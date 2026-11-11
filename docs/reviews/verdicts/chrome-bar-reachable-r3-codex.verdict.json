@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 3189 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "7543e2b9a381f7684cc6d00c0e027d9b999e776e",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/tmp/r3-prompt.md",
+  "reason": "3189 chars",
+  "refused": false,
+  "review": "chrome-bar-reachable-r3-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

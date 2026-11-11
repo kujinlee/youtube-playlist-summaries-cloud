@@ -1,0 +1,23 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 1845 chars"
+  ],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 63a0a17237a60114affb1df9e952bdcfd400ac41"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "af8a5188d69239189c92fc576ae91447221a1dca",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/cx-reshard-r2/log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "loosening_answers": {},
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/review-reshard-r2.md",
+  "reason": "1845 chars",
+  "refused": false,
+  "review": "reshard-sweep-38-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/reshard-38"
+}

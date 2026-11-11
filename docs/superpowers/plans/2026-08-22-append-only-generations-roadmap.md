@@ -7,6 +7,8 @@
 > moot. Each milestone gets its own detailed plan under `docs/superpowers/plans/` before it starts;
 > only M1 has one today (`2026-08-22-m1-honest-card.md`). Do not execute from this file.
 
+**Status:** ✅ shipped — merged in PR #158 (*"feat(M4): M4-β applied to production — 0027 is live, and the three fi…"*) and 7 earlier PR(s), all MERGED; ADR-0006 and ADR-0007 are `accepted 2026-08-24`, and `supabase/migrations/0027_stable_blob_addressing.sql` is in the tree and live on production.
+
 **Goal:** Move blob addressing from mutable `<serial>_<slug>` to immutable per-generation addresses
 with append-only publication, so two concurrent writers can neither destroy each other's paid work
 nor leave a row whose card and body came from different runs.

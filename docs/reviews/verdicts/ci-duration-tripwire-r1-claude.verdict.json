@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/ci-duration-tripwire-r1-claude.md": "100644 6e0ef20eba0c6d4580c37fbf83f6c4bec4e6d3d4"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f4bfae16b733c0503759ea4809e06c23595cdc35",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 11369 chars, names f4bfae16b733",
+  "refused": false,
+  "review": "ci-duration-tripwire-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/cdt",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

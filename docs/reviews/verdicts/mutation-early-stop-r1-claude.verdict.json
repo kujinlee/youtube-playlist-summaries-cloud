@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/mutation-early-stop-r1-claude.md": "100644 df1ad40d05b78a7f8137665d1a55d5bea5054e46",
+    "docs/reviews/codex/mutation-early-stop-r1-codex.md": "100644 4feb9272041cf9ee99d2cb466fda1a07c03e5203",
+    "docs/reviews/verdicts/mutation-early-stop-r1-codex.verdict.json": "100644 392b35519f42822babceb9caf99d4caa4f8907c9"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "98beb6b1048aa17e05e0469461cdb621185ec5da",
+  "intrusions": [],
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 7315 chars, names 98beb6b1048a",
+  "refused": false,
+  "review": "mutation-early-stop-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a57a35d7124802a47",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

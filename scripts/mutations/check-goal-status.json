@@ -1,0 +1,93 @@
+[
+  {
+    "name": "the ambiguity check on the alive marker is dropped, so current and needs-you collapse",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "    if marker == \"🟠\":",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ ...so a bare 🟠 is REFUSED, because it cannot say which of the two it is"
+    ]
+  },
+  {
+    "name": "the variation selector is no longer stripped, so the two pause spellings become different",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "    return marker.replace(\"️\", \"\")",
+        "    return marker"
+      ]
+    ],
+    "expect": [
+      "⭐ a selector after the ALIVE marker is stripped, which is where _norm is load-bearing"
+    ]
+  },
+  {
+    "name": "the status is searched over the WHOLE document, so it can hide below the reader's window",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "    m = STATUS_LINE.search(head)",
+        "    m = STATUS_LINE.search(text)"
+      ]
+    ],
+    "expect": [
+      "a declaration BELOW the window is not found, so it cannot hide in a long document"
+    ]
+  },
+  {
+    "name": "a missing declaration fails under EVERY anchor, so the guard is red from birth (backlog #56)",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "            if armed_here:",
+        "            if True:"
+      ]
+    ],
+    "expect": [
+      "...while the SAME blank document under an UNARMED anchor passes, which is what arming IS"
+    ]
+  },
+  {
+    "name": "a malformed line fails outside an armed anchor again, refusing 78 legitimate status lines",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "        if d[\"why\"] and armed_here:",
+        "        if d[\"why\"]:"
+      ]
+    ],
+    "expect": [
+      "⛔ a non-marker status under an UNARMED anchor is NOT a failure — it is another field"
+    ]
+  },
+  {
+    "name": "an empty corpus reports OK instead of CANNOT RUN, so nothing checked reads as clean",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "    if not docs:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "an empty tree is CANNOT RUN (2), never a pass — nothing was checked"
+    ]
+  },
+  {
+    "name": "an unreadable document is swallowed as an absent status rather than CANNOT RUN",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "                raise ValueError(f\"{f} could not be read: {exc}\") from exc",
+        "                continue"
+      ]
+    ],
+    "expect": [
+      "an UNREADABLE document is CANNOT RUN (2), never an absent status"
+    ]
+  }
+]

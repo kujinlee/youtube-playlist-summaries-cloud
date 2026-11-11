@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/gates-runner-438-r1-claude.md": "100644 9f58fc458548a8642ca8c7d4143a82eef718d52d",
+    "docs/reviews/codex/gates-runner-438-r1-codex.md": "100644 38266c5a193d5f129b3f56c6f07aa99aafbef07c",
+    "docs/reviews/verdicts/gates-runner-438-r1-codex.verdict.json": "100644 851b16483e6473c088b25c8fd18f2b67b6c095ac"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "a09cc99cc53f32007449ca4b6147c4199ea7f490",
+  "intrusions": [],
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 9185 chars, names a09cc99cc53f",
+  "refused": false,
+  "review": "gates-runner-438-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/wt-438",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

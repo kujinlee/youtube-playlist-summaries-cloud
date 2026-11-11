@@ -4,6 +4,8 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #230 (*"The late flush is an instrument, not a warning (backlog #97)"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Backlog #97.** **v1, 2026-09-06.** Filed on the resume immediately after PR #229 merged, from the
 live warn log rather than from a report.
 

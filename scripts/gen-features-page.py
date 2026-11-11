@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 12 cases
+    python3 scripts/gen-features-page.py --self-test  # 19 cases
 
 WHY THIS EXISTS
 ---------------
@@ -42,7 +42,11 @@ fallen behind.
 ⛔ REUSES THE SHIPPED BACKLOG PARSER rather than re-deriving "which row, what severity, what is it
 about". `gen-backlog-page.parse` already owns that rule — including the `(was 🟡)` and `**Title**`
 decoration seven rows carry — and a second implementation of one rule drifts. It is imported
-lazily, so `--self-test` stays pure and a broken sibling cannot take this suite down with it.
+lazily, so a broken sibling cannot take the rendering cases down with it.
+
+⛔ AND ITS TAG RULE (backlog #381). A row lands under a node through `gen-backlog-page.cell_tags`
+and `nearest_claim`, never by comparing the raw cell: a row may carry several `(tag)` groups and
+appears under the node claiming EACH of them, and `(cloud/money)` and `(cloud / money)` are one tag.
 """
 from __future__ import annotations
 
@@ -79,6 +83,7 @@ parse_features, Node = check_features.parse_features, check_features.Node
 
 esc = page_markup.escape
 inline_md = page_markup.render_inline
+inline_unlinked = page_markup.render_unlinked
 
 ANCHOR_ROW = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|\s*([^|]*?)\s*\|")
 DOC_ANCHOR = re.compile(r"^>\s*\*\*Anchor:\*\*\s*`([a-z0-9-]+)`")
@@ -254,6 +259,27 @@ def backlog_rows() -> list[dict]:
     return backlog_page().parse((DOCS / "backlog.md").read_text().split("\n"))
 
 
+def match_rows(nodes: list[Node], rows: list[dict]) -> dict[str, list[dict]]:
+    """PURE over the backlog page's tag rule. Each node's backlog rows, by slug.
+
+    A row lands under the node that `nearest_claim`s EACH tag its cell writes, so a row tagged
+    `(tooling) (comprehensibility)` appears under both nodes — the point of backlog #381 — and once
+    under a node that claims two of its tags. A tag no node claims lands nowhere here;
+    `check-features` is what refuses that, and it reads the same two functions."""
+    bp = backlog_page()
+    claims: dict[str, str] = {}
+    for n in nodes:
+        for a in n.areas:
+            claims.setdefault(bp.normalise_tag(a), n.slug)
+    out: dict[str, list[dict]] = {n.slug: [] for n in nodes}
+    for r in rows:
+        for leaf in bp.cell_tags(r["bundle"])[0]:
+            area = bp.nearest_claim(leaf, claims)
+            if area is not None and r not in out[claims[area]]:
+                out[claims[area]].append(r)
+    return out
+
+
 def collect(nodes: list[Node]) -> tuple[dict[str, dict], dict]:
     """(fragments keyed by node slug, notes about what could not be derived)."""
     notes: dict = {}
@@ -262,6 +288,7 @@ def collect(nodes: list[Node]) -> tuple[dict[str, dict], dict]:
 
     adr_files = {p.name[:4]: p.name for p in sorted((DOCS / "adr").glob("[0-9][0-9][0-9][0-9]-*.md"))}
     rows = backlog_rows()
+    matched = match_rows(nodes, rows)
     glyphs = sev_glyphs(backlog_page().SEVERITY)
     reviews = sorted(p for p in (DOCS / "reviews").rglob("*.md")) if (DOCS / "reviews").is_dir() else []
     subjects = git_subjects()
@@ -273,13 +300,12 @@ def collect(nodes: list[Node]) -> tuple[dict[str, dict], dict]:
     for n in nodes:
         f: dict[str, list] = {k: [] for k, _ in SECTIONS}
 
-        mine = [r for r in rows if r["bundle"] in n.areas]
-        mine.sort(key=lambda r: (r["closed"], r["num"]))
+        mine = sorted(matched[n.slug], key=lambda r: (r["closed"], r["num"]))
         f["backlog"] = [{
             "label": f"#{r['num']} {glyphs.get(r['sev'], '·')}"
                      + (f" (was {r['was']})" if r["was"] else "")
                      + f" {r['title']}",
-            "href": f"/backlog-table#i{r['num']}",
+            "href": page_markup.key_link("backlog", r["num"]),
             "closed": r["closed"],
         } for r in mine]
 
@@ -394,7 +420,9 @@ def render_fragments(f: dict) -> list[str]:
         parts.append(f'<div class="band"><span class="blab">{label}</span>')
         for e in shown:
             text, href = fragment_parts(e)
-            body = f'<a href="{esc(href)}">{inline_md(text)}</a>' if href else inline_md(text)
+            # The row text sits INSIDE the row's link, so a key in it stays text (`inline_unlinked`),
+            # or the page carries an `<a>` in an `<a>` — 29 rows did (backlog #470 review round 1).
+            body = f'<a href="{esc(href)}">{inline_unlinked(text)}</a>' if href else inline_md(text)
             parts.append(f'<div class="frag">{body}</div>')
         if extra or closed:
             bits = []
@@ -405,7 +433,7 @@ def render_fragments(f: dict) -> list[str]:
             parts.append(f'<details class="more"><summary>{" · ".join(bits)}</summary>')
             for e in extra + closed:
                 text, href = fragment_parts(e)
-                body = f'<a href="{esc(href)}">{inline_md(text)}</a>' if href else inline_md(text)
+                body = f'<a href="{esc(href)}">{inline_unlinked(text)}</a>' if href else inline_md(text)
                 parts.append(f'<div class="frag">{body}</div>')
             parts.append("</details>")
         parts.append("</div>")
@@ -525,6 +553,13 @@ def render(nodes: list[Node], fragments: dict, built_at: str = "",
 
 # ---------------------------------------------------------------- self-test
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     cases = failures = 0
 
     def check(name, got, want) -> None:
@@ -553,6 +588,12 @@ def self_test() -> int:
     check("an absent node is marked", "not built" in html, True)
     check("the absent reason is shown", "expected because" in html.lower(), True)
     check("a linked gap appears", "#139" in html, True)
+    # backlog #470 review round 1: a row whose title cites a key sits inside the row's own link.
+    _nest = render(nodes, {"wake-on-visit": {"backlog": [
+        {"label": "#45 residue left when backlog #7 merged", "href": "/backlog-table#i45"}], "adr": []}})
+    check("a key in a linked row's text is not a second <a> inside the row's link",
+          ([t.start for t in page_markup.page_tokens(_nest)[0] if t.kind == "start" and t.in_a],
+           "residue left when backlog #7 merged</a>" in _nest), ([], True))
     check("the absence count is shown", "1 declared absence" in html, True)
     # ⛔ DELIBERATE DEVIATION FROM THE BRIEF, AND THE MEASUREMENT THAT FORCED IT. The brief writes
     # this case as a bare `str(date.today().year) in html`. MEASURED: that case CANNOT FAIL in
@@ -594,6 +635,57 @@ def self_test() -> int:
     check("the severity glyphs are derived from the backlog page's map, not a second copy",
           (sev_glyphs({"🟣": "epic"}), sev_glyphs({})),
           ({"none": "·", "epic": "🟣"}, {"none": "·"}))
+
+    # ── WHICH ROWS A NODE CLAIMS (backlog #381) ─────────────────────────────────────────────────
+    tagged, _ = parse_features(
+        "## DEV\n"
+        "### harness\nstate: built\nfor: Guards.\nareas: (tooling), (process)\n"
+        "### status-pages\nstate: built\nfor: Pages.\nareas: (comprehensibility)\n"
+        "### spend\nstate: built\nfor: Money.\nareas: (cloud/money)\n"
+        "### cloud\nstate: built\nfor: Cloud.\nareas: (cloud)\n")
+    _r = lambda num, bundle: {"num": num, "bundle": bundle, "closed": False}
+    got = match_rows(tagged, [_r(1, "(tooling) (comprehensibility)"), _r(2, "(cloud / money)"),
+                              _r(3, "(cloud/money)"), _r(4, "(Cloud/new), (tooling)"),
+                              _r(5, "(tooling) (process)")])
+    nums = {k: [r["num"] for r in v] for k, v in got.items()}
+    # ⛔ THE FAILS-IF, features half: a two-tag row under BOTH matching features.
+    check("a two-tag row appears under BOTH nodes that claim its tags",
+          (1 in nums["harness"], 1 in nums["status-pages"]), (True, True))
+    check("both spellings of a slashed tag land under the one node that claims it, and only there",
+          (nums["spend"], 2 in nums["cloud"] or 3 in nums["cloud"]), ([2, 3], False))
+    check("hierarchy and several tags together: an unclaimed leaf falls to its family's node",
+          (4 in nums["cloud"], 4 in nums["harness"]), (True, True))
+    check("a row is listed ONCE under a node however many of its tags that node claims",
+          nums["harness"].count(5), 1)
+    # ⛔ THE FAILS-IF, agreement half, over the REAL files. Every real row lands under a node for
+    # each tag it writes, and every tag it is filed under on /features is one the backlog page's
+    # filter lists for it — so the two pages cannot disagree about any row's tags.
+    _bp = backlog_page()
+    _real_nodes = parse_features((DOCS / "features.md").read_text())[0]
+    _real_rows = backlog_rows()
+    _placed = match_rows(_real_nodes, _real_rows)
+    _areas = {_bp.normalise_tag(a): n.slug for n in _real_nodes for a in n.areas}
+    def _row_disagrees(r: dict) -> bool:
+        claim = [_bp.nearest_claim(t, _areas) for t in _bp.cell_tags(r["bundle"])[0]]
+        filed = {slug for slug, v in _placed.items() if r in v}
+        return (None in claim                                    # a tag /features cannot show
+                or filed != {_areas[a] for a in claim}           # filed elsewhere, or missing
+                or not set(claim) <= set(_bp.bundle_tags(r["bundle"])))  # a tag the filter lacks
+    _disagree = [r["num"] for r in _real_rows if _row_disagrees(r)]
+    check("every REAL tagged row lands under a node, and only under tags the backlog filter gives it",
+          (len(_real_rows) > 300, _disagree), (True, []))
+
+    # ⚠ THE CALL SITE, not only the function — `collect` is what the page renders from, and a
+    # `match_rows` nobody calls would leave every case above green.
+    # Two node sets — the real tree and the synthetic multi-area one — so `nodes` is not a constant.
+    def _band_mismatch(ns: list[Node], frag: dict) -> list[str]:
+        placed = match_rows(ns, _real_rows)
+        return [n.slug for n in ns
+                if sorted(e["href"] for e in frag[n.slug]["backlog"])
+                != sorted(page_markup.key_link("backlog", r["num"]) for r in placed[n.slug])]
+    check("the page's backlog band lists exactly the rows match_rows places, for every node",
+          (_band_mismatch(_real_nodes, collect(_real_nodes)[0]),
+           _band_mismatch(tagged, collect(tagged)[0])), ([], []))
 
     # ── THE REGEN HOOK ──────────────────────────────────────────────────────────────────────────
     # ⭐ Code review r1 (Codex), Low. `.claude/hooks/regen-features-page.sh` is the ONLY thing that
@@ -647,6 +739,8 @@ def main() -> int:
 
     if args.self_test:
         return self_test()
+    # Every `PR #N` this page renders links to GitHub (backlog #470); no GitHub remote -> plain text.
+    page_markup.use_repo(page_markup.origin_repo(ROOT))
 
     for p in (DOCS / "features.md", DOCS / "anchors.md", DOCS / "backlog.md"):
         if not p.is_file():
@@ -659,6 +753,8 @@ def main() -> int:
               file=sys.stderr)
         return 2
     try:
+        # A `backlog #N` naming no row is marked text, not a link to nothing (backlog #470).
+        page_markup.use_rows(r["num"] for r in backlog_rows())
         fragments, notes = collect(nodes)
     except Exception as e:                      # an unparseable backlog is CANNOT RUN, not empty
         print(f"CANNOT RUN — the fragments could not be derived ({e.__class__.__name__}: {e}). "
@@ -676,6 +772,8 @@ def main() -> int:
     fragment = render(nodes, fragments, notes=notes, problems=problems,
                       generated_at=page_chrome.provenance(
                           _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), ROOT))
+    # Every key left as TEXT by whichever path rendered it becomes a link (backlog #470).
+    fragment = page_markup.link_html(fragment, page_markup.REPO)
 
     if args.fragment_only:
         page_chrome.assert_wired(fragment, "gen-features-page.py")

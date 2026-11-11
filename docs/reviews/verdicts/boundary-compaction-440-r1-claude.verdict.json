@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/boundary-compaction-440-r1-claude.md": "100644 baeff0b1715ccb1c438099fedd40eea930ea041d",
+    "docs/reviews/codex/boundary-compaction-440-r1-codex.md": "100644 da3762513001bc063386f6e1a4fe1e6088a25202",
+    "docs/reviews/verdicts/boundary-compaction-440-r1-codex.verdict.json": "100644 784372c24b4b900b8648caff1b28ec1155fe8d8f"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "cfdcf659c5ea64271e79ba677812105c360c2217",
+  "intrusions": [],
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 9472 chars, names cfdcf659c5ea",
+  "refused": false,
+  "review": "boundary-compaction-440-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/wt-440",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

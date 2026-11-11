@@ -73,10 +73,11 @@ leaving the item open forever.
 ## Regenerate — one command
 
 ```bash
-python3 scripts/gen-dashboard.py
+python3 scripts/regen-pages.py --page dashboard
 ```
 
-It composes and writes the page, and **exits non-zero if it does not** — so its exit code is the
+It builds the page from a FRESH `origin/master` (backlog #408) — so an entry on an unmerged branch appears on the
+served page once it merges — composes and writes it, and **exits non-zero if it does not** — so its exit code is the
 answer to "did that work", and there is nothing to check by hand afterwards.
 
 > ⛔ **No `mv` glob, and no writing the page yourself.** The generator returns a fragment and hands
@@ -85,7 +86,7 @@ answer to "did that work", and there is nothing to check by hand afterwards.
 > the reader simply has no way to ask anything back.
 
 A `PostToolUse` hook (`.claude/hooks/regen-dashboard.sh`) runs this for you whenever the store is
-written, and prints `↻ dashboard regenerated`. Run the command yourself when the page needs
+written, and prints `↻ dashboard: pages show origin/master <sha>; this edit appears after it merges`. Run the command yourself when the page needs
 rebuilding for any other reason — a new commit, a PR opening or closing — since those change the
 page without touching the store.
 

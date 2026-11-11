@@ -1,0 +1,467 @@
+<title>Suite roles review</title>
+
+<style>
+:root{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+.bad{color:var(--red)} .warn{color:var(--amber)}
+.rev{border:1px solid var(--rule);border-radius:7px;background:var(--panel);padding:4px 18px 14px;margin:20px 0}
+.rev h3{margin-top:14px}
+.chip{display:inline-block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;
+  border-radius:10px;border:1px solid var(--amber);color:var(--amber);margin-left:8px;vertical-align:middle}
+.chip.set{border-color:var(--verified-br);color:var(--verified)}
+.chip.ret{border-color:var(--red);color:var(--red)}
+.rev dl{margin:8px 0;display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:15px}
+.rev dt{color:var(--fg3);font-weight:600}
+.rev dd{margin:0}
+.ans{margin-top:12px;border:1px dashed var(--rule);border-radius:5px;padding:9px 12px;
+  color:var(--fg3);font-size:14.5px;background:var(--bg)}
+.ans b{color:var(--fg2)}
+@media (max-width:560px){ .rev dl{grid-template-columns:1fr} }
+</style>
+
+<div class="wrap ex-body">
+
+<h1>Suite roles review — draft for backlog #384</h1>
+<p class="horizon">as of <code>4b098b2d</code> (master) · 2026-10-28 03:53 PDT · a SPEC DRAFT for your review, not a measurement — every role below is a proposal</p>
+
+<div class="reading">
+<b>The reading I chose:</b> <i>Draft roles for the comprehensibility suite's pages (backlog #384): one question per page, how the pages link, and what is still open, for review on this page; your answers are written back here.</i> You asked for this at 03:47: <i>"it would be better to have a topic page that shows your draft roles and we go through review and answer cycle on the page."</i> Each review item ends in an answer box; ask on its heading (accept, reject, or rewrite it) and the answer is written into that box.
+</div>
+
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at the newest page.
+<ol>
+<li><b>To review an item:</b> hover its heading (or select any sentence) → <b>ask</b> → type <i>accept</i>, <i>reject</i>, or your rewrite → <b>Send</b>. Then say <i>“read my questions”</i> in the session; your answer is written into that item's box.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and a reboot stops it, which is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+
+<div class="toc">
+<b>Where this goes</b>
+<ol>
+<li><a href="#decided">Decided (3 items)</a></li>
+<li><a href="#roles">Draft roles, one per page (8 items)</a></li>
+<li><a href="#links">How the pages link (1 item)</a></li>
+<li><a href="#open">Still open (5 items)</a></li>
+<li><a href="#spec">What the spec will contain once reviewed</a></li>
+<li><a href="#measured">What was measured, and what was inferred</a></li>
+</ol>
+</div>
+
+<h2 id="decided">Decided</h2>
+<p>Settled with you on 2026-10-28 at 03:47, by selection card. They are the fixed points the drafts below are built around; ask on one if you want to reopen it.</p>
+
+<div class="rev">
+<h3 id="d-needs">D1 — "Needs you" has one definition and one home <span class="chip set">settled</span></h3>
+<p><b>"Needs you" means a decision only you can make, open now.</b> It lives in <b>one list on the goal-tree page</b>. The dashboard's open asks and the backlog's decision rows link to that list instead of each counting their own.</p>
+<p>Why it was needed: the inventory measured three answers to one question — the dashboard's open asks (37, of which 29 the dashboard cannot read), the backlog page's "need your decision" rows (12), and the agent's chat summaries (0).</p>
+<div class="ans"><b>Your answer (03:47):</b> A — one list on the goal-tree page.</div>
+</div>
+
+<div class="rev">
+<h3 id="d-worklines">D2 — The goal-tree page absorbs work-lines <span class="chip set">settled</span></h3>
+<p>The goal tree's timeline replaces <code>/work-lines</code>; work-lines is then <b>retired</b>, its history (through 2026-10-25) kept as an archive, not migrated. Work-lines went stale because it is fed only by plans armed with <code>begin-plan.py</code>, which stopped being used on 10-25.</p>
+<div class="ans"><b>Your answer (03:47):</b> A — absorb, then retire work-lines.</div>
+</div>
+
+<div class="rev">
+<h3 id="d-fresh">D3 — Every generated page is rebuilt on every merge <span class="chip set">settled</span></h3>
+<p>A merge regenerates dashboard, goals, backlog, features and the goal tree, so no page is more than a minute behind master. Today a merge fires no rebuild, and <code>/dashboard</code> and <code>/goals</code> were measured stale (built 10-25 and 10-23).</p>
+<div class="ans"><b>Your answer (03:47):</b> A — rebuild on every merge.</div>
+</div>
+
+<h2 id="roles">Draft roles, one per page</h2>
+<p>One question per page; a second page that answers the same question links to the first instead of restating it. These are <b>drafts</b>, started from the inventory's candidate roles and sharpened by D1–D3.</p>
+
+<div class="rev">
+<h3 id="r-goaltree">R1 — Goal tree <span class="chip set">settled</span></h3>
+<dl>
+<dt>Its one question</dt><dd>What is the agent working on right now, why, and what is it waiting on — and how did it get here?</dd>
+<dt>Reader and moment</dt><dd>You, any time you want to know where the work stands; the <b>home page</b> if R-open-4 is accepted.</dd>
+<dt>Must not duplicate</dt><dd>the change log (link to the dashboard for <i>what changed</i>), a row's detail (link to the backlog).</dd>
+<dt>Sources</dt><dd><code>docs/goal-threads.md</code> (goals and each thread's relation, written by the agent), <code>git</code> and <code>gh</code> for every state, the in-flight ledger; the "needs you" list (D1).</dd>
+<dt>Outbound links</dt><dd>PR #N → GitHub · backlog #N → /backlog-table#iN · a goal → /goals · a timeline entry → its full past tree.</dd>
+</dl>
+<p>Being built now as backlog #363: current tree on top, the "needs you" list above it, a timeline of past snapshots below, rebuilt at each <code>/goal-tree</code> and each merge.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> accepted as written: the goal tree answers "what is the agent working on, why, and what is it waiting on", and is the home page (R-open-4).</p></div>
+</div>
+
+<div class="rev">
+<h3 id="r-backlog">R2 — Backlog <span class="chip set">settled</span></h3>
+<dl>
+<dt>Its one question</dt><dd>What work exists that is not done, and what state is each item in?</dd>
+<dt>Reader and moment</dt><dd>You when choosing what comes next; the agent when filing or closing an item.</dd>
+<dt>Must not duplicate</dt><dd>progress on an item (link to the goal tree), how it was built (link to the PR).</dd>
+<dt>Sources</dt><dd><code>docs/backlog.md</code>, read by the one shared parser (#381).</dd>
+<dt>Outbound links</dt><dd>an item → its PR (GitHub) · its tags → /features · its goal → /goals · its decision, if it needs one → the goal tree's "needs you" list.</dd>
+</dl>
+<p>The <b>single place an item's state is decided</b>; every other page that shows an item's state reads it from here.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> accepted as written: the backlog is the ONLY place an item's state is decided; every other page links to it.</p></div>
+</div>
+
+<div class="rev">
+<h3 id="r-dashboard">R3 — Dashboard <span class="chip set">settled</span></h3>
+<dl>
+<dt>Its one question</dt><dd>What changed while I was away, newest first?</dd>
+<dt>Reader and moment</dt><dd>You, returning after a gap.</dd>
+<dt>Must not duplicate</dt><dd>"needs you" (D1: it links to the goal tree's list instead), where each thread stands (the goal tree).</dd>
+<dt>Sources</dt><dd><code>docs/dashboard-entries.md</code>, one entry per change.</dd>
+<dt>Outbound links</dt><dd>an entry → its PR · its backlog row · the goal it served.</dd>
+</dl>
+<p>A pure change log. Its open asks move to D1's list; its 29 unreadable asks must be repaired or closed first.</p>
+<div class="ans"><b>Your answer (10-28 19:12):</b> "my visiting time wouldn't have serious meaning as I would not remember all the detail when I visit. It would be enough if I can query what has been changed since T. The T can be yesterday, last merge, this morning or last query."</div>
+<div class="qa"><p class="q"><b>You asked (10-28 18:38):</b> goal-tree logs can detect changes over certain duration. Which one would be more convenient or versatile?</p>
+<p><b>Short answer: the goal-tree log is the more versatile source; the dashboard is the more convenient read today. They answer different halves of "what changed".</b></p>
+<table>
+<tr><th></th><th>Goal-tree log</th><th>Dashboard</th></tr>
+<tr><td>How it is made</td><td>Derived: a snapshot is logged automatically whenever the tree changes (18 today, 03:50–18:34)</td><td>Hand-written: one entry per PR, by me</td></tr>
+<tr><td>Any time window?</td><td><b>Yes, in principle.</b> <code>changes(prev, cur)</code> compares <i>any</i> two snapshots, so "since T" is the snapshot at T against the newest. ⚠ <b>Not built yet</b>: today it diffs only consecutive snapshots.</td><td>Only by date headings; no "since my last visit"</td></tr>
+<tr><td>Can it be stale or wrong?</td><td>Only if a snapshot was not taken (it is taken on every merge and every goal-thread edit)</td><td>Yes: today it held 29 stale asks until triaged</td></tr>
+<tr><td>Says WHAT changed</td><td>Yes: thread states, merges, new or closed decisions</td><td>Yes</td></tr>
+<tr><td>Says WHY it matters</td><td><b>No</b>: states only</td><td><b>Yes</b>: plain-words narrative</td></tr>
+</table>
+<p><b>My recommendation for R3:</b> make the goal tree's timeline the change log, with a "since <i>T</i>" window (default: your last visit), and keep the dashboard only as the <i>narrative</i> layer, where each timeline line links to the entry that explains it. That removes the duplicate "what changed" list, one of the overlaps backlog #384 exists to resolve. The window is small to build, because the log already holds the snapshots. ⚠ Open question for you: should "your last visit" be detected (from when the page was last opened) or chosen by you?</p>
+<p><b>⟳ Answered by you (19:12): neither; a query, "what changed since T".</b> What that becomes:</p>
+<ul>
+<li><b>A "changed since" control on the goal-tree page</b> with your four presets: <b>yesterday</b>, <b>this morning</b>, <b>the last merge</b> and <b>my last query</b>, plus a typed time. The answer is the newest snapshot compared against the newest one at or before T, through the same <code>changes()</code> rule the timeline uses. ⟳ <b>Corrected (19:14):</b> I first wrote that the page already embeds the snapshots. <b>It does not:</b> it renders a pre-built timeline, and the snapshots (20 so far) live in the git-ignored <code>.claude/goal-tree-log.jsonl</code>. So building this means either embedding the snapshots in the page, or having the explainer server answer the query from the log. Which is better is a design choice for the build.</li>
+<li><b>"My last query"</b> is the one preset with state: the page remembers in your browser when you last ran a query. That is a convenience, so it survives a reload and can be cleared. If the browser forgot, it says so rather than guessing.</li>
+<li><b>"The last merge"</b> comes from the snapshots themselves (the master head each one was read at), not from git at view time.</li>
+<li>Each change line links to the dashboard entry that explains it, where one exists: the narrative layer from my recommendation above.</li>
+</ul>
+<p>Filed as a backlog row, so it is built rather than left in this thread.</p>
+<p><b>⟳ Corrected by you (19:17):</b> <i>"these are just examples not directives. The reader can specify since T in free form or select from dropdown list."</i> Understood. T is typed in <b>free form</b> (a date or time, or a phrase like "yesterday") <b>or picked from a dropdown</b>. Your four are examples of what it must understand, not a fixed list. A T it cannot read is refused with what it did understand, never quietly read as another time. Backlog #392 now says this.</p></div>
+</div>
+
+<div class="rev">
+<h3 id="r-goals">R4 — Goals <span class="chip set">settled</span></h3>
+<dl>
+<dt>Its one question</dt><dd>What are we trying to achieve, and which specs, plans, decisions and work belong to each aim?</dd>
+<dt>Reader and moment</dt><dd>You when the direction is in question; the agent when a new piece of work needs a home.</dd>
+<dt>Must not duplicate</dt><dd>what is built (link to /features), what is in flight (link to the goal tree).</dd>
+<dt>Sources</dt><dd><code>docs/anchors.md</code>, the roadmap, spec and plan headers, ADRs.</dd>
+<dt>Outbound links</dt><dd>a goal → its features · its open backlog rows · its specs and ADRs.</dd>
+</dl>
+<p>Depends on R-open-1, the unit of a goal.</p>
+<div class="qa"><p class="q"><b>You wrote (10-28 19:26):</b> in Agile, Initiative, Epic, Story, task, defect, backlog etc can express planning intention, work granularities etc.</p>
+<p><b>The repo already has every one of those levels, but under other names, and one level is mixed.</b> Counted today:</p>
+<table>
+<tr><th>Agile</th><th>What this repo has</th><th>Count</th></tr>
+<tr><td>Initiative</td><td>the roadmap's programmes (cloud, sync, comprehensibility…)</td><td>3</td></tr>
+<tr><td>Epic</td><td><b>anchors</b> (<code>docs/anchors.md</code>, each "a goal"), roadmap milestones, feature-map nodes</td><td>13 anchors · 3 milestone sections (M1–M3; M4–M9 are only mentioned, never sectioned) · 28 nodes</td></tr>
+<tr><td>Story</td><td>backlog rows that describe an outcome, and the goal tree's goals (your requests)</td><td>part of 345 rows · 4 goals</td></tr>
+<tr><td>Task</td><td>backlog rows that are a unit of work, plan files (<code>.claude/plans/</code>) and their steps, PRs</td><td>part of 345 rows · 136 plans</td></tr>
+<tr><td>Defect</td><td>backlog rows filed from review findings: <b>no separate type</b></td><td>inside the 345</td></tr>
+<tr><td>Backlog</td><td><code>docs/backlog.md</code></td><td>1</td></tr>
+</table>
+<p><b>Three consequences:</b></p>
+<ul>
+<li><b>Backlog #90 is this problem, named by you on 2026-09-03:</b> <i>"backlog is used as a parking space for stories and tasks."</i> Story, task and defect all share one table, with no column saying which is which.</li>
+<li><b>R-open-1 ("what is the unit of a goal?")</b> is the Epic question. Three epic-like units exist (anchors, milestones, feature nodes) with no stated relation between them.</li>
+<li><b>Backlog #385 (a common tag vocabulary)</b> is where a <i>level</i> would live: a <code>kind:</code> facet (initiative / epic / story / task / defect) beside the area tags.</li>
+</ul>
+<p><b>My recommendation:</b> adopt the Agile names as the suite's vocabulary for <i>level</i>. Every backlog row gets one <code>kind</code> (story, task or defect). Anchors are the epics, programmes the initiatives, and plans and PRs the tasks' execution. That one decision would settle #90, answer R-open-1, and give #385 its first facet. ⚠ Not measured yet: how the 345 rows split by kind. A first pass would classify them and show you the counts before anything is retagged.</p>
+<p><b>Question for you:</b> should I treat this as your direction for #90, R-open-1 and #385 (adopt Agile levels), or was it an observation to weigh in the R4 walkthrough?</p>
+<p class="q"><b>You answered (19:35):</b> "what are R-open-1, R4? Regardless, I think adopting Agile vocabulary is good direction. … We may re-organize current backlog (as big bag) to proper structure or just use qualifier or tag to give flavor to line-items then detect internal relationship from the qualifier or tag. What do you think?"</p>
+<p><b>First, the names I used without explaining them:</b> <b>R4</b> is the fourth page-role draft on this page, the one for the <b>Goals</b> page. <b>R-open-1</b> is this page's first open question, <i>"what is the unit of a goal?"</i>: anchors, feature nodes or the roadmap's programmes. I should have said so when I first used them.</p>
+<p><b>Recorded: adopting the Agile vocabulary is your direction.</b></p>
+<p><b>Restructure or tag? I recommend tags, with one change to "detect".</b></p>
+<ul>
+<li><b>Tags, not a re-organisation.</b> Splitting the 345 rows into separate tables would move every row, and rows are referred to by number (<code>backlog #N</code>) from thousands of places: PRs, review documents, memory, other rows. A <code>kind</code> tag (story, task or defect) is <b>additive and reversible</b>, and the multi-tag parser built this week (backlog #381) already reads several tags per row.</li>
+<li><b>But relationships should be DECLARED, not detected.</b> A tag says what a row <i>is</i>, not what it <i>belongs to</i>. Inferring "this task is part of that story" from wording is the mistake this whole session kept making: six subjects in two days failed by inferring a fact from free text that the text could defeat (the goal tree's first two review rounds failed exactly that way). The reliable form is an explicit link written on the row, such as <code>part of: backlog #N</code> or <code>epic: &lt;anchor&gt;</code>, read by the same one parser.</li>
+<li><b>So the shape is:</b> a <code>kind</code> tag on every row, plus an explicit parent link where one exists. Pages then <i>derive</i> the tree (initiative → epic → story → task) from those two fields and never guess.</li>
+</ul>
+<p>⚠ Still unmeasured: how the 345 rows split by kind, and how many already name a parent. A first pass would classify them and show you the counts before anything is retagged.</p>
+<p class="q"><b>You chose (19:38):</b> a kind tag plus an explicit parent link. <i>"This will be a good start to reshaping backlogs. We will see what happen."</i></p>
+<p><b>⟳ First pass, done (19:5x). A proposal: nothing has been retagged.</b> Every row was read with the backlog page's own parser (347 rows, 0 unreadable), and I recounted these numbers from the per-row data:</p>
+<table>
+<tr><th>kind</th><th>open</th><th>closed</th><th>total</th></tr>
+<tr><td>story</td><td>21</td><td>11</td><td>32</td></tr>
+<tr><td>task</td><td>54</td><td>26</td><td>80</td></tr>
+<tr><td><b>defect</b></td><td><b>141</b></td><td>94</td><td><b>235 (68%)</b></td></tr>
+</table>
+<ul>
+<li><b>The backlog is mostly a defect log.</b> That fits how rows are filed here: from review findings. Stories, the outcomes a reader wants, are only 32.</li>
+<li><b>Confidence:</b> 188 high, 126 medium, 33 low (18 of the low ones are tasks, 9 stories, 6 defects).</li>
+<li><b>Explicit parents already written:</b> 22 rows carry 23 links, for example #19, #21 and #22 → #17, and #364 → #223. Two point at an anchor (#23 → corrections-in-cloud, #75 → status-visibility). Rows that merely <i>mention</i> another row ("NOT folded into…", "found by review of…") were not counted.</li>
+<li><b>Caveat:</b> the kinds are a judgement from each row's title and opening text, so this is a first pass for you to correct, not a measurement.</li>
+</ul>
+<p><b>Three questions for you</b> (asked on a card in the session too):</p>
+<ol>
+<li><b>Decision rows.</b> Eight rows (#26, #27, #66, #148, #211, #320, #321, #327) are decisions or questions, not work. Do they get a fourth kind, or stay a task with the NEEDS-OWNER marker saying the rest?</li>
+<li><b>A group tag is not a parent.</b> Four rows carry the tag <code>comprehensibility / feature-map</code>. That says which area a row is in, not what it belongs to. Should grouping and parentage stay separate?</li>
+<li><b>Missing tests.</b> Is "add the missing coverage" a task, with a defect only when a claim is false because of the gap? This line is the main source of medium confidence.</li>
+</ol>
+<p class="q"><b>You answered (20:35), all three A:</b> three kinds only, and a decision is a task plus NEEDS-OWNER; grouping and parentage stay separate; missing coverage is a task unless a claim is false.</p>
+<p><b>⟳ Next:</b> the retag is being built as backlog #394. That covers the backlog grammar accepting <code>kind</code> and <code>part of:</code>, the backlog page showing both, and every row written from the first pass under your three rulings. The PR will list every row whose kind changed from the proposal.</p></div>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> settled by your 10-28 20:35 answers (three kinds, a decision is a task plus NEEDS-OWNER), built as backlog #394.</p></div>
+</div>
+
+<div class="rev">
+<h3 id="r-features">R5 — Features <span class="chip set">settled</span></h3>
+<dl>
+<dt>Its one question</dt><dd>What does the system do today, and what is missing from each part of it?</dd>
+<dt>Reader and moment</dt><dd>Anyone who needs to know what exists before asking for something new.</dd>
+<dt>Must not duplicate</dt><dd>the gaps' detail (link to each backlog row), intent (link to /goals).</dd>
+<dt>Sources</dt><dd><code>docs/features.md</code>, plus the backlog rows its tags claim.</dd>
+<dt>Outbound links</dt><dd>a feature → its backlog rows (already linked today, 358 links) · its goal → /goals · its ADRs and specs.</dd>
+</dl>
+<p>The one page that is a hub today; the draft keeps it as the map of what exists.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> accepted as written: features is the map of what exists and what is missing.</p></div>
+</div>
+
+<div class="rev">
+<h3 id="r-briefs">R6 — Brief pages <span class="chip set">settled</span></h3>
+<dl>
+<dt>Its one question</dt><dd>Where did one body of work stand on a given day, and what decision did it need then?</dd>
+<dt>Reader and moment</dt><dd>You, for a decision or a catch-up at a moment.</dd>
+<dt>Must not duplicate</dt><dd>current state (link to the generated page that owns it), counts a generated page computes.</dd>
+<dt>Sources</dt><dd>the moment it was written; it is a dated snapshot.</dd>
+<dt>Outbound links</dt><dd>every item → its live home page.</dd>
+</dl>
+<p>Depends on R-open-3, snapshot or report.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> settled by R-open-3: briefs are dated snapshots that link to the generated page for current state.</p></div>
+<div class="qa"><p class="q"><b>You wrote (10-28 20:39):</b> I wonder if brief can be merged to other such as goal-tree-history or explain-topic.</p>
+<p><b>Yes. A brief is two things glued together, and each already has a better home.</b> Measured today: there are <b>49</b> brief pages. <b>4</b> are not briefs at all: they are topic explainers that <code>brief-compose.py</code>'s default filename labelled "brief". Of the other <b>45</b>, <b>44</b> are about a decision. So a brief is "where one body of work stood on a day" <i>plus</i> "the argument for one decision then".</p>
+<table>
+<tr><th>Part of a brief</th><th>Better home</th><th>Why</th></tr>
+<tr><td>Where the work stood on day D</td><td><b>The goal tree</b>: its snapshot at D, filtered to one thread (backlog #392's "since T" query, plus a thread filter)</td><td>Derived from git and gh, so never stale or mis-copied. A brief is typed once and silently ages.</td></tr>
+<tr><td>What decision it needed then</td><td><b>NEEDS YOU</b> in that snapshot</td><td>One list (your D1), not one per brief</td></tr>
+<tr><td>The argument for that decision: evidence, options, a recommendation, the Ask tray</td><td><b>An explain-topic (or explain-findings) page</b>, linked from the NEEDS YOU item</td><td>That page already is "a question you can interrogate, answered in the page"</td></tr>
+</table>
+<p><b>My recommendation:</b> retire "brief" as a separate page kind. New work uses the goal tree for state and an explain page for each decision that needs an argument, linked from its NEEDS YOU item. The 45 existing briefs stay as dated history, untouched. Separately, fix <code>brief-compose.py</code>'s default filename, which mislabelled 4 topic pages. This would also settle <b>R-open-3</b> (snapshot or report?): the snapshot half becomes derived, and the report half becomes an explain page.</p>
+<p>⚠ What would be lost: a single page that holds a whole catch-up for one subject at once. The goal tree's thread view at T plus the linked explain page would need to cover that. Whether they do is checkable once backlog #392 is built.</p>
+<p class="q"><b>You chose (20:46): decide after backlog #392 is built.</b> And (20:47): <i>"if we need an overall explanation page, brief may just present combined view with goal-tree history and explanation with pointer. in general, pages provides a perspective view which contains links to other pages."</i></p>
+<p><b>Recorded as a principle for the whole suite (backlog #384), not just for briefs:</b> <b>a page is a perspective.</b> It composes a view of content other pages own and links to them, and never keeps its own copy. That is also the general cure for "two pages answer the same question". Under it, a brief, if one is still wanted after #392, is a <i>combined view</i>: the goal tree's history for one subject plus the explanation, each shown by pointer, with nothing restated.</p></div>
+</div>
+
+<div class="rev">
+<h3 id="r-explainers">R7 — Explainer pages <span class="chip set">settled</span></h3>
+<dl>
+<dt>Its one question</dt><dd>How does this one subject work — a concept, a change, a set of findings?</dd>
+<dt>Reader and moment</dt><dd>You, when you want to understand something, and ask on the page.</dd>
+<dt>Must not duplicate</dt><dd>status (link to the goal tree or backlog).</dd>
+<dt>Sources</dt><dd>the subject, read at the time; answers are written into the page.</dd>
+<dt>Outbound links</dt><dd>the item it explains (a row, PR, goal or feature); and that item's page links back to it.</dd>
+</dl>
+<p>The change from today: an explainer declares what it is about, so it stops being found only by date.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> accepted as written: an explainer declares the item it is about, and that item's page links back.</p></div>
+</div>
+
+<div class="rev">
+<h3 id="r-worklines">R8 — Work-lines <span class="chip ret">retiring</span></h3>
+<p>Per D2, its job (how threads branched) moves into the goal tree as one more relation; the page is kept read-only as an archive of history through 2026-10-25, and nothing new is written to it.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> done: PR #434 (d0acfa85) retired the work-lines page into the goal tree, history archived.</p></div>
+</div>
+
+<h2 id="links">How the pages link</h2>
+
+<div class="rev">
+<h3 id="l-keys">L1 — Every identifier is a link, to one home page <span class="chip set">settled</span></h3>
+<div class="scroll"><table>
+<tr><th>Entity</th><th>Its key</th><th>Its home page</th></tr>
+<tr><td>Goal</td><td>an anchor slug</td><td>/goals</td></tr>
+<tr><td>Feature</td><td>a node slug</td><td>/features</td></tr>
+<tr><td>Backlog item</td><td><code>backlog #N</code></td><td>/backlog-table#iN</td></tr>
+<tr><td>Pull request</td><td><code>PR #N</code></td><td>GitHub (see R-open-2)</td></tr>
+<tr><td>Change</td><td>a dated dashboard entry</td><td>/dashboard</td></tr>
+<tr><td>Topic</td><td>an explainer slug</td><td>the explainer page</td></tr>
+<tr><td>Thread</td><td>a backlog row or PR on the goal tree</td><td>/goal-tree</td></tr>
+</table></div>
+<p><b>The rule:</b> wherever one of these keys appears, on any page, it is rendered as a link to its home page by <b>one shared function</b> — the way the page chrome is shared today. The inventory measured 0 links to PRs on the generated pages, against 18 to 157 PR numbers mentioned as plain text per page.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> accepted as written: one shared function renders every key as a link to its one home page.</p></div>
+</div>
+
+<h2 id="open">Still open</h2>
+<p><b>All five answered 2026-11-02</b>, each as recommended. The spec can now be written.</p>
+
+<div class="rev">
+<h3 id="o-goal-unit">R-open-1 — What is the unit of a goal? <span class="chip set">settled</span></h3>
+<p>Today three units are in use: <b>anchors</b> (13, used by /goals), <b>feature nodes</b> (26, used by /features), and the roadmap's <b>3 programmes</b>.</p>
+<p><b>Recommended:</b> keep both pages, and have each feature node <b>declare its goal</b> (an anchor), so /goals and /features can link to each other. The programmes stay prose in the roadmap.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> A, as recommended: keep both pages; each feature node declares its goal (an anchor); the programmes stay prose in the roadmap.</p></div>
+</div>
+
+<div class="rev">
+<h3 id="o-pr-target">R-open-2 — Where does a PR link go? <span class="chip set">settled</span></h3>
+<p>Options: <b>GitHub's PR page</b>, or a local PR page the suite would have to build.</p>
+<p><b>Recommended:</b> GitHub. It already holds the diff, checks and comments; a local page would be a second copy of them.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> A, as recommended: GitHub's PR page.</p></div>
+</div>
+
+<div class="rev">
+<h3 id="o-briefs">R-open-3 — Are brief pages snapshots or reports? <span class="chip set">settled</span></h3>
+<p>The inventory found 49 of 68 dated pages are briefs, and they restate counts that the generated pages also show, frozen at their date.</p>
+<p><b>Recommended:</b> dated <b>snapshots</b>: they keep their narrative and the decision they asked for, link to the generated page for current state, and stop restating its counts.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> A, as recommended: dated snapshots, which keep their narrative and decision, link to the generated page, and stop restating its counts.</p></div>
+</div>
+
+<div class="rev">
+<h3 id="o-home">R-open-4 — Is there one entry page? <span class="chip set">settled</span></h3>
+<p>Today there is no home; each page is reached by URL or from the index at <code>/</code>.</p>
+<p><b>Recommended:</b> the goal-tree page is home — it answers "what is the agent doing, and what needs me", and links out to every other page.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> A, as recommended: the goal-tree page is home.</p></div>
+</div>
+
+<div class="rev">
+<h3 id="o-vocab">R-open-5 — Does the tag vocabulary follow from these keys? <span class="chip set">settled</span></h3>
+<p>Backlog #385 asks for a common tag vocabulary. If every key above is already a link, tags are needed only where a link needs a join: <b>goal</b> (anchors), <b>area</b> (the backlog's tags, #381), <b>kind</b> (story, defect or task, #90) and <b>status</b> (open, parked, needs-you, done — split out of severity).</p>
+<p><b>Recommended:</b> yes — these four facets, each a small closed list, and nothing else.</p>
+<div class="ans"><p class="q"><b>You answered (11-02 09:2x, selection card):</b> A, as recommended: four closed facets (goal, area, kind, status), and nothing else.</p></div>
+</div>
+
+<h2 id="spec">What the spec will contain once reviewed</h2>
+<ol>
+<li>The decisions (D1–D3) and your answers to R1–R8, L1 and R-open-1 to 5.</li>
+<li>Per page: its one question, reader, sources, what it links to and what it must not restate.</li>
+<li>The key → home-page table and the one shared link function.</li>
+<li>The facets of the tag vocabulary (#385).</li>
+<li>What changes on each page, as a list of backlog rows, in order.</li>
+<li>For each rule, the observation that would show it is not being kept.</li>
+</ol>
+<p>It is written to <code>docs/superpowers/specs/</code> after this review, and walked through with you again before anything is built from it.</p>
+
+<h2 id="measured">What was measured, and what was inferred</h2>
+<div class="scroll"><table>
+<tr><th>Claim</th><th>Status</th></tr>
+<tr><td>D1–D3 and their times</td><td><span class="tag m">recorded</span> your selection-card answers, 2026-10-28 03:47</td></tr>
+<tr><td>The three "needs you" counts (37 with 29 unreadable, 12, 0)</td><td><span class="tag m">measured</span> 2026-10-27 18:10, the inventory page and a regenerated dashboard</td></tr>
+<tr><td>/dashboard and /goals stale; work-lines last fed 10-25</td><td><span class="tag m">measured</span> 2026-10-27 and 2026-10-28, the inventory and the work-lines page</td></tr>
+<tr><td>0 PR links on generated pages; 358 features → backlog links</td><td><span class="tag m">measured</span> the inventory page, 2026-10-27</td></tr>
+<tr><td>13 anchors, 26 feature nodes, 49 of 68 dated pages are briefs</td><td><span class="tag m">measured</span> the inventory page, 2026-10-27</td></tr>
+<tr><td>Every role R1–R8 and L1</td><td><span class="tag i">draft</span> proposals for review, not measurements</td></tr>
+<tr><td>Every recommendation under "Still open"</td><td><span class="tag i">inferred</span> a recommendation only</td></tr>
+<tr><td>The goal-tree page's shape</td><td><span class="tag i">in progress</span> backlog #363 is being built; not yet merged</td></tr>
+</table></div>
+
+</div>

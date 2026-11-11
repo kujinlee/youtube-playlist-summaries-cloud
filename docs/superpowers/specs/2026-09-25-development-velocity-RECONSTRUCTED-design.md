@@ -4,6 +4,24 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
+**Status:** ⛔ obsolete — THE THREAD, not the question. Deliverable is a self-declared tombstone, plan is 0 of 12 ticked. Backlog #177 stays 🟠 and is the live home of this subject.
+Three independent grounds, each checkable:
+
+1. the deliverable `docs/development-velocity.md` is a **self-declared TOMBSTONE** — its first line
+   reads *"THIS IS NOT A DOCUMENT. It is a forwarding table."* The content moved to the pages that
+   own each subject;
+2. the implementation plan has **0 of 12 tasks ticked** — it was never executed;
+3. `RECONSTRUCTED` is in the filename because the original was destroyed by a `git reset --hard`
+   on 2026-09-26 and rebuilt from a partial record (the warning travels in the filename because the
+   goals page renders filenames, not bodies).
+
+⭐ **backlog #177 remains 🟠 OPEN and is the live home of this question** — "the review INSTRUMENT
+is never chosen, only its dosage". Retiring this thread loses nothing: it removes two documents
+from the goals page's live inventory that no longer describe work anybody is doing.
+⚠ Its successor in substance is `docs/superpowers/specs/2026-10-19-rounds-to-convergence-is-rising-design.md`,
+which measured the trend this thread only proposed to measure, and whose option **B** is a budget
+and retirement rule for guards.
+
 **Status:** ⏳ **DESIGN — Phase 1, awaiting the human gate.** Backlog **#177**.
 
 ⟳ **RENAMED `…-RECONSTRUCTED-design.md` after r1 (Codex, High).** The goals page renders a document's
@@ -61,8 +79,8 @@ One branch, same reviewers, same gates, one variable:
 
 | Work | Upfront architecture review? | Outcome |
 |---|---|---|
-| observer-log | **yes** (`architecture-review-2026-09-22-observer-family.md`) | **converged by round 3**, CONVERGED Codex verdict |
-| verdict-path | **no** — entered as an un-designed side job mid-round-3 (`c3ad7727`) | **thrashed three further rounds** until it got a review of its own |
+| observer-log | **yes** (`architecture-review-2026-09-22-observer-family.md`) | ~~converged by round 3~~ ⛔ WITHDRAWN 2026-09-26 — the round documents contradict it ([`velocity-evidence-2026-09-24.md`](../../velocity-evidence-2026-09-24.md) §4): it reached r5 NOT CONVERGED |
+| verdict-path | **no** — entered as an un-designed side job mid-round-3 (`c3ad7727`) | ~~thrashed three further rounds~~ — untraceable (no review stem); it did get a review of its own |
 
 ⛔ **THE OBVIOUS READING IS WRONG, AND #177 SAYS SO ITSELF:** *"An upfront review would NOT have
 caught it — it was out of scope and untouched when the first review ran, and reviewing everything
@@ -261,8 +279,8 @@ supported them stays behind as a measurement**, in
 
 | trigger | instrument | the evidence for it |
 |---|---|---|
-| **seam work** | architecture review **BEFORE building** | asymmetric cost: a wrong seam cost 3 extra rounds; the review that resolved it took one sitting |
-| **logic inside an existing seam** | the normal adversarial loop, unchanged | the *designed* half of PR #342 converged by round 3 with a CONVERGED Codex verdict |
+| **seam work** | architecture review **BEFORE building** | asymmetric cost (⛔ the "3 extra rounds" figure is WITHDRAWN 2026-09-26, velocity-evidence §4); the review that resolved it took one sitting |
+| **logic inside an existing seam** | the normal adversarial loop, unchanged | ⛔ the cited "converged by round 3" is WITHDRAWN 2026-09-26 (velocity-evidence §4); no measured support is claimed |
 | **a side job entering mid-slice** | **RE-ASK Q0** | the missing moment, and the cheapest fix available. ⛔ the literal wording was NOT adopted in PR #345 — *"Q0 does not exist and a rule pointing at nothing cannot run"* |
 | **thrashing** | escalate, and **do not litigate the wording** | measured failure: the trigger said *two consecutive ROUNDS*, the situation was two halves of ONE round, and arguing that distinction cost three rounds of being technically right |
 | **findings shifting to wording** | **de-escalate — stop** | a document can be right forever |

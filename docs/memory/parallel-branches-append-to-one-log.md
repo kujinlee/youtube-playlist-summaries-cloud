@@ -53,3 +53,11 @@ rewrite of the user's open PRs unattended; offer it.
 Related: [[a-check-result-is-not-the-claim]] — the reason NOT to just rebase one
 branch onto another without retargeting its PR base is that the diff would then silently carry the
 other PR. [[quote-the-code-dont-characterise-it]]
+
+⛔ **2026-10-26 night — "keep both sides" can DROP a shared delimiter, and I committed the merge before gating it.**
+Two branches each added a tuple entry to `check-fixture-variation.py`'s `EXAMINED_KEYS` after the same key; the
+conflict markers enclosed the two NEW entries but not the `),` that closed the first, so concatenating them produced a
+file that did not parse — committed as the merge, caught only by the gate run after a stash pop. Also: a conflict on the
+SAME key (`"check-hook-commands.py": 12` vs `16`) is not keep-both — take the branch's value, keep master's new keys, and
+set the pinned total from the real sum. **How to apply:** after resolving, run `ast.parse` over every touched `.py` and
+the gate set BEFORE `git commit` on the merge; never commit a merge and gate afterwards.

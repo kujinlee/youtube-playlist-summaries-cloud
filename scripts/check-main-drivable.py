@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 438 cases
+    python3 scripts/check-main-drivable.py --self-test   # 462 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -108,6 +108,7 @@ import functools
 import io
 import re
 import sys
+import types
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -136,13 +137,10 @@ MAIN_DEBT: frozenset[str] = frozenset({
     "scripts/check-handoff-path.py",
     "scripts/check-live-schema.py",
     "scripts/check-memory-link.py",
-    "scripts/check-merge-ready.py",
     "scripts/check-python-pin.py",
     "scripts/check-review-decision.py",
-    "scripts/check-review-recorded.py",
     "scripts/check-review-rounds.py",
     "scripts/check-roadmap-consistency.py",
-    "scripts/check-selftest-counts.py",
     "scripts/check-sentinel-meanings.py",
     "scripts/check-storage-independence.py",
     "scripts/check-test-counts.py",
@@ -311,6 +309,57 @@ class Verdict:
 # data. The only thing that touches disk is `main`, which is also the only thing that needs a root.
 
 
+def _memo_by_node(build):
+    """Cache a PURE helper on the IDENTITY of its AST arguments, and freeze what it hands back.
+
+    It is here for one measured reason (backlog #401): the case that reconciles the committed
+    `MAIN_DEBT` runs `assess()` over every real guard, and the same few helpers re-walked the same
+    large trees ~52M `ast.walk` steps per suite run — 68% of the whole mutation sweep's work.
+    ⚠ `id` KEYS ARE SAFE ONLY BECAUSE THE NODES ARE ALIVE: each entry holds its own arguments, so
+    no node it names can be collected and have its id reused while the entry exists — the reason
+    `_parents` gives for keeping its cache and its `id` keys in one function.
+    ⚠ ONE ANSWER IS SHARED BY EVERY CALLER, so it is frozen — a list becomes a tuple, a set a
+    frozenset, a dict a read-only view. A caller that mutates fails loudly instead of corrupting
+    every later answer for that node. No caller mutates today; this is what keeps it so.
+    ⚠ POSITIONAL ARGUMENTS ONLY, on purpose: a keyword call raises rather than missing the cache.
+    ⛔ PRECONDITION — A TREE IS NEVER MODIFIED AFTER A MEMOISED HELPER HAS SEEN IT. The key is the
+    node's identity, not its content, so an edit to a node already asked about is answered from the
+    old content (r1 Codex Minor: rename an import's `asname` and the cached answer keeps the old
+    one). Nothing here transforms or annotates a tree; an importer that does must `ast.parse` again.
+    ⚠ BOUNDED, LEAST-RECENTLY-USED, `_MEMO_MAX` ENTRIES PER HELPER (r1 Codex Minor: unbounded, an
+    importer that kept asking grew ~30 MB over 20,000 discarded trees). A cap, not a clear at the
+    end of `assess()`: `check-fixture-git-isolation.py` calls `suite_entries` directly and never
+    enters `assess()`, so a lifecycle hung on `assess()` would leave the one long-lived importer
+    unbounded. The reuse that pays for this is all inside ONE `classify()` — measured, at most 26
+    entries per helper over every real guard — so evicting an old tree's entries loses nothing.
+    """
+    memo: dict[tuple, tuple[tuple, object]] = {}
+
+    @functools.wraps(build)
+    def cached(*args):
+        key = tuple(id(a) if isinstance(a, ast.AST) else a for a in args)
+        hit = memo.get(key)
+        if hit is None:
+            out = build(*args)
+            if isinstance(out, list):
+                out = tuple(out)
+            elif isinstance(out, set):
+                out = frozenset(out)
+            elif isinstance(out, dict):
+                out = types.MappingProxyType(out)
+            hit = memo[key] = (args, out)
+            if len(memo) > _MEMO_MAX:
+                del memo[next(iter(memo))]            # the least recently used, its arguments with it
+        else:
+            memo[key] = memo.pop(key)                # most recently used goes last
+        return hit[1]
+    cached.memo = memo                                 # read by the lifetime cases, never written
+    return cached
+
+
+_MEMO_MAX = 64
+
+
 def module_globals(tree: ast.Module) -> set[str]:
     """Every name bound at module level — assignments, imports, and defs. PURE.
 
@@ -387,6 +436,7 @@ def world_names(tree: ast.Module, start: str = "main") -> set[str]:
     return out
 
 
+@_memo_by_node
 def argv_forwarders(tree: ast.Module) -> dict[str, int]:
     """Local helpers that forward their Nth argument straight into `main()`. PURE.
 
@@ -416,6 +466,7 @@ def argv_forwarders(tree: ast.Module) -> dict[str, int]:
 SUITE_ENTRY_NAMES = ("_self_test", "self_test")   # measured on disk: 67 and 25 occurrences
 
 
+@_memo_by_node
 def _all_functions(tree: ast.Module) -> dict[str, ast.AST]:
     """Every function DEFINED anywhere in the module, nested ones included, by name.
 
@@ -451,6 +502,7 @@ def _mentions_self_test(test: ast.AST) -> bool:
     return any(isinstance(n, ast.Constant) and n.value == "--self-test" for n in ast.walk(test))
 
 
+@_memo_by_node
 def dispatches_a_suite(tree: ast.Module) -> bool:
     """-> True when something in this module routes the `--self-test` flag somewhere. PURE.
 
@@ -489,6 +541,7 @@ def dispatches_a_suite(tree: ast.Module) -> bool:
     return False
 
 
+@_memo_by_node
 def suite_entries(tree: ast.Module) -> set[str]:
     """The functions `--self-test` ACTUALLY DISPATCHES TO. PURE.
 
@@ -520,6 +573,7 @@ def suite_entries(tree: ast.Module) -> set[str]:
     return out
 
 
+@_memo_by_node
 def suite_reachable(tree: ast.Module) -> set[str]:
     """Functions reachable from the `--self-test` entry point. PURE.
 
@@ -585,6 +639,7 @@ def _static_truth(test: ast.AST) -> "tuple[bool] | None":
         return None
 
 
+@_memo_by_node
 def _dead_branch_ids(tree: ast.Module) -> set[int]:
     """Bodies no interpreter will ever enter — `if False:`, `if 0:`, `if ():`, `while False:`.
 
@@ -665,6 +720,7 @@ def suite_main_calls(tree: ast.Module) -> list[tuple[ast.Call, ast.AST | None, s
     return found
 
 
+@_memo_by_node
 def note_globals_imports(tree: ast.Module) -> set[str]:
     """Names this module imported FOR `globals` — `from builtins import globals as gl`. PURE."""
     out: set[str] = set()
@@ -1389,6 +1445,7 @@ def _passes_extra_world(call: ast.Call, main_fn: ast.AST, fn: ast.AST | None = N
                for kw in call.keywords)
 
 
+@_memo_by_node
 def _own_scope(fn: ast.AST | None) -> list[ast.AST]:
     """Every node of this function EXCEPT the bodies of functions and classes nested inside it.
 
@@ -1421,6 +1478,7 @@ def _own_scope(fn: ast.AST | None) -> list[ast.AST]:
     return out
 
 
+@_memo_by_node
 def _bound_values(name: str, fn: ast.AST | None) -> list[tuple[int, ast.AST | None]]:
     """Every value this case binds to `name`, in source order. PURE.
 
@@ -1616,6 +1674,7 @@ def callee_returns_live(expr: ast.Call, tree: ast.Module | None, world: frozense
     return _definition_returns_live(_resolve_callee(expr.func, tree, fn), tree, world, depth, expr)
 
 
+@_memo_by_node
 def _defs_in_scope(scope: ast.AST) -> list[ast.AST]:
     """The function definitions BOUND IN this scope — not those bound in scopes beneath it. PURE.
 
@@ -1693,17 +1752,25 @@ def _visible_def(name: str, fn: ast.AST | None, tree: ast.Module) -> "ast.AST | 
     return None
 
 
+@_memo_by_node
+def _class_methods(tree: ast.Module) -> list[ast.AST]:
+    """Every function defined directly in a class body, nested classes included. PURE.
+
+    Once per tree: `_resolve_callee` asks for it on every `Attribute` callee it meets.
+    """
+    # ⚠ `ast.walk`, not `tree.body`: a NESTED class is still a class (round 9, Claude M2).
+    return [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
+            for f in cls.body
+            if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+
 def _resolve_callee(func: ast.AST, tree: ast.Module,
                     fn: ast.AST | None = None) -> "ast.AST | None":
     """The definition this callee names, or None when it cannot be resolved UNAMBIGUOUSLY."""
     if isinstance(func, ast.Name):
         return _visible_def(func.id, fn, tree)
     if isinstance(func, ast.Attribute):
-        # ⚠ `ast.walk`, not `tree.body`: a NESTED class is still a class (round 9, Claude M2).
-        named = [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
-                 for f in cls.body
-                 if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
-                 and f.name == func.attr]
+        named = [f for f in _class_methods(tree) if f.name == func.attr]
         # ⛔ ROUND 10, CLAUDE M3, AND IT IS A MASKING PAIR INSIDE THE EXTRACTION WRITTEN TO END
         # THEM. An `if len(named) == 1: return named[0]` stood above this, plus a ternary
         # `return named if len({id(f) for f in named}) > 1 else named[0]`. `named` holds distinct
@@ -2220,8 +2287,15 @@ def _constructed_at_call_sites(tree: ast.Module | None, fn: ast.AST | None, idx:
     return False
 
 
+@functools.lru_cache(maxsize=256)
 def classify(text: str, path: str = "<memory>") -> Verdict:
-    """The whole rule for ONE guard: which route, if any, reaches `main` over a built world."""
+    """The whole rule for ONE guard: which route, if any, reaches `main` over a built world.
+
+    ⚠ MEMOISED ON `(text, path)` (backlog #231): the suite classifies seven real guards by name and
+    then the live reconcile classifies the same files again, which was ~1.4 s of CPU per run. Both
+    arguments are strings, so the key is the whole input; the rest of the answer is module constants
+    nothing reassigns, and a `Verdict` is frozen with a frozenset of routes, so a shared answer
+    cannot be mutated. The suite passes the live reconcile's relative path, so its call is a hit."""
     try:
         tree = ast.parse(text)
     except SyntaxError as exc:
@@ -2459,6 +2533,55 @@ def _wired(src: str) -> str:
     return src[:body] + "    if '--self-test' in argv:\n        return _self_test()\n" + src[body:]
 
 
+# ⛔ THE LIVE RECONCILE'S DEADLINE (PR #443, shard 8). The memo-key mutant ("drops every argument that
+# is not a node") makes `world_class` recurse exponentially, but ONLY over a tree whose functions' names
+# bind each other — measured: `classify(check-plan-leak.py)` 0.4 s clean, over 200 s mutated, which hit
+# the harness's SUITE_TIMEOUT and reported NOT MEASURED instead of the mutant's named case, which had
+# already gone red ~5 s in. A wall-clock bound on the live reconcile turns "hangs" into a RED CASE.
+# `BaseException`, so no `except Exception` inside the subject can swallow the alarm.
+LIVE_DEADLINE_S = 45
+
+
+class DeadlineExceeded(BaseException):
+    pass
+
+
+def with_deadline(thunk, seconds: float):
+    """Run `thunk` under a wall-clock deadline; return `(value, timed_out)`. SIGALRM (macOS and Linux)."""
+    import signal
+
+    def _expire(signum, frame):
+        raise DeadlineExceeded()
+
+    previous = signal.signal(signal.SIGALRM, _expire)
+    try:                                            # the restore is OUTER: an alarm landing inside the disarm cannot skip it
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        try:
+            return thunk(), False
+        except DeadlineExceeded:
+            return None, True
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+    finally:
+        signal.signal(signal.SIGALRM, previous)
+
+
+def live_reconcile(live: dict[str, str], debt: frozenset[str], deadline: float = LIVE_DEADLINE_S,
+                   assess_fn=None):
+    """`(problems, verdicts, timed_out)` for the live population; a raise or an expiry is a PROBLEM."""
+    assess_fn = assess_fn or assess
+    live_reconcile.applied = deadline               # read by the case that pins the deadline the LIVE call armed
+    try:
+        got, timed_out = with_deadline(lambda: assess_fn(live, debt), deadline)
+        if timed_out:
+            return [f"DEADLINE {deadline}s"], {}, True
+        return got[0], got[1], False
+    except DeadlineExceeded:                        # an alarm landing inside the disarm: still a timeout, never an escape
+        return [f"DEADLINE {deadline}s"], {}, True
+    except Exception as exc:                        # noqa: BLE001 — reporting IS the point
+        return [f"RAISED {type(exc).__name__}"], {}, False
+
+
 def case(name: str, got, want) -> None:
     global ok, fail
     if got == want:
@@ -2469,7 +2592,14 @@ def case(name: str, got, want) -> None:
         print(f"  [FAIL] {name}\n        got:  {got!r}\n        want: {want!r}")
 
 
-def _self_test() -> int:                                      # noqa: C901 — a flat list of cases
+def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:                                      # noqa: C901 — a flat list of cases
     import tempfile
 
     # ⛔ THE DYING-CASE WRAPPER, AND IT IS DEFINED FIRST BECAUSE NINE CASES NEED IT. A case whose
@@ -2482,6 +2612,54 @@ def _self_test() -> int:                                      # noqa: C901 — a
             return thunk()
         except Exception as exc:                    # noqa: BLE001 — reporting IS the point
             return f"RAISED {type(exc).__name__}"
+
+    import gc
+    import weakref
+    # ── THE MEMO'S LIFETIME CONTRACT, FIRST, AND A BROKEN ONE STOPS THE SUITE (backlog #427) ────
+    # Every case below asks memoised helpers (`_memo_by_node`), whose `id` keys are sound only while
+    # each entry holds the nodes it names. With that contract broken, a freed tree's id is reused and
+    # ANY later answer may be a dead tree's: measured under the mutant `(None, out)`, 13 distinct
+    # failing sets in 100 runs on 3.14 (14 in 100 on Linux 3.12), and on CI (run 41194535294) a run
+    # that never reached these two cases at all. So they run here, while every memo is still empty,
+    # and when the entry does not hold its node the suite STOPS: what follows would be allocator
+    # noise, not evidence.
+    # ⛔ THE CACHE ANSWERS FOR THIS NODE AND THIS NAME, NEVER A PREVIOUS ONE (backlog #401). Each
+    # tree here is dropped as soon as its call returns — the answer is strings, so nothing of the
+    # tree outlives it — and CPython hands the next, same-shaped tree the freed addresses. Measured
+    # with the entry NOT holding its arguments: 9 to 58 of 64 answers were a previous tree's, on
+    # 3.14 and 3.12. A key coarser than identity answers the first tree's `g0` every time.
+    # ⚠ `_bound_values` CANNOT witness this: `_own_scope`'s answer contains `fn` itself, which keeps
+    # the node alive and its id unique whatever the entry holds — measured, 0 of 64 wrong.
+    case("⛔ a memoised helper answers for THIS tree, though every tree before it is gone and its "
+         "address is reused (backlog #401)",
+         [sorted(note_globals_imports(ast.parse(f"from builtins import globals as g{i}\n")))
+          for i in range(256)],
+         [[f"g{i}"] for i in range(256)])
+    # ⛔ DIRECT, NOT BY ALLOCATOR CHURN (r1 Codex Minor): the 256-tree case above goes red only if
+    # CPython happens to reuse a freed address, and under an instrument that retains every tree it
+    # cannot. This asks the entry itself whether it holds the node its key names.
+    # ⚠ A FRESH MEMO, so this case is red for ONE defect only — an entry that does not hold its
+    # arguments — and the stop below cannot fire for a coarser KEY (which the 256-tree case and
+    # its own named case catch, further on).
+    _fresh = _memo_by_node(lambda t: len(t.body))
+    _held = ast.parse("from builtins import globals as g\n")
+    _held_ref = weakref.ref(_held)
+    _fresh(_held)
+    del _held
+    gc.collect()
+    _alive = _held_ref()
+    _fail_before = fail
+    case("⛔ a memo ENTRY keeps alive the node its key names, so that id cannot be reused while "
+         "the entry exists — asserted on the node, not on what the allocator does (backlog #401)",
+         (_alive is not None,
+          any(isinstance(a, tuple) and a and a[0] is _alive for a, _ in _fresh.memo.values())),
+         (True, True))
+    del _alive, _fresh
+    if fail > _fail_before:
+        print("\n  STOPPED — a memo entry does not hold its arguments, so every later memoised "
+              "answer may be a dead tree's and every later case allocator noise (backlog #427). "
+              f"{ok}/{ok + fail} passed before the stop.")
+        return 1
 
     # ── the vocabulary a case can build on ───────────────────────────────────────────────────
     NO_MAIN = "def check(x):\n    return []\n"
@@ -4424,6 +4602,90 @@ def _self_test() -> int:                                      # noqa: C901 — a
              "def f():\n    with first() as td:\n        pass\n"
              "    td = second()\n    for td in third():\n        pass\n").body[0])],
          [2, 4, 5])
+    # ⟳ backlog #427: the two lifetime cases that stood here — "a memoised helper answers for THIS
+    # tree" and "a memo ENTRY keeps alive the node its key names" — now run FIRST in the suite.
+    _two =ast.parse("def f():\n    td = first()\n    p = second()\n").body[0]
+    case("...and for THIS name: one function, two names, two answers",
+         ([ast.unparse(v) for _, v in _bound_values("td", _two)],
+          [ast.unparse(v) for _, v in _bound_values("p", _two)]),
+         (["first()"], ["second()"]))
+    # ⚠ `p` BEFORE `P`, deliberately: a case-folded key caches `p` and then answers `P` from it.
+    _case = ast.parse("def f():\n    p = first()\n    P = second()\n").body[0]
+    case("...and a name is told apart by its EXACT spelling: `p` and `P` are two names, two "
+         "answers (r1 Codex Minor — a key that ignored case survived 441/441)",
+         ([ast.unparse(v) for _, v in _bound_values("p", _case)],
+          [ast.unparse(v) for _, v in _bound_values("P", _case)]),
+         (["first()"], ["second()"]))
+    _built: list[ast.AST] = []
+    _counted = _memo_by_node(lambda t: _built.append(t) or len(t.body))
+    _once = ast.parse("x = 1\ny = 2\n")
+    case("⛔ the memo IS A CACHE: two calls on one tree build once (r1 Codex Minor — losing the "
+         "reuse kept every answer right, lost the whole speedup, and survived 441/441)",
+         (_counted(_once), _counted(_once), len(_built)), (2, 2, 1))
+
+    # ⚠ `_kept` IS TOUCHED BEFORE EVERY INSERT, so a cap that evicts by insertion order rather
+    # than by use loses it on the second eviction; `_MEMO_MAX` fresh trees force exactly two. Touched
+    # AFTER, an evicted `_kept` is simply re-inserted, and the first draft survived that way.
+    _old, _kept = (ast.parse("from builtins import globals as g\n") for _ in range(2))
+    _old_ref, _kept_ref = weakref.ref(_old), weakref.ref(_kept)
+    note_globals_imports(_old)
+    note_globals_imports(_kept)
+    for _ in range(_MEMO_MAX):
+        note_globals_imports(_kept)
+        note_globals_imports(ast.parse("from builtins import globals as g\n"))
+    del _old, _kept
+    gc.collect()
+    case("⛔ the memo is BOUNDED: past `_MEMO_MAX` entries the least recently USED goes, and its "
+         "tree with it (r1 Codex Minor — unbounded, ~30 MB over 20,000 discarded trees)",
+         (_old_ref() is None, _kept_ref() is not None,
+          len(note_globals_imports.memo) <= _MEMO_MAX),
+         (True, True, True))
+    # ⛔ A FRESH MEMO, NOT `note_globals_imports`' (r2 Codex Minor): the case above shares that
+    # helper's memo with every earlier case, so ONE unrelated prior entry let a cap that evicted the
+    # SECOND entry rather than the oldest survive 445/445. Every tree is held, so every key stays
+    # unique, and the answer is WHICH entry went — not how many are left.
+    def _held_by(memo, trees) -> list[bool]:
+        return [any(args[0] is t for args, _ in memo.values()) for t in trees]
+    _lru = _memo_by_node(lambda t: len(t.body))
+    _lru_trees = [ast.parse("x = 1\n") for _ in range(_MEMO_MAX + 1)]
+    for _t in _lru_trees:
+        _lru(_t)
+    case("⛔ in a FRESH memo, the insertion past `_MEMO_MAX` evicts exactly the OLDEST entry — not "
+         "the second, and not two (r2 Codex Minor — `list(memo)[1]` survived 445/445)",
+         _held_by(_lru.memo, _lru_trees), [False] + [True] * _MEMO_MAX)
+    # ⚠ THE BOUNDARY ITSELF (r2 Codex Minor — `>=` for `>` survived 445/445): `_MEMO_MAX` trees
+    # are ALL kept and asked again without one rebuild; only the next one evicts, and only one.
+    _edge_built: list[ast.AST] = []
+    _edge = _memo_by_node(lambda t: _edge_built.append(t) or len(t.body))
+    _edge_trees = [ast.parse("x = 1\n") for _ in range(_MEMO_MAX + 1)]
+    for _t in _edge_trees[:_MEMO_MAX]:
+        _edge(_t)
+    _edge_full = len(_edge.memo)
+    for _t in _edge_trees[:_MEMO_MAX]:
+        _edge(_t)
+    _edge_rebuilt = len(_edge_built)
+    _edge(_edge_trees[_MEMO_MAX])
+    case("...and `_MEMO_MAX` entries are a FULL memo, not an overflowing one: all kept, all hits on "
+         "a second pass, and the next insertion evicts exactly one",
+         (_edge_full, _edge_rebuilt, len(_edge.memo), _held_by(_edge.memo, _edge_trees)),
+         (_MEMO_MAX, _MEMO_MAX, _MEMO_MAX, [False] + [True] * _MEMO_MAX))
+    del _lru_trees, _edge_trees, _edge_built
+
+    def _refuses(op) -> bool:
+        try:
+            op()
+        except (AttributeError, TypeError):
+            return True
+        return False
+    _fz = ast.parse("from builtins import globals as gl\ndef f():\n    td = 1\n")
+    case("...and the ONE answer every caller shares refuses to be mutated, so a caller cannot "
+         "corrupt it for the next — list, set and dict alike",
+         (_refuses(lambda: _own_scope(_fz.body[-1]).append(None)),
+          _refuses(lambda: note_globals_imports(_fz).add("x")),
+          _refuses(lambda: _all_functions(_fz).__setitem__("g", None)),
+          len(_own_scope(_fz.body[-1])) > 0, set(note_globals_imports(_fz)),
+          set(_all_functions(_fz))),
+         (True, True, True, True, {"gl"}, {"f"}))
     # ⚠ FIVE PRECONDITIONS, EACH GUARDING A CRASH NO CASE HAD REACHED. Severing any of them left
     # the suite GREEN — so the rule the ratchet would want at each line was unmutatable, and a
     # real guard of that shape would have raised out of the gate rather than reported.
@@ -5049,13 +5311,13 @@ def _self_test() -> int:                                      # noqa: C901 — a
     # `MAIN_DEBT` to reach the whole-population branch is itself the rebind route. Asserted as the
     # exact set, so deleting any one KIND of case here goes red rather than passing on the others.
     case("...and satisfies its OWN rule by the param, argv AND rebind routes",
-         _caught(lambda: classify(me.read_text()).routes), frozenset({PARAM, ARGV, REBIND}))
+         _caught(lambda: classify(me.read_text(), "scripts/check-main-drivable.py").routes), frozenset({PARAM, ARGV, REBIND}))
     case("...so it is not in its own debt set", "scripts/check-main-drivable.py" in MAIN_DEBT, False)
 
     exemplar = live_root / "scripts/check-fixture-variation.py"
     case("ADR-0014's exemplar is on disk", exemplar.is_file(), True)
     case("...and COMPLIES by the argv route — the false positive this rule was corrected for",
-         ARGV in classify(exemplar.read_text()).routes, True)
+         ARGV in classify(exemplar.read_text(), "scripts/check-fixture-variation.py").routes, True)
 
     # ⛔ EVERY FILE THIS RULE HAS JUDGED WRONGLY, PINNED BY NAME. Each line is one defect's
     # regression case, and the list grew in round 1 because four of the five were found by a
@@ -5081,7 +5343,7 @@ def _self_test() -> int:                                      # noqa: C901 — a
         # is a bare NAME — so severing the argv shape test raises here, at case 273, with no
         # `[FAIL]` line. The raising site is the real-file read, not any fixture.
         case(f"...and {'complies' if want else 'is DEBT'} — {why}",
-             _caught(lambda f=f: classify(f.read_text()).complies), want)
+             _caught(lambda f=f: classify(f.read_text(), f"scripts/{f.name}").complies), want)
 
     # ⛔ THE LIVE CONSEQUENCE of the tuple-restore defect, pinned on the real file. Before the fix,
     # `main(["/nonexistent/nope.py"])` at `check-fixture-variation.py:1881` — its unreadable-
@@ -5098,20 +5360,99 @@ def _self_test() -> int:                                      # noqa: C901 — a
     case("...and its literal-path call is NOT credited rebind by a stale substitution",
          _overcredited, [])
 
+    # The deadline, proved with a SHORT injected one (never wait 45 s): a stalled `assess` yields the
+    # timed-out flag and a problem, a prompt one is untouched, and the alarm is disarmed afterwards.
+    import time as _time
+    _t0 = _time.monotonic()
+    _stalled = live_reconcile({}, frozenset(), 0.2, assess_fn=lambda t, d: _time.sleep(3))
+    case("a stalled reconcile hits its deadline and reports a problem, in well under the stall",
+         (_stalled[2], len(_stalled[0]), _time.monotonic() - _t0 < 2), (True, 1, True))
+    _prompt = live_reconcile({}, frozenset(), 0.2, assess_fn=lambda t, d: (["p"], {"v": 1}))
+    case("...a prompt reconcile is returned untouched and not timed out", _prompt, (["p"], {"v": 1}, False))
+    _raised = live_reconcile({}, frozenset(), 0.2, assess_fn=lambda t, d: 1 / 0)
+    case("...a raising reconcile is a problem, not a timeout", (_raised[0], _raised[2]),
+         (["RAISED ZeroDivisionError"], False))
+    import signal as _signal
+    case("...and the alarm is disarmed once it returns", _signal.getitimer(_signal.ITIMER_REAL)[0], 0.0)
+
+    # ⛔ r7 L1/L2: the alarm landing AFTER the thunk returned (inside the disarm) must be a TIMEOUT, not
+    # an escape, and the handler must be the one that was there before — in every outcome. The late alarm
+    # is made deterministic by raising from the disarm call itself, the exact point the race lands on.
+    _before_handler = _signal.getsignal(_signal.SIGALRM)
+    _real_setitimer = _signal.setitimer
+
+    def _late_alarm(which, seconds, *rest):
+        _real_setitimer(which, seconds, *rest)
+        if seconds == 0:
+            raise DeadlineExceeded()
+
+    _signal.setitimer = _late_alarm
+    try:
+        _late = live_reconcile({}, frozenset(), 5, assess_fn=lambda t, d: ([], {}))
+    except DeadlineExceeded:                        # the escape itself must be a FAIL line, not a dead suite
+        _late = "ESCAPED"
+        _signal.signal(_signal.SIGALRM, _before_handler)
+    finally:
+        _signal.setitimer = _real_setitimer
+    case("a deadline landing during the disarm is a timeout, never an escape (r7 L1)",
+         (_late[2], len(_late[0])) if isinstance(_late, tuple) else _late, (True, 1))
+    live_reconcile({}, frozenset(), 5, assess_fn=lambda t, d: ([], {}))
+    _handler_ok = _signal.getsignal(_signal.SIGALRM) is _before_handler
+    live_reconcile({}, frozenset(), 0.2, assess_fn=lambda t, d: _time.sleep(3))
+    _handler_to = _signal.getsignal(_signal.SIGALRM) is _before_handler
+    case("...and SIGALRM's handler is restored after a normal, a timed-out and a late-alarm reconcile (r7 L2)",
+         (_handler_ok, _handler_to, _signal.getsignal(_signal.SIGALRM) is _before_handler), (True, True, True))
+
+    # ── backlog #231: THE FIVE TREE HELPERS AND `classify` ARE CACHES, AND NEVER A STALE ONE ────────
+    # Each is asked on tree A, then a DIFFERENT tree B, then A again: B's answer must differ from
+    # A's (a key coarser than the tree would hand B the answer for A), and the second A must be the
+    # memo's entry for A (losing the decorator keeps every answer right and loses the reuse, which
+    # is what these cases pin; asked of the ENTRY, since a bool answer is the same object anyway).
+    _ca, _cb = ast.parse(_wired(B1_REACHED)), ast.parse(PLAIN.replace("_self_test", "_not_a_suite"))
+    _da, _db = ast.parse("if False:\n    x = 1\n"), ast.parse("if True:\n    x = 1\n")
+    _fa, _fb = ast.parse(_wired(F_OK)), ast.parse(_wired(PLAIN))
+    for _helper, _a, _b in ((argv_forwarders, _fa, _fb), (dispatches_a_suite, _ca, _cb),
+                            (suite_entries, _ca, _cb), (suite_reachable, _ca, _cb),
+                            (_dead_branch_ids, _da, _db)):
+        _first = _helper(_a)
+        _other = _helper(_b)
+        _entry = [out for args, out in getattr(_helper, "memo", {}).values() if args[0] is _a]
+        case(f"⛔ {_helper.__name__} is memoised: a second tree gets ITS answer, and the first tree's "
+             f"answer is the memo's entry for it (backlog #231)",
+             (_other != _first, _helper(_a) == _first, len(_entry) == 1 and _entry[0] is _first),
+             (True, True, True))
+    _hits = _caught(lambda: classify.cache_info().hits)
+    _v1 = classify(_wired(B1_REACHED), "a.py")
+    _v2 = classify(_wired(B1_DEAD), "a.py")
+    _v3 = classify(_wired(B1_REACHED), "b.py")
+    case("⛔ classify is memoised on (text, path): the same pair is a hit, a different TEXT gets its own "
+         "routes and a different PATH its own path (backlog #231)",
+         (_v1.routes, _v2.routes, _v3.path, _v3.routes, classify(_wired(B1_REACHED), "a.py") is _v1,
+          _caught(lambda: classify.cache_info().hits) == _hits + 1 if isinstance(_hits, int) else _hits),
+         (frozenset({ARGV}), frozenset(), "b.py", frozenset({ARGV}), True, True))
+
     discovered = sorted(live_root.glob(GUARD_GLOB))
     case("the live population is non-empty", len(discovered) > 0, True)
     live = {str(p.relative_to(live_root)): p.read_text() for p in discovered}
     # ⛔ TWELFTH DYING CASE. `subprocess_self_calls`' `node.args` presence test raises on a REAL
     # guard on disk, so this case — the one that reconciles the committed debt against the live
     # population — took the suite down at 289 with nothing attributable.
-    _assessed = _caught(lambda: assess(live, MAIN_DEBT))
-    live_problems, live_verdicts = (_assessed if isinstance(_assessed, tuple)
-                                    else ([_assessed], {}))
+    _live_hits = _caught(lambda: classify.cache_info().hits)
+    live_problems, live_verdicts, _live_timed_out = live_reconcile(live, MAIN_DEBT)
+    # ⚠ backlog #231: the seven real guards the cases above classified by name, under the path the
+    # reconcile uses, are answered from the cache — at least seven hits during the reconcile.
+    case("the live reconcile reuses the seven named real-guard verdicts (backlog #231)",
+         _caught(lambda: classify.cache_info().hits - _live_hits >= 7), True)
+    case("the live reconcile finished within 45 s", (_live_timed_out, LIVE_DEADLINE_S), (False, 45))
+    # ⛔ r7 M1: the case above compares the CONSTANT, so a call passing 100000, or no longer calling
+    # `live_reconcile` at all, stayed green. The deadline the call ARMED is recorded and pinned.
+    case("...and the deadline the live call ARMED is LIVE_DEADLINE_S, not another and not a stale one",
+         getattr(live_reconcile, "applied", None), LIVE_DEADLINE_S)
     case("...and the committed MAIN_DEBT reconciles against it with no findings",
          live_problems, [])
     case("...every pinned name is in the population",
          sorted(MAIN_DEBT - set(live_verdicts)), [])
-    case("...no pinned name complies", sorted(p for p in MAIN_DEBT if live_verdicts[p].complies), [])
+    case("...no pinned name complies", sorted(p for p in MAIN_DEBT if p in live_verdicts and live_verdicts[p].complies), [])
 
     print(f"\n{ok}/{ok + fail} passed")
     # The declared count has ONE owner — the docstring — and is READ, never repeated here.

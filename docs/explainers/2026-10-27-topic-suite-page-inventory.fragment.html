@@ -1,0 +1,292 @@
+<title>Suite page inventory</title>
+
+<style>
+:root{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+.bad{color:var(--red)} .warn{color:var(--amber)}
+</style>
+
+<div class="wrap ex-body">
+
+<h1>Suite page inventory — what each page is for, measured</h1>
+<p class="horizon">as of <code>f0dfef07</code> (master) · 2026-10-27 17:57 PDT · generated pages read from <code>~/explainers/</code> as they stand on disk, producers and hooks read from the main checkout · every number below comes from a command run against these files</p>
+
+<div class="reading">
+<b>The reading I chose:</b> <i>what each of the comprehensibility suite's pages is for, measured: the question it answers, who reads it and when, what it is built from, what triggers a rebuild, and where two pages tell the same thing — the input to backlog #384's design walkthrough.</i> Added at the owner's request (18:02): each page's <b>outbound links</b>, and the links a reader following one thread would need. <b>This page decides nothing.</b> Its last sections are hypotheses and questions for the walkthrough. <b>Not covered:</b> tag fields in detail; the <a href="/2026-10-27-topic-tag-vocabulary-survey.html">tag-vocabulary survey</a> holds those.
+</div>
+
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at the newest page.
+<ol>
+<li><b>To ask:</b> select any text, or hover a heading, → <b>ask</b> → type → <b>Send</b>. Then say <i>“read my questions”</i> in the session and the answer gets written into this page, under the section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and a reboot stops it, which is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+
+<div class="toc">
+<b>Where this goes</b>
+<ol>
+<li><a href="#lead">The finding that reframes it: three answers to "what needs me?"</a></li>
+<li><a href="#pages">The pages, one row each</a></li>
+<li><a href="#fresh">Freshness: two of five generated pages are stale right now</a></li>
+<li><a href="#links">The link graph today</a></li>
+<li><a href="#overlap">The overlap matrix: facts more than one page shows</a></li>
+<li><a href="#roles">Candidate roles (hypotheses)</a></li>
+<li><a href="#consolidate">Consolidation candidates</a></li>
+<li><a href="#questions">Open questions for the owner</a></li>
+<li><a href="#measured">What was measured, and what was inferred</a></li>
+</ol>
+</div>
+
+<h2 id="lead">The finding that reframes it: three answers to "what needs me?"</h2>
+<p>The one question the whole suite exists to answer for you is <i>what needs me?</i> Today three surfaces answer it, from three sources, by three rules, and they <b>disagree</b>:</p>
+<table>
+<tr><th>Surface</th><th>Its answer today</th><th>Source and rule</th></tr>
+<tr><td><b>/dashboard</b>, section <i>What needs you</i></td><td><b>36</b> items, oldest <code>2026-09-09/15</code>, newest <code>2026-10-25/1</code></td><td><code>[needs-you]</code> entries in <code>docs/dashboard-entries.md</code>, cleared only when a later entry carries <code>[resolved: &lt;id&gt;]</code> (<code>gen-dashboard.py</code> <code>unresolved()</code>). The page on disk was built 10-25 23:25, so it cannot know anything since</td></tr>
+<tr><td><b>/backlog-table</b>, summary bar</td><td><b>12</b> "need your decision"</td><td>backlog rows whose gate is <i>decision</i> or <i>study</i> (<code>gen-backlog-page.py:2052</code>)</td></tr>
+<tr><td><b>my chat closing table</b> and <b>/goal-tree</b></td><td><b>"nothing needs you"</b></td><td>my judgment, typed per turn; no file holds it (backlog #363: the goal tree is typed, not derived)</td></tr>
+</table>
+<p>None of the three is wrong by its own rule. They are three different <i>definitions</i> of "needs you": an open ask in a change log, an open decision on a backlog row, and a blocker on the work in flight. Nothing in the suite says which one you should trust, or that they differ. <b>So the design problem is not page count. It's that pages share questions without sharing a definition.</b> That is what makes a consolidation decision possible: two pages that answer the same question by different rules are the first candidates to merge, or to have the question taken away from one of them.</p>
+
+<h2 id="pages">The pages, one row each</h2>
+<p>Each producer's stated purpose is quoted from its own docstring or skill description. "Reader / moment" separates what the source <b>states</b> from what its use makes <b>evident</b>.</p>
+<table>
+<tr><th>Page</th><th>Its stated question (quoted)</th><th>Reader / moment</th><th>Built from</th><th>Rebuilt by</th><th>Size today</th></tr>
+<tr><td><b>/dashboard</b><br><code>gen-dashboard.py</code></td><td>"Render the project dashboard from docs/dashboard-entries.md" (<code>:2</code>); skill: "Record what changed in this repo … that a person who was away would need to know about, when a decision starts waiting on the human"</td><td>stated: the owner after an absence</td><td><code>docs/dashboard-entries.md</code>; <code>git log --first-parent</code> (<code>:507</code>); <code>gh</code> (<code>:521</code>)</td><td>hook <code>regen-dashboard.sh</code> on Edit/Write of <code>dashboard-entries.md</code> only</td><td>1.53 MB; 378 entry headings in the store</td></tr>
+<tr><td><b>/goals</b><br><code>gen-goals-page.py</code></td><td>"One always-visible page: every GOAL this project is pursuing, and where each one stands" (<code>:2</code>)</td><td>stated: always visible; evident: when you need a goal's specs/plans/ADRs</td><td><code>docs/anchors.md</code>, <code>docs/adr/</code>, spec/plan <code>Anchor:</code> headers, <code>git log</code>, <code>gen-backlog-page.py</code>, <code>check-goal-status.py</code></td><td>hook <code>regen-goals-page.sh</code> on anchors, ADRs, specs, plans, the backlog generator</td><td>104 KB; 13 anchors</td></tr>
+<tr><td><b>/backlog-table</b><br><code>gen-backlog-page.py</code></td><td>"<i>what is left, and what are these things?</i>" (<code>:11–12</code>)</td><td>stated: when asking what remains</td><td><code>docs/backlog.md</code> and its <code>git log</code> history (<code>:1202</code>)</td><td>hook <code>regen-backlog-page.sh</code> on any change to <code>docs/backlog.md</code> (content-keyed)</td><td>3.0 MB; 337 rows, 214 open</td></tr>
+<tr><td><b>/features</b><br><code>gen-features-page.py</code></td><td>"what this system does, and what it deliberately does not" (<code>:2</code>); asked as "where can I find currently implemented behaviours?"</td><td>stated: when asking what exists</td><td><code>docs/features.md</code>, <code>anchors.md</code>, <code>backlog.md</code>, ADRs, spec/plan headers, <code>docs/reviews/**</code>, <code>git log</code> subjects</td><td>hook <code>regen-features-page.sh</code> on those 7 sources</td><td>141 KB; 26 nodes</td></tr>
+<tr><td><b>/work-lines</b><br><code>gen-work-lines.py</code></td><td>"How did we get here, and what did we never walk back to?" (<code>:2</code>)</td><td>stated: after a run of branching, to walk back to the original objective</td><td><code>.claude/plans/*.md</code> across every <code>git worktree list</code> checkout</td><td><code>begin-plan.py</code> when a plan is armed or advanced (<code>:87</code>); no file hook</td><td>47 KB; 136 plan files. ⚠ the page file is <b>untracked, not ignored</b> (<code>git status</code>: <code>??</code>)</td></tr>
+<tr><td><b>/brief pages</b><br>skill <code>brief</code></td><td>"a one-page visual briefing on where a piece of work stands right now — state, evidence, and any decision waiting on the human" (SKILL.md)</td><td>stated: "what is the status", "catch me up"</td><td>whatever the author gathers; a fork per page</td><td>never: a snapshot, dated</td><td><b>49</b> of 68 dated pages</td></tr>
+<tr><td><b>explain-* pages</b><br>skills <code>explain-topic</code>, <code>-diff</code>, <code>-findings</code></td><td>topic: "explaining a topic, concept, mechanism or open question"; diff: "a code change, branch, or PR"; findings: "need a file / don't-file / severity decision from a human"</td><td>stated: on request</td><td>the subject; a fork per page</td><td>never: a snapshot, answered in place</td><td>topic 10, diff/explanation 7, findings 1, other 1</td></tr>
+<tr><td><b>goal tree</b><br><code>/goal-tree</code></td><td>"every work thread in this session, hung under the request it serves, with live PR state" (command file)</td><td>evident: mid-session, when threads interleave</td><td><code>gh pr list</code>, <code>git log</code>, the in-flight ledger, my context</td><td>typed in chat on request; <b>no page</b> (backlog #363)</td><td>—</td></tr>
+<tr><td><b>/</b> index and <b>/latest</b><br><code>explainer-serve.py</code></td><td>the server's index (<code>:1150</code>) and newest-page redirect (<code>:1152</code>)</td><td>evident: the entry point</td><td>the directory listing</td><td>on every request</td><td>74 links</td></tr>
+</table>
+
+<h2 id="fresh">Freshness: two of five generated pages are stale right now</h2>
+<p>The server answers <code>/_stale?p=&lt;page&gt;</code> by comparing the built page's mtime with its declared sources (<code>PAGE_SOURCES</code>, <code>explainer-serve.py:142</code>). Asked at 18:0x:</p>
+<table>
+<tr><th>Page</th><th>Built</th><th><code>/_stale</code> says</th><th>Why</th></tr>
+<tr><td>/dashboard</td><td>10-25 23:25</td><td class="bad"><b>stale</b> <code>docs/dashboard-entries.md</code></td><td>21 entries (12 on 10-26, 9 on 10-27) reached master by <b>merge</b>. A merge is not an Edit/Write, so the hook never fired</td></tr>
+<tr><td>/goals</td><td>10-23 22:30</td><td class="bad"><b>stale</b> <code>docs/roadmap-to-launch.md</code></td><td>same: the sources moved by merge</td></tr>
+<tr><td>/backlog-table</td><td>10-27 17:46</td><td>fresh</td><td>I regenerated it by hand after the #381 merge</td></tr>
+<tr><td>/features</td><td>10-27 16:52</td><td>fresh</td><td>same</td></tr>
+<tr><td>/work-lines</td><td>10-26 14:12</td><td>fresh (no source declared beyond its plans)</td><td>—</td></tr>
+</table>
+<p><b>The pattern:</b> every generated page is rebuilt by a <i>tool-shaped</i> trigger (the agent writing a file), and the commonest way a source changes is a <i>merge</i>, which fires none of them. The pages do say they are stale (the server raises a banner), so this is visible rather than silent. It is still a design question: should pages rebuild on merge, on read, or on a schedule?</p>
+
+<h2 id="links">The link graph today</h2>
+<p>Outbound <code>href</code>s counted in each built page; mentions counted in its visible text (scripts and styles removed).</p>
+<table>
+<tr><th>Page</th><th>Links to other suite pages</th><th>Links to PRs</th><th>Plain-text mentions it does NOT link</th></tr>
+<tr><td>/dashboard</td><td>/goals 1, /backlog-table 1, /latest, 1 explainer page; the rest (57) are in-page anchors</td><td><b>0</b></td><td><b>73</b> PR numbers, <b>119</b> backlog numbers</td></tr>
+<tr><td>/goals</td><td>none; its 69 links all go to <code>/src/…</code> (60 of them spec/plan files)</td><td><b>0</b></td><td>46 PR numbers, 10 backlog numbers</td></tr>
+<tr><td>/backlog-table</td><td>/goals 1; the rest (686) are in-page anchors; a handful of <code>docs/</code> files</td><td><b>0</b></td><td>157 PR numbers, 221 backlog numbers (rows citing other rows)</td></tr>
+<tr><td>/features</td><td><b>358 links to backlog rows</b> (<code>/backlog-table#i&lt;N&gt;</code>), 144 to <code>/src/…</code></td><td><b>0</b></td><td>18 PR numbers, 11 backlog numbers</td></tr>
+<tr><td>/work-lines</td><td><b>none at all</b></td><td><b>0</b></td><td>0 (it names plans, not rows or PRs)</td></tr>
+<tr><td>brief / explain-* pages</td><td>hand-authored; e.g. the tag survey links 0 suite pages except via prose</td><td>UNVERIFIED across all 68</td><td>UNVERIFIED</td></tr>
+</table>
+<p><b>The only machine-made cross-page link family in the suite is /features → /backlog-table.</b> Everything else is a number in prose. A reader following one thread, say <i>goal → its backlog rows → the PRs that closed them → the explainer that describes them</i>, can make exactly one hop by clicking, from a feature node to a backlog row. The keys to make the rest exist already: every page writes <code>backlog #N</code> and <code>PR #N</code> as text, the anchors registry names goals, and explainer filenames carry a slug. What's missing is a rule saying which page is the <i>target</i> for each key.</p>
+<table>
+<tr><th>Hop a reader needs</th><th>Key that exists</th><th>Link today?</th></tr>
+<tr><td>goal → its backlog rows</td><td>anchor; the Bundle tag (after #381)</td><td>no. /goals does not list rows; /features does, per feature node, not per goal</td></tr>
+<tr><td>backlog row → the PR that closed it</td><td><code>(backlog #N)</code> at a merged subject's tail (<code>check-backlog-closure.py</code> reads it)</td><td>no</td></tr>
+<tr><td>PR → the explainer / review that explains it</td><td>review filenames carry the subject slug; explainer slugs are free text</td><td>no</td></tr>
+<tr><td>dashboard entry → the row or PR it reports</td><td><code>backlog #N</code>, <code>PR #N</code> in the entry text</td><td>no (119 + 73 unlinked mentions)</td></tr>
+<tr><td>work line → the backlog row it serves</td><td>none: plans name a slug, not a row</td><td>no, and no key</td></tr>
+<tr><td>goal tree → anything</td><td>it names rows and PRs</td><td>not a page</td></tr>
+</table>
+
+<h2 id="overlap">The overlap matrix: facts more than one page shows</h2>
+<p><b>Consistent</b> = same source and same rule. <b>Can disagree</b> = same source with a different rule, or different sources. <b>Disagrees now</b> = measured today.</p>
+<table>
+<tr><th>Fact</th><th>dashboard</th><th>goals</th><th>backlog</th><th>features</th><th>work-lines</th><th>brief / goal tree</th><th>Verdict</th></tr>
+<tr><td>what needs the owner</td><td>36 open asks</td><td>—</td><td>12 decisions</td><td>—</td><td>—</td><td>"nothing"</td><td class="bad"><b>disagrees now</b>: three definitions</td></tr>
+<tr><td>open backlog rows</td><td>mentions by number</td><td>per goal, via the backlog generator</td><td><b>214 open</b> (<code>parse</code>)</td><td>per node, via the shared parser (#381)</td><td>—</td><td>typed</td><td>backlog and features <b>consistent</b> (one parser since #381); goals reads it through <code>gen-backlog-page.py</code>, consistent in rule but <b>stale</b> in time</td></tr>
+<tr><td>recent merges / PRs</td><td><code>git log --first-parent</code> + <code>gh</code></td><td><code>git log --follow</code> per document</td><td>row status text, written by hand</td><td><code>git log</code> subjects matched to a node slug (a lower bound, its own docstring says)</td><td>—</td><td><code>gh pr list</code> live</td><td class="warn"><b>can disagree</b>: four rules over git, plus hand-written status</td></tr>
+<tr><td>goal status</td><td>—</td><td><code>check-goal-status.py</code></td><td>—</td><td>feature <code>state:</code> per node</td><td>—</td><td>roadmap prose; typed</td><td class="warn"><b>can disagree</b>: goals and features hold different units (anchor vs feature node), no mapping between them</td></tr>
+<tr><td>in-flight work</td><td>—</td><td>—</td><td>status cells ("in progress on branch …")</td><td>—</td><td><code>.claude/plans</code></td><td>the in-flight ledger; typed</td><td class="warn"><b>can disagree</b>: three stores (row text, plan files, <code>.claude/inflight.jsonl</code>), none reads another</td></tr>
+<tr><td>decisions made</td><td><code>[resolved: id]</code> entries</td><td>ADRs per anchor</td><td>row text</td><td>ADRs per node</td><td>—</td><td>chat cards</td><td class="warn"><b>can disagree</b>: ADRs are consistent between goals and features; owner card answers live only in the transcript</td></tr>
+<tr><td>review state</td><td>entry prose</td><td>—</td><td>row text</td><td>review files whose stem has the node slug (a lower bound)</td><td>—</td><td>typed</td><td class="warn"><b>can disagree</b>: no page reads the coordinator records or the decision log</td></tr>
+</table>
+<p><b>What I checked for a second real disagreement:</b> the state of backlog #373, #381, #364 and #376 on each page. The backlog and features pages agree, because they share a parser. The dashboard and goals pages simply predate those merges. That's staleness, not a rule conflict, so I don't count it as a second disagreement.</p>
+
+<h2 id="roles">Candidate roles (hypotheses for the walkthrough)</h2>
+<p>One line each, offered to accept, reject or rewrite. They describe what each page appears <i>best at</i> from the measurements above.</p>
+<table>
+<tr><th>Page</th><th>Hypothesis</th></tr>
+<tr><td>/dashboard</td><td><b>The change log for a returning reader:</b> what happened while you were away, newest first. Not the place that answers "what needs me"</td></tr>
+<tr><td>/goals</td><td><b>The map of intent:</b> each goal, its specs, plans and ADRs, and the backlog rows it owns</td></tr>
+<tr><td>/backlog-table</td><td><b>The work register:</b> every open item, filterable by facet; the single place an item's state is decided</td></tr>
+<tr><td>/features</td><td><b>What exists:</b> built behaviour per feature, with its gaps linked</td></tr>
+<tr><td>/work-lines</td><td><b>Work history:</b> how threads branched, and what was never walked back to</td></tr>
+<tr><td>goal tree</td><td><b>Live progress:</b> what is running right now, why, and what it waits on. Today typed; a page if #363 is built</td></tr>
+<tr><td>/brief pages</td><td><b>A dated snapshot of one body of work</b>, for a decision or a catch-up; never a source of current state</td></tr>
+<tr><td>explain-* pages</td><td><b>Understanding one subject</b> (a concept, a diff, a set of findings), answered in place</td></tr>
+</table>
+
+<h2 id="consolidate">Consolidation candidates</h2>
+<table>
+<tr><th>Pair</th><th>Evidence</th><th>Shape it could take</th></tr>
+<tr><td>dashboard "What needs you" + backlog "need your decision" + the goal tree's "needs you"</td><td>three answers to one question, measured: 36 / 12 / 0</td><td>one definition and <b>one owner page</b> for "needs you"; the others link to it rather than count</td></tr>
+<tr><td>goal tree + work-lines</td><td>both answer "what threads exist and how they relate"; work-lines knows plan parents but not <i>why</i> (#363); the goal tree knows <i>why</i> but is not a page</td><td>one live progress page, fed by the in-flight ledger and plan files</td></tr>
+<tr><td>goals + features</td><td>both list ADRs and specs per unit, from the same anchors (consistent), but by different units: anchor vs feature node</td><td>keep both, but define the mapping (a feature belongs to a goal), so a reader can cross between them</td></tr>
+<tr><td>brief pages vs the generated pages</td><td>49 of 68 dated pages are briefs: snapshots of state that the generated pages also show, frozen at their date</td><td>briefs keep the decision-and-narrative role; current state always comes from a generated page, linked from the brief</td></tr>
+</table>
+
+<h2 id="questions">Open questions for the owner</h2>
+<ol>
+<li><b>"Needs you" has three definitions.</b> Which is the one you mean: an open ask in the change log, an open decision on a backlog row, or a blocker on work in flight? And which single page should own it?</li>
+<li><b>Is the goal tree a page?</b> You found it the most useful view (#363). Should it become a generated page that replaces or absorbs /work-lines, or stay a chat command?</li>
+<li><b>What is the unit of a "goal"?</b> /goals uses anchors (13); /features uses feature nodes (26); the roadmap uses three programmes. Should a feature node declare its goal, so the two pages can link?</li>
+<li><b>When must a page be current?</b> Rebuild on merge, on read (the server regenerates when asked), or accept a banner? Today, a merge leaves /dashboard and /goals stale.</li>
+<li><b>Which page is the target for each key?</b> <code>backlog #N</code> → /backlog-table, <code>PR #N</code> → GitHub or a local PR page, a goal → /goals. With that decided, every page could link instead of mention (0 PR links today).</li>
+<li><b>Are brief pages snapshots or reports?</b> If snapshots, should they stop restating counts that a generated page owns?</li>
+</ol>
+
+<h2 id="measured">What was measured, and what was inferred</h2>
+<table>
+<tr><th>Claim</th><th>Measured / inferred</th><th>How</th></tr>
+<tr><td>36 / 12 / "nothing" answers to "needs you"</td><td>measured</td><td>parsed the dashboard page's <i>What needs you</i> section ids; the backlog summary bar text; my own closing tables</td></tr>
+<tr><td>/dashboard and /goals stale</td><td>measured</td><td><code>curl /_stale?p=…</code>; file mtimes</td></tr>
+<tr><td>link counts per page</td><td>measured</td><td><code>href</code> regex over each built page</td></tr>
+<tr><td>plain-text PR / backlog mentions</td><td>measured, approximate</td><td>regex over visible text (<code>PR #N</code>, <code>(#NNN)</code>, <code>backlog #N</code>); a lower bound for other spellings</td></tr>
+<tr><td>sources and rebuild triggers</td><td>measured</td><td>producer source lines cited; <code>.claude/settings.json</code> hooks; <code>regen-*.sh</code> case lists; <code>PAGE_SOURCES</code></td></tr>
+<tr><td>work-lines rebuilt by <code>begin-plan.py</code></td><td>partly measured</td><td><code>begin-plan.py:87</code> sets its output; the call path was not traced end to end</td></tr>
+<tr><td>link behaviour of the 68 authored pages</td><td><b>UNVERIFIED</b></td><td>not measured page by page</td></tr>
+<tr><td>"reader / moment", evident half</td><td>inferred</td><td>from how the pages were used this session</td></tr>
+<tr><td>candidate roles, consolidation shapes</td><td>inferred, hypotheses</td><td>for the walkthrough to accept or reject</td></tr>
+</table>
+
+</div>

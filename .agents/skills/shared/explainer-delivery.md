@@ -99,6 +99,53 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   browser collapses the whole block onto one line.
 - Light and dark both legible. Wide content scrolls inside its own container; the page body never
   scrolls horizontally.
+- **Structure is carried by COLOUR ROLES, not by brightness alone** (backlog #226, the owner's choice
+  from a live three-way switcher, 2026-10-05). Measured before it: heading, body prose and `<b>` all
+  computed to one colour, so luminance was the only cue and the page had to be read, not skimmed.
+  ⛔ **The roles style only content inside an element with class `.ex-body`.** ⟳ 2026-10-27
+  (backlog #376): `brief-compose.py` now SUPPLIES it — when it adds the theme control it also adds
+  the text-style switcher and wraps the fragment's body in `.ex-body`, unless the fragment already
+  carries the class (then it is not nested) or brings its own `#schemer` (then no second one is
+  added). Hand-placing it is still how a page scopes the roles to part of itself.
+  Inside `.ex-body` three roles are spent:
+
+  | Role | Colours | Token it reads |
+  |---|---|---|
+  | `--head` | `h1`–`h4` | `--accent`, the family's heading colour |
+  | `--prose` | body text | `--fg2` |
+  | `--emph` | `strong`, `b` | `--em` |
+
+  ⛔ **The semantic colours are RESERVED, and never spent on a role.** `--verified` and `--cool` mean
+  *measured*; `--warn` means *warning*; `--hot` and `--defect` mean *defect*. `--verified`, `--cool` and `--hot` are named in
+  *The common look*, `CONTEXT.md`; `--warn` and `--defect` are declared by the fragments, and the shim
+  supplies `--defect`. A page that bolds in one of them makes every bolded phrase assert
+  something it does not. They are named by token, not by hue, because a page sets its own hue.
+  ⛔ **A page that gets the switcher DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — the light
+  default, each explicit theme, and its OS-dark block — with the family pair `#2d4a7c` light /
+  `#9db8e8` dark unless it has a reason to differ. Since backlog #376, on any page whose finished
+  document carries `#schemer` (its own or the composer's), **the composer refuses a page whose
+  canonical palette block omits `--em`, or gives `--bg`/`--em` as anything but a literal colour, or
+  whose `--em` is under 4.5:1 against that block's `--bg`; rendered readability is verified in a
+  browser (§5b; backlog #387 will automate it).** The canonical blocks are `:root`,
+  `:root[data-theme="light"]`, `:root[data-theme="dark"]`, and inside
+  `@media (prefers-color-scheme: dark)`, `:root:not([data-theme="light"])` or `:root` (whitespace
+  is not significant). A `--bg`/`--em` declared anywhere else is refused by name
+  (`brief-compose.palette_blocks`). **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
+  is the LIGHT value with the OS dark and nothing pressed, and three committed pages that leaned on
+  it measured **1.78:1** there (backlog #226). It cannot be fixed in the shim, because only the page
+  knows whether its palette goes dark (`page_chrome`'s rule: *mechanism shared, palette local*);
+  two attempts here to supply it centrally, and a third the reviewer tried (`color-mix()`), each
+  broke a different page
+  (`docs/reviews/architecture-review-2026-10-24-em-default.md`). The role mapping itself is
+  `page_chrome.text_style_css()`; the family's `--accent` is *The common look* in `CONTEXT.md`.
+  ⚠ `--prose` reads `--fg2`, but on two committed pages the fragment and the shim define `--fg`/`--fg2`
+  in terms of each other, so with the OS light and nothing pressed it resolves to nothing and body
+  text falls back to black (readable, but not the role) — backlog #351. The switcher (`#schemer`)
+  is an **escape hatch, not scaffolding**: colour is the no-attribute default, so a page with
+  JavaScript off still renders in colour, and `page_chrome`'s switcher stores only the opt-outs
+  (a hand-authored copy in an older fragment may also store the default; that is harmless).
+  ⚠ Tuned on prose. The tabular producers (dashboard, goals, backlog, features, goal tree) do not
+  opt in, and nothing has measured them under it.
 
 **Check it by measuring, not by looking.** Once served, in the page:
 

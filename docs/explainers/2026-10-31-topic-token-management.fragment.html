@@ -1,0 +1,425 @@
+<title>Token management status</title>
+<style>
+.caveat{display:inline-block;margin:.2em 0;padding:.1em .5em;border-left:3px solid var(--amber);background:var(--amberbg);color:var(--fg2);font-size:.92em}
+code{overflow-wrap:anywhere}
+:root{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h4{font-size:15px;margin:22px 0 6px;color:var(--fg2)}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+.bad{color:var(--red)} .warn{color:var(--amber)}
+.answer{border:1px dashed var(--rule);border-radius:6px;padding:.5em .8em;color:var(--fg3);margin:.4em 0 1.2em}
+.live{border-left:4px solid var(--amber);padding-left:.8em;margin:1em 0}
+.tag.c{color:var(--amber);border-color:var(--amber)} .tag.ad{color:var(--verified);border-color:var(--verified-br)} .tag.bu,.tag.st,.tag.tr{color:var(--link);border-color:var(--link)} .tag.rj{color:var(--red);border-color:var(--red)} .tag.pe{color:var(--amber);border-color:var(--amber)}
+.log td:first-child,.log th:first-child{white-space:normal;width:11em;max-width:11em;overflow-wrap:anywhere}
+</style>
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code>. It always points at the newest page.
+<ol>
+<li><b>To ask:</b> select any text, or hover a heading, then <b>ask</b>, type, and <b>Send</b>. Then say <i>"read my questions"</i> in the session, and the answer is written into this page under the section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code>. It is safe to run twice. A reboot stops it, and that is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine. It only loses <b>Send</b>.</li>
+</ol>
+</div>
+<div class="wrap ex-body">
+<h1>Token management: what we measured, what we built, what is still open</h1>
+<p class="reading"><b>Reading chosen:</b> the token-usage work since the owner's 10-30 18:50 decision, <i>"token usage features first"</i>. It covers what we <b>measured</b>, what we <b>designed</b>, what <b>shipped</b> (with PR and commit), and what is <b>not implemented</b> yet. Both budgets count: Claude's 5-hour and weekly limits, and Codex's 5-hour and weekly limits. The research and trial log stay on the <a href="2026-10-30-brief-topic-multi-model-usage.html">10-30 multi-model usage page</a>. This page is the status view.</p>
+<p class="horizon">as of 2026-10-31 21:10 PDT · sources: <b>[U]</b> the weighted-usage study (10-30 ~19:00, one session, 10-22 to 10-30); <b>[M]</b> the meter-weighting study (10-31); <b>[C]</b> the compaction study (10-30 ~19:35); <b>[P]</b> the plugin-listing study (read-only); <b>[RC]</b> the review cost and yield study (10-31, 14 days, 273 rounds); <b>[G]</b> <code>git log origin/master</code> and <code>gh</code>, read at 21:05; <b>[L]</b> the in-flight ledger <code>.claude/inflight.jsonl</code>; <b>[BL]</b> <code>docs/backlog.md</code> on master. Labels: <span class="tag m">measured</span> <span class="tag i">inferred</span>. Nothing here was re-measured for this page, except the two live meter readings in section 2.</p>
+
+<div class="toc"><b>Contents</b><ol>
+<li><a href="#idea">The one idea: cost ≈ calls × context</a></li>
+<li><a href="#impact">Before and after: did the levers show up in the usage?</a></li>
+<li><a href="#budgets">The two budgets, side by side</a></li>
+<li><a href="#levers">Every lever, with its status</a></li>
+<li><a href="#burst">Burst test: inconclusive, replaced by a regression</a></li>
+<li><a href="#advice">Outside advice reviewed, and the effort fix</a></li>
+<li><a href="#open">Still not implemented, ranked</a></li>
+<li><a href="#traps">Traps we found on the way</a></li>
+<li><a href="#mi">Measured vs inferred</a></li>
+</ol></div>
+
+<h2 id="idea">The one idea: cost ≈ calls × context</h2>
+<p class="lede">Most of our usage is <b>not</b> generated text. It is the same large conversation <b>re-read on every API call</b>. The meter charges a cache read at about a tenth of fresh input, but a 410k-token context re-read 4,929 times still dominates the bill.</p>
+<div class="scroll"><table class="num">
+<tr><th>Fact</th><th>Number</th><th>Label</th><th>Source</th></tr>
+<tr><td>Share of the coordinator's cost that is cache reads</td><td><b>82%</b> (217.4M of 265.6M weighted)</td><td><span class="tag m">measured</span></td><td>[U] §2 components</td></tr>
+<tr><td>Coordinator median context per call</td><td>410k tokens (p90 780k)</td><td><span class="tag m">measured</span></td><td>[U] §3a</td></tr>
+<tr><td>Average weighted cost of one coordinator call, whatever it does</td><td>~54k</td><td><span class="tag m">measured</span></td><td>[U] §0</td></tr>
+<tr><td>Long-lived agents (span over 10 h)</td><td>6 agents, 149M, <b>40%</b> of agent spend</td><td><span class="tag m">measured</span></td><td>[U] §0</td></tr>
+<tr><td>Meter weights that fit the 5-hour meter best</td><td>cache read ≈ 0.05–0.2, cache write ≥ 1, output not determinable</td><td><span class="tag m">measured</span> (2 windows)</td><td>[M] verdict 1–2</td></tr>
+<tr><td>Context right after a compaction (the "floor")</td><td>97k (10-23), rising to <b>159k</b> (10-30); the summary itself is only 3.3–4.8k</td><td><span class="tag m">measured</span></td><td>[C] §2</td></tr>
+</table></div>
+<p>So three things multiply cost, and each lever below attacks one of them:</p>
+<ul>
+<li><b>How big the context is</b> on each call. Fat coordinator, long-lived agents, and the re-injected floor after compaction.</li>
+<li><b>How many calls</b> are made. Wake-ups for notifications, duplicate reports, polling, gates re-run on an unchanged tree, and extra review rounds.</li>
+<li><b>Cache rewrites</b>, at 1.25–2× instead of 0.1×. An agent parked for more than an hour, a model switch, or a compaction rewrites its whole context.</li>
+</ul>
+<div class="k warn"><b>Why a cheaper model is not the main lever.</b> The meter study found <b>weak evidence that Sonnet and Opus weigh about the same on the meter</b>: a ratio of 1 fit at least as well as 5/3, and ratios of 2.5 or more were rejected ([M] verdict 3). If that holds, routing work to Sonnet saves little, while cutting calls and context saves a lot. <span class="tag i">not settled</span>: the burst test was run overnight and was <b>inconclusive</b> (see <a href="#burst">the burst test</a>); a passive regression replaces it and is waiting for data.</div>
+
+<h2 id="impact">Before and after: did the levers show up in the usage?</h2>
+<p class="lede"><b>Per unit of work, yes; in raw daily totals, not clearly.</b> The cost per merged PR fell from a median of about <b>11.6M</b> weighted tokens (10-20 to 10-29) to <b>8.5M</b> (10-30 to 11-01) and <b>3.7M</b> on 11-02 so far, and the cost per assistant call fell from <b>48k</b> to <b>28k</b> to <b>21k</b>. The raw daily total did not fall until 11-01 to 11-02, and it swings with how much work was done. This is an observation of a period in which the workload also changed, so it does <b>not</b> prove that the levers caused the drop.</p>
+<p><b>How measured.</b> <span class="tag m">measured</span> Weighted tokens are summed from every assistant message in the transcripts of this project, coordinator and subagents, de-duplicated by message id. Weights: input 1, cache read 0.1, 1-hour cache write 2, 5-minute write 1.25, output 5. Days are Pacific time. Merged PRs per day come from <code>gh pr list --state merged</code>. <b>I chose "per merged PR" as the normaliser</b> because the levers aim at the cost of delivering a change (fewer review rounds, smaller context, fewer wake-ups), and a PR is the unit the owner sees. It is crude: PRs differ in size, and a day with one PR is noisy (10-16: 1 PR, 69M). Per-call cost is in the table as a second view that does not depend on PR counts.</p>
+<h3>Chart 1. Weighted tokens per day, with the levers marked</h3>
+<svg viewBox="0 0 760 300" width="100%" role="img" aria-label="Weighted tokens per day, coordinator and subagents, 10-15 to 11-02" style="max-width:760px;font-family:var(--mono);font-size:10px"><title>Weighted tokens per day, coordinator and subagents, 10-15 to 11-02</title><line x1="48" x2="750" y1="244.0" y2="244.0" style="stroke:var(--rule);stroke-width:1"/><text x="43" y="247.0" text-anchor="end" style="fill:var(--fg3)">0M</text><line x1="48" x2="750" y1="189.5" y2="189.5" style="stroke:var(--rule);stroke-width:1"/><text x="43" y="192.5" text-anchor="end" style="fill:var(--fg3)">40M</text><line x1="48" x2="750" y1="135.0" y2="135.0" style="stroke:var(--rule);stroke-width:1"/><text x="43" y="138.0" text-anchor="end" style="fill:var(--fg3)">80M</text><line x1="48" x2="750" y1="80.5" y2="80.5" style="stroke:var(--rule);stroke-width:1"/><text x="43" y="83.5" text-anchor="end" style="fill:var(--fg3)">120M</text><line x1="48" x2="750" y1="26.0" y2="26.0" style="stroke:var(--rule);stroke-width:1"/><text x="43" y="29.0" text-anchor="end" style="fill:var(--fg3)">160M</text><text x="48" y="12" style="fill:var(--fg3)">weighted tokens per day (millions)</text><rect x="51.0" y="174.0" width="30.9" height="70.0" style="fill:var(--link)"><title>10-15 coordinator 51.4M</title></rect><rect x="51.0" y="163.1" width="30.9" height="10.9" style="fill:var(--accent2)"><title>10-15 subagents 8.0M</title></rect><text x="66.5" y="160.1" text-anchor="middle" style="fill:var(--fg2)">59</text><rect x="87.9" y="163.0" width="30.9" height="81.0" style="fill:var(--link)"><title>10-16 coordinator 59.5M</title></rect><rect x="87.9" y="149.4" width="30.9" height="13.6" style="fill:var(--accent2)"><title>10-16 subagents 10.0M</title></rect><text x="103.4" y="146.4" text-anchor="middle" style="fill:var(--fg2)">69</text><rect x="124.9" y="206.9" width="30.9" height="37.1" style="fill:var(--link)"><title>10-17 coordinator 27.3M</title></rect><rect x="124.9" y="196.8" width="30.9" height="10.1" style="fill:var(--accent2)"><title>10-17 subagents 7.4M</title></rect><text x="140.4" y="193.8" text-anchor="middle" style="fill:var(--fg2)">35</text><rect x="161.8" y="195.9" width="30.9" height="48.1" style="fill:var(--link)"><title>10-18 coordinator 35.3M</title></rect><rect x="161.8" y="180.3" width="30.9" height="15.6" style="fill:var(--accent2)"><title>10-18 subagents 11.5M</title></rect><text x="177.3" y="177.3" text-anchor="middle" style="fill:var(--fg2)">47</text><rect x="198.8" y="141.8" width="30.9" height="102.2" style="fill:var(--link)"><title>10-19 coordinator 75.0M</title></rect><rect x="198.8" y="120.3" width="30.9" height="21.5" style="fill:var(--accent2)"><title>10-19 subagents 15.8M</title></rect><text x="214.3" y="117.3" text-anchor="middle" style="fill:var(--fg2)">91</text><rect x="235.7" y="160.1" width="30.9" height="83.9" style="fill:var(--link)"><title>10-20 coordinator 61.6M</title></rect><rect x="235.7" y="153.8" width="30.9" height="6.3" style="fill:var(--accent2)"><title>10-20 subagents 4.6M</title></rect><text x="251.2" y="150.8" text-anchor="middle" style="fill:var(--fg2)">66</text><rect x="272.7" y="172.4" width="30.9" height="71.6" style="fill:var(--link)"><title>10-21 coordinator 52.6M</title></rect><rect x="272.7" y="163.9" width="30.9" height="8.5" style="fill:var(--accent2)"><title>10-21 subagents 6.2M</title></rect><text x="288.2" y="160.9" text-anchor="middle" style="fill:var(--fg2)">59</text><rect x="309.6" y="198.3" width="30.9" height="45.7" style="fill:var(--link)"><title>10-22 coordinator 33.5M</title></rect><rect x="309.6" y="143.8" width="30.9" height="54.5" style="fill:var(--accent2)"><title>10-22 subagents 40.0M</title></rect><text x="325.1" y="140.8" text-anchor="middle" style="fill:var(--fg2)">74</text><rect x="346.6" y="218.2" width="30.9" height="25.8" style="fill:var(--link)"><title>10-23 coordinator 18.9M</title></rect><rect x="346.6" y="170.2" width="30.9" height="48.0" style="fill:var(--accent2)"><title>10-23 subagents 35.2M</title></rect><text x="362.1" y="167.2" text-anchor="middle" style="fill:var(--fg2)">54</text><rect x="383.5" y="212.0" width="30.9" height="32.0" style="fill:var(--link)"><title>10-24 coordinator 23.5M</title></rect><rect x="383.5" y="181.2" width="30.9" height="30.8" style="fill:var(--accent2)"><title>10-24 subagents 22.6M</title></rect><text x="399.0" y="178.2" text-anchor="middle" style="fill:var(--fg2)">46</text><rect x="420.5" y="214.8" width="30.9" height="29.2" style="fill:var(--link)"><title>10-25 coordinator 21.4M</title></rect><rect x="420.5" y="212.0" width="30.9" height="2.9" style="fill:var(--accent2)"><title>10-25 subagents 2.1M</title></rect><text x="435.9" y="209.0" text-anchor="middle" style="fill:var(--fg2)">24</text><rect x="457.4" y="180.3" width="30.9" height="63.7" style="fill:var(--link)"><title>10-26 coordinator 46.8M</title></rect><rect x="457.4" y="163.1" width="30.9" height="17.2" style="fill:var(--accent2)"><title>10-26 subagents 12.6M</title></rect><text x="472.9" y="160.1" text-anchor="middle" style="fill:var(--fg2)">59</text><rect x="494.4" y="189.1" width="30.9" height="54.9" style="fill:var(--link)"><title>10-27 coordinator 40.3M</title></rect><rect x="494.4" y="116.3" width="30.9" height="72.7" style="fill:var(--accent2)"><title>10-27 subagents 53.4M</title></rect><text x="509.8" y="113.3" text-anchor="middle" style="fill:var(--fg2)">94</text><rect x="531.3" y="175.9" width="30.9" height="68.1" style="fill:var(--link)"><title>10-28 coordinator 50.0M</title></rect><rect x="531.3" y="38.1" width="30.9" height="137.8" style="fill:var(--accent2)"><title>10-28 subagents 101.1M</title></rect><text x="546.8" y="35.1" text-anchor="middle" style="fill:var(--fg2)">151</text><rect x="568.3" y="228.6" width="30.9" height="15.4" style="fill:var(--link)"><title>10-29 coordinator 11.3M</title></rect><rect x="568.3" y="187.7" width="30.9" height="40.9" style="fill:var(--accent2)"><title>10-29 subagents 30.0M</title></rect><text x="583.7" y="184.7" text-anchor="middle" style="fill:var(--fg2)">41</text><rect x="605.2" y="187.1" width="30.9" height="56.9" style="fill:var(--link)"><title>10-30 coordinator 41.7M</title></rect><rect x="605.2" y="66.1" width="30.9" height="121.0" style="fill:var(--accent2)"><title>10-30 subagents 88.8M</title></rect><text x="620.7" y="63.1" text-anchor="middle" style="fill:var(--fg2)">131</text><rect x="642.2" y="226.9" width="30.9" height="17.1" style="fill:var(--link)"><title>10-31 coordinator 12.6M</title></rect><rect x="642.2" y="151.4" width="30.9" height="75.5" style="fill:var(--accent2)"><title>10-31 subagents 55.4M</title></rect><text x="657.6" y="148.4" text-anchor="middle" style="fill:var(--fg2)">68</text><rect x="679.1" y="229.4" width="30.9" height="14.6" style="fill:var(--link)"><title>11-01 coordinator 10.7M</title></rect><rect x="679.1" y="176.6" width="30.9" height="52.9" style="fill:var(--accent2)"><title>11-01 subagents 38.8M</title></rect><text x="694.6" y="173.6" text-anchor="middle" style="fill:var(--fg2)">49</text><rect x="716.1" y="225.4" width="30.9" height="18.6" style="fill:var(--link)" opacity=".55"><title>11-02 coordinator 13.6M</title></rect><rect x="716.1" y="193.2" width="30.9" height="32.2" style="fill:var(--accent2)" opacity=".55"><title>11-02 subagents 23.7M</title></rect><text x="731.5" y="190.2" text-anchor="middle" style="fill:var(--fg2)">37</text><line x1="602.2" x2="602.2" y1="20" y2="244" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><circle cx="602.2" cy="18" r="7" style="fill:var(--accent)"/><text x="602.2" y="21" text-anchor="middle" style="fill:var(--bg);font-weight:bold">1</text><line x1="639.2" x2="639.2" y1="20" y2="244" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><circle cx="639.2" cy="18" r="7" style="fill:var(--accent)"/><text x="639.2" y="21" text-anchor="middle" style="fill:var(--bg);font-weight:bold">2</text><line x1="676.1" x2="676.1" y1="20" y2="244" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><circle cx="676.1" cy="18" r="7" style="fill:var(--accent)"/><text x="676.1" y="21" text-anchor="middle" style="fill:var(--bg);font-weight:bold">3</text><line x1="713.1" x2="713.1" y1="20" y2="244" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><circle cx="713.1" cy="18" r="7" style="fill:var(--accent)"/><text x="713.1" y="21" text-anchor="middle" style="fill:var(--bg);font-weight:bold">4</text><text x="66.5" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 66.5 257)">10-15</text><text x="103.4" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 103.4 257)">10-16</text><text x="140.4" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 140.4 257)">10-17</text><text x="177.3" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 177.3 257)">10-18</text><text x="214.3" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 214.3 257)">10-19</text><text x="251.2" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 251.2 257)">10-20</text><text x="288.2" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 288.2 257)">10-21</text><text x="325.1" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 325.1 257)">10-22</text><text x="362.1" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 362.1 257)">10-23</text><text x="399.0" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 399.0 257)">10-24</text><text x="435.9" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 435.9 257)">10-25</text><text x="472.9" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 472.9 257)">10-26</text><text x="509.8" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 509.8 257)">10-27</text><text x="546.8" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 546.8 257)">10-28</text><text x="583.7" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 583.7 257)">10-29</text><text x="620.7" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 620.7 257)">10-30</text><text x="657.6" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 657.6 257)">10-31</text><text x="694.6" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 694.6 257)">11-01</text><text x="731.5" y="257" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 731.5 257)">11-02 *</text><rect x="48" y="288" width="9" height="9" style="fill:var(--link)"/><text x="61" y="296" style="fill:var(--fg2)">coordinator</text><rect x="138" y="288" width="9" height="9" style="fill:var(--accent2)"/><text x="151" y="296" style="fill:var(--fg2)">subagents</text></svg>
+<p class="note"><span class="tag m">measured</span> Bars show millions of weighted tokens per day (the number above each bar is the total). <b>*</b> 11-02 is a partial day (data to about 16:40) and is drawn faded. Lever markers are drawn at the start of the day they landed, merge dates in Pacific time from <code>gh</code>: <b>1</b> = 10-30 fresh agent per round (owner decision, 10-30) · <b>2</b> = 10-31 PR #453, the 300k <code>autoCompactWindow</code> (see the lever table), and PR #457 (round cap, merged 10-31 23:36) · <b>3</b> = 11-01 PR #458 (docs cut, 10:52), PR #463 (12:11), PR #468 (21:04) and PR #469 (22:55) · <b>4</b> = 11-02 PR #471 (06:47). The marker for <code>autoCompactWindow</code> uses the date this page gives, not a commit date, because the file is untracked.</p>
+<h3>Chart 2. Weighted tokens per merged PR (the normalised view)</h3>
+<svg viewBox="0 0 760 280" width="100%" role="img" aria-label="Weighted tokens per merged PR per day, 10-15 to 11-02" style="max-width:760px;font-family:var(--mono);font-size:10px"><title>Weighted tokens per merged PR per day, 10-15 to 11-02</title><line x1="48" x2="750" y1="224.0" y2="224.0" style="stroke:var(--rule);stroke-width:1"/><text x="43" y="227.0" text-anchor="end" style="fill:var(--fg3)">0M</text><line x1="48" x2="750" y1="174.5" y2="174.5" style="stroke:var(--rule);stroke-width:1"/><text x="43" y="177.5" text-anchor="end" style="fill:var(--fg3)">20M</text><line x1="48" x2="750" y1="125.0" y2="125.0" style="stroke:var(--rule);stroke-width:1"/><text x="43" y="128.0" text-anchor="end" style="fill:var(--fg3)">40M</text><line x1="48" x2="750" y1="75.5" y2="75.5" style="stroke:var(--rule);stroke-width:1"/><text x="43" y="78.5" text-anchor="end" style="fill:var(--fg3)">60M</text><line x1="48" x2="750" y1="26.0" y2="26.0" style="stroke:var(--rule);stroke-width:1"/><text x="43" y="29.0" text-anchor="end" style="fill:var(--fg3)">80M</text><text x="48" y="12" style="fill:var(--fg3)">weighted tokens per merged PR (millions)</text><rect x="51.0" y="187.3" width="30.9" height="36.7" style="fill:var(--accent)"><title>10-15: 14.8M per PR (4 PRs)</title></rect><text x="66.5" y="184.3" text-anchor="middle" style="fill:var(--fg2)">14.8</text><rect x="87.9" y="52.1" width="30.9" height="171.9" style="fill:var(--accent)"><title>10-16: 69.5M per PR (1 PRs)</title></rect><text x="103.4" y="49.1" text-anchor="middle" style="fill:var(--fg2)">69.5</text><text x="140.4" y="220" text-anchor="middle" style="fill:var(--fg3)">no PR</text><text x="177.3" y="220" text-anchor="middle" style="fill:var(--fg3)">no PR</text><rect x="198.8" y="111.6" width="30.9" height="112.4" style="fill:var(--accent)"><title>10-19: 45.4M per PR (2 PRs)</title></rect><text x="214.3" y="108.6" text-anchor="middle" style="fill:var(--fg2)">45.4</text><text x="251.2" y="220" text-anchor="middle" style="fill:var(--fg3)">no PR</text><rect x="272.7" y="78.5" width="30.9" height="145.5" style="fill:var(--accent)"><title>10-21: 58.8M per PR (1 PRs)</title></rect><text x="288.2" y="75.5" text-anchor="middle" style="fill:var(--fg2)">58.8</text><rect x="309.6" y="163.4" width="30.9" height="60.6" style="fill:var(--accent)"><title>10-22: 24.5M per PR (3 PRs)</title></rect><text x="325.1" y="160.4" text-anchor="middle" style="fill:var(--fg2)">24.5</text><rect x="346.6" y="190.5" width="30.9" height="33.5" style="fill:var(--accent)"><title>10-23: 13.5M per PR (4 PRs)</title></rect><text x="362.1" y="187.5" text-anchor="middle" style="fill:var(--fg2)">13.5</text><rect x="383.5" y="205.0" width="30.9" height="19.0" style="fill:var(--accent)"><title>10-24: 7.7M per PR (6 PRs)</title></rect><text x="399.0" y="202.0" text-anchor="middle" style="fill:var(--fg2)">7.7</text><rect x="420.5" y="204.6" width="30.9" height="19.4" style="fill:var(--accent)"><title>10-25: 7.8M per PR (3 PRs)</title></rect><text x="435.9" y="201.6" text-anchor="middle" style="fill:var(--fg2)">7.8</text><rect x="457.4" y="210.6" width="30.9" height="13.4" style="fill:var(--accent)"><title>10-26: 5.4M per PR (11 PRs)</title></rect><text x="472.9" y="207.6" text-anchor="middle" style="fill:var(--fg2)">5.4</text><rect x="494.4" y="206.2" width="30.9" height="17.8" style="fill:var(--accent)"><title>10-27: 7.2M per PR (13 PRs)</title></rect><text x="509.8" y="203.2" text-anchor="middle" style="fill:var(--fg2)">7.2</text><rect x="531.3" y="195.2" width="30.9" height="28.8" style="fill:var(--accent)"><title>10-28: 11.6M per PR (13 PRs)</title></rect><text x="546.8" y="192.2" text-anchor="middle" style="fill:var(--fg2)">11.6</text><rect x="568.3" y="189.9" width="30.9" height="34.1" style="fill:var(--accent)"><title>10-29: 13.8M per PR (3 PRs)</title></rect><text x="583.7" y="186.9" text-anchor="middle" style="fill:var(--fg2)">13.8</text><rect x="605.2" y="183.6" width="30.9" height="40.4" style="fill:var(--accent)"><title>10-30: 16.3M per PR (8 PRs)</title></rect><text x="620.7" y="180.6" text-anchor="middle" style="fill:var(--fg2)">16.3</text><rect x="642.2" y="203.0" width="30.9" height="21.0" style="fill:var(--accent)"><title>10-31: 8.5M per PR (8 PRs)</title></rect><text x="657.6" y="200.0" text-anchor="middle" style="fill:var(--fg2)">8.5</text><rect x="679.1" y="214.6" width="30.9" height="9.4" style="fill:var(--accent)"><title>11-01: 3.8M per PR (13 PRs)</title></rect><text x="694.6" y="211.6" text-anchor="middle" style="fill:var(--fg2)">3.8</text><rect x="716.1" y="214.8" width="30.9" height="9.2" style="fill:var(--accent)" opacity=".55"><title>11-02: 3.7M per PR (10 PRs)</title></rect><text x="731.5" y="211.8" text-anchor="middle" style="fill:var(--fg2)">3.7</text><line x1="234.7" x2="600.2" y1="195.2" y2="195.2" style="stroke:var(--red);stroke-width:2"/><text x="236.7" y="191.2" style="fill:var(--red);font-weight:bold">median 11.6</text><line x1="604.2" x2="711.1" y1="203.0" y2="203.0" style="stroke:var(--red);stroke-width:2"/><text x="606.2" y="199.0" style="fill:var(--red);font-weight:bold">median 8.5</text><line x1="715.1" x2="748.0" y1="214.8" y2="214.8" style="stroke:var(--red);stroke-width:2"/><text x="717.1" y="210.8" style="fill:var(--red);font-weight:bold">median 3.7</text><line x1="602.2" x2="602.2" y1="20" y2="224" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><circle cx="602.2" cy="18" r="7" style="fill:var(--accent)"/><text x="602.2" y="21" text-anchor="middle" style="fill:var(--bg);font-weight:bold">1</text><line x1="639.2" x2="639.2" y1="20" y2="224" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><circle cx="639.2" cy="18" r="7" style="fill:var(--accent)"/><text x="639.2" y="21" text-anchor="middle" style="fill:var(--bg);font-weight:bold">2</text><line x1="676.1" x2="676.1" y1="20" y2="224" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><circle cx="676.1" cy="18" r="7" style="fill:var(--accent)"/><text x="676.1" y="21" text-anchor="middle" style="fill:var(--bg);font-weight:bold">3</text><line x1="713.1" x2="713.1" y1="20" y2="224" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><circle cx="713.1" cy="18" r="7" style="fill:var(--accent)"/><text x="713.1" y="21" text-anchor="middle" style="fill:var(--bg);font-weight:bold">4</text><text x="66.5" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 66.5 237)">10-15</text><text x="103.4" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 103.4 237)">10-16</text><text x="140.4" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 140.4 237)">10-17</text><text x="177.3" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 177.3 237)">10-18</text><text x="214.3" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 214.3 237)">10-19</text><text x="251.2" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 251.2 237)">10-20</text><text x="288.2" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 288.2 237)">10-21</text><text x="325.1" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 325.1 237)">10-22</text><text x="362.1" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 362.1 237)">10-23</text><text x="399.0" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 399.0 237)">10-24</text><text x="435.9" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 435.9 237)">10-25</text><text x="472.9" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 472.9 237)">10-26</text><text x="509.8" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 509.8 237)">10-27</text><text x="546.8" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 546.8 237)">10-28</text><text x="583.7" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 583.7 237)">10-29</text><text x="620.7" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 620.7 237)">10-30</text><text x="657.6" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 657.6 237)">10-31</text><text x="694.6" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 694.6 237)">11-01</text><text x="731.5" y="237" text-anchor="middle" style="fill:var(--fg3)" transform="rotate(-45 731.5 237)">11-02 *</text></svg>
+<p class="note"><span class="tag m">measured</span> Each bar is the day's weighted tokens divided by the PRs merged that day; days with no merged PR (10-17, 10-18, 10-20) are marked "no PR". The red line is the median of the days in each window. The 10-16 bar (69M, one PR) is the one outlier and is shown in full.</p>
+<h3>Before and after (medians of daily values)</h3>
+<div class="scroll"><table class="num">
+<tr><th>Window</th><th>Days</th><th>Median weighted tokens per day</th><th>Median per merged PR</th><th>Median per assistant call</th></tr>
+<tr><td>Before: 10-20 to 10-29 (nothing from this page shipped yet)</td><td>10</td><td>59M</td><td><b>11.6M</b> (9 days with a PR)</td><td><b>48.3k</b></td></tr><tr><td>Levers phasing in: 10-30 to 11-01</td><td>3</td><td>68M</td><td><b>8.5M</b> (3 days with a PR)</td><td><b>28.0k</b></td></tr><tr><td>Since the last lever: 11-02 only, <b>partial day</b></td><td>1</td><td>37M</td><td><b>3.7M</b> (1 days with a PR)</td><td><b>21.5k</b></td></tr>
+</table></div>
+<p><span class="tag m">measured</span> the medians, from the transcripts and <code>gh</code> as above. <span class="tag i">inferred</span> the reading: the drop per PR and per call is <i>consistent with</i> fewer rounds and smaller contexts, but the workload also changed (10-26 to 10-28 were 11 to 13 PRs a day with heavy subagent use; 10-28 alone was 151M, the peak), so a single "before" median cannot isolate the levers. The "since the last lever" row is <b>one partial day</b>, so treat it as a first reading only. Raw medians per day: 59M before, 68M while phasing in, 37M on the partial 11-02.</p>
+<h3>Weekly meter: only two days exist</h3>
+<p><span class="tag m">measured</span> The statusline log <code>~/.claude/meter/log.jsonl</code> starts at <b>11-01 02:13</b>, not 10-30 (182 samples, none before that), and the weekly window did not reset inside it (resets 11-06 02:00). So there is no weekly-percent "before" at all. What it shows: the weekly meter went <b>48% to 60%</b> (+12 points) during 11-01 and <b>60% to 70%</b> (+10 points) on 11-02 through 16:36, while the transcripts show 49.5M and 37.3M weighted tokens on those days, about 4.1M and 3.7M per weekly point. <span class="tag i">inferred</span> That is a rough reading only: the meter moves in whole points, the first sample may hide earlier 11-01 spend, and the two days overlap in the levers, so this is too short to show a trend. I show it as numbers and omit a chart.</p>
+<p class="note"><b>Gaps.</b> Transcripts before 10-15 were not scanned; 11-02 is partial; the weekly meter has no data before 11-01 02:13; subagent transcripts are counted by file location, so a subagent that was never written to disk is missing from both sides equally.</p>
+
+<h2 id="budgets">The two budgets, side by side</h2>
+<div class="scroll"><table class="num">
+<tr><th></th><th>Claude (this account)</th><th>Codex (ChatGPT Plus)</th></tr>
+<tr><td>5-hour window now</td><td><b>4% used</b>, resets 11-01 01:50 <span class="tag m">measured</span> 21:09 from <code>~/.claude/.rate-limits.json</code>, 68 s old</td><td><b>2% used</b> (98% left), resets 19:34 <span class="tag m">measured</span> from the owner's <code>/status</code> screenshot at 14:47, now 6 h stale</td></tr>
+<tr><td>Weekly window now</td><td><b>45% used</b>, resets 11-06 02:00 <span class="tag m">measured</span> 21:09</td><td><b>46% used</b> (54% left), resets 11-03 23:40 <span class="tag m">measured</span> 14:47</td></tr>
+<tr><td>Size of the meter</td><td>100% of 5 h ≈ <b>52–73M</b> weighted; 1 weekly point ≈ <b>7.7</b> 5-hour points [M]</td><td>about <b>0.50% weekly per 1M tokens</b> [RC] <span class="tag i">estimate from one window</span></td></tr>
+<tr><td>What draws on it</td><td>Everything: the coordinator, every subagent (builds, folds, merges), and Claude review halves</td><td>Only Codex review halves, via <code>scripts/codex-review.py</code>. 0 non-review sessions in 14 days [RC]</td></tr>
+<tr><td>Cost of one review half</td><td>median 0.66M weighted ≈ <b>0.9–1.3% of the 5-hour meter</b>, or ~0.12–0.17% weekly [RC]</td><td>median 559k tokens ≈ <b>0.28% weekly</b> (mean 0.53%), ~2.7–2.9% of 5 h [RC] <span class="tag i">inferred</span></td></tr>
+<tr><td>What guards it</td><td>✅ the usage-pace hook (PR #446): WARN at 80% weekly, refuses a new subagent at 90%</td><td>⬜ nothing automatic. The coordinator checks <code>/status</code> by hand before a Codex run (an interim rule from 10-31)</td></tr>
+</table></div>
+<p>The two budgets are separate, so moving review work from Codex to Claude does not save anything overall. It moves the cost onto the meter that every other piece of work also draws on. That is why the owner's 10-31 decision (card A) cut <b>rounds</b> rather than swapping models (section 3, the review rows).</p>
+
+<h2 id="levers">Every lever, with its status</h2>
+<p>Status: <b>✅</b> shipped (PR, commit) · <b>◐</b> adopted as a convention (written in a memory file or a brief, but nothing enforces it) · <b>⏳</b> in flight · <b>⬜</b> not built · <b>✖</b> rejected. Savings are weighted tokens from [U] unless marked otherwise. They <b>overlap and are not additive</b>.</p>
+
+<h3 id="ctx">A. Make each call's context smaller</h3>
+<div class="scroll"><table class="log">
+<tr><th>Lever</th><th>Design</th><th>Status</th><th>Saving</th><th>Evidence</th></tr>
+<tr><td>Fresh agent per slice, round and fold; never park one</td><td>A new agent each time. Never SendMessage-resume a large-context agent after it has been idle, because the cache rewrite costs 2×.</td><td>◐ convention, docs PR #444 <code>7b16c059</code></td><td>long-lived builds were 149M, so up to ~68M <span class="tag i">inferred</span>; idle-rewrite excess 22.3M</td><td>[U] §3b, §6 #2 and #8; memory <code>usage-is-cache-rewrites-of-parked-agents</code></td></tr>
+<tr><td>Thin coordinator</td><td>The coordinator only dispatches and decides. Agents do the reading, gates and merges, and send one short report.</td><td>◐ owner's option A, 10-30</td><td>coordinator reads above 200k: up to 153M upper bound, plan on half <span class="tag i">inferred</span></td><td>[U] §6 #1</td></tr>
+<tr><td>autoCompactWindow 300k</td><td>Compact at about W − 30k. 300k is the valley; 200k is a cliff while the floor is about 150k.</td><td>✅ set in <code>.claude/settings.local.json</code> (<code>300000</code>, read 21:05; untracked file) · ⚠ it loads only at LAUNCH</td><td>~54k → 38–43k per call, about −20 to −30% <span class="tag i">model</span></td><td>[C] §1 and §3</td></tr>
+<tr><td>W = 200k</td><td>The owner's first choice</td><td>✖ rejected 10-30 19:35</td><td>worse than 300k: 14 calls per cycle, 62k per call</td><td>[C] §3 table</td></tr>
+<tr><td><code>idleCompaction: true</code></td><td>Compact while idle, before the cache expires</td><td>✖ removed: already the default, so the setting did nothing</td><td>0</td><td>[C] §1 (from the binary's schema strings) <span class="tag i">inferred</span></td></tr>
+<tr><td>Trim the floor: start-up hook output</td><td>Start-up hooks print a digest and a path to the full text</td><td>✅ PR #453 <code>8e6d484a</code></td><td>part of the hook captures (~65 KB) <span class="tag i">not re-measured</span></td><td>[G]</td></tr>
+<tr><td>Trim the floor: CLAUDE.md and its imports (the four always-loaded files measure 47.6 KB on origin/master, draft PR #458)</td><td>Move process detail out of the always-loaded instructions</td><td>⬜ <b>needs the owner</b> (these are the owner's files)</td><td>a 150k → 100k floor would be ≈ −15% per call, but <b>this row alone does not get there</b>: 47.6 KB is roughly 12k tokens, about 1.2k weighted per call of the 54k average (≈2%, INFERRED at 4 bytes per token). The ~162 KB in the study was the whole <code>instructions</code> attachment, which holds more than these four files, so the 15% share is NOT ESTABLISHED and needs re-deriving <span class="tag i">model</span></td><td>[C] §3 readings; ledger <code>auto-compact-300k</code></td></tr>
+<tr><td>Disable unused plugins and the explanatory output style</td><td>10 never-invoked plugins, set via <code>enabledPlugins</code> in the project settings</td><td>⬜ card C, <b>waiting on the owner</b></td><td>~1.3–1.5k tokens per turn (+1.7k with pr-review-toolkit) <span class="tag i">estimate</span></td><td>[P]; <code>.claude/settings.json</code> has no <code>enabledPlugins</code> key (read 21:06)</td></tr>
+<tr><td>Never Read an image into the coordinator</td><td>An agent describes a screenshot instead</td><td>◐</td><td>one screenshot was carried for 4,865 calls ≈ 6.0M</td><td>[U] §3d</td></tr>
+<tr><td>Boundary-deferred compaction hook</td><td>A PreCompact hook blocks an AUTO compaction while work is mid-flight (an executing-plan sentinel, an unreported Agent call, a running Monitor) and allows it at a ceiling of 1.5W. It never blocks an idle compaction.</td><td>⬜ prototype only (<code>t1/boundary_hook.py</code>); no backlog row</td><td>fewer compactions at bad moments; size not measured</td><td>[C] §1b: blocking works, with no retry storm</td></tr>
+</table></div>
+
+<h3 id="calls">B. Make fewer calls</h3>
+<div class="scroll"><table class="log">
+<tr><th>Lever</th><th>Design</th><th>Status</th><th>Saving</th><th>Evidence</th></tr>
+<tr><td>One SendMessage report per agent</td><td>The report goes by SendMessage, because plain output is not delivered. The idle echo then gets a one-line acknowledgement.</td><td>✅ rule in docs, PR #456 <code>0de20abb</code></td><td>duplicate-report turns 11.4M</td><td>[U] §6 #6</td></tr>
+<tr><td>No Monitors or background waits inside agents</td><td>Agents run sub-10-minute commands in the foreground and report once</td><td>◐ in every brief</td><td>monitor wakes 26.7M, background-command acknowledgements 10.4M</td><td>[U] §6 #4–5</td></tr>
+<tr><td>Gates for a PR in one call</td><td>One script runs the whole battery and prints one line per gate</td><td>⬜ (ledger <code>token-fixes</code> item 3)</td><td>30–50M <span class="tag i">inferred</span>, overlaps the coordinator lever</td><td>[U] §6 #3: 1,306 gate commands under 10 s</td></tr>
+<tr><td>Last-green ledger</td><td>Record (gate, tree hash) when a gate passes, and skip the re-run when nothing changed</td><td>⬜ (ledger <code>token-fixes</code> item 7)</td><td>~12.5M + 3.7M <span class="tag i">inferred</span></td><td>[U] §3c: 93 same-tree <code>--mutate</code> repeats</td></tr>
+<tr><td>Usage pacing hook</td><td>WARN at 80% weekly; refuse a NEW subagent at 90% unless overridden</td><td>✅ PR #446 <code>13296878</code> · now: <code>OK: weekly usage is below 80%</code> (run 21:06)</td><td>no tokens saved; it prevents the day-long halt (4 agents stopped for ~24 h on 10-29)</td><td>[BL] #399 · gap ⬜ #404: a subagent can still wake an idle sibling at 90%</td></tr>
+<tr><td>Stalled-work check</td><td>Every prompt derives stalled work, with its age, from git and gh</td><td>✅ PR #452 <code>60a4b363</code>; its facts cache ⬜ #420</td><td>replaces agents' promises to report, which cost 3 stalls on 10-30; latency 1.42 s → 0.16 s with the cache</td><td>[BL] #410, #420</td></tr>
+</table></div>
+
+<h3 id="review">C. Fewer review rounds (the Codex budget, and part of Claude's)</h3>
+<div class="scroll"><table class="num">
+<tr><th>Round</th><th>Rounds</th><th>Found a Blocking/High that was then fixed</th><th>Cumulative share of the 146 fixed</th></tr>
+<tr><td>r1</td><td>45</td><td>58%</td><td>58%</td></tr>
+<tr><td>r2</td><td>50</td><td>26%</td><td>78%</td></tr>
+<tr><td>r3</td><td>49</td><td>10%</td><td>83%</td></tr>
+<tr><td>r4+</td><td>129</td><td>12% (about half of these findings were caused by the previous round's fix)</td><td>100%</td></tr>
+</table></div>
+<p class="horizon">[RC], measured from the coordinator records. Half and round are confounded by the alternation rule, so this is not a ranking of Codex against Claude.</p>
+<div class="scroll"><table class="log">
+<tr><th>Lever</th><th>Design</th><th>Status</th><th>Saving</th><th>Evidence</th></tr>
+<tr><td>Cap review rounds (owner card A, 10-31)</td><td>Both halves at r1 (they overlap only ~25–35% on Blocking/High). r2–r3 alternate one half. From r4, findings are FILED as backlog rows unless one is a BLOCKER. The stop is committed at r1.</td><td>⏳ agent <code>build-review-cap</code>, branch <code>review-round-cap</code> (worktree exists; not pushed at 21:00)</td><td>over 14 days: Codex 99.6 → ~54 weekly-%, Claude 136 → 99 5h-%, keeping 121 of 146 fixes <span class="tag i">inferred</span></td><td>[RC] Q5 policy (d), plus verdict files</td></tr>
+<tr><td>Claude halves write the verdict file</td><td>Only Codex wrote <code>docs/reviews/verdicts/*.verdict.json</code>, so <code>check-review-recorded</code> forced a Codex round after a Claude final round</td><td>⏳ same PR (closes backlog #403)</td><td>31 verdict-only rounds ≈ <b>7.4% of Codex weekly</b> in 14 days (14.8M tokens)</td><td>[RC] Q4, e.g. PR #455 round 10</td></tr>
+<tr><td>Code that reaches a branch by merging master does not count as new</td><td>Code that arrives by merging master is not "committed after the last round"</td><td>⬜ backlog #426</td><td>11 of the 31 verdict-only rounds were caused by master merges</td><td>[RC] Q4; [BL] #426</td></tr>
+<tr><td>Merge cascade: derived mutation total (T6)</td><td>The total is the sum of the per-file pins, so parallel PRs stop conflicting on one typed number</td><td>✅ PR #455 <code>eb3c1e88</code> · residue ⬜ #432 (adjacent pins still conflict)</td><td>fewer re-merges, so fewer re-review rounds <span class="tag i">not measured</span></td><td>[G]; [BL] #431–#433</td></tr>
+<tr><td>Codex for r1 and the final round only; Claude does every middle round</td><td>Option C on the card</td><td>✖ the owner chose A</td><td>Codex −65%, but Claude +60% on the shared meter</td><td>[RC] Q5 policy (b)</td></tr>
+</table></div>
+
+<h3 id="speed">D. Shorter waits (wall time; tokens only indirectly)</h3>
+<p>Every minute an agent waits on a gate costs polling and wake-up calls. These levers mostly buy wall time.</p>
+<div class="scroll"><table class="log">
+<tr><th>Lever</th><th>Status</th><th>Effect</th></tr>
+<tr><td>check-main-drivable memoised</td><td>✅ PR #449 <code>a34f8924</code></td><td>68 s → 8 s; about −59% of the mutation sweep</td></tr>
+<tr><td>Mutation sweep on 24 shards</td><td>✅ PR #445 <code>364ac2a4</code></td><td>slowest shard was 29.3 min against a 30-min limit</td></tr>
+<tr><td>Real-deadline cases skipped in mutation runs</td><td>✅ PR #454 <code>3a1cc908</code> (backlog #407)</td><td>about 81% of compaction-state's suite time was waiting on deadlines</td></tr>
+<tr><td>Stop a mutant at its named case (#405)</td><td>⬜ PR #451 was closed (the owner's card)</td><td>not measured</td></tr>
+<tr><td>Cache pure work in four suites (#406)</td><td>⬜</td><td>e.g. gen-backlog-page 15.7 → 2.95 s, measured locally</td></tr>
+<tr><td>Scoped local check-selftest-counts (#402)</td><td>⬜ ledger <code>build-402</code></td><td>366 full local runs since 10-23</td></tr>
+<tr><td>Injectable clock for compaction-state (#424)</td><td>⬜</td><td>the structural fix for #407's residue</td></tr>
+</table></div>
+
+<h2 id="burst">Burst test: inconclusive (11-01), replaced by a passive regression</h2>
+<p><b>Result: the overnight Opus-vs-Sonnet burst could not separate the models.</b> The meter moves in whole percent, and 1% of the 5-hour window is about <b>0.5–0.7M weighted tokens</b>.</p>
+<div class="scroll"><table class="num">
+<tr><th>Observation</th><th>Number</th><th>Label</th></tr>
+<tr><td>Burst A (Sonnet) size</td><td>~0.6M weighted: 30 calls, 2.6M cache reads, 230k cache writes, 19k output. That is about <b>one meter step</b></td><td><span class="tag m">measured</span></td></tr>
+<tr><td>5-hour meter across both bursts</td><td>1% to 3%</td><td><span class="tag m">measured</span></td></tr>
+<tr><td>Weekly meter</td><td>stayed at 48%</td><td><span class="tag m">measured</span></td></tr>
+<tr><td>Opus burst</td><td>stalled partway</td><td><span class="tag m">measured</span></td></tr>
+<tr><td>Cache file while the owner is AFK</td><td>goes stale: the statusline refreshes it only when the owner is present</td><td><span class="tag m">measured</span></td></tr>
+<tr><td>Size a valid burst would need</td><td>about <b>17x</b> larger</td><td><span class="tag i">inferred</span></td></tr>
+</table></div>
+<p><b>Owner decision, 11-01 09:16: drop the costly burst.</b></p>
+<p><b>Replacement: passive regression (built 11-01).</b> The statusline appends every meter change to <code>~/.claude/meter/log.jsonl</code>. <code>~/.claude/meter/regress.py</code> fits <b>delta% ~ a x Opus + b x Sonnet</b> weighted tokens, taken from all transcripts and deduplicated by message id plus request id. Weights: input 1, cache write 1.25, cache read 0.1, output 5. It uses non-negative least squares, separately for the weekly and the 5-hour window.</p>
+<ul>
+<li>It <b>refuses (CANNOT RUN)</b> with fewer than 10 moving intervals, a zero-token family, or a correlation above 0.95 between the two families.</li>
+<li>First run: weekly 1 moving interval, 5-hour 4, so CANNOT RUN, as expected.</li>
+<li>Expect a weekly ratio after a few days of normal work. <span class="tag i">pending data</span></li>
+<li>Not seen: Codex usage and other machines.</li>
+</ul>
+
+<h2 id="advice">Outside advice reviewed (11-01), and the effort fix</h2>
+<div class="scroll"><table class="log">
+<tr><th>Claim</th><th>Verdict</th><th>Why</th></tr>
+<tr><td>"Opus is about 2.5-3x Sonnet per quota"</td><td>unsourced</td><td>This is exactly what the regression measures</td></tr>
+<tr><td>"80k context costs Opus 15-20% of the 5-hour quota per prompt"</td><td>contradicted</td><td>Burst A's 2.6M cache reads came to about 1% of the 5-hour window. Cached context is billed at about 0.1x, so cost is calls x context and caching dominates</td></tr>
+<tr><td>"Compact at 45k"</td><td>rejected</td><td>Below the measured 97-159k post-compaction floor, so it would compact in a loop (the 200k cliff, worse). We use <code>autoCompactWindow</code> 300k</td></tr>
+<tr><td>Model names <code>claude-3-opus-latest</code> / <code>claude-3-5-sonnet-latest</code></td><td>stale</td><td>Old model names</td></tr>
+<tr><td>Opus plans, Sonnet executes; fresh context per phase; spec-on-disk handoff</td><td>already adopted</td><td>Route-by-task, a fresh agent per task, plans on disk</td></tr>
+<tr><td><code>opusplan</code></td><td>real setting, unfit now: <b>filed</b></td><td>Opus only in plan mode, which needs approval each time, so unfit while the owner is AFK. Filed as the routing-revisit backlog row, to be reconsidered after the regression</td></tr>
+<tr><td>Lower thinking on mechanical work</td><td><b>adopted</b></td><td>See the fix below</td></tr>
+</table></div>
+<div class="k"><b>Fix adopted (owner, 11-01 09:26: "if it is just a win, apply in near term").</b> Agents whose result a deterministic script checks run <b>Sonnet at effort LOW</b>: merges on <code>check-merge-ready</code> READY, backlog and record writes checked by <code>check-docs</code> and leak scans, log reading, and re-merges with re-run gates. Judgment work (HOLD and loosening checks, test pins, folds) keeps default effort. <b>Why:</b> thinking is output, which weighs about 5x, and a slip is caught by the gate. Retries are counted, and the rule is revisited if they appear.</div>
+
+<h2 id="open">Still not implemented, ranked</h2>
+<p><b>Updated 11-02 05:00 — shipped items moved to Shipped; habits marked.</b> (Re-ranked 11-01 19:02 by the usage audit.) The audit attributed <b>230.31M weighted tokens</b> (10-30 00:00 → 11-01 15:30, 6,930 calls, MEASURED) to causes, with only <b>0.09%</b> unexplained. Shares below are of that TOTAL. Savings overlap, so they do not add up: a realistic combined figure is <b>~20–25%</b> (ESTIMATED). Backlog rows #455–#461 and register rows 15–21 were filed in PR #467.</p>
+<div class="scroll"><table class="log">
+<tr><th>#</th><th>Item</th><th>Share of total → expected saving</th><th>Status / blocked by</th></tr>
+<tr><td>1</td><td><b>Fixed context every agent loads</b> (backlog #456): ~72k tokens × 151 agents — tool definitions 7.5, skill list 3.5, the always-loaded docs 5.5, memory index 2.8</td><td>25.3% ESTIMATED → ~3% (plugins off ~2%, fewer small agents ~1%)</td><td>◐ plugins off 10-31 (~2%); the rest is a habit since 11-02: small mechanical steps inline or batched</td></tr>
+<tr><td>2</td><td><b>Output tokens</b> (backlog #458): incl. thinking 3.8%. Fix: shorter agent lifetimes, low effort for mechanical agents, drop ★ Insight blocks (~0.6%)</td><td>13.1% MEASURED → ~3%</td><td>habit since 11-02: mechanical Sonnet agents run at low effort; ★ Insight stays (owner's choice)</td></tr>
+<tr><td>3</td><td><b>Coordinator woken by idle notices</b> (backlog #459): 160 wakes, 45 of them today</td><td>4.9% MEASURED → ~3%</td><td>habit since 11-02: unnamed agents (one completion notice), one-line replies; wakes measured vs 11-01's 160 at the 11-06 reset</td></tr>
+<tr><td>4</td><td><b>Keep the coordinator's context small</b> (old #2): large reads to fresh agents, compact at pauses. Coordinator median context 262k (p90 787k)</td><td>messages carried 11.7% ESTIMATED, mostly 10-30 (2.6% today) → ~1%</td><td>habit; the boundary hook (✅ #463) moves compactions to pauses</td></tr>
+<tr><td>5</td><td><b>#426: a master merge forces another review round</b></td><td>re-merge re-work 0.7% MEASURED (the audit's re-work view)</td><td>work; smaller than it looked</td></tr>
+<tr><td>6</td><td><b>Per-prompt hook injections</b> (backlog #460): STALLED WORK 77× mean 2.4k chars, the same 25-day-old entries; IN FLIGHT 9× 8.4k</td><td>2.8% ESTIMATED → ≤0.5%</td><td>measured 11-02: the on-change half saves 0.06–0.23%, NOT built; row stays open for retiring dead worktree entries</td></tr>
+<tr><td>7</td><td><b>Model-routing guard</b>, after the Opus/Sonnet regression</td><td>unknown until a ratio exists</td><td>regression collecting data</td></tr>
+<tr><td>8</td><td>Codex budget check; speed rows #405, #406, #424, #447–#454</td><td>prevents running out / wall time</td><td>work</td></tr>
+<tr><td>—</td><td><b>Not measured</b> (backlog #461): compaction summaries (13), away-summaries (92), title calls; 1-hour cache writes cost 2× not 1.25×; Codex quota</td><td>1–3% ESTIMATED on top; +1.5% for the cache-write rate</td><td>no evidence source yet</td></tr>
+<tr><td colspan="4"><b>Shipped</b></td></tr>
+<tr><td>✅</td><td><b>Agent long-call guard</b> (#455, PR #468, <code>8d3fa320</code>): a subagent's foreground call that can block past 270 s is refused</td><td>19.2% target; effect measured at the 11-06 reset</td><td>11-01</td></tr>
+<tr><td>✅</td><td><b>Agent large-read guard</b> (#457, PR #469, <code>758249c6</code>): a subagent's read of more than 300 lines in one call is refused; ◐ its <code>;</code>/<code>&amp;&amp;</code> list extension (#465, PR #471) is in an architecture review after 3 rounds</td><td>effect measured at the 11-06 reset</td><td>11-01</td></tr>
+<tr><td>✅</td><td><b>Usage audit</b> (no blind spots, six axes) and its findings filed (#467, <code>499e7b34</code>)</td><td>made this ranking measurable</td><td>11-01</td></tr>
+<tr><td>✅</td><td><b>Memory index trim</b> (#467): 98% → 93% of its injection budget</td><td>prevents silent row loss</td><td>11-01</td></tr>
+<tr><td>✅</td><td><b>Always-loaded docs trim</b> (#458, <code>8fe725ec</code>): 47.6 KB → 25.5 KB</td><td>≈5,500 tokens a turn, but those are cache reads at 0.1×: ≈550 weighted per call, about 1–2% (ESTIMATED; the earlier ~15% was wrong)</td><td>merged 11-01</td></tr>
+<tr><td>✅</td><td><b>Boundary-deferred compaction</b> (#463, <code>2f277c85</code>): auto compaction waits for a pause, up to min(1.5× window, 0.9× model limit)</td><td>avoids mid-task compactions (≥68k re-derivation each, a lower bound)</td><td>merged 11-01 after a live dry-run</td></tr>
+<tr><td>✅</td><td><b>Gates in one call</b> (#465, <code>bf32f927</code>): <code>scripts/gates-for-pr.py</code> runs the PR's gate set and prints one line each</td><td>30–50M over 9 days (inferred). The <b>last-green ledger was dropped</b>: ~50 s a run saved, against false skips the review reproduced</td><td>merged 11-01</td></tr>
+<tr><td>✅</td><td><b>Scoped self-test count check</b> (#450, <code>e77a929b</code>): locally only suites a branch could affect (50 of 75)</td><td>wall time; CI still runs all</td><td>merged 11-01</td></tr>
+<tr><td>✅</td><td><b>Review cap + Claude verdicts</b> (#457, <code>6e419b2e</code>)</td><td>~46% of Codex weekly; ~27% of Claude review spend (inferred)</td><td>merged 10-31</td></tr>
+<tr><td>✅</td><td><b>Agents report in their final text only</b> (no SendMessage)</td><td>removes the duplicate report: 4.4% of the session total (measured upper bound)</td><td>rule, 11-01 14:10; first two agents since sent one report each</td></tr>
+<tr><td>✅</td><td><b>Optimization register</b> (#464, #466): each saving with its risk, signal, revert path</td><td>none directly; it lets a saving be re-evaluated and reverted</td><td>merged 11-01</td></tr>
+<tr><td>✅</td><td><b>Ledger entries close themselves</b> (old row 11): the stale <code>token-plan</code>/<code>token-fixes</code> entries are gone</td><td>keeps "pending" honest</td><td>done</td></tr>
+<tr><td>✅</td><td><b>Pace line instead of a fixed stop</b>: today's limit = 97 − remaining ÷ days-to-reset × days left after today; idle days roll forward</td><td>uses the weekly allowance that a fixed stop would lose at the reset</td><td>rule, 11-01 15:28</td></tr>
+</table></div>
+<div class="callout" id="ans-work-habit" style="border-left:4px solid var(--em);padding:.6em 1em;margin:1em 0">
+<p><b>Q (10-31 21:19): what are the work parts and the habit parts of item 1?</b></p>
+<p><b>Work: things to build, so that a pause can safely be a <code>/clear</code></b></p>
+<ul>
+<li><b>Restore after a clear.</b> The ledger (<code>.claude/inflight.jsonl</code>) and the IN FLIGHT block already restore in-flight state after a compaction. ⚠ My memory notes say the <code>/clear</code> restore was broken (backlog #396); <i>unverified tonight</i>. Until that works, a clear can drop in-flight work, so I avoid it.</li>
+<li><b>Ledger entries that close themselves</b> (item 11). If stale entries remain, the next session re-investigates finished work, which costs tokens.</li>
+<li><b>The boundary-deferred compaction hook</b> (item 5). It moves the automatic compaction to a pause between tasks, instead of mid-task, where re-deriving the work costs 68k+ tokens.</li>
+<li><b>Gates in one call</b> (item 3). One call reports every gate's result, instead of a dozen tool calls whose output stays in the context.</li>
+</ul>
+<p><b>Habit: things that need no code</b></p>
+<table><tr><th>Whose</th><th>Habit</th><th>Why it saves</th></tr>
+<tr><td>Mine</td><td>Send large reads (logs, diffs, transcripts, review files) to a fresh agent, and keep only its conclusion</td><td>Anything read into the main session is re-read on every later call: a 20k log read once costs about 20k × the calls that follow</td></tr>
+<tr><td>Mine</td><td>Keep output short: no repeated status, one line for a duplicate notice, long text written to files</td><td>Output is the costliest token class and then becomes context</td></tr>
+<tr><td>Mine</td><td>Ask for a compaction at natural pauses (after a merge, before a new thread), not mid-task</td><td>A pause compaction is cheap to recover from; a mid-task one forces re-work</td></tr>
+<tr><td>Mine</td><td>Never re-read a file or re-run a check whose answer is already in the conversation</td><td>Each repeat adds context and costs a call</td></tr>
+<tr><td><s>Yours</s></td><td><s>Restart Claude Code once…</s> <b>Withdrawn 21:26: not needed, see the next answer.</b> The 300k window is already live</td><td>Measured: today's compactions fired at about 267k</td></tr>
+</table>
+<p>The largest single habit is the first one. Measured on 10-30, the main session's median context was 410k, and 82% of its cost was re-reading it.</p>
+</div>
+<div class="callout" id="ans-programmatic-compact" style="border-left:4px solid var(--em);padding:.6em 1em;margin:1em 0">
+<p><b>Q (10-31 21:26): this cannot be done while I am AFK. Can you trigger <code>/compact</code> or <code>/clear</code> programmatically?</b></p>
+<p><b>Correction first: nothing is needed from you.</b> The 300k window is already live in this session. Measured from this session's transcript (<code>compactMetadata</code>): the automatic compactions at 12:49, 17:43 and 21:00 today each fired at about <b>267k</b> tokens. Before the change they fired at about 965k. A new session reads <code>autoCompactWindow</code> from settings on its own, so no restart is needed. My "restart once" line above was wrong.</p>
+<p><b>Can I type <code>/compact</code> or <code>/clear</code> myself? No.</b> Slash commands are typed by you. I have no tool that issues one, and a hook can block or delay a compaction but cannot start one. (This is from my toolset and the hook model, not checked against the docs.)</p>
+<p><b>What does run on its own:</b></p>
+<table><tr><th>Mechanism</th><th>Status here</th><th>Evidence</th></tr>
+<tr><td>Automatic compaction at the window (300k)</td><td>✅ live</td><td>3 compactions today at about 267k (measured)</td></tr>
+<tr><td><b>Idle compaction</b>: Claude Code compacts a long conversation <i>while it is idle, before the prompt cache expires</i></td><td>◐ fired 8 times (10-23 to 10-27), <b>not once since</b></td><td>The transcript's "Compacted while idle" notices (measured). The CLI says <code>idleCompaction:false</code> turns it off, but <i>setting it to true does not turn it on</i>, and there is a <code>CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS</code> threshold. Why it stopped is <b>not known</b>; inferred: the server decides when it applies, or the smaller window keeps the context under its minimum</td></tr>
+<tr><td>Boundary-deferred hook (item 5)</td><td>⬜ not built</td><td>The PreCompact block is verified. It cannot <i>start</i> a compaction, but it can stop a mid-task one, so compactions land at pauses</td></tr>
+<tr><td>Typing into the terminal (<code>tmux send-keys</code>, AppleScript keystrokes)</td><td>✖ rejected</td><td>Not running under tmux (measured: <code>$TMUX</code> is empty; this is the VS Code terminal). Keystrokes go to whichever window has focus, which is unsafe while you're away</td></tr>
+</table>
+<p><b>So the AFK plan is:</b> the automatic 300k compaction plus the PreCompact boundary hook (deferring mid-task compactions to pauses) give the "compact at a natural pause" behaviour without anyone typing. <code>/clear</code> has no programmatic equivalent. Its job, a small coordinator, is covered by sending large reads to fresh agents.</p>
+</div>
+<div class="callout" id="ans-gates-one-call" style="border-left:4px solid var(--em);padding:.6em 1em;margin:1em 0">
+<p><b>Q (10-31 21:29): explain "gates in one call, plus a last-green ledger".</b></p>
+<p><b>The problem (measured, 10-30 usage study, rows 3 and 7).</b> Before a push, the main session runs about ten checks: <code>--self-test</code> on each touched script, <code>check-docs</code>, <code>check-review-rounds</code>, <code>check-reference-namespace</code>, <code>check-fixture-variation</code>, and so on. It runs them <b>one tool call at a time</b>. Over 9 days that came to <b>1,306 gate-type commands that finished in under 10 s</b>, and 3,674 of the session's 4,929 calls carried a single tool. Each call costs the same no matter how small its output, because <b>every call re-reads the whole context</b> (median 410k, about 54k weighted per call). A two-second check costs as much as a large one.</p>
+<p><b>Lever A: gates in one call.</b> One script, for example <code>scripts/gates-for-pr.sh &lt;worktree&gt;</code>, works out which checks apply to the branch's changed files, runs them all, and prints <b>one line per gate</b> (<code>✅ check-docs</code> / <code>❌ check-review-rounds: 1 silent gap</code>). Ten calls become one, and ten tool outputs in the context become ten short lines. Better still, the agent that owns the branch runs it, so the main session never sees it. Measured: <b>68M</b> of call cost went on sub-10 s gate commands. Expected saving: <b>30–50M over 9 days</b>, inferred, and it overlaps with item 1, because a smaller context also makes each call cheaper.</p>
+<p><b>Lever B: the last-green ledger.</b> The same check often re-ran on <b>a tree that had not changed</b>: 152 repeat candidates, plus 44 runs killed at the 10-minute limit, mostly full mutation sweeps (682 wall minutes). The ledger is a small file recording <code>(gate, tree hash) → green</code>. Before running a gate, the script checks whether this exact tree already passed it, and if so prints <code>✅ (cached, tree abc123)</code> without running anything. The tree hash covers everything, so any change to a file re-runs the check. Expected: about <b>16M</b> (12.5M + 3.7M, inferred), plus a lot of wall time.</p>
+<p><b>Why it is not built yet.</b> No script exists on master (checked: <code>scripts/</code> has no <code>gates-for-pr</code> or similar), and <b>no backlog row exists yet</b>. ⚠ One known trap: the gates already differ between local and CI. Mutation runs are partial locally and full in CI shards. So the ledger must key on the <i>mode</i> as well as the tree, or a local partial green would be read as a full green.</p>
+</div>
+
+
+
+<div class="callout" id="ans-fix-up-to-5" style="border-left:4px solid var(--em);padding:.6em 1em;margin:1em 0">
+<p><b>Q (11-02 04:46): items #1–#5 are meaningful, #6 onward small. Fix up to #5 if dev costs are not too big; re-evaluate later if the situation changes.</b></p>
+<table><tr><th>#</th><th>State on master (11-02)</th><th>What's left / cost</th></tr>
+<tr><td>1 #455 cache re-writes</td><td>✅ done, PR #468 (270-s guard)</td><td>—</td></tr>
+<tr><td>2 #456 fixed agent context</td><td>◐ 13 plugins off 10-31 (~2%)</td><td>~1% "fewer small agents": do small mechanical steps inline or batch them. A habit, no build</td></tr>
+<tr><td>3 #457 Bash output</td><td>✅ PR #469; its list extension PR #471 in round 3</td><td>Finish #471</td></tr>
+<tr><td>4 #458 output tokens</td><td>open</td><td>Low effort for mechanical Sonnet agents: a spawn parameter, no build. The ★ Insight style stays (owner's choice, ~0.6%)</td></tr>
+<tr><td>5 #459 idle-notice wakes</td><td>open</td><td>One-line replies (habit) plus an experiment: unnamed agents send one completion notice instead of teammate idle notices; measure wakes against 11-01's 160</td></tr>
+</table>
+<p>So no new build beyond finishing PR #471. Items 2, 4, 5 are adopted as habits from 11-02; re-measured at the weekly reset (11-06), per the owner's re-evaluate rule.</p>
+</div>
+<div class="callout" id="ans-update-list" style="border-left:4px solid var(--em);padding:.6em 1em;margin:1em 0">
+<p><b>Q (11-02 04:54): if shipped, then update the list.</b></p>
+<p>Done: #455 and #457 moved to Shipped; #456, #458, #459 marked as habits; #460 marked measured-not-built. Their actual effect is measured at the 11-06 reset.</p>
+</div>
+
+<h2 id="traps">Traps we found on the way</h2>
+<ul>
+<li><b>A setting you write is not a setting in effect.</b> <code>autoCompactWindow</code> is read at launch, so the session that set it ran on the old value until the owner typed <code>/autocompact 300k</code>.</li>
+<li><b>"Sonnet is cheaper" was an assumption.</b> The meter fit does not support 5/3 (section 1). Routing remains a convention until the regression has data.</li>
+<li><b>Moving work between meters is not saving.</b> Claude-only review would have cost the most in total: 307 5-hour points over 14 days, against 136 for the status quo [RC] Q5 (c).</li>
+<li><b>The summary is small; the floor is not.</b> After a compaction, 3–5k tokens are the summary and 100k+ are re-injected instructions, listings and hook output [C] §2.</li>
+<li><b>A gate can force spend.</b> <code>check-review-recorded</code> accepted only Codex verdicts, so a Claude final round always cost one extra Codex run (31 times in 14 days).</li>
+</ul>
+
+<h2 id="mi">Measured vs inferred</h2>
+<div class="scroll"><table class="log">
+<tr><th>Claim</th><th>Status</th><th>Source</th></tr>
+<tr><td>82% of coordinator cost is cache reads; median context 410k; 54k per call</td><td><span class="tag m">measured</span></td><td>[U]</td></tr>
+<tr><td>Cache read weight is 0.05–0.2 and cache write weight ≥ 1 on the 5-hour meter</td><td><span class="tag m">measured</span>, 2 windows</td><td>[M]</td></tr>
+<tr><td>Opus and Sonnet weigh about the same on the meter</td><td><span class="tag i">weak evidence</span>: ratio 1 fit 0.486 vs 0.539 for 5/3, on a 0.29 noise floor</td><td>[M]</td></tr>
+<tr><td>1 weekly point ≈ 7.7 five-hour points</td><td><span class="tag m">measured</span> ±1 point of rounding</td><td>[M]</td></tr>
+<tr><td>The post-compaction floor is 97–159k; the summary is 3.3–4.8k</td><td><span class="tag m">measured</span></td><td>[C]</td></tr>
+<tr><td>300k is the optimum window; −20 to −30% per call</td><td><span class="tag i">model</span>; it overstates absolute savings by about a third</td><td>[C] §3</td></tr>
+<tr><td>A PreCompact block holds off an auto compaction with no retry storm</td><td><span class="tag m">measured</span> (headless Haiku)</td><td>[C] §1b</td></tr>
+<tr><td>Review yield by round: 58 / 78 / 83%</td><td><span class="tag m">measured</span> from coordinator records</td><td>[RC]</td></tr>
+<tr><td>31 verdict-only Codex rounds ≈ 7.4% of the weekly limit</td><td><span class="tag m">measured</span> rule on the text; the weekly-% conversion is <span class="tag i">estimated</span></td><td>[RC]</td></tr>
+<tr><td>Savings of each review policy</td><td><span class="tag i">inferred</span>, with medians filled in for halves that did not run</td><td>[RC] Q5</td></tr>
+<tr><td>Plugin saving of 1.3–1.5k tokens per turn</td><td><span class="tag i">estimate</span>, not measured against the injected listing</td><td>[P]</td></tr>
+<tr><td>Claude 4% / 45% used; Codex 2% / 46% used</td><td><span class="tag m">measured</span> at 21:09 (Claude) and 14:47 (Codex, now stale)</td><td>live cache; owner's screenshot</td></tr>
+<tr><td>Shipped PRs and commits</td><td><span class="tag m">read</span> from <code>git log origin/master</code> at 21:05</td><td>[G]</td></tr>
+<tr><td>Saving from PR #453's hook digest</td><td><span class="tag i">not re-measured</span></td><td>—</td></tr>
+</table></div>
+</div>

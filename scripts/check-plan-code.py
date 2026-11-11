@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 178 cases
+    python3 scripts/check-plan-code.py --self-test          # 418 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -80,8 +80,10 @@ ordinary way to read a log, and the sentence was stated as an invariant.
 """
 from __future__ import annotations
 import argparse
+import ast
 import dataclasses
 import contextlib
+import functools
 import io
 import json
 import os
@@ -92,6 +94,7 @@ import subprocess
 import sys
 import tokenize
 import tempfile
+import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # ⛔ THE DEPENDENCY RUNS ONE WAY ONLY (spec §5 Q1). `coverage_verdict` knows nothing about
@@ -105,6 +108,64 @@ from coverage_verdict import (  # noqa: E402
 # `run_suite`, the timeout path could only be reached by waiting two minutes, so no
 # case reached it and "a hung suite is recorded as caught" survived. Round 5, M2.
 SUITE_TIMEOUT = 120
+# ⛔ backlog #558: ONE flat limit gave a FALSE red. MEASURED on master's push run 42377549561 (`1d5fd219`),
+# shard 16: `check-fixture-variation.py`'s control took 15.8 s, and its mutant "deadness is judged over
+# every file…" did not finish in 120 s — while its neighbours on the same runner took ~14.5 s each. The
+# schedule run on the same commit took 125.3 s for that mutant over TWO seeds against a 21.7 s control
+# (5.8x per seed), and locally it took 248 s of CPU against the control's 23 s (10.7x). So the cause is
+# chiefly the MUTANT'S OWN WORK (it analyses every file instead of one), which grows with the population,
+# with runner variance on top — not a slow runner alone. A mutation run's limit is therefore derived
+# from its target's own CONTROL, timed on the same runner minutes earlier (`suite_limit`):
+#   max(SUITE_TIMEOUT, SUITE_TIMEOUT_FACTOR x the control's per-suite seconds), never above the CEILING.
+# FACTOR 20 is ~1.9x the largest ratio measured (10.7x). The CEILING bounds ONE suite run: an infinite
+# loop still times out — after at most 600 s instead of 120 — and a timeout is still rc 2, CANNOT RUN,
+# never a pass. A control has no measurement yet, so it keeps the flat SUITE_TIMEOUT, and so does the
+# RE-CONTROL (r1 Codex F3): it proves the restored suite still behaves as it did, and "as it did"
+# includes finishing inside the bound its first control was held to. Under the mutant's limit a
+# restored suite 6x slower than its control (30 s -> 200 s) certified a run master refused.
+SUITE_TIMEOUT_FACTOR = 20
+SUITE_TIMEOUT_CEILING = 600
+# ⛔ r1 (both halves, F1): THE CEILING IS PER RUN, NOT PER SHARD. Three hung mutants at 600 s are 1,800 s,
+# the whole `timeout-minutes: 30` of a pull request's shard; the job is then KILLED, and the line naming
+# each hang, and every verdict the shard reached, never reach the log. So a run under `--event` (CI) has a
+# CUMULATIVE budget: the sweep job's own `timeout-minutes`, as the RUNNER evaluated it (`LIMIT_VAR`, below),
+# less SWEEP_HEADROOM. Every suite run is capped at the budget left (`run_suite_parts`),
+# and once it is spent the run STOPS and its LAST line is BUDGET_STOP, naming the mutants that did not
+# finish and those not reached.
+# ⟳ r2 (Codex F1-F3): the deadline is ABSOLUTE in JOB time (`ci_deadline`): the job's first step writes
+# its epoch, so the steps before the sweep (at most 31 s MEASURED on 42 shard jobs, runs 42449427382,
+# 42380275076) are now INSIDE the clock, not added after it. HEADROOM covers only what the clock still does
+# not see, and the report is printed and flushed BEFORE teardown: job start to that first step at most 2 s
+# (MEASURED, 42 jobs of runs 42432742676 and 42387350733, at the API's 1 s resolution); killing the
+# in-flight suite (a timed-out `subprocess.run` returned at its timeout with a pipe-holding grandchild,
+# MEASURED locally); then, after the report, teardown 6-8 s (ESTIMATED from local runs) and the post
+# steps at most 4 s (MEASURED). So the report lands ~117 s before the kill, and the job ends red, not killed.
+SWEEP_HEADROOM = 120
+CI_WORKFLOW = ".github/workflows/ci.yml"
+SWEEP_JOB = "mutation-sweep"
+# ⛔ r2 F1: the epoch the sweep job's FIRST step writes to `$GITHUB_ENV` (`sweep_limit_pin` pins the step to ci.yml).
+JOB_START_VAR = "SWEEP_JOB_START"
+# ⛔ Architecture review 2026-11-08 (sweep-deadline), replacing r1-r2's workflow READER: the job's limit in minutes,
+# put in the sweep step's env by a YAML ALIAS of the job's own `timeout-minutes: &LIMIT_ANCHOR ...`. The runner
+# evaluates ONE node for the job's kill and for this value, so the harness parses neither ci.yml nor the event
+# expression; it reads one integer, and on CI a missing or non-integer one is CANNOT RUN (`ci_deadline`).
+LIMIT_VAR = "SWEEP_TIMEOUT_MINUTES"
+LIMIT_ANCHOR = "sweep-limit"
+BUDGET_STOP = "CANNOT RUN — this run's time budget ran out"
+# The absolute `time.monotonic()` by which this run must stop, or None (no budget: off CI). Set ONLY by
+# `mutate_delivered` for the length of its run, read ONLY by `run_suite_parts` (the one producer of a
+# suite run) and `budget_spent` — one reader, so no hand-off can drop it (r1 F2 was a dropped hand-off).
+_DEADLINE: "float | None" = None
+
+# ⛔ THE LOCAL SWEEP BUDGET — the owner's rule, made mechanical 2026-10-25: a FULL sweep belongs to
+# the pull request's CI shards; a local run is a PARTIAL diagnostic. The rule was written (velocity
+# design spec, "draft PR at slice start", deliberately NOT automated) and was missed three times in
+# four weeks, the last costing ~3.5h in one day — two local runs co-scoping a 183-entry manifest
+# whose file had not changed. So `--mutate` times each target's CONTROL run (it runs anyway, before
+# any mutation) and, off CI, REFUSES a run whose estimate exceeds this. ⛔ The exception is a FLAG,
+# `--allow-long-local`, never an environment variable: a flag cannot outlive the one run that asked.
+LOCAL_SWEEP_BUDGET = 600
+LOCAL_REFUSAL = "REFUSED LOCALLY"
 
 
 
@@ -158,6 +219,9 @@ def child_env(d: pathlib.Path) -> dict[str, str]:
     temp tree create it themselves.
     """
     env = dict(os.environ)
+    # Backlog #407 r1: STRIPPED, not merely never added — a borrower (`check-selftest-counts.audit`) run from inside a
+    # mutation run would otherwise inherit the marker and count a suite short. `mutation_env` adds it back.
+    env.pop(MUTATION_RUN_ENV, None)
     env["HOME"] = str(d / CHILD_HOME)
     env["USERPROFILE"] = env["HOME"]   # the same concept on Windows
     # ⛔ NO BYTECODE CACHE, AND THIS ONE LINE IS A CORRECTNESS FIX, NOT A TIDINESS ONE.
@@ -182,6 +246,210 @@ def child_env(d: pathlib.Path) -> dict[str, str]:
     # milliseconds against suites measured in seconds.
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
+
+
+# Backlog #407: says THIS is a mutation run, so a suite may leave out the cases that only wait on a REAL deadline
+# (`compaction-state.py`'s 11 s kill) — CI's ordinary check still runs them. `fixture_git.PROCESS_PASSED` keeps it.
+MUTATION_RUN_ENV = "PLAN_CODE_MUTATION_RUN"
+
+
+def mutation_env(d: pathlib.Path, seed: "int | None" = None) -> dict[str, str]:
+    """`child_env` plus the mutation-run marker — for the harness's OWN suite runs only (`run_suite_parts`).
+
+    ⛔ NOT folded into `child_env`: that is BORROWED (`check-selftest-counts.audit` counts every suite under it), and
+    measured, a marker there made the count check run `compaction-state` short — 100 cases of a declared 102.
+
+    ⟳ backlog #506: `seed` is the child's `PYTHONHASHSEED` for a seed-varied run (`--seeds`). None leaves the
+    inherited value alone, so an unseeded run is exactly the run it always was.
+    """
+    env = {**child_env(d), MUTATION_RUN_ENV: "1"}
+    if seed is not None:
+        env["PYTHONHASHSEED"] = str(seed)
+    return env
+
+
+# ── backlog #506, THE CLASS CHECK: a kill that holds under one hash seed and not another ──────────
+# MEASURED 2026-11-05: dropping `sorted()` in `check-review-decision.py` survived under PYTHONHASHSEED
+# 266/312/342/449 of 0-599 (about 1 in 120), so on every other seed it read KILLED and once in ~120 runs
+# it reddened an unrelated pull request's sweep. `--seeds A,B` runs every suite — control, mutant and
+# re-control — under each seed, and `seed_outcome` classifies: killed under some seeds and not others is
+# NONDETERMINISTIC, a distinct FAILING outcome, never "killed"; a seed that cannot run is a cannot-run.
+# ⛔ WHERE IT RUNS: the daily SCHEDULED full sweep only (`ci.yml`), not every pull request — doubling a
+# PR's ~20-minute sweep and its share of the account's 20 concurrent jobs was judged not worth it.
+SEED_MAX = 4294967295          # PYTHONHASHSEED's own range is 0..2**32-1
+
+
+def parse_seeds(spec: str) -> "tuple[tuple[int, ...] | None, str | None]":
+    """`"0,266"` -> `((0, 266), None)`, or `(None, why)`. PURE.
+
+    At least TWO distinct seeds: one seed is a pin, and a pin cannot show a kill that depends on the seed.
+    """
+    seeds = []
+    for p in (x.strip() for x in (spec or "").split(",")):
+        if not p.isdigit() or int(p) > SEED_MAX:
+            return None, (f"CANNOT RUN — --seeds {spec!r}: {p!r} is not a PYTHONHASHSEED (an integer "
+                          f"0..{SEED_MAX}). NOTHING WAS MEASURED.")
+        seeds.append(int(p))
+    if len(set(seeds)) != len(seeds):
+        return None, (f"CANNOT RUN — --seeds {spec!r} repeats a seed, which runs the same order twice "
+                      f"and calls it two. NOTHING WAS MEASURED.")
+    if len(seeds) < 2:
+        return None, (f"CANNOT RUN — --seeds {spec!r} names one seed; it takes two or more, because one "
+                      f"seed cannot show a kill that depends on the seed. NOTHING WAS MEASURED.")
+    return tuple(seeds), None
+
+
+def seed_outcome(runs: list, wants=None) -> "tuple[int, str, str | None]":
+    """`[(seed, rc, out), ...]` -> `(rc, out, nondeterministic)` for `run_mutations`. PURE.
+
+    `wants` is the mutation's `expect` list — the cases its kill is ATTRIBUTED to.
+
+    ⛔ FAIL CLOSED, in this order:
+      * any seed rc 2 (did not complete) -> rc 2, a CANNOT RUN naming that seed — never a kill;
+      * killed (rc 1) under some seeds and not others -> NONDETERMINISTIC, naming both sides;
+      * ⟳ r1 Codex M2: killed under every seed, but the suite COMPLETED (printed a whole summary LINE,
+        `summary_total` — ⟳ r2 Codex M1, never the substring `passed`, which a case name can hold) under some and
+        not others -> rc 2, NOT CHECKED. A run that stopped early printed a
+        TRUNCATED red set, so its agreement with the others on case names is not evidence of anything;
+      * killed under every seed, but the NAMED red cases differ -> NONDETERMINISTIC: the attribution is luck.
+        ⟳ r1 Claude M1: the NAMED ones, not every red case. MEASURED on #506's own mutant: the expect case red under
+        all of seeds 0..599, an incidental pair under 596 of them — comparing whole sets made that deterministic,
+        attributed kill a false NONDETERMINISTIC red about 1 nightly in 150. With no `expect`, the whole red set
+        is compared, the stricter rule, because then nothing narrower is claimed;
+      * otherwise every seed agrees, and the first seed's run stands for all of them.
+    """
+    for seed, rc, out in runs:
+        if rc == 2:
+            return 2, f"[under PYTHONHASHSEED={seed}] {out}", None
+    killed = [seed for seed, rc, _ in runs if rc == 1]
+    spared = [seed for seed, rc, _ in runs if rc != 1]
+    first_rc, first_out = runs[0][1], runs[0][2]
+    if killed and spared:
+        return first_rc, first_out, (
+            "killed under " + ", ".join(f"PYTHONHASHSEED={x}" for x in killed)
+            + " but survived under " + ", ".join(f"PYTHONHASHSEED={x}" for x in spared))
+    if killed:
+        done = {seed: summary_total(out) is not None for seed, _, out in runs}
+        if len(set(done.values())) > 1:
+            stopped = [x for x, ok in done.items() if not ok]
+            return 2, (f"[under PYTHONHASHSEED={stopped[0]}] CANNOT RUN — the suite did not complete under "
+                       + ", ".join(f"PYTHONHASHSEED={x}" for x in stopped) + " (no summary line: it crashed "
+                       "or stopped early) but completed under "
+                       + ", ".join(f"PYTHONHASHSEED={x}" for x, ok in done.items() if ok)
+                       + ", so its red cases there are a truncated list. NOT CHECKED."), None
+        named = [wants] if isinstance(wants, str) else list(wants or [])
+        reds = {seed: sorted(f for f in parse_fail_names(out) if not named or f in named) for seed, _, out in runs}
+        if len({tuple(v) for v in reds.values()}) > 1:
+            return first_rc, first_out, (
+                "killed under every seed, but by DIFFERENT " + ("NAMED " if named else "") + "cases: "
+                + "; ".join(f"PYTHONHASHSEED={x}: {v}" for x, v in reds.items()))
+    return first_rc, first_out, None
+
+
+def seed_trees(d: pathlib.Path, seeds, cleanup: contextlib.ExitStack) -> dict:
+    """`{seed: tree}` — ONE tree per seed for a WHOLE run: the first seed's is `d`, every later seed's a copy of `d`.
+
+    ⛔ r1 Codex M1, MEASURED: every seed used to run in the one tree `d`, so a suite that leaves files behind (a
+    result cache, a log it reads back) let a LATER seed replay an EARLIER seed's red — a kill under seed 3 only
+    read as killed under 3 and 7, `1 killed, 1 attributed, 0 survivor(s)`. So each seed gets a tree of its own.
+    ⟳ r1 fold, COST, MEASURED: the fold copied the tree for EVERY mutant and EVERY control, which took a 30-mutant
+    slice from 16 s to 201 s with two seeds (Mac laptop) — on the nightly shards, past their 60-minute timeout.
+    So the copies are taken ONCE, before the first control, and `cleanup` deletes them when the run ends.
+    Callers apply and revert each mutation in EVERY tree (`seed_apply`, `seed_revert`), so a seed's tree differs
+    from `d` only by what that seed's own runs left behind.
+    ⚠ BOUND: the seeds are independent of EACH OTHER. Within one seed's tree, a later mutant still sees what an
+    earlier mutant's run left there — the unseeded harness's own, pre-existing, exposure, not introduced here.
+    A tree that cannot be copied maps to its CANNOT RUN reason (a str): every run under that seed is NOT CHECKED.
+    """
+    trees: dict = {}
+    for seed in seeds[1:]:
+        c = pathlib.Path(tempfile.mkdtemp(prefix=f"seed-{seed}-"))
+        cleanup.callback(shutil.rmtree, c, ignore_errors=True)
+        try:
+            shutil.copytree(d, c / "t", symlinks=True, ignore=shutil.ignore_patterns("__pycache__"))
+            trees[seed] = c / "t"
+        except (OSError, shutil.Error) as e:
+            trees[seed] = (f"CANNOT RUN — the tree for PYTHONHASHSEED={seed} could not be copied "
+                           f"({type(e).__name__}: {e}), so that seed would have run in a tree another "
+                           f"seed had already used. NOT CHECKED.")
+    return {seeds[0]: d, **trees}
+
+
+def seed_apply(trees: dict, d: pathlib.Path, fname: str, text: str) -> dict:
+    """Write `text` to `fname` in every seed's tree except `d` (the caller writes `d`'s); return the trees to run in.
+
+    A tree it cannot write maps to a CANNOT RUN reason, so that seed is NOT CHECKED for this mutant — never a run
+    of the UNMUTATED file, which would read as a survivor under that seed.
+    """
+    out = dict(trees)
+    for seed, t in trees.items():
+        if isinstance(t, str) or t == d:
+            continue
+        try:
+            (t / fname).write_text(text)
+        except OSError as e:
+            out[seed] = (f"CANNOT RUN — the mutant of {fname} could not be written to the tree for "
+                         f"PYTHONHASHSEED={seed} ({type(e).__name__}: {e}), so that seed would have run the "
+                         f"UNMUTATED file. NOT CHECKED.")
+    return out
+
+
+def seed_revert(trees: dict, d: pathlib.Path, fname: str, text: str) -> "str | None":
+    """Restore `fname` to `text` in every seed's tree except `d`, READING EACH BACK. None, or why the run must STOP.
+
+    ⛔ An unrestored tree carries a mutant into every LATER run under its seed — the next mutant's, and the
+    after-control — so like the main tree's after-control it stops the run rather than let them be read.
+    """
+    for seed, t in trees.items():
+        if isinstance(t, str) or t == d:
+            continue
+        try:
+            (t / fname).write_text(text)
+            back = (t / fname).read_text()
+        except OSError as e:
+            back = None
+            why = f"{type(e).__name__}: {e}"
+        else:
+            why = "it reads back different"
+        if back != text:
+            return (f"CANNOT RUN — {fname} could not be restored in the tree for PYTHONHASHSEED={seed} after a "
+                    f"mutant ({why}), so every later run under that seed would test a mutant. The run STOPS "
+                    f"here; treat it as NOT CHECKED.")
+    return None
+
+
+def seed_runs(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None,
+              limit: "float | None" = None) -> list:
+    """`[(seed, rc, stdout, stderr), ...]`: `name`'s suite under each seed, each in ITS OWN tree (`seed_trees`).
+
+    `trees` are the run's trees; without them this call makes its own, used once and deleted.
+    Any seed whose tree is a CANNOT RUN reason (not copied, or not written) is rc 2 for that seed, and nothing
+    runs — never a run in a tree another seed used.
+    """
+    if trees is None:
+        with contextlib.ExitStack() as cleanup:
+            return seed_runs(d, name, seeds, seed_trees(d, seeds, cleanup), limit=limit)
+    cannot = [(seed, 2, "", trees[seed]) for seed in seeds if isinstance(trees[seed], str)]
+    if cannot:
+        return cannot
+    return [(seed, *run_suite_parts(trees[seed], name, seed, limit=limit)) for seed in seeds]
+
+
+def control_parts(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None) -> tuple[int, str, str]:
+    """A CONTROL run under EVERY seed (backlog #506): the first one that is not green, else the last green one.
+
+    Always under the flat `SUITE_TIMEOUT` — the re-control too (r1 Codex F3, see the constants' block).
+
+    ⛔ THIS IS WHAT STOPS A RED CONTROL FROM FORGING A KILL. A suite red under seed B WITHOUT any mutation
+    reddens every mutant under B, so a mutant killed only by luck under seed A would read killed under both.
+    """
+    if not seeds:
+        return run_suite_parts(d, name)
+    rc, so, se = 0, "", ""
+    for seed, rc, so, se in seed_runs(d, name, seeds, trees):
+        if not control_is_green(rc, merged_output(so, se)):
+            return rc, so, f"[under PYTHONHASHSEED={seed}] {se}"
+    return rc, so, se
 
 
 # What the harness stages into the mutation tree.
@@ -253,7 +521,397 @@ HARNESS_TREE = (
     # ("a scripts-only tree gave each a red control") happening for a fifth subject.
     # ⚠ `.agents/skills`, not `.agents`: only the skills are a subject here.
     ".agents/skills",
+    # ⟳ 2026-10-29, backlog #393 (PR #443 r1): `check-plan-leak.py`'s suite copies the SHIPPED
+    # `.githooks/pre-push` into bare-remote worlds and drives real `git push` through it. Without this
+    # entry its control raises FileNotFoundError on that copy — measured on the first sweep — and every
+    # mutation is NOT MEASURED. One file.
+    ".githooks",
 )
+
+# ── WHICH MANIFESTS A PULL REQUEST RUNS (backlog #330, approved by the owner 2026-11-02) ───────
+# ⛔ THIS REPLACES A BINARY SKIP, AND THE SHAPE IS THE FIX. backlog #173's `sweep_needed` answered
+# one all-or-nothing question, so every error mode was TOTAL: a diff that failed skipped the whole
+# gate (r4 F1), a staged path it did not recognise skipped the whole gate (r4 finding 2,
+# `.agents/skills/shared/handoff-path.md`: a staged suite went 25/25 -> 24/25 while the skip hid
+# it), and `docs` was excluded on purpose although a docs CONTENT change was MEASURED to flip a
+# suite (r5: `check-anon-exposure` 74/74 -> exit 1). A per-manifest selector has no total failure
+# mode: whatever it cannot place selects MORE — up to the whole manifest — never fewer.
+#
+# THE RULES, in order, for each changed path (`select_manifests` is the only implementation):
+#   1. not a pull request (a master push, the schedule) ............ the WHOLE manifest
+#   2. the changed-file list is undetermined ......................... the WHOLE manifest
+#   3. a harness file (`harness_files`: this script, the modules it
+#      imports, the workflow that runs it) ........................... the WHOLE manifest
+#      ⟳ backlog #533: the PINS FILE (`PINS_FILE`) is not a harness file. It is data the harness
+#      reads, so a pin bump goes through rules 5-8 like any other path under `scripts/`
+#   4. `package.json` / `package-lock.json` (`DEPENDENCY_MANIFESTS`) — they change the staged
+#      `node_modules/typescript` without changing any staged path (r1 C3) .. the WHOLE manifest
+#   5. outside every `HARNESS_TREE` root — it is never staged, so no suite can read it: nothing
+#   6. a target, or `scripts/mutations/<stem>.json` .................. that manifest
+#      (a manifest whose target does not exist ....................... the WHOLE manifest)
+#   7. every target whose source NAMES the path (full path, file name, import name, or the
+#      QUOTED stem a hyphenated sibling is loaded by — r1 X1), every target that IMPORTS one of
+#      those modules, transitively (r1 C5), and every target QUOTING a directory between the path
+#      and its staged root — the root itself included, unless it is in `IMPORT_ROOTS` (r1 C2), where
+#      only a target that WALKS the root (`_walks_dir`, a structural test) is selected (r2 X2)
+#      (a path more than half the targets name is SHARED .............. the WHOLE manifest)
+#   8. none of the above: the targets quoting its staged ROOT; if none .. the WHOLE manifest
+#
+# ⚠ WHAT THIS DOES NOT SEE, AND WHY THE FULL SWEEP STAYS: "names" is a TEXT test. A suite that
+# reads a file without naming it or any directory above it (a bare walk of the repo root), or
+# that walks `scripts/` through a directory only its CALLER names (a lister applied to a bare
+# parameter, which `_walks_dir` cannot follow), is not selected by it — and backlog #109's orphaned anchor binds by text in ANOTHER manifest, which
+# only executing that manifest sees. So the full sweep still runs on every master push and on a
+# schedule, and a red one opens an issue (`ci.yml`, `mutation-sweep-complete`). The owner accepted
+# that such a defect is found after merge. What a scoped run does NOT give up: every whole-
+# manifest check (`pin_drift`, `anchor_problems`, the home-escape scan) still runs in every shard
+# over EVERY manifest, because they are file reads, not suites.
+# ⚠ The harness's own source is never a NAMER: it names many targets, so counting it would select
+# `check-plan-code`'s own entries for every change in the repository. ⟳ backlog #533: the pins file,
+# which lists EVERY target, is not a namer either — it is not a `scripts/*.py` module and not a
+# target. A change TO it is an ordinary path under `scripts/` (rules 7 and 8), never the harness:
+# a pin bump no longer sweeps the WHOLE manifest. A wrong pin is still refused in every shard,
+# because `pin_drift` is one of the whole-manifest checks named above.
+SWEEP_WORKFLOW = ".github/workflows/ci.yml"
+SWEEP_HARNESS = "scripts/check-plan-code.py"
+SHARED_FULL_FRACTION = 0.5
+# r1 C3: `node_modules/typescript` is staged but untracked, so no diff ever names a path under it;
+# it changes when one of these does. Exact repository paths, never a file name anywhere.
+DEPENDENCY_MANIFESTS = frozenset({"package.json", "package-lock.json"})
+# r1 C2: the staged root whose files a target reaches by IMPORT NAME (rule 7 and its closure),
+# not by QUOTING it. Measured 2026-11-04: 54 of 87 targets quote `scripts`, nearly all to build the
+# path of one sibling, so treating every quoter as a walker would select ~54 for every script change.
+# ⟳ PR #496 r2 X2: a target that really WALKS it (`check-canonical-source`, `check-ratchet-contract`)
+# reads every file under it, so `_walks_dir` — a STRUCTURAL test, not a quote — selects it.
+IMPORT_ROOTS = frozenset({"scripts"})
+# The calls that LIST a directory rather than open one file in it. `ls-files` is `git ls-files`.
+WALK_CALLS = frozenset({"glob", "rglob", "iglob", "iterdir", "walk", "listdir", "scandir"})
+MANIFEST_PATH = re.compile(r"scripts/mutations/([^/]+)\.json")
+
+
+def harness_files(own_src: str, script_stems) -> frozenset:
+    """PURE. The files whose change makes every verdict suspect: this script, the sibling modules
+    it imports at top level (derived from `own_src`, never re-typed — today `coverage_verdict`),
+    and the workflow that runs it."""
+    mods = set()
+    for node in ast.parse(own_src).body:
+        if isinstance(node, ast.Import):
+            mods |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            mods.add(node.module.split(".")[0])
+    return frozenset({SWEEP_HARNESS, SWEEP_WORKFLOW}
+                     | {f"scripts/{m}.py" for m in mods if m in script_stems})
+
+
+def _staged_root(path: str, roots) -> "str | None":
+    """The `HARNESS_TREE` root `path` is under — by PREFIX, never substring — or None."""
+    under = [r for r in roots if path.startswith(r + "/")]
+    return max(under, key=len) if under else None
+
+
+def _quotes_dir(src: str, d: str) -> bool:
+    """Does `src` quote directory `d` — as a path (`'docs/reviews'`, `"docs/reviews/x"`) or as the
+    component a `ROOT / 'docs' / 'reviews'` join would spell?"""
+    return any(re.search(r"""["']""" + re.escape(form) + r"""["'/]""", src)
+               for form in {d, d.rsplit("/", 1)[-1]})
+
+
+@functools.lru_cache(maxsize=None)   # one parse per source, however many paths ask
+def _walks_dir(src: str, d: str) -> bool:
+    """PURE. Does `src` WALK directory `d` (r2 X2)? True when a `WALK_CALLS` lister (or a call
+    carrying `ls-files`) is applied to an expression that CARRIES `d`: a string naming it as a
+    whole directory (`'scripts'`, `'scripts/'`, a glob under it like `'scripts/*.py'`), or a name
+    assigned from one — through a join, a loop over a tuple, a comprehension, a `with` — in the same
+    function or at module level (`for sub in ('docs', 'scripts'): (root / sub).rglob(...)`). A path
+    to ONE file (`'scripts/x.py'`) is not a walk. ⚠ Toward MORE: a walk of a directory BELOW `d`
+    (`root / 'scripts' / 'mutations'`) counts, and unparseable source is a walker. ⚠ NOT SEEN: a
+    lister applied to a bare PARAMETER, whose directory only a caller knows — the full sweep's."""
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return True
+    depth = len(d.split("/"))
+    def names_d(v) -> bool:
+        return isinstance(v, str) and (v.rstrip("/") == d or (
+            v.startswith(d + "/") and any(c in v.split("/")[depth] for c in "*?[")))
+    # backlog #231 COST (2026-11-07): this function was the largest single cost of `--self-test`
+    # (MEASURED: 6.1 s of CPU after the parse, over the real `scripts/`), because every function
+    # scope was re-walked and tainted whether or not it held a lister call, and `carries` re-walked
+    # every value on every fixpoint pass. Now ONE walk records each node's parent, the lister calls
+    # and the assignment-like FLOWS; each flow and each lister is filed under the scopes that enclose
+    # it, and only a scope holding a lister is tainted — one without cannot return True. `facts`
+    # and `parent` are keyed by `id` of nodes `tree` keeps alive until this call returns, so neither
+    # can outlive or cross a parse. The answer is unchanged: a scope's members are what `ast.walk`
+    # of it reached before (every def above a node, plus the module's top level when the node's
+    # top-level statement is not a def or class — a class body outside a def is in NO scope), and
+    # the taint is the least fixpoint of a monotone rule, so evaluation order cannot move it.
+    facts: dict = {}
+    def fact(expr) -> tuple:
+        got = facts.get(id(expr))
+        if got is None:
+            subs = list(ast.walk(expr))
+            got = facts[id(expr)] = (
+                any(isinstance(n, ast.Constant) and names_d(n.value) for n in subs),
+                frozenset(n.id for n in subs if isinstance(n, ast.Name)))
+        return got
+    def carries(expr, tainted) -> bool:
+        const, names = fact(expr)
+        return const or not names.isdisjoint(tainted)
+    def taint(flows, seed) -> set:
+        out, grew = set(seed), True
+        while grew:
+            grew = False
+            for names, val in flows:
+                if not names <= out and carries(val, out):
+                    out |= names
+                    grew = True
+        return out
+    defs = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+    TOP = None                        # the module's top level, as a scope key
+    parent: dict = {}
+    every, i = [tree], 0
+    while i < len(every):             # `ast.walk`'s traversal, recording each child's parent
+        for ch in ast.iter_child_nodes(every[i]):
+            parent[id(ch)] = every[i]
+            every.append(ch)
+        i += 1
+    def scopes_of(n) -> list:
+        """The keys of the scopes whose `ast.walk` reaches `n`."""
+        out, stmt, up = [], n, parent.get(id(n))
+        if up is None:
+            return out                # `tree` itself
+        while up is not tree:
+            if isinstance(up, defs):
+                out.append(id(up))
+            stmt, up = up, parent[id(up)]
+        if not isinstance(stmt, defs + (ast.ClassDef,)):
+            out.append(TOP)
+        return out
+    # A call carries `ls-files` only if the tree does, so its arguments are walked only then.
+    any_ls = any(isinstance(m, ast.Constant) and m.value == "ls-files" for m in every)
+    flows: dict = {}                  # scope key -> [(names a flow assigns, the value it reads)]
+    listers: dict = {}                # scope key -> [the expressions a lister call is applied to]
+    for n in every:
+        if isinstance(n, ast.Assign):
+            pairs = [(t, n.value) for t in n.targets]
+        elif isinstance(n, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and n.value is not None:
+            pairs = [(n.target, n.value)]
+        elif isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension)):
+            pairs = [(n.target, n.iter)]
+        elif isinstance(n, ast.withitem) and n.optional_vars is not None:
+            pairs = [(n.optional_vars, n.context_expr)]
+        elif isinstance(n, ast.Call):
+            args = list(n.args) + [k.value for k in n.keywords]
+            name = n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, "id", None)
+            ls = any_ls and any(isinstance(m, ast.Constant) and m.value == "ls-files"
+                                for a in args for m in ast.walk(a))
+            if not (name in WALK_CALLS or ls):
+                continue
+            subject = args + ([n.func.value] if isinstance(n.func, ast.Attribute) else [])
+            for key in scopes_of(n):
+                listers.setdefault(key, []).append(subject)
+            continue
+        else:
+            continue
+        for key in scopes_of(n):
+            flows.setdefault(key, []).extend((fact(tg)[1], val) for tg, val in pairs)
+    if not listers:
+        return False
+    module = taint(flows.get(TOP, []), set())
+    for key, subjects in listers.items():
+        tainted = taint(flows.get(key, []), module)
+        if any(carries(x, tainted) for subject in subjects for x in subject):
+            return True
+    return False
+
+
+def _names_of(path: str) -> set:
+    """The spellings a reader of `path` would carry: the path, its file name, and — for a
+    `scripts/` module — its import name, or its QUOTED stem when it is hyphenated (r1 X1: this
+    repository loads `gen-work-lines.py` as `_sibling("gen-work-lines")`, never by file name)."""
+    base = path.rsplit("/", 1)[-1]
+    out = {path, base}
+    if path.startswith("scripts/") and path.endswith(".py"):
+        out |= _import_spellings(base[:-3]) | ({base[:-3]} if base[:-3].isidentifier() else set())
+    return out
+
+
+def _import_spellings(stem: str) -> set:
+    """The spellings that IMPORT module `stem`: its stem quoted (`_sibling`, `import_module`, a
+    `_load` wrapper) and, for an identifier, `import stem` / `from stem import`. Prose that only
+    MENTIONS a module is not among them — the import graph is closed over these alone (r1 C5)."""
+    out = {f'"{stem}"', f"'{stem}'"}
+    out |= {f'"{stem}.py"', f"'{stem}.py'"}   # backlog #498: `_load("gen-dashboard.py", …)`
+    if stem.isidentifier():
+        out |= {f"import {stem}\n", f"import {stem} ", f"import {stem},", f", {stem}\n",
+                f"from {stem} import"}
+    return out
+
+
+def _importers(start: set, modules: dict) -> set:
+    """The modules that import any of `start`, directly or through one another (r1 C5:
+    `m4_base_db` reaches `check-live-schema` only through `m4_catalog`). PURE; a fixpoint."""
+    reach, todo = set(), list(start)
+    while todo:
+        ks = _import_spellings(todo.pop().rsplit("/", 1)[-1][:-3])
+        for m, src in modules.items():
+            if m not in reach and m not in start and any(k in src for k in ks):
+                reach.add(m)
+                todo.append(m)
+    return reach
+
+
+def select_manifests(event: str, changed: "list[str] | None", why: str, sources: dict,
+                     harness: frozenset, roots=HARNESS_TREE,
+                     modules: "dict | None" = None) -> "tuple[frozenset | None, list[str]]":
+    """PURE. The targets whose manifests a run executes — None means the WHOLE manifest — and the
+    log lines saying why. `sources` maps every manifest target to its text; `modules` adds the
+    importable modules no manifest targets, for the import closure. Rules: the block above.
+    """
+    if event != "pull_request":
+        return None, [f"full: the event is {event!r}, not a pull request — a master push and "
+                      f"the schedule run the WHOLE manifest"]
+    if changed is None:
+        return None, [f"full: {why}"]
+    readers = {t: s for t, s in sources.items() if t not in harness}
+    mods = {**{m: s for m, s in (modules or {}).items() if m not in harness}, **readers}
+    picked: dict = {}
+    outside = 0
+    for path in (p.strip() for p in changed):
+        if not path:
+            continue
+        if path in harness:
+            return None, [f"full: {path} is the sweep harness itself"]
+        if path in DEPENDENCY_MANIFESTS:
+            return None, [f"full: {path} changes what is installed under a staged root "
+                          f"(`node_modules/typescript`) without changing any staged path"]
+        root = _staged_root(path, roots)
+        if root is None:
+            outside += 1
+            continue
+        hit = set()
+        if path in sources:
+            hit.add(path)
+        own = MANIFEST_PATH.fullmatch(path)
+        if own:
+            target = f"scripts/{own.group(1)}.py"
+            if target not in sources:
+                return None, [f"full: {path} is a manifest with no target this tree loads"]
+            hit.add(target)
+        names = _names_of(path)
+        namers = {m for m, s in mods.items() if any(k in s for k in names)}
+        start = namers | ({path} if path in mods else set())
+        named = {t for t in namers | _importers({m for m in start if m.endswith(".py")}, mods)
+                 if t in readers}
+        if len(named) > len(readers) * SHARED_FULL_FRACTION:
+            return None, [f"full: {path} is named by {len(named)} of {len(readers)} targets — "
+                          f"a shared module"]
+        parts = path.split("/")
+        # r1 C2: a reader that walks the staged ROOT itself (`ROOT / 'docs'`, then `rglob`) reads
+        # every file under it, so it is selected by any change there — not only when nothing else
+        # names the path. Except a root in `IMPORT_ROOTS`, reached by import name instead.
+        lo = len(root.split("/")) + (root in IMPORT_ROOTS)
+        between = ["/".join(parts[:i]) for i in range(lo, len(parts))]
+        hit |= named | {t for t, s in readers.items() if any(_quotes_dir(s, d) for d in between)}
+        # r2 X2: ...but a target that WALKS an import root is selected by any change under it.
+        if root in IMPORT_ROOTS:
+            hit |= {t for t, s in readers.items() if _walks_dir(s, root)}
+        if not hit:
+            hit = {t for t, s in readers.items() if _quotes_dir(s, root)}
+        if not hit:
+            return None, [f"full: {path} is staged, and no target names it or quotes a directory "
+                          f"above it — an unrecognised path selects MORE, never fewer"]
+        for t in hit:
+            picked.setdefault(t, []).append(path)
+    head = (f"diff-scoped: {len(picked)} of {len(sources)} manifest(s) selected from the changed "
+            f"path(s), {outside} outside the staged tree")
+    return frozenset(picked), [head] + [f"  {t} <- {', '.join(picked[t][:5])}"
+                                        + (" …" if len(picked[t]) > 5 else "")
+                                        for t in sorted(picked)]
+
+
+def changed_or_why(raw: "str | None", label: str) -> "tuple[list[str] | None, str]":
+    """PURE. The changed-file list read from `label`, or None and WHY it is undetermined — two
+    causes, reported differently (r6 CLAUDE M1): the list could not be read (the diff failed, so
+    it was never written), or it was read and cannot be trusted (`changed_from_nul`)."""
+    if raw is None:
+        return None, (f"the changed-file list {label} could not be read — the diff failed or "
+                      f"was never written, so the changed set is UNDETERMINED")
+    paths = changed_from_nul(raw)
+    if paths is None:
+        return None, (f"the changed-file list {label} is not NUL-delimited or holds a C-quoted "
+                      f"path, so it cannot be trusted")
+    return paths, ""
+
+
+def sweep_sources(root: pathlib.Path) -> "tuple[dict, frozenset]":
+    """IO. Every manifest target's text under `root` (unreadable -> empty, which can only make a
+    selection go to its fallback or to FULL), and the harness files."""
+    sources = {}
+    for man in sorted((root / MANIFEST_DIR).glob("*.json")):
+        target = f"scripts/{man.stem}.py"
+        try:
+            sources[target] = (root / target).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            sources[target] = ""
+    stems = {p.stem for p in (root / "scripts").glob("*.py")}
+    # The harness is the one RUNNING — `root` is only the tree it measures (a fixture has none).
+    own = pathlib.Path(__file__).read_text(encoding="utf-8")
+    return sources, harness_files(own, stems)
+
+
+def module_sources(root: pathlib.Path) -> dict:
+    """IO. Every `scripts/*.py` module's text under `root` — the import graph a selection is closed
+    over (r1 C5), including the modules no manifest targets. Unreadable -> empty."""
+    out = {}
+    for p in sorted((root / "scripts").glob("*.py")):
+        try:
+            out[f"scripts/{p.name}"] = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            out[f"scripts/{p.name}"] = ""
+    return out
+
+
+def changed_from_nul(raw: str) -> "list[str] | None":
+    """PURE. Parse `git diff --name-only -z` output. **None means the paths could not be trusted.**
+
+    ⛔ r6 CODEX finding 2 — A VERDICT DEFECT, NOT A REPORTING ONE, and it refutes three rounds of my
+    own argument that `sweep-skip`'s logic was undented. `git diff --name-only` WITHOUT `-z`
+    C-QUOTES any path that is not plain ASCII. Measured in a real throwaway repository:
+
+        $ git diff --name-only HEAD~1 HEAD      ->  "scripts/\303\251.py"
+        $ git diff --name-only -z HEAD~1 HEAD   ->  scripts/é.py
+
+    The quoted form does not start with `scripts/` — it starts with a double quote — so
+    the (since retired, backlog #330) `sweep_needed(['"scripts/\\303\\251.py"'])` returned **False**
+    and the entire mutation gate was skipped while a `scripts/` file had genuinely changed.
+
+    ⛔ SO THE FIX IS TWO-SIDED, and the second side is the one that matters. `ci.yml` now passes
+    `-z`, AND this parser REFUSES input that is not NUL-delimited instead of trusting it. A `-z`
+    dropped in a later edit must therefore produce `None` — which `select_manifests` answers with
+    the WHOLE manifest — rather than silently resurrecting this defect. *"Cannot run is a failure, never a
+    pass"* applies to parsing the input exactly as it applies to the measurement.
+
+    ⚠ ENCODING, stated because r6 CLAUDE L1 found the bound missing: the subject is BYTES and this
+    takes a `str`, so a filename that is not valid UTF-8 raises in the caller's read before
+    reaching here. That FAILS THE STEP rather than skipping the gate — loud, not silent, which is
+    the right direction — but it is a crash and not a diagnosed refusal, and no case covers it
+    because the harness cannot create such a name portably. Reading bytes and decoding with
+    `surrogateescape` would turn it into a refusal; not done, and recorded rather than implied.
+
+    ⚠ WHAT IS NOT CLAIMED: that every mangling is detectable. This catches the newline-delimited and
+    C-quoted shapes, which are the ones `git` actually produces. A path containing a literal newline
+    under `-z` is handled correctly (NUL is the only separator); one crafted to contain a NUL is not
+    representable in a POSIX filename at all.
+    """
+    if not raw or not raw.strip():
+        return []
+    if "\0" not in raw:
+        return None          # `-z` was not used: paths may be C-quoted and cannot be trusted
+    parts = [p for p in raw.split("\0") if p.strip()]
+    if any(p.startswith('"') for p in parts):
+        return None          # C-quoted survived anyway — refuse rather than mis-prefix
+    return parts
 
 
 def stage_tree(root: pathlib.Path, dest: pathlib.Path) -> list[str]:
@@ -375,6 +1033,36 @@ def home_escapes(src: str) -> list[str]:
 # moved with them, to scripts/mutations/coverage_verdict.json.
 
 
+# ⛔ THE ONE DEFINITION OF A SUITE'S SUMMARY LINE — `check-selftest-counts.py` borrows `summary_total` rather than
+# keeping its own (it used to: the RATIO plus the word `passed` anywhere on a line).
+# ⟳ r2 Codex MAJOR (backlog #506): completion was `"passed" in out`, a SUBSTRING of everything the child printed,
+# so a case named `value passed validation` read as a summary and a suite that crashed under one seed was credited
+# as a clean kill. Only a WHOLE line in a shape the suites actually print counts. ENUMERATED from the scripts'
+# own `print` calls (2026-11-06, every `print` under scripts/ naming `passed`) and CHECKED by running all 88 suites
+# that a manifest mutates or check-selftest-counts pins: `N/M passed`, `N/M cases passed`, `N/M self-test cases
+# passed`, `N/M cannot-run cases passed`, `N of M self-test cases passed`, and check-storage-independence's
+# `N cases, N passed, N failed` (whose total is its FIRST number) — each optionally led by `self-test: `.
+# A `[FAIL] …` line, or a label quoting a summary inside backticks, is never one.
+SUMMARY_LINE = re.compile(
+    r"\s*(?:self-test:\s*)?(?:"
+    r"(\d+)\s*(?:/|\s+of\s+)\s*(\d+)"
+    r"(?:\s+(?:self-test\s+cases|cannot-run\s+cases|cases))?\s+passed"
+    r"|(\d+)\s+cases,\s+\d+\s+passed,\s+\d+\s+failed)\s*")
+
+
+def summary_total(out: str) -> "int | None":
+    """The denominator of the LAST whole-line summary in `out`, or None if the suite printed none. PURE.
+
+    LAST, because a suite's own case labels may quote an example summary earlier in its output.
+    """
+    total = None
+    for line in out.split("\n"):
+        m = SUMMARY_LINE.fullmatch(line)
+        if m:
+            total = int(m.group(2) or m.group(3))
+    return total
+
+
 def control_is_green(rc: int, out: str) -> bool:
     """Did this control run actually PROVE the suite works?
 
@@ -390,10 +1078,11 @@ def control_is_green(rc: int, out: str) -> bool:
     the harm was a mislabelled flag rather than a false green — but it is the same clause,
     named the same thing, meaning two different things in the two producers of one predicate.
     """
-    return rc == 0 and "passed" in out
+    return rc == 0 and summary_total(out) is not None
 
 
-def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None) -> str:
+def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None, only=None,
+                      scope=None) -> str:
     """The ONE sentence that says a run produced no coverage verdict.
 
     ⟳ backlog #217: it now also names WHICH SLICE of the manifest produced no verdict, through
@@ -432,7 +1121,7 @@ def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None) -
     AttributeError on `.reason`, which is the point: the sentence is only ever true of one
     variant, and the type says so instead of a comment saying so.
     """
-    return f"NOT MEASURED — {nm.reason} — measured over {shard_label(shard)}"
+    return f"NOT MEASURED — {nm.reason} — measured over {shard_label(shard, only, scope)}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -554,1004 +1243,181 @@ def merged_output(stdout: str, stderr: str) -> str:
     return (stderr + stdout).strip()
 
 
-def run_suite_parts(d: pathlib.Path, name: str) -> tuple[int, str, str]:
+def suite_limit(control_seconds: "float | None") -> float:
+    """PURE. The seconds one suite run may take (backlog #558): the flat `SUITE_TIMEOUT` when its
+    control has not been timed (`None` — a control run itself), else `SUITE_TIMEOUT_FACTOR` x the
+    control's PER-SUITE seconds, floored at `SUITE_TIMEOUT` and capped at `SUITE_TIMEOUT_CEILING`.
+    Always FINITE, so a real hang still times out. The constants' block says why these values."""
+    if control_seconds is None:
+        return SUITE_TIMEOUT
+    return min(SUITE_TIMEOUT_CEILING, max(SUITE_TIMEOUT, SUITE_TIMEOUT_FACTOR * control_seconds))
+
+
+def run_suite_parts(d: pathlib.Path, name: str, seed: "int | None" = None,
+                    limit: "float | None" = None) -> tuple[int, str, str]:
     """`(rc, stdout, stderr)` — the RAW halves, for the one caller that must budget them.
 
-    The only producer. `run_suite` is the merged view every other consumer wants.
+    The only producer. `run_suite` is the merged view every other consumer wants. `limit` is
+    `suite_limit`'s answer for this target; None is the flat `SUITE_TIMEOUT`. Under a run's budget
+    (`_DEADLINE`) the child gets the SMALLER of its limit and the budget left, and none at all once it is
+    spent — so no suite run can carry the shard past its job's `timeout-minutes` (r1 F1).
     """
+    limit = SUITE_TIMEOUT if limit is None else limit
+    left = None if _DEADLINE is None else _DEADLINE - time.monotonic()
+    if left is not None and left <= 0:
+        return 2, "", (f"CANNOT RUN — {name} --self-test was NOT STARTED: this run's time budget is "
+                       f"spent. NOT CHECKED.")
+    cap = limit if left is None or left >= limit else left
     # A hung suite is a CANNOT RUN, not a traceback. rc 2 is distinct from both the
     # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
     try:
         r = subprocess.run([sys.executable, name, "--self-test"], cwd=d,
-                           capture_output=True, text=True, timeout=SUITE_TIMEOUT,
-                           env=child_env(d))
+                           capture_output=True, text=True, timeout=cap,
+                           env=mutation_env(d, seed))
     except subprocess.TimeoutExpired:
+        if cap < limit:
+            return 2, "", (f"CANNOT RUN — {name} --self-test was STOPPED after {cap:.1f}s, when this "
+                           f"run's time budget ran out (its own limit was {limit:.1f}s). NOT CHECKED.")
         return 2, "", (f"CANNOT RUN — {name} --self-test did not finish in "
-                       f"{SUITE_TIMEOUT}s. NOT CHECKED.")
+                       f"{limit:.1f}s. NOT CHECKED.")
     return r.returncode, r.stdout, r.stderr
 
 
-def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
-    rc, out, err = run_suite_parts(d, name)
+def ci_deadline(env, arg_event: "str | None", wall: float,
+                mono: float) -> "tuple[float | None, str | None, str | None]":
+    """PURE. On CI: `(deadline, line, None)` — the `time.monotonic()` by which this run must stop and the TIME
+    BUDGET line that says why — or `(None, None, why)`. `wall`/`mono` are `time.time()`/`time.monotonic()` now.
+
+    ⛔ EVERY INPUT IS THE RUNNER'S OWN, AND A MISSING OR MALFORMED ONE IS A REASON, NEVER A DEFAULT.
+      * the LIMIT is `LIMIT_VAR`, the job's `timeout-minutes` as the runner evaluated it, aliased into the step's
+        env from the job's own node (architecture review 2026-11-08). Nothing here reads ci.yml or mirrors the
+        event expression, so a workflow other than ci.yml gives the limit of the job that actually ran. A value
+        that is not a whole number of minutes (an alias the runner did not expand, an expression it did not
+        evaluate, a float) is refused: a wrong assumption about the runner turns the shard red, never unbudgeted;
+      * the EVENT is `GITHUB_EVENT_NAME` (r2 F3). It no longer feeds the budget, but `--event` still chooses the
+        manifest SELECTION, so an `--event` that disagrees with the runner's is still refused;
+      * the CLOCK starts at `JOB_START_VAR`, the epoch the job's FIRST step writes (r2 F1), so checkout,
+        `npm ci` and everything else before the sweep are spent from the budget, not added after it.
+    """
+    event = env.get("GITHUB_EVENT_NAME", "")
+    if not event:
+        return None, None, "GITHUB_EVENT_NAME is not set, so this run's event is unknown"
+    if arg_event is not None and arg_event != event:
+        return None, None, f"--event {arg_event!r} is not this run's event (GITHUB_EVENT_NAME={event!r})"
+    minutes = env.get(LIMIT_VAR, "")
+    if not re.fullmatch(r"[1-9][0-9]{0,3}", minutes):
+        return None, None, (f"{LIMIT_VAR} is {minutes!r}, not a whole number of minutes, so the job's limit is "
+                            f"unknown (the sweep step's env must alias the job's `timeout-minutes: "
+                            f"&{LIMIT_ANCHOR}`, and the runner must expand and evaluate it)")
+    raw = env.get(JOB_START_VAR, "")
+    if not re.fullmatch(r"[0-9]{1,12}", raw):
+        return None, None, (f"{JOB_START_VAR} is {raw!r}, not the epoch the job's first step records, so "
+                            f"when the job's limit runs out is unknown")
+    if int(raw) > wall:
+        return None, None, f"{JOB_START_VAR}={raw} is later than now ({wall:.0f})"
+    limit = int(minutes) * 60
+    secs = limit - SWEEP_HEADROOM
+    left = int(raw) + secs - wall
+    return mono + left, (f"TIME BUDGET — {secs:.0f}s: the job's timeout-minutes ({LIMIT_VAR}={minutes}, event "
+                         f"{event!r}), less {SWEEP_HEADROOM}s of headroom, from the job's first step "
+                         f"({JOB_START_VAR}); {max(left, 0.0):.0f}s of it left as this run starts"), None
+
+
+def _step_items(body: list, steps_at: int) -> list:
+    """PURE. The line indexes in `body` where the step items under `body[steps_at]` (`    steps:`) begin."""
+    out = []
+    for i in range(steps_at + 1, len(body)):
+        line = body[i]
+        if line.startswith("      - "):
+            out.append(i)
+        elif line.strip() and not line.startswith("      ") and not line.lstrip().startswith("#"):
+            break
+    return out
+
+
+def sweep_limit_pin(ci_text: str) -> list:
+    """PURE. What in `ci_text` breaks the sweep job's budget contract: `[]` when nothing does.
+
+    A STATIC pin, read with line patterns over the one job, NOT a YAML parser (the parser it replaces is what
+    r1-r3 kept finding holes in). It is a guard on the REPO'S OWN ci.yml, run by the self-test, so it reds the PR
+    that reshapes the job; the run-time guarantee does not rest on it — the two values are one YAML node, and a
+    value the runner did not deliver is CANNOT RUN in `ci_deadline`. It checks:
+      * the job's own `timeout-minutes` carries `&LIMIT_ANCHOR`, defined once in the file's code;
+      * `*LIMIT_ANCHOR` appears once in the file, as `LIMIT_VAR: *LIMIT_ANCHOR`, in the step that runs `--mutate`;
+      * the job has ONE `timeout-minutes` in any spelling — a step's first key (`- timeout-minutes:`, R3-F1), a
+        later key, a flow mapping or a quoted key: a step-level limit kills the step before the budget runs out;
+      * the job's FIRST step writes `JOB_START_VAR`, and the file names it once.
+    The job is the lines after `  <SWEEP_JOB>:` up to the next line indented less than four spaces. A comment
+    is not read (nor counted file-wide). A shape these patterns do not know (a step list at another indent) is a problem, never a pass."""
+    lines = ci_text.lstrip("\ufeff").replace("\r\n", "\n").split("\n")
+    starts = [i for i, ln in enumerate(lines) if ln.rstrip() == f"  {SWEEP_JOB}:"]
+    if len(starts) != 1:
+        return [f"`  {SWEEP_JOB}:` appears {len(starts)} times, not once"]
+    end = next((i for i in range(starts[0] + 1, len(lines))
+                if lines[i].strip() and not lines[i].lstrip().startswith("#")
+                and len(lines[i]) - len(lines[i].lstrip(" ")) < 4), len(lines))
+    every = [re.sub(r"(?:^|\s)#.*", "", ln) for ln in lines]
+    whole = "\n".join(every)
+    body, code = lines[starts[0] + 1:end], every[starts[0] + 1:end]
+    problems = []
+    anchored = [ln for ln in code if re.fullmatch(rf"    timeout-minutes: &{LIMIT_ANCHOR} \S.*", ln)]
+    once = whole.count(f"&{LIMIT_ANCHOR}") == 1
+    if len(anchored) != 1 or not once:
+        problems.append(f"the job's own timeout-minutes does not carry `&{LIMIT_ANCHOR}` exactly once")
+    limits = sum(len(re.findall(r"(?:^|[\s{,])[\"']?timeout-minutes[\"']?\s*:", ln)) for ln in code)
+    if limits != 1:
+        problems.append(f"the job has {limits} timeout-minutes, not ONE, its own")
+    steps_at = next((i for i, ln in enumerate(code) if ln.rstrip() == "    steps:"), None)
+    items = [] if steps_at is None else _step_items(code, steps_at)
+    if len(items) < 2:
+        return problems + ["the job's steps are not a list of `      - ` items this pin can read"]
+    bounds = list(zip(items, items[1:] + [len(code)]))
+    alias = [i for i, ln in enumerate(code) if re.fullmatch(rf" +{LIMIT_VAR}: \*{LIMIT_ANCHOR}\s*", ln)]
+    in_step = [b for b in bounds if alias and b[0] < alias[0] < b[1]]
+    if (len(alias) != 1 or whole.count(f"*{LIMIT_ANCHOR}") != 1 or not in_step
+            or "check-plan-code.py --mutate" not in "\n".join(code[in_step[0][0]:in_step[0][1]])):
+        problems.append(f"the step that runs --mutate does not set `{LIMIT_VAR}: *{LIMIT_ANCHOR}`, once")
+    first = "\n".join(body[bounds[0][0]:bounds[0][1]])
+    if (f'echo "{JOB_START_VAR}=$(date +%s)" >> "$GITHUB_ENV"' not in first
+            or whole.count(f"{JOB_START_VAR}=") != 1):
+        problems.append(f"the job's FIRST step does not write {JOB_START_VAR}, named once in the file")
+    return problems
+
+
+def budget_spent() -> bool:
+    """True once this run's budget (`_DEADLINE`) has run out; never under no budget."""
+    return _DEADLINE is not None and time.monotonic() >= _DEADLINE
+
+
+def _set_deadline(deadline: "float | None") -> "float | None":
+    """Make `deadline` this run's budget; returns the one it replaces, for the caller to put back."""
+    global _DEADLINE
+    prev, _DEADLINE = _DEADLINE, deadline
+    return prev
+
+
+def budget_stop_line(unfinished: list, unreached: list) -> str:
+    """PURE. The LAST line of a run whose budget ran out (r1 F1): what did not finish, and what was never
+    started. Printed by the harness itself, so it reaches the log before the job is killed."""
+    return (f"{BUDGET_STOP}, so it STOPPED before its job's timeout-minutes could kill it. Did not finish "
+            f"({len(unfinished)}): {'; '.join(unfinished) or 'none'}. Not reached ({len(unreached)}): "
+            f"{'; '.join(unreached) or 'none'}. Treat every one of them as NOT CHECKED; each verdict above "
+            f"stands.")
+
+
+def run_suite(d: pathlib.Path, name: str, seed: "int | None" = None,
+              limit: "float | None" = None) -> tuple[int, str]:
+    rc, out, err = run_suite_parts(d, name, seed, limit=limit)
     return rc, merged_output(out, err)
 
 
 
 
-# How many mutations each delivered script is covered by. EXACT, not a floor: adding a
-# mutation should also be a visible act, and a floor drifts downward the moment somebody
-# adds one without saying so.
-#
-# ⚠ This lives in the RUNNER, deliberately, not in the manifest. A count stored beside the
-# entries it counts gets edited in the same breath as deleting one, which is no guard at all.
-EXPECTED_MUTATIONS = {
-    # ⟳ 2026-08-30, backlog #71: gen-dashboard 61 -> 49. TWELVE entries did not disappear, they
-    # MOVED to scripts/page_markup.py with the code they guard. The sum below is unchanged at 73,
-    # which is the point — a seam that relocates coverage must not be able to look like coverage
-    # that was deleted, and only the per-file split can tell those two apart.
-    # ⟳ 2026-08-30, backlog #74: this file joins the manifest. It is 1,696 lines, every mutation
-    # verdict in the project passes through it, and it was the ONLY member of the stack with
-    # cases and no mutations — the layer nothing checked back. Adding it found THREE guards whose
-    # deletion left the suite green: the after-sequence control, the duplicate-anchor refusal,
-    # and `check()`'s redirected-home mkdir. Not circular — the orchestrating process is this
-    # copy, the mutated target is the temp copy, and the nested spawn inherits `child_env`.
-    # ⟳ 2026-08-31, ask-choices slice: gen-dashboard 47 -> 56, check-dashboard-entry
-    # 12 -> 18. The new entries cover the derived badge, the malformed-ask tray row,
-    # the cleared-entry exemption, the Worth-knowing NOT-CHECKED branch, the PR token
-    # and its budget, gh shape validation, and — on the gate — the decision grammar
-    # including the NESTING rule, whose absence silently dropped every option after a
-    # 4-space nest.
-    # ⟳ 2026-09-01, the block-start divergence: gen-dashboard 67 -> 68. The ENTRY
-    # GATE's count does NOT move in the same change, and the asymmetry is the point.
-    # `BLOCK` RELOCATED into check-dashboard-entry.py, so its existing mutation was
-    # retargeted there (a retarget, not an addition — same count, 29); what is NEW
-    # is a mutation on the seam itself, restoring the page's private copy of the
-    # rule. That copy is what the defect WAS, and scanning the manifest to repair
-    # the orphaned anchor showed the page's `BLOCK` had never had a mutation at all
-    # — the regex at the centre of the bug was the one thing nothing measured.
-    # ⟳ 70 -> 73, comprehensibility slice A (backlog #83). THREE entries, one per new
-    # behaviour: the settled class, the settled CSS, the resolver back-reference. Each
-    # names the case it must go red through, so a mutation caught by a SIBLING case
-    # cannot be credited — the round-5 M1 defect where `expect` matched 7 case names.
-    # ⟳ 2026-09-06, backlog #96: this guard joins the manifest — one of the 23 R4 debts,
-    # paid down here because the slice rewrote its decision path. MANIFEST_BASELINE in
-    # check-ratchet-contract.py drops 23 -> 22 in the SAME commit, which R4 requires as an
-    # EXACT match: paying a debt down fails the gate until the constant follows.
-    # ⟳ 2026-09-06, backlog #97: 7 -> 8. The new entry guards the OBSERVATION LINE'S CONTENT,
-    # not whether a line appeared. Found by the Codex half of code review r1: `flush_line`
-    # rewritten to a constant string passed 94/94, because the F11 cases counted lines and never
-    # read one. The counts ARE the evidence, so a line that has lost them records that something
-    # happened while destroying what was measured — the recorded *a guard's own output is a
-    # CONTRACT* shape, one layer in from the log-format defect this whole slice is about.
-    # ⟳ 2026-10-16: check-claim-propagation.py joins the manifest at 10, raising the declared
-    # sum by 10. It is the mechanical half of `one-rule-one-place` for documents, built after
-    # two adversarial rounds on `marketplace-inventory` produced 4 then 14 fix-induced findings
-    # with ONE mechanism behind thirteen of them: a rule stated in several places, and the fold
-    # updating the site the finding named. A convention had already failed at it twice in two
-    # rounds, which is why this is a guard and not a checklist.
-    # ⟳ 2026-10-17, ADR-0015: 32 -> 15. ⛔ THIS IS A RATCHET FALL, which is permitted ONLY when
-    # the entries are RETIRED WITH THEIR SUBJECT, and that is what these are: the prose-matching
-    # half of the guard is deleted, so the retired anchors name code that no longer exists.
-    # ⟳⟳ 2026-10-17, r5 CODEX Low: the count here said **19** and the arithmetic did not close —
-    # 32 - 19 is 13, not 15. The real figure is **17 retired**, and 19 was the INTERMEDIATE value
-    # from the first pass, before two entries were restored as retargets. ⭐ It is now DERIVED by
-    # diffing the manifest against `8a583f7c^` rather than retyped, which is the only form of this
-    # number that cannot drift: 32 before, 15 after, 4 retargeted, 32 - 17 = 15. Precedent and
-    # shape are `retire-plan-mode` (44 -> 23, declared sum 392 -> 371), where 20 anchors stopped
-    # resolving because the code they named was gone.
-    # ⚠ FOUR WERE RETARGETED RATHER THAN RETIRED, and checking that was the point: their anchors
-    # broke while the RULES they measure survived — the empty-registry refusal (its condition went
-    # from a three-way disjunction to one), the `wanted |= …DERIVED…` line (now the FIRST
-    # assignment, so the witness is stronger), the `audited_sites` witness (its token half retired,
-    # its DERIVED half kept) and the self-closing-not-pushed rule in `_Carriers`. Retiring those
-    # four would have dropped live coverage silently, which is this repo's recorded failure mode
-    # for exactly this operation.
-    # ⟳⟳ 2026-10-17, r5 CODEX M3: 15 -> 18. Three surviving branches of `_Carriers` that no
-    # case pinned — stripped accumulation, the VOID vocabulary beyond `img`, and an unmatched
-    # end tag. The reviewer found them by applying each mutation and getting 41/41 GREEN.
-    # ⟳⟳⟳ 2026-10-17, r5 CLAUDE H1 — THE VOID VOCABULARY, as opposed to six of its fourteen
-    # members. The comment on the previous case asserted it covered the set; the code supplied a
-    # hardcoded 6-tuple and dropping all 8 unpinned members was 49/49 GREEN.
-    # ⟳ r6 CODEX Low: THIS COMMENT SAID `18 -> 19` AND NO NINETEENTH MUTATION EXISTS. The fix
-    # EXTENDED an existing entry's `expect` list, because the harness refused a second entry on
-    # the same anchor as measuring nothing new — so the count did not move, and the arithmetic
-    # comment below correctly says `18 -> 18`. ⚠ The executable count is right; the audit trail
-    # was wrong, in the one number this round was asked to verify. Corrected, not raised.
-    "scripts/check-claim-propagation.py": 18,
-    "scripts/check-anchors.py": 5,
-    "scripts/check-arch-findings.py": 5,
-    # ⟳ 2026-09-22, the third warning class: 8 -> 22. THREE of the eight are not about the new
-    # branch's rules at all but about it being WIRED and LABELLED — `run_decide` ceasing to count
-    # the turn, the log re-deriving the class from its output, and the class reporting its
-    # sibling's reason. That split is deliberate: the two older classes shipped with their rules
-    # covered and their wiring not, and the comment on H3 in the suite records three log mutations
-    # surviving on exactly that gap. The threshold entry is the fourth of that kind — every other
-    # case derives _BIG/_SMALL from LARGE_TURN and so moves with it, leaving the calibrated value
-    # unfalsifiable until one case pinned it as a literal.
-    # ⟳ 2026-09-23, backlog #166 + #170 — A SANCTIONED RATCHET FALL, and the only kind there is.
-    # ⟳⟳ r2 M1 REWROTE THIS ACCOUNT, because it was off by one entry and mislabelled another. It
-    # said "THREE anchors stopped resolving" and listed five; **SIX entry names left the three
-    # adapters and three arrived**, and the sixth was unaccounted for. The count is now DERIVED
-    # rather than recalled — `git show origin/master:scripts/mutations/<f>.json` against the branch
-    # copy, names diffed as sets — and every removal is in exactly ONE of the three classes below.
-    #
-    #   ⑴ RETIRED WITH THEIR SUBJECT — 3. The code they name is GONE, moved into
-    #     `scripts/observer_log.py` with the record grammar, and each property is mutation-covered
-    #     in its new home. This is the only sanctioned kind of fall:
-    #       ci      fields stop being sanitised  -> observer_log "col stops removing the TAB"
-    #       ci      sanitiser empties the field  -> observer_log "col strips a TAB" + content
-    #       closing empty-session fallback       -> observer_log "the EMPTY sentinel is blanked"
-    #
-    #   ⑵ RENAMED AND RETARGETED, NOT RETIRED — 2, so they appear in BOTH the removed and the
-    #     added set and net to zero. ⛔ THEY WERE BRIEFLY IN CLASS ⑴ AND THAT WAS WRONG (r1 Codex,
-    #     round 2 on the folded tree):
-    #       banner  flush_line freezes session   -> NOT covered by "record puts `session` third"
-    #       banner  flush_line freezes timestamp -> NOT covered by "record puts `when` second"
-    #     Those cases prove `record()` PRESERVES arguments it is GIVEN; they say nothing about
-    #     whether the ADAPTER passes its own through. Measured with mutant adapters: the
-    #     observer_log cases stayed true while the adapter property failed.
-    #
-    #   ⑶ REPLACED BY A DIFFERENT PROPERTY — 1, and THIS IS THE ONE THE OLD ACCOUNT LOST. ci's
-    #     *"the log line drops its SESSION column, so entries stop being attributable"* became
-    #     *"the log line drops a PAYLOAD column, so a record loses a field"*. Calling that a
-    #     retarget was loose: the old property is *this adapter passes `session` through*, the new
-    #     one is *this adapter emits its payload fields*, and they are different claims. The reason
-    #     the swap is correct is that `session` is now the shared module's POSITIONAL 3, so what
-    #     remains the adapter's own is its payload; the reason it needed saying is that the
-    #     passthrough property still exists and still needs an owner — which is ⑵'s whole lesson,
-    #     accepted for `flush_line` and then not searched for over its two siblings.
-    #
-    # ⭐ **SO THE SEARCH WAS RUN, AND IT CLOSES THE CLASS** (r2 M1): neither `check-ci-watched`'s
-    # nor `check-closing-table`'s `log_line` had a session- or timestamp-passthrough entry. FOUR
-    # were added (ci 27 -> 29, closing 46 -> 48), each MEASURED first by freezing the argument in
-    # the delivered adapter and reading which named case went red — 49/57, 56/57, and two clean
-    # closing-table failures. The properties were never uncovered; the RATCHET is what proves the
-    # cases can fail, and for two of three adapters nothing held it.
-    #
-    # Net: banner 47->47, ci 29->29, closing 47->48, +16 for the new owner. ⚠ THIS LINE PREVIOUSLY
-    # READ `47->45 … +14` — the pre-withdrawal numbers — for three commits after the withdrawal
-    # above it. r2 B1: the correction had landed in the COMMIT MESSAGE and not in the file, and a
-    # justification that disagrees with its own pins is not a justification.
-    # Every surviving anchor was re-verified to resolve exactly once AFTER the code was final.
-    # ⟳ r3 M4, 2026-09-23: 47 -> 48. The fold rewired this file's WARN write to
-    # `observer_log.append_or_raise` and ratcheted NOTHING at the new call site — it applied *the
-    # ratchet is what proves the cases can fail* to the passthrough properties it found missing, and
-    # not to the delegation it introduced in the same commit. Measured: neutering the call reds 9
-    # named cases, no crash.
-    "scripts/check-banner-armed.py": 48,
-    # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
-    # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
-    # module until both existed (R4W_no_mutation_manifest), which is the contract working on
-    # a file minutes old. ⭐ Mutation 2 is the load-bearing one: it swaps `splitlines()` for
-    # `split("\n")`, which is the EXACT historical defect one file over — a hand-written line
-    # rule that covered 2 of the 11 characters `splitlines()` honours.
-    # ⟳ r1 HIGH 4, same day: 14 -> 15. The review measured that the retired R5-646c property
-    # (a frozen `when` column) had NO replacement mutation and no case that could fail —
-    # `record defaults `when` to now()` asserted `!= ""`, which `col(x) or EMPTY` can never
-    # be. A case and a mutation were both added. A RISE needs a reason as much as a fall.
-    # ⟳ r3 H1 + M2, same day: 16 -> 19. THREE entries, all on lines this round changed:
-    #   * `encoding=` deleted from `append_or_raise` — ⛔ THE DOCSTRING SAID THIS COULD NOT BE
-    #     COVERED. r3 H1 refuted that by building the case: the locale default is an INPUT fixed
-    #     before interpreter start, so a child under `LC_ALL=C` reports US-ASCII and the missing
-    #     argument raises. A self-authored exemption sitting in the one line the whole consolidation
-    #     concentrates value into.
-    #   * the whitespace-only guard in `col` reverted — r3 M2, the sentinel was DEFEATED for this
-    #     grammar's own primary separator (`SEP` becomes a space, and a space is truthy).
-    #   * that guard returning `out.strip()` instead of TESTING it — the fix's cheapest wrong form,
-    #     which every other case passes.
-    # ⟳ r2 H3, same day: 15 -> 16. M9 was fixed as an INSTANCE — one hand-rolled write delegated,
-    # `encoding=` hand-added to a second — and TWO hand-rolled writes stayed in the tree, each with
-    # its own `mkdir` + `open`. The API forced that: `append` returns a bool and two callers need
-    # `{e}`. `append_or_raise` is the class fix, and the new entry is the FAIL-OPEN direction on it
-    # (it swallows the error itself, so no caller can report one). ⚠ TWO EXISTING ANCHORS WERE
-    # RETARGETED, NOT RETIRED: the write body moved from `append`'s `try:` to module indent, so
-    # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
-    # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
-    # session. Both re-verified to resolve exactly once AFTER the code was final.
-    "scripts/observer_log.py": 19,
-    # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
-    # already asserted; the other two are the gaps writing them found, and both are the same
-    # shape — a claim about coverage that nothing executed:
-    #   * `_moved_problems_for`'s unreadable-harness branch was driven by NO case, so `return []`
-    #     in its place was a fail-open. "Cannot run" reported as clean is the failure this repo
-    #     has now paid for four times, and it was sitting inside the script whose entire purpose
-    #     is to stop "covered elsewhere" claims going unverified.
-    #   * the ACL regex is written TWICE (EXCLUDED and MOVED_COVERAGE) and nothing checked the
-    #     two agree. The case that looked like it did — `any("relacl" in pat …)` — is a SUBSTRING
-    #     test on the pattern text, so either copy could narrow while it stayed green.
-    "scripts/check-catalog-coverage.py": 7,
-    # ⟳ 2026-09-20, the closing-table guard. Ten entries, and the one that earned the file is
-    # "an unreadable transcript passes quietly" — the fail-open direction, which is the failure
-    # this repo has now paid for more than four times. Two others exist only because writing the
-    # suite found the defects: `relative_to` raising on a redirected log (a warn-only observer
-    # turning into a traceback), and judging the LIVE turn instead of the previous one, which
-    # would have made the guard silently unable to see any closing message at all.
-    # ⟳ r2 M1, 2026-09-23: 46 -> 48, the same two passthrough entries as its ci sibling, and for
-    # the same reason — the search Codex's `flush_line` Blocking implied was never run over the
-    # other two adapters. Measured first: freezing session reds *log: the session is the THIRD
-    # field, verbatim*, freezing `when` reds *log: the timestamp is the SECOND field*.
-    "scripts/check-closing-table.py": 48,
-    "scripts/gen-dashboard.py": 68,
-    # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
-    # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
-    # all had one. ⚠ IT WAS NOT "the ONE generator with no manifest", which both round-1
-    # halves flagged and round 2 repeated: `scripts/gen-m4-manifest.py` has none either and
-    # is still outside `scripts/mutations/`. The narrower sentence is the true one; the wider
-    # one made a reader sizing manifest debt from this dict believe the class was closed.
-    # The gap predates the work-threads branch, but that branch added 532 lines to it (`git
-    # show --numstat 58d82658`), making it the largest unmutated surface of its kind here.
-    # ⚠ NOT "~540 lines of new rules", which stood here for three rounds: 540 is `--stat`'s
-    # CHANGED-line total (532 insertions + 8 deletions), read as if it were insertions.
-    # ⟳ 2026-09-12, review rounds 1 and 2: 14 -> 25. ⚠ AN EARLIER VERSION OF THIS PARAGRAPH CITED A
-    # MEASUREMENT NO COMMITTED ARTIFACT CONTAINS — "Claude staged the tree, applied 24
-    # candidate weakenings and measured 11 SURVIVING" — and used it as the justification for
-    # this number. TWO agents wrote to one review path and the later overwrote the earlier;
-    # the coordinator committed the survivor without re-reading it and wrote the commit
-    # message from the lost one. The surviving `docs/reviews/claude/goal-page-mutations-r1-
-    # claude.md` says nothing of the kind, and its High is `parse_adr`, not the seam.
-    # WHAT IS ON THE RECORD: the CANNOT-RUN producer being unnamed is CODEX's round-1 High
-    # (`docs/reviews/codex/goal-page-mutations-r1-codex.md`), independently reproduced by the
-    # coordinator before any code changed. `git_pr_history` and `git_show_files` had no seam, so
-    # every rule inside them was unreachable from any case and a mutation on one would have
-    # survived. Their absence from the first fourteen was untestability, not completeness —
-    # and `git_pr_history` returning None is the ONLY thing in that file that can set
-    # `pr_error`, which TWO of those fourteen entries already defended downstream of (a third
-    # defends the same None-IS-NOT-False discipline, but through `git_show_files`, not this
-    # sentinel — the earlier "three" bound that count to `pr_error` and was wrong under its
-    # own grammar).
-    # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
-    # captured, and a fan-out threshold whose boundary value was absent from the fixture.
-    "scripts/gen-goals-page.py": 25,
-    # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
-    # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
-    # its own terms: seven of the ten revert a DECISION the renderer makes (which band a fragment
-    # lands in, whether a `####` node is nested or duplicated, whether the build time is read from
-    # the clock), and the tenth guards `sev_glyphs`, which earned a mutation only after review
-    # round 1 found its "derived" comment sitting above a hand-written literal. A renderer that
-    # decides nothing is a claim worth testing before it is used to skip coverage.
-    "scripts/gen-features-page.py": 10,
-    # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
-    # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
-    # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
-    # go red. Four review rounds each found a fresh crop of unfalsifiable ones — 1, then 9, then 8,
-    # then 15 — every one found by a human reading, none by CI. These five revert THAT BRANCH'S OWN
-    # fixes: the report gate narrowing below the read gate (#110's defect verbatim), the unread list
-    # being emptied behind two source-shape proxies, half the drift qualification, the ⚠ prefix the
-    # Refresh button collects, and the delimiter cell's end anchor. Five that can only rise beats
-    # zero; the rest is its own slice.
-    "scripts/gen-backlog-page.py": 5,
-    # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
-    # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
-    # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
-    # `backlog-table.html` stood at composition generation 872. Eight entries, one per clause
-    # the fix decides. THREE are on wiring rather than logic — `main` passing `exclude`, the
-    # end marker being written, and the begin marker being read with `rfind` — because the
-    # extraction rules can each be perfectly correct and never reached.
-    # ⟳ r1 Codex Medium: 8 -> 10. A page-specific `#tray …` override was migrating INTO the
-    # tray region and freezing there for every page later composed from it; the second entry
-    # guards the fix's own failure mode, which is subtracting the tray away entirely.
-    "scripts/brief-compose.py": 16,
-    # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
-    # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
-    # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
-    # returns empty instead of raising is the failure this repo counts as worse than a red.
-    "scripts/check-selection-card.py": 13,
-    # ⟳ 2026-09-11: backlog #90's grouping policy gets its guard, and the guard gets its
-    # manifest in the SAME commit — a policy guard with no mutations is a rule nothing
-    # checks back, which is the shape `check-ratchet-contract` refuses by name (R4).
-    "scripts/check-group-claims.py": 11,
-
-    "scripts/page_markup.py": 14,
-    # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
-    # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
-    # it added well-formed?" (new, and previously fail-open on the entry-only branch,
-    # which is the most common way an entry is written). THREE of the five mutations
-    # are on the WIRING, not the predicate: `added_entry_problems` can be perfectly
-    # correct and never called, and the pure cases stay green either way.
-    # ⟳ 2026-09-01, the block-start divergence: 29 -> 30. The BLOCK mutation was a
-    # RETARGET (count unmoved, so a relocation cannot read as new coverage); this +1
-    # is a genuinely new guard, added by the Claude review half after the Codex half
-    # rated the agreement case Low. It restores a HAND-WRITTEN `ENTRY_ISH`, which the
-    # BLOCK mutation provably cannot reach: corrupting the shared rule moves both
-    # sides together and leaves the agreement case green. Only breaking the
-    # DERIVATION separates them, and that is the regression the seam exists to stop.
-    # ⟳ 34 -> 42 and gen-dashboard 73 -> 65, backlog #82: parse_entries RELOCATED into the
-    # gate, and its eight mutations moved WITH it. THE SUM IS UNCHANGED AT 107 on purpose —
-    # only the per-file split can tell a relocation apart from deleted coverage, which is
-    # the same reason #71 held its sum at 73. `run_suite(d, fname)` runs only the mutated
-    # file's suite, so the killing cases moved too.
-    # ⟳ 2026-09-08, R4 manifest debt 6 -> 5. ⚠ `state in UNRESOLVED` is NOT a target and must not
-    # become one: the two state lists are disjoint, so that disjunct always implies the second and
-    # NO input can distinguish it. It is defensive (it catches a future edit that wrongly moves a
-    # pending state into the resolved list), not decisive — mutating it would be unkillable-by-
-    # construction, the `check-storage-grant-pin` case-5 shape.
-    # ⟳ r2 M1, 2026-09-23: 27 -> 29. `log_line` had NO entry for either of the two arguments it
-    # passes through to the shared record — session and the timestamp — while its banner sibling
-    # had both. The gap is the shape of the fall above it: `session` moving into `observer_log`'s
-    # positional 3 retired the adapter's SANITISING entries correctly and took the PASSTHROUGH
-    # entry with them, which is a different property. Both measured on the delivered adapter
-    # before being added: freezing session -> 49/57, freezing `when` -> 56/57.
-    # ⚠ **BOTH ANCHOR ON A SUBSTRING, NOT THE WHOLE `return` LINE, AND THE HARNESS IS WHY.** The
-    # first draft gave the two NEW entries the same find-string as the PRE-EXISTING entry already on
-    # that line, and `--mutate .` REFUSED the manifest with `NOT MEASURED`: `load_manifests` builds
-    # `seen_anchors` from the find-strings ALONE, so a differing replacement does not distinguish two
-    # entries, and its `EXACT TUPLE EQUALITY` note names the escape — a distinct substring each.
-    # ⭐ This is the OTHER HALF of r2 H1, which established that different substrings of one line ARE
-    # accepted; identical ones are not, and both halves had to be learned by running it.
-    # ⚠ **THE THIRD ENTRY ON EACH LINE KEEPS ITS FULL-LINE ANCHOR, DELIBERATELY** (r3 addendum L1):
-    # it is the pre-existing payload-column entry, and the whole line IS its subject. So the count is
-    # 3 entries per line, of which 2 per line were retargeted — 4 across the two files, each
-    # RE-MEASURED after retargeting, because a moved anchor is a different mutation until something
-    # proves otherwise.
-    # ⛔ r3 H3 / addendum H1: THE TWO LINE CITATIONS THAT USED TO BE IN THIS PARAGRAPH BROKE THEMSELVES.
-    # They were correct when typed and wrong as delivered, because this comment is long enough to push
-    # its own targets down — an eight-line insertion moves every citation below it by eight. Symbols
-    # now. That is the repo's standing rule and this file cites its own lines nineteen times, so the
-    # class is open and nothing guards it.
-    # ⟳ r3 M4, 2026-09-23: 29 -> 30, the sibling call site. ⛔ AND IT COULD NOT HAVE HAD AN ENTRY
-    # BEFORE ONE CHANGE TO THE SUITE: neutering the write made this suite die by `IndexError`, not
-    # by a named case, and the harness requires death VIA THE CASE AN ENTRY NAMES. Two cases indexed
-    # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
-    # `and` short-circuited for the siblings and raised for these. The second instance was found by
-    # grepping for the class, not by the first fix. Now 10 named reds, no crash.
-    "scripts/check-ci-watched.py": 37,
-    "scripts/codex-frontier-model.py": 7,
-    # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
-    #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
-    #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
-    #     supplied the interior. A range written `B1-5` is the only shape where the top member
-    #     exists solely by expansion; that case is now present.
-    #   * `open_items` did not exist: the "what counts as still open" rule was written TWICE, once
-    #     for the verdict and once for the sentence main() prints. Byte-identical with nothing
-    #     holding them so — drift would fail the check while printing "every checkbox is ticked".
-    "scripts/check-roadmap-consistency.py": 12,
-    # ⟳ 2026-09-08, R4 manifest debt 4 -> 3. TWO VACUOUS ABSENCE-ASSERTIONS, same shape: both
-    # `both halves pass` and `halves in per-writer subdirectories pair normally` assert
-    # `problems == []`, and deleting the scan they depend on produces exactly that empty list.
-    # "Nothing went wrong" was satisfied by "nothing happened", so the flat and nested scans were
-    # each unguarded. Companion cases now assert stats["rounds"] == 1 — the pair was SEEN.
-    # ⟳ 2026-09-12. THE GUARD THAT DEMANDS MANIFESTS HAD NEVER BEEN ASKED FOR ONE. R4's escape is
-    # a written `NO-MUTATIONS: <why>`, and its regex matched line 16 of check-ratchet-contract's
-    # OWN docstring — "a mutation manifest, or `NO-MUTATIONS:` ENFORCED — R1 asks whether …" —
-    # taking "` ENFORCED — …" as the reason. Measured across all 34 guards: it was the only file
-    # affected. The regex now requires a space then a LETTER, and this manifest is the answer to
-    # the question it had been dodging. ⚠ It ALSO hit the failure-line trap — FIVE printers said
-    # `  FAIL {name}`, which `parse_fail_names` cannot see, so every mutation here would have been
-    # killed and unattributed. ⛔ AN ORDINAL FOR THAT IS DELIBERATELY NOT WRITTEN: PR #293 retired
-    # the count one commit earlier, after three hand-written versions were each wrong, and the
-    # first draft of THIS comment resurrected it as "the TENTH file" — the retired number walking
-    # straight back in at the next opportunity. Derive it:
-    #     git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>
-    "scripts/check-ratchet-contract.py": 16,
-    # ⟳ 2026-09-23, folding review-identity-176 round 1: 12 -> 17, AND ONE EXISTING ENTRY WAS
-    # RETARGETED — its anchor `if rec.get("gate_ran"):` was unbound by the restructure that added
-    # the reverse clause, the exact *an anchor is unbound by ANY nearby edit* shape this repo has
-    # paid for seven times in one session. Found by sweeping every manifest anchor against the
-    # tree, NOT by `--self-test`, which loads the manifests without resolving them. The consumer
-    # also gained the
-    # three rules r1 found missing from it, and each entry names the case that reds for it:
-    # a REFUSAL is not testimony about a gate (B1 — without it a re-dispatch that touched
-    # nothing makes CI tell the reader to delete a real review); the ERA BOUNDARY is a
-    # number in the record rather than a date in a comment (M2 — the prose caveat had no
-    # falsifier and deleting it went green everywhere); the REVERSE direction of the join,
-    # `gate_ran: true` naming a review that is not filed (M1 — the shape #176 was convened
-    # over, `continue`d until the era gate made it safe to read); and two on the derived
-    # era counts (M3 — the figure that stood in prose was wrong at the denominator).
-    # ⟳ 2026-09-24, folding round 2: 19 -> 24, AND SIX EXISTING ENTRIES WERE RETARGETED — five of
-    # them because the round-2 fix moved the line they named, which is the finding that convened
-    # this fold. TWO of the five had already gone silently orphaned on the previous fold and were
-    # caught by CI, not by `--self-test`, which loads the manifests without resolving them.
-    #   ⑴ RETARGETED — 6. `r1 B1` and `r1 M3 (refusals)` moved when `refused` became `is True` at
-    #     both sites; `r1 M2` and `r1 M3 (era counts)` moved when the era gate became `schema_of`;
-    #     the two `gate_ran` entries moved when H1's fix made that field `is not True` as well.
-    #     ⚠ The re-derivation entry was retargeted to a DIFFERENT text from its neighbour on
-    #     purpose: a bare `rec.get("gate_ran")` anchor now survives the fix while measuring
-    #     something the case it names cannot see, and identical anchor tuples are refused.
-    #   ⑵ ADDED — 5. TWO hold H1 (`gate_ran` read by identity in the join, and refused as a
-    #     non-bool on the read side); ONE holds M1, the third site of the same idiom, whose
-    #     hardening left the suite at 49/49 until the case beside it existed; TWO hold L1's
-    #     `schema_of` in both directions — a field that is not a version is unreadable, and an
-    #     ABSENT field is the oldest era rather than unreadable, which is the direction that would
-    #     turn the whole 184-record pre-cutover corpus into a CANNOT RUN.
-    # ⟳ 2026-09-24, backlog #176 round 3 fold, 25 -> 29. FOUR entries, and none of them is the
-    #   fifth patch's own line twice: H1 splits into the TYPE clause (an unhashable `review` raised
-    #   out of the check as rc 1 with stdout empty) and the BLANK clause (an empty string is a key
-    #   nothing on disk matches), attributed to different cases; L1 restores the `(unnamed)`
-    #   sentinel, which made a record CARRYING it indistinguishable from one with no field; M2
-    #   collapses the new `unreadable` era bucket back into `pre_cutover`, which is what
-    #   `(schema_of(rec) or 0)` did silently. ⚠ The `verdict_problems` arm of M2 carries NO entry
-    #   on purpose: both answers skip there, so a mutation of it would survive, and shipping an
-    #   unkillable entry to make the count look fuller is the shape this table exists to refuse.
-    #   SIX anchors in these two files were RE-TARGETED in the same commit because the fix moved
-    #   their text; the sweep is what found them, and it is still in no local suite.
-    "scripts/check-review-rounds.py": 29,
-    # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
-    # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
-    # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
-    # the case names and touched a different string. Retargeted to the fragment carrying the claim.
-    "scripts/check-test-counts.py": 11,
-    # ⟳ 2026-09-08, R4 manifest debt 2 -> 1. Every target is in the PURE half, and the two most
-    # valuable pin defects this guard has already paid for: r9 M1 (schema qualification unstripped,
-    # so an ordinary READABLE relation derived as OUT OF REACH) and r9 M3 (the grantee side used a
-    # different normaliser from the relation side, so `to "anon"` matched nothing). Both are now
-    # mutation-covered rather than merely commented.
-    "scripts/check-anon-exposure.py": 13,
-    # ⟳ 2026-09-08, R4 manifest debt 1 -> 0. THE LAST ONE. Also closed a MEASURED coverage gap:
-    # `idx` joined ATTRIBUTABLE_KINDS on 2026-08-28 because `create unique index rev_uq on
-    # video_artifacts (video_id)` PASSED — and no case arrived with the fix. Removing "idx" from
-    # that tuple survived all 117 cases; the drift table now carries an INDEX row, so it does not.
-    "scripts/check-live-schema.py": 12,
-    # ⟳ r2 M2, 2026-09-23: 43 -> 44. Backlog #168's remedy — the sentence in this guard's refusal
-    # telling the reader that editing the PR body cannot re-arm the gate and they must PUSH — was
-    # an UNTESTED SENTENCE: the suite was 148/148 with it present or absent. The entry deletes the
-    # clause and the new case reds. ⭐ Worth naming the shape: #168 is *the knowledge lives where
-    # the person in trouble is not looking*, and it shipped with its own remedy unmeasured.
-    "scripts/check-dashboard-entry.py": 44,
-    # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
-    # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
-    # at 359, which is the point: a seam that relocates coverage must not be able to look
-    # like coverage that was deleted, and only the per-file split can tell those apart.
-    # ⟳ 2026-09-08, the plan-mode retirement: HELD AT 44, and the hold is the point. The
-    # refusal made `main()`'s plan-mode tail (L3529-3581) UNREACHABLE — every path there needs
-    # `a.plan` truthy and the refusal intercepts exactly that — so the mutation anchored to its
-    # `not_measured_line(verdict, f"{mode}: ")` print could no longer be killed by any case.
-    # CI's `--mutate .` caught it as 1 survivor of 383; the local suite could not, because the
-    # case had been rewritten off the CLI onto `evidence()` and stayed green at 229/229. That is
-    # the recorded shape: A SUITE PASSING IS NOT EVIDENCE ITS MUTATION STILL BINDS.
-    # RETARGETED, not deleted, onto `evidence()`'s `not_measured_line(v)` — the printer that
-    # same case now drives, guarding the identical property (a NOT MEASURED refusal must not
-    # leak a survivor count). The count is therefore UNCHANGED: a retarget must not read as
-    # lost coverage, and a deletion here would have shrunk the ratchet inside the very PR whose
-    # message says it only rises. The retirement of this entry belongs to the deletion slice,
-    # with the case it serves.
-    # ⛔ ⟳ 2026-09-09, THE DELETION SLICE — THIS NUMBER FALLS, DELIBERATELY, AND A FALL IS
-    # NORMALLY A DEFECT. The comment above says the retirement of a plan-mode entry "belongs
-    # to the deletion slice, with the case it serves", and this is that slice. 21 of the 44
-    # entries were anchored INSIDE the seven plan-mode functions; when the function goes, the
-    # anchor cannot resolve, so the entry is retired rather than orphaned. Retired one commit
-    # at a time WITH its function, so a reviewer sees which coverage left with which code.
-    #   verify_evidence 1 · evidence 5 · check 7 · extract 8   = 21   (44 -> 23)
-    # ⚠ HOW THE 21 WAS MEASURED, because the first two attempts both answered 0. The question
-    # is NOT "does the anchor text mention a doomed function" — the retargeted `r3 B2` entry
-    # reads `not_measured_line(v)` and lives at evidence():1541, invisible to a name match.
-    # It is "is the anchor LOCATED INSIDE one": `src.find(anchor)` -> line -> enclosing def.
-    # And the anchor is `edits[i][0]`, not a key called `anchor`; reading the wrong key gives
-    # `find("") == 0`, which attributes all 44 entries to line 1 and answers 0 a second way.
-    # ⟳ 2026-09-09, round 1 F9+F10: 32 -> 33. NOT a new behaviour — a SPLIT of one entry that
-    # was silently carrying two. Entry 11's edit was `!=` -> `==`, an INVERSION, so it broke
-    # count_drift's mismatch branch AND its match branch at once and reddened FOUR cases under a
-    # name claiming one. Retargeted to `!= actual and False` (2 reds, the named case still fires)
-    # and the match branch given its own entry. Measured by the reviewer on a staged copy: the
-    # two directions are INDEPENDENTLY breakable, and breaking the match branch alone does NOT
-    # fire 'count_drift reports a mismatch' — so this was two properties, not one with symptoms.
-    # ⟳ 2026-09-09, backlog #98: a NEW guard arrives with its manifest in the SAME commit.
-    # The ratchet offered to raise MANIFEST_BASELINE to 1 instead; taking that would be how
-    # paid-down debt gets silently re-accrued, which is the thing the baseline exists to stop.
-    "scripts/check-backlog-closure.py": 6,
-    # ⟳ 2026-09-10, backlog #106: 33 -> 34. The harness always REFUSED a suite whose red could
-    # not be attributed to any case; what it did not do was say WHY, and that silence cost two
-    # branches in one day — both diagnosed by hand from an empty list at the bottom of a
-    # 420-mutation log. The new entry guards the DIAGNOSIS, not the refusal.
-    # ⟳ r1 of the progress round: 39 → 48. Nine, for the six new clauses plus the one whose case
-    # could not fail (B1) — and ONE RETARGET: bounding the line rewrote `progress_line`'s return,
-    # orphaning the anchor that guarded it. An anchor binds by TEXT, so improving code breaks it
-    # and the suite stays green; `--mutate .` refuses an unresolved anchor, which is the only
-    # reason that was caught here rather than merged.
-    # ⟳ r9: 27 → 29. FOUR added for star-args, kwargs keying and the key-set pin;
-    # TWO retired with their subject — the per-file COUNT comparison they mutated was
-    # replaced by a key-set comparison, so their anchors named code that is gone. That
-    # is the one sanctioned kind of fall: recorded here with its count and its reason.
-    # ⟳ r10: 43 → 42. One RETIRED WITH ITS SUBJECT — widening the suite's scope made the
-    # underscore test unable to decide anything, measured by its mutation surviving a full
-    # suite. The clause stays as a defence; the entry cannot fire, so it goes.
-    "scripts/check-fixture-variation.py": 42,
-    # ⟳ 2026-09-17: `check-python-pin.py` JOINS with 11 entries, in the commit that creates it —
-    # `check-ratchet-contract.py` refused the file until it did, which is the manifest half of the
-    # contract doing its job. ⭐ Two of the eleven found AMBIENT cases on the first pass: the
-    # empty-corpus case asserted only an exit code that the NO-PINS prong returns by another route
-    # (backlog #137's `declared_not_derived` defect, recurring), and the jobs-block case used a
-    # fixture key the regex rejected anyway. Both repaired rather than exempted.
-    # ⟳ r1 (codex) 1 Blocking + 2 High: 11 -> 12. ⭐ The High that mattered was a FALSE GREEN —
-    # `declared_pins` matched ANY line shaped like `python-version:`, so one inside a shell
-    # heredoc or an unrelated action's `with:` made a job with NO setup-python read as PINNED.
-    # The predicate is now "a pin attached to an actions/setup-python step", with the reviewer's
-    # two reproduction fixtures as cases. ⚠ A step-boundary clause written alongside it was
-    # MEASURED INERT (deleting it left the suite green, the dedent test already covering it) and
-    # was DELETED rather than kept with an entry that could not fail.
-    # ⟳ r1 (claude) 3 High + 3 Medium + 4 Low: 12 -> 18. ⭐ HIGH 1 was the branch's own central
-    # claim: "the pin TOOK EFFECT" compared major.minor, and the runner's AMBIENT python3 is
-    # already 3.12.3 — so the comparison was satisfied by the exact pre-branch world the guard
-    # exists to end, and `update-environment: false` would have kept it green while 45 guards ran
-    # unpinned. It now asserts PROVENANCE via `pythonLocation`, which only setup-python exports.
-    # HIGH 2: four legitimate YAML job shapes were INVISIBLE, and an invisible job passes — the
-    # guard was calibrated on its own corpus. Tails loosened (measured free), indent kept
-    # (measured load-bearing), and a jobless workflow now REFUSES rather than passing.
-    # HIGH 3: the single line arming the assertion had no case and no mutation; extracted.
-    # ⟳ r2 High (codex): 18 -> 19. The pin must be the input the ACTION READS —
-    # `with.python-version`. Scoping it to "inside the setup-python step" was the SECOND version
-    # of this predicate and still too loose: a `python-version:` under `env:` in that same step
-    # made a job whose setup-python declared nothing report `python pin OK`. Third iteration, and
-    # each time the span was narrowed instead of the THING being named.
-    # ⟳ r2 (claude) 3 Medium + 5 Low: 19 -> 24. Medium 1: the jobless refusal only fired on an
-    # ALL-OR-NOTHING file, so one readable job beside an unreadable one (a QUOTED job key, which
-    # GitHub accepts) restored both r1 Highs at once — it now COUNTS unreadable keys. Medium 3:
-    # r1's inline-comment fix had no case and no entry, so deleting it left the suite green.
-    # Low 2: three clauses of `pin_took_effect` were undriven and the first is FAIL-OPEN — an
-    # EMPTY `pythonLocation` makes `startswith("/")` true for every absolute path on earth.
-    "scripts/check-python-pin.py": 52,
-    # ⟳ 2026-10-05, backlog #217: 77 -> 92. FIFTEEN entries, one per clause of `--shard I/N`,
-    # ⟳⟳ 2026-10-06, ROUND 5 M2 — AND THE LINE ABOVE WAS LEFT NARRATING 92 WHILE THE VALUE
-    # BELOW REACHED 95. Three later entries (the `.pyc` read/write pair and the stale-`expect`
-    # retarget) landed without extending this note, so the only record of them was the number
-    # itself — which is the one thing a reader cannot attribute. Corrected to 95; thethree 
-    # intervening deltas are in their own commits.
-    # added in the same commit as the flag. Every `expect` was derived by APPLYING the mutation
-    # in a staged tree and reading which case reddened — not written from memory, which is how
-    # this file's r2 fold shipped three behaviours with zero entries. Four of the fifteen pin
-    # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
-    # because a partition that drops an entry makes N green jobs report success over work
-    # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 106,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
-    # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
-    # did, and a case is held only by the self-test COUNT ratchet, which sees the number
-    # move rather than the coverage leave.
-    # ⟳⟳ 2026-09-08, r3 M1 — AND THE ANCHOR NOTE ABOVE IT WAS TRUE ON THE WRONG AXIS, which
-    # the reviewer measured on a copy BEFORE the fix rather than predicting it. r2's anchors
-    # avoided the branch expression and landed on `mut_unreadable = any(…)` instead — a
-    # PREDICATE ASSIGNMENT, indented 8 spaces inside `if not files:`, and r3 H1's fix deletes
-    # that line outright. Two entries were orphaned by this fold (that one, and the honest-zero
-    # predicate for the FOURTH time on this branch); both are retargeted here, not adjusted.
-    # The lesson that survives: there is no anchor a rewrite of its own subject cannot break,
-    # so the ratchet is the instrument — every new entry quotes a problem MESSAGE or a whole
-    # statement, and `--mutate .` in CI is what will say if one stops resolving.
-    "scripts/coverage_verdict.py": 6,
-    # ⟳ 2026-09-10: the zero-round gate joins the manifest in the SAME commit that adds it. Five
-    # PRs merged unreviewed on 2026-09-09 because a guard existed and nothing ran it; shipping its
-    # replacement as manifest debt would repeat the shape at one remove.
-    # ⟳ 2026-09-13, 6 -> 23: the final-tree rule, over FOUR review rounds. TWELVE of the seventeen
-    # exist because its own reviews found them, and both rounds' Blockings were the SAME class one
-    # layer apart — r1: subtracting dirty PATHS credited a file edited again after the round; r2:
-    # comparing CONTENT credited a mode-only change. The entry is now mode+blob. Also here: the
-    # `guarded_changes` call that no case could reach, the CANNOT-RUN exit code, and the REVIEW GAP
-    # escape in both directions including whose absence it is allowed to explain, and the reviewed
-    # DELETION that had no entry to compare against — absence is a tree state, and dropping it
-    # failed the careful path for the crime of deleting code.
-    # ⟳ 2026-09-14, r11: 23 -> 35. TWELVE entries, and every one of them aims at a rule that used to
-    # live inside the git-reading gatherer where no case could reach it — measured, eight decision
-    # points all surviving mutation with the suite at 77/77, two of them turning a live refusal into
-    # a live pass. The rules are now `classify_verdict`, `reviewed_map`, `tail_candidates`,
-    # `second_question`, `readable_docs` and `split_nul`; these entries are the proof they can fail.
-    # Two of the twelve are the r11 Blocking and High, which are ONE expression pulling opposite
-    # ways: the union (a reverted overlay must still be compared) and the intersection (the base's
-    # commits must not be charged to this branch).
-    "scripts/check-review-decision.py": 10,
-    # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
-    # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
-    # because a workflow-level filter is what made the `schema-gates` check unrequireable. TWO
-    # entries were RETIRED WITH THEIR SUBJECT (both mutated `workflow_docs_globs`, which is deleted)
-    # and SIX added for the reader that replaced it. ⚠ The orphans were found by RUNNING the anchor
-    # check, not by the keyword grep that preceded it — that grep missed both, which is this repo's
-    # recorded "a refactor ORPHANS the mutation guarding it", anchors binding by TEXT.
-    # ⚠ One of the six SURVIVED on first measurement and the case it named was the reason: a
-    # whole-line shell comment is rejected by the `NAME=` match, not by the comment strip, so the
-    # case passed for an AMBIENT reason while the clause it appeared to test was unfalsifiable. A
-    # case driving a TRAILING comment on a real assignment was added and kills it.
-    # ⟳⟳ 2026-09-16, r1 High (codex): 47 -> 50. The suffix ALLOW-LIST fail-open'd by
-    # OMISSION — a new gate reading a `docs/…/rules.json` was invisible while the existing
-    # gates kept the result non-empty, so the CANNOT-RUN guard passed and coverage shrank
-    # silently. Reproduced by the reviewer, not argued. Fixed as a CLASS: `.md` answers *is
-    # it prose* and an INJECTED existence check answers *is it a path*, the job the allow-list
-    # had been doing by accident. Plus `_joined_path`, because a `pathlib` join holds no
-    # `docs/…` literal at all. ⚠ TWO entries were re-anchored (the fix moved their text) and
-    # ONE was DELETED rather than kept: `len(parts) > 1` is INERT — mutating it to `> 0` left
-    # the suite green, because a one-constant join returns what the per-constant scan already
-    # finds. A clause whose removal changes nothing cannot carry a mutation.
-    # ⟳⟳⟳ 2026-09-16, r1 BLOCKING 1 (claude): 50 -> 49, and the count was WRONG IN A WAY
-    # NOTHING CHECKED. Three entries mutated three clauses of ONE LINE, so all three shared
-    # one anchor; `:1019` keys the duplicate refusal on the `old` half alone, refused two,
-    # and `--mutate .` returned BEFORE STAGING — zero of 719 mutations ran, in the required
-    # `verify` job. ⚠ Declared 50 while the LOADER ACCEPTED 48: this pin had never been
-    # compared against the accepted population, only against the file. One entry is gone
-    # for cause — the reviewer measured it strictly WEAKER than the entry it collided with
-    # (it removed `suffix and` too, which Low 12 showed is unfalsified) and naming the same
-    # case, so it added no coverage even once split. The predicate is now one clause per
-    # line (`is_gate_data`) so each mutation has its own anchor.
-    # ⟳ r1 High 2 fix: 49 -> 52. THREE entries for the completeness falsifier, and the
-    # first of them is the one the reviewer pointed out did not exist at all: NOTHING
-    # targeted `_gate_sources`' discovery loop, so deleting it left the suite green at
-    # 153/153 while two of three gate directories vanished and the gate reported success.
-    # ⟳ 2026-09-16: 52 -> 56. FOUR entries for the path-SHAPE guard, which exists because CI
-    # and this machine DISAGREED on the same commit (`99f4da56`): 723 attributed locally,
-    # 722 in CI, one mutation "RED but printed no `[FAIL]` line". A gate script DOCSTRING
-    # mentioning a `docs/` path yields components up to 1450 bytes, and `Path.is_file()`
-    # RAISES ENAMETOOLONG on those — except on Python 3.13+, which swallows that errno.
-    # Shape is now decided before the disk is touched, so no python version can crash it.
-    # ⟳ r2 (claude) 1 High + 5 Medium + 3 Low: 56 -> 61. FIVE entries — the `review_added`
-    # DIRECTORY clause (High 1: dropping `p.startswith(REVIEW_DIR)` left the suite green, so
-    # ANY added `.md` would have recorded a review round), the retired extension-less rule
-    # (Medium 3), the bare-`docs` skip (Medium 2), the TOTAL path bound (Medium 4), and the
-    # anti-drift ORDER — which needed `antidrift_verdict` extracted out of `main` first,
-    # because the call site was unfalsifiable and the entry written for it SURVIVED
-    # (Medium 6). ⚠ One entry was RENAMED rather than re-anchored: it claimed to re-admit
-    # the shape that crashed CI, and measured, whitespace already rejects that (Low 8).
-    # ⟳ r3 (claude) 1 High + 4 Medium + 3 Low: 61 -> 64. The empty-derivation CANNOT-RUN guard
-    # (Medium 2: its case asserted only the exit code, which the COMPLETENESS prong returns by
-    # another route, so deleting the guard left the suite green), `PATH_LIMIT`'s VALUE (Medium 5a:
-    # the two bracketing cases left a 4,545-byte window, so 4096 — Linux's PATH_MAX, the wrong
-    # value for the platform that raised — survived), and `.gitignore` (Low 6: the two prose
-    # branches mutually masked, each surviving alone). ⚠ My first PATH_LIMIT cases built their
-    # input FROM the constant, so the input moved with the mutation and could never pin the value:
-    # literal lengths now.
-    # ⟳ r4 (claude) 7 Low: 64 -> 66. The root-`.md` prose fallback (Low 4 — the OTHER half of a
-    # mutual mask this lineage has now visited three rounds running: r2 L7 -> r3 L6 -> r4 L4) and
-    # `verdict.pr_body` (Low 1 — the SAME "constant wearing a signature" shape this branch closed
-    # for `prose_exceptions_cover.declared`, still live in the same file: closing one instance and
-    # leaving the only other one is instance-not-class).
-    # ⟳ 2026-09-24, backlog #176 round 3 fold, 66 -> 68. The r3 H2 pair, both on rules this file
-    #   already had and read by truthiness or identity: `gate_ran` read with `not`, which credited
-    #   `"gate_ran": "false"` with having seen the final tree, and `dirty` tested by `is None`,
-    #   which let `[]` — a shape a COMMITTED verdict actually carries — classify as a real head
-    #   with an empty overlay. Distinct from the two `if False:` entries already on those lines:
-    #   those delete the rule, these weaken it, and the four are attributed to disjoint cases.
-    "scripts/check-review-recorded.py": 68,
-    # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
-    # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
-    # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
-    # from zero mutations to zero while gaining `reviewed_state`. r11 found THREE of its new rules
-    # surviving mutation — two of them regressions of findings earlier rounds had already paid for
-    # (r3's "a deletion is RECORDED, not skipped" and the producer half of r2's mode contract) —
-    # plus a case that could not fail at all, because the fixture held no file matching its own
-    # subject. Nine entries: the two the earlier rounds bought back, the destination-mode read, the
-    # throwaway index, the unchanged-file rule, the null-vs-empty distinction, the recorded prompt,
-    # and repository redirection in both directions.
-    # ⟳ 2026-09-23, THE VERDICT-PATH COLLISION — 12 -> 16, and it is the THIRD measured
-    # instance of one defect: `verdict_path` DERIVES the verdict name from `--out`'s basename,
-    # so the namespace has no allocator and two reviews choosing the same output name write the
-    # same file. A round-3 run with `--out codex-r3.md` overwrote a COMMITTED
-    # `codex-r3.verdict.json` from an earlier session; both records honestly said
-    # `"review": "codex-r3.md"`, so the stem cannot tell them apart. ⛔ `check-review-recorded`
-    # catches a MISSING verdict and the overwritten file shows as MODIFIED, not ADDED — so
-    # nothing in the repo could see it. FOUR entries, because the rule has four directions and
-    # three of them are ways to be wrong in the SAFE-LOOKING direction:
-    #   * the refusal dropped (the defect itself);
-    #   * `tracked is None` read as answerable — the RULE's fail-open;
-    #   * ⭐ git's rc=128 read as "not tracked" — the FETCH's fail-open, which SURVIVED 101/101
-    #     until a case drove it. git answers three ways and the first two cases drove two of
-    #     them. ⟳ r4 M1: the reason first written here — "`--out` lives outside the repo, where
-    #     rc=128 is what you get" — is FALSE at the call site, because the query is made on
-    #     `vpath`, which is always joined under `REPO_ROOT`. What reaches it is `REPO_ROOT` not
-    #     being a git repository: this very harness stages a `copytree` with no `.git`.
-    #   * the explicit `--verdict` escape removed — the OVER-refusal direction, which would
-    #     break the legitimate replacement and teach callers to route around the guard.
-    # ⟳ 2026-09-23, backlog #176: 28 -> 29, AND THE CARDINALITY IS THE LEAST INTERESTING PART OF
-    # THIS MOVE — THIRTEEN ENTRIES WERE RETIRED AND FOURTEEN ADDED. A pin that only counted would
-    # have read +1 and said nothing about a manifest whose membership changed by 93%.
-    #
-    #   ⑴ RETIRED WITH THEIR SUBJECT — 13, the only sanctioned kind of fall. Every one of them
-    #     mutated the ALLOCATOR for a namespace derived from `--out`'s basename: `run_token` and
-    #     its three inputs, `TOKEN_HEX`'s width, `verdict_collision` in three directions,
-    #     `path_is_tracked`'s fail-open, `refusal_verdict_path`, and `build_probe_repo`, which
-    #     existed only to build the world `path_is_tracked`'s cases needed. That namespace is
-    #     GONE — the caller supplies the review's identity — so the code the anchors name does not
-    #     exist and the entries are retired with it rather than orphaned. ⚠ The four entries
-    #     recorded immediately above (2026-09-23, "THE VERDICT-PATH COLLISION") are among them:
-    #     they were correct about the instance in front of them and the architecture review
-    #     convened on THRASHING found the root one layer down.
-    #
-    #   ⑵ ADDED FOR THE NEW BEHAVIOUR — 14, and they are not a translation of the old ones. Three
-    #     hold the IMPORTED filing grammar (a private suffix rule, a defaulted writer, the
-    #     coordinator counted as a half); two hold the CI JOIN KEY, which is the whole point of
-    #     #176 and whose killing case is driven through the shipped `check-review-rounds.
-    #     verdict_problems` rather than a copy of it; two hold the PROMOTION's destination; three
-    #     hold the one overwrite policy in its three directions; one holds the second call site
-    #     asking the filesystem again; one holds the promoted file's CONTENT; and two hold the CLI
-    #     — the retired `--verdict` naming its retirement, and `--review-id` staying REQUIRED.
-    # Every anchor was verified to resolve exactly once AFTER the code was final, and all 29 were
-    # driven against a green control: 29 killed, 29 attributed via the case each names.
-    # ⟳ 2026-09-23, folding review-identity-176 round 1: 29 -> 40. ELEVEN added, none retired.
-    # FOUR restore r4 M5, whose entry this slice retired under an argument that covered the
-    # deleted ALLOCATOR and not the invariant — *a refusal must not write to the path it is
-    # protecting* — which the slice then violated with a new refusal: the refusal namespace
-    # collapsing onto the protected path, the selection ignoring `refused`, the record
-    # dropping the field the consumer reads, and `main`'s refusal branch dropping the flag
-    # (that last one killed through a SANDBOXED end-to-end drive, because a call site is
-    # exactly what pure cases cannot reach). THREE hold the one-segment rule on --review-id
-    # (H1) at the predicate, its two clauses, and the gate that applies it. THREE hold the
-    # --out location refusal (M5) in both directions plus its wiring — the condition three
-    # texts asserted the quarantine safety on and nothing enforced. ONE holds the exit code
-    # that separates "the gate ran and the review is not filed" from CANNOT RUN (M4).
-    #   ⚠ THE TWO --out ENTRIES OVERLAP THEIR ANCHORS ON PURPOSE, and they are different
-    #     behaviours verified by ATTRIBUTION rather than by assertion: one DROPS the
-    #     subdirectory arm (under-refusal — 2 red cases) and one refuses the COMPLEMENT
-    #     (over-refusal — 9, including the documented scratch shape, which is the direction
-    #     that would teach callers to route around the guard). The r11 `tail_candidates`
-    #     split is the precedent for clearing the duplicate-anchor rule this way.
-    # ⟳ 2026-09-24, folding round 2: 42 -> 45. FOUR ADDED, ONE RETIRED WITH ITS SUBJECT, AND THREE
-    # RETARGETED — one of which had gone orphaned on the previous fold and was caught by CI.
-    #   ⑴ RETIRED — 1, A SANCTIONED RATCHET FALL. `r2: reserved device names stop disqualifying an
-    #     id` is gone because the RULE is gone (r2 Claude half, M2). It was wrong in both
-    #     directions — measured, `aux-tokens-r1-codex`, `com1-migration-r1-codex` and
-    #     `prn-cache-r1-claude` were REFUSED while the genuinely reserved `CON.md-r1-codex` and
-    #     `NUL.json-r1-codex` were ADMITTED, because `split("-")[0]` is not the Windows rule, which
-    #     keys on the base before the first PERIOD — and its stated justification was false: all
-    #     three `runs-on` lines in `.github/workflows/` are `ubuntu-latest`. ⚠ The entry was KILLED
-    #     THROUGH THE CASE THAT ENCODED THE ERROR, so it was a green guard over a property the code
-    #     did not have; repairing the token would have kept a rule protecting nothing measured. The
-    #     same reason is written above `MAX_ID_LEN` in `scripts/codex-review.py`, at the code.
-    #   ⑵ RETARGETED — 3. `r1 H1: the relative components` and `r2: whitespace` moved when the
-    #     predicate became `segment_problem`, which RETURNS THE RULE IT BROKE (M3); `r1 H1:
-    #     review_identity stops applying the one-segment rule` moved with its call site.
-    #   ⑶ ADDED — 4. TWO hold M4's boundary, which the previous fold stated as VERIFIED and was
-    #     not: its "AT the cap" case was 199 against a cap of 200, and the reviewer drove
-    #     `> 200 -> >= 200` SURVIVING at 162/162 — one entry mutates the comparison, the other
-    #     moves `MAX_ID_LEN` so the two cases cannot silently agree with a cap that shifted. TWO
-    #     hold M3: the reason returning the WRONG rule, and the reason being computed and dropped,
-    #     which is the state the message was in before this fold.
-    "scripts/codex-review.py": 45,
-    # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
-    # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
-    # input that a DIFFERENT rule filters first, so the named rule was never reached.
-    #   * `lib/…` and `parse.ts:42` are stopped by the lowercase-prose rule, not by the path and
-    #     file:line guards those two cases are named for. Both only bite when the first segment is
-    #     CAPITALISED (`MyModule/index.ts` -> `MyModule`, `Parse.ts:42` -> `Parse`).
-    #   * `epsilon` and `omega` are lowercase, so the mode-reset and prose-termination branches
-    #     could both be deleted and the cases stayed green. MEASURED, then capitalised.
-    #   * `all(t > num for t in owners)` was unfalsifiable: every fixture symbol had exactly ONE
-    #     producer, and with one owner `all`/`any` agree and `>`/`>=` agree.
-    "scripts/check-plan-task-order.py": 9,
-    # ⟳ 2026-09-08, the plan-mode retirement. A NEW file, 8 entries. It fences the tag grammar
-    # this very script used to parse, and it exists because retiring plan mode removed the only
-    # reader those tags ever had — so `no plan embeds code` went from enforced to merely true.
-    # ⚠ Three of the eight are on the FENCE RULE, and that is where the defect actually was: the
-    # first version had no fence rule at all, on a claim about `extract()` written from reading
-    # it. Its first live run flagged a committed review document, and running `extract()` on
-    # those exact bytes returned `files=[]` — the parser had never seen the tag. The mutations
-    # pin each branch of the rule that replaced the guess (column-0 opens, indented does not,
-    # the skip ends at the closing fence), because a rule derived from a measurement is only as
-    # durable as the case that re-takes it.
-    "scripts/check-plan-file-tags.py": 18,
-    # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
-    # vacuous cases of my own — a "dirty tree" assertion compared against a
-    # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
-    # and the git-cannot-launch branch was unreachable from a temp dir.
-    "scripts/page_chrome.py": 11,
-    # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
-    # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
-    # immediately found two live defects. Probing these seven before shipping found three more in
-    # the new script itself, one of them a fail-open (`changed_lines` returned an empty set on a
-    # git failure, indistinguishable from "nothing changed").
-    "scripts/peer-sites.py": 25,
-    # ⟳ 2026-09-16, backlog #122 — `explainer-serve.py` joins the manifest. It was the largest
-    # UNRATCHETED file in `scripts/`: 149 real cases, none ever shown able to fail, on a server
-    # that emits pasteable shell commands. Seeding it immediately found TWO surviving mutations —
-    # `SERVABLE` could be widened to serve `.env.local`, and `SRC_REASONS` could gain a member —
-    # both now cased. ⚠ The 17 entries are deliberately NOT one-per-function: an entry is admitted
-    # only when its kill is ATTRIBUTABLE, which `check-plan-code` decides by matching `expect`
-    # against a parsed case name by EXACT EQUALITY.
-    # ⟳ CORRECTED 2026-09-16 by round 1's review, which MEASURED the claim this comment first made
-    # — that a raise-dying case "can never be named". **False.** Feeding the real `parse_fail_names`
-    # and the real matcher an `expect` carrying the full `{name} — AssertionError: {msg}` string
-    # attributes fine, because `_Forbidden`'s message is built from two call-site literals and is
-    # deterministic. The honest bound is narrower and survives being checked: naming a raise kill
-    # means embedding the exception type AND message, which is unattributable the moment that
-    # message carries runtime data — the same sweep produced a `ValueError` naming a machine-
-    # specific temp path — and couples the entry to one failure mode of the case even when it does
-    # not. That still supports converting the raise to a value (the case `driving /src/ never
-    # consults the environment`), which is why the decision stands and only its reason changed.
-    "scripts/explainer-serve.py": 46,
-    # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
-    # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
-    # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
-    # token that no longer exists), the cannot-run arm (a missing shim block reading as an
-    # empty palette — the fail-open that would make it pass about nothing), and the
-    # declaration parser (counting a MENTION as a declaration, which would let a page
-    # "cover" a token by talking about it).
-    "scripts/check-theme-token-coverage.py": 4,
-    # ⟳ 2026-09-01, backlog #69 follow-on (task #203): the external count observer joins the
-    # manifest. Its eight entries cover the printed-total parser (first-match vs last-match — the
-    # defect it found in ITSELF), the `passed` requirement, the `N of M` arm, BOTH directions of
-    # the population ratchet, the borrowed-name refusal, and both arms of `declares`.
-    # ⚠ ADDING IT FOUND TWO DEFECTS IN THE SUITE IT WAS MEASURING, both of the same shape as the
-    # ones this file already records: (1) `a ratio on a line without the word is ignored` was
-    # VACUOUS — the stray ratio sat BEFORE the real summary, so last-match-wins discarded it and
-    # deleting the `passed` filter still returned 8; (2) the borrowed-name case re-derived the
-    # comprehension instead of calling it, so deleting the real rule left the case green. A
-    # second implementation of one rule, tested against itself.
-    "scripts/check-selftest-counts.py": 8,
-    "scripts/check-sentinel-meanings.py": 5,
-    # ⟳ 2026-09-07. First of the four guards that PR #247 made stageable: their subjects
-    # live outside scripts/, so before HARNESS_TREE their control could never be green.
-    # One mutation per case — the suite has exactly six, and each is now killed by one.
-    "scripts/check-storage-grant-pin.py": 6,
-    # ⟳ 2026-09-13: the CI storage fixture's falsifier, pinned in the commit that creates it.
-    # Its predecessor was a grep inside the workflow that survived 3 of 5 mutations, so this
-    # manifest exists to prove the replacement does not.
-    "scripts/check-storage-independence.py": 16,
-    # ⟳ 2026-09-06, backlog #99: the Stop guard and its driver BOTH join the manifest, in the
-    # commit that changes their decision paths. Only ONE of them is R4 debt — begin-plan.py is
-    # not a `check-*` guard, so `discover_guards` never saw it and it was never counted as owed.
-    # MANIFEST_BASELINE therefore drops 22 -> 21, not 20, and the number came from running
-    # check-ratchet-contract.py rather than from arithmetic (this file's own recorded lesson:
-    # a second implementation of the population rule drifted by one).
-    #
-    # The ten check-plan-progress entries exist because the defect being fixed was a guard that
-    # went QUIET, so the mutations are weighted at what the guard SAYS, not only at what it
-    # returns: dropping the count, dropping the human's pause reason, and — the one that matters
-    # most — collapsing WARN from 3 onto 1, which would make a Python traceback indistinguishable
-    # from a pause warning and turn the fail-closed path in block-idle-stop.sh into a fail-open
-    # one. Two more assert the pause escape still cannot BLOCK on either cannot-run arm.
-    #
-    # The seven begin-plan entries split the same way: three on the refusal happening at all and
-    # on the plan staying byte-identical when it does, two on the refusal's TEXT (a refusal that
-    # stops naming `--resume` strands the reader in #99's own state with no discoverable exit),
-    # and two on `--resume` — one for a write-back that never clears, one for a clear that takes
-    # the `plan:` pointer with it.
-    "scripts/check-plan-progress.py": 17,
-    # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
-    # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
-    # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
-    "scripts/check-producer-enumeration.py": 5,
-    "scripts/begin-plan.py": 18,
-    # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
-    # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
-    # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
-    # so every mutation here would have killed the suite UNATTRIBUTABLY.
-    "scripts/check-gate-falsifiability.py": 5,
-    # ⟳ 2026-09-07. Four targets in `backlog_shape_errors`, the PURE half: CELL_SPLIT's
-    # escaped-pipe lookbehind, the column-count comparison, the delimiter-row threshold, and
-    # the prev_was_row flag a split table depends on.
-    "scripts/check-docs.py": 5,
-    "scripts/check-explainer-delivery.py": 5,
-    # ⟳⟳ 2026-10-17: 6 -> 7, for the root-file invariant. A declared citing site must EXIST and
-    # `HARNESS_TREE` stages no repo-root files, so declaring one reddens this guard's control
-    # and reports NOT MEASURED for every shard — measured live in CI, 6 of 8 shards.
-    # ⟳⟳⟳ 2026-10-17, r5 CLAUDE H2: 7 -> 8. The root-file predicate pinned the SPELLING, so
-    # `./CONTEXT.md` passed 28/28 while the staged tree went red. ⚠ The new entry had to be
-    # RETARGETED onto an extracted predicate before it could kill at all: over the LIVE table
-    # no declared entry uses a `./` spelling, so removing the normalisation changed nothing and
-    # the mutation SURVIVED — caught here, not by a reviewer, by running the negative control.
-    # ⟳⟳⟳⟳ 2026-10-17, r6 CODEX Medium: 8 -> 9. The root-file rule has TWO refusal arms —
-    # absolute/escaping, and root-level — and one mutation left the second unpinned. ⚠ Isolating
-    # the ABSOLUTE arm needed a NESTED absolute path as input: an absolute path to a root-level
-    # file is caught by the other arm anyway, so the first attempt had no witness and its negative
-    # control did not redden. Found by RUNNING the control, not by reading the code.
-    # ⟳⟳⟳⟳⟳ 2026-10-17, r6 CLAUDE M2+M3: 9 -> 11. The predicate was REDESIGNED from a filesystem
-    # test to a LEXICAL one (v4), because v3 both MISSED a parent roundtrip to a nested file —
-    # `resolve()` erases the `..` — and FALSELY REFUSED `node_modules/typescript/...`, which the
-    # harness stages, because that path is a symlink in a worktree and `resolve()` followed it out.
-    # ⛔ That made the verdict HOST-DEPENDENT. v4 has THREE arms and each needs its own witness,
-    # plus one for the STAGEABLE_PREFIXES duplicate, whose identity case is the only thing that
-    # makes the duplicate a ratchet rather than this repo's most-measured defect.
-    # ⟳ 2026-10-17, r6 fold: 11 -> 10. The ABSOLUTE arm was DEAD CODE and the harness proved it
-    # by refusing to let its mutation die — no staged prefix begins with `/`, so the prefix arm
-    # already caught every absolute path. The arm is deleted; the entry goes with its subject.
-    "scripts/check-canonical-source.py": 10,   # r6 redesign: the inverted-restatement mutation
-    # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
-    # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
-    # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
-    # CELL INDEX and the escaped-pipe lookbehind with no falsifier at all. Two of the seventeen red
-    # TWO cases apiece — the cell index (`cells[-3]` -> `cells[-4]`) and the trunk carry-down — and
-    # both are allowed because `expect` is matched by EQUALITY against one of them, not by the size
-    # of the red set.
-    # ⟳ 2026-09-20, code review r1 (Codex) — 17 -> 20. The first review to read the CODE rather than
-    # the plan found the parser passing input it should refuse, and all three entries restore a way
-    # a line could reach no rule at all: the exemption tuple that let `>`, `<!--` and a bare `#322`
-    # sit unread inside a node (its Blocking), and the two halves of the duplicate-field refusal —
-    # dropping the refusal, and reporting it while still applying last-write-wins. The second half
-    # needed its own entry because the first cannot reach it: with the refusal gone BOTH cases red,
-    # so a repair that reports a duplicate and overwrites anyway would have been indistinguishable
-    # from a correct one. ⚠ The wrapped-continuation entry was RETARGETED in the same commit (its
-    # anchor was the line the fix rewrote) — a retarget, not an addition, so it is not in the +3.
-    "scripts/check-features.py": 22,
-    # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
-    # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
-    # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
-    # BEFORE these were registered, which is the order the loop requires and I got wrong once.
-    "scripts/check-function-revokes.py": 6,
-    "scripts/check-guard-coverage.py": 10,
-    "scripts/check-handoff-path.py": 5,
-    # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
-    # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
-    # comment/code bucket, the SQL string blanker, block-comment NESTING, the SQL line-comment
-    # blanker, and the ledger's file ordering. TWO first attempts were WRONG and the harness
-    # said so: disabling the dollar-quote branch SURVIVED (that case is actually killed by the
-    # STRING branch — its fixture puts the create inside quotes), and dropping "scripts" from
-    # PRODUCTION_DIRS CRASHED, because the fixture mkdirs from that same tuple.
-    # ⟳ 2026-09-27: 12 -> 16. Four mutations for the ESCAPE CROSS-CHECK, which explains why a
-    # refusing gate did not see the `NO-ENTRY:`/`NO-REVIEW:` the author believes they wrote. One
-    # per distinguishable state (misdirected, invisible, inert-other) plus one that makes it run
-    # on gates that did NOT refuse — the shape that would turn an explanation into an accusation.
-    "scripts/check-merge-ready.py": 16,
-    "scripts/check-paid-caller-arrival.py": 6,
-    "scripts/check-vocabulary-collisions.py": 5,
-    # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
-    # creates it, over a file whose CENTRAL mechanism — a model call — cannot be mutated at all.
-    # That is why the mutations are dense everywhere else: the answer to an untestable core is to
-    # shrink it and cover everything it touches, not to accept the gap. SIX of them mutate the
-    # PROMPT TEXT rather than code, deliberately — the prompt is the measured artefact (20/20
-    # must-fire, 0/60 false fires, 2026-09-29), so deleting one of its five load-bearing clauses
-    # invalidates the measurement exactly as a code defect would.
-    # ⛔ M1, round 1: this comment SAID "41 entries" twice, beside the number it sits next to — and
-    # it was already 53 when the review read it. A count in prose has no owner and drifts from the
-    # literal below it; the only count that cannot is the literal, which the suite pins. So the
-    # figure is NOT restated here. The same rule is written at the top of EXPECTED_MUTATIONS and
-    # this comment was the counter-example to it.
-    # ⟳ 2026-09-30, review rounds 1 and 2 folded. ⛔ NO COUNT HERE — and the previous version of
-    # THIS line, added to fix round-1 M1, said "53 → 74" three lines after declaring that the
-    # figure is not restated. It was 80 by the time the reviewer read it. A rule stated and
-    # broken in the same comment is worse than one never stated: the literal below is the count.
-    # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with the
-    # hook's `case` arms. Five entries, registered in the same commit that creates it — R4 refused
-    # the file until they existed, which is the population half of the contract doing its job on a
-    # guard added minutes earlier.
-    # ⟳ 2026-09-30, round 3 M1: 5 -> 9. The arm reader's indentation, the soundness check over
-    # unmodelled arm shapes, the structural-line string tracking, and the `case` block bound.
-    # ⟳⟳ 2026-09-30, THE ARMING CONDITION FIRED AND THIS IS THE ONE SANCTIONED RATCHET FALL:
-    # 16 -> 9. FOURTEEN entries were RETIRED WITH THEIR SUBJECT — the 114-line hand-rolled bash
-    # lexer (`case_block`, `structural_lines`, `unmodelled_quoting`, `arm_soundness`, and the
-    # lexical `handled_codes` / `unguarded_detail_arms`) is GONE, replaced by adjudicating the
-    # hook with bash itself. Every entry named code that no longer exists, so they are retired
-    # rather than orphaned. SEVEN were added against the observer. Reason at the retirement site
-    # in that file; the self-test count falls 51 -> 40 in the same commit for the same reason.
-    # ⚠ Round 3 B2, round 4 Codex H1 and round 4 B1/M1/M2 were all findings in that one component
-    # across two consecutive rounds, every one caused by the previous round's fix — which is
-    # `dev-process.md:108`'s condition, met for the first time in this fold.
-    # ⟳ 2026-10-15: the reference-namespace guard arrives with a manifest rather than
-    # manifest DEBT. `check-ratchet-contract` offered `MANIFEST_BASELINE = 1`, which would
-    # have ACCEPTED the debt; six entries take it to 0 instead.
-    # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
-    # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
-    # injected reader each have a case that names them.
-    "scripts/check-doc-citations.py": 37,
-    "scripts/check-reference-namespace.py": 6,
-    "scripts/check-rc-contract.py": 17,
-    # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
-    # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
-    # contract: every Blocking in rounds 3-7 landed on R3 while R1/R2 produced none, and round 7
-    # B2 showed why — the cross-file guard observes the hook by STAGING A MINIMAL TREE, and a
-    # staged tree is a proxy for the repo. This guard runs the REAL hook IN THE REAL REPO through
-    # the one ARGV seam (`surface-recall.sh:60`), so there is no fabricated world to be unfaithful.
-    # Measured: an arm branching on `.claude/settings.json` renders a dangling `Detail:` for a
-    # reader — this guard returns [5], the staged observer returned [].
-    # ⚠ FOUR OF THE 11 ARE RELOCATED, NOT NEW — they came from `check-rc-contract`'s manifest with
-    # the rule, retargeted onto the code that now owns it. Its 20 -> 14 and this 0 -> 11 are ONE
-    # move, and the declared sum rises 1158 -> 1163 net of two retirements whose subject is gone.
-    "scripts/check-surface-recall.py": 21,
-    # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
-    # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
-    # alive on `--arm`, which is B1's error a third time.
-    "scripts/recall-llm.py": 96,
-    # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
-    # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
-    # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
-    # coverage: one severs the unpinned-guard verdict and one severs `main`'s consumption of the
-    # finished list, and NEITHER is reachable by a unit case — they go red only through the case
-    # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
-    # detector cannot see, measured on the guard that enforces the rule.
-    # ⟳ 2026-10-05, ROUND 10's FOLD: 163 -> 183. Nineteen entries, and NINE RETARGETS that are not
-    # additions — the Blocking replaced a leaf-level PROXY with a rule that reads what an
-    # expression HANDS BACK, which moved or dissolved nine anchors. ⭐ FIVE of the nineteen were
-    # SURVIVORS on a first run and are here only because the run said so: the case each one
-    # needed did not exist, and two of those six exposed a case of the fold's own that could not
-    # fail — a branched binding answered by `_is_restore_value` before the rule under test, and a
-    # callee-scope substitution no input distinguished. Every `expect` below was derived by
-    # RUNNING its mutation against a green control, never written from the finding.
-    "scripts/check-main-drivable.py": 183,
-    "scripts/check-memory-link.py": 8,
-    # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
-    # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
-    # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
-    # while BOTH suites read repo files outside it — `gen-backlog-page --self-test` opens
-    # `docs/backlog.md`, and explainer-serve's new source-coverage case stats `docs/`.
-    # MEASURED: `FileNotFoundError: .../tmpw8okpx8z/docs/backlog.md`, 9 files mutated,
-    # 0 mutations run.
-    #
-    # That is a REASON, not an excuse, and it is why neither file was ever in here. Making
-    # them mutable means making their suites runnable outside a checkout — a separate piece
-    # of work. Recorded rather than papered over: shipping a manifest whose suite cannot
-    # execute would report coverage that does not exist, which is the exact failure this
-    # harness was built to prevent.
-}
+# ⟳ backlog #533: THE PINS ARE NOT IN THIS FILE. `EXPECTED_MUTATIONS` (how many mutations each
+# delivered script is covered by, EXACT in both directions) lives in `PINS_FILE`,
+# `scripts/mutations/expected_mutations.py`, with the history comment beside each pin. It is DATA,
+# read with `pin_display` below and never executed. It moved because every pin bump was a change to
+# this harness, and a harness change sweeps the WHOLE manifest (`select_manifests`, rule 3).
 
 MANIFEST_DIR = "scripts/mutations"
 
@@ -1822,23 +1688,315 @@ def shard_mode_refusal(shard_arg: "str | None", mutate_arg: "str | None",
     return None
 
 
-def shard_label(shard: "tuple[int, int] | None") -> str:
+def shard_label(shard: "tuple[int, int] | None", only: "frozenset | None" = None,
+                scope: "tuple[int, int] | None" = None) -> str:
     """Which SLICE of the manifest a verdict line is about. PURE.
 
     The docstring's "the final line of STDOUT names the mode" is too weak once the execution
     can be split: a sharded run's verdict is about a FRACTION of the manifest, and a CI log
-    that does not say so reads exactly like a whole-repo pass.
+    that does not say so reads exactly like a whole-repo pass. ⛔ `--only` is a slice too
+    (backlog #208), and says it is a DIAGNOSTIC: the gate is the whole manifest, in CI.
     """
-    if shard is None:
-        return "the WHOLE manifest"
-    return f"shard {shard[0]} of {shard[1]} (round-robin)"
+    if only:
+        return f"ONLY {', '.join(sorted(only))} — a DIAGNOSTIC slice, not the gate"
+    # backlog #330: a pull request's selection is a slice too, and must never read as the whole.
+    if scope is None:
+        return "the WHOLE manifest" if shard is None else f"shard {shard[0]} of {shard[1]} (round-robin)"
+    picked = (f"the DIFF-SCOPED selection, {scope[0]} of {scope[1]} manifest(s) — the full sweep "
+              f"runs on master")
+    return picked if shard is None else f"shard {shard[0]} of {shard[1]} (round-robin) of {picked}"
+
+
+def sweep_estimate(control_seconds: dict, muts: list) -> float:
+    """PURE. Seconds a run will take: each target's measured CONTROL time x (its mutations + the
+    re-control). Every mutation re-runs that target's WHOLE suite (backlog #217), so this is
+    the cost model the harness actually has, not an approximation of it."""
+    per: dict = {}
+    for m in muts:
+        per[m["file"]] = per.get(m["file"], 0) + 1
+    return sum(control_seconds.get(f, 0.0) * (n + 1) for f, n in per.items())
+
+
+def local_budget_refusal(control_seconds: dict, muts: list, budget: "float | None") -> "str | None":
+    """PURE. Why a LOCAL run must not proceed, or None. `budget` None = CI or `--allow-long-local`."""
+    if budget is None:
+        return None
+    est = sweep_estimate(control_seconds, muts)
+    if est <= budget:
+        return None
+    per: dict = {}
+    for m in muts:
+        per[m["file"]] = per.get(m["file"], 0) + 1
+    worst = max(per, key=lambda f: control_seconds.get(f, 0.0) * per[f])
+    return (f"{LOCAL_REFUSAL} — this run would take over {est / 60:.1f} min here (local budget "
+            f"{budget / 60:.0f} min); the most is {worst}: {per[worst]} mutation(s) x "
+            f"{control_seconds.get(worst, 0.0):.0f}s per suite. The FULL sweep runs on the pull "
+            f"request's CI shards — push to the (draft) PR. Locally, sweep only what changed: "
+            f"--only <script>. To run THIS ONE anyway, add --allow-long-local (this run only). "
+            f"NOTHING WAS MEASURED.")
+
+
+def anchor_problems(muts: list[dict], read) -> list[str]:
+    """PURE over `read(target) -> text | None`. Every entry's edits, applied SEQUENTIALLY to the
+    delivered text exactly as `run_mutations` applies them: each find-string must occur once.
+
+    ⛔ backlog #252: an anchor stops binding when an edit ELSEWHERE changes the text it names, and
+    `run_mutations` only discovers that when the mutation runs — measured 14m58s into a CI shard,
+    while 175 sibling entries bought no verdict. This is the same rule, run up front, in well under
+    a second, before any tree is staged. `run_mutations` keeps its own check: a target can change
+    between this pass and the run only by a bug, and the late check is what would say so.
+    """
+    out = []
+    for m in muts:
+        name, fname = m.get("name", "?"), m.get("file", "")
+        src = read(fname)
+        if src is None:
+            continue                     # an unknown target is refused by its own rule, not here
+        for find, repl in m.get("edits", []):
+            n = src.count(find)
+            if n != 1:
+                out.append(f"mutation {name!r} ({fname}): " + (
+                    "anchor NOT FOUND" if n == 0 else f"anchor matches {n} times")
+                    + " in the delivered file — refused before any tree is staged (backlog #252). "
+                      "Re-bind it to the text the edit now names")
+                break
+            src = src.replace(find, repl, 1)
+    return out
+
+
+def manifest_counts(muts: list) -> dict:
+    """PURE. How many entries each target file has across the loaded manifests."""
+    counts: dict = {}
+    for m in muts:
+        counts[m["file"]] = counts.get(m["file"], 0) + 1
+    return counts
+
+
+def declared_total() -> int:
+    """The mutation total — DERIVED from the per-file pins, never typed (backlog #359).
+
+    A typed total was edited by 41 of 43 merged commits to this file from 2026-10-17, so every
+    pair of open PRs that added a mutation anywhere conflicted on it. The sum can only move when
+    a pin moves, so it carries nothing the pins do not.
+    """
+    return sum(EXPECTED_MUTATIONS[target] for target in EXPECTED_MUTATIONS)
+
+
+def pin_drift(counts: dict) -> list[str]:
+    """PURE over `EXPECTED_MUTATIONS`. Every manifest whose entry count differs from its pin, and
+    every manifest with no pin — the ONE rule, read by the sweep and by the cheap self-test alike.
+
+    Per file, in both directions: a TOTAL cannot see one manifest gain what another loses. When
+    anything drifts, one line stating both derived totals follows the per-file lines, so a merge
+    never types one. (`mutate_delivered` may append home-escape findings after it.)
+    """
+    drift = []
+    for target, want in sorted(EXPECTED_MUTATIONS.items()):
+        got = counts.get(target, 0)
+        if got != want:
+            drift.append(f"{target}: manifest holds {got} mutation(s), expected {want}. "
+                         f"Coverage cannot change silently — if this is deliberate, change "
+                         f"its pin in {PINS_FILE} in the SAME commit and "
+                         f"say why in the message")
+    for target in sorted(set(counts) - set(EXPECTED_MUTATIONS)):
+        drift.append(f"{target}: {counts[target]} mutation(s) but no declared count — add it "
+                     f"to EXPECTED_MUTATIONS in {PINS_FILE} so its coverage cannot shrink unnoticed")
+    if drift:
+        drift.append(f"in all: the manifests hold {sum(counts.values())} mutation(s) and the pins "
+                     f"declare {declared_total()} — the total is derived from the per-file pins, "
+                     f"so change a pin, never a total")
+    return drift
+
+
+# ── THE PINS ARE THEIR DISPLAY (backlog #359 r3) ─────────────────────────────────────────────
+# ⛔ ONE READER for "the pins a tree declares": the single module-level `EXPECTED_MUTATIONS = {...}`
+# display, read as DATA. `check-merge-ready.py` imports it and applies it to the merge base's text
+# and the head's, so a falling pin is HELD without executing either REVISION (importing this working-
+# tree file to get the reader does execute it; anything that import raises is CANNOT RUN there, but
+# code that ends the process WITHOUT raising — `os._exit`, an `atexit`/thread/signal hook — or that
+# rebinds merge-ready's globals is not caught: the trust merge-ready extends to its own source. What
+# the reader RETURNS is reduced there to an exact `{str: int}` (merge-ready's `_cross`, r7); a WRONG but
+# well-typed answer is still trusted, as master trusts it, and a forged `KeyboardInterrupt` escapes at
+# rc 130, which fails closed). That
+# reading is only sound if the dict this harness USES is that display — so `--mutate` (before any
+# mutation) and `--self-test` (at its top) each assert `pin_display_problems(...) == []` in their own
+# process, and refuse with rc 2 otherwise. A write the display does not show — a duplicate key,
+# `-= 4`, a default argument, a decorator, a shadowed `dict`, or one gated on argv or the environment
+# (r3, Claude F1) — is then refused at entry, under whatever invocation it was gated on.
+# ⚠ BOUND, stated (r4 Codex F1, DEFERRED to backlog #431): the assertion fixes the INITIAL value, not
+# the value later CONSUMED. A write in the harness's own code paths after it — a manifest loader
+# setting `EXPECTED_MUTATIONS[target] = len(entries)`, the mutate loop — is seen by neither the
+# assertion nor check-merge-ready's HOLD. Measured on that exact edit, with the last entry of
+# `mutations/check-vocabulary-collisions.json` deleted: origin/master was GREEN too (`--self-test`
+# 249/249, `--mutate . --only` 4/4 killed), so this loses nothing master had.
+PINS_NAME = "EXPECTED_MUTATIONS"
+PINS_REFUSAL = ("CANNOT RUN — the pins this process holds are not its EXPECTED_MUTATIONS display, "
+                "so check-merge-ready, which reads the display, would compare the wrong numbers")
+
+
+class PinDisplayError(ValueError):
+    """The source has no single literal `EXPECTED_MUTATIONS` display. Every reader: CANNOT RUN."""
+
+
+def pin_display(src: str) -> dict:
+    """PURE. The ONE module-level `EXPECTED_MUTATIONS = {...}` display in `src`, as {path: int}.
+
+    Refused (`PinDisplayError`) unless there is exactly one module-level assignment to the name and
+    its value is a dict display of string-literal keys and int-literal values with NO duplicate key —
+    Python keeps the last duplicate, so a display carrying one shows a number nobody holds."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError as exc:
+        raise PinDisplayError(f"the source does not parse ({exc.msg}, line {exc.lineno})")
+
+    def names(stmt):
+        if isinstance(stmt, ast.Assign):
+            return stmt.targets
+        return [stmt.target] if isinstance(stmt, (ast.AnnAssign, ast.AugAssign)) else []
+    sites = [s for s in tree.body
+             if any(isinstance(t, ast.Name) and t.id == PINS_NAME for t in names(s))]
+    if len(sites) != 1:
+        raise PinDisplayError(f"{len(sites)} module-level assignments to {PINS_NAME}, not exactly one")
+    disp = sites[0].value
+    if not isinstance(disp, ast.Dict):
+        raise PinDisplayError(f"line {sites[0].lineno}: {PINS_NAME} is not a dict display")
+    pins: dict = {}
+    for k, v in zip(disp.keys, disp.values):
+        if not (isinstance(k, ast.Constant) and type(k.value) is str):
+            raise PinDisplayError(f"line {v.lineno}: a key that is not a string literal")
+        if not (isinstance(v, ast.Constant) and type(v.value) is int):
+            raise PinDisplayError(f"line {v.lineno}: {k.value}'s pin is not an int literal")
+        if k.value in pins:
+            raise PinDisplayError(f"line {k.lineno}: {k.value} is a DUPLICATE key — Python keeps the "
+                                  f"last value, so the display shows a pin nobody holds")
+        pins[k.value] = v.value
+    return pins
+
+
+def pin_display_problems(src: str, effective: dict) -> list[str]:
+    """PURE. Why the pins a process HOLDS (`effective`) are not the display in its source — one line
+    per differing key, or the reason there is no display. Empty when they agree."""
+    try:
+        display = pin_display(src)
+    except PinDisplayError as exc:
+        return [str(exc)]
+    return pin_differences(display, effective)
+
+
+def pin_differences(display: dict, effective: dict) -> list[str]:
+    """PURE. One line per key on which a pins `display` and the `effective` dict disagree."""
+    return [f"{k}: the display says {display.get(k)}, this process holds {effective.get(k)}"
+            for k in sorted(display.keys() | effective.keys())
+            if display.get(k) != effective.get(k)]
+
+
+# ⟳ backlog #533: where the pins live, from the repository root. The harness finds them beside its OWN
+# file (`own_pins_path`), so a staged copy of `scripts/` measures against the pins it was copied with.
+PINS_FILE = "scripts/mutations/expected_mutations.py"
+
+
+def own_pins_path() -> pathlib.Path:
+    """The pins file of the tree THIS file lives in."""
+    return pathlib.Path(__file__).resolve().parent.parent / PINS_FILE
+
+
+def read_pins(path: pathlib.Path) -> "tuple[dict, str | None]":
+    """IO. (the pins `path` displays, None), or ({}, WHY they could not be read). It never raises.
+
+    ⛔ IMPORTING THIS MODULE MUST NOT NEED THE PINS. `check-merge-ready.py`, `check-diff-coverage.py`
+    and `begin-plan.py` import it for OTHER rules, often from a copy with no pins file beside it. So an
+    unreadable pins file is not an import error. It is a refusal at every CONSUMER of the pins:
+    `own_pin_problems` reports it, and `--mutate` and `--self-test` stop at rc 2 (CANNOT RUN) before
+    they measure anything against {}."""
+    try:
+        return pin_display(path.read_text(encoding="utf-8")), None
+    except (OSError, UnicodeDecodeError, PinDisplayError) as exc:
+        return {}, f"{PINS_FILE}: the pins could not be read ({exc.__class__.__name__}: {exc})"
+
+
+EXPECTED_MUTATIONS = read_pins(own_pins_path())[0]
+
+
+def pin_file_problems(path: pathlib.Path, effective: dict) -> list[str]:
+    """IO. The pins file at `path` against the dict a process holds. A file `read_pins` cannot read is
+    its REASON (backlog #533), never an empty agreement — ⟳ sweep-pin-select r1 (Claude F2): this is the
+    reason's consumer; it once reread the file itself, and the reason went unread."""
+    display, why = read_pins(path)
+    if why is not None:
+        return [why]
+    return pin_differences(display, effective)
+
+
+def own_pin_problems() -> list[str]:
+    """`pin_file_problems` for THIS process: its pins file against the dict it holds."""
+    return pin_file_problems(own_pins_path(), EXPECTED_MUTATIONS)
+
+
+# The names whose mention makes a literal a TOTAL rather than a number: the derived total, or the pins.
+TOTAL_NAMES = frozenset({"declared_total", "EXPECTED_MUTATIONS"})
+# The self-test's own assertions — a literal passed to one of these is asserted, as in `assert`.
+ASSERT_CALLS = frozenset({"case", "check"})
+
+
+def typed_total_sites(src: str, total: int) -> list[int]:
+    """PURE. Lines where an int literal equal to the derived `total` is asserted ABOUT the total.
+
+    ⟳ backlog #359 r1 (Codex Medium, Claude L1): a regex for `declared_total(), N)` missed a trailing
+    comma, `2_981`, `assert declared_total() == N` and `declared_total() == N, True`. Reading the
+    LITERAL's value catches every one of those spellings.
+    ⟳ r2 (Codex Medium): reading it in ANY call or comparison also hit `timeout(2986)`. A literal now
+    counts only inside a comparison, an `assert`, or a `case`/`check` call that also mentions
+    `TOTAL_NAMES`.
+    ⚠ BOUND: a CONVENTION guard over ordinary spellings. Arithmetic (`2900 + 86`), an f-string, and
+    a name bound to the total all escape it, and that is accepted: a re-typed total no longer
+    protects or loosens anything — `check-merge-ready.py` compares the EFFECTIVE pins — so all it
+    can bring back is the merge conflict this file shed.
+    """
+    tree = ast.parse(src)
+    parents = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
+
+    def about_total(node) -> bool:
+        return any(isinstance(n, ast.Name) and n.id in TOTAL_NAMES for n in ast.walk(node))
+
+    hits = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and type(node.value) is int and node.value == total):
+            continue
+        up = parents.get(node)
+        while up is not None:
+            asserting = (isinstance(up, (ast.Compare, ast.Assert))
+                         or (isinstance(up, ast.Call) and isinstance(up.func, ast.Name)
+                             and up.func.id in ASSERT_CALLS))
+            if asserting and about_total(up):
+                hits.append(node.lineno)
+                break
+            if isinstance(up, ast.stmt):
+                break
+            up = parents.get(up)
+    return sorted(hits)
 
 
 def mutate_delivered(root: pathlib.Path,
                      progress=None,
                      shard: "tuple[int, int] | None" = None,
+                     budget: "float | None" = None,
+                     only: "frozenset | None" = None,
+                     select: "frozenset | None" = None,
+                     seeds: "tuple[int, ...] | None" = None,
+                     deadline: "float | None" = None,
+                     hold: "contextlib.ExitStack | None" = None,
                      ) -> tuple[bool, list[str], "Measured | NotMeasured"]:
     """Mutate the DELIVERED scripts, not a copy assembled from a document.
+
+    `deadline` (r1 F1) is the absolute `time.monotonic()` by which the run must stop (`ci_deadline`), None
+    for no budget. Once it passes, the run STOPS and its report ENDS with a `budget_stop_line`.
+    `hold` (r2 F1): the caller's stack, which then owns this run's teardown (the staged tree, its seed copy,
+    the deadline's reset), so `main` prints and flushes the report BEFORE that unbounded work, not after it.
+
+    `select` (backlog #330) is a pull request's diff-scoped selection of TARGETS, None for the
+    whole manifest. It is applied BEFORE the shard, so the shards split the SELECTED entries
+    round-robin; a shard left with none of them is a clean pass over nothing (`declared = 0`),
+    because under a selection an empty slice is the expected outcome, not a misconfigured N.
 
     The whole `scripts/` tree is copied because these scripts import each other as
     siblings and resolve a repo root from their own path; copying only the targeted
@@ -1874,20 +2032,8 @@ def mutate_delivered(root: pathlib.Path,
     ev_files: dict = {}
     if problems:
         return False, problems, NotMeasured.from_counts([], None, ev_files)
-    counts = {}
-    for m in muts:
-        counts[m["file"]] = counts.get(m["file"], 0) + 1
-    drift = []
-    for target, want in sorted(EXPECTED_MUTATIONS.items()):
-        got = counts.get(target, 0)
-        if got != want:
-            drift.append(f"{target}: manifest holds {got} mutation(s), expected {want}. "
-                         f"Coverage cannot change silently — if this is deliberate, change "
-                         f"EXPECTED_MUTATIONS in check-plan-code.py in the SAME commit and "
-                         f"say why in the message")
-    for target in sorted(set(counts) - set(EXPECTED_MUTATIONS)):
-        drift.append(f"{target}: {counts[target]} mutation(s) but no declared count — add it "
-                     f"to EXPECTED_MUTATIONS so its coverage cannot shrink unnoticed")
+    counts = manifest_counts(muts)
+    drift = pin_drift(counts)
     # A target that resolves the home directory by a route `$HOME` does not govern would
     # make `child_env`'s guarantee false without changing anything `child_env` can see.
     for target in sorted(counts):
@@ -1912,6 +2058,16 @@ def mutate_delivered(root: pathlib.Path,
                 drift.append(f"mutation {m.get('name', '?')!r}: {why}. Its REPLACEMENT "
                              f"text is scanned as well as its target, because the "
                              f"mutation is what puts the route there")
+    _texts: dict = {}
+
+    def _read(target: str):
+        if target not in _texts:
+            try:
+                _texts[target] = (root / target).read_text(encoding="utf-8")
+            except OSError:
+                _texts[target] = None
+        return _texts[target]
+    drift += anchor_problems(muts, _read)
     if drift:
         return False, drift, NotMeasured.from_counts([], None, ev_files)
     # ⛔ EVERYTHING ABOVE THIS LINE IS OVER THE WHOLE MANIFEST, AND MUST STAY THAT WAY. The
@@ -1922,25 +2078,49 @@ def mutate_delivered(root: pathlib.Path,
     # slice, one global invariant would quietly become N local ones and coverage could shrink
     # with every shard still green, which is this repository's definition of a false green.
     # ONLY THE EXECUTION BELOW IS SHARDED.
-    if shard is not None:
+    pool = muts if select is None else [m for m in muts if m["file"] in select]
+    if shard is not None and select is None:
         why = shard_refusal(shard[0], shard[1], len(muts))
         if why:
             return False, [why], NotMeasured.from_counts([], None, ev_files)
-    shard_muts = shard_slice(muts, shard[0], shard[1]) if shard is not None else muts
+    shard_muts = shard_slice(pool, shard[0], shard[1]) if shard is not None else pool
+    if select is not None and not shard_muts:
+        return True, [], Measured(files={}, declared=0, mutations=[], survivors=[],
+                                  controls_green=True)
+    # `--only` (backlog #208): like a shard, it narrows EXECUTION only — every global check above
+    # has already run over the whole manifest, so a narrowed run cannot hide a coverage drop.
+    if only is not None:
+        missing = sorted(only - {m["file"] for m in muts})
+        if missing:
+            return False, [f"CANNOT RUN — --only names {', '.join(missing)}, which no manifest "
+                           f"targets. NOTHING WAS MEASURED."], NotMeasured.from_counts([], None, ev_files)
+        shard_muts = [m for m in shard_muts if m["file"] in only]
     # THE SHARD'S OWN TARGETS, not the manifest's. The control run is what makes every "caught"
     # verdict below mean anything, so a shard must prove the suite of each file it MUTATES is
     # green first — and must not pay for the suites of files it never touches, which is the cost
     # this flag exists to cut.
     targets = sorted({m["file"] for m in shard_muts})
-    with tempfile.TemporaryDirectory() as td:
+    with contextlib.ExitStack() as _own:
+        _keep = _own if hold is None else hold   # r2 F1: under a `hold` the teardown waits for the report
+        td = _keep.enter_context(tempfile.TemporaryDirectory())
+        cleanup = _keep.enter_context(contextlib.ExitStack())
         d = pathlib.Path(td)
+        cleanup.callback(_set_deadline, _set_deadline(deadline))   # this run's budget, put back on exit
         staging = stage_tree(root, d)
         if staging:
             return False, staging, NotMeasured.from_counts([], None, ev_files)
         # The redirected home the suites will resolve `Path.home()` to — see `child_env`.
         # Inside the TemporaryDirectory, so it is removed with everything else.
         (d / CHILD_HOME).mkdir()
+        # ⟳ #506 r1 fold, COST: ONE tree per extra seed for the WHOLE run, copied here — after the home exists,
+        # before the first control — and shared by every control, mutant and re-control below (`seed_trees`).
+        trees = seed_trees(d, seeds, cleanup) if seeds else None
         report = []
+        control_seconds: dict = {}
+        # backlog #558: each GREEN target's limit for its mutant runs (never its re-control: r1 F3), from its
+        # own control. Local to this run, so a later run (or another fixture's same-named target) never
+        # inherits it.
+        limits: dict = {}
         # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
         # the mutation; that claim is empty unless the suite is green without it.
         # SILENT UNLESS A CALLER ASKS — see `run_mutations`. The reporter belongs to the
@@ -1952,9 +2132,13 @@ def mutate_delivered(root: pathlib.Path,
         # one session. With the comment hoisted, both blocks are pure code and are distinguished
         # by `control` vs `re-control`, which is what they actually differ by.
         for position, name in enumerate(targets, 1):
+            if budget_spent():
+                break
             if progress is not None:
                 progress(position, len(targets), f"control {name}")
-            rc, so, se = run_suite_parts(d, name)
+            _t0 = time.monotonic()
+            rc, so, se = control_parts(d, name, seeds, trees)
+            control_seconds[name] = time.monotonic() - _t0
             out = merged_output(so, se)
             ev_files[name] = {"rc": rc, "tail": (out.split("\n")[-1] if out else ""),
                               "blocks": None}
@@ -1963,10 +2147,28 @@ def mutate_delivered(root: pathlib.Path,
                               f"works (exit {rc}) BEFORE any mutation was applied. Every "
                               f"verdict below would be an artefact. Treat this as NOT "
                               f"CHECKED.\n    {diagnostic_tail(so, se)}")
+                control_seconds.pop(name, None)     # r2 L: a FAILED control prices nothing
+                continue
+            # PER SUITE: under N seeds the control ran the suite N times (`control_parts`).
+            limits[name] = suite_limit(control_seconds[name] / max(1, len(seeds or ())))
+            # THE BUDGET, AS SOON AS IT IS KNOWN TO BE BLOWN — after this control proved GREEN (r1 L2:
+            # a slow FAILING control read as "REFUSED LOCALLY"). The estimate only grows, so the
+            # targets timed so far bound it — refusing here costs one suite, not all.
+            why = local_budget_refusal(control_seconds,
+                                       [m for m in shard_muts if m["file"] in control_seconds], budget)
+            if why:
+                # r2 L: an EARLIER failed control is reported FIRST — a refusal must not hide it.
+                return False, report + [why], NotMeasured.from_counts([], None, ev_files)
+        if budget_spent():
+            # r1 F1: a control cut short by the budget is in `report` already; this line says what is lost.
+            return False, report + [budget_stop_line(
+                [f"control {t}" for t in targets if ev_files.get(t, {}).get("rc") == 2],
+                [f"control {t}" for t in targets if t not in ev_files]
+                + [f"all {len(shard_muts)} mutation(s)"])], NotMeasured.from_counts([], None, ev_files)
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
-        ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets),
-                                                          progress=progress)
+        ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets), limits=limits,
+                                                          progress=progress, seeds=seeds, trees=trees)
         # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
         # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
         # ⚠ WHAT THIS SHARD DECLARED, not what the manifest holds. `len(muts)` here makes every
@@ -1974,6 +2176,9 @@ def mutate_delivered(root: pathlib.Path,
         # MEASURED over work it actually did, and the cardinality clause stops being able to see
         # a genuinely skipped mutation because every run already fails it.
         declared = len(shard_muts)
+        if m_report and m_report[-1].startswith(BUDGET_STOP):
+            # r1 F1: no time is left for a re-control, and without one there is no verdict to certify.
+            return False, m_report, NotMeasured.from_counts(m_muts, declared, ev_files)
         # THE CONTROL AGAIN, AFTER. A prologue proves the tree was good when we STARTED.
         # If it goes bad at mutation 17 — disk, OOM, a peer process — every later suite
         # exits 1, `run_mutations` only distinguishes rc==2, and an environmental red is
@@ -1985,10 +2190,14 @@ def mutate_delivered(root: pathlib.Path,
         # clear it. It is passed to the predicate rather than overwriting its result,
         # because the predicate is where the whole contract now lives.
         controls_green = True
+        recontrol_rc: dict = {}
         for position, name in enumerate(targets, 1):
+            if budget_spent():
+                break
             if progress is not None:
                 progress(position, len(targets), f"re-control {name}")
-            rc, so, se = run_suite_parts(d, name)
+            rc, so, se = control_parts(d, name, seeds, trees)
+            recontrol_rc[name] = rc
             out = merged_output(so, se)
             if not control_is_green(rc, out):
                 ok = False
@@ -2000,6 +2209,13 @@ def mutate_delivered(root: pathlib.Path,
                     f"{rc}), so the tree changed underneath it. Any 'caught' above may be "
                     f"an artefact of that, not of its mutation. Treat this run as NOT "
                     f"CHECKED.\n    {diagnostic_tail(so, se)}")
+        # r1 F1: the budget ran out in, or before, the re-controls — say what that cost, LAST.
+        if len(recontrol_rc) < len(targets) or (budget_spent() and 2 in recontrol_rc.values()):
+            ok = controls_green = False
+            m_report.append(budget_stop_line(
+                [m["name"] for m in m_muts if m.get("measured") is False]
+                + [f"re-control {t}" for t, r in recontrol_rc.items() if r == 2],
+                [f"re-control {t}" for t in targets if t not in recontrol_rc]))
         # ONE assignment, AFTER both controls, holding all three clauses. r2 computed this
         # BEFORE the after-control and then overwrote it, which worked but split one rule
         # across two statements — and the split is what let `check()` reproduce the bug
@@ -2017,7 +2233,8 @@ def mutate_delivered(root: pathlib.Path,
 
 
 def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
-                  progress=None) -> tuple[bool, list[str], list[dict], list[str]]:
+                  progress=None, seeds=None, trees=None,
+                  limits: "dict | None" = None) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
 
     `d` holds runnable scripts — assembled from a plan, or copied from the delivered
@@ -2028,10 +2245,21 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
     guard below was bought with a review round, so a diff that alters behaviour is a
     defect in the refactor, not an improvement. Proof is a measurement, not a reading:
     43 mutations / 0 survivors before and after.
+
+    `trees` (#506 r1 fold): the run's per-seed trees (`seed_trees`). Without them, a seeded call makes its own,
+    ONCE for all of `muts` — never one per mutant, which was the fold's 12x cost.
     """
+    if seeds and trees is None:
+        with contextlib.ExitStack() as cleanup:
+            return run_mutations(d, muts, known, progress, seeds, seed_trees(d, seeds, cleanup), limits=limits)
     ok, report, ev_muts, ev_survivors = True, [], [], []
     for position, mut in enumerate(muts, 1):
         name, fname = mut.get("name", "?"), mut.get("file", "")
+        if budget_spent():
+            # r1 F1: STOP, and say what is lost — a run carried on would be killed with its evidence unprinted.
+            report.append(budget_stop_line([e["name"] for e in ev_muts if e.get("measured") is False],
+                                           [m.get("name", "?") for m in muts[position - 1:]]))
+            return False, report, ev_muts, ev_survivors
         # ⚠ SILENT UNLESS A CALLER ASKS. This function is driven dozens of times by its own
         # suite, and the OUTER harness captures a suite's stderr into `control_is_green` — so
         # progress leaking out of a nested run would be read as part of that suite's output.
@@ -2070,8 +2298,20 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             continue
         orig = (d / fname).read_text()
         (d / fname).write_text(src)
-        rc, out = run_suite(d, fname)
+        limit = (limits or {}).get(fname)   # backlog #558: this target's, from its own control
+        if seeds:
+            here = seed_apply(trees, d, fname, src)
+            rc, out, odd = seed_outcome([(s, r, merged_output(so, se)) for s, r, so, se
+                                         in seed_runs(d, fname, seeds, here, limit=limit)],
+                                        wants=mut.get("expect"))
+        else:
+            (rc, out), odd = run_suite(d, fname, limit=limit), None
         (d / fname).write_text(orig)
+        stuck = seed_revert(trees, d, fname, orig) if seeds else None
+        if stuck:
+            ok = False
+            report.append(stuck)
+            return ok, report, ev_muts, ev_survivors
         # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
         # not the first ":". A case name may contain a colon ("collect: a missing
         # git is a could-not-tell"), and splitting on the first one truncated it to
@@ -2080,6 +2320,19 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         # merely contains the marker (a log prefix, an ANSI escape) was sliced
         # blind and silently produced a wrong case name. Measured round 5.
         fails = parse_fail_names(out)
+        if odd:
+            ok = False
+            ev_muts.append({"name": name, "caught": False, "fails": fails, "measured": True,
+                            "nondeterministic": odd, "seeds": list(seeds)})
+            ev_survivors.append(name)
+            # ⟳ r1 Claude m3: the runs differ in their seed, but a suite's THREAD TIMING differs between them too, so
+            # the message does not blame the seed. Re-running the same seeds is what tells the two apart.
+            report.append(f"mutation NONDETERMINISTIC — {name}: {odd}. A kill that differs between runs is "
+                          f"seed-dependent or timing-dependent — luck, not coverage (backlog #506). Re-run with "
+                          f"--seeds {','.join(map(str, seeds))}: if it reproduces it is the seed, so make the case "
+                          f"fail under every seed (e.g. an order that is deterministic and NOT sorted); if not, "
+                          f"it is timing")
+            continue
         # rc 2 is `run_suite`'s CANNOT RUN — a timeout. Reading it as red records
         # two minutes of NOT CHECKED as proof that a guard works, and prints
         # `caught <name>` into the evidence block. The comment on `run_suite`
@@ -2139,6 +2392,8 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         # and a summary line byte-identical to success.
         ev_muts.append({"name": name, "caught": caught, "fails": fails,
                         "attributed": caught and not unnamed, "measured": True})
+        if seeds:
+            ev_muts[-1]["seeds"] = list(seeds)
         if not caught:
             ok = False
             ev_survivors.append(name)
@@ -2226,7 +2481,8 @@ def _entries_of(v) -> list:
     return v.mutations if isinstance(v, Measured) else v.entries
 
 
-def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None) -> str:
+def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None, only=None,
+               scope=None) -> str:
     """The one-line summary of a `--mutate` run. PURE.
 
     ⟳ backlog #217: AND WHICH SLICE OF THE MANIFEST IT IS ABOUT. A sharded run's numbers are a
@@ -2246,12 +2502,17 @@ def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None) -> str
     """
     killed = len(verdict.mutations) - len(verdict.survivors)
     attributed = sum(1 for m in verdict.mutations if m.get("attributed") is True)
+    # backlog #506: a NONDETERMINISTIC mutant is among the survivors (never killed), and counted on its own.
+    _nd = sum(1 for m in verdict.mutations if m.get("nondeterministic"))
+    _seeds = next((m["seeds"] for m in verdict.mutations if m.get("seeds")), None)
     return (("OK — " if ok else "FAILED — ")
             + f"delivered scripts mutated: {len(verdict.files)} file(s), "
               f"{len(verdict.mutations)} mutation(s), {killed} killed, "
               f"{attributed} attributed to the case each names, "
+              f"{f'{_nd} NONDETERMINISTIC (among the survivors), ' if _nd else ''}"
               f"{len(verdict.survivors)} survivor(s)"
-            + f" — measured over {shard_label(shard)}")
+            + f" — measured over {shard_label(shard, only, scope)}"
+            + (f" under PYTHONHASHSEED {', '.join(map(str, _seeds))}" if _seeds else ""))
 
 
 # One terminal row, so an update cannot wrap. ⟳ r1 M2: labels are manifest names written for a
@@ -2359,7 +2620,96 @@ def parse_fail_names(out: str) -> list[str]:
             for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
 
 
+@contextlib.contextmanager
+def _suite_owns_the_pins():
+    """THE SUITE ONLY (backlog #359 r3). Its synthetic `--mutate` runs REWRITE `EXPECTED_MUTATIONS`
+    on purpose, around `main()`, over a fixture root — so the display assertion, which is about THIS
+    file's pins and is proved by its own cases on a real copy of this file, stands down for them."""
+    global own_pin_problems
+    real = own_pin_problems
+    own_pin_problems = lambda: []
+    try:
+        yield
+    finally:
+        own_pin_problems = real
+
+
+def _budget_wiring(root: pathlib.Path) -> dict:
+    """`main()` over the fixture ROOT under each CI / flag / --only / --event setting: {key: (rc, stdout)}.
+
+    ⛔ A SMALL FUNCTION ON PURPOSE (PR #400 r1 H1, measured): `check-main-drivable` analyses every
+    `main()` call site against its ENCLOSING function, and inside the long `_self_test` this one
+    call cost its suite ~30s and pushed it past `SUITE_TIMEOUT`. Here it costs nothing."""
+    _gh = ("CI", "GITHUB_EVENT_NAME", JOB_START_VAR, LIMIT_VAR)
+    saved = {k: os.environ.pop(k, None) for k in _gh}
+    out = {}
+    torn: dict = {}
+    _real_md = mutate_delivered
+
+    def _held(*a_, hold=None, _k=None, _b=None, **k_):
+        # r2 F1: what stdout already holds when the run's teardown starts — None if main passed no `hold`.
+        r = _real_md(*a_, hold=hold, **k_)
+        if hold is not None:
+            hold.callback(lambda: torn.__setitem__(_k, _b.getvalue()))
+        return r
+    (root / "changed.txt").write_text("scripts/thing.py\0")
+    # r1 F1: a CI run's budget is the job's limit the runner put in LIMIT_VAR (30 minutes on every row but
+    # "spent", whose 2 minutes leave NO budget after the headroom, so it stops before any suite). No ci.yml.
+    scoped = ["--event", "pull_request", "--changed", str(root / "changed.txt")]
+    try:
+        for key, ci, extra, bud in (("local", None, [], 0), ("flag", None, ["--allow-long-local"], 0),
+                                    ("cifalse", "false", [], 0), ("ci", "true", [], 0),
+                                    ("only", None, ["--only", "scripts/thing.py"], 3600),
+                                    ("scoped1", "true", scoped + ["--shard0", "0/2"], 0),
+                                    ("scoped2", "true", scoped + ["--shard0", "1/2"], 0),
+                                    ("push", "true", ["--event", "push"], 0),
+                                    ("seeds", "true", ["--seeds", "3,5"], 0),
+                                    ("spent", "true", ["--event", "push"], 0),
+                                    # r2 F1: a job that started 1,700 s ago has none of a push's 1,680 left
+                                    ("late", "true", ["--event", "push"], 0),
+                                    # r2 F3: no event from the runner, or an --event that disagrees with it
+                                    ("noevent", "true", [], 0),
+                                    ("conflict", "true", ["--event", "schedule"], 0),
+                                    ("nostart", "true", ["--event", "push"], 0),
+                                    # arch 11-08: no limit from the runner, or one it did not expand
+                                    ("nolimit", "true", ["--event", "push"], 0),
+                                    ("rawlimit", "true", ["--event", "push"], 0)):
+            for _k in _gh:
+                os.environ.pop(_k, None)
+            # The runner's own variables on EVERY row, so the rows off CI prove they are ignored there.
+            _ev = (extra[extra.index("--event") + 1] if "--event" in extra and key != "conflict" else "push")
+            os.environ.update({"GITHUB_EVENT_NAME": _ev,
+                               LIMIT_VAR: {"spent": "2", "rawlimit": f"*{LIMIT_ANCHOR}"}.get(key, "30"),
+                               JOB_START_VAR: str(int(time.time()) - (1700 if key == "late" else 0))})
+            for _k in {"noevent": "GITHUB_EVENT_NAME", "nostart": JOB_START_VAR, "nolimit": LIMIT_VAR}.get(key, "").split():
+                os.environ.pop(_k)
+            if ci is not None:
+                os.environ["CI"] = ci
+            buf = io.StringIO()
+            globals()["mutate_delivered"] = functools.partial(_held, _k=key, _b=buf)
+            try:
+                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()), \
+                        _suite_owns_the_pins():
+                    out[key] = (main(["--mutate", str(root), *extra], local_budget=bud), buf.getvalue())
+            finally:
+                globals()["mutate_delivered"] = _real_md
+    finally:
+        for _k in _gh:
+            os.environ.pop(_k, None)
+            if saved[_k] is not None:
+                os.environ[_k] = saved[_k]
+    out["torn"] = torn
+    return out
+
+
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     ok = fail = 0
 
     def case(name, got, want):
@@ -2370,6 +2720,12 @@ def _self_test() -> int:
             fail += 1
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
 
+    # ⛔ backlog #359 r3: FIRST, the pins this suite measures are its display — see `PINS_REFUSAL`.
+    _disp = own_pin_problems()
+    case("⛔ the pins this process holds ARE its EXPECTED_MUTATIONS display", _disp, [])
+    if _disp:
+        print(PINS_REFUSAL + ":\n" + "\n".join(f"  {_d}" for _d in _disp), file=sys.stderr)
+        return 2
 
     # ── r3 B5 + B6: THE CONTRACT'S OWN CLAUSES ───────────────────────────
     # ⟳ backlog #91. These were asserted on `verdicts_are_trustworthy`; the clauses now
@@ -2407,6 +2763,151 @@ def _self_test() -> int:
          _constructs([{"name": "m", "caught": True, "measured": 1}], 1, True), False)
     case("...and a MISSING `measured` key is refused too",
          _constructs([{"name": "m", "caught": True}], 1, True), False)
+
+    # ⛔ ABOVE the hung-suite case, and its no-limit call does not time out: a mutant that drops the
+    # flat default reaches `{limit:.1f}` with None there and crashes the suite, so this case must have
+    # printed its `[FAIL]` first (MEASURED 2026-11-08: placed after it, that mutant crashed unattributed).
+    import subprocess as _sp
+    _real = _sp.run
+    # ⛔ backlog #558: a mutant's limit is derived from its target's CONTROL, never unbounded.
+    case("⭐ backlog #558: an untimed suite (a control) gets the flat SUITE_TIMEOUT",
+         suite_limit(None), SUITE_TIMEOUT)
+    case("...a fast control is FLOORED at SUITE_TIMEOUT, never below it",
+         suite_limit(0.5), SUITE_TIMEOUT)
+    case("...a slow control's mutants get SUITE_TIMEOUT_FACTOR x its time — the 15.8 s that went "
+         "red on master's shard 16 now allows 316 s",
+         suite_limit(15.8), 15.8 * SUITE_TIMEOUT_FACTOR)
+    case("...and a very slow one is CAPPED, so a real infinite loop still times out",
+         suite_limit(10_000.0), SUITE_TIMEOUT_CEILING)
+    case("the limit's constants are pinned — a factor of 1 is the flat limit again, an unbounded "
+         "ceiling lets a real hang hold a shard",
+         (SUITE_TIMEOUT_FACTOR, SUITE_TIMEOUT_CEILING), (20, 600))
+    _seen_t: list = []
+
+    def _timeout_seen(*a, **k):
+        _seen_t.append(k.get("timeout"))
+        if len(_seen_t) == 1:         # the given-limit call hangs; the no-limit call completes, so a
+            raise _sp.TimeoutExpired(cmd="x", timeout=k.get("timeout"))   # None limit is SEEN, not formatted
+        return _sp.CompletedProcess(a[0] if a else [], 0, "", "")
+
+    _sp.run = _timeout_seen
+    try:
+        _rc_l, _so_l, _se_l = run_suite_parts(pathlib.Path("."), "whatever.py", limit=333.0)
+        run_suite_parts(pathlib.Path("."), "whatever.py")
+    finally:
+        _sp.run = _real
+    case("⭐ backlog #558: run_suite_parts runs the child under the limit it is GIVEN, and the flat "
+         "SUITE_TIMEOUT when given none — never no timeout at all",
+         _seen_t, [333.0, SUITE_TIMEOUT])
+    case("...and a suite over that limit is still rc 2, CANNOT RUN, naming the limit it ran under",
+         (_rc_l, "CANNOT RUN" in _se_l and "333.0s" in _se_l and "NOT CHECKED" in _se_l), (2, True))
+
+    # ⛔ THE SHARD'S BUDGET (r1 F1; r2 F1/F3; architecture review 2026-11-08, sweep-deadline). The job's limit is
+    # the RUNNER's evaluated `timeout-minutes`, aliased into the step's env as LIMIT_VAR; nothing reads ci.yml.
+    _env = {"GITHUB_EVENT_NAME": "push", LIMIT_VAR: "30", JOB_START_VAR: "1000000"}
+    _dl, _dline, _dwhy = ci_deadline(_env, None, 1000150.0, 500.0)
+    case("⭐ r2 F1: the deadline counts from the JOB's start: 150 s of setup leaves 1,530 s of a push's 1,680",
+         (_dl, _dwhy, "1530s of it left" in (_dline or "")), (500.0 + 30 * 60 - SWEEP_HEADROOM - 150, None, True))
+    case("⭐ arch 11-08: the budget is the LIMIT the runner gave, less the headroom, whatever the event "
+         "(60 -> 3,480 s, 7 -> 300 s; a schedule's 30 stays 1,680 — the harness mirrors no event expression)",
+         [ci_deadline({**_env, **_v}, None, 1000000.0, 0.0)[0] for _v in
+          ({LIMIT_VAR: "60"}, {LIMIT_VAR: "7"}, {"GITHUB_EVENT_NAME": "schedule"})],
+         [60 * 60 - SWEEP_HEADROOM, 7 * 60 - SWEEP_HEADROOM, 30 * 60 - SWEEP_HEADROOM])
+    _no_lim = {_k: _v for _k, _v in _env.items() if _k != LIMIT_VAR}
+    case("⭐ arch 11-08: a missing or non-integer limit — an alias the runner did not expand, an expression it did "
+         "not evaluate, a float, padding, zero, a leading zero, five digits — is a REASON naming it, never a default",
+         [(ci_deadline(_e, None, 1000000.0, 0.0)[0], LIMIT_VAR in (ci_deadline(_e, None, 1000000.0, 0.0)[2] or ""))
+          for _e in [_no_lim] + [{**_env, LIMIT_VAR: _v} for _v in
+                                 ("", f"*{LIMIT_ANCHOR}", "${{ github.event_name == 'schedule' && 60 || 30 }}",
+                                  "30.0", " 30", "30\n", "0", "030", "12345")]],
+         [(None, True)] * 10)
+    case("⭐ r2 F3: an --event that disagrees with GITHUB_EVENT_NAME is a REASON (it would choose the wrong selection)",
+         ci_deadline(_env, "schedule", 1000000.0, 0.0)[0::2],
+         (None, "--event 'schedule' is not this run's event (GITHUB_EVENT_NAME='push')"))
+    case("⭐ r2 F3: no GITHUB_EVENT_NAME is a REASON, never a default event",
+         ci_deadline({**_env, "GITHUB_EVENT_NAME": ""}, "push", 1000000.0, 0.0)[0], None)
+    case("⭐ r2 F1: a missing, non-numeric or FUTURE job start is a REASON",
+         [ci_deadline({**_env, JOB_START_VAR: _v}, None, 1000000.0, 0.0)[0]
+          for _v in ("", "12a", " 1000000", "1000001")], [None] * 4)
+    case("the budget's headroom is pinned — at most 31 s before the step and 4 s after it were MEASURED",
+         SWEEP_HEADROOM, 120)
+    # ⛔ THE STATIC PIN over the REAL ci.yml, and one fixture per broken clause: each is the real file with ONE
+    # change and must give exactly that clause's problem. A change that no longer applies leaves the fixture
+    # equal to the real file, which is red here too (its `changed` is False), never vacuous.
+    _ci_txt = (pathlib.Path(__file__).resolve().parent.parent / CI_WORKFLOW).read_text(encoding="utf-8")
+    case("⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate "
+         "step, ONE timeout-minutes in the job, and the epoch written by the job's first step",
+         sweep_limit_pin(_ci_txt), [])
+    _head, _sep, _job = _ci_txt.partition(f"\n  {SWEEP_JOB}:\n")
+    _mstep = "      - name: Mutation manifest against the delivered scripts (one shard)\n"
+    _alias_line = f"          {LIMIT_VAR}: *{LIMIT_ANCHOR}\n"
+    _install = "      - name: Install dependencies\n        run: npm ci\n"
+
+    def _in_job(*_pairs):
+        _j = _job
+        for _old, _new in _pairs:
+            _j = _j.replace(_old, _new, 1)
+        return _head + _sep + _j
+    _p_lim = "the job has 2 timeout-minutes, not ONE, its own"
+    _p_anchor = f"the job's own timeout-minutes does not carry `&{LIMIT_ANCHOR}` exactly once"
+    _p_alias = f"the step that runs --mutate does not set `{LIMIT_VAR}: *{LIMIT_ANCHOR}`, once"
+    _p_epoch = f"the job's FIRST step does not write {JOB_START_VAR}, named once in the file"
+    _pin_fx = (
+        ("R3-F1: a step-level limit as the step's FIRST key",
+         _in_job((_mstep, "      - timeout-minutes: 5\n" + _mstep.replace("      - ", "        ", 1))), [_p_lim]),
+        ("a step-level limit as a later key", _in_job((_mstep, _mstep + "        timeout-minutes: 5\n")), [_p_lim]),
+        ("a step-level limit in a flow mapping",
+         _in_job((_mstep, "      - {name: x, timeout-minutes: 5, run: 'true'}\n" + _mstep)), [_p_lim]),
+        ("a step-level limit under a quoted key",
+         _in_job((_mstep, _mstep + "        \"timeout-minutes\": 5\n")), [_p_lim]),
+        ("the job's limit without the anchor",
+         _in_job((f"timeout-minutes: &{LIMIT_ANCHOR} ", "timeout-minutes: ")), [_p_anchor]),
+        ("the anchor defined again before the job (an alias binds the LATEST)",
+         _head.replace("\n    timeout-minutes: 30\n", f"\n    timeout-minutes: &{LIMIT_ANCHOR} 30\n", 1) + _sep + _job,
+         [_p_anchor]),
+        ("a literal limit in the step's env, not the alias",
+         _in_job((_alias_line, f"          {LIMIT_VAR}: 30\n")), [_p_alias]),
+        ("the alias QUOTED, which YAML reads as the string, not the node",
+         _in_job((_alias_line, f"          {LIMIT_VAR}: \"*{LIMIT_ANCHOR}\"\n")), [_p_alias]),
+        ("the alias moved to a step that does not run --mutate",
+         _in_job((_alias_line, ""), (_install, _install.replace("\n        run:", "\n        env:\n"
+                                                                + _alias_line.rstrip("\n") + "\n        run:"))),
+         [_p_alias]),
+        ("the epoch step no longer FIRST",
+         _in_job(("      - name: Record when this job started",
+                  "      - run: 'true'\n      - name: Record when this job started")), [_p_epoch]),
+    )
+    case("⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit "
+         "included",
+         [(_n, _fx != _ci_txt, sweep_limit_pin(_fx)) for _n, _fx, _ in _pin_fx],
+         [(_n, True, _w) for _n, _, _w in _pin_fx])
+    case("...and a job it cannot find, or steps it cannot read, is a problem, never a pass",
+         [sweep_limit_pin(_t) for _t in
+          ("jobs:\n  other:\n    timeout-minutes: 5\n",
+           f"jobs:\n  {SWEEP_JOB}:\n    timeout-minutes: &{LIMIT_ANCHOR} 30\n    steps:\n    - run: x\n    - run: y\n")],
+         [[f"`  {SWEEP_JOB}:` appears 0 times, not once"],
+          ["the job's steps are not a list of `      - ` items this pin can read"]])
+    _seen_b: list = []
+
+    def _budget_seen(*a, **k):
+        _seen_b.append(k.get("timeout"))
+        raise _sp.TimeoutExpired(cmd="x", timeout=k.get("timeout"))
+
+    _sp.run = _budget_seen
+    _prev_dl = _set_deadline(time.monotonic() + 50.0)
+    try:
+        _rc_b, _so_b, _se_b = run_suite_parts(pathlib.Path("."), "whatever.py", limit=333.0)
+        _set_deadline(time.monotonic() - 1.0)
+        _rc_s, _so_s, _se_s = run_suite_parts(pathlib.Path("."), "whatever.py", limit=333.0)
+    finally:
+        _sp.run = _real
+        _set_deadline(_prev_dl)
+    case("⭐ r1 F1: under a budget a suite run is capped at the budget LEFT, never its own longer limit",
+         [40.0 < _x <= 50.0 for _x in _seen_b[:1]], [True])
+    case("...a run the budget cut short is rc 2 and SAYS the budget stopped it, naming its own limit",
+         (_rc_b, "time budget ran out" in _se_b, "333.0s" in _se_b), (2, True, True))
+    case("...and once the budget is spent NO suite is started: rc 2, CANNOT RUN",
+         (_rc_s, "NOT STARTED" in _se_s, len(_seen_b)), (2, True, 1))
 
     # A hung suite is a CANNOT RUN (rc 2), not a traceback and not a verdict.
     import subprocess as _sp
@@ -2587,9 +3088,10 @@ def _self_test() -> int:
     import contextlib as _cl2, io as _io2
 
     def _main_rc(argv):
-        with _cl2.redirect_stdout(_io2.StringIO()) as buf, _cl2.redirect_stderr(_io2.StringIO()):
+        with _cl2.redirect_stdout(_io2.StringIO()) as buf, \
+                _cl2.redirect_stderr(_io2.StringIO()) as ebuf:
             rc = main(argv)
-        return rc, buf.getvalue()
+        return rc, buf.getvalue(), ebuf.getvalue()
 
     with tempfile.TemporaryDirectory() as td4:
         # ⚠ THE CONTENT IS DELIBERATELY INERT, and saying so is the point. These used
@@ -2619,7 +3121,7 @@ def _self_test() -> int:
                              ([str(g), "--verify-evidence"], "--verify-evidence"),
                              ([str(g), "--compare", str(td4)], "--compare"),
                              ([str(r)], "a FAILING plan — still NOT MEASURED, not failed")):
-            _rc, _out = _main_rc(_argv)
+            _rc, _out, _ = _main_rc(_argv)
             case(f"retired: {_what} refuses with rc=2, measuring nothing", _rc, 2)
         # The sentence, once — on stderr, where a CANNOT RUN belongs.
         with _cl2.redirect_stdout(_io2.StringIO()), \
@@ -2637,6 +3139,15 @@ def _self_test() -> int:
              _main_rc(["--mutate", "/nonexistent-root"])[0], 2)
         case("...and a bare invocation still exits 2, never 0",
              _main_rc([])[0], 2)
+        # backlog #330's flags: each misuse is refused BY NAME, before any tree is read. The root
+        # does not exist, so a dropped refusal still fails fast — on the WRONG sentence.
+        for _argv, _says in ((["--event", "pull_request"], "only mean something with --mutate"),
+                             (["--mutate", "/nonexistent-root", "--changed", "x.txt"],
+                              "--changed without --event"),
+                             (["--mutate", "/nonexistent-root", "--event", "push", "--only",
+                               "scripts/a.py"], "--only and --event are two different slices")):
+            _rc, _, _err3 = _main_rc(_argv)
+            case(f"refused by name, rc=2: {' '.join(_argv[:4])}", (_rc, _says in _err3), (2, True))
 
 
 
@@ -2686,6 +3197,74 @@ def _self_test() -> int:
         _ok, _rep, _evm, _evs = run_mutations(_d, _mut, {"m.py"})
         case("run_mutations catches a real mutation", (_ok, _evs), (True, []))
         case("run_mutations records the caught mutation", len(_evm), 1)
+        # ⛔ backlog #558, DIRECT: each hand-off of a limit is given a value of its OWN, recorded at the
+        # producer (`check-fixture-variation.py` found every direct call passing the default; the
+        # through-`mutate_delivered` case below reaches them only indirectly).
+        _lim_d: list = []
+        _real_parts_d = run_suite_parts
+
+        def _rec_d(_dd, _nn, _ss=None, limit=None):
+            _lim_d.append(limit)
+            return _real_parts_d(_dd, _nn, _ss, limit=limit)
+        globals()["run_suite_parts"] = _rec_d
+        try:
+            _okl, _, _, _ = run_mutations(_d, _mut, {"m.py"}, limits={"m.py": 77.0, "other.py": 5.0})
+            run_suite(_d, "m.py", limit=88.0)
+            with contextlib.ExitStack() as _csl:
+                seed_runs(_d, "m.py", (3, 5), seed_trees(_d, (3, 5), _csl), limit=99.0)
+        finally:
+            globals()["run_suite_parts"] = _real_parts_d
+        case("⭐ backlog #558: run_mutations runs a mutant under ITS target's limit, and run_suite and "
+             "seed_runs (every seed) under the limit they are given",
+             (_okl, _lim_d), (True, [77.0, 88.0, 99.0, 99.0]))
+        # ⛔ r1 F2 (both halves): the SEEDED call with no trees makes its own — and must still forward the limits.
+        _lim_f2: list = []
+
+        def _rec_f2(_dd, _nn, _ss=None, limit=None):
+            _lim_f2.append(limit)
+            return _real_parts_d(_dd, _nn, _ss, limit=limit)
+        globals()["run_suite_parts"] = _rec_f2
+        try:
+            _okf2 = run_mutations(_d, _mut, {"m.py"}, seeds=(3, 5), limits={"m.py": 66.0})[0]
+        finally:
+            globals()["run_suite_parts"] = _real_parts_d
+        case("⭐ r1 F2: a SEEDED run_mutations given no trees makes its own, and runs every seed under the "
+             "limit it was given", (_okf2, _lim_f2), (True, [66.0, 66.0]))
+        # ⛔ r1 F1: once the budget is spent run_mutations STOPS. The stub cuts the FIRST mutant (rc 2) and
+        # spends the budget as it does; the other two must never start, and the report's LAST line says so.
+        _calls_b: list = []
+
+        def _cut_b(_dd, _nn, _ss=None, limit=None):
+            _calls_b.append(_nn)
+            _set_deadline(time.monotonic() - 1.0)
+            return 2, "", "CANNOT RUN — stub: cut short by the budget. NOT CHECKED."
+        _three = [dict(_mut[0], name=f"mut {_i}") for _i in (1, 2, 3)]
+        _prev_b = _set_deadline(None)
+        globals()["run_suite_parts"] = _cut_b
+        try:
+            _okb, _repb, _evb, _ = run_mutations(_d, _three, {"m.py"})
+        finally:
+            globals()["run_suite_parts"] = _real_parts_d
+            _set_deadline(_prev_b)
+        case("⭐ r1 F1: once the budget is spent run_mutations STOPS — one suite started, not three — and fails",
+             (_okb, len(_calls_b)), (False, 1))
+        case("...and its LAST line names the mutant that did not finish and each one not reached",
+             ((_repb or [''])[-1].startswith(BUDGET_STOP), "Did not finish (1): mut 1." in (_repb or [''])[-1],
+              "Not reached (2): mut 2; mut 3." in (_repb or [''])[-1]), (True, True, True))
+        # backlog #252: the same rules, applied up front over the delivered text — sequentially, as the run does.
+        _src = {"m.py": "def f():\n    return 1\nx = 1\nx = 1\n"}.get
+        case("anchor_problems: a binding anchor, and a second edit that binds only AFTER the first, are clean",
+             anchor_problems([{"name": "a", "file": "m.py", "edits": [["return 1", "return 2"], ["return 2", "return 3"]]}], _src), [])
+        case("...an anchor absent from its target is named",
+             [("anchor NOT FOUND" in r, "'gone'" in r) for r in
+              anchor_problems([{"name": "gone", "file": "m.py", "edits": [["return 9", "return 2"]]}], _src)], [(True, True)])
+        # a DIFFERENT reader: one that cannot read a target. That target is refused by its own rule (unknown
+        # file), so this pass names nothing for it rather than inventing a NOT FOUND.
+        case("...and a target the reader cannot read is left to its own refusal, not reported as NOT FOUND",
+             anchor_problems([{"name": "u", "file": "m.py", "edits": [["return 1", "return 2"]]}], lambda f: None), [])
+        case("...and so is one that matches TWICE",
+             [("matches 2 times" in r) for r in
+              anchor_problems([{"name": "twice", "file": "m.py", "edits": [["x = 1", "x = 2"]]}], _src)], [True])
         _bad = [{"name": "anchor not there", "file": "m.py",
                  "edits": [["return 99", "return 2"]], "expect": "f returns one"}]
         _ok2, _rep2, _, _ = run_mutations(_d, _bad, {"m.py"})
@@ -2713,6 +3292,271 @@ def _self_test() -> int:
              (_ok9, _evs9), (False, ["exits three"]))
         case("...and the report says it survived rather than naming a red case",
              any("mutation SURVIVED" in r for r in _rep9), True)
+
+        # ── backlog #506, THE CLASS CHECK: a mutant killed under one PYTHONHASHSEED and not another ─────
+        # MEASURED 2026-11-05: dropping `sorted()` in check-review-decision survived under seeds 266/312/342/
+        # 449 of 0-599 — a kill that was luck. `seed_outcome` is the one classifier; a NONDETERMINISTIC
+        # mutant is a distinct, failing outcome, and a seed that cannot run makes the mutant NOT CHECKED.
+        _K, _S = "  [FAIL] f returns one: got 2\n", "1/1 passed\n"
+        _nd = seed_outcome([(3, 1, _K), (7, 0, _S)])
+        case("⭐ #506: killed under one seed and survived under another is NONDETERMINISTIC, naming both seeds",
+             (_nd[0], bool(_nd[2]), "PYTHONHASHSEED=3" in (_nd[2] or ""), "PYTHONHASHSEED=7" in (_nd[2] or "")),
+             (1, True, True, True))
+        case("...the ADJACENT negative: killed under BOTH seeds by the same case is an ordinary kill",
+             (seed_outcome([(3, 1, _K), (5, 1, _K)])[0], seed_outcome([(3, 1, _K), (5, 1, _K)])[2]), (1, None))
+        case("...survived under both seeds is an ordinary survivor, not nondeterministic",
+             (seed_outcome([(3, 0, _S), (5, 0, _S)])[0], seed_outcome([(3, 0, _S), (5, 0, _S)])[2]), (0, None))
+        # ⚠ The DIFFERENT-cases rule below masks the kill/spare rule whenever the spared seed prints no red case
+        # (measured: `if killed and spared:` -> `if False:` survived). This input separates them: under seed 7
+        # the suite printed the SAME red case and then exited 3 — not a clean red, so not a kill under 7.
+        _x3 = seed_outcome([(3, 1, _K), (7, 3, _K)])
+        case("...a seed that prints the same red case but exits 3 is SPARED under it, so the mutant is NONDETERMINISTIC",
+             (bool(_x3[2]), "survived under PYTHONHASHSEED=7" in (_x3[2] or "")), (True, True))
+        _cr = seed_outcome([(3, 1, _K), (7, 2, "CANNOT RUN — timed out")])
+        case("⛔ a seed that CANNOT RUN makes the mutant a cannot-run (rc 2) naming that seed — never killed",
+             (_cr[0], _cr[2], "PYTHONHASHSEED=7" in _cr[1]), (2, None, True))
+        _dc = seed_outcome([(3, 1, _K), (7, 1, "  [FAIL] something else\n")])
+        case("...killed under every seed but by DIFFERENT cases is NONDETERMINISTIC too (the named kill was luck)",
+             (_dc[0], bool(_dc[2])), (1, True))
+        # ⟳ r1 Claude MAJOR 1: classify on the NAMED (`expect`) cases, not the whole red set. MEASURED on #506's own
+        # mutant (check-review-decision, seeds 0..599): the expect case red under all 600, an incidental pair red
+        # under 596 and not under 266/312/342/449. Comparing whole sets called that NONDETERMINISTIC — a false red
+        # about 1 nightly in 150. This is that real shape, as the adjacent negative.
+        _E = "  [FAIL] tied names come back sorted\n"
+        _real = seed_outcome([(0, 1, _E + "  [FAIL] stable order\n  [FAIL] NO LEAD line\n0/3 passed\n"),
+                              (266, 1, _E + "2/3 passed\n")], wants=["tied names come back sorted"])
+        case("⭐ r1 M1: the expect case red under EVERY seed, an extra case under one, is an ordinary attributed kill",
+             (_real[0], _real[2]), (1, None))
+        _dcn = seed_outcome([(3, 1, _K), (7, 1, "  [FAIL] something else\n")], wants=["f returns one"])
+        case("...but the NAMED case red under one seed and not the other (both killed) is NONDETERMINISTIC",
+             (_dcn[0], bool(_dcn[2]), "f returns one" in (_dcn[2] or "")), (1, True, True))
+        # ⟳ r1 Codex MAJOR 2: a seed whose suite did not COMPLETE (no `passed` summary — it crashed after printing the
+        # named [FAIL]) agrees with the seed that completed on every red case name. Its red set is truncated, so
+        # that agreement is not evidence: a seed that completed under one seed and not another is NOT CHECKED.
+        _crash = "  [FAIL] f returns one: got 2\nTraceback (most recent call last):\nRuntimeError: stop\n"
+        _inc = seed_outcome([(3, 1, _K + "0/1 passed\n"), (7, 1, _crash)], wants=["f returns one"])
+        case("⛔ r1 Codex M2: a suite that COMPLETED under one seed and stopped early under another is a cannot-run",
+             (_inc[0], _inc[2], "PYTHONHASHSEED=7" in _inc[1], "did not complete" in _inc[1]),
+             (2, None, True, True))
+        _inc2 = seed_outcome([(3, 1, _crash), (7, 1, _crash)], wants=["f returns one"])
+        case("...ADJACENT: a suite that stops at the same place under EVERY seed is judged as the unseeded run judges it",
+             (_inc2[0], _inc2[2]), (1, None))
+        # ⟳ r2 Codex MAJOR: completion was `"passed" in out`, so a CASE NAME containing the word read as a summary.
+        _pv = "  [FAIL] value passed validation\n"
+        _inc3 = seed_outcome([(3, 1, _pv + "0/1 passed\n"), (7, 1, _pv + "Traceback (most recent call last):\n")],
+                             wants=["value passed validation"])
+        case("⛔ r2 Codex M1: a case NAME containing `passed` is not a summary — the stopped seed is still a cannot-run",
+             (_inc3[0], "PYTHONHASHSEED=7" in _inc3[1]), (2, True))
+        _pv2 = "  [FAIL] 3/4 passed is the shape\n"
+        _inc4 = seed_outcome([(3, 1, _pv2 + "0/1 passed\n"), (7, 1, _pv2)], wants=["3/4 passed is the shape"])
+        case("...nor is a case name that CONTAINS the whole summary shape: only a summary LINE completes a suite",
+             _inc4[0], 2)
+        case("⛔ r2 Codex M1: a control that exits 0 printing only a case name with `passed` in it is NOT green",
+             (control_is_green(0, _pv), control_is_green(0, _pv + "1/1 passed\n"), control_is_green(1, "0/1 passed\n")),
+             (False, True, False))
+        # `summary_total` — the ONE summary-line rule (check-selftest-counts borrows it). One case per shape arm.
+        case("summary_total: every summary shape the suites print reads its denominator",
+             [summary_total(s) for s in ("\n12/12 self-test cases passed", "self-test: 9/9 passed", "5/7 cases passed",
+                                         "32 of 32 self-test cases passed", "  4/4 passed  ",
+                                         "self-test: 50 cases, 49 passed, 1 failed")],
+             [12, 9, 7, 32, 4, 50])
+        case("...a ratio line WITHOUT `passed` is not a summary, even one that would otherwise win as the last",
+             summary_total("8/8 passed\n3/4"), 8)
+        case("...the LAST summary line wins (a trailing SECOND summary is what gets read)",
+             summary_total("77/77 passed\n6/6 cannot-run cases passed"), 6)
+        case("...a `[FAIL]` line or a backticked label quoting a summary is never one; no summary -> None",
+             [summary_total(s) for s in ("  [FAIL] 3/4 passed", "  ok `12/12 cases passed` -> 12", "fine")],
+             [None, None, None])
+        case("⛔ r1 Codex M1: seed_runs cannot isolate a seed (the tree cannot be copied) -> CANNOT RUN, never a run",
+             [(s, rc, "CANNOT RUN" in se) for s, rc, _, se in seed_runs(pathlib.Path("/nonexistent-svs"), "x.py",
+                                                                         (3, 7)) if rc == 2],
+             [(7, 2, True)])
+        case("parse_seeds: two distinct seeds in range are accepted, in order",
+             parse_seeds("0,266"), ((0, 266), None))
+        case("...ONE seed is refused — a single seed cannot show a kill that depends on the seed",
+             (parse_seeds("5")[0], "two" in (parse_seeds("5")[1] or "")), (None, True))
+        case("...a REPEATED seed is refused — it would run the same order twice and call it two",
+             (parse_seeds("3,3")[0], "repeat" in (parse_seeds("3,3")[1] or "")), (None, True))
+        case("...a seed outside 0..4294967295, or not a number, is refused",
+             [parse_seeds(s)[0] for s in ("x,1", "-1,2", "4294967296,1", "1,")], [None, None, None, None])
+        with tempfile.TemporaryDirectory() as _tds:
+            _ds = pathlib.Path(_tds)
+            case("⭐ mutation_env hands a seed to the CHILD as PYTHONHASHSEED",
+                 mutation_env(_ds, 266).get("PYTHONHASHSEED"), "266")
+            case("...and with no seed it leaves the inherited value alone (the unseeded run is unchanged)",
+                 mutation_env(_ds).get("PYTHONHASHSEED"), os.environ.get("PYTHONHASHSEED"))
+            (_ds / "probe.py").write_text('print(hash("seed-probe"))\nprint("1/1 passed")\n')
+            _h = [run_suite(_ds, "probe.py", seed=_s)[1].split("\n")[0] for _s in (266, 266, 312)]
+            case("⭐ the seed REACHES the child's hashing: one seed repeats its hash, another seed differs",
+                 (_h[0] == _h[1], _h[0] != _h[2]), (True, True))
+            case("...run_suite_parts hands the same seed through: its hash under 266 is run_suite's under 266",
+                 run_suite_parts(_ds, "probe.py", 266)[1].split("\n")[0], _h[0])
+            case("...and a seeded env still redirects HOME into the d it is given",
+                 mutation_env(_ds / "elsewhere", 5)["HOME"], str(_ds / "elsewhere" / CHILD_HOME))
+            (_ds / "s.py").write_text(
+                'import os, sys\n'
+                'def f():\n    return 1\n\n\n'
+                'def _self_test():\n'
+                '    lucky = os.environ.get("PYTHONHASHSEED") == "7"\n'
+                '    if f() != 1 and not lucky:\n'
+                '        print("  [FAIL] f returns one: got %r" % f())\n'
+                '        return 1\n'
+                '    print("1/1 passed")\n'
+                '    return 0\n\n\n'
+                'if __name__ == "__main__":\n'
+                '    sys.exit(_self_test())\n')
+            _sm = [{"name": "f returns two", "file": "s.py",
+                    "edits": [["def f():\n    return 1", "def f():\n    return 2"]], "expect": "f returns one"}]
+            _okn, _repn, _evn, _svn = run_mutations(_ds, _sm, {"s.py"}, seeds=(3, 7))
+            case("⭐ #506 END TO END: a fake suite whose kill depends on the seed is NONDETERMINISTIC and RED",
+                 (_okn, _svn, [e.get("caught") for e in _evn],
+                  any(r.startswith("mutation NONDETERMINISTIC — f returns two") and "PYTHONHASHSEED=3" in r
+                      and "PYTHONHASHSEED=7" in r for r in _repn)),
+                 (False, ["f returns two"], [False], True))
+            _okk, _repk, _evk, _svk = run_mutations(_ds, _sm, {"s.py"}, seeds=(3, 5))
+            case("...ADJACENT: the SAME mutant under two seeds that both kill it is KILLED and attributed",
+                 (_okk, _svk, [(e.get("caught"), e.get("attributed"), e.get("seeds")) for e in _evk]),
+                 (True, [], [(True, True, [3, 5])]))
+            # A caller's trees (as `mutate_delivered` passes them) are the ones used, and stay the CALLER's to delete.
+            with contextlib.ExitStack() as _cs3:
+                _tk = seed_trees(_ds, (3, 5), _cs3)
+                _okt5, _, _evt5, _ = run_mutations(_ds, _sm, {"s.py"}, seeds=(3, 5), trees=_tk)
+                case("...run_mutations runs in the trees it is handed, and leaves them for their owner to delete",
+                     (_okt5, [e.get("attributed") for e in _evt5], (_tk[5] / "s.py").read_text() == (_ds / "s.py").read_text()),
+                     (True, [True], True))
+            _oks, _reps, _, _svs = run_mutations(_ds, [{"name": "noop", "file": "s.py",
+                                                       "edits": [["import os, sys", "import os, sys, re"]],
+                                                       "expect": "f returns one"}], {"s.py"}, seeds=(3, 7))
+            case("...and a mutant no seed kills is reported SURVIVED, not NONDETERMINISTIC",
+                 (_oks, _svs, any("mutation SURVIVED" in r for r in _reps),
+                  any("NONDETERMINISTIC" in r for r in _reps)), (False, ["noop"], True, False))
+            # r1 Claude M1 END TO END: run_mutations hands the `expect` list to the classifier. The suite reds the
+            # named case under every seed and an incidental one only under seed 3 — #506's real mutant's shape.
+            (_ds / "x.py").write_text(
+                'import os, sys\n'
+                'def f():\n    return 1\n\n\n'
+                'def _self_test():\n'
+                '    if f() != 1:\n'
+                '        print("  [FAIL] f returns one: got %r" % f())\n'
+                '        if os.environ.get("PYTHONHASHSEED") == "3":\n'
+                '            print("  [FAIL] incidental order")\n'
+                '        print("0/2 passed")\n'
+                '        return 1\n'
+                '    print("2/2 passed")\n'
+                '    return 0\n\n\n'
+                'if __name__ == "__main__":\n'
+                '    sys.exit(_self_test())\n')
+            _xm = [dict(_sm[0], file="x.py")]
+            _okx, _repx, _evx, _svx = run_mutations(_ds, _xm, {"x.py"}, seeds=(3, 5))
+            case("⭐ r1 M1 END TO END: the named case red under every seed + an incidental one under one seed is KILLED",
+                 (_okx, _svx, [(e.get("caught"), e.get("attributed")) for e in _evx]),
+                 (True, [], [(True, True)]))
+            # r1 Codex M1 END TO END — Codex's own reproduction. The suite caches its (rc, output) in a file in its
+            # working tree, keyed on the value under test. Without the cache the mutant dies only under seed 3; if
+            # seed 7 ran in the tree seed 3 left behind, it would replay seed 3's red and forge a seed-independent kill.
+            (_ds / "c.py").write_text(
+                'import json, os, pathlib, sys\n'
+                'VALUE = 1\n\n\n'
+                'def _self_test():\n'
+                '    cache = pathlib.Path("cached-result-" + str(VALUE))\n'
+                '    if cache.exists():\n'
+                '        rc, out = json.loads(cache.read_text())\n'
+                '    else:\n'
+                '        rc = int(VALUE != 1 and os.environ.get("PYTHONHASHSEED") == "3")\n'
+                '        out = "  [FAIL] value is one" if rc else "1/1 passed"\n'
+                '        cache.write_text(json.dumps([rc, out]))\n'
+                '    print(out)\n'
+                '    return rc\n\n\n'
+                'if __name__ == "__main__":\n'
+                '    sys.exit(_self_test())\n')
+            _okc, _repc2, _evc, _svc = run_mutations(
+                _ds, [{"name": "value is two", "file": "c.py", "edits": [["VALUE = 1", "VALUE = 2"]],
+                       "expect": "value is one"}], {"c.py"}, seeds=(3, 7))
+            (_ds / "m.py").write_text(
+                'import os, pathlib\n'
+                'm = pathlib.Path("marker")\n'
+                'print(os.environ["PYTHONHASHSEED"], "seen" if m.exists() else "fresh")\n'
+                'm.write_text("x")\n')
+            case("...seed_runs, three seeds: each runs under ITS seed, in order, and none sees the marker another left",
+                 [(s, rc, so.split()) for s, rc, so, _ in seed_runs(_ds, "m.py", (266, 312, 5))],
+                 [(266, 0, ["266", "fresh"]), (312, 0, ["312", "fresh"]), (5, 0, ["5", "fresh"])])
+            # ⟳ r1 fold, COST: ONE tree per seed for a whole run. Run twice in the SAME trees, each seed sees exactly
+            # what ITS OWN first run left — never another seed's, and never a fresh tree (a copy per call was 12x).
+            (_ds / "m2.py").write_text(
+                'import os, pathlib\n'
+                'print(os.environ["PYTHONHASHSEED"], *sorted(p.name for p in pathlib.Path(".").glob("mk-*")))\n'
+                'pathlib.Path("mk-" + os.environ["PYTHONHASHSEED"]).write_text("x")\n')
+            with contextlib.ExitStack() as _cs:
+                _tr = seed_trees(_ds, (266, 312), _cs)
+                _twice = [[so.split() for _, _, so, _ in seed_runs(_ds, "m2.py", (266, 312), _tr)] for _ in (1, 2)]
+            case("⭐ r1 fold COST: seed_runs in a run's trees — each seed's tree PERSISTS and holds only its own leftovers",
+                 _twice, [[["266"], ["312"]], [["266", "mk-266"], ["312", "mk-312"]]])
+            _bad = _ds / "no-such-tree"
+            _ap = seed_apply({3: _ds, 7: _bad}, _ds, "q.py", "x = 1\n")
+            case("⛔ r1 fold: a seed's tree the mutant cannot be written to is that seed's CANNOT RUN, never a run",
+                 (_ap[3] == _ds, "CANNOT RUN" in str(_ap[7]), (_ds / "q.py").exists()), (True, True, False))
+            # A SECOND tree as `d` (fixture variation): the copy is of the `d` it is given — its file is there.
+            _rvd = _ds / "rv"; _rvd.mkdir(); (_rvd / "q.py").write_text("x = 0\n")
+            with contextlib.ExitStack() as _cs2:
+                _tr = seed_trees(_rvd, (3, 7), _cs2)
+                _copied = (_tr[3], (_tr[7] / "q.py").read_text())
+                _apd = seed_apply(_tr, _rvd, "r.py", "y = 2\n")
+                case("...seed_apply writes the mutant into every seed's tree but d, and returns those trees to run in",
+                     (_apd == _tr, (_tr[7] / "r.py").read_text(), (_rvd / "r.py").exists()), (True, "y = 2\n", False))
+                (_tr[7] / "q.py").write_text("x = 2\n")
+                _rv = seed_revert(_tr, _rvd, "q.py", "x = 1\n")
+                case("...seed_trees copies the d it is given; seed_revert restores every seed's tree and reports nothing",
+                     (_copied, _rv, (_tr[7] / "q.py").read_text(), (_rvd / "q.py").read_text()),
+                     ((_rvd, "x = 0\n"), None, "x = 1\n", "x = 0\n"))
+            case("...and the run's cleanup deletes the seed's copy when the run ends", _tr[7].exists(), False)
+            _rvb = seed_revert({3: _ds, 7: _bad}, _ds, "r.py", "y = 3\n")
+            case("⛔ r1 fold: a seed's tree that cannot be restored STOPS the run, naming the seed",
+                 (_rvb is not None and "STOPS" in _rvb, "PYTHONHASHSEED=7" in (_rvb or "")), (True, True))
+            case("⛔ r1 Codex M1 END TO END: a seed never reads the files an EARLIER seed's run left — NONDETERMINISTIC",
+                 (_okc, _svc, any("NONDETERMINISTIC" in r for r in _repc2)), (False, ["value is two"], True))
+            # ⚠ AFTER Codex's case: under a shared-tree mutant this suite turns the MAIN tree's file into a
+            # directory, and the crash must not hide that case's red.
+            # END TO END: the suite, under seed 7, replaces its own file with a DIRECTORY, so the revert cannot
+            # write it back. The run stops after that mutant; the second is never applied or counted.
+            (_ds / "p.py").write_text(
+                'import os, sys\n'
+                'VALUE = 1\n'
+                'if __name__ == "__main__":\n'
+                '    if os.environ.get("PYTHONHASHSEED") == "7":\n'
+                '        os.remove(__file__)\n'
+                '        os.mkdir(__file__)\n'
+                '    print("  [FAIL] value is one" if VALUE != 1 else "1/1 passed")\n'
+                '    sys.exit(int(VALUE != 1))\n')
+            _okp, _repp, _evp, _ = run_mutations(
+                _ds, [{"name": f"value is {_v}", "file": "p.py", "edits": [["VALUE = 1", f"VALUE = {_v}"]],
+                       "expect": "value is one"} for _v in (2, 3)], {"p.py"}, seeds=(3, 7))
+            # 0 entries, not 1: the run stops BEFORE crediting the mutant whose revert failed, so the declared count
+            # cannot balance and the caller can build no tally (NOT MEASURED) — fail closed.
+            case("⛔ r1 fold END TO END: an unrestored seed tree STOPS the run — the later mutant is never measured",
+                 (_okp, len(_evp), any("STOPS" in r for r in _repp)), (False, 0, True))
+            # ⟳ r2 Codex MAJOR END TO END — Codex's fixture verbatim: r1's incomplete-suite reproduction with its case
+            # renamed `value passed validation`. Seed 7 crashes before its summary; the case name alone said `passed`,
+            # so the run was credited `1 killed, 1 attributed` over a suite that never finished under seed 7.
+            (_ds / "v.py").write_text(
+                'import os, sys\n'
+                'VALUE = 1\n'
+                'def _self_test():\n'
+                '    if VALUE != 1:\n'
+                '        print("  [FAIL] value passed validation", flush=True)\n'
+                '        if os.environ["PYTHONHASHSEED"] == "7":\n'
+                '            raise RuntimeError("seed 7 suite did not finish")\n'
+                '        print("0/1 passed")\n'
+                '        return 1\n'
+                '    print("1/1 passed")\n'
+                '    return 0\n'
+                'if __name__ == "__main__":\n'
+                '    sys.exit(_self_test())\n')
+            _okv, _repv, _evv, _ = run_mutations(
+                _ds, [{"name": "value is two", "file": "v.py", "edits": [["VALUE = 1", "VALUE = 2"]],
+                       "expect": "value passed validation"}], {"v.py"}, seeds=(3, 7))
+            case("⛔ r2 Codex M1 END TO END: a seed that crashed before its summary is never credited as a kill",
+                 (_okv, [e.get("caught") for e in _evv], any("did not complete" in r for r in _repv)),
+                 (False, [False], True))
 
         # ⛔ ⟳ 2026-09-09, THE DELETION SLICE — AND CI IS WHAT FOUND THIS, NOT ANY LOCAL GATE.
         # Three mutations on THIS function had their only red case over in plan mode, which
@@ -2966,6 +3810,168 @@ def _self_test() -> int:
                  any("control" in r.lower() for r in _rep), False)
             case("...and a complete run is TRUSTWORTHY, so the caller may print the tally",
                  isinstance(_ev, Measured), True)
+            # ⛔ THE LOCAL BUDGET (2026-10-25). Refused AFTER the control — it is what times the
+            # suites — and before any mutation, so nothing was measured and no tally can print.
+            _okb, _repb, _evb = mutate_delivered(_r, budget=0.0)
+            case("⭐ a local run over its budget is REFUSED after the control, measuring nothing",
+                 (_okb, bool(_repb) and _repb[0].startswith(LOCAL_REFUSAL), isinstance(_evb, NotMeasured)),
+                 (False, True, True))
+            case("...and under a generous budget it runs exactly as before",
+                 isinstance(mutate_delivered(_r, budget=3600.0)[2], Measured), True)
+            # r2 L: a FAILING control (sorted first) is reported ahead of a later budget refusal, and
+            # does not price the estimate.
+            with tempfile.TemporaryDirectory() as _td2:
+                _r2 = pathlib.Path(_td2); _mini(_r2)
+                for _nm, _ok in (("aaa", False), ("zzz", True)):
+                    (_r2 / "scripts" / f"{_nm}.py").write_text(
+                        # r3: the FAILED control is deliberately SLOW, so if it were priced it would be
+                        # the costliest every time — the case cannot pass on a lucky timing.
+                        "import sys, time\n" + ("print('1/1 passed')\nsys.exit(0)\n" if _ok else
+                                                "time.sleep(0.5)\nprint('  [FAIL] broken control')\nsys.exit(1)\n"))
+                    (_r2 / "scripts" / "mutations" / f"{_nm}.json").write_text(json.dumps(
+                        [{"name": f"{_nm} m", "file": f"scripts/{_nm}.py", "edits": [["sys.exit", "sys.exit"]],
+                          "expect": "x"}]))
+                _saved2 = dict(EXPECTED_MUTATIONS)
+                EXPECTED_MUTATIONS.update({"scripts/aaa.py": 1, "scripts/zzz.py": 1})
+                try:
+                    _okc, _repc, _ = mutate_delivered(_r2, budget=0.0, only=frozenset({"scripts/aaa.py", "scripts/zzz.py"}))
+                finally:
+                    EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved2)
+            case("⭐ an earlier FAILED control is reported before a budget refusal, not hidden by it",
+                 (_okc, bool(_repc) and "control run of scripts/aaa.py" in _repc[0],
+                  any(r.startswith(LOCAL_REFUSAL) for r in _repc)), (False, True, True))
+            case("...and the refusal prices only GREEN controls (it names zzz.py, not the failed aaa.py)",
+                 [("the most is scripts/zzz.py" in r, "the most is scripts/aaa.py" in r)
+                  for r in _repc if r.startswith(LOCAL_REFUSAL)], [(True, False)])
+            _oko, _repo, _evo = mutate_delivered(_r, only=frozenset({"scripts/thing.py"}))
+            case("--only runs the named target's mutations to a full verdict",
+                 (_oko, isinstance(_evo, Measured)), (True, True))
+            # ── backlog #506 through `mutate_delivered`. ⛔ THE ADVERSARIAL INPUT: a suite whose CONTROL is red
+            # under ONE seed reddens every mutant under that seed, so a mutant killed only by luck under the
+            # other seed would read KILLED under both. The control therefore runs under EVERY seed, and a red
+            # one refuses the run (NOT MEASURED), naming the seed.
+            _oksd, _repsd, _evsd = mutate_delivered(_r, seeds=(3, 5))
+            case("#506: --mutate under two seeds runs each mutation under both, to a full verdict",
+                 (_oksd, isinstance(_evsd, Measured),
+                  [e.get("seeds") for e in _entries_of(_evsd)] if isinstance(_evsd, Measured) else None),
+                 (True, True, [[3, 5]]))
+            with tempfile.TemporaryDirectory() as _tdr:
+                _rr = pathlib.Path(_tdr); _mini(_rr)
+                _th = _rr / "scripts" / "thing.py"
+                _th.write_text(_th.read_text().replace(
+                    "def _self_test():\n",
+                    'def _self_test():\n'
+                    '    if __import__("os").environ.get("PYTHONHASHSEED") == "7":\n'
+                    '        print("  [FAIL] red under seed 7")\n'
+                    '        return 1\n', 1))
+                _okr, _repr, _evr = mutate_delivered(_rr, seeds=(3, 7))
+            case("⛔ #506 ADVERSARIAL: a control red under ONE seed refuses the run, naming that seed — never KILLED",
+                 (_okr, isinstance(_evr, NotMeasured),
+                  any("control run of scripts/thing.py" in x and "PYTHONHASHSEED=7" in x for x in _repr)),
+                 (False, True, True))
+            # ⟳ r1 fold, COST, THROUGH `mutate_delivered`: the seed trees are made ONCE, before the first control, and
+            # every control, mutant and re-control under a seed runs in that seed's tree. This suite reds on another
+            # seed's leftovers, and skips its check in a tree it has never run in — so a tree copied per call
+            # (seed 3's control leftovers in it, seed 7's own absent) makes the mutant survive under seed 7 only.
+            with tempfile.TemporaryDirectory() as _tdt:
+                _rt = pathlib.Path(_tdt); _mini(_rt)
+                _th = _rt / "scripts" / "thing.py"
+                _th.write_text(_th.read_text().replace(
+                    "def _self_test():\n",
+                    'def _self_test():\n'
+                    '    import os\n'
+                    '    own = pathlib.Path("seen-" + os.environ.get("PYTHONHASHSEED", "none"))\n'
+                    '    other = sorted(p.name for p in pathlib.Path(".").glob("seen-*") if p.name != own.name)\n'
+                    '    had = own.exists()\n'
+                    '    own.write_text("x")\n'
+                    '    if other:\n'
+                    '        print("  [FAIL] another seed\'s leftovers: %s" % other)\n'
+                    '        return 1\n'
+                    '    if not had:\n'
+                    '        print("1/1 passed")\n'
+                    '        return 0\n', 1))
+                _okt, _rept, _evt = mutate_delivered(_rt, seeds=(3, 7))
+            case("⭐ r1 fold COST END TO END: one tree per seed for the whole run — controls and mutants share it",
+                 (_okt, isinstance(_evt, Measured), _rept), (True, True, []))
+            # backlog #252: an anchor that no longer binds is refused BEFORE any tree is staged — it used to
+            # surface only when its mutation ran, 15 minutes into a CI shard. And it is a whole-manifest
+            # check, so --only naming ANOTHER target still sees it.
+            _man_t = _r / "scripts" / "mutations" / "thing.json"; _keep_t = _man_t.read_text()
+            _man_t.write_text(json.dumps([{"name": "value is two", "file": "scripts/thing.py",
+                                           "edits": [["VALUE != 9", "VALUE != 2"]], "expect": "value is one"}]))
+            _told_a: list = []
+            try:
+                _oka, _repa, _eva = mutate_delivered(_r, progress=lambda *a: _told_a.append(a))
+            finally:
+                _man_t.write_text(_keep_t)
+            case("⭐ an orphaned anchor is REFUSED before any tree is staged — no control ran (backlog #252)",
+                 (_oka, any("anchor NOT FOUND" in r and "before any tree is staged" in r for r in _repa),
+                  isinstance(_eva, NotMeasured), _told_a), (False, True, True, []))
+            # r1 CLAUDE L1: the WHOLE-MANIFEST claim, driven — `--only` naming ANOTHER target still sees the orphan.
+            _man_t.write_text(json.dumps([{"name": "value is two", "file": "scripts/thing.py",
+                                           "edits": [["VALUE != 9", "VALUE != 2"]], "expect": "value is one"}]))
+            _saved_o = dict(EXPECTED_MUTATIONS); EXPECTED_MUTATIONS["scripts/other.py"] = 1
+            try:
+                _oko2, _repo2, _ = mutate_delivered(_r, only=frozenset({"scripts/other.py"}))
+            finally:
+                _man_t.write_text(_keep_t); EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved_o)
+            case("...and `--only` naming ANOTHER target still refuses it — the pre-check is whole-manifest (r1 L1)",
+                 (_oko2, any("'value is two'" in r and "before any tree is staged" in r for r in _repo2)), (False, True))
+            _okn, _repn, _ = mutate_delivered(_r, only=frozenset({"scripts/nope.py"}))
+            case("...and refuses a target no manifest names",
+                 (_okn, bool(_repn) and "--only names scripts/nope.py" in _repn[0]), (False, True))
+            # main()'s WIRING: off CI the budget applies, on CI or with the one-run flag it does not.
+            # ⟳ PR #400 r1 H1: the budget is a PARAMETER, not a `globals()` rebind — the rebind made
+            # check-main-drivable's call-site analysis cost ~85s and pushed its suite past 120s.
+            # ⟳ PR #400 r1 H1, re-measured: the cost was the NUMBER of `main(["--mutate"…])` call
+            # sites (check-main-drivable analyses each — 209s vs 50s on master), not the rebind. ONE
+            # call site, driven from a table.
+            _wired = _budget_wiring(_r)
+            _rc_local, _rc_flag, _rc_cifalse, _rc_ci = (_wired[k][0] for k in ("local", "flag", "cifalse", "ci"))
+            _rc_only, _out_only = _wired["only"][0], io.StringIO(_wired["only"][1])
+            case("...an exported CI=false is NOT CI, so the budget still applies, rc=2", _rc_cifalse, 2)
+            case("⭐ main() wires --only to a verdict line that names the DIAGNOSTIC slice, rc=0",
+                 (_rc_only, "measured over ONLY scripts/thing.py — a DIAGNOSTIC slice" in _out_only.getvalue()),
+                 (0, True))
+            _sc1, _sc2, _push = _wired["scoped1"], _wired["scoped2"], _wired["push"]
+            case("⭐ main() logs a pull request's SELECTION and labels the verdict DIFF-SCOPED, rc=0",
+                 (_sc1[0], "SELECTION — diff-scoped: 1 of 1 manifest(s)" in _sc1[1],
+                  "1 mutation(s)" in _sc1[1],
+                  "shard 1 of 2 (round-robin) of the DIFF-SCOPED selection, 1 of 1" in _sc1[1]),
+                 (0, True, True, True))
+            case("⭐ ...a shard holding none of the selection says so and PASSES, rc=0",
+                 (_sc2[0], "nothing to do" in _sc2[1], "0 mutation(s)" in _sc2[1]), (0, True, True))
+            case("⭐ ...and a master push logs FULL and measures the WHOLE manifest, rc=0",
+                 (_push[0], "SELECTION — full: the event is 'push'" in _push[1],
+                  "measured over the WHOLE manifest" in _push[1]), (0, True, True))
+            case("⭐ main() off CI REFUSES a run past the local budget, rc=2", _rc_local, 2)
+            case("...--allow-long-local lets THAT run through, rc=0", _rc_flag, 0)
+            case("...and on CI the budget never applies, rc=0", _rc_ci, 0)
+            case("⭐ #506: main() wires --seeds to the run, and the verdict line names the seeds, rc=0",
+                 (_wired["seeds"][0], "under PYTHONHASHSEED 3, 5" in _wired["seeds"][1]), (0, True))
+            _spent_out = _wired["spent"][1].rstrip("\n").split("\n")
+            case("⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so "
+                 "the run stops, rc=1, and its LAST line is the budget stop",
+                 (_wired["spent"][0], "TIME BUDGET — 0s" in _wired["spent"][1],
+                  _spent_out[-1].startswith(f"  \u2717 {BUDGET_STOP}")), (1, True, True))
+            case("...and with no job limit from the runner, or one it did not expand, a CI run REFUSES before "
+                 "measuring, rc=2", [(_wired[k][0], "SELECTION" in _wired[k][1]) for k in ("nolimit", "rawlimit")],
+                 [(2, False)] * 2)
+            _late_out = _wired["late"][1].rstrip("\n").split("\n")
+            case("⭐ r2 F1: main() counts a CI run's budget from the JOB's first step — 1,700 s after it, a push's "
+                 "1,680 are spent, so the run stops at once, rc=1, its LAST line the budget stop",
+                 (_wired["late"][0], "TIME BUDGET — 1680s" in _wired["late"][1], "0s of it left" in _wired["late"][1],
+                  _late_out[-1].startswith(f"  \u2717 {BUDGET_STOP}")), (1, True, True, True))
+            case("⭐ r2 F3: main() on CI with no GITHUB_EVENT_NAME, or an --event that disagrees with it, REFUSES "
+                 "before measuring, rc=2", [(_wired[k][0], "SELECTION" in _wired[k][1]) for k in ("noevent", "conflict")],
+                 [(2, False)] * 2)
+            case("⭐ r2 F1: main() on CI with no job-start epoch REFUSES before measuring, rc=2",
+                 (_wired["nostart"][0], "SELECTION" in _wired["nostart"][1]), (2, False))
+            case("⭐ r2 F3: main() on CI with NO --event still has its job's budget, from the runner's limit",
+                 "TIME BUDGET — 1680s" in _wired["ci"][1], True)
+            case("⭐ r2 F1: main() prints the whole report BEFORE the run's teardown starts",
+                 [_k for _k in ("push", "spent", "ci") if "measured over" not in (_wired["torn"].get(_k) or "")
+                  and BUDGET_STOP not in (_wired["torn"].get(_k) or "")], [])
         # ── THE REPORTER IS INJECTED, AND THE DEFAULT IS SILENCE ──────────────────────────
         # ⟳ r1 H1/H2/M1. `mutate_delivered` USED to call `stderr_progress` directly at both
         # control loops, and `_self_test` drives it fourteen times — so the suite's own stderr
@@ -2975,10 +3981,11 @@ def _self_test() -> int:
         #     ENTIRELY — measured — so the harness's own control-failure diagnostic contained
         #     none of the failure. That undid r1 F7 (2026-09-09) for the one subject that
         #     matters most: the harness itself;
-        #   * `control_is_green` is `rc == 0 and "passed" in out`, so author-written labels
+        #   * `control_is_green` was `rc == 0 and "passed" in out`, so author-written labels
         #     entered the stream whose substring decides greenness. Two of the 434 live
         #     manifest names contain "passed". Not reachable then, held by a naming
-        #     coincidence rather than by anything;
+        #     coincidence rather than by anything (⟳ r2 Codex M1 of #506: now a whole
+        #     summary LINE, `summary_total`, so the coincidence no longer holds it);
         #   * nested runs printed progress nobody asked for.
         # The fix is the seam `run_mutations` already had. THE PROGRESS ARGUMENT IS THE WHOLE
         # POINT OF THESE TWO CASES: the first pins every site that must report, the second
@@ -2988,6 +3995,29 @@ def _self_test() -> int:
             EXPECTED_MUTATIONS["scripts/other.py"] = 1
             _told: list = []
             mutate_delivered(_r, progress=lambda *a: _told.append(a))
+            # `--only` NARROWS EXECUTION: of two targets, only the named one's mutation runs.
+            _evs = mutate_delivered(_r, only=frozenset({"scripts/other.py"}))[2]
+            case("--only narrows execution to its target (of two, one ran)",
+                 sorted(m["name"] for m in getattr(_evs, "mutations", [])), ["two is three"])
+            # backlog #330: a SELECTION narrows execution the same way, and is applied BEFORE the
+            # shard — shard-then-filter would leave shard 1 of 2 with nothing of `thing`'s.
+            _evq = mutate_delivered(_r, select=frozenset({"scripts/other.py"}))[2]
+            case("⭐ a selection narrows execution to the selected targets (of two, one ran)",
+                 sorted(m["name"] for m in getattr(_evq, "mutations", [])), ["two is three"])
+            _evq = mutate_delivered(_r, shard=(1, 2), select=frozenset({"scripts/thing.py"}))[2]
+            case("⭐ SELECT, THEN SHARD: the shards split the selected entries round-robin",
+                 sorted(m["name"] for m in getattr(_evq, "mutations", [])), ["value is two"])
+            # Shard 3 of 3 is EMPTY over the whole manifest too, so the unscoped refusal would fire here.
+            _okq, _repq, _evq = mutate_delivered(_r, shard=(3, 3), select=frozenset({"scripts/thing.py"}))
+            case("⭐ a shard holding none of the selection PASSES over nothing — not an EMPTY refusal",
+                 (_okq, _repq, getattr(_evq, "declared", None)), (True, [], 0))
+            EXPECTED_MUTATIONS["scripts/other.py"] = 2
+            _gq = [mutate_delivered(_r, select=_sq)[:2] for _sq in (frozenset({"scripts/thing.py"}),
+                                                                       frozenset())]
+            EXPECTED_MUTATIONS["scripts/other.py"] = 1
+            case("⛔ the whole-manifest checks still run under ANY selection, an empty one included",
+                 [(_o, any("expected 2" in r for r in _rp)) for _o, _rp in _gq],
+                 [(False, True), (False, True)])
             # Control, then the mutation, then re-control — the three phases a reader waits
             # through. Asserting the SEQUENCE, not a count: a count survives losing the
             # re-control loop and gaining a duplicate control.
@@ -3039,7 +4069,7 @@ def _self_test() -> int:
         with tempfile.TemporaryDirectory() as _td:
             _r = pathlib.Path(_td); _mini(_r)
             _mo, _mer = io.StringIO(), io.StringIO()
-            with contextlib.redirect_stdout(_mo), contextlib.redirect_stderr(_mer):
+            with contextlib.redirect_stdout(_mo), contextlib.redirect_stderr(_mer), _suite_owns_the_pins():
                 main(["--mutate", str(_r)])
             case("--mutate itself supplies the reporter, so a real run is not silent",
                  [l for l in _mer.getvalue().split("\n") if l.startswith("[1/1] ")],
@@ -3054,6 +4084,7 @@ def _self_test() -> int:
             _r = pathlib.Path(_td); _mini(_r)
             (_r / "scripts" / "thing.py").write_text(
                 'import sys\n'
+                'ANCHOR = "VALUE != 1"  # keeps the manifest anchor bound (backlog #252 pre-check)\n'
                 'def _self_test():\n'
                 '    print("S" * 800)\n'
                 '    raise RuntimeError("the tree went bad underneath")\n'
@@ -3074,6 +4105,7 @@ def _self_test() -> int:
             _r = pathlib.Path(_td); _mini(_r)
             (_r / "scripts" / "thing.py").write_text(
                 'import sys\n'
+                'ANCHOR = "VALUE != 1"  # keeps the manifest anchor bound (backlog #252 pre-check)\n'
                 'def _self_test():\n'
                 '    sys.stderr.write("N" * 600 + "\\n")\n'
                 '    print("  [FAIL] the value is one")\n'
@@ -3082,7 +4114,7 @@ def _self_test() -> int:
                 '    sys.exit(_self_test())\n')
             _okT, _repT, _evT = mutate_delivered(_r)
             case("...and the recorded tail is the failure, not the noise",
-                 _evT.files["scripts/thing.py"]["tail"].strip(), "[FAIL] the value is one")
+                 _evT.files.get("scripts/thing.py", {}).get("tail", "").strip(), "[FAIL] the value is one")
         # The falsifier for the instrument: break the UNMUTATED script. Without a control
         # check every mutation 'goes red' and a full table of catches is reported over a
         # suite that never worked.
@@ -3103,8 +4135,8 @@ def _self_test() -> int:
         # ⟳ 2026-09-09, round 1 F3. THE OTHER DIRECTION, and it was unguarded. `:382-384` states
         # the rule as "EXACT, not a floor: adding a mutation should also be a visible act", but the
         # only case pinned SHRINKAGE, so `!=` -> `<` survived at 78/78 and a manifest could GROW
-        # silently. ⚠ The obvious backstops do not backstop it: `the declared counts are the real
-        # ones` compares EXPECTED_MUTATIONS against a literal and `sorted(EXPECTED_MUTATIONS)` pins
+        # silently. ⚠ The obvious backstops did not backstop it: the retired total literal (backlog
+        # #359) compared EXPECTED_MUTATIONS against a typed number and `sorted(EXPECTED_MUTATIONS)` pins
         # the key list — in this scenario EXPECTED_MUTATIONS is UNTOUCHED, so both still match.
         EXPECTED_MUTATIONS.clear()
         EXPECTED_MUTATIONS["scripts/thing.py"] = 1
@@ -3253,7 +4285,7 @@ def _self_test() -> int:
                     # that supplies `stderr_progress` — so without this the suite's own stderr
                     # carries progress from a nested run, and `out[-400:]` diagnostics upstream
                     # lose the failure they exist to show (r1 H1).
-                    with contextlib.redirect_stderr(io.StringIO()):
+                    with contextlib.redirect_stderr(io.StringIO()), _suite_owns_the_pins():
                         main(["--mutate", str(_r7)])
                     _mut_out = sys.stdout.getvalue()
                 finally:
@@ -3287,7 +4319,7 @@ def _self_test() -> int:
                 try:
                     # stderr discarded for the same reason as above: the real entry point is
                     # the one place a reporter is supplied, and this is a NESTED run.
-                    with contextlib.redirect_stderr(io.StringIO()):
+                    with contextlib.redirect_stderr(io.StringIO()), _suite_owns_the_pins():
                         main(["--mutate", str(root)])
                     return sys.stdout.getvalue()
                 finally:
@@ -3318,8 +4350,20 @@ def _self_test() -> int:
                     {"name": "anchor absent two", "file": "scripts/thing.py",
                      "edits": [["NO SUCH TEXT TWO", "y"]], "expect": "value is one"}]))
                 EXPECTED_MUTATIONS["scripts/thing.py"] = 2
-                _outB = _mutate_output(_rB)
+                # ⟳ backlog #252: the pre-check now refuses this world before staging, naming both. The
+                # late shortfall path stays as defence (a target changed between pre-check and run), so
+                # it is reached here with the pre-check stood down, and the pre-check asserted separately.
+                _outB_pre = _mutate_output(_rB)
+                _ap = globals()["anchor_problems"]; globals()["anchor_problems"] = lambda m, r: []
+                try:
+                    _outB = _mutate_output(_rB)
+                finally:
+                    globals()["anchor_problems"] = _ap
                 EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+                case("⭐ ...and with the pre-check in place the same world is refused UP FRONT, naming both "
+                     "entries (backlog #252)",
+                     ("'anchor absent one'" in _outB_pre, "'anchor absent two'" in _outB_pre,
+                      "before any tree is staged" in _outB_pre), (True, True, True))
                 case("a TOTAL SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
                      _no_tally(_outB), (True, False, False))
                 case("...and it names the arithmetic, so dropped entries are not invisible",
@@ -3352,11 +4396,11 @@ def _self_test() -> int:
             # control loops moved to `run_suite_parts` to budget the two streams separately.
             # The stub then missed both controls, the call indices shifted by two, and the case
             # went red — correctly. Stub the PRODUCER, which every path still goes through.
-            def _timeout_on_the_mutated_run(_d, _name):
+            def _timeout_on_the_mutated_run(_d, _name, _seed=None, limit=None):
                 _calls.append(_name)
                 if len(_calls) == 2:          # 1 = before-control, 2 = the mutation, 3 = after
                     return 2, "", "CANNOT RUN — stub timeout. NOT CHECKED."
-                return _real_run_suite(_d, _name)
+                return _real_run_suite(_d, _name, _seed, limit=limit)
             globals()["run_suite_parts"] = _timeout_on_the_mutated_run
             try:
                 _ok8, _rep8, _ev8 = mutate_delivered(_r)
@@ -3367,6 +4411,107 @@ def _self_test() -> int:
                  (True, False))
             case("...and it is reported as a cannot-run, not as a catch",
                  any("did NOT COMPLETE" in r for r in _rep8), True)
+        # ⛔ backlog #558, THROUGH `mutate_delivered`: every suite run's limit, recorded at the producer.
+        # The clock is FAKED so the control "takes" 10 s per suite run — deterministic under any load —
+        # and each run is still the real fixture suite. 10 s x the factor (20) is 200 s: above the
+        # floor, below the ceiling, so a dropped hand-off (None -> 120 s) and a per-seed division left out
+        # (20 s -> 400 s under two seeds) each read differently.
+        _real_parts, _real_clock = run_suite_parts, time.monotonic
+        for _seeds558 in (None, (0, 7)):
+            with tempfile.TemporaryDirectory() as _td:
+                _r = pathlib.Path(_td); _mini(_r)
+                _lim558, _skew = [], [0.0]
+
+                def _priced(_d, _name, _seed=None, limit=None):
+                    _lim558.append(limit)
+                    _skew[0] += 10.0
+                    return _real_parts(_d, _name, _seed, limit=limit)
+                globals()["run_suite_parts"] = _priced
+                time.monotonic = lambda: _real_clock() + _skew[0]
+                try:
+                    mutate_delivered(_r, seeds=_seeds558)
+                finally:
+                    globals()["run_suite_parts"] = _real_parts
+                    time.monotonic = _real_clock
+            _n558 = len(_seeds558 or (0,))
+            # ⟳ r1 Codex F3: the RE-CONTROL is flat too — the third block of `None`s.
+            case(f"⭐ backlog #558: under {_n558} seed(s) the control and the re-control run under the flat "
+                 f"limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time",
+                 # the fixture's REAL run time is on top of the fake 10 s: allow it 8 s per suite (a loaded
+                 # runner), still below the 20 s a dropped seed division gives
+                 [None if x is None else 10.0 * SUITE_TIMEOUT_FACTOR <= x < 18.0 * SUITE_TIMEOUT_FACTOR
+                  for x in _lim558],
+                 [None] * _n558 + [True] * _n558 + [None] * _n558)
+        # ⛔ r1 F1, THROUGH `mutate_delivered`: where the budget runs out decides what is lost, and the report's
+        # LAST line must say which. Each run's stub spends the budget at ONE call (1 = control, 2 = the
+        # mutant, 3 = the re-control); `cut` says whether that call itself is cut short (rc 2) or finishes.
+        _real_parts_c = run_suite_parts
+
+        def _budget_run(_at, _cut, _deadline=None, _two=False):
+            _calls_c: list = []
+
+            def _spend(_d, _name, _seed=None, limit=None):
+                _calls_c.append(_name)
+                if len(_calls_c) == _at:
+                    _set_deadline(time.monotonic() - 1.0)
+                    if _cut:
+                        return 2, "", "CANNOT RUN — stub: cut short by the budget. NOT CHECKED."
+                return _real_parts_c(_d, _name, _seed, limit=limit)
+            with tempfile.TemporaryDirectory() as _tdc:
+                _rc_root = pathlib.Path(_tdc); _mini(_rc_root)
+                if _two:     # TWO mutations, so run_mutations itself reaches a mutant it must not start
+                    (_rc_root / "scripts" / "mutations" / "thing.json").write_text(json.dumps(
+                        [{"name": f"value is {_w}", "file": "scripts/thing.py",   # distinct anchors (#74)
+                          "edits": [[_a, _a.replace("1", _v)]], "expect": "value is one"}
+                         for _w, _a, _v in (("two", "VALUE != 1", "2"), ("three", "if VALUE != 1:", "3"))]))
+                    EXPECTED_MUTATIONS["scripts/thing.py"] = 2
+                _prev_c = _set_deadline(None)
+                globals()["run_suite_parts"] = _spend
+                try:
+                    _okc, _repc, _evc = mutate_delivered(_rc_root, deadline=_deadline)
+                    _left = _DEADLINE
+                finally:
+                    globals()["run_suite_parts"] = _real_parts_c
+                    _set_deadline(_prev_c)
+                    EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+            return _okc, _repc, _evc, len(_calls_c), _left
+        _ok_p, _rep_p, _ev_p, _n_p, _left_p = _budget_run(0, False, time.monotonic() - 1.0)
+        case("⭐ r1 F1: a run whose budget is already spent starts NO suite, is NOT MEASURED, and its last line "
+             "names the control and the mutations it never reached",
+             (_ok_p, isinstance(_ev_p, NotMeasured), _n_p, (_rep_p or [''])[-1].startswith(BUDGET_STOP),
+              "Not reached (2): control scripts/thing.py; all 1 mutation(s)." in (_rep_p or [''])[-1]),
+             (False, True, 0, True, True))
+        case("...and the run puts the budget it replaced back when it ends", _left_p, None)
+        _ok_m, _rep_m, _ev_m, _n_m, _ = _budget_run(2, True, _two=True)
+        case("⭐ r1 F1: a MUTANT cut short by the budget stops the run — no later mutant, no re-control — and "
+             "the run says so ONCE, last, naming it and the mutant never reached",
+             (_ok_m, isinstance(_ev_m, NotMeasured), _n_m, sum(_r.startswith(BUDGET_STOP) for _r in _rep_m),
+              "Did not finish (1): value is two. Not reached (1): value is three." in (_rep_m or [''])[-1]),
+             (False, True, 2, 1, True))
+        _ok_a, _rep_a, _ev_a, _n_a, _ = _budget_run(2, False)
+        case("⭐ r1 F1: a budget that runs out AFTER the last mutant starts no re-control, and names it "
+             "not reached", (_ok_a, isinstance(_ev_a, NotMeasured), _n_a,
+                             "Not reached (1): re-control scripts/thing.py." in (_rep_a or [''])[-1]),
+             (False, True, 2, True))
+        _ok_r, _rep_r, _ev_r, _n_r, _ = _budget_run(3, True)
+        case("⭐ r1 F1: a RE-CONTROL cut short by the budget is named as not finished, on the last line",
+             (_ok_r, isinstance(_ev_r, NotMeasured), _n_r, (_rep_r or [''])[-1].startswith(BUDGET_STOP),
+              "Did not finish (1): re-control scripts/thing.py." in (_rep_r or [''])[-1]), (False, True, 3, True, True))
+        # ⛔ r2 F1: under a `hold` the run's teardown (its staged tree, and the deadline's reset with it) waits for
+        # the CALLER, so `main` can print the report first.
+        with tempfile.TemporaryDirectory() as _tdh:
+            _h_root = pathlib.Path(_tdh); _mini(_h_root)
+            _prev_h = _set_deadline(None)
+            _h_dl = time.monotonic() + 3600.0
+            try:
+                with contextlib.ExitStack() as _hold:
+                    mutate_delivered(_h_root, deadline=_h_dl, hold=_hold)
+                    _h_during = _DEADLINE
+                _h_after = _DEADLINE
+            finally:
+                _set_deadline(_prev_h)
+        case("⭐ r2 F1: a run given a `hold` leaves its teardown to the holder — the deadline stands until it closes",
+             (_h_during == _h_dl, _h_after), (True, None))
         # ⟲ Backlog #74. Two entries with the same edit anchors measure one thing twice, and the
         # second reports `caught` for coverage that does not exist. Also untested until now.
         with tempfile.TemporaryDirectory() as _td:
@@ -3440,8 +4585,17 @@ def _self_test() -> int:
     finally:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
-         sorted(EXPECTED_MUTATIONS), ["scripts/begin-plan.py",
+         sorted(EXPECTED_MUTATIONS), ["scripts/backfill-work-lines.py",
+                                      # backlog #534: the batch full sweep, with its manifest.
+                                      "scripts/batch-ci.py",
+                                      "scripts/begin-plan.py",
+                                      # ⟳ PR #440 r2: the bounded reader, a LIBRARY, added with its manifest.
+                                      "scripts/bounded_read.py",
                                       "scripts/brief-compose.py",
+                                      # backlog #455: the subagent long-call hook, with its manifest.
+                                      # backlog #457: the subagent large-read hook, with its manifest.
+                                      "scripts/check-agent-large-read.py",
+                                      "scripts/check-agent-long-call.py",
                                       "scripts/check-anchors.py",
                                       "scripts/check-anon-exposure.py",
                                       "scripts/check-arch-findings.py",
@@ -3452,7 +4606,11 @@ def _self_test() -> int:
                                       "scripts/check-ci-watched.py",
                                       "scripts/check-claim-propagation.py",
                                       "scripts/check-closing-table.py",
+                                      # backlog #440: the PreCompact boundary hook, with its manifest.
+                                      "scripts/check-compaction-boundary.py",
                                       "scripts/check-dashboard-entry.py",
+                                      "scripts/check-decision-scheme.py",
+                                      "scripts/check-diff-coverage.py",
                                       "scripts/check-doc-citations.py",
                                       "scripts/check-docs.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
@@ -3462,23 +4620,29 @@ def _self_test() -> int:
                                       # which must NOT be "corrected" to today's number.
                                       "scripts/check-explainer-delivery.py",
                                       "scripts/check-features.py",
+                                      "scripts/check-fixture-git-isolation.py",
                                       "scripts/check-fixture-variation.py",
                                       "scripts/check-function-revokes.py",
                                       "scripts/check-gate-falsifiability.py",
+                                      "scripts/check-goal-status.py",
                                       "scripts/check-group-claims.py",
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
+                                      "scripts/check-hook-commands.py",
                                       "scripts/check-live-schema.py",
                                       # ⟳ 2026-10-02: ADR-0014's rule D2 arrives with its
                                       # manifest in the same commit.
                                       "scripts/check-main-drivable.py",
+                                      "scripts/check-memory-index-budget.py",
                                       "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
+                                      "scripts/check-page-links.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       # ⟳ 2026-09-08: the plan-mode retirement's replacement
                                       # fence. A LIVE inventory entry, added with the guard.
                                       "scripts/check-plan-file-tags.py",
+                                      "scripts/check-plan-leak.py",
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-plan-task-order.py",
                                       "scripts/check-producer-enumeration.py",
@@ -3492,27 +4656,39 @@ def _self_test() -> int:
                                       "scripts/check-review-recorded.py",
                                       "scripts/check-review-rounds.py",
                                       "scripts/check-roadmap-consistency.py",
+                                      "scripts/check-run-hook.py",
                                       "scripts/check-selection-card.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
+                                      "scripts/check-stalled-work.py",
                                       "scripts/check-storage-grant-pin.py",
 "scripts/check-storage-independence.py",
                                       "scripts/check-surface-recall.py",
                                       "scripts/check-test-counts.py",
                                       "scripts/check-theme-token-coverage.py",
+                                      "scripts/check-transcript-references.py",
+                                      "scripts/check-usage-pace.py",
                                       "scripts/check-vocabulary-collisions.py",
+                                      # backlog #397: the CI-duration tripwire, with its manifest.
+                                      "scripts/ci-durations.py",
                                       # ⟳ 2026-09-14, r11. A LIVE inventory entry, added with the
                                       # manifest — and it is NOT a `check-*` guard, so this list is
                                       # the only place that names it. Its R4 debt is dropped from
                                       # WIDENED_MANIFEST_DEBT in the same commit.
                                       "scripts/codex-frontier-model.py",
                                       "scripts/codex-review.py",
+                                      # backlog #361: the compaction hooks' script, added with its manifest.
+                                      "scripts/compaction-state.py",
                                       "scripts/coverage_verdict.py",
                                       "scripts/explainer-serve.py",
+                                      "scripts/fixture_git.py",
+                                      "scripts/gates-for-pr.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-features-page.py",
                                       "scripts/gen-goals-page.py",
+                                      "scripts/gen-work-lines.py",
+                                      "scripts/goal-tree.py",
                                       # ⟳ 2026-09-23, backlog #166 + #170 — the ONE owner of
                                       # the observer-log record. A LIBRARY, not a guard, so
                                       # `check-ratchet-contract`'s population never sees it;
@@ -3521,10 +4697,20 @@ def _self_test() -> int:
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
                                       "scripts/peer-sites.py",
+                                      # backlog #589: the merged-worktree archiver, with its manifest.
+                                      "scripts/prune-merged-worktrees.py",
+                                      # ⟳ 2026-11-08, backlog #428: the push gate's detection.
+                                      "scripts/push-command.py",
                                       # ⟳ 2026-09-29, backlog #191: the LLM recall
                                       # matcher. A LIVE inventory, so it grows with the
                                       # manifest that ships beside the script.
-                                      "scripts/recall-llm.py"])
+                                      "scripts/recall-llm.py",
+                                      # ⟳ 2026-10-31, the review-round cap: a Claude half's verdict.
+                                      "scripts/record-review-verdict.py",
+                                      "scripts/regen-pages.py",
+                                      "scripts/session-state.py",
+                                      # ⟳ PR #496 r2 X1: the sweep-red alert, out of shell into a tested helper.
+                                      "scripts/sweep-red-alert.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest
@@ -4085,14 +5271,79 @@ def _self_test() -> int:
              "either, or this run poisons the next one",
              (_e1.get("PYTHONDONTWRITEBYTECODE"), _e2.get("PYTHONDONTWRITEBYTECODE")),
              ("1", "1"))
+        # Backlog #407: `child_env` is BORROWED (`check-selftest-counts.audit` runs every suite under it to count its
+        # cases), so the mutation-run marker must not ride on it — measured, it did, and the count check saw 100 of 102.
+        case("...but `child_env` alone does NOT mark a mutation run — it is borrowed outside one (backlog #407)",
+             (_e1.get(MUTATION_RUN_ENV), _e2.get(MUTATION_RUN_ENV)), (None, None))
+        # r1 (Codex P1, Claude L3): this suite itself runs under the marker when the harness re-runs it as a control, so
+        # an INHERITED marker must be stripped too — measured, without it this suite was 247/248 under the marker.
+        _ambient = os.environ.get(MUTATION_RUN_ENV)
+        os.environ[MUTATION_RUN_ENV] = "1"
+        try:
+            _inherited = child_env(pathlib.Path(_bd)).get(MUTATION_RUN_ENV)
+        finally:
+            if _ambient is None:
+                os.environ.pop(MUTATION_RUN_ENV, None)
+            else:
+                os.environ[MUTATION_RUN_ENV] = _ambient
+        case("⭐ ...and STRIPS a marker it inherits, so a borrower run inside a mutation run counts in full (backlog #407)",
+             (_inherited, os.environ.get(MUTATION_RUN_ENV)), (None, _ambient))
+        _probe = pathlib.Path(_bd) / "marker_probe.py"
+        _probe.write_text("import os\nprint(os.environ.get('PLAN_CODE_MUTATION_RUN'))\n")
+        case("⭐ ...and every suite the harness itself spawns IS told it is a mutation run (backlog #407)",
+             run_suite_parts(pathlib.Path(_bd), "marker_probe.py")[:2], (0, "1\n"))
         case("...and the redirected home is derived from the directory it is given, so the two "
              "trees cannot share one home", _e1["HOME"] == _e2["HOME"], False)
 
     case("the slice is named when there is no shard", shard_label(None), "the WHOLE manifest")
+    case("the --only slice says it is a DIAGNOSTIC, not the gate",
+         "DIAGNOSTIC" in shard_label(None, frozenset({"scripts/a.py"})), True)
+    case("sweep_estimate: each target's control x (its mutations + the re-control)",
+         sweep_estimate({"a": 2.0, "b": 10.0}, [{"file": "a"}, {"file": "a"}, {"file": "b"}]), 26.0)
+    case("...over another world", sweep_estimate({"x": 1.5}, [{"file": "x"}]), 3.0)
+    # ⭐ 2026-10-25's real run: 183 x ~40s beside 30 x ~0.3s — about two hours.
+    _big = [{"file": "scripts/check-main-drivable.py"}] * 183 + [{"file": "scripts/check-merge-ready.py"}] * 30
+    _secs = {"scripts/check-main-drivable.py": 40.0, "scripts/check-merge-ready.py": 0.3}
+    _why = local_budget_refusal(_secs, _big, 600) or ""
+    case("⭐ the 2026-10-25 run is refused, naming the costly file and the one-run flag",
+         (_why.startswith(LOCAL_REFUSAL), "check-main-drivable.py: 183 mutation(s)" in _why,
+          "--allow-long-local" in _why), (True, True, True))
+    case("...while its partial run alone is not", local_budget_refusal(_secs, _big[183:], 600), None)
+    case("...a run exactly AT the budget is not refused", local_budget_refusal({"y": 5.0}, [{"file": "y"}], 10.0), None)
+    case("...and no budget (CI, or --allow-long-local) never refuses", local_budget_refusal(_secs, _big, None), None)
+    # ⚠ The SENTENCE is asserted, not only rc 2: a bare `main([])` is rc 2 too, so a case on the
+    # exit code alone would pass with the refusal deleted.
+    for _argv, _says in ((["--only", "scripts/a.py"], "only mean something with --mutate"),
+                         (["--allow-long-local"], "only mean something with --mutate"),
+                         (["--mutate", ".", "--only", "scripts/a.py", "--shard", "1/2"], "two different slices"),
+                         (["--seeds", "3,5"], "--seeds only means something with --mutate"),
+                         # a NONEXISTENT root, not `.`: with the refusal mutated away, `.` would start a
+                         # real whole-manifest sweep inside this suite; this root ends at "not a directory".
+                         (["--mutate", "/nonexistent-root", "--seeds", "3,3"], "repeat")):
+        _se = io.StringIO()
+        with contextlib.redirect_stderr(_se), contextlib.redirect_stdout(io.StringIO()):
+            _rc_arg = main(_argv)
+        case(f"{' '.join(_argv[:2])}{' ... --shard' if '--shard' in _argv else ''} is refused, rc=2, saying why",
+             (_rc_arg, _says in _se.getvalue()), (2, True))
     case("...and it is named I of N, in that order, when there is one",
          shard_label((2, 5)), "shard 2 of 5 (round-robin)")
     # ⚠ THE WIRING, NOT ONLY THE FUNCTION — this file's own recorded lesson (round 6, M5):
     # extracting a helper buys coverage of the helper and the CALL inherits the blind spot.
+    _ndv = Measured(files={}, declared=2, mutations=[
+        {"name": "a", "caught": False, "measured": True, "nondeterministic": "x", "seeds": [3, 7]},
+        {"name": "b", "caught": True, "attributed": True, "measured": True, "seeds": [3, 7]}],
+        survivors=["a"], controls_green=True)
+    case("⭐ #506: the tally COUNTS a nondeterministic mutant separately and is never 'killed' for it",
+         ("1 killed" in tally_line(False, _ndv), "1 NONDETERMINISTIC" in tally_line(False, _ndv),
+          tally_line(False, _ndv).endswith("under PYTHONHASHSEED 3, 7")), (True, True, True))
+    case("...and a run with no nondeterministic mutant does not mention it",
+         "NONDETERMINISTIC" in tally_line(True, _mk(_all_ok, [])), False)
+    case("the tally line names an --only slice as a DIAGNOSTIC",
+         tally_line(True, _mk(_all_ok, []), None, frozenset({"scripts/x.py"})).endswith(
+             "measured over ONLY scripts/x.py — a DIAGNOSTIC slice, not the gate"), True)
+    case("...and so does the NOT-MEASURED line for one",
+         not_measured_line(NotMeasured.from_counts([], 2, {}), None, frozenset({"scripts/y.py", "scripts/z.py"})).endswith(
+             "measured over ONLY scripts/y.py, scripts/z.py — a DIAGNOSTIC slice, not the gate"), True)
     case("the tally line says which slice it is about",
          tally_line(True, _mk(_all_ok, []), (1, 3)).endswith(
              "0 survivor(s) — measured over shard 1 of 3 (round-robin)"), True)
@@ -4288,6 +5539,9 @@ def _self_test() -> int:
     # so an `expect` naming it in full could never match and its entry would be unattributable.
     case("⚠ a case name containing ': got ' is TRUNCATED by the consumer",
          parse_fail_names("  [FAIL] the width: got the wrong value"), ["the width"])
+    # ⛔ HISTORY, NOT A CASE (backlog #359): the narration below ran above a typed-total case that is
+    # now RETIRED. "This case" and "this literal" in it name that case; the total is derived by
+    # `declared_total`, and the per-file pins are checked by `pin_drift` and the on-disk case below.
     # ⟳ 2026-09-11: 513 -> 524. `check-group-claims.py` joins the manifest with ELEVEN entries,
     # all verified to ATTRIBUTE (each goes red via the case it names) before this number moved.
     # A RISE is the ordinary direction; the sanctioned FALL is retirement-with-subject, and
@@ -4361,9 +5615,9 @@ def _self_test() -> int:
     # halves is updated. SEVENTEEN entries for fourteen behaviours; nine were bought by its own three
     # review rounds, whose two Blockings were the same class one layer apart — path, then content,
     # then the tree entry that is actually right. A RISE, the ordinary kind. ⚠ The first draft of this line said `421 -> 426`, read off the narration block
-    # above rather than off `sum(EXPECTED_MUTATIONS.values())`, and THIS CASE caught it — which is
-    # the case working, and a reminder that the running commentary up there is history, not the
-    # total.
+    # above rather than off `sum(EXPECTED_MUTATIONS.values())`, and the typed-total case (retired since
+    # backlog #359) caught it — that case working, and a reminder that the running commentary up there
+    # is history, not the total.
     # ⟳ MERGE of master (#297) into this branch: 592, which is master's total plus this
     # branch's additions. DERIVED from the dict, not added up from either side's
     # narration — both blocks above are history and neither knew about the other.
@@ -4542,8 +5796,8 @@ def _self_test() -> int:
     # (M1, the session- and timestamp-passthrough entries the two siblings never had), +1 on
     # `check-dashboard-entry.py` (M2, backlog #168's remedy was an untested sentence). The two
     # RETARGETED anchors are net zero by construction — retargeting keeps the entry and moves its
-    # text, which is why it is the repair for a moved subject and retiring is not. This literal is
-    # the outside observer of the sum; the reasons are on the entries.
+    # text, which is why it is the repair for a moved subject and retiring is not. The typed literal
+    # was then the outside observer of the sum (retired since backlog #359); the reasons are on the entries.
     # ⟳ 2026-09-23, round 4 (folding r4's H1/M2/M5 on `codex-review.py`): 981 -> 986. All +5 on
     # `codex-review.py`: three for the ALLOCATOR r4 H1 found missing — the run id dropped from the
     # path, and the token ignoring each of its two inputs — one for the refusal that testified to
@@ -5164,54 +6418,504 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    # ⟳ 2026-10-16, AFTER #377 MERGED: check-claim-propagation.py arrives with 10. The rise is
-    # exactly its manifest size — no existing entry moved. ⚠ THIS BRANCH FIRST DECLARED 1429,
-    # against the 1419 master it branched from; #377 then merged and took master to 1456, so the
-    # branch figure was stale by 27 before it was ever pushed. Rebased, re-derived, and read off
-    # the guard's own refusal rather than added by hand — the same conflict backlog measured on
-    # PR #365 (1361 declared against an 1178 master). ⚠ 1466 was the GUARD'S OWN FIGURE, read
-    # from `got 1466 want 0` against a deliberately wrong sentinel.
-    # ⟳ 2026-10-16: 1466 → 1480, across round 3's two halves and its Medium fold.
-    # `check-claim-propagation` goes 10 → 24 entries: partial propagation, the served page as an
-    # audited site, block-level HTML matching, whitespace normalisation, the retirement vocabulary
-    # admitting an ordinary English word, an empty site list, an empty registry, an unknown compute
-    # rule, an unregistered derived carrier, path-of comparison, word boundaries, a doubly-carried
-    # key, a whitespace-only class leak, and a pushed self-closing tag. ⚠ TWO of its behaviours have
-    # NO entry and the reason is written in that file beside each: both crash as FileNotFoundError
-    # when disabled, so a mutation would forge a `[FAIL]` instead of failing its case. Every figure
-    # here was read off the guard's own refusal — the last from `got 1484 want 1480` for that one.
-    # ⟳⟳⟳ 2026-10-16, round 4's CLAUDE half: 1484 → 1488. Four more — the composed page and the
-    # derived source each leaving the audited path set (two lines that had been declared
-    # "unmutatable" and were not), and a void element ceasing to separate words in each of its two
-    # spellings. Read off `got 1488 want 1484`.
-    # ⟳⟳ 2026-10-16, round 4: 1480 → 1484. Four more for CODEX's round — the absent-path refusal
-    # returning a clean result (whose entry r3 claimed could not exist, and r4 refuted in one line),
-    # whitespace between inline elements being deleted, the closure rule reading values instead of
-    # carrier openings, and the tolerant unwind popping one element instead of the subtree.
-    # ⟳ 2026-10-17, ADR-0015 (backlog #282/#298): 1488 → 1489. ONE entry — `check-canonical-source`
-    # goes 5 → 6 for the `*.html` widening, which had NO falsifier when it was written: reverting
-    # `SEARCHED` left the guard printing OK because the page it now governs was invisible to it.
-    # Read off `got 1489 want 1488`. ⚠ This is a RISE and needs no permission; the FALL that
-    # ADR-0015 also implies — shedding `check-claim-propagation`'s copy-policing half — is recorded
-    # separately at that file's entry, because a fall is the thing that needs a stated reason.
-    # ⟳ 2026-10-17 — ADR-0015 and rounds 5–6. ⛔ THE HAND-SUMMED TRAIL THAT STOOD HERE WAS WRONG
-    # THREE TIMES IN TWO DAYS, each caught by a reviewer and never by me: r5 CODEX Low (it said 19
-    # retired where 17 was right), r6 CODEX Low (it claimed a nineteenth mutation that never
-    # existed), r6 CLAUDE M4 (its shown derivation reached 1476 against an assertion of 1478).
-    #
-    # ⭐ SO THERE IS NO ARITHMETIC IN THIS COMMENT ANY MORE. A total re-typed beside the dict it
-    # describes drifts every time the dict moves, and the drifting total is THIS FILE'S OWN
-    # SUBJECT. Only the per-file deltas this branch caused are recorded, because those are facts
-    # about the work rather than a sum:
-    #
-    #     check-claim-propagation    32 -> 18   17 retired WITH THEIR SUBJECT, 4 retargeted, 3 added
-    #     check-canonical-source      5 -> 10   the `*.html` widening, then four predicate versions,
-    #                                           less one arm the harness showed was dead
-    #
-    # ⛔ THE AUTHORITATIVE TOTAL IS THE CASE BELOW, which sums the dict and is compared against the
-    # on-disk manifests; `check-selftest-counts.py` verifies it by EXECUTION. If you want the
-    # number, run it. Do not add these up by hand — that is the thing that failed three times.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1479)
+    # ── backlog #330: WHICH manifests a pull request runs ─────────────────────────────────
+    # The binary skip (backlog #173) is gone: every error mode of an all-or-nothing answer was
+    # total. These pin the per-manifest selector, and above all its DIRECTION — anything it
+    # cannot place selects MORE, up to the whole manifest, never fewer.
+    _H = frozenset({"scripts/check-plan-code.py", "scripts/coverage_verdict.py",
+                    ".github/workflows/ci.yml"})
+    _SRC = {"scripts/check-a.py": "import fixture_lib\nCANON = '.agents/skills/shared/canon.md'\n",
+            "scripts/check-b.py": "R = ROOT / 'docs' / 'reviews'\n# cites check-a.py\n",
+            "scripts/check-c.py": "x = 1\n",
+            "scripts/check-d.py": "HOOKS = ROOT / '.claude/hooks'\n",
+            "scripts/check-e.py": "LOG = 'docs/reviews/r1.md'\n",
+            "scripts/fixture_lib.py": "",
+            # The harness names every target in its pins; that must not select them.
+            "scripts/check-plan-code.py": "'scripts/check-c.py': 3, 'docs', 'reviews'"}
+
+    def _sel(changed, event="pull_request", why="w", src=_SRC):
+        return select_manifests(event, changed, why, src, _H)[0]
+    case("⭐ a changed guard selects itself and the targets that NAME it — not the rest",
+         _sel(["scripts/check-a.py"]), frozenset({"scripts/check-a.py", "scripts/check-b.py"}))
+    case("a guard nobody else names selects only itself — the harness's pin list is not a reader",
+         _sel(["scripts/check-c.py"]), frozenset({"scripts/check-c.py"}))
+    case("a MANIFEST change selects its target",
+         _sel(["scripts/mutations/check-c.json"]), frozenset({"scripts/check-c.py"}))
+    case("⛔ a manifest with no target it can load is unrecognised -> the WHOLE manifest",
+         _sel(["scripts/mutations/check-zz.json"]), None)
+    case("an importable module is selected through its IMPORT name too",
+         _sel(["scripts/fixture_lib.py"]),
+         frozenset({"scripts/fixture_lib.py", "scripts/check-a.py"}))
+    case("...and a target that merely MENTIONS an importable stem is selected too — a deliberate over-approximation",
+         _sel(["scripts/fixture_lib.py"], src={"scripts/check-k.py": "# see fixture_lib.helper\n",
+                                               "scripts/fixture_lib.py": ""}),
+         frozenset({"scripts/fixture_lib.py", "scripts/check-k.py"}))
+    case("⛔ a change to the harness itself -> the WHOLE manifest",
+         [_sel([p]) for p in sorted(_H)], [None, None, None])
+    case("⛔ an UNDETERMINED diff -> the WHOLE manifest, and the reason is the caller's",
+         select_manifests("pull_request", None, "the diff failed", _SRC, _H),
+         (None, ["full: the diff failed"]))
+    case("⛔ a master push and the schedule run the WHOLE manifest whatever changed",
+         [_sel(["app/page.tsx"], event=e) for e in ("push", "schedule", "workflow_dispatch")],
+         [None, None, None])
+    case("a path outside every staged root reaches no suite and selects nothing",
+         _sel(["app/page.tsx", "README.md", "lib/gemini.ts"]), frozenset())
+    case("an empty diff selects nothing", _sel([]), frozenset())
+    case("a blank path is not a change", _sel(["", "  "]), frozenset())
+    case("a path merely CONTAINING a staged root is not under it — PREFIX, never substring",
+         _sel(["app/docs/readme.md", "x/scripts/y.py"]), frozenset())
+    case("a doc is selected by the guards naming it AND by those quoting a directory above it",
+         _sel(["docs/reviews/r1.md"]), frozenset({"scripts/check-b.py", "scripts/check-e.py"}))
+    case("a canon file selects the guard that names it",
+         _sel([".agents/skills/shared/canon.md"]), frozenset({"scripts/check-a.py"}))
+    case("a file nothing names falls back to the guards quoting its staged ROOT",
+         _sel([".claude/hooks/new-hook.sh"]), frozenset({"scripts/check-d.py"}))
+    case("⛔ a staged file that nothing names, under a root nothing quotes -> the WHOLE manifest",
+         _sel(["supabase/migrations/0099_x.sql"]), None)
+    _SHARED = {f"scripts/check-{i}.py": "import fixture_lib\n" for i in range(3)}
+    _SHARED.update({"scripts/check-9.py": "", "scripts/fixture_lib.py": ""})
+    case("⛔ a module more than half the targets name is SHARED -> the WHOLE manifest",
+         _sel(["scripts/fixture_lib.py"], src=_SHARED), None)
+    _SHARED["scripts/check-8.py"] = ""
+    case("...and at exactly half it is still a selection, not the whole",
+         len(_sel(["scripts/fixture_lib.py"], src=_SHARED) or ()), 4)
+    _why = select_manifests("pull_request", ["docs/reviews/r1.md", "app/x.ts"], "w", _SRC, _H)[1]
+    case("the log names each selected manifest and the changed path that selected it",
+         [l for l in _why if l.startswith("  ")],
+         ["  scripts/check-b.py <- docs/reviews/r1.md", "  scripts/check-e.py <- docs/reviews/r1.md"])
+    case("...and its header counts the selection against the whole and the unreachable paths",
+         _why[0].startswith("diff-scoped: 2 of 7 manifest(s)") and "1 outside" in _why[0], True)
+    case("the harness's own files are derived from its imports, never re-typed",
+         harness_files("import json\nfrom coverage_verdict import X\n", {"coverage_verdict"}),
+         frozenset({"scripts/check-plan-code.py", ".github/workflows/ci.yml",
+                    "scripts/coverage_verdict.py"}))
+    case("...and a module the tree does not hold is not a harness file, whatever it imports",
+         harness_files("import observer_log\nimport json\n", {"observer_log", "x"}),
+         frozenset({"scripts/check-plan-code.py", ".github/workflows/ci.yml", "scripts/observer_log.py"}))
+    case("the staged roots are a parameter: a path under a root passed in is staged",
+         (select_manifests("pull_request", ["lib/x.py"], "w", {"scripts/check-q.py": "'lib'"}, _H,
+                           roots=("lib",))[0],
+          select_manifests("pull_request", ["lib/x.py"], "w", {"scripts/check-q.py": "'lib'"}, _H)[0]),
+         (frozenset({"scripts/check-q.py"}), frozenset()))
+    case("the selection names itself in every label it reaches",
+         (shard_label((2, 3), None, (4, 87)), shard_label(None, None, (0, 9))),
+         ("shard 2 of 3 (round-robin) of the DIFF-SCOPED selection, 4 of 87 manifest(s) — the full "
+          "sweep runs on master",
+          "the DIFF-SCOPED selection, 0 of 9 manifest(s) — the full sweep runs on master"))
+    case("...the tally line and the NOT-MEASURED line included",
+         (tally_line(True, Measured(files={}, declared=0, mutations=[], survivors=[],
+                                    controls_green=True), None, None, (1, 2)).endswith(
+             "measured over the DIFF-SCOPED selection, 1 of 2 manifest(s) — the full sweep runs on master"),
+          "DIFF-SCOPED selection, 3 of 4" in not_measured_line(
+              NotMeasured.from_counts([], None, {}), (1, 2), None, (3, 4))), (True, True))
+    case("a reason names the list it is about", "/y" in changed_or_why(None, "/y")[1], True)
+    with tempfile.TemporaryDirectory() as _tds:
+        _ts = pathlib.Path(_tds)
+        (_ts / "scripts" / "mutations").mkdir(parents=True)
+        (_ts / "scripts" / "check-q.py").write_text("Q = 'docs'\n")
+        (_ts / "scripts" / "mutations" / "check-q.json").write_text("[]")
+        case("the sources are every manifest's target under the ROOT given, and the harness is this file's",
+             sweep_sources(_ts), ({"scripts/check-q.py": "Q = 'docs'\n"},
+                                  frozenset({"scripts/check-plan-code.py", ".github/workflows/ci.yml"})))
+    # ⭐ THE FALSIFIER OF backlog #330, ON THE REAL TREE: r4 Codex proved a change to this canon
+    # alone moves a manifested suite (check-canonical-source's real-repo case goes red); the binary
+    # skip hid it. Here it must select that suite AND check-handoff-path's.
+    _real = pathlib.Path(__file__).resolve().parent.parent
+    _rs, _rh = sweep_sources(_real)
+    _hp = select_manifests("pull_request", [".agents/skills/shared/handoff-path.md"], "w", _rs, _rh)[0]
+    case("⭐ the handoff canon alone selects check-handoff-path AND check-canonical-source",
+         {"scripts/check-handoff-path.py", "scripts/check-canonical-source.py"} <= (_hp or set())
+         and len(_hp) < len(_rs), True)
+    case("...and on the real tree the harness is the WHOLE manifest",
+         select_manifests("pull_request", ["scripts/check-plan-code.py"], "w", _rs, _rh)[0], None)
+    # ── PR #496 r1: four real kinds of dependency carried no quotable name in the form rule 7
+    # looked for. Each case is the reviewer's own input; the fixtures are independent of the tree.
+    # X1 = C1: a hyphenated sibling is loaded by its bare STEM, never by its file name.
+    _HY = {"scripts/check-g.py": '_SS = _sibling("gen-lines")\n',
+           "scripts/check-h.py": "m = importlib.import_module('gen-lines')\n",
+           "scripts/check-i.py": "# gen-lines builds the work lines\n",
+           "scripts/gen-lines.py": ""}
+    case("⭐ r1 X1: a hyphenated sibling selects the targets that load it by its quoted STEM",
+         _sel(["scripts/gen-lines.py"], src=_HY),
+         frozenset({"scripts/gen-lines.py", "scripts/check-g.py", "scripts/check-h.py"}))
+    _rm = module_sources(_real)
+    _rsel = lambda p: select_manifests("pull_request", [p], "w", _rs, _rh, modules=_rm)[0]  # noqa: E731
+    case("⭐ r1 X1 on the real tree: gen-work-lines.py selects goal-tree, which loads it by stem",
+         "scripts/goal-tree.py" in (_rsel("scripts/gen-work-lines.py") or {"scripts/goal-tree.py"}),
+         True)
+    # two hops, so naming the changed file is not what selects check-a: it reaches check-c only through gen-b
+    _FN = {"scripts/check-a.py": 'gd = _load("gen-b.py", "_b")\n', "scripts/gen-b.py": 'c = _load("check-c", "_c")\n',
+           "scripts/check-c.py": "", "scripts/check-z.py": "y = 1\n"}
+    case("⭐ backlog #498: a target that loads a sibling by its FILENAME (`\"gen-b.py\"`) is reached through it",
+         _sel(["scripts/check-c.py"], src=_FN), frozenset({"scripts/check-c.py", "scripts/gen-b.py", "scripts/check-a.py"}))
+    _r498 = _rsel("scripts/check-dashboard-entry.py")
+    case("backlog #498 on the real tree: check-dashboard-entry.py reaches compaction-state through gen-dashboard.py",
+         (_r498 is not None, "scripts/compaction-state.py" in (_r498 or set())), (True, True))
+    # ── backlog #533: A PIN BUMP IS NOT A HARNESS CHANGE ──────────────────────────────────────
+    # Measured 2026-11-06 on PR #516, PR #522, PR #524 and PR #525: four of five went FULL (18 shards) only
+    # because a pin bump edited this file. The pins now live in `PINS_FILE`, which is data, so a
+    # pins diff goes through rules 5-8 like any path under `scripts/`. The choice, and its failure
+    # mode: it selects whatever READS the pins file (more is swept), and the changed manifest beside
+    # it selects its own target (rule 6), so no changed manifest is skipped. A pin that disagrees
+    # with its manifest is refused in every shard by `pin_drift`, whatever was selected.
+    _PN = dict(_SRC, **{"scripts/check-m.py": f"PINS = ROOT / '{PINS_FILE}'\n"})
+    case("⭐ backlog #533: a pins-only diff selects the targets that READ the pins file, never the WHOLE manifest",
+         _sel([PINS_FILE], src=_PN), frozenset({"scripts/check-m.py"}))
+    case("⭐ backlog #533: a manifest + pins diff selects that manifest's target too",
+         _sel([PINS_FILE, "scripts/mutations/check-c.json"], src=_PN),
+         frozenset({"scripts/check-m.py", "scripts/check-c.py"}))
+    case("⭐ backlog #533 on the real tree: the pins file is not a harness file, though the harness reads it",
+         (PINS_FILE in _rh, SWEEP_HARNESS in _rh), (False, True))
+    _r533 = _rsel(PINS_FILE)
+    case("⭐ backlog #533 on the real tree: a pins-only diff is a SELECTION, and it includes check-merge-ready, "
+         "which reads the pins at both revisions",
+         (_r533 is not None, len(_r533 or _rs) < len(_rs), "scripts/check-merge-ready.py" in (_r533 or set())),
+         (True, True, True))
+    _r533m = select_manifests("pull_request", [PINS_FILE, "scripts/mutations/check-anchors.json"], "w",
+                              _rs, _rh, modules=_rm)[0]
+    case("⭐ backlog #533 on the real tree: a manifest + pins diff selects that manifest's target, not the whole",
+         (_r533m is not None, "scripts/check-anchors.py" in (_r533m or set())), (True, True))
+    # C2: a reader that walks a whole staged root is selected by ANY change under it.
+    _WK = {"scripts/check-w.py": "for p in (ROOT / 'docs').rglob('*.md'): pass\n",
+           "scripts/check-n.py": "IDX = 'docs/memory/MEMORY.md'\n",
+           "scripts/check-x.py": "y = 2\n"}
+    case("⭐ r1 C2: a ROOT walker is selected even when another target names the changed path",
+         _sel(["docs/memory/MEMORY.md"], src=_WK),
+         frozenset({"scripts/check-w.py", "scripts/check-n.py"}))
+    case("...and on the real tree MEMORY.md selects the docs walkers check-docs and check-plan-file-tags",
+         {"scripts/check-docs.py", "scripts/check-plan-file-tags.py"}
+         <= (_rsel("docs/memory/MEMORY.md") or {"scripts/check-docs.py", "scripts/check-plan-file-tags.py"}),
+         True)
+    case("a directory below the root is matched as the COMPONENT a join spells, not only as a whole path",
+         _sel(["docs/reviews/r1.md"], src={"scripts/check-r.py": "R = DOCS_DIR / 'reviews'\n",
+                                           "scripts/check-x.py": "y = 2\n"}),
+         frozenset({"scripts/check-r.py"}))
+    case("...and a file under `scripts` that nothing names falls back to the targets quoting `scripts`",
+         _sel(["scripts/notes.txt"], src={"scripts/check-s.py": "S = ROOT / 'scripts'\n",
+                                          "scripts/check-x.py": "y = 2\n"}),
+         frozenset({"scripts/check-s.py"}))
+    case("...but `scripts` is reached by import name, not walked: a script change does not select "
+         "every target that quotes the directory",
+         _sel(["scripts/check-x.py"], src=dict(_WK, **{"scripts/check-s.py": "S = ROOT / 'scripts'\n"})),
+         frozenset({"scripts/check-x.py"}))
+    # PR #496 r2 X2: a target that WALKS `scripts/` reads every file under it, so excluding the
+    # import root dropped one (`check-canonical-source` walks it through a loop variable).
+    _SW = {"scripts/check-cw.py": ("def files(root):\n    for sub in ('docs', 'scripts'):\n"
+                                   "        d = root / sub\n        yield from d.rglob('*.py')\n"),
+           "scripts/check-gw.py": "import glob\nALL = glob.glob('scripts/*.py')\n",
+           "scripts/check-q.py": ("import glob\nP = ROOT / 'scripts/x.py'\nONE = glob.glob('scripts/x.py')\n"
+                                  "for q in (ROOT / 'docs').glob('*'): pass\n"),
+           "scripts/check-x.py": "y = 2\n"}
+    case("⭐ r2 X2: a target that WALKS `scripts/` — through a loop variable, or a glob pattern — is "
+         "selected by any script change",
+         _sel(["scripts/check-x.py"], src=_SW),
+         frozenset({"scripts/check-x.py", "scripts/check-cw.py", "scripts/check-gw.py"}))
+    case("...but a target that only QUOTES a path to ONE file under `scripts/` — even inside a glob "
+         "call — and walks another directory, is not a walker of it",
+         "scripts/check-q.py" in (_sel(["scripts/check-x.py"], src=_SW) or _SW), False)
+    # backlog #231 COST: `_walks_dir` now files each lister call and each assignment under the
+    # scopes that enclose it, instead of re-walking every scope. These pin the scope rule it must
+    # still reproduce, and that its `lru_cache` answers per (source, directory) — never stale.
+    _gw = _SW["scripts/check-gw.py"]
+    case("⭐ backlog #231: the cached `_walks_dir` answers per INPUT — the same source for another "
+         "directory, then a changed source for the same one, each changes the answer",
+         (_walks_dir(_gw, "scripts"), _walks_dir(_gw, "docs"),
+          _walks_dir(_gw.replace("'scripts/", "'lib/"), "scripts"), _walks_dir(_gw, "scripts")),
+         (True, False, False, True))
+    case("⭐ backlog #231: a module-level name carries the directory into a function's lister",
+         _walks_dir("import os\nR = 'scripts'\ndef f():\n    return os.listdir(R)\n", "scripts"), True)
+    case("...and a lister in a CLASS BODY, outside any def, is in no scope — it is not a walk",
+         _walks_dir("import glob\nclass C:\n    ALL = glob.glob('scripts/*.py')\n", "scripts"), False)
+    case("...nor is a name assigned in a SIBLING function, which the lister's scope cannot see",
+         _walks_dir("import os\ndef g():\n    R = 'scripts'\ndef f():\n    return os.listdir(R)\n",
+                    "scripts"), False)
+    case("...and a name assigned from one assigned LATER in the scope is still tainted — a fixpoint, "
+         "not one pass in source order",
+         _walks_dir("import os\ndef f():\n    c = b\n    b = 'scripts'\n    return os.listdir(c)\n",
+                    "scripts"), True)
+    case("⭐ backlog #231: a call carrying `ls-files` is a lister, whatever it is called",
+         _walks_dir("import subprocess\nsubprocess.run(['git', 'ls-files', 'scripts'])\n", "scripts"),
+         True)
+    case("⭐ r2 X2 on the real tree: check-usage-pace.py selects check-canonical-source, which walks scripts/",
+         "scripts/check-canonical-source.py" in (_rsel("scripts/check-usage-pace.py") or set()), True)
+    # C3: the dependency manifests change staged `node_modules` without any staged path changing.
+    case("⭐ r1 C3: package.json and package-lock.json select the WHOLE manifest",
+         [_sel([p]) for p in ("package.json", "package-lock.json")], [None, None])
+    case("...and a file merely NAMED like one, elsewhere, is not a dependency manifest",
+         _sel(["app/package.json"]), frozenset())
+    # C5: imports are followed transitively — a module reaches the targets that import an importer.
+    _TR = {"scripts/check-t.py": "import m_cat\n",
+           "scripts/check-u.py": "# m_cat is described in the spec\n",
+           "scripts/check-v.py": "z = 0\n"}
+    _TM = {"scripts/m_base.py": "CONTAINER = 'x'\n",
+           "scripts/m_cat.py": "from m_base import CONTAINER\n"}
+    case("⭐ r1 C5: a module reaches a target through an importer it does not name",
+         select_manifests("pull_request", ["scripts/m_base.py"], "w", _TR, _H, modules=_TM)[0],
+         frozenset({"scripts/check-t.py"}))
+    case("...through an IMPORT, never through prose that mentions the importer",
+         "scripts/check-u.py" in (select_manifests("pull_request", ["scripts/m_base.py"], "w", _TR, _H,
+                                                   modules=_TM)[0] or _TR), False)
+    case("...and on the real tree m4_base_db reaches check-live-schema and check-catalog-coverage",
+         {"scripts/check-live-schema.py", "scripts/check-catalog-coverage.py"}
+         <= (_rsel("scripts/m4_base_db.py")
+             or {"scripts/check-live-schema.py", "scripts/check-catalog-coverage.py"}), True)
+    with tempfile.TemporaryDirectory() as _tdm:
+        (pathlib.Path(_tdm) / "scripts").mkdir()
+        (pathlib.Path(_tdm) / "scripts" / "m_a.py").write_text("import m_b\n")
+        (pathlib.Path(_tdm) / "notes.py").write_text("")
+        case("the module sources are every scripts/*.py under the ROOT given",
+             module_sources(pathlib.Path(_tdm)), {"scripts/m_a.py": "import m_b\n"})
+    # ── the changed-file list: NUL-delimited, or it is not trusted ────────────────────────
+    # r6 CODEX finding 2: git C-QUOTES non-ASCII paths without `-z`, and the quoted form does not
+    # start with a staged root. Measured in a real repo: `"scripts/\303\251.py"`.
+    case("NUL-delimited output parses to the real paths",
+         changed_from_nul("scripts/a.py\0docs/b.md\0"), ["scripts/a.py", "docs/b.md"])
+    case("an empty diff is an empty list, not an unparseable one", changed_from_nul(""), [])
+    case("⛔ NEWLINE-delimited output is REFUSED — `-z` was dropped and paths may be C-quoted",
+         changed_from_nul("scripts/a.py\n"), None)
+    case("⛔ a C-quoted path that arrives anyway is REFUSED, never mis-prefixed",
+         changed_from_nul('"scripts/\\303\\251.py"\0'), None)
+    case("⛔ a list that could not be READ is undetermined, and says so",
+         changed_or_why(None, "/x")[0] is None and "could not be read" in changed_or_why(None, "/x")[1],
+         True)
+    case("⛔ ...and so is one that is not NUL-delimited — the two causes report differently",
+         changed_or_why("scripts/a.py\n", "/x")[0] is None
+         and "not NUL-delimited" in changed_or_why("scripts/a.py\n", "/x")[1], True)
+    case("a readable NUL list is the paths, with no reason", changed_or_why("a\0", "/x"), (["a"], ""))
+    case("...and the refusal composes: an untrusted list selects the WHOLE manifest",
+         select_manifests("pull_request", *changed_or_why("scripts/check-c.py\n", "/x"), _SRC, _H)[0],
+         None)
+    # ─── THE TOTAL IS DERIVED, NEVER TYPED (backlog #359) ─────────────────────────────────
+    # ⛔ A literal total stood here, and 41 of the 43 merged commits that touched this file from
+    # 2026-10-17 edited it — so any two open PRs that added a mutation anywhere collided on ONE
+    # line, and each later merge cost a re-merge and 3–4 extra review rounds. The sum moves only
+    # when a pin moves, and the pins fail in both directions (`pin_drift`, and the on-disk case
+    # below). What the literal alone caught was a pin LOWERED together with its entries — and
+    # `check-merge-ready.py` HOLDS a falling pin (the base's and head's DISPLAYS, read by
+    # `pin_display`, which this harness proves are the pins it uses), so that fall still reaches
+    # the owner with its reason. A same-manifest
+    # conflict is REAL and stays; one on a derived number was cost.
+    _own_src = pathlib.Path(__file__).read_text(encoding="utf-8")
+    # ⟳ r1 (Codex Medium, Claude L1): a regex here missed four spellings. The scan reads the LITERAL.
+    _t = declared_total()
+    case("⛔ no typed mutation total is compared, passed or asserted anywhere in this file",
+         typed_total_sites(_own_src, _t), [])
+    case("...a typed total with a trailing comma is found",
+         typed_total_sites(f'case("t", declared_total(), {_t},)\n', _t), [1])
+    case("...a typed total with digit separators is found",
+         typed_total_sites(f'case("t", declared_total(), {_t:_})\n', _t), [1])
+    case("...a typed total in an assert is found",
+         typed_total_sites(f"assert declared_total() == {_t}\nassert not declared_total() - {_t}\n",
+                           _t), [1, 2])
+    case("...a typed total compared inside a case is found",
+         typed_total_sites(f'case("t", declared_total() == {_t}, True)\n', _t), [1])
+    case("...a typed total compared OUTSIDE any call is found",
+         typed_total_sites(f"if declared_total() != {_t}:\n    pass\n", _t), [1])
+    case("...and a different number, or the total as plain data, is not",
+         typed_total_sites(f'case("t", declared_total(), {_t + 1})\nN = {_t}\n', _t), [])
+    # ⟳ r2 (Codex Medium): a literal equal to the total in an UNRELATED call was a false positive.
+    case("...nor the same number in a call or comparison that never mentions the total",
+         typed_total_sites(f"timeout({_t})\nif retries == {_t}:\n    pass\ncase('t', other(), {_t})\n", _t), [])
+    case("...but the same call naming EXPECTED_MUTATIONS is found",
+         typed_total_sites(f"case('t', sum(EXPECTED_MUTATIONS.values()), {_t})\n", _t), [1])
+    # The TOTAL is a parameter, not today's value: the same text is a hit at 7 and silent at 8.
+    case("...the scan reads the total it is GIVEN, not today's",
+         [typed_total_sites('case("t", declared_total(), 7)\n', n) for n in (7, 8)], [[1], []])
+    # ⚠ A STATED BOUND, asserted so it cannot be forgotten: a CONVENTION guard over ordinary
+    # spellings. Arithmetic, an f-string and a name escape it, and that is accepted — a re-typed
+    # total no longer protects or loosens anything; it only brings the merge conflict back.
+    case("BOUND (stated, r2): arithmetic, an f-string and a name are NOT found",
+         typed_total_sites(f"assert declared_total() == {_t - 86} + 86\n"
+                           f"assert f'{{declared_total()}}' == '{_t}'\n"
+                           f"N = {_t}\nassert declared_total() == N\n", _t), [])
+    # ─── THE PINS ARE THEIR DISPLAY (backlog #359 r3) ────────────────────────────────────────
+    # ⛔ `check-merge-ready.py` HOLDS a falling pin by reading the `EXPECTED_MUTATIONS` DISPLAY at the
+    # merge base and at the head, as data — `pin_display`, the one reader. That is only sound if the
+    # dict this harness USES is that display, so both of its consumers prove it in their OWN process:
+    # `--mutate` before any mutation runs, and this suite at its top (`pin_display_problems`).
+    # ⟳ r2 read the EFFECTIVE dict in a separate `--print-pins` process instead, and r3 (Claude F1)
+    # beat it with a write conditioned on that invocation — `if "--print-pins" not in sys.argv:` —
+    # which reported 87 while the harness held 82. An assertion made where the pins are consumed
+    # cannot be split from them, so a write conditioned on anything is refused there.
+    # ⟳ r3: `--print-pins`, its three cases and its two mutation entries are RETIRED WITH THEIR
+    # SUBJECT; r2's retirement of `pin_shape_problems` (eight cases, three entries) stands.
+    _dsrc = ('import sys\nEXPECTED_MUTATIONS = {\n    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n}\n')
+    case("the display is read as data: {path: int}",
+         pin_display(_dsrc), {"scripts/a.py": 5, "scripts/b.py": 3})
+
+    def _display_refused(src):
+        try:
+            pin_display(src)
+            return None
+        except PinDisplayError as exc:
+            return str(exc)
+    # r1 (Claude S1, Codex X1): Python keeps the LAST duplicate, so a display with one hides a value.
+    case("⛔ a DUPLICATE key in the display is REFUSED, not resolved to the last value",
+         "DUPLICATE" in str(_display_refused(_dsrc.replace("}\n", '    "scripts/a.py": (\n        4\n    ),\n}\n'))),
+         True)
+    case("...and so is a display that is not a literal {str: int}",
+         [bool(_display_refused(_dsrc.replace(*r))) for r in
+          (('"scripts/b.py": 3', '"scripts/b.py": 1 + 2'), ('"scripts/b.py": 3', '"scripts/b.py": True'),
+           ('"scripts/b.py": 3', '**{"scripts/b.py": 3}'), ('{\n    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n}', 'dict(a=5)'))],
+         [True, True, True, True])
+    case("...and a source with no display, or two",
+         [bool(_display_refused(s)) for s in ("x = 1\n", _dsrc + _dsrc)], [True, True])
+    # ── backlog #533: the pins are read from `PINS_FILE`, beside this file ──────────────────
+    with tempfile.TemporaryDirectory() as _tdp:
+        _pf = pathlib.Path(_tdp) / "pins.py"
+        _pf.write_text(_dsrc)
+        _ok = read_pins(_pf)
+        _pf.write_text("EXPECTED_MUTATIONS = dict(a=5)\n")
+        _bad = read_pins(_pf)
+        _gone = read_pins(pathlib.Path(_tdp) / "absent.py")
+    case("backlog #533: a readable pins file is its display, with no reason",
+         _ok, ({"scripts/a.py": 5, "scripts/b.py": 3}, None))
+    case("⛔ backlog #533: a pins file whose display is refused is {} WITH the reason, never a silent {}",
+         (_bad[0], (_bad[1] or "").startswith(PINS_FILE), "not a dict display" in (_bad[1] or "")),
+         ({}, True, True))
+    case("⛔ backlog #533: a MISSING pins file is {} WITH the reason",
+         (_gone[0], "FileNotFoundError" in (_gone[1] or "")), ({}, True))
+    # ⟳ sweep-pin-select r1 (Claude F2): the reason `read_pins` gives is what the CONSUMER reports. With
+    # `effective` {} — what an import holds when the file cannot be read — a silent {} would agree.
+    with tempfile.TemporaryDirectory() as _tdq:
+        _qf = pathlib.Path(_tdq) / "pins.py"
+        _qf.write_text("EXPECTED_MUTATIONS = dict(a=5)\n")
+        _q_bad = pin_file_problems(_qf, {})
+        _q_gone = pin_file_problems(pathlib.Path(_tdq) / "absent.py", {})
+        _qf.write_text(_dsrc)
+        _q_ok = pin_file_problems(_qf, {"scripts/a.py": 5, "scripts/b.py": 3})
+        _q_drift = pin_file_problems(_qf, {"scripts/a.py": 4, "scripts/b.py": 3})
+    case("⛔ sweep-pin-select r1 F2: an unreadable pins file is REPORTED by its consumer with read_pins's reason, "
+         "never an agreement with {}",
+         [(len(p), p[0].startswith(f"{PINS_FILE}: the pins could not be read") if p else False)
+          for p in (_q_bad, _q_gone)], [(1, True), (1, True)])
+    case("...while a readable one is compared key by key (the adjacent negatives)",
+         (_q_ok, _q_drift), ([], ["scripts/a.py: the display says 5, this process holds 4"]))
+    case("backlog #533: the pins this harness holds are read from the pins file BESIDE it",
+         (own_pins_path() == pathlib.Path(__file__).resolve().parent.parent / PINS_FILE,
+          read_pins(own_pins_path())[1]), (True, None))
+    # The moved pins are still judged against EVERY manifest: a wrong pin in the pins file is refused
+    # by `pin_drift`, the whole-manifest check every shard runs whatever the selection.
+    _k533 = "scripts/check-anchors.py"
+    _real_pins = read_pins(own_pins_path())[0]
+    with tempfile.TemporaryDirectory() as _tdw:
+        _wf = pathlib.Path(_tdw) / "pins.py"
+        _wf.write_text(own_pins_path().read_text(encoding="utf-8").replace(
+            f'    "{_k533}": {_real_pins.get(_k533)},', f'    "{_k533}": {(_real_pins.get(_k533) or 0) + 1},', 1))
+        _wrong = read_pins(_wf)[0]
+    _counts533 = manifest_counts(load_manifests(own_pins_path().parents[2])[0])
+    _saved533 = dict(EXPECTED_MUTATIONS)
+    try:
+        _right_drift = pin_drift(_counts533)
+        EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_wrong)
+        _wrong_drift = [d.split(":")[0] for d in pin_drift(_counts533) if not d.startswith("in all:")]
+    finally:
+        EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved533)
+    case("⭐ backlog #533: a WRONG pin in the pins file is still refused by pin_drift over the real manifests",
+         (_right_drift, _wrong_drift), ([], [_k533]))
+
+    def _eff(extra):
+        """What a module EVALUATES its pins to — the dict a process holds after import."""
+        ns: dict = {"__name__": "pins_eval"}
+        exec(compile(_dsrc + extra, "<pins>", "exec"), ns)
+        return ns["EXPECTED_MUTATIONS"]
+    case("an UNCHANGED module holds exactly its display", pin_display_problems(_dsrc, _eff("")), [])
+    case("...and a RAISED pin in the display is still its display",
+         pin_display_problems(_dsrc.replace(": 5,", ": 9,"), {"scripts/a.py": 9, "scripts/b.py": 3}), [])
+    # Every r1/r2 input that changes what Python computes without touching the display. Each is
+    # REFUSED here; check-merge-ready, which reads displays, never has to see it.
+    for _why, _extra in (
+            ("r1 (Claude S2): a later `-= 4`", 'EXPECTED_MUTATIONS["scripts/a.py"] -= 4\n'),
+            ("Codex r2 H1: a DEFAULT ARGUMENT",
+             'def _self_test_body(_init=EXPECTED_MUTATIONS.update({"scripts/a.py": 4})):\n    pass\n'),
+            ("Codex r2 H1: a DECORATOR",
+             '@(lambda f: (EXPECTED_MUTATIONS.update({"scripts/a.py": 4}), f)[1])\ndef g():\n    pass\n'),
+            ("Codex r2 H3: a shadowed `dict`",
+             "def adjust_pins():\n    def dict(pins):\n        pins['scripts/a.py'] = 4\n"
+             "    dict(EXPECTED_MUTATIONS)\nadjust_pins()\n")):
+        case(f"⛔ {_why} write outside the display is REFUSED, naming the key",
+             pin_display_problems(_dsrc, _eff(_extra)),
+             [f"scripts/a.py: the display says 5, this process holds {1 if '-= 4' in _extra else 4}"])
+    case("⛔ a pin DELETED at runtime is refused too",
+         pin_display_problems(_dsrc, _eff("del EXPECTED_MUTATIONS['scripts/b.py']\n")),
+         ["scripts/b.py: the display says 3, this process holds None"])
+    # THE WIRING, in a real process. r3 (Claude F1)'s three inputs, applied to a COPY of this very
+    # file and run as CI runs it. Each copy must refuse before measuring anything.
+    # ⚠ A copy does not spawn copies of its own: each carries `_PINS_COPY = True` in its SOURCE, because
+    # without the refusal a copy's suite reaches this same case, and an environment marker does not
+    # survive `fixture_git.isolated()` (measured: a mutant that dropped the refusal recursed ~25 deep).
+    # Each copy runs in its own session and its whole group is killed at the timeout.
+    if not globals().get("_PINS_COPY"):
+        _here_dir = pathlib.Path(__file__).resolve().parent
+        _cp = pathlib.Path(tempfile.mkdtemp())
+
+        def _copy_run(attack, argv, env=None, pins=True):
+            (_cp / "scripts").mkdir(exist_ok=True)
+            for _n in ("coverage_verdict.py", "fixture_git.py"):
+                shutil.copy(_here_dir / _n, _cp / "scripts" / _n)
+            (_cp / PINS_FILE).parent.mkdir(parents=True, exist_ok=True)     # backlog #533
+            if pins:
+                shutil.copy(_here_dir.parent / PINS_FILE, _cp / PINS_FILE)
+            else:
+                (_cp / PINS_FILE).unlink(missing_ok=True)
+            _src = pathlib.Path(__file__).read_text(encoding="utf-8")
+            _guard = '\nif __name__ == "__main__":'
+            (_cp / "scripts" / "check-plan-code.py").write_text(
+                _src.replace(_guard, "\n_PINS_COPY = True\n" + attack + _guard, 1), encoding="utf-8")
+            (_cp / "empty").mkdir(exist_ok=True)
+            pr = subprocess.Popen([sys.executable, str(_cp / "scripts" / "check-plan-code.py"), *argv],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                  stdin=subprocess.DEVNULL, cwd=str(_cp / "empty"),
+                                  env={**os.environ, **(env or {})}, start_new_session=True)
+            try:
+                _o, _e = pr.communicate(timeout=30)
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(OSError):
+                    os.killpg(pr.pid, 9)
+                pr.communicate()
+                return None, "timeout"
+            return pr.returncode, PINS_REFUSAL in _e
+        _k5 = 'EXPECTED_MUTATIONS["scripts/check-merge-ready.py"] -= 5\n'
+        try:
+            _argv_attack = 'if "--print-pins" not in sys.argv:\n    ' + _k5
+            case("⛔ r3 F1: a write gated on argv is REFUSED by --mutate, rc=2",
+                 _copy_run(_argv_attack, ["--mutate", "."]), (2, True))
+            case("⛔ r3 F1: ...and by --self-test, rc=2",
+                 _copy_run(_argv_attack, ["--self-test"]), (2, True))
+            case("⛔ r3 F1: a write gated on CI=true is REFUSED by --mutate under CI",
+                 _copy_run('if os.environ.get("CI") == "true":\n    ' + _k5, ["--mutate", "."],
+                           {"CI": "true"}), (2, True))
+            case("⛔ r3 F1: a write made whenever the run is NOT --self-test is REFUSED by --mutate",
+                 _copy_run('if "--self-test" not in sys.argv:\n    ' + _k5, ["--mutate", "."]), (2, True))
+            case("...while an UNCHANGED copy is not refused for its pins",
+                 _copy_run("", ["--mutate", "."])[1], False)
+            # backlog #533: importing this file must not need the pins (other scripts import it for
+            # other rules), so a MISSING pins file is not an import crash — it is CANNOT RUN at the
+            # consumer, before anything is measured against {}.
+            case("⛔ backlog #533: a copy with NO pins file is REFUSED by --mutate, rc=2, never measured against {}",
+                 _copy_run("", ["--mutate", "."], pins=False), (2, True))
+        finally:
+            shutil.rmtree(_cp, ignore_errors=True)
+    _saved_t = dict(EXPECTED_MUTATIONS)
+    try:
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS.update({"scripts/a.py": 3, "scripts/b.py": 4})
+        case("the declared total is the sum of the per-file pins, whatever they are",
+             declared_total() == 7, True)
+        case("a drifted pin reports the DERIVED total, so a merge never types one",
+             [d for d in pin_drift({"scripts/a.py": 3, "scripts/b.py": 5})
+              if d.startswith("in all:")],
+             ["in all: the manifests hold 8 mutation(s) and the pins declare 7 — the total is "
+              "derived from the per-file pins, so change a pin, never a total"])
+        # The defect a TOTAL cannot see: one manifest gains what another loses.
+        case("a +1/-1 swap between two manifests is refused though the total is unchanged",
+             sorted(d.split(":")[0] for d in pin_drift({"scripts/a.py": 4, "scripts/b.py": 3})
+                    if not d.startswith("in all:")),
+             ["scripts/a.py", "scripts/b.py"])
+        case("pins that match their manifests report nothing, not even a total",
+             pin_drift({"scripts/a.py": 3, "scripts/b.py": 4}), [])
+    finally:
+        EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved_t)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -5229,6 +6933,7 @@ def _self_test() -> int:
     # claim were checked and the thing the claim is ABOUT — the files on disk — was checked by
     # nothing until the 8-minute sweep. r3 B1: four entries repeated an earlier anchor tuple, the
     # loader refused them, `--mutate .` returned NOT MEASURED, and this suite stayed green.
+    # ⟳ backlog #359: the declared-count literal is retired; the history below still names it.
     # ⭐ The comment above the declared-count case calls that literal "the outside observer of the
     # sum". It observes the DICT. These two observe the MANIFESTS, which is the other operand, and
     # they are the pair that makes the sentence true.
@@ -5247,10 +6952,17 @@ def _self_test() -> int:
     # commit was 128/128 green. That is a falsifier with a recorded observation behind it, which is
     # the property the ratchet exists to supply — supplied here by a different mechanism, said out
     # loud so nobody reads the missing entry as an oversight.
+    case("manifest_counts counts entries PER FILE",
+         manifest_counts([{"file": "a"}, {"file": "b"}, {"file": "a"}]), {"a": 2, "b": 1})
     _live_entries, _live_problems = load_manifests(_repo)
     case("the manifests ON DISK load with no refusal", _live_problems, [])
-    case("...and the entry count they yield is the pinned sum, not a typed literal",
-         len(_live_entries), sum(EXPECTED_MUTATIONS.values()))
+    # ⟳ backlog #359: this compared the TOTAL, which a +1 in one manifest and a -1 in another
+    # leave unchanged. It now compares every manifest with its own pin, in both directions —
+    # the rule the sweep applies, imported rather than restated, at a cost of well under a second.
+    # ⚠ On a consistent tree a total-only comparison passes too, so THIS case cannot tell the two
+    # apart; the per-file direction is pinned by the synthetic "+1/-1 swap" case above.
+    case("...and every manifest ON DISK matches its own pin, and every pin has a manifest",
+         pin_drift(manifest_counts(_live_entries)), [])
 
     # ─── A PRE-FLIGHT FOR THE FAILURE-LINE CONTRACT WAS ATTEMPTED HERE, AND ABANDONED ────
     # ⛔ THE PROBLEM IS REAL AND HAS COST A GROWING LIST OF FILES — see the derivation below,
@@ -5325,7 +7037,7 @@ def _self_test() -> int:
     return _drift_rc(__doc__, ok, fail)
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], local_budget: "float | None" = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("plan", nargs="?")
@@ -5341,6 +7053,22 @@ def main(argv: list[str]) -> int:
                          "the mode that makes the evidence about the code that ships.")
     # ⚠ DERIVED from `SHARD_FLAGS`, never typed twice — round 7 H1. The dict is the single
     # declaration; this loop and the mode check in `main` are its only two readers.
+    ap.add_argument("--only", metavar="SCRIPT", action="append",
+                    help="With --mutate: run only the mutations targeting SCRIPT, written as the "
+                         "manifest's `file` (e.g. scripts/check-x.py; repeatable). "
+                         "A DIAGNOSTIC slice — the gate is the whole manifest, in CI.")
+    ap.add_argument("--seeds", metavar="A,B",
+                    help="With --mutate: run every suite under each PYTHONHASHSEED listed (two or more, "
+                         "distinct). A mutant killed under one seed and not another is NONDETERMINISTIC "
+                         "and the run fails (backlog #506). CI passes it on the scheduled sweep only.")
+    ap.add_argument("--allow-long-local", action="store_true",
+                    help="With --mutate, off CI: run even past the local budget. THIS RUN ONLY.")
+    ap.add_argument("--event", metavar="NAME",
+                    help="With --mutate: the CI event (backlog #330). `pull_request` runs only the "
+                         "manifests --changed selects; any other event runs the WHOLE manifest.")
+    ap.add_argument("--changed", metavar="FILE",
+                    help="With --event: the pull request's `git diff --name-only -z` output. "
+                         "Unreadable or untrusted -> the WHOLE manifest, never fewer.")
     ap.add_argument("--compare", metavar="DIR",
                     help="diff each assembled file against DIR/<name> and FAIL on any "
                          "difference. WITHOUT THIS the check reads only the plan's copy "
@@ -5448,7 +7176,43 @@ def main(argv: list[str]) -> int:
         if why:
             print(why, file=sys.stderr)
             return 2
+    if (a.only or a.allow_long_local) and not a.mutate:
+        print("CANNOT RUN — --only and --allow-long-local only mean something with --mutate ROOT. "
+              "NOTHING WAS MEASURED.", file=sys.stderr)
+        return 2
+    if (a.event is not None or a.changed is not None) and not a.mutate:
+        print("CANNOT RUN — --event and --changed only mean something with --mutate ROOT. "
+              "NOTHING WAS MEASURED.", file=sys.stderr)
+        return 2
+    if a.changed is not None and a.event is None:
+        print("CANNOT RUN — --changed without --event: whether a diff may narrow the run depends "
+              "on the event. NOTHING WAS MEASURED.", file=sys.stderr)
+        return 2
+    if a.only and a.event is not None:
+        print("CANNOT RUN — --only and --event are two different slices; pass one. NOTHING WAS "
+              "MEASURED.", file=sys.stderr)
+        return 2
+    if a.only and shard is not None:
+        print("CANNOT RUN — --only and a shard are two different slices; pass one. NOTHING WAS "
+              "MEASURED.", file=sys.stderr)
+        return 2
+    seeds = None
+    if a.seeds is not None:
+        if not a.mutate:
+            print("CANNOT RUN — --seeds only means something with --mutate ROOT. NOTHING WAS MEASURED.",
+                  file=sys.stderr)
+            return 2
+        seeds, why = parse_seeds(a.seeds)
+        if why:
+            print(why, file=sys.stderr)
+            return 2
     if a.mutate:
+        # ⛔ backlog #359 r3: the pins this run USES are its display, asserted HERE, in the process
+        # that consumes them and before any mutation runs — check-merge-ready reads the display.
+        _held = own_pin_problems()
+        if _held:
+            print(PINS_REFUSAL + ":\n" + "\n".join(f"  {_d}" for _d in _held), file=sys.stderr)
+            return 2
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():
             print(f"CANNOT RUN — --mutate {mroot} is not a directory. NOT CHECKED.",
@@ -5463,7 +7227,37 @@ def main(argv: list[str]) -> int:
         # ⚠ ONLY WHEN THE MANIFEST ITSELF LOADS. Over a broken manifest `len(muts)` is a
         # shortfall, and "shard 4 of 4 is empty" would then be a confident answer to the wrong
         # question — the manifest's own problems belong to `mutate_delivered`'s report.
-        if shard is not None:
+        # backlog #330: THE SELECTION, decided once by `select_manifests` and LOGGED before any
+        # suite runs — which manifests, and the changed path that selected each, or "full: why".
+        select = scope = deadline = None
+        # L1: only a CI runner's own `CI=true` counts — an exported `CI=false` is not CI.
+        _ci = os.environ.get("CI", "").lower() == "true"
+        if _ci:
+            # ⛔ r1 F1, r2 F1-F3: EVERY run on CI has its job's budget, or it does not run — with or without
+            # --event, from the runner's own environment (`ci_deadline`), counted from the job's FIRST step.
+            deadline, _line, why = ci_deadline(os.environ, a.event, time.time(), time.monotonic())
+            if why:
+                print(f"CANNOT RUN — no time budget for this sweep run: {why}. Without one, hung mutants can "
+                      f"run past the job's timeout-minutes and the job is killed with its evidence unprinted. "
+                      f"NOTHING WAS MEASURED.", file=sys.stderr)
+                return 2
+            print(_line)
+        if a.event is not None:
+            raw = None
+            if a.changed is not None:
+                try:
+                    raw = pathlib.Path(a.changed).read_text(encoding="utf-8", errors="surrogateescape")
+                except OSError:
+                    raw = None
+            changed, why = (changed_or_why(raw, a.changed) if a.changed is not None
+                            else (None, "no --changed list was given"))
+            sources, harness = sweep_sources(mroot)
+            select, lines = select_manifests(a.event, changed, why, sources, harness,
+                                             modules=module_sources(mroot))
+            print("SELECTION — " + "\n".join(lines))
+            if select is not None:
+                scope = (len(select), len(sources))
+        if shard is not None and select is None:
             _muts, _problems = load_manifests(mroot)
             why = None if _problems else shard_refusal(shard[0], shard[1], len(_muts))
             if why:
@@ -5471,10 +7265,26 @@ def main(argv: list[str]) -> int:
                 return 2
         # THE ONE PLACE THE REPORTER IS SUPPLIED. Everything below `mutate_delivered` defaults
         # to silence, so a nested run cannot write into the stream its parent reads.
+        # ⛔ OFF CI the budget applies unless THIS invocation asks otherwise; `CI` is set by
+        # every GitHub Actions runner, so the sharded gate is never refused.
+        budget = None if (_ci or a.allow_long_local) else (
+            LOCAL_SWEEP_BUDGET if local_budget is None else local_budget)
+        only = frozenset(a.only) if a.only else None
+        # ⛔ r2 F1: the run's teardown is HELD until the report is printed and flushed (its length is unbounded).
+        hold = contextlib.ExitStack()
         ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress,
-                                               shard=shard)
+                                               shard=shard, budget=budget, only=only, seeds=seeds, hold=hold,
+                                               select=select, deadline=deadline)
+        if report and report[0].startswith(LOCAL_REFUSAL):
+            hold.close()
+            print(report[0], file=sys.stderr)
+            return 2
+        # r1 F1: a budget stop is the LAST line of the log, after the verdict line, where a reader of a
+        # red shard looks first.
+        stops = [r for r in report if r.startswith(BUDGET_STOP)]
         for r in report:
-            print(f"  \u2717 {r}")
+            if r not in stops:
+                print(f"  \u2717 {r}")
         # BACKLOG #93, AND ITS ANSWER CHANGED - READ THIS BEFORE RE-ADDING A DIFFERENCE.
         # This gate and the plan-mode gate USED to differ on purpose: this one was
         # `trustworthy` ALONE, that one also let through `declared is None`. #93's warning
@@ -5506,7 +7316,10 @@ def main(argv: list[str]) -> int:
         # rather than the gate: the gate is defended by the type; the refusal is the part a
         # one-line edit can still get wrong quietly.
         if isinstance(verdict, Measured):
-            print(tally_line(ok, verdict, shard))
+            if select is not None and verdict.declared == 0:
+                print(f"nothing to do — none of the selected mutations falls in "
+                      f"{shard_label(shard, only, scope)}; every whole-manifest check ran and passed")
+            print(tally_line(ok, verdict, shard, only, scope))
         else:
             # NO tally — and that includes the FILE count. On a control-failure run
             # `ev["files"]` holds the CONTROL runs, so "7 file(s)" asserts work that measured
@@ -5517,7 +7330,11 @@ def main(argv: list[str]) -> int:
             # line above — printing "(162 of 162 … produced a verdict)" next to "produced no
             # coverage verdict" contradicts itself. Measured 2026-09-03: the first run of
             # F2-S4 emitted exactly that sentence.
-            print(not_measured_line(verdict, shard))
+            print(not_measured_line(verdict, shard, only, scope))
+        for r in stops:
+            print(f"  \u2717 {r}", flush=True)
+        sys.stdout.flush()
+        hold.close()
         return 0 if ok else 1
     # THE ONLY WAY TO REACH HERE IS A BARE INVOCATION — no `--self-test`, no `--mutate`, and
     # no retired flag (those return 2 above). It is not dead code: `_self_test` asserts

@@ -1,0 +1,107 @@
+[
+  {
+    "name": "the adjacent-qualifier exemption is dropped, so `backlog #291` fires as a violation and the guard cries wolf on correctly written prose",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "            if crn.QUALIFIER.search(before.lower()):\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "...and a QUALIFIED one is not"
+    ]
+  },
+  {
+    "name": "the inline-code quotation exemption is dropped, so a bare `#39` QUOTED as the wrong form is reported as the wrong form",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "            if line[:m.start()].count(\"`\") % 2 == 1:      # a quotation, not a reference\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "the inline-code QUOTATION exemption is inherited too"
+    ]
+  },
+  {
+    "name": "the LIVE turn is judged instead of the completed one, so the nudge fires on a message that is still being written and the one-turn-latency contract is broken",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "        window = cba.judged_window(cba.windows(records))",
+        "        _wins = cba.windows(records)\n        window = _wins[-1] if _wins else None"
+      ]
+    ],
+    "expect": [
+      "the COMPLETED turn is judged, not the live one"
+    ]
+  },
+  {
+    "name": "a payload with no transcript_path reads as QUIET instead of CANNOT RUN, so a hook that stopped supplying it would look like a clean turn for ever ⟳ PR #440 r1: retargeted onto the borrowed payload check's verdict, which `judge` now maps ⟳ PR #440 r2: retargeted onto the bounded reader's `records is None`; it is also r2 X1 / #331(e)'s mutant, a corrupt record answered QUIET",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "    if records is None:\n        return 2, f\"CANNOT RUN — {why}\", []",
+        "    if records is None:\n        return 0, \"no transcript\", []"
+      ]
+    ],
+    "expect": [
+      "no transcript_path is CANNOT RUN",
+      "⭐ r2 X1 / backlog #331(e): the judged record truncated mid-transcript, and a good record followed by three non-JSON lines, are CANNOT RUN — the control without the cut WARNS"
+    ]
+  },
+  {
+    "name": "a firing stops being appended to the log, so the only durable record of the false-positive rate disappears while the printed warning still looks healthy",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "        log.parent.mkdir(parents=True, exist_ok=True)",
+        "        return 1\n        log.parent.mkdir(parents=True, exist_ok=True)"
+      ]
+    ],
+    "expect": [
+      "...and the firing is APPENDED to the log, which is the durable channel"
+    ]
+  },
+  {
+    "name": "backlog #152 r1: transcript-references lets the turn rule's exception escape (exit 1)",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "    except Exception as exc:\n        # ⛔ backlog #152 r1",
+        "    except ZeroDivisionError as exc:\n        # ⛔ backlog #152 r1"
+      ]
+    ],
+    "expect": [
+      "⭐ a raising turn rule is CANNOT RUN (2), never the warning code (backlog #152 r1)"
+    ]
+  },
+  {
+    "name": "PR #440 r1 m1 ⟳ r2: the hook's stdin is read as TEXT, unbounded, again — an undecodable payload raises before any handler",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "        raw, why = _owner(\"bounded_read\").read_stream(stdin or sys.stdin)",
+        "        raw, why = (stdin or sys.stdin).read(), \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C4: the CANNOT RUN message drops the reader's reason — a FIFO refusal reads like any other",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "return 2, f\"CANNOT RUN — {why}\", []",
+        "return 2, \"CANNOT RUN\", []"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C4: a transcript_path that is not a regular file — a FIFO, a directory, /dev/zero — is refused through --decide BY NAME, never read as empty and refused for something else"
+    ]
+  }
+]

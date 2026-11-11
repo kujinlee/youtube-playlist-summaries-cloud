@@ -5,6 +5,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ shipped — merged in PR #189 (*"Dashboard cards collapse to one line, and a truncated title stops los…"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Goal:** Collapse each dashboard entry card to one clipped row that opens on a triangle, and stop the 110-character title cap from displaying an author's words nowhere.
 
 **Architecture:** One `<details>` per entry, nested inside the existing `<article class="entry" id="{eid}">` so every anchor keeps resolving. The `<summary>` is a single `<h3 class="row">` holding id, badge, title and triangle. Clipping moves from a Python character cap to CSS `text-overflow`, which lets the whole sentence live in the DOM; `TITLE_CAP` and its entire orphaned-delimiter repair cascade are deleted rather than disabled.

@@ -1,0 +1,366 @@
+[
+  {
+    "name": "the limit becomes inclusive, so an index exactly at the cliff is reported as over",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    if n_chars > limit:\n",
+        "    if n_chars >= limit:\n"
+      ]
+    ],
+    "expect": [
+      "exactly AT the limit is not over"
+    ]
+  },
+  {
+    "name": "the EMPTY-index arm is severed, so a destroyed index reads as comfortably under budget",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    if n_chars == 0:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "an EMPTY index exits 2 too \u2014 not a comfortable zero"
+    ]
+  },
+  {
+    "name": "the warn threshold becomes a second literal instead of deriving from the limit",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    return int(limit * WARN_FRACTION)\n",
+        "    return 900\n"
+      ]
+    ],
+    "expect": [
+      "the warn threshold tracks the limit it is given"
+    ]
+  },
+  {
+    "name": "the size is counted in BYTES, the WRONG unit \u2014 it is the harness's own character limit (r1 CLAUDE H1); this entry was INVERTED, it used to defend bytes",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "        return len(path.read_bytes().decode(\"utf-8\"))\n",
+        "        return len(path.read_bytes())\n"
+      ]
+    ],
+    "expect": [
+      "index_chars counts CHARACTERS, not bytes (multi-byte glyphs)"
+    ]
+  },
+  {
+    "name": "CANNOT RUN collapses onto OK, so an unmeasurable index reports success",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "OK, OVER_BUDGET, CANNOT_RUN = 0, 1, 2\n",
+        "OK, OVER_BUDGET, CANNOT_RUN = 0, 1, 0\n"
+      ]
+    ],
+    "expect": [
+      "the three exit codes are the DECLARED values and are pairwise distinct"
+    ]
+  },
+  {
+    "name": "the advisory WARN band starts blocking, which is how a gate gets switched off (#56)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "        return {\"rc\": OK, \"state\": \"warn\", **common, \"headroom\": limit - n_chars,\n",
+        "        return {\"rc\": OVER_BUDGET, \"state\": \"warn\", **common, \"headroom\": limit - n_chars,\n"
+      ]
+    ],
+    "expect": [
+      "a warning is ADVISORY \u2014 it must not block"
+    ]
+  },
+  {
+    "name": "the declared limit drifts away from the harness warning it was read from",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "LIMIT_CHARS = int(24.4 * 1024)  # 24,985\n",
+        "LIMIT_CHARS = int(32 * 1024)\n"
+      ]
+    ],
+    "expect": [
+      "LIMIT_CHARS matches the 24.4KB the harness reported"
+    ]
+  },
+  {
+    "name": "INDEX is repointed at another corpus file, so the guard measures the wrong subject (r1 CODEX #2a)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "INDEX = ROOT / \"docs\" / \"memory\" / \"MEMORY.md\"\n",
+        "INDEX = ROOT / \"docs\" / \"memory\" / \"slice-history.md\"\n"
+      ]
+    ],
+    "expect": [
+      "INDEX is the always-loaded index, not some other corpus file"
+    ]
+  },
+  {
+    "name": "main() under-reports the size by one byte, so an index one over the limit passes (r1 CODEX #2b)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    rc, msg = budget_verdict(index_chars(index), limit, shown)\n",
+        "    rc, msg = budget_verdict((index_chars(index) or 1) - 1, limit, shown)\n"
+      ]
+    ],
+    "expect": [
+      "main() fails a file ONE BYTE over, measured end to end"
+    ]
+  },
+  {
+    "name": "the reported path becomes a constant, so a mis-pointed guard reads correct (r1 CODEX #2c)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "        shown = str(index.relative_to(ROOT))\n",
+        "        shown = \"WRONG\"\n"
+      ]
+    ],
+    "expect": [
+      "an OK verdict names the file REPO-RELATIVE, with no absolute prefix"
+    ]
+  },
+  {
+    "name": "the unknown-argument predicate accepts everything, so validation is dead (r1 CODEX #7)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    return [a for a in argv if a != \"--self-test\"]\n",
+        "    return []\n"
+      ]
+    ],
+    "expect": [
+      "a positional operand counts as unknown, not as an accepted operand"
+    ]
+  },
+  {
+    "name": "the two CANNOT RUN arms are merged, so EMPTY and ABSENT become indistinguishable (r1 CLAUDE H3 mutation G)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    if n_chars is None:\n",
+        "    if n_chars is None or n_chars == 0:\n"
+      ]
+    ],
+    "expect": [
+      "an EMPTY index says EMPTY and an ABSENT one does not"
+    ]
+  },
+  {
+    "name": "relative_to is dropped, so the verdict names an ABSOLUTE path (r1 CLAUDE L3)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    try:\n        shown = str(index.relative_to(ROOT))\n    except ValueError:\n        shown = str(index)  # a fixture outside the repo, as the suite's driving cases pass\n",
+        "    shown = str(index)\n"
+      ]
+    ],
+    "expect": [
+      "an OK verdict names the file REPO-RELATIVE, with no absolute prefix"
+    ]
+  },
+  {
+    "name": "the OVER message prints the TOTAL instead of the overage, which a suffix-vacuous case could not see (r1 CLAUDE N1)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "{f['overage']:,} characters",
+        "{f['chars']:,} characters"
+      ]
+    ],
+    "expect": [
+      "EVERY fact reaches the rendered message, in every state"
+    ]
+  },
+  {
+    "name": "an unreadable index reports EMPTY instead of unreadable \u2014 same rc, wrong remedy (r1 CLAUDE N1, same class)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    except (OSError, UnicodeDecodeError):\n        return None\n",
+        "    except (OSError, UnicodeDecodeError):\n        return 0\n"
+      ]
+    ],
+    "expect": [
+      "an UNREADABLE index says it could not be read, and does NOT claim to be EMPTY"
+    ]
+  },
+  {
+    "name": "newline translation comes back, so a CRLF index UNDER-counts \u2014 the dangerous direction (r2 CODEX #4)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "path.read_bytes().decode(\"utf-8\")",
+        "path.read_text(encoding=\"utf-8\")"
+      ]
+    ],
+    "expect": [
+      "index_chars does NOT translate CRLF away (27 chars, not 18)"
+    ]
+  },
+  {
+    "name": "the overage gains a constant, which every SUBSTRING assertion let through (r2 CODEX #1)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "{f['overage']:,} characters of its tail never arrive. Nothing chose what those ",
+        "{f['overage'] + 1000:,} characters of its tail never arrive. Nothing chose what those "
+      ]
+    ],
+    "expect": [
+      "EVERY fact reaches the rendered message, in every state"
+    ]
+  },
+  {
+    "name": "self-test dispatch moves back ABOVE validation, so --self-test swallows a bogus flag (r2 CODEX #2)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    unknown = unknown_args(argv)\n    if unknown:\n",
+        "    if \"--self-test\" in argv:\n        return _self_test()\n    unknown = unknown_args(argv)\n    if unknown:\n"
+      ]
+    ],
+    "expect": [
+      "validation runs BEFORE dispatch: an unknown flag beside --self-test is refused and the suite is NOT entered"
+    ]
+  },
+  {
+    "name": "WARN_FRACTION drifts by a near-miss a threshold fixture cannot see (r2 CODEX #5)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "WARN_FRACTION = 0.90\n",
+        "WARN_FRACTION = 0.9004\n"
+      ]
+    ],
+    "expect": [
+      "WARN_FRACTION is the declared 0.90, pinned so a near-miss like 0.9004 cannot slip"
+    ]
+  },
+  {
+    "name": "the warn threshold ROUNDS instead of truncating (r2 CODEX #5)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "int(limit * WARN_FRACTION)",
+        "round(limit * WARN_FRACTION)"
+      ]
+    ],
+    "expect": [
+      "warn_threshold TRUNCATES rather than rounding (int, not round)"
+    ]
+  },
+  {
+    "name": "UnicodeDecodeError leaves the handler, so an invalid-UTF-8 index crashes (r2 CODEX #5)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "(OSError, UnicodeDecodeError)",
+        "(OSError,)"
+      ]
+    ],
+    "expect": [
+      "an index that is not valid UTF-8 is CANNOT RUN, not a traceback"
+    ]
+  },
+  {
+    "name": "OSError leaves the handler, so a present-but-unreadable index crashes instead of CANNOT RUN",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "OSError, UnicodeDecodeError)",
+        "UnicodeDecodeError,)"
+      ]
+    ],
+    "expect": [
+      "a present-but-unreadable index is CANNOT RUN, not a traceback"
+    ]
+  },
+  {
+    "name": "the OK arm names a LITERAL path instead of the label it was given (r2 CLAUDE H1)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    return (f\"ok \u2014 {label} is {f['chars']:,} characters,",
+        "    return (f\"ok \u2014 docs/memory/MEMORY.md is {f['chars']:,} characters,"
+      ]
+    ],
+    "expect": [
+      "EVERY fact reaches the rendered message, in every state"
+    ]
+  },
+  {
+    "name": "the WARN arm's headroom gains a constant \u2014 the arm no case had covered (r2 CLAUDE H2)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "within {f['headroom']:,} characters ",
+        "within {f['headroom'] + 1000:,} characters "
+      ]
+    ],
+    "expect": [
+      "EVERY fact reaches the rendered message, in every state"
+    ]
+  },
+  {
+    "name": "render ignores the label it is passed and reads module state instead (r2 CLAUDE H1)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    label = f[\"label\"]\n",
+        "    label = INDEX_LABEL\n"
+      ]
+    ],
+    "expect": [
+      "EVERY fact reaches the rendered message, in every state"
+    ]
+  },
+  {
+    "name": "the delimited matcher reverts to a bare substring test, which 414-inside-1,414 defeats",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "        return re.search(r\"(?<![\\d,])\" + re.escape(val) + r\"(?![\\d,])\", msg) is not None\n",
+        "        return val in msg\n"
+      ]
+    ],
+    "expect": [
+      "a number is matched as a WHOLE token: 414 is NOT found inside 1,414"
+    ]
+  },
+  {
+    "name": "the vacuity precondition always passes, so a self-concealing fixture is accepted",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "        return [f\"{a!r} is inside {b!r}\" for a in vals for b in vals if a != b and a in b]\n",
+        "        return []\n"
+      ]
+    ],
+    "expect": [
+      "_vacuous_pairs DETECTS a concealing pair (the 80-inside-1,080 that defeated the first loop)"
+    ]
+  },
+  {
+    "name": "a CANNOT RUN fact set carries a limit the message never shows",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "        return {\"rc\": CANNOT_RUN, \"state\": \"empty\", \"label\": label}\n",
+        "        return {\"rc\": CANNOT_RUN, \"state\": \"empty\", \"label\": label, \"limit\": limit}\n"
+      ]
+    ],
+    "expect": [
+      "the CANNOT RUN facts name the state and keep the label"
+    ]
+  }
+]

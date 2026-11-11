@@ -4,7 +4,7 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⛔⛔ **PARKED BEHIND BACKLOG #117 — the architecture review's verdict, 2026-09-25.**
+**Status:** ⏸️ parked — behind backlog #117 (`check-review-decision.py` hand-rolls a YAML parser over a safety record), per the architecture review's verdict of 2026-09-25. Not abandoned: the blocker is named and still 🟠.
 **Not replaced, and not proceeding as written.** The two-clause condition survived both halves of two
 rounds, the withdrawal of r1's third clause is correct, and the `covers:` binding is right. But
 **every remaining piece of work in *Sizing* is a new hand-rolled reader over `parse_header`** — a

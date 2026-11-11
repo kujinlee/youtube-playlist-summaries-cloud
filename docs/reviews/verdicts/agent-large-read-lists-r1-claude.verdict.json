@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/agent-large-read-lists-r1-claude.md": "100644 b80ab5dcdd75c5228a2fba505c7dcf52566b77d4",
+    "docs/reviews/codex/agent-large-read-lists-r1-codex.md": "100644 ceb92a79d006b052d215d7f87ddb49b4a19d0939",
+    "docs/reviews/verdicts/agent-large-read-lists-r1-codex.verdict.json": "100644 2e34e3c3f1cdb0b7640ef680df9e6adbb2793275"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "c377529aa3bae9ef74f61e3cddaf6f39df346f9a",
+  "intrusions": [],
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/r1-465.md",
+  "reason": "claude half filed: 5091 chars, names c377529aa3ba",
+  "refused": false,
+  "review": "agent-large-read-lists-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-ade01958dc84c4a45",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

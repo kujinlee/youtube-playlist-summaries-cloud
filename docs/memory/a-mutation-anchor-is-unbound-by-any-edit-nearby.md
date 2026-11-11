@@ -39,3 +39,14 @@ it, and *nothing says so* until something applies the manifest. A multi-line anc
 
 See [[a-mutation-loses-its-binding]] (the earlier, narrower instance),
 [[a-measurement-is-only-as-good-as-its-corpus]], [[a-check-result-is-not-the-claim]].
+
+⟳ **2026-10-25 — AGAIN, on the branch I was NOT watching (PR #400).** I re-resolved every anchor after every
+fold on `merge-when-ready-rule` — and never once on `local-sweep-guard`, which edited `check-plan-code.py`'s
+verdict printers and orphaned FOUR existing entries (two guarding the very property the branch extended). The
+review found it. ⛔ **The check is per BRANCH, not per habit: after ANY edit to a manifested script, on every
+branch in flight, run the all-manifest resolve** (`for m in scripts/mutations/*.json … s.count(anchor) == 1`) — it
+needs no suite and takes a second.
+⟳ **…and the SAME night, the same branch, a SECOND per-branch miss:** `check-decision-scheme` trigger 1 failed in CI
+(`local-sweep-guard` reached 4 rounds with NO decision-log row) — I logged every bet on the watched branch and
+none on this one. ⛔ **Every per-round gate (anchors, decision log, review rounds) is run on EVERY branch with a
+review round, not on the one I am thinking about.** A retroactive row is the honest repair; it is not a bet.

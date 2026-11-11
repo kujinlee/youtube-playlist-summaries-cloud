@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 770 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "b8af2e70b75a13c698d8631cb373f6b118568209",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/prompt-369-r3.md",
+  "reason": "770 chars",
+  "refused": false,
+  "review": "ledger-cap-safety-r3-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

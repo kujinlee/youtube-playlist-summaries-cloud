@@ -89,6 +89,13 @@ playwright/.auth/
 .claude/executing-plan
 .claude/executing-plan.state
 
+# The owner's override of the usage pacing gate (backlog #399, PR #446 r1 M2): an expiry epoch, read from the
+# MAIN checkout by scripts/check-usage-pace.py. Committed, it would override every clone and worktree on arrival.
+.claude/allow-spawn-over-limit
+# Which session was last told the usage cache is absent, so it is said once per session (same script).
+.claude/usage-pace-notice
+.claude/usage-pace-notice.*.tmp
+
 # Session plans written by scripts/begin-plan.py. Deliberately NOT in docs/superpowers/plans/:
 # that directory is the anchor registry's population (check-anchors.py globs it and requires a
 # Goal + Anchor header on every dated file) and it is the durable design corpus. A session to-do
@@ -123,6 +130,12 @@ playwright/.auth/
 # The CI observer's warn log — the evidence base for its false-alarm rate, session-local
 # like its sibling `.claude/banner-warnings*.log` above. Added 2026-09-22.
 .claude/ci-unwatched.log
+# Per-job CI durations of merged PRs (scripts/ci-durations.py, backlog #397). Local and re-derivable
+# from GitHub at any time; a tracked append-only log conflicts across parallel branches.
+.claude/ci-durations.jsonl
+# ...and its write lock and the temp file of an atomic rewrite (r2 R2-F2, R2-F5).
+.claude/ci-durations.jsonl.lock
+.claude/ci-durations.jsonl.tmp
 
 # Generated pages never belong at the repo root. MEASURED 2026-08-30: `frag.html`
 # and `rel-nested.html` — two rendered dashboards — were committed in 96ae502 by
@@ -159,6 +172,7 @@ docs/explainers/backlog-table.html
 docs/explainers/backlog-table.fragment.html
 docs/explainers/features.html
 docs/explainers/features.fragment.html
+docs/explainers/goal-tree.html
 # The server's own runtime droppings — it writes these into whatever it serves.
 docs/explainers/.serve.log
 docs/explainers/.serve.pid
@@ -174,3 +188,27 @@ docs/explainers/.serve.pid
 # ⚠ This stops NEW questions being published. The 81 already in git history remain there; removing
 # those needs a history rewrite of a public repo, which was considered and NOT chosen.
 docs/explainers/questions.md
+
+# backlog #362: the in-flight ledger — one line per running background job, what it is FOR and what to do
+# when it ends. Per-checkout and per-session by nature; `scripts/session-state.py` prints it at session start.
+.claude/inflight.jsonl
+# backlog #363: the goal-tree snapshot log — appended on every merge, so it must churn no tracked file.
+.claude/goal-tree-log.jsonl
+.claude/inflight.jsonl.lock
+
+# backlog #361: written by the PreCompact / PostCompact hooks (`scripts/compaction-state.py`) and printed at the
+# SessionStart after a compaction. `.remember/` is ignored only by a global gitignore on one machine, so these
+# are named here too.
+.remember/compaction/
+# One JSON line per PreCompact decision from .claude/hooks/compaction-boundary.sh (backlog #440), so the
+# share of compactions the 1.5 x W ceiling forces can be measured (`check-compaction-boundary.py --summary`).
+.claude/compaction-boundary.log
+.claude/agenda-log.jsonl
+# backlog #408: the lock scripts/regen-pages.py holds while it builds every page from a fresh origin/master tree
+# (that tree lives in a private temp directory, never in the repository).
+.claude/regen-pages.lock
+# backlog #589: prune-merged-worktrees.py logs each ARCHIVED worktree (name, branch, HEAD, undo command) and keeps
+# `refused.json` (worktrees git refused to move) here, in the MAIN checkout.
+.claude/pruned-worktrees/
+# A hook writes this log in every checkout; ignored so a worktree it appears in can still be removed (backlog #589).
+.claude/transcript-reference-warnings.log

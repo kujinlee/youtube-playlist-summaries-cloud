@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CI mutation sweep: why it kept getting slower, and what made it fast again</title>
+
+
+<style>
+:root{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+.bad{color:var(--red)} .warn{color:var(--amber)}
+.rev{border:1px solid var(--rule);border-radius:7px;background:var(--panel);padding:4px 18px 14px;margin:20px 0}
+.rev h3{margin-top:14px}
+.chip{display:inline-block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;
+  border-radius:10px;border:1px solid var(--amber);color:var(--amber);margin-left:8px;vertical-align:middle}
+.chip.set{border-color:var(--verified-br);color:var(--verified)}
+.chip.ret{border-color:var(--red);color:var(--red)}
+.rev dl{margin:8px 0;display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:15px}
+.rev dt{color:var(--fg3);font-weight:600}
+.rev dd{margin:0}
+.ans{margin-top:12px;border:1px dashed var(--rule);border-radius:5px;padding:9px 12px;
+  color:var(--fg3);font-size:14.5px;background:var(--bg)}
+.ans b{color:var(--fg2)}
+@media (max-width:560px){ .rev dl{grid-template-columns:1fr} }
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4;
+         /* The two tokens the text-style scheme SPENDS. On `html` for the same reason
+            `--rule` is: specificity 0,0,1 loses to a page's own `:root` (0,1,0), and SHIM
+            is concatenated AFTER the fragment, so anything declared at equal specificity
+            here would silently beat every page that styles itself. MEASURED 2026-10-06:
+            6 of the 21 recomposable pages declare no `--accent` and 8 declare no `--em`,
+            so without this the scheme resolves to nothing on a third of them and the
+            switcher becomes a control that changes an attribute nothing styles.
+            `--accent` DELIBERATELY FOLLOWS `--structure` rather than naming a colour:
+            `--structure` already has a light and a dark value, so accent parity is a
+            consequence rather than a second thing to keep in sync. `--em` has no existing
+            source and therefore needs an explicit pair -- see the dark block. */
+         --accent: var(--structure, #33607a); --em: #2d4a7c; }
+  /* ⛔ `--em`'s SECOND HALF IS KEYED ON THE THEME ATTRIBUTE, NOT ON THE MEDIA QUERY, and
+     that placement is the whole point. Putting it in the OS-dark block made the compose
+     fail immediately and correctly: a media query contributes NO specificity, so a page
+     whose light palette does not declare `--em` would keep the DARK value when the reader
+     toggles to light — the HALF-LIVE toggle that measured 1.03:1 on 2026-09-08. Only 13 of
+     the 21 recomposable pages declare `--em` at all, so that was the common case, not the
+     corner. Keyed on `[data-theme]` the two halves beat the media block in both
+     directions and no page is required to declare anything. */
+  :root[data-theme="light"] { --em: #2d4a7c; }
+  :root[data-theme="dark"]  { --em: #9db8e8; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied.
+     ⚠ THAT IS TRUE PER TOKEN AND A TRAP PER PALETTE (backlog #105). A media query adds ZERO
+     specificity, so each fragment token beats this rule unconditionally and each undeclared one
+     falls through to it. Declare SOME tokens under [data-theme="light"] and the toggle goes
+     half-live: declared tokens follow it, the rest stay pinned to the OS — measured 2026-09-08 at
+     1.03:1 body contrast, dark on dark. A palette is declared WHOLE or NOT AT ALL; none leaves the
+     page dark and readable. Enforcement is backlog #102's; compose already refuses the half-live
+     toggle (PR #283). */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}:root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}:root[data-scheme="1"]{--head:var(--fg);--prose:var(--fg);--emph:var(--fg)}:root[data-scheme="2"]{--head:var(--accent);--prose:var(--fg2);--emph:var(--fg)}.ex-body{color:var(--prose)}.ex-body h1,.ex-body h2,.ex-body h3,.ex-body h4{color:var(--head)}.ex-body strong,.ex-body b{color:var(--emph)}.schemer{display:inline-flex;align-items:center;gap:.3em}.schemer .lbl{color:var(--ink-soft,inherit)}.schemer button{background:none;border:1px solid transparent;border-radius:1em;padding:0 .55em;cursor:pointer;color:inherit;font:inherit}.schemer button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+
+
+<div class="wrap ex-body">
+
+<h1>CI mutation sweep: why it kept getting slower, and what made it fast again</h1>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-11-08 10:33 · 8c861e2e · uncommitted changes</time></span></div></div>
+<p class="horizon">as of <code>d7a15f82</code> (master) · 2026-11-08 10:30 PST · PR #536 still open. Built from <code>git log</code>, <code>docs/backlog.md</code>, the scripts on master, and GitHub's own job timings for 13 master pushes (10-06 → 11-08).</p>
+
+<div class="reading">
+<b>The reading I chose:</b> <i>the CI <b>mutation sweep</b> — <code>scripts/check-plan-code.py --mutate</code>, split across parallel CI jobs ("shards") — and why its cost kept climbing as mutation cases piled up, plus every fix from 10-24 to 11-08 that bought the time back.</i> Not the ordinary <code>verify</code> job, not local runs. "Caching to reuse verdicts" gets its own section (§4), because what the caches do is not quite that.
+</div>
+
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at the newest page. This page: <code>http://127.0.0.1:7391/2026-11-08-topic-ci-sweep-speed.html</code>
+<ol>
+<li><b>To ask:</b> hover a heading (or select any sentence) → <b>ask</b> → type → <b>Send</b>. Then say <i>“read my questions”</i> in the session; the answer is written into this page.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and a reboot stops it, which is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+
+<div class="toc">
+<b>Where this goes</b>
+<ol>
+<li><a href="#reframe">The one equation every fix attacks</a></li>
+<li><a href="#growth">How fast did it grow? (measured)</a></li>
+<li><a href="#fewer">Lever 1 — run fewer mutations</a></li>
+<li><a href="#cheaper">Lever 2 — make each mutation cheaper (the caching)</a></li>
+<li><a href="#reuse">Is any verdict actually reused? And the trap</a></li>
+<li><a href="#wider">Lever 3 — more shards, and why that alone cannot win</a></li>
+<li><a href="#budget">Lever 4 — the 120 s limit that turned master red</a></li>
+<li><a href="#open">What is still open</a></li>
+<li><a href="#measured">What was measured vs. inferred</a></li>
+</ol>
+</div>
+
+<h2 id="reframe">1. The one equation every fix attacks</h2>
+<p class="lede">A mutation entry says "break the guard <i>this</i> way, and its self-test must go red". The sweep applies each break and runs that guard's whole <code>--self-test</code>, in a fresh process. So:</p>
+<pre><code>total work   ≈  Σ over mutations run  ( self-test time of that mutation's guard )  +  N × floor
+time to wait ≈  total work ÷ N shards   (+ the per-shard floor, which N does not divide)</code></pre>
+<p>Both factors kept growing: <b>more mutations</b> (every review round adds entries), and <b>slower suites</b> (a suite grows as its guard grows, and one expensive suite multiplies by every entry that targets it). Every fix since 10-24 pulls exactly one lever:</p>
+<div class="scroll"><table class="big">
+<tr><th>Lever</th><th>What it shrinks</th><th>Fixes</th></tr>
+<tr><td>1. Run fewer</td><td>the number of mutations a run executes</td><td>PR #496 (diff-scoped PR sweep), PR #518, PR #526, PR #529 (batch CI)</td></tr>
+<tr><td>2. Cheaper each</td><td>the suite time per mutation — <b>the caching</b></td><td>PR #449, PR #534, PR #537</td></tr>
+<tr><td>3. Wider</td><td>wall clock, by dividing among N shards</td><td>PR #394 (8→12), PR #445 (→24), PR #484 (→18), PR #533 (→24)</td></tr>
+<tr><td>4. Budget right</td><td>false reds from a limit that did not fit the suite</td><td>PR #538 (adaptive per-suite limit + shard time budget)</td></tr>
+</table></div>
+
+<h2 id="growth">2. How fast did it grow? <span class="tag m">measured</span></h2>
+<p>From GitHub's job start/finish times on master pushes (one per day; days where the sweep was skipped are left out), and the manifest counted at each commit:</p>
+<figure class="fig"><svg viewBox="0 0 760 230" role="img" aria-label="Mutation entries in the manifest">
+<line x1="56" x2="750" y1="190" y2="190" stroke="var(--rule)"/><text x="50" y="194" text-anchor="end" font-size="11" fill="var(--fg3)">0</text>
+<line x1="56" x2="750" y1="148" y2="148" stroke="var(--rule)"/><text x="50" y="152" text-anchor="end" font-size="11" fill="var(--fg3)">1,125</text>
+<line x1="56" x2="750" y1="105" y2="105" stroke="var(--rule)"/><text x="50" y="109" text-anchor="end" font-size="11" fill="var(--fg3)">2,250</text>
+<line x1="56" x2="750" y1="62" y2="62" stroke="var(--rule)"/><text x="50" y="66" text-anchor="end" font-size="11" fill="var(--fg3)">3,375</text>
+<line x1="56" x2="750" y1="20" y2="20" stroke="var(--rule)"/><text x="50" y="24" text-anchor="end" font-size="11" fill="var(--fg3)">4,500</text>
+<rect x="60" y="144" width="45" height="46" fill="var(--accent)" opacity=".85"><title>10-06 7f7a1577: 1,211</title></rect>
+<text x="82" y="140" text-anchor="middle" font-size="10" fill="var(--fg2)">1,211</text>
+<text x="82" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-06</text>
+<rect x="113" y="137" width="45" height="53" fill="var(--accent)" opacity=".85"><title>10-07 74a44551: 1,408</title></rect>
+<text x="135" y="133" text-anchor="middle" font-size="10" fill="var(--fg2)">1,408</text>
+<text x="135" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-07</text>
+<rect x="165" y="135" width="45" height="55" fill="var(--accent)" opacity=".85"><title>10-16 b200f2cf: 1,456</title></rect>
+<text x="188" y="131" text-anchor="middle" font-size="10" fill="var(--fg2)">1,456</text>
+<text x="188" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-16</text>
+<rect x="218" y="114" width="45" height="76" fill="var(--accent)" opacity=".85"><title>10-23 92c78bff: 1,999</title></rect>
+<text x="240" y="110" text-anchor="middle" font-size="10" fill="var(--fg2)">1,999</text>
+<text x="240" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-23</text>
+<rect x="270" y="114" width="45" height="76" fill="var(--accent)" opacity=".85"><title>10-24 a50ddc36: 2,003</title></rect>
+<text x="293" y="110" text-anchor="middle" font-size="10" fill="var(--fg2)">2,003</text>
+<text x="293" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-24</text>
+<rect x="323" y="95" width="45" height="95" fill="var(--accent)" opacity=".85"><title>10-28 40291231: 2,504</title></rect>
+<text x="345" y="91" text-anchor="middle" font-size="10" fill="var(--fg2)">2,504</text>
+<text x="345" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-28</text>
+<rect x="376" y="93" width="45" height="97" fill="var(--accent)" opacity=".85"><title>10-30 ffb3aa8b: 2,565</title></rect>
+<text x="398" y="89" text-anchor="middle" font-size="10" fill="var(--fg2)">2,565</text>
+<text x="398" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-30</text>
+<rect x="428" y="77" width="45" height="113" fill="var(--accent)" opacity=".85"><title>10-31 eb3c1e88: 3,001</title></rect>
+<text x="451" y="73" text-anchor="middle" font-size="10" fill="var(--fg2)">3,001</text>
+<text x="451" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-31</text>
+<rect x="481" y="63" width="45" height="127" fill="var(--accent)" opacity=".85"><title>11-03 36c3f276: 3,367</title></rect>
+<text x="503" y="59" text-anchor="middle" font-size="10" fill="var(--fg2)">3,367</text>
+<text x="503" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-03</text>
+<rect x="534" y="54" width="45" height="136" fill="var(--accent)" opacity=".85"><title>11-04 a6201ad6: 3,596</title></rect>
+<text x="556" y="50" text-anchor="middle" font-size="10" fill="var(--fg2)">3,596</text>
+<text x="556" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-04</text>
+<rect x="586" y="50" width="45" height="140" fill="var(--accent)" opacity=".85"><title>11-05 f8aa1ae9: 3,706</title></rect>
+<text x="608" y="46" text-anchor="middle" font-size="10" fill="var(--fg2)">3,706</text>
+<text x="608" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-05</text>
+<rect x="639" y="44" width="45" height="146" fill="var(--accent)" opacity=".85"><title>11-06 3b6bfad7: 3,876</title></rect>
+<text x="661" y="40" text-anchor="middle" font-size="10" fill="var(--fg2)">3,876</text>
+<text x="661" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-06</text>
+<rect x="691" y="30" width="45" height="160" fill="var(--accent)" opacity=".85"><title>11-08 d7a15f82: 4,244</title></rect>
+<text x="714" y="26" text-anchor="middle" font-size="10" fill="var(--fg2)">4,244</text>
+<text x="714" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-08</text>
+</svg><figcaption><b>A. Mutations in the manifest</b> at each master commit (counted from <code>scripts/mutations/*.json</code> at that commit): 1,211 → 4,244, ×3.5 in a month.</figcaption></figure>
+<figure class="fig"><svg viewBox="0 0 760 230" role="img" aria-label="Shard-seconds per mutation">
+<line x1="56" x2="750" y1="190" y2="190" stroke="var(--rule)"/><text x="50" y="194" text-anchor="end" font-size="11" fill="var(--fg3)">0.0</text>
+<line x1="56" x2="750" y1="148" y2="148" stroke="var(--rule)"/><text x="50" y="152" text-anchor="end" font-size="11" fill="var(--fg3)">2.0</text>
+<line x1="56" x2="750" y1="105" y2="105" stroke="var(--rule)"/><text x="50" y="109" text-anchor="end" font-size="11" fill="var(--fg3)">4.0</text>
+<line x1="56" x2="750" y1="62" y2="62" stroke="var(--rule)"/><text x="50" y="66" text-anchor="end" font-size="11" fill="var(--fg3)">6.0</text>
+<line x1="56" x2="750" y1="20" y2="20" stroke="var(--rule)"/><text x="50" y="24" text-anchor="end" font-size="11" fill="var(--fg3)">8.0</text>
+<rect x="60" y="162" width="45" height="28" fill="var(--link)" opacity=".85"><title>10-06 7f7a1577: 1.3</title></rect>
+<text x="82" y="158" text-anchor="middle" font-size="10" fill="var(--fg2)">1.3</text>
+<text x="82" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-06</text>
+<rect x="113" y="58" width="45" height="132" fill="var(--link)" opacity=".85"><title>10-07 74a44551: 6.2</title></rect>
+<text x="135" y="54" text-anchor="middle" font-size="10" fill="var(--fg2)">6.2</text>
+<text x="135" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-07</text>
+<rect x="165" y="69" width="45" height="121" fill="var(--link)" opacity=".85"><title>10-16 b200f2cf: 5.7</title></rect>
+<text x="188" y="65" text-anchor="middle" font-size="10" fill="var(--fg2)">5.7</text>
+<text x="188" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-16</text>
+<rect x="218" y="72" width="45" height="118" fill="var(--link)" opacity=".85"><title>10-23 92c78bff: 5.6</title></rect>
+<text x="240" y="68" text-anchor="middle" font-size="10" fill="var(--fg2)">5.6</text>
+<text x="240" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-23</text>
+<rect x="270" y="77" width="45" height="113" fill="var(--link)" opacity=".85"><title>10-24 a50ddc36: 5.3</title></rect>
+<text x="293" y="73" text-anchor="middle" font-size="10" fill="var(--fg2)">5.3</text>
+<text x="293" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-24</text>
+<rect x="323" y="31" width="45" height="159" fill="var(--link)" opacity=".85"><title>10-28 40291231: 7.5</title></rect>
+<text x="345" y="27" text-anchor="middle" font-size="10" fill="var(--fg2)">7.5</text>
+<text x="345" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-28</text>
+<rect x="376" y="43" width="45" height="147" fill="var(--link)" opacity=".85"><title>10-30 ffb3aa8b: 6.9</title></rect>
+<text x="398" y="39" text-anchor="middle" font-size="10" fill="var(--fg2)">6.9</text>
+<text x="398" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-30</text>
+<rect x="428" y="84" width="45" height="106" fill="var(--link)" opacity=".85"><title>10-31 eb3c1e88: 5.0</title></rect>
+<text x="451" y="80" text-anchor="middle" font-size="10" fill="var(--fg2)">5.0</text>
+<text x="451" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-31</text>
+<rect x="481" y="71" width="45" height="119" fill="var(--link)" opacity=".85"><title>11-03 36c3f276: 5.6</title></rect>
+<text x="503" y="67" text-anchor="middle" font-size="10" fill="var(--fg2)">5.6</text>
+<text x="503" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-03</text>
+<rect x="534" y="68" width="45" height="122" fill="var(--link)" opacity=".85"><title>11-04 a6201ad6: 5.8</title></rect>
+<text x="556" y="64" text-anchor="middle" font-size="10" fill="var(--fg2)">5.8</text>
+<text x="556" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-04</text>
+<rect x="586" y="52" width="45" height="138" fill="var(--link)" opacity=".85"><title>11-05 f8aa1ae9: 6.5</title></rect>
+<text x="608" y="48" text-anchor="middle" font-size="10" fill="var(--fg2)">6.5</text>
+<text x="608" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-05</text>
+<rect x="639" y="58" width="45" height="132" fill="var(--link)" opacity=".85"><title>11-06 3b6bfad7: 6.2</title></rect>
+<text x="661" y="54" text-anchor="middle" font-size="10" fill="var(--fg2)">6.2</text>
+<text x="661" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-06</text>
+<rect x="691" y="68" width="45" height="122" fill="var(--link)" opacity=".85"><title>11-08 d7a15f82: 5.7</title></rect>
+<text x="714" y="64" text-anchor="middle" font-size="10" fill="var(--fg2)">5.7</text>
+<text x="714" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-08</text>
+</svg><figcaption><b>B. Shard-seconds per mutation</b> = total of every shard job's duration ÷ mutations. It includes each shard's fixed floor (checkout, setup, control and re-control), so it overstates the per-mutation suite cost a little — but it is the same measure on every bar.</figcaption></figure>
+<figure class="fig"><svg viewBox="0 0 760 230" role="img" aria-label="Slowest shard, seconds">
+<line x1="56" x2="750" y1="190" y2="190" stroke="var(--rule)"/><text x="50" y="194" text-anchor="end" font-size="11" fill="var(--fg3)">0</text>
+<line x1="56" x2="750" y1="148" y2="148" stroke="var(--rule)"/><text x="50" y="152" text-anchor="end" font-size="11" fill="var(--fg3)">450</text>
+<line x1="56" x2="750" y1="105" y2="105" stroke="var(--rule)"/><text x="50" y="109" text-anchor="end" font-size="11" fill="var(--fg3)">900</text>
+<line x1="56" x2="750" y1="62" y2="62" stroke="var(--rule)"/><text x="50" y="66" text-anchor="end" font-size="11" fill="var(--fg3)">1,350</text>
+<line x1="56" x2="750" y1="20" y2="20" stroke="var(--rule)"/><text x="50" y="24" text-anchor="end" font-size="11" fill="var(--fg3)">1,800</text>
+<line x1="56" x2="750" y1="20" y2="20" stroke="var(--red)" stroke-dasharray="5 4"/><text x="748" y="15" text-anchor="end" font-size="11" fill="var(--red)">30-min job limit</text>
+<rect x="60" y="167" width="45" height="23" fill="var(--green)" opacity=".85"><title>10-06 7f7a1577: 244</title></rect>
+<text x="82" y="163" text-anchor="middle" font-size="10" fill="var(--fg2)">244</text>
+<text x="82" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-06</text>
+<text x="82" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=8</text>
+<rect x="113" y="56" width="45" height="134" fill="var(--green)" opacity=".85"><title>10-07 74a44551: 1,414</title></rect>
+<text x="135" y="52" text-anchor="middle" font-size="10" fill="var(--fg2)">1,414</text>
+<text x="135" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-07</text>
+<text x="135" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=8</text>
+<rect x="165" y="62" width="45" height="128" fill="var(--green)" opacity=".85"><title>10-16 b200f2cf: 1,359</title></rect>
+<text x="188" y="58" text-anchor="middle" font-size="10" fill="var(--fg2)">1,359</text>
+<text x="188" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-16</text>
+<text x="188" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=8</text>
+<rect x="218" y="37" width="45" height="153" fill="var(--green)" opacity=".85"><title>10-23 92c78bff: 1,621</title></rect>
+<text x="240" y="33" text-anchor="middle" font-size="10" fill="var(--fg2)">1,621</text>
+<text x="240" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-23</text>
+<text x="240" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=8</text>
+<rect x="270" y="78" width="45" height="112" fill="var(--green)" opacity=".85"><title>10-24 a50ddc36: 1,181</title></rect>
+<text x="293" y="74" text-anchor="middle" font-size="10" fill="var(--fg2)">1,181</text>
+<text x="293" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-24</text>
+<text x="293" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=12</text>
+<rect x="323" y="30" width="45" height="160" fill="var(--green)" opacity=".85"><title>10-28 40291231: 1,692</title></rect>
+<text x="345" y="26" text-anchor="middle" font-size="10" fill="var(--fg2)">1,692</text>
+<text x="345" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-28</text>
+<text x="345" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=12</text>
+<rect x="376" y="30" width="45" height="160" fill="var(--green)" opacity=".85"><title>10-30 ffb3aa8b: 1,698</title></rect>
+<text x="398" y="26" text-anchor="middle" font-size="10" fill="var(--fg2)">1,698</text>
+<text x="398" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-30</text>
+<text x="398" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=12</text>
+<rect x="428" y="111" width="45" height="79" fill="var(--green)" opacity=".85"><title>10-31 eb3c1e88: 835</title></rect>
+<text x="451" y="107" text-anchor="middle" font-size="10" fill="var(--fg2)">835</text>
+<text x="451" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">10-31</text>
+<text x="451" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=24</text>
+<rect x="481" y="71" width="45" height="119" fill="var(--green)" opacity=".85"><title>11-03 36c3f276: 1,260</title></rect>
+<text x="503" y="67" text-anchor="middle" font-size="10" fill="var(--fg2)">1,260</text>
+<text x="503" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-03</text>
+<text x="503" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=18</text>
+<rect x="534" y="61" width="45" height="129" fill="var(--green)" opacity=".85"><title>11-04 a6201ad6: 1,363</title></rect>
+<text x="556" y="57" text-anchor="middle" font-size="10" fill="var(--fg2)">1,363</text>
+<text x="556" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-04</text>
+<text x="556" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=18</text>
+<rect x="586" y="40" width="45" height="150" fill="var(--green)" opacity=".85"><title>11-05 f8aa1ae9: 1,590</title></rect>
+<text x="608" y="36" text-anchor="middle" font-size="10" fill="var(--fg2)">1,590</text>
+<text x="608" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-05</text>
+<text x="608" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=18</text>
+<rect x="639" y="31" width="45" height="159" fill="var(--green)" opacity=".85"><title>11-06 3b6bfad7: 1,684</title></rect>
+<text x="661" y="27" text-anchor="middle" font-size="10" fill="var(--fg2)">1,684</text>
+<text x="661" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-06</text>
+<text x="661" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=18</text>
+<rect x="691" y="73" width="45" height="117" fill="var(--green)" opacity=".85"><title>11-08 d7a15f82: 1,242</title></rect>
+<text x="714" y="69" text-anchor="middle" font-size="10" fill="var(--fg2)">1,242</text>
+<text x="714" y="204" text-anchor="middle" font-size="10.5" fill="var(--fg3)">11-08</text>
+<text x="714" y="218" text-anchor="middle" font-size="10" fill="var(--fg3)">N=24</text>
+</svg><figcaption><b>C. The slowest shard</b> (seconds, start → finish) against the 30-minute job limit; N = shards. Every fall is a re-shard or a cheaper suite; every climb is the manifest growing.</figcaption></figure>
+<div class="scroll"><table><tr><th>Date</th><th>Master commit</th><th>Mutations</th><th>Shards</th><th>Total shard-s</th><th>s / mutation</th><th>Slowest shard s</th></tr><tr><td>10-06</td><td><code>7f7a1577</code></td><td class="num">1,211</td><td class="num">8</td><td class="num">1,604</td><td class="num">1.3</td><td class="num">244</td></tr><tr><td>10-07</td><td><code>74a44551</code></td><td class="num">1,408</td><td class="num">8</td><td class="num">8,773</td><td class="num">6.2</td><td class="num">1,414</td></tr><tr><td>10-16</td><td><code>b200f2cf</code></td><td class="num">1,456</td><td class="num">8</td><td class="num">8,294</td><td class="num">5.7</td><td class="num">1,359</td></tr><tr><td>10-23</td><td><code>92c78bff</code></td><td class="num">1,999</td><td class="num">8</td><td class="num">11,101</td><td class="num">5.6</td><td class="num">1,621</td></tr><tr><td>10-24</td><td><code>a50ddc36</code></td><td class="num">2,003</td><td class="num">12</td><td class="num">10,690</td><td class="num">5.3</td><td class="num">1,181</td></tr><tr><td>10-28</td><td><code>40291231</code></td><td class="num">2,504</td><td class="num">12</td><td class="num">18,711</td><td class="num">7.5</td><td class="num">1,692</td></tr><tr><td>10-30</td><td><code>ffb3aa8b</code></td><td class="num">2,565</td><td class="num">12</td><td class="num">17,792</td><td class="num">6.9</td><td class="num">1,698</td></tr><tr><td>10-31</td><td><code>eb3c1e88</code></td><td class="num">3,001</td><td class="num">24</td><td class="num">14,985</td><td class="num">5.0</td><td class="num">835</td></tr><tr><td>11-03</td><td><code>36c3f276</code></td><td class="num">3,367</td><td class="num">18</td><td class="num">18,934</td><td class="num">5.6</td><td class="num">1,260</td></tr><tr><td>11-04</td><td><code>a6201ad6</code></td><td class="num">3,596</td><td class="num">18</td><td class="num">20,717</td><td class="num">5.8</td><td class="num">1,363</td></tr><tr><td>11-05</td><td><code>f8aa1ae9</code></td><td class="num">3,706</td><td class="num">18</td><td class="num">24,077</td><td class="num">6.5</td><td class="num">1,590</td></tr><tr><td>11-06</td><td><code>3b6bfad7</code></td><td class="num">3,876</td><td class="num">18</td><td class="num">24,157</td><td class="num">6.2</td><td class="num">1,684</td></tr><tr><td>11-08</td><td><code>d7a15f82</code></td><td class="num">4,244</td><td class="num">24</td><td class="num">24,385</td><td class="num">5.7</td><td class="num">1,242</td></tr></table></div>
+
+<div class="k warn"><b>What the numbers say:</b> mutations grew <b>×3.5</b> (1,211 → 4,244), but total shard-seconds grew <b>×15</b> (1,604 → 24,385). The difference is chart B: each mutation got <b>~5× more expensive</b> between 10-06 and 10-28 (1.3 → 7.5 s), because expensive suites joined — one guard, <code>check-main-drivable.py</code>, brought 183 entries against a ~48 s suite and alone was <b>68%</b> of the sweep (backlog #401, measured from CI log timestamps). Since then caching has held the per-mutation cost at <b>5–6.5 s</b> while the count kept climbing — so the total still rises, just at the rate of the count rather than faster.</div>
+
+<h2 id="fewer">3. Lever 1 — run fewer mutations</h2>
+<ul>
+<li><b>PR #496 (backlog #330), 11-04 — a PR runs only the manifests its diff selects.</b> The full sweep runs on master and on a schedule. An unreadable or unrecognised changed path selects <i>more</i>, never fewer — the old all-or-nothing skip had a total failure mode (backlog #330).</li>
+<li><b>PR #518 (backlog #498)</b> widened selection for correctness: a sibling loaded by filename now counts, so a dashboard-grammar change re-tests <code>compaction-state</code>.</li>
+<li><b>PR #526 (backlog #533)</b> — a pin bump no longer forces the full sweep: the counts moved to <code>scripts/mutations/expected_mutations.py</code>.</li>
+</ul>
+<div class="k red"><b>⚠ But scoping saves less than it sounds.</b> <span class="tag m">measured</span> PR #539's latest green CI: <code>SELECTION — diff-scoped: 67 of 89 manifest(s) selected</code>. Backlog #534 saw the same on PR #528 (66 of 88). Files like <code>docs/backlog.md</code> and <code>docs/dashboard-entries.md</code> are inputs to many whole-repo guards, so almost every PR touches them. And PR #538 changed <code>ci.yml</code>, so it ran <code>SELECTION — full</code>. Per-PR scoping mainly buys <i>correctness</i> (no all-or-nothing skip), not much time.</div>
+<p><b>PR #529 (backlog #534), 11-07 — batch CI.</b> The owner's design: each PR runs only its scoped sweep; <code>scripts/batch-ci.py</code> merges several READY PRs onto <code>batch/&lt;time&gt;</code> and runs <b>one</b> full sweep for all of them, before they merge. That is lever 1 applied across PRs instead of within one. <span class="tag i">observed</span> No <code>batch/*</code> run appears among the 20 most recent CI runs, so as of this page it is built but has not carried a merge yet.</p>
+
+<h2 id="cheaper">4. Lever 2 — make each mutation cheaper (the caching)</h2>
+<p>Each fix memoises a <b>pure</b> helper the suite calls over and over, so one suite run stops re-computing the same answer:</p>
+<div class="scroll"><table>
+<tr><th>PR</th><th>Guard</th><th>What is cached</th><th>Suite time</th></tr>
+<tr><td>PR #449 (backlog #401), 10-30</td><td><code>check-main-drivable.py</code></td><td>AST helpers, keyed on the <i>identity</i> of the tree node (<code>_memo_by_node</code>, line 312) — the suite was re-walking the same trees ~52M times per run</td><td class="num">68 s → 8 s <span class="tag m">PR title</span></td></tr>
+<tr><td>PR #534, 11-07</td><td><code>gen-backlog-page.py</code></td><td><code>layout_body(h)</code> via <code>functools.lru_cache</code> (line 1075) — ~60% of the suite's CPU</td><td class="num">73 s → 27 s <span class="tag m">PR title</span></td></tr>
+<tr><td>PR #537 (backlog #406), 11-08</td><td><code>goal-tree.py</code></td><td>sibling scripts imported once per path, <i>only</i> inside the self-test (<code>_sibling_sweep</code>) — it asked for the same three ~180 times</td><td class="num">16–18 s → ~2 s <span class="tag i">reported in the PR's record, not re-measured here</span></td></tr>
+<tr><td>PR #537</td><td><code>check-usage-pace.py</code></td><td><code>meter_row</code> on the line's text (line 317)</td><td>—</td></tr>
+</table></div>
+<p>Effect on the whole sweep: chart B's drop from 6.9 to 5.0 s per mutation between 10-30 and 10-31 is the PR #449 cut landing (together with N going to 24). <i>Not in this lever:</i> PR #407's ffmpeg <code>.deb</code> cache speeds the <code>verify</code> job, not the sweep.</p>
+
+<h2 id="reuse">5. Is any verdict actually reused? And the trap</h2>
+<p class="lede"><b>Short answer: no mutation verdict is reused today.</b> Every cache above lives inside <b>one process</b>, and each mutant runs in its own fresh process with the mutated file already on disk. So the cache can never hand a mutant the unmutated answer — the <code>gen-backlog-page.py</code> comment says this exactly: <i>"the cache lives for ONE process, and each mutant is its own process."</i> What the caches reuse is <i>work within one suite run</i>, not a verdict.</p>
+<ul>
+<li><b>The only verdict reuse that exists is batch CI's</b> (§3): one full-sweep verdict covers every PR in the batch. <code>check-merge-ready.py</code> reports it as an <code>info batch sweep</code> line that <b>never blocks a merge</b> (advisory, backlog #534).</li>
+<li><b>A cross-run verdict cache is an open idea, not built:</b> backlog #560 — skip a mutant whose every input is unchanged since a green run, with inputs recorded by <i>observing</i> file opens, failing closed on anything untraceable.</li>
+<li><b>And the owner already rejected one form of it.</b> Backlog #534, 11-06: <i>"skip a shard whose inputs are unchanged since a green run"</i> was considered and rejected for PR CI — the safe key (the whole tree) saves nothing, and the useful key rests on a dependency model with holes, so <i>"a skip on a stale key is a green nobody measured."</i></li>
+</ul>
+<div class="k red"><b>⚠ The trap — a cache can hide a mutant, and it did.</b> <span class="tag m">measured, PR #537 round 5</span> CI's shard 20 reported a <b>survivor</b>: the <code>check-usage-pace</code> mutation "the blank-line skip is removed". The branch's <code>lru_cache</code> on <code>meter_row</code> made 4 MiB of identical blank lines cheap, so the 2 s <b>timing</b> case passed even with the skip deleted. On master, without the cache, the mutant takes 29.3 s. The fix (<code>4935fa11</code>) replaced timing with a <b>spy</b> that asserts only the one real row reaches the parse. <br><br><b>The lesson:</b> a cache does not only risk a stale <i>answer</i>; it can remove the <i>cost</i> that a case was using as its signal. Any case that detects a mutant by "too slow" is a candidate to be blinded by the next memo.</div>
+<p>The second hazard is stated in the code rather than hit: <code>_memo_by_node</code> keys on node <i>identity</i>, not content, so its docstring sets a precondition — <i>"A TREE IS NEVER MODIFIED AFTER A MEMOISED HELPER HAS SEEN IT"</i> (<code>check-main-drivable.py:325</code>). And backlog #560 notes that any cache shared <i>across</i> runs must key on the helper's own source, or a mutant reads the unmutated answer.</p>
+
+<h2 id="wider">6. Lever 3 — more shards, and why that alone cannot win</h2>
+<div class="scroll"><table>
+<tr><th>When</th><th>PR</th><th>N</th><th>Why</th></tr>
+<tr><td>10-24</td><td>PR #394</td><td>8 → 12</td><td>backlog #231's trigger fired: three shards over 1,500 s, the slowest 27.0 min of 30</td></tr>
+<tr><td>10-30</td><td>PR #445</td><td>12 → 24</td><td>slowest shard 29.3 min against the 30-min limit</td></tr>
+<tr><td>11-03</td><td>PR #484</td><td>24 → 18</td><td>the account runs <b>20 jobs at once</b>; 24 shards ran as two waves. Paired measurement on one commit (backlog #415): N=18 reported 1,194 s — one wave won</td></tr>
+<tr><td>11-07</td><td>PR #533</td><td>18 → 24</td><td>the 1,500 s trigger fired a third time as the manifest grew (chart C: 1,684 s on 11-06)</td></tr>
+</table></div>
+<p>Why N alone cannot win (backlog #231, #401): each shard pays a <b>fixed floor</b> — checkout, setup, and a control and re-control run of its suites — that does not divide by N (~309 s measured on 10-30). Past 20 shards the jobs queue. Raising <code>timeout-minutes</code> instead would only hide a growing sweep. So N buys headroom while levers 1 and 2 do the real work.</p>
+
+<h2 id="budget">7. Lever 4 — the 120 s limit that turned master red</h2>
+<p>Every mutant's suite used to run under one flat limit, <code>SUITE_TIMEOUT = 120</code> (<code>check-plan-code.py:110</code>). As suites grew, one crossed it under a slow runner: <span class="tag m">measured</span> master's push run on <code>bd1284b4</code> (11-08 08:13) and the 14:21 schedule run both failed on the <code>check-fixture-variation</code> mutation <i>"deadness is judged over every file rather than the one its exemption names…"</i> with <i>"the suite did NOT COMPLETE"</i> — a CANNOT RUN, not a survivor. Nothing was wrong with the guard; the limit didn't fit the suite.</p>
+<p><b>PR #538 (backlog #558), merged 11-08 as <code>4d7766f8</code>:</b></p>
+<pre><code>suite_limit(control) = min(600, max(120, 20 × control's per-suite seconds))   # check-plan-code.py:1246</code></pre>
+<p>The limit now scales with the suite's own clean (unmutated) run, measured in the same shard. A real hang still dies at 600 s. The same PR gives each shard a total <b>TIME BUDGET</b> read from the job's own <code>timeout-minutes</code> via a YAML anchor, so a shard about to hit the job limit stops cleanly and names what it did not reach, instead of being killed silently. <span class="tag m">measured</span> The first full master sweep under it (<code>d7a15f82</code>) is <b>green</b>, prints <code>TIME BUDGET — 1680s … (SWEEP_TIMEOUT_MINUTES=30, event 'push')</code>, and its slowest shard took 1,242 s.</p>
+
+<h2 id="open">8. What is still open</h2>
+<ul>
+<li><b>GitHub issue #499</b> (full sweep red on master, opened 11-04) is <b>still open</b>, though the two master pushes since PR #538 (<code>4d7766f8</code>, <code>d7a15f82</code>) are green. <span class="tag i">inferred</span> It can close once the next scheduled run is green too.</li>
+<li><b>Backlog #560</b> 🟢 — the cross-run verdict cache (§5). The one idea that would make sweep cost follow the size of a PR's change rather than the size of the manifest.</li>
+<li><b>Backlog #559</b> 🟡 — <b>what does each entry catch, against what it costs?</b> Measured so far: over master's last 200 sweep runs only <b>2</b> reds were real survivors; the rest were timeouts or cancellations. Unmeasured: how often a PR's scoped sweep caught something before merge. Without that, no one can say which of the 4,244 entries earn their seconds.</li>
+<li><b>Backlog #231</b> 🟠 (reopened 11-07) — the shard headroom watch. At 24 shards the slowest is 1,242 s, about 1.45× inside the limit, and the manifest is still growing.</li>
+<li><b>Backlog #401</b> 🟠 — still marked open, but its own fail condition is "check-main-drivable above 25% of mutation work". Backlog #559 measured 10.2% on run 42432742676. <span class="tag i">inferred</span> It looks closable.</li>
+</ul>
+
+<h2 id="measured">9. What was measured vs. inferred</h2>
+<div class="scroll"><table>
+<tr><th>Claim</th><th>Status</th><th>Source</th></tr>
+<tr><td>Mutations 1,211 → 4,244 (10-06 → 11-08)</td><td><span class="tag m">measured</span></td><td>entries in <code>scripts/mutations/*.json</code> at each commit</td></tr>
+<tr><td>Shard-seconds, slowest shard, N for 13 master pushes</td><td><span class="tag m">measured</span></td><td>GitHub jobs API, start → finish</td></tr>
+<tr><td>Per-mutation cost 1.3 → 7.5 → ~5.7 s</td><td><span class="tag m">measured</span>, derived</td><td>the two rows above divided; includes each shard's floor</td></tr>
+<tr><td>check-main-drivable was 68% of the sweep</td><td><span class="tag m">measured</span></td><td>backlog #401, from CI log timestamps (10-30)</td></tr>
+<tr><td>Suite speedups 68→8 s, 73→27 s</td><td><span class="tag m">measured</span> by those PRs</td><td>PR #449, PR #534 titles; not re-timed here</td></tr>
+<tr><td>goal-tree 16–18 → ~2 s</td><td><span class="tag i">reported</span></td><td>the PR #537 work record; not re-timed</td></tr>
+<tr><td>Scoped sweep still selects 67 of 89</td><td><span class="tag m">measured</span></td><td>PR #539's CI log <code>SELECTION</code> line</td></tr>
+<tr><td>No mutation verdict is reused across mutants or runs</td><td><span class="tag m">read in code</span></td><td>every memo is in-process; each mutant is a fresh process</td></tr>
+<tr><td>The cache masked a mutant</td><td><span class="tag m">measured</span></td><td>PR #537 round 5 coordinator record</td></tr>
+<tr><td>The 120 s limit caused master's reds</td><td><span class="tag m">measured</span></td><td>failed logs of runs 42461971348 and 42489447406</td></tr>
+<tr><td>The first sweep under PR #538 is green</td><td><span class="tag m">measured</span></td><td>run 42506721859 (<code>d7a15f82</code>)</td></tr>
+<tr><td>Batch CI has not carried a merge yet</td><td><span class="tag i">observed, narrow</span></td><td>no <code>batch/*</code> branch among the 20 most recent runs only</td></tr>
+<tr><td>Issue #499 and backlog #401 are closable</td><td><span class="tag i">inferred</span></td><td>reasoning above, not acted on</td></tr>
+</table></div>
+
+</div>
+
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var TK='explainer-scheme',TA='data-scheme',TD='3';var box=document.getElementById('schemer');if(box){function sset(s){if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}var bs=box.querySelectorAll('button[data-s]');for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}box.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;if(b)sset(b.getAttribute('data-s'));});var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}sset(sv==='1'||sv==='2'?sv:TD);}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');function tell(m){if(say){say.textContent=m;say.setAttribute('data-refresh',m);}}if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){tell('opened as a file \u2014 no server to rebuild it; run the generator');return;}r.disabled=true;tell('rebuilding\u2026');fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){tell('rebuilt WITH A WARNING: '+j.warning);return;}location.reload();}).catch(function(e){r.disabled=false;tell('could not rebuild: '+e.message);});});}var bars=document.querySelectorAll('.chrome-slot .chrome');var slot=null,bar=null;for(var bi=0;bi<bars.length;bi++){if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];slot=bar.closest('.chrome-slot');break;}}if(!bar&&bars.length){bar=bars[0];slot=bar.closest('.chrome-slot');}var sch=document.getElementById('schemer');if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);if(bar&&bar.querySelector('#chrome-theme,#schemer')){var tailPx=0;var ctls=bar.querySelectorAll('#chrome-theme,#schemer');var pin=function(on){if(bar.classList.contains('chrome-pinned')===on)return;bar.classList.toggle('chrome-pinned',on);if(!on)sync();};var io=null;var arm=function(){if(!window.IntersectionObserver)return;if(io)io.disconnect();io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};var sync=function(){if(bar.classList.contains('chrome-pinned'))return;var h=bar.getBoundingClientRect().height;slot.style.minHeight=h+'px';document.documentElement.style.setProperty('--chrome-h',h+'px');var sb=slot.getBoundingClientRect().bottom,m=Infinity;for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));arm();};sync();if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}else{window.addEventListener('resize',sync);}if(!window.IntersectionObserver){var fb=function(){var r=slot.getBoundingClientRect();pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||document.documentElement.clientHeight));};fb();window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}})();</script>
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div></div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

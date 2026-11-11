@@ -100,6 +100,11 @@ def _contrast(a: str, b: str) -> float:
 _inline = page_markup.render_inline
 
 
+# Inline markup with NO key links — for text that is itself the body of a link. ONE function,
+# shared with `gen-features-page`'s row links (backlog #470 round 1: the class, not the instance).
+_inline_unlinked = page_markup.render_unlinked
+
+
 def _prose(text: str, drop_headline: bool = False, settled: bool = False,
            resolver: dict | None = None) -> str:
     """Blank-line-separated paragraphs, first one as the LEDE.
@@ -961,10 +966,11 @@ def build(entries, days, prs, pr_error, git_error, window,
                     continue
                 n = int(m.group(1))
                 note = PR_NOTE[pr_state(n, _pr_cache, _pr_budget)]
-                slug = _repo_once(_repo_box)
-                if slug:
-                    body = (f'<a href="https://github.com/{_html.escape(slug)}'
-                            f'/pull/{n}">{_inline(o["text"])}</a>')
+                href = page_markup.key_link("PR", n, _repo_once(_repo_box))
+                if href:
+                    # `_inline_unlinked`: the option text sits inside this link, so a key in it
+                    # must not become a second, nested `<a>`.
+                    body = f'<a href="{_html.escape(href)}">{_inline_unlinked(o["text"])}</a>'
                 else:
                     body = _inline(o["text"])
                 opt_items.append(f'<li><span class="otext">{body}</span>'
@@ -1561,8 +1567,23 @@ def _write_sandbox():
         _shutil.rmtree(sandbox, ignore_errors=True)
 
 
-def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
-    """The cases. `_write_sandbox` is already in force — see main()."""
+def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _sandboxed_self_test()
+
+
+def _sandboxed_self_test() -> int:
+    # The sandbox wraps the CALL, so its `finally` covers every case —
+    # including ones appended at the very end of `_self_test_body`, where the
+    # previous explicit restore left a window (L2).
+    with _write_sandbox() as (_box, _real):
+        return _self_test_body(real_out=_real, sandbox=_box)
+
+
+def _self_test_body(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
+    """The cases. `_write_sandbox` is already in force — see `_sandboxed_self_test`."""
     ok = fail = 0
 
     # ⛔ ROUND 4, High — the previous guard read the SOURCE TEXT for a string
@@ -2682,6 +2703,15 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          _with_run(lambda *a, **k: _R(0, '{"nameWithOwner":"o/r"}', ""),
                    lambda: repo_slug()), "o/r")
 
+    # ── backlog #470: an option naming a PR links through `page_markup.key_link`, and a key in the
+    # option's own text is NOT nested into a second link inside it. One reply serves both gh calls.
+    _ents470 = parse_entries("## 2026-08-29 [needs-you]\nPick.\n\n**Decide:** Pick.\n"
+                             "- merge PR #7 for backlog #3\n- do not\n<!--tech-->\nx.\n")
+    _opt470 = _with_run(lambda *a, **k: _R(0, '{"nameWithOwner":"o/r","number":7,"state":"OPEN"}', ""),
+                        lambda: _B(_ents470, bucket_days(["2026-08-29"], _ents470, 2, "2026-08-29")))
+    case("a PR option links to its PR, built by key_link",
+         '<a href="https://github.com/o/r/pull/7">merge PR #7 for backlog #3</a>' in _opt470, True)
+
     v, err = _with_run(lambda *a, **k: _R(0, "not json at all", ""), open_prs)
     case("open_prs: unparseable gh output is a could-not-tell, not zero",
          (v, bool(err)), (None, True))
@@ -3372,8 +3402,12 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("the suite never writes to the REAL dashboard path",
          (OUT_DEFAULT != real_out, str(OUT_DEFAULT).startswith(str(sandbox))),
          (True, True))
+    # ⟳ backlog #382: this suite runs inside `fixture_git.isolated()`, whose HOME is a fresh temp
+    # directory, while OUT_DEFAULT was computed at IMPORT from the caller's HOME. `Path.home()` here
+    # is therefore NOT what a normal run uses: the real path is the reader's page, outside it.
     case("...and the real path is still what a normal run would use",
-         real_out == pathlib.Path.home() / "explainers" / "dashboard.html", True)
+         (real_out.parts[-2:], str(real_out).startswith(str(pathlib.Path.home()))),
+         (("explainers", "dashboard.html"), False))
 
     # L1 — the falsifier the `atexit` handler could never have. A NESTED
     # sandbox with a raising body: the restore must still run, and the temp
@@ -3405,7 +3439,7 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # satisfied by `_outer` being any third thing.
     case("...and it restores the value IN FORCE, not a copy of the real path",
          (_outer == sandbox / "dashboard.html",
-          _outer != pathlib.Path.home() / "explainers" / "dashboard.html"),
+          _outer != real_out),
          (True, True))
 
     # ⚠ THE SANDBOX'S BLIND SPOT, guarded where it actually lives (round 3, Low).
@@ -3453,11 +3487,17 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--fragment-only", type=pathlib.Path, default=None)
     a = ap.parse_args(argv)
     if a.self_test:
-        # The sandbox wraps the CALL, so its `finally` covers every case —
-        # including ones appended at the very end of `_self_test`, where the
-        # previous explicit restore left a window (L2).
-        with _write_sandbox() as (_box, _real):
-            return _self_test(real_out=_real, sandbox=_box)
+        return _self_test()
+    # Every `PR #N` this page renders links to GitHub (backlog #470); no GitHub remote -> plain text.
+    page_markup.use_repo(page_markup.origin_repo(ROOT))
+    # A `backlog #N` naming no row is marked text, not a link to nothing (backlog #470).
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location("_gbp_rows", ROOT / "scripts" / "gen-backlog-page.py")
+    _gbp = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_gbp)
+    _warn = _gbp.publish_rows(ROOT)
+    if _warn:
+        print(_warn, file=sys.stderr)
     if a.window < 1:
         print(f"CANNOT RUN — --window must be at least 1, got {a.window}.", file=sys.stderr)
         return 2
@@ -3497,6 +3537,8 @@ def main(argv: list[str]) -> int:
     frag = build(entries, days, prs, pr_error, git_error, a.window, exemptions,
                  exempt_error, _store_label(store), store_error,
                  page_chrome.provenance(_dt.datetime.now().strftime('%Y-%m-%d %H:%M'), ROOT))
+    # Every key left as TEXT by whichever path rendered it becomes a link (backlog #470).
+    frag = page_markup.link_html(frag, page_markup.REPO)
     if a.fragment_only:
         # Codex Medium: the gate was only on the composed path, so a fragment could ship
         # a dead control. Every write of this page goes through it now.

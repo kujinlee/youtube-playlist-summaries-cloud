@@ -1,0 +1,2601 @@
+[
+  {
+    "name": "the reserve per day moves off 5",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "RESERVE_PER_DAY = 5.0",
+        "RESERVE_PER_DAY = 4.9"
+      ]
+    ],
+    "expect": [
+      "weekly 90 is REFUSE-SPAWN",
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
+    ]
+  },
+  {
+    "name": "the WARN threshold moves off 80",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "WARN_AT = 80.0",
+        "WARN_AT = 80.1"
+      ]
+    ],
+    "expect": [
+      "weekly 80 is WARN"
+    ]
+  },
+  {
+    "name": "REFUSE becomes strictly above the stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if weekly >= stop:",
+        "    if weekly > stop:"
+      ]
+    ],
+    "expect": [
+      "weekly 90 is REFUSE-SPAWN"
+    ]
+  },
+  {
+    "name": "WARN becomes strictly above 80",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if weekly >= WARN_AT:",
+        "    if weekly > WARN_AT:"
+      ]
+    ],
+    "expect": [
+      "weekly 80 is WARN"
+    ]
+  },
+  {
+    "name": "the five-hour WARN becomes strictly above 90",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "five[0] >= FIVE_HOUR_WARN_AT",
+        "five[0] > FIVE_HOUR_WARN_AT"
+      ]
+    ],
+    "expect": [
+      "five-hour 90 is WARN"
+    ]
+  },
+  {
+    "name": "a five-hour window whose reset has arrived still warns",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "five[1] > now",
+        "five[1] >= now"
+      ]
+    ],
+    "expect": [
+      "a five-hour window whose reset passed adds nothing"
+    ]
+  },
+  {
+    "name": "a cache exactly 15 min old reads as stale",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if age > MAX_AGE_S:",
+        "    if age >= MAX_AGE_S:"
+      ]
+    ],
+    "expect": [
+      "a cache exactly 15 min old is still read"
+    ]
+  },
+  {
+    "name": "the staleness rule is deleted, so an old cache reads as current",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if age > MAX_AGE_S:\n        return cannot(f\"the cache at",
+        "    if False:\n        return cannot(f\"the cache at"
+      ]
+    ],
+    "expect": [
+      "a cache 15 min + 1 s old is CANNOT RUN (stale)"
+    ]
+  },
+  {
+    "name": "the future-cache rule is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if age < -FUTURE_SLACK_S:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a cache 6 s in the future is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a seven_day reset exactly now still reads as current",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if resets <= now:",
+        "    if resets < now:"
+      ]
+    ],
+    "expect": [
+      "a seven_day reset exactly now is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a MISSING cache reads as fine",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if text is None:\n        return cannot(missing)",
+        "    if text is None:\n        return OK, \"\""
+      ]
+    ],
+    "expect": [
+      "a missing cache is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "no seven_day window reads as fine",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if seven is None:\n        return cannot(\"the cache has no seven_day window\")",
+        "    if seven is None:\n        return OK, \"\""
+      ]
+    ],
+    "expect": [
+      "no seven_day window is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a boolean passes as a percentage",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "isinstance(x, (int, float)) and not isinstance(x, bool) and",
+        "isinstance(x, (int, float)) and"
+      ]
+    ],
+    "expect": [
+      "a boolean percentage is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "NaN passes as a percentage",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " and math.isfinite(x)",
+        ""
+      ]
+    ],
+    "expect": [
+      "a NaN percentage is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a negative percentage passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not is_number(p) or p < 0:",
+        "if not is_number(p):"
+      ]
+    ],
+    "expect": [
+      "a negative percentage is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the override is ignored, so the owner cannot let a spawn through",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict != REFUSE or override[0]:",
+        "    if verdict != REFUSE:"
+      ]
+    ],
+    "expect": [
+      "gate: REFUSE with the override allows"
+    ]
+  },
+  {
+    "name": "a WARN also denies the spawn",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict != REFUSE or override[0]:\n        return None\n    return json.dumps({\"systemMessage\"",
+        "    if verdict not in (REFUSE, WARN) or override[0]:\n        return None\n    return json.dumps({\"systemMessage\""
+      ]
+    ],
+    "expect": [
+      "gate: WARN, CANNOT RUN and OK allow"
+    ]
+  },
+  {
+    "name": "any value of the override env var counts",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "env.get(OVERRIDE_ENV) == \"1\"",
+        "env.get(OVERRIDE_ENV) is not None"
+      ]
+    ],
+    "expect": [
+      "locate_override: env =0 is not"
+    ]
+  },
+  {
+    "name": "the override FILE is ignored",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    active, note = override_rule(*read_regular(path, CACHE_MAX_BYTES), now)",
+        "    active, note = False, \"\""
+      ]
+    ],
+    "expect": [
+      "locate_override: the MAIN checkout's file counts from a worktree"
+    ]
+  },
+  {
+    "name": "the prompt hook is silent on CANNOT RUN, so a missing cache reads as fine",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict == OK:\n        return None\n    context = ",
+        "    if verdict in (OK, CANNOT_RUN):\n        return None\n    context = "
+      ]
+    ],
+    "expect": [
+      "prompt: CANNOT RUN adds the notice to context"
+    ]
+  },
+  {
+    "name": "main's spawn path drops the override it computed",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    override = locate_override(env, args.root, now) if verdict == REFUSE else (False, \"\")",
+        "    override = (False, \"\")"
+      ]
+    ],
+    "expect": [
+      "run-hook: the MAIN checkout's override lets a 98.5% spawn through from a worktree"
+    ]
+  },
+  {
+    "name": "main's hook mode returns the verdict's exit code",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if out:\n        print(out)\n    return 0\n",
+        "    if out:\n        print(out)\n    return RC[verdict]\n"
+      ]
+    ],
+    "expect": [
+      "main: spawn hook at 98.5% denies, rc 0"
+    ]
+  },
+  {
+    "name": "main ignores --cache and reads the live cache",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "read_regular(cache_path, CACHE_MAX_BYTES)",
+        "read_regular(os.path.expanduser(DEFAULT_CACHE), CACHE_MAX_BYTES)"
+      ]
+    ],
+    "expect": [
+      "main: the verdict's exit codes"
+    ]
+  },
+  {
+    "name": "the REFUSE message drops the reset time",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "subagent's report is allowed. Resets {local_time(resets)}.{stop_note}{line_note}{five_note}\")",
+        "subagent's report is allowed.{stop_note}{line_note}{five_note}\")"
+      ]
+    ],
+    "expect": [
+      "REFUSE, the whole message (fixed string; it names no override)"
+    ]
+  },
+  {
+    "name": "a bad --hook value is accepted, so a typo in the hook would print nothing and allow",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        elif a == \"--hook\" and v not in (\"prompt\", \"spawn\", \"wake\"):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "main: a bad --hook value is refused, rc 2"
+    ]
+  },
+  {
+    "name": "a flag with no value is silently dropped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if v is None:\n            raise ValueError(f\"{a} needs a value\")",
+        "        if v is None:\n            break"
+      ]
+    ],
+    "expect": [
+      "main: a flag with no value is refused, rc 2"
+    ]
+  },
+  {
+    "name": "the REFUSE message hands the override to the model it constrains (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "wake an agent, are REFUSED (at {pct_up(stop)});",
+        "wake an agent, are REFUSED (at {pct_up(stop)}; override: {OVERRIDE_ENV}=1);"
+      ]
+    ],
+    "expect": [
+      "the REFUSE message (the model's) names no override"
+    ]
+  },
+  {
+    "name": "local_time lets the platform's exception escape (r1 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except (OverflowError, OSError, ValueError) as e:\n        raise Malformed(f\"the time",
+        "    except ZeroDivisionError as e:\n        raise Malformed(f\"the time"
+      ]
+    ],
+    "expect": [
+      "local_time(1e+300) raises Malformed, never a bare exception"
+    ]
+  },
+  {
+    "name": "evaluate is no longer total: a Malformed time escapes (r1 M3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut)\n    except Malformed as e:",
+        "        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut)\n    except ZeroDivisionError as e:"
+      ]
+    ],
+    "expect": [
+      "a seven_day resets_at of -1e300 at 98.5% is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the reset horizon is deleted, so a millisecond epoch reads as a reset",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if r > now + span + HORIZON_SLACK_S:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a seven_day resets_at of a millisecond epoch at 98.5% is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the reset horizon excludes its own boundary",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if r > now + span + HORIZON_SLACK_S:",
+        "if r >= now + span + HORIZON_SLACK_S:"
+      ]
+    ],
+    "expect": [
+      "a seven_day reset exactly 7 days + 1 h ahead is read"
+    ]
+  },
+  {
+    "name": "the seven-day window is held to the five-hour horizon",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "window(rl, \"seven_day\", now, SEVEN_DAY_S)",
+        "window(rl, \"seven_day\", now, FIVE_HOUR_S)"
+      ]
+    ],
+    "expect": [
+      "a seven_day reset exactly 7 days + 1 h ahead is read"
+    ]
+  },
+  {
+    "name": "the five-hour window is held to the seven-day horizon",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "window(rl, \"five_hour\", now, FIVE_HOUR_S)",
+        "window(rl, \"five_hour\", now, SEVEN_DAY_S)"
+      ]
+    ],
+    "expect": [
+      "a five-hour reset 1 s past its horizon is unreadable, never a reading"
+    ]
+  },
+  {
+    "name": "a malformed five-hour window disables the weekly verdict again (r1 M3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        five, five_note = None, f\" The five-hour window is unreadable ({e}): treat it as NOT RUN.\"",
+        "        return cannot(f\"the cache is malformed: {e}\")"
+      ]
+    ],
+    "expect": [
+      "weekly 98.5 with a five-hour resets_at 1e300 still REFUSES"
+    ]
+  },
+  {
+    "name": "a malformed five-hour window at a low weekly is silent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        return WARN",
+        "    if zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        return WARN"
+      ]
+    ],
+    "expect": [
+      "weekly 10 with a malformed five-hour window is WARN, never silent"
+    ]
+  },
+  {
+    "name": "the future allowance is back to 60 s (r1 X3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "FUTURE_SLACK_S = 5",
+        "FUTURE_SLACK_S = 60"
+      ]
+    ],
+    "expect": [
+      "a cache 6 s in the future is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the cache is opened blocking, so a FIFO stalls the hook (r1 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    timeout).\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
+        "    timeout).\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY)"
+      ]
+    ],
+    "expect": [
+      "a FIFO cache is CANNOT RUN within 5 s, and says why"
+    ]
+  },
+  {
+    "name": "a non-regular file is read",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if not stat.S_ISREG(os.fstat(fd).st_mode):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "read_regular: a directory is not a regular file"
+    ]
+  },
+  {
+    "name": "the byte bound is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if n > limit:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "read_regular: one byte over the bound is refused"
+    ]
+  },
+  {
+    "name": "the byte bound refuses its own limit",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if n > limit:\n            return None, f\"{path} is over",
+        "        if n >= limit:\n            return None, f\"{path} is over"
+      ]
+    ],
+    "expect": [
+      "read_regular: exactly the bound is read"
+    ]
+  },
+  {
+    "name": "a missing file reads as unreadable, not absent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except FileNotFoundError:\n        return None, \"\"\n",
+        "    except FileNotFoundError:\n        return None, \"x\"\n"
+      ]
+    ],
+    "expect": [
+      "read_regular: no file is (None, '')"
+    ]
+  },
+  {
+    "name": "an exported GIT_DIR redirects the override's location",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not k.startswith(\"GIT_\")",
+        "if True"
+      ]
+    ],
+    "expect": [
+      "override_path: an exported GIT_DIR does not redirect it",
+      "main_checkout: an exported GIT_DIR moves raw git, and does not move it",
+      "main_checkout: an exported GIT_COMMON_DIR moves raw git, and does not move it",
+      "main_checkout: an exported GIT_CEILING_DIRECTORIES moves raw git, and does not move it",
+      "main_checkout: an exported GIT_OBJECT_DIRECTORY moves raw git, and does not move it"
+    ]
+  },
+  {
+    "name": "the override is read from the session's checkout, not the main one (r1 m1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return os.path.dirname(common), \"\"",
+        "    return root, \"\""
+      ]
+    ],
+    "expect": [
+      "override_path: from a WORKTREE it is the MAIN checkout's file"
+    ]
+  },
+  {
+    "name": "a git dir not named .git is taken as a checkout's",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if os.path.basename(common) != \".git\":",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_path: a git dir not named .git (a submodule's shape) is None, with a reason"
+    ]
+  },
+  {
+    "name": "the override never expires (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if expiry <= now:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_rule: an expired file is not active, and says expired"
+    ]
+  },
+  {
+    "name": "the override is still valid at its expiry instant",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if expiry <= now:",
+        "if expiry < now:"
+      ]
+    ],
+    "expect": [
+      "override_rule: an expiry exactly now is NOT active"
+    ]
+  },
+  {
+    "name": "the 7-day cap on the override is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if expiry > now + OVERRIDE_MAX_S:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_rule: more than 7 days ahead is NOT active"
+    ]
+  },
+  {
+    "name": "a non-finite expiry counts as an override",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if not math.isfinite(expiry):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_rule: 'nan' is not active"
+    ]
+  },
+  {
+    "name": "the deny REASON carries the owner's instructions to the model (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "\"permissionDecisionReason\": message}})",
+        "\"permissionDecisionReason\": f\"{message} {owner_text(override)}\"}})"
+      ]
+    ],
+    "expect": [
+      "gate: REFUSE without an override DENIES, the reason is the bare message"
+    ]
+  },
+  {
+    "name": "the deny tells the owner nothing (r1 m4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "json.dumps({\"systemMessage\": f\"{message} {owner_text(override)}\".rstrip(),\n                       \"hookSpecificOutput\"",
+        "json.dumps({\"hookSpecificOutput\""
+      ]
+    ],
+    "expect": [
+      "gate: the deny tells the OWNER how to override"
+    ]
+  },
+  {
+    "name": "the prompt WARN reaches only the model (r1 m4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict == WARN:\n        out[\"systemMessage\"] = message",
+        "    if False:\n        out[\"systemMessage\"] = message"
+      ]
+    ],
+    "expect": [
+      "prompt: WARN also tells the OWNER (systemMessage)"
+    ]
+  },
+  {
+    "name": "the prompt REFUSE reaches only the model (r1 m4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    elif verdict == REFUSE:\n        out[\"systemMessage\"]",
+        "    elif False:\n        out[\"systemMessage\"]"
+      ]
+    ],
+    "expect": [
+      "prompt: REFUSE tells the OWNER how to override"
+    ]
+  },
+  {
+    "name": "the prompt context carries the owner's instructions to the model (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "\"additionalContext\": context}}",
+        "\"additionalContext\": context + owner_text(override)}}"
+      ]
+    ],
+    "expect": [
+      "prompt: REFUSE's model context never carries the owner's instructions"
+    ]
+  },
+  {
+    "name": "an ACTIVE override is not named in the prompt context",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(ACTIVE_NOTE if verdict == REFUSE and override[0] else \"\")",
+        "(\"\")"
+      ]
+    ],
+    "expect": [
+      "prompt: an ACTIVE override is named in the context at REFUSE"
+    ]
+  },
+  {
+    "name": "a subagent's report is refused at 95%, stranding finished work",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(sent_by_subagent(payload) or is_control_message",
+        "(False or is_control_message"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 98.5% allows a subagent's report",
+      "run-hook: the wake hook allows a subagent's report at 98.5%"
+    ]
+  },
+  {
+    "name": "the payload bound is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "len(payload) <= PAYLOAD_MAX_BYTES and (sent_by_subagent",
+        "(sent_by_subagent"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 98.5% DENIES a payload over the bound, even a subagent's"
+    ]
+  },
+  {
+    "name": "the wake hook never denies (r1 M1 reverted)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        out = gate_output(verdict, message, override)",
+        "        out = None if args.hook == \"wake\" else gate_output(verdict, message, override)"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 98.5% DENIES a message to an agent"
+    ]
+  },
+  {
+    "name": "the percentage is rounded, not floored (r1 m3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    s = repr(float(p))",
+        "    s = repr(round(float(p), 1))"
+      ]
+    ],
+    "expect": [
+      "pct(89.9999) is 89.9% (floored)"
+    ]
+  },
+  {
+    "name": "the zone abbreviation is dropped (r1 X4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "%H:%M{sec} %Z\"",
+        "%H:%M{sec}\""
+      ]
+    ],
+    "expect": [
+      "local_time: the SAME wall clock an hour later is PST"
+    ]
+  },
+  {
+    "name": "UTC is shown as local time (r1 m2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "%H:%M{sec} %Z\", time.localtime(shown))",
+        "%H:%M{sec} %Z\", time.gmtime(shown))"
+      ]
+    ],
+    "expect": [
+      "local_time: a PST instant"
+    ]
+  },
+  {
+    "name": "an astronomical count is printed in full",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return f\"{x:.0f}\" if abs(x) < 1e7 else",
+        "    return f\"{x:.0f}\" if True else"
+      ]
+    ],
+    "expect": [
+      "count: an astronomical one is short"
+    ]
+  },
+  {
+    "name": "an absent cache is said on every prompt again (the session is never recognised)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if text is not None and text.strip() == sid:\n        return True",
+        "    if False:\n        return True"
+      ]
+    ],
+    "expect": [
+      "main: the 2nd absent-cache prompt in a session is silent"
+    ]
+  },
+  {
+    "name": "the session is never recorded",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        os.replace(tmp, state)",
+        "        os.remove(tmp)"
+      ]
+    ],
+    "expect": [
+      "main: the 2nd absent-cache prompt in a session is silent"
+    ]
+  },
+  {
+    "name": "any recorded session silences every later one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "text.strip() == sid:",
+        "text.strip() != \"\":"
+      ]
+    ],
+    "expect": [
+      "main: a NEW session is told again"
+    ]
+  },
+  {
+    "name": "a STALE cache is silenced like an absent one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if verdict == CANNOT_RUN and absent:",
+        "        if verdict == CANNOT_RUN:"
+      ]
+    ],
+    "expect": [
+      "main: a STALE cache warns on every prompt of a session"
+    ]
+  },
+  {
+    "name": "a payload with no session_id counts as already told",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if sid is None:\n        return False\n    main, _ = main_checkout(root)",
+        "    if sid is None:\n        return True\n    main, _ = main_checkout(root)"
+      ]
+    ],
+    "expect": [
+      "main: a payload with no session_id is LOUD every time"
+    ]
+  },
+  {
+    "name": "the notice state lives in the session's checkout, not the main one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    state = os.path.join(main, NOTICE_STATE_FILE)",
+        "    state = os.path.join(root, NOTICE_STATE_FILE)"
+      ]
+    ],
+    "expect": [
+      "told_this_session: the state lives in the MAIN checkout, written from a worktree"
+    ]
+  },
+  {
+    "name": "a session_id with a newline inside is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " or \"\\n\" in sid:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "session_of: none, empty, not a string, a newline inside, too long, unparseable"
+    ]
+  },
+  {
+    "name": "the stale message drops the cache path",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "the cache at {path} is {count(age // 60)} min old",
+        "the cache is {count(age // 60)} min old"
+      ]
+    ],
+    "expect": [
+      "the stale message names the cache path"
+    ]
+  },
+  {
+    "name": "the stale message drops how the cache is written",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"{STATUSLINE}, so check that the statusline is running\")",
+        "f\"check the statusline\")"
+      ]
+    ],
+    "expect": [
+      "the stale message says the statusline writes it, and where"
+    ]
+  },
+  {
+    "name": "main does not pass the cache path to the stale message",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut)",
+        "evaluate(text, now, reason, meter=meter_text, meter_why=meter_why, meter_cut=meter_cut)"
+      ]
+    ],
+    "expect": [
+      "main: the stale notice names the --cache path"
+    ]
+  },
+  {
+    "name": "the absent-cache notice drops how the cache is written",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "reason = f\"no cache at {cache_path}; {STATUSLINE}\"",
+        "reason = f\"no cache at {cache_path}\""
+      ]
+    ],
+    "expect": [
+      "main: the absent-cache notice names the path and says the statusline writes it"
+    ]
+  },
+  {
+    "name": "the wake gate trusts agent_type, so a --agent main session passes as a subagent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    aid = doc.get(\"agent_id\") if isinstance(doc, dict) else None",
+        "    aid = (doc.get(\"agent_id\") or doc.get(\"agent_type\")) if isinstance(doc, dict) else None"
+      ]
+    ],
+    "expect": [
+      "sent_by_subagent: a --agent main session (agent_type, no agent_id) is not",
+      "main: wake hook at 98.5% DENIES a --agent main session's message"
+    ]
+  },
+  {
+    "name": "the wake gate reads an agent_id the MODEL wrote into tool_input",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "doc.get(\"agent_id\") if isinstance(doc, dict)",
+        "(doc.get(\"agent_id\") or (doc.get(\"tool_input\") or {}).get(\"agent_id\")) if isinstance(doc, dict)"
+      ]
+    ],
+    "expect": [
+      "sent_by_subagent: an agent_id the MODEL wrote into tool_input is not"
+    ]
+  },
+  {
+    "name": "any truthy agent_id counts, a number or a blank included",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return isinstance(aid, str) and aid.strip() != \"\"",
+        "    return bool(aid)"
+      ]
+    ],
+    "expect": [
+      "sent_by_subagent: an empty, blank, non-string agent_id, unparseable or a non-object is not"
+    ]
+  },
+  {
+    "name": "a blank agent_id counts",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "isinstance(aid, str) and aid.strip() != \"\"",
+        "isinstance(aid, str) and aid != \"\""
+      ]
+    ],
+    "expect": [
+      "sent_by_subagent: an empty, blank, non-string agent_id, unparseable or a non-object is not"
+    ]
+  },
+  {
+    "name": "the recipient's name is consulted again (the r1 exemption, the r2 X1 hole)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "or is_control_message(payload)):",
+        "or is_control_message(payload) or '\"to\": \"main' in payload):"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 98.5% DENIES the MAIN SESSION's message to 'main' (r2 X1)",
+      "main: wake hook at 98.5% DENIES the MAIN SESSION's message to 'main [abcdef]' (r2 X1)",
+      "run-hook: the wake hook DENIES the main session's message to `main [abcdef]` at 98.5%"
+    ]
+  },
+  {
+    "name": "JSON integers are Python ints again, so 10**400 raises in math.isfinite (r2 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return json.loads(text, parse_int=float)",
+        "        return json.loads(text)"
+      ]
+    ],
+    "expect": [
+      "parse_json: 10**400 is inf, not an int",
+      "the r2 input: weekly 98.5 with a five-hour used_percentage of 10**400 still REFUSES",
+      "main: a cache with five-hour used 10**400 exits 0 from all three hooks (r2 X2: they exited 1)",
+      "a VALID weekly 98.5 REFUSES across every hostile five-hour used x reset"
+    ]
+  },
+  {
+    "name": "the cache is parsed by plain json.loads, around parse_json",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        doc = parse_json(text)\n    except ValueError as e:\n        return cannot(f\"the cache is not valid JSON",
+        "        doc = json.loads(text)\n    except ValueError as e:\n        return cannot(f\"the cache is not valid JSON"
+      ]
+    ],
+    "expect": [
+      "the r2 input: weekly 98.5 with a five-hour used_percentage of 10**400 still REFUSES",
+      "a weekly used_percentage of 10**400 is CANNOT RUN, never a crash"
+    ]
+  },
+  {
+    "name": "a parser RecursionError escapes (Python 3.12 on a 60 KB nested cache)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except RecursionError:\n        raise ValueError(\"it is nested too deeply to parse\")",
+        "    except ZeroDivisionError:\n        raise ValueError(\"it is nested too deeply to parse\")"
+      ]
+    ],
+    "expect": [
+      "a parser RecursionError is CANNOT RUN for the cache, None for a session, and gated for a wake"
+    ]
+  },
+  {
+    "name": "the read waits for its reader with no deadline (r2 X3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    worker.join(deadline)",
+        "    worker.join()"
+      ]
+    ],
+    "expect": [
+      "read_regular: a read slower than its deadline is (None, why) within the deadline",
+      "main: a stalled cache read is a loud CANNOT RUN within the 1 s deadline"
+    ]
+  },
+  {
+    "name": "the default deadline is far past a stalled read",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "READ_DEADLINE_S = 1.0",
+        "READ_DEADLINE_S = 10.0"
+      ]
+    ],
+    "expect": [
+      "main: a stalled cache read is a loud CANNOT RUN within the 1 s deadline"
+    ]
+  },
+  {
+    "name": "a reader's exception loses its name",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "could not be read ({type(e).__name__}: {e})",
+        "could not be read"
+      ]
+    ],
+    "expect": [
+      "read_regular: a reader that raises is (None, why), never a bare exception or an empty box"
+    ]
+  },
+  {
+    "name": "only GIT_DIR is stripped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "not k.startswith(\"GIT_\")",
+        "k != \"GIT_DIR\""
+      ]
+    ],
+    "expect": [
+      "main_checkout: an exported GIT_COMMON_DIR moves raw git, and does not move it",
+      "main_checkout: an exported GIT_CEILING_DIRECTORIES moves raw git, and does not move it",
+      "main_checkout: an exported GIT_OBJECT_DIRECTORY moves raw git, and does not move it"
+    ]
+  },
+  {
+    "name": "the r1 list of relocating variables returns",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not k.startswith(\"GIT_\")}",
+        "if k not in (\"GIT_DIR\", \"GIT_WORK_TREE\", \"GIT_COMMON_DIR\")}"
+      ]
+    ],
+    "expect": [
+      "main_checkout: an exported GIT_CEILING_DIRECTORIES moves raw git, and does not move it",
+      "main_checkout: an exported GIT_OBJECT_DIRECTORY moves raw git, and does not move it"
+    ]
+  },
+  {
+    "name": "the reader thread is not a daemon, so the process outlives the deadline (r3 C2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "worker = threading.Thread(target=work, daemon=True)",
+        "worker = threading.Thread(target=work, daemon=False)"
+      ]
+    ],
+    "expect": [
+      "a CHILD whose cache read stalls 10 s EXITS within the 1 s deadline + 1.5 s (the process, r3 C2)"
+    ]
+  },
+  {
+    "name": "the wake gate ignores control messages (r3 C4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(sent_by_subagent(payload) or is_control_message(payload))",
+        "sent_by_subagent(payload)"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 98.5% ALLOWS the main session's shutdown_request (r3 C4)",
+      "main: wake hook at 98.5% ALLOWS the main session's plan approval (r3 C4)",
+      "run-hook: the wake hook allows the main session's shutdown_request at 98.5%"
+    ]
+  },
+  {
+    "name": "a control message escapes the payload bound",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "len(payload) <= PAYLOAD_MAX_BYTES and (sent_by_subagent(payload) or is_control_message(payload))",
+        "(len(payload) <= PAYLOAD_MAX_BYTES and sent_by_subagent(payload)) or is_control_message(payload)"
+      ]
+    ],
+    "expect": [
+      "main: a control message over the payload bound is DENIED"
+    ]
+  },
+  {
+    "name": "a control message may lack a required key",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not required <= set(msg) <= allowed:",
+        "if not set(msg) <= allowed:"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a plan approval with no request_id, or approve missing, is not"
+    ]
+  },
+  {
+    "name": "a control message may carry an extra key",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "required <= set(msg) <= allowed",
+        "required <= set(msg)"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a shutdown_request with an extra key is not",
+      "is_control_message: a plan approval with an extra key is not",
+      "main: wake hook at 98.5% still DENIES the main session's shutdown_request with an extra key (r3 C4)"
+    ]
+  },
+  {
+    "name": "a blank request_id passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "isinstance(rid, str) and rid.strip() != \"\"",
+        "isinstance(rid, str)"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a blank or non-string request_id is not"
+    ]
+  },
+  {
+    "name": "a non-boolean approve passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " and isinstance(msg.get(\"approve\", False), bool))",
+        ")"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a non-boolean approve is not"
+    ]
+  },
+  {
+    "name": "a non-string reason or feedback passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "all(isinstance(msg.get(k, \"\"), str) for k in (\"reason\", \"feedback\"))",
+        "True"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a non-string reason or feedback is not"
+    ]
+  },
+  {
+    "name": "a control message is read from outside tool_input",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "msg = ti.get(\"message\") if isinstance(ti, dict) else None",
+        "msg = (doc.get(\"message\") if isinstance(doc, dict) and \"message\" in doc else ti.get(\"message\") if isinstance(ti, dict) else None)"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a control message OUTSIDE tool_input is not"
+    ]
+  },
+  {
+    "name": "the payload read stops AT the bound, not one byte past it (r4 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "b = os.read(0, limit + 1 - n)",
+        "b = os.read(0, limit - n)"
+      ]
+    ],
+    "expect": [
+      "run-hook: a shutdown_request followed by over 1 MiB of spaces on stdin is DENIED at 98.5% (r4 X2)",
+      "read_payload: exactly the bound is read, one byte over is None"
+    ]
+  },
+  {
+    "name": "a payload one byte over the bound is kept (r4 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "box.append(None if n > limit else",
+        "box.append(None if n > limit + 1 else"
+      ]
+    ],
+    "expect": [
+      "read_payload: exactly the bound is read, one byte over is None"
+    ]
+  },
+  {
+    "name": "the stdin reader is not a daemon, so a held-open writer holds the hook (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "reader = threading.Thread(target=take, daemon=True)",
+        "reader = threading.Thread(target=take, daemon=False)"
+      ]
+    ],
+    "expect": [
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 98.5% (r4 X1)",
+      "run-hook: a prompt whose stdin writer stays OPEN exits within the deadline + 1.5 s and still says CANNOT RUN on an absent cache (r4 X1)"
+    ]
+  },
+  {
+    "name": "an unread stdin is taken for a subagent's report (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return box[0] if box else None",
+        "return box[0] if box else '{\"agent_id\": \"a1\"}'"
+      ]
+    ],
+    "expect": [
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 98.5% (r4 X1)",
+      "read_payload: a writer that stays open is None, within its deadline"
+    ]
+  },
+  {
+    "name": "the wake gate's stdin read has no deadline again (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "payload = read_payload() or \"\"  # unusable stdin: neither",
+        "payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode(\"utf-8\", errors=\"replace\")  # unusable stdin: neither"
+      ]
+    ],
+    "expect": [
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 98.5% (r4 X1)"
+    ]
+  },
+  {
+    "name": "the prompt hook's stdin read has no deadline again (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "payload = read_payload() or \"\"  # unusable stdin: no session",
+        "payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode(\"utf-8\", errors=\"replace\")  # unusable stdin: no session"
+      ]
+    ],
+    "expect": [
+      "run-hook: a prompt whose stdin writer stays OPEN exits within the deadline + 1.5 s and still says CANNOT RUN on an absent cache (r4 X1)"
+    ]
+  },
+  {
+    "name": "a control message's type is looked up before it is known to be a string (r4 X3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not isinstance(kind, str) or kind not in CONTROL_MESSAGES:",
+        "if kind not in CONTROL_MESSAGES:"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a list or an object as `type` is False, not a crash (r4 X3)",
+      "main: wake hook at 98.5% DENIES a control message whose `type` is a list or an object (r4 X3)",
+      "run-hook: a control message whose `type` is a list or an object is DENIED at 98.5%, rc 0 (r4 X3)"
+    ]
+  },
+  {
+    "name": "the missing-cache case reads an EXISTING cache (r4 X4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "absent_path = os.path.join(tmp, \"absent.json\")",
+        "absent_path = cpath"
+      ]
+    ],
+    "expect": [
+      "main: wake hook with a MISSING cache (and no --now) allows, silently, because it is absent"
+    ]
+  },
+  {
+    "name": "#500: the stop is not capped at 97",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "min(cap_at(now, resets), 100 - RESERVE_PER_DAY * days_after_today(now, resets))",
+        "100 - RESERVE_PER_DAY * days_after_today(now, resets)"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 → #510: on the last day the stop RISES (20:00 reset, at midnight: 97 + 2 × 24/43; 98.1 warns, 98.2 refuses)",
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
+    ]
+  },
+  {
+    "name": "#500: the reset's time of day is dropped, so days are whole days",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " + (b.tm_hour * 3600 + b.tm_min * 60 + b.tm_sec) / 86400)",
+        " + 0)"
+      ]
+    ],
+    "expect": [
+      "#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)",
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)",
+      "⭐ #500 r3 C2/C3: a day with a DST change is ONE day — fall back, spring forward, summer, month end"
+    ]
+  },
+  {
+    "name": "day band: the 8% floor no longer caps the band's top",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return min(low, cap), min(high, cap), source, False",
+        "    return min(low, cap), high, source, False"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the 8% floor caps an edge — start 45 keeps 57 but its 65 is capped at 59.33; start 50 caps both"
+    ]
+  },
+  {
+    "name": "#500 r3 C2/C3: the days are counted in SECONDS between midnights, so a DST day is 23/24 or 25/24",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    whole = (datetime.date(b.tm_year, b.tm_mon, b.tm_mday) - datetime.date(a.tm_year, a.tm_mon, a.tm_mday)).days - 1\n",
+        "    whole = (local_midnight(resets) - local_midnight(now)) / 86400 - 1\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r3 C2/C3: a day with a DST change is ONE day — fall back, spring forward, summer, month end"
+    ]
+  },
+  {
+    "name": "#500: the verdict ignores the computed stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    stop, days = refuse_at(now, resets), days_after_today(now, resets)\n",
+        "    stop, days = 90.0, days_after_today(now, resets)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 → #510: on the last day the stop RISES (20:00 reset, at midnight: 97 + 2 × 24/43; 98.1 warns, 98.2 refuses)",
+      "⭐ #500: early in the week the reserve bites below WARN (6 days after today → 70; 69.9 OK, 70 refuses)"
+    ]
+  },
+  {
+    "name": "day band: the 8% floor is lost (DAY_FLOOR 8 → 0)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "DAY_FLOOR = 8.0",
+        "DAY_FLOOR = 0.0"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the 8% floor caps an edge — start 45 keeps 57 but its 65 is capped at 59.33; start 50 caps both"
+    ]
+  },
+  {
+    "name": "#500: start% is the LATEST reading, not the value at midnight",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    start = before or after\n",
+        "    start = after or before\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: start% is the value AT midnight, not the latest reading (83 at midnight, 88 now)"
+    ]
+  },
+  {
+    "name": "#500: the window filter is dropped, so last week's rows set the line",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " or not 0 <= p <= 100 or r != resets or at > now:",
+        " or not 0 <= p <= 100 or at > now:"
+      ]
+    ],
+    "expect": [
+      "#500: last week's rows and future rows never set start%, and garbage lines are skipped"
+    ]
+  },
+  {
+    "name": "#500: future rows are read",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "or not 0 <= p <= 100 or r != resets or at > now:",
+        "or not 0 <= p <= 100 or r != resets:"
+      ]
+    ],
+    "expect": [
+      "#500: last week's rows and future rows never set start%, and garbage lines are skipped"
+    ]
+  },
+  {
+    "name": "day band: an unknown band is silent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return (f\" pace: today's band is UNKNOWN — start% cannot be read ({start_why}): treat it as NOT RUN, \"\n                f\"never as fine.{trend_note}\", BAND_UNKNOWN)",
+        "        return \"\", BAND_UNKNOWN"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: an unreadable start% is SAID (the band is UNKNOWN), and the stop is unchanged"
+    ]
+  },
+  {
+    "name": "#500: main() never reads the meter log",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut)",
+        "    verdict, message = evaluate(text, now, reason, cache_path)"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: main() reads --meter: its message names the start% 85 from that file"
+    ]
+  },
+  {
+    "name": "#500 r1 X2: a negative meter reading is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "or not 0 <= p <= 100 or r",
+        "or not p <= 100 or r"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set start%"
+    ]
+  },
+  {
+    "name": "#500 r1 C3: a meter reading over 100 is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "<= 100 or r != resets",
+        "<= 1000 or r != resets"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set start%"
+    ]
+  },
+  {
+    "name": "#500 r1 C3: a non-number meter reading is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not (is_number(at) and is_number(p) and is_number(r)) or",
+        "if not (is_number(at) and is_number(r)) or"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set start%"
+    ]
+  },
+  {
+    "name": "#500 r1 C1: the default meter path is wrong",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "METER_LOG = os.path.join(\"~\", \".claude\", \"meter\", \"log.jsonl\")",
+        "METER_LOG = os.path.join(\"~\", \".claude\", \"meter\", \"log.json\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 C1: with NO --meter, main() reads ~/.claude/meter/log.jsonl — the path the hooks use"
+    ]
+  },
+  {
+    "name": "#500 r1 C1: the meter path's ~ is not expanded",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "read_meter(os.path.expanduser(args.meter), METER_MAX_BYTES)",
+        "read_meter(args.meter, METER_MAX_BYTES)"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 C1: with NO --meter, main() reads ~/.claude/meter/log.jsonl — the path the hooks use"
+    ]
+  },
+  {
+    "name": "#500 r1 C2: the suite reads the real HOME",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "tempfile.mkdtemp(prefix=\"usage-pace-home-\")\n    os.environ[\"HOME\"] = fake_home\n",
+        "tempfile.mkdtemp(prefix=\"usage-pace-home-\")\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 C2: the suite's HOME is redirected, so the DEFAULT meter path is absent for every case"
+    ]
+  },
+  {
+    "name": "#500 r1 C5: the read's reason is dropped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"the meter log is unreadable: {why}\" if why else ",
+        "\"\" if False else "
+      ]
+    ],
+    "expect": [
+      "#500 r1 C5: a meter log that cannot be read says WHY, from the read"
+    ]
+  },
+  {
+    "name": "day band: the band's floor moves the stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    line_note, zone = (\"\", None) if meter is False else band_note(meter, now, resets, weekly, meter_why, meter_cut)\n",
+        "    line_note, zone = (\"\", None) if meter is False else band_note(meter, now, resets, weekly, meter_why, meter_cut)\n    stop = min(stop, band_cap(now, resets))\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: the DAY BAND never moves the stop — the same cache gives the same verdict under any meter"
+    ]
+  },
+  {
+    "name": "#500: the WARN message omits the stop's reserve",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"Resets {local_time(resets)}.{stop_note}{line_note}{five_note}\")",
+        "f\"Resets {local_time(resets)}.{line_note}{five_note}\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: the message states the stop's reserve, and names the day band as a guide"
+    ]
+  },
+  {
+    "name": "#500 r3 C7: days after today can go negative",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return max(0.0, whole + ",
+        "return (0.0 + whole + "
+      ]
+    ],
+    "expect": [
+      "#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)"
+    ]
+  },
+  {
+    "name": "#500 r3 C1: the blank-line skip is removed",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if '\"seven_day\"' not in line:  #",
+        "        if False:  #"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r3 C1: blank and garbage meter lines never reach the parse — only the seven_day row does"
+    ]
+  },
+  {
+    "name": "#500 r3 C5: the WARN message shows the stop rounded DOWN",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"{pct_up(stop)} new spawns",
+        "f\"{pct(stop)} new spawns"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r3 C5: the stop is shown rounded UP — 94.55% under a 94.58 stop warns 'at 94.6%'"
+    ]
+  },
+  {
+    "name": "#510: the cap never rises (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return min(cap_at(now, resets), 100 - RESERVE_PER_DAY",
+        "    return min(STOP_CAP, 100 - RESERVE_PER_DAY"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 → #510: on the last day the stop RISES (20:00 reset, at midnight: 97 + 2 × 24/43; 98.1 warns, 98.2 refuses)"
+    ]
+  },
+  {
+    "name": "#510: the rise ends AT the reset, not an hour before (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "start, end = rise_start(resets), resets - RISE_END_S",
+        "start, end = rise_start(resets), resets"
+      ]
+    ],
+    "expect": [
+      "⭐ #510: the cap rises linearly over the last day — 97 at its midnight, 98 halfway, 99 an hour before the reset, 99 after"
+    ]
+  },
+  {
+    "name": "#510: the rise starts at the reset's own midnight, not the last day's (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return local_midnight(resets - 86400)\n",
+        "    return local_midnight(resets)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #510: the cap rises linearly over the last day — 97 at its midnight, 98 halfway, 99 an hour before the reset, 99 after"
+    ]
+  },
+  {
+    "name": "#510: the rise is a step, not a line (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return STOP_CAP + (LAST_DAY_CAP - STOP_CAP) * (now - start) / (end - start)",
+        "    return LAST_DAY_CAP"
+      ]
+    ],
+    "expect": [
+      "⭐ #510: the rise is measured against ITS reset — Fri 12:30 under a Sat 02:00 reset is 98; under a Fri 23:00 reset it is 97 + 2 × 36.5/46"
+    ]
+  },
+  {
+    "name": "#510: the rising cap overrides the reserve (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return min(cap_at(now, resets), 100 - RESERVE_PER_DAY * days_after_today(now, resets))",
+        "    return cap_at(now, resets)"
+      ]
+    ],
+    "expect": [
+      "⭐ #510: the reserve still binds below the cap — on the day before a Fri 23:00 reset the stop is 100 − 5 × 23/24, not the rising cap"
+    ]
+  },
+  {
+    "name": "#510: the cap is already rising before the last day (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if now <= start:\n        return STOP_CAP\n",
+        "    if now <= start - 86400:\n        return STOP_CAP\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #510: before the last day the cap is 97 — a minute before its midnight, and a whole day earlier"
+    ]
+  },
+  {
+    "name": "#510: a rising stop is described as the 97% cap (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "                 else f\" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight.\" if stop == STOP_CAP\n",
+        "                 else f\" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight.\" if stop >= STOP_CAP\n"
+      ]
+    ],
+    "expect": [
+      "#510: the message says the stop is rising, its value now, and when its NEXT stop comes (backlog #525: the hard limit at the last night)"
+    ]
+  },
+  {
+    "name": "#510 r1 Codex M1: the rise starts 24 h before the reset's own midnight, not at the previous day's local midnight",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    ruled the rise starts at the midnight before `resets − 24 h`.\"\"\"\n    return local_midnight(resets - 86400)",
+        "    ruled the rise starts at the midnight before `resets − 24 h`.\"\"\"\n    return local_midnight(resets) - 86400"
+      ]
+    ],
+    "expect": [
+      "⭐ #510 r1 Codex M1: across spring-forward the rise starts at Sat 00:00 PST for a Mon 00:30 PDT reset — Sat 12:00 is 12 h into a 46.5 h rise"
+    ]
+  },
+  {
+    "name": "#510 r2 Codex L1: the note picks the reserve only below 97, not whenever the reserve binds",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "days after today.\" if stop < cap_at(now, resets)",
+        "days after today.\" if stop < STOP_CAP"
+      ]
+    ],
+    "expect": [
+      "⭐ #510 r2 Codex L1: when the reserve binds above 97 the message names the reserve, not the rising cap"
+    ]
+  },
+  {
+    "name": "the last day's room is never said (owner 11-05 19:44)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if last_day and weekly < stop else \"\")",
+        "if False else \"\")"
+      ]
+    ],
+    "expect": [
+      "⭐ 11-05 19:44: on the last day with room under the stop the message LEADS with USE IT, the room and the reset"
+    ]
+  },
+  {
+    "name": "day band: the last day is a band to hold under, not USE IT ALL",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if on_last_day(now, resets):\n        return cap, cap, \"the last day: use it all\", True",
+        "    if False:\n        return cap, cap, \"the last day: use it all\", True"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the LAST day (from rise_start) is USE IT ALL at the 100 cap; the day before it (Wed 23:00) is a band",
+      "11-05 19:44: ...and on the last day the day band says USE IT ALL, never a band to hold under"
+    ]
+  },
+  {
+    "name": "below WARN on the last day the room is a silent OK",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if use_it:   # below the WARN line",
+        "    if False:   # below the WARN line"
+      ]
+    ],
+    "expect": [
+      "⭐ 11-05 19:44: below the WARN line on the last day the room is SAID, never a silent OK"
+    ]
+  },
+  {
+    "name": "every day is the last day, so next week's room is called lost",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    last_day = on_last_day(now, resets)",
+        "    last_day = True"
+      ]
+    ],
+    "expect": [
+      "11-05 19:44: before the last day there is no USE IT — the room is still next week's"
+    ]
+  },
+  {
+    "name": "the WARN on the last day does not lead with the room",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return WARN, (f\"{use_it}⚠ usage pace: weekly",
+        "        return WARN, (f\"⚠ usage pace: weekly"
+      ]
+    ],
+    "expect": [
+      "⭐ 11-05 19:44: on the last day with room under the stop the message LEADS with USE IT, the room and the reset"
+    ]
+  },
+  {
+    "name": "a room under 0.1 shows as '0%' left (use-it-or-lose-it r1 P2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if stop - weekly >= 0.1 else '<0.1%'}",
+        "if True else '<0.1%'}"
+      ]
+    ],
+    "expect": [
+      "use-it-or-lose-it r1 P2: a room under 0.1 is '<0.1%' left, never '0%' — which reads as nothing"
+    ]
+  },
+  {
+    "name": "USE IT keeps its own last-day start, apart from the rise (use-it-or-lose-it r1 P2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    last_day = on_last_day(now, resets)   # the same instant",
+        "    last_day = on_last_day(now - 3600, resets)   # the same instant"
+      ]
+    ],
+    "expect": [
+      "use-it-or-lose-it r1 P2: USE IT starts at the SAME instant the stop starts rising — one helper, a minute either side"
+    ]
+  },
+  {
+    "name": "backlog #523: the last night keeps the day's stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if last_night(now, resets):\n        return HARD_LIMIT\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #523: the stop becomes the hard limit at the last night's start — a minute either side",
+      "⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit"
+    ]
+  },
+  {
+    "name": "backlog #523: the last night starts only at the rise's end",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return now >= resets - LAST_NIGHT_S",
+        "    return now >= resets - RISE_END_S"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #523: the stop becomes the hard limit at the last night's start — a minute either side"
+    ]
+  },
+  {
+    "name": "backlog #523: the last night's room is called room under the stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "{'before the hard limit' if stop == HARD_LIMIT else 'under the stop'}",
+        "{'under the stop'}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit"
+    ]
+  },
+  {
+    "name": "backlog #523: the last night's stop note is not said",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "\"commit before every long step (owner 11-05 20:46).\" if stop == HARD_LIMIT",
+        "\"commit before every long step (owner 11-05 20:46).\" if False"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit"
+    ]
+  },
+  {
+    "name": "backlog #523: the last night still says start only what fits the room",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "new week. \" if stop == HARD_LIMIT else",
+        "new week. \" if False else"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit"
+    ]
+  },
+  {
+    "name": "backlog #525 M1: the rise names its 99% end, which the last night always skips",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "night_at\n                          else (night_at",
+        "night_at or True\n                          else (night_at"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 M1: before the last night the rising stop names its NEXT real stop — 100% (the hard limit) at the last night's start, never a 99% it skips"
+    ]
+  },
+  {
+    "name": "backlog #525 M3: the last night starts a second late (>= becomes >)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return now >= resets - LAST_NIGHT_S",
+        "return now > resets - LAST_NIGHT_S"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 M3: the last night starts EXACTLY at resets − LAST_NIGHT_S — a second before it the day's stop, at it and a second after the hard limit"
+    ]
+  },
+  {
+    "name": "backlog #525 r1 fold: a tie names the 99% (< night_at becomes <=)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "rise_end < night_at\n",
+        "rise_end <= night_at\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 r1 fold: a TIE (rise end == last night start) names the hard limit — last_night uses >=, so a 99% there is never a stop"
+    ]
+  },
+  {
+    "name": "backlog #525 r1 fold: a rise end already past is still named (now < rise_end dropped)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if now < rise_end <",
+        "if rise_end <"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 r1 fold: past the rise's end (end 17:00, now 17:30) the next stop is the 100% at the last night's start, never a 99% already past"
+    ]
+  },
+  {
+    "name": "backlog #525 r1 fold: the forecast never shows seconds",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "sec = \":%S\" if exact and",
+        "sec = \":%S\" if False and"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 r1 fold: a transition that is not minute-aligned shows its seconds (18:37:42), never 18:37 which is 42 s early"
+    ]
+  },
+  {
+    "name": "backlog #525 r1 fold: the forecast always shows seconds",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if exact and shown % 60 else \"\"",
+        "if exact else \"\""
+      ]
+    ],
+    "expect": [
+      "backlog #525 r1 fold: …and an aligned transition keeps the minute form"
+    ]
+  },
+  {
+    "name": "backlog #525 r2 fold: the forecast truncates a fraction instead of rounding it up",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "shown = math.ceil(t) if exact else t",
+        "shown = int(t) if exact else t"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 r2 fold: a fractional transition (02:37:00.500) is shown UP to the next second (18:37:01), never 18:37 which is 0.5 s early",
+      "⭐ backlog #525 r2 fold: …and 02:37:42.500 is shown as 18:37:43, never 18:37:42"
+    ]
+  },
+  {
+    "name": "backlog #525 r2 fold: the seconds test reads the unrounded transition",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if exact and shown % 60 else",
+        "if exact and int(t) % 60 else"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 r2 fold: a fractional transition (02:37:00.500) is shown UP to the next second (18:37:01), never 18:37 which is 0.5 s early"
+    ]
+  },
+  {
+    "name": "backlog #525 r1 fold: the 99% branch is unreachable (now < rise_end < night_at becomes False)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(rise_end, pct(LAST_DAY_CAP)) if",
+        "(rise_end, pct(LAST_DAY_CAP)) if False and"
+      ]
+    ],
+    "expect": [
+      "backlog #525 r1 fold: …while BEFORE a rise end that precedes the last night, the 99% IS the next stop (the other branch stays reachable)"
+    ]
+  },
+  {
+    "name": "backlog #501: the tail read seeks to offset 0 (the first bytes are read, not the last)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        start = max(0, st.st_size - limit)\n",
+        "        start = 0\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 FALSIFIER: a meter log OVER the 4 MiB bound still yields today's start% (85)"
+    ]
+  },
+  {
+    "name": "backlog #501: the partial first line of a cut read is kept, not dropped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "data = b\"\" if newline < 0 else data[newline + 1:]",
+        "data = data"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: a tail that starts MID-LINE drops the partial line — neither parsed nor refused",
+      "#501: one byte over the bound cuts the first line, which is DROPPED, not parsed"
+    ]
+  },
+  {
+    "name": "backlog #501: the read starts AT the window, not one byte before it (a whole first line is dropped)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "os.lseek(fd, max(0, start - 1), os.SEEK_SET)",
+        "os.lseek(fd, start, os.SEEK_SET)"
+      ]
+    ],
+    "expect": [
+      "#501: a cut that falls exactly on a line start keeps that line WHOLE (the byte before is a newline)"
+    ]
+  },
+  {
+    "name": "backlog #501 → PR #531 r3: the witness is removed, so a cut part too short in time answers from a later row",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if min_at is None or not min_at < needed - METER_SKEW_S:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
+      "#501: a cut that drops the midnight row's partial line is refused the same way",
+      "#501: a cut part holding ONLY rows after midnight is refused, even when the window began after it",
+      "⭐ #501 r3: C1 in contract (30 min of disorder across the cut) is refused, never the wrong 10",
+      "⭐ #501 r3: an unseen newer row at or before midnight (0.5 h of disorder) is refused, never the wrong 50"
+    ]
+  },
+  {
+    "name": "backlog #501: a cut log is read as if it were whole (the exactly-at-bound read reports a cut)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return data.decode(\"utf-8\", errors=\"replace\"), \"\", start > 0",
+        "return data.decode(\"utf-8\", errors=\"replace\"), \"\", start >= 0"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: a log EXACTLY at the bound is read whole and NOT cut — its first line is kept"
+    ]
+  },
+  {
+    "name": "backlog #501: main() drops the cut flag on its way to evaluate (unit-green, wiring-dead)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "cache_path, meter_text, meter_why, meter_cut)",
+        "cache_path, meter_text, meter_why)"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: main() over the bound with the midnight row outside the tail says WHY, as NOT RUN, and the stop is unchanged"
+    ]
+  },
+  {
+    "name": "backlog #501: the meter tail is opened blocking, so a FIFO meter log stalls the read",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "the `fstat` are not read; a half-written last row fails to parse and is skipped.\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
+        "the `fstat` are not read; a half-written last row fails to parse and is skipped.\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY)"
+      ]
+    ],
+    "expect": [
+      "#501: a FIFO meter log is 'not a regular file' at once — opened non-blocking, never a stall"
+    ]
+  },
+  {
+    "name": "backlog #501: a missing meter log reads as unreadable, not absent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except FileNotFoundError:\n        return None, \"\", False\n",
+        "    except FileNotFoundError:\n        return None, \"x\", False\n"
+      ]
+    ],
+    "expect": [
+      "#501: read_meter of no file is (None, '', False) — NO FILE, as for the cache"
+    ]
+  },
+  {
+    "name": "PR #531 r1 F2: read_meter's failure is a 2-tuple, so main's unpack crashes and the stop is lost",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "path, deadline, (False,))\n",
+        "path, deadline)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 F2: read_meter(deadline=0.3) of a stalled log is (None, why, False) within the deadline",
+      "⭐ #501 r1 F2: read_meter of a reader that RAISES is (None, why, False) — a reason, not a crash",
+      "⭐ #501 r1 F2: at the stop, a STALLED meter read still DENIES the spawn — main does not crash, the line is NOT RUN",
+      "⭐ #501 r1 F2: at the stop, a meter reader that RAISES still DENIES the spawn"
+    ]
+  },
+  {
+    "name": "PR #531 r1 F4: the tail is decoded strictly, so one invalid byte makes the whole read fail",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return data.decode(\"utf-8\", errors=\"replace\"), \"\", start > 0\n",
+        "        return data.decode(\"utf-8\"), \"\", start > 0\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 F4: one invalid byte in the tail skips ITS row (a 10% start); start% still reads 85"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the canary is removed, so a part that breaks the writer contract answers",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut and breach:\n        late, above = breach\n",
+        "    if False:\n        late, above = breach\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 10",
+      "#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order",
+      "⭐ #501 r3: the canary — a row exactly S before the row above it answers; S + 1 s is a broken contract",
+      "⭐ #501 r3: the canary keeps the RUNNING MAXIMUM — a row S + 1 s before an EARLIER row, though only 601 s before its predecessor, is a broken contract",
+      "#501 r3: a broken contract names the two rows, so the late row can be found and deleted"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the witness admits a part whose oldest row is EXACTLY S before what it must reach (<= for <)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "not min_at < needed - METER_SKEW_S",
+        "not min_at <= needed - METER_SKEW_S"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 88"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the witness drops the skew, so an unseen row within S of the oldest one can be the start",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "< needed - METER_SKEW_S:",
+        "< needed:"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 88"
+    ]
+  },
+  {
+    "name": "PR #531 r3: with a midnight row, the witness reaches back to the window's start instead of to that row",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "needed = before[0] if before else",
+        "needed = resets - SEVEN_DAY_S - HORIZON_SLACK_S if before else"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
+      "⭐ #501 r3 SWEEP: no in-contract cut answer differs from the whole log; the out-of-contract CONTROL finds at least one (wrong in contract, cuts > 1000, control can fail)"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the window's earliest stamp loses HORIZON_SLACK_S (W2's reset rounding)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "else resets - SEVEN_DAY_S - HORIZON_SLACK_S\n",
+        "else resets - SEVEN_DAY_S\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 88"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the canary compares with the row above, not the running maximum",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "max_at = at if max_at is None else max(max_at, at)",
+        "max_at = at"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: the canary keeps the RUNNING MAXIMUM — a row S + 1 s before an EARLIER row, though only 601 s before its predecessor, is a broken contract"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the oldest row is taken over THIS window's rows only",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "min_at = at if min_at is None else min(min_at, at)",
+        "min_at = min_at if r != resets else (at if min_at is None else min(min_at, at))"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: a reset at 02:00, after midnight, at scale, answers from this window's first row (1)",
+      "⭐ #501 r3: R1-F3 at scale (a reset between midnight and the first row read) answers 2"
+    ]
+  },
+  {
+    "name": "PR #531 r3: a WHOLE log that breaks the contract is refused too (it can see every row)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut and breach:\n",
+        "    if breach:\n"
+      ]
+    ],
+    "expect": [
+      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (85)"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the witness applies to a WHOLE log too",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut:\n        needed",
+        "    if True:\n        needed"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
+      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (85)"
+    ]
+  },
+  {
+    "name": "backlog #231: meter_row loses its memo, so the sweep re-parses every line once per suffix",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "@functools.lru_cache(maxsize=METER_ROW_MEMO)\ndef meter_row(",
+        "def meter_row("
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #231: meter_row is memoised on the line's text, and a changed line is a changed answer"
+    ]
+  },
+  {
+    "name": "day band: A and B swapped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        low, high, source = start + BAND_LOW, start + BAND_HIGH,",
+        "        low, high, source = start + BAND_HIGH, start + BAND_LOW,"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the band is start + 12 … start + 20, from two distinct start% values (10 → 22–30; 30 → 42–50)"
+    ]
+  },
+  {
+    "name": "day band: the band top ignores start% (a constant base)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "start + BAND_HIGH, f\"{BAND_LOW:g}",
+        "10 + BAND_HIGH, f\"{BAND_LOW:g}"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the band is start + 12 … start + 20, from two distinct start% values (10 → 22–30; 30 → 42–50)"
+    ]
+  },
+  {
+    "name": "day band: the owner's override is ignored",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    over = BAND_OVERRIDES.get(local_date(resets), {}).get(local_date(now))",
+        "    over = None"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the owner's override HITS for its window (Tue 11-10 → 78–80, start% ignored) and MISSES for another window (start 50 → 62–70)"
+    ]
+  },
+  {
+    "name": "day band: the override is read for ANY window, so it never expires with its own",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        ".get(local_date(resets), {})",
+        ".get(\"2026-11-13\", {})"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the owner's override HITS for its window (Tue 11-10 → 78–80, start% ignored) and MISSES for another window (start 50 → 62–70)"
+    ]
+  },
+  {
+    "name": "day band: the NORMAL/WIND-DOWN boundary is inclusive",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return NORMAL if weekly < low else WIND_DOWN if weekly < high else NO_NEW_STARTS",
+        "    return NORMAL if weekly <= low else WIND_DOWN if weekly < high else NO_NEW_STARTS"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: each zone boundary on both sides — 21.9 NORMAL, 22 WIND-DOWN, 29.9 WIND-DOWN, 30 NO NEW STARTS"
+    ]
+  },
+  {
+    "name": "day band: the WIND-DOWN/NO NEW STARTS boundary is inclusive",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "WIND_DOWN if weekly < high",
+        "WIND_DOWN if weekly <= high"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: each zone boundary on both sides — 21.9 NORMAL, 22 WIND-DOWN, 29.9 WIND-DOWN, 30 NO NEW STARTS"
+    ]
+  },
+  {
+    "name": "day band: a WIND-DOWN or NO NEW STARTS zone is silent at rc 0",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):",
+        "    if five_note or zone in (BAND_UNKNOWN,):"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the zone sets the verdict below WARN — NORMAL is OK, WIND-DOWN and NO NEW STARTS are WARN"
+    ]
+  },
+  {
+    "name": "day band: NORMAL warns too",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN)",
+        "zone in (NORMAL, WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN)"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the zone sets the verdict below WARN — NORMAL is OK, WIND-DOWN and NO NEW STARTS are WARN"
+    ]
+  },
+  {
+    "name": "day band: the trend base is lost (8 → 0)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "TREND_BASE = 8.0",
+        "TREND_BASE = 0.0"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+    ]
+  },
+  {
+    "name": "day band: the trend slope moves off 14.3",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "TREND_PER_DAY = 14.3",
+        "TREND_PER_DAY = 14.0"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+    ]
+  },
+  {
+    "name": "day band: USE IT ALL is said beside a refusal at the stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if weekly >= stop and zone == USE_IT_ALL:\n        line_note = \"\"",
+        "    if False:\n        line_note = \"\""
+      ]
+    ],
+    "expect": [
+      "11-05 19:44: at the stop there is no room, so no USE IT — the refusal stands"
+    ]
+  },
+  {
+    "name": "day band: BAND_LOW moves off 12",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BAND_LOW = 12.0",
+        "BAND_LOW = 11.0"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the band is start + 12 … start + 20, from two distinct start% values (10 → 22–30; 30 → 42–50)"
+    ]
+  },
+  {
+    "name": "day band: BAND_HIGH moves off 20",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BAND_HIGH = 20.0",
+        "BAND_HIGH = 21.0"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the band is start + 12 … start + 20, from two distinct start% values (10 → 22–30; 30 → 42–50)"
+    ]
+  },
+  {
+    "name": "pace-band r1 U1: an UNKNOWN band is OK again, so the prompt hook is silent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        ", BAND_UNKNOWN):\n        return WARN, f\"⚠ usage pace",
+        "):\n        return WARN, f\"⚠ usage pace"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 U1: an unknown start% with no override is a WARN that says the band is UNKNOWN and why, and the prompt hook speaks it"
+    ]
+  },
+  {
+    "name": "pace-band r1 C2: the last day excludes its own midnight again",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return now >= rise_start(resets)",
+        "    return now > rise_start(resets)"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 C2: AT the last day's midnight the band is USE IT ALL and the room is said; one second before it is still the band (NO NEW STARTS)"
+    ]
+  },
+  {
+    "name": "pace-band r1 L5: start% has no age bound",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if before is not None and before[0] < local_midnight(midnight - 1):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L5: a start row from before yesterday's midnight is too old (UNKNOWN, with its time); one AT yesterday's midnight and one an hour before today's still set start%",
+      "pace-band r1 L5: ...and evaluate() says that band is UNKNOWN, as a WARN"
+    ]
+  },
+  {
+    "name": "pace-band r1 L5: the age bound counts back two midnights, not one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "before[0] < local_midnight(midnight - 1):",
+        "before[0] < local_midnight(local_midnight(midnight - 1) - 1):"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L5: a start row from before yesterday's midnight is too old (UNKNOWN, with its time); one AT yesterday's midnight and one an hour before today's still set start%"
+    ]
+  },
+  {
+    "name": "pace-band r1 L1: today's override key is the UTC date (Claude's surviving mutation)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        ".get(local_date(now))",
+        ".get(time.strftime(\"%Y-%m-%d\", time.gmtime(now)))"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L1: the override is keyed by LOCAL dates — Tue 17:00 PST is Tue's 78–80, and a reset at Thu 17:00 PST is not the Fri 11-13 window"
+    ]
+  },
+  {
+    "name": "pace-band r1 L1: the window's override key is the UTC date",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BAND_OVERRIDES.get(local_date(resets)",
+        "BAND_OVERRIDES.get(time.strftime(\"%Y-%m-%d\", time.gmtime(resets))"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L1: the override is keyed by LOCAL dates — Tue 17:00 PST is Tue's 78–80, and a reset at Thu 17:00 PST is not the Fri 11-13 window"
+    ]
+  },
+  {
+    "name": "pace-band r1 L2: the trend line moves up by 0.05 (Claude's surviving mutation)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(now - (resets - SEVEN_DAY_S)) / 86400 + TREND_BASE",
+        "(now - (resets - SEVEN_DAY_S)) / 86400 + TREND_BASE + 0.05"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+    ]
+  },
+  {
+    "name": "pace-band r1 L2: the trend line moves down by 0.05",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "/ 86400 + TREND_BASE",
+        "/ 86400 + TREND_BASE - 0.05"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+    ]
+  }
+]

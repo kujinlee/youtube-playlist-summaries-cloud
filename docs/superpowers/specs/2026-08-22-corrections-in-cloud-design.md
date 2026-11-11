@@ -3,6 +3,8 @@
 > **Anchor:** `corrections-in-cloud` — **ADR:** none
 > **Goal:** A cloud user corrects a summary and gets the same result a local user would.
 
+**Status:** ✅ shipped — merged in PR #133 (*"docs(#23): corrections in the cloud, slice A — spec and plan, both gated"*) and 1 earlier PR(s), all MERGED; slice A's 12 tasks are all ticked (89/89) and shipped.
+
 **Backlog:** #23. **Phase:** 1. **Scope:** the user-initiated cloud correction, and nothing else.
 
 **History.** v1 → r1 (26 findings) → v2 → r2 (33) → v3 → r3 (Codex 2B/2H/2M/2L, Claude 3B/7H/8M/10L)

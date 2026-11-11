@@ -3,7 +3,9 @@
 > **Anchor:** `cloud-sync` — **ADR:** 0002
 > **Goal:** The local vault and the cloud replica reconcile without either destroying the other's work.
 
-**Status:** **v10 — CONVERGED** (dual adversarial review, 2026-07-17). Final round: **opus CONVERGED (0 B/H/M)**
+**Status:** ✅ shipped — merged in PR #42 (*"fix(sync): stop orphaning paid dig blobs when replicas disagree on a …"*); the sync path is in the product (`lib/`, `worker/`) and M2 shipped.
+
+> ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: ***v10 — CONVERGED** (dual adversarial review, 2026-07-17). Final round: **opus CONVERGED (0 B/H/M)***
 + **Codex 0 Blocking/0 High** (2 Medium dispositioned: the §12.3 recompute contradiction FIXED; the
 carried-scalar-staleness Medium dispositioned as accepted **R9** per opus's deeper trace showing carry-verbatim
 is MD-consistent/safe). v10 also adds the `archived_not_synced` disclosure (R10) and softens over-absolute

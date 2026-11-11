@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 194 cases
+    python3 scripts/check-review-recorded.py --self-test  # 285 cases
 
 WHY THIS EXISTS
 ---------------
@@ -53,9 +53,12 @@ SCOPE, STATED RATHER THAN IMPLIED
 ----------------------------------
   * Only verdicts THIS branch ADDED are considered. On `master` the range is empty, so the rule
     correctly says nothing; a MODIFIED historical verdict is not testimony about this branch.
-  * Only the Codex half leaves a verdict. A round that ran as Claude because Codex was down cannot
-    answer this question at all — which is CANNOT RUN, cleared by a `REVIEW GAP:` naming **codex**
-    (a gap about the other half explains a different absence). ⚠ Like the recorded-review question,
+  * ⟳ 2026-10-31: BOTH halves can leave a verdict. `codex-review.py` writes one at dispatch; a
+    Claude half's is written after it is filed, by `record-review-verdict.py`, as the same record
+    (`writer: claude`, `dirty: {}`, a head the review itself names). Nothing here reads the writer,
+    so the rule is unchanged. A round with NO verdict cannot answer this question at all — which
+    is CANNOT RUN, cleared by a `REVIEW GAP:` naming **codex** (a gap about the other half explains
+    a different absence). ⚠ Like the recorded-review question,
     the gap is read over the whole RANGE, so a stacked child is cleared by its parent's
     declaration — measured r3. The pass names the document it relied on rather than hiding it.
   * A verdict older than schema 2 carries no `head`, and one whose head was rebased or squashed
@@ -76,6 +79,18 @@ SCOPE, STATED RATHER THAN IMPLIED
     merge action by the author under CI's synthesised merge ref. A clean-merge SEMANTIC conflict is
     given up knowingly — `tsc --noEmit` and the unit suite are the instruments for that, and CI runs
     both on the same ref.
+  * ⛔ AND MASTER'S CHANGES ARE SUBTRACTED PER FILE, NOT JUST PER PATH (backlog #426). The path
+    scope above misses a file BOTH sides touched: the branch reviewed `ci.yml` at round 2, master
+    then changed `ci.yml` too, and re-merging master charged the round for master's hunk — PR #487
+    paid an extra round for exactly that. So a path the round's own commit did not hand over dirty
+    is cleared when HEAD's entry equals `merge-tree(round's commit, merge-base(base, HEAD))`: what
+    the reviewed tree becomes when master's changes since are added and NOTHING else. A TREE
+    comparison, not a commit walk, because a walk has to decide what a merge commit "did" — and a
+    conflict resolution or an evil merge lives inside one, invisible to any rule that skips merges.
+    Comparing against the synthesised merge catches both with no special case. A path that merge
+    CONFLICTED is never cleared, a dirty-overlay path keeps the strict rule (its blobs are not in
+    CI's object store), and if the merge cannot be built the rule falls back to strict — every
+    failure leaves a round REQUIRED, never cleared.
   * ⚠ IT RUNS ON `pull_request` ONLY (r1 High). The workflow also runs on push to `master`, where
     this step is skipped and neither question is asked. Direct pushes to the default branch are
     refused by `.claude/hooks/block-default-branch-push.sh`, so the path is closed by a different
@@ -103,12 +118,17 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import importlib.util
+import io
 import json
+import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Callable
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -122,6 +142,9 @@ VERDICT_DIR = "docs/reviews/verdicts/"
 # and comparing against this literal made a reviewed deletion falsely FAIL there. `is_absent` reads
 # the shape instead, so the constant stays a readable spelling rather than a hidden width check.
 ABSENT_ENTRY = "000000 " + "0" * 40
+# `(entries, conflicted)` of `merge-tree(<round's commit>, merge-base(base, HEAD))`, or `None` when
+# that merge could not be built — see `master_explains` (backlog #426).
+MasterSide = "tuple[dict[str, str], frozenset[str]] | None"
 
 
 def is_absent(entry: "str | None") -> bool:
@@ -886,12 +909,15 @@ def second_question(changed: list[str], waiver: "str | None") -> "tuple[bool, st
     return True, None
 
 
-def round_tail(after: list[str], reviewed: dict[str, str], final: dict[str, str]) -> list[str]:
+def round_tail(after: list[str], reviewed: dict[str, str], final: dict[str, str],
+               master: "MasterSide" = None) -> list[str]:
     """PURE. The guarded paths one round cannot have seen.
 
     `after`    — paths changed between that round's commit and HEAD
     `reviewed` — path -> `"<mode> <object-id>"` the reviewer was handed UNCOMMITTED
     `final`    — path -> `"<mode> <object-id>"` in the tree that will merge
+    `master`   — the round's commit merged with master, for `master_explains` (backlog #426);
+                 `None` (no merge built) leaves the strict rule
 
     ⛔ THE COMPARISON IS THE TREE ENTRY, and it took two rounds to get there. r1: subtracting dirty
     PATHS let "review `lib/x.py` at v2, then edit it to v3 and commit" pass, because the name still
@@ -905,11 +931,57 @@ def round_tail(after: list[str], reviewed: dict[str, str], final: dict[str, str]
     def same(p: str) -> bool:
         seen, now = reviewed.get(p), final.get(p, ABSENT_ENTRY)
         if not seen:
-            return False
+            return master_explains(p, master, now)
         return (is_absent(seen) and is_absent(now)) or now == seen
 
     missed = [p for p in guarded_changes(after) if not same(p)]
     return sorted(set(missed))
+
+
+def master_explains(p: str, master: "MasterSide", now: str) -> bool:
+    """PURE. Is HEAD's entry for `p` exactly what the reviewed commit plus master's changes give?
+
+    `master` is `(entries, conflicted)` from `merge-tree(<round's commit>, merge-base(base, HEAD))`
+    — the reviewed tree with master's changes since added and nothing else (backlog #426). Equal
+    means everything in `p` after the round came from master or from a clean textual merge of the
+    two. ⚠ STATED BOUND: when both touched `p`, the COMPOSITION was reviewed by nobody (master's
+    reviewer never saw the branch's hunk, the round never saw master's) — the same semantic waiver
+    `tail_candidates` states across files, here within one file.
+
+    ⛔ EVERY UNKNOWN IS "NOT EXPLAINED", i.e. a round stays required: no merge could be built
+    (`None`), or the merge CONFLICTED on `p` — the resolution is the branch's own code even when it
+    happens to equal what the synthesised tree holds (a modify/delete conflict keeps the modified
+    side, so equality there would credit the author's choice to keep it).
+
+    ⛔ AND ABSENT NEVER EXPLAINS — merge-delta r4, from the thrashing architecture review. "Both
+    absent" is unreachable for an honest lookup: `p` is here only if it changed since the round
+    (so the round's commit or HEAD holds it) and is in the branch delta (so `onto` differs from
+    HEAD); if HEAD lacks `p`, both merge sides hold it, and a clean merge of two sides that both
+    hold a path cannot drop it. So absent == absent only ever came from a lookup that LIED — r1's
+    failed `ls-tree`, r3's pathspec miss — and each read as a clear. Now any such lie charges.
+    """
+    if master is None:
+        return False
+    entries, conflicted = master
+    if p in conflicted:
+        return False
+    want = entries.get(p, ABSENT_ENTRY)
+    return not is_absent(now) and now == want
+
+
+def parse_merge_tree(out: str, rc: int) -> "tuple[str, frozenset[str]] | None":
+    """PURE. `git merge-tree --write-tree --name-only --no-messages -z` -> `(tree, conflicted)`.
+
+    rc 0 is a clean merge, rc 1 a conflicted one (the tree still exists, with markers in it);
+    anything else means the merge was NOT computed, and that is `None` — never an empty conflict
+    set, which would read as "clean".
+    """
+    if rc not in (0, 1):
+        return None
+    tree, *rest = out.split("\0")
+    if not tree.strip():
+        return None
+    return tree.strip(), frozenset(p for p in rest if p)
 
 
 def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
@@ -932,7 +1004,7 @@ def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
     """
     if not tails:
         why = (f"{unusable} round(s) recorded no commit (verdicts written before schema 2)"
-               if unusable else "no Codex verdict was added by this branch")
+               if unusable else "no review verdict was added by this branch")
         if gap:
             # ⚠ THE RANGE, NOT THE BRANCH — r3 High, and the same honest contract `verdict()` states
             # six lines up: a stacked child is cleared by its PARENT's declaration. Not silently:
@@ -943,8 +1015,9 @@ def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
                        f"{gap}")
         return 2, (f"CANNOT RUN — {why}, so whether any round saw the code about to merge is "
                    f"UNKNOWN.\n"
-                   f"  Treat this as NOT CHECKED, never as reviewed. Either run a Codex round "
-                   f"against the current tree,\n"
+                   f"  Treat this as NOT CHECKED, never as reviewed. Either record a round against "
+                   f"the current tree (codex-review.py, or record-review-verdict.py for a Claude "
+                   f"half),\n"
                    f"  or record `REVIEW GAP: codex — <reason>` in a review document of this "
                    f"branch (docs/plugins.md).")
     clean = sorted(n for n, paths in tails.items() if not paths)
@@ -971,11 +1044,31 @@ def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
                f"  introduced by a FIX — code no round had seen.")
 
 
+def git_text(raw: bytes) -> str:
+    """PURE. Git's output bytes -> str, with every byte kept: a CR stays a CR, a non-UTF-8 byte
+    becomes the same lone surrogate in every reader, so two listings compare byte for byte."""
+    return raw.decode("utf-8", "surrogateescape")
+
+
+def _run_git(argv: list[str], **kw) -> subprocess.CompletedProcess:
+    """Run git and capture BYTES, decoded by `git_text`. EVERY git read in this file goes here.
+
+    ⛔ NEVER `text=True` — merge-delta r4 Codex BLOCKER, measured end to end. Text mode applies
+    universal newlines, so `lib/a\\r.py` came back as `lib/a\\n.py`; in a whole-tree listing the
+    unchanged CR-named entry then OVERWROTE the edited LF-named one under the same key, HEAD and the
+    synthetic merge agreed on the wrong entry, and the full CLI said `ok`, rc 0. `encoding=` and
+    `errors=` do not turn that translation off; only bytes do. Strict decoding was the second half
+    of the class (r4 Codex M2): `changed_paths`/`added_paths` raised on a `0xe9` path name.
+    """
+    p = subprocess.run(argv, capture_output=True, **kw)
+    return subprocess.CompletedProcess(p.args, p.returncode, git_text(p.stdout), git_text(p.stderr))
+
+
 def _git(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True)
+    return _run_git(["git", "-C", str(ROOT), *args])
 
 
-def _final_entries(paths: list[str]) -> dict[str, str]:
+def _final_entries(paths: list[str], git=None) -> dict[str, str]:
     """path -> `"<mode> <object-id>"` in the tree that will merge. Absent means it is not in HEAD.
 
     ⚠ MODE IS PART OF IT — r2 Blocking. `git rev-parse HEAD:<path>` answers with the object id
@@ -988,11 +1081,41 @@ def _final_entries(paths: list[str]) -> dict[str, str]:
     SUBMODULE read as absent, so a reviewer who saw the path deleted credited a merge that puts a
     gitlink there. The mode already separates them (`160000` gitlink, `120000` symlink,
     `100644`/`100755` file), so the filter bought nothing and cost a false pass.
+
+    ⛔ A FAILED LOOKUP RAISES — merge-delta r1 Codex High. It returned `{}`, i.e. "every path is
+    absent from HEAD", and since backlog #426 an absent path EQUALS a deletion master made: the
+    reviewer injected a failure into this one call and a branch's unreviewed re-add of a file
+    master deleted was cleared, rc 0. An unknown HEAD is CANNOT RUN, never an empty tree.
     """
+    git = git or _git
     if not paths:
         return {}
-    got = _git("ls-tree", "-z", "HEAD", "--", *paths)
-    return parse_ls_tree(got.stdout) if got.returncode == 0 else {}
+    got = git(*ls_tree_argv("HEAD"))
+    if got.returncode != 0:
+        raise RuntimeError(f"CANNOT RUN — git ls-tree HEAD failed ({got.stderr.strip()}), so "
+                           f"what is about to merge is UNKNOWN. Treat this as NOT CHECKED.")
+    return select_entries(parse_ls_tree(got.stdout), paths)
+
+
+def ls_tree_argv(tree: str) -> list[str]:
+    """PURE. List the WHOLE tree, NUL-separated, with no path argument at all.
+
+    ⛔ merge-delta r3 Claude M1. Both lookups passed the changed paths after `--`, and git reads
+    that as a PATHSPEC: `:/evil.sh`, `:(top)evil.sh` and `:(literal)x/evil.sh` were looked up
+    under ANOTHER name, missing from HEAD and from the merge alike, and absent == absent CLEARED an
+    unreviewed file. A decomposed-Unicode name did the same under `core.precomposeunicode=true`
+    (the macOS default), because git precomposes its argv and not a tree's names. With no path in
+    the argv there is nothing for git to reinterpret; `select_entries` matches exact names.
+    `-r -t` lists every leaf AND the trees on the way, so a path that is a directory in the tree
+    still has an entry, as the pathspec form gave it. The `-c` is a belt: nothing here is argv.
+    """
+    return ["-c", "core.precomposeunicode=false",
+            "ls-tree", "-r", "-t", "-z", "--full-tree", tree]
+
+
+def select_entries(listing: dict[str, str], paths: list[str]) -> dict[str, str]:
+    """PURE. The entries of `listing` whose name is EXACTLY one of `paths` — no pattern, no magic."""
+    return {p: listing[p] for p in paths if p in listing}
 
 
 def parse_ls_tree(out: str) -> dict[str, str]:
@@ -1016,6 +1139,130 @@ def parse_ls_tree(out: str) -> dict[str, str]:
         if name and len(parts) >= 3:
             entries[name] = f"{parts[0]} {parts[2]}"
     return entries
+
+
+def merge_onto(base: str, git=None) -> "str | None":
+    """`merge-base(base, HEAD)` — the master commit HEAD already contains — or `None`.
+
+    ⛔ ONE HELPER FOR `main` AND THE REAL-GIT FIXTURE — merge-delta r1 Claude M2. The fixture
+    recomputed this itself, so `main`'s copy was never run by any case: `rev-parse HEAD` in its
+    place left 217/217 green, and `merge-tree(round, HEAD)` is HEAD's own tree, which clears EVERY
+    post-review commit. Both now call this, so the fixture's red is `main`'s red.
+    """
+    git = git or _git
+    mb = git("merge-base", base, "HEAD")
+    return mb.stdout.strip() if mb.returncode == 0 else None
+
+
+def merge_tree_argv(empty_tree: str, head: str, onto: str) -> list[str]:
+    """PURE. The `merge-tree` call. It runs ONLY inside `isolated_env` — see `_isolated_git`.
+
+    `--attr-source=<empty tree>` stays even there: a bare repository reads `HEAD:.gitattributes`,
+    and the flag says "no tree attributes" whatever HEAD becomes. Git older than 2.42 does not know
+    it and exits 129, which `parse_merge_tree` reads as `None`, the strict rule.
+    """
+    return [f"--attr-source={empty_tree}",
+            "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", head, onto]
+
+
+def isolated_env(git_dir: str, home: str, path: "str | None") -> dict[str, str]:
+    """PURE. The WHOLE environment of the synthetic merge — built, never filtered from `os.environ`.
+
+    ⛔ merge-delta r1 Claude M1, r2 Codex M1 + M2: a merge driver reached `merge-tree` from the
+    branch's `.gitattributes`, then from `info/attributes`, then from a configured
+    `merge.text.driver` (repository config, an include, `GIT_CONFIG_COUNT`) and the SYSTEM
+    `gitattributes` — one more source per round, each closed by one more `-c`. The class is "git
+    reads configuration and attributes the branch, the host or the caller can set", so the merge
+    runs in a repository with NONE of its own: an empty `GIT_DIR` (see `_isolated_git`), no
+    inherited variable at all (`GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS`, `XDG_CONFIG_HOME`, ...),
+    no system or global config, no system attributes, and a `HOME` with nothing in it.
+    """
+    env = {"GIT_DIR": git_dir, "HOME": home, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_ATTR_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
+    if path:
+        env["PATH"] = path
+    return env
+
+
+@contextlib.contextmanager
+def _isolated_git(git):
+    """Yield a `git` runner over an EMPTY repository that borrows the real one's objects, or `None`.
+
+    The temp `GIT_DIR` has no config, no attributes, no hooks (`--template=`) and NO REFS, and its
+    `objects/info/alternates` names the real object store, so every commit and blob is readable and
+    nothing else is. `merge-tree --write-tree` writes its result into the temp store, which is
+    deleted on exit. ⚠ NO REFS MEANS NO REPLACE REFS AND NO GRAFTS: the merge is of the objects the
+    SHAs name, not of what `refs/replace/` substitutes — measured in the self-test. Any failure to
+    build it (no temp dir, no common dir, init refused) is `None`, which `_master_side` reads as the
+    strict rule.
+    """
+    common = git("rev-parse", "--path-format=absolute", "--git-common-dir")
+    objects = pathlib.Path(common.stdout.strip(), "objects") if common.returncode == 0 else None
+    # ⚠ The empty-answer and `is_dir` checks, and `init`'s rc below, are SECOND LOCKS, not mutation
+    # targets: without them the alternates name nothing (or no repository exists), the merge cannot
+    # find the round's commit, and `parse_merge_tree` reads the failure as `None` — measured.
+    if objects is None or not common.stdout.strip() or not objects.is_dir():
+        yield None
+        return
+    try:
+        tmp = tempfile.mkdtemp(prefix="crr-merge-")
+    except OSError:
+        yield None
+        return
+    # ⛔ THE `finally` OPENS RIGHT AFTER `mkdtemp` — merge-delta r3 Claude L1. The setup used to sit
+    # before it, so any exception but `OSError` (a missing `git` under a mutant, an interrupt)
+    # left `crr-merge-*/home` behind in `$TMPDIR`; the mutation sweep leaked one per run.
+    try:
+        ok = False
+        try:
+            git_dir, home = os.path.join(tmp, "repo.git"), os.path.join(tmp, "home")
+            os.mkdir(home)
+            env = isolated_env(git_dir, home, os.environ.get("PATH"))
+
+            def run(*args: str) -> subprocess.CompletedProcess:
+                return _run_git(["git", *args], cwd=tmp, env=env)
+
+            ok = run("init", "-q", "--bare", "--template=", git_dir).returncode == 0
+            if ok:
+                info = pathlib.Path(git_dir, "objects", "info")
+                info.mkdir(parents=True, exist_ok=True)
+                (info / "alternates").write_text(f"{objects}\n", encoding="utf-8")
+        except OSError:
+            ok = False
+        yield run if ok else None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _master_side(head: str, onto: "str | None", paths: list[str],
+                 git=None, isolate=None) -> "tuple[dict[str, str], frozenset[str]] | None":
+    """`(entries, conflicted)` of the round's commit merged with `onto`; `None` on ANY failure.
+
+    `None` is the strict rule, so a merge that cannot be built leaves a round required (backlog
+    #426, the fail direction). `git` (the real repository) and `isolate` (the isolated runner's
+    factory, `_isolated_git`) are injectable so a case can drive it over a real fixture repository
+    and inject a failure into either. The merge and the `ls-tree` of its result run ISOLATED — see
+    `isolated_env`; the real repository is only asked where its objects are.
+    """
+    git = git or _git
+    isolate = isolate or _isolated_git
+    if not onto or not paths:
+        return None
+    with isolate(git) as iso:
+        if iso is None:
+            return None
+        empty = iso("hash-object", "-t", "tree", "/dev/null")
+        if empty.returncode != 0 or not empty.stdout.strip():
+            return None
+        mt = iso(*merge_tree_argv(empty.stdout.strip(), head, onto))
+        parsed = parse_merge_tree(mt.stdout, mt.returncode)
+        if parsed is None:
+            return None
+        tree, conflicted = parsed
+        ls = iso(*ls_tree_argv(tree))
+        if ls.returncode != 0:
+            return None
+        return select_entries(parse_ls_tree(ls.stdout), paths), conflicted
 
 
 def _load_verdict(rel: str) -> "object | None":
@@ -1050,7 +1297,8 @@ def _changed_since(head: str) -> list[str]:
 
 def round_tails(verdict_files: list[str], branch_delta: list[str], *,
                 load=None, is_ancestor=None, changed_since=None,
-                final_entries=None) -> tuple[dict[str, list[str]], int]:
+                final_entries=None, onto: "str | None" = None,
+                master_side=None) -> tuple[dict[str, list[str]], int]:
     """`(tails, unusable)` for `tail_verdict`. **I/O ONLY** — every decision here is a pure rule.
 
     ⚠ NO MERGE-BASE SKIP — r1 High. The first version also skipped a verdict whose head is an
@@ -1069,12 +1317,16 @@ def round_tails(verdict_files: list[str], branch_delta: list[str], *,
     are real, not decorative.
 
     `branch_delta` is `changed_paths(base)`, threaded in from `main` where it is already computed,
-    so scoping the candidate set costs no extra git call.
+    so scoping the candidate set costs no extra git call. `onto` is `merge-base(base, HEAD)` — the
+    master commit HEAD already contains — and `master_side` builds what the round's commit becomes
+    when merged with it (backlog #426); `onto=None` means it could not be resolved, so no round is
+    cleared by it.
     """
     load = load or _load_verdict
     is_ancestor = is_ancestor or _is_ancestor
     changed_since = changed_since or _changed_since
     final_entries = final_entries or _final_entries
+    master_side = master_side or _master_side
     tails: dict[str, list[str]] = {}
     unusable = 0
     for rel in verdict_files:
@@ -1090,8 +1342,9 @@ def round_tails(verdict_files: list[str], branch_delta: list[str], *,
             continue
         reviewed = reviewed_map(rec)
         cands = tail_candidates(changed_since(head), reviewed, branch_delta)
+        guarded = guarded_changes(cands)
         tails[pathlib.PurePosixPath(rel).name] = round_tail(
-            cands, reviewed, final_entries(guarded_changes(cands)))
+            cands, reviewed, final_entries(guarded), master_side(head, onto, guarded))
     return tails, unusable
 
 
@@ -1190,17 +1443,14 @@ def changed_paths(base: str) -> list[str]:
     """
     if not (ROOT / ".git").exists():
         raise RuntimeError("CANNOT RUN — no .git directory. Treat this as NOT CHECKED.")
-    shallow = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--is-shallow-repository"],
-                             capture_output=True, text=True)
+    shallow = _git("rev-parse", "--is-shallow-repository")
     if shallow.stdout.strip() == "true":
         raise RuntimeError("CANNOT RUN — shallow clone; the diff would be confidently short.")
-    merge_base = subprocess.run(["git", "-C", str(ROOT), "merge-base", base, "HEAD"],
-                                capture_output=True, text=True)
+    merge_base = _git("merge-base", base, "HEAD")
     if merge_base.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — cannot resolve a merge base with {base!r}: "
                            f"{merge_base.stderr.strip()}")
-    diff = subprocess.run(["git", "-C", str(ROOT), *diff_argv(merge_base.stdout.strip())],
-                          capture_output=True, text=True)
+    diff = _git(*diff_argv(merge_base.stdout.strip()))
     if diff.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — git diff failed: {diff.stderr.strip()}")
     return split_nul(diff.stdout)
@@ -1254,13 +1504,10 @@ def diff_argv(base_sha: str, *, added_only: bool = False) -> list[str]:
 
 def added_paths(base: str) -> list[str]:
     """Paths ADDED against `base` (status A). RAISES like `changed_paths`; shares `diff_argv`."""
-    mb = subprocess.run(["git", "-C", str(ROOT), "merge-base", base, "HEAD"],
-                        capture_output=True, text=True)
+    mb = _git("merge-base", base, "HEAD")
     if mb.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — cannot resolve a merge base with {base!r}")
-    out = subprocess.run(["git", "-C", str(ROOT),
-                          *diff_argv(mb.stdout.strip(), added_only=True)],
-                         capture_output=True, text=True)
+    out = _git(*diff_argv(mb.stdout.strip(), added_only=True))
     if out.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — git diff failed: {out.stderr.strip()}")
     return split_nul(out.stdout)
@@ -1351,7 +1598,10 @@ def main(argv: list[str]) -> int:
             print("ok — " + waived)
         return 0
     try:
-        tails, unusable = round_tails(branch_verdicts(added), changed)
+        # ⛔ an unresolvable merge base is `None`, which clears nothing — backlog #426's fail
+        # direction. `changed_paths` above has already refused that case; this is the second lock.
+        tails, unusable = round_tails(branch_verdicts(added), changed,
+                                      onto=merge_onto(args.base))
         gap = declared_gap(review_added(added))
     except (RuntimeError, OSError) as exc:
         print(str(exc) if str(exc).startswith("CANNOT RUN") else f"CANNOT RUN — {exc}",
@@ -1364,6 +1614,13 @@ def main(argv: list[str]) -> int:
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     cases: list[tuple[str, object, object]] = []
 
     def case(name: str, got, want) -> None:
@@ -1822,6 +2079,12 @@ def self_test() -> int:
     # survived mutation with the suite green and two of them were live fail-opens. ──
     case("a schema-2 verdict whose gate RAN is usable, and the head comes back stripped",
          classify_verdict({"gate_ran": True, "head": " abc123 \n"}), ("abc123", USABLE))
+    # ⟳ 2026-10-31: a CLAUDE half's record (`record-review-verdict.py`) is the wrapper's schema plus
+    # `writer`/`tool`, with a clean overlay — and it is read exactly like a Codex one.
+    case("a Claude half's verdict is usable like a Codex one — the writer is not read",
+         classify_verdict({"schema": 3, "gate_ran": True, "head": "abc123", "dirty": {},
+                           "tool": "record-review-verdict", "writer": "claude"}),
+         ("abc123", USABLE))
     case("a verdict saying the gate did NOT run is skipped, never read as testimony",
          classify_verdict({"gate_ran": False, "head": "abc123"}), (None, SKIP))
     case("...and that rule is the one whose deletion turned exit 2 into exit 0",
@@ -2044,6 +2307,522 @@ def self_test() -> int:
     case("a deletion recorded at one sha width matches an absence at another",
          round_tail(["lib/x.ts"], {"lib/x.ts": "000000 " + "0" * 64}, {}), [])
     case("empty output is an empty answer, not an invented one", parse_ls_tree(""), {})
+
+    # ── backlog #426: master's changes since a round are subtracted per FILE, by a tree comparison ──
+    _M = "100644 " + "m" * 40
+    _B = "100644 " + "b" * 40
+    case("#426: no merge could be built -> NOT explained, the round stays required",
+         master_explains("lib/x.ts", None, _M), False)
+    case("#426: HEAD equal to the reviewed commit merged with master IS explained",
+         master_explains("lib/x.ts", ({"lib/x.ts": _M}, frozenset()), _M), True)
+    case("#426: a branch edit on top of master's IS NOT explained",
+         master_explains("lib/x.ts", ({"lib/x.ts": _M}, frozenset()), _B), False)
+    case("#426 trap 1: a CONFLICTED path is never explained, even when HEAD equals the merge",
+         master_explains("lib/x.ts", ({"lib/x.ts": _M}, frozenset({"lib/x.ts"})), _M), False)
+    case("#426: a conflict on ANOTHER path does not block this one",
+         master_explains("lib/y.ts", ({"lib/y.ts": _M}, frozenset({"lib/x.ts"})), _M), True)
+    case("merge-delta r4: absent in HEAD AND in the merge is charged (only a lying lookup gives it)",
+         master_explains("lib/z.ts", ({}, frozenset()), ABSENT_ENTRY), False)
+    case("merge-delta r4 control: ...while a present HEAD equal to the merge is still explained",
+         master_explains("lib/z.ts", ({"lib/z.ts": _B}, frozenset()), _B), True)
+    case("#426: a file HEAD deleted that the merge keeps is NOT explained",
+         master_explains("lib/x.ts", ({"lib/x.ts": _M}, frozenset()), ABSENT_ENTRY), False)
+    case("#426: a clean merge-tree is its tree and no conflicts",
+         parse_merge_tree("t1\0", 0), ("t1", frozenset()))
+    case("#426: a conflicted merge-tree still has a tree, and NAMES the conflicts",
+         parse_merge_tree("t2\0lib/a.ts\0lib/b.ts\0", 1),
+         ("t2", frozenset({"lib/a.ts", "lib/b.ts"})))
+    case("#426 trap 3: a merge-tree that did not run is None, never 'clean'",
+         parse_merge_tree("fatal: bad object\0", 128), None)
+    case("#426 trap 3: ...and empty output on rc 0 is None, not a tree named ''",
+         parse_merge_tree("", 0), None)
+    case("#426 FAILS IF (pure): a path whose only post-round change is master's is not charged",
+         round_tail(["lib/x.ts"], {}, {"lib/x.ts": _M}, ({"lib/x.ts": _M}, frozenset())), [])
+    case("#426: ...while one carrying a branch edit too still is",
+         round_tail(["lib/x.ts"], {}, {"lib/x.ts": _B}, ({"lib/x.ts": _M}, frozenset())),
+         ["lib/x.ts"])
+    case("#426: a DIRTY-overlay path keeps the strict rule — master cannot clear it",
+         round_tail(["lib/x.ts"], {"lib/x.ts": "100644 aaa"}, {"lib/x.ts": _M},
+                    ({"lib/x.ts": _M}, frozenset())), ["lib/x.ts"])
+    _onto_seen: list = []
+    _t9, _ = round_tails(_V, ["lib/x.ts"], load=lambda r: _CLEAN, is_ancestor=lambda h: True,
+                         changed_since=lambda h: ["lib/x.ts"],
+                         final_entries=lambda p: {"lib/x.ts": _M}, onto="m1",
+                         master_side=lambda h, o, p: (_onto_seen.append((h, o, p)) or
+                                                      ({"lib/x.ts": _M}, frozenset())))
+    case("#426 through the gatherer: a master-only change clears the round",
+         _t9["a.verdict.json"], [])
+    case("#426 through the gatherer: the round's head, `onto` and the guarded paths are passed",
+         _onto_seen, [("h1", "m1", ["lib/x.ts"])])
+    _t10, _ = round_tails(_V, ["lib/x.ts"], load=lambda r: _CLEAN, is_ancestor=lambda h: True,
+                          changed_since=lambda h: ["lib/x.ts"],
+                          final_entries=lambda p: {"lib/x.ts": _M}, onto=None)
+    case("#426 trap 3 through the gatherer: no merge base -> the round is charged",
+         _t10["a.verdict.json"], ["lib/x.ts"])
+
+    # ── #426 over a REAL repository: PR #487's shape, a conflict resolution, an evil merge ──
+    _tmp = tempfile.mkdtemp(prefix="crr426-")
+
+    # BYTES, decoded here and NOT through `_run_git`: this runner feeds the production parsers in
+    # `_tails_at`, so it must keep a CR too, and a mutant of `_run_git` must not reach the fixture
+    def _g(*a: str) -> subprocess.CompletedProcess:
+        p = subprocess.run(["git", "-C", _tmp, "-c", "user.name=t", "-c",
+                            "user.email=t@example.com", "-c", "commit.gpgsign=false", *a],
+                           capture_output=True)
+        return subprocess.CompletedProcess(p.args, p.returncode,
+                                           p.stdout.decode("utf-8", "surrogateescape"),
+                                           p.stderr.decode("utf-8", "surrogateescape"))
+
+    def _w(rel: str, text: str) -> None:
+        f = pathlib.Path(_tmp, rel)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding="utf-8")
+
+    def _commit(msg: str) -> str:
+        _g("add", "--", ".")
+        _g("commit", "-q", "-m", msg)
+        return _g("rev-parse", "HEAD").stdout.strip()
+
+    # the fixture's own `-z` split, NOT `split_nul`: a mutant of that rule must red ITS case, not
+    # crash this one with a NUL inside an argv
+    def _nul(out: str) -> list[str]:
+        return [x for x in out.split("\0") if x]
+
+    # ⛔ `onto` and HEAD's entries come from the SAME helpers `main` calls (`merge_onto`,
+    # `_final_entries`), never a copy — r1 Claude M2: a copy here left `main`'s line unexercised.
+    def _tails_at(review: str, git=None) -> list[str]:
+        git = git or _g
+        onto = merge_onto("master", git=git)
+        delta = _nul(git(*diff_argv(onto)).stdout)
+        t, _u = round_tails(
+            ["docs/reviews/verdicts/r.verdict.json"], delta,
+            load=lambda r: {"gate_ran": True, "head": review, "dirty": {}},
+            is_ancestor=lambda h: git("merge-base", "--is-ancestor", h, "HEAD").returncode == 0,
+            changed_since=lambda h: _nul(git(*diff_argv(h)).stdout),
+            final_entries=lambda p: _final_entries(p, git=git),
+            onto=onto, master_side=lambda h, o, p: _master_side(h, o, p, git=git))
+        return t.get("r.verdict.json", ["<no usable round>"])
+
+    # a `git` that answers exactly ONE call itself, so a case can inject a failure into a real repo
+    def _failing(prefix: tuple, rc: int = 128, out: str = "") -> object:
+        def g(*a: str) -> subprocess.CompletedProcess:
+            if a[:len(prefix)] == prefix:
+                return subprocess.CompletedProcess(["git", *a], rc, out, "fatal: injected")
+            return _g(*a)
+        return g
+
+    # an `isolate` that answers exactly ONE call on the ISOLATED runner itself (the merge runs there)
+    def _iso_failing(prefix: tuple, rc: int = 128, out: str = "") -> object:
+        @contextlib.contextmanager
+        def iso(g):
+            with _isolated_git(g) as run:
+                def r(*a: str) -> subprocess.CompletedProcess:
+                    if a[:len(prefix)] == prefix:
+                        return subprocess.CompletedProcess(["git", *a], rc, out, "fatal: injected")
+                    return run(*a)
+                yield r if run else None
+        return iso
+
+    # a crash is a `[FAIL]` line naming this case, never a traceback the harness cannot attribute
+    def _or_raised(fn) -> object:
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 — the case reports it
+            return f"raised {type(exc).__name__}"
+
+    def _raises(fn) -> str:
+        try:
+            fn()
+        except RuntimeError as exc:
+            return "CANNOT RUN" if str(exc).startswith("CANNOT RUN") else f"raised {exc}"
+        return "did not raise"
+
+    _g("init", "-q", "-b", "master")
+    _LINES = "".join(f"line {i}\n" for i in range(1, 21))
+    _GATE = "docs/superpowers/specs/m4/gate.sql"     # guarded code under a prose directory
+    for _f in (".github/workflows/ci.yml", "scripts/plan.py", "scripts/drivable.py",
+               "scripts/solo.py", "scripts/gone.py", _GATE):
+        _w(_f, _LINES)
+    _base = _commit("base")
+    _g("checkout", "-q", "-b", "br")
+    _w(".github/workflows/ci.yml", _LINES.replace("line 2\n", "BRANCH 2\n"))
+    _w("scripts/plan.py", _LINES.replace("line 2\n", "BRANCH 2\n"))
+    _w(_GATE, _LINES.replace("line 2\n", "BRANCH 2\n"))
+    _review = _commit("branch work, then the final review round")
+    _g("checkout", "-q", "master")
+    _w(".github/workflows/ci.yml", _LINES.replace("line 18\n", "MASTER 18\n"))
+    _w("scripts/plan.py", _LINES.replace("line 18\n", "MASTER 18\n"))
+    _commit("master moves on")
+    _g("checkout", "-q", "br")
+    _g("merge", "-q", "--no-edit", "master")
+    case("#426 FAILS IF, real git: a round followed ONLY by a merge of master is not charged",
+         _tails_at(_review), [])
+    _w("scripts/drivable.py", _LINES.replace("line 9\n", "BRANCH 9\n"))
+    _commit("a genuine branch change after the round")
+    case("#426, PR #487's shape: the genuine change is charged, master's two files are not",
+         _tails_at(_review), ["scripts/drivable.py"])
+    # trap 2 — an EVIL MERGE: master's merge commit also carries a branch edit nobody reviewed
+    _g("reset", "-q", "--hard", _review)
+    _g("checkout", "-q", "master")
+    _w("scripts/solo.py", _LINES.replace("line 5\n", "MASTER 5\n"))
+    _commit("master again")
+    _g("checkout", "-q", "br")
+    _g("merge", "-q", "--no-commit", "master")
+    _w("scripts/plan.py", _LINES.replace("line 2\n", "BRANCH 2\n").replace(
+        "line 18\n", "MASTER 18\n").replace("line 10\n", "EVIL 10\n"))
+    _commit("merge master (evil)")
+    case("#426 trap 2: a branch edit hidden inside a merge commit is charged",
+         _tails_at(_review), ["scripts/plan.py"])
+    # trap 1 — a CONFLICT whose resolution is the branch's own code
+    _g("reset", "-q", "--hard", _review)
+    _g("checkout", "-q", "master")
+    _w(".github/workflows/ci.yml", _LINES.replace("line 18\n", "MASTER 18\n").replace("line 2\n", "MASTER 2\n"))
+    _commit("master edits the branch's line")
+    _g("checkout", "-q", "br")
+    _g("merge", "-q", "--no-edit", "master")          # conflicts on ci.yml; resolve by hand
+    _w(".github/workflows/ci.yml", _LINES.replace("line 18\n", "MASTER 18\n").replace("line 2\n", "RESOLVED 2\n"))
+    _commit("merge master, resolving the conflict")
+    case("#426 trap 1: a merge whose conflict RESOLUTION edits a guarded file is charged",
+         _tails_at(_review), [".github/workflows/ci.yml"])
+    case("#426 trap 3, real git: an unknown commit to merge with builds no master side",
+         _master_side(_review, "f" * 40, [".github/workflows/ci.yml"], git=_g), None)
+    case("merge-delta r1 Claude M2: an unresolvable base has no `onto`, never an empty one",
+         merge_onto("no-such-ref", git=_g), None)
+    _onto_good = merge_onto("master", git=_g)
+    case("merge-delta r2 control: the isolated merge of this conflict IS built, and names it",
+         (_master_side(_review, _onto_good, [".github/workflows/ci.yml"], git=_g) or (None, None))[1],
+         frozenset({".github/workflows/ci.yml"}))
+    case("merge-delta r1 Codex M2 / Claude L1: a failed `ls-tree` of the merged tree is None",
+         _master_side(_review, _onto_good, [".github/workflows/ci.yml"], git=_g,
+                      isolate=_iso_failing(tuple(ls_tree_argv("")[:3]))), None)
+    case("merge-delta r1 Claude M1: no empty tree to read attributes from builds no master side",
+         _master_side(_review, _onto_good, [".github/workflows/ci.yml"], git=_g,
+                      isolate=_iso_failing(("hash-object",))), None)
+    # ⚠ A SECOND LOCK, NOT A MUTATION TARGET: git 2.49 itself refuses `--attr-source=` with an
+    # empty value (rc 128, "bad --attr-source") once a content merge reads attributes, and a merge
+    # that reads none cannot be steered by them — so removing this check stays green (measured).
+    case("merge-delta r1 Claude M1: ...nor does an empty answer with rc 0",
+         _master_side(_review, _onto_good, [".github/workflows/ci.yml"], git=_g,
+                      isolate=_iso_failing(("hash-object",), rc=0)), None)
+    case("merge-delta r2: an unresolvable object store builds no master side",
+         _or_raised(lambda: _master_side(
+             _review, _onto_good, [".github/workflows/ci.yml"],
+             git=_failing(("rev-parse", "--path-format=absolute", "--git-common-dir")))), None)
+    case("merge-delta r2: a common dir with no object store builds no master side",
+         _or_raised(lambda: _master_side(
+             _review, _onto_good, [".github/workflows/ci.yml"],
+             git=_failing(("rev-parse", "--path-format=absolute", "--git-common-dir"),
+                          rc=0, out=str(pathlib.Path(_tmp, "nowhere")) + "\n"))), None)
+    # the isolated repository's own `git` is reached through PATH, so a PATH holding a `git` that
+    # refuses everything fails `init`, and an empty one fails to launch it at all
+    _common = _g("rev-parse", "--path-format=absolute", "--git-common-dir").stdout
+    _bin = pathlib.Path(tempfile.mkdtemp(prefix="crr426-bin-"))    # outside the fixture's tree
+    _saved_path = os.environ["PATH"]
+    try:
+        os.environ["PATH"] = str(_bin)
+        _known = _failing(("rev-parse", "--path-format=absolute", "--git-common-dir"), rc=0,
+                          out=_common)
+        case("merge-delta r2: no `git` to build the isolated repository builds no master side",
+             _or_raised(lambda: _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
+                                             git=_known)), None)
+        (_bin / "git").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        (_bin / "git").chmod(0o755)
+        case("merge-delta r2: an isolated repository whose `init` fails builds no master side",
+             _or_raised(lambda: _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
+                                             git=_known)), None)
+    finally:
+        os.environ["PATH"] = _saved_path
+        shutil.rmtree(_bin, ignore_errors=True)
+
+    # merge-delta r1 Codex H1 — master DELETES a file; the branch re-adds it after the round
+    _g("reset", "-q", "--hard", _review)
+    _g("checkout", "-q", "master")
+    _g("reset", "-q", "--hard", _base)
+    _g("rm", "-q", "--", "scripts/gone.py")
+    _g("commit", "-q", "-m", "master deletes gone.py")
+    _g("checkout", "-q", "br")
+    _g("merge", "-q", "--no-edit", "master")
+    _w("scripts/gone.py", _LINES.replace("line 7\n", "UNREVIEWED 7\n"))
+    _commit("the branch brings gone.py back, unreviewed")
+    case("merge-delta r1 Codex H1 control: a re-add of a file master deleted is charged",
+         _tails_at(_review), ["scripts/gone.py"])
+    case("merge-delta r1 Codex H1: a failed HEAD `ls-tree` is CANNOT RUN, never 'all absent'",
+         _raises(lambda: _tails_at(_review, git=_failing(tuple(ls_tree_argv("HEAD"))))),
+         "CANNOT RUN")
+
+    # ⛔ merge-delta r3 Claude M1 — a NAME git would read as a pathspec, or normalise. Each file is
+    # added after the round through the index alone (no checkout: some of these names cannot exist
+    # on this filesystem), and the round's own commit stays the reviewed head. The CONTROL is the
+    # pathspec form both lookups used, which misses the name in this very repository.
+    _blob = _g("rev-parse", f"{_review}:scripts/solo.py").stdout.strip()
+    _ENTRY = f"100644 {_blob}"
+
+    def _add_raw(name: str) -> str:
+        _g("reset", "-q", "--hard", _review)
+        _g("-c", "core.precomposeunicode=false", "update-index", "--add", "--cacheinfo",
+           f"100644,{_blob},{name}")
+        _g("commit", "-q", "-m", "a post-round file under an odd name")
+        return _g("rev-parse", "HEAD").stdout.strip()
+
+    def _lookups(name: str) -> tuple:
+        head = _add_raw(name)
+        ms = _or_raised(lambda: _master_side(head, merge_onto("master", git=_g), [name], git=_g))
+        return (_or_raised(lambda: _final_entries([name], git=_g)),
+                ms[0] if isinstance(ms, tuple) else ms,
+                _or_raised(lambda: _tails_at(_review)))
+
+    for _name, _tag in ((":/evil.sh", "`:/`"), (":(top)evil.sh", "`:(top)`")):
+        _fe, _ms, _tl = _lookups(_name)
+        case(f"merge-delta r3 M1 control: the pathspec lookup misses a {_tag} name",
+             _g("ls-tree", "-z", "HEAD", "--", _name).stdout, "")
+        case(f"merge-delta r3 M1: HEAD's lookup finds a {_tag} name by its exact bytes",
+             _fe, {_name: _ENTRY})
+        case(f"merge-delta r3 M1: the merged tree's lookup finds a {_tag} name too",
+             _ms, {_name: _ENTRY})
+        case(f"merge-delta r3 M1: an unreviewed {_tag} file is charged, never absent == absent",
+             _tl, [_name])
+    # a DECOMPOSED name under `core.precomposeunicode=true`, the macOS default. Git precomposes its
+    # argv only on macOS, so the control's want is the platform's own answer.
+    _nfd = "scripts/cafe\u0301.py"
+    _g("config", "core.precomposeunicode", "true")
+    _fe, _ms, _tl = _lookups(_nfd)
+    case("merge-delta r3 M1 control: under precomposition the pathspec lookup of an NFD name",
+         bool(_g("ls-tree", "-z", "HEAD", "--", _nfd).stdout), sys.platform != "darwin")
+    case("merge-delta r3 M1: HEAD's lookup finds a decomposed name", _fe, {_nfd: _ENTRY})
+    case("merge-delta r3 M1: the merged tree's lookup finds a decomposed name", _ms, {_nfd: _ENTRY})
+    case("merge-delta r3 M1: an unreviewed decomposed-name file is charged", _tl, [_nfd])
+    _g("config", "--unset", "core.precomposeunicode")
+    for _name, _tag in (("scripts/a\nb.py", "a newline"), ("scripts/caf\udce9.py", "non-UTF-8 bytes"),
+                        ("scripts/a\rb.py", "a carriage return")):
+        _fe, _ms, _tl = _lookups(_name)
+        case(f"merge-delta r3 M1: HEAD's lookup finds a name holding {_tag}", _fe, {_name: _ENTRY})
+        case(f"merge-delta r3 M1: the merged tree's lookup finds a name holding {_tag}",
+             _ms, {_name: _ENTRY})
+        case(f"merge-delta r3 M1: an unreviewed file whose name holds {_tag} is charged",
+             _tl, [_name])
+    _g("reset", "-q", "--hard", _review)
+    case("merge-delta r3 M1: a path that is a DIRECTORY in HEAD still has an entry, as before",
+         _final_entries(["scripts"], git=_g).get("scripts", "").split()[:1], ["040000"])
+    case("merge-delta r3 M1 (pure): the lookup lists the whole tree, with no path in its argv",
+         ls_tree_argv("t1"),
+         ["-c", "core.precomposeunicode=false", "ls-tree", "-r", "-t", "-z", "--full-tree", "t1"])
+    case("merge-delta r3 M1 (pure): only the EXACT names asked for are selected",
+         select_entries({":/a": "e1", "a": "e2", "b": "e3"}, [":/a", "c"]), {":/a": "e1"})
+    # ⛔ merge-delta r3 Claude L1 — a crash inside the isolated repository's setup leaves NO temp
+    # dir. Counted in a PRIVATE `TMPDIR`, so another run's leftovers cannot answer for this one.
+    _priv = tempfile.mkdtemp(prefix="crr426-tmpdir-")
+    _saved_tempdir, _saved_env = tempfile.tempdir, isolated_env
+    try:
+        tempfile.tempdir = _priv
+
+        def _crash(*_a, **_k):
+            raise ValueError("injected")
+        globals()["isolated_env"] = _crash
+        _r = _or_raised(lambda: _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
+                                             git=_g))
+        case("merge-delta r3 L1: a crash in the isolated setup leaves no `crr-merge-*` dir",
+             (_r, sorted(x.name for x in pathlib.Path(_priv).glob("crr-merge-*"))),
+             ("raised ValueError", []))
+    finally:
+        globals()["isolated_env"] = _saved_env
+        tempfile.tempdir = _saved_tempdir
+        shutil.rmtree(_priv, ignore_errors=True)
+
+    # merge-delta r1 Claude M1 — a merge DRIVER the branch chose resolves a real conflict
+    _g("reset", "-q", "--hard", _review)
+    _g("checkout", "-q", "master")
+    _g("reset", "-q", "--hard", _base)
+    _w(_GATE, _LINES.replace("line 2\n", "MASTER 2\n"))
+    _commit("master edits the gate's line 2 too")
+    _g("checkout", "-q", "br")
+    _w("docs/.gitattributes", "** merge=union\n")    # prose: committing it is never charged
+    _commit("a prose-path attributes file")
+    _g("merge", "-q", "--no-edit", "master")          # clean, under the union driver
+    _union = pathlib.Path(_tmp, _GATE).read_text(encoding="utf-8")
+    case("merge-delta r1 Claude M1: a committed `merge=union` cannot turn a conflict into a clear",
+         _tails_at(_review), [_GATE])
+    # the same union content, typed by hand with no committed attributes, under each LOCAL source
+    _g("reset", "-q", "--hard", _review)
+    _g("merge", "-q", "--no-edit", "master")          # conflicts on the gate
+    _w(_GATE, _union)
+    _commit("merge master, resolving the gate by hand to the union")
+    case("merge-delta r1 Claude M1 control: the hand-typed union with no attributes is charged",
+         _tails_at(_review), [_GATE])
+    # Claude L2 — the shape where ONLY the conflict exclusion charges: HEAD commits the synthesised
+    # conflicted blob itself, markers and all, so HEAD's entry EQUALS the master side's
+    _ms_tree = _g(*merge_tree_argv(_g("hash-object", "-t", "tree", "/dev/null").stdout.strip(),
+                                   _review, merge_onto("master", git=_g))).stdout.split("\0")[0]
+    _w(_GATE, _g("cat-file", "-p", f"{_ms_tree}:{_GATE}").stdout)
+    _commit("the branch commits the conflicted blob as it stands")
+    case("merge-delta r1 Claude L2: HEAD EQUAL to a conflicted merge is still charged",
+         _tails_at(_review), [_GATE])
+    _g("reset", "-q", "--hard", "HEAD~1")             # back to the hand-typed union for the rest
+    _w("docs/.gitattributes", "** merge=union\n")    # uncommitted, in the working tree
+    case("merge-delta r1 Claude M1: a WORKTREE `.gitattributes` does not clear it",
+         _tails_at(_review), [_GATE])
+    pathlib.Path(_tmp, "docs/.gitattributes").unlink()
+    _w(".union-attrs", "* merge=union\n")
+    _g("config", "core.attributesFile", str(pathlib.Path(_tmp, ".union-attrs")))
+    case("merge-delta r1 Claude M1: a `core.attributesFile` does not clear it",
+         _tails_at(_review), [_GATE])
+    _g("config", "--unset", "core.attributesFile")
+    _g("config", "merge.default", "union")
+    case("merge-delta r1 Claude M1: a repository `merge.default` does not clear it",
+         _tails_at(_review), [_GATE])
+    _g("config", "--unset", "merge.default")
+    # ⛔ merge-delta r2: an `info/attributes` is no longer REFUSED (r1's fallback) — the isolated
+    # repository has its own, empty one, so the real one is simply not read: the conflict is BUILT
+    # and named, which is stronger than a `None`.
+    _w(".git/info/attributes", "* merge=union\n")
+    _onto_m = merge_onto("master", git=_g)
+    # the CONTROL is r1's own command, in the real repository: what each source fooled before
+    _empty_t = _g("hash-object", "-t", "tree", "/dev/null").stdout.strip()
+    _real_mt = lambda: _g(f"--attr-source={_empty_t}", "-c", "core.attributesFile=/dev/null",
+                          "-c", "merge.default=text", "merge-tree", "--write-tree", "--name-only",
+                          "--no-messages", "-z", _review, _onto_m).returncode
+    case("merge-delta r2 control: r1's merge in the real repository honours its `info/attributes`",
+         _real_mt(), 0)
+    case("merge-delta r1 Claude M1: an `info/attributes` in force still names the conflict",
+         (_master_side(_review, _onto_m, [_GATE], git=_g) or ({}, frozenset()))[1], frozenset({_GATE}))
+    case("merge-delta r1 Claude M1: ...and through the gatherer it is charged",
+         _tails_at(_review), [_GATE])
+    pathlib.Path(_tmp, ".git/info/attributes").unlink()
+    # merge-delta r2 Codex M1 — the `text` driver itself, redefined in every config layer git reads.
+    # The driver copies the hand-typed union over the merge result, so the merge comes out EQUAL.
+    # Each layer sets `merge.default=text` TOO: r2 dropped that `-c`, and a driver nothing selects
+    # would leave these cases green with the isolation removed.
+    _drv = f"cp {pathlib.Path(_tmp, _GATE)} %A"
+    case("merge-delta r2 Codex M1 control: with no driver configured the real merge conflicts",
+         _real_mt(), 1)
+    _g("config", "merge.text.driver", _drv)
+    _g("config", "merge.default", "text")
+    case("merge-delta r2 Codex M1 control: the real merge honours a configured `merge.text.driver`",
+         _real_mt(), 0)
+    case("merge-delta r2 Codex M1: a repository `merge.text.driver` does not clear it",
+         _tails_at(_review), [_GATE])
+    _g("config", "--unset", "merge.text.driver")
+    _g("config", "--unset", "merge.default")
+    _w(".inc-driver", f"[merge]\n\tdefault = text\n[merge \"text\"]\n\tdriver = {_drv}\n")
+    # an `include.path`, not the review's `includeIf.gitdir:` — that condition did not match under
+    # this suite's temp path on git 2.49 (measured), and the layer is the same: an included file
+    _g("config", "include.path", str(pathlib.Path(_tmp, ".inc-driver")))
+    case("merge-delta r2 Codex M1 control: r1's merge honours a driver from an INCLUDED file",
+         _real_mt(), 0)
+    case("merge-delta r2 Codex M1: an included driver does not clear it", _tails_at(_review), [_GATE])
+    _g("config", "--unset", "include.path")
+    _saved = dict(os.environ)
+    try:
+        os.environ.update({"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "merge.text.driver",
+                           "GIT_CONFIG_VALUE_0": _drv, "GIT_CONFIG_KEY_1": "merge.default",
+                           "GIT_CONFIG_VALUE_1": "text"})
+        case("merge-delta r2 Codex M1 control: the real merge honours a driver injected by env",
+             _real_mt(), 0)
+        case("merge-delta r2 Codex M1: a `GIT_CONFIG_COUNT` driver does not clear it",
+             _tails_at(_review), [_GATE])
+        os.environ.clear()
+        os.environ.update(_saved)
+        os.environ.pop("GIT_CONFIG_NOSYSTEM", None)       # the fixture turns the system layer off
+        os.environ["GIT_CONFIG_SYSTEM"] = str(pathlib.Path(_tmp, ".inc-driver"))
+        case("merge-delta r2 control: the real merge honours a SYSTEM-config driver",
+             _real_mt(), 0)
+        case("merge-delta r2: a system-config driver does not clear it", _tails_at(_review), [_GATE])
+    finally:
+        os.environ.clear()
+        os.environ.update(_saved)
+    case("merge-delta r2 control: every layer removed, the real merge conflicts again", _real_mt(), 1)
+    # ⚠ merge-delta r2 — REPLACE REFS. The isolated repository has NO refs, so `refs/replace/` is
+    # not read: the merge is of the objects the SHAs name. Replacing the round's commit by HEAD
+    # makes the REAL merge HEAD's own tree (clean); the isolated one still names the conflict.
+    _g("replace", _review, "HEAD")
+    case("merge-delta r2 control: a replace ref makes the real merge clean", _real_mt(), 0)
+    case("merge-delta r2: a replace ref of the round's commit is not read by the isolated merge",
+         (_master_side(_review, _onto_m, [_GATE], git=_g) or ({}, frozenset()))[1], frozenset({_GATE}))
+    _g("replace", "-d", _review)
+    # merge-delta r2 Codex M2 — the SYSTEM gitattributes is `$(prefix)/etc/gitattributes`, a path no
+    # environment variable relocates, and this suite does not write outside its temp dir; so the
+    # system ATTRIBUTES layer is pinned here by the environment, and its live effect was measured by
+    # the review (`GIT_ATTR_NOSYSTEM=1` restored the conflict).
+    _env = isolated_env("/g", "/h", "/bin")
+    case("merge-delta r2 Codex M2 (pure): the isolated merge reads no system attributes",
+         _env.get("GIT_ATTR_NOSYSTEM"), "1")
+    case("merge-delta r2 (pure): the isolated environment inherits nothing from the caller",
+         sorted(_env), sorted(["GIT_DIR", "HOME", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL",
+                               "GIT_ATTR_NOSYSTEM", "GIT_TERMINAL_PROMPT", "PATH"]))
+    case("merge-delta r2 (pure): ...and no PATH is no PATH, never the caller's",
+         "PATH" in isolated_env("/g", "/h", None), False)
+    case("merge-delta r1 Claude M1 (pure): merge-tree runs with no tree attribute source",
+         merge_tree_argv("e0", "h1", "o1"),
+         ["--attr-source=e0",
+          "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", "h1", "o1"])
+
+    # ⛔ merge-delta r4 Codex BLOCKER — the FULL CLI over a repository holding `lib/a\n.ts` AND
+    # `lib/a\r.ts`, only the LF one edited after the round. Text-mode capture read both as
+    # `lib/a\n.ts`, the unchanged CR entry won, and `main` said ok, rc 0. `main` runs in-process with
+    # `ROOT` pointed at the fixture; the gate's own inputs (`scripts/`, `docs/superpowers/`) are
+    # UNTRACKED links to this checkout's, so no diff the gate reads contains them. `lib/caf\xe9.ts`
+    # rides along for r4 Codex M2: the branch-level readers raised on it.
+    _cli = tempfile.mkdtemp(prefix="crr426-cli-")
+    _real_root = ROOT
+    _LF, _CR, _E9 = "lib/a\n.ts", "lib/a\r.ts", "lib/caf\udce9.ts"
+
+    def _c(*a: str) -> subprocess.CompletedProcess:
+        return _g("-C", _cli, *a)
+
+    def _blob_of(text: str) -> str:
+        return subprocess.run(["git", "-C", _cli, "hash-object", "-w", "--stdin"], input=text.encode(),
+                              capture_output=True).stdout.decode().strip()
+
+    def _verdict_at(head: str) -> None:
+        _vd = pathlib.Path(_cli, "docs/reviews/verdicts")
+        _vd.mkdir(parents=True, exist_ok=True)
+        pathlib.Path(_cli, "docs/reviews/codex").mkdir(parents=True, exist_ok=True)
+        pathlib.Path(_cli, "docs/reviews/codex/m-r1-codex.md").write_text("VERDICT\n", encoding="utf-8")
+        (_vd / "m-r1-codex.verdict.json").write_text(
+            json.dumps({"gate_ran": True, "head": head, "dirty": {}}), encoding="utf-8")
+        _c("add", "--", "docs/reviews")
+        _c("commit", "-q", "-m", "the review round's record")
+
+    def _quiet(fn) -> object:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return _or_raised(fn)
+
+    try:
+        _c("init", "-q", "-b", "master")
+        pathlib.Path(_cli, "README.md").write_text("prose\n", encoding="utf-8")
+        _c("add", "--", "README.md")
+        _c("commit", "-q", "-m", "base")
+        _cli_base = _c("rev-parse", "HEAD").stdout.strip()
+        _c("checkout", "-q", "-b", "br")
+        os.symlink(_real_root / "scripts", pathlib.Path(_cli, "scripts"))
+        pathlib.Path(_cli, "docs").mkdir()
+        os.symlink(_real_root / "docs" / "superpowers", pathlib.Path(_cli, "docs", "superpowers"))
+        _ok = _blob_of("reviewed\n")
+        for _n in (_LF, _CR, _E9):
+            _c("update-index", "--add", "--cacheinfo", f"100644,{_ok},{_n}")
+        _c("commit", "-q", "-m", "the reviewed commit")
+        _cli_r = _c("rev-parse", "HEAD").stdout.strip()
+        _c("update-index", "--cacheinfo", f"100644,{_blob_of('UNREVIEWED')},{_LF}")
+        _c("commit", "-q", "-m", "an unreviewed edit to the LF-named file only")
+        _cli_e = _c("rev-parse", "HEAD").stdout.strip()
+        globals()["ROOT"] = pathlib.Path(_cli)
+        case("merge-delta r4 M2: `changed_paths` keeps a CR, an LF and a raw 0xe9 byte apart",
+             _or_raised(lambda: sorted(p for p in changed_paths(_cli_base) if p.startswith("lib/"))),
+             sorted([_LF, _CR, _E9]))
+        case("merge-delta r4 M2: ...and against the reviewed commit, only the edited LF name",
+             _or_raised(lambda: changed_paths(_cli_r)), [_LF])
+        case("merge-delta r4 M2: `added_paths` keeps a CR, an LF and a raw 0xe9 byte apart",
+             _or_raised(lambda: sorted(p for p in added_paths("master") if p.startswith("lib/"))),
+             sorted([_LF, _CR, _E9]))
+        case("merge-delta r4 M2: ...and against the reviewed commit, nothing was added",
+             _or_raised(lambda: added_paths(_cli_r)), [])
+        case("merge-delta r4 BLOCKER: the full CLI charges the edited LF name beside a CR twin",
+             _verdict_at(_cli_r) or _quiet(lambda: main(["--base", "master"])), 1)
+        case("merge-delta r4 BLOCKER control: a round at the edited commit clears the same tree",
+             _verdict_at(_cli_e) or _quiet(lambda: main(["--base", _cli_base])), 0)
+    finally:
+        globals()["ROOT"] = _real_root
+        shutil.rmtree(_cli, ignore_errors=True)
+    shutil.rmtree(_tmp, ignore_errors=True)
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, NOT A STYLE CHOICE. `check-plan-code`'s mutation harness
     # attributes a kill by reading `l.strip().startswith("[FAIL] ")`, slicing `[7:]`, then

@@ -8,6 +8,8 @@
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ shipped — merged in PR #292 (*"A goal shows the work that pursued it: spec, plan, and the pull reque…"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Goal:** Each goal card on `/goals` shows the work that pursued it as `spec → plan → PR` threads, so
 a reader can find the pull requests, not just the documents.
 

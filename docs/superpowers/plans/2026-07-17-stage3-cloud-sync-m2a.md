@@ -7,6 +7,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ shipped — no thread-specific PR — this design predates PR-numbered merges; the work was committed directly; the sync path is in the product (`lib/`, `worker/`) and M2 shipped.
+
 **Goal:** Give the single author a manual **Cloud Sync** command that reconciles their local research corpus with their own multi-tenant cloud tenant — two-class reconciliation (generated content by format/corrections-currency, human edits per-field newer-wins), additive + baseline-aware deletes, Supabase-Auth session, per-playlist manifest.
 
 **Architecture:** A new `lib/cloud-sync/` module holds pure reconcile logic (`content-hash`, `reconcile-class-a`, `reconcile-class-b`, `companion`) plus stateful helpers (`manifest`, `registry`, `auth`) and an orchestrator (`sync-run`). Sync reads/writes through the **existing `MetadataStore`/`BlobStore` seams** — the *local* replica via `LocalFsMetadataStore`, the *cloud* replica via `SupabaseMetadataStore` constructed with the **user's Supabase session client** (never the service-role key — RLS enforces `owner_id = auth.uid()`). New per-video sync signals (`mdGeneratedAt`, `mdCorrectionsHash`, per-field `annotationsEditedAt`) are added to `VideoSchema` and stamped by the SQL RPCs (migration 0021) and the local store. A `scripts/cloud-sync.ts` CLI (mirroring `worker/main.ts`) is the trigger.

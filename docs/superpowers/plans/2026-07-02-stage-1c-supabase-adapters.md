@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ shipped — no thread-specific PR — this design predates PR-numbered merges; the work was committed directly; the cloud app is deployed and `lib/supabase/` holds the adapters this design specified.
+
 **Goal:** Ship async, transactional `SupabaseMetadataStore` + `SupabaseBlobStore` on the 1B schema, behind capability contracts, verified against a local Supabase stack — while the personal local workflow stays byte-for-byte unchanged and default.
 
 **Architecture:** Extend the 1A `lib/storage/` seam. Make `MetadataStore` async + intent-specific (retire whole-index `writeIndex`); add a new `BlobStore` contract. Provide local impls (wrap today's FS/`index-store` behavior) and Supabase impls (Postgres rows + Storage objects, RLS-isolated). A single `getStorageBundle()` selects the backend; cloud is reached only via tests in 1C (routes stay local, guarded by `getPrincipalFromSession()`).

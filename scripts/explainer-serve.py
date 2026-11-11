@@ -32,6 +32,9 @@ newest one, so no filename ever has to be copied again. `/` lists them all, newe
 STANDING PAGES — a fixed url for a page that is rewritten, not re-created
 ------------------------------------------------------------------------
     http://127.0.0.1:7391/backlog-table        ← scripts/gen-backlog-page.py
+    http://127.0.0.1:7391/work-lines-archive   ← FROZEN: the retired work-lines page (backlog #389);
+                                                  `/work-lines` redirects here
+    http://127.0.0.1:7391/goal-tree            ← scripts/goal-tree.py
 
 Some pages are not a snapshot of a moment but a live view of something in the repo, regenerated in
 place. They are recognised by their filename carrying NO date, and they get two things:
@@ -63,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 202 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 239 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -82,12 +85,14 @@ import io
 import json
 import os
 import pathlib
+import posixpath
 import re
 import shlex
 import signal
 import socket
 import subprocess
 import threading
+import time
 import sys
 import urllib.parse
 from typing import Callable, NamedTuple
@@ -110,6 +115,11 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent
 # only because of where the caller stood is a check that will one day stand somewhere else.
 REPO = SCRIPTS.parent
 REGEN_TIMEOUT = 300
+# A page whose rebuild is pressed while the owner watches gets a tighter bound than the
+# default. Backlog #497, the owner 2026-11-04 01:07: the goal tree refreshes on a click, so
+# a click must answer within a minute, never hang for five. MEASURED 2026-11-04: `goal-tree.py --page`
+# took 7.08, 7.95 and 6.41 s, so the bound is max(60, 2 x the slowest = 15.9) = 60 s.
+REGEN_TIMEOUTS = {"goal-tree": 60}
 # ⚠ The ONLY pages `POST /regenerate` may rebuild. A dict of LITERALS, deliberately: the
 # caller names a key, never a path or an argument, so nothing it sends reaches the
 # command line. Adding a page here is a visible act; resolving one from the request
@@ -119,11 +129,77 @@ REGEN_TIMEOUT = 300
 # file, while rebuilding two DIFFERENT pages at once is harmless and stays parallel.
 REGEN_LOCKS: dict[str, "threading.Lock"] = {}
 REGEN_LOCKS_GUARD = threading.Lock()
+# backlog #408: a Refresh press runs the generator THROUGH this runner (`--page <key>`), never directly.
+REGEN_RUNNER = "regen-pages.py"
+# Seconds a timed-out runner gets, after SIGTERM, to kill its generators, remove its tree and exit.
+REGEN_GRACE = 15
+# Seconds the pipes are drained after SIGKILL before they are CLOSED (review r2 F4): a descendant that left the
+# group (`setsid`) can hold them open for ever, and EOF is never waited for past this bound.
+REGEN_DRAIN = 2
+
+
+def _signal_group(pgid: int, sig: int) -> None:
+    try:
+        os.killpg(pgid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _reap_killed(p: subprocess.Popen) -> None:
+    """After SIGKILL to `p`'s group: drain its pipes for at most REGEN_DRAIN s, then CLOSE them and reap `p`
+    itself, without waiting for EOF from a descendant outside the group (review r2 F4 — an unbounded
+    `communicate()` here waited 3.08 s, and for ever, on one)."""
+    try:
+        p.communicate(timeout=REGEN_DRAIN)
+    except subprocess.TimeoutExpired:
+        for f in (p.stdout, p.stderr):
+            try:
+                f.close()
+            except OSError:
+                pass
+        try:
+            p.wait(timeout=REGEN_DRAIN)
+        except subprocess.TimeoutExpired:
+            pass                                       # SIGKILLed already; nothing more can be sent
+
+
+def run_in_group(argv: list[str], *, timeout: float) -> subprocess.CompletedProcess:
+    """`subprocess.run(argv, capture_output=True, text=True, timeout=timeout)`, with the runner in a process
+    group of its own (backlog #408, review r1 X3). On a timeout the GROUP gets SIGTERM — the runner's handler
+    then kills its generators' groups, removes its tree and closes its lock — and SIGKILL only after
+    REGEN_GRACE s; then the timeout is raised as before. Before this a timeout SIGKILLed the runner alone, so
+    its generator ran on while the lock it was built under was released. ⚠ The 504 therefore comes up to
+    REGEN_GRACE s after the click's bound when the runner is slow to stop, plus at most 2 x REGEN_DRAIN s for
+    a descendant that left the group and holds the pipes (`_reap_killed`). ⚠ BOUND: such a descendant is not
+    killed, only no longer waited for — the same bound `regen-pages.py` states."""
+    p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                         text=True, start_new_session=True)
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _signal_group(p.pid, signal.SIGTERM)
+        try:
+            p.communicate(timeout=REGEN_GRACE)
+        except subprocess.TimeoutExpired:
+            _signal_group(p.pid, signal.SIGKILL)
+            _reap_killed(p)
+        raise
+    except BaseException:
+        _signal_group(p.pid, signal.SIGKILL)
+        _reap_killed(p)
+        raise
+    return subprocess.CompletedProcess(argv, p.returncode, out, err)
+
+
+# What a Refresh press runs the runner with. A module name, so the suite can stand in for it.
+REGEN_EXEC = run_in_group
 REGENERABLE = {
     "dashboard": "gen-dashboard.py",
     "backlog-table": "gen-backlog-page.py",
     "goals": "gen-goals-page.py",
     "features": "gen-features-page.py",
+    # Run with no arguments it snapshots (gh + git, logged only if the tree changed) AND renders.
+    "goal-tree": "goal-tree.py",
 }
 # ⟳ 2026-09-02. Which repo file each derived page is BUILT FROM, for `/_stale`.
 #
@@ -152,7 +228,24 @@ PAGE_SOURCES = {
     # Teaching `/_stale` about directories (rglob each entry, take the max mtime) is a real change
     # to this file and is deliberately out of that plan's scope.
     "features": ["docs/features.md", "docs/anchors.md", "docs/backlog.md"],
+    # The declared threads only: the snapshot log is git-ignored (no checkout would carry it, which the
+    # every-source-is-a-real-file case below would refuse), and the STATES move with gh and git, which
+    # no file carries — so "fresh" here means "nothing re-declared since", not "gh agrees".
+    "goal-tree": ["docs/goal-threads.md"],
 }
+# ⛔ THE ONLY PAGES WITH NO `/_stale` BANNER, and why — the self-test holds this set EQUAL to the
+# keys whose source list is empty, so an empty list can never appear on another page silently.
+# ⟳ backlog #389: EMPTY now — its one member, the work-lines page, retired. The case below still
+# holds this set equal to the pages with no sources, so the next exemption must be named here.
+STALE_EXEMPT: dict[str, str] = {}
+# ⛔ A RETIRED PAGE REDIRECTS TO ITS ARCHIVE, AND IS NEVER LISTED (backlog #389). A stale copy of the
+# old file may still sit in a checkout's served directory (it was never tracked); serving or listing it
+# would present a retired page as current, which is that row's FAILS-IF. ⟳ r1 (both halves): this was a
+# map of URL SPELLINGS, and `/%77ork-lines.html` and `/./work-lines.html` served the stale copy, because
+# retirement read the raw url while the resolver decoded and normalised it. It is now keyed by the
+# CANONICAL page — the file name the resolver would serve, from the root — see `retired_target`.
+RETIRED_FILES = {"work-lines.html": "/work-lines-archive"}
+_RETIRED_FOLDED = {k.casefold(): v for k, v in RETIRED_FILES.items()}
 
 
 def stale_verdict(built_ns: int, newest_source_ns: int) -> str:
@@ -281,6 +374,22 @@ SRC_ROOT_ENV = "EXPLAINER_DOCS_ROOT"
 
 # ── pure helpers, all covered by --self-test ─────────────────────────────────────────────────────
 
+# ⛔ WHAT `Path.resolve()` RAISES DEPENDS ON THE PYTHON VERSION (backlog #389, CI red on PR #434): on a
+# symlink LOOP, 3.12 — the version CI pins — raises RuntimeError; 3.13+ raises OSError (ELOOP) or returns
+# a path. Every resolve on the serve and index paths goes through `resolve_or_none`, so no call site can treat
+# one version's loop as a crash and another's as a refusal.
+UNRESOLVABLE = (OSError, ValueError, RuntimeError)
+
+
+def resolve_or_none(p: pathlib.Path) -> pathlib.Path | None:
+    """`p.resolve()`, or None when it cannot be resolved — a loop (RuntimeError on 3.12, OSError later),
+    a NUL byte (ValueError), a name too long. Never raises."""
+    try:
+        return p.resolve()
+    except UNRESOLVABLE:
+        return None
+
+
 def safe_path(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     """Resolve a URL path inside `root`, or None if it escapes or is not a servable type.
 
@@ -299,11 +408,14 @@ def safe_path(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     # OSError joins ValueError because a path can also be unresolvable for
     # filesystem reasons (ENAMETOOLONG, ELOOP), and this function's contract is
     # "a path inside root, or None" — never "or an exception".
+    # ⟳ backlog #389: the resolves are `resolve_or_none`, which also absorbs 3.12's RuntimeError on a loop.
+    candidate, base = resolve_or_none(root / raw), resolve_or_none(root)
+    if candidate is None or base is None:
+        return None                      # not a resolvable path at all
     try:
-        candidate = (root / raw).resolve()
-        candidate.relative_to(root.resolve())
-    except (OSError, ValueError):
-        return None                      # escaped the root, or is not a resolvable path at all
+        candidate.relative_to(base)
+    except ValueError:
+        return None                      # escaped the root
     if candidate.suffix.lower() not in SERVABLE:
         return None
     return candidate
@@ -735,7 +847,11 @@ def explainers(root: pathlib.Path) -> list[pathlib.Path]:
     """Explainer PAGES, newest first by mtime. Composer fragments are not pages — see above."""
     if not root.is_dir():
         return []
-    return sorted((p for p in root.glob("*.html") if p.is_file() and not is_fragment(p)),
+    # ⛔ backlog #389: only a LIVE page is listed (so reachable from `/` and /latest) — by the same `classify`
+    # the server redirects on, so an alias, a chain through the retired name, a differently-cased name or a
+    # refused chain is never listed (r2 Y4, r3 Z1).
+    return sorted((p for p in root.glob("*.html")
+                   if p.is_file() and not is_fragment(p) and classify(p, root)[0] == "live"),
                   key=lambda p: p.stat().st_mtime, reverse=True)
 
 
@@ -759,6 +875,126 @@ def latest_target(root: pathlib.Path) -> str | None:
     return "/" + urllib.parse.quote(found[0].name) if found else None
 
 
+def page_candidates(url_path: str, root: pathlib.Path) -> list[tuple[pathlib.Path, pathlib.Path]]:
+    """The contained candidates a GET for `url_path` may serve, in order, each as (its UNRESOLVED path,
+    its resolved path): the direct path, then — for an EXTENSIONLESS final segment only — the same name
+    with `.html`. Existence is NOT checked here; `served_candidate` picks the one the server serves."""
+    out = []
+    hit = safe_path(url_path, root)
+    # ⛔ DECODE BEFORE ASKING "DID IT HAVE AN EXTENSION?" — see `resolve_page` for the measured history.
+    bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
+    rel = posixpath.normpath("/" + bare.lstrip("/")).lstrip("/")
+    if hit is not None:
+        out.append((root / rel, hit))
+    if "." not in bare.rsplit("/", 1)[-1]:
+        alt = safe_path(urllib.parse.quote(bare) + ".html", root)
+        if alt is not None:
+            out.append((root / (rel + ".html"), alt))
+    return out
+
+
+def served_candidate(url_path: str, root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
+    """THE candidate a GET serves — the first whose resolved path is a FILE — as (unresolved, resolved),
+    or None. ONE selection, shared by `resolve_page` (which serves it) and `retirement` (which classifies
+    exactly it). ⟳ #389 r4 (W1): classification picked the first candidate that EXISTED, so an `alias/`
+    directory was classified live while `alias.html`, a hard link to the retired page, was served."""
+    return next(((lex, res) for lex, res in page_candidates(url_path, root) if res.is_file()), None)
+
+
+def requested_name(url_path: str) -> str | None:
+    """PURE. The page NAME a url asks for, before the filesystem is consulted: decoded once (as
+    `safe_path` decodes), `.`/`..` collapsed, `.html` on a bare name — or None for a path
+    below the root. ⟳ #389 r2 (Y2, Y3): the round-1 rule judged only the RESOLVED file, so a symlink NAMED
+    `work-lines.html` pointing at a live page lost the retired name, and `/WORK-LINES.html` (one file on
+    a case-insensitive filesystem) matched no key."""
+    bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
+    head, name = posixpath.split(posixpath.normpath("/" + bare.lstrip("/")))
+    if head != "/" or not name or name in (".", ".."):
+        return None
+    return name if "." in name else name + ".html"   # casefolded once, by `retirement`
+
+
+MAX_HOPS = 16   # symlinks followed, link by link, before a chain is REFUSED (a loop ends here too)
+
+
+def _inside(p: pathlib.Path, root: pathlib.Path) -> bool:
+    """Lexically inside the served root, as given or as resolved (`~/explainers` is itself a symlink)."""
+    bases = {pathlib.Path(os.path.normpath(root.absolute())), resolve_or_none(root)} - {None}
+    return any(p == b or b in p.parents for b in bases)
+
+
+def classify(lexical: pathlib.Path, root: pathlib.Path) -> tuple[str, str | None]:
+    """THE ONE retirement decision (backlog #389), for a request, an index candidate and /latest alike.
+    -> ("retired", archive url) | ("refused", why) | ("live", None).
+
+    ⟳ r3 (Z1, route SPLIT): r2 judged the requested name and the FINAL file, so `chain -> alias ->
+    work-lines.html -> live.html` served stale content — resolution erased the retired name in the
+    middle. Now the symlink chain is walked LINK BY LINK with `os.readlink`, each step normalised against
+    the link's own directory, and a request is retired when ANY name it traverses, casefolded, is a
+    retired name; or (hard links) when the final file is the same file as a REAL retired page.
+    ⛔ A chain that leaves the served root, or runs past MAX_HOPS (a loop), is REFUSED — the handler
+    answers 403 — never served. ⚠ BOUND: only the FINAL component's symlinks are walked; a symlinked
+    DIRECTORY on the way is not, though `safe_path` still refuses anything it resolves outside the root."""
+    cur = pathlib.Path(os.path.normpath(lexical.absolute()))
+    names, hops = [cur.name], 0
+    while True:
+        if not _inside(cur, root):
+            return "refused", "its symlink chain leaves the served root"
+        if not os.path.islink(cur):
+            break
+        hops += 1
+        if hops > MAX_HOPS:
+            return "refused", f"its symlink chain is longer than {MAX_HOPS} links (or loops)"
+        cur = pathlib.Path(os.path.normpath(cur.parent / os.readlink(cur)))
+        names.append(cur.name)
+    for n in names:
+        if n.casefold() in _RETIRED_FOLDED:
+            return "retired", _RETIRED_FOLDED[n.casefold()]
+    if os.path.exists(cur):
+        for retired, target in RETIRED_FILES.items():
+            rp = root / retired
+            try:
+                if rp.is_file() and not rp.is_symlink() and os.path.samefile(cur, rp):
+                    return "retired", target
+            except OSError:
+                continue
+    return "live", None
+
+
+def lexical_candidates(url_path: str, root: pathlib.Path) -> list[pathlib.Path]:
+    """The UNRESOLVED paths a request names, existing ones only: decoded once, `.`/`..` collapsed, then the
+    `.html` fallback for a bare name — `page_candidates` before the filesystem resolves anything."""
+    bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
+    rel = posixpath.normpath("/" + bare.lstrip("/")).lstrip("/")
+    if not rel or rel in (".", ".."):
+        return []
+    out = [root / rel] + ([root / (rel + ".html")] if "." not in rel.rsplit("/", 1)[-1] else [])
+    return [p for p in out if os.path.lexists(p)]
+
+
+def retirement(url_path: str, root: pathlib.Path) -> tuple[str, str | None]:
+    """A request's verdict: a retired NAME (even with no file behind it) is retired; otherwise the very
+    candidate the server would serve (`served_candidate`) is `classify`d. -> ("retired", url) | ("refused", why) | ("live", None)."""
+    name = requested_name(url_path)
+    if name is not None and name.casefold() in _RETIRED_FOLDED:
+        return "retired", _RETIRED_FOLDED[name.casefold()]
+    sc = served_candidate(url_path, root)
+    if sc is not None:
+        return classify(sc[0], root)           # EXACTLY what the server would serve, walked unresolved
+    # Nothing would be served: a dangling, looping or escaping LINK still gets its verdict (403), and
+    # an existing directory is never a verdict at all.
+    for lex in lexical_candidates(url_path, root):
+        if os.path.islink(lex):
+            return classify(lex, root)
+    return "live", None
+
+
+def retired_target(url_path: str, root: pathlib.Path) -> str | None:
+    """The archive a request for a RETIRED page redirects to, or None."""
+    kind, info = retirement(url_path, root)
+    return info if kind == "retired" else None
+
+
 def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     """The file a GET should serve, or None. `safe_path` first; then, for an EXTENSIONLESS path,
     the same name with `.html` — so `/backlog-table` serves `backlog-table.html`.
@@ -769,9 +1005,6 @@ def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     Existence is checked HERE, unlike in `safe_path`, whose job is containment only. Returning a
     path to a file that is not there would make `/anything` look resolvable and push the real
     decision onto every caller."""
-    hit = safe_path(url_path, root)
-    if hit is not None and hit.is_file():
-        return hit
     # ⛔ DECODE BEFORE ASKING "DID IT HAVE AN EXTENSION?" — found 2026-09-16 by the Codex half,
     # retroactively, after three Claude rounds had cased `/secret.env` and never its encoded twin.
     # MEASURED on the pre-fix code, with `secret.env.html` present in the root:
@@ -781,9 +1014,6 @@ def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     # still judged a path by its pre-decoded form — a classifier and its resolver disagreeing about
     # what the same request says. ⚠ Unquote only; no `.lower()` and no normalisation beyond it,
     # because the question is the literal presence of a dot in the final segment.
-    bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
-    if "." in bare.rsplit("/", 1)[-1]:
-        return None                      # it HAD an extension; the fallback is not a second chance
     # ⛔⛔ RE-ENCODED, BECAUSE `safe_path` UNQUOTES AGAIN — and the first version of this fix did
     # not, which MOVED the bypass instead of closing it. `bare` is now decoded (above), and handing
     # it to `safe_path` decodes a SECOND time, so the classifier judged one decoding and the
@@ -795,8 +1025,10 @@ def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     # The middle and bottom rows INVERTED between master and the first fix — i.e. it was a
     # regression at `%25`, not a gap it failed to reach. Quoting restores the invariant the rule
     # needs: the fallback resolves exactly the string the extension test judged.
-    alt = safe_path(urllib.parse.quote(bare) + ".html", root)
-    return alt if alt is not None and alt.is_file() else None
+    # The selection is `served_candidate`, shared with `retirement` (backlog #389 r4): the direct path,
+    # then the `.html` fallback for an extensionless name; the first that is a FILE is served.
+    sc = served_candidate(url_path, root)
+    return sc[1] if sc is not None else None
 
 
 def index_html(root: pathlib.Path) -> str:
@@ -1024,7 +1256,20 @@ RELOAD_JS = """
   // cannot reach the server we cannot trust the staleness answer either.
   var serverMsg = '';   // owned by poll()      — "I cannot reach the server"
   var staleMsg  = '';   // owned by pollStale() — "the output is behind its source"
-  function render() { say(serverMsg || staleMsg); }
+  //
+  // ⛔ AND A THIRD WRITER THE 09-02 FIX DID NOT SEE: THE REFRESH BUTTON — backlog #502. Its
+  // handler (page_chrome.py) writes "rebuilding…" into this span, and render() blanked it on the
+  // next 2 s poll. MEASURED 2026-11-04 in Chrome: blank at 0.85 s, reload at 7.9 s, so the click
+  // looked dead and the owner clicked twice. The button's text is the answer to what the reader
+  // just DID, so it outranks the stale warning; the handler marks it with `data-refresh`, and a
+  // reload (the only way a rebuild ends well) clears the mark with the page.
+  // ⚠ BUT NOT THE OUTAGE — r1 CODEX MEDIUM. The first version put the claim FIRST, and a claim
+  // never expires: a rebuild left hanging, or one that failed, then hid "server not responding"
+  // for as long as the page stayed open. An unreachable server outranks everything, as above.
+  function render() {
+    var s = document.getElementById('chrome-refresh-say');
+    say(serverMsg || (s && s.getAttribute('data-refresh')) || staleMsg);
+  }
   var misses = 0;
   // ⛔ NOT 1. A single failed poll is a blip — a laptop waking, a restart mid-request — and
   // shouting on the first one trains the reader to ignore the message, which is worse than
@@ -1141,6 +1386,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", target)
             self.end_headers()
             return
+        verdict, info = retirement(path, ROOT)
+        if verdict == "retired":
+            self.send_response(302)
+            self.send_header("Location", info)
+            self.end_headers()
+            return
+        if verdict == "refused":
+            return self._send(403, f"refused: {info}".encode(), "text/plain; charset=utf-8")
         if path == "/_rev":
             # Change detection for the injected live-reload client. Goes through resolve_page —
             # the SAME resolver the page GET below uses — so the two agree by construction: if
@@ -1211,7 +1464,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             text = target.read_text(errors="replace")
             if "raw=1" in (self.path.split("?", 1)[1] if "?" in self.path else ""):
                 return self._send(200, text.encode(), "text/plain; charset=utf-8")
-            rel = str(target.relative_to(root.resolve()))
+            rel = str(target.relative_to(resolve_or_none(root) or root))
             return self._send(200, source_shell(rel, text).encode(), "text/html; charset=utf-8")
         resolved = resolve_page(path, ROOT)
         if resolved is None or not resolved.is_file():
@@ -1229,7 +1482,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         ⚠ THE ALLOW-LIST IS THE WHOLE SECURITY ARGUMENT, and it is a dict of literals:
         the caller names a KEY, never a path, an argument or a command. Nothing the
-        caller sends reaches the command line — a request for an unknown page is a 400
+        caller sends reaches the command line but a string PROVEN to be one of those keys
+        (backlog #408: the runner's `--page <key>`) — a request for an unknown page is a 400
         naming the legal set, not an attempt to resolve it. `shell=False` (a list argv)
         and a timeout are the belt to that brace.
 
@@ -1245,14 +1499,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(400, body.encode("utf-8"), "text/plain; charset=utf-8")
         with REGEN_LOCKS_GUARD:
             lock = REGEN_LOCKS.setdefault(want, threading.Lock())
+        limit = REGEN_TIMEOUTS.get(want, REGEN_TIMEOUT)
+        # ⛔ review r2 X2: the bound is the CLICK's, not the subprocess's. The deadline is taken BEFORE the
+        # lock, the lock wait is bounded by it, and the rebuild gets only what is left — so a second click
+        # waiting on a first answers with the timeout at the bound, never a full bound later.
+        deadline = time.monotonic() + limit
         try:
-            with lock:
-                r = subprocess.run([sys.executable, str(SCRIPTS / script)],
-                                   capture_output=True, text=True, timeout=REGEN_TIMEOUT)
+            if not lock.acquire(timeout=limit):
+                raise subprocess.TimeoutExpired(cmd=script, timeout=limit)
+            try:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise subprocess.TimeoutExpired(cmd=script, timeout=limit)
+                # ⛔ backlog #408: through the ONE runner, which builds from a fresh origin/master tree
+                # and says CANNOT RUN (exit 2) rather than build from this server's own, possibly stale,
+                # checkout. `want` reaches the argv only once `script` proved it an allow-list KEY (a
+                # list argv, no shell), and the runner checks it against the same table again.
+                # ⛔ review r1 X3: in a process group of its own, stopped with SIGTERM on a timeout, so the runner
+                # ends its generators before it lets go of the lock — see `run_in_group`.
+                r = REGEN_EXEC([sys.executable, str(SCRIPTS / REGEN_RUNNER), "--page", want], timeout=left)
+            finally:
+                lock.release()
         except subprocess.TimeoutExpired:
             # A timeout is NOT a failure to report as "rebuilt". The reader is told the
             # page may now be half-written, because silence here reads as success.
-            return self._send(504, (f"{script} did not finish in {REGEN_TIMEOUT}s — the page "
+            return self._send(504, (f"{script} did not finish in {limit}s — the page "
                                     f"may be unchanged. NOT REBUILT.").encode(),
                               "text/plain; charset=utf-8")
         if r.returncode != 0:
@@ -1358,9 +1629,44 @@ def status() -> int:
 # ── self-test ────────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import tempfile
     ok = 0
     cases: list[tuple[str, Callable[[], object]]] = []
+
+    def _run_reload_js(claimed: bool, stale: bool, down: bool = False) -> str:
+        """Run RELOAD_JS on a stub page whose span reads "rebuilding…"; return the span's text
+        after both polls settle, or a CANNOT RUN string (never equal to any expected value).
+        `down`: every fetch rejects and the interval fires twice more, so three polls miss."""
+        import json as _j
+        js = RELOAD_JS.strip().removeprefix("<script>").removesuffix("</script>")
+        stub = ("var span={textContent:'rebuilding\\u2026',a:{},getAttribute:function(k){return k in this.a?this.a[k]:null;},"
+                "setAttribute:function(k,v){this.a[k]=String(v);}};"
+                "if(CLAIMED)span.setAttribute('data-refresh','rebuilding\\u2026');"
+                "var G=globalThis;G.document={getElementById:function(i){return i==='chrome-refresh-say'?span:null;},"
+                "querySelectorAll:function(){return [];},addEventListener:function(){},activeElement:null,visibilityState:'visible'};"
+                "G.window=G;G.scrollY=0;G.scrollTo=function(){};G.addEventListener=function(){};G.setInterval=function(f){G.tick=f;};"
+                "Object.defineProperty(G,'location',{configurable:true,value:{pathname:'/x.html',reload:function(){}}});"
+                "G.sessionStorage={getItem:function(){return null;},setItem:function(){},removeItem:function(){}};"
+                "G.fetch=function(u){if(DOWN)return Promise.reject(new Error('down'));var t=u.indexOf('/_stale')===0?(STALE?'stale docs/x.md':'fresh'):'r1';"
+                "return Promise.resolve({ok:true,text:function(){return Promise.resolve(t);}});};"
+                ).replace("CLAIMED", _j.dumps(claimed)).replace("STALE", _j.dumps(stale)).replace("DOWN", _j.dumps(down))
+        prog = stub + js + ("\nif(%s){G.tick();G.tick();}" % _j.dumps(down)) + "\nsetTimeout(function(){console.log(JSON.stringify(span.textContent));},50);"
+        try:
+            r = subprocess.run(["node", "-e", prog], capture_output=True, text=True, timeout=30)
+            if r.returncode:
+                return f"CANNOT RUN: node rc={r.returncode} {r.stderr.strip()[:160]}"
+            return _j.loads(r.stdout.strip().splitlines()[-1])
+        except FileNotFoundError:
+            return "CANNOT RUN: node is not on PATH — treat this as NOT RUN"
+        except Exception as e:
+            return f"CANNOT RUN: {e}"
 
     def case(name, fn):
         cases.append((name, fn))
@@ -1493,6 +1799,21 @@ def _self_test() -> int:
         case("...and every declared source is a real file in the repo",
              lambda: [s for ss in PAGE_SOURCES.values() for s in ss
                       if not (REPO / s).is_file()] == [])
+        # ⛔ THE EXEMPTION IS EXPLICIT, AND IT CANNOT SPREAD. The file-only case above passes
+        # VACUOUSLY on an empty list, so emptiness itself is pinned: exactly the pages named in
+        # STALE_EXEMPT have no sources, and each exemption states its reason.
+        case("an EMPTY source list is exactly the STALE_EXEMPT set, each with a reason",
+             lambda: (sorted(k for k, v in PAGE_SOURCES.items() if not v), sorted(STALE_EXEMPT),
+                      all(STALE_EXEMPT.values())) == ([], [], True))
+        case("⛔ backlog #389: the retired work-lines page is NOT regenerable, and its urls go to the archive",
+             lambda: ("work-lines" not in REGENERABLE,
+                      [retired_target(u, REPO / "docs" / "explainers")
+                       for u in ("/work-lines", "/work-lines.html", "/goal-tree")])
+             == (True, ["/work-lines-archive", "/work-lines-archive", None]))
+        case("...and a live page's url is not redirected",
+             lambda: retired_target("/dashboard", REPO / "docs" / "explainers") is None)
+        case("...and the archive it redirects to is a real, tracked file that says it is ARCHIVED",
+             lambda: "ARCHIVED" in (REPO / "docs/explainers/work-lines-archive.html").read_text())
 
         # ⚠ THE SHIPPED FUNCTION, not a copy of its rule. See `stale_verdict`'s docstring:
         # the first draft defined the comparison again right here, which would have kept
@@ -1683,6 +2004,20 @@ def _self_test() -> int:
         # COMMENTS above that quote the old call while explaining why it is gone. A check about
         # code that prose can satisfy is measuring the wrong population; this one strips line
         # comments first. `_stale_no_url_literals` below guards the strip's one precondition.
+        # ⛔ BEHAVIOUR, RUN UNDER NODE — backlog #502. The client blanked the Refresh button's
+        # "rebuilding…" 0.85 s into a 7.9 s rebuild (measured in Chrome), so a click looked dead.
+        # A substring check cannot see that: the defect was a correct-looking render() meeting a
+        # writer in ANOTHER file. So this runs the real RELOAD_JS against a stub page, twice from
+        # one start — span claimed by the Refresh button, and not — and reads the span after both
+        # polls settle. The unclaimed world must still be blanked or warned, or the claim test
+        # would pass on a client that never writes at all.
+        case("a Refresh claim survives both polls; an unclaimed span is still the polls' (run)",
+             lambda: _run_reload_js(claimed=True, stale=False) == "rebuilding\u2026"
+                     and _run_reload_js(claimed=True, stale=True) == "rebuilding\u2026"
+                     and _run_reload_js(claimed=False, stale=False) == ""
+                     and _run_reload_js(claimed=False, stale=True).startswith("docs/x.md has changed")
+                     # r1 CODEX MEDIUM: the claim must NOT outrank an unreachable server
+                     and _run_reload_js(claimed=True, stale=True, down=True).startswith("server not responding"))
         case("no poll clears the whole status line; each owns its own state",
              lambda: "say('')" not in _js_code_only(RELOAD_JS)
                      and "serverMsg" in RELOAD_JS and "staleMsg" in RELOAD_JS)
@@ -2371,6 +2706,179 @@ def _self_test() -> int:
             h._send = lambda code, body, ctype: got.update(code=code, body=body, ctype=ctype)
             h.do_GET()
             return got.get("code"), got.get("body", b""), got.get("ctype", "")
+        def _drive_redirect(url_path):
+            got = {}
+            h = object.__new__(Handler)
+            h.path = url_path
+            h.send_response = lambda code: got.update(code=code)
+            h.send_header = lambda k, v: got.update({k: v})
+            h.end_headers = lambda: None
+            h._send = lambda code, body, ctype: got.update(code=code)
+            h.do_GET()
+            return got.get("code"), got.get("Location")
+        case("⭐ backlog #389: GET /work-lines REDIRECTS to the archive, end to end through do_GET",
+             lambda: _drive_redirect("/work-lines") == (302, "/work-lines-archive"))
+        # ⛔ backlog #389 r1 (both halves): with a STALE work-lines.html on disk, every spelling of the
+        # page — encoded, `./`-normalised, bare, `.html` — redirects; none serves the stale copy, and
+        # the index does not list it. A temp root, so the real served directory is never touched.
+        def _with_stale_root(fn):
+            import tempfile as _tfr
+            with _tfr.TemporaryDirectory() as _sd:
+                _sr = pathlib.Path(_sd)
+                (_sr / "work-lines.html").write_text("<p>STALE live page</p>")
+                (_sr / "2026-10-01-topic-live.html").write_text("<p>a live page</p>")
+                _real_root = globals()["ROOT"]
+                globals()["ROOT"] = _sr
+                try:
+                    return fn(_sr)
+                finally:
+                    globals()["ROOT"] = _real_root
+        case("⭐ #389 r1: every spelling of the retired page REDIRECTS, even with a stale copy on disk",
+             lambda: _with_stale_root(lambda _r: [_drive_redirect(u) for u in (
+                 "/%77ork-lines.html", "/./work-lines.html", "/work-lines", "/work-lines.html",
+                 "/sub/../work-lines.html")]) == [(302, "/work-lines-archive")] * 5)
+        case("...but a same-named file in a SUBDIRECTORY is a different page, not the retired one",
+             lambda: _with_stale_root(lambda _r: retired_target("/sub/work-lines.html", _r)) is None)
+        case("...while a live page beside it is still served, not redirected",
+             lambda: _with_stale_root(lambda _r: _drive_get("/2026-10-01-topic-live.html")[0]) == 200)
+        # ⛔ #389 r2 (REDESIGN to identity): symlinks and case. Each world is built in a temp root.
+        def _with_root(build, fn):
+            import tempfile as _tfr
+            with _tfr.TemporaryDirectory() as _sd:
+                _sr = pathlib.Path(_sd)
+                build(_sr)
+                _real_root = globals()["ROOT"]
+                globals()["ROOT"] = _sr
+                try:
+                    return fn(_sr)
+                finally:
+                    globals()["ROOT"] = _real_root
+
+        def _symlink_to_live(r):                      # Codex Y2: a symlink NAMED work-lines.html -> live
+            (r / "live.html").write_text("<p>a live page</p>")
+            (r / "work-lines.html").symlink_to("live.html")
+
+        def _alias_of_stale(r):                       # Codex Y4: an alias symlink to the stale file
+            (r / "work-lines.html").write_text("<p>STALE</p>")
+            (r / "2026-10-28-work-lines.html").symlink_to("work-lines.html")
+            (r / "2026-10-01-topic-live.html").write_text("<p>live</p>")
+        case("⭐ #389 r2: with NO stale file at all, every spelling of the retired NAME still redirects",
+             lambda: _with_root(lambda r: None, lambda _r: [retired_target(u, _r) for u in (
+                 "/WORK-LINES.html", "/./work-lines.html", "/%77ork-lines", "/sub/../work-lines.html")])
+             == ["/work-lines-archive"] * 4)
+        case("⭐ #389 r2 Y2: a symlink NAMED work-lines.html redirects, whatever it points at",
+             lambda: _with_root(_symlink_to_live, lambda _r: [_drive_redirect(u) for u in (
+                 "/work-lines.html", "/work-lines")]) == [(302, "/work-lines-archive")] * 2)
+        case("...while the live page it points at is still served, and still listed",
+             lambda: _with_root(_symlink_to_live, lambda _r: (_drive_redirect("/live.html"),
+                                                             "live.html" in index_html(_r),
+                                                             "work-lines.html" in index_html(_r)))
+             == ((200, None), True, False))
+        case("⭐ #389 r2 Y3: a differently-CASED name is the retired page too",
+             lambda: _with_stale_root(lambda _r: [_drive_redirect(u) for u in (
+                 "/WORK-LINES.html", "/WoRk-LiNeS.hTmL", "/Work-Lines")]) == [(302, "/work-lines-archive")] * 3)
+        case("⭐ #389 r2 Y4: an ALIAS of the retired file is neither listed nor served",
+             lambda: _with_root(_alias_of_stale, lambda _r: (
+                 "2026-10-28-work-lines.html" in index_html(_r), latest_target(_r),
+                 _drive_redirect("/2026-10-28-work-lines.html")))
+             == (False, "/2026-10-01-topic-live.html", (302, "/work-lines-archive")))
+        # ⛔ #389 r3 Z1 (route SPLIT): Codex's chain, a chain leaving the root, and a loop.
+        def _codex_chain(r):
+            (r / "live.html").write_text("<p>STALE work-lines page</p>")
+            (r / "work-lines.html").symlink_to("live.html")
+            (r / "2026-10-28-alias.html").symlink_to("work-lines.html")
+            (r / "2026-10-28-chain.html").symlink_to("2026-10-28-alias.html")
+            (r / "2026-10-01-topic-live.html").write_text("<p>a dated live page</p>")
+        # ⛔ CI red on PR #434: Python 3.12 raises RuntimeError from resolve() on a symlink loop. Simulated
+        # here on any interpreter, so the 3.12 path is exercised where the suite runs.
+        def _try(fn):
+            try:
+                return fn()
+            except Exception as exc:                  # noqa: BLE001 - named, so the case reddens by name
+                return f"RAISED {type(exc).__name__}"
+        def _resolve_raises_runtime(fn):
+            _real = pathlib.Path.resolve
+            def _boom(self, *a, **k):
+                raise RuntimeError(f"Symlink loop from {str(self)!r}")
+            pathlib.Path.resolve = _boom
+            try:
+                return fn()
+            finally:
+                pathlib.Path.resolve = _real
+        case("⛔ #389: a resolve() that raises RuntimeError (3.12's symlink loop) is unresolvable, never a crash",
+             lambda: _resolve_raises_runtime(lambda: [_try(lambda: resolve_or_none(pathlib.Path("/x/a.html"))),
+                                                      _try(lambda: resolve_or_none(pathlib.Path("/y/b.html"))),
+                                                      _try(lambda: safe_path("/a.html", pathlib.Path("/x")))])
+             == [None, None, None])
+        case("⭐ #389 r3 Z1: a chain THROUGH the retired name redirects at every link, alias and chain alike",
+             lambda: _with_root(_codex_chain, lambda _r: [_drive_redirect(u) for u in (
+                 "/2026-10-28-alias.html", "/2026-10-28-chain.html", "/work-lines.html")])
+             == [(302, "/work-lines-archive")] * 3)
+        case("⭐ #389 r3 Z1: neither the alias nor the chain is listed, and /latest never picks them",
+             lambda: _with_root(_codex_chain, lambda _r: (
+                 "2026-10-28-alias" in index_html(_r), "2026-10-28-chain" in index_html(_r), latest_target(_r)))
+             == (False, False, "/2026-10-01-topic-live.html"))
+        case("#389 r3 Z1: classify names the chain's verdict directly, in its own root",
+             lambda: _with_root(_codex_chain, lambda _r: [classify(_r / n, _r) for n in (
+                 "2026-10-28-chain.html", "live.html")])
+             == [("retired", "/work-lines-archive"), ("live", None)])
+        case("...while the independent live target is still served directly, and listed",
+             lambda: _with_root(_codex_chain, lambda _r: (_drive_redirect("/live.html"),
+                                                         "live.html" in index_html(_r))) == ((200, None), True))
+
+        def _escape_and_loop(r):
+            (r / "outside.html").write_text("<p>outside the served root</p>")
+            (r / "served").mkdir()
+            (r / "served" / "2026-10-02-out.html").symlink_to("../outside.html")
+            (r / "served" / "2026-10-03-a.html").symlink_to("2026-10-03-b.html")
+            (r / "served" / "2026-10-03-b.html").symlink_to("2026-10-03-a.html")
+            (r / "served" / "2026-10-04-live.html").write_text("<p>live</p>")
+
+        def _served(fn):
+            def _run(_r):
+                _real = globals()["ROOT"]
+                globals()["ROOT"] = _r / "served"
+                try:
+                    return fn(_r / "served")
+                finally:
+                    globals()["ROOT"] = _real
+            return _with_root(_escape_and_loop, _run)
+        case("⛔ #389 r3: a symlink chain that LEAVES the served root is refused, never served",
+             lambda: _served(lambda sr: classify(sr / "2026-10-02-out.html", sr)[0]) == "refused")
+        case("⛔ #389 r3: a symlink LOOP is refused within the hop bound, never served",
+             lambda: _served(lambda sr: classify(sr / "2026-10-03-a.html", sr))
+             == ("refused", f"its symlink chain is longer than {MAX_HOPS} links (or loops)"))
+        case("⛔ #389 r3: the handler answers a refused chain with 403, and the index lists neither",
+             lambda: _served(lambda sr: (_drive_redirect("/2026-10-02-out.html")[0],
+                                         _drive_redirect("/2026-10-03-a.html")[0],
+                                         [p.name for p in explainers(sr)]))
+             == (403, 403, ["2026-10-04-live.html"]))
+        def _hard_link(r):
+            (r / "work-lines.html").write_text("<p>STALE</p>")
+            os.link(r / "work-lines.html", r / "2026-10-29-hard.html")
+        case("⭐ #389 r3: a HARD LINK to the retired page (no symlink to walk) is the same file, so retired",
+             lambda: _with_root(_hard_link, lambda _r: (_drive_redirect("/2026-10-29-hard.html"),
+                                                       "2026-10-29-hard" in index_html(_r)))
+             == ((302, "/work-lines-archive"), False))
+        def _dir_beside_hard_link(r):                 # Codex r4 W1
+            (r / "work-lines.html").write_text("<p>STALE work-lines page</p>")
+            (r / "alias").mkdir()
+            os.link(r / "work-lines.html", r / "alias.html")
+        case("⭐ #389 r4 W1: a DIRECTORY never suppresses classifying the .html fallback the server serves",
+             lambda: _with_root(_dir_beside_hard_link, lambda _r: (
+                 _drive_redirect("/alias"), _drive_redirect("/alias.html"), "alias.html" in index_html(_r)))
+             == ((302, "/work-lines-archive"), (302, "/work-lines-archive"), False))
+        case("#389 r4: a root without the file serves nothing for the same url",
+             lambda: _with_root(lambda r: (r / "alias").mkdir(), lambda _empty: served_candidate("/alias", _empty))
+             is None)
+        case("#389 r4: classification and serving pick the SAME candidate",
+             lambda: _with_root(_dir_beside_hard_link, lambda _r: (
+                 served_candidate("/alias", _r)[1].name, resolve_page("/alias", _r).name,
+                 served_candidate("/work-lines.html", _r)[0].name, served_candidate("/nothing-here", _r)))
+             == ("alias.html", "alias.html", "work-lines.html", None))
+        case("⛔ #389 r1: the index does NOT list a retired page whose stale file exists",
+             lambda: _with_stale_root(lambda _r: ("work-lines.html" not in index_html(_r),
+                                                  "2026-10-01-topic-live.html" in index_html(_r))) == (True, True))
         def _drive_post(route, raw: bytes, length=None, headers=None):
             got = {}
             h = object.__new__(Handler)
@@ -2551,19 +3059,19 @@ def _self_test() -> int:
         # not at the WIRING.
         def _drive_regen_route(payload_bytes):
             _regen_calls.clear()
-            _real = subprocess.run
+            _real = globals()["REGEN_EXEC"]
             def _spy(*a, **k):
                 _regen_calls.append((a, k))
                 return _ok_runner(*a, **k)
             try:
-                subprocess.run = _spy               # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _spy
                 return _drive_post("/regenerate", payload_bytes)
             finally:
-                subprocess.run = _real              # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _real
         case("POST /regenerate REACHES the allow-list the seven cases above defend",
              lambda: (_drive_regen_route(json.dumps({"page": _page}).encode()),
                       len(_regen_calls) == 1
-                      and _regen_calls[0][0][0][1] == str(SCRIPTS / REGENERABLE[_page]))[1])
+                      and _regen_calls[0][0][0][1:] == [str(SCRIPTS / REGEN_RUNNER), "--page", _page])[1])
 
         # ⛔ r3 MEDIUM 5 — `_send`'s Content-TYPE VALUE was unasserted; only its presence was.
         # `send_header("Content-Type", ctype)` -> a hardcoded `"text/plain"` survived 188/188, i.e.
@@ -2624,15 +3132,15 @@ def _self_test() -> int:
             _regen_calls.clear()
             h = object.__new__(Handler)
             h._send = lambda code, body, ctype: got.update(code=code, body=body)
-            _real = subprocess.run
+            _real = globals()["REGEN_EXEC"]
             def _spy(*a, **k):
                 _regen_calls.append((a, k))
                 return runner(*a, **k)
             try:
-                subprocess.run = _spy            # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _spy
                 Handler._regenerate(h, payload)
             finally:
-                subprocess.run = _real           # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _real
             return got.get("code"), got.get("body", b"")
         def _timeout_runner(*_a, **_k):
             raise subprocess.TimeoutExpired(cmd="x", timeout=REGEN_TIMEOUT)
@@ -2676,17 +3184,65 @@ def _self_test() -> int:
                          for k in REGENERABLE))
         # ⛔ WHAT WOULD ACTUALLY HAVE RUN — the claim "nothing the caller sends reaches the command
         # line", asserted against the recorded argv rather than against the reply.
-        case("the argv is exactly [python, SCRIPTS/<allow-listed script>] — nothing else",
+        case("the argv is exactly [python, SCRIPTS/regen-pages.py, --page, <allow-list key>] — nothing else",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
-                      _regen_calls[0][0][0] == [sys.executable,
-                                                str(SCRIPTS / REGENERABLE[_page])])[1])
+                      _regen_calls[0][0][0] == [sys.executable, str(SCRIPTS / REGEN_RUNNER),
+                                                "--page", _page])[1])
+        # ⛔ backlog #408: EVERY key reaches the runner as itself — a lookup that resolved all of them to
+        # one page, or passed the generator's script name, would rebuild the wrong page or none.
+        case("backlog #408: every allow-listed page is routed through the runner under its OWN key",
+             lambda: [(_drive_regen({"page": k}, _ok_runner), _regen_calls[0][0][0][1:])[1]
+                      for k in sorted(REGENERABLE)]
+                     == [[str(SCRIPTS / REGEN_RUNNER), "--page", k] for k in sorted(REGENERABLE)])
         case("…and it is a LIST argv with no shell — `shell=False` is the belt to that brace",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
                       isinstance(_regen_calls[0][0][0], list)
                       and not _regen_calls[0][1].get("shell", False))[1])
+        # review r2 X2: the rebuild gets what is LEFT of the click's bound, so it is just under the bound, never over.
+        _bounded = lambda kw, b: b - 1 < (kw.get("timeout") or 0) <= b
         case("…and it is bounded by REGEN_TIMEOUT, not left to run forever",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
-                      _regen_calls[0][1].get("timeout") == REGEN_TIMEOUT)[1])
+                      _bounded(_regen_calls[0][1], REGEN_TIMEOUT))[1])
+        # ⛔ Backlog #497: the goal tree is rebuilt on a click while the owner watches, so it gets
+        # its own 60 s bound — and only it; every other page keeps the default.
+        case("the goal tree's rebuild is bounded by its own 60 s, not the 300 s default",
+             lambda: (_regen_calls.clear(), _drive_regen({"page": "goal-tree"}, _ok_runner),
+                      _bounded(_regen_calls[0][1], 60))[2])
+        case("…and a page with no bound of its own still gets REGEN_TIMEOUT",
+             lambda: "backlog-table" not in REGEN_TIMEOUTS and (
+                 _regen_calls.clear(), _drive_regen({"page": "backlog-table"}, _ok_runner),
+                 _bounded(_regen_calls[0][1], REGEN_TIMEOUT))[2])
+        case("…and a goal-tree timeout names the 60 s it actually waited",
+             lambda: b"did not finish in 60s" in _drive_regen({"page": "goal-tree"}, _timeout_runner)[1])
+        # ⛔ review r2 X2 (Codex's input, scaled): two overlapping clicks. The second waited for the lock and then
+        # got a FULL bound of its own — 79 ms and 159 ms at a 100 ms limit. Scaled to a 1.0 s limit and 0.75 s
+        # rebuilds (the second click 50 ms after the first), unfixed is ~1.45 s; the bound with slack is 1.25 s.
+        def _overlap(limit=1.0, build=0.75):
+            def _sleepy(*_a, timeout=None, **_k):
+                if timeout is not None and timeout < build:
+                    time.sleep(max(timeout, 0))
+                    raise subprocess.TimeoutExpired(cmd="x", timeout=timeout)
+                time.sleep(build)
+                return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+            got: list = []
+            def _click():
+                h = object.__new__(Handler)
+                t0 = time.monotonic()
+                h._send = lambda code, body, ctype: got.append((code, time.monotonic() - t0, body))
+                Handler._regenerate(h, {"page": "goal-tree"})
+            _real, _bound = globals()["REGEN_EXEC"], REGEN_TIMEOUTS["goal-tree"]
+            try:
+                globals()["REGEN_EXEC"], REGEN_TIMEOUTS["goal-tree"] = _sleepy, limit
+                ts = [threading.Thread(target=_click) for _ in range(2)]
+                ts[0].start(); time.sleep(0.05); ts[1].start()
+                for t in ts:
+                    t.join()
+            finally:
+                globals()["REGEN_EXEC"], REGEN_TIMEOUTS["goal-tree"] = _real, _bound
+            return sorted(c for c, _, _ in got), max(e for _, e, _ in got) <= limit + 0.25, got
+        case("⛔ review r2 X2: two overlapping Refresh clicks BOTH answer within the bound — the deadline is taken "
+             "before the lock, and a click that cannot finish answers with the timeout",
+             lambda: _overlap()[:2] == ([200, 504], True))
         # ⛔ THE 500 ARM IS THE SIBLING OF ROUND 1'S OWN HEADLINE, three lines below it, and it was
         # left uncased — *after fixing, SEARCH for the class*, failing one `if` later. A generator
         # that exits non-zero must not report a rebuild.
@@ -2706,6 +3262,69 @@ def _self_test() -> int:
         # and ratchet entries are different things, and this is a place they legitimately differ.
         case("…including a SIGNAL-killed generator, whose returncode is negative",
              lambda: _drive_regen({"page": _page}, _sig_runner)[0] == 500)
+
+        # ⛔⛔ review r1 X3: a Refresh TIMEOUT must stop the runner's whole group, SIGTERM first. Real children: a
+        # "runner" that records the SIGTERM it gets, and starts a child in its group that writes a marker 1.5 s on.
+        import tempfile as _tf
+        _gd = pathlib.Path(_tf.mkdtemp(prefix="serve-group-"))
+        (_gd / "runner.py").write_text(
+            "import os, signal, subprocess, sys, time\nd = sys.argv[1]\n"
+            "def term(*_):\n    open(os.path.join(d, 'termed'), 'w').write('1')\n    sys.exit(143)\n"
+            "signal.signal(signal.SIGTERM, term)\n"
+            "subprocess.Popen([sys.executable, '-c', 'import sys, time; time.sleep(1.5); "
+            "open(sys.argv[1], \"w\").write(\"late\")', os.path.join(d, 'late')])\n"
+            "open(os.path.join(d, 'started'), 'w').write('1')\ntime.sleep(30)\n")
+
+        def _group_timeout():
+            try:
+                run_in_group([sys.executable, str(_gd / "runner.py"), str(_gd)], timeout=0.8)
+                raised = False
+            except subprocess.TimeoutExpired:
+                raised = True
+            time.sleep(1.2)
+            return raised, (_gd / "started").exists(), (_gd / "termed").exists(), (_gd / "late").exists()
+        _gt = _group_timeout()
+        case("⛔⛔ review r1 X3: a Refresh timeout sends the RUNNER SIGTERM first — so it can stop its generators "
+             "and release its lock — and still raises the timeout",
+             lambda: _gt[:3] == (True, True, True))
+        case("⛔⛔ review r1 X3: ...and the runner's whole process group is gone: its child never writes its marker",
+             lambda: _gt[3] is False)
+        # ⛔⛔ review r2 F4: a runner whose descendant LEFT the group (`setsid`) and holds its pipes. The Refresh
+        # timeout must still come back within its bounds, never when that descendant chooses to exit.
+        (_gd / "escaper.py").write_text(
+            "import os, subprocess, sys, time\nd = sys.argv[1]\n"
+            "q = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'], start_new_session=True)\n"
+            "open(os.path.join(d, 'escaped.pid'), 'w').write(str(q.pid))\ntime.sleep(30)\n")
+
+        def _escaped_timeout():
+            saved = (globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"])
+            globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"] = 0.3, 0.3
+            t0 = time.monotonic()
+            try:
+                run_in_group([sys.executable, str(_gd / "escaper.py"), str(_gd)], timeout=0.8)
+                raised = False
+            except subprocess.TimeoutExpired:
+                raised = True
+            finally:
+                globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"] = saved
+            took = time.monotonic() - t0
+            try:
+                os.kill(int((_gd / "escaped.pid").read_text()), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
+            return raised, (_gd / "escaped.pid").exists(), took < 5
+        _esc = _escaped_timeout()
+        case("⛔⛔ review r2 F4: a Refresh timeout whose runner left a descendant OUTSIDE its group holding the pipes "
+             "still raises within its bounds — the drain is bounded, never a wait for that descendant's EOF",
+             lambda: _esc == (True, True, True))
+        case("review r1 X3: run_in_group returns what subprocess.run would — exit code, stdout, stderr",
+             lambda: (lambda r: (r.returncode, r.stdout, r.stderr))(run_in_group(
+                 [sys.executable, "-c", "import sys; print('o'); print('e', file=sys.stderr); sys.exit(4)"],
+                 timeout=30)) == (4, "o\n", "e\n"))
+        case("review r1 X3: a Refresh press runs the runner through run_in_group, not a bare subprocess.run",
+             lambda: REGEN_EXEC is run_in_group)
+        import shutil as _sh
+        _sh.rmtree(_gd, ignore_errors=True)
 
         # ── r1 MEDIUM 6: `status()` reported success with nothing listening ──────────────────
         # ⛔ `return 0 if running else 1` -> `return 0` passed **149/149**. This is the one command
@@ -2850,7 +3469,7 @@ def _self_test() -> int:
         #   ② the search is the RUNNER BLOCK, not the whole function: prose above legitimately
         #      discusses both spellings, so a whole-file search answers about the commentary.
         def _runner_src():
-            return inspect.getsource(_self_test).split("\n        for name, fn in cases:", 1)[1]
+            return inspect.getsource(_self_test_body).split("\n        for name, fn in cases:", 1)[1]
         _BAD = "  " + "FAIL" + ": {name}"
         # ⛔ BOTH PRINTS, AND ASSERTING ONLY THE FIRST IS THE DEFECT THIS CASE ITSELF HAD. The
         # runner reports a failure from two places — the falsy-result branch and the `except` that

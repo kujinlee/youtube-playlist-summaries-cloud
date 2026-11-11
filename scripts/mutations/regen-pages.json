@@ -1,0 +1,791 @@
+[
+  {
+    "name": "any file whose name ends in goal-threads.md rebuilds the goal tree",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "fp.endswith(\"/\" + THREADS_REL)",
+        "fp.endswith(THREADS_REL)"
+      ]
+    ],
+    "expect": [
+      "⛔ another file named goal-threads.md elsewhere does not"
+    ]
+  },
+  {
+    "name": "every generator gets the default timeout instead of the one asked for",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            rc, tail = run(pages[name], timeout, tree)",
+        "            rc, tail = run(pages[name], TIMEOUT, tree)"
+      ]
+    ],
+    "expect": [
+      "each generator gets its OWN timeout"
+    ]
+  },
+  {
+    "name": "a failed generator makes the HOOK exit non-zero",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        if a.all and any(r[\"rc\"] != 0 for r in results):",
+        "        if any(r[\"rc\"] != 0 for r in results):"
+      ]
+    ],
+    "expect": [
+      "⛔ --hook exits 0 even when every generator failed, and the report reaches stdout"
+    ]
+  },
+  {
+    "name": "a hook that cannot run at all exits non-zero",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        return 1 if loud else 0\n    return 0",
+        "        return 1\n    return 0"
+      ]
+    ],
+    "expect": [
+      "⛔ --hook that cannot run at all still exits 0, and SAYS the pages may be stale"
+    ]
+  },
+  {
+    "name": "a generator that crashed (negative exit) is not named as stale",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    bad = [r for r in results if r[\"rc\"] != 0]",
+        "    bad = [r for r in results if r[\"rc\"] > 0]"
+      ]
+    ],
+    "expect": [
+      "⛔ every failure is NAMED with its exit code, and says the page is stale"
+    ]
+  },
+  {
+    "name": "--all exits 0 when a page did not rebuild",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        if a.all and any(r[\"rc\"] != 0 for r in results):\n            return 1",
+        "        if a.all and any(r[\"rc\"] != 0 for r in results):\n            return 0"
+      ]
+    ],
+    "expect": [
+      "--all exits 1 when a page did not rebuild (it is a command, not a hook)"
+    ]
+  },
+  {
+    "name": "an unrelated command still prints a rebuild report",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        if not names:\n            return 0",
+        "        if False:\n            return 0"
+      ]
+    ],
+    "expect": [
+      "--hook on an unrelated command is silent and launches nothing"
+    ]
+  },
+  {
+    "name": "Z3: the substring test is removed, so no merge triggers a rebuild",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    return \"gh pr merge\" in cmd",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "⭐ Z3: real merges FIRE, however the shell around them is written"
+    ]
+  },
+  {
+    "name": "Z3: every Bash command triggers a rebuild",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "\"gh pr merge\" in cmd",
+        "True"
+      ]
+    ],
+    "expect": [
+      "⚠ Z3, STATED MISS: a merge spelled without the text `gh pr merge` does not fire"
+    ]
+  },
+  {
+    "name": "W1: registration is read whatever the matcher, so an Edit hook counts as the Bash one",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "g.get(\"matcher\") == \"Bash\"",
+        "True"
+      ]
+    ],
+    "expect": [
+      "W1: registration is read per event, Bash matcher only"
+    ]
+  },
+  {
+    "name": "backlog #408: a failed fetch is ignored, so the tree is built from whatever origin/master already was",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        raise CannotRun(f\"`git fetch {REMOTE} {BRANCH}` failed (exit {rc}: {_brief(out)}){lock_hint(out)}\")",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⛔ a failed fetch is CANNOT RUN, and nothing after it runs (no stale-tree fallback)"
+    ]
+  },
+  {
+    "name": "backlog #408: an unresolvable origin/master is accepted",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    if rc != 0 or not SHA.fullmatch(sha):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ origin/master that does not resolve is CANNOT RUN, before any clone"
+    ]
+  },
+  {
+    "name": "backlog #408: the read-back's git-dir check is dropped, so a tree git resolved to the MAIN checkout's own git dir is built from",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    if rc != 0 or gd != str(tree / \".git\"):",
+        "    if rc != 0:"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ a tree whose git dir is the main checkout's own (git walked up) is refused"
+    ]
+  },
+  {
+    "name": "backlog #408: the top-level check is dropped, so a tree git resolves to the main checkout is checked out --force",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    if rc != 0 or top != str(tree):",
+        "    if rc != 0:"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ a tree whose top level git reads as the MAIN checkout is refused, and removed"
+    ]
+  },
+  {
+    "name": "review r2: a main checkout with no origin URL is accepted, so the clone's origin names the main checkout and its stale local master",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    if rc != 0 or not url or \"\\n\" in url:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ review r2: a main checkout with no origin URL is CANNOT RUN before any clone — a clone whose origin named the main checkout would fetch its stale local master"
+    ]
+  },
+  {
+    "name": "backlog #408: the read-back HEAD is not compared with origin/master",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    if rc != 0 or head != sha:",
+        "    if rc != 0:"
+      ]
+    ],
+    "expect": [
+      "⛔ a tree that reads back a different HEAD is CANNOT RUN — never built from"
+    ]
+  },
+  {
+    "name": "backlog #408: a dirty tree is built from",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    if rc != 0 or dirty:",
+        "    if rc != 0:"
+      ]
+    ],
+    "expect": [
+      "⛔ a tree that is not clean after the checkout is CANNOT RUN, and is removed"
+    ]
+  },
+  {
+    "name": "review r2: the clone is made without --shared, so it copies the objects instead of reading them through alternates",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "[\"clone\", \"--shared\", \"--no-checkout\", \"--quiet\", str(main), str(tree)]",
+        "[\"clone\", \"--no-checkout\", \"--quiet\", str(main), str(tree)]"
+      ]
+    ],
+    "expect": [
+      "⭐ review r2: every run CLONES — `clone --shared --no-checkout --quiet <main checkout> <private>/tree`, run from the private dir",
+      "⭐⭐ REAL git: the tree is origin/master AFTER a fetch, a CLONE of its own whose objects come through alternates from the main checkout, in the private temp dir — though the main checkout never moved"
+    ]
+  },
+  {
+    "name": "review r2: origin/master is never set in the clone, so the goal tree reads the main checkout's stale local master",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "                       ([\"update-ref\", f\"refs/remotes/{REMOTE}/{BRANCH}\", sha], f\"setting {REMOTE}/{BRANCH}\"),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ review r2: ...then, INSIDE the clone and only there: checkout --detach of the sha, origin/master set to it, and origin's URL set to the main checkout's",
+      "⭐⭐ review r2: in the clone origin/master is the FETCHED sha — not the main checkout's stale local master a clone copies — and origin is the main checkout's own URL"
+    ]
+  },
+  {
+    "name": "backlog #408: an inherited GIT_DIR reaches git and the generators",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    return {k: v for k, v in os.environ.items() if k not in REPO_VARS and k != MAIN_CHECKOUT_ENV}",
+        "    return dict(os.environ)"
+      ]
+    ],
+    "expect": [
+      "an inherited GIT_DIR / GIT_WORK_TREE is DROPPED for git and the generators; config vars pass"
+    ]
+  },
+  {
+    "name": "backlog #408: the lock is never taken, so two rebuilds move the tree under each other",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)\n                break",
+        "                break"
+      ]
+    ],
+    "expect": [
+      "⛔ a second rebuild while the first holds the lock waits, then says CANNOT RUN, naming `lsof`"
+    ]
+  },
+  {
+    "name": "backlog #408: generators run out of THIS checkout's scripts again",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    p = subprocess.Popen([sys.executable, str(tree / \"scripts\" / script)], cwd=tree, stdout=subprocess.PIPE,",
+        "    p = subprocess.Popen([sys.executable, str(SCRIPTS / script)], cwd=tree, stdout=subprocess.PIPE,"
+      ]
+    ],
+    "expect": [
+      "⭐ launch runs <tree>/scripts/<generator> with cwd=<tree>, stdout then stderr, its own exit code"
+    ]
+  },
+  {
+    "name": "backlog #408: generators run with this checkout as their cwd",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "str(tree / \"scripts\" / script)], cwd=tree,",
+        "str(tree / \"scripts\" / script)], cwd=ROOT,"
+      ]
+    ],
+    "expect": [
+      "⭐ launch runs <tree>/scripts/<generator> with cwd=<tree>, stdout then stderr, its own exit code"
+    ]
+  },
+  {
+    "name": "backlog #408: regen is not handed the fresh tree, so generators run in this checkout",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "                results = regen(names, table, run, tree=tree)",
+        "                results = regen(names, table, run)"
+      ]
+    ],
+    "expect": [
+      "--all hands the fresh tree to every generator and names the commit it was built from"
+    ]
+  },
+  {
+    "name": "backlog #408: CANNOT RUN makes the HOOK exit non-zero",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            return 2 if loud else 0",
+        "            return 2"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #408: --hook with no fresh tree exits 0, says CANNOT RUN, and runs NO generator"
+    ]
+  },
+  {
+    "name": "backlog #408: CANNOT RUN exits 0 from --all and --page, reading as a pass",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            print(cannot_run_line(exc))\n            return 2 if loud else 0",
+        "            print(cannot_run_line(exc))\n            return 0"
+      ]
+    ],
+    "expect": [
+      "⛔ ...--all and --page with no fresh tree exit 2 (a command: CANNOT RUN is a failure, never a pass)"
+    ]
+  },
+  {
+    "name": "backlog #408: --page swallows the generator's output, so its ⚠ lines never reach the hook",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            if results[0][\"tail\"]:\n                print(results[0][\"tail\"])",
+        "            if False:\n                print(results[0][\"tail\"])"
+      ]
+    ],
+    "expect": [
+      "--page prints the generator's own output (its ⚠ lines intact) and the commit, with its exit code"
+    ]
+  },
+  {
+    "name": "backlog #408: --page reports success whatever the generator returned",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            return results[0][\"rc\"]",
+        "            return 0"
+      ]
+    ],
+    "expect": [
+      "--page returns a failed generator's exit code and says NOT rebuilt"
+    ]
+  },
+  {
+    "name": "backlog #408: --page accepts any name",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            if a.page not in table:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "--page refuses a name that is not a page KEY, naming the legal set"
+    ]
+  },
+  {
+    "name": "backlog #408: the report stops naming the commit it was built from",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "           + (f\" — {built_from(sha)}\" if sha else \"\")]",
+        "           + \"\"]"
+      ]
+    ],
+    "expect": [
+      "--all hands the fresh tree to every generator and names the commit it was built from"
+    ]
+  },
+  {
+    "name": "backlog #408: --page is treated as a hook, so its CANNOT RUN exits 0",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    loud = a.all or a.page is not None",
+        "    loud = a.all"
+      ]
+    ],
+    "expect": [
+      "⛔ ...--all and --page with no fresh tree exit 2 (a command: CANNOT RUN is a failure, never a pass)"
+    ]
+  },
+  {
+    "name": "review r2: discard deletes nothing inside the private dir, so every run leaves a full tree in the temp root",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        for name in sorted(os.listdir(priv.fd)):",
+        "        for name in []:"
+      ]
+    ],
+    "expect": [
+      "⛔ after the block the private dir is GONE, nothing is left in the temp root, and NOTHING was ever made under the main repository's `worktrees/`"
+    ]
+  },
+  {
+    "name": "review r2: discard never removes the private dir itself",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "                os.rmdir(priv.path)",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⛔ after the block the private dir is GONE, nothing is left in the temp root, and NOTHING was ever made under the main repository's `worktrees/`"
+    ]
+  },
+  {
+    "name": "review r1: fresh never discards the tree it made",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            for note in discard(priv):",
+        "            for note in []:"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ REAL git: after the block the tree is GONE — no private dir, `git worktree list` exactly as before, and both checkouts untouched"
+    ]
+  },
+  {
+    "name": "review r2 F1: the private dir's identity is not checked, so an EMPTY directory swapped in at its path is removed",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        if now != priv.ident:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ review r2 F1: an EMPTY directory swapped in at the private path survives — refused by identity — while the run's own tree is still removed through its descriptor"
+    ]
+  },
+  {
+    "name": "review r2 F1: the contents are deleted by PATH, not through the descriptor, so a swapped ancestor sends the delete elsewhere",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "                    shutil.rmtree(name, dir_fd=priv.fd)",
+        "                    shutil.rmtree(priv.path / name)"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ review r2 F1: the private dir's ANCESTOR swapped for a symlink to a same-named tree elsewhere — that tree and its file survive, and the run's own tree is still removed (its emptied dir is left, refused)"
+    ]
+  },
+  {
+    "name": "review r1: the private tree is made under the main checkout instead of the temp root",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "tempfile.mkdtemp(prefix=PRIVATE_PREFIX, dir=scratch)",
+        "tempfile.mkdtemp(prefix=PRIVATE_PREFIX, dir=str(main))"
+      ]
+    ],
+    "expect": [
+      "⭐ ...in a private directory of its own: mode 0700, in the temp root, named by PRIVATE_PREFIX"
+    ]
+  },
+  {
+    "name": "review r1 X3: generators run in the runner's own process group, so a timeout ends the generator alone",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "errors=\"replace\", start_new_session=True, pass_fds=tuple(_HELD_FDS))",
+        "errors=\"replace\", start_new_session=False, pass_fds=tuple(_HELD_FDS))"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X3: a generator that exits leaving a child behind — launch ends the child before it returns"
+    ]
+  },
+  {
+    "name": "review r1 X3: launch never ends the generator's group, so a timed-out generator's child runs on",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        gone = end_group(p, GROUP_GRACE)",
+        "        gone = True"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ review r1 X3: a timed-out generator's WHOLE process group is ended — its child never writes its marker — and the tree is removed only after"
+    ]
+  },
+  {
+    "name": "review r1 X3: generators do not inherit the lock, so a SIGKILLed runner releases it under them",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "start_new_session=True, pass_fds=tuple(_HELD_FDS))",
+        "start_new_session=True, pass_fds=())"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X3: every generator INHERITS the lock's descriptor, so the lock outlives a killed runner"
+    ]
+  },
+  {
+    "name": "review r1 X3: a stopped runner does not kill its generators' groups before it unwinds",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            os.killpg(pgid, signal.SIGKILL)\n    raise SystemExit(128 + signum)",
+        "            pass\n    raise SystemExit(128 + signum)"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ review r1 X3: a runner sent SIGTERM mid-build KILLS its generator's group first, then removes its tree and frees the lock"
+    ]
+  },
+  {
+    "name": "review r1 X3: a generator is never registered as live, so a stop signal cannot reach it",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    with _LIVE_GUARD:\n        _LIVE[p.pid] = p",
+        "    with _LIVE_GUARD:\n        pass"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ review r1 X3: a runner sent SIGTERM mid-build KILLS its generator's group first, then removes its tree and frees the lock"
+    ]
+  },
+  {
+    "name": "review r1 C5: a lock file left by a killed git is never named",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    if not m:\n        return \"\"\n    return (f\". A git process",
+        "    if True:\n        return \"\"\n    return (f\". A git process"
+      ]
+    ],
+    "expect": [
+      "⭐ review r1 C5: a lock left by a killed git is named IN FULL, with the rm that clears it"
+    ]
+  },
+  {
+    "name": "review r1 C2: --after-edit still prints the plain provenance line, so the edit hook implies the edit was rendered",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "(after_edit_line(a.page, sha) if a.after_edit else",
+        "(f\"↻ {a.page} {built_from(sha)}\" if a.after_edit else"
+      ]
+    ],
+    "expect": [
+      "⭐ review r1 C2: --page --after-edit SAYS the page shows origin/master and the edit appears after it merges"
+    ]
+  },
+  {
+    "name": "review r1 C6: the suite's refusal of this repository is removed",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    if _IN_SUITE and _is_this_repository(repo):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ the suite refuses to materialise THIS repository, whatever a case passes for tree_for"
+    ]
+  },
+  {
+    "name": "review r2 F6: the escalation never reaches SIGKILL, so a generator that ignores SIGTERM runs on",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    for sig in (signal.SIGTERM, signal.SIGKILL):",
+        "    for sig in (signal.SIGTERM, signal.SIGTERM):"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ review r2 F6: a generator that IGNORES SIGTERM is SIGKILLed after the grace — gone before launch returns, and reported as a timeout, not as having survived"
+    ]
+  },
+  {
+    "name": "review r2: discard stats THROUGH a symlink, so a tree swapped for a link to a checkout is treated as a directory",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "                if stat.S_ISDIR(os.lstat(name, dir_fd=priv.fd).st_mode):",
+        "                if stat.S_ISDIR(os.stat(name, dir_fd=priv.fd).st_mode):"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ review r1 X2/C3: the tree swapped for a symlink to ANOTHER linked worktree before removal — that checkout is untouched, and this run's own directory is still removed",
+      "discard deletes the private dir's directories, files AND symlinks (unlinked, never followed), then the dir"
+    ]
+  },
+  {
+    "name": "review r2: the clone is never mapped to its main checkout, so its generators cannot find the ledger",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        _TREE_MAIN[str(tree)] = str(main)",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ review r2: while the block runs, the clone is mapped to the main checkout its generators are told of",
+      "⭐⭐ review r2: session-state.main_checkout, run in the clone with what launch hands a generator, names the MAIN checkout — where the ledger and the goal-tree log live"
+    ]
+  },
+  {
+    "name": "review r2: launch never hands a generator REGEN_MAIN_CHECKOUT",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        env[MAIN_CHECKOUT_ENV] = _TREE_MAIN[str(tree)]",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ review r2: a generator in a clone is told the main checkout in REGEN_MAIN_CHECKOUT; out of one, nothing"
+    ]
+  },
+  {
+    "name": "review r2: a removed clone stays mapped to its main checkout",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            _TREE_MAIN.pop(str(tree), None)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ after the block the private dir is GONE, nothing is left in the temp root, and NOTHING was ever made under the main repository's `worktrees/`"
+    ]
+  },
+  {
+    "name": "review r2: a failed step inside the clone is ignored, so a tree that is not at the sha, or names no origin, is built from",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        rc, out = git(args, tree)\n        if rc != 0:",
+        "        rc, out = git(args, tree)\n        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ review r2: a failed checkout, origin/master update or URL update inside the clone is CANNOT RUN, naming the step, and nothing is left"
+    ]
+  },
+  {
+    "name": "review r2: a failed clone is ignored",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    rc, out = git([\"clone\", \"--shared\", \"--no-checkout\", \"--quiet\", str(main), str(tree)], tree.parent)\n    if rc != 0:",
+        "    rc, out = git([\"clone\", \"--shared\", \"--no-checkout\", \"--quiet\", str(main), str(tree)], tree.parent)\n    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ review r2: a failed clone is CANNOT RUN, and its private dir is removed"
+    ]
+  },
+  {
+    "name": "review r2: origin's URL is never set in the clone, so its fetch and gh reach the main checkout",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "                       ([\"remote\", \"set-url\", REMOTE, url], f\"setting {REMOTE}'s URL\")):",
+        "                       ):"
+      ]
+    ],
+    "expect": [
+      "⭐ review r2: ...then, INSIDE the clone and only there: checkout --detach of the sha, origin/master set to it, and origin's URL set to the main checkout's",
+      "⭐⭐ review r2: in the clone origin/master is the FETCHED sha — not the main checkout's stale local master a clone copies — and origin is the main checkout's own URL"
+    ]
+  },
+  {
+    "name": "review r3 R3-F1: no lstat before the in-clone verbs, so a tree swapped for a symlink to a clean main checkout has its HEAD detached",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        _real_dir(tree, f\"the clone's {what}\")",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F1: <private>/tree swapped for a symlink to a clean main checkout right after the clone — refused before any in-clone git verb; that checkout's HEAD is still on its branch"
+    ]
+  },
+  {
+    "name": "review r3 R3-F1: the read-back compares through realpath again, so a tree git reads back under another path is accepted",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    if rc != 0 or top != str(tree):",
+        "    if rc != 0 or os.path.realpath(top) != os.path.realpath(tree):"
+      ],
+      [
+        "    if rc != 0 or gd != str(tree / \".git\"):",
+        "    if rc != 0 or os.path.realpath(gd) != os.path.realpath(tree / \".git\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F1: read_back compares the tree path EXACTLY — a tree git reads back under another path (its temp root moved behind a symlink) is refused, never accepted through realpath; and removed"
+    ]
+  },
+  {
+    "name": "review r3 R3-F2: an inherited REGEN_MAIN_CHECKOUT passes through _env to git and to a generator out of a clone",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "if k not in REPO_VARS and k != MAIN_CHECKOUT_ENV}",
+        "if k not in REPO_VARS}"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F2: an INHERITED REGEN_MAIN_CHECKOUT never reaches a generator out of a clone, or git; one in a clone gets this run's value, not the inherited one"
+    ]
+  },
+  {
+    "name": "review r3 R3-F3: a stop signal mid-git SIGKILLs it at once, with no SIGTERM grace to remove its lock",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    except BaseException:\n        _stop_git(p)\n        raise",
+        "    except BaseException:\n        p.kill()\n        _stop_git(p)\n        raise"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F3: a stop signal mid-git sends git SIGTERM FIRST — its own clean-up (the lock removal) runs — and the signal is still re-raised"
+    ]
+  },
+  {
+    "name": "review r3 R3-F3: the drain after SIGKILLing git is unbounded, so a child of git holding its pipes holds the runner",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        p.communicate(timeout=GIT_DRAIN)",
+        "        p.communicate()"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F3: ...and a git that IGNORES SIGTERM is SIGKILLed, then its pipes — still held by a child of git — are drained for a BOUNDED time, not until that child exits"
+    ]
+  },
+  {
+    "name": "PR #536 CI sweep: an exception escaping the suite body prints no `[FAIL]` line, so its red has no name",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        print(f\"  [FAIL] {CRASH_CASE}",
+        "        print(f\"  CRASHED {CRASH_CASE}"
+      ]
+    ],
+    "expect": [
+      "⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body is a `[FAIL]` of CRASH_CASE that the harness's parse_fail_names reads, naming the last case; a clean body is untouched"
+    ]
+  },
+  {
+    "name": "PR #536 CI sweep: a non-zero sys.exit escaping the suite body is not caught, so it exits red with no name",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    except (Exception, SystemExit) as exc:\n        if isinstance(exc, SystemExit)",
+        "    except Exception as exc:\n        if isinstance(exc, SystemExit)"
+      ]
+    ],
+    "expect": [
+      "⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body is a `[FAIL]` of CRASH_CASE that the harness's parse_fail_names reads, naming the last case; a clean body is untouched"
+    ]
+  }
+]

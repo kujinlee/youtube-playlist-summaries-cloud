@@ -6,6 +6,8 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #225 (*"The banner guard learns the direction that actually failed (backlog #95)"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Goal:** Teach `scripts/check-banner-armed.py` to detect *plan armed, work done, no banner emitted*, and make that branch reachable by moving the guard ahead of the blocking check in `.claude/hooks/block-idle-stop.sh`.
 
 **Architecture:** Extend the existing pure core (`decide()`) with two new inputs supplied by the I/O shell; split the transcript windowing helper so one implementation serves both text and tool-use extraction; move one line in the Stop hook. No new files.

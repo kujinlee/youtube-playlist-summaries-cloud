@@ -11,7 +11,10 @@ that holds state drifts, and this project has measured that twice (see `docs/anc
 **Fragments attach through declarations that already exist.** An `anchors:` line names goals from
 `docs/anchors.md`, which carry their specs, plans and ADRs with them; an `areas:` line names the
 `(area)` tags `docs/backlog.md` rows carry. Every anchor and every in-use area is claimed by exactly
-one node, so a rename or a new spelling turns the check red instead of vanishing from the page.
+one node, so a rename turns the check red instead of vanishing from the page. Areas compare PER TAG
+and normalised — `(cloud/money)` and `(cloud / money)` are one tag, so write it once — and a tag is
+claimed by the nearest area that equals it or is a family above it. A row carrying several tags,
+`(tooling) (comprehensibility)`, appears under the node claiming each one.
 
 ## PRODUCT
 
@@ -88,7 +91,7 @@ anchors: serve-path-bounding
 state: built
 for: Keeps one generation paid for once, and the total spend under a ceiling the operator chooses.
 anchors: serve-money-guard
-areas: (cloud/money), (cloud / money)
+areas: (cloud/money)
 
 ### artifact-addressing
 state: built
@@ -127,6 +130,7 @@ areas: (cloud/test), (test infra)
 ### guard-and-gate-harness
 state: built
 for: Gives the rules this project works by a mechanical enforcer, instead of a reader who has to remember them.
+anchors: dev-speed-first
 areas: (tooling)
 
 ### status-pages
@@ -139,11 +143,23 @@ areas: (comprehensibility)
 state: built
 for: Lets anyone find what the system does, what it omits on purpose, and the fragments that define each.
 anchors: feature-map
+areas: (comprehensibility/feature-map)
+
+#### goal-tree
+state: built
+for: Shows every thread of work under the owner request it serves, what waits on the owner, and which plans are not ticked closed — at http://127.0.0.1:7391/goal-tree.
+areas: (comprehensibility/goal-tree)
+
+#### work-lines
+state: absent
+for: Drew every plan as a line back to the plan it branched from.
+expected-because: retired 2026-10-28 into the goal-tree node above (the owner's decision D2, backlog #389) — two pages answering which threads are live left the reader with neither; a frozen record of it, with plan contents withheld pending backlog #194, is at http://127.0.0.1:7391/work-lines-archive.
 
 ### explainer-pages
 state: built
 for: Lets a person have a subject they choose explained in a page they can ask questions inside.
 anchors: explanation-on-demand
+areas: (comprehensibility/explainers)
 
 ### review-loop
 state: built

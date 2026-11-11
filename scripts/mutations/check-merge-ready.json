@@ -96,7 +96,7 @@
     "        if key not in ACCOUNTED_MENTIONS:\n"
    ]
   ],
-  "expect": "a SECOND copy of an approved line is unaccounted \u2014 the allowance is a count"
+  "expect": "a SECOND copy of an approved line is unaccounted — the allowance is a count"
  },
  {
   "name": "commented-out mentions stop being skipped, so prose about a gate reads as one",
@@ -174,5 +174,2166 @@
    ]
   ],
   "expect": "a refusing gate whose own escape is granted says nothing"
+ },
+ {
+  "name": "the baseline exception matches nothing",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "BASELINE_FILE = re.compile(r\"^docs/reviews/.*baseline\\.json$\")",
+    "BASELINE_FILE = re.compile(r\"^$\")"
+   ]
+  ],
+  "expect": [
+   "a pinned baseline edit is a loosening (decision-scheme)",
+   "a pinned baseline edit is a loosening (other)"
+  ]
+ },
+ {
+  "name": "a pin that drops is read as a rise",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        elif new[path] < old[path]:",
+    "        elif new[path] > old[path]:"
+   ]
+  ],
+  "expect": [
+   "a pin LOWERED in the display is HELD",
+   "a mutation pin that DROPS 128 -> 125 is a loosening"
+  ]
+ },
+ {
+  "name": "a falling self-test count is ignored",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if oc and nc and nc[0] < oc[0]:",
+    "if False:"
+   ]
+  ],
+  "expect": [
+   "a declared self-test count that drops 274 -> 271 is a loosening",
+   "a declared self-test count that drops 9 -> 1 is a loosening"
+  ]
+ },
+ {
+  "name": "the failure-path window shrinks to the removed line itself",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if any(abs(j - i) <= k and fail.search(w[1:]) for j, w in code):",
+    "if any(j == i and fail.search(w[1:]) for j, w in code):"
+   ]
+  ],
+  "expect": [
+   "⭐ a check entry REMOVED from beside a fails list is a loosening (PR #398's shape)"
+  ]
+ },
+ {
+  "name": "a moved line is counted as a removal",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if l[1:] in added:\n                added.remove(l[1:])\n                moved.add(n)\n",
+    "            if False:\n                pass\n"
+   ]
+  ],
+  "expect": [
+   "...but the SAME line MOVED (removed and re-added) is not"
+  ]
+ },
+ {
+  "name": "comment lines count on the failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]",
+    "code = list(enumerate(old_side))"
+   ]
+  ],
+  "expect": [
+   "...and a removed COMMENT beside a fails list is not"
+  ]
+ },
+ {
+  "name": "the failure-path rule reaches non-gate scripts",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        node =",
+    "        if False:\n            continue\n        node ="
+   ]
+  ],
+  "expect": [
+   "...and the same removal in a NON-gate script is not"
+  ]
+ },
+ {
+  "name": "a migration is not held for a deploy",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "migs = [f for f in files if MIGRATION.match(f)]",
+    "migs = []"
+   ]
+  ],
+  "expect": [
+   "a migration needs a deploy first (0028_x.sql)",
+   "a migration needs a deploy first (0099_y.sql)"
+  ]
+ },
+ {
+  "name": "a NO-REVIEW waiver is not held",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if no_review:\n        out.append(",
+    "    if False:\n        out.append("
+   ]
+  ],
+  "expect": [
+   "a NO-REVIEW waiver is held"
+  ]
+ },
+ {
+  "name": "a local test run at ANY head clears app code",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if app and (head is None or app_tests_at != head):",
+    "if app and (head is None or app_tests_at is None):"
+   ]
+  ],
+  "expect": [
+   "...but NOT by a run at a DIFFERENT head"
+  ]
+ },
+ {
+  "name": "NOT READY no longer beats a hold",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if code != 0 or not holds:\n        return code, line",
+    "    if not holds:\n        return code, line"
+   ]
+  ],
+  "expect": [
+   "...NOT READY wins over a hold",
+   "...CANNOT RUN wins over a hold"
+  ]
+ },
+ {
+  "name": "main() computes the holds and never applies them",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    code, line = final_verdict(code, line, holds)\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "⭐ main() HOLDS a READY PR that edits a pinned baseline, rc=3, naming why",
+   "⭐ main() HOLDS a READY PR whose body declares NO-REVIEW:, rc=3"
+  ]
+ },
+ {
+  "name": "main() never reads the NO-REVIEW waiver",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "nr = granted_escapes(body_file.read_text()).get(\"NO-REVIEW:\") is not None",
+    "nr = False"
+   ]
+  ],
+  "expect": [
+   "⭐ main() HOLDS a READY PR whose body declares NO-REVIEW:, rc=3"
+  ]
+ },
+ {
+  "name": "r1: a DELETED gate's removals are dropped again",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            cur[\"old\"] = _side(line[4:], \"a/\")",
+    "            cur[\"old\"] = None"
+   ]
+  ],
+  "expect": [
+   "⭐ DELETING a gate script outright is a loosening",
+   "...and so is deleting a hook in a subdirectory"
+  ]
+ },
+ {
+  "name": "r1: distance counted over the combined diff, added lines included",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "old_side = [l for l in hk if not l.startswith(\"+\")]",
+    "old_side = hk"
+   ]
+  ],
+  "expect": [
+   "⭐ six ADDED comment lines do not push an adjacent removal out of the window",
+   "...nor do eight added CODE lines"
+  ]
+ },
+ {
+  "name": "FAIL_PATH forgets a hook's deny",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|SystemExit\\(|\\bdeny\\b|\\braise\\b|\\bassert\\b\")",
+    "|SystemExit\\(|\\braise\\b|\\bassert\\b\")"
+   ]
+  ],
+  "expect": [
+   "a hook's removed `deny` is a loosening",
+   "...and so is deleting a hook in a subdirectory"
+  ]
+ },
+ {
+  "name": "FAIL_PATH forgets exit 2",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\\bexit\\s+-?[1-9]\\d*\\b\"",
+    "\\bexit\\s+1\\b\""
+   ]
+  ],
+  "expect": [
+   "...and so is a hook's `exit 2` turned into `exit 0`"
+  ]
+ },
+ {
+  "name": "FAIL_PATH forgets a failures tally",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\\bfails\\b|\\bfailures?\\b|",
+    "\\bfails\\b|"
+   ]
+  ],
+  "expect": [
+   "...nor do eight added CODE lines"
+  ]
+ },
+ {
+  "name": "GATE_CODE sees only top-level hooks",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|\\.claude/hooks/.+)$\")",
+    "|\\.claude/hooks/[^/]+)$\")"
+   ]
+  ],
+  "expect": [
+   "...and so is deleting a hook in a subdirectory"
+  ]
+ },
+ {
+  "name": "gate callers are never read",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if not any(GATE_CALLER.match(p) for p in _paths(f)):\n",
+    "        if True:\n"
+   ]
+  ],
+  "expect": [
+   "⭐ a CI step that runs a check, removed, is a loosening",
+   "...and so is a hook dropped from settings.json"
+  ]
+ },
+ {
+  "name": "a MOVED gate invocation counts as dropped",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    " and r not in back]",
+    "]"
+   ]
+  ],
+  "expect": [
+   "...but the same CI line MOVED is not"
+  ]
+ },
+ {
+  "name": "every removed caller line counts, gate or not",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if GATE_REF.search(r) and r not in back",
+    "if r not in back"
+   ]
+  ],
+  "expect": [
+   "...nor a removed CI line that names no gate"
+  ]
+ },
+ {
+  "name": "a deleted or renamed pin is not a drop",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            out.append(f\"loosens a gate: the mutation pin for {path} ({old[path]}) is removed\")",
+    "            pass"
+   ]
+  ],
+  "expect": [
+   "a pin REMOVED from the display is HELD",
+   "a mutation pin DELETED is a loosening"
+  ]
+ },
+ {
+  "name": "main() holds on NO-ENTRY instead of NO-REVIEW",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    ".get(\"NO-REVIEW:\") is not None",
+    ".get(\"NO-ENTRY:\") is not None"
+   ]
+  ],
+  "expect": [
+   "⭐ main() does NOT hold a PR whose body declares only NO-ENTRY: (owner: NO-REVIEW only)"
+  ]
+ },
+ {
+  "name": "r2: a rename keeps only the destination path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return [p for p in (f[\"old\"], f[\"new\"]) if p]",
+    "    return [p for p in (f[\"new\"],) if p]"
+   ]
+  ],
+  "expect": [
+   "⭐ a gate RENAMED out of scope with `return 1` -> `return 0` is a loosening (failure path)",
+   "...and so is a hook moved into docs/ with its `deny` dropped"
+  ]
+ },
+ {
+  "name": "r2: scope exits are never consulted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for exit_ in scope_exits(diff, fs):",
+    "    for exit_ in []:"
+   ]
+  ],
+  "expect": [
+   "⭐ a workflow MOVED out of .github/workflows/ with no hunk at all is a loosening",
+   "a deleted workflow is a scope exit",
+   "...and the rename itself is a scope exit"
+  ]
+ },
+ {
+  "name": "r2: a comment counts as a gate invocation",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if l.startswith(sign) and l[1:].strip() and not is_comment(l[1:])]",
+    "if l.startswith(sign) and l[1:].strip()]"
+   ]
+  ],
+  "expect": [
+   "⭐ a reworded workflow COMMENT naming a check is not a dropped invocation (r2 false HOLD)",
+   "...nor a reworded shell comment in check-schema-gates.sh"
+  ]
+ },
+ {
+  "name": "r2: a rename WITHIN gate scope is treated as an exit",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if not f[\"copy\"] and any(o and not n for o, n in zip(role(f[\"old\"]), role(f[\"new\"])))]",
+    "if not f[\"copy\"] and any(role(f[\"old\"]))]"
+   ]
+  ],
+  "expect": [
+   "...but a workflow renamed WITHIN .github/workflows/ is not",
+   "...but a check renamed to another check keeps its role"
+  ]
+ },
+ {
+  "name": "r3: git's C-quoted paths are not decoded",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if len(p) >= 2 and p[0] == p[-1] == '\"':",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "⭐ a deleted workflow whose path git C-QUOTES (non-ASCII) is a scope exit"
+  ]
+ },
+ {
+  "name": "r3: the tab git appends after a spaced path is kept",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "field = field.split(\"\\t\")[0]",
+    "field = field"
+   ]
+  ],
+  "expect": [
+   "⭐ a gate whose path has a SPACE (git appends a tab) still has its failure path read"
+  ]
+ },
+ {
+  "name": "r3: `deleted file mode` is ignored, so a binary deletion keeps its path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            cur[\"new\"] = None              # r3",
+    "            pass              # r3"
+   ]
+  ],
+  "expect": [
+   "⭐ a BINARY-diffed workflow deleted (no `+++ /dev/null`) is a scope exit"
+  ]
+ },
+ {
+  "name": "r3: a copy is read as a rename",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            cur[\"copy\"] = line.startswith(\"copy \")",
+    "            cur[\"copy\"] = False"
+   ]
+  ],
+  "expect": [
+   "⭐ a workflow COPIED out leaves the source running, so it is not an exit"
+  ]
+ },
+ {
+  "name": "r3: a gate's ROLE collapses to 'some gate'",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "return (bool(p and GATE_CODE.match(p)), bool(p and GATE_CALLER.match(p)))",
+    "return (bool(p and (GATE_CODE.match(p) or GATE_CALLER.match(p))), False)"
+   ]
+  ],
+  "expect": [
+   "⭐ a workflow renamed INTO scripts/check-*.py keeps no workflow role, so it is an exit"
+  ]
+ },
+ {
+  "name": "#353 / r4: a GAINED role reads as an exit",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "any(o and not n for o, n in zip(",
+    "any(o != n for o, n in zip("
+   ]
+  ],
+  "expect": [
+   "real git: a check renamed so it GAINS a role is not an exit (r4 false HOLD)"
+  ]
+ },
+ {
+  "name": "#353: main() does not hand the machine list to the detectors",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "head, args.app_tests_passed, bool(nr), fs=fs, pins=pins,",
+    "head, args.app_tests_passed, bool(nr), fs=None, pins=pins,"
+   ]
+  ],
+  "expect": [
+   "⭐ main() takes paths from --name-status, not the patch header (a rename only the list shows)"
+  ]
+ },
+ {
+  "name": "#353: an ADDED file keeps an old path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(None, p) if k == \"A\"",
+    "(p, p) if k == \"A\""
+   ]
+  ],
+  "expect": [
+   "name_status reads a rename, an add and a delete"
+  ]
+ },
+ {
+  "name": "#353: an incomplete --name-status entry is not refused",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if not k or i + n > len(toks):",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "...and an incomplete --name-status entry"
+  ]
+ },
+ {
+  "name": "#353: changed_paths drops a renamed file's old path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "for p in (e[\"old\"], e[\"new\"]) if p})",
+    "for p in (e[\"new\"],) if p})"
+   ]
+  ],
+  "expect": [
+   "changed_paths keeps a renamed file's OLD path too (a baseline renamed away is still edited)"
+  ]
+ },
+ {
+  "name": "r5: the patch is read WITH an external diff driver",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "GIT_PLAIN = [\"--no-ext-diff\", ",
+    "GIT_PLAIN = ["
+   ]
+  ],
+  "expect": [
+   "real git: an external diff driver over a gate cannot hide its weakening",
+   "⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening"
+  ]
+ },
+ {
+  "name": "r6: blob_hunks diffs the wrong pair of blobs",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "old[1], new[1]]))",
+    "new[1], new[1]]))"
+   ]
+  ],
+  "expect": [
+   "⭐ gather diffs each entry's EXACT BLOBS (old tree's, new tree's) and reads no file outside the gate roots",
+   "⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening"
+  ]
+ },
+ {
+  "name": "r6: the blob diff is read without --text",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\"--no-color\", \"--text\", *GIT_PLAIN,",
+    "\"--no-color\", *GIT_PLAIN,"
+   ]
+  ],
+  "expect": [
+   "real git: a gate whose content holds a NUL byte still has its hunks read (--text)"
+  ]
+ },
+ {
+  "name": "r6: a gitlink is diffed as if it were a blob",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        return x is not None and x[0] != GITLINK",
+    "        return x is not None"
+   ]
+  ],
+  "expect": [
+   "blob_hunks: a gitlink on both sides has no hunks, and reads nothing"
+  ]
+ },
+ {
+  "name": "r6: no file's hunks are read at all",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "new_t.get(e[\"new\"]) if e[\"new\"] else None) if looked else []})",
+    "new_t.get(e[\"new\"]) if e[\"new\"] else None) if False else []})"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening",
+   "real git: a DELETED gate's failure path is read from its old blob"
+  ]
+ },
+ {
+  "name": "r6: files outside the gate roots are read too",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        looked = any(p.startswith(HUNK_ROOTS) for p in (e[\"old\"], e[\"new\"]) if p)",
+    "        looked = True"
+   ]
+  ],
+  "expect": [
+   "⭐ gather diffs each entry's EXACT BLOBS (old tree's, new tree's) and reads no file outside the gate roots"
+  ]
+ },
+ {
+  "name": "r6: an added blob reads as removed and a deleted one as added",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    oid, sign = (new[1], \"+\") if blob(new) else (old[1], \"-\")",
+    "    oid, sign = (new[1], \"-\") if blob(new) else (old[1], \"+\")"
+   ]
+  ],
+  "expect": [
+   "blob_hunks: an ADDED blob is every line added, a DELETED one every line removed",
+   "real git: a DELETED gate's failure path is read from its old blob"
+  ]
+ },
+ {
+  "name": "r7: git is read in TEXT mode (CR becomes LF)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        r = run(cmd, text=False)",
+    "        r = run(cmd)"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): of two paths differing only by CR vs LF, the CHANGED one keeps its weakening"
+  ]
+ },
+ {
+  "name": "r7: as_text translates CR to LF",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return out.decode(\"utf-8\", \"surrogateescape\") if isinstance(out, bytes) else out",
+    "    return out.decode(\"utf-8\", \"surrogateescape\").replace(\"\\r\", \"\\n\") if isinstance(out, bytes) else out"
+   ]
+  ],
+  "expect": [
+   "as_text keeps a CR a CR (no newline translation) and passes text through",
+   "⭐ real git (r7): of two paths differing only by CR vs LF, the CHANGED one keeps its weakening"
+  ]
+ },
+ {
+  "name": "r7: a gate symlink's changed target is never consulted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if tgt in changed and tgt != path:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens"
+  ]
+ },
+ {
+  "name": "r7: a symlink target is not normalised (`../` kept)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        tgt = posixpath.normpath(posixpath.join(",
+    "        tgt = (posixpath.join("
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens"
+  ]
+ },
+ {
+  "name": "r7: a target's hunks are filed under the TARGET's name, not the gate's",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            fs.append({\"old\": path, \"new\": path, \"copy\": False, \"status\": \"M\", \"via\": tgt,",
+    "            fs.append({\"old\": tgt, \"new\": tgt, \"copy\": False, \"status\": \"M\", \"via\": tgt,"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens"
+  ]
+ },
+ {
+  "name": "r7: a failed git command answers empty instead of raising",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            raise PathsDisagree(f\"`{' '.join(cmd[:6])} …` exited {r.returncode}\")",
+    "            return \"\""
+   ]
+  ],
+  "expect": [
+   "git_reader RAISES on a failed command rather than answering empty"
+  ]
+ },
+ {
+  "name": "r8: a helper module outside `check-*` is not gate code",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "GATE_CODE = re.compile(r\"^(scripts/[^/]+\\.(py|sh|ts|mts|cts|js|mjs|cjs)|",
+    "GATE_CODE = re.compile(r\"^(scripts/check-[^/]+\\.(py|sh|ts|mts|cts|js|mjs|cjs)|"
+   ]
+  ],
+  "expect": [
+   "⭐ a weakened HELPER module (not `check-*`) is a loosening — the gate imports it"
+  ]
+ },
+ {
+  "name": "r8: only statuses 1 and 2 count for sys.exit",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|sys\\.exit\\((?!\\s*(?:0|None)?\\s*\\))|",
+    "|sys\\.exit\\(\\s*[12]\\s*\\)|"
+   ]
+  ],
+  "expect": [
+   "⭐ a gate's `sys.exit(3)` turned into success is a loosening (any non-zero status)"
+  ]
+ },
+ {
+  "name": "r8: only returns of 1 and 2 count",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\\breturn\\s+-?[1-9]\\d*\\b|",
+    "\\breturn\\s+[12]\\b|"
+   ]
+  ],
+  "expect": [
+   "...and so is a `return 7`"
+  ]
+ },
+ {
+  "name": "r9: a move is compared without its indentation again",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if l[1:] in added:\n                added.remove(l[1:])\n                moved",
+    "            if l[1:].strip() in [a.strip() for a in added]:\n                added.remove(next(a for a in added if a.strip() == l[1:].strip()))\n                moved"
+   ]
+  ],
+  "expect": [
+   "⭐ `return 1` pushed under a new `if verbose:` is NOT a move — it is a loosening"
+  ]
+ },
+ {
+  "name": "r9: `raise` is not a failure statement",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|\\bdeny\\b|\\braise\\b|\\bassert\\b\")",
+    "|\\bdeny\\b|\\bassert\\b\")"
+   ]
+  ],
+  "expect": [
+   "...and a `raise` turned into a `print`"
+  ]
+ },
+ {
+  "name": "r10: sys.exit's argument is not inspected (0 / None / nothing count as failures)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(?!\\s*(?:0|None)?\\s*\\))",
+    ""
+   ]
+  ],
+  "expect": [
+   "...but `sys.exit(0)`, `sys.exit()` and `sys.exit(None)` removed are not failure statements"
+  ]
+ },
+ {
+  "name": "r10: main() catches only PathsDisagree, so an unexpected error crashes",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except Exception as exc:              # r10: ANY collection error fails CLOSED, never a crash",
+    "    except PathsDisagree as exc:"
+   ]
+  ],
+  "expect": [
+   "⭐ main() turns an UNEXPECTED collection error into CANNOT RUN, rc=2 (never a crash)"
+  ]
+ },
+ {
+  "name": "backlog #354: GATE_CODE reads only .py/.sh under scripts/, so a TypeScript gate is not gate code",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(scripts/[^/]+\\.(py|sh|ts|mts|cts|js|mjs|cjs)|",
+    "(scripts/[^/]+\\.(py|sh)|"
+   ]
+  ],
+  "expect": [
+   "⭐ a `.ts` gate's `process.exit(1)` turned into `process.exit(0)` is a loosening (backlog #354)",
+   "...and so is an `.mjs` gate's `throw` turned into a `console.error`",
+   "...and `process.exitCode = 1` dropped",
+   "⭐ real git (backlog #354): a TypeScript gate's `process.exit(1)` -> `0` is held"
+  ]
+ },
+ {
+  "name": "backlog #354: Node's process.exit(<non-zero>) is not a failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "+ r\"|process\\.exit\\s*\\((?!\\s*0?\\s*\\))\"",
+    "+ r\"\""
+   ]
+  ],
+  "expect": [
+   "⭐ a `.ts` gate's `process.exit(1)` turned into `process.exit(0)` is a loosening (backlog #354)",
+   "⭐ real git (backlog #354): a TypeScript gate's `process.exit(1)` -> `0` is held"
+  ]
+ },
+ {
+  "name": "backlog #354: process.exit(...) of ANY argument is a failure path, so process.exit(0) removed holds",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "exit\\s*\\((?!\\s*0?\\s*\\))\"",
+    "exit\\s*\\(\""
+   ]
+  ],
+  "expect": [
+   "...but `process.exit(0)`, `process.exit()` and `process.exitCode = 0` removed are not failure statements"
+  ]
+ },
+ {
+  "name": "backlog #354: the exitCode lookahead backtracks over the space, so `exitCode = 0` reads as a failure",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=(?!=)(?!\\s*0\\b)",
+    "process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=\\s*(?!=)(?!0\\b)"
+   ]
+  ],
+  "expect": [
+   "...but `process.exit(0)`, `process.exit()` and `process.exitCode = 0` removed are not failure statements"
+  ]
+ },
+ {
+  "name": "backlog #354: a non-zero process.exitCode is not a failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "r\"|process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=(?!=)(?!\\s*0\\b)\"",
+    "r\"\""
+   ]
+  ],
+  "expect": [
+   "...and `process.exitCode = 1` dropped"
+  ]
+ },
+ {
+  "name": "backlog #354: Node's `throw` is not a failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                            r\"|\\bthrow\\b\")",
+    "                            r\"\")"
+   ]
+  ],
+  "expect": [
+   "...and so is an `.mjs` gate's `throw` turned into a `console.error`"
+  ]
+ },
+ {
+  "name": "backlog #354: Node's idioms are read in EVERY gate, so a Python gate's JS stub string holding `throw` holds",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "fail = NODE_FAIL_PATH if node else FAIL_PATH",
+    "fail = NODE_FAIL_PATH"
+   ]
+  ],
+  "expect": [
+   "...but a Python gate's JS stub string holding `throw` is not a failure path (PR #397's shape)"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: a space before `process.exit`'s bracket is not allowed",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "process\\.exit\\s*\\((?!",
+    "process\\.exit\\((?!"
+   ]
+  ],
+  "expect": [
+   "⭐ r1 CODEX H: `process.exit (1)` -> `process.exit (0)` — a space before the bracket — is a loosening"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: `exitCode === 0` reads as an assignment",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "=(?!=)(?!\\s*0\\b)\"",
+    "=(?!\\s*0\\b)\""
+   ]
+  ],
+  "expect": [
+   "r1 CODEX M: an edit beside `process.exitCode === 0` (a comparison, not an assignment) is not held"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: a logical assignment (`||=`) to exitCode is unseen",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=",
+    "process\\.exitCode\\s*="
+   ]
+  ],
+  "expect": [
+   "...while `process.exitCode ||= 1` dropped is a loosening (r1 CLAUDE L2)"
+  ]
+ },
+ {
+  "name": "main() never reads the pins, so no fall is ever held (backlog #359 r2)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        pins = pin_pair(_run, BASE_REF)\n",
+    "        pins = ({}, {})\n"
+   ]
+  ],
+  "expect": [
+   "⭐ main() HOLDS a READY PR whose head's pin falls, rc=3"
+  ]
+ },
+ {
+  "name": "a display check-plan-code refuses reads as pinning nothing, so a duplicate key or a computed pin fails OPEN (backlog #359 r3) ⟳ r7: re-bound to `pins_at`'s `_cross` call — the per-call catch is gone ⟳ backlog #538 r2: re-bound to `_child_pins`, where the child's refusal is read",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if \"error\" in answer:\n        raise PinsUnreadable(f\"{what}: {answer['error']}\")\n",
+    "    if \"error\" in answer:\n        return {}\n"
+   ]
+  ],
+  "expect": [
+   "⛔ a head with no single literal display is CANNOT RUN, never a pass"
+  ]
+ },
+ {
+  "name": "a failing `git ls-tree` is read as an answer, so an unread side can pin anything (backlog #359 r3)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if ls.returncode != 0:\n            raise PinsUnreadable",
+    "        if False:\n            raise PinsUnreadable"
+   ]
+  ],
+  "expect": [
+   "⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}"
+  ]
+ },
+ {
+  "name": "the shared sibling import catches only Exception, so a module-level SystemExit in EITHER sibling escapes main() as rc 0 with no verdict (r4 Codex F2, r5 Claude F1) ⟳ r7: the anchor now binds `_cross`, the ONE catch every sibling import and call crosses ⟳ backlog #538: the pins reader is now imported in a CHILD (`_head_read`), so its module body no longer reaches `_cross`; the one in-process sibling IMPORT left is the dashboard gate (`_dashboard_gate` -> `_import_sibling`), and `expect` names only its case",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except BaseException as exc:\n        raise error(",
+    "    except Exception as exc:\n        raise error("
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)"
+ },
+ {
+  "name": "pins_at bypasses `_cross` with its own `except Exception`, so a pin_display that raises SystemExit escapes as no verdict (r4 Codex F2; ⟳ r7: re-bound — the per-call catch is now `_cross`'s) ⟳ backlog #538 r2: re-bound to the child's driver, whose catch is BaseException",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        except BaseException as exc:\n            return {\"error\": describe(exc)}\n",
+    "        except Exception as exc:\n            return {\"error\": describe(exc)}\n"
+   ]
+  ],
+  "expect": "⛔ ...and a reader whose pin_display itself raises SystemExit"
+ },
+ {
+  "name": "the child driver's IMPORT catches only Exception, so a reader whose module body raises SystemExit ends the child with no answer and is refused only as an empty stdout, never named (r4 Codex F2; backlog #538: the reader's import moved from `_cross` into the child)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except BaseException as exc:\n        res[\"import\"] = describe(exc)\n",
+    "    except Exception as exc:\n        res[\"import\"] = describe(exc)\n"
+   ]
+  ],
+  "expect": "⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN"
+ },
+ {
+  "name": "the dashboard gate imports its sibling RAW, bypassing the fail-closed helper, so a module-level SystemExit there escapes main() as rc 0 (r5 Claude F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return _import_sibling(src, \"_cde_for_merge_ready\")\n",
+    "    spec = importlib.util.spec_from_file_location(\"_cde_for_merge_ready\", src)\n    mod = importlib.util.module_from_spec(spec)\n    spec.loader.exec_module(mod)\n    return mod\n"
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)"
+ },
+ {
+  "name": "granted_escapes calls exemption_reason RAW, bypassing `_cross`, so a matcher that raises SystemExit escapes as no verdict (r5 Claude F1; ⟳ r7: re-bound like the reader's)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return {m: _cross(lambda m=m: gate.exemption_reason(pr_body, m), reduce=_exact_reason,",
+    "    return {m: _exact_reason(gate.exemption_reason(pr_body, m)) for m in sorted(set(GATE_ESCAPE.values()))}\n    return {m: _cross(lambda m=m: gate.exemption_reason(pr_body, m), reduce=_exact_reason,"
+   ]
+  ],
+  "expect": "⭐ ...and when the gate's exemption_reason itself raises SystemExit"
+ },
+ {
+  "name": "_describe calls str(exc) UNGUARDED, so a sibling exception whose __str__ exits escapes main() as rc 0 while the error text is built (r6 Codex F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except BaseException:\n        msg = \"<unprintable>\"",
+    "    except ZeroDivisionError:\n        msg = \"<unprintable>\""
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when the dashboard gate's import raises an exception whose __str__ exits (r6 Codex F1)"
+ },
+ {
+  "name": "the child's driver checks pin_display's answer with isinstance, so a bool — an int subclass — passes as a pin and a fall is hidden as READY (r7 Claude F2) — re-anchored (backlog #538 r4) from `_exact_pins`, which the r2 child read put BEHIND this driver and `_child_answer_ok` (`type(v) is int` on decoded JSON), so its mutation became equivalent",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if _type(got) is not _dict:\n                raise TypeError(\"pin_display did not return an exact dict\")",
+    "            if not isinstance(got, _dict):\n                raise TypeError(\"pin_display did not return an exact dict\")"
+   ],
+   [
+    "                if _type(k) is not _str or _type(v) is not _int:\n                    raise TypeError(",
+    "                if not isinstance(k, _str) or not isinstance(v, _int):\n                    raise TypeError("
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when pin_display returns bool values, which are not ints here"
+ },
+ {
+  "name": "the child's driver checks the dict but not its keys and values, so a bool pin passes as 1 and a fall is hidden as READY (r7 Claude F2) — re-anchored (backlog #538 r4) from `_exact_pins`, which the r2 child read put BEHIND this driver and `_child_answer_ok` (`type(v) is int` on decoded JSON), so its mutation became equivalent",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if _type(k) is not _str or _type(v) is not _int:\n                    raise TypeError(",
+    "                if False:\n                    raise TypeError("
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when pin_display returns bool values, which are not ints here"
+ },
+ {
+  "name": "_exact_reason accepts any value unchecked, so a value whose __bool__ exits is truth-tested in escape_diagnosis and a refusal becomes rc 0 (r7 Claude F3)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if type(got) is not str:\n        raise TypeError(\"exemption_reason returned neither None nor an exact str\")\n    return str.__str__(got)",
+    "    return got"
+   ]
+  ],
+  "expect": "⭐ a REFUSING gate is CANNOT RUN, rc=2, never rc 0, when exemption_reason returns a value whose __bool__ exits (r7 P11)"
+ },
+ {
+  "name": "_describe leaves the class NAME uncoerced, so a str-subclass __name__ whose __format__ exits runs in the f-string and leaves rc 0 (r7 Claude F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        name = str.__str__(type.__dict__[\"__name__\"].__get__(type(exc)))",
+    "        name = type.__dict__[\"__name__\"].__get__(type(exc))"
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when the gate's import raises a class whose __name__ is a str subclass (r7 P12)"
+ },
+ {
+  "name": "_exact_pins no longer refuses an EMPTY pin map, so a reader returning {} turns base and head into {} and a falling pin into READY (r8 Codex F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if not out:\n        # r8 Codex F1",
+    "    if False:\n        # r8 Codex F1"
+   ]
+  ],
+  "expect": "⭐ r8 F1: main() is CANNOT RUN, rc=2, when pin_display returns {} for a present file"
+ },
+ {
+  "name": "#508 (1): the rising-count exemption is skipped, so a `--self-test  # N cases` line whose count only ROSE beside a FAIL word is held again",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                rose = rising_count(l[1:], added)",
+    "                rose = None"
+   ]
+  ],
+  "expect": "#508: a rising self-test count 6 -> 9 beside a FAIL word is not a failure-path removal"
+ },
+ {
+  "name": "#508 (1): any CHANGED count is exempt, so a FALLING `--self-test` count beside a FAIL word leaves the failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if (len(new) == 1 and int(new[0][\"n\"]) > int(old[0][\"n\"])",
+    "        if (len(new) == 1 and int(new[0][\"n\"]) != int(old[0][\"n\"])"
+   ]
+  ],
+  "expect": "#508: ...but a FALLING count there still is (and the count rule holds it too)"
+ },
+ {
+  "name": "#508 (1): the text BEFORE the count is not compared, so a re-indented count line is exempt",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                and a[:new[0].start(\"n\")] == removed[:old[0].start(\"n\")]",
+    "                and True"
+   ]
+  ],
+  "expect": "#508: ...and a rising count RE-INDENTED still is (in Python indentation is meaning)"
+ },
+ {
+  "name": "#508 (1): the text AFTER the count is not compared, so `# 9 cases; exit 0 always` is exempt",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                and a[new[0].end(\"n\"):] == removed[old[0].end(\"n\"):]):",
+    "                and True):"
+   ]
+  ],
+  "expect": "#508: ...and a rising count with text changed AFTER the count still is"
+ },
+ {
+  "name": "#508 (2): a flagged line's occurrence is not in its id, so one answer covers every identical removed line",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            out.append((flag_id(path, t, seen.get(t, 0)), path, t))",
+    "            out.append((flag_id(path, t, 0), path, t))"
+   ]
+  ],
+  "expect": "#508: ...and the two ids differ"
+ },
+ {
+  "name": "#508 (2): a `dirty: null` record (the tree could not be described) is read as a clean tree",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if not isinstance(dirty, dict):\n        return False\n    for p in set(reviewed) | set(merged) | set(dirty):",
+    "    if not isinstance(dirty, dict):\n        dirty = {}\n    for p in set(reviewed) | set(merged) | set(dirty):"
+   ]
+  ],
+  "expect": "#508: a tree the wrapper COULD NOT DESCRIBE (dirty None) never matches"
+ },
+ {
+  "name": "#508 (2): every docs/ path may change after the round, not only the round's own records",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if REVIEW_RECORD.fullmatch(p):",
+    "        if p.startswith(\"docs/\"):"
+   ]
+  ],
+  "expect": "#508: ...nor does a DOC changed after it (the tree is EXACT, not gate files only)"
+ },
+ {
+  "name": "#508 (2): the uncommitted overlay is ignored, so a fix the reviewer saw and the author REVERTED still matches",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        saw = dirty[p] if p in dirty else reviewed.get(p)",
+    "        saw = merged.get(p)"
+   ]
+  ],
+  "expect": "#508: ...nor one the reviewer saw that was then REVERTED (dirty, but the head has the old blob)"
+ },
+ {
+  "name": "#508 (2): a reviewer's FINDING no longer beats another verdict's `not a loosening`",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for p, r, _ok in records:\n        k = key(p)",
+    "    for p, r, _ok in [x for x in records if not x[2]]:\n        k = key(p)"
+   ]
+  ],
+  "expect": "#508: ...a FINDING in any matching verdict beats `not a loosening` in another"
+ },
+ {
+  "name": "#508 (2): any answer CONTAINING the words clears a line, not only the exact answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "             if i in ok and a == NOT_A_LOOSENING}",
+    "             if i in ok and NOT_A_LOOSENING in a.lower()}"
+   ],
+   [
+    "            if a == NOT_A_LOOSENING:\n                continue",
+    "            if NOT_A_LOOSENING in a.lower():\n                continue"
+   ]
+  ],
+  "expect": "#508: ...and any other answer text is not an answer"
+ },
+ {
+  "name": "#508 (2): hold_reasons ignores the answers, so an answered line is still held",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        gone = [t for i, t in mine if i not in answered]",
+    "        gone = [t for i, t in mine]"
+   ]
+  ],
+  "expect": "#508: ...with BOTH answered, the failure-path hold is cleared"
+ },
+ {
+  "name": "#508 (2): main() never passes the answers it read to hold_reasons — the call site, reverted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                              answered=answered)",
+    "                              answered=frozenset())"
+   ]
+  ],
+  "expect": "⭐ #508 real git: answered `not a loosening` by a verdict on the EXACT tree, the HOLD clears, rc=0"
+ },
+ {
+  "name": "#544: review_answers does not compare the flagged FILE with HEAD's, so an edit to it after the round keeps the answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if moved:\n",
+    "                if False:\n"
+   ]
+  ],
+  "expect": "⭐ #544 real git: ...but a ONE-BYTE edit to the flagged file voids it, rc=3, naming the file"
+ },
+ {
+  "name": "#544 r1 Claude F1: gather writes a gate symlink's target under another key, so flag_binds binds the link only",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            fs.append({\"old\": path, \"new\": path, \"copy\": False, \"status\": \"M\", \"via\": tgt,\n",
+    "            fs.append({\"old\": path, \"new\": path, \"copy\": False, \"status\": \"M\", \"via_\": tgt,\n"
+   ]
+  ],
+  "expect": "⭐ #544 r1 Claude F1 real git: a gate SYMLINK's answer clears on its reviewed target (rc=0), and an edit to the TARGET after the round voids it, rc=3, naming the target"
+ },
+ {
+  "name": "#508 (2): a verdict whose gate did NOT run still answers",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if rec.get(\"gate_ran\") is not True or rec.get(\"refused\"):",
+    "        if False:"
+   ]
+  ],
+  "expect": "#508 real git: an answer in a verdict whose gate did NOT run clears nothing, rc=3"
+ },
+ {
+  "name": "#508 (2): --flagged-block prints nothing, so no reviewer is ever asked",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        print(flagged_block(failure_path_flags(\"\", _fs, lines=_ln), _ln), end=\"\")",
+    "        print(\"\", end=\"\")"
+   ]
+  ],
+  "expect": "#508 real git: --flagged-block prints the branch's flagged line with its id, rc=0"
+ },
+ {
+  "name": "#508 r1 Codex 3: the rising-count comparison strips trailing whitespace again, so a dropped meaningful space is exempt",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "rose = rising_count(l[1:], added)",
+    "rose = rising_count(l[1:].rstrip(), [a.rstrip() for a in added])"
+   ]
+  ],
+  "expect": "#508 r1 Codex 3: a rising count that also DROPS a trailing space is still a failure-path removal"
+ },
+ {
+  "name": "#508 r1 Codex 2: gitlinks are not compared, so a submodule moved after the round keeps the answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for p in set(reviewed) | set(merged) | set(dirty):",
+    "    for p in {q for q in set(reviewed) | set(merged) | set(dirty) if (merged.get(q) or ('',))[0] != GITLINK}:"
+   ]
+  ],
+  "expect": "#508 r1 Codex 2: a GITLINK changed after the round does not match, though no diff named it"
+ },
+ {
+  "name": "#508 r1 Codex 2: a path only the MERGING tree has is not compared, so a file added after the round keeps the answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "set(reviewed) | set(merged) | set(dirty):",
+    "set(reviewed) | set(dirty):"
+   ]
+  ],
+  "expect": "#508 r1 Codex 2: ...nor a file ADDED after the round that no diff named"
+ },
+ {
+  "name": "#508 r1 M2: the coordinator document is not a round record, so committing it after the round voids every answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(claude|codex|coordinator)/",
+    "(claude|codex)/"
+   ]
+  ],
+  "expect": "#508 r1 M2: the round's coordinator document and decision log, added after it, match"
+ },
+ {
+  "name": "#508 r1 M2: the decision log is not a round record, so appending to it after the round voids every answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|decision-scheme/decision-log\\.jsonl)\")",
+    "|decision-scheme/no-log)\")"
+   ]
+  ],
+  "expect": "#508 r1 M2: the round's coordinator document and decision log, added after it, match"
+ },
+ {
+  "name": "#508 r1 M2: the WHOLE decision-scheme directory is exempt, so its baseline may change after the round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "decision-scheme/decision-log\\.jsonl)",
+    "decision-scheme/.*)"
+   ]
+  ],
+  "expect": "#508 r1 M2: ...but the decision scheme's BASELINE changed after it does not (only the log is a record)"
+ },
+ {
+  "name": "#508 r1 M2: --flagged-block reads only the commits, so a line only an UNCOMMITTED fix flags is never asked about",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            _wt = _rd([\"git\", \"stash\", \"create\"]).strip() or \"HEAD\"",
+    "            _wt = \"HEAD\""
+   ]
+  ],
+  "expect": "⭐ #508 r1 M2 real git: --flagged-block asks about a line an UNCOMMITTED fix flags"
+ },
+ {
+  "name": "#508 r1 M2: the status list ignores the head it is given, so a file changed only in the working tree is not read",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            f\"{base}...{head}\"]",
+    "            f\"{base}...HEAD\"]"
+   ]
+  ],
+  "expect": "⭐ #508 r1 M2 real git: --flagged-block asks about a line an UNCOMMITTED fix flags"
+ },
+ {
+  "name": "#508 r1 m3: a FINDING on another tree is dropped, so a later assent on an unchanged line clears it",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for p, r, _ok in records:\n        k = key(p)\n        for i, a in",
+    "    for p, r, _ok in [x for x in records if x[2]]:\n        k = key(p)\n        for i, a in"
+   ]
+  ],
+  "expect": "#508 r1 m3: a FINDING from a record on ANOTHER tree still beats an assent on this one"
+ },
+ {
+  "name": "#508 r1 m3: review_answers passes no other-tree records — the call site, reverted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    got, standing = answered_flags(anywhere), standing_findings(anywhere)",
+    "    got, standing = answered_flags([x for x in anywhere if x[2]]), standing_findings([x for x in anywhere if x[2]])"
+   ]
+  ],
+  "expect": "⭐ #508 r1 m3 real git: a FINDING from an earlier round on an UNCHANGED line beats a later assent, rc=3"
+ },
+ {
+  "name": "#508 r1 m5: a removal's line is its hunk's FIRST line, not its own",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "None if getattr(hk, \"old\", None) is None else hk.old + i))",
+    "None if getattr(hk, \"old\", None) is None else hk.old))"
+   ]
+  ],
+  "expect": "#508 r1 m5: each block row names its file AND base line"
+ },
+ {
+  "name": "#508 r1 m5: the block row drops the line number it was given",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        return f\"{p}:{n}\" if n is not None else p",
+    "        return p"
+   ]
+  ],
+  "expect": "#508 r1 m5: each block row names its file AND base line"
+ },
+ {
+  "name": "#508 r1 m5: the diff parser keeps no hunk start, so no row can be located",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            hunk = _hunk(line)\n            cur[\"hunks\"].append(hunk)",
+    "            hunk = Hunk()\n            cur[\"hunks\"].append(hunk)"
+   ]
+  ],
+  "expect": "#508 r1 m5: each block row names its file AND base line"
+ },
+ {
+  "name": "#508 r1 m5: the blob-diff reader (main's path) keeps no hunk start",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            hunk = _hunk(line)\n            out.append(hunk)",
+    "            hunk = Hunk()\n            out.append(hunk)"
+   ]
+  ],
+  "expect": "#508 r1 m5 real git: ...and names where each line was in the base file"
+ },
+ {
+  "name": "#508 r1 m5: --flagged-block does not pass the line numbers it collected — the call site",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "failure_path_flags(\"\", _fs, lines=_ln), _ln)",
+    "failure_path_flags(\"\", _fs, lines=_ln))"
+   ]
+  ],
+  "expect": "#508 r1 m5 real git: ...and names where each line was in the base file"
+ },
+ {
+  "name": "#508 r2 Codex 3: a coordinator record's name is a prefix pattern, so any file under coordinator/ is a record",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "-r[0-9]+-\\1\\.md\"",
+    ".*\""
+   ]
+  ],
+  "expect": "#508 r2 Codex 3: a file under docs/reviews/coordinator/ that is not a round's coordinator doc does not match"
+ },
+ {
+  "name": "#508 r2 Codex 3: a record is matched at the START of the path, so a name extending one is a record",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if REVIEW_RECORD.fullmatch(p):\n            continue",
+    "        if REVIEW_RECORD.match(p):\n            continue"
+   ]
+  ],
+  "expect": "#508 r2 Codex 3: ...nor a file whose name only STARTS with the decision log's"
+ },
+ {
+  "name": "#508 r2 Codex 3: a review doc may sit in ANY half's directory",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "-\\1\\.md\"",
+    "-(?:claude|codex|coordinator)\\.md\""
+   ]
+  ],
+  "expect": "#508 r2 Codex 3: ...nor any other name in a review directory — a script, no round, the wrong half's directory, a coordinator doc that is not .md"
+ },
+ {
+  "name": "#508 r2 Codex 5: a finding is never retired, so a repaired line stays held for ever",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if k is not None and any(",
+    "            if False and any("
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: a LATER round of the SAME half, on this tree, answering `not a loosening` retires its finding"
+ },
+ {
+  "name": "#508 r2 Codex 5: the OTHER half's later assent retires a finding",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "k2[:2] == k[:2]",
+    "k2[0] == k[0]"
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...but not a later round of the OTHER half"
+ },
+ {
+  "name": "#508 r2 Codex 5: another SUBJECT's later round retires a finding",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(k2 := key(p2)) is not None and k2[:2] == k[:2]",
+    "(k2 := key(p2)) is not None and k2[1] == k[1]"
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...nor another SUBJECT's later round, nor anything after a verdict whose name gives no round"
+ },
+ {
+  "name": "#508 r2 Codex 5: any OTHER round, earlier too, retires a finding",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "k2[2] > k[2]",
+    "k2[2] != k[2]"
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...nor an EARLIER round's assent — rounds compare as numbers, r10 after r9"
+ },
+ {
+  "name": "#508 r2 Codex 5: rounds compare as TEXT, so r10 reads as earlier than r9",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(m[1], m[3], int(m[2]))",
+    "(m[1], m[3], m[2])"
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...nor an EARLIER round's assent — rounds compare as numbers, r10 after r9"
+ },
+ {
+  "name": "#508 r2 Codex 5: a later assent on ANOTHER tree retires a finding",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                    i in ok2 and (r2.get(",
+    "                    (r2.get("
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...nor the same half's later assent on ANOTHER tree"
+ },
+ {
+  "name": "#508 r2 Codex 5: a later round of the same half retires a finding whatever it answers that id, a finding again too",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(r2.get(\"loosening_answers\") or {}).get(i) == NOT_A_LOOSENING\n",
+    "True\n"
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...nor a later round of the same half that answers THAT id a finding AGAIN \u2014 both verdicts stay named"
+ },
+ {
+  "name": "#508 r2 Codex 5: review_answers names no verdict whose finding stands",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for i in sorted(set(standing) & {i for _p, r, ok in anywhere for i in ok}):",
+    "    for i in []:"
+   ]
+  ],
+  "expect": "⭐ #508 r1 m3 real git: a FINDING from an earlier round on an UNCHANGED line beats a later assent, rc=3"
+ },
+ {
+  "name": "#508 r2 Codex 1 / r3 M1: a line a rising count consumed stays in the budget, so it also excuses a second rise",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                    added.remove(rose)\n",
+    "                    pass\n"
+   ]
+  ],
+  "expect": "#508 r3 M1: ...and one raised-count addition excuses ONE rise, not two"
+ },
+ {
+  "name": "#508 r2 Codex 1: a moved line stays in the budget, so one re-added line excuses two removals",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                added.remove(l[1:])\n",
+    "                pass\n"
+   ]
+  ],
+  "expect": "#508 r2 Codex 1: ...one re-added line excuses ONE identical removal, not two"
+ },
+ {
+  "name": "#508 r2 Codex 1: a move is compared without trailing whitespace again, so it spends the line a count rise needed",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if l[1:] in added:\n",
+    "            if l[1:].rstrip() in [a.rstrip() for a in added]:\n"
+   ],
+   [
+    "                added.remove(l[1:])\n                moved.add(n)",
+    "                added.remove(next(a for a in added if a.rstrip() == l[1:].rstrip()))\n                moved.add(n)"
+   ]
+  ],
+  "expect": "#508 r2 Codex 1: a MOVED line cannot also excuse a rising count that drops a trailing space"
+ },
+ {
+  "name": "#508 r3 Claude M1: moves are paired in hunk order WITH the rises again (greedy), so a rise met first takes a moved line's addition",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        moved = set()\n        for n, (_hk, _i, l, _code) in enumerate(removed):\n",
+    "        moved = set()\n        for n, (_hk, _i, l, _code) in enumerate([]):\n"
+   ],
+   [
+    "            if n not in moved:\n                t = l[1:].strip()\n",
+    "            if n not in moved:\n                t = l[1:].strip()\n                if l[1:] in added:\n                    added.remove(l[1:])\n                    continue\n"
+   ]
+  ],
+  "expect": [
+   "#508 r3 M1: in the MIRROR order (the rise first) the rise cannot take the moved line's addition",
+   "⭐ #508 r3 M1 real git: the MIRROR order (b() before a(), a() padded) is flagged and HELD too"
+  ]
+ },
+ {
+  "name": "#508 r3 Claude M1: a removal the exact pass paired as a MOVE is judged again, so a moved line beside a failure word is flagged",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if n not in moved:\n",
+    "            if True:\n"
+   ]
+  ],
+  "expect": [
+   "...but the SAME line MOVED (removed and re-added) is not"
+  ]
+ },
+ {
+  "name": "backlog #533: a revision is read ONLY from the pins file, so a merge base that predates the move pins nothing and a fall across the move is READY",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for path in (PINS_FILE, PINS_SCRIPT):",
+    "    for path in (PINS_FILE,):"
+   ]
+  ],
+  "expect": [
+   "⭐ backlog #533: a base that PREDATES the move is read from check-plan-code.py's display, so a fall across the move is HELD",
+   "⛔ backlog #533: a head that DELETES the pins file falls back to a harness with no display: CANNOT RUN"
+  ]
+ },
+ {
+  "name": "backlog #533: the harness is read BEFORE the pins file, so a revision holding both is read from the wrong home",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "path in (PINS_FILE, PINS_SCRIPT):",
+    "path in (PINS_SCRIPT, PINS_FILE):"
+   ]
+  ],
+  "expect": [
+   "⭐ backlog #533: a revision holding BOTH files is read from the pins file, never the harness"
+  ]
+ },
+ {
+  "name": "backlog #536: the held-versus-display comparison is skipped, so a head harness redirected to a new pins file with a lowered pin is READY on the stale display",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if differ:\n            raise PinsUnreadable(",
+    "        if False:\n            raise PinsUnreadable("
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #536: a head harness REDIRECTED to a new pins file with a lowered pin is CANNOT RUN, by every import-time route (R1-R7), never READY on the stale file"
+  ]
+ },
+ {
+  "name": "backlog #536: the comparison is inverted, so the real harness, whose held pins equal its display, is CANNOT RUN",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if differ:\n",
+    "        if not differ:\n"
+   ]
+  ],
+  "expect": [
+   "backlog #536: ...while the real harness and harmless shapes of the same names are read, and hold nothing (the adjacent negatives, L0-L4)"
+  ]
+ },
+ {
+  "name": "backlog #536: the comparison reads only the held side's keys, so a redirect to a pins file that drops a target is READY",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "held.keys() | new.keys()",
+    "held.keys()"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #536: ...and so is a redirect to a pins file that DROPS a target (the comparison reads both sides)"
+  ]
+ },
+ {
+  "name": "backlog #534: a green master run counts as a batch",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "             and str(r.get(\"headBranch\", \"\")).startswith(BATCH_PREFIX)]\n",
+    "             ]\n"
+   ]
+  ],
+  "expect": [
+   "#534: a green MASTER run containing the head is not a batch — `info`"
+  ]
+ },
+ {
+  "name": "backlog #534: a red batch run counts as green",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    green = [r for r in runs if r.get(\"conclusion\") == \"success\"\n",
+    "    green = [r for r in runs if True\n"
+   ]
+  ],
+  "expect": [
+   "#534: a RED batch run containing the head is only `info`"
+  ]
+ },
+ {
+  "name": "backlog #534: the advisory batch line moves the verdict",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    print(f\"  {bmark} {'batch sweep':18s} {bline}\")\n",
+    "    results[\"batch sweep\"] = 0 if bmark == \"ok \" else 1\n    print(f\"  {bmark} {'batch sweep':18s} {bline}\")\n"
+   ]
+  ],
+  "expect": [
+   "⭐ #534: main() leaves a READY PR with NO green batch READY, rc=0 — the batch line never moves the verdict"
+  ]
+ },
+ {
+  "name": "backlog #534: a batch that diverged from the head is read as containing it",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            return rc_.stdout.strip() in (\"ahead\", \"identical\")\n",
+    "            return True\n"
+   ]
+  ],
+  "expect": [
+   "#534: main() reports NO containing batch when GitHub says no green batch descends from the head"
+  ]
+ },
+ {
+  "name": "batch-ci r1 R1-F8: the batch line compares every green batch run, uncapped",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for r in green[:cap]:\n",
+    "    for r in green:\n"
+   ]
+  ],
+  "expect": [
+   "R1-F8: the batch line compares at most BATCH_COMPARE_CAP green batch runs, and says how many of how many"
+  ]
+ },
+ {
+  "name": "batch-ci r1 R1-F8: the batch run list carries no timeout",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                   \"--json\", \"databaseId,headBranch,headSha,conclusion\"], timeout=BATCH_CALL_TIMEOUT)\n",
+    "                   \"--json\", \"databaseId,headBranch,headSha,conclusion\"])\n"
+   ]
+  ],
+  "expect": [
+   "R1-F8: main() gives EVERY batch-line call (the run list and each compare) the per-call timeout"
+  ]
+ },
+ {
+  "name": "batch-ci r1 R1-F8: a batch compare carries no timeout",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            rc_ = _run([\"gh\", \"api\", f\"repos/{{owner}}/{{repo}}/compare/{bhead}...{sha}\", \"--jq\", \".status\"],\n                       timeout=BATCH_CALL_TIMEOUT)\n",
+    "            rc_ = _run([\"gh\", \"api\", f\"repos/{{owner}}/{{repo}}/compare/{bhead}...{sha}\", \"--jq\", \".status\"])\n"
+   ]
+  ],
+  "expect": [
+   "R1-F8: main() gives EVERY batch-line call (the run list and each compare) the per-call timeout"
+  ]
+ },
+ {
+  "name": "batch-ci r1 R1-F8: a refused compare reads as `does not contain`",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if rc_.returncode != 0:           # a failed compare is NOT \"does not contain\": it was not checked\n",
+    "            if rc_.returncode != 0:           # a failed compare is NOT \"does not contain\": it was not checked\n                return False\n"
+   ]
+  ],
+  "expect": [
+   "R1-F8: a compare GitHub refused is `advisory: not checked`, never read as `does not contain`"
+  ]
+ },
+ {
+  "name": "backlog #538: the held side imports the WORKING-TREE harness again, so a stale harness left uncommitted reads a pin-lowering redirect as READY",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\"harness\": str(root / PINS_SCRIPT),",
+    "\"harness\": str(PINS_READER),"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538: a head harness redirected to a lowered pins file is CANNOT RUN on a clean tree (the control) AND with the previous harness left uncommitted in the working tree",
+   "⛔ backlog #538: ...and by R3, with the redirecting `_redir.py` reverted in the working tree, the head harness's sibling import is HEAD's, never the module the working-tree reader already loaded",
+   "⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though an untracked copy sits in the working tree, redirecting (the first read) or not (the second)",
+   "backlog #538: ...while an HONEST head with a LOWERING redirect left uncommitted is read as HEAD holds it: nothing held, clean or dirty (the adjacent negative)",
+   "⛔ backlog #538 r1 (C-F1): an honest pin fall is HELD on a clean tree (the control) AND under a working-tree pin_display that answers from the working-tree pins file: no working-tree code parses a display"
+  ]
+ },
+ {
+  "name": "backlog #538: a failing `git ls-tree` of HEAD's scripts/ is not refused for itself, so its output is read as a listing (r1: was `git archive`)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if ls.returncode != 0:\n        raise PinsUnreadable(f\"HEAD: `git ls-tree` of scripts/ exited",
+    "    if False:\n        raise PinsUnreadable(f\"HEAD: `git ls-tree` of scripts/ exited"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1: a failing `git ls-tree` of HEAD's scripts/ is CANNOT RUN, named for the listing"
+  ]
+ },
+ {
+  "name": "backlog #538: a listing entry that does not parse is passed over, and answered only by a later failure (r1: was an archive that does not unpack)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            raise PinsUnreadable(\"HEAD: `git ls-tree` of scripts/ printed an entry that is not `<mode> <type> <id>\\\\t<path>`\")\n",
+    "            continue\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1: ...and so is a listing it cannot parse, named for the listing"
+  ]
+ },
+ {
+  "name": "backlog #538: r1 C-F1: the displays are parsed by the WORKING-TREE harness again, so a dirty reader hides an honest fall",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    old = {} if base_home is None else _child_pins(ans[\"base\"], f\"{rev}: {base_home}\")\n",
+    "    old = {} if base_home is None else _cross(lambda: _import_sibling(PINS_READER, \"_cpc_for_merge_ready\", PinsUnreadable).pin_display(base_text), reduce=_exact_pins, error=PinsUnreadable)\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1 (C-F1): an honest pin fall is HELD on a clean tree (the control) AND under a working-tree pin_display that answers from the working-tree pins file: no working-tree code parses a display",
+   "⛔ backlog #538 r2 (X-F3): sys.path and sys.modules are UNCHANGED across the suite's first pin_pair, a successful held read and a failing one, a path and a fileless module the head harness made included"
+  ]
+ },
+ {
+  "name": "backlog #538: r1: an EMPTY listing is not refused, so an empty tree is imported",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if not entries:\n        raise",
+    "    if False:\n        raise"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1: ...and an EMPTY listing, never an empty tree imported"
+  ]
+ },
+ {
+  "name": "backlog #538: r1: a symlink or submodule entry is not refused",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if fields[0] not in _HEAD_MODES or fields[1] != b\"blob\":\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1: ...and a SYMLINK or a SUBMODULE in it: only a regular file is materialised"
+  ]
+ },
+ {
+  "name": "backlog #538: r1: a path that leaves scripts/ is not refused",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if parts[0] != \"scripts\" or len(parts) < 2 or any(p in (\"\", \".\", \"..\") for p in parts):\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1: ...and a path that leaves scripts/ (`..`)"
+  ]
+ },
+ {
+  "name": "backlog #538: r1: a file is written over, so two entries landing on one file pass",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        with open(target, \"xb\") as fh:",
+    "        with open(target, \"wb\") as fh:"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1: ...and two entries landing on ONE file (case folding), never the second over the first"
+  ]
+ },
+ {
+  "name": "backlog #538: r1: a failing `git cat-file --batch` is not refused for itself",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if cat.returncode != 0:\n        raise",
+    "    if False:\n        raise"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1: a failing `git cat-file --batch` is CANNOT RUN, named for the read"
+  ]
+ },
+ {
+  "name": "backlog #538: r1: a cat-file answer that is not the blob asked for is not refused for itself",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if len(head) != 3 or head[0] != oid.encode() or head[1] != b\"blob\" or not head[2].isdigit():\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1: ...and an answer that is not the blob asked for"
+  ]
+ },
+ {
+  "name": "backlog #538: r1 X-F1: the bytes read are not hashed against the blob id, so a rewritten harness is imported",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if out[end:end + 1] != b\"\\n\" or _blob_id(data, len(oid)) != oid:\n",
+    "        if out[end:end + 1] != b\"\\n\":\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1: ...and BYTES that do not hash to the blob's id: nothing but HEAD's exact bytes is imported"
+  ]
+ },
+ {
+  "name": "backlog #538: r1: a cat-file answer with more than was asked is not refused",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if pos != len(out):\n        raise",
+    "    if False:\n        raise"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r1: ...and an answer with MORE than was asked"
+  ]
+ },
+ {
+  "name": "#544: a DELETED flagged file's answer is not compared with the whole tree, so a doc edit after the round keeps it",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if not whole:\n",
+    "                if False:\n"
+   ]
+  ],
+  "expect": "⭐ #544 real git: a DELETED flagged file's answers keep the EXACT-tree rule — its failure-path hold cleared on that tree, back after a later doc edit"
+ },
+ {
+  "name": "#544: flag_binds binds a DELETED file to nothing (every comparison vacuously true), not to the exact tree",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if not f[\"new\"]:\n            by[n] = None\n",
+    "        if not f[\"new\"]:\n            by[n] = ()\n"
+   ]
+  ],
+  "expect": "#544: flag_binds — a file binds its own path, a rename its NEW path, a gate symlink its TARGET too, and a deleted or unknown file None (the exact tree)"
+ },
+ {
+  "name": "#544: flag_binds drops a gate symlink's TARGET, so an edit to the target after the round keeps the answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    ", f[\"new\"], *([f[\"via\"]] if f.get(\"via\") else [])}",
+    ", f[\"new\"]}"
+   ]
+  ],
+  "expect": "#544: flag_binds — a file binds its own path, a rename its NEW path, a gate symlink its TARGET too, and a deleted or unknown file None (the exact tree)"
+ },
+ {
+  "name": "#544: file_matches reads a file ABSENT from both trees as identical",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return saw is not None and saw == _entry(merged.get(path))",
+    "    return saw == _entry(merged.get(path))"
+   ]
+  ],
+  "expect": "#544: ...nor the file MISSING from the merging tree, from the reviewed one, or from both"
+ },
+ {
+  "name": "#544: answered_flags clears every id a record answers once ANY of its answers is bound to this tree",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "             if i in ok and a == NOT_A_LOOSENING}",
+    "             if ok and a == NOT_A_LOOSENING}"
+   ]
+  ],
+  "expect": "#544: a record bound for ONE id clears only that id, though it answers both"
+ },
+ {
+  "name": "#544: standing_findings retires a finding by a same-half later round bound for ANY id, not THAT one",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                    i in ok2 and (r2.get(\"loosening_answers\")",
+    "                    ok2 and (r2.get(\"loosening_answers\")"
+   ]
+  ],
+  "expect": "#544: ...and a same-half later round whose answer for THAT id is on a changed file retires nothing, though the other half assents"
+ },
+ {
+  "name": "#544: the call site binds every flag to no file, so every answer survives any edit — the call site, reverted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "review_answers(git_reader(_run), files, flag_binds(flags, fs))",
+    "review_answers(git_reader(_run), files, {i: () for i, _p, _t in flags})"
+   ]
+  ],
+  "expect": "⭐ #544 real git: ...but a ONE-BYTE edit to the flagged file voids it, rc=3, naming the file"
+ },
+ {
+  "name": "backlog #538 r2: HEAD's child runs WITHOUT -I, so a PYTHONPATH naming the working tree supplies a module HEAD does not hold",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "[sys.executable, \"-I\", \"-B\", \"-S\", \"-c\", _DRIVER]",
+    "[sys.executable, \"-B\", \"-S\", \"-c\", _DRIVER]"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though an untracked copy sits in the working tree, redirecting (the first read) or not (the second)"
+  ]
+ },
+ {
+  "name": "backlog #538 r2 X-F1: committed bytecode in HEAD's scripts/ is skipped, not refused",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            raise PinsUnreadable(f\"HEAD: {path!r} is committed Python bytecode, which can run code its source does not hold\")\n",
+    "            continue\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r2 (X-F1): a committed unchecked-hash .pyc that holds the display's pins, beside a harness source that redirects, is CANNOT RUN for the BYTECODE, with the cache in the working tree or not",
+   "⛔ backlog #538 r2 (X-F1): ...and ANY committed bytecode is refused beside an HONEST source, never skipped (a cache, a sourceless .pyc, a .pyo)"
+  ]
+ },
+ {
+  "name": "backlog #538 r2: the child's exit code is not checked, so a child that answers and then fails is read",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if child.returncode != 0:\n        tail",
+    "    if False:\n        tail"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r2: a child that answers and then exits NON-ZERO is CANNOT RUN, named for the exit"
+  ]
+ },
+ {
+  "name": "backlog #538 r2: the child's JSON is not checked against its schema",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if not _child_answer_ok(ans, base_text is not None, head_text is not None):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r2: a child that prints JSON OUTSIDE the schema is CANNOT RUN: an extra key, a value that is not an int, a pins answer that is not a dict"
+  ]
+ },
+ {
+  "name": "backlog #538 r2: the child has no timeout, so a child that hangs holds the gate",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "out, err = child.communicate(req, timeout=CHILD_TIMEOUT)",
+    "out, err = child.communicate(req, timeout=None)"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r2: ...and a child that runs past its timeout"
+  ]
+ },
+ {
+  "name": "backlog #538 Phase 6 (M1): a HEAD scripts/ name that is a standard-library module is not refused",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if top in sys.stdlib_module_names:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 Phase 6 (R3-F1): a committed scripts/importlib/ PACKAGE that forges the child's answer is CANNOT RUN, named for the standard-library module it shadows",
+   "⛔ backlog #538 Phase 6: ...and a MODULE named for one, a name this platform may lack (scripts/msvcrt.py)",
+   "⛔ backlog #538 Phase 6: EVERY stdlib name the child imports, as scripts/<name>.py and as a package, is refused, and the refused set holds the fixed core"
+  ]
+ },
+ {
+  "name": "backlog #538 Phase 6 (M1b): a stdlib-named PACKAGE (scripts/<name>/) is not checked",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "top = parts[1][:-3] if len(parts) == 2 else parts[1]",
+    "top = parts[1][:-3] if len(parts) == 2 else None"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 Phase 6 (R3-F1): a committed scripts/importlib/ PACKAGE that forges the child's answer is CANNOT RUN, named for the standard-library module it shadows"
+  ]
+ },
+ {
+  "name": "backlog #538 Phase 6 (M1c): the stdlib-name refusal is over-broad, refusing a name that only case-folds to one",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if top in sys.stdlib_module_names:\n            raise PinsUnreadable(f\"HEAD: {path!r} is named",
+    "if top.lower() in sys.stdlib_module_names:\n            raise PinsUnreadable(f\"HEAD: {path!r} is named"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 Phase 6: ...but NOT a name that is a stdlib name only case-folded (scripts/Json.py) or nested (scripts/tools/json.py): the fall is held, and neither file ran"
+  ]
+ },
+ {
+  "name": "backlog #538 Phase 6 (M2): the timeout does not kill the child's session",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                os.killpg(child.pid, 9)         # its whole session",
+    "                pass         # its whole session"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 Phase 6 (R3-F2): a timed-out child and an IN-session grandchild holding its stdout are both killed: CANNOT RUN, and nothing outlived the kill"
+  ]
+ },
+ {
+  "name": "backlog #538 Phase 6 (M3): the wait after the kill is unbounded, so a setsid grandchild holds the gate",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                child.communicate(timeout=CHILD_GRACE)\n",
+    "                child.communicate()\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 Phase 6 (R3-F2): ...and a grandchild that LEFT the session holds the pipe: the gate stops waiting after its grace, CANNOT RUN naming what outlived the kill, in under 10 s"
+  ]
+ },
+ {
+  "name": "backlog #538 Phase 6 (M4): a duplicate key in the child's JSON is accepted, last one wins",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                raise ValueError(f\"duplicate key {k!r}\")\n",
+    "                pass\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 Phase 6 (R3-F3): a child whose JSON repeats a key is CANNOT RUN, though the last value would pass the schema"
+  ]
  }
 ]

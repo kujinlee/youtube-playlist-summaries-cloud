@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 0cfd7079-9c4f-4f89-9a59-337f426f6311
-  modified: 2026-09-22T01:00:01.460Z
+  modified: 2026-10-19T19:52:11.279Z
 ---
 
 **Measured 2026-09-21** on the backlog #153 architecture review (PR #329). Four review rounds; the
@@ -40,6 +40,26 @@ perfectly visible to the next reader. r3 said this explicitly: splitting measure
 - **Prefer locators that do not shift.** Line anchors over ordinal indices. Related:
   [[a-mutation-loses-its-binding]], [[a-retrospective-number-needs-provenance]],
   [[quote-the-code-dont-characterise-it]], [[concurrent-agents-go-wrong]].
+
+## ⤳ 2026-10-19 — A NEW SHAPE: I inferred what an AGENT HAD RECEIVED from the FILE it wrote
+
+I sent a running review half two new findings at 19 minutes. I then read its filed review, grepped
+it for both, found nothing, and **published "this finding has been reviewed by nobody"** in the
+review document, the commit message and my report to the owner. It was wrong **within six minutes**:
+the half picked the message up, filed a 195-line addendum, **confirmed one finding with better
+evidence than mine and refuted two of my conclusions** — a remedy I had filed as a backlog row, and
+my claim about which row owned the defect.
+
+⛔ **THE FILE IS NOT A RECORD OF WHAT THE AGENT RECEIVED.** An agent that is still running has not
+written what it is about to write, so absence in its artifact is evidence of nothing. I had the
+cheap check available — **ask it** (`SendMessage`), or look at whether it was still live — and
+instead I inferred from the one source that structurally cannot answer.
+
+**How to apply:** before saying an agent *did not* see, consider, or address something, either ask
+it or state the claim as *"not in its filed document as of HH:MM, and it may still be working"*.
+⚠ And the asymmetry matters: *"it addressed X"* is checkable from the file; *"it did not address X"*
+is not. Related: [[concurrent-agents-go-wrong]], [[ask-an-agent-to-refute-not-confirm]],
+[[a-harness-cannot-read-a-cause-from-a-childs-text]].
 
 ⚠ **The rounds were NOT thrashing** by this repo's definition, and saying so mattered: r3-1/r3-3/r3-4
 were independent new subjects, not consequences of a previous fix. The stop signal was different —

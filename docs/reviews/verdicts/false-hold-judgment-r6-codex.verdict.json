@@ -1,0 +1,28 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 752 chars"
+  ],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 4f8430949ce150090fb4810f410025fe387e7384"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "d71e8bb5e97ccd7201d9f176e1b30e69a458d3d3",
+  "intrusions": [],
+  "loosening_answers": {
+    "26a23836138b": "not a loosening",
+    "6bd002a6d73a": "not a loosening",
+    "795043e96b8f": "not a loosening",
+    "c7f21f95034a": "not a loosening",
+    "e8b3c3bfbf22": "not a loosening",
+    "f13e64d753fa": "not a loosening"
+  },
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/fhj-r6-prompt.txt",
+  "reason": "752 chars",
+  "refused": false,
+  "review": "false-hold-judgment-r6-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/fhj"
+}

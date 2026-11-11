@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/reshard-18-r1-claude.md": "100644 f3fe1a5fc7b883c6435530b1abc5f98e61b1c4bf",
+    "docs/reviews/codex/reshard-18-r1-codex.md": "100644 51a0e0866d0c87a0f98f51ea70a5d0940f685830",
+    "docs/reviews/verdicts/reshard-18-r1-codex.verdict.json": "100644 6a70aa9eab340d429fb6ea765fa2c8ab7e788208"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "0b4f691a0c3b8f6839db8b0755378db81db633cd",
+  "intrusions": [],
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 6249 chars, names 0b4f691a0c3b",
+  "refused": false,
+  "review": "reshard-18-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a5c0cd52df75b4737",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

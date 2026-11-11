@@ -1057,6 +1057,8 @@ Phase 5 rule already said *"open the PR, notify, do not merge"*, making push the
 Specific beat general the whole time and the general list was read over it.
 
 ⚠ **What did NOT change:** merging is still the human gate, and **a PR is a separate judgement** —
+⟳ *superseded 2026-10-25 for the first half: merge when `check-merge-ready.py` says READY, and HOLD
+(rc 3) for the owner on its four exceptions — `dev-process.md`, Human-in-the-Loop.* The second half stands:
 opening one asserts the work is ready for that gate, so it is not opened for work that has not
 converged.
 
@@ -1130,3 +1132,17 @@ non-git directory (*"Not inside a trusted directory"*) and with stdin left open.
 reporting a real failure for an invocation error is the thing to rule out before believing an
 outage.
 
+
+---
+
+## Why the spine is short — history moved out of the always-loaded files
+
+*Moved verbatim from the always-loaded `docs/dev-process.md` on 2026-10-31 to cut the text re-sent on every turn. The rule itself still stands there as one line; this is its full account. Edit the rule there and the account here — never restate the account back into the spine.*
+
+This document reached **576 lines**, of which ~28% was added in two days. Every addition was justified
+by a measured defect; the aggregate was unreadable — the *"individually thoughtful, fail as a set"*
+verdict these reviews keep producing, applied to their own documentation. An unread rule is worse than
+no rule, because it creates a belief that something is covered.
+
+**The eviction queue was drained 2026-09-20** — all three flagged rules resolved, reasons in
+[`process-rationale.md`](process-rationale.md). `check-docs.py` now WARNS before a budget blocks.

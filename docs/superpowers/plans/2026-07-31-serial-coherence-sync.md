@@ -3,6 +3,8 @@
 > **Anchor:** `cloud-sync` — **ADR:** 0002
 > **Goal:** The same video has the same serial number on both replicas, so both derive the same blob address.
 
+**Status:** ✅ shipped — merged in PR #42 (*"fix(sync): stop orphaning paid dig blobs when replicas disagree on a …"*); the sync path is in the product (`lib/`, `worker/`) and M2 shipped.
+
 **Goal:** the same video has the same `serialNumber` on both replicas, so both derive the same
 `base` (`<serial>_<slug>`) and no derived blob is ever orphaned by a sync.
 

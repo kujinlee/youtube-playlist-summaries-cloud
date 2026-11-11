@@ -1,0 +1,34 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 5162 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "8775b82df83afbdb98d8ffffd838dbb0b34936e5",
+  "intrusions": [],
+  "loosening_answers": {
+    "1249da34105f": "not a loosening",
+    "3e8b51e50547": "not a loosening",
+    "46da71649200": "not a loosening",
+    "4f118205f0ba": "not a loosening",
+    "a3675a17d265": "not a loosening",
+    "a6bd50cab65e": "not a loosening",
+    "bb9bf96e21f2": "not a loosening",
+    "be450713bce4": "not a loosening",
+    "c47564441466": "finding",
+    "d2d3b8498823": "not a loosening",
+    "db3eea4bbfbd": "not a loosening",
+    "e36f8dfa2eb5": "not a loosening",
+    "e6423f648a1d": "not a loosening",
+    "f32c87427819": "not a loosening"
+  },
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/hph-r2-codex.txt",
+  "reason": "5162 chars",
+  "refused": false,
+  "review": "held-pins-head-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/hph"
+}

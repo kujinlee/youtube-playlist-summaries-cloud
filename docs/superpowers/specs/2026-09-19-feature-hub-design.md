@@ -3,6 +3,8 @@
 > **Anchor:** `feature-map` — **ADR:** none
 > **Goal:** Anyone can find what the system does today, what it is missing on purpose, and every fragment that defines each — without searching.
 
+**Status:** ✅ shipped — merged in PR #323 (*"A feature hub: one page for what this system does today, and what it …"*); `docs/features.md` and `scripts/gen-features-page.py` are in the tree.
+
 ## Why this exists
 
 **Asked on 2026-09-19, after a day spent reviewing one slice: *"where can I find currently

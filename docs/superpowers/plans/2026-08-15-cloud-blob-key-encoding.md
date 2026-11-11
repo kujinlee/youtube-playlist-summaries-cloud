@@ -5,6 +5,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ shipped — merged in PR #146 (*"docs(adr): ADR-0010 — a document declares its anchor; the index is de…"*) and 2 earlier PR(s), all MERGED; the blob key encoding is in the product and its guards are in CI.
+
 **Goal:** Let a video with a title in any language be stored **and served** from the cloud, without changing vault filenames and without migrating anything already in the bucket.
 
 **Architecture:** Two independent halves. (1) **The encoder** — `SupabaseBlobStore` maps a *logical* Unicode key to a *physical* ASCII one at the storage seam, so Storage's ASCII-only rule stops reaching the rest of the app. (2) **The servability guard** — one predicate, `isServableSummaryKey`, installed at points that *dominate* every writer rather than at a list of call sites: `videoDataPayload()` for cloud row writes, `serialize()` for model envelopes.

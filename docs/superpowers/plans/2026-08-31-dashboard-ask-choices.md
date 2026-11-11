@@ -5,6 +5,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (the project default, `docs/dev-process.md` Phase 3) to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ shipped — merged in PR #187 (*"Heads-up expiry decided: no expiry, and the ask that carried it is re…"*) and 1 earlier PR(s), all MERGED; the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Spec:** [`2026-08-31-dashboard-ask-choices-design.md`](../specs/2026-08-31-dashboard-ask-choices-design.md) **v3**, commit `77f63f3`.
 
 ⚠ **Never write the word `resolved` in ALL CAPS anywhere in this plan — prose, comment or test-case

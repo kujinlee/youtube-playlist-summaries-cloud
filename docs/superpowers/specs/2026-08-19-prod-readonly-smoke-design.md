@@ -3,6 +3,8 @@
 > **Anchor:** `prod-smoke` — **ADR:** none
 > **Goal:** After every deploy, prove by machine that the deployed application serves the real application.
 
+**Status:** ✅ shipped — merged in PR #126 (*"docs(deploy): write the prod smoke INTO the runbook — a gate announce…"*) and 3 earlier PR(s), all MERGED; the smoke gate is written into the deploy runbook.
+
 **Backlog:** #41 🟠 · **Roadmap:** the untaken half of 3.1 · **Status:** design approved by the user
 2026-08-19, spec awaiting review.
 

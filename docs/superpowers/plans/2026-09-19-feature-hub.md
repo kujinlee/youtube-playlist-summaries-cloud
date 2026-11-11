@@ -5,6 +5,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ shipped — merged in PR #323 (*"A feature hub: one page for what this system does today, and what it …"*); `docs/features.md` and `scripts/gen-features-page.py` are in the tree.
+
 **Goal:** A page at `/features` showing what this system does, what it deliberately does not, and the fragments that define each — derived from declarations, never hand-maintained.
 
 **Architecture:** One hand-written data file (`docs/features.md`) holds a feature tree: trunks, nodes, one purpose sentence each, and alias lines pointing at existing vocabularies. `check-features.py` **owns the grammar** and validates it; `gen-features-page.py` **imports that parser** and renders. This split is deliberate — two parsers for one grammar is the drift shape this repo has measured 13 times, and `check-dashboard-entry.py` already sets the precedent by owning the entry-header grammar that its page imports.

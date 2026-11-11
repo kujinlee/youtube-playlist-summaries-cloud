@@ -121,12 +121,25 @@
     "file": "scripts/check-canonical-source.py",
     "edits": [
       [
-        "                      \".claude/hooks/\", \".github/workflows/\", \".agents/skills/\")",
-        "                      \".claude/hooks/\", \".github/workflows/\")"
+        "                      \".claude/hooks/\", \".github/workflows/\", \".agents/skills/\",\n                      \".githooks/\")",
+        "                      \".claude/hooks/\", \".github/workflows/\",\n                      \".githooks/\")"
       ]
     ],
     "expect": [
       "STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift"
     ]
+  },
+  {
+    "name": "⭐ 2026-10-21: the duplication rule stops honouring EXEMPT, so a review that QUOTES a marker in its own test output becomes a second canon site again — the live defect, found by running the FULL ci.yml guard list instead of a subset. The citing rule has always applied EXEMPT; this rule had not, so the module's documented exemption was true of half of it.",
+    "edits": [
+      [
+        "            and not EXEMPT.match(str(f.relative_to(root)))",
+        "            and True"
+      ]
+    ],
+    "expect": [
+      "⭐ a marker QUOTED in frozen testimony is NOT a second canon site"
+    ],
+    "file": "scripts/check-canonical-source.py"
   }
 ]

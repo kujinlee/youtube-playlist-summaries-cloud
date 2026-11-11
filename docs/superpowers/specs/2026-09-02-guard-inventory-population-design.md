@@ -3,6 +3,8 @@
 > **Anchor:** `status-visibility` — **ADR:** none
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #214 (*"The mutation harness stops reporting a coverage verdict it did not earn"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Backlog:** #72 (and #73, which closes with it).
 **Status: v4 — rounds 1, 2 and 3 folded in, BOTH halves each round. EXITS PHASE 1.** The shape the
 user approved (declare-out) is unchanged and was never challenged in three rounds. The declaration's

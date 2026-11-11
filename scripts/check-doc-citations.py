@@ -1222,6 +1222,13 @@ def _cited_symlink_witness() -> "tuple[int, int]":
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     """78 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 

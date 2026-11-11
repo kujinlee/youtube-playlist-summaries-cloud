@@ -1,0 +1,84 @@
+[
+  {
+    "name": "PR #496 r3: a green full sweep closes the open sweep-red issue",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            gh(\"issue\", \"comment\", str(i[\"number\"]), \"--body\",\n",
+        "            gh(\"issue\", \"close\", str(i[\"number\"]), \"--comment\",\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: a green AT the failing commit, with the issue open, COMMENTS and leaves it OPEN",
+      "⭐ r3: `gh issue close` is never invoked, over a whole red/green/red/green history"
+    ]
+  },
+  {
+    "name": "PR #496 r3: a green full sweep comments on only the first open sweep-red issue",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        for i in issues:\n",
+        "        for i in issues[:1]:\n"
+      ]
+    ],
+    "expect": [
+      "a green comments on EACH open sweep-red issue, and closes neither"
+    ]
+  },
+  {
+    "name": "PR #496 r3: a green full sweep is handled as a red one",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if sweep == \"success\":\n",
+        "    if sweep == \"SUCCESS\":\n"
+      ]
+    ],
+    "expect": [
+      "a green with NO issue open writes nothing to GitHub",
+      "...and the comment names the green SHA and its run"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X1: the red run does not record the failing SHA",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            f\"{MARKER.format(sha=sha)}\")",
+        "            f\"\")"
+      ]
+    ],
+    "expect": [
+      "the red body carries ITS OWN failing SHA as a marker",
+      "a red run with none open CREATES one issue, recording its failing SHA"
+    ]
+  },
+  {
+    "name": "backlog #330: a second red opens another issue instead of commenting on the open one",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if issues:\n        gh(\"issue\", \"comment\", str(issues[0][\"number\"]), \"--body\", body)\n",
+        "    if False:\n        gh(\"issue\", \"comment\", str(issues[0][\"number\"]), \"--body\", body)\n"
+      ]
+    ],
+    "expect": [
+      "a second red COMMENTS on the open issue, recording its own SHA, and opens no second issue"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X1: a failed gh call is not raised",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if r.returncode != 0:\n        raise RuntimeError",
+        "    if False:\n        raise RuntimeError"
+      ]
+    ],
+    "expect": [
+      "a gh failure makes the step RED, never a silent pass (success)",
+      "a gh failure makes the step RED, never a silent pass (failure)"
+    ]
+  }
+]

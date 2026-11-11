@@ -41,6 +41,7 @@ failure, not a placeholder — allocate the name when the first document needs i
 | `review-decides-itself` | 0014 | A review loop decides its own next step — run, stop, or escalate — from recorded evidence rather than recall, and reaches the human only for decisions that are genuinely theirs. |
 | `feature-map` | — | Anyone can find what the system does today, what it is missing on purpose, and every fragment that defines each — without searching. |
 | `harness-ships-elsewhere` | 0015 | The harness this project built can be installed and used by someone who has never seen this repository. |
+| `dev-speed-first` | — | A change gets its verdict as fast as the evidence allows, with mutation coverage identical. |
 
 ## Declaring the anchor in a document
 

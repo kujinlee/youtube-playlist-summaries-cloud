@@ -4,7 +4,9 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
 **Backlog:** #71. **Origin:** Phase 6 finding D, `docs/reviews/architecture-review-2026-08-30.md`.
-**Status:** drafted 2026-08-30. Candidate 1 of the Phase 6 candidates; the user set the order
+**Status:** ✅ shipped — merged in PR #180 (*"One renderer for four pages: the inline markup seam (backlog #71)"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
+> ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: *drafted 2026-08-30. Candidate 1 of the Phase 6 candidates; the user set the order*
 **1 → 3 → 4** on 2026-08-30.
 
 ---

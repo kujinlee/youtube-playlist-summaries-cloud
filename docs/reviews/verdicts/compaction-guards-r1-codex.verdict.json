@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 5099 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "217d74e2f4de498d51c9992656a8b065370788a5",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "../361-codex-r1.md",
+  "reason": "5099 chars",
+  "refused": false,
+  "review": "compaction-guards-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

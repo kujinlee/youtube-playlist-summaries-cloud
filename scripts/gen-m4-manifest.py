@@ -229,6 +229,13 @@ def read_committed() -> set[str] | None:
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     """⭐ r5 B3 — PROVE THE POST-PHASE PATH, which is otherwise only reachable after M4-β.
 
     Builds a scratch database that HAS M4, points `derive()` at it as the baseline, and requires the

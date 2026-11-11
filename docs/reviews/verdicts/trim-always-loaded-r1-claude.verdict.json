@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/trim-always-loaded-r1-claude.md": "100644 c78c69f322c1fbf9a773488a00095ba100b00cfd",
+    "docs/reviews/codex/trim-always-loaded-r1-codex.md": "100644 0c47abb331836472e0a14c9faeee65655a610ea0",
+    "docs/reviews/verdicts/trim-always-loaded-r1-codex.verdict.json": "100644 b7a82cb5350f71d67b5c496399abd8a3af825d55"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "36a614b168d1516cc34425471460a2d5062c4154",
+  "intrusions": [],
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 10616 chars, names 36a614b168d1",
+  "refused": false,
+  "review": "trim-always-loaded-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/wt-trim",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

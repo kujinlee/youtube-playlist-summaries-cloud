@@ -48,3 +48,36 @@ used step 2 (`STEP 2 of 5`, `STEP 2 of 3`), so all the distinctness lived in the
 See [[a-case-can-pass-for-an-ambient-reason]] (the *environment* sibling of this),
 [[a-test-that-cannot-fail]], [[assert-the-property-not-the-mechanism]],
 [[a-filed-finding-s-proposed-fix-is-a-hypothesis]], [[after-fixing-search-for-the-class]].
+
+---
+
+## ⟳ 2026-10-21 — THE FIX FOR A FINDING REINTRODUCED THAT FINDING, **inside its own replacement**, and survived 179/179
+
+A review half found trigger 7 computing an accuracy bound over *scored rows* when the population
+should be *ranker predictions* — it reported a sample of 10 where 8 predictions existed. I fixed it
+by introducing a `sample` list and pinning the whole message with an identity case.
+
+⛔ **Two mutations then survived the fixed suite**, found by the OTHER half:
+
+| mutation | printed | why no case saw it |
+|---|---|---|
+| `len(sample)` → `len(rows)` in the message | `13 ranker predictions` over 10 — **the original defect, verbatim** | every t7 fixture had `len(rows) == len(sample)` AT THE MESSAGE SITE |
+| `hits` over `rows` with `.get()` | `8 ranker hits` where 6 existed | same — and it restored the string-coercion defect too |
+
+⭐ **The identity case was pinning the whole 100-character message and still could not tell the two
+populations apart, because no fixture made them differ where the message is built.** A fixture that
+cannot distinguish the old mechanism from the new one makes the fix **unfalsifiable** — and an
+unfalsifiable fix lets the exact defect it repaired walk back in.
+
+**How to apply — when a fix REPLACES a population, a producer or a mechanism:**
+- Build one fixture in which the OLD and NEW things **differ at every site that reads them**. Here:
+  10 eligible predictions PLUS ineligible extras (one with no field, one coerced `"yes"`, one
+  retroactive) — so `rows` is 13 where `sample` is 10, and the message can only be right one way.
+- ⛔ **Then sever the fix and check it reddens.** "The case passes" is not the claim; "the case
+  fails when the fix is removed" is. I verified this only after a reviewer showed me the survivors.
+- ⚠ **The old mechanism is still available to mutate** — `rows` did not stop existing when `sample`
+  arrived. Ask: *could the old expression be substituted back in, and would anything notice?*
+- Same session, same shape at a different scale: a parameter (`baseline_median`) passed `4` at all
+  four call sites, so no case could tell the comparator from a literal — caught by
+  `check-fixture-variation`, not by me. See [[a-sever-substitutes-todays-value]] and
+  [[a-case-can-pass-for-an-ambient-reason]].

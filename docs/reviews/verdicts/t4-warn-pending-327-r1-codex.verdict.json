@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 2306 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "c7432fb16d6ffa2cfb745f5f0978dfb946d813f2",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "../prompt-t4-r1.md",
+  "reason": "2306 chars",
+  "refused": false,
+  "review": "t4-warn-pending-327-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

@@ -1,0 +1,43 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: try_next \u2014 CLI wrote no final message (exit 1)",
+    "  gpt-6-astra: ok \u2014 2431 chars"
+  ],
+  "dirty": {
+    ".claude/last-plan": "100644 dcb87c91c948d32181744df7813ec35a0cfad8c6",
+    ".claude/transcript-reference-warnings.log": "100644 4984832869d81500190bfa90471530e0c0565a54",
+    "devprocess-top.png": "100644 e4565ef5584fdfbd98b32145d08ec24e060c19da",
+    "docs/explainers/2026-09-08-brief-plan-mode-question.html": "100644 839db5771686a28f4d73e0dc46845b93622b3f89",
+    "docs/explainers/2026-09-21-topic-pr329-yaml-readers.html": "100644 3ceb7bea80d18c788371f54f168b0e50c49e19fb",
+    "docs/explainers/2026-09-23-topic-pr-336-338.html": "100644 dec238546cb11478c11f46223caff78ccebdecae",
+    "docs/explainers/2026-09-24-brief-velocity-ledger.html": "100644 fdb13ac161e7cdfb7700d93e95eaaf659e60b123",
+    "docs/explainers/2026-09-25-brief-backlog-117-spec-walkthrough.html": "100644 0e92eef3a1c4b0e6aab8539504b4dd25280dc3f7",
+    "docs/explainers/2026-09-25-brief-velocity-prespec-walkthrough.html": "100644 7be8f5c59c2cf00676cda5a1983344d9e8c79932",
+    "docs/explainers/2026-09-26-brief-velocity-goal-design.html": "100644 6b40e56e13e96f42150ee5cd5d01f2497eec4055",
+    "docs/explainers/2026-09-27-topic-memory-recall-taxonomy.html": "100644 dea8211f276eaa153e3601b1ad630d3ebf76eb00",
+    "docs/explainers/2026-10-02-brief-project-status.html": "100644 ec1b609350c4abe217bce7b5486bfb54b1060e1b",
+    "docs/explainers/2026-10-02-topic-recent-prs-found-solved.html": "100644 0eff6fa42d75db416cfb75689d45ce1190102d39",
+    "docs/explainers/2026-10-05-topic-why-x-not-y.html": "100644 0fc3733432229d7f4000d126a3997bf24ca9bb5f",
+    "docs/explainers/2026-10-06-brief-dev-process-speed.html": "100644 b1e47428498b095bf0ce95d3fbff03e2544d3a2a",
+    "docs/explainers/2026-10-15-brief-marketplace-inventory-walkthrough.fragment.html": "100644 47f7a4ff0684a7c6f45c233da85f4e406edcd80c",
+    "docs/explainers/2026-10-15-brief-marketplace-inventory-walkthrough.html": "100644 abdc07ed3e4cc8789cf03a48a881cddcf0c5b7e9",
+    "docs/explainers/2026-10-17-topic-three-open-items.fragment.html": "100644 569c60a0889c99efad280852bf3ee4cbf5dede5c",
+    "docs/explainers/2026-10-17-topic-three-open-items.html": "100644 a43c3ebe787dceae500fcbca903a08d3712878a3",
+    "docs/explainers/2026-10-18-brief-2026-10-17-topic-three-open-items.fragment.html": "100644 569c60a0889c99efad280852bf3ee4cbf5dede5c",
+    "docs/explainers/2026-10-18-brief-2026-10-17-topic-three-open-items.html": "100644 04da1787a393d6fa2cd030e63f180f63e16ea03f",
+    "docs/explainers/work-lines.html": "100644 bb40030972e1b7aebf36895b6baf4abd47857ac3",
+    "docs/memory/MEMORY.md": "100644 ae31698001fcacf94bc8c078b5fc0366c3797f10",
+    "docs/memory/terminal-selection-dead-under-fullscreen-tui.md": "100644 bc5cf71b98dcca45919a25cac4391bbc152c6438"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "cd7134f800e1b595fade1d2496f5d7470f153281",
+  "intrusions": [],
+  "model": "gpt-6-astra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/review-banner-r4.md",
+  "reason": "2431 chars",
+  "refused": false,
+  "review": "banner-thread-armed-r4-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

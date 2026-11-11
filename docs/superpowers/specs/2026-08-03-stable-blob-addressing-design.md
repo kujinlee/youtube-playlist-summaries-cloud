@@ -3,7 +3,9 @@
 > **Anchor:** `stable-blob-addressing` — **ADR:** 0006, 0007
 > **Goal:** A blob's address stops moving when a title or a serial number changes.
 
-**Status:** **v1 DRAFT — not reviewed, not approved.** Written 2026-08-03 from the design discussion of
+**Status:** ⛔ obsolete — THE THREAD, not the work. This spec's own header still reads *"v1 DRAFT — not reviewed, not approved"*; it was superseded by **ADR-0006** and **ADR-0007** (both `accepted 2026-08-24`), which are the decisions that shipped. Migration 0027 is live on production. Read the ADRs, not this draft.
+
+> ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: ***v1 DRAFT — not reviewed, not approved.** Written 2026-08-03 from the design discussion of*
 2026-08-01→03. Requires `grill-with-docs` terminology pass + dual adversarial review to convergence
 before it becomes a plan. **Supersedes part of [ADR-0002](../../adr/0002-playlist-in-job-identity.md)
 — see §12.**

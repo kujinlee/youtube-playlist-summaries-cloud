@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 d74d80e2b5c55909345790d69a2f6416e6f1d771",
+    "docs/reviews/claude/dirty-no-ci-r4-claude.md": "100644 c50f53821e6b847041f2f6d1bcad7b5b7627f0b6"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "a6e075630b28dd01c020d834e1b24a6a85de9939",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 9002 chars, names a6e075630b28",
+  "refused": false,
+  "review": "dirty-no-ci-r4-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/dnc",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

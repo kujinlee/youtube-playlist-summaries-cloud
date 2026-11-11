@@ -4,6 +4,8 @@
 > **Goal:** A person working now can have a subject they choose — a change, a concept, or a set of
 > findings — explained in a page they can read and ask questions inside.
 
+**Status:** ✅ shipped — merged in PR #267 (*"#89 T0/T3/T4 are run — the parent's verification caught what the fork…"*) and 1 earlier PR(s), all MERGED; the explainer pages are in the tree (`docs/explainers/`).
+
 **Backlog #89.** **v1 (DRAFT), 2026-09-08.** Answers questions (1), (2), (3) and (5); (4) was the
 precondition and is re-measured below. **Nothing here is implemented.** The spec is the human gate.
 

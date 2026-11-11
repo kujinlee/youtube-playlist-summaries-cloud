@@ -1,0 +1,18 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: try_next \u2014 the final message NAMES ITS OWN OUTPUT FILE (guard-fail-open-batch-r3-codex.md), so it is a report of having written a review, not the review. The review itself was not captured \u2014 see the prompt rule 'YOUR FINAL MESSAGE IS THE REVIEW ITSELF'",
+    "  gpt-6-astra: ok \u2014 450 chars"
+  ],
+  "dirty": {},
+  "exit_code": 3,
+  "gate_ran": true,
+  "head": "66b1e026079faef88bf198bf3cbea821d1495e16",
+  "intrusions": [],
+  "model": "gpt-6-astra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/prompt-gfo-r3.md",
+  "reason": "450 chars; NOT PROMOTED: REFUSING \u2014 the promoted review already exists: /Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/wt-gfo/docs/reviews/codex/guard-fail-open-batch-r3-codex.md",
+  "refused": false,
+  "review": "guard-fail-open-batch-r3-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

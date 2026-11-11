@@ -1,0 +1,47 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 1574 chars"
+  ],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 a31840792af873e5699245438e1af8fe7584312e"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "28c68e495e8516d447efcc154f9e578d7989f69f",
+  "intrusions": [],
+  "loosening_answers": {
+    "0639175f96f3": "not a loosening",
+    "19e3cb6a182b": "not a loosening",
+    "1c483d300bca": "not a loosening",
+    "2d51171ccc52": "not a loosening",
+    "2fec52dc562d": "not a loosening",
+    "30d52ad23ac7": "not a loosening",
+    "475f8e419a00": "not a loosening",
+    "484e60231961": "not a loosening",
+    "4a3b8fdd91c6": "not a loosening",
+    "4a4c20c73163": "not a loosening",
+    "4d7974581a8f": "not a loosening",
+    "6a9e243ccfd4": "not a loosening",
+    "6ed1cdc83491": "not a loosening",
+    "727e65f884c9": "not a loosening",
+    "85052e8ab73c": "not a loosening",
+    "8ca795163b8f": "not a loosening",
+    "90a173413926": "not a loosening",
+    "a37789af0a0d": "not a loosening",
+    "b4c2d38505b1": "not a loosening",
+    "c361c21aa22d": "not a loosening",
+    "ce1282293e59": "not a loosening",
+    "e2997ee94d34": "not a loosening",
+    "e6c86a86ce2e": "not a loosening",
+    "e886704a5c48": "not a loosening",
+    "f090c90de19b": "not a loosening"
+  },
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/phq-r9-head.txt",
+  "reason": "1574 chars",
+  "refused": false,
+  "review": "push-hook-quoted-r9-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/phq"
+}

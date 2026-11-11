@@ -3,6 +3,8 @@
 > **Anchor:** `stable-blob-addressing` — **ADR:** 0006, 0007
 > **Goal:** Render addressing, split out of the addressing design on 2026-08-09 after two proposals were refuted in two rounds. A brief, not a design.
 
+**Status:** ✅ shipped — the addressing lemma it establishes is implemented; PR #65 is its design review and PR #15 the work. ADR-0006/0007 carry the decision.
+
 **Status: awaiting Phase 1 brainstorming.** Split out of ADR-0007 by user decision, 2026-08-09, after
 two proposed designs were refuted in two consecutive adversarial rounds.
 

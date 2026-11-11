@@ -1,0 +1,18 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: try_next \u2014 CLI wrote no final message (exit 1)",
+    "  gpt-6-astra: ok \u2014 1100 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "3801eee3b465502dd6fe1394a5120d636e5f3b12",
+  "intrusions": [],
+  "model": "gpt-6-astra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/prompt-sweep-r5.md",
+  "reason": "1100 chars",
+  "refused": false,
+  "review": "local-sweep-guard-r5-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

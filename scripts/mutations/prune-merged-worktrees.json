@@ -1,0 +1,685 @@
+[
+  {
+    "name": "an OPEN PR no longer keeps a merged branch's worktree",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if e[\"open\"]:\n        r.append(\"open PR\")",
+        "    if False:\n        r.append(\"open PR\")"
+      ]
+    ],
+    "expect": [
+      "KEPT openpr: open PR"
+    ]
+  },
+  {
+    "name": "a FORK's merged PR counts as a merge of this repo's branch of the same name",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        " and r[\"isCrossRepository\"] is False and r[\"headRefOid\"]",
+        " and r[\"headRefOid\"]"
+      ]
+    ],
+    "expect": [
+      "KEPT fork: no merged PR"
+    ]
+  },
+  {
+    "name": "the reuse rule dropped: a reused branch name whose HEAD moved past the merged PR is archived",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        if 0 not in reach:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT reuse: HEAD moved past the merged PR"
+    ]
+  },
+  {
+    "name": "the reuse rule asks the ancestry BACKWARDS: an ancestor of the merged head is kept",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "\"--is-ancestor\", wt[\"head\"], oid)[0]",
+        "\"--is-ancestor\", oid, wt[\"head\"])[0]"
+      ]
+    ],
+    "expect": [
+      "ARCHIVED older"
+    ]
+  },
+  {
+    "name": "a tracked change no longer keeps the worktree",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if out.strip(\"\\0\"):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT dirty: tracked changes"
+    ]
+  },
+  {
+    "name": "a commit missing from origin/<branch> no longer keeps the worktree",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        elif n.strip() != \"0\":\n",
+        "        elif False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT unpushed: 1 commit(s) not on origin/br-unpushed"
+    ]
+  },
+  {
+    "name": "a LOCKED worktree is not skipped",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if wt[\"locked\"]:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT locked: locked"
+    ]
+  },
+  {
+    "name": "the process's own cwd is not skipped",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if inside(cwd, path):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT cwd: it is the current working directory"
+    ]
+  },
+  {
+    "name": "a running process's cwd inside the worktree no longer keeps it",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if busy:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT busy: a running process has its cwd inside (pid 4242)"
+    ]
+  },
+  {
+    "name": "a detached HEAD is not skipped by its own rule",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if wt[\"branch\"] is None:\n        r.append(\"detached HEAD\")",
+        "    if False:\n        r.append(\"detached HEAD\")"
+      ]
+    ],
+    "expect": [
+      "KEPT detached: detached HEAD"
+    ]
+  },
+  {
+    "name": "lsof's exit status is ignored: a failing lsof whose stdout parses is trusted",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if rc != 0:\n        raise CannotRun(f\"lsof exited",
+        "    if False:\n        raise CannotRun(f\"lsof exited"
+      ]
+    ],
+    "expect": [
+      "lsof failing (rc 1, real-looking output): rc 2, CANNOT RUN naming lsof, nothing moved"
+    ]
+  },
+  {
+    "name": "an lsof answer with no cwd at all is trusted as 'no process anywhere'",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if not out:\n        raise CannotRun(\"lsof printed no process cwd\")",
+        "    if False:\n        raise CannotRun(\"lsof printed no process cwd\")"
+      ]
+    ],
+    "expect": [
+      "parse_lsof: no cwd at all is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a PR merged under 2 h ago is archived anyway",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if any(now - t < datetime.timedelta(seconds=RECENT_S)",
+        "    if False and any(now - t < datetime.timedelta(seconds=RECENT_S)"
+      ]
+    ],
+    "expect": [
+      "KEPT recent: its PR merged under 2 h ago"
+    ]
+  },
+  {
+    "name": "a merged PR with no mergedAt is accepted",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        if r[\"state\"] == \"MERGED\":\n            parse_time(r.get(\"mergedAt\"))\n",
+        "        if False:\n            parse_time(r.get(\"mergedAt\"))\n"
+      ]
+    ],
+    "expect": [
+      "check_prs refuses a merged row with no mergedAt"
+    ]
+  },
+  {
+    "name": "an archive on a different filesystem is attempted anyway (git refuses with 'Cross-device link': a FAILED instead of a clear early KEPT)",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if devf(row.path) != devf(archive):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT xdev: is on a different filesystem"
+    ]
+  },
+  {
+    "name": "a name collision is not suffixed: the worktree is kept instead",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        ", archive / f\"{name}-{now.astimezone().strftime('%Y%m%d%H%M')}\")",
+        ",)"
+      ]
+    ],
+    "expect": [
+      "ARCHIVED collide",
+      "a name already in the archive gets a -YYYYMMDDHHMM suffix; the old entry is untouched"
+    ]
+  },
+  {
+    "name": "gh's exit status is ignored: a failing gh whose stdout parses is trusted",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if rc != 0:\n        raise CannotRun(f\"gh pr list",
+        "    if False:\n        raise CannotRun(f\"gh pr list"
+      ]
+    ],
+    "expect": [
+      "gh failure: rc 2, CANNOT RUN, NOTHING archived, nothing moved"
+    ]
+  },
+  {
+    "name": "a PR list AT the limit is trusted, though it may be truncated",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if len(rows) >= PR_LIMIT:\n",
+        "    if len(rows) > PR_LIMIT:\n"
+      ]
+    ],
+    "expect": [
+      "check_prs refuses a list at the limit (maybe truncated)"
+    ]
+  },
+  {
+    "name": "--dry-run moves",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if dry_run:\n        row.verdict = \"WOULD-ARCHIVE\"\n        return\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "--dry-run moves nothing and writes no log"
+    ]
+  },
+  {
+    "name": "a log that cannot be written no longer keeps the worktree",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        row.dest, row.reasons = None, [f\"could not write the log: {shape(exc, 'error', 120, free=True)}\"]\n        return\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "a log that cannot be written keeps every candidate, and moves nothing"
+    ]
+  },
+  {
+    "name": "a move is not logged before it runs",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        log_line(log, stamp, row.name, row.branch or \"-\", row.head, \"archiving\",",
+        "        (lambda *a: None)(log, stamp, row.name, row.branch or \"-\", row.head, \"archiving\","
+      ]
+    ],
+    "expect": [
+      "the log has an 'archiving' line, with its undo command, BEFORE an 'archived' line, per move"
+    ]
+  },
+  {
+    "name": "a deadline inside the loop escapes it: the moves already made are not reported",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        except CannotRun as exc:\n            stopped = str(exc)\n",
+        "        except ZeroDivisionError as exc:\n            stopped = str(exc)\n"
+      ]
+    ],
+    "expect": [
+      "a deadline after one move: rc 2, exactly one worktree moved, and the report NAMES it"
+    ]
+  },
+  {
+    "name": "the CANNOT RUN line says NOTHING was archived though a move happened",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if n or failed:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "... and the CANNOT RUN line comes LAST, says 'archived 1', and never 'NOTHING was archived'",
+      "hook_lines: the archived worktree is named FIRST, the CANNOT RUN line after it says 'archived 1'"
+    ]
+  },
+  {
+    "name": "the loop does not stop when the deadline nears",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        if stopped or (not dry_run and b.left() < MOVE_MIN_S):\n",
+        "        if stopped:\n"
+      ]
+    ],
+    "expect": [
+      "a near deadline (under MOVE_MIN_S left) DEFERS the next worktree and moves nothing"
+    ]
+  },
+  {
+    "name": "the archive-size line never prints",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if n <= ARCHIVE_WARN:\n        return None\n",
+        "    return None\n"
+      ]
+    ],
+    "expect": [
+      "the archive over 10 worktrees prints ONE line naming the count"
+    ]
+  },
+  {
+    "name": "a half-moved worktree (prunable, directory present) is called missing",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if wt[\"prunable\"]:\n        if os.path.isdir(path):\n",
+        "    if wt[\"prunable\"]:\n        if False:\n"
+      ]
+    ],
+    "expect": [
+      "a prunable worktree whose directory still exists is called half-moved, never 'directory is missing'"
+    ]
+  },
+  {
+    "name": "r2 F5: the post-move check dropped: a move git calls rc 0 that moved nothing is ARCHIVED",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if rc == 0 and os.path.isdir(dest):\n",
+        "    if rc == 0:\n"
+      ]
+    ],
+    "expect": [
+      "a move git calls rc 0 that moved nothing is FAILED, never ARCHIVED (the post-move check)"
+    ]
+  },
+  {
+    "name": "r2 F5: a prunable worktree is evaluated further",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        return row\n    if wt[\"locked\"]:\n",
+        "    if wt[\"locked\"]:\n"
+      ]
+    ],
+    "expect": [
+      "a prunable worktree is not evaluated further: ONE reason, though it is also detached (r2 F5)"
+    ]
+  },
+  {
+    "name": "r2 F5: a zone-less mergedAt is accepted",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if t.tzinfo is None:\n        raise CannotRun(",
+        "    if False:\n        raise CannotRun("
+      ]
+    ],
+    "expect": [
+      "parse_time refuses a mergedAt with no time zone (r2 F5)"
+    ]
+  },
+  {
+    "name": "r2 F5: the archive-size line fires AT the limit",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if n <= ARCHIVE_WARN:\n",
+        "    if n < ARCHIVE_WARN:\n"
+      ]
+    ],
+    "expect": [
+      "the archive-size line: silent AT 10, printed at 11 (r2 F5)"
+    ]
+  },
+  {
+    "name": "r2 F5: an inherited GIT_DIR is not dropped",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    for k in GIT_ENV_DROP:\n        os.environ.pop(k, None)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "an inherited GIT_DIR is dropped: the dry run still sees the same seven (r2 F5)"
+    ]
+  },
+  {
+    "name": "r2 F5: after a CannotRun the loop goes on evaluating and moving",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "if stopped or (not dry_run",
+        "if (not dry_run"
+      ]
+    ],
+    "expect": [
+      "a ONE-SHOT CannotRun stops the loop: rc 2, nothing moved, the next worktree DEFERRED unreached"
+    ]
+  },
+  {
+    "name": "r2 F5: the hook's line cap is not applied",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    return lines[:HOOK_MAX_LINES]\n",
+        "    return lines\n"
+      ]
+    ],
+    "expect": [
+      "hook_lines applies HOOK_MAX_LINES (4 lines of input, the cap set to 2) (r2 F5)"
+    ]
+  },
+  {
+    "name": "r2 F1: no placeholder is left at the old path, so a late write recreates the directory",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        why_not = leave_placeholder(row.path, str(dest))\n",
+        "        why_not = None\n"
+      ]
+    ],
+    "expect": [
+      "a PLACEHOLDER file is left at each archived path, naming the archive path and the undo",
+      "a late mkdir -p + write to <old>/x fails loudly (EEXIST or ENOTDIR) instead of recreating the directory"
+    ]
+  },
+  {
+    "name": "r2 F1/F10: the undo is relative and does not remove the placeholder",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    return f\"rm {o} && git worktree move {d} {o}\"\n",
+        "    return f\"git worktree move {d} .claude/worktrees/{Path(o).name}\"\n"
+      ]
+    ],
+    "expect": [
+      "the logged undo command is the documented one, ABSOLUTE both ways, and removes the placeholder"
+    ]
+  },
+  {
+    "name": "r2 F4: the repair advice does not name the logged archive path",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "            to = (logged or {}).get(path)\n",
+        "            to = None\n"
+      ]
+    ],
+    "expect": [
+      "a missing directory advises `git worktree repair <the logged archive path>`, never prune (r2 F4)"
+    ]
+  },
+  {
+    "name": "r2 F6: a remembered refusal is tried and reported again at the same HEAD",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if refused_now((refused or {}).get(path), wt[\"head\"], now):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "... the next run KEEPS it quietly: rc 0, a KEPT reason, and the hook prints nothing"
+    ]
+  },
+  {
+    "name": "r2 F6: a refusal is not remembered",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "            refused[row.path] = {\"head\": row.head, \"at\": now.timestamp()}",
+        "            refused.get(row.path)"
+      ]
+    ],
+    "expect": [
+      "git refusing a move (a submodule): FAILED once, rc 1, remembered at this HEAD (r2 F6)"
+    ]
+  },
+  {
+    "name": "r2 F7: a worktree a concurrent run archived is reported FAILED",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    elif (rc != 0 and not os.path.isdir(row.path) and (peer := peer_copy(archive, row.name, link))\n",
+        "    elif (False\n"
+      ]
+    ],
+    "expect": [
+      "a move whose source a concurrent run archived is BY-PEER 'archived by a concurrent run', rc 0"
+    ]
+  },
+  {
+    "name": "r3 F1: the old path's absence is required again: a move with a late write at the old path is FAILED",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if rc == 0 and os.path.isdir(dest):\n        # r3 F1: NOT",
+        "    if rc == 0 and os.path.isdir(dest) and not os.path.lexists(row.path):\n        # r3 F1: NOT"
+      ]
+    ],
+    "expect": [
+      "r3 F1: a directory recreated at the old path before the placeholder: ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, the late file left alone, the archive in place"
+    ]
+  },
+  {
+    "name": "r3 F1: a missing placeholder no longer changes the verdict: it stays a quiet ARCHIVED",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "            row.verdict, row.reasons = NO_PLACEHOLDER, [why_not]\n",
+        "            row.reasons = [why_not]\n"
+      ]
+    ],
+    "expect": [
+      "r3 F1: a directory recreated at the old path before the placeholder: ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, the late file left alone, the archive in place",
+      "r3 F6: a file racing into the old path keeps its bytes, and the collision is reported (rc 1)"
+    ]
+  },
+  {
+    "name": "r3 F1: an archive without a placeholder does not fail the run",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "FAILED_RC if any(r.verdict in (\"FAILED\", NO_PLACEHOLDER) for r in rows)",
+        "FAILED_RC if any(r.verdict in (\"FAILED\",) for r in rows)"
+      ]
+    ],
+    "expect": [
+      "r3 F1: a directory recreated at the old path before the placeholder: ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, the late file left alone, the archive in place"
+    ]
+  },
+  {
+    "name": "r3 F1/F4: the hook does not print an archive without a placeholder",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if bare:   # r3 F1/F4",
+        "    if False:   # r3 F1/F4"
+      ]
+    ],
+    "expect": [
+      "r3 F1: the hook PRINTS an archive without a placeholder, with its reason and its undo",
+      "r3 F4: ... and the hook names that move (no CANNOT RUN that hides it)"
+    ]
+  },
+  {
+    "name": "r3 F6: the placeholder is created without O_EXCL: a file already at the old path is overwritten",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644",
+        "os.O_WRONLY | os.O_CREAT, 0o644"
+      ]
+    ],
+    "expect": [
+      "r3 F6: a file racing into the old path keeps its bytes, and the collision is reported (rc 1)"
+    ]
+  },
+  {
+    "name": "r3 F4: a failure WRITING the placeholder is not caught",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    except (OSError, ValueError) as exc:\n        return (f\"the placeholder at the old path could not be written",
+        "    except ZeroDivisionError as exc:\n        return (f\"the placeholder at the old path could not be written"
+      ]
+    ],
+    "expect": [
+      "r3 F4: a placeholder WRITE failure after the move: ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, the undo printed, the archive in place",
+      "r3 F4: ... and the hook names that move (no CANNOT RUN that hides it)"
+    ]
+  },
+  {
+    "name": "r3 F2: with the remote branch gone, the LISTED head is asked instead of the live HEAD",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "\"--is-ancestor\", \"HEAD\", oid)[0]",
+        "\"--is-ancestor\", wt[\"head\"], oid)[0]"
+      ]
+    ],
+    "expect": [
+      "r3 F2: a GONE remote branch and a new commit on top of the merged head (after the listing): KEPT"
+    ]
+  },
+  {
+    "name": "r3 F2: with the remote branch gone, HEAD is not asked about at all",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        if 0 not in live:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "r3 F2: a GONE remote branch and a new commit on top of the merged head (after the listing): KEPT"
+    ]
+  },
+  {
+    "name": "r3 F3: BY-PEER without asking git where the worktree is registered",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "          and registered_at(b, main, peer, row.head)):\n",
+        "          ):\n"
+      ]
+    ],
+    "expect": [
+      "r3 F3: a peer killed between its rename and git's update: FAILED rc 1, never BY-PEER"
+    ]
+  },
+  {
+    "name": "r3 F3: BY-PEER accepts a registration at any HEAD",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "t[\"path\"]) == real and t[\"head\"] == head for t",
+        "t[\"path\"]) == real for t"
+      ]
+    ],
+    "expect": [
+      "r3 F3: a peer's archive registered at a DIFFERENT HEAD than the one evaluated: FAILED rc 1, never BY-PEER"
+    ]
+  },
+  {
+    "name": "r3 F5: a remembered refusal never expires",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "and now.timestamp() - ent[\"at\"] < REFUSED_TTL_S",
+        "and True"
+      ]
+    ],
+    "expect": [
+      "r3 F5: a refusal remembered 25 h ago at this HEAD is EXPIRED: tried and reported again"
+    ]
+  },
+  {
+    "name": "r3 F7: the undo's paths are not shell-quoted (a space withholds them)",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    return shlex.quote(p) if p.isprintable() else shape(p, \"path\", 300)\n",
+        "    return shape(p, \"path\", 300)\n"
+      ]
+    ],
+    "expect": [
+      "r3 F7: with spaces in the paths the printed undo is shell-quoted, and running it restores the worktree",
+      "r3 F7: undo_cmd keeps each path ONE shell word and withholds a non-printable one"
+    ]
+  },
+  {
+    "name": "r3 F7: a non-printable path is quoted raw instead of withheld",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "shlex.quote(p) if p.isprintable() else",
+        "shlex.quote(p) if True else"
+      ]
+    ],
+    "expect": [
+      "r3 F7: undo_cmd keeps each path ONE shell word and withholds a non-printable one"
+    ]
+  }
+]

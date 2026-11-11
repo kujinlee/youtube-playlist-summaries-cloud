@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 2400 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "2dee42b239958a9e9cb1e2455ec35fb0cd9c90dd",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "../389-codex-r3.md",
+  "reason": "2400 chars",
+  "refused": false,
+  "review": "retire-work-lines-r3-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

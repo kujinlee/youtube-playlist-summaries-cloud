@@ -94,3 +94,10 @@ Do **NOT** dispatch the `codex:codex-rescue` subagent in this environment — it
 
 **How to apply:** for any `codex:rescue` / adversarial-review gate, invoke codex directly via coordinator Bash and capture output to `docs/reviews/...-codex.md`. Pass the prompt as an argument (not stdin). Keeps the true dual-review (Codex + Claude) intact instead of substituting. See [[dev-process]], [[process-conventions]]; governance lives in `docs/plugins.md` (Codex fallback section) — candidate to codify there once the user confirms.
 
+
+⛔ **2026-10-26 — EVERY PROMPT CARRIES "your final message IS the review; write no file", AND I READ THE WRAPPER'S
+VERDICT LINE, NOT THE FILE.** Without the rule, a Codex round wrote its review as a FILE: the wrapper recorded
+`gate_ran=false`, and I read the self-written file as if it were the gate — for one round CI and I disagreed until
+`check-review-rounds` went red. The next round wrote a file AND a backlog row into the worktree, and my commit staged
+the row unread. After a Codex run: `grep 'verdict: gate_ran' <task output>` and `git status` the worktree BEFORE
+staging; never `| tail -2` the wrapper output (it dropped the capture path).

@@ -12,6 +12,13 @@ it.** The fix for a drifted copy is to delete it and cite the source; that delet
 such a guard refuses.
 
 **MEASURED 2026-10-17, `marketplace-inventory` / backlog #297.**
+
+⛔ **LOCATOR — CORRECTED 2026-10-19 BY r1 CODEX #8, AND THE FIRST FIX WAS THE SAME BUG AGAIN.** The script is **not on `master`** *(as of 2026-10-19; if PR #376 is squash-merged this sentence stops being true and a live copy exists — re-check before relying on it)*.
+- **Immutable identity:** `d06da80c62da50973e55bec956bc0d8215266b94:scripts/check-claim-propagation.py`. A full SHA names one object forever.
+- **Retrieval route, not an identity:** PR #376 — `git fetch origin refs/pull/376/head`, then read the SHA above.
+- ⚠ **`refs/pull/376/head` is NOT a pin and citing it alone was wrong.** It FOLLOWS the PR head: measured 2026-10-19 it was `2e0ad1ef`, already moved past the `d06da80c` the finding below was measured on. A bare path, a branch name and a pull ref are all MOVING locators; only the SHA is not.
+- ⚠ **Residual risk, stated rather than hidden:** GitHub's retention of pull refs is documented practice, not a guaranteed archive. If PR #376 is closed unmerged and the ref is reaped, the SHA still names the object but nothing may serve it.
+
 `scripts/check-claim-propagation.py`'s `LIVE` registry registered `d5-ship-plus-argued` and
 `d8-corrections-land-here` at `[SPEC, PAGE]`. Its rule: a token present at some declared sites and
 absent at others is a problem (*"reached only some of its sites"*). So:

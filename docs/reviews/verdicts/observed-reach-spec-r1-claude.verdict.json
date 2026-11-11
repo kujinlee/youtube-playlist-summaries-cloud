@@ -1,0 +1,24 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 5ab38b88e43de342ea2324335b7717c56cc0c3c6",
+    "docs/reviews/claude/observed-reach-spec-r1-claude.md": "100644 1b986b20d026a2325b70863c370dc1c211ef9043",
+    "docs/reviews/codex/observed-reach-spec-r1-codex.md": "100644 a57908128139da7483c5f622cba0ed919341520f",
+    "docs/reviews/verdicts/observed-reach-spec-r1-codex.verdict.json": "100644 d0b09391df589fd4d8d278d417ee035727431172"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "5ee0b6d778ed3074ab3cb86e83096949bd52759a",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/review-spec586-r1.md",
+  "reason": "claude half filed: 15785 chars, names 5ee0b6d778ed",
+  "refused": false,
+  "review": "observed-reach-spec-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/spec-586",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

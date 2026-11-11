@@ -1225,7 +1225,14 @@ def _fire_armed(again: bool, sentinel_text: str, plan, plan_text: str) -> int:
 
 
 # ────────────────────────────────────────────────────────────────── self-test
-def _self_test() -> int:  # noqa: C901 - a flat list of cases is the readable shape
+def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:  # noqa: C901 - a flat list of cases is the readable shape
     ok = fail = 0
 
     def _live_trigger_probe(body):

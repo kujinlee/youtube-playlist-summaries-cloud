@@ -346,6 +346,13 @@ def find_inconsistencies(sources: dict[str, str]) -> list[Finding]:
 
 # ── self-test ────────────────────────────────────────────────────────────────────────────────────
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     def roadmap(block_body: str, checkboxes: str = "") -> str:
         return f"## M1\n{checkboxes}\n### ▶ NEXT ACTIONS\n\n{block_body}\n\n## Later\n"
 
