@@ -70,6 +70,41 @@ EXPECTED_MUTATIONS = {
     # read one. The counts ARE the evidence, so a line that has lost them records that something
     # happened while destroying what was measured — the recorded *a guard's own output is a
     # CONTRACT* shape, one layer in from the log-format defect this whole slice is about.
+    # ⟳ 2026-10-16: check-claim-propagation.py joins the manifest at 10, raising the declared
+    # sum by 10. It is the mechanical half of `one-rule-one-place` for documents, built after
+    # two adversarial rounds on `marketplace-inventory` produced 4 then 14 fix-induced findings
+    # with ONE mechanism behind thirteen of them: a rule stated in several places, and the fold
+    # updating the site the finding named. A convention had already failed at it twice in two
+    # rounds, which is why this is a guard and not a checklist.
+    # ⟳ 2026-10-17, ADR-0015: 32 -> 15. ⛔ THIS IS A RATCHET FALL, which is permitted ONLY when
+    # the entries are RETIRED WITH THEIR SUBJECT, and that is what these are: the prose-matching
+    # half of the guard is deleted, so the retired anchors name code that no longer exists.
+    # ⟳⟳ 2026-10-17, r5 CODEX Low: the count here said **19** and the arithmetic did not close —
+    # 32 - 19 is 13, not 15. The real figure is **17 retired**, and 19 was the INTERMEDIATE value
+    # from the first pass, before two entries were restored as retargets. ⭐ It is now DERIVED by
+    # diffing the manifest against `8a583f7c^` rather than retyped, which is the only form of this
+    # number that cannot drift: 32 before, 15 after, 4 retargeted, 32 - 17 = 15. Precedent and
+    # shape are `retire-plan-mode` (44 -> 23, declared sum 392 -> 371), where 20 anchors stopped
+    # resolving because the code they named was gone.
+    # ⚠ FOUR WERE RETARGETED RATHER THAN RETIRED, and checking that was the point: their anchors
+    # broke while the RULES they measure survived — the empty-registry refusal (its condition went
+    # from a three-way disjunction to one), the `wanted |= …DERIVED…` line (now the FIRST
+    # assignment, so the witness is stronger), the `audited_sites` witness (its token half retired,
+    # its DERIVED half kept) and the self-closing-not-pushed rule in `_Carriers`. Retiring those
+    # four would have dropped live coverage silently, which is this repo's recorded failure mode
+    # for exactly this operation.
+    # ⟳⟳ 2026-10-17, r5 CODEX M3: 15 -> 18. Three surviving branches of `_Carriers` that no
+    # case pinned — stripped accumulation, the VOID vocabulary beyond `img`, and an unmatched
+    # end tag. The reviewer found them by applying each mutation and getting 41/41 GREEN.
+    # ⟳⟳⟳ 2026-10-17, r5 CLAUDE H1 — THE VOID VOCABULARY, as opposed to six of its fourteen
+    # members. The comment on the previous case asserted it covered the set; the code supplied a
+    # hardcoded 6-tuple and dropping all 8 unpinned members was 49/49 GREEN.
+    # ⟳ r6 CODEX Low: THIS COMMENT SAID `18 -> 19` AND NO NINETEENTH MUTATION EXISTS. The fix
+    # EXTENDED an existing entry's `expect` list, because the harness refused a second entry on
+    # the same anchor as measuring nothing new — so the count did not move, and the arithmetic
+    # comment below correctly says `18 -> 18`. ⚠ The executable count is right; the audit trail
+    # was wrong, in the one number this round was asked to verify. Corrected, not raised.
+    "scripts/check-claim-propagation.py": 18,
     "scripts/check-anchors.py": 5,
     "scripts/check-arch-findings.py": 5,
     # ⟳ 2026-09-22, the third warning class: 8 -> 22. THREE of the eight are not about the new
@@ -1467,7 +1502,11 @@ EXPECTED_MUTATIONS = {
     "scripts/check-docs.py": 5,
     "scripts/check-explainer-delivery.py": 5,
     # ⟳ 2026-10-21: 5 -> 6. EXEMPT reaching the duplication rule.
-    "scripts/check-canonical-source.py": 6,   # r6 redesign: the inverted-restatement mutation
+    # ⟳ 2026-11-11, marketplace-inventory merged with master: 6 -> 11. The branch's five (the `*.html`
+    # widening, the citing-site stageability rule and its three predicate arms) join master's EXEMPT one;
+    # both sides grew from the same base 5, so the merge is additive. `.githooks/` joined STAGEABLE_PREFIXES
+    # because master added it to HARNESS_TREE, and the identity case went red until it did.
+    "scripts/check-canonical-source.py": 11,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
