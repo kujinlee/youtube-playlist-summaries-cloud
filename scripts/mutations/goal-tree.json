@@ -2973,8 +2973,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"\\n\".join(_html_line(ln, repo) for ln in agenda_step_lines(snap, ag))",
-        "\"\\n\".join(_html_line(ln, repo) for ln in agenda_step_lines(snap, ag)[1:])"
+        "        for ln in agenda_step_lines(snap, ag)) + \"</pre>\")",
+        "        for ln in agenda_step_lines(snap, ag)[1:]) + \"</pre>\")"
       ]
     ],
     "expect": [
@@ -4382,6 +4382,19 @@
     ],
     "expect": [
       "backlog #406: a sibling compiles as ITSELF, never under goal-tree's own `from __future__` flags"
+    ]
+  },
+  {
+    "name": "agenda group labels render as plain step text, not titles (owner 11-11 14:52)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_html_line(ln, repo) if ln.startswith(\" \") else f'<span class=\"ag-when\">",
+        "_html_line(ln, repo) if True else f'<span class=\"ag-when\">"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-11 14:52: each `## <when>` group in All steps is a TITLE (its own span, in the accent), and no step line is one"
     ]
   }
 ]

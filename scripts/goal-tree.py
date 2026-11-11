@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 438 cases
+    python3 scripts/goal-tree.py --self-test                 # 439 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1998,8 +1998,9 @@ def agenda_html(snap: dict) -> str:
         if kind_ == "stale":
             parts.append(f'<p class="warn">{_html_line(text, repo)}</p>')
     parts.append('<h3>All steps</h3>')
-    parts.append('<pre class="tree">' + "\n".join(_html_line(ln, repo) for ln in agenda_step_lines(snap, ag))
-                 + "</pre>")
+    parts.append('<pre class="tree">' + "\n".join(
+        _html_line(ln, repo) if ln.startswith(" ") else f'<span class="ag-when">{_html_line(ln, repo)}</span>'
+        for ln in agenda_step_lines(snap, ag)) + "</pre>")
     hist, bad = snap_history(snap)
     if bad:
         parts.append(f'<p class="warn">⚠ earlier agendas NOT READ — {html.escape(bad)}</p>')
@@ -2195,6 +2196,8 @@ section.agenda{background:var(--card);border:1px solid var(--rule);border-left:4
                border-radius:.5rem;padding:.4rem 1.1rem .7rem;margin:1rem 0}
 section.agenda.none{border-left-color:var(--rule)}
 section.agenda pre.tree{overflow-x:auto}
+section.agenda .ag-when{display:inline-block;margin-top:.55rem;font-family:var(--ui);font-size:.92rem;
+  font-weight:700;color:var(--accent);text-transform:capitalize}
 section.agenda h2{margin:.5rem 0}
 section.agenda h3{font-size:.9rem;margin:.8rem 0 .3rem;color:var(--ink-soft)}
 .waits{color:var(--warn,#d29922);font-size:.85rem;white-space:nowrap}
@@ -3952,6 +3955,11 @@ def _self_test_cases(*, outside: dict) -> int:
         case("⭐ #509: the page lays out what is in flight and the focus as lists above the steps, and STALE once in the warning colour",
              (_h509.count('<p class="warn">⚠ STALE'), _h509.count("<h3>Running now</h3>"), _h509.count("<h3>Focus"),
               _h509.index("Running now") < _h509.index('<pre class="tree">')), (1, 1, 1, True))
+        _pre509 = _h509.split('<pre class="tree">', 1)[1].split("</pre>", 1)[0]
+        case("⭐ owner 11-11 14:52: each `## <when>` group in All steps is a TITLE (its own span, in the accent), and "
+             "no step line is one",
+             (re.findall(r'<span class="ag-when">([^<]*)</span>', _pre509), _pre509.count('class="ag-when"')),
+             (["today", "after"], 2))
         case("⭐ owner 11-05 14:37: the agenda heading is a short title in the goals' accent style; the plan's time, its AGE "
              "and its window sit on a meta line beneath (r4 X1: the page's age line)",
              ('<h2 class="agenda-h">Agenda</h2>' in _h509,
@@ -4136,7 +4144,7 @@ def _self_test_cases(*, outside: dict) -> int:
         for _snp in (dict(_sn509, repo="o/r"), {"agenda": dict(_a509, change_if="x"), "goals": [], "repo": "o/r"}):
             _hp = agenda_html(_snp)
             _pre = _hp.split('<pre class="tree">', 1)[1].split("</pre>", 1)[0]
-            _kept.append([ln.strip()[:2] for ln in _pre.split("\n")] == ["to", "1.", "2.", "3.", "af", "4.", "5."])
+            _kept.append([re.sub(r"<[^>]+>", "", ln).strip()[:2] for ln in _pre.split("\n")] == ["to", "1.", "2.", "3.", "af", "4.", "5."])
         case("⭐ #509 r1 Codex L2: the page keeps every when heading and every step, whatever lines sit above them",
              _kept, [True, True])
         case("no agenda derives to None, and the text output then shows no block",
@@ -4198,7 +4206,7 @@ def _self_test_cases(*, outside: dict) -> int:
         except Exception as _e:  # noqa: BLE001
             _ah0 = f"CRASH {type(_e).__name__}"
         case("an agenda with no change-if draws every step, none mistaken for the change-if line",
-             ("changes if" in _ah0, '<pre class="tree">g\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower()),
+             ("changes if" in _ah0, '<pre class="tree"><span class="ag-when">g</span>\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower()),
              (False, True, True, False))
         case("no agenda: the page SAYS none is recorded; a malformed one is said as a warning",
              ("AGENDA — none recorded" in agenda_html({"agenda": None}),

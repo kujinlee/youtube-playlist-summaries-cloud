@@ -20257,3 +20257,13 @@ channel and its reading of C2-C4); §2b's checkpoint bullet and D11 table, §3 E
 Master merged in (171 commits, 10 conflicts); `check-claim-propagation` now runs its suite inside
 `fixture_git.isolated()`; `.githooks/` joins `STAGEABLE_PREFIXES`; pins moved to
 `scripts/mutations/expected_mutations.py`; two retroactive decision-log rows for this subject.
+## 2026-11-11
+On the goal-tree page, the plan's groups under All steps ("done today", "now", "next today", "carried over") are
+now titles, each in the accent colour with space above, instead of plain lines mixed in with the steps. You
+asked for this at 14:52. The text printout is unchanged.
+Also filed backlog #610: the page showed PR #557 under the next steps because it reads the backlog from a
+checkout that was 42 commits behind; fast-forwarding fixed the page today, the row is for the cause.
+<!--tech-->
+Branch `agenda-group-titles`. `scripts/goal-tree.py` `agenda_html` wraps each `## <when>` line in
+`<span class="ag-when">` (styled in `section.agenda`); a new self-test case asserts the spans and that no step
+line gets one; two older cases now read through the span; one mutation added, one re-bound (pin 336 -> 337).
