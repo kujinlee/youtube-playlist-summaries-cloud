@@ -360,7 +360,9 @@ EXPECTED_MUTATIONS = {
     # sibling read through its .pyc; compiled under goal-tree's `from __future__` flags; the sweep restore out of
     # finally / never run; a nested sweep with its own memo; the outside probe taken inside the sweep; the body run
     # outside any sweep. Above master's 325 by eleven.
-    "scripts/goal-tree.py": 336,
+    # ⟳ 2026-11-11, side job goal-tree-ask: 336 -> 338, none retired. Two new: the Ask tray's lift removed (the tray-less
+    # fragment page overwrites the composed one), and the missing-tray reason cut to its headline.
+    "scripts/goal-tree.py": 338,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
