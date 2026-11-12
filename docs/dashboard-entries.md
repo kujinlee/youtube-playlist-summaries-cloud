@@ -20311,19 +20311,21 @@ accepted); four mutations added, one re-bound (pin 360 -> 364).
 
 ## 2026-11-11
 The plan for the marketplace inventory is written and waiting for its review; nothing is built yet. It turns
-the spec you approved this morning into 22 small steps in six pull requests. First the three stale claims in
-the portable-practices index are corrected. Then a throwaway local marketplace proves a package can be
-installed at all, and a scan reads every component for this repository's fingerprints. Next, the
+the spec you approved this morning into 22 small steps in five pull requests. The first pull request opens
+with the three corrections to the portable-practices index, as you decided (in the same pull request, not a
+separate one). Then a throwaway local marketplace proves a package can be installed at all, and a scan reads every component for this repository's fingerprints. Next, the
 comprehensibility pages are installed into a made-up stranger's repository and a real third-party one. Last,
 every component gets a verdict, an evidence grade, a price and its cheapest route. Nothing is published:
 the public repository, the licence and its copyright holder stay your steps. The work stops for you if
 making the pages public costs three times the "my next project" bar for most of them. One thing it will
 ask you for: a login token, so the pages' skills can be tried under a fresh home directory. Without it,
-that half is recorded as not run.
+that half is recorded as not run. A second: the page server always uses port 7391, which your own server is
+using, so the trial that serves a page waits until you stop yours; it never stops it for you. The first
+review round found 22 distinct problems (one blocking) and all are folded in; a second round follows.
 <!--tech-->
 Branch `plan-marketplace-inventory`. Plan `docs/superpowers/plans/2026-11-11-marketplace-inventory.md` for
 spec `docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md` (anchor `harness-ships-elsewhere`):
-22 tasks in slices A-F; new tools `mkt_isolate.py`, `mkt_stage.py`, `mkt_seed_repo.py`,
+22 tasks in slices B-F (D8 corrections = slice B's first commit); new tools `mkt_isolate.py`, `mkt_stage.py`, `mkt_seed_repo.py`,
 `check-shipping-sets.py`, `check-publishability.py`, `check-inventory.py` (rc 3 = D1 checkpoint fired);
-human steps H1-H6. Plugin install under a fresh HOME measured working without login (`claude` 2.1.322);
-`claude -p` there is not logged in. Phase 2 dual review not yet run.
+human steps H1-H7 (H7: free port 7391, hard-coded `PORT` in `explainer-serve.py`). Plugin install under a fresh HOME measured working without login (`claude` 2.1.322);
+`claude -p` there is not logged in. Review r1 folded (`docs/reviews/coordinator/marketplace-plan-r1-coordinator.md`); r2 alternates, one half.

@@ -5,7 +5,10 @@
 
 **Status:** 📝 DRAFT, written 2026-11-11 from the approved spec at `2f5e3f3d` (spec approved by the owner
 2026-11-11 05:53, merged as `d18167ce`). Phase 2: dual adversarial review to convergence or the round cap
-(`docs/review-method.md` §0 Q4c) before any task is dispatched. Nothing is built.
+(`docs/review-method.md` §0 Q4c) before any task is dispatched. Nothing is built. ⟳ **r1 folded 2026-11-11**
+(`docs/reviews/coordinator/marketplace-plan-r1-coordinator.md`): 1 BLOCKER (raised by both halves), 12 distinct MAJORs, 9 MINORs.
+The header names ADR 0015 while the spec's reads `ADR: none`: the ADR was written after the spec, and
+`docs/anchors.md` registers `harness-ships-elsewhere` with it.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -91,19 +94,28 @@ spec is the definition.
 
 ## Slice map
 
-Each slice is ONE pull request off fresh `origin/master`, with its own dual review. Slices A-C can merge without
+Each slice is ONE pull request off fresh `origin/master`, with its own dual review. Slices B-C can merge without
 the experiment; slice F cannot be final before Task 21's checkpoint is answered.
+
+**The spec's "PR 1" is delivered as five slice PRs (B-F); the D8 bound is applied to the FIRST of them.** The spec
+names the milestone's deliverable "PR 1" and decides nothing about how many PRs carry it; it DOES decide where the
+three corrections go, and that decision is kept as written (spec §7 item 8): *"⭐ **D8 — A CORRECTION LANDS WITH THE
+WORK THAT FOUND IT, NOT IN A SEPARATE PR. Decided 2026-10-16 by the owner**, asked through the walkthrough page:
+'yes, fix in here.'"* and *"All three repairs are docs-only and depend on nothing else in PR 1, so they go in as its
+**first commit** and are mergeable alone. The observation that makes this bound FAIL: PR 1 open with ANY OF THE
+THREE corrections not yet committed."* So Task 1 is **slice B's first commit**, not a PR of its own (⟳ r1 CLAUDE
+M8: the r0 draft gave it a standalone slice A, which reversed D8). The spec names exactly one condition for a
+separate PR — the stall risk going live — and this plan does not pre-empt it.
 
 | Slice | Branch | Tasks | What merges | Outward-facing? |
 |---|---|---|---|---|
-| A | `mkt-d8-corrections` | 1 | the three `portable-practices.md` corrections (spec §7 item 8, D8) | no |
-| B | `mkt-spike` | 2-4 | isolation tool, staging tool, spike record | no (local marketplace in a temp dir) |
+| B | `mkt-spike` | 1-4 | **first commit:** the three `portable-practices.md` corrections (spec §7 item 8, D8); then the isolation tool, staging tool, spike record | no (local marketplace in a temp dir) |
 | C | `mkt-shipping-sets` | 5-7 | component map, shipping-set declaration, closure guard | no |
 | D | `mkt-scan` | 8-12 | `check-publishability.py` + CI | no |
 | E | `mkt-experiment` | 13-16 | seeded repo builder, tier-A and tier-B records, scan fixes | no (read-only clone) |
 | F | `mkt-inventory` | 17-22 | effort (1)/(2) readings, inventory guard, cost record, checkpoint, inventory | no; Task 21 may STOP for the owner |
 
-**Ordering.** A is independent and goes first (spec §7 item 8: "its first commit and mergeable alone"). B before C
+**Ordering.** Task 1 is slice B's first commit (spec §7 item 8: "its first commit and mergeable alone"). B before C
 (C derives the declaration from B's installed tree). C before D (the scan reads C's data). D before E (the
 experiment checks the scan's predictions). F needs D for effort (1)/(2) and E for effort (3). Task 4 is a
 **go/no-go**: if the spike fails, spec §9's D3 falsifier has fired and the plan stops at Human step H3.
@@ -121,9 +133,11 @@ experiment checks the scan's predictions). F needs D for effort (1)/(2) and E fo
 | `docs/marketplace/shipping-sets.json` | per package: installed member files, symlinks resolved, expected count per component | Task 6 |
 | `scripts/check-shipping-sets.py` | map completeness against disk; declaration closure against the installed tree | Tasks 5, 7 |
 | `scripts/check-publishability.py` | the scan, detectors 1-7 (spec §5) | Tasks 8-12 |
+| `docs/marketplace/harness-tools.txt` | the harness tool names detector 4 reports (hand-written, dated, with `claude --version`; a stated deviation from "derived") | Task 11 |
 | `docs/marketplace/scan-<date>.json` | one scan report, dated, with the commit | Task 12 |
 | `scripts/mkt_seed_repo.py` | builds the tier-A seeded stranger repo and its known-facts file | Task 13 |
 | `docs/marketplace/experiment-tier-a.md`, `experiment-tier-b.md` | spec §7 items 3b and 4 | Tasks 14, 15 |
+| `docs/marketplace/experiment-tier-a.json` | the tier-A coverage matrix as data (read by Task 19's SHIP-versus-experiment rule) | Task 14 |
 | `docs/marketplace/inventory.json` | the inventory rows (spec §7 items 4b, 5, 9b) | Tasks 17-20 |
 | `scripts/check-inventory.py` | spec §9 falsifiers decidable from the inventory; the D1 checkpoint; renders `inventory.md` | Task 19 |
 | `docs/marketplace/inventory.md` | generated view: verdict and grade in one cell | Task 22 |
@@ -131,7 +145,7 @@ experiment checks the scan's predictions). F needs D for effort (1)/(2) and E fo
 
 ---
 
-## Slice A — the D8 corrections (spec §7 item 8)
+## Slice B, first commit — the D8 corrections (spec §7 item 8)
 
 ### Task 1: correct the three stale claims in `docs/portable-practices.md`
 
@@ -161,15 +175,19 @@ done
   omits. Every figure keeps its commit. Cite the spec rather than restating its argument.
 - [ ] **Step 3: run** the loop from Step 1 (all `0`), then `python3 scripts/check-docs.py`,
   `python3 scripts/check-canonical-source.py`, `python3 scripts/check-claim-propagation.py`. Each `rc=0`.
-- [ ] **Step 4: dashboard entry, commit, then** `python3 scripts/check-dashboard-entry.py` (must say an entry block
-  was added).
+- [ ] **Step 4: dashboard entry, commit as the FIRST commit of slice B's branch `mkt-spike`, then**
+  `python3 scripts/check-dashboard-entry.py` (must say an entry block was added). Nothing else goes in this commit,
+  so it stays mergeable alone.
 
-**FAILS IF:** any of the three phrases still occurs, or slice A's PR is still open when slice B's PR opens (spec
-§7 item 8's bound: the corrections are first and mergeable alone).
+**FAILS IF:** any of the three phrases still occurs, or **slice B's PR (the first PR of the spec's "PR 1") is open
+with any of the three corrections not yet committed** — D8's own FAILS IF, restated against the slices — or the
+corrections commit is not the first commit on `mkt-spike` above `origin/master` (`git log --reverse
+origin/master..mkt-spike | head` names it), or it touches any file besides `docs/portable-practices.md` and
+`docs/dashboard-entries.md`.
 
 ---
 
-## Slice B — isolation and the packaging spike (spec §6, §7 items 0b and 0)
+## Slice B (continued) — isolation and the packaging spike (spec §6, §7 items 0b and 0)
 
 ### Task 2: the isolation baseline and `scripts/mkt_isolate.py`
 
@@ -183,7 +201,8 @@ done
 **Interfaces:**
 - Consumes: nothing.
 - Produces: `build_world(root: Path, allow: list[str]) -> World` (a dataclass with `home`, `bindir`, `tmpdir`,
-  `env: dict[str, str]`); `preflight(world: World) -> list[str]` (refusal reasons, empty = clear);
+  `env: dict[str, str]`); `preflight(world: World, port: int = <explainer-serve's PORT>) -> list[str]` (refusal
+  reasons, empty = clear; `port` is a parameter so the self-test can pass an ephemeral one);
   `run_isolated(world: World, argv: list[str], cwd: Path, timeout: int) -> RunRecord` (`rc`, `stdout`, `stderr`,
   `opened: list[str]`, `executed: list[str]`, `unobservable: list[str]`); CLI
   `python3 scripts/mkt_isolate.py --root DIR --allow CMD,... -- ARGV...` writing `RunRecord` as JSON to stdout.
@@ -199,8 +218,10 @@ access by non-Python children (`git`, `node`, `gh`), network access, and anythin
 - [ ] **Step 1: write the self-test cases first** (in `_self_test()`, the repo's `--self-test` convention):
   `world env has no key outside the declared set`; `PATH holds only allow-listed commands` (`command -v gh` fails
   when `gh` is not allowed); `preflight refuses a HOME whose explainers dir resolves into the repo` (a symlink
-  fixture); `preflight refuses when the explainer port is already listening` (bind a socket in the case, then
-  release it); `preflight refuses an allow-listed command that resolves inside the repository`;
+  fixture); `preflight refuses when the explainer port is already listening` (the case binds port `0`, reads the
+  port the OS assigned, passes THAT to `preflight(world, port=...)`, then releases it — never 7391, which the
+  owner's own server holds; ⟳ r1 CLAUDE M1, measured listening 2026-11-11); `preflight refuses an allow-listed
+  command that resolves inside the repository`;
   `audit hook records an open of a fixture file`; `a non-Python child is listed as unobservable, never as zero
   opens`; `an unreachable command is CANNOT RUN (rc 2)`.
 - [ ] **Step 2: run** `python3 scripts/mkt_isolate.py --self-test`; expected: fails (no implementation).
@@ -209,7 +230,12 @@ access by non-Python children (`git`, `node`, `gh`), network access, and anythin
 - [ ] **Step 4: write `isolation-baseline.md`**: interpreter (`python3 -V` of the run), stdlib-only package set,
   the allow-listed commands with versions (`git --version`, `claude --version`, `node -v` if allowed), network
   policy (allowed only for `claude` model calls and the tier-B clone; nothing else), and the unobservable list.
-  Every version is the output of a command in this session.
+  Every version is the output of a command in this session. Two stated baseline deviations (r1 CLAUDE defaults
+  table, m7): **(a)** the audit hook's `sitecustomize.py` on `PYTHONPATH` SHADOWS the interpreter's own (Homebrew
+  Python ships one, measured `…/lib/python3.14/sitecustomize.py`; CI pins 3.12) — name the one shadowed, by path;
+  **(b)** `claude -p` in the world runs with `--permission-mode bypassPermissions` (flag measured present in
+  `claude --help` 2026-11-11), because a fresh `HOME` has no settings and would refuse Bash/Write — a stranger
+  answers those prompts themselves, so a permission refusal is a baseline artifact, never a suite defect.
 - [ ] **Step 5: run the self-test green; wire W1-W8; append the spend-log row; commit.**
 
 **FAILS IF:** a self-test case passes with the hook removed (W2 mutation `drop audit hook` must go red), or the
@@ -263,22 +289,45 @@ path that does not exist.
 - Consumes: `build_world`, `preflight`, `run_isolated` (Task 2); `stage`, `install`, `PackageSpec` (Task 3).
 - Produces: `docs/marketplace/spike-record.md` (prose; no symbol).
 
-- [ ] **Step 1:** stage ONE skill and ONE script: `.agents/skills/explain-topic` and `scripts/explainer-serve.py`,
-  as package `spike` version `0.0.1`. (Choice: `explain-topic` is the smallest of the four page skills and
-  `explainer-serve.py` is the script it ends in.)
+- [ ] **Step 1:** stage ONE skill and ONE script **with the script's import closure**: `.agents/skills/explain-topic`,
+  `scripts/explainer-serve.py`, and the two siblings it imports at module load, `scripts/page_chrome.py` and
+  `scripts/page_markup.py` (`explainer-serve.py:101-102`), as package `spike` version `0.0.1`. (Choice:
+  `explain-topic` is the smallest of the four page skills and `explainer-serve.py` is the script it ends in.)
+  ⟳ r1 CLAUDE B1 / CODEX 1: the r0 payload omitted both siblings, and even `--help` died with
+  `ModuleNotFoundError: No module named 'page_chrome'`. **Measured 2026-11-11 (fold r1):** those three files alone,
+  copied to a scratch dir and run by absolute path from an unrelated directory under a fresh `HOME` with
+  `python3 -I`, give `--help` rc 0 and `--status` rc 0. `fixture_git` is imported only inside the self-tests
+  (`explainer-serve.py:1636`), so it is not in the closure of the operations below; a standing-page route
+  (`/dashboard`, `/backlog-table`, …) shells out to `regen-pages.py` (`explainer-serve.py:1523`) and is likewise
+  out of the spike's operation set.
 - [ ] **Step 2:** build a world (allow: `python3`, `git`, `claude`), run `preflight` (must be empty), `install`.
-- [ ] **Step 3:** from an unrelated directory inside the world, run the installed script by its installed path
-  (`python3 <installed>/scripts/explainer-serve.py --help`) and one useful operation (start it on a free port,
-  `GET /` returns 200, stop it). Record the `RunRecord`s.
+  **The port.** `explainer-serve.py` has no port option: `PORT = 7391` is a module constant (`:104`) and `main()`
+  takes only `--stop`, `--status`, `--self-test`. So the serve operation runs on 7391 or not at all, and preflight
+  refuses while anything listens there. Measured 2026-11-11: the owner's own server listens on 7391, and the
+  stranger's `--status` reported it (`listening : yes`) — a stranger's command observing the author's server, which
+  is Review Focus 3's leak. If preflight refuses for the port, the serve operation waits on **Human step H7** (the
+  owner stops their server for the experiment window); the agent never stops the owner's process. The hard-coded
+  port itself is recorded as a **finding** on `explainer-serve.py` (one server per machine; any other user of
+  7391 collides), not repaired (*Evaluate, never repair*).
+- [ ] **Step 3:** from an unrelated directory inside the world, by the installed path:
+  (a) `python3 <installed>/scripts/explainer-serve.py --help` and `--status` — invocation from elsewhere, needs no
+  port; (b) the useful operation, ONLY once preflight has confirmed 7391 free: start it (no flag), `GET /` returns
+  200 and is served from the WORLD's `~/explainers` (the response names no path outside the world), then `--stop`.
+  Record the `RunRecord`s.
 - [ ] **Step 4:** also record what the skill's text tells the model to run, and whether that path resolves from the
   unrelated directory (expected, per spec §4: it does not, because the paths are CWD-relative; that is a finding,
   not a spike failure).
-- [ ] **Step 5:** write the record: GO if the package installs and the installed script performs the operation by
-  its installed path; NO-GO otherwise, with the failure.
+- [ ] **Step 5:** write the record: GO if the package installs and the installed script performs (a) and (b) by its
+  installed path; NO-GO if the install fails or the installed script cannot be invoked from elsewhere; **INCOMPLETE
+  (neither)** if (b) is waiting on H7 — an INCOMPLETE spike blocks slice C exactly as NO-GO does, but does not open
+  H3.
 
 **FAILS IF (and this is spec §9's D3 falsifier):** the package cannot be installed from the local marketplace, or
 the installed script cannot be invoked from elsewhere. On NO-GO: stop the plan, file the record, and go to Human
-step H3; do not proceed to slice C.
+step H3; do not proceed to slice C. **A NO-GO caused by the plan's own staging — a payload missing a member of the
+script's import closure — is a PLAN defect, never the D3 falsifier:** fix the payload and re-run before recording
+NO-GO. The observation that makes the staging FAIL: `--help` by the installed path exits non-zero with
+`ModuleNotFoundError` naming a file that exists in this repository's `scripts/`.
 
 ---
 
@@ -314,7 +363,17 @@ exist; hooks are registered through `run-hook.sh`), which is why the map is deri
   `the real repo map has zero gaps` (the identity case, run on the live tree).
 - [ ] **Step 2: red. Step 3: implement `candidates`, `map_gaps`. Step 4: write `components.json` by hand from the
   candidates, assigning effort, role(s), phase and package per spec §3/§4 and D11; one package for phase 1
-  (`comprehensibility`), one for recall (`recall`), one for the CI layer (`ci-layer`).**
+  (`comprehensibility`), one for recall (`recall`), one for the CI layer (`ci-layer`). Each package carries
+  `"channel": "plugin"` or `"channel": "reusable-workflow"`; `ci-layer` is `reusable-workflow` (spec §2c, *Install
+  channel for CI pieces*: installed as `uses: <owner>/<repo>/.github/workflows/…@<tag>`, "not through `/plugin
+  marketplace add`"; ⟳ r1 CLAUDE M3).**
+  **The standing cost of `--map` in CI is intended, and kept to one line (⟳ r1 CLAUDE m4).** The 27 registered
+  hooks are mostly governance (`block-default-branch-push`, `check-plan-gate`, `usage-pace-*`); each becomes a
+  candidate, so a future PR that adds a hook turns `--map` red until it is classified. That is the map doing its
+  job (spec §3: every supporting artifact mapped or excluded), so an exclusion may be a glob with one reason
+  (`.claude/hooks/*` reached from no package entry point → `"governance: not part of any shipped package"`), and a
+  new governance hook then matches it with no edit. A glob exclusion that swallows a file some package component
+  invokes is refused (case: `a glob exclusion never hides a file a package invokes`).
 - [ ] **Step 5: green** `python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json` → `0 gaps`;
   record the component count per effort with the commit in the map's `measured_at` and in the commit message
   (this count replaces spec §3's lower bound of 24).
@@ -339,11 +398,21 @@ exist; hooks are registered through `run-hook.sh`), which is why the map is deri
 (spec §7 item 2: "a step that never reads the scan's output"). Self-test: `declare reads no file outside the
 installed dir` (audit hook from Task 2), `a symlink in the installed tree is recorded by its resolved path`.
 
-- [ ] **Steps:** cases red → implement → stage and install all three packages from `components.json` → write the
-  JSON → green → WM pins → commit.
+**Only the two `channel: plugin` packages are installed** (`comprehensibility`, `recall`). `ci-layer` is NOT
+installed as a plugin (⟳ r1 CLAUDE M3; spec §2c says its channel is a reusable workflow, and C4 for it "stays
+`argued` (no experiment this milestone)"). Its entry in `shipping-sets.json` is `{"channel": "reusable-workflow",
+"declared_from": "components.json (no installed tree: spec §2c, C4 argued)", "components": {...}}` — the files a
+reusable workflow would reference, listed from the map, with symlinks resolved and counts, and no
+`installed_files`. Task 7's `--closure` skips it and says so (`ci-layer: SKIPPED — reusable-workflow channel, no
+installed tree`), never a silent pass. Task 17 reads its routes against this entry.
 
-**FAILS IF:** `shipping-sets.json` lists a file that is not in the installed tree, or `declare` opens any path
-under `scripts/check-publishability*` (audit record).
+- [ ] **Steps:** cases red → implement → stage and install the two plugin packages from `components.json` → write
+  the JSON (plus the declared `ci-layer` entry) → green → WM pins → commit.
+
+**FAILS IF:** `shipping-sets.json` lists a file under a `plugin` package that is not in its installed tree;
+`declare` opens any path outside the installed dir it was given (audit record; the self-test case above — ⟳ r1
+CLAUDE m5: the r0 gate named `scripts/check-publishability*`, which does not exist until Task 8, so it could not
+fail); or `ci-layer` was passed to `install` (its entry carries `installed_files`).
 
 ### Task 7: the closure validator
 
@@ -357,18 +426,30 @@ under `scripts/check-publishability*` (audit record).
   shell, `source`, a `Read`-the-file instruction naming a path in a SKILL.md); `closure_gaps(decl, reached) ->
   list[str]`.
 
-A reached path that resolves OUTSIDE the installed tree (CWD-relative, `docs/...`) is not a gap in the declaration:
-it is reported as `external: <path>` and handed to the scan (detector 2). Only a reached path that exists in the
-repository's version of the package but is missing from the declaration is a gap.
+**Every CWD-relative edge is ALSO resolved against the package root (⟳ r1 CLAUDE M2).** Measured 2026-11-11: every
+skill→script edge in the page skills and shared contracts is CWD-relative (`dashboard/SKILL.md:76 python3
+scripts/regen-pages.py`; `shared/explainer-delivery.md:165 … brief-compose.py`, `:223` and `:300 …
+explainer-serve.py`), so a rule that called every CWD-relative path `external` could never turn red on the edge
+that matters most. The rule, per reached path `p`:
+
+| `p` is | and | result |
+|---|---|---|
+| an EXECUTABLE edge (`python3`/`bash`/`source`/import) | `<installed>/p` exists | member; ALSO `cwd-relative: p` handed to detector 2 (it resolves only from the plugin root) |
+| an executable edge | not in the installed tree, but `p` exists in this repository | **gap** (the package omits a file its own text runs) |
+| an executable edge | exists nowhere | **gap** (`dangling: p`) |
+| a READ of a document (`docs/...`, a `Read`-the-file instruction) | not in the installed tree | `external: p` — the stranger's own project file; handed to detector 4 (doc path), never a gap |
 
 - [ ] **Steps:** cases (`omitted dependency with a count written to match is refused` — spec §5's third file-set
-  mutation; `a CWD-relative invocation is external, not a gap`; `an import cycle terminates`) red → implement →
+  mutation; **`brief-compose.py dropped from the declaration with its count lowered → closure red`** (the edge is
+  CWD-relative in `explainer-delivery.md`; the r0 rule kept this green); `a CWD-relative invocation of a member is
+  a member plus a cwd-relative hand-off, not a gap` (adjacent negative); `a docs/ read is external, not a gap`;
+  `an import cycle terminates`) red → implement →
   green on the real declaration → WM pins → add `python3 scripts/check-shipping-sets.py --closure` to `ci.yml`
   only if CI can build the installed tree without `claude` (it cannot; so CI runs `--self-test` and `--map`, and
   `--closure` is a recorded local gate in the slice's pre-push) → commit.
 
 **FAILS IF:** removing a member from `shipping-sets.json` and lowering its `expected_count` leaves
-`--closure` green.
+`--closure` green — in particular `scripts/brief-compose.py`, whose only inbound edge is CWD-relative.
 
 ---
 
@@ -410,20 +491,36 @@ has NO id (spec §5 rule 1).
 - Produces: `derive_vocabulary(root: Path) -> set[str]`; `classify_match(file, line, token) -> "dependency" |
   "mention"`.
 
-Vocabulary is derived, not hand-written: the repository name from `git remote get-url origin`, top-level
-directories that exist only for the product (`supabase/`, `worker/`, `app/`, `lib/`, `components/`), the
-`dependencies` keys of `package.json` that name a service SDK, the variable names in `.env.example` if present, and
-`fly` if `fly.toml` exists. A match becomes a dependency only when it is an import, an invocation, a documented
-prerequisite, or a config read without a working default (spec §5 rule 1, r2 CLAUDE M7); otherwise it is a
-mention with no id.
+Vocabulary is derived, not hand-written (spec §5 item 1 names the terms it must reach: *"`supabase`, `gemini`,
+`fly`, `youtube-playlist`, repo-rooted paths"*). Every source below is read from disk; none is a typed list
+(⟳ r1 CLAUDE M6 — the r0 derivation could not produce `gemini`, and it hand-typed the directory list its own
+structural case forbade):
+
+| Source | Yields (measured 2026-11-11) |
+|---|---|
+| `git remote get-url origin`: the repository name AND the owner segment | `youtube-playlist-summaries-cloud`, and the owner handle (an identity term; intended — a published file naming the author's account is a C2 leak) |
+| `package.json` `name` | `youtube-playlist-summaries` |
+| top-level directories of `git ls-files` that hold a product-language file (`.ts`, `.tsx`, `.sql`) and contain NO Task 5 candidate | `app/`, `components/`, `lib/`, `supabase/`, `tests/`, `types/`, `worker/` (`docs/` and `scripts/` hold `.ts`/`.sql` files too, and are excluded because they hold candidates) |
+| the module stems named in `docs/dev-process.md`'s *Mocking boundaries* paragraph (the project's own declaration of its external-service boundaries) | `gemini` (`lib/gemini.ts`), `youtube` (`lib/youtube.ts`) |
+| the SCOPE of every scoped `package.json` `dependencies` key (`@<scope>/…`) — a vendor namespace, so no hand judgment of which keys "name a service" | `google`, `googleapis`, `supabase` (unscoped keys such as `next`, `react`, `zod` are generic words and are not taken) |
+| the variable names in `.env.example` if present (measured absent) | — |
+| `fly` if `fly.toml` exists | `fly` |
+
+A match becomes a dependency only when it is an import, an invocation, a documented prerequisite, or a config read
+without a working default (spec §5 rule 1, r2 CLAUDE M7); otherwise it is a mention with no id.
 
 - [ ] **Cases**: `supabase inside a self-test fixture string is a mention` (the `page_markup.py` shape);
   `import of a project module is a dependency`; `an env read with a default that works is a mention`; `an env read
   whose absence raises is a dependency`; `a verdict cannot cite a mention` (no id is ever emitted for one);
-  `vocabulary contains no hand-typed literal` (the source of `derive_vocabulary` has no service-name string
-  literal — a structural case). Red → implement → green → WM → commit.
+  **`the derived vocabulary on the live tree matches supabase, gemini, fly and youtube-playlist`** (each term spec
+  §5 item 1 names; an identity case on the live tree); **`a fixture repo with no Mocking boundaries paragraph and no
+  lib/gemini.ts yields no gemini`** (the adjacent negative — the term comes from the source, not from the code);
+  `the source of derive_vocabulary contains none of the four spec terms as a string literal` (structural, and now
+  satisfiable: the directory rule is a predicate, not a list). Red → implement → green → WM → commit.
 
-**FAILS IF:** `page_markup.py`'s two `supabase` matches produce a dependency finding.
+**FAILS IF:** `page_markup.py`'s two `supabase` matches produce a dependency finding; or the live vocabulary lacks
+any of `supabase`, `gemini`, `fly`, `youtube-playlist`; or `derive_vocabulary`'s source contains one of them as a
+literal.
 
 ### Task 10: detectors 2 (cross-repo invocation) and 3 (self-test and user docs)
 
@@ -453,22 +550,46 @@ even when `X` is in the package, and the finding records the known fix `${CLAUDE
 - Produces: findings `detector: 4` (`kind: "guard-name"|"doc-path"|"tool-name"`) and `detector: 5`
   (`kind: "requires-skill"`).
 
-Bare guard names are derived from `ls scripts/check-*.py` stems; tool names from the set of tool names the harness
-exposes that a stranger's install may lack (`TaskList`, `TaskCreate`, `PushNotification`, `AskUserQuestion`,
-derived by grepping skills for `\b[A-Z][a-z]+[A-Z]\w+\b` and confirming each against `docs/available-skills.md`);
-doc paths are repo-relative paths under `docs/` that the package does not ship. Detector 5 matches an instruction
-to load or use another skill (`load the X skill`, `use /X`, `X skill` in a prerequisite sentence) whose skill is not
-in the same package.
+Bare guard names are derived from `ls scripts/check-*.py` stems; doc paths are repo-relative paths under `docs/`
+that the package does not ship. Detector 5 matches an instruction to load or use another skill (`load the X
+skill`, `use /X`, `X skill` in a prerequisite sentence) whose skill is not in the same package.
 
-- [ ] **Cases**: **calibration** `brief/SKILL.md yields exactly the 9 items of spec §4: 4 guard names
-  (check-docs, check-producer-enumeration, check-roadmap-consistency, check-test-counts), 4 doc paths
-  (docs/backlog.md, docs/reviews/, docs/roadmap-to-launch.md, docs/superpowers/), 1 tool name (TaskList)` — if the
-  live file has changed since `2f5e3f3d`, the case re-derives the expectation from a fixture copy committed with
-  the case, and the live difference is reported, never absorbed; `brief and explain-findings require
-  artifact-design` (detector 5); `a skill required from inside the same package is not a finding`. Red → implement
-  → green → WM → commit.
+**Tool names come from a hand-written, dated list — a STATED deviation from "derived" (⟳ r1 CLAUDE M5 / CODEX 5).**
+The r0 rule confirmed candidates against `docs/available-skills.md`, which lists skills and commands and contains
+none of `TaskList`, `TaskCreate`, `PushNotification`, `AskUserQuestion` (measured: `grep -c` → `0`), so it
+confirmed nothing; and the camel-case pattern also matches `JavaScript`, `SessionStart`, `PreToolUse`, …. No file
+in this repository lists the harness's tools (`.claude/settings.json`'s hook `matcher`s name only the tools a hook
+watches — measured: `Agent`, `Skill`, `AskUserQuestion`, `Bash`, `Edit`, `Write`, `Read`, `SendMessage`; no
+`TaskList`). So Task 11 commits `docs/marketplace/harness-tools.txt`: one tool name per line, headed by the date,
+`claude --version` of the session that wrote it (2.1.322 on 2026-11-11), and its source (the tool list the
+writing session's harness exposes). The detector reports a camel-case word as `tool-name` only if it is on that
+list. The list is data the scan reads, so it can be stale; the case below makes a stale list visible rather than
+silent.
 
-**FAILS IF:** the calibration case finds fewer than 9 on the fixture copy.
+**The calibration population is the ground-truth passage of `brief/SKILL.md`, not the whole file (⟳ r1 CLAUDE
+M4).** Spec §4's nine are counted over `brief`'s *Step 1* reading list — at `2f5e3f3d`, the lines from *"Then read,
+in this order"* through the ratchet names (`check-docs`, `check-roadmap-consistency`, `check-test-counts`,
+`check-producer-enumeration`). The detector run over the WHOLE file finds more, correctly — measured 2026-11-11:
+guard names `check-deploy-freshness.py` (line 78, inside Step 1's blockquote but after the passage) and
+`check-selftest-counts.py` (line 167), and doc path `docs/dev-process.md` (line 31, before the passage; the
+passage's own `dev-process.md` is bare, not a `docs/` path). Measured by `grep -o -E
+'docs/[A-Za-z0-9_./-]*|check-[a-z-]+'` over the file: 11 distinct = 8 of the nine (the ninth, `TaskList`, is
+neither pattern) + those 3 extras; the file is unchanged since `2f5e3f3d` (`git diff --stat` empty). The extras are
+reported separately with their names, never asserted away and never counted into the nine.
+
+- [ ] **Cases**: **calibration** `the ground-truth passage of brief/SKILL.md (fixture copy committed with the case,
+  taken at 2f5e3f3d) yields exactly the 9 items of spec §4: 4 guard names (check-docs, check-producer-enumeration,
+  check-roadmap-consistency, check-test-counts), 4 doc paths (docs/backlog.md, docs/reviews/,
+  docs/roadmap-to-launch.md, docs/superpowers/), 1 tool name (TaskList)`; `the whole fixture file yields those 9
+  plus exactly check-deploy-freshness, check-selftest-counts and docs/dev-process.md` (the extras named, so a
+  detector that silently narrows to the passage goes red); `a camel-case word absent from harness-tools.txt (JavaScript,
+  SessionStart) is not a tool-name finding` (adjacent negative); `a harness-tools.txt with no date or version
+  header is CANNOT RUN`; `brief and explain-findings require artifact-design` (detector 5); `a skill required from
+  inside the same package is not a finding`. If the live `brief/SKILL.md` differs from the fixture, the
+  difference is reported, never absorbed. Red → implement → green → WM → commit.
+
+**FAILS IF:** the calibration case on the passage finds any count other than exactly 9 (fewer: an item missed;
+more: the population leaked) — or the whole-file case does not name all three extras.
 
 ### Task 12: detectors 6 (runtime prerequisites) and 7 (inbound registration); CI; the first report
 
@@ -540,11 +661,15 @@ Two halves, because a model call needs a login (measured 2026-11-11: `claude -p`
 
 - **Scripted half (autonomous):** for each entry-point script of the package, by its installed path, from inside
   the seeded repo: one useful operation each (compose a page with `brief-compose.py`, serve it with
-  `explainer-serve.py`, `GET` the page and its Ask endpoint, run each generator's documented command). Record a
+  `explainer-serve.py` (on 7391 only, once preflight confirms it free; else CANNOT RUN waiting on H7, Task 4
+  Step 2), `GET` the page and its Ask endpoint, run each generator's documented command). Record a
   `RunRecord` per operation.
 - **Skill half (needs Human step H2's token):** with `CLAUDE_CODE_OAUTH_TOKEN` from the file H2 produced (never
-  committed, never echoed), `claude -p` invokes each of the four page skills in the seeded repo. The token is a
-  recorded baseline deviation: a stranger has their own login. If H2 has not happened, the skill half is
+  committed, never echoed), `claude -p --permission-mode bypassPermissions "/comprehensibility:<skill> …"` invokes
+  each of the four page skills in the seeded repo (a plugin skill is invoked under `-p` by its namespaced slash
+  name; the first run records the exact form that worked, and a form that does not resolve the skill is a
+  baseline defect to fix, never a suite defect — ⟳ r1 CLAUDE m7). The token and the permission mode are recorded
+  baseline deviations (Task 2 Step 4): a stranger has their own login and answers their own prompts. If H2 has not happened, the skill half is
   **CANNOT RUN**, recorded with that reason, and every skill entry-point is `argued` (spec §4: CANNOT RUN is not a
   component failure).
 
@@ -552,12 +677,25 @@ Two halves, because a model call needs a login (measured 2026-11-11: `claude -p`
 - [ ] **Step 2:** scripted half; Step 3: skill half or its CANNOT RUN line.
 - [ ] **Step 4:** score the five pass conditions of spec §6 per entry-point; for pass condition 2 compare every
   ground-truth answer with `known-facts.json` and mark `correct`, `correctly-empty`, `missing-capability`, or
-  `wrong`; condition 4(a) answered for each component (does it document recovery?).
+  `wrong`; condition 4(a) answered for each component (does it document recovery?). **Ground truth exists only
+  for `brief`** (`known-facts.json` seeds `brief`'s items; ⟳ r1 CLAUDE m9): pass condition 2 is scored against it
+  for `brief` alone, and for `explain-diff`, `explain-findings`, `explain-topic` and `dashboard` it is recorded
+  `not scored — no seeded facts`, which makes their condition 2 `argued` (their other conditions keep whatever
+  grade their own scenario earns).
 - [ ] **Step 5:** for every failure, record whether the scan predicted it (a finding id) — feeds Task 16.
-- [ ] **Step 6:** write the record; spend-log row; commit.
+- [ ] **Step 6:** write the record, AND its machine-readable sidecar `docs/marketplace/experiment-tier-a.json`:
+  `{"measured_at", "components": {id: {"exercised": bool, "scenario": str|null, "operation_ok": bool,
+  "pass_conditions": {"1".."5": "pass"|"fail"|"argued"|"CANNOT RUN"}}}}` — the coverage matrix as data, which
+  Task 19's SHIP-versus-experiment rule reads (⟳ r1 CLAUDE M7). Spend-log row; commit.
 
-**FAILS IF:** the record marks a page skill `measured` while its page carried `missing-capability` on any item
-whose seeded fact is non-empty (the hollow-page case, spec §6), or a `measured` grade names no scenario.
+**A hollow page is a FAILED measurement, not an unmeasured one (⟳ r1 CODEX 3).** Spec §4b defines `measured` as
+exercised with a named scenario, and a measured run may fail. A page whose `missing-capability` items are non-empty
+keeps its `measured` grade and FAILS pass condition 2, which supports `NEEDS-WORK` and forbids `SHIP`.
+
+**FAILS IF:** the record marks pass condition 2 `pass` — or the component `SHIP` — for a page skill whose page
+carried `missing-capability` or `wrong` on any item whose seeded fact is non-empty (the hollow-page case, spec §6);
+or a `measured` grade names no scenario; or the sidecar and the Markdown record disagree on any component's
+`exercised` or pass-condition value.
 
 ### Task 15: tier B — a real third-party harness repository
 
@@ -601,7 +739,8 @@ corresponding scan case.
 **Files:** Create rows in `docs/marketplace/inventory.json` for every effort (2) component.
 
 **Interfaces:**
-- Consumes: `ScanReport` (Task 12); `components.json` (Task 5).
+- Consumes: `ScanReport` (Task 12); `components.json` (Task 5); the `ci-layer` entry of `shipping-sets.json`
+  (Task 6 — declared from the map, `channel: reusable-workflow`, no installed tree).
 - Produces: inventory rows (schema in Task 19).
 
 For the three pieces of spec §3 Effort (2) — (a) matrix sharding, (b) selection by closure / observed reach,
@@ -625,17 +764,29 @@ Grade: `argued` for all (spec §2b).
 `docs/marketplace/experiment-tier-a.md` named *Recall with an empty corpus*.
 
 **Interfaces:**
-- Consumes: `build_world`, `run_isolated` (Task 2); `ScanReport` (Task 12).
-- Produces: `recall_feasible_a: true|false` with its evidence, in the corpus row's notes and in the record.
+- Consumes: `build_world`, `run_isolated` (Task 2); `ScanReport` (Task 12); Human step H2's token.
+- Produces: the inventory's top-level `"recall": {"a": true|false|"CANNOT RUN", "b": "pass"|"fail"|"unanswered"}`
+  with its evidence in the corpus row's notes and in the record, and the recall rows' `phase` resolved from it.
 
 The probe: stage the `recall` package, run `.claude/hooks/surface-recall.sh` and `scripts/recall-llm.py` in the
-seeded repo with NO memory corpus reachable (spec §3: `recall-llm.memory_dir()` returns `None` in a clone). Record
-what happens: an error, a silent no-op, or a useful behaviour (for example, telling the user how to start a
-corpus). Condition (a) is met only if a stranger with an empty corpus gets something useful on day one; a silent
-no-op is NOT useful. Condition (b) is Human step H1 and is never decided here. The corpus row carries
+seeded repo with NO memory corpus reachable (spec §3: `recall-llm.memory_dir()` returns `None` in a clone). The
+world's allow-list is `python3`, `git`, `bash` and `claude` (⟳ r1 CLAUDE m8: `surface-recall.sh` starts
+`#!/usr/bin/env bash`, and `recall-llm.py` shells out to `claude -p` at `recall-llm.py:924`), and the model half
+needs H2's token. Without H2 — or with `bash`/`claude` unreachable — the probe is **CANNOT RUN** and `a` is
+recorded `"CANNOT RUN"`, never `false`: a probe that could not run says nothing about usefulness and must not
+decide D11 (a). Record what happens: an error, a silent no-op, or a useful behaviour (for example, telling the user
+how to start a corpus). Condition (a) is met only if a stranger with an empty corpus gets something useful on day
+one; a silent no-op is NOT useful. Condition (b) is Human step H1 and is never decided here. The corpus row carries
 `C5: unanswered — blocked on the content review` until H1 lands, and its verdict cannot be the ship verdict.
 
-**FAILS IF:** the probe ran with any path under this repository's `docs/memory/` in its `RunRecord.opened`.
+**The phase is written, not left standing (⟳ r1 CODEX 2, CLAUDE m3).** Spec §2c, D11: *"Either one failing moves
+(1) to 'later'."* So Task 18 rewrites every recall row's `phase`: `a` false OR `b` fail → `"later"`; `a` true AND
+`b` pass → `"1"`; anything else (H1 unanswered, or `a` CANNOT RUN) → stays `"1-if-feasible"`, which means
+UNRESOLVED, and Task 19's checkpoint handles it explicitly (it never counts an unresolved row as phase 1).
+
+**FAILS IF:** the probe ran with any path under this repository's `docs/memory/` in its `RunRecord.opened`; or a
+recall row is still `"1-if-feasible"` while `recall.a` is `false` or `recall.b` is `"fail"` (Task 19 refuses it);
+or `recall.a` is `false` on a record whose probe was CANNOT RUN.
 
 ### Task 19: `scripts/check-inventory.py` — the falsifiers as a guard, and the checkpoint
 
@@ -644,7 +795,7 @@ no-op is NOT useful. Condition (b) is Human step H1 and is never decided here. T
 
 **Interfaces:**
 - Consumes: `inventory.json` rows written by Tasks 17-18 (and 20); `components.json` (Task 5);
-  `shipping-sets.json` (Task 6); the latest `scan-<date>.json` (Task 12).
+  `shipping-sets.json` (Task 6); the latest `scan-<date>.json` (Task 12); `experiment-tier-a.json` (Task 14).
 - Produces: `checkpoint_fires(rows: list[dict]) -> bool`; `row_errors(row: dict, scan: dict) -> list[str]`;
   `render(rows) -> str` (Markdown, verdict and grade in ONE table cell); CLI rc 0 clean, 1 row errors,
   2 CANNOT RUN, **3 CHECKPOINT** (the D1 checkpoint fired: stop and go to Human step H4).
@@ -660,7 +811,16 @@ Row schema (one per component in `components.json`; a missing component is an er
  "route": {"kind": "decouple-config", "cost_hours": 4.0, "grade": "argued"}}
 ```
 
-`row_errors` refuses, each a spec falsifier: a ship row whose grade is missing (§4b); an `inherited` grade with no
+`row_errors` refuses, each a spec falsifier: **ANY row whose grade is missing** (§4b: *"Every component in the
+inventory carries both fields. A verdict without a grade is an incomplete row"* — ⟳ r1 CLAUDE M7, the r0 rule
+checked SHIP rows only); **a `SHIP` row on a component the install experiment covers (a `plugin`-channel package)
+whose `experiment-tier-a.json` entry has `exercised: false` or `operation_ok: false`, or any pass condition
+`fail` or `CANNOT RUN`** (§9: *"a component marked `SHIP` that the install experiment cannot run"*; `ci-layer`
+rows are outside this rule because the spec gives effort (2) no experiment this milestone, §2c); **a phase-1 row
+whose component is absent from its package's `components` in `shipping-sets.json`** (§9 D11's "named subset that
+has no shipping set", per component, not only per package); **a recall row still `"1-if-feasible"` while the
+inventory's `recall.a` is `false` or `recall.b` is `"fail"`** (§2c D11; Task 18 must have moved it to `"later"`);
+**`next_project_hours` ≤ 0** (the ratio is undefined; ⟳ r1 CLAUDE m2); an `inherited` grade with no
 `scenario` (§4b); a non-ship verdict with no `cites`, or citing an id the scan did not emit (§5 rule 1); a non-ship
 row with no `route` (§9 D10); a `practice` harvest with no `practice_entry` naming a heading that exists in
 `docs/portable-practices.md` (§4c); a `data` row with a C4 value other than `"struck"` (§4); the memory-corpus row
@@ -669,45 +829,93 @@ with a ship verdict while its `C5` is `unanswered` (§7 item 11); a `measured` g
 package with no entry in `shipping-sets.json` (§9 D11).
 
 The checkpoint, exactly as spec §2c states it (embedded because the threshold arithmetic is what the owner decided;
-it is run as written below):
+it is run as written below). ⟳ r1 CODEX 2 / CLAUDE m3: the r0 function counted every `"1-if-feasible"` row, so
+recall rows D11 had already excluded could suppress the owner's checkpoint (Codex measured: three comprehensibility
+rows with two at 3× fire alone; four added recall rows flipped it to False). Phase is now resolved before counting
+(Task 18 writes it), and an unresolved row is counted only when it cannot change the answer. Extracted and run
+under `python3 -I` at the r1 fold: every assert passes; the mutation that restores r0's population
+(`== "1"` → `in ("1", "1-if-feasible")`) fails an assert.
 
 ```python
-def checkpoint_fires(rows):
-    """D1 checkpoint (spec §2c): fires when public_bar >= 3 x next_project
-    for MORE THAN HALF of the phase-1 components (phase "1" and "1-if-feasible")."""
-    phase1 = [r for r in rows if r["phase"] in ("1", "1-if-feasible")]
-    if not phase1:
+def _fires(pop):
+    """public_bar >= 3 x next_project for MORE THAN HALF of `pop`."""
+    if not pop:
         raise ValueError("CANNOT RUN: no phase-1 rows")
-    over = [r for r in phase1
+    for r in pop:
+        if not r["cost"]["next_project_hours"] > 0:
+            raise ValueError(f"CANNOT RUN: {r.get('id', '?')} has next_project_hours <= 0 "
+                             "(a row error; row_errors must have refused it first)")
+    over = [r for r in pop
             if r["cost"]["public_bar_hours"] >= 3 * r["cost"]["next_project_hours"]]
-    return 2 * len(over) > len(phase1)
+    return 2 * len(over) > len(pop)
+
+
+def checkpoint_fires(rows):
+    """D1 checkpoint (spec §2c) over the resolved phase-1 population.
+    Phase "1" rows always count. A "1-if-feasible" row is UNRESOLVED (D11 not yet decided):
+    the answer is computed with and without the unresolved rows, and returned only when the
+    two agree; if they disagree the answer depends on H1, so it is CANNOT RUN, never a guess.
+    A recall row that D11 has moved out carries phase "later" (Task 18) and never counts."""
+    base = [r for r in rows if r["phase"] == "1"]
+    unresolved = [r for r in rows if r["phase"] == "1-if-feasible"]
+    without = _fires(base)
+    if not unresolved:
+        return without
+    if without == _fires(base + unresolved):
+        return without
+    raise ValueError("CANNOT RUN: the checkpoint depends on recall's unresolved phase (H1)")
 
 
 def _row(phase, pub, nxt):
     return {"phase": phase, "cost": {"public_bar_hours": pub, "next_project_hours": nxt}}
 
 
-assert checkpoint_fires([_row("1", 3, 1), _row("1", 3, 1), _row("1", 1, 1)])        # 2 of 3 at exactly 3x
-assert not checkpoint_fires([_row("1", 3, 1), _row("1", 1, 1)])                     # 1 of 2 is not MORE than half
-assert not checkpoint_fires([_row("1", 2.9, 1), _row("1", 2.9, 1)])                 # below 3x
+def _raises(rows):
+    try:
+        checkpoint_fires(rows)
+    except ValueError:
+        return True
+    return False
+
+
+C3 = [_row("1", 3, 1), _row("1", 3, 1), _row("1", 1, 1)]                          # 2 of 3 at exactly 3x
+assert checkpoint_fires(C3)
+assert not checkpoint_fires([_row("1", 3, 1), _row("1", 1, 1)])                    # 1 of 2 is not MORE than half
+assert not checkpoint_fires([_row("1", 2.9, 1), _row("1", 2.9, 1)])                # below 3x
 assert checkpoint_fires([_row("1", 9, 1), _row("later", 1, 1), _row("later", 1, 1)])  # later rows do not count
-try:
-    checkpoint_fires([_row("later", 9, 1)])
-    raise AssertionError("an empty phase-1 set must not read as 'did not fire'")
-except ValueError:
-    pass
+assert _raises([_row("later", 9, 1)])                                              # empty phase 1 is not "did not fire"
+# r1 CODEX 2: recall moved to "later" (D11 failed) cannot suppress the checkpoint.
+assert checkpoint_fires(C3 + [_row("later", 1, 1)] * 4)
+# Unresolved recall that does not change the answer: the answer stands.
+assert checkpoint_fires(C3 + [_row("1-if-feasible", 9, 1)])
+# Unresolved recall that WOULD flip the answer: CANNOT RUN (depends on H1), never a guess.
+assert _raises(C3 + [_row("1-if-feasible", 1, 1)] * 4)
+# r1 CLAUDE m2: next_project_hours = 0 never fires automatically.
+assert _raises([_row("1", 1, 0)])
+assert _raises([_row("1", 0, 0)])
 ```
 
-A `next_project_hours` of 0 is a row error (the ratio is undefined), never an automatic fire.
+A `next_project_hours` of 0 is a row error (the ratio is undefined), never an automatic fire; the function also
+refuses it, so the order of the two checks cannot turn it into a fire.
+
+**Exit codes rank, and the order is the rule (⟳ r1 CLAUDE m2):** inputs unreadable or absent → **2**; else any
+row error → **1**, and the checkpoint is NOT computed (a fire over rows with errors is not evidence); else
+`checkpoint_fires` raising (no phase-1 rows, or an answer that depends on H1) → **2**; else fired → **3**; else
+**0**. So rc 1 outranks rc 3.
 
 - [ ] **Cases**: one per `row_errors` rule (each with an ADJACENT negative: the same row with the field fixed is
-  clean), the five checkpoint asserts above, `render puts verdict and grade in one cell`, `a component in the map
-  with no row is an error`. Red → implement → green → W1-W8 (the `ci.yml` caller runs both `--self-test` and the
-  live inventory once it exists; rc 3 on the live inventory is NOT a CI failure — CI prints it; only rc 1 and 2
-  fail) → commit.
+  clean — including `a NEEDS-WORK row with no grade is an error` beside the same row graded, and `a SHIP row whose
+  tier-A entry is exercised: false is an error` beside `exercised: true, operation_ok: true`), the checkpoint
+  asserts above, `rows with an error AND a crossed threshold exit 1, not 3`, `render puts verdict and grade in one
+  cell`, `a component in the map with no row is an error`. Red → implement → green → W1-W8 → commit.
+- [ ] **CI caller — `--self-test` ONLY in this task (⟳ r1 CODEX 6).** The live inventory is necessarily incomplete
+  here (Tasks 17-18 wrote effort (2)/(1) rows; effort (3) rows come in Task 20), and a missing component is rc 1,
+  so enabling the live run now would put CI red by construction. The live caller is added in **Task 20**, in the
+  same commit that completes the rows.
 
-**FAILS IF:** the live inventory has a ship row with its grade in a different cell of `inventory.md`, or the
-checkpoint fires on the live inventory and `check-inventory.py` exits 0.
+**FAILS IF:** the live inventory has a ship row with its grade in a different cell of `inventory.md`; or the
+checkpoint fires on the live inventory and `check-inventory.py` exits 0; or this task's commit adds a `ci.yml`
+step that runs `check-inventory.py` without `--self-test`.
 
 ### Task 20: the cost record and the cheapest routes for effort (3)
 
@@ -720,13 +928,24 @@ checkpoint fires on the live inventory and `check-inventory.py` exits 0.
 For each component: verdict from the evidence (scan findings + experiment), grade per §4b and §4's inheritance
 table (a `library` is `inherited` only via a named measured scenario that exercised it; CANNOT RUN importers
 contribute nothing), the two cost estimates, and for every non-ship row the cheapest of D10's routes with its cost.
-Estimates are in hours of agent-implemented work including one review round, graded `argued` unless something was
+Estimates are in hours of agent-implemented work including review to convergence under the round cap (at least
+r1 with BOTH halves, then alternating halves; `docs/review-method.md` §0 Q4c — ⟳ r1 CLAUDE defaults table: "one
+review round" understated it), graded `argued` unless something was
 run (for example, a route whose fix was tried in the experiment's scratch copy, never in the repository, is
 `measured`). Each estimate names its basis in one line (which findings it removes).
 
-- [ ] **Steps:** write rows → `python3 scripts/check-inventory.py` rc 0 or 3 → commit.
+- [ ] **Steps (order matters — ⟳ r1 CODEX 4):** write rows → **write one `docs/portable-practices.md` entry per
+  `harvest: practice` row across ALL efforts (the first is the `${CLAUDE_PLUGIN_ROOT}` practice of spec §4, item
+  9b), so every `practice_entry` heading exists BEFORE the guard first reads the live inventory** (measured
+  2026-11-11: no heading in `portable-practices.md` contains `CLAUDE_PLUGIN_ROOT`, so the r0 order — headings in
+  Task 22, guard here — returned rc 1 on a valid row) → `python3 scripts/check-inventory.py` rc 0 or 3 → **add
+  the live caller to `ci.yml`** (`python3 scripts/check-inventory.py`; rc 3 is printed and is NOT a CI failure,
+  only rc 1 and 2 fail — Task 19 deferred it here, ⟳ r1 CODEX 6) → commit rows, practice entries and the caller
+  together.
 
-**FAILS IF:** `check-inventory.py` exits 1 on the committed inventory.
+**FAILS IF:** `check-inventory.py` exits 1 on the committed inventory; or a `practice_entry` names a heading that
+the commit's `portable-practices.md` does not contain; or the live `ci.yml` caller lands in a commit whose
+inventory lacks a row for any component in `components.json`.
 
 ### Task 21: the D1 checkpoint (spec §2c) — STOP POINT
 
@@ -747,8 +966,8 @@ run (for example, a route whose fix was tried in the experiment's scratch copy, 
 
 **Files:**
 - Create: `docs/marketplace/inventory.md` (generated by `python3 scripts/check-inventory.py --render`)
-- Modify: `docs/portable-practices.md` (the rubric entry, spec §7 item 9; one entry per `harvest: practice`, item
-  9b — the first is the `${CLAUDE_PLUGIN_ROOT}` practice of spec §4), `docs/backlog.md` (one row per
+- Modify: `docs/portable-practices.md` (the rubric entry, spec §7 item 9; the item 9b `harvest: practice` entries
+  were already written in Task 20, before the guard read them), `docs/backlog.md` (one row per
   `NEEDS-WORK` component with its named defect and nothing else, item 6; area `(process / deliverable #2)`, already
   claimed in `docs/features.md`), `docs/roadmap-to-launch.md` (the milestone's status line and ticks under the
   existing `harness-ships-elsewhere` section), `docs/dashboard-entries.md`.
@@ -762,7 +981,7 @@ Spec §7 item 7 (register the anchor, close backlog row 290) is **already done**
 `docs/anchors.md` registers `harness-ships-elsewhere` and row 290 is ✅. This task only verifies it
 (`python3 scripts/check-anchors.py` rc 0).
 
-- [ ] **Steps:** render → write practice entries → backlog rows (`python3 scripts/gen-backlog-page.py --self-test`
+- [ ] **Steps:** rubric entry → render → backlog rows (`python3 scripts/gen-backlog-page.py --self-test`
   after editing `backlog.md`) → roadmap → dashboard entry → all document guards → commit →
   `python3 scripts/check-dashboard-entry.py`.
 
@@ -778,6 +997,7 @@ from `--render`'s output (the page is derived, never hand-edited).
 | **H1** | **C5 content review of the memory corpus** (`docs/memory/`): does any file hold private content, credentials or third-party material that may not be redistributed? Spec §7 item 11. | the recall phase decision (D11 (b)) | the corpus row stays `C5: unanswered`; recall moves to "later" |
 | **H2** | **A login token for the skill half of the experiment**: run `claude setup-token` and save the token to a file outside the repository (path told to the coordinator, never pasted into chat or committed). | Task 14/15 skill half | the skill half is CANNOT RUN; the four page skills stay `argued` |
 | **H3** | **Re-decide the method if the spike fails** (spec §9: D4 is unachievable; never silently downgrade to paper scoring). | Task 4 NO-GO | the plan stops after slice B |
+| **H7** | **Free port 7391 for the experiment window**: stop your own explainer server (`python3 scripts/explainer-serve.py --stop` in your checkout) and say when; restart it afterwards. The port is a constant, so the stranger's server can only run there (Task 4 Step 2). | Task 4 (b), Task 14/15 serve operations | the serve operations stay CANNOT RUN; the spike is INCOMPLETE and slice C waits |
 | **H4** | **Answer the D1 checkpoint card** (keep the public bar, or drop to "my next project"). | Task 21 rc 3 | the inventory stays not final |
 | **H5** | **Name the copyright holder** for the MIT `LICENSE` (spec §4: the git identity is a placeholder). | the NEXT milestone | nothing in this plan blocks |
 | **H6** | **Create the published marketplace repository, add its `LICENSE`, any listing, the first tag and `CHANGELOG`** (spec §10, D9). | the NEXT milestone | out of scope here |
@@ -797,7 +1017,7 @@ slice start so CI's selected sweep runs early.
 | Spec item | Task |
 |---|---|
 | §7 item 0b, isolation baseline + capture mechanism and its limits | 2 |
-| §7 item 0, packaging spike; §9 D3 falsifier | 3, 4, H3 |
+| §7 item 0, packaging spike; §9 D3 falsifier | 3, 4, H3, H7 |
 | §3 mapping step (map first, then count; every supporting artifact mapped or excluded) | 5 |
 | §7 item 2, declaration from the installed tree; three producers | 6, 7 |
 | §5 file-set rules (symlinks, identity, independent declaration, three mutations) | 8, 7 |
@@ -813,6 +1033,6 @@ slice start so CI's selected sweep runs early.
 | §2c / §7 item 4c D1 checkpoint | 19, 21, H4 |
 | §7 items 5, 6, 9, 9b, 10 | 22 |
 | §7 item 7 (anchor, row 290) | already on master; verified in 22 |
-| §7 item 8 (D8 corrections, first and alone) | 1 |
+| §7 item 8 (D8 corrections: slice B's FIRST commit, not a separate PR) | 1 |
 | §7 item 11 (C5 corpus review) | H1, 18, 19 |
 | §4d D9, §10 publication | H5, H6 (next milestone) |
