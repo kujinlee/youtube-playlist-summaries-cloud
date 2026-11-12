@@ -10,7 +10,7 @@ halves:
 findings:
   - {id: CL1, severity: High, aim: deliverable, fix_induced: false, component: goal-tree-served-page, disposition: fixed}
   - {id: X1, severity: High, aim: deliverable, fix_induced: false, component: goal-tree-served-page, disposition: fixed}
-  - {id: CL3, severity: Low, aim: deliverable, fix_induced: false, component: goal-tree-served-page, disposition: bounded}
+  - {id: CL3, severity: Low, aim: deliverable, fix_induced: false, component: goal-tree-served-page, disposition: narrowed}
   - {id: CL4, severity: Low, aim: deliverable, fix_induced: false, component: goal-tree-served-page, disposition: fixed}
   - {id: X2, severity: Low, aim: deliverable, fix_induced: false, component: goal-tree-served-page, disposition: fixed}
 ```
@@ -23,7 +23,7 @@ Claude (`docs/reviews/claude/610-served-page-r1-claude.md`), Codex (`docs/review
 - X1 = CL2 (Codex MAJOR, Claude MINOR; both reproduced it): the guard compared the path's spelling, so
   `…/../goal-tree.html` or a symlink wrote the served page. Now `a.out.resolve() == DEFAULT_OUT.resolve()`. Two cases (a
   `..` spelling, a symlink), one mutation back to the spelling compare, red on its case.
-- CL3 (MINOR): a hand-set `REGEN_MAIN_CHECKOUT` passes from any tree. Bounded, not fixed: setting the clone's marker by
+- CL3 (MINOR): a hand-set `REGEN_MAIN_CHECKOUT` passes from any tree. Narrowed, not fixed: setting the clone's marker by
   hand is a deliberate bypass; the bound is written into row 610.
 - CL4 (MINOR): the dashboard entry overstated ("lagging no longer matters to any page"); `--snapshot` from a stale
   checkout still logs. Reworded.
