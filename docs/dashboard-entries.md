@@ -20338,3 +20338,18 @@ on or inside `<svg>`/`<math>` is CANNOT RUN and both are `_P_SCOPE` stops; the d
 count" bound is corrected (F2, misnested end tags, NOT fixed); the p-closure sets and the formatting check's
 `hidden` are pinned. THRASHING armed in decision-scan → Phase 6 filed as backlog #616. Self-test 196 → 226; 48
 mutations, pin 46 → 94.
+My 18:54 explanation of the stale goal-tree page was wrong, and the fix you approved at 18:57 is replaced. The Refresh
+button already builds every page from GitHub's master (backlog #408). The stale page at 14:58 came from me running
+the goal-tree script directly after recording an agenda, which overwrote the page you open from an old checkout. At
+18:48 PR #559 and PR #560 were missing because the agenda did not name them, not because of the checkout. Now a direct
+run cannot overwrite your page; it says to use the Refresh path, and the page's own "To refresh" hint now names that
+path. A lagging checkout can still put an old snapshot into the page's history if I take one from it, so I take them
+from a current checkout. Also: the stale waits on backlog #511 and #603 are fixed, and backlog #611, #612 and #613 are filed. Your
+survivor-retry idea is recorded on backlog #495: a survivor that dies on a re-run is reported FLAKY, never killed.
+<!--tech-->
+Branch `610-read-at-origin`. `scripts/goal-tree.py` `main`: `--page` to the default `--out` with no
+`REGEN_MAIN_CHECKOUT` (set only by `regen-pages.py launch` in its clone) is CANNOT RUN, rc 2, before anything is
+logged; the path is compared resolved, so `..` and symlink spellings are refused (r1). Seven cases, four mutations,
+pin 364 -> 368. The page's refresh hint, the docstring and `gen-work-lines.py`'s retired message now name
+`regen-pages.py --page goal-tree` (r1 F1). The first approach (`git show origin/master:` reads plus a lag line) was withdrawn after
+r1: both halves found it mixed trees outside the clone, and the Claude half found it a no-op inside it.

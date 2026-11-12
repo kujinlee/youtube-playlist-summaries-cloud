@@ -373,7 +373,7 @@ def main(argv: list[str]) -> int:
     if a.self_test:
         return _self_test()
     print(f"RETIRED — the work-lines page was absorbed into the goal tree (backlog #389): run "
-          f"`python3 scripts/goal-tree.py --snapshot --page`. Its archived record is at {ARCHIVE_REL}. "
+          f"`python3 scripts/regen-pages.py --page goal-tree`. Its archived record is at {ARCHIVE_REL}. "
           f"This file is now the plan-file reader that begin-plan.py, check-banner-armed.py and "
           f"goal-tree.py import.")
     return 2
@@ -532,7 +532,7 @@ def _self_test_body() -> int:
     with contextlib.redirect_stdout(_buf_m):
         _rc_m = main([])
     case("⛔ the retired page-writing main exits 2, names the goal tree and the archive, and writes nothing",
-         (_rc_m, "goal-tree.py --snapshot --page" in _buf_m.getvalue(), ARCHIVE_REL in _buf_m.getvalue()),
+         (_rc_m, "regen-pages.py --page goal-tree" in _buf_m.getvalue(), ARCHIVE_REL in _buf_m.getvalue()),
          (2, True, True))
     with _tf.TemporaryDirectory() as _d3:
         _pd3 = pathlib.Path(_d3) / "plans"; _pd3.mkdir()
