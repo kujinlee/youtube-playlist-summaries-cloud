@@ -20250,12 +20250,13 @@ Self-test 458 cases. Six new mutations in all (manifest pin 336 -> 342): the two
 open, an orphaned answer dropped, a thread's answers never attached, and a bad entry skipped.
 ## 2026-11-10
 The first build step of the faster mutation sweep (backlog #586) is measured: `strace` works on GitHub's runners.
-Every one of the 92 guard suites ran twice under two fixed seeds, once plain and once traced, on six machines in
-parallel. The trace step succeeded on all six, so the plan goes ahead with `strace` as the recorder; the fallback
-recorder is not needed. Tracing makes a suite up to about 20 times slower, and the whole measurement took about 47
-minutes of machine time. The pull request is a draft and waits for its review. Two things it found for the next
-slice: one suite (`regen-pages`) fails a signal-timing case only when traced, and the recorder must follow each
-process's working directory, because git deletes files by relative path.
+This was a ONE-TIME experiment, not a recurring cost: every one of the 92 guard suites ran once plain and once
+traced, on six machines in parallel, about 47 minutes of machine time in all. The trace step succeeded on all six,
+so the plan goes ahead with `strace` as the recorder. Tracing a suite is up to about 20 times slower, which is why
+it never runs on a pull request: a separate job records after each merge to master, and a pull request only reads
+the saved map. (Reworded 2026-11-11: the first version read as an ongoing cost.) The pull request merged on 11-11.
+Two things it found for the next slice: one suite (`regen-pages`) fails a signal-timing case only when traced,
+and the recorder must follow each process's working directory, because git deletes files by relative path.
 <!--tech-->
 PR #557 (draft), run 42893595762: strace 6.19; `-yy` decorates `AT_FDCWD`; 118 syscall names, 7 ioctl tokens;
 `io_uring_setup` in 4 targets, ` (deleted)` labels in 2, no unshare/setns/mount; `TRACE_FACTOR` 20 (batch-ci 19.94);
@@ -20285,6 +20286,17 @@ channel and its reading of C2-C4); §2b's checkpoint bullet and D11 table, §3 E
 Master merged in (171 commits, 10 conflicts); `check-claim-propagation` now runs its suite inside
 `fixture_git.isolated()`; `.githooks/` joins `STAGEABLE_PREFIXES`; pins moved to
 `scripts/mutations/expected_mutations.py`; two retroactive decision-log rows for this subject.
+
+## 2026-11-11
+The faster mutation sweep (backlog #586) now has a "worth it?" gate, at your request (15:58). Its trial run on 20
+real pull requests already had to prove the new selector misses nothing; now it must also save enough. If the
+median pull request would skip less than a quarter of today's mutation targets, the work stops after slices 1-5,
+the recording job is switched off, and today's selector stays. The 11-10 entry about measuring `strace` is
+reworded, because it read as an ongoing cost when it was a one-time experiment.
+<!--tech-->
+Spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §7 gains row Q7 (owner 15:58,
+signature line ✍ DECISION 1 of 1). The 11-10 strace entry's prose rewritten; its tech section unchanged.
+
 ## 2026-11-11
 On the goal-tree page, the plan's groups under All steps ("done today", "now", "next today", "carried over") are
 now titles, each in the accent colour with space above, instead of plain lines mixed in with the steps. You
@@ -20292,6 +20304,7 @@ asked for this at 14:52. The text printout is unchanged.
 Also filed backlog #610: the page showed PR #557 under the next steps because it reads the backlog from a
 checkout that was 42 commits behind; fast-forwarding fixed the page today, the row is for the cause.
 <!--tech-->
-Branch `agenda-group-titles`. `scripts/goal-tree.py` `agenda_html` wraps each `## <when>` line in
-`<span class="ag-when">` (styled in `section.agenda`); a new self-test case asserts the spans and that no step
-line gets one; two older cases now read through the span; one mutation added, one re-bound (pin 336 -> 337).
+Branch `agenda-group-titles`. `scripts/goal-tree.py`: `agenda_step_items` returns (kind, line), and `agenda_html`
+wraps each `when` item in `<span class="ag-when">` by KIND, never by indentation (accent colour, first letter
+uppercased). Self-test cases assert the spans, escaping, and the style rule; review rounds 1-2 (r2 Codex, 1 LOW
+accepted); four mutations added, one re-bound (pin 360 -> 364).
