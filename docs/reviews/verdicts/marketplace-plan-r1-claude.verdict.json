@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/marketplace-plan-r1-claude.md": "100644 aa82739747b4677178cb4974c0a0b46630dcb391",
+    "docs/reviews/codex/marketplace-plan-r1-codex.md": "100644 34e2548a6e50b74a87ef21a7635d2727026d19f2",
+    "docs/reviews/verdicts/marketplace-plan-r1-codex.verdict.json": "100644 5c643d32398219b8c1d9fe24e436b3bcc1bcde85"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "266ba0b565d1f69ac9fc48aa277e9a66f9a2ebe8",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "Adversarial r1 Claude half of marketplace-plan (PR #562): refute plan readiness vs approved spec",
+  "reason": "claude half filed: 19338 chars, names 266ba0b565d1",
+  "refused": false,
+  "review": "marketplace-plan-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a4d874045eeadd26a",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
