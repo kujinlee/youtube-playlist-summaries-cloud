@@ -900,5 +900,16 @@
    ]
   ],
   "expect": "adjacent: an absolute call across a sibling's chdir is not a race"
+ },
+ {
+  "name": "a rename cycle is accepted instead of refused",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    return links, \"rename cycle\"",
+    "    return links, None"
+   ]
+  ],
+  "expect": "r2: a rename cycle that grows the runtime-link closure without end is refused, not looped on"
  }
 ]

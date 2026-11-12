@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Parse one `strace -f -yy` log into resolved calls, or a named refusal (backlog #586, plan slice 2).
 
-    python3 scripts/strace_reads.py --self-test  # 134 cases
+    python3 scripts/strace_reads.py --self-test  # 135 cases
 
 A PURE LIBRARY, no caller yet: slice 3 classifies the calls this module resolves, slice 4 records with it. Spec:
 `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §2, "Normalising strace's paths", and the
@@ -82,6 +82,7 @@ REASONS: tuple[str, ...] = (
     "cwd race",
     "unknown return",
     "through a runtime link",
+    "rename cycle",
     "through a pre-existing link",
     "deleted label",
     "real checkout",
@@ -630,18 +631,19 @@ def _cwd_overlap(calls, tree, root, by_cwd) -> "str | None":
     return None
 
 
-def _runtime_links(calls, named) -> "set[str]":
+def _runtime_links(calls, named) -> "tuple[set[str], str | None]":
     """Every path a successful symlink named, closed over successful renames that moved it (or a directory above
     it). Over the WHOLE log: a use before the link's creation refuses too."""
     links = {named[i][0][0] for i, c in enumerate(calls)
              if c.name in LINKS and i in named and named[i] and outcome(c.ret) is not False}
     moves = [(named[i][0][0], named[i][1][0]) for i, c in enumerate(calls)
              if c.name in RENAMES and i in named and len(named[i]) >= 2 and outcome(c.ret) is not False]
-    while True:
+    for _ in range(len(moves) + 1):                   # an acyclic chain of moves closes in at most len(moves) passes
         more = {dst + link[len(src):] for src, dst in moves for link in links if under(link, src)} - links
         if not more:
-            return links
+            return links, None
         links |= more
+    return links, "rename cycle"                       # r2 Codex: A->B then B->A/C grows A/C/C/.../L forever
 
 
 def resolve_calls(calls: "list[Call]", tree: dict, ctx: Ctx) -> "tuple[list[tuple[Call, list[str]]], str | None]":
@@ -651,7 +653,9 @@ def resolve_calls(calls: "list[Call]", tree: dict, ctx: Ctx) -> "tuple[list[tupl
     named, why = _cwd_pass(calls, tree, ctx, root)
     if why:
         return [], why
-    links = _runtime_links(calls, named)
+    links, why = _runtime_links(calls, named)
+    if why:
+        return [], why
     copy_real = os.path.realpath(ctx.copy)
     out = []
     for i in sorted(named, key=lambda j: calls[j].seq):
@@ -1103,6 +1107,10 @@ def _self_test_body() -> int:
          lambda: why([symlink("/t", "/tmp/run/A"), mkdir("/tmp/run/B"),
                       renameat2("/tmp/run/B", "/tmp/run/A", "RENAME_EXCHANGE"), succeeds(stat("/tmp/run/B/a.py"))], RUN),
          "unmodelled flags")
+    case("r2: a rename cycle that grows the runtime-link closure without end is refused, not looped on",
+         lambda: why([mkdir("/tmp/run/A"), symlink("/t/needed.py", "/tmp/run/A/L"), rename("/tmp/run/A", "/tmp/run/B"),
+                      mkdir("/tmp/run/A"), rename("/tmp/run/B", "/tmp/run/A/C"),
+                      succeeds(stat("/tmp/run/A/C/L"))], RUN), "rename cycle")
     case("C3: /proc/self/task/<tid>/cwd is refused", lambda: why([succeeds(stat("/proc/self/task/1/cwd/a.py"))], RUN),
          "unresolved /proc path")
     case("C3: /proc/<pid>/task/<tid>/fd/N is refused", lambda: why([succeeds(stat("/proc/1/task/1/fd/3/a.py"))], RUN),
