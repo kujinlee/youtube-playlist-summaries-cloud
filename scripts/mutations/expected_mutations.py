@@ -534,7 +534,23 @@ EXPECTED_MUTATIONS = {
     # the literal-colour rule (prefix match, a var() admitted); 3 retargeted onto the new code.
     # ⟳ 2026-11-03, backlog #470 review round 2: 45 -> 46 — the tray markup is lifted CLOSED (a composed
     # page left `#tray` open at `</body>`, outside the page subset).
-    "scripts/brief-compose.py": 46,
+    # ⟳ 2026-11-11, backlog #603: 46 -> 58 — the decision tags (numbering, placement, the answered
+    # state and its escaping, the derived counter, its link and colour, its place under the title,
+    # the call site, the stylesheet's gating, and both theme halves of the tag colours).
+    # ⟳ 2026-11-11, backlog #603 review round 1: 58 -> 77 — the refusals (inside an unrendered
+    # element, hidden/inert, ON a table row/option/raw-text/void element, the refusal itself, the
+    # ancestor stack's pop), the raw-text list that makes 3.12 parse like 3.14, `<details>` opened,
+    # the id collision, the label, `text-transform: none`, and the r1 survivors (first open, the
+    # answered count, whitespace-only, the position guard, OS-dark values, answered colour, contrast x2).
+    # Three 603 entries retargeted onto the rewritten loop.
+    # ⟳ 2026-11-11, backlog #603 review round 2: 77 -> 86 — the <details> auto-open REMOVED (its
+    # mutation with it) and replaced by a refusal (on, inside, deeper, the first-summary exemption,
+    # a second summary), the implicit </p> (the call, the scope boundary, the formatting guard), and
+    # the contrast instrument refusing what it cannot evaluate (alpha, a hex prefix, Codex 4's 00).
+    # ⟳ 2026-11-11, backlog #603 review round 3: 86 -> 94 — the r3 Claude survivors pinned (the
+    # formatting check's `hidden`, `object` as a p scope stop, `li`/`hr`/`h2` closing a p) and the
+    # SVG/MathML refusal (on, inside, and `svg`/`math` as p scope stops).
+    "scripts/brief-compose.py": 94,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch

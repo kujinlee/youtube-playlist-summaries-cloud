@@ -20361,6 +20361,36 @@ is a recorded component failure (NO-GO route, H3), Task 14 likewise. Thrashing a
 plan document. Closed at the round cap; decision-log DEFER row appended.
 
 ## 2026-11-11
+Pages you review now mark each decision the way a contract marks a signature line, as you asked at 06:03: a yellow
+"🟨 ✍ DECISION 3 of 11" tag at the exact spot the question is asked, turning green with your answer once you have
+given it, and a box under the page title saying how many decisions there are, how many remain, and a link to the
+next open one. The numbers are counted by the page builder from the tags, never typed by hand. The marketplace
+inventory walkthrough is the first page rebuilt this way: 13 decisions, 11 answered, 2 still yours: the content
+review of the memory files before they are published, and the legal name or entity to put on the copyright line.
+A tag can lead with the page's own name for a decision ("D7 — DECISION 6 of 13"), and a page that hides a decision
+where you could not see it, including inside a collapsed section, now fails to build instead of counting it.
+Filed backlog #615: nothing yet checks that a page marks every decision it asks you. A decision placed inside a
+drawing (an SVG or maths block) is now refused too. The review closed at its round limit, but the checker that decides
+whether a tag is visible kept producing new holes from one round's fix to the next, so a redesign review of it is
+filed as backlog #616. One known gap stays open there: deliberately mis-nested hidden markup can still be counted
+without being seen. No real page has it.
+<!--tech-->
+Backlog #603. `scripts/brief-compose.py`: `render_decisions` parses the fragment body (html.parser, so a
+`data-decision` inside an attribute value or a script string is not counted), inserts a tag after each marked
+element's start tag, and places the counter under the first `</h1>` via `page_chrome.place_bar`. `DECISION_CSS`
+(own tokens on `html`, dark half under the OS media query and keyed on `[data-theme]` both ways) ships only on a
+page with a decision, so every other page composes byte-identical. r1 fold: a mark that is hidden, inert, inside a
+`template`/`noscript`/`select`, or on a table row or raw-text element is CANNOT RUN; the parse names its raw-text
+set so 3.12 and 3.14 agree; ids are `ex-decision-{n}` and a collision is refused; `data-decision-label` leads the
+tag. r2 fold (all four findings caused by r1): the `<details>` auto-open is REMOVED and a mark in a `<details>`
+outside its `<summary>` is CANNOT RUN; the ancestor stack closes a `<p>` as HTML does; the contrast case refuses a
+colour it cannot fully evaluate (alpha, `rgba`, named, `var()`). r3 fold (Claude F1–F3; F1/F3 caused by r2): a mark
+on or inside `<svg>`/`<math>` is CANNOT RUN and both are `_P_SCOPE` stops; the docstring's false "never a silent
+count" bound is corrected (F2, misnested end tags, NOT fixed); the p-closure sets and the formatting check's
+`hidden` are pinned. THRASHING armed in decision-scan → Phase 6 filed as backlog #616. Self-test 196 → 226; 48
+mutations, pin 46 → 94.
+
+## 2026-11-11
 Backlog #495 is fixed, along with your 19:25 request. The mutation sweep now gives every survivor one more run, in a
 fresh copy of the code. A survivor that dies on that second run, the way a first-run kill would (the run finished and
 the case it names went red), is reported as FLAKY: the pull request stays green, and it is never counted as killed,

@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/603-decision-tags-r3-claude.md": "100644 dd8a8ae1380b675801856a8296b2b6f797de5237"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f22cf182c7e0bb25b2f5c8079ab8d35f34c44d1a",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "r3 adversarial Claude half, decision-scan r2 fold",
+  "reason": "claude half filed: 9199 chars, names f22cf182c7e0",
+  "refused": false,
+  "review": "603-decision-tags-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-af12d5dac01fa01be",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
