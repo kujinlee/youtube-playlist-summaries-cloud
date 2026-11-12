@@ -20310,7 +20310,7 @@ uppercased). Self-test cases assert the spans, escaping, and the style rule; rev
 accepted); four mutations added, one re-bound (pin 360 -> 364).
 
 ## 2026-11-11
-The plan for the marketplace inventory is written and waiting for its review; nothing is built yet. It turns
+The plan for the marketplace inventory is written and its review is finished; nothing is built yet. It turns
 the spec you approved this morning into 22 small steps in five pull requests. The first pull request opens
 with the three corrections to the portable-practices index, as you decided (in the same pull request, not a
 separate one). Then a throwaway local marketplace proves a package can be installed at all, and a scan reads every component for this repository's fingerprints. Next, the
@@ -20323,8 +20323,11 @@ that half is recorded as not run. A second: the page server always uses port 739
 using, so the trial that serves a page waits until you stop yours; it never stops it for you. The first
 review round found 22 distinct problems (one blocking) and all are folded in. The second round found nine
 more, every one caused by the first round's fixes; they are folded too, mostly by deleting what the first fix
-added rather than adding more. A third round follows; if it again finds problems caused by this fold in the
-same places, the design itself gets reviewed.
+added rather than adding more. The third and final round found one more, again caused by the previous fix: a
+page server that starts on a free port and then breaks was being filed as "waiting for you to free the port",
+when it is a real failure of the tool. It is now recorded as a failure. Review is closed at the round cap. The
+same part kept producing problems, but it is text about a trial, and the trial itself is the real test, so no
+design review was convened.
 <!--tech-->
 Branch `plan-marketplace-inventory`. Plan `docs/superpowers/plans/2026-11-11-marketplace-inventory.md` for
 spec `docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md` (anchor `harness-ships-elsewhere`):
@@ -20334,4 +20337,8 @@ human steps H1-H7 (H7: free port 7391, hard-coded `PORT` in `explainer-serve.py`
 `claude -p` there is not logged in. Review r1 folded (`docs/reviews/coordinator/marketplace-plan-r1-coordinator.md`). r2 (Claude, 5 MAJOR + 4 MINOR,
 all fix-induced) folded (`docs/reviews/coordinator/marketplace-plan-r2-coordinator.md`): spike GO needs start's
 `serving <world>` + pidfile = listener + a seeded sentinel; recall phase is `"1"`/`"later"` only (D11 "only if"),
-the unresolved state and its checkpoint branch deleted; `../shared/` read edges are closure members. r3 = Codex.
+the unresolved state and its checkpoint branch deleted; `../shared/` read edges are closure members. r3 (Codex, 1 MAJOR,
+fix-induced, `task-4-spike`) folded (`docs/reviews/coordinator/marketplace-plan-r3-coordinator.md`): an isolation
+failure (port held, `already serving`, pid mismatch) is INCOMPLETE (H7); the world's verified own server failing
+is a recorded component failure (NO-GO route, H3), Task 14 likewise. Thrashing armed (r2+r3); no Phase 6 for a
+plan document. Closed at the round cap; decision-log DEFER row appended.

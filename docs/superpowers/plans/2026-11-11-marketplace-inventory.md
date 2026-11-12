@@ -339,8 +339,16 @@ path that does not exist.
   `:107`) is the pid `lsof -nP -t -iTCP:7391 -sTCP:LISTEN` reports; (iii) `GET /` is 200 and its body contains the
   sentinel's token. Measured on the same scratch copy: all three hold for the world's own server (start printed
   `serving <scratch HOME>/explainers`, pidfile pid = listener pid, body named the sentinel), and against a foreign
-  listener (i) fails. Any one failing → INCOMPLETE (another server holds 7391; H7 not in effect), never GO and
-  never NO-GO. `--stop` is safe in both cases: it reads only the world's pidfile, so it can never signal the
+  listener (i) fails. **A failed condition is routed by WHOSE server failed (⟳ r3 CODEX M1)** — H7 can resolve
+  only an isolation failure, never a broken component: **isolation failure → INCOMPLETE** (H7 not in effect),
+  never GO and never NO-GO — 7391 held before start (`--status` rc 0), start printing `already serving`, or the
+  world pidfile's pid differing from the listener's; **the world's VERIFIED own server failing → a recorded
+  FAILURE of the component (the NO-GO route, H3)**, never INCOMPLETE — start exiting non-zero on a port preflight
+  confirmed free, or start printing `serving <world HOME>/explainers` with the pidfile pid = listener pid and then
+  `GET /` erroring, non-200, or lacking the sentinel token. Measured by r3 CODEX on a scratch copy with an injected
+  `RuntimeError` in `index_html()`: port free before start, `serving …`, pid match, `GET /` →
+  `RemoteDisconnected` — a component failure H7 cannot fix. The failure's evidence (start's rc and stdout, both
+  pids, the `GET /` error or body) goes in the record. `--stop` is safe in both cases: it reads only the world's pidfile, so it can never signal the
   owner's process (measured: with the foreign listener up, the world's `--stop` printed `not running` and the
   listener survived). **No port flag is added** — the script has none and reads no port from the environment
   (`os.environ` is consulted only for `SRC_ROOT_ENV`, `:658`), and *Evaluate, never repair* forbids adding one
@@ -349,8 +357,9 @@ path that does not exist.
   unrelated directory (expected, per spec §4: it does not, because the paths are CWD-relative; that is a finding,
   not a spike failure).
 - [ ] **Step 5:** write the record: GO if the package installs, `--help` by the installed path exits 0, and (b)'s
-  three conditions all hold; NO-GO if the install fails or `--help` by the installed path cannot run; **INCOMPLETE
-  (neither)** if (b) is waiting on H7 or any of (b)'s three conditions fails — an INCOMPLETE spike blocks slice C
+  three conditions all hold; NO-GO if the install fails, `--help` by the installed path cannot run, or (b) records
+  the world's verified own server failing (Step 3, ⟳ r3 CODEX M1); **INCOMPLETE (neither)** if (b) is waiting on
+  H7 or one of (b)'s conditions fails as an isolation failure (Step 3) — an INCOMPLETE spike blocks slice C
   exactly as NO-GO does, but does not open H3. **On INCOMPLETE or NO-GO, split Task 1 off (⟳ r2 CLAUDE m4).**
   Spec §7 item 8 names this exact moment: *"The observation that makes this bound FAIL: PR 1 open with ANY OF THE
   THREE corrections not yet committed … At that point the stall risk the owner accepted is live and the corrections
@@ -732,8 +741,9 @@ Two halves, because a model call needs a login (measured 2026-11-11: `claude -p`
   the seeded repo: one useful operation each (compose a page with `brief-compose.py`, serve it with
   `explainer-serve.py` (on 7391 only, once preflight confirms it free; else CANNOT RUN waiting on H7, Task 4
   Step 2; the serve counts as `operation_ok` only under Task 4 Step 3 (b)'s three conditions — start says
-  `serving <world HOME>/explainers`, world pidfile pid = listener pid, `GET /` names a seeded sentinel — else it
-  is CANNOT RUN, never pass), `GET` the page and its Ask endpoint, run each generator's documented command). Record a
+  `serving <world HOME>/explainers`, world pidfile pid = listener pid, `GET /` names a seeded sentinel — else, routed as
+  Task 4 Step 3 (⟳ r3 CODEX M1): an isolation failure is CANNOT RUN waiting on H7, and the world's verified own
+  server failing is a recorded component failure (a suite defect) with its evidence, never CANNOT RUN and never pass), `GET` the page and its Ask endpoint, run each generator's documented command). Record a
   `RunRecord` per operation.
 - **Skill half (needs Human step H2's token):** with `CLAUDE_CODE_OAUTH_TOKEN` from the file H2 produced (never
   committed, never echoed), `claude -p --permission-mode bypassPermissions "/comprehensibility:<skill> …"` invokes
