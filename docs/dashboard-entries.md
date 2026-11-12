@@ -20454,3 +20454,38 @@ the clone's entry; a chdir while a non-CLONE_FS clone is in flight is a cwd race
 138 cases; manifest `scripts/mutations/strace_reads.json` 85 entries, 85 killed by their named cases. Wired into
 check-plan-code's list, expected_mutations (85), check-selftest-counts, check-fixture-variation (9 keys) and a ci.yml
 step. TMPDIR is not yet set in check-plan-code's child environment (slice 4; #600/#602).
+
+## 2026-11-12
+The third build step of the faster mutation sweep (backlog #586) is written: every system call in a recorded log
+is sorted into read, list, write or process, and any call, `ioctl` or strace version not on the list measured on
+GitHub's runners is refused rather than guessed at. Each guard's run becomes one record of what it read and wrote,
+the two fixed-seed runs must agree, and a guard that reads what another guard wrote is refused. Nothing calls it
+yet and nothing is skipped because of it. ⚠ One rule as written refuses every guard while any one guard is refused,
+and four guards use `io_uring` today (MEASURED), which is refused: until that changes, slice 4 would skip nothing.
+<!--tech-->
+Branch `586-slice3`, on slice 2 (PR #565). `scripts/strace_reads.py` adds `classify` (ALLOWED = the 118 measured
+syscalls minus `DENIED_FAMILY`: io_uring_*, unshare/setns/chroot/pivot_root, the mount family; the 7 measured ioctls
+minus FS_IOC_SET* and FICLONE; writing open flags, shared writable mmap), `measurement_disagrees` (the constants
+equal the committed `2026-11-10-strace-on-runner.json`), `record_from_log` → `Record` (reads, probed, listed,
+probed_stat_only, wrote, all_named, all_listed; `sun_path` sockets; the sendfile/copy_file_range OUT side),
+`merge_seeds` (differing reads/probes/listings → `seed-dependent reads`, writes kept) and `cross_run` (`cross-run
+flow`, `peer trace incomplete`). Nine new REASONS. Round 1 folded five fail-opens in three classes: a write meets a
+name at, below or above it (`_meets`, `_cross_forms`); the cross-run view keeps `.git` and a labelled open's
+argument (SHADOW); a quoted `"@x"` socket is a relative file and an undecorated descriptor is `unresolved path`
+(`FD_OPERANDS`). Self-test 282 cases; manifest 203 entries (85 + 99 + 19). Wired: expected_mutations 203, check-fixture-variation 20 keys (re-derived by
+`analyse()`), docstring count; check-plan-code's list and the ci.yml step already cover the file.
+
+## 2026-11-12 [resolved: 2026-11-11/2]
+
+You answered the two marketplace-plan defaults that were taken on your behalf: the cost checkpoint stays at 3 times, and
+memory recall joins the first phase only if it helps a stranger with no memories and passes your content review. That
+review is still yours to do, when recall is ready to ship. The goal tree's Refresh button works again: the page server had
+been running since November 5 on old code and was restarted. Two rows are filed: dashboard asks will carry the yellow
+decision tags with options (backlog #623), and the server will warn when it is running older code than master (#624).
+
+<!--tech-->
+Owner selection card 2026-11-12 05:28: Decision 1 = A (keep the 3x checkpoint), Decision 2 = A (recall in phase 1 under
+its two conditions), dashboard tags = A (build, backlog #623). The 2026-11-11/2 entry's headline was stale (the plan merged
+as PR #562 `eebb1ac7`). Refresh: `explainer-serve.py` PID 30306 started 2026-11-05 12:08, older than PR #536 (`64e4b67a`,
+11-08) and PR #561 (`c7e06274`, 11-11); restarted as PID 97947 at 05:23; a POST /regenerate for goal-tree returned
+`{"ok": true}` in 46.5 s and rewrote `~/explainers/goal-tree.html`. Backlog #624 files the class.

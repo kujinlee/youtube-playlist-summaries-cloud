@@ -2235,5 +2235,11 @@ EXPECTED_MUTATIONS = {
     "scripts/prune-merged-worktrees.py": 52,
     # ⟳ 2026-11-12, backlog #586 slice 2: the strace-log path resolver, pinned in the commit that creates it.
     # One entry per refusal and per cwd-model rule, the #602 location rule's allowed roots one each.
-    "scripts/strace_reads.py": 85,
+    # ⟳ 2026-11-12, backlog #586 slice 3: the default-deny classifier and record assembly. One entry per measured-
+    # constant comparison, denied family, ioctl/open/mmap write rule, record field, seed-merge rule, cross-run rule
+    # and exempt write path. ARITHMETIC: 85 + 99 = 184.
+    # ⟳ 2026-11-12, slice 3 round 1 fold: 22 anchors re-bound in place (the resolver refactor), 19 added for the new
+    # branches (SHADOW argument, the cross-run view, `_meets` both directions, `_cross_forms`, bare descriptors).
+    # ARITHMETIC: 184 + 19 = 203. ⟳ round 2 fold: 3 added (a SHADOW `..`, a SHADOW /proc link, the `cross` flag) = 206; 1 re-bound (the resolver refusal, now `cross=True`), 1 re-targeted (a socket SHADOW now names the link check). ⟳ round 3 fold: 2 re-bound (the SHADOW `..` and /proc lines moved into the shared branch), 1 added (a SHADOW argument skips the link checks), 1 re-targeted (a socket taken for a SHADOW no longer reddens a link case; it drops the socket from the READ view, now a case) = 207.
+    "scripts/strace_reads.py": 207,
 }
