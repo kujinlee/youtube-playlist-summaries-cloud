@@ -2,7 +2,7 @@
 """Parse one `strace -f -yy` log into resolved calls and a per-run read record, or a named refusal (backlog #586,
 plan slices 2 and 3).
 
-    python3 scripts/strace_reads.py --self-test  # 282 cases
+    python3 scripts/strace_reads.py --self-test  # 284 cases
 
 A PURE LIBRARY, no caller yet: slice 4 records with it. Spec:
 `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §2, "Normalising strace's paths", and the
@@ -717,7 +717,7 @@ def resolve_calls(calls: "list[Call]", tree: dict, ctx: Ctx) -> "tuple[list[tupl
     return [(c, kept) for c, kept, _every in out], why
 
 
-def _resolve(calls, tree, ctx):
+def _resolve(calls, tree, ctx, cross=False):
     """`resolve_calls`, each call also carrying EVERY path it named, before the read-selection filter: the `.git`
     paths and the `SHADOW` argument included. The cross-run sets are built from these (r1 C1; spec §2: "`wrote`,
     and the cross-run check's reads, probes and listings, keep every path")."""
@@ -747,6 +747,14 @@ def _resolve(calls, tree, ctx):
                     return [], "through a runtime link"
                 if not under(p, ctx.copy) and under(os.path.realpath(p), copy_real):
                     return [], "through a pre-existing link"
+            elif cross:
+                # r2 X1: `cross` means the caller compares `every` by TEXT across runs (`record_from_log`). A SHADOW
+                # argument is then a name like any other, so `..` or a /proc magic link in it is unresolved and
+                # refuses. The read view (`cross` False) still takes the kernel's label, as slice 2 always has.
+                if ".." in p.split("/"):
+                    return [], "unresolved .."
+                if PROC.match(p):
+                    return [], "unresolved /proc path"
             if under(p, ctx.workspace):
                 return [], "real checkout"
             rel = rel_to_copy(p, ctx)
@@ -770,7 +778,7 @@ def resolve_log(text: str, ctx: Ctx) -> "tuple[list[tuple[Call, list[str]]], str
     return [(c, kept) for c, kept, _every in out], why
 
 
-def _resolve_text(text, ctx):
+def _resolve_text(text, ctx, cross=False):
     """`resolve_log` with `_resolve`'s every-path view."""
     calls, why = parse_log(text)
     if why:
@@ -780,7 +788,7 @@ def _resolve_text(text, ctx):
     tree, why = process_tree(calls, min(calls, key=lambda c: c.seq).pid)
     if why:
         return [], why
-    return _resolve(calls, tree, ctx)
+    return _resolve(calls, tree, ctx, cross)
 
 
 # ── slice 3: the measured allowlist, the classifier (Task 3.1; backlog #590) ─────────────────────────────
@@ -1009,7 +1017,7 @@ def record_from_log(text: str, ctx: Ctx, strace_version: str) -> Record:
         _cls, why = classify(c)
         if why:
             return Record(why)
-    resolved, why = _resolve_text(text, ctx)
+    resolved, why = _resolve_text(text, ctx, cross=True)
     if why:
         return Record(why)
     reads, listed, wrote, named, stat_named, other_named = set(), set(), set(), set(), set(), set()
@@ -1982,6 +1990,12 @@ def _self_test_body() -> int:
          lambda: flows(in_copy([writes("/t/.home/cur")], "/tmp/cU"),
                        in_copy([opened("/t/.home/cur", "/t/.home/cur")], "/tmp/cT"), CU, CT),
          ("complete", "cross-run flow"))
+    case("r2 X1: a labelled open whose own argument holds `..` refuses, so a peer's symlink cannot hide behind it",
+         lambda: flows(in_copy([symlink("/t/docs/b.md", "/t/.home/cur")], "/tmp/cU"),
+                       in_copy([opened("/t/docs/../.home/cur", "/t/docs/b.md")], "/tmp/cT"), CU, CT),
+         ("peer trace incomplete", "unresolved .."))
+    case("r2 X1: a labelled open whose own argument is a /proc magic link refuses",
+         lambda: rec([opened("/proc/self/cwd/docs/a.md", "/t/docs/a.md")]).trace, "unresolved /proc path")
     case("adjacent: a labelled open of another name the peer did not write is kept",
          lambda: flows(in_copy([symlink("/t/docs/b.md", "/t/.home/cur")], "/tmp/cU"),
                        in_copy([opened("/t/.home/other", "/t/docs/b.md")], "/tmp/cT"), CU, CT),

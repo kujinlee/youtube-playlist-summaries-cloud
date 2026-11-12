@@ -1324,8 +1324,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "    resolved, why = _resolve_text(text, ctx)\n    if why:",
-    "    resolved, why = _resolve_text(text, ctx)\n    if False:"
+    "    resolved, why = _resolve_text(text, ctx, cross=True)\n    if why:",
+    "    resolved, why = _resolve_text(text, ctx, cross=True)\n    if False:"
    ]
   ],
   "expect": "a slice-2 refusal reaches the record"
@@ -2057,7 +2057,7 @@
   "expect": "a /proc/*/fd path with no label is refused"
  },
  {
-  "name": "a socket path skips the /proc check (taken for a shadow)",
+  "name": "a socket path skips the link checks (taken for a shadow)",
   "file": "scripts/strace_reads.py",
   "edits": [
    [
@@ -2065,7 +2065,7 @@
     "        out.append((\"/\" + \"/\".join(components(text)), SHADOW, -1, True))"
    ]
   ],
-  "expect": "a socket path through a /proc magic link is refused"
+  "expect": "r1 X3: a socket path through a pre-existing link into the copy is refused"
  },
  {
   "name": "all_named is built from the read view",
@@ -2231,5 +2231,38 @@
    ]
   ],
   "expect": "adjacent: a successful write on a decorated pipe is kept"
+ },
+ {
+  "name": "a SHADOW argument holding `..` is kept in the cross-run view",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                if \"..\" in p.split(\"/\"):\n                    return [], \"unresolved ..\"\n                if PROC.match(p):",
+    "                if False:\n                    return [], \"unresolved ..\"\n                if PROC.match(p):"
+   ]
+  ],
+  "expect": "r2 X1: a labelled open whose own argument holds `..` refuses, so a peer's symlink cannot hide behind it"
+ },
+ {
+  "name": "a SHADOW argument that is a /proc magic link is kept in the cross-run view",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                if PROC.match(p):\n                    return [], \"unresolved /proc path\"\n            if under(p, ctx.workspace):",
+    "                if False:\n                    return [], \"unresolved /proc path\"\n            if under(p, ctx.workspace):"
+   ]
+  ],
+  "expect": "r2 X1: a labelled open whose own argument is a /proc magic link refuses"
+ },
+ {
+  "name": "the per-run record resolves without the cross-run flag",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    resolved, why = _resolve_text(text, ctx, cross=True)",
+    "    resolved, why = _resolve_text(text, ctx)"
+   ]
+  ],
+  "expect": "r2 X1: a labelled open whose own argument holds `..` refuses, so a peer's symlink cannot hide behind it"
  }
 ]
