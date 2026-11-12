@@ -20321,11 +20321,17 @@ making the pages public costs three times the "my next project" bar for most of 
 ask you for: a login token, so the pages' skills can be tried under a fresh home directory. Without it,
 that half is recorded as not run. A second: the page server always uses port 7391, which your own server is
 using, so the trial that serves a page waits until you stop yours; it never stops it for you. The first
-review round found 22 distinct problems (one blocking) and all are folded in; a second round follows.
+review round found 22 distinct problems (one blocking) and all are folded in. The second round found nine
+more, every one caused by the first round's fixes; they are folded too, mostly by deleting what the first fix
+added rather than adding more. A third round follows; if it again finds problems caused by this fold in the
+same places, the design itself gets reviewed.
 <!--tech-->
 Branch `plan-marketplace-inventory`. Plan `docs/superpowers/plans/2026-11-11-marketplace-inventory.md` for
 spec `docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md` (anchor `harness-ships-elsewhere`):
 22 tasks in slices B-F (D8 corrections = slice B's first commit); new tools `mkt_isolate.py`, `mkt_stage.py`, `mkt_seed_repo.py`,
 `check-shipping-sets.py`, `check-publishability.py`, `check-inventory.py` (rc 3 = D1 checkpoint fired);
 human steps H1-H7 (H7: free port 7391, hard-coded `PORT` in `explainer-serve.py`). Plugin install under a fresh HOME measured working without login (`claude` 2.1.322);
-`claude -p` there is not logged in. Review r1 folded (`docs/reviews/coordinator/marketplace-plan-r1-coordinator.md`); r2 alternates, one half.
+`claude -p` there is not logged in. Review r1 folded (`docs/reviews/coordinator/marketplace-plan-r1-coordinator.md`). r2 (Claude, 5 MAJOR + 4 MINOR,
+all fix-induced) folded (`docs/reviews/coordinator/marketplace-plan-r2-coordinator.md`): spike GO needs start's
+`serving <world>` + pidfile = listener + a seeded sentinel; recall phase is `"1"`/`"later"` only (D11 "only if"),
+the unresolved state and its checkpoint branch deleted; `../shared/` read edges are closure members. r3 = Codex.
