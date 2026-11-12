@@ -35,7 +35,14 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 196 cases
+    python3 scripts/brief-compose.py --self-test  # 207 cases
+
+DECISION TAGS (backlog #603, 2026-11-11)
+---------------------------------------
+A fragment marks each decision it asks of the owner with `data-decision` on the element where
+it is asked (empty = open; a value = the answer given). The composed page shows a yellow
+`🟨 ✍ DECISION n of N` tag there (green with the answer once answered) and a counter under the
+title, all derived from the marks — see `render_decisions`.
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -54,6 +61,7 @@ import datetime as _dt
 import os
 import pathlib
 import re
+from html import escape as html_escape
 from html.parser import HTMLParser
 import sys
 import tempfile
@@ -1071,6 +1079,113 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
             f"<script>{page_chrome.chrome_script()}</script>")
 
 
+# ── BACKLOG #603: DECISION TAGS ─────────────────────────────────────────────────────────
+# The owner, 2026-11-11 06:03: "when we review a document and decisions need to be made based
+# on the document contents, selection card may interfere with the workflow. Just show me
+# decision points clearly as a contract document mark signature lines with yellow tag (and show
+# total number of decisions and remaining number of decisions etc.)"
+#
+# THE MARKUP, in the fragment: any element carrying `data-decision`. No value (or an empty one)
+# is an OPEN decision; a value is the ANSWER that was given, and the tag turns green with it:
+#     <p data-decision>Approve D1 — the audience is a stranger?</p>
+#     <p data-decision="Approved 11-11, keep the stranger">Approve D1 …?</p>
+# It is the same shape as the `data-derived` claims a fragment already carries.
+#
+# ⛔ THE NUMBERS ARE DERIVED, NEVER TYPED. `n of N`, the total and the remaining count all come
+# from ONE list — the parse below — so the counter cannot disagree with the tags it counts, and
+# a fragment has nowhere to type a number. Asked of the PARSE, not a regex: a `data-decision`
+# inside an attribute value or a script string is not markup and is not counted.
+DECISION_ATTR = "data-decision"
+
+# ⚠ ITS OWN TOKENS, declared the way SHIM declares its defaults: on `html` (specificity 0,0,1),
+# so a page that wants other colours wins by declaring them on `:root`. The dark half is given
+# BOTH ways — under the OS media query AND keyed on `[data-theme]` — for the reason SHIM's
+# `--em` records: a media query has no specificity, so a toggle keyed only there goes half-live.
+# A pair (ink, background, border) always comes from ONE block, so contrast never mixes halves.
+# Emitted ONLY on a page that has a decision: every other page composes byte-identical to before.
+DECISION_CSS = """
+  html { --decide: #3a2c00; --decide-bg: #ffe45c; --decide-br: #c99a00;
+         --decided: #14532d; --decided-bg: #d3f2dc; --decided-br: #3d9a5c; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --decide: #1d1600; --decide-bg: #e0bc2a; --decide-br: #f5d24a;
+         --decided: #c9f0d5; --decided-bg: #1f4d2e; --decided-br: #4fae70; }
+  }
+  :root[data-theme="light"] { --decide: #3a2c00; --decide-bg: #ffe45c; --decide-br: #c99a00;
+         --decided: #14532d; --decided-bg: #d3f2dc; --decided-br: #3d9a5c; }
+  :root[data-theme="dark"] { --decide: #1d1600; --decide-bg: #e0bc2a; --decide-br: #f5d24a;
+         --decided: #c9f0d5; --decided-bg: #1f4d2e; --decided-br: #4fae70; }
+  .ex-decision { display: inline-block; margin: 0 .5em .3em 0; padding: .1em .6em;
+         border: 1px solid var(--decide-br); border-radius: 4px; background: var(--decide-bg);
+         color: var(--decide); font: 700 .78rem/1.5 var(--sans); letter-spacing: .03em;
+         vertical-align: baseline; scroll-margin-top: 4rem; }
+  .ex-decision-done { border-color: var(--decided-br); background: var(--decided-bg);
+         color: var(--decided); }
+  .ex-decision-count { margin: .6em 0 1em; padding: .5em .8em; border: 2px solid var(--decide-br);
+         border-radius: 6px; background: var(--decide-bg); color: var(--decide);
+         font: 600 .92rem/1.5 var(--sans); }
+  .ex-decision-count.all-done { border-color: var(--decided-br); background: var(--decided-bg);
+         color: var(--decided); }
+  .ex-decision-count a { color: inherit; }
+"""
+
+
+class _DecisionScan(HTMLParser):
+    """Every start tag carrying `data-decision`, in document order, with its position. PURE."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.found: list[tuple[tuple[int, int], str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        for key, value in attrs:
+            if key and key.lower() == DECISION_ATTR:
+                self.found.append((self.getpos(), self.get_starttag_text() or "",
+                                   (value or "").strip()))
+                return
+
+
+def render_decisions(markup: str) -> tuple[str, int, int]:
+    """Tag each `data-decision` element and put the counter under the title. PURE.
+
+    Returns (markup, total, remaining). With no decision the markup comes back UNCHANGED.
+    """
+    scan = _DecisionScan()
+    scan.feed(markup)
+    scan.close()
+    total = len(scan.found)
+    if not total:
+        return markup, 0, 0
+    # `getpos()` counts lines by "\n" only, so the offsets are rebuilt the same way —
+    # `splitlines` would also split on characters the parser does not.
+    starts = [0] + [i + 1 for i, ch in enumerate(markup) if ch == "\n"]
+    spots = []
+    for n, ((line, col), text, answer) in enumerate(scan.found, 1):
+        at = starts[line - 1] + col
+        if not text or markup[at:at + len(text)] != text:
+            raise SystemExit(f"brief-compose: CANNOT RUN — decision {n} of {total} was not found "
+                             "where the parser reported it; no tag was placed. Treat as NOT RENDERED.")
+        if answer:
+            tag = (f'<span class="ex-decision ex-decision-done" id="decision-{n}">'
+                   f"🟩 ✍ DECISION {n} of {total} — ANSWERED: {html_escape(answer)}</span>")
+        else:
+            tag = (f'<span class="ex-decision ex-decision-open" id="decision-{n}">'
+                   f"🟨 ✍ DECISION {n} of {total}</span>")
+        spots.append((at + len(text), tag))
+    for at, tag in reversed(spots):
+        markup = markup[:at] + tag + markup[at:]
+    open_ns = [n for n, (_, _, answer) in enumerate(scan.found, 1) if not answer]
+    remaining = len(open_ns)
+    if open_ns:
+        nxt = f' · next: <a href="#decision-{open_ns[0]}">DECISION {open_ns[0]}</a>'
+        counter = (f'<div class="ex-decision-count" role="status">✍ <b>{total}</b> decisions on '
+                   f"this page · <b>{remaining}</b> remaining · <b>{total - remaining}</b> "
+                   f"answered{nxt}</div>")
+    else:
+        counter = (f'<div class="ex-decision-count all-done" role="status">✍ <b>{total}</b> '
+                   f"decisions on this page · <b>0</b> remaining · all answered</div>")
+    return page_chrome.place_bar(markup, counter), total, remaining
+
+
 def compose(content: str, title: str, css: str, markup: str, script: str,
             generated_at: str = "") -> str:
     """Content fragment + extracted tray -> one self-contained document."""
@@ -1140,9 +1255,14 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # STRING each guard actually receives. The guards were green about a corpus that did
     # not contain the subject.
     scheme_css = page_chrome.text_style_css()
+    # BACKLOG #603: the decision tags and their counter, derived from `data-decision` in the
+    # fragment. Their stylesheet joins the read corpus below like every other block this
+    # function appends — a block written into the page is checked as part of the page.
+    body, decisions, _remaining = render_decisions(body)
+    decision_css = DECISION_CSS if decisions else ""
     assert_theme_complete(page_css, live_control,
                           css + "\n" + page_chrome.chrome_css() + "\n"
-                          + scheme_css + "\n" + SHIM)
+                          + scheme_css + "\n" + SHIM + "\n" + decision_css)
     chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)
     # ⭐ BACKLOG #376 — THE SWITCHER BY DEFAULT. Its CSS styles only `.ex-body …`, which was
     # hand-authored on 5 of 89 tracked pages, so a fragment that forgot it shipped with Theme
@@ -1167,7 +1287,7 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # fragment's own `#tray …` overrides — which is what `head` legitimately contains, and
     # what a selector scan could never tell apart from the tray's own rules.
     styled = (head + SHIM + "\n" + TRAY_BEGIN + "\n" + css + "\n" + TRAY_END
-              + "\n" + chrome_css + "\n</style>")
+              + "\n" + chrome_css + "\n" + decision_css + "</style>")
     doc = (
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
@@ -2629,6 +2749,80 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
         _written = _self.read_text(encoding="utf-8")
         case("main lifts from the OTHER page, not the one it is overwriting",
              _rc == 0 and "#tray{a:1}" in _written and "#tray{zz:9}" not in _written)
+
+    # ── BACKLOG #603: DECISION TAGS, LIKE A CONTRACT'S SIGNATURE LINES ───────────────────
+    # The owner, 11-11 06:03: a decision on a page under review is marked AT THE SPOT, as a
+    # yellow tag, with a total/remaining counter at the top — not a selection card. The
+    # fragment marks one with `data-decision` (empty = open, a value = the answer given).
+    # ⚠ TWO DISTINCT INPUTS for every derived number, so no case is satisfied by a constant
+    # its own fixture supplies (memory: exercise the producer at two distinct inputs).
+    _d3 = ("<title>x</title><style>:root{--good:#0f0}</style>"
+           "<h1>Title</h1><p>intro</p>"
+           "<p data-decision>Approve D1?</p>"
+           "<p data-decision=\"Yes &lt;keep&gt; it\">Approve D2?</p>"
+           "<p title='<b data-decision>' data-x=1>not one</p>"
+           "<script>var s = '<p data-decision>';</script>"
+           "<div data-decision=\"\">Approve D3?</div>")
+    _dd3 = compose(_d3, "T", css, markup, script, _fixed_at)
+    _tags3 = re.findall(r'<span class="ex-decision ex-decision-(open|done)"[^>]*>([^<]*)</span>', _dd3)
+    case("603: decisions are tagged n of N in document order, and only real markup counts",
+         [t[1].split(" — ")[0] for t in _tags3]
+         == ["🟨 ✍ DECISION 1 of 3", "🟩 ✍ DECISION 2 of 3", "🟨 ✍ DECISION 3 of 3"])
+    case("603: each tag sits AT its spot — right after the marked element opens",
+         "<p data-decision><span class=\"ex-decision ex-decision-open\"" in _dd3
+         and "<div data-decision=\"\"><span class=\"ex-decision ex-decision-open\"" in _dd3
+         and _dd3.find("DECISION 1 of 3") < _dd3.find("Approve D1?")
+         < _dd3.find("DECISION 2 of 3") < _dd3.find("Approve D2?"))
+    case("603: an answered decision renders green WITH its answer, escaped",
+         [t[0] for t in _tags3] == ["open", "done", "open"]
+         and "🟩 ✍ DECISION 2 of 3 — ANSWERED: Yes &lt;keep&gt; it" in _dd3)
+    _count3 = re.search(r'<div class="ex-decision-count[^"]*"[^>]*>(.*?)</div>', _dd3, re.S)
+    _d2 = ("<title>x</title><style>:root{--good:#0f0}</style>"
+           "<h1>Other</h1><p data-decision=\"no\">A?</p><p data-decision=\"yes\">B?</p>")
+    _dd2 = compose(_d2, "T", css, markup, script, _fixed_at)
+    _count2 = re.search(r'<div class="ex-decision-count[^"]*"[^>]*>(.*?)</div>', _dd2, re.S)
+    _c3 = _count3.group(1) if _count3 else ""
+    _c2 = _count2.group(1) if _count2 else ""
+    case("603: the counter is DERIVED — total and remaining follow the tags, at two inputs",
+         "<b>3</b> decisions" in _c3 and "<b>2</b> remaining" in _c3
+         and "<b>2</b> decisions" in _c2 and "<b>0</b> remaining" in _c2)
+    case("603: the counter links to the FIRST open decision, and each tag is a target",
+         'href="#decision-1"' in _c3 and 'id="decision-1"' in _dd3
+         and 'id="decision-3"' in _dd3 and _c2 != "" and "href=" not in _c2)
+    case("603: an all-answered counter turns green, an open one stays yellow",
+         'class="ex-decision-count all-done"' in _dd2
+         and 'class="ex-decision-count"' in _dd3)
+    case("603: the counter is at the TOP — under the title, above every decision",
+         -1 < _dd3.find("</h1>") < _dd3.find("ex-decision-count\"") < _dd3.find("intro")
+         < _dd3.find("DECISION 1 of 3"))
+    _dcss = globals().get("DECISION_CSS", "")
+    case("603: the decision stylesheet ships only with a decision",
+         _dcss.strip() != "" and _dcss.strip() in _dd3 and _dcss.strip() not in doc
+         and "ex-decision" not in doc)
+
+    def _vars_in(sel: str) -> set[str]:
+        return {n for b in re.findall(re.escape(sel) + r"\s*\{([^}]*)\}", _dcss)
+                for n in declared_vars(b)}
+
+    def _value_in(sel: str, var: str) -> str:
+        blk = re.search(re.escape(sel) + r"\s*\{([^}]*)\}", _dcss)
+        val = blk and re.search(re.escape(var) + r":\s*([^;]+);", blk.group(1))
+        return val.group(1).strip() if val else ""
+    _reads = {v for v in vars_read_anywhere(_dcss) if v.startswith("--decide")}
+    _dark_media = re.search(r"@media \(prefers-color-scheme: dark\)\s*\{(.*?)\}\s*\}", _dcss, re.S)
+    case("603: every tag colour has a light AND a dark value, keyed on the theme both ways",
+         len(_reads) >= 6
+         and _reads <= _vars_in("html") and _reads <= _vars_in(':root[data-theme="light"]')
+         and _reads <= _vars_in(':root[data-theme="dark"]')
+         and _dark_media is not None and _reads <= declared_vars(_dark_media.group(1)))
+    case("603: the light and dark tag colours actually differ, and light matches light",
+         len(_reads) >= 6 and all(
+             _value_in("html", v) != _value_in(':root[data-theme="dark"]', v) != ""
+             and _value_in("html", v) == _value_in(':root[data-theme="light"]', v)
+             for v in _reads))
+    case("603: composing a decision page twice is byte-identical",
+         compose(_d3, "T", css, markup, script, _fixed_at) == _dd3)
+
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, and this suite was not keeping it. `check-plan-code`'s
     # harness attributes a kill with `startswith("[FAIL] ")` then `[7:]`. This printed

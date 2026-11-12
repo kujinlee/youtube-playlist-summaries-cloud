@@ -216,7 +216,7 @@
         "in css"
       ]
     ],
-    "expect": "\u26d4 a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED"
+    "expect": "⛔ a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED"
   },
   {
     "name": "the consumer flag is severed to a constant",
@@ -227,7 +227,7 @@
         "scoped_css_emitted=False)"
       ]
     ],
-    "expect": "\u26d4 a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED"
+    "expect": "⛔ a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED"
   },
   {
     "name": "the content disjunct is re-added, reaching outside the stated bound",
@@ -238,7 +238,7 @@
         "text_style_css() in chrome_css or page_chrome.text_style_css() in content)"
       ]
     ],
-    "expect": "\u26d4 a fragment that dresses its OWN switcher composes \u2014 the composer emitted no scoped stylesheet, so this is NOT this guard's subject. A red here means someone tightened it: decide deliberately, do not 'fix' the fixture."
+    "expect": "⛔ a fragment that dresses its OWN switcher composes — the composer emitted no scoped stylesheet, so this is NOT this guard's subject. A red here means someone tightened it: decide deliberately, do not 'fix' the fixture."
   },
   {
     "name": "the composer appends the bar to the END of <body> again (backlog #300)",
@@ -573,6 +573,162 @@
     ],
     "expect": [
       "a tray whose inner div nests another is extracted CLOSED, every div it opens (r2)"
+    ]
+  },
+  {
+    "name": "603: the tags are numbered from zero, so n of N is off by one",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    for n, ((line, col), text, answer) in enumerate(scan.found, 1):\n",
+        "    for n, ((line, col), text, answer) in enumerate(scan.found, 0):\n"
+      ]
+    ],
+    "expect": [
+      "603: decisions are tagged n of N in document order, and only real markup counts"
+    ]
+  },
+  {
+    "name": "603: the tag is placed BEFORE the marked element instead of inside it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        spots.append((at + len(text), tag))\n",
+        "        spots.append((at, tag))\n"
+      ]
+    ],
+    "expect": [
+      "603: each tag sits AT its spot — right after the marked element opens"
+    ]
+  },
+  {
+    "name": "603: an answer is ignored and every decision renders open",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if answer:\n            tag = (f'<span class=\"ex-decision ex-decision-done\"",
+        "        if False:\n            tag = (f'<span class=\"ex-decision ex-decision-done\""
+      ]
+    ],
+    "expect": [
+      "603: an answered decision renders green WITH its answer, escaped"
+    ]
+  },
+  {
+    "name": "603: the answer text reaches the page unescaped",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "ANSWERED: {html_escape(answer)}</span>\")",
+        "ANSWERED: {answer}</span>\")"
+      ]
+    ],
+    "expect": [
+      "603: an answered decision renders green WITH its answer, escaped"
+    ]
+  },
+  {
+    "name": "603: remaining is the total, not the open tags counted",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    remaining = len(open_ns)\n",
+        "    remaining = total\n"
+      ]
+    ],
+    "expect": [
+      "603: the counter is DERIVED — total and remaining follow the tags, at two inputs"
+    ]
+  },
+  {
+    "name": "603: the counter links to the LAST open decision",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        nxt = f' · next: <a href=\"#decision-{open_ns[0]}\">",
+        "        nxt = f' · next: <a href=\"#decision-{open_ns[-1]}\">"
+      ]
+    ],
+    "expect": [
+      "603: the counter links to the FIRST open decision, and each tag is a target"
+    ]
+  },
+  {
+    "name": "603: an all-answered counter stays yellow",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        counter = (f'<div class=\"ex-decision-count all-done\" role=\"status\">",
+        "        counter = (f'<div class=\"ex-decision-count\" role=\"status\">"
+      ]
+    ],
+    "expect": [
+      "603: an all-answered counter turns green, an open one stays yellow"
+    ]
+  },
+  {
+    "name": "603: the counter is appended at the END instead of under the title",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    return page_chrome.place_bar(markup, counter), total, remaining\n",
+        "    return markup + counter, total, remaining\n"
+      ]
+    ],
+    "expect": [
+      "603: the counter is at the TOP — under the title, above every decision"
+    ]
+  },
+  {
+    "name": "603: compose never calls render_decisions (the call site severed)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    body, decisions, _remaining = render_decisions(body)\n",
+        "    decisions, _remaining = 0, 0\n"
+      ]
+    ],
+    "expect": [
+      "603: decisions are tagged n of N in document order, and only real markup counts"
+    ]
+  },
+  {
+    "name": "603: the decision stylesheet ships on every page",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    decision_css = DECISION_CSS if decisions else \"\"\n",
+        "    decision_css = DECISION_CSS\n"
+      ]
+    ],
+    "expect": [
+      "603: the decision stylesheet ships only with a decision"
+    ]
+  },
+  {
+    "name": "603: the theme-keyed LIGHT half of the tag colours is dropped",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "  :root[data-theme=\"light\"] { --decide: #3a2c00;",
+        "  :root[data-theme=\"lyte\"] { --decide: #3a2c00;"
+      ]
+    ],
+    "expect": [
+      "603: every tag colour has a light AND a dark value, keyed on the theme both ways"
+    ]
+  },
+  {
+    "name": "603: the dark tag colours are the light ones",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "  :root[data-theme=\"dark\"] { --decide: #1d1600; --decide-bg: #e0bc2a; --decide-br: #f5d24a;\n         --decided: #c9f0d5; --decided-bg: #1f4d2e; --decided-br: #4fae70; }\n",
+        "  :root[data-theme=\"dark\"] { --decide: #3a2c00; --decide-bg: #ffe45c; --decide-br: #c99a00;\n         --decided: #14532d; --decided-bg: #d3f2dc; --decided-br: #3d9a5c; }\n"
+      ]
+    ],
+    "expect": [
+      "603: the light and dark tag colours actually differ, and light matches light"
     ]
   }
 ]

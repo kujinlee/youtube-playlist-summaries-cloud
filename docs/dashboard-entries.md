@@ -20308,3 +20308,17 @@ Branch `agenda-group-titles`. `scripts/goal-tree.py`: `agenda_step_items` return
 wraps each `when` item in `<span class="ag-when">` by KIND, never by indentation (accent colour, first letter
 uppercased). Self-test cases assert the spans, escaping, and the style rule; review rounds 1-2 (r2 Codex, 1 LOW
 accepted); four mutations added, one re-bound (pin 360 -> 364).
+
+## 2026-11-11
+Pages you review now mark each decision the way a contract marks a signature line, as you asked at 06:03: a yellow
+"🟨 ✍ DECISION 3 of 11" tag at the exact spot the question is asked, turning green with your answer once you have
+given it, and a box under the page title saying how many decisions there are, how many remain, and a link to the
+next open one. The numbers are counted by the page builder from the tags, never typed by hand. The marketplace
+inventory walkthrough is the first page rebuilt this way: 11 decisions, 9 answered, 2 still open (whether the
+lopsided evidence is acceptable, and approving the spec itself).
+<!--tech-->
+Backlog #603. `scripts/brief-compose.py`: `render_decisions` parses the fragment body (html.parser, so a
+`data-decision` inside an attribute value or a script string is not counted), inserts a tag after each marked
+element's start tag, and places the counter under the first `</h1>` via `page_chrome.place_bar`. `DECISION_CSS`
+(own tokens on `html`, dark half under the OS media query and keyed on `[data-theme]` both ways) ships only on a
+page with a decision, so every other page composes byte-identical. Self-test 196 → 207; 12 mutations, pin 46 → 58.

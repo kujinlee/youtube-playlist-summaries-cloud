@@ -534,7 +534,10 @@ EXPECTED_MUTATIONS = {
     # the literal-colour rule (prefix match, a var() admitted); 3 retargeted onto the new code.
     # ⟳ 2026-11-03, backlog #470 review round 2: 45 -> 46 — the tray markup is lifted CLOSED (a composed
     # page left `#tray` open at `</body>`, outside the page subset).
-    "scripts/brief-compose.py": 46,
+    # ⟳ 2026-11-11, backlog #603: 46 -> 58 — the decision tags (numbering, placement, the answered
+    # state and its escaping, the derived counter, its link and colour, its place under the title,
+    # the call site, the stylesheet's gating, and both theme halves of the tag colours).
+    "scripts/brief-compose.py": 58,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
