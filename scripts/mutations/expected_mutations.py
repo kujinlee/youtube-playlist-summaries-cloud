@@ -2235,5 +2235,8 @@ EXPECTED_MUTATIONS = {
     "scripts/prune-merged-worktrees.py": 52,
     # ⟳ 2026-11-12, backlog #586 slice 2: the strace-log path resolver, pinned in the commit that creates it.
     # One entry per refusal and per cwd-model rule, the #602 location rule's allowed roots one each.
-    "scripts/strace_reads.py": 85,
+    # ⟳ 2026-11-12, backlog #586 slice 3: the default-deny classifier and record assembly. One entry per measured-
+    # constant comparison, denied family, ioctl/open/mmap write rule, record field, seed-merge rule, cross-run rule
+    # and exempt write path. ARITHMETIC: 85 + 99 = 184.
+    "scripts/strace_reads.py": 184,
 }

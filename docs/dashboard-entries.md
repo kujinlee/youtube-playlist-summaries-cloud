@@ -20454,3 +20454,21 @@ the clone's entry; a chdir while a non-CLONE_FS clone is in flight is a cwd race
 138 cases; manifest `scripts/mutations/strace_reads.json` 85 entries, 85 killed by their named cases. Wired into
 check-plan-code's list, expected_mutations (85), check-selftest-counts, check-fixture-variation (9 keys) and a ci.yml
 step. TMPDIR is not yet set in check-plan-code's child environment (slice 4; #600/#602).
+
+## 2026-11-12
+The third build step of the faster mutation sweep (backlog #586) is written: every system call in a recorded log
+is sorted into read, list, write or process, and any call, `ioctl` or strace version not on the list measured on
+GitHub's runners is refused rather than guessed at. Each guard's run becomes one record of what it read and wrote,
+the two fixed-seed runs must agree, and a guard that reads what another guard wrote is refused. Nothing calls it
+yet and nothing is skipped because of it. ⚠ One rule as written refuses every guard while any one guard is refused,
+and four guards use `io_uring` today (MEASURED), which is refused: until that changes, slice 4 would skip nothing.
+<!--tech-->
+Branch `586-slice3`, on slice 2 (PR #565). `scripts/strace_reads.py` adds `classify` (ALLOWED = the 118 measured
+syscalls minus `DENIED_FAMILY`: io_uring_*, unshare/setns/chroot/pivot_root, the mount family; the 7 measured ioctls
+minus FS_IOC_SET* and FICLONE; writing open flags, shared writable mmap), `measurement_disagrees` (the constants
+equal the committed `2026-11-10-strace-on-runner.json`), `record_from_log` → `Record` (reads, probed, listed,
+probed_stat_only, wrote, all_named, all_listed; `sun_path` sockets; the sendfile/copy_file_range OUT side),
+`merge_seeds` (differing reads/probes/listings → `seed-dependent reads`, writes kept) and `cross_run` (`cross-run
+flow`, `peer trace incomplete`). Nine new REASONS. Self-test 250 cases; manifest 184 entries (85 + 99), each new one
+pre-verified red on its named case. Wired: expected_mutations 184, check-fixture-variation 20 keys (re-derived by
+`analyse()`), docstring count; check-plan-code's list and the ci.yml step already cover the file.

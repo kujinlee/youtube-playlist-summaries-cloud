@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Parse one `strace -f -yy` log into resolved calls, or a named refusal (backlog #586, plan slice 2).
+"""Parse one `strace -f -yy` log into resolved calls and a per-run read record, or a named refusal (backlog #586,
+plan slices 2 and 3).
 
-    python3 scripts/strace_reads.py --self-test  # 138 cases
+    python3 scripts/strace_reads.py --self-test  # 250 cases
 
-A PURE LIBRARY, no caller yet: slice 3 classifies the calls this module resolves, slice 4 records with it. Spec:
+A PURE LIBRARY, no caller yet: slice 4 records with it. Spec:
 `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §2, "Normalising strace's paths", and the
 §8.4 normalisation cases. Every rule here is a REFUSAL, never a model (plan Global Constraints): a line, a path or
 a process this module cannot place makes the whole trace INCOMPLETE with one of `REASONS`, and the target takes
@@ -21,6 +22,21 @@ Three steps, each its own function:
     label; every other path is joined with its directory label, or with the cwd model (one cwd per shared
     filesystem context; a child without `CLONE_FS` copies its parent's cwd at the clone's entry line). Then the
     refusals of spec §2, in the order `REASONS` lists them.
+
+Slice 3 (backlog #590's default-deny allowlist) adds three more:
+  * `classify` — every call's class (`read`, `list`, `write`, `process`) or a refusal. A syscall is ALLOWED only if
+    slice 1 MEASURED it on the runner (`MEASURED_SYSCALLS`, a case holds it equal to `MEASUREMENT`) and it is not
+    `DENIED_SYSCALLS` (io_uring, unshare/setns/chroot/pivot_root, the mount family); an allowed name outside spec
+    §2's READ-ONLY and process lists is a WRITE. An unmeasured name, `???` included, is `unclassified syscall`; an
+    ioctl request outside the measured, non-denied set (or spelled `_IOC_WRITE`) is `unclassified ioctl`. An open's
+    or an `mmap`'s operand that does not parse makes the call a write.
+  * `record_from_log` — the version, then every call classified, then `resolve_log`, assembled into a `Record`:
+    staged-root `reads`/`probed`/`listed`/`probed_stat_only`, and the whole-trace `wrote`/`all_named`/`all_listed`
+    in `copy_norm` form (`copy:<rel>` under the copy). An AF_UNIX `sun_path` is a named path, and `connect` writes it.
+  * `merge_seeds` and `cross_run` — the two seeds must agree (`seed-dependent reads`); a target whose whole-trace
+    names meet another target's non-exempt write, or that listed an ancestor of one, is `cross-run flow`; and one
+    whose peer was refused is `peer trace incomplete`, because that peer's writes are unknown. ⚠ That last rule
+    refuses EVERY target while any one is refused (MEASURED: 4 targets call `io_uring_setup` on the runner).
 
 ⟳ ROUND 1 (PR #565), eleven fail-opens, two classes. (1) A return value and a flags operand are read as FIELDS:
 `RET` is the return grammar (a label that does not close, or a last line with no newline, is `log did not parse`);
@@ -55,6 +71,7 @@ every allowed root and refuse.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import pathlib
@@ -90,6 +107,16 @@ REASONS: tuple[str, ...] = (
     "through a repo link",
     "rename in the copy",
     "external path removed",
+    # slice 3 (Task 3.1/3.2)
+    "unclassified syscall",
+    "unclassified ioctl",
+    "io_uring",
+    "unmodelled unshare",
+    "mount family",
+    "strace version",
+    "seed-dependent reads",
+    "cross-run flow",
+    "peer trace incomplete",
 )
 
 
@@ -713,6 +740,300 @@ def resolve_log(text: str, ctx: Ctx) -> "tuple[list[tuple[Call, list[str]]], str
     return resolve_calls(calls, tree, ctx)
 
 
+# ── slice 3: the measured allowlist, the classifier (Task 3.1; backlog #590) ─────────────────────────────
+# DEFAULT-DENY. A syscall is allowed only if build step 1 MEASURED it on the runner (run 42893595762, strace 6.19:
+# `MEASUREMENT`) and it is not denied; an allowed name not in spec §2's READ-ONLY or process lists is a WRITE.
+# Anything else, an unmeasured name or `???` included, refuses the trace (`unclassified syscall`), even where spec §2
+# names its class (`openat2`, `inotify_add_watch`): a false refusal costs one target today's selection, a wrong
+# class costs an unchecked mutant. A new name reaches the allowlist only by a new measurement (the equality case).
+STRACE_VERSION = "strace -- version 6.19"
+MEASUREMENT = ROOT / "docs" / "reviews" / "measurements" / "2026-11-10-strace-on-runner.json"
+MEASURED_SYSCALLS = frozenset((
+    "access", "alarm", "arch_prctl", "brk", "capget", "chdir", "chmod", "clock_nanosleep", "clone", "clone3", "close",
+    "close_range", "connect", "copy_file_range", "dup", "dup2", "epoll_create1", "epoll_ctl", "epoll_pwait",
+    "epoll_pwait2", "epoll_wait", "eventfd2", "execve", "exit", "exit_group", "faccessat2", "fadvise64", "fcntl",
+    "flock", "fstat", "fstatfs", "fsync", "ftruncate", "futex", "getcwd", "getdents64", "getegid", "geteuid", "getgid",
+    "getgroups", "getitimer", "getpeername", "getpgrp", "getpid", "getppid", "getrandom", "getresgid", "getresuid",
+    "getsockname", "gettid", "getuid", "io_uring_enter", "io_uring_setup", "ioctl", "kill", "link", "linkat",
+    "listxattr", "lseek", "madvise", "mkdir", "mkdirat", "mknodat", "mmap", "mprotect", "mremap", "munmap",
+    "nanosleep", "newfstatat", "openat", "pidfd_open", "pipe2", "poll", "prctl", "pread64", "prlimit64", "pselect6",
+    "read", "readlink", "readlinkat", "recvfrom", "rename", "renameat", "restart_syscall", "rmdir", "rseq",
+    "rt_sigaction", "rt_sigprocmask", "rt_sigreturn", "rt_sigsuspend", "sched_getaffinity", "sched_yield", "sendfile",
+    "sendto", "set_robust_list", "set_tid_address", "setitimer", "setpgid", "setsid", "sigaltstack", "socket",
+    "socketpair", "splice", "stat", "statfs", "statx", "symlink", "tgkill", "timerfd_create", "timerfd_settime",
+    "uname", "unlink", "unlinkat", "utimensat", "vfork", "wait4", "write", "writev"))
+MEASURED_IOCTLS = frozenset(("BTRFS_IOC_CLONE or FICLONE", "FIOCLEX", "FIONBIO", "TCGETS", "TCGETS2", "TIOCGPGRP",
+                             "TIOCGWINSZ"))
+# Denied whether measured or not, each with its family's refusal. io_uring submits work no syscall line shows;
+# unshare/setns/chroot/pivot_root move the filesystem context or root the cwd model assumes (slice 2's carry-over:
+# `unshare(CLONE_FS)`); the mount family changes what a path resolves to.
+DENIED_FAMILY = {
+    **{n: "io_uring" for n in ("io_uring_setup", "io_uring_enter", "io_uring_register")},
+    **{n: "unmodelled unshare" for n in ("unshare", "setns", "chroot", "pivot_root")},
+    **{n: "mount family" for n in ("mount", "umount2", "open_tree", "move_mount", "fsopen", "fsmount", "fspick",
+                                   "mount_setattr")},
+}
+DENIED_SYSCALLS = frozenset(DENIED_FAMILY)
+# FICLONE is `_IOW`: it writes its descriptor's file. The others set inode flags or the version.
+DENIED_IOCTLS = frozenset(("FS_IOC_SETFLAGS", "FS_IOC_FSSETXATTR", "FS_IOC_SETVERSION", "BTRFS_IOC_CLONE or FICLONE"))
+ALLOWED_IOCTLS = MEASURED_IOCTLS - DENIED_IOCTLS
+# Spec §2's READ-ONLY class and its process list, as written (unmeasured members included; the allowlist cuts them).
+SPEC_READ_ONLY = frozenset((
+    "open", "openat", "openat2", "stat", "lstat", "newfstatat", "statx", "statfs", "access", "faccessat",
+    "faccessat2", "readlink", "readlinkat", "execve", "execveat", "chdir", "getxattr", "lgetxattr", "listxattr",
+    "llistxattr", "inotify_add_watch", "read", "readv", "pread64", "preadv", "preadv2", "lseek", "close",
+    "close_range", "dup", "dup2", "dup3", "fcntl", "flock", "ioctl", "mmap", "munmap", "fstat", "fstatfs",
+    "fgetxattr", "flistxattr", "fchdir", "getdents64", "poll", "ppoll", "select", "pselect6", "epoll_create",
+    "epoll_create1", "epoll_ctl", "epoll_wait", "epoll_pwait", "epoll_pwait2", "fsync", "fdatasync", "fadvise64"))
+SPEC_PROCESS = frozenset(("clone", "clone3", "fork", "vfork", "wait4", "exit_group", "brk", "futex", "getpid"))
+# "and the like" (spec §2), completed from the measurement: each takes no file (a case checks every recorded line).
+PROCESS_EXTRA = {
+    "alarm": "a timer", "arch_prctl": "a thread register", "capget": "reads its own capabilities",
+    "clock_nanosleep": "a sleep", "nanosleep": "a sleep", "exit": "a thread exit", "getegid": "an id",
+    "geteuid": "an id", "getgid": "an id", "getuid": "an id", "getresgid": "an id", "getresuid": "an id",
+    "getgroups": "an id list", "getitimer": "a timer", "setitimer": "a timer", "getpgrp": "a process group",
+    "getppid": "a pid", "gettid": "a tid", "getrandom": "kernel entropy, no file", "kill": "a signal",
+    "tgkill": "a signal", "madvise": "a memory hint", "mprotect": "a protection change",
+    "mremap": "moves a mapping; a shared file mapping is writable only after a writable open, already a write",
+    "prlimit64": "a resource limit", "restart_syscall": "a restart", "rseq": "a registration",
+    "set_robust_list": "a futex list", "set_tid_address": "a tid pointer", "sigaltstack": "a signal stack",
+    "sched_getaffinity": "a cpu mask", "sched_yield": "a yield", "setpgid": "a process group",
+    "setsid": "a session", "uname": "the kernel's name",
+}
+
+
+def _spec_class(name: str) -> str:
+    if name in SPEC_READ_ONLY:
+        return "list" if name == "getdents64" else "read"
+    if name in SPEC_PROCESS or name in PROCESS_EXTRA or name.startswith("rt_sig"):
+        return "process"
+    return "write"
+
+
+READ_ONLY = frozenset(n for n in MEASURED_SYSCALLS - DENIED_SYSCALLS if n in SPEC_READ_ONLY)
+PROCESS = frozenset(n for n in MEASURED_SYSCALLS - DENIED_SYSCALLS if _spec_class(n) == "process")
+WRITES = MEASURED_SYSCALLS - DENIED_SYSCALLS - READ_ONLY - PROCESS
+ALLOWED_SYSCALLS = READ_ONLY | WRITES | PROCESS
+WRITING_OPEN = frozenset(("O_CREAT", "O_WRONLY", "O_RDWR", "O_TRUNC", "O_TMPFILE"))
+SHARED_MAP = frozenset(("MAP_SHARED", "MAP_SHARED_VALIDATE"))
+STAT_FAMILY = frozenset(("stat", "lstat", "newfstatat", "statx", "statfs", "access", "faccessat", "faccessat2"))
+
+
+def measurement_disagrees(doc: dict) -> "str | None":
+    """The first field of slice 1's measurement JSON the constants above do not equal (`syscalls`, `ioctls`,
+    `strace_version`), or None."""
+    if frozenset(doc.get("syscalls", ())) != MEASURED_SYSCALLS:
+        return "syscalls"
+    if frozenset(doc.get("ioctls", ())) != MEASURED_IOCTLS:
+        return "ioctls"
+    if {h.get("strace_version") for h in doc.get("headers", ())} != {STRACE_VERSION}:
+        return "strace_version"
+    return None
+
+
+def classify(call: Call) -> "tuple[str, str | None]":
+    """`call`'s class (`read`, `list`, `write` or `process`) and a refusal, or None. Default-deny: a name not
+    allowed refuses whatever its class; an operand this function cannot read makes the call a write."""
+    n = call.name
+    if n in DENIED_SYSCALLS:
+        return "write", DENIED_FAMILY[n]
+    if n not in ALLOWED_SYSCALLS:
+        return _spec_class(n), "unclassified syscall"
+    scanned = scan_args(call.args + ")")
+    if scanned is None:                                # parse_log refuses such a line first; defensive only
+        return "write", "log did not parse"
+    args = scanned[0]
+    if n == "ioctl":                                   # an exact allowlist: an `_IOC(_IOC_WRITE, ...)` never matches
+        req = args[1] if len(args) >= 2 else ""
+        if req not in ALLOWED_IOCTLS:
+            return "write", "unclassified ioctl"
+        return "read", None
+    if n in OPENS:
+        # Only `openat` is measured; another open reaching here (after a new measurement) reads no flags: a write.
+        i = 2 if n == "openat" else None
+        toks = flag_tokens(args[i]) if i is not None and i < len(args) else None
+        if toks is None or WRITING_OPEN & set(toks):
+            return "write", None
+        return "read", None
+    if n == "mmap":
+        prot = flag_tokens(args[2]) if len(args) > 3 else None
+        mflags = flag_tokens(args[3]) if len(args) > 3 else None
+        if prot is None or mflags is None or ("PROT_WRITE" in prot and SHARED_MAP & set(mflags)):
+            return "write", None
+        return "read", None
+    if n in READ_ONLY:
+        return _spec_class(n), None
+    if n in PROCESS:
+        return "process", None
+    return "write", None
+
+
+# ── slice 3: the per-run record, the seed check, the cross-run check (Task 3.2) ──────────────────────────
+@dataclass(frozen=True)
+class Record:
+    """One target's traced control. `reads`/`probed`/`listed`/`probed_stat_only` hold staged-root paths, relative,
+    with no prefix (the selector's form); `wrote`, `all_named` (every path the whole trace named) and `all_listed`
+    are in `copy_norm` form and keep every path. A refused record (`trace` ≠ `complete`) holds no paths."""
+    trace: str
+    reads: frozenset = frozenset()
+    probed: frozenset = frozenset()
+    listed: frozenset = frozenset()
+    probed_stat_only: frozenset = frozenset()
+    wrote: frozenset = frozenset()
+    all_named: frozenset = frozenset()
+    all_listed: frozenset = frozenset()
+
+
+# Spec §2: these carry no state between runs, and are dropped from another target's `wrote` before the comparison.
+EXEMPT_WRITES = frozenset(("/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty"))
+# The peer traces whose `wrote` is known: a seed-dependent record keeps the union of both seeds' writes.
+WRITES_KNOWN = frozenset(("complete", "seed-dependent reads"))
+SUN_PATH = re.compile(r'sun_path=(@?)"((?:[^"\\]|\\.)*)"')
+
+
+def copy_norm(path: str, ctx: Ctx) -> str:
+    """Spec §2's one path form: `copy:<relative>` at or under the copy (`copy:` for the copy itself), else `path`."""
+    rel = rel_to_copy(path, ctx)
+    return norm(path) if rel is None else "copy:" + rel
+
+
+def exempt_write(path: str) -> bool:
+    return path in EXEMPT_WRITES or path.startswith("/dev/pts/") or any(under(path, r) for r in ("/proc", "/sys"))
+
+
+def _staged(path: str, ctx: Ctx) -> "str | None":
+    rel = rel_to_copy(path, ctx)
+    if rel is None:
+        return None
+    for root in ctx.staged_roots:
+        r = root.strip("/")
+        if rel == r or rel.startswith(r + "/"):
+            return rel
+    return None
+
+
+def _socket_paths(c: Call, ctx: Ctx) -> "tuple[list[str], str | None]":
+    """The filesystem socket paths `c` names (an AF_UNIX `sun_path`; an abstract `@name` names none)."""
+    found = SUN_PATH.findall(c.args)
+    if len(found) != c.args.count("sun_path="):
+        return [], "undecodable path"
+    out = []
+    for at, raw in found:
+        if at or raw.startswith("@"):
+            continue
+        p = decode_path(raw)
+        if p is None:
+            return [], "undecodable path"
+        if not p.startswith("/"):
+            return [], "unresolved path"
+        if ".." in components(p):
+            return [], "unresolved .."
+        if under(norm(p), ctx.workspace):
+            return [], "real checkout"
+        out.append(norm(p))
+    return out, None
+
+
+def _out_side(c: Call, kept: "list[str]") -> "list[str]":
+    """The paths `c` writes: the OUT descriptor of `sendfile` (operand 0) and `copy_file_range` (operand 2), whose IN
+    side is read-only (spec §2); every path it names otherwise (`splice` included: both sides, which refuses more)."""
+    i = {"sendfile": 0, "copy_file_range": 2}.get(c.name)
+    if i is None:
+        return kept
+    args = scan_args(c.args + ")")[0]
+    p, _ok = _desc_path(args[i]) if i < len(args) else (None, True)
+    if p is None:
+        return []
+    if p.endswith(" (deleted)"):
+        p = p[:-len(" (deleted)")]
+    return [p] if p in kept else []
+
+
+def record_from_log(text: str, ctx: Ctx, strace_version: str) -> Record:
+    """One traced run's `Record`, or a refused one: the version, then every call classified (the first refusal in
+    line order), then slice 2's resolution."""
+    if strace_version != STRACE_VERSION:
+        return Record("strace version")
+    calls, _why = parse_log(text)                      # a parse refusal is resolve_log's, below
+    for c in sorted(calls, key=lambda c: c.seq):
+        _cls, why = classify(c)
+        if why:
+            return Record(why)
+    resolved, why = resolve_log(text, ctx)
+    if why:
+        return Record(why)
+    reads, listed, wrote, named, stat_named, other_named = set(), set(), set(), set(), set(), set()
+    for c, kept in resolved:
+        klass, _ = classify(c)
+        sockets, why = _socket_paths(c, ctx)
+        if why:
+            return Record(why)
+        paths = list(kept) + sockets
+        named |= set(paths)
+        (stat_named if c.name in STAT_FAMILY else other_named).update(paths)
+        done = outcome(c.ret) is True
+        if klass == "read":
+            if (c.name in OPENS and c.label is not None) or (c.name in ("execve", "execveat") and done) \
+                    or c.name in ("readlink", "readlinkat"):
+                reads |= set(kept)
+        elif klass == "list":
+            listed |= set(kept)
+        else:
+            wrote |= set(_out_side(c, kept)) | set(sockets)
+
+    def staged(ps):
+        return frozenset(r for r in (_staged(p, ctx) for p in ps) if r is not None)
+    return Record("complete", reads=staged(reads), probed=staged(named), listed=staged(listed),
+                  probed_stat_only=staged(stat_named - other_named),
+                  wrote=frozenset(copy_norm(p, ctx) for p in wrote),
+                  all_named=frozenset(copy_norm(p, ctx) for p in named),
+                  all_listed=frozenset(copy_norm(p, ctx) for p in listed))
+
+
+def merge_seeds(a: Record, b: Record) -> Record:
+    """Spec §3: green and complete under BOTH seeds. A refusal wins (`a`'s first); differing reads, probes or
+    listings are `seed-dependent reads` (with the union of the writes, still known to `cross_run`); else the shared
+    sets, writes and whole-trace sets unioned, `probed_stat_only` intersected."""
+    if a.trace != "complete":
+        return a
+    if b.trace != "complete":
+        return b
+    if (a.reads, a.probed, a.listed) != (b.reads, b.probed, b.listed):
+        return Record("seed-dependent reads", wrote=a.wrote | b.wrote)
+    return dataclasses.replace(a, wrote=a.wrote | b.wrote, all_named=a.all_named | b.all_named,
+                               all_listed=a.all_listed | b.all_listed,
+                               probed_stat_only=a.probed_stat_only & b.probed_stat_only)
+
+
+def _ancestor(d: str, p: str) -> bool:
+    """Whether directory `d` is above `p`, both in `copy_norm` form (`d` itself is named, so `all_named` meets it)."""
+    if d.endswith(":"):
+        return p.startswith(d)
+    return p.startswith(d.rstrip("/") + "/")
+
+
+def cross_run(records: "dict[str, Record]") -> "dict[str, Record]":
+    """Spec §2: a complete target T is refused (`cross-run flow`) when its whole-trace names meet another target's
+    non-exempt write, or a directory it listed is an ancestor of one; and (`peer trace incomplete`) when another
+    target's writes are unknown, because its trace was refused. Decided from the INPUT records: order-free."""
+    out = {}
+    for t, rec in records.items():
+        why = None
+        if rec.trace == "complete":
+            for u, peer in records.items():
+                if u == t:
+                    continue
+                if peer.trace not in WRITES_KNOWN:
+                    why = why or "peer trace incomplete"
+                    continue
+                hot = {p for p in peer.wrote if not exempt_write(p)}
+                if rec.all_named & hot or any(_ancestor(d, p) for d in rec.all_listed for p in hot):
+                    why = "cross-run flow"
+                    break
+        out[t] = Record(why) if why else rec
+    return out
+
+
 # ── self-test ───────────────────────────────────────────────────────────────────────────────────────────
 def _samples() -> dict:
     """(syscall, shape) → the recorded line, from slice 1's fixture (never typed from memory)."""
@@ -1221,6 +1542,346 @@ def _self_test_body() -> int:
     case("rel_to_copy: a deeper copy with a trailing slash",
          lambda: rel_to_copy("/w/c/docs/a.md", with_(CTX, copy="/w/c/")), "docs/a.md")
     case("norm folds . and doubled slashes", lambda: norm("/a/./b//c/"), "/a/b/c")
+
+    # ── Task 3.1: the measured allowlist and the classifier (plan slice 3; backlog #590) ──
+    def C(line):                                 # one recorded line as a Call
+        calls, err = parse_log(line + "\n")
+        assert err is None and len(calls) == 1, (line, err)
+        return calls[0]
+
+    def cls(line):
+        return classify(C(line))
+
+    MEASURED_DOC = json.loads(MEASUREMENT.read_text())
+    case("the measured constants ARE the committed measurement", lambda: measurement_disagrees(MEASURED_DOC), None)
+    case("adjacent: a measurement with one extra syscall disagrees",
+         lambda: measurement_disagrees({**MEASURED_DOC, "syscalls": {**MEASURED_DOC["syscalls"], "memfd_create": 1}}),
+         "syscalls")
+    case("adjacent: a measurement with one extra ioctl disagrees",
+         lambda: measurement_disagrees({**MEASURED_DOC, "ioctls": {**MEASURED_DOC["ioctls"], "FIONREAD": 1}}), "ioctls")
+    case("adjacent: a measurement at another strace version disagrees",
+         lambda: measurement_disagrees({**MEASURED_DOC, "headers": MEASURED_DOC["headers"]
+                                        + [{**MEASURED_DOC["headers"][0], "strace_version": "strace -- version 6.20"}]}),
+         "strace_version")
+    case("the allowlist is a subset of the measured set",
+         lambda: (ALLOWED_SYSCALLS <= MEASURED_SYSCALLS, ALLOWED_IOCTLS <= MEASURED_IOCTLS), (True, True))
+    case("the three classes partition the measured set less the denied names",
+         lambda: (READ_ONLY | WRITES | PROCESS == MEASURED_SYSCALLS - DENIED_SYSCALLS,
+                  len(READ_ONLY) + len(WRITES) + len(PROCESS) == len(READ_ONLY | WRITES | PROCESS)), (True, True))
+    case("no denied name is allowed",
+         lambda: (ALLOWED_SYSCALLS & DENIED_SYSCALLS, ALLOWED_IOCTLS & DENIED_IOCTLS), (frozenset(), frozenset()))
+    case("every PROCESS member beyond spec §2's list was measured",
+         lambda: sorted(set(PROCESS_EXTRA) - MEASURED_SYSCALLS), [])
+
+    def shape_names_a_file(name):
+        """Whether any recorded line of `name` carries a descriptor label or a quoted absolute path; None if the
+        fixture holds no line of it (then nothing was checked)."""
+        lines = [s["line"] for s in json.loads((FIXTURES / "samples.json").read_text())["samples"]
+                 if s["syscall"] == name]
+        if not lines:
+            return None
+        return any(re.search(r'(?:^|[(,{\s=])-?\d+<|"/', ln.split(None, 1)[1]) for ln in lines)
+    case("every PROCESS member beyond spec §2's list takes no fd and no path in its recorded lines",
+         lambda: sorted(n for n in PROCESS_EXTRA if shape_names_a_file(n) is not False), [])
+    case("adjacent: the shape check sees a descriptor label (close) and a path (access)",
+         lambda: (shape_names_a_file("close"), shape_names_a_file("access")), (True, True))
+
+    case("an unlisted measured name is a write (prctl)", lambda: cls(L(("prctl", "= N"), 1)), ("write", None))
+    case("an unlisted measured name is a write (pidfd_open is measured, not in spec §2's lists)",
+         lambda: ("pidfd_open" in MEASURED_SYSCALLS, "pidfd_open" in WRITES), (True, True))
+    case("adjacent: futex is a process call", lambda: cls(L(("futex", "= N"), 1)), ("process", None))
+    case("an unmeasured syscall is refused",
+         lambda: cls(L(("newfstatat", "= N"), 1, ("newfstatat(", "name_to_handle_at("))),
+         ("write", "unclassified syscall"))
+    case("adjacent: a measured newfstatat is a read", lambda: cls(L(("newfstatat", "= N"), 1)), ("read", None))
+    case("an unnamed syscall (???) is refused",
+         lambda: classify(parse_log(S[("???", 0)] + "\n" + S[("???", 1)] + "\n")[0][0])[1], "unclassified syscall")
+    case("ioctl FS_IOC_SETFLAGS is refused",
+         lambda: cls(L(("ioctl", "= N"), 1, ("FIOCLEX", "FS_IOC_SETFLAGS, [FS_APPEND_FL]"))),
+         ("write", "unclassified ioctl"))
+    case("ioctl FICLONE (measured, but _IOW: it writes its descriptor's file) is refused",
+         lambda: cls(L(("ioctl", "= N"), 1, ("FIOCLEX", "BTRFS_IOC_CLONE or FICLONE, 4</t/scripts/src.py>"))),
+         ("write", "unclassified ioctl"))
+    case("an ioctl spelled by its _IOC_WRITE direction is refused",
+         lambda: cls(L(("ioctl", "= N"), 1, ("FIOCLEX", "_IOC(_IOC_WRITE, 0x66, 0x2, 0x8), 0x7ffd"))),
+         ("write", "unclassified ioctl"))
+    case("adjacent: an unmeasured read-direction ioctl is refused too (default-deny)",
+         lambda: cls(L(("ioctl", "= N"), 1, ("FIOCLEX", "FIONREAD, [0]")))[1], "unclassified ioctl")
+    case("adjacent: an ioctl with no request operand is refused",
+         lambda: cls(L(("ioctl", "= N"), 1, ("3</t/scripts/backfill-work-lines.py>, FIOCLEX", "3</t/a>"))),
+         ("write", "unclassified ioctl"))
+    case("adjacent: a measured TCGETS is a read",
+         lambda: cls(L(("ioctl", "= -1 E"), 1, ("TCGETS2", "TCGETS"))), ("read", None))
+    case("adjacent: a measured FIOCLEX is a read", lambda: cls(L(("ioctl", "= N"), 1)), ("read", None))
+    case("read, close, lseek, fcntl and a PROT_READ mmap of a file are reads",
+         lambda: [cls(L((n, "-yy label"), 1)) for n in ("read", "close", "lseek", "fcntl", "mmap")],
+         [("read", None)] * 5)
+    MMAP = L(("mmap", "-yy label"), 1)
+    case("mmap MAP_SHARED with PROT_WRITE of a file is a write",
+         lambda: cls(MMAP.replace("PROT_READ, MAP_PRIVATE|MAP_DENYWRITE", "PROT_READ|PROT_WRITE, MAP_SHARED")),
+         ("write", None))
+    case("adjacent: mmap MAP_SHARED_VALIDATE with PROT_WRITE is a write",
+         lambda: cls(MMAP.replace("PROT_READ, MAP_PRIVATE|MAP_DENYWRITE", "PROT_WRITE, MAP_SHARED_VALIDATE")),
+         ("write", None))
+    case("adjacent: mmap MAP_PRIVATE with PROT_WRITE is a read",
+         lambda: cls(MMAP.replace("PROT_READ, MAP_PRIVATE|MAP_DENYWRITE", "PROT_READ|PROT_WRITE, MAP_PRIVATE")),
+         ("read", None))
+    case("adjacent: mmap MAP_SHARED with PROT_READ only is a read",
+         lambda: cls(MMAP.replace("MAP_PRIVATE|MAP_DENYWRITE", "MAP_SHARED")), ("read", None))
+    case("adjacent: mmap whose prot does not parse is a write",
+         lambda: cls(MMAP.replace("PROT_READ, MAP_PRIVATE", "0x3, MAP_SHARED")), ("write", None))
+    case("adjacent: mmap whose flags do not parse is a write",
+         lambda: cls(MMAP.replace("PROT_READ, MAP_PRIVATE|MAP_DENYWRITE", "PROT_WRITE, 0x1")), ("write", None))
+    case("ftruncate of a file is a write", lambda: cls(L(("ftruncate", "-yy label"), 1)), ("write", None))
+    case("truncate is a write (and unmeasured, so refused)",
+         lambda: cls(L(("chmod", "= N"), 1, ("chmod(", "truncate("), (", 0644", ", 0"))),
+         ("write", "unclassified syscall"))
+    case("chmod, utimensat and rename are writes",
+         lambda: [cls(L(k, 1)) for k in (("chmod", "= N"), ("utimensat", "= N"), ("rename", "= N"))],
+         [("write", None)] * 3)
+    case("openat O_RDWR is a write", lambda: cls(opened("/t/a", "/t/a", flags="O_RDWR|O_CLOEXEC")), ("write", None))
+    case("adjacent: openat O_RDONLY is a read", lambda: cls(opened("/t/a", "/t/a")), ("read", None))
+    case("openat with any one writing flag is a write",
+         lambda: [cls(opened("/t/a", "/t/a", flags=f"O_RDONLY|{f}|O_CLOEXEC"))[0]
+                  for f in ("O_CREAT", "O_WRONLY", "O_TRUNC", "O_TMPFILE")], ["write"] * 4)
+    case("adjacent: openat whose flags do not parse is a write",
+         lambda: cls(opened("/t/a", "/t/a", flags="O_RDONLY|0x80000000")), ("write", None))
+    case("getdents64 is a listing", lambda: cls(L(("getdents64", "-yy label"), 1)), ("list", None))
+    case("execve and readlink are reads",
+         lambda: [cls(L((n, "= N"), 1)) for n in ("execve", "readlink")], [("read", None)] * 2)
+    case("sendfile, copy_file_range and splice are writes",
+         lambda: [cls(L((n, "= N"), 1)) for n in ("sendfile", "copy_file_range", "splice")], [("write", None)] * 3)
+
+    def denied(n):
+        return cls(L(("rseq", "= N"), 1, ("rseq(", f"{n}(")))
+    case("every denied syscall is refused, by its family's name",
+         lambda: {n: denied(n) for n in sorted(DENIED_SYSCALLS)},
+         {**{n: ("write", "io_uring") for n in ("io_uring_enter", "io_uring_register", "io_uring_setup")},
+          **{n: ("write", "unmodelled unshare") for n in ("chroot", "pivot_root", "setns", "unshare")},
+          **{n: ("write", "mount family") for n in ("fsmount", "fsopen", "fspick", "mount", "mount_setattr",
+                                                    "move_mount", "open_tree", "umount2")}})
+    case("unshare(CLONE_FS) is refused (slice 2's carry-over)",
+         lambda: cls(L(("rseq", "= N"), 1, ("rseq(0x7a3ddbea3ac0, 0x21, 0, 0x53053053)", "unshare(CLONE_FS)"))),
+         ("write", "unmodelled unshare"))
+    case("the recorded io_uring_setup line is refused", lambda: cls(L(("io_uring_setup", "-yy label"), 1)),
+         ("write", "io_uring"))
+
+    # ── Task 3.2: the per-run record, the seed check and the cross-run check ──
+    REC = Ctx(copy="/t", workspace="/runner/work/x", staged_roots=("docs", "scripts"), repo_links=frozenset(),
+              cwd0="/t", home="/t/.home", tmpdir="/tmp/run")
+
+    def rec(lines, ctx=REC, version=STRACE_VERSION):
+        return record_from_log("\n".join(lines) + "\n", ctx, version)
+
+    def in_copy(lines, copy):                    # the same lines, traced in another copy root
+        return [ln.replace("/t/", copy + "/").replace("</t>", f"<{copy}>") for ln in lines]
+
+    def writes(path, pid=1):                     # a successful writing open
+        return opened(path, path, pid, flags="O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0666")
+
+    def lists(path, pid=1):
+        return L(("getdents64", "-yy label"), pid, ("3</opt/hostedtoolcache/Python/3.12.16/x64/lib/python3.12>",
+                                                     f"3<{path}>"))
+
+    def execs(path, failed=False, pid=1):
+        key = ("execve", "= -1 E") if failed else ("execve", "= N")
+        old = "/opt/hostedtoolcache/Python/3.12.16/x64/bin/" + ("git" if failed else "python3")
+        return L(key, pid, (f'"{old}"', f'"{path}"'))
+
+    def access(path, pid=1):
+        return L(("access", "= -1 E"), pid, ('"/etc/ld.so.preload"', f'"{path}"'))
+
+    def fields(r, *names):
+        return tuple(sorted(getattr(r, n)) if n != "trace" else r.trace for n in names)
+
+    case("a complete trace records its read", lambda: fields(rec([opened("/t/docs/a.md", "/t/docs/a.md")]),
+                                                            "trace", "reads", "wrote"),
+         ("complete", ["docs/a.md"], []))
+    case("adjacent: a read outside the staged roots is not a read, but is named",
+         lambda: fields(rec([opened("/t/.home/x", "/t/.home/x"), opened("/usr/lib/y", "/usr/lib/y")]),
+                        "reads", "probed", "all_named"), ([], [], ["/usr/lib/y", "copy:.home/x"]))
+    case("a staged root itself counts", lambda: fields(rec([lists("/t/docs")]), "listed", "all_listed"),
+         (["docs"], ["copy:docs"]))
+    case("adjacent: a sibling with a staged root as prefix does not count",
+         lambda: fields(rec([probe("/t/docsx/a")]), "probed", "all_named"), ([], ["copy:docsx/a"]))
+    case("probed holds a failed open, a failed execve, a chdir and a statfs",
+         lambda: fields(rec([probe("/t/docs/a"), execs("/t/scripts/opt.sh", failed=True), chdir("/t/docs/d"),
+                             L(("statfs", "= -1 E"), 1, ('"/sys/fs/selinux"', '"/t/scripts/f"'))]),
+                        "probed", "reads"), (["docs/a", "docs/d", "scripts/f", "scripts/opt.sh"], []))
+    case("an inotify_add_watch is unmeasured, so the trace is refused (it would be a probe)",
+         lambda: rec([L(("statfs", "= -1 E"), 1, ("statfs(", "inotify_add_watch(3<anon_inode:inotify>, "),
+                        ('"/sys/fs/selinux", 0x7fffbea13cc0', '"/t/docs", IN_MODIFY'))]).trace, "unclassified syscall")
+    case("readlink is a read of the link", lambda: fields(rec([readlink("/t/scripts/L")]), "reads"), (["scripts/L"],))
+    case("execve of a staged script is a read", lambda: fields(rec([execs("/t/scripts/run.sh")]), "reads"),
+         (["scripts/run.sh"],))
+    case("openat2 is unmeasured, so the trace is refused",
+         lambda: rec([L(("openat", "= -1 E"), 1, ("openat(", "openat2("),
+                        ("O_RDONLY|O_CLOEXEC)", "{flags=O_RDONLY, resolve=0}, 24)"))]).trace, "unclassified syscall")
+    case("a failed unlink is a write", lambda: fields(rec([unlink("/t/docs/x", failed=True)]), "wrote"),
+         (["copy:docs/x"],))
+    case("a writing open is a write, kept in copy form", lambda: fields(rec([writes("/t/docs/out")]), "wrote"),
+         (["copy:docs/out"],))
+    case("a write outside the copy keeps its absolute path", lambda: fields(rec([writes("/dev/shm/x")]), "wrote"),
+         (["/dev/shm/x"],))
+    SF_OUT, SF_IN = "/tmp/fixture-tmp-3xec1v1d/tmp828gr67c/backup/live.md", \
+        "/tmp/fixture-tmp-3xec1v1d/tmp828gr67c/repo/.claude/plans/live.md"
+    case("sendfile writes its OUT side only; the IN side is a probe",
+         lambda: fields(rec([L(("sendfile", "= N"), 1, (SF_OUT, "/t/docs/out"), (SF_IN, "/t/docs/in"))]),
+                        "wrote", "probed"), (["copy:docs/out"], ["docs/in", "docs/out"]))
+    case("sendfile to a deleted file outside the copy writes that file",
+         lambda: fields(rec([L(("sendfile", "= N"), 1, (SF_OUT, "/tmp/run/o (deleted)"), (SF_IN, "/t/docs/in"))]),
+                        "wrote"), (["/tmp/run/o"],))
+    case("adjacent: sendfile to a pipe writes no path",
+         lambda: fields(rec([L(("sendfile", "= N"), 1, (f"4<{SF_OUT}>", "4<pipe:[1]>"), (SF_IN, "/t/docs/in"))]),
+                        "trace", "wrote"), ("complete", []))
+    CF = ("/tmp/fixture-tmp-vgnzf8kn/crr426-9mprddnq/docs/superpowers/specs/m4/gate.sql",
+          "/tmp/fixture-tmp-vgnzf8kn/crr426-9mprddnq/.merge_file_vITBBC")
+    case("copy_file_range writes its OUT side only",
+         lambda: fields(rec([L(("copy_file_range", "= N"), 1, (CF[0], "/t/docs/in"), (CF[1], "/t/docs/out"))]),
+                        "wrote"), (["copy:docs/out"],))
+    case("adjacent: splice writes every side it names",
+         lambda: fields(rec([L(("splice", "= -1 E"), 1, ("4<pipe:[316697]>", "4</t/docs/out>"))]), "wrote"),
+         (["/dev/null", "copy:docs/out"],))
+    case("a socket path is named and, by connect, written",
+         lambda: fields(rec([L(("connect", "= N"), 1)]), "all_named", "wrote"),
+         (["/run/systemd/userdb/io.systemd.DynamicUser"],) * 2)
+    case("adjacent: a relative socket path is refused",
+         lambda: rec([L(("connect", "= N"), 1, ('sun_path="/run', 'sun_path="run'))]).trace, "unresolved path")
+    case("adjacent: an abstract socket names no path",
+         lambda: fields(rec([L(("connect", "= N"), 1, ('sun_path="/run', 'sun_path="@run'))]), "trace", "all_named"),
+         ("complete", []))
+    case("adjacent: an abstract socket spelled @\"name\" names no path",
+         lambda: fields(rec([L(("connect", "= N"), 1, ('sun_path="/run', 'sun_path=@"run'))]), "trace", "all_named"),
+         ("complete", []))
+    case("adjacent: a sun_path that is not a quoted string is refused",
+         lambda: rec([L(("connect", "= N"), 1, ('sun_path="/run/systemd/userdb/io.systemd.DynamicUser"',
+                                                'sun_path=0x7ffd417b73e0'))]).trace, "undecodable path")
+    case("adjacent: a socket path with an undecodable escape is refused",
+         lambda: rec([L(("connect", "= N"), 1, ('sun_path="/run', 'sun_path="/r\\qun'))]).trace, "undecodable path")
+    case("adjacent: a socket path through .. is refused",
+         lambda: rec([L(("connect", "= N"), 1, ('sun_path="/run', 'sun_path="/tmp/../run'))]).trace, "unresolved ..")
+    case("adjacent: a socket path in the real checkout is refused",
+         lambda: rec([L(("connect", "= N"), 1, ('sun_path="/run/systemd/userdb', 'sun_path="/runner/work/x'))]).trace,
+         "real checkout")
+    case("probed_stat_only holds an access-only path", lambda: fields(rec([access("/t/scripts/x")]), "probed_stat_only"),
+         (["scripts/x"],))
+    case("probed_stat_only holds a path only newfstatat probed",
+         lambda: fields(rec([nfstatat("/t/docs/a", "0")]), "probed_stat_only"), (["docs/a"],))
+    case("adjacent: not a path newfstatat probed and a failed openat named",
+         lambda: fields(rec([nfstatat("/t/docs/a", "0"), probe("/t/docs/a")]), "probed_stat_only", "probed"),
+         ([], ["docs/a"]))
+    case("adjacent: not a path access probed and then execve'd",
+         lambda: fields(rec([access("/t/scripts/x"), execs("/t/scripts/x")]), "probed_stat_only", "probed"),
+         ([], ["scripts/x"]))
+    case("a version mismatch is refused",
+         lambda: rec([probe("/t/docs/a")], version="strace -- version 6.20").trace, "strace version")
+    case("a denied call in the log refuses the trace", lambda: rec([L(("io_uring_setup", "-yy label"), 1)]).trace,
+         "io_uring")
+    case("an unnamed syscall in the log refuses the trace", lambda: rec([S[("???", 0)], S[("???", 1)]]).trace,
+         "unclassified syscall")
+    case("a slice-2 refusal reaches the record", lambda: rec([probe("/t/../a")]).trace, "unresolved ..")
+    case("a refused record holds no paths",
+         lambda: fields(rec([probe("/t/docs/a"), writes("/t/docs/w"), L(("io_uring_setup", "-yy label"), 1)]),
+                        "probed", "wrote", "all_named"), ([], [], []))
+    case("an empty log is a complete, empty record", lambda: fields(record_from_log("", REC, STRACE_VERSION),
+                                                                    "trace", "all_named"), ("complete", []))
+
+    A, B = rec([probe("/t/docs/a")]), rec([probe("/t/docs/b")])
+    case("two seeds whose sets differ are refused", lambda: merge_seeds(A, B).trace, "seed-dependent reads")
+    case("adjacent: two seeds whose listings differ (probes equal) are refused",
+         lambda: merge_seeds(rec([lists("/t/docs")]), rec([nfstatat("/t/docs", "0")])).trace, "seed-dependent reads")
+    case("adjacent: two seeds whose reads differ (probes equal) are refused",
+         lambda: merge_seeds(rec([opened("/t/docs/a", "/t/docs/a")]), A).trace, "seed-dependent reads")
+    case("adjacent: equal seeds are kept", lambda: merge_seeds(A, rec([probe("/t/docs/a")])), A)
+    REF = rec([probe("/t/docs/a")], version="strace -- version 6.20")
+    case("a complete seed A and a refused seed B with equal sets carry B's refusal",
+         lambda: merge_seeds(A, REF).trace, "strace version")
+    case("the mirror: a refused seed A carries A's refusal", lambda: merge_seeds(REF, A).trace, "strace version")
+    case("both refused: A's refusal first",
+         lambda: merge_seeds(REF, rec([probe("/t/../a")])).trace, "strace version")
+    WB = merge_seeds(A, rec([probe("/t/docs/a"), unlink("/tmp/run/x")]))
+    case("a write present only under seed B is in the merged record", lambda: fields(WB, "trace", "wrote"),
+         ("complete", ["/tmp/run/x"]))
+    case("... and it refuses a target that reads it",
+         lambda: cross_run({"U": WB, "T": rec([opened("/tmp/run/x", "/tmp/run/x")])})["T"].trace, "cross-run flow")
+    case("probed_stat_only is the intersection of the seeds",
+         lambda: fields(merge_seeds(rec([nfstatat("/t/docs/a", "0"), nfstatat("/t/docs/b", "0")]),
+                                    rec([nfstatat("/t/docs/a", "0"), probe("/t/docs/a"), nfstatat("/t/docs/b", "0")])),
+                        "probed_stat_only"), (["docs/b"],))
+    case("all_named and all_listed are the union of the seeds",
+         lambda: fields(merge_seeds(rec([lists("/tmp/run/d")]), rec([lists("/tmp/run/e")])), "all_named",
+                        "all_listed"), (["/tmp/run/d", "/tmp/run/e"],) * 2)
+
+    def flows(writer_lines, reader_lines, wctx=REC, rctx=REC):
+        out = cross_run({"U": rec(writer_lines, wctx), "T": rec(reader_lines, rctx)})
+        return out["U"].trace, out["T"].trace
+    case("a read of a path another target wrote is refused",
+         lambda: flows([writes("/t/docs/generated/flag")], [opened("/t/docs/generated/flag", "/t/docs/generated/flag")]),
+         ("complete", "cross-run flow"))
+    case("adjacent: a read of a path no other target wrote is kept",
+         lambda: flows([writes("/t/docs/generated/flag")], [opened("/t/docs/other", "/t/docs/other")]),
+         ("complete", "complete"))
+    case("a probe of a path another target wrote is refused",
+         lambda: flows([writes("/tmp/run/flag")], [probe("/tmp/run/flag")]), ("complete", "cross-run flow"))
+    case("a listing of an ancestor of another target's write is refused",
+         lambda: flows([writes("/t/docs/generated/flag")], [lists("/t/docs/generated")]), ("complete", "cross-run flow"))
+    case("adjacent: a listing of a sibling directory is kept",
+         lambda: flows([writes("/t/docs/generated/flag")], [lists("/t/docs/other")]), ("complete", "complete"))
+    case("adjacent: a listing of the copy root is an ancestor of every write in it",
+         lambda: flows([writes("/t/docs/generated/flag")], [lists("/t")]), ("complete", "cross-run flow"))
+    case("adjacent: a listing of / is an ancestor of every write",
+         lambda: flows([writes("/dev/shm/x")], [lists("/")]), ("complete", "cross-run flow"))
+    case("adjacent: a listing whose name is a prefix of the written directory is kept",
+         lambda: flows([writes("/t/docs/generated/flag")], [lists("/t/docs/gen")]), ("complete", "complete"))
+    case("two targets each opening /dev/null O_RDWR do not refuse each other",
+         lambda: flows([opened("/dev/null", "/dev/null", flags="O_RDWR|O_CLOEXEC")],
+                       [opened("/dev/null", "/dev/null", flags="O_RDWR|O_CLOEXEC")]), ("complete", "complete"))
+    case("every exempt device and /proc, /sys path is dropped",
+         lambda: sorted(p for p in ("/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty",
+                                    "/dev/pts/0", "/proc/self/status", "/sys/fs/x", "/proc", "/dev/shm/x", "/dev/pts",
+                                    "/devx/null", "/procx/a", "/dev/null/x") if not exempt_write(p)),
+         ["/dev/null/x", "/dev/pts", "/dev/shm/x", "/devx/null", "/procx/a"])
+    case("adjacent: /dev/null is exempt and /dev/shm/x is not",
+         lambda: (exempt_write("/dev/null"), exempt_write("/dev/shm/x")), (True, False))
+    case("a /dev/shm write another target reads is refused",
+         lambda: flows([writes("/dev/shm/x")], [opened("/dev/shm/x", "/dev/shm/x")]), ("complete", "cross-run flow"))
+    case("a target's own write is not a cross-run flow", lambda: cross_run({"T": rec([writes("/tmp/run/x"),
+                                                                                      probe("/tmp/run/x")])})["T"].trace,
+         "complete")
+    case("two copy roots meet on copy-relative paths",
+         lambda: flows(in_copy([writes("/t/docs/generated/flag")], "/tmp/cU"),
+                       in_copy([lists("/t/docs/generated")], "/tmp/cT"),
+                       with_(REC, copy="/tmp/cU", cwd0="/tmp/cU", home="/tmp/cU/.home"),
+                       with_(REC, copy="/tmp/cT", cwd0="/tmp/cT", home="/tmp/cT/.home")),
+         ("complete", "cross-run flow"))
+    case("adjacent: two copy roots, a listing of another directory",
+         lambda: flows(in_copy([writes("/t/docs/generated/flag")], "/tmp/cU"),
+                       in_copy([lists("/t/docs/other")], "/tmp/cT"),
+                       with_(REC, copy="/tmp/cU", cwd0="/tmp/cU", home="/tmp/cU/.home"),
+                       with_(REC, copy="/tmp/cT", cwd0="/tmp/cT", home="/tmp/cT/.home")),
+         ("complete", "complete"))
+    case("a target whose peer's trace is incomplete is refused (the peer's writes are unknown)",
+         lambda: cross_run({"U": REF, "T": A})["T"].trace, "peer trace incomplete")
+    case("a seed-dependent peer's writes still refuse a target that reads them",
+         lambda: cross_run({"U": merge_seeds(rec([probe("/t/docs/a"), writes("/tmp/run/x")]), B),
+                            "T": rec([opened("/tmp/run/x", "/tmp/run/x")])})["T"].trace, "cross-run flow")
+    case("two refused targets each keep their own refusal",
+         lambda: [r.trace for _k, r in sorted(cross_run({"U": REF, "T": rec([probe("/t/../a")])}).items())],
+         ["unresolved ..", "strace version"])
+    case("adjacent: the refused peer keeps its own refusal", lambda: cross_run({"U": REF, "T": A})["U"].trace,
+         "strace version")
+    case("a refused target keeps its sets for nothing: cross_run returns it unchanged",
+         lambda: cross_run({"U": REF})["U"], REF)
+    case("copy_norm: the copy itself, a path under it, a sibling, a path outside",
+         lambda: [copy_norm(p, REC) for p in ("/t", "/t/docs/a", "/tx/a", "/tmp/a")],
+         ["copy:", "copy:docs/a", "/tx/a", "/tmp/a"])
+    case("copy_norm reads the copy from its ctx: /t is outside a copy at /c",
+         lambda: (copy_norm("/t/docs/a", dataclasses.replace(REC, copy="/c")),
+                  copy_norm("/c/docs/a", dataclasses.replace(REC, copy="/c"))), ("/t/docs/a", "copy:docs/a"))
+    case("REASONS holds every refusal slice 3 adds",
+         lambda: [r for r in ("unclassified syscall", "unclassified ioctl", "io_uring", "unmodelled unshare",
+                              "mount family", "strace version", "seed-dependent reads", "cross-run flow",
+                              "peer trace incomplete") if r not in REASONS], [])
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

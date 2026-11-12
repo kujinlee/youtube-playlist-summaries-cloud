@@ -316,8 +316,12 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #586 slice 2 (2026-11-12): the strace-log path resolver, pinned in the commit that creates it. DERIVED by
     # running `analyse()` on the delivered source: 9 keys, every one varied by a case (none exempt).
-    "strace_reads.py": ("decode_path.s", "norm.path", "parse_log.text", "process_tree.calls", "process_tree.root",
-                        "rel_to_copy.ctx", "rel_to_copy.path", "resolve_log.ctx", "resolve_log.text"),
+    # ⟳ 2026-11-12 slice 3 (the default-deny classifier and record assembly): re-DERIVED by `analyse()`, 9 + 11 = 20.
+    "strace_reads.py": ("classify.call", "copy_norm.ctx", "copy_norm.path", "cross_run.records", "decode_path.s",
+                        "exempt_write.path", "measurement_disagrees.doc", "merge_seeds.a", "merge_seeds.b", "norm.path",
+                        "parse_log.text", "process_tree.calls", "process_tree.root", "record_from_log.ctx",
+                        "record_from_log.strace_version", "record_from_log.text", "rel_to_copy.ctx", "rel_to_copy.path",
+                        "resolve_log.ctx", "resolve_log.text"),
     # backlog #586 slice 1 (2026-11-10): the strace measurement instrument, which joined this population when its
     # review-round-1 fold gave it a `--self-test`. DERIVED by running `analyse()` on the delivered source: 8 keys,
     # every one reached through ONE forwarding helper (`_read`, `_merge`) and EXEMPT below naming the cases that vary it.
