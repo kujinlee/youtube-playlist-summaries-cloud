@@ -593,7 +593,6 @@ def _samples() -> dict:
 
 def _self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
-    sys.path.insert(0, str(ROOT / "scripts"))
     import fixture_git
     with fixture_git.isolated():
         return _self_test_body()
