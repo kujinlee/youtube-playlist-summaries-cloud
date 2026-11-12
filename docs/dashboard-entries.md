@@ -20474,3 +20474,18 @@ name at, below or above it (`_meets`, `_cross_forms`); the cross-run view keeps 
 argument (SHADOW); a quoted `"@x"` socket is a relative file and an undecorated descriptor is `unresolved path`
 (`FD_OPERANDS`). Self-test 282 cases; manifest 203 entries (85 + 99 + 19). Wired: expected_mutations 203, check-fixture-variation 20 keys (re-derived by
 `analyse()`), docstring count; check-plan-code's list and the ci.yml step already cover the file.
+
+## 2026-11-12 [resolved: 2026-11-11/2]
+
+You answered the two marketplace-plan defaults that were taken on your behalf: the cost checkpoint stays at 3 times, and
+memory recall joins the first phase only if it helps a stranger with no memories and passes your content review. That
+review is still yours to do, when recall is ready to ship. The goal tree's Refresh button works again: the page server had
+been running since November 5 on old code and was restarted. Two rows are filed: dashboard asks will carry the yellow
+decision tags with options (backlog #623), and the server will warn when it is running older code than master (#624).
+
+<!--tech-->
+Owner selection card 2026-11-12 05:28: Decision 1 = A (keep the 3x checkpoint), Decision 2 = A (recall in phase 1 under
+its two conditions), dashboard tags = A (build, backlog #623). The 2026-11-11/2 entry's headline was stale (the plan merged
+as PR #562 `eebb1ac7`). Refresh: `explainer-serve.py` PID 30306 started 2026-11-05 12:08, older than PR #536 (`64e4b67a`,
+11-08) and PR #561 (`c7e06274`, 11-11); restarted as PID 97947 at 05:23; a POST /regenerate for goal-tree returned
+`{"ok": true}` in 46.5 s and rewrote `~/explainers/goal-tree.html`. Backlog #624 files the class.
