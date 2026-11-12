@@ -2238,5 +2238,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-12, backlog #586 slice 3: the default-deny classifier and record assembly. One entry per measured-
     # constant comparison, denied family, ioctl/open/mmap write rule, record field, seed-merge rule, cross-run rule
     # and exempt write path. ARITHMETIC: 85 + 99 = 184.
-    "scripts/strace_reads.py": 184,
+    # ⟳ 2026-11-12, slice 3 round 1 fold: 22 anchors re-bound in place (the resolver refactor), 19 added for the new
+    # branches (SHADOW argument, the cross-run view, `_meets` both directions, `_cross_forms`, bare descriptors).
+    # ARITHMETIC: 184 + 19 = 203.
+    "scripts/strace_reads.py": 203,
 }

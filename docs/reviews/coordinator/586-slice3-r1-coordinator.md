@@ -50,3 +50,37 @@ goes in a backlog row, owned by slice 4.
 
 A fresh fold agent first turns every reviewer input above into a failing self-test case, then fixes the code. After
 that, round 2 runs ONE half (alternation).
+
+## How the fixes were proved
+
+**Before → after.** Every reviewer input (X1–X3, C1 J/I/B/S, C2) and an adjacent control for each became a self-test
+case before any code changed. Run with the round-1 code (HEAD `df8cdcbe`) under the new tests: **258/282** passed, and
+the 24 failures are exactly the new reviewer cases plus the rewritten X2 case. After the fix: **282/282** (the slice-2
+cases unchanged). The baseline before this round was 250/250.
+
+**The fix, by class.**
+1. *A view built for something else.* `_resolve` now returns two lists per call: `kept` (the read view, unchanged)
+   and `every` (each path the trace named, `.git` included). The cross-run fields `wrote`, `all_named` and
+   `all_listed` come from `every`. A labelled open's argument is kept as a SHADOW path: it is named for the cross-run
+   check, it skips the label-replaced checks (`..`, `/proc`, links), and it is left out of reads (C1 J, I, B, S).
+   Socket `sun_path`s go through `_named`, so they get slice 2's resolution and refusals like every other path (X3).
+2. *Exact equality where the meaning is a subtree.* `_meets(n, w)` is true when the two are equal, or either one is
+   an ancestor of the other. `cross_run` uses it for every name, and `all_listed ⊆ all_named` covers listings (X1).
+   `_cross_forms` adds `copy:` for a path above the copy, so a probe of `/tmp` meets a write in the copy.
+3. *Text read where the meaning is structural.* Only the unquoted `@"…"` is abstract; a quoted `"@x"` is a relative
+   name and refuses as `unresolved path` (X2). Any call in `FD_OPERANDS` with an undecorated descriptor operand that
+   is not known to have failed refuses as `unresolved path` (C2). This covers both sides of a transfer and the
+   read/list/stat calls too, because a missed read is the same fail-open.
+
+**Mutations.** 184 → **203**. A refactor orphans an anchor, because anchors bind by exact text; 22 were re-bound in
+place, and 19 were added for the new branches (SHADOW, the cross-run view, each `_meets` direction, `_cross_forms`,
+the bare-descriptor rule and its operand table). The pin `expected_mutations.py` is now 203. `check-plan-code.py
+--mutate . --only scripts/strace_reads.py`: 203 killed, each by the case it names, **0 survivors**. The first run
+attributed 201 of them: the adjacent "labelled open's argument" case used an argument outside the staged roots, so
+it could not see a leak, and it was moved inside `docs/`.
+
+**Flagged for slice 4's measurement.** `_meets` reads "at, below or above" literally for reads and probes as well
+as listings, and an ancestor of the copy stands for the whole copy. Both can only add refusals (safe), but they may
+refuse broadly on real logs. Slice 4's first real-corpus run should count them.
+
+Also filed: backlog #622 (`UV_USE_IO_URING=0`, owned by slice 4).

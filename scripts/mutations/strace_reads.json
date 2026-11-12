@@ -323,8 +323,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "            out.append((\"/\" + \"/\".join(components(base) + components(text)), False, k, follow))",
-    "            out.append((\"/\" + \"/\".join(components(text)), False, k, follow))"
+    "            out.append((\"/\" + \"/\".join(components(base) + components(text)), mark, k, follow))",
+    "            out.append((\"/\" + \"/\".join(components(text)), mark, k, follow))"
    ]
   ],
   "expect": "a relative stat after chdir joins the new cwd"
@@ -334,11 +334,11 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        if opened and call.label is not None and call.label.startswith(\"/\"):\n            continue",
-    "        if False:\n            continue"
+    "        mark = SHADOW if opened and call.label is not None and call.label.startswith(\"/\") else False",
+    "        mark = False"
    ]
   ],
-  "expect": "a successful .. open is resolved by its label"
+  "expect": "adjacent: a labelled open's argument is named; its reads hold the label only"
  },
  {
   "name": "a return label is not a path",
@@ -367,7 +367,7 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "                if not from_label and \"..\" in p.split(\"/\"):",
+    "                if from_label is False and \"..\" in p.split(\"/\"):",
     "                if False:"
    ]
   ],
@@ -642,8 +642,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "            if \".git\" not in components(p):\n                kept.append(p)",
-    "            if True:\n                kept.append(p)"
+    "            if from_label is not SHADOW and \".git\" not in components(p):\n                kept.append(p)",
+    "            if from_label is not SHADOW:\n                kept.append(p)"
    ]
   ],
   "expect": "a .git path in a temp repo is dropped, the same process's working-tree read counted"
@@ -653,8 +653,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "if \".git\" not in components(p):",
-    "if \".git\" not in p:"
+    "and \".git\" not in components(p):",
+    "and \".git\" not in p:"
    ]
   ],
   "expect": ".github and .githooks are ordinary"
@@ -1324,52 +1324,52 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "    resolved, why = resolve_log(text, ctx)\n    if why:",
-    "    resolved, why = resolve_log(text, ctx)\n    if False:"
+    "    resolved, why = _resolve_text(text, ctx)\n    if why:",
+    "    resolved, why = _resolve_text(text, ctx)\n    if False:"
    ]
   ],
   "expect": "a slice-2 refusal reaches the record"
  },
  {
-  "name": "a socket refusal is ignored",
+  "name": "a quoted \"@name\" is taken for an abstract socket",
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        sockets, why = _socket_paths(c, ctx)\n        if why:",
-    "        sockets, why = _socket_paths(c, ctx)\n        if False:"
+    "        if at:                                         # `@\"name\"`: an abstract",
+    "        if at or raw.startswith(\"@\"):                  # `@\"name\"`: an abstract"
    ]
   ],
-  "expect": "adjacent: a relative socket path is refused"
+  "expect": "r1 X2: a QUOTED \"@run\" is a relative file name, not an abstract socket: refused"
  },
  {
   "name": "an unquoted sun_path is skipped",
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "    if len(found) != c.args.count(\"sun_path=\"):",
+    "    if len(found) != call.args.count(\"sun_path=\"):",
     "    if False:"
    ]
   ],
   "expect": "adjacent: a sun_path that is not a quoted string is refused"
  },
  {
-  "name": "an abstract socket is a path",
+  "name": "an abstract @\"name\" socket is a path",
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        if at or raw.startswith(\"@\"):",
-    "        if False:"
+    "        if at:                                         # `@\"name\"`",
+    "        if False:                                      # `@\"name\"`"
    ]
   ],
-  "expect": "adjacent: an abstract socket names no path"
+  "expect": "adjacent: an abstract socket spelled @\"name\" names no path"
  },
  {
-  "name": "the @\"name\" abstract spelling is a path",
+  "name": "the @\"name\" abstract spelling is not recognised",
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    " at or r",
-    " r"
+    "sun_path=(@?)\"((?:",
+    "sun_path=()\"((?:"
    ]
   ],
   "expect": "adjacent: an abstract socket spelled @\"name\" names no path"
@@ -1379,8 +1379,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        p = decode_path(raw)\n        if p is None:",
-    "        p = decode_path(raw)\n        if False:"
+    "        text = decode_path(raw)\n        if text is None:",
+    "        text = decode_path(raw)\n        if False:"
    ]
   ],
   "expect": "adjacent: a socket path with an undecodable escape is refused"
@@ -1390,8 +1390,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        if not p.startswith(\"/\"):\n            return [], \"unresolved path\"",
-    "        if False:\n            return [], \"unresolved path\""
+    "        if not text.startswith(\"/\"):                   # relative",
+    "        if False:                                      # relative"
    ]
   ],
   "expect": "adjacent: a relative socket path is refused"
@@ -1401,22 +1401,22 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        if \"..\" in components(p):\n            return [], \"unresolved ..\"",
-    "        if False:\n            return [], \"unresolved ..\""
+    "\"/\" + \"/\".join(components(text)), False, -1",
+    "os.path.normpath(text), False, -1"
    ]
   ],
   "expect": "adjacent: a socket path through .. is refused"
  },
  {
-  "name": "a socket in the real checkout is kept",
+  "name": "a socket path skips the link refusals (taken for a label)",
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        if under(norm(p), ctx.workspace):",
-    "        if False:"
+    "components(text)), False, -1, True))",
+    "components(text)), True, -1, True))"
    ]
   ],
-  "expect": "adjacent: a socket path in the real checkout is refused"
+  "expect": "r1 X3: a socket path through a pre-existing link into the copy is refused"
  },
  {
   "name": "a failed open is a read",
@@ -1489,30 +1489,30 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "            wrote |= set(_out_side(c, kept)) | set(sockets)",
-    "            wrote |= set(sockets)"
+    "            wrote |= set(_out_side(c, every))",
+    "            wrote |= set()"
    ]
   ],
   "expect": "a writing open is a write, kept in copy form"
  },
  {
-  "name": "a socket is not written",
+  "name": "a write takes the read view (.git dropped)",
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    " | set(sockets)",
-    ""
+    "_out_side(c, every))",
+    "_out_side(c, kept))"
    ]
   ],
-  "expect": "a socket path is named and, by connect, written"
+  "expect": "r1 C1 B: a .git path outside the copy a peer writes and the target reads refuses the target"
  },
  {
   "name": "a socket is not named",
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        paths = list(kept) + sockets",
-    "        paths = list(kept)"
+    "    for at, raw in found:\n        if at:",
+    "    for at, raw in []:\n        if at:"
    ]
   ],
   "expect": "a socket path is named and, by connect, written"
@@ -1610,7 +1610,7 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "wrote=frozenset(copy_norm(p, ctx) for p in wrote)",
+    "wrote=_cross_forms(wrote, ctx)",
     "wrote=frozenset(wrote)"
    ]
   ],
@@ -1621,8 +1621,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "all_named=frozenset(copy_norm(p, ctx) for p in named)",
-    "all_named=frozenset(named)"
+    "all_named=_cross_forms(every_named, ctx)",
+    "all_named=frozenset(every_named)"
    ]
   ],
   "expect": "adjacent: a read outside the staged roots is not a read, but is named"
@@ -1632,8 +1632,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "all_listed=frozenset(copy_norm(p, ctx) for p in listed)",
-    "all_listed=frozenset(listed)"
+    "all_listed=_cross_forms(every_listed, ctx))",
+    "all_listed=frozenset(every_listed))"
    ]
   ],
   "expect": "a staged root itself counts"
@@ -1892,26 +1892,26 @@
   "expect": "two targets each opening /dev/null O_RDWR do not refuse each other"
  },
  {
-  "name": "a named path meeting a write passes",
+  "name": "a write is compared by equality only",
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "                if rec.all_named & hot or any(",
-    "                if any("
-   ]
-  ],
-  "expect": "a read of a path another target wrote is refused"
- },
- {
-  "name": "a listed ancestor of a write passes",
-  "file": "scripts/strace_reads.py",
-  "edits": [
-   [
-    "                if rec.all_named & hot or any(_ancestor(d, p) for d in rec.all_listed for p in hot):",
+    "                if any(_meets(n, w) for n in rec.all_named for w in hot):",
     "                if rec.all_named & hot:"
    ]
   ],
-  "expect": "a listing of an ancestor of another target's write is refused"
+  "expect": "r1 X1: a rename of a directory refuses a peer reading below it"
+ },
+ {
+  "name": "a name ABOVE a write does not meet it",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    " or _ancestor(n, w)\n",
+    "\n"
+   ]
+  ],
+  "expect": "r1 X1: a write below a directory refuses a peer that probed the directory (above)"
  },
  {
   "name": "the named devices are not exempt",
@@ -2022,5 +2022,214 @@
    ]
   ],
   "expect": "every exempt device and /proc, /sys path is dropped"
+ },
+ {
+  "name": "a labelled open's SHADOW argument is dropped from the cross-run view",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "every.append(p)",
+    "every.append(p) if from_label is not SHADOW else None"
+   ]
+  ],
+  "expect": "r1 C1 S: a symlink a peer planted, opened by the target and labelled with its target, refuses the target"
+ },
+ {
+  "name": "a SHADOW argument enters the read view",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if from_label is not SHADOW and \".git\"",
+    "            if \".git\""
+   ]
+  ],
+  "expect": "adjacent: a labelled open's argument is named; its reads hold the label only"
+ },
+ {
+  "name": "a magic /proc path is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "magic = PROC.match(p) if from_label is False else None",
+    "magic = None"
+   ]
+  ],
+  "expect": "a /proc/*/fd path with no label is refused"
+ },
+ {
+  "name": "a socket path skips the /proc check (taken for a shadow)",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        out.append((\"/\" + \"/\".join(components(text)), False, -1, True))",
+    "        out.append((\"/\" + \"/\".join(components(text)), SHADOW, -1, True))"
+   ]
+  ],
+  "expect": "a socket path through a /proc magic link is refused"
+ },
+ {
+  "name": "all_named is built from the read view",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "_cross_forms(every_named",
+    "_cross_forms(named"
+   ]
+  ],
+  "expect": "r1 C1 I: a .git file a peer writes and the target reads refuses the target"
+ },
+ {
+  "name": "all_listed is built from the read view",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            every_listed |= set(every)",
+    "            every_listed |= set(kept)"
+   ]
+  ],
+  "expect": "adjacent: a .git listing is in all_listed and not in listed"
+ },
+ {
+  "name": "a name BELOW a write does not meet it",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "or _ancestor(w, n) or",
+    "or"
+   ]
+  ],
+  "expect": "r1 X1: a rename of a directory refuses a peer reading below it"
+ },
+ {
+  "name": "an exact name does not meet its write",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "return n == w or _ancestor",
+    "return _ancestor"
+   ]
+  ],
+  "expect": "a read of a path another target wrote is refused"
+ },
+ {
+  "name": "a name above the copy does not stand for the copy",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        if under(norm(ctx.copy), p):",
+    "        if False:"
+   ]
+  ],
+  "expect": "adjacent: a peer probing an ancestor of its own copy meets a write in the other copy"
+ },
+ {
+  "name": "a name below the copy stands for the whole copy",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "under(norm(ctx.copy), p):",
+    "under(p, norm(ctx.copy)):"
+   ]
+  ],
+  "expect": "adjacent: a read of a path no other target wrote is kept"
+ },
+ {
+  "name": "an undecorated descriptor is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        if _bare_descriptor(c):\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "r1 C2: write(5, ...) on an undecorated descriptor is refused"
+ },
+ {
+  "name": "a failed call's undecorated descriptor is refused",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if outcome(c.ret) is False:\n        return False\n    args = scan_args",
+    "    if False:\n        return False\n    args = scan_args"
+   ]
+  ],
+  "expect": "adjacent: a FAILED write on an undecorated descriptor is kept (it wrote nothing)"
+ },
+ {
+  "name": "sendfile's IN descriptor is not checked",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "(0, 1), \"copy_file_range\"",
+    "(0,), \"copy_file_range\""
+   ]
+  ],
+  "expect": "sendfile whose IN descriptor is undecorated is refused (its read is unknown)"
+ },
+ {
+  "name": "sendfile's OUT descriptor is not checked",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "\"sendfile\": (0, 1)",
+    "\"sendfile\": (1,)"
+   ]
+  ],
+  "expect": "r1 C2: sendfile(5, ...) whose OUT descriptor is undecorated is refused"
+ },
+ {
+  "name": "write's descriptor is not checked",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "FD_OPERANDS = {\"write\": (0,), ",
+    "FD_OPERANDS = {"
+   ]
+  ],
+  "expect": "r1 C2: write(5, ...) on an undecorated descriptor is refused"
+ },
+ {
+  "name": "mmap's descriptor is not checked",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "\"mmap\": (4,), ",
+    ""
+   ]
+  ],
+  "expect": "a shared writable mmap of an undecorated descriptor is refused"
+ },
+ {
+  "name": "read's descriptor is not checked",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "\"read\": (0,), ",
+    ""
+   ]
+  ],
+  "expect": "a read(5, ...) on an undecorated descriptor is refused (a read nobody can place)"
+ },
+ {
+  "name": "getdents64's descriptor is not checked",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "\"getdents64\": (0,), ",
+    ""
+   ]
+  ],
+  "expect": "a getdents64 on an undecorated descriptor is refused (a listing nobody can place)"
+ },
+ {
+  "name": "a bare descriptor is any operand text",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "BARE_FD = re.compile(r\"\\d+\")",
+    "BARE_FD = re.compile(r\".*\")"
+   ]
+  ],
+  "expect": "adjacent: a successful write on a decorated pipe is kept"
  }
 ]

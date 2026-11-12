@@ -2,7 +2,7 @@
 """Parse one `strace -f -yy` log into resolved calls and a per-run read record, or a named refusal (backlog #586,
 plan slices 2 and 3).
 
-    python3 scripts/strace_reads.py --self-test  # 250 cases
+    python3 scripts/strace_reads.py --self-test  # 282 cases
 
 A PURE LIBRARY, no caller yet: slice 4 records with it. Spec:
 `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §2, "Normalising strace's paths", and the
@@ -33,9 +33,9 @@ Slice 3 (backlog #590's default-deny allowlist) adds three more:
   * `record_from_log` — the version, then every call classified, then `resolve_log`, assembled into a `Record`:
     staged-root `reads`/`probed`/`listed`/`probed_stat_only`, and the whole-trace `wrote`/`all_named`/`all_listed`
     in `copy_norm` form (`copy:<rel>` under the copy). An AF_UNIX `sun_path` is a named path, and `connect` writes it.
-  * `merge_seeds` and `cross_run` — the two seeds must agree (`seed-dependent reads`); a target whose whole-trace
-    names meet another target's non-exempt write, or that listed an ancestor of one, is `cross-run flow`; and one
-    whose peer was refused is `peer trace incomplete`, because that peer's writes are unknown. ⚠ That last rule
+  * `merge_seeds` and `cross_run` — the two seeds must agree (`seed-dependent reads`); a target any of whose
+    whole-trace names is at, below or above another target's non-exempt write is `cross-run flow`; and one whose
+    peer was refused is `peer trace incomplete`, because that peer's writes are unknown. ⚠ That last rule
     refuses EVERY target while any one is refused (MEASURED: 4 targets call `io_uring_setup` on the runner).
 
 ⟳ ROUND 1 (PR #565), eleven fail-opens, two classes. (1) A return value and a flags operand are read as FIELDS:
@@ -46,6 +46,14 @@ read from. (2) Where the model is short of the kernel it REFUSES: `link`/`linkat
 beyond RENAME_NOREPLACE and `openat2` RESOLVE_IN_ROOT (`unmodelled flags`), every /proc magic link incl.
 `task/<tid>/`, and any cwd change whose entry-to-return window overlaps, in its filesystem context, another cwd
 change, a cwd-relative call or a copying clone (`cwd race`, `_cwd_overlap`).
+
+⟳ SLICE 3 ROUND 1, five fail-opens in the cross-run record, three classes (`docs/reviews/coordinator/
+586-slice3-r1-coordinator.md`). (1) The whole-trace sets were a view built for READ selection: they now come from
+`_resolve`'s every-path view, `.git` paths and a labelled open's own argument (`SHADOW`) included, and a socket path
+is resolved in `_named` like any other, so slice 2's link, repo-link, /proc and checkout refusals reach it. (2) A
+write is compared as a SUBTREE: `_meets` (at, below or above), and `_cross_forms` adds `copy:` for a name above the
+copy. (3) Only the unquoted `@"name"` is abstract, and a call that moves data through an undecorated descriptor
+(`FD_OPERANDS`) is `unresolved path`.
 
 ⟳ BACKLOG #602 (the Phase 6 review, finding P1), replacing plan Task 2.2's `external path removed` rule. The plan
 refused a removal "outside the copy that no earlier call in the log created"; that creation-provenance model was
@@ -404,6 +412,12 @@ RENAME_FLAGS = frozenset({"RENAME_NOREPLACE"})
 PROC = re.compile(r"^(?:/proc/[^/]+(?:/task/[^/]+)?/(?:fd/[^/]+|cwd|root|exe|map_files/[^/]+)"
                   r"|/dev/(?:fd/[^/]+|stdin|stdout|stderr))(?=/|$)")
 DIRFD = re.compile(r"^(?:(\d+)|AT_FDCWD)(?:<(.*)>)?$")
+# An AF_UNIX address. Only strace's UNQUOTED `@"name"` is an abstract socket; a quoted `"@name"` is a relative file
+# name (r1 X2). The path goes through `_named` like every other one, so slice 2's refusals reach it (r1 X3).
+SUN_PATH = re.compile(r'sun_path=(@?)"((?:[^"\\]|\\.)*)"')
+# The argument of a successful labelled open: the label stands for its READ, but the name the call looked up is
+# still a path it NAMED, kept for the cross-run check only (r1 C1 S: a peer's symlink is opened by its name).
+SHADOW = "shadow"
 DESC = re.compile(r"^\d+<(.*)>$")
 
 
@@ -491,7 +505,8 @@ def follows_final(name: str, k: int, flags: "tuple[str, ...] | None", text: str)
 
 def _named(call: Call, args: "list[str]", cwd: str):
     """The (path, from_label, operand index, follows its final component) tuples `call` names, the cwd labels it
-    carries, whether any path was resolved against the cwd, or a refusal."""
+    carries, whether any path was resolved against the cwd, or a refusal. `from_label` is True for a kernel label,
+    `SHADOW` for a successful labelled open's own argument, else False."""
     out, cwd_labels, path_dirfds, by_cwd = [], [], set(), False
     opened = call.name in OPENS and outcome(call.ret) is True
     flags, why = _flags(call, args)
@@ -528,17 +543,29 @@ def _named(call: Call, args: "list[str]", cwd: str):
             text = decode_path(q.group(1)) if q else None
             if text is None:
                 return None, None, False, "undecodable path"
-        if opened and call.label is not None and call.label.startswith("/"):
-            continue                                   # the kernel's label stands for this path (below)
+        # The kernel's label stands for this path's read (below); its argument is kept as a SHADOW name (r1 C1 S).
+        mark = SHADOW if opened and call.label is not None and call.label.startswith("/") else False
         follow = follows_final(call.name, k, flags, text)
         if text.startswith("/"):
             out.append((norm(text) if ".." not in components(text) else "/" + "/".join(components(text)),
-                        False, k, follow))
+                        mark, k, follow))
         elif base is None:
             return None, None, False, "unresolved path"
         else:
             by_cwd = by_cwd or at_cwd
-            out.append(("/" + "/".join(components(base) + components(text)), False, k, follow))
+            out.append(("/" + "/".join(components(base) + components(text)), mark, k, follow))
+    found = SUN_PATH.findall(call.args)
+    if len(found) != call.args.count("sun_path="):
+        return None, None, False, "undecodable path"
+    for at, raw in found:
+        if at:                                         # `@"name"`: an abstract socket names no file
+            continue
+        text = decode_path(raw)
+        if text is None:
+            return None, None, False, "undecodable path"
+        if not text.startswith("/"):                   # relative, `"@name"` included: refused, never modelled
+            return None, None, False, "unresolved path"
+        out.append(("/" + "/".join(components(text)), False, -1, True))
     for i, a in enumerate(args):
         if i in path_dirfds:
             continue
@@ -609,9 +636,9 @@ def _cwd_pass(calls, tree, ctx, root):
             if any(norm(lab) != cwd[k] for lab in cwd_labels):
                 return named, "cwd model disagrees"
             for p, from_label, _op, follow in paths:
-                if not from_label and ".." in p.split("/"):
+                if from_label is False and ".." in p.split("/"):
                     return named, "unresolved .."
-                magic = PROC.match(p) if not from_label else None
+                magic = PROC.match(p) if from_label is False else None
                 if magic and (follow or len(p) > magic.end()):
                     return named, "unresolved /proc path"
             named[i] = paths
@@ -684,7 +711,16 @@ def _runtime_links(calls, named) -> "tuple[set[str], str | None]":
 
 
 def resolve_calls(calls: "list[Call]", tree: dict, ctx: Ctx) -> "tuple[list[tuple[Call, list[str]]], str | None]":
-    """Each call with the absolute paths it names (`.git` paths dropped), or ([], the first refusal)."""
+    """Each call with the absolute paths it names for READ selection (`.git` paths and a labelled open's own argument
+    dropped), or ([], the first refusal)."""
+    out, why = _resolve(calls, tree, ctx)
+    return [(c, kept) for c, kept, _every in out], why
+
+
+def _resolve(calls, tree, ctx):
+    """`resolve_calls`, each call also carrying EVERY path it named, before the read-selection filter: the `.git`
+    paths and the `SHADOW` argument included. The cross-run sets are built from these (r1 C1; spec §2: "`wrote`,
+    and the cross-run check's reads, probes and listings, keep every path")."""
     by_line = sorted(calls, key=lambda c: c.seq)
     root = next((c.pid for c in by_line if c.pid not in tree), 0)
     named, why = _cwd_pass(calls, tree, ctx, root)
@@ -697,14 +733,14 @@ def resolve_calls(calls: "list[Call]", tree: dict, ctx: Ctx) -> "tuple[list[tupl
     out = []
     for i in sorted(named, key=lambda j: calls[j].seq):
         c = calls[i]
-        kept = []
+        kept, every = [], []
         for p, from_label, op, follow in named[i]:
-            if from_label:
+            if from_label is True:
                 if p.endswith(" (deleted)"):
                     p = p[:-len(" (deleted)")]
                     if under(p, ctx.copy):
                         return [], "deleted label"
-            else:
+            elif from_label is False:
                 comps = components(p)
                 last = len(comps) if follow else len(comps) - 1
                 if any("/" + "/".join(comps[:n]) in links for n in range(1, last + 1)):
@@ -721,14 +757,21 @@ def resolve_calls(calls: "list[Call]", tree: dict, ctx: Ctx) -> "tuple[list[tupl
             if (c.name in REMOVERS and op >= 0 and outcome(c.ret) is not False
                     and not any(under(p, r) for r in (ctx.copy, ctx.home, ctx.tmpdir))):
                 return [], "external path removed"
-            if ".git" not in components(p):
+            every.append(p)
+            if from_label is not SHADOW and ".git" not in components(p):
                 kept.append(p)
-        out.append((c, kept))
+        out.append((c, kept, every))
     return out, None
 
 
 def resolve_log(text: str, ctx: Ctx) -> "tuple[list[tuple[Call, list[str]]], str | None]":
     """`parse_log`, `process_tree` (the first line's pid is the root) and `resolve_calls` over `text`."""
+    out, why = _resolve_text(text, ctx)
+    return [(c, kept) for c, kept, _every in out], why
+
+
+def _resolve_text(text, ctx):
+    """`resolve_log` with `_resolve`'s every-path view."""
     calls, why = parse_log(text)
     if why:
         return [], why
@@ -737,7 +780,7 @@ def resolve_log(text: str, ctx: Ctx) -> "tuple[list[tuple[Call, list[str]]], str
     tree, why = process_tree(calls, min(calls, key=lambda c: c.seq).pid)
     if why:
         return [], why
-    return resolve_calls(calls, tree, ctx)
+    return _resolve(calls, tree, ctx)
 
 
 # ── slice 3: the measured allowlist, the classifier (Task 3.1; backlog #590) ─────────────────────────────
@@ -888,7 +931,17 @@ class Record:
 EXEMPT_WRITES = frozenset(("/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty"))
 # The peer traces whose `wrote` is known: a seed-dependent record keeps the union of both seeds' writes.
 WRITES_KNOWN = frozenset(("complete", "seed-dependent reads"))
-SUN_PATH = re.compile(r'sun_path=(@?)"((?:[^"\\]|\\.)*)"')
+# The DESCRIPTOR operands of every call that moves data or metadata through one. `strace -yy` labels every valid
+# descriptor, so a bare number on a call that did not fail names a file nobody can place: `unresolved path` (r1
+# C2). The coordinator's rule names writes; reads are listed too, because a missed read is the same fail-open, and
+# both sides of a transfer (an undecorated IN side is a read nobody can place). A `*at` call's directory operand is
+# `_named`'s. Not listed (no file content or name): `close`, `close_range`, `lseek`, `fcntl`, `fsync`, `fadvise64`,
+# `flock`, `dup*`, `epoll_*`, `poll`, `ioctl`.
+FD_OPERANDS = {"write": (0,), "writev": (0,), "ftruncate": (0,), "sendfile": (0, 1), "copy_file_range": (0, 2),
+               "splice": (0, 2), "sendto": (0,), "recvfrom": (0,), "connect": (0,), "getsockname": (0,),
+               "getpeername": (0,), "timerfd_settime": (0,), "mmap": (4,), "read": (0,), "pread64": (0,),
+               "getdents64": (0,), "fstat": (0,), "fstatfs": (0,)}
+BARE_FD = re.compile(r"\d+")
 
 
 def copy_norm(path: str, ctx: Ctx) -> str:
@@ -912,26 +965,23 @@ def _staged(path: str, ctx: Ctx) -> "str | None":
     return None
 
 
-def _socket_paths(c: Call, ctx: Ctx) -> "tuple[list[str], str | None]":
-    """The filesystem socket paths `c` names (an AF_UNIX `sun_path`; an abstract `@name` names none)."""
-    found = SUN_PATH.findall(c.args)
-    if len(found) != c.args.count("sun_path="):
-        return [], "undecodable path"
-    out = []
-    for at, raw in found:
-        if at or raw.startswith("@"):
-            continue
-        p = decode_path(raw)
-        if p is None:
-            return [], "undecodable path"
-        if not p.startswith("/"):
-            return [], "unresolved path"
-        if ".." in components(p):
-            return [], "unresolved .."
-        if under(norm(p), ctx.workspace):
-            return [], "real checkout"
-        out.append(norm(p))
-    return out, None
+def _bare_descriptor(c: Call) -> bool:
+    """Whether `c`, not known to have failed, has an undecorated descriptor operand (r1 C2)."""
+    if outcome(c.ret) is False:
+        return False
+    args = scan_args(c.args + ")")[0]
+    return any(i < len(args) and BARE_FD.fullmatch(args[i]) for i in FD_OPERANDS.get(c.name, ()))
+
+
+def _cross_forms(paths, ctx: Ctx) -> frozenset:
+    """`paths` in `copy_norm` form for the cross-run check, plus `copy:` when one is a strict ANCESTOR of the copy:
+    the copies stand for one shared tree, so a name above this copy is above every path in the other's (r1 X1)."""
+    out = set()
+    for p in paths:
+        out.add(copy_norm(p, ctx))
+        if under(norm(ctx.copy), p):                  # the copy itself already has the form `copy:`
+            out.add("copy:")
+    return frozenset(out)
 
 
 def _out_side(c: Call, kept: "list[str]") -> "list[str]":
@@ -959,18 +1009,18 @@ def record_from_log(text: str, ctx: Ctx, strace_version: str) -> Record:
         _cls, why = classify(c)
         if why:
             return Record(why)
-    resolved, why = resolve_log(text, ctx)
+    resolved, why = _resolve_text(text, ctx)
     if why:
         return Record(why)
     reads, listed, wrote, named, stat_named, other_named = set(), set(), set(), set(), set(), set()
-    for c, kept in resolved:
+    every_named, every_listed = set(), set()          # the cross-run view: every path NAMED (r1 C1)
+    for c, kept, every in resolved:
         klass, _ = classify(c)
-        sockets, why = _socket_paths(c, ctx)
-        if why:
-            return Record(why)
-        paths = list(kept) + sockets
-        named |= set(paths)
-        (stat_named if c.name in STAT_FAMILY else other_named).update(paths)
+        if _bare_descriptor(c):
+            return Record("unresolved path")
+        named |= set(kept)
+        every_named |= set(every)
+        (stat_named if c.name in STAT_FAMILY else other_named).update(kept)
         done = outcome(c.ret) is True
         if klass == "read":
             if (c.name in OPENS and c.label is not None) or (c.name in ("execve", "execveat") and done) \
@@ -978,16 +1028,16 @@ def record_from_log(text: str, ctx: Ctx, strace_version: str) -> Record:
                 reads |= set(kept)
         elif klass == "list":
             listed |= set(kept)
+            every_listed |= set(every)
         else:
-            wrote |= set(_out_side(c, kept)) | set(sockets)
+            wrote |= set(_out_side(c, every))
 
     def staged(ps):
         return frozenset(r for r in (_staged(p, ctx) for p in ps) if r is not None)
     return Record("complete", reads=staged(reads), probed=staged(named), listed=staged(listed),
                   probed_stat_only=staged(stat_named - other_named),
-                  wrote=frozenset(copy_norm(p, ctx) for p in wrote),
-                  all_named=frozenset(copy_norm(p, ctx) for p in named),
-                  all_listed=frozenset(copy_norm(p, ctx) for p in listed))
+                  wrote=_cross_forms(wrote, ctx), all_named=_cross_forms(every_named, ctx),
+                  all_listed=_cross_forms(every_listed, ctx))
 
 
 def merge_seeds(a: Record, b: Record) -> Record:
@@ -1012,6 +1062,12 @@ def _ancestor(d: str, p: str) -> bool:
     return p.startswith(d.rstrip("/") + "/")
 
 
+def _meets(n: str, w: str) -> bool:
+    """Whether a name `n` and a write `w` meet: `n` is at, below or ABOVE `w` (r1 X1: a rename or chmod of a directory
+    moves everything below it, and a write below a directory changes what a probe of it sees). Not modelled: refused."""
+    return n == w or _ancestor(w, n) or _ancestor(n, w)
+
+
 def cross_run(records: "dict[str, Record]") -> "dict[str, Record]":
     """Spec §2: a complete target T is refused (`cross-run flow`) when its whole-trace names meet another target's
     non-exempt write, or a directory it listed is an ancestor of one; and (`peer trace incomplete`) when another
@@ -1027,7 +1083,7 @@ def cross_run(records: "dict[str, Record]") -> "dict[str, Record]":
                     why = why or "peer trace incomplete"
                     continue
                 hot = {p for p in peer.wrote if not exempt_write(p)}
-                if rec.all_named & hot or any(_ancestor(d, p) for d in rec.all_listed for p in hot):
+                if any(_meets(n, w) for n in rec.all_named for w in hot):     # all_listed ⊆ all_named
                     why = "cross-run flow"
                     break
         out[t] = Record(why) if why else rec
@@ -1747,9 +1803,9 @@ def _self_test_body() -> int:
          (["/run/systemd/userdb/io.systemd.DynamicUser"],) * 2)
     case("adjacent: a relative socket path is refused",
          lambda: rec([L(("connect", "= N"), 1, ('sun_path="/run', 'sun_path="run'))]).trace, "unresolved path")
-    case("adjacent: an abstract socket names no path",
-         lambda: fields(rec([L(("connect", "= N"), 1, ('sun_path="/run', 'sun_path="@run'))]), "trace", "all_named"),
-         ("complete", []))
+    case("r1 X2: a QUOTED \"@run\" is a relative file name, not an abstract socket: refused",
+         lambda: rec([L(("connect", "= N"), 1, ('sun_path="/run/systemd/userdb/io.systemd.DynamicUser"',
+                                                'sun_path="@state"'))]).trace, "unresolved path")
     case("adjacent: an abstract socket spelled @\"name\" names no path",
          lambda: fields(rec([L(("connect", "= N"), 1, ('sun_path="/run', 'sun_path=@"run'))]), "trace", "all_named"),
          ("complete", []))
@@ -1872,6 +1928,115 @@ def _self_test_body() -> int:
          "strace version")
     case("a refused target keeps its sets for nothing: cross_run returns it unchanged",
          lambda: cross_run({"U": REF})["U"], REF)
+    # ── r1 fold: every reviewer input, plus the adjacent controls that must stay accepted ──
+    def mkdir(path, pid=1):
+        return L(("mkdir", "= N"), pid, ('"/tmp/fixture-tmp-3xec1v1d"', f'"{path}"'))
+
+    def chmod(path, mode="0644", pid=1):
+        return L(("chmod", "= N"), pid, ('"/tmp/fixture-tmp-3xec1v1d/tmp828gr67c/backup/live.md"', f'"{path}"'),
+                 ("0644", mode))
+
+    def connect(sun, pid=1):                     # `sun` is the operand's text after `sun_path=`, quotes and all
+        return L(("connect", "= N"), pid, ('sun_path="/run/systemd/userdb/io.systemd.DynamicUser"', f"sun_path={sun}"))
+    CU = with_(REC, copy="/tmp/cU", cwd0="/tmp/cU", home="/tmp/cU/.home")
+    CT = with_(REC, copy="/tmp/cT", cwd0="/tmp/cT", home="/tmp/cT/.home")
+
+    # Class 2 (X1): a write to D meets every name at, below or above D.
+    case("r1 X1: a rename of a directory refuses a peer reading below it",
+         lambda: flows([rename("/tmp/run/before", "/tmp/run/after")],
+                       [opened("/tmp/run/after/input", "/tmp/run/after/input")]), ("complete", "cross-run flow"))
+    case("r1 X1: a chmod of a directory refuses a peer probing below it",
+         lambda: flows([chmod("/tmp/run/shared", "0000")], [probe("/tmp/run/shared/input")]),
+         ("complete", "cross-run flow"))
+    case("r1 X1: a write below a directory refuses a peer that probed the directory (above)",
+         lambda: flows([writes("/tmp/run/d/x")], [probe("/tmp/run/d")]), ("complete", "cross-run flow"))
+    case("adjacent: a chmod of a directory whose name is a prefix of the peer's directory is kept",
+         lambda: flows([chmod("/tmp/run/shared", "0000")], [probe("/tmp/run/sharedx/input")]), ("complete", "complete"))
+    case("adjacent: a write in a sibling directory is kept",
+         lambda: flows([writes("/tmp/run/a/x")], [probe("/tmp/run/b/y")]), ("complete", "complete"))
+    case("adjacent: a peer probing an ancestor of its own copy meets a write in the other copy",
+         lambda: flows(in_copy([writes("/t/docs/x")], "/tmp/cU"), in_copy([probe("/tmp")], "/tmp/cT"), CU, CT),
+         ("complete", "cross-run flow"))
+    case("adjacent: a peer probing a path beside its copy does not",
+         lambda: flows(in_copy([writes("/t/docs/x")], "/tmp/cU"), in_copy([probe("/tmp/other")], "/tmp/cT"), CU, CT),
+         ("complete", "complete"))
+    case("adjacent: a write to an ancestor of the writer's copy meets a name in the other copy",
+         lambda: flows(in_copy([chmod("/tmp", "0777")], "/tmp/cU"), in_copy([probe("/t/docs/a")], "/tmp/cT"), CU, CT),
+         ("complete", "cross-run flow"))
+
+    # Class 1 (C1): the cross-run sets hold every path the trace NAMED, before the read-selection filter.
+    case("r1 C1 J: a .git directory made below a directory a peer listed refuses the peer",
+         lambda: flows([mkdir("/t/docs/sub/.git")], [lists("/t/docs/sub")]), ("complete", "cross-run flow"))
+    case("r1 C1 I: a .git file a peer writes and the target reads refuses the target",
+         lambda: flows([mkdir("/t/.git"), writes("/t/.git/HEAD")],
+                       [nfstatat("/t/.git", "0"), opened("/t/.git/HEAD", "/t/.git/HEAD")]), ("complete", "cross-run flow"))
+    case("r1 C1 B: a .git path outside the copy a peer writes and the target reads refuses the target",
+         lambda: flows([writes("/dev/shm/r/.git/hooks/pre-commit")],
+                       [opened("/dev/shm/r/.git/hooks/pre-commit", "/dev/shm/r/.git/hooks/pre-commit")]),
+         ("complete", "cross-run flow"))
+    case("r1 C1 S: a symlink a peer planted, opened by the target and labelled with its target, refuses the target",
+         lambda: flows(in_copy([symlink("/t/docs/b.md", "/t/.home/cur")], "/tmp/cU"),
+                       in_copy([opened("/t/.home/cur", "/t/docs/b.md")], "/tmp/cT"), CU, CT),
+         ("complete", "cross-run flow"))
+    case("r1 C1 S control: a regular file the peer wrote there is refused too",
+         lambda: flows(in_copy([writes("/t/.home/cur")], "/tmp/cU"),
+                       in_copy([opened("/t/.home/cur", "/t/.home/cur")], "/tmp/cT"), CU, CT),
+         ("complete", "cross-run flow"))
+    case("adjacent: a labelled open of another name the peer did not write is kept",
+         lambda: flows(in_copy([symlink("/t/docs/b.md", "/t/.home/cur")], "/tmp/cU"),
+                       in_copy([opened("/t/.home/other", "/t/docs/b.md")], "/tmp/cT"), CU, CT),
+         ("complete", "complete"))
+    case("adjacent: a .git path is named for the cross-run check and still in no staged set",
+         lambda: fields(rec([opened("/t/docs/.git/x", "/t/docs/.git/x")]), "reads", "probed", "all_named"),
+         ([], [], ["copy:docs/.git/x"]))
+    # The argument sits in a staged root, so an argument that leaks into the read view shows in `reads`.
+    case("adjacent: a labelled open's argument is named; its reads hold the label only",
+         lambda: fields(rec([opened("/t/docs/cur.md", "/t/docs/b.md")]), "reads", "probed", "all_named"),
+         (["docs/b.md"], ["docs/b.md"], ["copy:docs/b.md", "copy:docs/cur.md"]))
+
+    # Class 1 (X3): a socket path goes through slice 2's resolution and refusals like every other path.
+    os.symlink(base / "copy" / "docs", base / "alias")
+    case("r1 X3: a socket path through a pre-existing link into the copy is refused",
+         lambda: rec([connect(f'"{base}/alias/state"')], rctx).trace, "through a pre-existing link")
+    case("adjacent: the same socket named directly in the copy is kept, in copy form",
+         lambda: fields(rec([connect(f'"{copy}/docs/state"')], rctx), "trace", "wrote"), ("complete", ["copy:docs/state"]))
+    case("a socket path through a runtime link is refused",
+         lambda: rec([symlink("/t/docs", "/tmp/run/L"), connect('"/tmp/run/L/state"')]).trace, "through a runtime link")
+    case("a socket path under a repo link is refused",
+         lambda: rec([connect('"/t/docs/alias/s"')], with_(REC, repo_links=frozenset({"docs/alias"}))).trace,
+         "through a repo link")
+    case("a socket path through a /proc magic link is refused",
+         lambda: rec([connect('"/proc/self/cwd/s"')]).trace, "unresolved /proc path")
+
+    # Class 3 (C2): a write-class call on an undecorated descriptor names a path nobody can read.
+    case("r1 C2: write(5, ...) on an undecorated descriptor is refused",
+         lambda: rec([L(("write", "= N"), 1, ("3</tmp/y4w8ft5b>", "5"))]).trace, "unresolved path")
+    case("r1 C2: sendfile(5, ...) whose OUT descriptor is undecorated is refused",
+         lambda: rec([L(("sendfile", "= N"), 1, (f"4<{SF_OUT}>", "5"), (SF_IN, "/t/docs/in"))]).trace, "unresolved path")
+    case("sendfile whose IN descriptor is undecorated is refused (its read is unknown)",
+         lambda: rec([L(("sendfile", "= N"), 1, (SF_OUT, "/t/docs/out"), (f"3<{SF_IN}>", "5"))]).trace,
+         "unresolved path")
+    case("a shared writable mmap of an undecorated descriptor is refused",
+         lambda: rec([L(("mmap", "-yy label"), 1, ("PROT_READ, MAP_PRIVATE|MAP_DENYWRITE", "PROT_READ|PROT_WRITE, MAP_SHARED"),
+                        (f"3<{LIB}>", "5"))]).trace, "unresolved path")
+    case("adjacent: a FAILED write on an undecorated descriptor is kept (it wrote nothing)",
+         lambda: fields(rec([L(("write", "= -1 E"), 1, ("4<pipe:[55681]>", "5"))]), "trace", "wrote"), ("complete", []))
+    case("adjacent: a shared anonymous mmap (fd -1) is kept",
+         lambda: fields(rec([L(("mmap", "= N"), 1, ("MAP_PRIVATE|MAP_ANONYMOUS", "MAP_SHARED|MAP_ANONYMOUS"))]),
+                        "trace", "wrote"), ("complete", []))
+    case("a read(5, ...) on an undecorated descriptor is refused (a read nobody can place)",
+         lambda: rec([L(("read", "= N"), 1, (f"3<{LIB}>", "5"))]).trace, "unresolved path")
+    case("a getdents64 on an undecorated descriptor is refused (a listing nobody can place)",
+         lambda: rec([L(("getdents64", "-yy label"), 1, ("3</opt/hostedtoolcache/Python/3.12.16/x64/lib/python3.12>",
+                                                         "3"))]).trace, "unresolved path")
+    case("adjacent: a private read-only mmap of an undecorated descriptor is refused too",
+         lambda: rec([L(("mmap", "-yy label"), 1, (f"3<{LIB}>", "5"))]).trace, "unresolved path")
+    case("adjacent: a .git listing is in all_listed and not in listed",
+         lambda: fields(rec([lists("/t/docs/.git")]), "listed", "all_listed"), ([], ["copy:docs/.git"]))
+    case("adjacent: a successful write on a decorated pipe is kept",
+         lambda: fields(rec([L(("write", "= N"), 1, ("3</tmp/y4w8ft5b>", "3<pipe:[1]>"))]), "trace", "wrote"),
+         ("complete", []))
+
     case("copy_norm: the copy itself, a path under it, a sibling, a path outside",
          lambda: [copy_norm(p, REC) for p in ("/t", "/t/docs/a", "/tx/a", "/tmp/a")],
          ["copy:", "copy:docs/a", "/tx/a", "/tmp/a"])

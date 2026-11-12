@@ -20469,6 +20469,8 @@ minus FS_IOC_SET* and FICLONE; writing open flags, shared writable mmap), `measu
 equal the committed `2026-11-10-strace-on-runner.json`), `record_from_log` → `Record` (reads, probed, listed,
 probed_stat_only, wrote, all_named, all_listed; `sun_path` sockets; the sendfile/copy_file_range OUT side),
 `merge_seeds` (differing reads/probes/listings → `seed-dependent reads`, writes kept) and `cross_run` (`cross-run
-flow`, `peer trace incomplete`). Nine new REASONS. Self-test 250 cases; manifest 184 entries (85 + 99), each new one
-pre-verified red on its named case. Wired: expected_mutations 184, check-fixture-variation 20 keys (re-derived by
+flow`, `peer trace incomplete`). Nine new REASONS. Round 1 folded five fail-opens in three classes: a write meets a
+name at, below or above it (`_meets`, `_cross_forms`); the cross-run view keeps `.git` and a labelled open's
+argument (SHADOW); a quoted `"@x"` socket is a relative file and an undecorated descriptor is `unresolved path`
+(`FD_OPERANDS`). Self-test 282 cases; manifest 203 entries (85 + 99 + 19). Wired: expected_mutations 203, check-fixture-variation 20 keys (re-derived by
 `analyse()`), docstring count; check-plan-code's list and the ci.yml step already cover the file.
