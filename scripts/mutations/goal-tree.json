@@ -4753,7 +4753,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if a.page and a.out == DEFAULT_OUT and not os.environ.get(_SS.MAIN_CHECKOUT_ENV):\n",
+        "    if a.page and a.out.resolve() == DEFAULT_OUT.resolve() and not os.environ.get(_SS.MAIN_CHECKOUT_ENV):\n",
         "    if False:\n"
       ]
     ],
@@ -4779,12 +4779,25 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if a.page and a.out == DEFAULT_OUT and",
+        "if a.page and a.out.resolve() == DEFAULT_OUT.resolve() and",
         "if a.page and"
       ]
     ],
     "expect": [
       "main wrote the page"
+    ]
+  },
+  {
+    "name": "backlog #610 r1: the guard compares the path's spelling, not its destination",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "a.out.resolve() == DEFAULT_OUT.resolve()",
+        "a.out == DEFAULT_OUT"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610 r1 (X1/F2): the served page spelled another way (served.html) is refused too"
     ]
   }
 ]

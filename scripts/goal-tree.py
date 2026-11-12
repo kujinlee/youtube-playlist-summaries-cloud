@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """The goal tree, logged: why each thread of work exists, what state it is in, and how that changed.
 
-    python3 scripts/goal-tree.py --snapshot --page --print   # what /goal-tree runs
-    python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
-    python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
-                                                             # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 481 cases
+    python3 scripts/regen-pages.py --page goal-tree          # build the SERVED page (the Refresh button, /goal-tree)
+    python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
+    python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
+                                                             # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
+    python3 scripts/goal-tree.py --self-test                 # 483 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -2226,7 +2226,7 @@ def render_page(log: list[dict], built: str, live: dict | None = None, answers: 
              f'<time class="replayed">{html.escape(newest["at"])}</time>.</b> NEEDS YOU is '
              + (f'read live at <time>{html.escape(live["at"])}</time>' if live is not None
                 else 'from that snapshot too')
-             + '. To refresh: <code>python3 scripts/goal-tree.py --snapshot --page</code>, or the '
+             + '. To refresh: <code>python3 scripts/regen-pages.py --page goal-tree</code>, or the '
              'Refresh button.</p>',
              '<p class="lede">Each thread hangs under the owner request it serves. The relation '
              '(fix, blocker, bookkeeping, side) is declared by hand; the state is read from git and gh '
@@ -2462,7 +2462,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
     # (backlog #408), which alone sets REGEN_MAIN_CHECKOUT. A direct run here would overwrite it from WHATEVER tree
     # runs it: on 11-11 a bare run from a checkout 42 commits behind showed merged steps as CANNOT RUN. An explicit
     # --out (a test, a preview) is still allowed: it does not replace what the owner opens.
-    if a.page and a.out == DEFAULT_OUT and not os.environ.get(_SS.MAIN_CHECKOUT_ENV):
+    if a.page and a.out.resolve() == DEFAULT_OUT.resolve() and not os.environ.get(_SS.MAIN_CHECKOUT_ENV):
         print(f"CANNOT RUN — the served page {DEFAULT_OUT} is built only from a fresh origin/master: run "
               f"`python3 scripts/regen-pages.py --page goal-tree`. Nothing was logged or written. (A preview: "
               f"add --out <file>.)")
@@ -3845,7 +3845,7 @@ def _self_test_cases(*, outside: dict) -> int:
           "action(s) only you can take</h2>" in _pg), (True, True, True, True))
     case("⭐ Y7: the page says it REPLAYS a snapshot, when, and how to refresh it",
          ('This page replays the snapshot taken at <time class="replayed">t</time>' in _pg,
-          "python3 scripts/goal-tree.py --snapshot --page" in _pg,
+          "python3 scripts/regen-pages.py --page goal-tree" in _pg,
           _pg.index('class="replay"') < _pg.index('<section class="needs')), (True, True, True))
     case("Y7: a live NEEDS YOU read is named as live",
          "NEEDS YOU is read live at <time>t2</time>" in render_page([_nd], "t", dict(_ns, at="t2")), True)
@@ -5121,6 +5121,14 @@ def _self_test_cases(*, outside: dict) -> int:
                                now="2026-11-11 19:41")
             case("backlog #610: ...while an explicit --out (a preview) is still written",
                  (_rc610p, (r / "preview.html").is_file(), _served.exists()), (0, True, False))
+            (r / "alias").mkdir(exist_ok=True)
+            (r / "link.html").symlink_to(_served)
+            for _alias in (r / "alias" / ".." / "served.html", r / "link.html"):
+                _ba = io.StringIO()
+                with contextlib.redirect_stdout(_ba):
+                    _rca = main(["--page", "--out", str(_alias)], root=r, run=run_ok, now="2026-11-11 19:43")
+                case(f"⛔ backlog #610 r1 (X1/F2): the served page spelled another way ({_alias.name}) is refused too",
+                     (_rca, "regen-pages.py --page goal-tree" in _ba.getvalue(), _served.exists()), (2, True, False))
             os.environ[_SS.MAIN_CHECKOUT_ENV] = str(r / "main")
             with contextlib.redirect_stdout(io.StringIO()):
                 _rc610c = main(["--page"], root=r, run=run_ok, now="2026-11-11 19:42")

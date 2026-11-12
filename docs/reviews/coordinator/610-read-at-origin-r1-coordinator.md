@@ -34,7 +34,7 @@ from a different tree than the backlog), CL3/X4 (lossy decoding of `git show`), 
 X1 (a narrowed refspec leaves `origin/master` stale), X5 (the dashboard read was unpinned). `scripts/goal-tree.py`
 `collect` is back to `origin/master`'s.
 
-**The replacement** (redesign — the round count restarts, PR #553): `main` refuses `--page` to the default `--out`
+**The replacement** (a redesign, so the round count restarts under the rule PR #553 added; this branch is PR #561): `main` refuses `--page` to the default `--out`
 when `REGEN_MAIN_CHECKOUT` (set only by `regen-pages.py launch`) is absent — CANNOT RUN, rc 2, before anything is
 logged. Five cases, three mutations (each red against its named case, run by hand), pin 364 -> 367. A new round 1
 reviews it under review id `610-served-page`.
