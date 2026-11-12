@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 476 cases
+    python3 scripts/goal-tree.py --self-test                 # 486 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -4066,6 +4066,11 @@ def _self_test_cases(*, outside: dict) -> int:
         out = pathlib.Path(d) / "p.html"
         why = write_page(out, log2, "2026-10-28 07:00", tray_source=tray_src and str(tray_src))
         built = out.read_text()
+        _out610 = pathlib.Path(d) / "p610.html"
+        write_page(_out610, log2, "2026-10-28 07:00", tray_source=tray_src and str(tray_src),
+                   current={"read_at": "origin/master", "behind": 3})
+        case("⛔ backlog #610: write_page passes THIS run's lag through to the page (and only that run's)",
+             ("3 commit(s) behind" in _out610.read_text(), 'class="lag-line"' in built), (True, False))
         (pathlib.Path(d) / "a.json").write_text(json.dumps({"answers": [
             {"key": "goal:long-gone", "asked": "10-01 09:00", "q": "where did it go?", "a": "kept"}]}))
         (pathlib.Path(d) / "b.json").write_text("{")
