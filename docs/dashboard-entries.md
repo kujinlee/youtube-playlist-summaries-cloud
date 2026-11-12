@@ -20389,3 +20389,19 @@ on or inside `<svg>`/`<math>` is CANNOT RUN and both are `_P_SCOPE` stops; the d
 count" bound is corrected (F2, misnested end tags, NOT fixed); the p-closure sets and the formatting check's
 `hidden` are pinned. THRASHING armed in decision-scan → Phase 6 filed as backlog #616. Self-test 196 → 226; 48
 mutations, pin 46 → 94.
+
+## 2026-11-12
+The second build step of the faster mutation sweep (backlog #586) is written: a reader that turns a recorded
+`strace` log into the list of repository files a guard's suite touched, and refuses the log when it cannot be sure.
+Nothing calls it yet and nothing is skipped because of it. Unlike the plan, a file deleted outside the copy, the
+child's home folder and its temp folder is refused by WHERE it is, not by whether the same run created it (the
+Phase 6 review's backlog #602). The draft pull request is waiting for its review.
+<!--tech-->
+Branch `586-slice2`. New `scripts/strace_reads.py` (`parse_log`, `process_tree`, `resolve_log`, `Ctx` with `home`
+and `tmpdir`): unfinished/resumed halves joined per pid, a per-process cwd model (CLONE_FS shares, others copy at
+the clone's entry; a chdir while a non-CLONE_FS clone is in flight is a cwd race), runtime and pre-existing links,
+`/proc` and `..` without a label, deleted labels, the real checkout, repo links, renames in the copy, and #602's
+`external path removed` (stateless: a successful unlink*/rmdir/rename* side outside copy/HOME/TMPDIR). Self-test
+92 cases; manifest `scripts/mutations/strace_reads.json` 62 entries, 62 killed by their named cases. Wired into
+check-plan-code's list, expected_mutations (62), check-selftest-counts, check-fixture-variation (9 keys) and a ci.yml
+step. TMPDIR is not yet set in check-plan-code's child environment (slice 4; #600/#602).

@@ -314,6 +314,10 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #586 slice 2 (2026-11-12): the strace-log path resolver, pinned in the commit that creates it. DERIVED by
+    # running `analyse()` on the delivered source: 9 keys, every one varied by a case (none exempt).
+    "strace_reads.py": ("decode_path.s", "norm.path", "parse_log.text", "process_tree.calls", "process_tree.root",
+                        "rel_to_copy.ctx", "rel_to_copy.path", "resolve_log.ctx", "resolve_log.text"),
     # backlog #586 slice 1 (2026-11-10): the strace measurement instrument, which joined this population when its
     # review-round-1 fold gave it a `--self-test`. DERIVED by running `analyse()` on the delivered source: 8 keys,
     # every one reached through ONE forwarding helper (`_read`, `_merge`) and EXEMPT below naming the cases that vary it.

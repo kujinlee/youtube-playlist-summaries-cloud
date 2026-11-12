@@ -1,0 +1,684 @@
+[
+ {
+  "name": "an exiting pid's unfinished half is forgotten",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if int(ex.group(1)) in pending:    # its unfinished half can never resume",
+    "            if False:    # its unfinished half can never resume"
+   ]
+  ],
+  "expect": "an unfinished half whose pid exits is refused even when a resume follows"
+ },
+ {
+  "name": "an unknown line is skipped",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        if not m:\n            return calls, \"log did not parse\"\n        pid = int(m.group(1))",
+    "        if not m:\n            continue\n        pid = int(m.group(1))"
+   ]
+  ],
+  "expect": "an unknown line shape is refused, never skipped"
+ },
+ {
+  "name": "a resumed half of another call is joined",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if head is None or head[0] != m.group(2):",
+    "            if head is None:"
+   ]
+  ],
+  "expect": "a resumed half of ANOTHER call is refused"
+ },
+ {
+  "name": "an unfinished half left at the end of the log is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if pending:\n        return calls, \"unmatched unfinished/resumed\"\n    return calls, None",
+    "    return calls, None"
+   ]
+  ],
+  "expect": "an unfinished half with no resume is refused"
+ },
+ {
+  "name": "a second unfinished half on one pid overwrites the first",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                if pid in pending:\n                    return calls, \"unmatched unfinished/resumed\"",
+    "                if False:\n                    return calls, \"unmatched unfinished/resumed\""
+   ]
+  ],
+  "expect": "a second unfinished half on one pid is refused"
+ },
+ {
+  "name": "a signal line is refused",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        if SIGNAL.match(line):\n            continue",
+    "        if SIGNAL.match(line):\n            return calls, \"log did not parse\""
+   ]
+  ],
+  "expect": "a signal and an exit line give no call and no reason"
+ },
+ {
+  "name": "an unknown escape is kept as text",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        else:\n            return None\n    return os.fsdecode(bytes(out))",
+    "        else:\n            out += s[i:i + 2].encode()\n            i += 2\n    return os.fsdecode(bytes(out))"
+   ]
+  ],
+  "expect": "an unknown escape does not decode"
+ },
+ {
+  "name": "an octal escape decodes to the wrong byte",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            out.append(int(s[i + 1:j], 8) & 0xFF)",
+    "            out.append(0x3F)"
+   ]
+  ],
+  "expect": "an octal-escaped path decodes"
+ },
+ {
+  "name": "a hex escape decodes to the wrong byte",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            out.append(int(s[i + 2:i + 4], 16))",
+    "            out.append(0x3F)"
+   ]
+  ],
+  "expect": "a hex escape and a quote decode"
+ },
+ {
+  "name": "a return label keeps its device suffix",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    inner = DEVICE.sub(\"\", m.group(2))",
+    "    inner = m.group(2)"
+   ]
+  ],
+  "expect": "a return label's device suffix is dropped"
+ },
+ {
+  "name": "a descriptor argument keeps its device suffix",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    inner = DEVICE.sub(\"\", m.group(1))",
+    "    inner = m.group(1)"
+   ]
+  ],
+  "expect": "a descriptor argument's device suffix is dropped"
+ },
+ {
+  "name": "an undecodable return label is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if not ok:\n        return Call(pid, name, body[:close], ret, None, seq, -1)",
+    "    if False:\n        return Call(pid, name, body[:close], ret, None, seq, -1)"
+   ]
+  ],
+  "expect": "an undecodable return label is refused"
+ },
+ {
+  "name": "a vfork's flags do not parse",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if call.name in (\"fork\", \"vfork\"):\n        return ()",
+    "    if call.name in (\"fork\", \"vfork\"):\n        return None"
+   ]
+  ],
+  "expect": "a vfork child is placed"
+ },
+ {
+  "name": "an unparsed flag word is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if not m or not FLAG_LIST.fullmatch(m.group(1)):",
+    "    if not m:"
+   ]
+  ],
+  "expect": "a clone whose flags do not parse is refused"
+ },
+ {
+  "name": "a clone into a new namespace is modelled",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if any(f.startswith(\"CLONE_NEW\") for f in flags):\n        return None",
+    "    if False:\n        return None"
+   ]
+  ],
+  "expect": "a clone into a new namespace is refused"
+ },
+ {
+  "name": "a failed clone names a child",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        if c.name not in FORKS or c.ret.startswith(\"-1 \"):",
+    "        if c.name not in FORKS:"
+   ]
+  ],
+  "expect": "a failed clone creates no child"
+ },
+ {
+  "name": "a recycled pid is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        if pid in tree or pid == root:                 # a recycled pid is not modelled",
+    "        if pid == root:                 # a recycled pid is not modelled"
+   ]
+  ],
+  "expect": "a pid two clones returned is refused"
+ },
+ {
+  "name": "CLONE_FS is ignored",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        tree[pid] = (c.pid, c.seq, \"CLONE_FS\" in flags)",
+    "        tree[pid] = (c.pid, c.seq, False)"
+   ]
+  ],
+  "expect": "a child's lines before its parent's clone return are placed"
+ },
+ {
+  "name": "the clone's RETURN line is recorded, not its entry",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "(c.pid, c.seq, \"CLONE_FS\"",
+    "(c.pid, c.end, \"CLONE_FS\""
+   ]
+  ],
+  "expect": "a child's lines before its parent's clone return are placed"
+ },
+ {
+  "name": "a pid no clone created is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        if c.pid != root and c.pid not in tree:\n            return tree, \"unknown pid\"",
+    "        if False:\n            return tree, \"unknown pid\""
+   ]
+  ],
+  "expect": "a pid no clone created is refused"
+ },
+ {
+  "name": "every child shares its parent's cwd",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if shares:\n                pc = ctx_of(parent)",
+    "            if True:\n                pc = ctx_of(parent)"
+   ]
+  ],
+  "expect": "a fork child's relative stat uses the cwd copied at the clone's entry"
+ },
+ {
+  "name": "no child shares its parent's cwd",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if shares:\n",
+    "            if False:\n"
+   ]
+  ],
+  "expect": "a CLONE_FS thread's chdir moves another thread's relative stat"
+ },
+ {
+  "name": "a chdir does not move the cwd",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            cwd[k] = targets[0]",
+    "            pass"
+   ]
+  ],
+  "expect": "a relative stat after chdir joins the new cwd"
+ },
+ {
+  "name": "a failed chdir moves the cwd",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        if c.name in (\"chdir\", \"fchdir\") and not c.ret.startswith(\"-1 \"):",
+    "        if c.name in (\"chdir\", \"fchdir\"):"
+   ]
+  ],
+  "expect": "a failed chdir does not move the cwd"
+ },
+ {
+  "name": "a chdir while a fork is in flight is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if open_copies.get(k, 0) > 0:\n                return named, \"cwd race\"",
+    "            if False:\n                return named, \"cwd race\""
+   ]
+  ],
+  "expect": "a chdir in the shared context while a fork is in flight is refused"
+ },
+ {
+  "name": "a fork stays in flight after its return",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            open_copies[k] -= 1",
+    "            pass"
+   ]
+  ],
+  "expect": "a chdir after the fork returned is not a race"
+ },
+ {
+  "name": "an AT_FDCWD label is not compared with the model",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if any(norm(lab) != cwd[k] for lab in cwd_labels):",
+    "            if False:"
+   ]
+  ],
+  "expect": "an AT_FDCWD label that disagrees with the model is refused"
+ },
+ {
+  "name": "an undecorated descriptor joins the cwd",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            elif m.group(1) is not None:              # an undecorated descriptor: nothing names its directory\n                base = None",
+    "            elif m.group(1) is not None:              # an undecorated descriptor: nothing names its directory\n                pass"
+   ]
+  ],
+  "expect": "a relative path through an undecorated descriptor is refused"
+ },
+ {
+  "name": "a directory descriptor's label is ignored",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                base = lab\n",
+    "                pass\n"
+   ]
+  ],
+  "expect": "openat through a directory descriptor label"
+ },
+ {
+  "name": "a relative path is not joined with its directory",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            out.append((\"/\" + \"/\".join(components(base) + components(text)), False, k))",
+    "            out.append((\"/\" + \"/\".join(components(text)), False, k))"
+   ]
+  ],
+  "expect": "a relative stat after chdir joins the new cwd"
+ },
+ {
+  "name": "a successful open's argument is resolved instead of its label",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        if opened and call.label is not None and call.label.startswith(\"/\"):\n            continue",
+    "        if False:\n            continue"
+   ]
+  ],
+  "expect": "a successful .. open is resolved by its label"
+ },
+ {
+  "name": "a return label is not a path",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if call.label is not None and call.label.startswith(\"/\"):\n        out.append((call.label, True, -1))",
+    "    if False:\n        out.append((call.label, True, -1))"
+   ]
+  ],
+  "expect": "a successful .. open is resolved by its label"
+ },
+ {
+  "name": "a descriptor argument's label is not a path",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        if p is not None:\n            out.append((p, True, -1))",
+    "        if False:\n            out.append((p, True, -1))"
+   ]
+  ],
+  "expect": "a descriptor argument's device suffix is dropped"
+ },
+ {
+  "name": "a `..` is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                if not from_label and \"..\" in p.split(\"/\"):",
+    "                if False:"
+   ]
+  ],
+  "expect": "a failed .. probe is refused"
+ },
+ {
+  "name": "a /proc path is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                if not from_label and PROC.match(p):",
+    "                if False:"
+   ]
+  ],
+  "expect": "a /proc/*/fd path with no label is refused"
+ },
+ {
+  "name": "/proc/*/cwd is not a /proc path",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "PROC = re.compile(r\"^/proc/[^/]+/(?:fd/[^/]+|cwd|root)",
+    "PROC = re.compile(r\"^/proc/[^/]+/(?:fd/[^/]+|root)"
+   ]
+  ],
+  "expect": "a /proc/*/cwd path with no label is refused"
+ },
+ {
+  "name": "a . component is kept",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    return [p for p in path.split(\"/\") if p not in (\"\", \".\")]",
+    "    return [p for p in path.split(\"/\") if p != \"\"]"
+   ]
+  ],
+  "expect": "a . component is folded, not refused"
+ },
+ {
+  "name": "a path through a runtime link is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                if any(\"/\" + \"/\".join(comps[:n]) in links for n in range(1, last + 1)):",
+    "                if False:"
+   ]
+  ],
+  "expect": "a failed probe through a runtime link is refused"
+ },
+ {
+  "name": "every call follows its final component",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                last = len(comps) if _follows_final(c) else len(comps) - 1",
+    "                last = len(comps)"
+   ]
+  ],
+  "expect": "a non-following call on the runtime link itself is not"
+ },
+ {
+  "name": "no call follows its final component",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "if _follows_final(c) else len(comps) - 1",
+    "if False else len(comps) - 1"
+   ]
+  ],
+  "expect": "a following call on the runtime link itself is refused"
+ },
+ {
+  "name": "a renamed runtime link is forgotten",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        more = {dst + link[len(src):] for src, dst in moves for link in links if under(link, src)} - links",
+    "        more = set()"
+   ]
+  ],
+  "expect": "a runtime link a rename moved is still one"
+ },
+ {
+  "name": "only a rename OF the link moves it, not of a directory above it",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "for link in links if under(link, src)}",
+    "for link in links if link == src}"
+   ]
+  ],
+  "expect": "a runtime link under a renamed directory is still one"
+ },
+ {
+  "name": "a pre-existing link into the copy is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                if not under(p, ctx.copy) and under(os.path.realpath(p), copy_real):",
+    "                if False:"
+   ]
+  ],
+  "expect": "a failed L/<copy>/docs/x with L -> / is refused (a pre-existing link)"
+ },
+ {
+  "name": "a deleted label in the copy is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                    if under(p, ctx.copy):\n                        return [], \"deleted label\"",
+    "                    if False:\n                        return [], \"deleted label\""
+   ]
+  ],
+  "expect": "a deleted label in the copy is refused"
+ },
+ {
+  "name": "a deleted label outside is not stripped",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                    p = p[:-len(\" (deleted)\")]",
+    "                    pass"
+   ]
+  ],
+  "expect": "a deleted label outside the copy is stripped"
+ },
+ {
+  "name": "the real checkout is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if under(p, ctx.workspace):\n                return [], \"real checkout\"",
+    "            if False:\n                return [], \"real checkout\""
+   ]
+  ],
+  "expect": "a path under the workspace is the real checkout"
+ },
+ {
+  "name": "`under` is a string prefix",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    return path == r or path.startswith(r.rstrip(\"/\") + \"/\")",
+    "    return path.startswith(r)"
+   ]
+  ],
+  "expect": "a path beside the workspace is not"
+ },
+ {
+  "name": "a repo link is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if rel is not None and any(under(\"/\" + rel, \"/\" + link) for link in ctx.repo_links):",
+    "            if False:"
+   ]
+  ],
+  "expect": "a read under a repo link is refused"
+ },
+ {
+  "name": "a rename in the copy is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if c.name in RENAMES and op >= 0 and under(p, ctx.copy):",
+    "            if False:"
+   ]
+  ],
+  "expect": "a rename with a side in the copy is refused"
+ },
+ {
+  "name": "#602: an external removal is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if (c.name in REMOVERS and op",
+    "            if (False and op"
+   ]
+  ],
+  "expect": "#602: the same unlink with no earlier creation gives the same answer"
+ },
+ {
+  "name": "#602: a failed remover counts as a removal",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "op >= 0 and not c.ret.startswith(\"-1 \")\n",
+    "op >= 0\n"
+   ]
+  ],
+  "expect": "#602: a failed unlink is not a removal and is not refused"
+ },
+ {
+  "name": "#602: TMPDIR is not an allowed root",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "ctx.home, ctx.tmpdir))):",
+    "ctx.home))):"
+   ]
+  ],
+  "expect": "#602: an unlink under TMPDIR is not refused"
+ },
+ {
+  "name": "#602: the child HOME is not an allowed root",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "(ctx.copy, ctx.home, ctx",
+    "(ctx.copy, ctx"
+   ]
+  ],
+  "expect": "#602: an unlink under the child HOME is not refused"
+ },
+ {
+  "name": "#602: the copy is not an allowed root",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "for r in (ctx.copy, ",
+    "for r in ("
+   ]
+  ],
+  "expect": "#602: an unlink in the copy is not refused"
+ },
+ {
+  "name": "#602: an empty root holds everything",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if not root:\n        return False",
+    "    if not root:\n        return True"
+   ]
+  ],
+  "expect": "#602: a TMPDIR that is unset exempts nothing"
+ },
+ {
+  "name": "#602: a rename's destination is not named",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    \"rename\": ((None, 0), (None, 1)),",
+    "    \"rename\": ((None, 0),),"
+   ]
+  ],
+  "expect": "#602: a rename whose destination is outside is refused"
+ },
+ {
+  "name": "#602: rmdir is not a remover",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "\"rmdir\", \"rename\", \"renameat\", \"renameat2\")",
+    "\"rename\", \"renameat\", \"renameat2\")"
+   ]
+  ],
+  "expect": "#602: an rmdir outside is refused"
+ },
+ {
+  "name": "#602: unlinkat is not a remover",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "REMOVERS = (\"unlink\", \"unlinkat\", ",
+    "REMOVERS = (\"unlink\", "
+   ]
+  ],
+  "expect": "#602: an unlinkat through a dirfd outside is refused"
+ },
+ {
+  "name": "a .git path is kept",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if \".git\" not in components(p):\n                kept.append(p)",
+    "            if True:\n                kept.append(p)"
+   ]
+  ],
+  "expect": "a .git path in a temp repo is dropped, the same process's working-tree read counted"
+ },
+ {
+  "name": "`.git` matches as a substring",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "if \".git\" not in components(p):",
+    "if \".git\" not in p:"
+   ]
+  ],
+  "expect": ".github and .githooks are ordinary"
+ },
+ {
+  "name": "rel_to_copy: the copy itself is outside",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if p == c:\n        return \"\"",
+    "    if p == c:\n        return None"
+   ]
+  ],
+  "expect": "rel_to_copy: the copy itself"
+ },
+ {
+  "name": "rel_to_copy: a string prefix",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if p.startswith(c.rstrip(\"/\") + \"/\"):",
+    "    if p.startswith(c):"
+   ]
+  ],
+  "expect": "rel_to_copy: a sibling with the copy as prefix is outside"
+ }
+]
