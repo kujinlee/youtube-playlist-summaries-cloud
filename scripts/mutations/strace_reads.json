@@ -37,8 +37,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "    if pending:\n        return calls, \"unmatched unfinished/resumed\"\n    return calls, None",
-    "    return calls, None"
+    "    if pending:\n        return calls, \"unmatched unfinished/resumed\"\n    if text and",
+    "    if text and"
    ]
   ],
   "expect": "an unfinished half with no resume is refused"
@@ -169,7 +169,7 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        if c.name not in FORKS or c.ret.startswith(\"-1 \"):",
+    "        if c.name not in FORKS or outcome(c.ret) is False:",
     "        if c.name not in FORKS:"
    ]
   ],
@@ -257,8 +257,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        if c.name in (\"chdir\", \"fchdir\") and not c.ret.startswith(\"-1 \"):",
-    "        if c.name in (\"chdir\", \"fchdir\"):"
+    "            if done:\n                targets",
+    "            if True:\n                targets"
    ]
   ],
   "expect": "a failed chdir does not move the cwd"
@@ -268,8 +268,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "            if open_copies.get(k, 0) > 0:\n                return named, \"cwd race\"",
-    "            if False:\n                return named, \"cwd race\""
+    "or c.name in CWD_CHANGES or copies(c)}",
+    "or c.name in CWD_CHANGES}"
    ]
   ],
   "expect": "a chdir in the shared context while a fork is in flight is refused"
@@ -279,8 +279,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "            open_copies[k] -= 1",
-    "            pass"
+    "c.seq <= cw.end and cw.seq <= c.end and group",
+    "c.seq <= cw.end and group"
    ]
   ],
   "expect": "a chdir after the fork returned is not a race"
@@ -323,8 +323,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "            out.append((\"/\" + \"/\".join(components(base) + components(text)), False, k))",
-    "            out.append((\"/\" + \"/\".join(components(text)), False, k))"
+    "            out.append((\"/\" + \"/\".join(components(base) + components(text)), False, k, follow))",
+    "            out.append((\"/\" + \"/\".join(components(text)), False, k, follow))"
    ]
   ],
   "expect": "a relative stat after chdir joins the new cwd"
@@ -345,8 +345,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "    if call.label is not None and call.label.startswith(\"/\"):\n        out.append((call.label, True, -1))",
-    "    if False:\n        out.append((call.label, True, -1))"
+    "    if call.label is not None and call.label.startswith(\"/\"):\n        out.append((call.label, True, -1, False))",
+    "    if False:\n        out.append((call.label, True, -1, False))"
    ]
   ],
   "expect": "a successful .. open is resolved by its label"
@@ -356,8 +356,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "        if p is not None:\n            out.append((p, True, -1))",
-    "        if False:\n            out.append((p, True, -1))"
+    "        if p is not None:\n            out.append((p, True, -1, False))",
+    "        if False:\n            out.append((p, True, -1, False))"
    ]
   ],
   "expect": "a descriptor argument's device suffix is dropped"
@@ -378,7 +378,7 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "                if not from_label and PROC.match(p):",
+    "                if magic and (follow or len(p) > magic.end()):",
     "                if False:"
    ]
   ],
@@ -389,8 +389,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "PROC = re.compile(r\"^/proc/[^/]+/(?:fd/[^/]+|cwd|root)",
-    "PROC = re.compile(r\"^/proc/[^/]+/(?:fd/[^/]+|root)"
+    "(?:fd/[^/]+|cwd|root|exe|map_files/[^/]+)",
+    "(?:fd/[^/]+|root|exe|map_files/[^/]+)"
    ]
   ],
   "expect": "a /proc/*/cwd path with no label is refused"
@@ -422,7 +422,7 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "                last = len(comps) if _follows_final(c) else len(comps) - 1",
+    "                last = len(comps) if follow else len(comps) - 1",
     "                last = len(comps)"
    ]
   ],
@@ -433,7 +433,7 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "if _follows_final(c) else len(comps) - 1",
+    "if follow else len(comps) - 1",
     "if False else len(comps) - 1"
    ]
   ],
@@ -554,7 +554,7 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "op >= 0 and not c.ret.startswith(\"-1 \")\n",
+    "op >= 0 and outcome(c.ret) is not False\n",
     "op >= 0\n"
    ]
   ],
@@ -680,5 +680,225 @@
    ]
   ],
   "expect": "rel_to_copy: a sibling with the copy as prefix is outside"
+ },
+ {
+  "name": "a return that does not parse is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if not RET.match(ret):\n        return None\n",
+    ""
+   ]
+  ],
+  "expect": "X4: a return label missing its > is refused even on a whole line"
+ },
+ {
+  "name": "a last line with no newline is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if text and not text.endswith(\"\\n\"):",
+    "    if False:"
+   ]
+  ],
+  "expect": "adjacent: a log whose last line has no newline is refused (truncated)"
+ },
+ {
+  "name": "a = ? return reads as success",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if ret.startswith(\"?\") or ret.startswith(\"-\"):\n        return None",
+    "    if ret.startswith(\"-\"):\n        return None"
+   ]
+  ],
+  "expect": "adjacent: fchdir = ? is refused"
+ },
+ {
+  "name": "a cwd change with an unknown outcome is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if done is None:",
+    "            if False:"
+   ]
+  ],
+  "expect": "C6: chdir = ? ERESTARTSYS is not applied (an unknown cwd change is refused)"
+ },
+ {
+  "name": "a symlink = ? is not a runtime link",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "c.name in LINKS and i in named and named[i] and outcome(c.ret) is not False",
+    "c.name in LINKS and i in named and named[i] and outcome(c.ret) is True"
+   ]
+  ],
+  "expect": "adjacent: a symlink = ? ERESTARTSYS still counts as a runtime link"
+ },
+ {
+  "name": "the newfstatat flag is read from the wrong operand",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "FLAG_OPERAND = {\"newfstatat\": 3,",
+    "FLAG_OPERAND = {\"newfstatat\": 2,"
+   ]
+  ],
+  "expect": "adjacent: a real AT_SYMLINK_NOFOLLOW operand on the link itself is not refused"
+ },
+ {
+  "name": "an AT_SYMLINK_NOFOLLOW anywhere in the arguments is honoured",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "flags, text)\n        if text.startswith(\"/\"):",
+    "(\"AT_SYMLINK_NOFOLLOW\",) if \"AT_SYMLINK_NOFOLLOW\" in call.args else flags, text)\n        if text.startswith(\"/\"):"
+   ]
+  ],
+  "expect": "X1: a link NAMED AT_SYMLINK_NOFOLLOW is still followed by stat"
+ },
+ {
+  "name": "a flags operand that is not a name list is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if not FLAG_LIST.fullmatch(arg):\n        return None\n",
+    ""
+   ]
+  ],
+  "expect": "adjacent: a statx flag operand that does not parse is refused"
+ },
+ {
+  "name": "renameat2 accepts any flag",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    " and not set(toks) <= RENAME_FLAGS:",
+    " and False:"
+   ]
+  ],
+  "expect": "C4: renameat2 RENAME_EXCHANGE is refused"
+ },
+ {
+  "name": "openat2 RESOLVE_IN_ROOT is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "if toks is None or \"RESOLVE_IN_ROOT\" in toks:",
+    "if toks is None:"
+   ]
+  ],
+  "expect": "adjacent: openat2 RESOLVE_IN_ROOT is refused (an absolute path is under the dirfd)"
+ },
+ {
+  "name": "a trailing slash does not force a follow",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    if text and text.split(\"/\")[-1] in (\"\", \".\") and components(text):\n        return True\n",
+    ""
+   ]
+  ],
+  "expect": "C7: a trailing slash follows a final runtime link (readlink L/)"
+ },
+ {
+  "name": "a hard link's source is not followed",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        return k == 0",
+    "        return False"
+   ]
+  ],
+  "expect": "X2: link() of a runtime symlink is refused"
+ },
+ {
+  "name": "a followed final /proc magic link is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "(follow or len(p) > magic.end())",
+    "(len(p) > magic.end())"
+   ]
+  ],
+  "expect": "adjacent: following /proc/self/exe is refused"
+ },
+ {
+  "name": "a non-final /proc magic link is accepted when not followed",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                if magic and (follow or len(p) > magic.end()):\n                    return named",
+    "                if magic and follow:\n                    return named"
+   ]
+  ],
+  "expect": "adjacent: a readlink BELOW a /proc magic link is refused (non-final, though the call does not follow)"
+ },
+ {
+  "name": "/proc/<pid>/task/<tid>/ is not a magic-link directory",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "(?:/task/[^/]+)?/",
+    "/"
+   ]
+  ],
+  "expect": "C3: /proc/<pid>/task/<tid>/fd/N is refused"
+ },
+ {
+  "name": "a cwd-relative call does not race a chdir",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "    hits = {i for i, c in enumerate(calls) if i in by_cwd or c.name",
+    "    hits = {i for i, c in enumerate(calls) if c.name"
+   ]
+  ],
+  "expect": "X3: a relative call in flight across a CLONE_FS sibling's chdir is a cwd race"
+ },
+ {
+  "name": "two chdirs in flight do not race",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "if i in by_cwd or c.name in CWD_CHANGES or copies(c)}",
+    "if i in by_cwd or copies(c)}"
+   ]
+  ],
+  "expect": "adjacent: two CLONE_FS siblings' chdirs in flight together are a cwd race"
+ },
+ {
+  "name": "a race is not confined to one filesystem context",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    " and group(c.pid) == g:",
+    ":"
+   ]
+  ],
+  "expect": "adjacent: a relative call across a chdir in ANOTHER (forked) context is not a race"
+ },
+ {
+  "name": "an AT_FDCWD path is not resolved against the cwd",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            by_cwd = by_cwd or at_cwd",
+    "            by_cwd = by_cwd"
+   ]
+  ],
+  "expect": "adjacent: an AT_FDCWD-relative probe in flight across a sibling's chdir is a cwd race"
+ },
+ {
+  "name": "an absolute path counts as resolved against the cwd",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        follow = follows_final(call.name, k, flags, text)\n",
+    "        follow = follows_final(call.name, k, flags, text)\n        by_cwd = True\n"
+   ]
+  ],
+  "expect": "adjacent: an absolute call across a sibling's chdir is not a race"
  }
 ]

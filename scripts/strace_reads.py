@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Parse one `strace -f -yy` log into resolved calls, or a named refusal (backlog #586, plan slice 2).
 
-    python3 scripts/strace_reads.py --self-test  # 92 cases
+    python3 scripts/strace_reads.py --self-test  # 134 cases
 
 A PURE LIBRARY, no caller yet: slice 3 classifies the calls this module resolves, slice 4 records with it. Spec:
 `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §2, "Normalising strace's paths", and the
@@ -22,6 +22,15 @@ Three steps, each its own function:
     filesystem context; a child without `CLONE_FS` copies its parent's cwd at the clone's entry line). Then the
     refusals of spec §2, in the order `REASONS` lists them.
 
+⟳ ROUND 1 (PR #565), eleven fail-opens, two classes. (1) A return value and a flags operand are read as FIELDS:
+`RET` is the return grammar (a label that does not close, or a last line with no newline, is `log did not parse`);
+`outcome` decides success (`= ?` is unknown: a cwd change with an unknown outcome is `unknown return`, and every
+other caller reads it in the direction that over-reports); `FLAG_OPERAND` names the one operand an `AT_*` flag is
+read from. (2) Where the model is short of the kernel it REFUSES: `link`/`linkat` of a runtime link, `renameat2`
+beyond RENAME_NOREPLACE and `openat2` RESOLVE_IN_ROOT (`unmodelled flags`), every /proc magic link incl.
+`task/<tid>/`, and any cwd change whose entry-to-return window overlaps, in its filesystem context, another cwd
+change, a cwd-relative call or a copying clone (`cwd race`, `_cwd_overlap`).
+
 ⟳ BACKLOG #602 (the Phase 6 review, finding P1), replacing plan Task 2.2's `external path removed` rule. The plan
 refused a removal "outside the copy that no earlier call in the log created"; that creation-provenance model was
 broken three times in slice 1. This module decides by LOCATION, with no per-log creation state: a SUCCESSFUL
@@ -32,10 +41,11 @@ slice 4 sets `TMPDIR` in the recording environment (backlog #600/#602), a suite'
 every allowed root and refuse.
 
 ⚠ BOUNDS, stated rather than hidden:
-  * Links. A RUNTIME link is a path a successful `symlink`/`symlinkat` named, or that a successful `rename*`
-    moved one to, taken over the WHOLE log (not only earlier lines, so a use before creation refuses too). A path
-    any NON-FINAL component of which is one is refused; the final component is refused too unless the call does
-    not follow it (`NOFOLLOW_FINAL`, and `*at` calls passing `AT_SYMLINK_NOFOLLOW`). A link that appears without
+  * Links. A RUNTIME link is a path a `symlink`/`symlinkat` that did not fail named, or that a `rename*` that did
+    not fail moved one to, taken over the WHOLE log (not only earlier lines, so a use before creation refuses too).
+    A path any NON-FINAL component of which is one is refused; the final component is refused too unless the call
+    does not follow it (`NOFOLLOW_FINAL`, and the calls whose `FLAG_OPERAND` carries `AT_SYMLINK_NOFOLLOW`), and a
+    trailing `/` or `/.` always follows it. A `link`/`linkat` SOURCE is always checked as followed. A link that appears without
     a logged call (an `io_uring` submission: slice 3 refuses `io_uring_setup`) is invisible here. A PRE-EXISTING
     link is found only by `os.path.realpath` at parse time and only INTO the copy; a pre-existing link under
     `home` or `tmpdir` that points outside is not looked for, because both are FRESH per run (spec §2,
@@ -67,8 +77,10 @@ REASONS: tuple[str, ...] = (
     "unresolved path",
     "unresolved ..",
     "unresolved /proc path",
+    "unmodelled flags",
     "cwd model disagrees",
     "cwd race",
+    "unknown return",
     "through a runtime link",
     "through a pre-existing link",
     "deleted label",
@@ -116,6 +128,21 @@ UNFINISHED = "<unfinished ...>"
 SIGNAL = re.compile(r"^(\d+)\s+--- (?:SIG[A-Z0-9]+ \{.*\}|stopped by SIG[A-Z0-9]+) ---$")
 EXITED = re.compile(r"^(\d+)\s+\+\+\+ (?:exited with \d+|killed by SIG[A-Z0-9]+(?: \(core dumped\))?) \+\+\+$")
 RET_LABEL = re.compile(r"^(\d+)<(.*)>$")
+# A return value: `?` (the call did not complete: `= ? ERESTARTSYS ...`, `= ? <unavailable>`), or a number with an
+# optional `-yy` label that CLOSES, then optional text after a space. Anything else (`= 3</t/a` cut before its `>`)
+# is `log did not parse`: a return is read as FIELDS, never searched as text (round 1, X4).
+RET = re.compile(r"^(?:\?(?:\s.*)?|(?:-?\d+|0x[0-9a-fA-F]+)(?:<.*>)?(?:\s+\S.*)?)$")
+ERRNO = re.compile(r"^-1 E[A-Z0-9]+(?:\s|$)")
+
+
+def outcome(ret: str) -> "bool | None":
+    """True if the call succeeded, False if it failed (`-1 E...`), None if the log cannot say (`= ?`, a negative
+    return without an errno). Every caller decides what None means in the direction that never under-reports."""
+    if ERRNO.match(ret):
+        return False
+    if ret.startswith("?") or ret.startswith("-"):
+        return None
+    return True
 DEVICE = re.compile(r"<(?:char|block) \d+:\d+>$")
 FORKS = ("clone", "clone3", "fork", "vfork")
 OPENS = ("open", "openat", "openat2", "creat")
@@ -216,6 +243,8 @@ def _call(pid: int, name: str, body: str, seq: int, end: int) -> "Call | None":
     if not m:
         return None
     ret = m.group(1).strip()
+    if not RET.match(ret):
+        return None
     label, ok = ret_label(ret)
     if not ok:
         return Call(pid, name, body[:close], ret, None, seq, -1)
@@ -259,6 +288,8 @@ def parse_log(text: str) -> "tuple[list[Call], str | None]":
         calls.append(c)
     if pending:
         return calls, "unmatched unfinished/resumed"
+    if text and not text.endswith("\n"):          # the last line was cut: what it omitted cannot be known
+        return calls, "log did not parse"
     return calls, None
 
 
@@ -286,7 +317,7 @@ def process_tree(calls: "list[Call]", root: int) -> "tuple[dict[int, tuple[int, 
     value; then every call's pid must be the root or a child."""
     tree: dict = {}
     for c in calls:
-        if c.name not in FORKS or c.ret.startswith("-1 "):
+        if c.name not in FORKS or outcome(c.ret) is False:
             continue
         flags = clone_flags(c)
         child = re.match(r"(\d+)(?:$|\s)", c.ret)
@@ -325,10 +356,24 @@ PATH_ARGS: dict = {
 REMOVERS = ("unlink", "unlinkat", "rmdir", "rename", "renameat", "renameat2")
 RENAMES = ("rename", "renameat", "renameat2")
 LINKS = ("symlink", "symlinkat")
-# Calls that act on a final component that is a link rather than following it.
+HARDLINKS = ("link", "linkat")
+CWD_CHANGES = ("chdir", "fchdir")
+# Calls that act on a final component that is a link rather than following it. NOT `link`/`linkat`'s SOURCE: a hard
+# link of a symlink is a second symlink, and `AT_SYMLINK_FOLLOW` follows it, so either way the source is checked as
+# followed (round 1, X2/C5); their destination (operand 1) does not exist yet and is never followed.
 NOFOLLOW_FINAL = REMOVERS + LINKS + ("lstat", "readlink", "readlinkat", "lgetxattr", "llistxattr", "lsetxattr",
-                                     "lremovexattr", "lchown", "link", "linkat")
-PROC = re.compile(r"^/proc/[^/]+/(?:fd/[^/]+|cwd|root)(?:/|$)|^/dev/(?:fd/[^/]+|stdin|stdout|stderr)(?:/|$)")
+                                     "lremovexattr", "lchown")
+# name -> the index of its `AT_*` flags operand. The flag is read from THAT operand, parsed, never searched for in
+# the argument text, where a filename can spell it (round 1, X1).
+FLAG_OPERAND = {"newfstatat": 3, "statx": 2, "faccessat2": 3, "fchownat": 4, "utimensat": 3, "fchmodat2": 3,
+                "execveat": 4, "linkat": 4, "renameat2": 4}
+# The renameat2 flags this module models: none, or RENAME_NOREPLACE (a plain rename that may fail). RENAME_EXCHANGE
+# moves the destination to the source as well, RENAME_WHITEOUT leaves a device behind: refused (round 1, C4).
+RENAME_FLAGS = frozenset({"RENAME_NOREPLACE"})
+# A /proc or /dev MAGIC link: it resolves against another process's state, which a path cannot show. Refused when
+# anything is looked up below it, or when the call follows it; `readlink` of one reads only its text (round 1, C3).
+PROC = re.compile(r"^(?:/proc/[^/]+(?:/task/[^/]+)?/(?:fd/[^/]+|cwd|root|exe|map_files/[^/]+)"
+                  r"|/dev/(?:fd/[^/]+|stdin|stdout|stderr))(?=/|$)")
 DIRFD = re.compile(r"^(?:(\d+)|AT_FDCWD)(?:<(.*)>)?$")
 DESC = re.compile(r"^\d+<(.*)>$")
 
@@ -373,27 +418,74 @@ def _desc_path(arg: str) -> "tuple[str | None, bool]":
     return d, d is not None
 
 
+def flag_tokens(arg: str) -> "tuple[str, ...] | None":
+    """A flags operand as its names (`0` gives none), or None if it is not a `|`-list of names (`AT_X|0x100`)."""
+    if arg == "0":
+        return ()
+    if not FLAG_LIST.fullmatch(arg):
+        return None
+    return tuple(arg.split("|"))
+
+
+def _flags(call: Call, args: "list[str]") -> "tuple[tuple[str, ...] | None, str | None]":
+    """`call`'s parsed flags operand (None if it takes none) and a refusal for a flag this module does not model."""
+    if call.name == "openat2":                         # `{flags=..., resolve=...}`: RESOLVE_IN_ROOT moves `/`
+        if len(args) < 3 or not args[2].startswith("{"):
+            return None, "unmodelled flags"
+        m = re.search(r"(?:\{|,\s*)resolve=([^,}]*)", args[2])
+        toks = flag_tokens(m.group(1)) if m else ()
+        if toks is None or "RESOLVE_IN_ROOT" in toks:
+            return None, "unmodelled flags"
+        return None, None
+    if call.name not in FLAG_OPERAND:
+        return None, None
+    i = FLAG_OPERAND[call.name]
+    toks = flag_tokens(args[i]) if i < len(args) else None
+    if toks is None:
+        return None, "unmodelled flags"
+    if call.name == "renameat2" and not set(toks) <= RENAME_FLAGS:
+        return None, "unmodelled flags"
+    return toks, None
+
+
+def follows_final(name: str, k: int, flags: "tuple[str, ...] | None", text: str) -> bool:
+    """Whether the call named `name` follows the final component of its `k`-th path operand, spelled `text`. A
+    trailing `/` or `/.` makes the kernel follow it whatever the call (round 1, C7)."""
+    if text and text.split("/")[-1] in ("", ".") and components(text):
+        return True
+    if name in HARDLINKS:
+        return k == 0
+    if name in NOFOLLOW_FINAL:
+        return False
+    return "AT_SYMLINK_NOFOLLOW" not in (flags or ())
+
+
 def _named(call: Call, args: "list[str]", cwd: str):
-    """The (path, from_label, operand index) triples `call` names, the cwd labels it carries, or a refusal."""
-    out, cwd_labels, path_dirfds = [], [], set()
-    opened = call.name in OPENS and not call.ret.startswith("-1 ")
+    """The (path, from_label, operand index, follows its final component) tuples `call` names, the cwd labels it
+    carries, whether any path was resolved against the cwd, or a refusal."""
+    out, cwd_labels, path_dirfds, by_cwd = [], [], set(), False
+    opened = call.name in OPENS and outcome(call.ret) is True
+    flags, why = _flags(call, args)
+    if why:
+        return None, None, False, why
     for k, (fd_i, p_i) in enumerate(PATH_ARGS.get(call.name, ())):
         if p_i >= len(args):
-            return None, None, "undecodable path"
-        base = cwd
+            return None, None, False, "undecodable path"
+        base, at_cwd = cwd, True
         if fd_i is not None:
             if fd_i >= len(args):
-                return None, None, "undecodable path"
+                return None, None, False, "undecodable path"
             path_dirfds.add(fd_i)
             m = DIRFD.match(args[fd_i])
             if not m:
-                return None, None, "unresolved path"
+                return None, None, False, "unresolved path"
+            at_cwd = m.group(1) is None                # AT_FDCWD, labelled or not, is the cwd
             if m.group(2) is not None:
                 lab = decode_path(DEVICE.sub("", m.group(2)))
                 if lab is None:
-                    return None, None, "undecodable path"
+                    return None, None, False, "undecodable path"
                 if not lab.startswith("/"):
-                    return None, None, "unresolved path"
+                    return None, None, False, "unresolved path"
                 if m.group(1) is None:
                     cwd_labels.append(lab)
                 base = lab
@@ -406,27 +498,29 @@ def _named(call: Call, args: "list[str]", cwd: str):
             q = re.fullmatch(r'"((?:[^"\\]|\\.)*)"', raw)
             text = decode_path(q.group(1)) if q else None
             if text is None:
-                return None, None, "undecodable path"
+                return None, None, False, "undecodable path"
         if opened and call.label is not None and call.label.startswith("/"):
             continue                                   # the kernel's label stands for this path (below)
+        follow = follows_final(call.name, k, flags, text)
         if text.startswith("/"):
             out.append((norm(text) if ".." not in components(text) else "/" + "/".join(components(text)),
-                        False, k))
+                        False, k, follow))
         elif base is None:
-            return None, None, "unresolved path"
+            return None, None, False, "unresolved path"
         else:
-            out.append(("/" + "/".join(components(base) + components(text)), False, k))
+            by_cwd = by_cwd or at_cwd
+            out.append(("/" + "/".join(components(base) + components(text)), False, k, follow))
     for i, a in enumerate(args):
         if i in path_dirfds:
             continue
         p, ok = _desc_path(a)
         if not ok:
-            return None, None, "undecodable path"
+            return None, None, False, "undecodable path"
         if p is not None:
-            out.append((p, True, -1))
+            out.append((p, True, -1, False))
     if call.label is not None and call.label.startswith("/"):
-        out.append((call.label, True, -1))
-    return out, cwd_labels, None
+        out.append((call.label, True, -1, False))
+    return out, cwd_labels, by_cwd, None
 
 
 def _cwd_pass(calls, tree, ctx, root):
@@ -435,8 +529,8 @@ def _cwd_pass(calls, tree, ctx, root):
     cwd: list = []                 # context id -> cwd
     pid_ctx: dict = {}
     snapshot: dict = {}            # child pid -> its parent's cwd at the clone's entry line
-    open_copies: dict = {}         # context id -> clones in flight whose child COPIES the context
     named: dict = {}
+    by_cwd: set = set()            # calls that resolved a path against the cwd
 
     def ctx_of(pid):
         if pid in pid_ctx:
@@ -478,50 +572,76 @@ def _cwd_pass(calls, tree, ctx, root):
             scanned = scan_args(c.args + ")")
             if scanned is None:
                 return named, "log did not parse"
-            paths, cwd_labels, why = _named(c, scanned[0], cwd[k])
+            paths, cwd_labels, rel, why = _named(c, scanned[0], cwd[k])
             if why:
                 return named, why
             if any(norm(lab) != cwd[k] for lab in cwd_labels):
                 return named, "cwd model disagrees"
-            for p, from_label, _op in paths:
+            for p, from_label, _op, follow in paths:
                 if not from_label and ".." in p.split("/"):
                     return named, "unresolved .."
-                if not from_label and PROC.match(p):
+                magic = PROC.match(p) if not from_label else None
+                if magic and (follow or len(p) > magic.end()):
                     return named, "unresolved /proc path"
             named[i] = paths
+            if rel:
+                by_cwd.add(i)
             if child is not None:
                 snapshot[child] = cwd[k]
-                if not tree[child][2]:
-                    open_copies[k] = open_copies.get(k, 0) + 1
             continue
-        if child is not None and not tree[child][2]:
-            open_copies[k] -= 1
-        if c.name in ("chdir", "fchdir") and not c.ret.startswith("-1 "):
-            if open_copies.get(k, 0) > 0:
-                return named, "cwd race"
-            targets = [p for p, _l, _o in named[i]]
-            if len(targets) != 1:
-                return named, "unresolved path"
-            cwd[k] = targets[0]
-    return named, None
+        if c.name in CWD_CHANGES:
+            done = outcome(c.ret)
+            if done is None:                          # `= ?`: the kernel may or may not have moved it
+                return named, "unknown return"
+            if done:
+                targets = [p for p, _l, _o, _f in named[i]]
+                if len(targets) != 1:
+                    return named, "unresolved path"
+                cwd[k] = targets[0]
+    return named, _cwd_overlap(calls, tree, root, by_cwd)
+
+
+def _cwd_overlap(calls, tree, root, by_cwd) -> "str | None":
+    """`cwd race` if a cwd change's window (its entry line to its return line) overlaps, in the SAME filesystem
+    context, another cwd change, a call that resolved a path against the cwd, or a clone whose child copies the cwd
+    (round 1, X3/C1/C2). The kernel may apply a chdir at any moment in its window and resolve a path at any moment
+    in the other's, so the model's one order (a path at its entry, a chdir at its return) is not the only one.
+    Refused rather than modelled. Each pid's own calls never overlap one another."""
+    def group(pid):
+        while pid != root and pid in tree and tree[pid][2]:
+            pid = tree[pid][0]
+        return pid
+
+    def copies(c):
+        m = re.match(r"(\d+)(?:$|\s)", c.ret) if c.name in FORKS else None
+        child = int(m.group(1)) if m else None
+        return child in tree and tree[child][1] == c.seq and not tree[child][2]
+
+    changes = [i for i, c in enumerate(calls) if c.name in CWD_CHANGES and outcome(c.ret) is not False]
+    if not changes:
+        return None
+    hits = {i for i, c in enumerate(calls) if i in by_cwd or c.name in CWD_CHANGES or copies(c)}
+    for w in changes:
+        cw, g = calls[w], group(calls[w].pid)
+        for i in hits:
+            c = calls[i]
+            if i != w and c.seq <= cw.end and cw.seq <= c.end and group(c.pid) == g:
+                return "cwd race"
+    return None
 
 
 def _runtime_links(calls, named) -> "set[str]":
     """Every path a successful symlink named, closed over successful renames that moved it (or a directory above
     it). Over the WHOLE log: a use before the link's creation refuses too."""
     links = {named[i][0][0] for i, c in enumerate(calls)
-             if c.name in LINKS and i in named and named[i] and not c.ret.startswith("-1 ")}
+             if c.name in LINKS and i in named and named[i] and outcome(c.ret) is not False}
     moves = [(named[i][0][0], named[i][1][0]) for i, c in enumerate(calls)
-             if c.name in RENAMES and i in named and len(named[i]) >= 2 and not c.ret.startswith("-1 ")]
+             if c.name in RENAMES and i in named and len(named[i]) >= 2 and outcome(c.ret) is not False]
     while True:
         more = {dst + link[len(src):] for src, dst in moves for link in links if under(link, src)} - links
         if not more:
             return links
         links |= more
-
-
-def _follows_final(call: Call) -> bool:
-    return call.name not in NOFOLLOW_FINAL and "AT_SYMLINK_NOFOLLOW" not in call.args
 
 
 def resolve_calls(calls: "list[Call]", tree: dict, ctx: Ctx) -> "tuple[list[tuple[Call, list[str]]], str | None]":
@@ -537,7 +657,7 @@ def resolve_calls(calls: "list[Call]", tree: dict, ctx: Ctx) -> "tuple[list[tupl
     for i in sorted(named, key=lambda j: calls[j].seq):
         c = calls[i]
         kept = []
-        for p, from_label, op in named[i]:
+        for p, from_label, op, follow in named[i]:
             if from_label:
                 if p.endswith(" (deleted)"):
                     p = p[:-len(" (deleted)")]
@@ -545,7 +665,7 @@ def resolve_calls(calls: "list[Call]", tree: dict, ctx: Ctx) -> "tuple[list[tupl
                         return [], "deleted label"
             else:
                 comps = components(p)
-                last = len(comps) if _follows_final(c) else len(comps) - 1
+                last = len(comps) if follow else len(comps) - 1
                 if any("/" + "/".join(comps[:n]) in links for n in range(1, last + 1)):
                     return [], "through a runtime link"
                 if not under(p, ctx.copy) and under(os.path.realpath(p), copy_real):
@@ -557,7 +677,7 @@ def resolve_calls(calls: "list[Call]", tree: dict, ctx: Ctx) -> "tuple[list[tupl
                 return [], "through a repo link"
             if c.name in RENAMES and op >= 0 and under(p, ctx.copy):
                 return [], "rename in the copy"
-            if (c.name in REMOVERS and op >= 0 and not c.ret.startswith("-1 ")
+            if (c.name in REMOVERS and op >= 0 and outcome(c.ret) is not False
                     and not any(under(p, r) for r in (ctx.copy, ctx.home, ctx.tmpdir))):
                 return [], "external path removed"
             if ".git" not in components(p):
@@ -889,6 +1009,184 @@ def _self_test_body() -> int:
          lambda: run([unlink("/var/x", failed=True)]), [["/var/x"]])
     case("#602: a TMPDIR that is unset exempts nothing",
          lambda: why([unlink("/tmp/x")], with_(CTX, tmpdir="")), "external path removed")
+
+    # ── round 1 (PR #565): every reviewer input, each a fail-open on the slice-2 head, then the adjacent probes ──
+    ENOENT = "= -1 ENOENT (No such file or directory)"
+
+    def succeeds(line):                               # the same line, returning success
+        assert ENOENT in line, line
+        return line.replace(ENOENT, "= 0")
+
+    def link(src, dst, pid=1):
+        return L(("link", "= N"), pid, ('".git/objects/c1/tmp_obj_oaWls9"', f'"{src}"'),
+                 ('".git/objects/c1/b0730e0133447badcfd47fd144e254807b06e1"', f'"{dst}"'))
+
+    LK = ("/tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/late",
+          "/tmp/fixture-tmp-ui1umrq2/fixture-home-hslp48gl/.local/state/gh/device-id")
+
+    def linkat(src, dst, flags, pid=1, src_fd="AT_FDCWD</t>"):
+        return L(("linkat", "= N"), pid, (f'AT_FDCWD<{LK[0]}>, "{LK[1]}.tmp.985797497"', f'{src_fd}, "{src}"'),
+                 (f'AT_FDCWD<{LK[0]}>, "{LK[1]}", 0)', f'AT_FDCWD</t>, "{dst}", {flags})'))
+
+    RA = "4</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/killed/.remember/compaction/S-kill>"
+
+    def renameat2(src, dst, flags, pid=1):
+        return L(("renameat", "= N"), pid, ("renameat(", "renameat2("), (RA, "AT_FDCWD</t>"),
+                 ('".receipt.json.7078.fcef515a"', f'"{src}"'), ('"receipt.json")', f'"{dst}", {flags})'))
+
+    def mkdir(path, pid=1):
+        return L(("mkdir", "= N"), pid, ('"/tmp/fixture-tmp-3xec1v1d"', f'"{path}"'))
+
+    def readlink(path, pid=1):                   # a call that does NOT follow its final component
+        return L(("readlink", "= -1 E"), pid, ('"/opt/hostedtoolcache/Python/3.12.16/x64/bin/python3.12"', f'"{path}"'))
+
+    def nfstatat(path, flags, pid=1):            # newfstatat(AT_FDCWD</t>, path, buf, flags)
+        return L(("newfstatat", "= -1 E"), pid, ('"/opt/hostedtoolcache/Python/3.12.16/x64/lib/glibc-hwcaps/x86-64-v3/"',
+                                                  f'"{path}"'), ("0x7ffd417b73e0, 0)", f"0x7ffd417b73e0, {flags})"))
+
+    def statx(path, flags, pid=1):
+        return L(("statx", "= -1 E"), pid, ('"/t/scripts/node_modules/typescript"', f'"{path}"'),
+                 ("AT_STATX_SYNC_AS_STAT,", f"{flags},"))
+
+    def split_access(path, pid=1):               # a path-only call split across two lines
+        return [L(("access", "unfinished"), pid, ('"/etc/ld.so.preload"', f'"{path}"')),
+                L(("access", "resumed"), pid)]
+
+    def split_chdir(path, pid=1, name="chdir", ret=None):
+        head = L(("chdir", "unfinished"), pid, ('"/tmp/fixture-tmp-td74stb7/tmpk11z8pdq"', f'"{path}"'))
+        tail = L(("chdir", "resumed"), pid)
+        if name == "fchdir":
+            head = head.replace(f'chdir("{path}"', f"fchdir(3<{path}>")
+            tail = tail.replace("chdir", "fchdir")
+        if ret is not None:
+            tail = tail.replace("= 0", ret)
+        return [head, tail]
+
+    def fchdir(path, pid=1):
+        return L(("fstat", "-yy label"), pid, (f"fstat(3<{LIB}>, {{st_mode=S_IFREG|0777, st_size=29948232, ...}})",
+                                               f"fchdir(3<{path}>)"))
+
+    def oneline_fork(parent, child):            # a one-line clone WITHOUT CLONE_FS
+        return L(("clone", "unfinished"), parent, (" <unfinished ...>", f", child_tidptr=0x79c7f31b6e50) = {child}"))
+
+    RUN = with_(CTX, tmpdir="/tmp/run", repo_links=frozenset())
+
+    # Root class 1: text read where the meaning is structural.
+    case("X1: a link NAMED AT_SYMLINK_NOFOLLOW is still followed by stat",
+         lambda: why([symlink("/t/scripts/needed.py", "/tmp/run/AT_SYMLINK_NOFOLLOW"),
+                      succeeds(stat("/tmp/run/AT_SYMLINK_NOFOLLOW")), unlink("/tmp/run/AT_SYMLINK_NOFOLLOW")], RUN),
+         "through a runtime link")
+    trunc = opened("/tmp/run/preexisting-link/needed.py", "/t/scripts/needed.py", flags="O_RDONLY")[:-1]
+    case("X4: a log truncated inside a return label is refused", lambda: resolve_log(trunc, RUN)[1],
+         "log did not parse")
+    case("X4: a return label missing its > is refused even on a whole line",
+         lambda: why([trunc], RUN), "log did not parse")
+    case("C6: chdir = ? ERESTARTSYS is not applied (an unknown cwd change is refused)",
+         lambda: why([chdir("/t/sub").replace("= 0", "= ? ERESTARTSYS (To be restarted if SA_RESTART is set)"),
+                      stat("a.py")], RUN), "unknown return")
+    case("C6: a resumed chdir = ? <unavailable> is refused",
+         lambda: why(split_chdir("/t/sub", ret="= ? <unavailable>") + [stat("a.py")], RUN), "unknown return")
+    case("C7: a trailing slash follows a final runtime link (readlink L/)",
+         lambda: why([symlink("/t/sub", "/tmp/run/L"), readlink("/tmp/run/L/")], RUN), "through a runtime link")
+    # Root class 2: a model of the kernel that is short of it.
+    case("X2: link() of a runtime symlink is refused",
+         lambda: why([symlink("/t/scripts", "/tmp/run/L"), link("/tmp/run/L", "/tmp/run/M"),
+                      succeeds(stat("/tmp/run/M/needed.py")), unlink("/tmp/run/M"), unlink("/tmp/run/L")], RUN),
+         "through a runtime link")
+    case("C5a: link() of a runtime symlink to the copy root is refused",
+         lambda: why([symlink("/t", "/tmp/run/A"), link("/tmp/run/A", "/tmp/run/A2"),
+                      succeeds(stat("/tmp/run/A2/a.py"))], RUN), "through a runtime link")
+    case("C5b: linkat(AT_SYMLINK_FOLLOW) through a runtime link is refused",
+         lambda: why([symlink("/t/a.py", "/tmp/run/L"), linkat("/tmp/run/L", "/tmp/run/H", "AT_SYMLINK_FOLLOW"),
+                      opened("/tmp/run/H", "/tmp/run/H")], RUN), "through a runtime link")
+    case("C4: renameat2 RENAME_EXCHANGE is refused",
+         lambda: why([symlink("/t", "/tmp/run/A"), mkdir("/tmp/run/B"),
+                      renameat2("/tmp/run/B", "/tmp/run/A", "RENAME_EXCHANGE"), succeeds(stat("/tmp/run/B/a.py"))], RUN),
+         "unmodelled flags")
+    case("C3: /proc/self/task/<tid>/cwd is refused", lambda: why([succeeds(stat("/proc/self/task/1/cwd/a.py"))], RUN),
+         "unresolved /proc path")
+    case("C3: /proc/<pid>/task/<tid>/fd/N is refused", lambda: why([succeeds(stat("/proc/1/task/1/fd/3/a.py"))], RUN),
+         "unresolved /proc path")
+    case("X3: a relative call in flight across a CLONE_FS sibling's chdir is a cwd race",
+         lambda: why([thread(1, 2), split_access("needed.py", 1)[0], chdir("/t/scripts", 2),
+                      split_access("needed.py", 1)[1]], RUN), "cwd race")
+    case("C1: a chdir in flight across a CLONE_FS sibling's relative call is a cwd race",
+         lambda: why([thread(1, 2), split_chdir("/t/sub", 1)[0], stat("a.py", 2), split_chdir("/t/sub", 1)[1]], RUN),
+         "cwd race")
+    case("C2: a chdir in flight across a sibling's whole fork is a cwd race",
+         lambda: why([thread(1, 2), split_chdir("/t/sub", 1)[0], oneline_fork(2, 3), split_chdir("/t/sub", 1)[1],
+                      stat("a.py", 3)], RUN), "cwd race")
+
+    # Adjacent probes, the class rather than the sample.
+    case("adjacent: a newfstatat path NAMED AT_SYMLINK_NOFOLLOW with flags 0 follows",
+         lambda: why([symlink("/t", "/tmp/run/AT_SYMLINK_NOFOLLOW"), nfstatat("/tmp/run/AT_SYMLINK_NOFOLLOW", "0")],
+                     RUN), "through a runtime link")
+    case("adjacent: a real AT_SYMLINK_NOFOLLOW operand on the link itself is not refused",
+         lambda: run([symlink("/t", "/tmp/run/L"), nfstatat("/tmp/run/L", "AT_SYMLINK_NOFOLLOW")], RUN)[-1],
+         ["/tmp/run/L"])
+    case("adjacent: a statx flag operand that does not parse is refused",
+         lambda: why([statx("/tmp/run/x", "AT_STATX_SYNC_AS_STAT|0x100")], RUN), "unmodelled flags")
+    case("adjacent: renameat2 RENAME_WHITEOUT is refused",
+         lambda: why([renameat2("/tmp/run/B", "/tmp/run/A", "RENAME_WHITEOUT")], RUN), "unmodelled flags")
+    case("adjacent: a file NAMED RENAME_EXCHANGE renamed with RENAME_NOREPLACE is modelled (the move tracked)",
+         lambda: why([symlink("/t", "/tmp/run/RENAME_EXCHANGE"),
+                      renameat2("/tmp/run/RENAME_EXCHANGE", "/tmp/run/C", "RENAME_NOREPLACE"),
+                      succeeds(stat("/tmp/run/C/a.py"))], RUN), "through a runtime link")
+    case("adjacent: linkat(AT_EMPTY_PATH) of a descriptor ON a runtime link is refused",
+         lambda: why([symlink("/t", "/tmp/run/L"), linkat("", "/tmp/run/M", "AT_EMPTY_PATH",
+                                                          src_fd="3</tmp/run/L>")], RUN), "through a runtime link")
+    case("adjacent: linkat without a flag, of a runtime link, is refused",
+         lambda: why([symlink("/t", "/tmp/run/L"), linkat("/tmp/run/L", "/tmp/run/M", "0")], RUN),
+         "through a runtime link")
+    case("adjacent: a hard link of an ordinary temp file is not refused",
+         lambda: run([link("/tmp/run/f", "/tmp/run/g")], RUN), [["/tmp/run/f", "/tmp/run/g"]])
+    case("adjacent: an fchdir in flight across a sibling's relative call is a cwd race",
+         lambda: why([thread(1, 2), split_chdir("/t/sub", 1, name="fchdir")[0], stat("a.py", 2),
+                      split_chdir("/t/sub", 1, name="fchdir")[1]], RUN), "cwd race")
+    case("adjacent: two CLONE_FS siblings' chdirs in flight together are a cwd race",
+         lambda: why([thread(1, 2), split_chdir("/t/a", 1)[0], chdir("/t/b", 2), split_chdir("/t/a", 1)[1]], RUN),
+         "cwd race")
+    case("adjacent: an AT_FDCWD-relative probe in flight across a sibling's chdir is a cwd race",
+         lambda: why([thread(1, 2), split_chdir("/t/sub", 1)[0], probe("a.py", 2), split_chdir("/t/sub", 1)[1]], RUN),
+         "cwd race")
+    case("adjacent: an absolute call across a sibling's chdir is not a race",
+         lambda: run([thread(1, 2), split_chdir("/t/sub", 1)[0], stat("/t/a.py", 2), split_chdir("/t/sub", 1)[1]],
+                     RUN)[2], ["/t/a.py"])
+    case("adjacent: a relative call across a chdir in ANOTHER (forked) context is not a race",
+         lambda: run(fork(1, 2) + [split_chdir("/t/sub", 2)[0], stat("a.py", 1), split_chdir("/t/sub", 2)[1]],
+                     RUN)[2], ["/t/a.py"])
+    case("adjacent: fchdir = ? is refused",
+         lambda: why([fchdir("/t/sub").replace("= 0", "= ? ERESTARTSYS (To be restarted if SA_RESTART is set)")], RUN),
+         "unknown return")
+    case("adjacent: a successful fchdir moves the cwd",
+         lambda: run([fchdir("/t/sub"), stat("a.py")], RUN)[-1], ["/t/sub/a.py"])
+    case("adjacent: /proc/thread-self/cwd is refused", lambda: why([succeeds(stat("/proc/thread-self/cwd/a.py"))], RUN),
+         "unresolved /proc path")
+    case("adjacent: /proc/self/task/<tid>/root is refused",
+         lambda: why([succeeds(stat("/proc/self/task/7/root/t/a.py"))], RUN), "unresolved /proc path")
+    case("adjacent: following /proc/self/exe is refused", lambda: why([succeeds(stat("/proc/self/exe"))], RUN),
+         "unresolved /proc path")
+    case("adjacent: readlink of /proc/self/exe reads only the link text and is not refused",
+         lambda: run([readlink("/proc/self/exe")], RUN), [["/proc/self/exe"]])
+    case("adjacent: a readlink BELOW a /proc magic link is refused (non-final, though the call does not follow)",
+         lambda: why([readlink("/proc/self/cwd/L")], RUN), "unresolved /proc path")
+    case("adjacent: /proc/self/task/<tid>/status is an ordinary file",
+         lambda: run([succeeds(stat("/proc/self/task/1/status"))], RUN), [["/proc/self/task/1/status"]])
+    case("adjacent: a log whose last line has no newline is refused (truncated)",
+         lambda: resolve_log(stat("/tmp/run/x"), RUN)[1], "log did not parse")
+    case("adjacent: a descriptor return label cut before its > is refused",
+         lambda: why([L(("dup2", "-yy label"), 1)[:-1]], RUN), "log did not parse")
+    case("adjacent: a trailing /. follows a final runtime link",
+         lambda: why([symlink("/t/sub", "/tmp/run/L"), readlink("/tmp/run/L/.")], RUN), "through a runtime link")
+    case("adjacent: a remover with a trailing slash follows a final runtime link",
+         lambda: why([symlink("/t/sub", "/tmp/run/L"), unlink("/tmp/run/L/")], RUN), "through a runtime link")
+    case("adjacent: a symlink = ? ERESTARTSYS still counts as a runtime link",
+         lambda: why([symlink("/t", "/tmp/run/L").replace("= 0", "= ? ERESTARTSYS (To be restarted)"),
+                      stat("/tmp/run/L/a.py")], RUN), "through a runtime link")
+    case("adjacent: openat2 RESOLVE_IN_ROOT is refused (an absolute path is under the dirfd)",
+         lambda: why([L(("openat", "= -1 E"), 1, ("openat(", "openat2("), ("O_RDONLY|O_CLOEXEC)",
+                                                                           "{flags=O_RDONLY, resolve=RESOLVE_IN_ROOT}, 24)"))], RUN),
+         "unmodelled flags")
 
     case("rel_to_copy: the copy itself", lambda: rel_to_copy("/t", CTX), "")
     case("rel_to_copy: a path under it", lambda: rel_to_copy("/t/scripts/a.py", CTX), "scripts/a.py")
