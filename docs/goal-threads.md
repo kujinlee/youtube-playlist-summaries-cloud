@@ -59,7 +59,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-10-28 03:41 "I wonder if this kind of goal tree is logged every so often (periodically in time or when meaningful changes are made) and I can see the page to learn how your work has been progressed, the page can be ideal dashboard."
 - fix · backlog #381, PR #421 · a backlog row can carry several tags, read by one parser for both pages
 - fix · backlog #376, PR #422 · a composed page with the Theme button gets the text-style switcher too
-- fix · backlog #603 · explainer pages mark each owner decision with a yellow ✍ DECISION n of N tag and a top counter; an answered tag turns green · waits on backlog #610 (queued behind it)
+- fix · backlog #603 · explainer pages mark each owner decision with a yellow ✍ DECISION n of N tag and a top counter; an answered tag turns green
 - fix · backlog #384 · the suite's overarching design · waits on the owner's walkthrough of the design ideas
 - fix · backlog #363 · the goal tree as a logged, generated page
 - bookkeeping · PR #423 · backlog #384, backlog #385 and backlog #386 filed; the design-ideas section
@@ -96,7 +96,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #496 · NEEDS YOU flags a row whose status records a decision after its NEEDS-OWNER marker (DECIDED / answered by the owner, or a status head rewritten after the marker), with the remedy, and keeps it listed
 - fix · backlog #408, PR #536 · the generated pages are rebuilt from a fresh private tree, with a stated threat model, after a thrashing-armed architecture review
 - side · PR #558 · the goal-tree page gets the Ask tray, lifted by brief-compose like the backlog and dashboard pages; answers to its questions show as a collapsed marker, never interlaced with the tree
-- fix · backlog #610 · the goal tree reads the backlog and dashboard at origin/master, and says how far the checkout lags
+- fix · backlog #610 · only the fresh-clone build writes the served goal-tree page; a direct run is refused
 - fix · backlog #611 · an agenda step naming a backlog row is ticked by the row's status, not by the PR that filed it
 - fix · backlog #612 · a declared wait whose date has passed is flagged, not shown as a reason
 ## GOAL compaction-guards

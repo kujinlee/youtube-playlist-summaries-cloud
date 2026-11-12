@@ -20310,18 +20310,16 @@ uppercased). Self-test cases assert the spans, escaping, and the style rule; rev
 accepted); four mutations added, one re-bound (pin 360 -> 364).
 
 ## 2026-11-11
-The goal-tree page now shows merged work as soon as you press Refresh, even when your local checkout has not
-been pulled. It reads the backlog and dashboard from GitHub's master (fetched on each Refresh, under a second)
-instead of from the checkout, and a line under the header says how many commits your checkout is behind, with
-the command to catch up (`git pull --ff-only`). You asked for this at 18:54 and chose it at 18:57.
-Also: backlog #511 and backlog #603 showed under Owed with misleading waits; #511's "weekly reset (11-06)" wait
-was stale and is removed, #603 now says it is queued behind this work. Three rows filed from today: backlog #611
-(a step is ticked by the PR that only filed its row), backlog #612 (a wait with a passed date is not flagged),
-backlog #613 (the dashboard keeps no answers).
+My 18:54 explanation of the stale goal-tree page was wrong, and the fix you approved at 18:57 is replaced. The Refresh
+button already builds every page from GitHub's master (backlog #408). The stale page at 14:58 came from me running
+the goal-tree script directly after recording an agenda, which overwrote the page you open from an old checkout. At
+18:48 PR #559 and PR #560 were missing because the agenda did not name them, not because of the checkout. Now a direct
+run cannot overwrite your page; it says to use the Refresh path. Your local checkout lagging no longer matters to any
+page. Also: the stale waits on backlog #511 and #603 are fixed, and backlog #611, #612 and #613 are filed. Your
+survivor-retry idea is recorded on backlog #495: a survivor that dies on a re-run is reported FLAKY, never killed.
 <!--tech-->
-Branch `610-read-at-origin`. `scripts/goal-tree.py` `collect`: after a successful fetch, `docs/backlog.md` and
-`docs/dashboard-entries.md` are read with `git show origin/master:<file>` (cached per run), and the lag with
-`git rev-list --count HEAD..origin/master`; a failed fetch reads the checkout and says so. The lag is passed from
-THIS run to `render_page(current=…)`, never stored in the snapshot (an unchanged tree is not re-logged, so a
-stored count would be replayed stale). Joined to the lede so `parts.insert(6, …)` keeps its place. Nine cases,
-eight mutations (pin 364 -> 372).
+Branch `610-read-at-origin`. `scripts/goal-tree.py` `main`: `--page` to the default `--out` with no
+`REGEN_MAIN_CHECKOUT` (set only by `regen-pages.py launch` in its clone) is CANNOT RUN, rc 2, before anything is
+logged. Five cases (bare, `--page`, `--snapshot --page` refused; `--out` preview written; clone writes), three
+mutations, pin 364 -> 367. The first approach (`git show origin/master:` reads plus a lag line) was withdrawn after
+r1: both halves found it mixed trees outside the clone, and the Claude half found it a no-op inside it.

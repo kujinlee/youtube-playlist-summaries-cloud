@@ -4749,107 +4749,42 @@
     ]
   },
   {
-    "name": "backlog #610: the backlog/dashboard read goes back to the checkout's disk",
+    "name": "backlog #610: a direct run writes the served page again (the guard is gone)",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                rc, out = run([\"git\", \"show\", f\"origin/master:{rel}\"], root, 30)\n                if rc != 0:\n                    raise OSError(f\"git show origin/master:{rel} exited {rc}: {_SS.clean(out, 120)}\")\n                shared[rel] = out\n",
-        "                shared[rel] = (root / rel).read_text(encoding=\"utf-8\")\n"
+        "    if a.page and a.out == DEFAULT_OUT and not os.environ.get(_SS.MAIN_CHECKOUT_ENV):\n",
+        "    if False:\n"
       ]
     ],
     "expect": [
-      "⛔ backlog #610: the backlog is read at origin/master, NOT from the checkout (the fates are master's)"
+      "⛔ backlog #610: a direct run (bare) never writes the SERVED page, and logs nothing"
     ]
   },
   {
-    "name": "backlog #610: the fates reader reads the checkout, not the shared read",
+    "name": "backlog #610: the guard ignores the clone marker, so regen-pages' own build is refused",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        fates, fproblems = row_fates(read_shared(BACKLOG_REL))\n",
-        "        fates, fproblems = row_fates((root / BACKLOG_REL).read_text(encoding=\"utf-8\"))\n"
+        " and not os.environ.get(_SS.MAIN_CHECKOUT_ENV):\n",
+        ":\n"
       ]
     ],
     "expect": [
-      "⛔ backlog #610: the backlog is read at origin/master, NOT from the checkout (the fates are master's)"
+      "⛔ backlog #610: ...and inside regen-pages' clone (REGEN_MAIN_CHECKOUT set) the served page IS written"
     ]
   },
   {
-    "name": "backlog #610: a failed fetch still reads at origin/master (stale ref)",
+    "name": "backlog #610: the guard refuses an explicit --out preview too",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            if not fetched:\n                shared[rel]",
-        "            if False:\n                shared[rel]"
+        "if a.page and a.out == DEFAULT_OUT and",
+        "if a.page and"
       ]
     ],
     "expect": [
-      "⛔ backlog #610: a failed fetch reads the CHECKOUT, says so, and reads no lag"
-    ]
-  },
-  {
-    "name": "backlog #610: the shared read is not cached (two git shows)",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "        if rel not in shared:\n",
-        "        if True:\n"
-      ]
-    ],
-    "expect": [
-      "backlog #610: the backlog is fetched from git ONCE, though two readers parse it"
-    ]
-  },
-  {
-    "name": "backlog #610: the page drops the lag line",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "             + lag_line(current or {}),",
-        "             + \"\","
-      ]
-    ],
-    "expect": [
-      "backlog #610: the PAGE says where the shared files were read and the lag, above the replay line"
-    ]
-  },
-  {
-    "name": "backlog #610: main does not pass this run's lag to the page",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "write_page(a.out, log, now, live, current=current)",
-        "write_page(a.out, log, now, live)"
-      ]
-    ],
-    "expect": [
-      "⛔ backlog #610: --snapshot --page (the Refresh button) shows THIS run's lag; --page alone, a replay, claims none"
-    ]
-  },
-  {
-    "name": "backlog #610: the lag count is never read",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "            src[\"behind\"] = int(out.strip())\n",
-        "            pass\n"
-      ]
-    ],
-    "expect": [
-      "backlog #610: the lag is read with rev-list HEAD..origin/master, and recorded with where it read"
-    ]
-  },
-  {
-    "name": "backlog #610: a lag of 0 is said as a count, not up to date",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "(\"this checkout is up to date with it\" if behind == 0 else",
-        "(\"this checkout is up to date with it\" if behind == -1 else"
-      ]
-    ],
-    "expect": [
-      "backlog #610: the lag line says the count and how to catch up; 0 says up to date; unread says so"
+      "main wrote the page"
     ]
   }
 ]
