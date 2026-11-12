@@ -404,7 +404,9 @@ EXPECTED_MUTATIONS = {
     # a thread marker drawn inside its fold and the two hoisted draws dropped, and the ledger match by bare number twice.
     # Then 354 -> 355 (PR #558 round 2 fold): an unpaired surrogate in an answer no longer refused by name. Then
     # 355 -> 360 (round 3 fold): the UTF-8 check skipping each of its four fields, and an unreadable file raising.
-    "scripts/goal-tree.py": 360,
+    # Then 360 -> 364 (PR #559, agenda group titles + r1 fold): group labels as plain text, by indentation again,
+    # a title unescaped, the title's accent rule removed; one re-bound to `agenda_step_items`.
+    "scripts/goal-tree.py": 364,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

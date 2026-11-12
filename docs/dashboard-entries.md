@@ -20296,3 +20296,15 @@ reworded, because it read as an ongoing cost when it was a one-time experiment.
 <!--tech-->
 Spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §7 gains row Q7 (owner 15:58,
 signature line ✍ DECISION 1 of 1). The 11-10 strace entry's prose rewritten; its tech section unchanged.
+
+## 2026-11-11
+On the goal-tree page, the plan's groups under All steps ("done today", "now", "next today", "carried over") are
+now titles, each in the accent colour with space above, instead of plain lines mixed in with the steps. You
+asked for this at 14:52. The text printout is unchanged.
+Also filed backlog #610: the page showed PR #557 under the next steps because it reads the backlog from a
+checkout that was 42 commits behind; fast-forwarding fixed the page today, the row is for the cause.
+<!--tech-->
+Branch `agenda-group-titles`. `scripts/goal-tree.py`: `agenda_step_items` returns (kind, line), and `agenda_html`
+wraps each `when` item in `<span class="ag-when">` by KIND, never by indentation (accent colour, first letter
+uppercased). Self-test cases assert the spans, escaping, and the style rule; review rounds 1-2 (r2 Codex, 1 LOW
+accepted); four mutations added, one re-bound (pin 360 -> 364).

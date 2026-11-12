@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 474 cases
+    python3 scripts/goal-tree.py --self-test                 # 476 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1611,17 +1611,23 @@ def agenda_lines(snap: dict) -> list[str]:
     return out
 
 
-def agenda_step_lines(snap: dict, ag: dict) -> list[str]:
-    """PURE. The steps grouped by when, each ending with its goals — ONE source for the text and the page, so the page
-    never slices them out of the text by counting the lines above (r1 Codex L2)."""
+def agenda_step_items(snap: dict, ag: dict) -> list[tuple[str, str]]:
+    """PURE. The steps grouped by when, each ending with its goals, as (kind, line) with kind "when" or "step" — ONE
+    source for the text and the page, so the page never slices them out of the text by counting the lines above (r1
+    Codex L2), and never tells a group from a step by its indentation (PR #559 r1: a hand-edited log can indent a when)."""
     out, sg, when = [], step_goals(snap, ag), None
     for st in ag["steps"]:
         if st["when"] != when:
             when = st["when"]
-            out.append(when)
+            out.append(("when", when))
         goal = (" → " + ", ".join(sg.get(st["n"]) or ["no goal"])) if st["refs"] else ""
-        out.append(f"  {st['n']}. {step_glyph(st['state'])} {st['text']} — {st['detail']}{goal}")
+        out.append(("step", f"  {st['n']}. {step_glyph(st['state'])} {st['text']} — {st['detail']}{goal}"))
     return out
+
+
+def agenda_step_lines(snap: dict, ag: dict) -> list[str]:
+    """PURE. The text form of agenda_step_items."""
+    return [ln for _, ln in agenda_step_items(snap, ag)]
 
 
 def step_glyph(state: str) -> str:
@@ -2012,8 +2018,9 @@ def agenda_html(snap: dict) -> str:
         if kind_ == "stale":
             parts.append(f'<p class="warn">{_html_line(text, repo)}</p>')
     parts.append('<h3>All steps</h3>')
-    parts.append('<pre class="tree">' + "\n".join(_html_line(ln, repo) for ln in agenda_step_lines(snap, ag))
-                 + "</pre>")
+    parts.append('<pre class="tree">' + "\n".join(
+        f'<span class="ag-when">{_html_line(ln, repo)}</span>' if k == "when" else _html_line(ln, repo)
+        for k, ln in agenda_step_items(snap, ag)) + "</pre>")
     hist, bad = snap_history(snap)
     if bad:
         parts.append(f'<p class="warn">⚠ earlier agendas NOT READ — {html.escape(bad)}</p>')
@@ -2330,6 +2337,9 @@ section.agenda{background:var(--card);border:1px solid var(--rule);border-left:4
                border-radius:.5rem;padding:.4rem 1.1rem .7rem;margin:1rem 0}
 section.agenda.none{border-left-color:var(--rule)}
 section.agenda pre.tree{overflow-x:auto}
+section.agenda .ag-when{display:inline-block;margin-top:.55rem;font-family:var(--ui);font-size:.92rem;
+  font-weight:700;color:var(--accent)}
+section.agenda .ag-when::first-letter{text-transform:uppercase}
 section.agenda h2{margin:.5rem 0}
 section.agenda h3{font-size:.9rem;margin:.8rem 0 .3rem;color:var(--ink-soft)}
 .waits{color:var(--warn,#d29922);font-size:.85rem;white-space:nowrap}
@@ -4383,6 +4393,22 @@ def _self_test_cases(*, outside: dict) -> int:
         case("⭐ #509: the page lays out what is in flight and the focus as lists above the steps, and STALE once in the warning colour",
              (_h509.count('<p class="warn">⚠ STALE'), _h509.count("<h3>Running now</h3>"), _h509.count("<h3>Focus"),
               _h509.index("Running now") < _h509.index('<pre class="tree">')), (1, 1, 1, True))
+        _pre509 = _h509.split('<pre class="tree">', 1)[1].split("</pre>", 1)[0]
+        case("⭐ owner 11-11 14:52: each `## <when>` group in All steps is a TITLE (its own span, in the accent), and "
+             "no step line is one",
+             (re.findall(r'<span class="ag-when">([^<]*)</span>', _pre509), _pre509.count('class="ag-when"')),
+             (["today", "after"], 2))
+        # PR #559 r1: a title by KIND, never by indentation; with a change-if too; escaped; and the style rule exists
+        _ti = [agenda_html({"goals": [], "repo": "o/r", "agenda": dict(_a509, change_if=_ci, steps=[
+            dict(_a509["steps"][0], when=_w), dict(_a509["steps"][3], when="after")])})
+            for _ci, _w in ((None, " today"), ("x", "<b>t</b>"))]
+        case("⭐ PR #559 r1: an indented or HTML-bearing group is still a title, escaped, with or without a change-if; the "
+             "accent style rule for the title exists",
+             ([re.findall(r'<span class="ag-when">(.*?)</span>', _h.split('<pre class="tree">', 1)[1].split("</pre>")[0])
+               for _h in _ti],
+              "section.agenda .ag-when{" in CSS and "color:var(--accent)}" in CSS.split("section.agenda .ag-when{", 1)[1]
+              .split("\n", 2)[1]),
+             ([[" today", "after"], ["&lt;b&gt;t&lt;/b&gt;", "after"]], True))
         case("⭐ owner 11-05 14:37: the agenda heading is a short title in the goals' accent style; the plan's time, its AGE "
              "and its window sit on a meta line beneath (r4 X1: the page's age line)",
              ('<h2 class="agenda-h">Agenda</h2>' in _h509,
@@ -4567,7 +4593,7 @@ def _self_test_cases(*, outside: dict) -> int:
         for _snp in (dict(_sn509, repo="o/r"), {"agenda": dict(_a509, change_if="x"), "goals": [], "repo": "o/r"}):
             _hp = agenda_html(_snp)
             _pre = _hp.split('<pre class="tree">', 1)[1].split("</pre>", 1)[0]
-            _kept.append([ln.strip()[:2] for ln in _pre.split("\n")] == ["to", "1.", "2.", "3.", "af", "4.", "5."])
+            _kept.append([re.sub(r"<[^>]+>", "", ln).strip()[:2] for ln in _pre.split("\n")] == ["to", "1.", "2.", "3.", "af", "4.", "5."])
         case("⭐ #509 r1 Codex L2: the page keeps every when heading and every step, whatever lines sit above them",
              _kept, [True, True])
         case("no agenda derives to None, and the text output then shows no block",
@@ -4629,7 +4655,7 @@ def _self_test_cases(*, outside: dict) -> int:
         except Exception as _e:  # noqa: BLE001
             _ah0 = f"CRASH {type(_e).__name__}"
         case("an agenda with no change-if draws every step, none mistaken for the change-if line",
-             ("changes if" in _ah0, '<pre class="tree">g\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower()),
+             ("changes if" in _ah0, '<pre class="tree"><span class="ag-when">g</span>\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower()),
              (False, True, True, False))
         case("no agenda: the page SAYS none is recorded; a malformed one is said as a warning",
              ("AGENDA — none recorded" in agenda_html({"agenda": None}),
