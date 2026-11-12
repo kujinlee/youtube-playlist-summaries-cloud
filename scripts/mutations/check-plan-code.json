@@ -3823,5 +3823,122 @@
     "expect": [
       "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step"
     ]
+  },
+  {
+    "name": "#495: a survivor is never re-run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        rerun = run_mutant() if rc not in (1, 2) and not odd else None",
+        "        rerun = None"
+      ]
+    ],
+    "expect": [
+      "⭐ #495: a mutant that SURVIVES and is KILLED on its one re-run is FLAKY — the run is NOT red"
+    ]
+  },
+  {
+    "name": "#495: a mutant killed the first time is re-run anyway",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if rc not in (1, 2) and not odd else None",
+        "if rc != 2 and not odd else None"
+      ]
+    ],
+    "expect": [
+      "⭐ #495: a mutant KILLED the first time is never re-run — one run, killed and attributed"
+    ]
+  },
+  {
+    "name": "#495: a FLAKY mutant turns the run red",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            ev_muts[-1][\"flaky\"] = True",
+        "            ev_muts[-1][\"flaky\"] = True\n            ok = False"
+      ]
+    ],
+    "expect": [
+      "⭐ #495: a mutant that SURVIVES and is KILLED on its one re-run is FLAKY — the run is NOT red"
+    ]
+  },
+  {
+    "name": "#495: a FLAKY mutant is counted as killed (left out of the survivors)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            ev_survivors.append(name)\n            ev_muts[-1][\"flaky\"] = True",
+        "            ev_muts[-1][\"flaky\"] = True"
+      ]
+    ],
+    "expect": [
+      "...it is never counted as killed: it is among the survivors, its entry not caught, marked flaky"
+    ]
+  },
+  {
+    "name": "#495: a plain kill on the re-run is not read as FLAKY (only a NONDETERMINISTIC re-run is)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "(rerun[0] == 1 or rerun[2])",
+        "(rerun[2])"
+      ]
+    ],
+    "expect": [
+      "⭐ #495: a mutant that SURVIVES and is KILLED on its one re-run is FLAKY — the run is NOT red"
+    ]
+  },
+  {
+    "name": "#495: a NONDETERMINISTIC re-run is not read as FLAKY",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "rerun[0] == 1 or rerun[2]):",
+        "rerun[0] == 1):"
+      ]
+    ],
+    "expect": [
+      "...#495 under --seeds: a re-run that kills under ONE seed only (a NONDETERMINISTIC re-run) is FLAKY too"
+    ]
+  },
+  {
+    "name": "#495: a mutant that survives its re-run too is FLAKY, not SURVIVED",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not caught and rerun is not None and (",
+        "        if not caught and rerun is not None or not caught and ("
+      ]
+    ],
+    "expect": [
+      "⭐ #495: a mutant that SURVIVES its re-run too is SURVIVED and RED, exactly as before — after 2 runs"
+    ]
+  },
+  {
+    "name": "#495: the FLAKY report does not name the case that killed the re-run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            _by = [f for f in _rf if f in wants] or _rf",
+        "            _by = []"
+      ]
+    ],
+    "expect": [
+      "...and the report NAMES the mutation and the case that killed it on the re-run"
+    ]
+  },
+  {
+    "name": "#495: the tally does not name FLAKY mutants",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    _fl = [m[\"name\"] for m in verdict.mutations if m.get(\"flaky\")]",
+        "    _fl = []"
+      ]
+    ],
+    "expect": [
+      "⭐ #495: the tally NAMES a FLAKY mutant on an OK run, and never counts it as killed"
+    ]
   }
 ]

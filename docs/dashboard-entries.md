@@ -20308,3 +20308,19 @@ Branch `agenda-group-titles`. `scripts/goal-tree.py`: `agenda_step_items` return
 wraps each `when` item in `<span class="ag-when">` by KIND, never by indentation (accent colour, first letter
 uppercased). Self-test cases assert the spans, escaping, and the style rule; review rounds 1-2 (r2 Codex, 1 LOW
 accepted); four mutations added, one re-bound (pin 360 -> 364).
+
+## 2026-11-11
+Backlog #495 is fixed, along with your 19:25 request. A mutation check that survived only because a CI machine was slow
+used to turn unrelated pull requests red. The test case behind it now forces the order it checks for, so it no longer
+depends on timing. The mutation sweep also gives every survivor one more run. A survivor that dies on that second run
+is reported as FLAKY: the pull request stays green, and the mutation and the case are named in the output and on the
+summary line. It is never counted as killed, because a test that catches a defect only sometimes is still a weak test.
+A survivor that lives through both runs is SURVIVED and red, as before.
+<!--tech-->
+Branch `495-survivor-retry`. In `scripts/check-selftest-counts.py`, the `ordered()` fixture now holds job `a` until
+the collector has consumed `b`'s result, through a wrapped `concurrent.futures.as_completed`, so completion order is
+forced. The #487 mutant's `expect` also names that case. In `scripts/check-plan-code.py`, `run_mutations` re-runs a
+mutant once when it is neither caught nor NONDETERMINISTIC. If the re-run is caught or splits across seeds, the mutant
+is FLAKY: it stays in `ev_survivors`, `flaky: True` is set on its evidence entry, and `ok` is not cleared. `tally_line`
+names FLAKY mutants. Nine self-test cases were added (418 -> 427) and nine mutations (pin 301 -> 310), each verified
+red on a staged copy via the case it names.

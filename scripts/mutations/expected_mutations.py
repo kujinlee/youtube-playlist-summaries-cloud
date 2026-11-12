@@ -908,7 +908,11 @@ EXPECTED_MUTATIONS = {
     # `ci_deadline`'s limit (padding/zero accepted, the limit ignored, the variable renamed) and twelve for
     # `sweep_limit_pin` (its anchor, alias, ONE-timeout-minutes — R3-F1's first-key spelling — epoch, job-end,
     # comment and refusal clauses). Every added or re-bound entry hand-checked by the harness's rule.
-    "scripts/check-plan-code.py": 301,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-11 backlog #495 (owner 19:25): 301 -> 310 — nine for the SURVIVOR re-run: never re-run, a kill
+    # re-run anyway, FLAKY turns red, FLAKY counted as killed, a plain re-run kill or a NONDETERMINISTIC re-run not
+    # read as FLAKY, survive-twice read as FLAKY, the report and the tally not naming it. Each verified red on a
+    # temp copy via the case it names.
+    "scripts/check-plan-code.py": 310,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
