@@ -7,7 +7,7 @@
     python3 scripts/batch-ci.py status batch/20261106-1820          # green? on red, which PR to eject
     python3 scripts/batch-ci.py land batch/20261106-1820            # DRY RUN: the merge plan
     python3 scripts/batch-ci.py land batch/20261106-1820 --land     # squash-merge each member, in order
-    python3 scripts/batch-ci.py --self-test              # 168 cases
+    python3 scripts/batch-ci.py --self-test              # 169 cases
 
     0 = assembled / green / landed   1 = red, or a land STOPPED   2 = CANNOT RUN (treat as NOT RUN)
 
@@ -537,6 +537,10 @@ def failures(log: str, entries: list[tuple[str, dict]]) -> list[dict]:
     Each is owned by its manifest and its target. A red line naming neither reads as NOTHING here, so the caller
     bisects — it never guesses.
     """
+    # ⛔ backlog #495 r1 Codex 5: a `mutation FLAKY — <name>: ` line is GREEN (the harness re-ran a survivor and the
+    # re-run killed it), but it matches `— <name>: ` — so it was read as a failure, and attribution EJECTED the PR
+    # owning a green mutation beside the one owning the real red. Such lines are dropped before matching.
+    log = "\n".join(l for l in log.split("\n") if "mutation FLAKY — " not in l)
     found = []
     for mpath, e in entries:
         name, target = e.get("name"), e.get("file")
@@ -1510,6 +1514,14 @@ def _self_test_body() -> int:
     case("a SURVIVED line and a red CONTROL line are each read back to their manifest and target",
          guarded(lambda: [sorted(f["paths"]) for f in failures(_log, _entries)]),
          [["scripts/a.py", "scripts/mutations/a.json"], ["scripts/b.py", "scripts/mutations/b.json"]])
+    _fl_entries = [("scripts/mutations/a.json", {"name": "benign", "file": "scripts/a.py"}),
+                   ("scripts/mutations/b.json", {"name": "real", "file": "scripts/b.py"})]
+    _fl_log = ("mutation-sweep (2)\tstep\t2026Z mutation FLAKY — benign: SURVIVED its first run, then KILLED on its one "
+               "re-run in a fresh tree (by 'c'). Not red\n"
+               "mutation-sweep (2)\tstep\t2026Z mutation SURVIVED — real: the suite stayed green, so no\n")
+    case("⭐ #495 r1 Codex 5: a green FLAKY line is NOT a failure — only the SURVIVED owner is ejected, never both",
+         guarded(lambda: attribute(failures(_fl_log, _fl_entries), {1: {"scripts/a.py"}, 2: {"scripts/b.py"}})),
+         ("eject", [2]))
     case("a log naming no known mutation reads as NO failure (and so bisects)",
          guarded(lambda: failures("something else went red", _entries[1:])), [])
     _f = [{"what": "drop the guard", "paths": {"scripts/a.py", "scripts/mutations/a.json"}}]

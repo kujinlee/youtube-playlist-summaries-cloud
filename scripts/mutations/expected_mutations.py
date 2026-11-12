@@ -912,7 +912,13 @@ EXPECTED_MUTATIONS = {
     # re-run anyway, FLAKY turns red, FLAKY counted as killed, a plain re-run kill or a NONDETERMINISTIC re-run not
     # read as FLAKY, survive-twice read as FLAKY, the report and the tally not naming it. Each verified red on a
     # temp copy via the case it names.
-    "scripts/check-plan-code.py": 310,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-11 backlog #495 r1 fold: 310 -> 319. Seven of the nine re-bound to the moved re-run (it now runs only
+    # for a survivor, in a FRESH tree); two dropped ("a plain re-run kill / a NONDETERMINISTIC re-run not read as
+    # FLAKY" — a seed split is now refused). Eleven added: the re-run kill held to the first-run rule (`rerun_kill`:
+    # the named case missing, red twice, no summary line, no [FAIL] line, a seed split, a re-run that did not
+    # complete, every red case named instead of the expected one), the fresh tree (`rerun_from=d`), the budget
+    # before the re-run, the unmutated re-run, the unseeded re-run. Each verified red on a temp copy via its case.
+    "scripts/check-plan-code.py": 319,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -1583,7 +1589,10 @@ EXPECTED_MUTATIONS = {
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
     # only the first issue, or is handled as red; the marker dropped; a second red opens another issue; gh swallowed.
-    "scripts/sweep-red-alert.py": 6,
+    # ⟳ 6 -> 14, backlog #495 r1 (Codex 4 / Claude M1): a FLAKY mutant FILED — never filed, scanned before the red
+    # alert, a missing directory read as none, no comment on the open issue, a name listed twice, one shard read,
+    # the names left out of the body, and a write with nothing to file.
+    "scripts/sweep-red-alert.py": 14,
     # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
     # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which
@@ -1606,7 +1615,8 @@ EXPECTED_MUTATIONS = {
     # P6 over the whole result (1), the prefix cut applied to the result (1), the one-side skip (1), several merge
     # bases (1), and the worktree created inside plan's clean-up (R3-F3, 1). Not added: the review's "cut = n",
     # which is EQUIVALENT — dropping the shared heading relabels its section to None in all four lists alike.
-    "scripts/batch-ci.py": 95,
+    # ⟳ 2026-11-11 backlog #495 r1 Codex 5: 95 -> 96 — a FLAKY line read as a failing mutation (`failures`).
+    "scripts/batch-ci.py": 96,
     # backlog #397 (2026-11-09): the CI-duration tripwire, pinned in the commit that creates it. 25: the 25%
     # threshold in three directions, both sample minimums, the median, the zero baseline, the slowest-shard group
     # row and its derivation, the skipped-job filter, the idempotent append, the run picker, the week step, the

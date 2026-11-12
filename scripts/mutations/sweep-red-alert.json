@@ -80,5 +80,112 @@
       "a gh failure makes the step RED, never a silent pass (success)",
       "a gh failure makes the step RED, never a silent pass (failure)"
     ]
+  },
+  {
+    "name": "#495 r1: a FLAKY mutant is never filed",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    file_flaky(read_flaky(env.get(\"FLAKY_DIR\", \"\")), event, sha, run_url)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r1: a GREEN sweep with FLAKY mutants in two shards OPENS one sweep-flaky issue naming BOTH"
+    ]
+  },
+  {
+    "name": "#495 r1: the FLAKY scan runs BEFORE the red alert, so a missing FLAKY_DIR costs a red its issue",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    alert_red(sweep, event, sha, run_url)\n    # backlog #495 r1: AFTER the red alert, so a missing FLAKY_DIR (which raises) can never cost a red its issue.\n    file_flaky(read_flaky(env.get(\"FLAKY_DIR\", \"\")), event, sha, run_url)\n",
+        "    file_flaky(read_flaky(env.get(\"FLAKY_DIR\", \"\")), event, sha, run_url)\n    alert_red(sweep, event, sha, run_url)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r1: a MISSING FLAKY_DIR makes the step RED — and only AFTER the red sweep got its issue"
+    ]
+  },
+  {
+    "name": "#495 r1: a missing FLAKY_DIR reads as no FLAKY",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if not flaky_dir or not pathlib.Path(flaky_dir).is_dir():\n        raise",
+        "    if not flaky_dir or not pathlib.Path(flaky_dir).is_dir():\n        return []\n        raise"
+      ]
+    ],
+    "expect": [
+      "...an unset FLAKY_DIR RAISES — a scan that did not run is never a scan that found nothing",
+      "⭐ #495 r1: a MISSING FLAKY_DIR makes the step RED — and only AFTER the red sweep got its issue"
+    ]
+  },
+  {
+    "name": "#495 r1: every FLAKY sweep opens a new sweep-flaky issue",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        gh(\"issue\", \"comment\", str(flaky_open[0][\"number\"]), \"--body\", body)\n        print(f\"commented on the open {FLAKY_LABEL}",
+        "        gh(\"issue\", \"create\", \"--label\", FLAKY_LABEL, \"--body\", body, \"--title\", \"x\")\n        print(f\"commented on the open {FLAKY_LABEL}"
+      ]
+    ],
+    "expect": [
+      "...a second one COMMENTS on the open sweep-flaky issue, naming its own, and opens no second issue"
+    ]
+  },
+  {
+    "name": "#495 r1: a FLAKY name seen twice is listed twice",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            if name and name not in names:",
+        "            if name:"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r1: `flaky_names` reads each FLAKY line's name (log prefix allowed), once each, never a SURVIVED one"
+    ]
+  },
+  {
+    "name": "#495 r1: only the first shard's FLAKY file is read",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "sorted(pathlib.Path(flaky_dir).glob(\"*.txt\"))",
+        "sorted(pathlib.Path(flaky_dir).glob(\"*.txt\"))[:1]"
+      ]
+    ],
+    "expect": [
+      "...`read_flaky` reads EVERY shard file in the directory (each name once), and only `*.txt`",
+      "⭐ #495 r1: a GREEN sweep with FLAKY mutants in two shards OPENS one sweep-flaky issue naming BOTH"
+    ]
+  },
+  {
+    "name": "#495 r1: the FLAKY issue does not name the mutations",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            + \"\".join(f\"- {n}\\n\" for n in names))",
+        "            + \"\")"
+      ]
+    ],
+    "expect": [
+      "...and `flaky_body` NAMES every FLAKY mutation, with its own event, SHA and run",
+      "⭐ #495 r1: a GREEN sweep with FLAKY mutants in two shards OPENS one sweep-flaky issue naming BOTH"
+    ]
+  },
+  {
+    "name": "#495 r1: a sweep with no FLAKY mutant still writes to GitHub",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if not names:\n        print(\"no FLAKY mutation in this sweep\")\n        return\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...a green sweep with NO FLAKY mutant writes nothing to GitHub"
+    ]
   }
 ]

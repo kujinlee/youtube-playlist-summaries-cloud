@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 427 cases
+    python3 scripts/check-plan-code.py --self-test          # 441 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -2232,9 +2232,94 @@ def mutate_delivered(root: pathlib.Path,
         return ok, m_report, verdict
 
 
+def rerun_snapshot(d: pathlib.Path, cleanup: contextlib.ExitStack) -> "pathlib.Path | str":
+    """A copy of `d` AS IT STANDS BEFORE THE FIRST MUTANT, for every re-run (backlog #495) — or why it could not be made.
+
+    ⛔ r1 Codex 2 / Claude m1: the re-run used to run in `d` itself, in the seed trees the first run had just used,
+    with whatever that run left behind — a suite that counts its runs in a file beside it was killed only on its
+    SECOND run, and read FLAKY. A survivor's re-run now runs in a FRESH copy of this snapshot (`rerun_fresh`), so
+    nothing its own first run wrote can reach it. `cleanup` deletes the snapshot when the run ends.
+    ⚠ BOUND: the snapshot is taken ONCE per run, after the controls — the state the FIRST mutant saw. A later
+    mutant's first run also saw what earlier mutants left in `d` (`seed_trees`' stated exposure); its re-run does not.
+    A str (CANNOT RUN reason) makes every re-run NOT CHECKED, so a survivor stays SURVIVED and red — never FLAKY.
+    """
+    c = pathlib.Path(tempfile.mkdtemp(prefix="rerun-snapshot-"))
+    cleanup.callback(shutil.rmtree, c, ignore_errors=True)
+    try:
+        shutil.copytree(d, c / "t", symlinks=True, ignore=shutil.ignore_patterns("__pycache__"))
+    except (OSError, shutil.Error) as e:
+        return (f"CANNOT RUN — the re-run snapshot of the tree could not be copied ({type(e).__name__}: {e}), so no "
+                f"re-run could start from a fresh tree. NOT CHECKED.")
+    return c / "t"
+
+
+def rerun_fresh(snap: "pathlib.Path | str", fname: str, src: str, seeds=None, limit: "float | None" = None,
+                wants=None) -> "tuple[int, str, str | None]":
+    """A survivor's ONE re-run (backlog #495), in a FRESH copy of `snap` with the mutant `src` written to `fname`,
+    and fresh seed trees made from that copy — nothing inherited from the first run. `(rc, out, nondeterministic)`,
+    the shape `run_mutant` returns. rc 2 when it could not run: the snapshot missing, the copy failing, or this
+    run's budget already spent (⟳ r1 Claude m2: checked BEFORE anything is copied, so it says NOT STARTED).
+    """
+    if isinstance(snap, str):
+        return 2, snap, None
+    if budget_spent():
+        return 2, ("CANNOT RUN — the re-run was NOT STARTED: this run's time budget is spent. NOT CHECKED."), None
+    with contextlib.ExitStack() as cleanup:
+        c = pathlib.Path(tempfile.mkdtemp(prefix="rerun-"))
+        cleanup.callback(shutil.rmtree, c, ignore_errors=True)
+        t = c / "t"
+        try:
+            shutil.copytree(snap, t, symlinks=True)
+            (t / fname).write_text(src)
+        except (OSError, shutil.Error) as e:
+            return 2, (f"CANNOT RUN — the re-run's fresh tree could not be made ({type(e).__name__}: {e}). "
+                       f"NOT CHECKED."), None
+        if seeds:
+            return seed_outcome([(s, r, merged_output(so, se)) for s, r, so, se
+                                 in seed_runs(t, fname, seeds, seed_trees(t, seeds, cleanup), limit=limit)],
+                                wants=wants)
+        return (*run_suite(t, fname, limit=limit), None)
+
+
+def rerun_kill(rerun: "tuple[int, str, str | None]", wants: list) -> "tuple[list, str | None]":
+    """`(the cases that killed it, None)` when a re-run's kill would be ACCEPTED as a FIRST-run kill, else
+    `([], why not)`. PURE. Only an accepted kill makes a survivor FLAKY (backlog #495).
+
+    ⛔ r1 Claude B1 / Codex 1+3 (BLOCKER): the re-run's kill was taken on rc 1 alone, or on a NONDETERMINISTIC
+    split — so a GENUINE survivor whose re-run crashed (`No space left on device`), went red in an unrelated
+    timing case, or split across seeds passed GREEN. The loaded runner the re-run exists for is exactly what
+    reddens an unrelated case. So a re-run kill is held to the first run's rule, and stricter, in this order:
+      * it did not complete (rc 2: a timeout, the budget, a tree not made) -> not a kill;
+      * it split across seeds (NONDETERMINISTIC) -> not a kill;
+      * it stayed green -> not a kill;
+      * it went red WITHOUT a summary line (`summary_total`: a crash, a suite stopped early) -> not a kill;
+      * a case the entry names is not red EXACTLY once (the first run's `unnamed` rule) -> not a kill;
+      * with no `expect`, it printed no `[FAIL] <case>` at all -> not a kill.
+    """
+    rc, out, odd = rerun
+    if rc == 2:
+        return [], f"its one re-run did NOT COMPLETE ({out.strip()[:160]})"
+    if odd:
+        return [], f"its one re-run was NONDETERMINISTIC ({odd})"
+    if rc != 1:
+        return [], "it SURVIVED its one re-run too"
+    if summary_total(out) is None:
+        return [], ("its one re-run went red WITHOUT COMPLETING (no summary line: it crashed or stopped early), "
+                    "which is not a kill")
+    fails = parse_fail_names(out)
+    missing = [w for w in wants if fails.count(w) != 1]
+    if missing:
+        return [], (f"its one re-run went red, but NOT via the case(s) it names ({', '.join(map(repr, missing))} "
+                    f"not red exactly once; red: {fails}), which is not a kill")
+    if not fails:
+        return [], "its one re-run went red but printed no `[FAIL] <case>` line, which is not a kill"
+    return (list(wants) or fails), None
+
+
 def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                   progress=None, seeds=None, trees=None,
-                  limits: "dict | None" = None) -> tuple[bool, list[str], list[dict], list[str]]:
+                  limits: "dict | None" = None,
+                  rerun_from: "pathlib.Path | str | None" = None) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
 
     `d` holds runnable scripts — assembled from a plan, or copied from the delivered
@@ -2251,7 +2336,13 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
     """
     if seeds and trees is None:
         with contextlib.ExitStack() as cleanup:
-            return run_mutations(d, muts, known, progress, seeds, seed_trees(d, seeds, cleanup), limits=limits)
+            return run_mutations(d, muts, known, progress, seeds, seed_trees(d, seeds, cleanup), limits=limits,
+                                 rerun_from=rerun_from)
+    if rerun_from is None:
+        # backlog #495 r1: the state every survivor's re-run starts from, taken before the first mutant.
+        with contextlib.ExitStack() as cleanup:
+            return run_mutations(d, muts, known, progress, seeds, trees, limits=limits,
+                                 rerun_from=rerun_snapshot(d, cleanup))
     ok, report, ev_muts, ev_survivors = True, [], [], []
     for position, mut in enumerate(muts, 1):
         name, fname = mut.get("name", "?"), mut.get("file", "")
@@ -2299,19 +2390,13 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         orig = (d / fname).read_text()
         (d / fname).write_text(src)
         limit = (limits or {}).get(fname)   # backlog #558: this target's, from its own control
-        here = seed_apply(trees, d, fname, src) if seeds else None
-
-        def run_mutant():
-            if seeds:
-                return seed_outcome([(s, r, merged_output(so, se)) for s, r, so, se
-                                     in seed_runs(d, fname, seeds, here, limit=limit)],
-                                    wants=mut.get("expect"))
-            return (*run_suite(d, fname, limit=limit), None)
-        rc, out, odd = run_mutant()
-        # ⛔ backlog #495 (owner 2026-11-11 19:25): a SURVIVOR is re-run ONCE, with the mutant still applied. A kill
-        # on the re-run makes it FLAKY below — not red, and never counted as killed. Only a survivor: a kill, a
-        # NONDETERMINISTIC split and a CANNOT RUN (rc 2) are verdicts of their own and are not re-run.
-        rerun = run_mutant() if rc not in (1, 2) and not odd else None
+        if seeds:
+            here = seed_apply(trees, d, fname, src)
+            rc, out, odd = seed_outcome([(s, r, merged_output(so, se)) for s, r, so, se
+                                         in seed_runs(d, fname, seeds, here, limit=limit)],
+                                        wants=mut.get("expect"))
+        else:
+            (rc, out), odd = run_suite(d, fname, limit=limit), None
         (d / fname).write_text(orig)
         stuck = seed_revert(trees, d, fname, orig) if seeds else None
         if stuck:
@@ -2400,23 +2485,24 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                         "attributed": caught and not unnamed, "measured": True})
         if seeds:
             ev_muts[-1]["seeds"] = list(seeds)
-        if not caught and rerun is not None and (rerun[0] == 1 or rerun[2]):
-            # ⛔ backlog #495: FLAKY — survived once, KILLED on the re-run. NOT red (the mutant can be killed, so an
-            # environmental survival must not turn a PR red), but NEVER a kill either: a kill case that works only
-            # sometimes is still a weak test. It stays among the survivors, and is named with the case that killed it.
+        if not caught:
+            # ⛔ backlog #495 (owner 2026-11-11 19:25): a SURVIVOR — and only a survivor: a kill, a NONDETERMINISTIC
+            # split and a CANNOT RUN are verdicts of their own and never reach here — is re-run ONCE, in a fresh tree
+            # (`rerun_fresh`). A re-run kill that would be ACCEPTED as a first-run kill (`rerun_kill`) makes it FLAKY:
+            # NOT red (the mutant can be killed, so an environmental survival must not turn a PR red), but NEVER a
+            # kill either — a kill case that works only sometimes is still a weak test. Anything else is SURVIVED, red.
             ev_survivors.append(name)
-            ev_muts[-1]["flaky"] = True
-            _rf = parse_fail_names(rerun[1])
-            _by = [f for f in _rf if f in wants] or _rf
-            report.append(f"mutation FLAKY — {name}: SURVIVED its first run, then KILLED on its one re-run "
-                          f"(by {', '.join(map(repr, _by)) or 'no named case'}). Not red, and NOT counted as "
-                          f"killed: a kill that works only sometimes is a weak test — make the case deterministic "
-                          f"(backlog #495)")
-        elif not caught:
-            ok = False
-            ev_survivors.append(name)
-            report.append(f"mutation SURVIVED — {name}: the suite stayed green, so no case "
-                          f"can fail for what it names")
+            _by, _why = rerun_kill(rerun_fresh(rerun_from, fname, src, seeds, limit, mut.get("expect")), wants)
+            if _why is None:
+                ev_muts[-1]["flaky"] = True
+                report.append(f"mutation FLAKY — {name}: SURVIVED its first run, then KILLED on its one re-run in a "
+                              f"fresh tree (by {', '.join(map(repr, _by))}). Not red, and NOT counted as killed: a "
+                              f"kill that works only sometimes is a weak test — make the case deterministic "
+                              f"(backlog #495)")
+            else:
+                ok = False
+                report.append(f"mutation SURVIVED — {name}: the suite stayed green, so no case "
+                              f"can fail for what it names; {_why}, so it is not FLAKY either")
         elif unnamed:
             ok = False
             # ⛔ RED WITH NOTHING READABLE IS A REPORT-FORMAT DEFECT, AND IT NOW SAYS SO.
@@ -3317,38 +3403,65 @@ def _self_test_body() -> int:
 
         # ── backlog #495, THE CLASS GUARD: a SURVIVOR is re-run ONCE ─────────────────────────────────────
         # Owner 2026-11-11 19:25: "if a mutation-sweep case fails due to environment, can we retry just to make sure
-        # it is indeed survive case or not". The fake suite counts its own runs in a file beside it and kills the
-        # mutant only from run KILL_FROM on, so each outcome is FORCED, never a race.
-        with tempfile.TemporaryDirectory() as _tdr:
-            _dr = pathlib.Path(_tdr)
+        # it is indeed survive case or not". ⟳ r1 Codex 2 / Claude m1: the fake suite counts its runs in a file
+        # OUTSIDE the tree, named by `PC495_STATE` (one per seed), so the test controls the first and second
+        # outcome while the re-run's tree stays FRESH — a count kept BESIDE the suite is the `beside` mode, the
+        # inheritance the re-run must not see. Each outcome is FORCED, never a race.
+        # `how` on the KILLING run: `named` prints the expect case red; `unrelated` a different case red; `crash`
+        # raises before any summary; `both` the expect case AND an incidental one; `slow` sleeps past the limit.
+        with tempfile.TemporaryDirectory() as _tdr, tempfile.TemporaryDirectory() as _tst:
+            _dr, _st = pathlib.Path(_tdr), pathlib.Path(_tst)
 
-            def _flaky_run(kill_from: int, seeds=None, only_seed=None):
-                for _old in _dr.rglob("runs.txt"):
+            def _flaky_run(kill_from: int, seeds=None, only_seed=None, how="named", beside=False, limits=None,
+                           spent_after=None):
+                for _old in [*_dr.rglob("runs*.txt"), *_st.glob("runs*.txt")]:
                     _old.unlink()
                 (_dr / "r.py").write_text(
-                    'import os, pathlib, sys\n'
+                    'import os, pathlib, sys, time\n'
                     'def f():\n    return 1\n\n\n'
                     'def _self_test():\n'
-                    f'    only = {only_seed!r}\n'
-                    '    runs = pathlib.Path(__file__).with_name("runs.txt")\n'
+                    f'    only, how = {only_seed!r}, {how!r}\n'
+                    + ('    runs = pathlib.Path(__file__).with_name("runs.txt")\n' if beside else
+                       '    runs = pathlib.Path(os.environ["PC495_STATE"]) / ("runs-%s.txt" % '
+                       'os.environ.get("PYTHONHASHSEED"))\n') +
                     '    n = int(runs.read_text()) + 1 if runs.exists() else 1\n'
                     '    runs.write_text(str(n))\n'
                     f'    if f() != 1 and n >= {kill_from} and only in (None, os.environ.get("PYTHONHASHSEED")):\n'
-                    '        print("  [FAIL] f returns one: got %r" % f())\n'
-                    '        print("0/1 passed")\n'
+                    '        if how == "crash":\n'
+                    '            raise OSError("No space left on device")\n'
+                    '        if how == "slow":\n'
+                    '            time.sleep(30)\n'
+                    '        if how in ("named", "both"):\n'
+                    '            print("  [FAIL] f returns one: got %r" % f())\n'
+                    '        if how in ("unrelated", "both"):\n'
+                    '            print("  [FAIL] some timing case: got 1 want 0")\n'
+                    '        print("0/2 passed")\n'
                     '        return 1\n'
-                    '    print("1/1 passed")\n'
+                    '    print("2/2 passed")\n'
                     '    return 0\n\n\n'
                     'if __name__ == "__main__":\n'
                     '    sys.exit(_self_test())\n')
                 _rm = [{"name": "f returns two", "file": "r.py",
                         "edits": [["def f():\n    return 1", "def f():\n    return 2"]], "expect": "f returns one"}]
-                with contextlib.ExitStack() as _csr:
-                    # The caller's trees, so every seed's own run count can be read back before they are deleted.
-                    _trr = seed_trees(_dr, seeds, _csr) if seeds else {None: _dr}
-                    _res = run_mutations(_dr, _rm, {"r.py"}, seeds=seeds, trees=_trr if seeds else None)
-                    _runs = [int((t / "runs.txt").read_text()) if (t / "runs.txt").exists() else 0
-                             for t in _trr.values()]
+                _real_spent, _calls = budget_spent, []
+
+                def _spent():
+                    _calls.append(1)
+                    return spent_after is not None and len(_calls) > spent_after
+                _prev_env = os.environ.get("PC495_STATE")
+                os.environ["PC495_STATE"] = str(_st)
+                globals()["budget_spent"] = _spent
+                try:
+                    _res = run_mutations(_dr, _rm, {"r.py"}, seeds=seeds, limits=limits)
+                finally:
+                    globals()["budget_spent"] = _real_spent
+                    if _prev_env is None:
+                        os.environ.pop("PC495_STATE", None)
+                    else:
+                        os.environ["PC495_STATE"] = _prev_env
+                # The number of runs under each seed (None: unseeded), read from outside every tree.
+                _runs = [int((_st / f"runs-{s}.txt").read_text()) if (_st / f"runs-{s}.txt").exists() else 0
+                         for s in (seeds or (None,))]
                 return _res, _runs
 
             (_okf, _repf, _evf, _svf), _nf = _flaky_run(2)
@@ -3358,12 +3471,12 @@ def _self_test_body() -> int:
                  (_svf, [(e.get("caught"), e.get("attributed"), e.get("flaky")) for e in _evf]),
                  (["f returns two"], [(False, False, True)]))
             case("...and the report NAMES the mutation and the case that killed it on the re-run",
-                 [(r.startswith("mutation FLAKY — f returns two"), "by 'f returns one'" in r) for r in _repf],
+                 [(r.startswith("mutation FLAKY — f returns two"), "by 'f returns one')" in r) for r in _repf],
                  [(True, True)])
             (_oks2, _reps2, _evs2, _svs2), _ns2 = _flaky_run(99)
             case("⭐ #495: a mutant that SURVIVES its re-run too is SURVIVED and RED, exactly as before — after 2 runs",
                  (_oks2, _svs2, _ns2, any(r.startswith("mutation SURVIVED — f returns two") for r in _reps2),
-                  any("FLAKY" in r for r in _reps2), [e.get("flaky") for e in _evs2]),
+                  any(r.startswith("mutation FLAKY") for r in _reps2), [e.get("flaky") for e in _evs2]),
                  (False, ["f returns two"], [2], True, False, [None]))
             (_okk2, _repk2, _evk2, _svk2), _nk2 = _flaky_run(1)
             case("⭐ #495: a mutant KILLED the first time is never re-run — one run, killed and attributed",
@@ -3374,11 +3487,83 @@ def _self_test_body() -> int:
                  (_okfs, _svfs, _nfs, [e.get("flaky") for e in _evfs],
                   any(r.startswith("mutation FLAKY — f returns two") for r in _repfs)),
                  (True, ["f returns two"], [2, 2], [True], True))
-            # Killed under the SECOND seed only: `seed_outcome` returns the FIRST seed's rc, so this re-run reads rc 0
-            # with a split — only the NONDETERMINISTIC flag can make it FLAKY (under seed 3 the rc alone would).
-            (_okfo, _repfo, _evfo, _svfo), _nfo = _flaky_run(2, seeds=(3, 5), only_seed="5")
-            case("...#495 under --seeds: a re-run that kills under ONE seed only (a NONDETERMINISTIC re-run) is FLAKY too",
-                 (_okfo, _svfo, _nfo, [e.get("flaky") for e in _evfo]), (True, ["f returns two"], [2, 2], [True]))
+
+            # ⛔ r1 Claude B1 / Codex 1+3 (BLOCKER): a re-run kill is FLAKY only if it would be ACCEPTED as a
+            # first-run kill. Each of these is a GENUINE survivor whose re-run went red for another reason.
+            def _red_survivor(res):
+                _ok, _rep, _ev, _sv = res
+                return (_ok, _sv, [e.get("flaky") for e in _ev], any("FLAKY —" in r for r in _rep),
+                        [r for r in _rep if r.startswith("mutation SURVIVED — f returns two")] != [])
+            _red = (False, ["f returns two"], [None], False, True)
+            (_resu, _nu) = _flaky_run(2, how="unrelated")
+            case("⭐ r1 B1: a re-run red only in an UNRELATED case is SURVIVED and RED, never FLAKY",
+                 (_red_survivor(_resu), _nu), (_red, [2]))
+            case("...and the report says the re-run went red NOT via the case it names",
+                 any("NOT via the case(s) it names ('f returns one'" in r for r in _resu[1]), True)
+            (_resc, _nc) = _flaky_run(2, how="crash")
+            case("⭐ r1 B1: a re-run that CRASHES (rc 1, no summary line) is SURVIVED and RED, never FLAKY",
+                 (_red_survivor(_resc), _nc), (_red, [2]))
+            case("...and the report says the re-run went red WITHOUT COMPLETING",
+                 any("WITHOUT COMPLETING" in r for r in _resc[1]), True)
+            (_reso, _no) = _flaky_run(2, seeds=(3, 5), only_seed="5")
+            case("⭐ r1 Codex 1: a re-run that kills under ONE seed only (a NONDETERMINISTIC re-run) is SURVIVED and RED",
+                 (_red_survivor(_reso), _no), (_red, [2, 2]))
+            case("...and the report names the re-run's seed split",
+                 any("re-run was NONDETERMINISTIC (killed under PYTHONHASHSEED=5" in r for r in _reso[1]), True)
+            (_resb, _nb) = _flaky_run(2, how="both")
+            case("⭐ r1 m4: a re-run red in the named case AND an incidental one is FLAKY, attributed to the NAMED case "
+                 "only", [r.split("(by ", 1)[-1].split(")", 1)[0] for r in _resb[1] if "FLAKY —" in r],
+                 ["'f returns one'"])
+            # ⛔ r1 Codex 2 / Claude m1: a count BESIDE the suite would make a fresh re-run see the first run's state.
+            (_resd, _) = _flaky_run(2, beside=True)
+            case("⭐ r1 Codex 2: a suite that keeps state BESIDE itself does not carry it into the re-run — SURVIVED, "
+                 "red, never FLAKY", _red_survivor(_resd), _red)
+            case("...and the first run's own tree still holds its state, so the re-run's FRESH tree is what saved it",
+                 (_dr / "runs.txt").read_text() if (_dr / "runs.txt").exists() else None, "1")
+            # ⛔ r1 Claude m2: a re-run that could not complete says so, and the budget is checked BEFORE it.
+            (_rest, _nt) = _flaky_run(2, how="slow", limits={"r.py": 2.0})
+            case("⭐ r1 m2: a re-run that TIMES OUT is SURVIVED and red, and the report says it did NOT COMPLETE",
+                 (_red_survivor(_rest), any("re-run did NOT COMPLETE (CANNOT RUN" in r for r in _rest[1])),
+                 (_red, True))
+            (_resp, _np) = _flaky_run(2, spent_after=1)
+            case("⭐ r1 m2: with the budget spent before the re-run, it is NOT STARTED — one run, SURVIVED, red, said so",
+                 (_red_survivor(_resp), _np, any("re-run did NOT COMPLETE (CANNOT RUN — the re-run was NOT STARTED"
+                                                 in r for r in _resp[1])), (_red, [1], True))
+
+        # ⛔ r1: the acceptance rule itself, PURE — every refusal clause, each with the one input that reaches it.
+        _sum = "\n0/1 passed"
+        case("⭐ r1 B1: `rerun_kill` accepts ONLY a completed red via every named case, and names why otherwise",
+             [rerun_kill(_r, _w)[1] is None for _r, _w in (
+                 ((1, "  [FAIL] a: got 1" + _sum, None), ["a"]),
+                 ((1, "  [FAIL] a: got 1\n  [FAIL] x: got 1" + _sum, None), ["a"]),
+                 ((1, "  [FAIL] x: got 1" + _sum, None), []),
+                 ((2, "CANNOT RUN — timeout", None), ["a"]),
+                 ((1, "  [FAIL] a: got 1" + _sum, "killed under 3 but survived under 5"), ["a"]),
+                 ((0, "1/1 passed", None), ["a"]),
+                 ((1, "  [FAIL] a: got 1\nTraceback", None), ["a"]),
+                 ((1, "  [FAIL] x: got 1" + _sum, None), ["a"]),
+                 ((1, "  [FAIL] a: got 1\n  [FAIL] a: got 1" + _sum, None), ["a"]),
+                 ((1, "Traceback" + _sum, None), []))],
+             [True, True, True, False, False, False, False, False, False, False])
+        case("...and an accepted kill is attributed to the NAMED cases, or to every red case when none is named",
+             (rerun_kill((1, "  [FAIL] a: got 1\n  [FAIL] x: got 1" + _sum, None), ["a"])[0],
+              rerun_kill((1, "  [FAIL] x: got 1\n  [FAIL] y: got 1" + _sum, None), [])[0]), (["a"], ["x", "y"]))
+        case("...a missing re-run snapshot is a CANNOT RUN, never a run", rerun_fresh("CANNOT RUN — x", "r.py", ""),
+             (2, "CANNOT RUN — x", None))
+        with tempfile.TemporaryDirectory() as _sd:
+            _snap = pathlib.Path(_sd) / "snap"
+            _snap.mkdir()
+            (_snap / "keep.txt").write_text("snapshot")
+            _red = ('import os, pathlib, sys\nok = pathlib.Path(__file__).with_name("keep.txt").exists()\n'
+                    'print("  [FAIL] c: got %r seed %s" % (ok, os.environ.get("PYTHONHASHSEED")))\n'
+                    'print("0/1 passed")\nsys.exit(1)\n')
+            _grn = 'import sys\nprint("1/1 passed")\nsys.exit(0)\n'
+            _f1 = rerun_fresh(_snap, "s.py", _red, None, 60.0, ["c"])
+            _f2 = rerun_fresh(_snap, "u.py", _grn, [3, 5], 90.0, None)
+            case("⭐ r1 Codex 2: `rerun_fresh` runs the MUTANT it is given, under the named file, in a COPY of the "
+                 "snapshot — once plain, once under every seed",
+                 (_f1[0], "[FAIL] c: got True" in _f1[1], _f2, sorted(x.name for x in _snap.iterdir())),
+                 (1, True, (0, "1/1 passed", None), ["keep.txt"]))
 
         # ── backlog #506, THE CLASS CHECK: a mutant killed under one PYTHONHASHSEED and not another ─────
         # MEASURED 2026-11-05: dropping `sorted()` in check-review-decision survived under seeds 266/312/342/

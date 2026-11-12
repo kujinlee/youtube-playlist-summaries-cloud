@@ -20310,17 +20310,23 @@ uppercased). Self-test cases assert the spans, escaping, and the style rule; rev
 accepted); four mutations added, one re-bound (pin 360 -> 364).
 
 ## 2026-11-11
-Backlog #495 is fixed, along with your 19:25 request. A mutation check that survived only because a CI machine was slow
-used to turn unrelated pull requests red. The test case behind it now forces the order it checks for, so it no longer
-depends on timing. The mutation sweep also gives every survivor one more run. A survivor that dies on that second run
-is reported as FLAKY: the pull request stays green, and the mutation and the case are named in the output and on the
-summary line. It is never counted as killed, because a test that catches a defect only sometimes is still a weak test.
-A survivor that lives through both runs is SURVIVED and red, as before.
+Backlog #495 is fixed, along with your 19:25 request. The mutation sweep now gives every survivor one more run, in a
+fresh copy of the code. A survivor that dies on that second run, the way a first-run kill would (the run finished and
+the case it names went red), is reported as FLAKY: the pull request stays green, and it is never counted as killed,
+because a test that catches a defect only sometimes is still a weak test. A FLAKY result is also FILED: on master the
+sweep opens a `sweep-flaky` GitHub issue naming it (or comments on the open one), even when the sweep is green. A
+survivor that lives through both runs, or whose second run crashed or went red for another reason, is SURVIVED and red,
+as before. The mutant from the #487 incident was already killed on master by the case added for backlog #506; this
+change also makes the `ordered()` case it names deterministic. Measured: 0 misses in 50 runs, a ~6% 95% upper bound.
 <!--tech-->
-Branch `495-survivor-retry`. In `scripts/check-selftest-counts.py`, the `ordered()` fixture now holds job `a` until
-the collector has consumed `b`'s result, through a wrapped `concurrent.futures.as_completed`, so completion order is
-forced. The #487 mutant's `expect` also names that case. In `scripts/check-plan-code.py`, `run_mutations` re-runs a
-mutant once when it is neither caught nor NONDETERMINISTIC. If the re-run is caught or splits across seeds, the mutant
-is FLAKY: it stays in `ev_survivors`, `flaky: True` is set on its evidence entry, and `ok` is not cleared. `tally_line`
-names FLAKY mutants. Nine self-test cases were added (418 -> 427) and nine mutations (pin 301 -> 310), each verified
-red on a staged copy via the case it names.
+Branch `495-survivor-retry`. `scripts/check-selftest-counts.py`: the `ordered()` fixture holds job `a` until the
+collector has consumed `b`'s result (a wrapped `as_completed`), so completion order is forced. `scripts/check-plan-code.py`:
+`run_mutations` takes one snapshot of the tree before the first mutant (`rerun_snapshot`); a survivor's single re-run
+runs in a fresh copy with fresh seed trees (`rerun_fresh`, budget checked first), and `rerun_kill` accepts it only as
+rc 1, a summary line, every `expect` case red exactly once, and no seed split. FLAKY stays in `ev_survivors` with
+`flaky: True`, `ok` untouched, named by `tally_line`. `scripts/sweep-red-alert.py` + `ci.yml`: each shard greps its
+`mutation FLAKY — ` lines into an artifact; the complete job downloads them into `FLAKY_DIR`, files them after the red
+alert, and a missing directory is a red step. `scripts/batch-ci.py`: `failures` drops FLAKY lines, so a FLAKY
+mutation never ejects its PR. Self-tests: check-plan-code 418 -> 441, sweep-red-alert 15 -> 24, batch-ci 168 -> 169.
+Mutation pins: check-plan-code 301 -> 319, sweep-red-alert 6 -> 14, batch-ci 95 -> 96, each verified red on a copy via
+the case it names.
