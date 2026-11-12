@@ -213,7 +213,7 @@ until the mapping step runs.</p>
 have seen what each one rules out. <strong>Every one of them is still reversible right now.</strong></p>
 
 <div class="dec">
-  <div class="hd">
+  <div class="hd" data-decision="Public strangers, full support bar (selection card, 10-15)" data-decision-label="D1">
     <span class="tag">D1 · AUDIENCE</span>
     <strong>Public strangers, full support bar.</strong> Works in any repo, documented for a newcomer,
     failure modes handled without you.
@@ -236,7 +236,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </div>
 
 <div class="dec">
-  <div class="hd">
+  <div class="hd" data-decision="One evaluation across all three efforts (selection card, 10-15)" data-decision-label="D2">
     <span class="tag">D2 · DECOMPOSITION</span>
     <strong>One evaluation across all three efforts</strong>, then a spec per publishable unit.
   </div>
@@ -257,7 +257,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </div>
 
 <div class="dec">
-  <div class="hd">
+  <div class="hd" data-decision="A self-published marketplace repo (selection card, 10-15)" data-decision-label="D3">
     <span class="tag">D3 · ROUTE</span>
     <strong>A self-published marketplace repo</strong>, installed with
     <code>/plugin marketplace add &lt;repo&gt;</code>.
@@ -280,7 +280,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </div>
 
 <div class="dec">
-  <div class="hd">
+  <div class="hd" data-decision="A mechanical scan plus one install experiment (selection card, 10-15)" data-decision-label="D4">
     <span class="tag">D4 · METHOD</span>
     <strong>A mechanical scan across all components, plus one real install experiment</strong> on the
     comprehensibility suite, where the experiment calibrates the scan.
@@ -530,7 +530,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   <table>
     <tr><th>What</th><th>The question</th><th>Who answers it</th></tr>
     <tr><td>the <strong>code</strong></td><td>under what licence is it published?</td><td>✅ <strong>ANSWERED — MIT</strong> (D7, below). ⟳ This cell read <em>“you — this is a choice, not a finding”</em> until round 3; it was true when written and the answer is two sections further down</td></tr>
-    <tr><td>the <strong>corpus</strong> — effort (1)'s memory files (<strong>159</strong> here, 157 on <code>master</code>)</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td>a <strong>content review</strong> — ⟳ now <strong>deliverable 11</strong>, listed as yours rather than left as a gap (round 3). Until it lands the corpus’s row reads <code>C5: unanswered</code> and <strong>cannot be <code>SHIP</code></strong></td></tr>
+    <tr><td>the <strong>corpus</strong> — effort (1)'s memory files (<strong>159</strong> here, 157 on <code>master</code>)</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td data-decision data-decision-label="C5 corpus content review">a <strong>content review</strong> — ⟳ now <strong>deliverable 11</strong>, listed as yours rather than left as a gap (round 3). Until it lands the corpus’s row reads <code>C5: unanswered</code> and <strong>cannot be <code>SHIP</code></strong></td></tr>
   </table>
   </div>
   <p class="note">⚠ <strong>Bounded honestly:</strong> no marketplace installed on this machine
@@ -541,7 +541,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </div>
 
 <div class="box warn">
-  <span class="lbl">✅ D7 — you chose MIT, and here is what it does and does not cover</span>
+  <span class="lbl" data-decision="MIT, on the marketplace repo; this repo stays unlicensed (11-10 18:41)" data-decision-label="D7">✅ D7 — you chose MIT, and here is what it does and does not cover</span>
   <p><strong>The code half of C5 is settled: MIT.</strong> The comparables were measured rather than
   guessed — <code>oh-my-claudecode</code> ships <strong>MIT</strong> and
   <code>openai/codex-plugin-cc</code> ships <strong>Apache-2.0</strong>, so either would have met a
@@ -558,7 +558,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
     <tr><th>What</th><th>State</th></tr>
     <tr><td>the published harness package</td><td><strong>MIT</strong> — the <code>LICENSE</code> lands on the marketplace repo, whose creation is deferred</td></tr>
     <tr><td>this repository</td><td><strong>unchanged</strong> — public, unlicensed, all rights reserved, until decided separately</td></tr>
-    <tr><td>the copyright holder</td><td>⚠ <strong>not yet named.</strong> No author is declared anywhere, and the git identity is the placeholder <code>t &lt;t@example.com&gt;</code>. Your GitHub account is <code>kujinlee</code> — a legal name or entity is still yours to give, and inventing one would be worse than leaving it visible</td></tr>
+    <tr><td>the copyright holder</td><td data-decision data-decision-label="Copyright holder">⚠ <strong>not yet named.</strong> No author is declared anywhere, and the git identity is the placeholder <code>t &lt;t@example.com&gt;</code>. Your GitHub account is <code>kujinlee</code> — a legal name or entity is still yours to give, and inventing one would be worse than leaving it visible</td></tr>
   </table>
   </div>
   <p class="note">⚠ <strong>And a correction.</strong> This was described to you as blocking the
@@ -568,7 +568,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </div>
 
 <div class="box warn">
-  <span class="lbl">D5 · Your decision, now settled — verdict and evidence are two axes</span>
+  <span class="lbl" data-decision="Verdict and evidence are two axes; confirmed 11-10 18:45 (&quot;Agree&quot;)" data-decision-label="D5">D5 · Your decision, now settled — verdict and evidence are two axes</span>
   <p>You chose this after finding the contradiction below. It is a <strong>decision of record</strong>
   now, not a recommendation: the three verdicts stay, and every verdict carries an
   <strong>evidence grade</strong> beside it.</p>
@@ -807,7 +807,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 <h2><span class="n">7</span>Four things I would like you to weigh</h2>
 
 <div class="q">
-  <h4>1 · Is the lopsided evidence acceptable?</h4>
+  <h4 data-decision="Accepted for this milestone; evaluate deeper later (selection card A, 11-09)" data-decision-label="Q1">1 · Is the lopsided evidence acceptable?</h4>
   <p>Effort (3) gets a real install experiment. Efforts (1) and (2) get argument. <strong>My
   recommendation: accept it</strong> — an install experiment for a CI harness and a memory matcher
   would cost more than their likely verdicts are worth.</p>
@@ -898,7 +898,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 </div>
 
 <div class="q">
-  <h4>2 · Is effort (2) worth evaluating at all?</h4>
+  <h4 data-decision="Yes, evaluated for SHIPPING as a portable, engine-agnostic CI layer, not only as a harvest; D6 still applies to its practices (11-10 19:07, 19:11)" data-decision-label="Q2">2 · Is effort (2) worth evaluating at all?</h4>
   <p>CI sharding and the mutation harness are wired into this repository's workflow. Under D1's public
   bar I expect most of it to come out <code>DON'T-SHIP</code>. <strong>My recommendation: evaluate it
   anyway</strong>, because “I expect” is the kind of claim this project keeps finding wrong, and the
@@ -940,7 +940,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 </div>
 
 <div class="q">
-  <h4>3 · Should the stale index claims be fixed here or separately?</h4>
+  <h4 data-decision="Here, as PR 1's first commit (D8)" data-decision-label="Q3">3 · Should the stale index claims be fixed here or separately?</h4>
   <p>Three claims in <code>portable-practices.md</code> are wrong — the size, the anchor count, and an
   owed anchor that now exists. The spec puts the corrections inside PR 1.
   <strong>My recommendation: keep them here</strong>, because the inventory is what discovered them and
@@ -969,7 +969,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 </div>
 
 <div class="q">
-  <h4>4 · Does “publishable” need a support policy decided first?</h4>
+  <h4 data-decision="Yes, decided first: best-effort, versioned (D9, option A)" data-decision-label="Q4">4 · Does “publishable” need a support policy decided first?</h4>
   <p>D1 commits to a public bar, which implies versioning, breaking-change handling, and answering
   strangers' issues. <strong>The spec did not price any of that when this question was written</strong>
   — ⟳ it now does, in §4d, which is D9 below — and the inventory would otherwise
@@ -1044,8 +1044,8 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
   </div>
 </div>
 
-<div class="box ok">
-  <span class="lbl">What happens after you decide</span>
+<div class="box ok" data-decision="Approved 11-11 05:53 (&quot;Had I already approved this? If not, I approve&quot;)" data-decision-label="Spec approval">
+  <span class="lbl">What happens after you decide — approve, push back or redirect the spec</span>
   <p><strong>Approve</strong> → I write the implementation plan, it gets dual review to convergence,
   then it is built autonomously per the process. <strong>Push back</strong> → I fold your objection the
   way I would fold a review finding, and we go again. <strong>Redirect</strong> → the spec parks and
