@@ -92,6 +92,7 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
 
 ## 2. The artifact must survive on its own
 
+- **DRAW IT — a diagram wherever the subject has a flow, a before/after, a decision rule or a structure** (owner, 2026-11-12: *"Diagram make it much easier to follow. I hope you use diagram whenever possible in explainer pages"*, after a prose-only answer about the same design was *"confusing"*). Inline SVG, coloured from the page's tokens so both themes work; prose carries the *why*, the diagram carries *what connects to what*. Example: `docs/explainers/2026-11-12-topic-stale-pages.html` (three diagrams).
 - **One self-contained HTML file.** Inline CSS and JS. **No external fonts, CDNs, images, or network
   access of any kind** — it must render offline, and in five years.
 - **Code blocks must use `<pre><code>`, and the `pre` CSS must include `white-space: pre` or
