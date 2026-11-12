@@ -3882,7 +3882,7 @@ def _self_test_cases(*, outside: dict) -> int:
     _pg610 = render_page([_ns], "t", current={"behind": 2, "read_at": "origin/master"})
     case("backlog #610: the PAGE says where the shared files were read and the lag, above the replay line",
          ("read at origin/master; <b class=\"lag\">this checkout is 2 commit(s) behind it" in _pg610,
-          _pg610.index('class="lag-line"') < _pg610.index('class="replay"') < _pg610.index('<section class="needs')),
+          -1 < _pg610.find('class="lag-line"') < _pg610.find('class="replay"') < _pg610.find('<section class="needs')),
          (True, True))
     case("Y7: a live NEEDS YOU read is named as live",
          "NEEDS YOU is read live at <time>t2</time>" in render_page([_nd], "t", dict(_ns, at="t2")), True)
@@ -4283,10 +4283,12 @@ def _self_test_cases(*, outside: dict) -> int:
                  f"{DASHBOARD_REL} NOT READ (OSError: git show origin/master:{DASHBOARD_REL} exited 128"), True)
         _r610c, _ = fake([(["git", "fetch"], (128, "offline")),
                           (["git", "show"], (0, "SHOULD NOT BE READ"))] + ok[1:])
-        _s610c = collect(r, _r610c)
+        _calls610c = []
+        _s610c = collect(r, lambda cmd, cwd, timeout: (_calls610c.append(list(cmd)), _r610c(cmd, cwd, timeout))[1])
         case("⛔ backlog #610: a failed fetch reads the CHECKOUT, says so, and reads no lag",
-             (_s610c["read_at"], _s610c["behind"], _s610c["fates"] is not None),
-             ("the local checkout (git fetch failed)", None, True))
+             (_s610c["read_at"], _s610c["behind"], _s610c["fates"] is not None,
+              [c for c in _calls610c if c[:2] in (["git", "show"], ["git", "rev-list"])]),
+             ("the local checkout (git fetch failed)", None, True, []))
         case("backlog #610: the lag line says the count and how to catch up; 0 says up to date; unread says so",
              ("3 commit(s) behind" in lag_line({"read_at": "origin/master", "behind": 3}),
               "up to date" in lag_line({"read_at": "origin/master", "behind": 0}),
