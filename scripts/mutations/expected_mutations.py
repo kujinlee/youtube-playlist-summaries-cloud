@@ -547,7 +547,10 @@ EXPECTED_MUTATIONS = {
     # mutation with it) and replaced by a refusal (on, inside, deeper, the first-summary exemption,
     # a second summary), the implicit </p> (the call, the scope boundary, the formatting guard), and
     # the contrast instrument refusing what it cannot evaluate (alpha, a hex prefix, Codex 4's 00).
-    "scripts/brief-compose.py": 86,
+    # ⟳ 2026-11-11, backlog #603 review round 3: 86 -> 94 — the r3 Claude survivors pinned (the
+    # formatting check's `hidden`, `object` as a p scope stop, `li`/`hr`/`h2` closing a p) and the
+    # SVG/MathML refusal (on, inside, and `svg`/`math` as p scope stops).
+    "scripts/brief-compose.py": 94,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch

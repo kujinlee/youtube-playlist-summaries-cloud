@@ -1094,5 +1094,109 @@
     "expect": [
       "603 r1: every tag state is READABLE in every theme block — contrast >= 4.5, OS-dark included"
     ]
+  },
+  {
+    "name": "603 r3: any formatting element keeps the p, hidden or not (Claude F3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "_FORMATTING and e[1] for e",
+        "_FORMATTING for e"
+      ]
+    ],
+    "expect": [
+      "603 r3: only a HIDDEN formatting element keeps the p; li/hr/h2 close it; object is a scope stop"
+    ]
+  },
+  {
+    "name": "603 r3: object is not a p scope stop (Claude F3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "\"marquee\", \"object\",",
+        "\"marquee\","
+      ]
+    ],
+    "expect": [
+      "603 r3: only a HIDDEN formatting element keeps the p; li/hr/h2 close it; object is a scope stop"
+    ]
+  },
+  {
+    "name": "603 r3: li does not close an open p (Claude F3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "\"listing\", \"form\", \"li\", \"dd\"",
+        "\"listing\", \"form\", \"dd\""
+      ]
+    ],
+    "expect": [
+      "603 r3: only a HIDDEN formatting element keeps the p; li/hr/h2 close it; object is a scope stop"
+    ]
+  },
+  {
+    "name": "603 r3: hr does not close an open p (Claude F3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "\"plaintext\", \"hr\", \"xmp\"",
+        "\"plaintext\", \"xmp\""
+      ]
+    ],
+    "expect": [
+      "603 r3: only a HIDDEN formatting element keeps the p; li/hr/h2 close it; object is a scope stop"
+    ]
+  },
+  {
+    "name": "603 r3: h2 does not close an open p (Claude F3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "\"h1\", \"h2\", \"h3\"",
+        "\"h1\", \"h3\""
+      ]
+    ],
+    "expect": [
+      "603 r3: only a HIDDEN formatting element keeps the p; li/hr/h2 close it; object is a scope stop"
+    ]
+  },
+  {
+    "name": "603 r3: svg/math are not p scope stops, so a hidden p is closed from inside them (Claude F1)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "\"template\", \"button\", \"svg\", \"math\"})",
+        "\"template\", \"button\"})"
+      ]
+    ],
+    "expect": [
+      "603 r3: a decision on or inside <svg>/<math> is REFUSED, and a hidden p stays open across them"
+    ]
+  },
+  {
+    "name": "603 r3: a mark ON svg/math is not refused (Claude F1)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            elif tag in _DECISION_REFUSE_FOREIGN:\n",
+        "            elif False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r3: a decision on or inside <svg>/<math> is REFUSED, and a hidden p stays open across them"
+    ]
+  },
+  {
+    "name": "603 r3: a mark INSIDE svg/math is not refused (Claude F1)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                    if anc in _DECISION_REFUSE_FOREIGN:\n",
+        "                    if False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r3: a decision on or inside <svg>/<math> is REFUSED, and a hidden p stays open across them"
+    ]
   }
 ]

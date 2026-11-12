@@ -1128,6 +1128,11 @@ _DECISION_REFUSE_ON = frozenset({
 _DECISION_REFUSE_INSIDE = frozenset({"template", "noscript", "select", "datalist"})
 #   • on or inside an element carrying one of these attributes, nothing is rendered.
 _DECISION_HIDING_ATTRS = frozenset({"hidden", "inert"})
+#   • ⟳ r3 (Claude F1): ON or INSIDE `<svg>`/`<math>` — foreign content, whose scope boundaries
+#     (`foreignObject`, `desc`, `mi`, `mtext`, …) this scanner does not model. REFUSED rather than
+#     taught more of the HTML spec: no fragment has a mark there, and a refusal tells the author
+#     to move it. Both are also `_P_SCOPE` stops, so a `<p>` is never closed from inside them.
+_DECISION_REFUSE_FOREIGN = frozenset({"svg", "math"})
 #   • ON a `<details>`, or inside one anywhere but its (first) `<summary>`, the tag is in the part
 #     that is collapsed until the reader opens it. ⟳ r2 (Codex 1, 2): r1 OPENED such a `<details>`
 #     instead, and both ways it could fail were found — a quoted ` open ` in another attribute read
@@ -1144,8 +1149,10 @@ _P_CLOSERS = frozenset({
     "p", "search", "section", "summary", "ul", "h1", "h2", "h3", "h4", "h5", "h6", "pre",
     "listing", "form", "li", "dd", "dt", "plaintext", "hr", "xmp",
 })
+# ⟳ r3 (Claude F1): `svg`/`math` stand in for the foreign scope boundaries inside them — stopping
+# at the ROOT is a superset of stopping at `foreignObject`/`mi`/…, and keeping a p can only refuse.
 _P_SCOPE = frozenset({"applet", "caption", "html", "table", "td", "th", "marquee", "object",
-                      "template", "button"})
+                      "template", "button", "svg", "math"})
 # A FORMATTING element closed with the p is RE-OPENED by the browser around what follows (the
 # "active formatting elements"), hidden attribute and all — so a hidden one keeps the p open here.
 _FORMATTING = frozenset({"a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small",
@@ -1191,6 +1198,11 @@ _DETAILS_REFUSAL = ("it is in a <details> outside its <summary>, which is collap
                     "opens it — move the mark outside the <details>, or onto its <summary>")
 
 
+def _foreign_refusal(tag: str) -> str:
+    return (f"it is on or inside a <{tag}>, foreign content whose visibility this check does not "
+            f"model — move the mark outside the <{tag}>")
+
+
 class _DecisionScan(HTMLParser):
     """Every start tag carrying `data-decision`, in document order, with its position. PURE.
 
@@ -1204,8 +1216,16 @@ class _DecisionScan(HTMLParser):
 
     Each found entry is (pos, start-tag text, answer, label, refusal-or-None). An ancestor stack is
     kept from start/end tags, and a `<p>` is closed where HTML closes it implicitly (`_close_p`). Any
-    OTHER element closed implicitly stays on the stack, which can only cause a refusal, never a
-    silent count.
+    OTHER element closed implicitly stays on the stack, which errs toward refusal.
+
+    ⚠ THE BOUND, CORRECTED r3 (Claude F2) — r2 said a stale stack "can only cause a refusal, never a
+    silent count", and that is FALSE. An EXPLICIT end tag pops the nearest same-named entry with no
+    scope check and no re-opening of active formatting elements, so MISNESTED hidden markup is
+    counted and not seen: `<p>a<b hidden>c</p><div data-decision>` (the browser re-opens the hidden
+    `b`), `<div><b hidden>x</div><p data-decision>`, `<p hidden>x<object></p><div data-decision>`
+    (the browser ignores that `</p>`), and an end tag crossing a table cell. Every such shape is
+    hostile misnesting; no real fragment has one. Not fixed here by teaching the scanner more of
+    the parser — that is the thrashing filed for a Phase 6 review (docs/backlog.md).
     """
 
     CDATA_CONTENT_ELEMENTS = ("script", "style", "xmp", "iframe", "noembed", "noframes",
@@ -1246,8 +1266,13 @@ class _DecisionScan(HTMLParser):
                 refusal = f"its <{tag}> carries {'/'.join(sorted(names & _DECISION_HIDING_ATTRS))}"
             elif tag == "details" or collapsed:
                 refusal = _DETAILS_REFUSAL
+            elif tag in _DECISION_REFUSE_FOREIGN:
+                refusal = _foreign_refusal(tag)
             else:
                 for anc, anc_hides, anc_collapsed, _ in self._stack:
+                    if anc in _DECISION_REFUSE_FOREIGN:
+                        refusal = _foreign_refusal(anc)
+                        break
                     if anc in _DECISION_REFUSE_INSIDE:
                         refusal = f"it is inside a <{anc}>, which is not rendered"
                         break
@@ -3074,6 +3099,27 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
          and "hidden or inert" in _refusal("<h1>x</h1><p hidden><button><div data-decision>b</div></button>")
          and "hidden or inert" in _refusal("<h1>x</h1><p>a<b hidden>c<div data-decision>d</div>")
          and render_decisions("<h1>x</h1><p hidden>h<div data-decision>v</div>")[1:] == (1, 1))
+    # ⟳ r3 (Claude F3): the p-closure sets and the formatting check, pinned in BOTH directions.
+    case("603 r3: only a HIDDEN formatting element keeps the p; li/hr/h2 close it; object is a scope stop",
+         _refusal("<h1>x</h1><p hidden>a<b>c<div data-decision>d</div>") == ""
+         and _refusal("<h1>x</h1><p hidden>x<li data-decision>l</li>") == ""
+         and _refusal("<h1>x</h1><p hidden>x<hr><span data-decision>s</span>") == ""
+         and _refusal("<h1>x</h1><p hidden>x<h2 data-decision>h</h2>") == ""
+         and "hidden or inert" in _refusal("<h1>x</h1><p hidden>x<object><div data-decision>o</div>"))
+    # ⟳ r3 (Claude F1): the reviewer's four SVG/MathML shapes, each counted-not-seen under r2.
+    case("603 r3: a decision on or inside <svg>/<math> is REFUSED, and a hidden p stays open across them",
+         all("CANNOT RUN" in _refusal(f) for f in (
+             "<h1>x</h1><p hidden>x<svg><foreignObject><div data-decision>fo</div></foreignObject></svg>",
+             "<h1>x</h1><p hidden>x<svg><desc><div data-decision>desc</div></desc></svg>",
+             "<h1>x</h1><p hidden>x<math><mi><div data-decision>mi</div></mi></math>",
+             "<h1>x</h1><p hidden>x<math><mtext><div data-decision>mt</div></mtext></math>",
+             "<h1>x</h1><svg data-decision><rect/></svg>"))
+         and "inside a <svg>, foreign" in _refusal(
+             "<h1>x</h1><div><svg><foreignObject><p data-decision>v</p></foreignObject></svg></div>")
+         and "inside a <math>, foreign" in _refusal("<h1>x</h1><math><mtext><b data-decision>m</b></mtext></math>")
+         and "hidden or inert" in _refusal("<h1>x</h1><p hidden>x<svg><foreignObject><div>d</div>"
+                                           "</foreignObject></svg><span data-decision>s</span>")
+         and _refusal("<h1>x</h1><svg><rect/></svg><p data-decision>after</p>") == "")
     case("603 r1: a fragment id/name the tags need is REFUSED, a different one is not",
          "ex-decision-1" in _refusal("<h1>x</h1><p id=\"ex-decision-1\">I</p><p data-decision>C</p>")
          and "ex-decision-2" in _refusal("<h1>x</h1><a name=\"ex-decision-2\"></a>"

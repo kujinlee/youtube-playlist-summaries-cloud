@@ -20318,7 +20318,11 @@ inventory walkthrough is the first page rebuilt this way: 13 decisions, 11 answe
 review of the memory files before they are published, and the legal name or entity to put on the copyright line.
 A tag can lead with the page's own name for a decision ("D7 — DECISION 6 of 13"), and a page that hides a decision
 where you could not see it, including inside a collapsed section, now fails to build instead of counting it.
-Filed backlog #615: nothing yet checks that a page marks every decision it asks you.
+Filed backlog #615: nothing yet checks that a page marks every decision it asks you. A decision placed inside a
+drawing (an SVG or maths block) is now refused too. The review closed at its round limit, but the checker that decides
+whether a tag is visible kept producing new holes from one round's fix to the next, so a redesign review of it is
+filed as backlog #616. One known gap stays open there: deliberately mis-nested hidden markup can still be counted
+without being seen. No real page has it.
 <!--tech-->
 Backlog #603. `scripts/brief-compose.py`: `render_decisions` parses the fragment body (html.parser, so a
 `data-decision` inside an attribute value or a script string is not counted), inserts a tag after each marked
@@ -20329,4 +20333,8 @@ page with a decision, so every other page composes byte-identical. r1 fold: a ma
 set so 3.12 and 3.14 agree; ids are `ex-decision-{n}` and a collision is refused; `data-decision-label` leads the
 tag. r2 fold (all four findings caused by r1): the `<details>` auto-open is REMOVED and a mark in a `<details>`
 outside its `<summary>` is CANNOT RUN; the ancestor stack closes a `<p>` as HTML does; the contrast case refuses a
-colour it cannot fully evaluate (alpha, `rgba`, named, `var()`). Self-test 196 → 224; 40 mutations, pin 46 → 86.
+colour it cannot fully evaluate (alpha, `rgba`, named, `var()`). r3 fold (Claude F1–F3; F1/F3 caused by r2): a mark
+on or inside `<svg>`/`<math>` is CANNOT RUN and both are `_P_SCOPE` stops; the docstring's false "never a silent
+count" bound is corrected (F2, misnested end tags, NOT fixed); the p-closure sets and the formatting check's
+`hidden` are pinned. THRASHING armed in decision-scan → Phase 6 filed as backlog #616. Self-test 196 → 226; 48
+mutations, pin 46 → 94.
