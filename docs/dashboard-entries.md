@@ -20318,6 +20318,9 @@ sweep opens a `sweep-flaky` GitHub issue naming it (or comments on the open one)
 survivor that lives through both runs, or whose second run crashed or went red for another reason, is SURVIVED and red,
 as before. The mutant from the #487 incident was already killed on master by the case added for backlog #506; this
 change also makes the `ordered()` case it names deterministic. Measured: 0 misses in 50 runs, a ~6% 95% upper bound.
+Review round 2 closed three holes the round-1 fix left: a link in the code could still let the second run see the
+first run's leftovers; a partly failed download of the FLAKY results could read as "none"; and a mutation's name was
+cut short in the issue. Now a missing result file makes the step red and says the check did not run.
 <!--tech-->
 Branch `495-survivor-retry`. `scripts/check-selftest-counts.py`: the `ordered()` fixture holds job `a` until the
 collector has consumed `b`'s result (a wrapped `as_completed`), so completion order is forced. `scripts/check-plan-code.py`:
@@ -20327,6 +20330,9 @@ rc 1, a summary line, every `expect` case red exactly once, and no seed split. F
 `flaky: True`, `ok` untouched, named by `tally_line`. `scripts/sweep-red-alert.py` + `ci.yml`: each shard greps its
 `mutation FLAKY — ` lines into an artifact; the complete job downloads them into `FLAKY_DIR`, files them after the red
 alert, and a missing directory is a red step. `scripts/batch-ci.py`: `failures` drops FLAKY lines, so a FLAKY
-mutation never ejects its PR. Self-tests: check-plan-code 418 -> 441, sweep-red-alert 15 -> 24, batch-ci 168 -> 169.
-Mutation pins: check-plan-code 301 -> 319, sweep-red-alert 6 -> 14, batch-ci 95 -> 96, each verified red on a copy via
-the case it names.
+mutation never ejects its PR. r2 fold (Codex 1-3): `rerun_snapshot` dereferences symlinks (no `symlinks=True`), so an
+absolute link cannot reach the first run's tree; `read_flaky` requires `shard-0..N-1.txt`, N from `ci.yml`'s `shard:`
+matrix (`shard_count`), and the download step is no longer `continue-on-error`; `flaky_names` reads a name up to the
+harness's fixed tail (`FLAKY_TAIL`), not the first `: `. Self-tests: check-plan-code 418 -> 443, sweep-red-alert
+15 -> 32, batch-ci 168 -> 169. Mutation pins: check-plan-code 301 -> 320, sweep-red-alert 6 -> 20, batch-ci 95 -> 96,
+each verified red on a copy via the case it names.

@@ -1496,12 +1496,13 @@ jobs:
       # The aggregate step above fails exactly when SWEEP is not `success`, so SWEEP decides here.
       # backlog #534: a `batch/**` push never alerts either. Its red is a batch verdict, read and acted on by
       # `batch-ci.py status` (eject or bisect); nothing it measured has merged, so master is not red.
-      # ⟳ backlog #495 r1 (Codex 4 / Claude M1): every shard's FLAKY names, merged into ONE directory. A shard
-      # that uploaded nothing leaves the directory short of its file, never a false "no FLAKY" for the run: an
-      # ABSENT directory makes the alert step below red (`read_flaky`), AFTER the sweep-red issue is filed.
+      # ⟳ backlog #495 r1 (Codex 4 / Claude M1): every shard's FLAKY names, merged into ONE directory.
+      # ⟳ r2 Codex 2: NOT continue-on-error — a failed download is a red step. The alert step below still runs
+      # (`!cancelled()`, no `success()`), files any red sweep FIRST, then goes red itself when ANY shard's
+      # `shard-<i>.txt` is missing (`read_flaky`, one per entry of the `shard:` matrix): an empty or partial
+      # download is NOT RUN, never "no FLAKY".
       - name: Download every shard's FLAKY mutation names
         if: ${{ !cancelled() && github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/heads/batch/') }}
-        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: sweep-flaky-*

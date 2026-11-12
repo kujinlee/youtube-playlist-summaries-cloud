@@ -918,7 +918,9 @@ EXPECTED_MUTATIONS = {
     # the named case missing, red twice, no summary line, no [FAIL] line, a seed split, a re-run that did not
     # complete, every red case named instead of the expected one), the fresh tree (`rerun_from=d`), the budget
     # before the re-run, the unmutated re-run, the unseeded re-run. Each verified red on a temp copy via its case.
-    "scripts/check-plan-code.py": 319,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-11 backlog #495 r2 fold (Codex 1): 319 -> 320 — the re-run snapshot preserving symlinks again (an
+    # absolute link into the tree shares the first run's count). Verified red via its case on a temp copy.
+    "scripts/check-plan-code.py": 320,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -1592,7 +1594,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 6 -> 14, backlog #495 r1 (Codex 4 / Claude M1): a FLAKY mutant FILED — never filed, scanned before the red
     # alert, a missing directory read as none, no comment on the open issue, a name listed twice, one shard read,
     # the names left out of the body, and a write with nothing to file.
-    "scripts/sweep-red-alert.py": 14,
+    # ⟳ 14 -> 20, backlog #495 r2 fold (Codex 2+3): a missing shard file read as none, the shard count not read from
+    # the matrix, two matrix lines or an empty one accepted, a name cut at its first `: `, a line without the tail
+    # read at a guess. Four r1 entries re-bound (the call in two, the unset-directory guard, the shard loop).
+    "scripts/sweep-red-alert.py": 20,
     # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
     # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which

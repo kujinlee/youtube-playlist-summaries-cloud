@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 441 cases
+    python3 scripts/check-plan-code.py --self-test          # 443 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -2239,6 +2239,10 @@ def rerun_snapshot(d: pathlib.Path, cleanup: contextlib.ExitStack) -> "pathlib.P
     with whatever that run left behind — a suite that counts its runs in a file beside it was killed only on its
     SECOND run, and read FLAKY. A survivor's re-run now runs in a FRESH copy of this snapshot (`rerun_fresh`), so
     nothing its own first run wrote can reach it. `cleanup` deletes the snapshot when the run ends.
+    ⛔ r2 Codex 1: symlinks are DEREFERENCED (`copytree`'s default, as `stage_tree` stages `d`). A preserved ABSOLUTE
+    link — one a control run made, to a counter in `d` — took the re-run back into `d`, where it saw the first run's
+    count and was killed: FLAKY. A dereferenced copy holds the target's bytes as they were here. A link that cannot be
+    followed (dangling, a loop) fails the copy: CANNOT RUN, so the survivor stays SURVIVED — never a shared route.
     ⚠ BOUND: the snapshot is taken ONCE per run, after the controls — the state the FIRST mutant saw. A later
     mutant's first run also saw what earlier mutants left in `d` (`seed_trees`' stated exposure); its re-run does not.
     A str (CANNOT RUN reason) makes every re-run NOT CHECKED, so a survivor stays SURVIVED and red — never FLAKY.
@@ -2246,7 +2250,7 @@ def rerun_snapshot(d: pathlib.Path, cleanup: contextlib.ExitStack) -> "pathlib.P
     c = pathlib.Path(tempfile.mkdtemp(prefix="rerun-snapshot-"))
     cleanup.callback(shutil.rmtree, c, ignore_errors=True)
     try:
-        shutil.copytree(d, c / "t", symlinks=True, ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(d, c / "t", ignore=shutil.ignore_patterns("__pycache__"))
     except (OSError, shutil.Error) as e:
         return (f"CANNOT RUN — the re-run snapshot of the tree could not be copied ({type(e).__name__}: {e}), so no "
                 f"re-run could start from a fresh tree. NOT CHECKED.")
@@ -2269,7 +2273,7 @@ def rerun_fresh(snap: "pathlib.Path | str", fname: str, src: str, seeds=None, li
         cleanup.callback(shutil.rmtree, c, ignore_errors=True)
         t = c / "t"
         try:
-            shutil.copytree(snap, t, symlinks=True)
+            shutil.copytree(snap, t)   # the snapshot holds no link (r2 Codex 1), so this copy shares nothing
             (t / fname).write_text(src)
         except (OSError, shutil.Error) as e:
             return 2, (f"CANNOT RUN — the re-run's fresh tree could not be made ({type(e).__name__}: {e}). "
@@ -3413,15 +3417,19 @@ def _self_test_body() -> int:
             _dr, _st = pathlib.Path(_tdr), pathlib.Path(_tst)
 
             def _flaky_run(kill_from: int, seeds=None, only_seed=None, how="named", beside=False, limits=None,
-                           spent_after=None):
+                           spent_after=None, link=False):
                 for _old in [*_dr.rglob("runs*.txt"), *_st.glob("runs*.txt")]:
                     _old.unlink()
+                if link:   # r2 Codex 1's probe: an ABSOLUTE link in the tree, to a counter in the tree, before run 1
+                    (_dr / "runs.txt").write_text("0")
+                    os.symlink(_dr.resolve() / "runs.txt", _dr / "runs-link.txt")
                 (_dr / "r.py").write_text(
                     'import os, pathlib, sys, time\n'
                     'def f():\n    return 1\n\n\n'
                     'def _self_test():\n'
                     f'    only, how = {only_seed!r}, {how!r}\n'
-                    + ('    runs = pathlib.Path(__file__).with_name("runs.txt")\n' if beside else
+                    + ('    runs = pathlib.Path(__file__).with_name("runs-link.txt")\n' if link else
+                       '    runs = pathlib.Path(__file__).with_name("runs.txt")\n' if beside else
                        '    runs = pathlib.Path(os.environ["PC495_STATE"]) / ("runs-%s.txt" % '
                        'os.environ.get("PYTHONHASHSEED"))\n') +
                     '    n = int(runs.read_text()) + 1 if runs.exists() else 1\n'
@@ -3520,6 +3528,12 @@ def _self_test_body() -> int:
                  "red, never FLAKY", _red_survivor(_resd), _red)
             case("...and the first run's own tree still holds its state, so the re-run's FRESH tree is what saved it",
                  (_dr / "runs.txt").read_text() if (_dr / "runs.txt").exists() else None, "1")
+            # ⛔ r2 Codex 1: the same count reached through an ABSOLUTE SYMLINK in the tree must not reach the re-run.
+            (_resl, _) = _flaky_run(2, link=True)
+            case("⭐ r2 Codex 1: a suite counting through an ABSOLUTE SYMLINK into its tree does not carry the count "
+                 "into the re-run — SURVIVED, red, never FLAKY", _red_survivor(_resl), _red)
+            case("...and the counter the link names was written ONCE, by the first run — the re-run never reached it",
+                 ((_dr / "runs.txt").read_text(), (_dr / "runs-link.txt").is_symlink()), ("1", True))
             # ⛔ r1 Claude m2: a re-run that could not complete says so, and the budget is checked BEFORE it.
             (_rest, _nt) = _flaky_run(2, how="slow", limits={"r.py": 2.0})
             case("⭐ r1 m2: a re-run that TIMES OUT is SURVIVED and red, and the report says it did NOT COMPLETE",

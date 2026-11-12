@@ -4021,6 +4021,19 @@
     ]
   },
   {
+    "name": "#495 r2 Codex 1: the re-run snapshot preserves symlinks, so an absolute link shares state with the first run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        shutil.copytree(d, c / \"t\", ignore=shutil.ignore_patterns(\"__pycache__\"))\n    except (OSError, shutil.Error) as e:\n        return (f\"CANNOT RUN — the re-run snapshot",
+        "        shutil.copytree(d, c / \"t\", symlinks=True, ignore=shutil.ignore_patterns(\"__pycache__\"))\n    except (OSError, shutil.Error) as e:\n        return (f\"CANNOT RUN — the re-run snapshot"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex 1: a suite counting through an ABSOLUTE SYMLINK into its tree does not carry the count into the re-run — SURVIVED, red, never FLAKY"
+    ]
+  },
+  {
     "name": "#495 r1 m2: the budget is not checked before the re-run",
     "file": "scripts/check-plan-code.py",
     "edits": [

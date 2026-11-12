@@ -2,7 +2,7 @@
 """Open or comment on the `sweep-red` issue after a FULL mutation sweep on master (backlog #330). It NEVER closes one.
 
     python3 scripts/sweep-red-alert.py              # in CI: reads SWEEP, SHA, EVENT, RUN_URL, FLAKY_DIR; acts via gh
-    python3 scripts/sweep-red-alert.py --self-test  # 24 cases
+    python3 scripts/sweep-red-alert.py --self-test  # 32 cases
 
 WHY THIS EXISTS. A pull request's sweep is diff-scoped, so what it does not select is measured only by the full
 sweep on master, AFTER merge. A red full sweep therefore opens an issue labelled `sweep-red` (or comments on the
@@ -20,8 +20,10 @@ act after reading it. A stale open alert fails toward MORE alarm, the direction 
 killed on that re-run is FLAKY — GREEN, so the sweep is `success` and nothing above would ever write. The owner's
 rule (11-11 19:25) is "named AND FILED". So each shard writes its `mutation FLAKY — <name>: ` lines to a file,
 the files reach this job as artifacts in `FLAKY_DIR`, and ANY FLAKY name — on a green sweep or a red one — opens
-an issue labelled `sweep-flaky` listing them (or comments on the open one). It never closes one either. A
-`FLAKY_DIR` that is unset or missing RAISES: a scan that did not run is NOT a scan that found nothing.
+an issue labelled `sweep-flaky` listing them (or comments on the open one). It never closes one either.
+⟳ r2 Codex 2: a `FLAKY_DIR` that is unset, or lacks ANY shard's `shard-<i>.txt` (one per entry of `ci.yml`'s
+`shard:` matrix, `shard_count`), RAISES: a scan that did not run is NOT a scan that found nothing.
+⟳ r2 Codex 3: a name runs to the harness's FIXED tail (`FLAKY_TAIL`), never to the first `: ` — real names hold one.
 
 A `gh` call that fails raises, so the CI step goes red and the run says so — never a silent pass.
 """
@@ -30,6 +32,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -39,6 +42,7 @@ LABEL = "sweep-red"
 MARKER = "<!-- sweep-red-sha: {sha} -->"
 FLAKY_LABEL = "sweep-flaky"
 FLAKY_LINE = "mutation FLAKY — "
+FLAKY_TAIL = ": SURVIVED its first run, then KILLED on its one re-run"   # what `check-plan-code` prints after <name>
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 STEP_NAME = "- name: The FULL sweep on master opens or comments on the sweep-red issue, and never closes one"
@@ -54,12 +58,19 @@ def red_body(sweep: str, event: str, sha: str, run_url: str) -> str:
 
 
 def flaky_names(text: str) -> list[str]:
-    """PURE. The mutation names on the harness's `mutation FLAKY — <name>: ...` lines in `text`, first seen first,
-    each once. A line may carry a log prefix (a timestamp); the name runs to the FIRST `: ` after the marker."""
+    """PURE. The mutation names on the harness's `mutation FLAKY — <name>: SURVIVED its first run, then KILLED ...`
+    lines in `text`, first seen first, each once. A line may carry a log prefix (a timestamp, `✗`).
+    ⛔ r2 Codex 3: the name runs from the marker to the LAST `FLAKY_TAIL` — never to the first `: `, which real
+    manifest names contain (`#495: a survivor is never re-run` read as `#495`). A marker line WITHOUT the tail
+    RAISES: the harness's line changed shape, and a name cut at a guess is a wrong name filed as right."""
     names: list[str] = []
     for line in text.split("\n"):
         if FLAKY_LINE in line:
-            name = line.split(FLAKY_LINE, 1)[1].split(": ", 1)[0].strip()
+            name, tail, _ = line.split(FLAKY_LINE, 1)[1].rpartition(FLAKY_TAIL)
+            if not tail:
+                raise RuntimeError(f"a FLAKY line without the harness's tail {FLAKY_TAIL!r}: {line.strip()[:200]!r} "
+                                   f"— its name cannot be read, so the FLAKY scan did NOT RUN")
+            name = name.strip()
             if name and name not in names:
                 names.append(name)
     return names
@@ -73,12 +84,32 @@ def flaky_body(names: list[str], event: str, sha: str, run_url: str) -> str:
             + "".join(f"- {n}\n" for n in names))
 
 
-def read_flaky(flaky_dir: str) -> list[str]:
-    """IO. Every FLAKY name in the shards' files under `flaky_dir`. RAISES when it is unset or not a directory."""
-    if not flaky_dir or not pathlib.Path(flaky_dir).is_dir():
-        raise RuntimeError(f"FLAKY_DIR {flaky_dir!r} is not a directory: the FLAKY scan did NOT RUN — treat the "
+def shard_count(workflow_text: str) -> int:
+    """PURE. How many shards the sweep runs: the entries of the ONE `shard: [...]` matrix line in `ci.yml`. RAISES
+    unless there is exactly one such line with at least one entry — a count guessed is a scan bounded by a guess."""
+    rows = [l for l in workflow_text.splitlines() if re.match(r"\s*shard:\s*\[", l)]
+    if len(rows) != 1:
+        raise ValueError(f"{len(rows)} `shard: [...]` matrix lines in the workflow, not one: the shard count is unknown")
+    n = len([x for x in rows[0].split("[", 1)[1].split("]", 1)[0].split(",") if x.strip()])
+    if n < 1:
+        raise ValueError("the `shard: [...]` matrix is empty: the shard count is unknown")
+    return n
+
+
+def read_flaky(flaky_dir: str, shards: int) -> list[str]:
+    """IO. Every FLAKY name in `shard-0.txt` .. `shard-<shards-1>.txt` under `flaky_dir` (`ci.yml` names each shard's
+    file by its 0-based `strategy.job-index`). ⛔ r2 Codex 2: RAISES when `flaky_dir` is unset or ANY shard's file is
+    absent — an empty directory or a partial download used to read as "no FLAKY"."""
+    if not flaky_dir:
+        raise RuntimeError("FLAKY_DIR is unset: the FLAKY scan did NOT RUN — treat the sweep's FLAKY results as "
+                           "NOT CHECKED")
+    files = [pathlib.Path(flaky_dir) / f"shard-{i}.txt" for i in range(shards)]
+    missing = [f.name for f in files if not f.is_file()]
+    if missing:
+        raise RuntimeError(f"FLAKY_DIR {flaky_dir!r} lacks {len(missing)} of {shards} shard files ({', '.join(missing[:5])}"
+                           f"{', ...' if len(missing) > 5 else ''}): the FLAKY scan did NOT RUN for them — treat the "
                            f"sweep's FLAKY results as NOT CHECKED")
-    return flaky_names("\n".join(f.read_text(encoding="utf-8") for f in sorted(pathlib.Path(flaky_dir).glob("*.txt"))))
+    return flaky_names("\n".join(f.read_text(encoding="utf-8") for f in files))
 
 
 def file_flaky(names: list[str], event: str, sha: str, run_url: str) -> None:
@@ -114,7 +145,8 @@ def main(env=None) -> int:
     event, run_url = env.get("EVENT", ""), env.get("RUN_URL", "")
     alert_red(sweep, event, sha, run_url)
     # backlog #495 r1: AFTER the red alert, so a missing FLAKY_DIR (which raises) can never cost a red its issue.
-    file_flaky(read_flaky(env.get("FLAKY_DIR", "")), event, sha, run_url)
+    file_flaky(read_flaky(env.get("FLAKY_DIR", ""), shard_count(WORKFLOW.read_text(encoding="utf-8"))), event, sha,
+               run_url)
     return 0
 
 
@@ -250,12 +282,25 @@ def _self_test_body() -> int:
     except ValueError:
         _raised = True
     case("a step with no `run:` of its own RAISES — the next step's is never borrowed", _raised, True)
-    _log = ("2026-11-11T01:02:03Z mutation FLAKY — drop a guard: SURVIVED its first run, then KILLED (by 'x: y')\n"
+    # ⛔ r2 Codex 3: REAL manifest names (`scripts/mutations/check-plan-code.json`), each holding `: `, in the line
+    # shape the harness prints (`  ✗ ` + its report line, a log timestamp before it).
+    _n1, _n2, _n3 = ("#495: a survivor is never re-run", "#495: a FLAKY mutant turns the run red",
+                     "#495 r1 B1: a re-run kill is accepted without the case it names")
+    _t = FLAKY_TAIL + " in a fresh tree (by 'f returns one: got 2'). Not red, and NOT counted as killed: x\n"
+    _log = (f"2026-11-11T01:02:03Z   ✗ {FLAKY_LINE}{_n1}{_t}"
             "mutation SURVIVED — real one: the suite stayed green\n"
-            "Z mutation FLAKY — flip: a sign: SURVIVED its first run\n"
-            "mutation FLAKY — drop a guard: again\n")
-    case("⭐ #495 r1: `flaky_names` reads each FLAKY line's name (log prefix allowed), once each, never a SURVIVED one",
-         (flaky_names(_log), flaky_names("mutation SURVIVED — real one: x\n")), (["drop a guard", "flip"], []))
+            f"  ✗ {FLAKY_LINE}{_n2}{_t}{FLAKY_LINE}{_n3}{_t}{FLAKY_LINE}{_n1}{_t}")
+    case("⭐ #495 r2 Codex 3: `flaky_names` reads each REAL name WHOLE (`: ` inside it), once each, never a SURVIVED one",
+         (flaky_names(_log), flaky_names("mutation SURVIVED — real one: x\n")), ([_n1, _n2, _n3], []))
+    try:
+        flaky_names(f"{FLAKY_LINE}{_n1}: KILLED somehow\n")
+        _raised_t = False
+    except RuntimeError as e:
+        _raised_t = "did NOT RUN" in str(e)
+    case("...a FLAKY line WITHOUT the harness's tail RAISES — never a name cut at a guess", _raised_t, True)
+    case("...and the harness prints exactly `FLAKY_LINE` + name + `FLAKY_TAIL`, so the tail read here is the one made",
+         f'f"{FLAKY_LINE}{{name}}{FLAKY_TAIL}' in (ROOT / "scripts" / "check-plan-code.py").read_text(encoding="utf-8"),
+         True)
     _b1, _b2 = flaky_body(["m one", "m two"], "push", B, "https://run/1"), flaky_body(["m three"], "schedule", C,
                                                                                       "https://run/2")
     case("...and `flaky_body` NAMES every FLAKY mutation, with its own event, SHA and run",
@@ -264,28 +309,55 @@ def _self_test_body() -> int:
                                                 (_b2, ("- m three\n", "schedule", C, "https://run/2", "1 FLAKY")))]
          + ["m one" in _b2], [True, True, False])
     try:
-        read_flaky("")
+        read_flaky("", 1)
         _raised_f = False
     except RuntimeError as e:
         _raised_f = "did NOT RUN" in str(e)
     case("...an unset FLAKY_DIR RAISES — a scan that did not run is never a scan that found nothing", _raised_f, True)
     with tempfile.TemporaryDirectory() as _fd:
-        pathlib.Path(_fd, "shard-1.txt").write_text("Z mutation FLAKY — b: x\nZ mutation FLAKY — a: y\n",
-                                                    encoding="utf-8")
-        pathlib.Path(_fd, "shard-0.txt").write_text("Z mutation FLAKY — a: x\n", encoding="utf-8")
-        pathlib.Path(_fd, "notes.log").write_text("Z mutation FLAKY — not a shard file: x\n", encoding="utf-8")
-        case("...`read_flaky` reads EVERY shard file in the directory (each name once), and only `*.txt`",
-             read_flaky(_fd), ["a", "b"])
+        def _raised_with(*a) -> str:
+            """the NOT RUN message `read_flaky` raised, or '' when it returned."""
+            try:
+                read_flaky(*a)
+                return ""
+            except RuntimeError as e:
+                return str(e) if "did NOT RUN" in str(e) else ""
+        case("⭐ #495 r2 Codex 2: an EMPTY FLAKY_DIR RAISES — every shard's file is missing",
+             ("shard-0.txt, shard-1.txt" in _raised_with(_fd, 2)), True)
+        pathlib.Path(_fd, "shard-0.txt").write_text(f"Z {FLAKY_LINE}a{_t}", encoding="utf-8")
+        _m = _raised_with(_fd, 2)
+        case("...a PARTIAL download (shard-0 of 2) RAISES, naming the missing shard and only it",
+             ("1 of 2" in _m, "shard-1.txt" in _m, "shard-0.txt" in _m), (True, True, False))
+        pathlib.Path(_fd, "shard-1.txt").write_text(f"Z {FLAKY_LINE}b{_t}Z {FLAKY_LINE}a{_t}", encoding="utf-8")
+        pathlib.Path(_fd, "notes.txt").write_text(f"Z {FLAKY_LINE}not a shard file{_t}", encoding="utf-8")
+        case("...`read_flaky` reads EVERY shard's file (each name once), and only the shards' files",
+             read_flaky(_fd, 2), ["a", "b"])
+    _wf3 = "jobs:\n  s:\n    strategy:\n      matrix:\n        # shard: [not, this]\n        shard: [1, 2, 3]\n"
+    case("⭐ #495 r2 Codex 2: `shard_count` is the entries of the ONE `shard:` matrix line", shard_count(_wf3), 3)
+    _bad = []
+    for _w in (_wf3 + "        shard: [1]\n", "jobs: {}\n", "        shard: []\n"):
+        try:
+            shard_count(_w)
+            _bad.append(False)
+        except ValueError:
+            _bad.append(True)
+    case("...two matrix lines, none, or an empty one RAISE — the count is never guessed", _bad, [True, True, True])
 
     # ── the workflow step's real `run:` block, against a fake gh ──
     wf = WORKFLOW.read_text(encoding="utf-8")
     run_block = step_run_block(wf)
     case("the alert step's run block runs this helper", "python3 scripts/sweep-red-alert.py" in run_block, True)
+    _dl = wf.split("- name: Download every shard's FLAKY mutation names", 1)[-1].split("- name:", 1)[0]
+    case("⭐ #495 r2 Codex 2: the download step exists and is NOT continue-on-error — a failed download is a red step",
+         ("actions/download-artifact" in _dl, "continue-on-error" in _dl), (True, False))
     with tempfile.TemporaryDirectory() as td:
         repo, bin_ = pathlib.Path(td) / "repo", pathlib.Path(td) / "bin"
         (repo / "scripts").mkdir(parents=True)
         bin_.mkdir()
         shutil.copy(__file__, repo / "scripts" / "sweep-red-alert.py")
+        (repo / ".github" / "workflows").mkdir(parents=True)   # r2 Codex 2: the helper reads the REAL shard count
+        shutil.copy(WORKFLOW, repo / ".github" / "workflows" / "ci.yml")
+        n_shards = shard_count(wf)
         (bin_ / "gh").write_text(FAKE_GH)
         (bin_ / "gh").chmod(0o755)
         # A REAL commit, so a green AT the failing commit is a green any coverage rule would accept: the strongest
@@ -301,11 +373,14 @@ def _self_test_body() -> int:
             sha[c] = g("rev-parse", "HEAD")
         state = pathlib.Path(td) / "gh.json"
 
-        def step(sweep: str, at: str, flaky: "dict | None" = None, flaky_dir: "str | None" = None) -> tuple[int, str]:
-            """`flaky`: {shard file: its FLAKY lines} written to a FRESH FLAKY_DIR; `flaky_dir` overrides the path."""
+        def step(sweep: str, at: str, flaky: "dict | None" = None, flaky_dir: "str | None" = None,
+                 drop: tuple = ()) -> tuple[int, str]:
+            """`flaky`: {shard file: its FLAKY lines} written to a FRESH FLAKY_DIR holding EVERY shard's file (an
+            empty one by default) except those named in `drop`; `flaky_dir` overrides the path."""
             fd = pathlib.Path(tempfile.mkdtemp(dir=td))
-            for fname, text in (flaky or {}).items():
-                (fd / fname).write_text(text, encoding="utf-8")
+            for fname, text in {**{f"shard-{i}.txt": "" for i in range(n_shards)}, **(flaky or {})}.items():
+                if fname not in drop:
+                    (fd / fname).write_text(text, encoding="utf-8")
             e = dict(os.environ, PATH=f"{bin_}{os.pathsep}{os.environ.get('PATH', '')}", FAKE_GH_STATE=str(state),
                      SWEEP=sweep, SHA=sha.get(at, at), EVENT="push", RUN_URL=f"https://run/{sweep}/{at}",
                      FLAKY_DIR=str(fd) if flaky_dir is None else flaky_dir)
@@ -349,19 +424,18 @@ def _self_test_body() -> int:
         case("a green with NO issue open writes nothing to GitHub", (rc, writes(st()["calls"]), st()["issues"]),
              (0, [], []))
         # ── backlog #495 r1 (Codex 4 / Claude M1): a FLAKY mutant is FILED, on a green sweep too ──
-        _fa = {"shard-0.txt": "Z mutation FLAKY — alpha: SURVIVED its first run\n",
-               "shard-3.txt": "Z mutation FLAKY — beta: SURVIVED its first run\n", "shard-1.txt": ""}
+        _fa = {"shard-0.txt": f"Z {FLAKY_LINE}alpha{_t}", "shard-3.txt": f"Z {FLAKY_LINE}beta{_t}"}
         state.write_text(json.dumps({"issues": [], "calls": []}))
         rc, out = step("success", "c", _fa)
         _fi = [i for i in st()["issues"] if i["labels"] == [FLAKY_LABEL]]
         case("⭐ #495 r1: a GREEN sweep with FLAKY mutants in two shards OPENS one sweep-flaky issue naming BOTH",
              (rc, len(_fi), [n in (_fi or [{}])[0].get("body", "") for n in ("- alpha\n", "- beta\n")],
               [i for i in st()["issues"] if LABEL in i["labels"]]), (0, 1, [True, True], []))
-        rc, out = step("success", "c", {"shard-2.txt": "Z mutation FLAKY — gamma: x\n"})
+        rc, out = step("success", "c", {"shard-2.txt": f"Z {FLAKY_LINE}gamma{_t}"})
         case("...a second one COMMENTS on the open sweep-flaky issue, naming its own, and opens no second issue",
              (rc, len(st()["issues"]), "- gamma\n" in (st()["issues"][0]["comments"] or [{}])[-1].get("body", "")),
              (0, 1, True))
-        rc, out = step("failure", "c", {"shard-0.txt": "Z mutation FLAKY — delta: x\n"})
+        rc, out = step("failure", "c", {"shard-0.txt": f"Z {FLAKY_LINE}delta{_t}"})
         case("...a RED sweep with a FLAKY mutant files BOTH: a sweep-red issue and the FLAKY names",
              (rc, sorted(i["labels"][0] for i in st()["issues"]),
               "- delta\n" in (st()["issues"][0]["comments"] or [{}])[-1].get("body", "")),
@@ -372,6 +446,10 @@ def _self_test_body() -> int:
         rc, out = step("failure", "c", flaky_dir=str(pathlib.Path(td) / "never-downloaded"))
         case("⭐ #495 r1: a MISSING FLAKY_DIR makes the step RED — and only AFTER the red sweep got its issue",
              (rc != 0, "did NOT RUN" in out, [i["labels"] for i in st()["issues"]]), (True, True, [[LABEL]]))
+        state.write_text(json.dumps({"issues": [], "calls": []}))
+        rc, out = step("success", "c", {"shard-0.txt": ""}, drop=(f"shard-{n_shards - 1}.txt",))
+        case("⭐ #495 r2 Codex 2: the REAL step with ONE of the matrix's shard files missing is RED, NOT RUN — never "
+             "'no FLAKY'", (rc != 0, f"shard-{n_shards - 1}.txt" in out, "no FLAKY mutation" in out), (True, True, False))
         (bin_ / "gh").write_text("#!/bin/sh\necho 'HTTP 502' >&2\nexit 1\n")
         for sweep in ("success", "failure"):
             rc, out = step(sweep, "c")
