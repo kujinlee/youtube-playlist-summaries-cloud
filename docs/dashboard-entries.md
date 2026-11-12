@@ -20308,3 +20308,20 @@ Branch `agenda-group-titles`. `scripts/goal-tree.py`: `agenda_step_items` return
 wraps each `when` item in `<span class="ag-when">` by KIND, never by indentation (accent colour, first letter
 uppercased). Self-test cases assert the spans, escaping, and the style rule; review rounds 1-2 (r2 Codex, 1 LOW
 accepted); four mutations added, one re-bound (pin 360 -> 364).
+
+## 2026-11-11
+The goal-tree page now shows merged work as soon as you press Refresh, even when your local checkout has not
+been pulled. It reads the backlog and dashboard from GitHub's master (fetched on each Refresh, under a second)
+instead of from the checkout, and a line under the header says how many commits your checkout is behind, with
+the command to catch up (`git pull --ff-only`). You asked for this at 18:54 and chose it at 18:57.
+Also: backlog #511 and backlog #603 showed under Owed with misleading waits; #511's "weekly reset (11-06)" wait
+was stale and is removed, #603 now says it is queued behind this work. Three rows filed from today: backlog #611
+(a step is ticked by the PR that only filed its row), backlog #612 (a wait with a passed date is not flagged),
+backlog #613 (the dashboard keeps no answers).
+<!--tech-->
+Branch `610-read-at-origin`. `scripts/goal-tree.py` `collect`: after a successful fetch, `docs/backlog.md` and
+`docs/dashboard-entries.md` are read with `git show origin/master:<file>` (cached per run), and the lag with
+`git rev-list --count HEAD..origin/master`; a failed fetch reads the checkout and says so. The lag is passed from
+THIS run to `render_page(current=…)`, never stored in the snapshot (an unchanged tree is not re-logged, so a
+stored count would be replayed stale). Joined to the lede so `parts.insert(6, …)` keeps its place. Nine cases,
+eight mutations (pin 364 -> 372).

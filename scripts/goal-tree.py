@@ -607,6 +607,22 @@ def derive(goals: list[dict], src: dict, now: str) -> dict:
             "cannot": [f"{k}: {v}" for k, v in sorted(src["errors"].items()) if v]}
 
 
+def lag_line(snap: dict) -> str:
+    """backlog #610: WHERE this run read the backlog and dashboard, and how far this checkout lags origin/master.
+    ⛔ From THIS run's `collect`, never the log: an unchanged tree is not re-logged, so a stored count goes stale.
+    A run that took no snapshot (`--page` alone) passes {} and says nothing."""
+    at, behind = snap.get("read_at"), snap.get("behind")
+    if not at:
+        return ""
+    lag = ("this checkout is up to date with it" if behind == 0 else
+           f'<b class="lag">this checkout is {behind} commit(s) behind it</b> — <code>git pull --ff-only</code> '
+           'to catch up; the page is current either way' if isinstance(behind, int) else
+           "how far this checkout lags it could not be read")
+    if at != "origin/master":
+        return f'<p class="lag-line"><b>The backlog and dashboard were read from {html.escape(at)}.</b></p>'
+    return f'<p class="lag-line">The backlog and dashboard were read at origin/master; {lag}.</p>'
+
+
 def fingerprint(snap: dict) -> str:
     """What a snapshot SAYS, without when it was read or the master head it was read at."""
     return json.dumps({k: v for k, v in snap.items() if k not in ("at", "head")}, sort_keys=True)
@@ -966,6 +982,7 @@ def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
            "ledger": [], "ledger_problems": [], "needs": [], "head": None, "repo": None,
            "main": root, "errors": errors}
     rc, out = run(["git", "fetch", "--quiet", "origin", "master"], root, 60)
+    fetched = rc == 0
     if rc != 0:
         errors["merged"] = f"git fetch origin master exited {rc}: {_SS.clean(out, 160)}"
     else:
@@ -1026,11 +1043,32 @@ def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
         # ⛔ X1: an unreadable ledger line may be an owner-wait, so the source is NOT READ — the
         # readable entries are still used.
         errors["ledger"] = "; ".join(src["ledger_problems"]) + " — NOT READ"
+    # backlog #610: the SHARED files are read at origin/master, just fetched — never from this checkout, which
+    # lags until someone pulls (a merge moves only GitHub's master). A failed fetch reads the checkout instead and
+    # SAYS so; that snapshot is not logged anyway (`merged` is CANNOT RUN). How far the checkout lags is reported.
+    src["read_at"] = "origin/master" if fetched else "the local checkout (git fetch failed)"
+    src["behind"] = None
+    if fetched:
+        rc, out = run(["git", "rev-list", "--count", "HEAD..origin/master"], root, 30)
+        if rc == 0 and out.strip().isdigit():
+            src["behind"] = int(out.strip())
+    shared: dict[str, str] = {}
+
+    def read_shared(rel: str) -> str:
+        if rel not in shared:
+            if not fetched:
+                shared[rel] = (root / rel).read_text(encoding="utf-8")
+            else:
+                rc, out = run(["git", "show", f"origin/master:{rel}"], root, 30)
+                if rc != 0:
+                    raise OSError(f"git show origin/master:{rel} exited {rc}: {_SS.clean(out, 120)}")
+                shared[rel] = out
+        return shared[rel]
     needs: list[dict] = []
     for key, rel, fn in (("dashboard", DASHBOARD_REL, needs_from_dashboard),
                          ("backlog", BACKLOG_REL, needs_from_backlog)):
         try:
-            text = (root / rel).read_text(encoding="utf-8")
+            text = read_shared(rel)
             items, problems = fn(text)
         except Exception as exc:                  # noqa: BLE001 - NOT READ, named, never "none"
             errors[key] = f"{rel} NOT READ ({type(exc).__name__}: {_SS.clean(exc, 120)})"
@@ -1044,7 +1082,7 @@ def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
     # and every thread naming a backlog row then says CANNOT RUN.
     src["fates"], src["fates_error"] = None, None
     try:
-        fates, fproblems = row_fates((root / BACKLOG_REL).read_text(encoding="utf-8"))
+        fates, fproblems = row_fates(read_shared(BACKLOG_REL))
         if fproblems:
             src["fates_error"] = "; ".join(fproblems)
         else:
@@ -2208,7 +2246,7 @@ TIMELINE_SHOWN = 6   # newest timeline entries shown open; the rest fold (owner 
 
 
 def render_page(log: list[dict], built: str, live: dict | None = None, answers: list[dict] = (),
-                answers_error: str = "") -> str:
+                answers_error: str = "", *, current: dict | None = None) -> str:
     """PURE. The page body: the newest snapshot as the current tree, then the timeline newest first.
 
     `live` is this run's derivation when it could not be logged (its `cannot` is non-empty), so the
@@ -2219,7 +2257,9 @@ def render_page(log: list[dict], built: str, live: dict | None = None, answers: 
              page_chrome.chrome_bar("goal-tree", built),
              f'<p class="lede">Built <time>{html.escape(built)}</time> · newest snapshot '
              f'<time class="newest">{html.escape(newest["at"])}</time> (master '
-             f'{html.escape(str(newest.get("head") or "unread"))}) · {len(log)} snapshot(s) logged.</p>',
+             f'{html.escape(str(newest.get("head") or "unread"))}) · {len(log)} snapshot(s) logged.</p>'
+             # backlog #610: joined to the lede, NOT its own element — `parts.insert(6, …)` below counts them.
+             + lag_line(current or {}),
              # ⭐ Y7: SAY it is a replay. The tree and timeline below are the stored snapshot, not a fresh
              # read, so a change to a source since then is invisible until the next snapshot.
              f'<p class="replay"><b>This page replays the snapshot taken at '
@@ -2372,7 +2412,7 @@ COMPOSE_TIMEOUT = 30
 
 def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None = None, *,
                tray_source: str | None = None, answers_path: pathlib.Path | None = None,
-               composer: list[str] | None = None) -> str:
+               composer: list[str] | None = None, current: dict | None = None) -> str:
     """Write the page, with the Ask tray LIFTED by `brief-compose.py` — never retyped (owner 2026-11-11:
     "goal-tree page do not have interactive 'ask' feature"). The same mechanism the backlog and dashboard
     pages use; `brief-compose.py`'s docstring records why the tray is never hand-copied.
@@ -2388,7 +2428,7 @@ def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None
     if answers_error:
         print(f"⚠  goal tree: answers NOT shown — {answers_error}", file=sys.stderr)
     # Every key left as TEXT (NEEDS YOU's prose, the lede) becomes a link too (backlog #470).
-    body = page_markup.link_html(render_page(log, built, live, answers, answers_error), log[-1].get("repo"))
+    body = page_markup.link_html(render_page(log, built, live, answers, answers_error, current=current), log[-1].get("repo"))
     fragment = (f"<title>{PAGE_TITLE}</title>"
                 f"<style>{CSS}\n{page_chrome.chrome_css()}</style>{body}"
                 f"<script>{page_chrome.chrome_script()}</script>")
@@ -2460,7 +2500,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
         return 2
     log_path = main_root / LOG_REL
     agenda_path = main_root / AGENDA_REL
-    rc, live = 0, None
+    rc, live, current = 0, None, None
     try:
         threads = root / THREADS_REL
         # the declared threads lend a step their `waits`; read only by the modes that derive (not --page)
@@ -2485,6 +2525,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
                 print(f"CANNOT RUN — {THREADS_REL} does not exist, so there is no tree to draw.")
                 return 2
             src = collect(root, run)
+            current = {"read_at": src.get("read_at"), "behind": src.get("behind")}   # backlog #610: THIS run's
             live = derive(parse_threads(threads.read_text()), src, now)
             # ⛔ a malformed agenda log is SAID on the agenda block and in the exit code, and never takes the
             # snapshot down with it — the tree was read whole (r2 Codex M4)
@@ -2516,7 +2557,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
         warn = _sibling("gen-backlog-page").publish_rows(root)
         if warn:
             print(warn)
-        print("\n".join(page_report(a.out, write_page(a.out, log, now, live))))
+        print("\n".join(page_report(a.out, write_page(a.out, log, now, live, current=current))))
     if a.print_:
         shown = live if live is not None else (log[-1] if log else None)
         if shown is None:
@@ -3838,6 +3879,11 @@ def _self_test_cases(*, outside: dict) -> int:
          ('This page replays the snapshot taken at <time class="replayed">t</time>' in _pg,
           "python3 scripts/goal-tree.py --snapshot --page" in _pg,
           _pg.index('class="replay"') < _pg.index('<section class="needs')), (True, True, True))
+    _pg610 = render_page([_ns], "t", current={"behind": 2, "read_at": "origin/master"})
+    case("backlog #610: the PAGE says where the shared files were read and the lag, above the replay line",
+         ("read at origin/master; <b class=\"lag\">this checkout is 2 commit(s) behind it" in _pg610,
+          _pg610.index('class="lag-line"') < _pg610.index('class="replay"') < _pg610.index('<section class="needs')),
+         (True, True))
     case("Y7: a live NEEDS YOU read is named as live",
          "NEEDS YOU is read live at <time>t2</time>" in render_page([_nd], "t", dict(_ns, at="t2")), True)
     case("a live read's needs are shown over the newest snapshot's",
@@ -4093,6 +4139,10 @@ def _self_test_cases(*, outside: dict) -> int:
             for prefix, ans in answers:
                 if cmd[:len(prefix)] == prefix:
                     return ans
+            # backlog #610: a fixture's file stands for its content AT origin/master, unless a case answers.
+            if cmd[:2] == ["git", "show"] and cmd[2].startswith("origin/master:"):
+                f = pathlib.Path(cwd) / cmd[2].split(":", 1)[1]
+                return (0, f.read_text(encoding="utf-8")) if f.is_file() else (128, f"fatal: path '{f}' does not exist")
             return 1, "unexpected command"
         return run, calls
 
@@ -4170,7 +4220,8 @@ def _self_test_cases(*, outside: dict) -> int:
         (r / BACKLOG_REL).unlink()
         _s_gone = collect(r, run_ok)
         case("⛔ backlog #484: a missing backlog is CANNOT RUN for its rows, and named in the errors",
-             (_s_gone["fates"], _s_gone["fates_error"].startswith("docs/backlog.md NOT READ (FileNotFoundError"),
+             (_s_gone["fates"], _s_gone["fates_error"].startswith(
+                  "docs/backlog.md NOT READ (OSError: git show origin/master:docs/backlog.md exited 128"),
               _s_gone["errors"].get("backlog", "").startswith("docs/backlog.md NOT READ")), (None, True, True))
         (r / DASHBOARD_REL).write_text(DASH_BAD)
         case("⛔ X1: an unreadable dashboard entry makes the dashboard NOT READ",
@@ -4213,6 +4264,38 @@ def _self_test_cases(*, outside: dict) -> int:
               needs_state(snap_nodash), "nothing waits on you" in render_text(snap_nodash)),
              (True, "not-read", False))
         (r / "docs" / "moved.md").rename(r / DASHBOARD_REL)
+        # ── backlog #610: the shared files are read at origin/master, and the lag is said ─────────────────
+        _stale = BACKLOG_FIXTURE.replace("| OPEN |", "| ✖ **WITHDRAWN 2026-11-02** |")
+        _calls610 = []
+        _r610, _ = fake([(["git", "show", f"origin/master:{BACKLOG_REL}"], (0, _stale)),
+                         (["git", "rev-list"], (0, "3\n"))] + ok)
+        _s610 = collect(r, lambda cmd, cwd, timeout: (_calls610.append(list(cmd)), _r610(cmd, cwd, timeout))[1])
+        case("⛔ backlog #610: the backlog is read at origin/master, NOT from the checkout (the fates are master's)",
+             _s610["fates"], {n: (("withdrawn", "withdrawn") if n == 8 else None) for n in range(5, 12)})
+        case("backlog #610: the lag is read with rev-list HEAD..origin/master, and recorded with where it read",
+             (_s610["behind"], _s610["read_at"], ["git", "rev-list", "--count", "HEAD..origin/master"] in _calls610),
+             (3, "origin/master", True))
+        case("backlog #610: the backlog is fetched from git ONCE, though two readers parse it",
+             sum(c == ["git", "show", f"origin/master:{BACKLOG_REL}"] for c in _calls610), 1)
+        _r610b, _ = fake([(["git", "show", f"origin/master:{DASHBOARD_REL}"], (128, "fatal: bad object"))] + ok)
+        case("⛔ backlog #610: a failed git show is NOT READ for that source, naming git show, never 'none'",
+             collect(r, _r610b)["errors"].get("dashboard", "").startswith(
+                 f"{DASHBOARD_REL} NOT READ (OSError: git show origin/master:{DASHBOARD_REL} exited 128"), True)
+        _r610c, _ = fake([(["git", "fetch"], (128, "offline")),
+                          (["git", "show"], (0, "SHOULD NOT BE READ"))] + ok[1:])
+        _s610c = collect(r, _r610c)
+        case("⛔ backlog #610: a failed fetch reads the CHECKOUT, says so, and reads no lag",
+             (_s610c["read_at"], _s610c["behind"], _s610c["fates"] is not None),
+             ("the local checkout (git fetch failed)", None, True))
+        case("backlog #610: the lag line says the count and how to catch up; 0 says up to date; unread says so",
+             ("3 commit(s) behind" in lag_line({"read_at": "origin/master", "behind": 3}),
+              "up to date" in lag_line({"read_at": "origin/master", "behind": 0}),
+              "could not be read" in lag_line({"read_at": "origin/master", "behind": None}),
+              "read from the local checkout" in lag_line({"read_at": "the local checkout (git fetch failed)"}),
+              lag_line({})), (True, True, True, True, ""))
+        case("⛔ backlog #610: the lag is NOT stored in the snapshot — an unchanged tree is not re-logged, so a stored "
+             "count would be replayed stale", ("behind" in derive([], _s610, "t"), "read_at" in derive([], _s610, "t")),
+             (False, False))
         run_502, _ = fake(ok[:2] + [(["gh", "pr", "list", "--state", "open"], (1, "HTTP 502"))] + ok[3:])
         case("⛔ a failed gh is a CANNOT RUN source, never an empty PR list read as 'none open'",
              collect(r, run_502)["errors"].get("gh", "").startswith("gh pr list: exited 1"), True)
@@ -5076,6 +5159,15 @@ def _self_test_cases(*, outside: dict) -> int:
              (rc_down, len(read_log(r / "main" / LOG_REL)), "could NOT run" in out.read_text()), (2, 1, True))
         case("⛔ the log is written to the MAIN checkout's git-ignored .claude/, never the root's",
              ((r / "main" / LOG_REL).is_file(), (r / LOG_REL).exists()), (True, False))
+        _run_lag, _ = fake([(["git", "rev-list"], (0, "4\n"))] + ok)
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(["--snapshot", "--page", "--out", str(out)], root=r, run=_run_lag, now="2026-10-28 09:11")
+        _lag_pg = out.read_text()
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(["--page", "--out", str(out)], root=r, run=_run_lag, now="2026-10-28 09:12")
+        case("⛔ backlog #610: --snapshot --page (the Refresh button) shows THIS run's lag; --page alone, a replay, "
+             "claims none", ("this checkout is 4 commit(s) behind it" in _lag_pg, "lag-line" in out.read_text()),
+             (True, False))
         (r / THREADS_REL).write_text(good + "stray\n")
         with contextlib.redirect_stdout(io.StringIO()):
             rc_bad = main(["--snapshot"], root=r, run=fake(ok)[0])
@@ -5121,6 +5213,8 @@ def _self_test_cases(*, outside: dict) -> int:
                 return 0, str(_m / ".git") + "\n"
             if cmd[:2] == ["git", "fetch"]:
                 return 0, ""
+            if cmd[:2] == ["git", "show"]:
+                return 0, (_m / cmd[2].split(":", 1)[1]).read_text()
             if cmd[:2] == ["git", "log"]:
                 return 0, "abc1234\t2026-11-03 19:09\tone (#20)\n"
             if cmd[:3] == ["gh", "pr", "list"]:

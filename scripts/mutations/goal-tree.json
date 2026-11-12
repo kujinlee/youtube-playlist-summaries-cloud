@@ -4747,5 +4747,109 @@
     "expect": [
       "⭐ PR #559 r1: an indented or HTML-bearing group is still a title, escaped, with or without a change-if; the accent style rule for the title exists"
     ]
+  },
+  {
+    "name": "backlog #610: the backlog/dashboard read goes back to the checkout's disk",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                rc, out = run([\"git\", \"show\", f\"origin/master:{rel}\"], root, 30)\n                if rc != 0:\n                    raise OSError(f\"git show origin/master:{rel} exited {rc}: {_SS.clean(out, 120)}\")\n                shared[rel] = out\n",
+        "                shared[rel] = (root / rel).read_text(encoding=\"utf-8\")\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610: the backlog is read at origin/master, NOT from the checkout (the fates are master's)"
+    ]
+  },
+  {
+    "name": "backlog #610: the fates reader reads the checkout, not the shared read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        fates, fproblems = row_fates(read_shared(BACKLOG_REL))\n",
+        "        fates, fproblems = row_fates((root / BACKLOG_REL).read_text(encoding=\"utf-8\"))\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610: the backlog is read at origin/master, NOT from the checkout (the fates are master's)"
+    ]
+  },
+  {
+    "name": "backlog #610: a failed fetch still reads at origin/master (stale ref)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if not fetched:\n                shared[rel]",
+        "            if False:\n                shared[rel]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610: a failed fetch reads the CHECKOUT, says so, and reads no lag"
+    ]
+  },
+  {
+    "name": "backlog #610: the shared read is not cached (two git shows)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if rel not in shared:\n",
+        "        if True:\n"
+      ]
+    ],
+    "expect": [
+      "backlog #610: the backlog is fetched from git ONCE, though two readers parse it"
+    ]
+  },
+  {
+    "name": "backlog #610: the page drops the lag line",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "             + lag_line(current or {}),",
+        "             + \"\","
+      ]
+    ],
+    "expect": [
+      "backlog #610: the PAGE says where the shared files were read and the lag, above the replay line"
+    ]
+  },
+  {
+    "name": "backlog #610: main does not pass this run's lag to the page",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "write_page(a.out, log, now, live, current=current)",
+        "write_page(a.out, log, now, live)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610: --snapshot --page (the Refresh button) shows THIS run's lag; --page alone, a replay, claims none"
+    ]
+  },
+  {
+    "name": "backlog #610: the lag count is never read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            src[\"behind\"] = int(out.strip())\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "backlog #610: the lag is read with rev-list HEAD..origin/master, and recorded with where it read"
+    ]
+  },
+  {
+    "name": "backlog #610: a lag of 0 is said as a count, not up to date",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(\"this checkout is up to date with it\" if behind == 0 else",
+        "(\"this checkout is up to date with it\" if behind == -1 else"
+      ]
+    ],
+    "expect": [
+      "backlog #610: the lag line says the count and how to catch up; 0 says up to date; unread says so"
+    ]
   }
 ]
