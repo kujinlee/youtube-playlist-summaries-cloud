@@ -20438,3 +20438,19 @@ PR #564 head `6546cb63` and PR #563 head `096f1f04`. Backlog #616 and #618 close
 F1 HIGH: the ci.yml `grep -F` literal is unpinned) and #620 (allow-list grammar + in-page `checkVisibility()`, and
 `markup_of` defined twice) filed. #503: probe transcripts' first `usage` — Explore/Sonnet 17,533 written then 17,533
 read 70 s later; all writes `ephemeral_5m`, none `ephemeral_1h`. Q2 (keep-alive) remains open.
+
+## 2026-11-12
+The second build step of the faster mutation sweep (backlog #586) is written: a reader that turns a recorded
+`strace` log into the list of repository files a guard's suite touched, and refuses the log when it cannot be sure.
+Nothing calls it yet and nothing is skipped because of it. Unlike the plan, a file deleted outside the copy, the
+child's home folder and its temp folder is refused by WHERE it is, not by whether the same run created it (the
+Phase 6 review's backlog #602). Three review rounds found 12 ways a log could make it under-report; each now refuses the log instead. Three slow or over-cautious refusals are filed as backlog #621.
+<!--tech-->
+Branch `586-slice2`. New `scripts/strace_reads.py` (`parse_log`, `process_tree`, `resolve_log`, `Ctx` with `home`
+and `tmpdir`): unfinished/resumed halves joined per pid, a per-process cwd model (CLONE_FS shares, others copy at
+the clone's entry; a chdir while a non-CLONE_FS clone is in flight is a cwd race), runtime and pre-existing links,
+`/proc` and `..` without a label, deleted labels, the real checkout, repo links, renames in the copy, and #602's
+`external path removed` (stateless: a successful unlink*/rmdir/rename* side outside copy/HOME/TMPDIR). Self-test
+138 cases; manifest `scripts/mutations/strace_reads.json` 85 entries, 85 killed by their named cases. Wired into
+check-plan-code's list, expected_mutations (85), check-selftest-counts, check-fixture-variation (9 keys) and a ci.yml
+step. TMPDIR is not yet set in check-plan-code's child environment (slice 4; #600/#602).

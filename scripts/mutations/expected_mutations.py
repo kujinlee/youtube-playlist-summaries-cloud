@@ -2233,4 +2233,7 @@ EXPECTED_MUTATIONS = {
     # F2 live HEAD x2, F3 registration + its HEAD, F5 expiry, F7 quoting + non-printable withheld.
     # ARITHMETIC: 39 + 13 = 52.
     "scripts/prune-merged-worktrees.py": 52,
+    # ⟳ 2026-11-12, backlog #586 slice 2: the strace-log path resolver, pinned in the commit that creates it.
+    # One entry per refusal and per cwd-model rule, the #602 location rule's allowed roots one each.
+    "scripts/strace_reads.py": 85,
 }

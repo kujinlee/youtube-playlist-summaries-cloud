@@ -120,6 +120,8 @@ SCRIPTS = ROOT / "scripts"
 # separately verified against the real suites and were all ACCURATE — including the two that print
 # no total at all, whose case lines were counted by hand (10 and 11).
 POPULATION: frozenset[str] = frozenset({
+    # ⟳ 2026-11-12, backlog #586 slice 2: pinned in the commit that creates it (a library, no caller yet).
+    "strace_reads.py",
     # ⟳ 2026-10-16, pinned in the commit that creates it. Its suite went 23 → 25 → 27 → 30
     # while it was being written — twice because a mutation proved a case was missing — so a
     # docstring count with no reader would have been wrong three times in one hour. ⚠ Backlog

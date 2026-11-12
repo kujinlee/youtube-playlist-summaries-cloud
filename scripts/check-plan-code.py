@@ -4998,6 +4998,8 @@ def _self_test_body() -> int:
                                       "scripts/record-review-verdict.py",
                                       "scripts/regen-pages.py",
                                       "scripts/session-state.py",
+                                      # ⟳ 2026-11-12, backlog #586 slice 2: the strace-log path resolver.
+                                      "scripts/strace_reads.py",
                                       # ⟳ PR #496 r2 X1: the sweep-red alert, out of shell into a tested helper.
                                       "scripts/sweep-red-alert.py"])
     # A literal on purpose: its whole job is that the total cannot move without
