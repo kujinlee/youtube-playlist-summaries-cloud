@@ -2241,8 +2241,11 @@ def rerun_snapshot(d: pathlib.Path, cleanup: contextlib.ExitStack) -> "pathlib.P
     nothing its own first run wrote can reach it. `cleanup` deletes the snapshot when the run ends.
     ⛔ r2 Codex 1: symlinks are DEREFERENCED (`copytree`'s default, as `stage_tree` stages `d`). A preserved ABSOLUTE
     link — one a control run made, to a counter in `d` — took the re-run back into `d`, where it saw the first run's
-    count and was killed: FLAKY. A dereferenced copy holds the target's bytes as they were here. A link that cannot be
-    followed (dangling, a loop) fails the copy: CANNOT RUN, so the survivor stays SURVIVED — never a shared route.
+    count and was killed: FLAKY. A dereferenced copy holds the target's bytes as they were here. A dangling or
+    self-referencing link fails the copy: CANNOT RUN, so the survivor stays SURVIVED — never a shared route.
+    ⚠ BOUND (r3 Claude m1): a DIRECTORY link to an ancestor does NOT fail fast — it is copied deeply, ~32 nested
+    levels (exponentially more with a second alias), until the OS fails it with ELOOP. No real suite leaves one:
+    measured 0 links in the staged tree after all 93 manifest targets' controls.
     ⚠ BOUND: the snapshot is taken ONCE per run, after the controls — the state the FIRST mutant saw. A later
     mutant's first run also saw what earlier mutants left in `d` (`seed_trees`' stated exposure); its re-run does not.
     A str (CANNOT RUN reason) makes every re-run NOT CHECKED, so a survivor stays SURVIVED and red — never FLAKY.
