@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Parse one `strace -f -yy` log into resolved calls, or a named refusal (backlog #586, plan slice 2).
 
-    python3 scripts/strace_reads.py --self-test  # 135 cases
+    python3 scripts/strace_reads.py --self-test  # 138 cases
 
 A PURE LIBRARY, no caller yet: slice 3 classifies the calls this module resolves, slice 4 records with it. Spec:
 `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §2, "Normalising strace's paths", and the
@@ -80,6 +80,7 @@ REASONS: tuple[str, ...] = (
     "unmodelled flags",
     "cwd model disagrees",
     "cwd race",
+    "cwd renamed",
     "unknown return",
     "through a runtime link",
     "rename cycle",
@@ -532,12 +533,14 @@ def _cwd_pass(calls, tree, ctx, root):
     snapshot: dict = {}            # child pid -> its parent's cwd at the clone's entry line
     named: dict = {}
     by_cwd: set = set()            # calls that resolved a path against the cwd
+    held: set = set()              # every cwd any context ever had (r3 F1)
 
     def ctx_of(pid):
         if pid in pid_ctx:
             return pid_ctx[pid]
         if pid == root:
             cwd.append(norm(ctx.cwd0))
+            held.add(cwd[-1])
             pid_ctx[pid] = len(cwd) - 1
         elif pid in tree:
             parent, _seq, shares = tree[pid]
@@ -549,7 +552,7 @@ def _cwd_pass(calls, tree, ctx, root):
             else:
                 if pid not in snapshot:
                     return None
-                cwd.append(snapshot[pid])
+                cwd.append(snapshot[pid])           # a parent's cwd value, so already in `held`
                 pid_ctx[pid] = len(cwd) - 1
         else:
             return None
@@ -599,6 +602,13 @@ def _cwd_pass(calls, tree, ctx, root):
                 if len(targets) != 1:
                     return named, "unresolved path"
                 cwd[k] = targets[0]
+                held.add(targets[0])
+    # r3 F1: the kernel's cwd is the DIRECTORY, so a rename at or above it moves it and the model's path goes stale.
+    # Refused rather than modelled: any successful rename whose source is, or holds, a cwd any context ever had.
+    for i, c in enumerate(calls):
+        if c.name in RENAMES and named.get(i) and outcome(c.ret) is not False:
+            if any(under(h, named[i][0][0]) for h in held):
+                return named, "cwd renamed"
     return named, _cwd_overlap(calls, tree, root, by_cwd)
 
 
@@ -1107,6 +1117,15 @@ def _self_test_body() -> int:
          lambda: why([symlink("/t", "/tmp/run/A"), mkdir("/tmp/run/B"),
                       renameat2("/tmp/run/B", "/tmp/run/A", "RENAME_EXCHANGE"), succeeds(stat("/tmp/run/B/a.py"))], RUN),
          "unmodelled flags")
+    case("r3 F1: renaming the directory a process is in refuses (the kernel's cwd moves with it)",
+         lambda: why([mkdir("/tmp/run/w"), chdir("/tmp/run/w"), rename("/tmp/run/w", "/tmp/run/v"),
+                      symlink("/t/scripts", "/tmp/run/v/L"), stat("L/new.py")], RUN), "cwd renamed")
+    case("r3 F1: renaming a PARENT of a forked child's inherited cwd refuses",
+         lambda: why([mkdir("/tmp/run/p"), mkdir("/tmp/run/p/w"), chdir("/tmp/run/p/w"), *fork(1, 2),
+                      rename("/tmp/run/p", "/tmp/run/q", pid=2), stat("a.py", pid=2)], RUN), "cwd renamed")
+    case("r3 F1 control: a rename beside the cwd, not above it, is not refused for the cwd",
+         lambda: why([mkdir("/tmp/run/w"), chdir("/tmp/run/w"), rename("/tmp/run/x", "/tmp/run/y"),
+                      stat("a.py")], RUN), None)
     case("r2: a rename cycle that grows the runtime-link closure without end is refused, not looped on",
          lambda: why([mkdir("/tmp/run/A"), symlink("/t/needed.py", "/tmp/run/A/L"), rename("/tmp/run/A", "/tmp/run/B"),
                       mkdir("/tmp/run/A"), rename("/tmp/run/B", "/tmp/run/A/C"),

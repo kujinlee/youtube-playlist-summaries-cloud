@@ -911,5 +911,27 @@
    ]
   ],
   "expect": "r2: a rename cycle that grows the runtime-link closure without end is refused, not looped on"
+ },
+ {
+  "name": "a rename above a held cwd is accepted",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            if any(under(h, named[i][0][0]) for h in held):",
+    "            if False:"
+   ]
+  ],
+  "expect": "r3 F1: renaming the directory a process is in refuses (the kernel's cwd moves with it)"
+ },
+ {
+  "name": "a chdir target is not remembered as a held cwd",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "                held.add(targets[0])\n",
+    ""
+   ]
+  ],
+  "expect": "r3 F1: renaming the directory a process is in refuses (the kernel's cwd moves with it)"
  }
 ]
