@@ -20417,3 +20417,24 @@ matrix (`shard_count`), and the download step is no longer `continue-on-error`; 
 harness's fixed tail (`FLAKY_TAIL`), not the first `: `. Self-tests: check-plan-code 418 -> 443, sweep-red-alert
 15 -> 32, batch-ci 168 -> 169. Mutation pins: check-plan-code 301 -> 320, sweep-red-alert 6 -> 20, batch-ci 95 -> 96,
 each verified red on a copy via the case it names.
+
+## 2026-11-12
+Two architecture reviews ran overnight and are now filed. Each looked at code whose review kept finding holes that
+the previous fix had opened. Both say the same thing: the design itself makes the holes, so the next step is a
+redesign, not another patch. Neither problem shows up in anything real today.
+The FLAKY-filing path (backlog #618 → new #619): the text that marks a FLAKY result exists in three copies, and
+nothing ties the third copy (in the CI workflow) to the other two. Change that copy and every FLAKY name would go
+unfiled while the checks stay green. The fix: the sweep writes one structured record per shard, and the alert reads
+only those records. The decision tags (backlog #616 → new #620): the builder guesses which marks you can see from a
+list of ways to hide one, and that list never ends (12 more hidden shapes were found in a real browser). The fix:
+accept a mark only in a small, known-safe layout, and have the page check in the browser that each counted mark is
+visible. Also measured, backlog #503: two agents of the same kind started close together share one cached start-up
+(57,509 tokens for a general-purpose agent). So agents that are ready anyway should start together, but none should
+wait just to be batched.
+<!--tech-->
+Branch `file-phase6-503`. `docs/reviews/architecture-review-2026-11-12-495-sweep-flaky-filing.md` and
+`docs/reviews/architecture-review-2026-11-12-603-decision-scan.md` are the Phase 6 reports, read-only runs against
+PR #564 head `6546cb63` and PR #563 head `096f1f04`. Backlog #616 and #618 closed; #619 (structured shard record,
+F1 HIGH: the ci.yml `grep -F` literal is unpinned) and #620 (allow-list grammar + in-page `checkVisibility()`, and
+`markup_of` defined twice) filed. #503: probe transcripts' first `usage` — Explore/Sonnet 17,533 written then 17,533
+read 70 s later; all writes `ephemeral_5m`, none `ephemeral_1h`. Q2 (keep-alive) remains open.
