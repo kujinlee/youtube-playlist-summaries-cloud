@@ -580,8 +580,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    for n, (pos, text, answer, label, _r, details) in enumerate(scan.found, 1):\n",
-        "    for n, (pos, text, answer, label, _r, details) in enumerate(scan.found, 0):\n"
+        "    for n, (pos, text, answer, label, _r) in enumerate(scan.found, 1):\n",
+        "    for n, (pos, text, answer, label, _r) in enumerate(scan.found, 0):\n"
       ]
     ],
     "expect": [
@@ -875,19 +875,6 @@
     ]
   },
   {
-    "name": "603 r1: a <details> around a decision is left closed (Claude F3)",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "                edits[d_at + len(dtext) - (2 if dtext.endswith(\"/>\") else 1)] = \" open\"\n",
-        "                pass\n"
-      ]
-    ],
-    "expect": [
-      "603 r1: a decision on or inside <details> OPENS it, so its tag shows on load"
-    ]
-  },
-  {
     "name": "603 r1: an id collision with the fragment is not refused (Codex 2, Claude F6)",
     "file": "scripts/brief-compose.py",
     "edits": [
@@ -972,6 +959,136 @@
       [
         "    :root:not([data-theme=\"light\"]) { --decide: #1d1600; --decide-bg: #e0bc2a; --decide-br: #f5d24a;\n         --decided: #c9f0d5; --decided-bg: #1f4d2e;",
         "    :root:not([data-theme=\"light\"]) { --decide: #1d1600; --decide-bg: #e0bc2a; --decide-br: #f5d24a;\n         --decided: #ffffff; --decided-bg: #ffffff;"
+      ]
+    ],
+    "expect": [
+      "603 r1: every tag state is READABLE in every theme block — contrast >= 4.5, OS-dark included"
+    ]
+  },
+  {
+    "name": "603 r2: a mark ON a <details> or in its collapsed part is counted (Codex 1, 2)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            elif tag == \"details\" or collapsed:\n                refusal = _DETAILS_REFUSAL\n",
+        "            elif False:\n                refusal = _DETAILS_REFUSAL\n"
+      ]
+    ],
+    "expect": [
+      "603 r2: a decision ON or in the collapsed part of a <details> is REFUSED, naming the fix"
+    ]
+  },
+  {
+    "name": "603 r2: a mark deeper inside a <details> is counted (Codex 1, 2)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                    if anc_collapsed:\n",
+        "                    if False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r2: a decision ON or in the collapsed part of a <details> is REFUSED, naming the fix"
+    ]
+  },
+  {
+    "name": "603 r2: a <details>'s own <summary> is treated as collapsed, so a mark there is refused",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            if tag == \"summary\" and not self._stack[-1][3]:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r2: a decision ON or in the collapsed part of a <details> is REFUSED, naming the fix"
+    ]
+  },
+  {
+    "name": "603 r2: a SECOND <summary> is treated as the shown one",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                self._stack[-1][3] = True\n",
+        "                pass\n"
+      ]
+    ],
+    "expect": [
+      "603 r2: a decision ON or in the collapsed part of a <details> is REFUSED, naming the fix"
+    ]
+  },
+  {
+    "name": "603 r2: a block start tag never closes an open <p> (Codex 3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if tag in _P_CLOSERS:\n            self._close_p()\n",
+        "        if tag in _P_CLOSERS:\n            pass\n"
+      ]
+    ],
+    "expect": [
+      "603 r2: a block start tag closes an open <p>, as HTML does — but not across a scope boundary, nor past a hidden formatting element the browser re-opens"
+    ]
+  },
+  {
+    "name": "603 r2: an implicit </p> crosses a scope boundary (button/table/td)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            if self._stack[i][0] in _P_SCOPE:\n                return\n",
+        "            if False:\n                return\n"
+      ]
+    ],
+    "expect": [
+      "603 r2: a block start tag closes an open <p>, as HTML does — but not across a scope boundary, nor past a hidden formatting element the browser re-opens"
+    ]
+  },
+  {
+    "name": "603 r2: a hidden formatting element closed with the p is dropped, though the browser re-opens it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                if any(e[0] in _FORMATTING and e[1] for e in self._stack[i + 1:]):\n",
+        "                if False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r2: a block start tag closes an open <p>, as HTML does — but not across a scope boundary, nor past a hidden formatting element the browser re-opens"
+    ]
+  },
+  {
+    "name": "603 r2: the contrast check reads a non-opaque 8-digit colour's first six digits (Codex 4)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if len(h) == 8 and h[6:].lower() != \"ff\":\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r2: the contrast check REFUSES a colour it cannot fully evaluate (alpha, rgba/hsla, named, var)"
+    ]
+  },
+  {
+    "name": "603 r2: the contrast check accepts a colour whose PREFIX is hex",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        m = re.fullmatch(r\"#([0-9a-fA-F]{3,4}",
+        "        m = re.match(r\"#([0-9a-fA-F]{3,4}"
+      ]
+    ],
+    "expect": [
+      "603 r2: the contrast check REFUSES a colour it cannot fully evaluate (alpha, rgba/hsla, named, var)"
+    ]
+  },
+  {
+    "name": "603 r2: the light open tag is fully transparent — Codex 4's appended 00",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "  html { --decide: #3a2c00; --decide-bg: #ffe45c;",
+        "  html { --decide: #3a2c0000; --decide-bg: #ffe45c00;"
       ]
     ],
     "expect": [

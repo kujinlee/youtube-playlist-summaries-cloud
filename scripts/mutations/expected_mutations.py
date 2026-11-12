@@ -543,7 +543,11 @@ EXPECTED_MUTATIONS = {
     # the id collision, the label, `text-transform: none`, and the r1 survivors (first open, the
     # answered count, whitespace-only, the position guard, OS-dark values, answered colour, contrast x2).
     # Three 603 entries retargeted onto the rewritten loop.
-    "scripts/brief-compose.py": 77,
+    # ⟳ 2026-11-11, backlog #603 review round 2: 77 -> 86 — the <details> auto-open REMOVED (its
+    # mutation with it) and replaced by a refusal (on, inside, deeper, the first-summary exemption,
+    # a second summary), the implicit </p> (the call, the scope boundary, the formatting guard), and
+    # the contrast instrument refusing what it cannot evaluate (alpha, a hex prefix, Codex 4's 00).
+    "scripts/brief-compose.py": 86,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch

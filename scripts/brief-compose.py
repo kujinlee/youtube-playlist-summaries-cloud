@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 222 cases
+    python3 scripts/brief-compose.py --self-test  # 224 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
@@ -44,8 +44,8 @@ it is asked (empty = open; a value = the answer given). The composed page shows 
 `🟨 ✍ DECISION n of N` tag there (green with the answer once answered) and a counter under the
 title, all derived from the marks — see `render_decisions`. `data-decision-label="D7"` makes the tag
 lead with the fragment's own name for it. A mark the owner could not SEE (hidden, inert, in a
-`template`/`noscript`/`select`, on a table row or a raw-text element) is CANNOT RUN, and a `<details>`
-around one is opened. ⚠ Nothing checks that a fragment marks EVERY decision it asks: an unmarked
+`template`/`noscript`/`select`, on a table row or a raw-text element, or in the collapsed part of a
+`<details>`) is CANNOT RUN. ⚠ Nothing checks that a fragment marks EVERY decision it asks (backlog #615): an unmarked
 question is invisible to the counter.
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
@@ -1128,10 +1128,28 @@ _DECISION_REFUSE_ON = frozenset({
 _DECISION_REFUSE_INSIDE = frozenset({"template", "noscript", "select", "datalist"})
 #   • on or inside an element carrying one of these attributes, nothing is rendered.
 _DECISION_HIDING_ATTRS = frozenset({"hidden", "inert"})
-# ⚠ `<details>` IS NOT REFUSED — IT IS OPENED. A decision on or inside a `<details>` gets `open`
-# added to every such `<details>` around it, so its tag shows on load. Chosen over moving the tag
-# onto the `<summary>`: the tag stays at the spot the fragment marked, and a reader who closes the
-# section has chosen to.
+#   • ON a `<details>`, or inside one anywhere but its (first) `<summary>`, the tag is in the part
+#     that is collapsed until the reader opens it. ⟳ r2 (Codex 1, 2): r1 OPENED such a `<details>`
+#     instead, and both ways it could fail were found — a quoted ` open ` in another attribute read
+#     as the `open` attribute, and a named group (`name=`) shows only one of its sections on load.
+#     The auto-open is REMOVED, not patched: a mark there is refused, telling the author to move it
+#     outside the `<details>` or onto its `<summary>` (always shown). No fragment had one.
+# ⟳ r2 (Codex 3): A START TAG THAT CLOSES AN OPEN `<p>`. HTML ends a paragraph implicitly when one
+# of these opens while a `p` is "in button scope" (searching down the stack, stopped by a scope
+# boundary) — so `<p hidden>x<div data-decision>` puts the div BESIDE the hidden p, not inside it.
+# `table` closes a p only in no-quirks mode and is left out: keeping the p can only refuse.
+_P_CLOSERS = frozenset({
+    "address", "article", "aside", "blockquote", "center", "details", "dialog", "dir", "div", "dl",
+    "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "main", "menu", "nav", "ol",
+    "p", "search", "section", "summary", "ul", "h1", "h2", "h3", "h4", "h5", "h6", "pre",
+    "listing", "form", "li", "dd", "dt", "plaintext", "hr", "xmp",
+})
+_P_SCOPE = frozenset({"applet", "caption", "html", "table", "td", "th", "marquee", "object",
+                      "template", "button"})
+# A FORMATTING element closed with the p is RE-OPENED by the browser around what follows (the
+# "active formatting elements"), hidden attribute and all — so a hidden one keeps the p open here.
+_FORMATTING = frozenset({"a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small",
+                         "strike", "strong", "tt", "u"})
 _DECISION_VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link",
                             "meta", "source", "track", "wbr"})
 
@@ -1169,6 +1187,10 @@ DECISION_CSS = """
 """
 
 
+_DETAILS_REFUSAL = ("it is in a <details> outside its <summary>, which is collapsed until the reader "
+                    "opens it — move the mark outside the <details>, or onto its <summary>")
+
+
 class _DecisionScan(HTMLParser):
     """Every start tag carrying `data-decision`, in document order, with its position. PURE.
 
@@ -1180,9 +1202,10 @@ class _DecisionScan(HTMLParser):
     Text inside raw text is TEXT, like a script string: never a decision. `<plaintext>` swallows
     the rest of the document in a browser (and on 3.14), so nothing after one is a decision either.
 
-    Each found entry is (pos, start-tag text, answer, label, refusal-or-None, details start tags
-    to open). An ancestor stack is kept from start/end tags; an element closed IMPLICITLY (an
-    unclosed `<p hidden>`) stays on it, which can only cause a refusal, never a silent count.
+    Each found entry is (pos, start-tag text, answer, label, refusal-or-None). An ancestor stack is
+    kept from start/end tags, and a `<p>` is closed where HTML closes it implicitly (`_close_p`). Any
+    OTHER element closed implicitly stays on the stack, which can only cause a refusal, never a
+    silent count.
     """
 
     CDATA_CONTENT_ELEMENTS = ("script", "style", "xmp", "iframe", "noembed", "noframes",
@@ -1190,21 +1213,29 @@ class _DecisionScan(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=False)
-        self.found: list[tuple[tuple[int, int], str, str, str, str | None,
-                               list[tuple[tuple[int, int], str]]]] = []
+        self.found: list[tuple[tuple[int, int], str, str, str, str | None]] = []
         self.ids: set[str] = set()
-        self._stack: list[tuple[str, bool, tuple[int, int], str]] = []
+        # [tag, hides, collapsed (a non-summary child of a <details>), a <summary> already seen]
+        self._stack: list[list] = []
         self._plaintext = False
 
     def handle_starttag(self, tag: str, attrs: list) -> None:
         if self._plaintext:
             return
+        if tag in _P_CLOSERS:
+            self._close_p()
         names = {k for k, _ in attrs if k}
         for key, value in attrs:
             if key in ("id", "name") and value:
                 self.ids.add(value)
         hides = bool(names & _DECISION_HIDING_ATTRS)
         text = self.get_starttag_text() or ""
+        collapsed = False
+        if self._stack and self._stack[-1][0] == "details":
+            if tag == "summary" and not self._stack[-1][3]:
+                self._stack[-1][3] = True
+            else:
+                collapsed = True
         if DECISION_ATTR in names:
             value = next((v for k, v in attrs if k == DECISION_ATTR), None)
             label = next((v for k, v in attrs if k == DECISION_LABEL_ATTR), None)
@@ -1213,23 +1244,36 @@ class _DecisionScan(HTMLParser):
                 refusal = f"it is ON a <{tag}>, where a tag is not shown at the spot"
             elif hides:
                 refusal = f"its <{tag}> carries {'/'.join(sorted(names & _DECISION_HIDING_ATTRS))}"
+            elif tag == "details" or collapsed:
+                refusal = _DETAILS_REFUSAL
             else:
-                for anc, anc_hides, _, _ in self._stack:
+                for anc, anc_hides, anc_collapsed, _ in self._stack:
                     if anc in _DECISION_REFUSE_INSIDE:
                         refusal = f"it is inside a <{anc}>, which is not rendered"
                         break
                     if anc_hides:
                         refusal = f"it is inside a <{anc}> that is hidden or inert"
                         break
-            details = [(pos, t) for anc, _, pos, t in self._stack if anc == "details"]
-            if tag == "details":
-                details.append((self.getpos(), text))
+                    if anc_collapsed:
+                        refusal = _DETAILS_REFUSAL
+                        break
             self.found.append((self.getpos(), text, (value or "").strip(),
-                               (label or "").strip(), refusal, details))
+                               (label or "").strip(), refusal))
         if tag == "plaintext":
             self._plaintext = True
         elif tag not in _DECISION_VOID:
-            self._stack.append((tag, hides, self.getpos(), text))
+            self._stack.append([tag, hides, collapsed, False])
+
+    def _close_p(self) -> None:
+        """Close an open `<p>` the way HTML does when a `_P_CLOSERS` tag starts."""
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == "p":
+                if any(e[0] in _FORMATTING and e[1] for e in self._stack[i + 1:]):
+                    return
+                self._stack = self._stack[:i]
+                return
+            if self._stack[i][0] in _P_SCOPE:
+                return
 
     def handle_startendtag(self, tag: str, attrs: list) -> None:
         # A browser ignores the slash on a non-void element: `<div hidden/>` OPENS a hidden div.
@@ -1264,7 +1308,7 @@ def render_decisions(markup: str) -> tuple[str, int, int]:
     total = len(scan.found)
     if not total:
         return markup, 0, 0
-    for n, ((line, _col), text, _a, _l, refusal, _d) in enumerate(scan.found, 1):
+    for n, ((line, _col), text, _a, _l, refusal) in enumerate(scan.found, 1):
         if refusal:
             raise SystemExit(f"brief-compose: CANNOT RUN — decision {n} of {total} ({text} at "
                              f"line {line}) would be counted but not seen: {refusal}. Move the "
@@ -1278,7 +1322,7 @@ def render_decisions(markup: str) -> tuple[str, int, int]:
     # `splitlines` would also split on characters the parser does not.
     starts = [0] + [i + 1 for i, ch in enumerate(markup) if ch == "\n"]
     edits: dict[int, str] = {}
-    for n, (pos, text, answer, label, _r, details) in enumerate(scan.found, 1):
+    for n, (pos, text, answer, label, _r) in enumerate(scan.found, 1):
         at = _decision_offset(markup, starts, pos, text, f"decision {n} of {total}")
         name = f"{html_escape(label)} — DECISION {n} of {total}" if label else f"DECISION {n} of {total}"
         if answer:
@@ -1288,13 +1332,9 @@ def render_decisions(markup: str) -> tuple[str, int, int]:
             tag = (f'<span class="ex-decision ex-decision-open" id="{DECISION_ID.format(n=n)}">'
                    f"🟨 ✍ {name}</span>")
         edits[at + len(text)] = tag
-        for dpos, dtext in details:
-            if not re.search(r"\sopen(\s|=|/?>)", dtext, re.I):
-                d_at = _decision_offset(markup, starts, dpos, dtext, f"the <details> around decision {n}")
-                edits[d_at + len(dtext) - (2 if dtext.endswith("/>") else 1)] = " open"
     for at in sorted(edits, reverse=True):
         markup = markup[:at] + edits[at] + markup[at:]
-    open_ns = [(n, label) for n, (_, _, answer, label, _, _) in enumerate(scan.found, 1)
+    open_ns = [(n, label) for n, (_, _, answer, label, _) in enumerate(scan.found, 1)
                if not answer]
     remaining = len(open_ns)
     if open_ns:
@@ -3012,12 +3052,28 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     case("603 r1: markup inside textarea/title/xmp is TEXT, never a decision — the same on 3.12 and 3.14",
          render_decisions(_raw)[1:] == (1, 1) and len(_old.found) == 1
          and render_decisions("<h1>x</h1><p data-decision>a</p><plaintext><p data-decision>b")[1] == 1)
-    _det = render_decisions("<h1>x</h1><details><summary>S</summary><p data-decision>X</p></details>"
-                            "<details data-decision><summary>T</summary></details>"
-                            "<details open><p data-decision>Y</p></details>")[0]
-    case("603 r1: a decision on or inside <details> OPENS it, so its tag shows on load",
-         "<details open><summary>S</summary>" in _det and "<details data-decision open>" in _det
-         and "<details open><p data-decision>" in _det and "open open" not in _det)
+    # ⟳ r2 (Codex 1, 2): the r1 auto-open is gone; Codex's two fragments are refused, not opened.
+    case("603 r2: a decision ON or in the collapsed part of a <details> is REFUSED, naming the fix",
+         all("in a <details> outside its <summary>" in _refusal(f)
+             and "onto its <summary>" in _refusal(f) for f in (
+                 "<h1>x</h1><details><summary>S</summary><p data-decision>X</p></details>",
+                 "<h1>x</h1><details data-decision><summary>T</summary></details>",
+                 "<h1>x</h1><details open><div><p data-decision>Y</p></div></details>",
+                 '<h1>x</h1><details title=" open "><summary>S</summary>\n  <p data-decision>X</p>\n</details>',
+                 '<h1>x</h1><details name="g" open><summary>A</summary><p data-decision>1</p></details>',
+                 "<h1>x</h1><details><summary>S</summary><summary data-decision>2nd</summary></details>"))
+         and _refusal("<h1>x</h1><details><summary data-decision>S</summary><p>b</p></details>") == ""
+         and _refusal("<h1>x</h1><details><p>b</p><summary><b data-decision>S</b></summary></details>") == ""
+         and _refusal("<h1>x</h1><details><summary>S</summary></details><p data-decision>after</p>") == "")
+    # ⟳ r2 (Codex 3): Codex's exact fragment — the div closes the hidden p, so it is visible.
+    case("603 r2: a block start tag closes an open <p>, as HTML does — but not across a scope "
+         "boundary, nor past a hidden formatting element the browser re-opens",
+         _refusal("<h1>x</h1><p hidden>Hidden paragraph<div data-decision>Visible sibling</div>") == ""
+         and _refusal("<h1>x</h1><p hidden>a<ul><li data-decision>v</li></ul>") == ""
+         and "hidden or inert" in _refusal("<h1>x</h1><p hidden>a<span data-decision>in</span></p>")
+         and "hidden or inert" in _refusal("<h1>x</h1><p hidden><button><div data-decision>b</div></button>")
+         and "hidden or inert" in _refusal("<h1>x</h1><p>a<b hidden>c<div data-decision>d</div>")
+         and render_decisions("<h1>x</h1><p hidden>h<div data-decision>v</div>")[1:] == (1, 1))
     case("603 r1: a fragment id/name the tags need is REFUSED, a different one is not",
          "ex-decision-1" in _refusal("<h1>x</h1><p id=\"ex-decision-1\">I</p><p data-decision>C</p>")
          and "ex-decision-2" in _refusal("<h1>x</h1><a name=\"ex-decision-2\"></a>"
@@ -3038,9 +3094,17 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
          "text-transform: none" in _rule(".ex-decision")
          and "text-transform: none" in _rule(".ex-decision-count"))
 
+    # ⟳ r2 (Codex 4): a colour this cannot FULLY evaluate is REFUSED (ValueError → ratio 0 → the
+    # case goes red), never read by its first six digits. `#rrggbb00` is transparent text that the
+    # r1 version passed as 10.72:1.
     def _hex_lum(c: str) -> float:
-        h = c.strip().lstrip("#")
-        h = "".join(ch * 2 for ch in h) if len(h) == 3 else h
+        m = re.fullmatch(r"#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})", c.strip())
+        if not m:
+            raise ValueError(f"not a hex colour this check can evaluate: {c!r}")
+        h = m.group(1)
+        h = "".join(ch * 2 for ch in h) if len(h) <= 4 else h
+        if len(h) == 8 and h[6:].lower() != "ff":
+            raise ValueError(f"{c!r} is not opaque: its contrast depends on what is behind it")
         lin = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
                for v in (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))]
         return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
@@ -3065,6 +3129,18 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
                for b, body in _blocks.items() for ink in ("--decide", "--decided")}
     case("603 r1: every tag state is READABLE in every theme block — contrast >= 4.5, OS-dark included",
          len(_ratios) == 8 and all(r >= 4.5 for r in _ratios.values()))
+
+    def _unreadable(c: str) -> bool:
+        try:
+            _hex_lum(c)
+        except ValueError:
+            return True
+        return False
+    case("603 r2: the contrast check REFUSES a colour it cannot fully evaluate (alpha, rgba/hsla, named, var)",
+         all(_unreadable(c) for c in ("#3a2c0000", "#3a2c00fe", "#fff0", "rgba(0, 0, 0, 1)",
+                                      "hsla(0, 0%, 0%, 1)", "rgb(0 0 0)", "yellow", "var(--x)", "", "#ggg"))
+         and not any(_unreadable(c) for c in ("#3a2c00", "#3a2c00ff", "#fff", "#ffff"))
+         and _contrast("#3a2c0000", "#ffe45c00") == 0.0)
     case("603 r1: the OS-dark half carries the DARK values, not the light ones",
          len(_reads) >= 6 and all(
              _blk_value(_blocks["OS-dark"], v) == _blk_value(_blocks["toggle dark"], v)

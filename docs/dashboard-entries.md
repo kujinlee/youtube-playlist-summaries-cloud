@@ -20317,13 +20317,16 @@ next open one. The numbers are counted by the page builder from the tags, never 
 inventory walkthrough is the first page rebuilt this way: 13 decisions, 11 answered, 2 still yours: the content
 review of the memory files before they are published, and the legal name or entity to put on the copyright line.
 A tag can lead with the page's own name for a decision ("D7 — DECISION 6 of 13"), and a page that hides a decision
-where you could not see it now fails to build instead of counting it.
+where you could not see it, including inside a collapsed section, now fails to build instead of counting it.
+Filed backlog #615: nothing yet checks that a page marks every decision it asks you.
 <!--tech-->
 Backlog #603. `scripts/brief-compose.py`: `render_decisions` parses the fragment body (html.parser, so a
 `data-decision` inside an attribute value or a script string is not counted), inserts a tag after each marked
 element's start tag, and places the counter under the first `</h1>` via `page_chrome.place_bar`. `DECISION_CSS`
 (own tokens on `html`, dark half under the OS media query and keyed on `[data-theme]` both ways) ships only on a
 page with a decision, so every other page composes byte-identical. r1 fold: a mark that is hidden, inert, inside a
-`template`/`noscript`/`select`, or on a table row or raw-text element is CANNOT RUN; a `<details>` around one is
-opened; the parse names its raw-text set so 3.12 and 3.14 agree; ids are `ex-decision-{n}` and a collision is
-refused; `data-decision-label` leads the tag. Self-test 196 → 222; 31 mutations, pin 46 → 77.
+`template`/`noscript`/`select`, or on a table row or raw-text element is CANNOT RUN; the parse names its raw-text
+set so 3.12 and 3.14 agree; ids are `ex-decision-{n}` and a collision is refused; `data-decision-label` leads the
+tag. r2 fold (all four findings caused by r1): the `<details>` auto-open is REMOVED and a mark in a `<details>`
+outside its `<summary>` is CANNOT RUN; the ancestor stack closes a `<p>` as HTML does; the contrast case refuses a
+colour it cannot fully evaluate (alpha, `rgba`, named, `var()`). Self-test 196 → 224; 40 mutations, pin 46 → 86.
