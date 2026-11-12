@@ -3470,9 +3470,11 @@ def _self_test_body() -> int:
                         os.environ.pop("PC495_STATE", None)
                     else:
                         os.environ["PC495_STATE"] = _prev_env
-                # The number of runs under each seed (None: unseeded), read from outside every tree.
+                # The number of runs under each seed, read from outside every tree. ⛔ issue #568: an UNSEEDED run
+                # keeps the INHERITED PYTHONHASHSEED (`mutation_env`), so its file is named by THIS process's
+                # value, not by None — the scheduled sweep runs this self-test under a seed and read 0 runs.
                 _runs = [int((_st / f"runs-{s}.txt").read_text()) if (_st / f"runs-{s}.txt").exists() else 0
-                         for s in (seeds or (None,))]
+                         for s in (seeds or (os.environ.get("PYTHONHASHSEED"),))]
                 return _res, _runs
 
             (_okf, _repf, _evf, _svf), _nf = _flaky_run(2)
