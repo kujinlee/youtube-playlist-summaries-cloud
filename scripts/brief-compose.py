@@ -35,14 +35,18 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 207 cases
+    python3 scripts/brief-compose.py --self-test  # 222 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
 A fragment marks each decision it asks of the owner with `data-decision` on the element where
 it is asked (empty = open; a value = the answer given). The composed page shows a yellow
 `🟨 ✍ DECISION n of N` tag there (green with the answer once answered) and a counter under the
-title, all derived from the marks — see `render_decisions`.
+title, all derived from the marks — see `render_decisions`. `data-decision-label="D7"` makes the tag
+lead with the fragment's own name for it. A mark the owner could not SEE (hidden, inert, in a
+`template`/`noscript`/`select`, on a table row or a raw-text element) is CANNOT RUN, and a `<details>`
+around one is opened. ⚠ Nothing checks that a fragment marks EVERY decision it asks: an unmarked
+question is invisible to the counter.
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -1096,6 +1100,40 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
 # a fragment has nowhere to type a number. Asked of the PARSE, not a regex: a `data-decision`
 # inside an attribute value or a script string is not markup and is not counted.
 DECISION_ATTR = "data-decision"
+# ⟳ r1 (Claude F5): a fragment that already numbers its decisions its own way ("D7", "Q1") says so
+# with `data-decision-label`, and the tag LEADS with that label. Without it, "DECISION 5" on a page
+# that says "D5" throughout reads as the wrong decision.
+DECISION_LABEL_ATTR = "data-decision-label"
+# ⟳ r1 (Codex 2, Claude F6): the ids are NAMESPACED (`ex-`, like every class this script owns), and
+# a fragment that already uses one is REFUSED — a namespace makes a collision unlikely, the refusal
+# makes it impossible. `getElementById` returns the FIRST match, so a collision sends "next" to the
+# fragment's element instead of the tag.
+DECISION_ID = "ex-decision-{n}"
+
+# ⟳ r1 (Codex 1, Claude F3): A DECISION THE OWNER CANNOT SEE MUST NOT BE COUNTED. A tag inserted as
+# the marked element's first child is invisible, or not at the spot, in three ways — and each is
+# REFUSED at compose time (CANNOT RUN, naming the element), never rendered as a counted, unseen tag:
+#   • ON one of these, the span is dropped, foster-parented out of a table, or shown as literal text
+#     (raw text), or the element has no inside (void);
+_DECISION_REFUSE_ON = frozenset({
+    "table", "thead", "tbody", "tfoot", "tr", "colgroup", "caption",
+    "select", "option", "optgroup", "datalist",
+    "textarea", "title", "xmp", "iframe", "noembed", "noframes", "plaintext",
+    "script", "style", "template", "noscript", "head", "html",
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
+    "track", "wbr",
+})
+#   • INSIDE one of these, nothing is rendered at all (template content is inert; noscript is not
+#     shown with scripting on; a select shows only option text);
+_DECISION_REFUSE_INSIDE = frozenset({"template", "noscript", "select", "datalist"})
+#   • on or inside an element carrying one of these attributes, nothing is rendered.
+_DECISION_HIDING_ATTRS = frozenset({"hidden", "inert"})
+# ⚠ `<details>` IS NOT REFUSED — IT IS OPENED. A decision on or inside a `<details>` gets `open`
+# added to every such `<details>` around it, so its tag shows on load. Chosen over moving the tag
+# onto the `<summary>`: the tag stays at the spot the fragment marked, and a reader who closes the
+# section has chosen to.
+_DECISION_VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+                            "meta", "source", "track", "wbr"})
 
 # ⚠ ITS OWN TOKENS, declared the way SHIM declares its defaults: on `html` (specificity 0,0,1),
 # so a page that wants other colours wins by declaring them on `:root`. The dark half is given
@@ -1103,6 +1141,8 @@ DECISION_ATTR = "data-decision"
 # `--em` records: a media query has no specificity, so a toggle keyed only there goes half-live.
 # A pair (ink, background, border) always comes from ONE block, so contrast never mixes halves.
 # Emitted ONLY on a page that has a decision: every other page composes byte-identical to before.
+# ⟳ r1 (Claude F5): `text-transform: none` — a tag inside a page's uppercase label (`.box .lbl`)
+# inherited it, and the owner's recorded answer was shown rewritten in capitals.
 DECISION_CSS = """
   html { --decide: #3a2c00; --decide-bg: #ffe45c; --decide-br: #c99a00;
          --decided: #14532d; --decided-bg: #d3f2dc; --decided-br: #3d9a5c; }
@@ -1117,12 +1157,12 @@ DECISION_CSS = """
   .ex-decision { display: inline-block; margin: 0 .5em .3em 0; padding: .1em .6em;
          border: 1px solid var(--decide-br); border-radius: 4px; background: var(--decide-bg);
          color: var(--decide); font: 700 .78rem/1.5 var(--sans); letter-spacing: .03em;
-         vertical-align: baseline; scroll-margin-top: 4rem; }
+         text-transform: none; vertical-align: baseline; scroll-margin-top: 4rem; }
   .ex-decision-done { border-color: var(--decided-br); background: var(--decided-bg);
          color: var(--decided); }
   .ex-decision-count { margin: .6em 0 1em; padding: .5em .8em; border: 2px solid var(--decide-br);
          border-radius: 6px; background: var(--decide-bg); color: var(--decide);
-         font: 600 .92rem/1.5 var(--sans); }
+         font: 600 .92rem/1.5 var(--sans); text-transform: none; }
   .ex-decision-count.all-done { border-color: var(--decided-br); background: var(--decided-bg);
          color: var(--decided); }
   .ex-decision-count a { color: inherit; }
@@ -1130,24 +1170,93 @@ DECISION_CSS = """
 
 
 class _DecisionScan(HTMLParser):
-    """Every start tag carrying `data-decision`, in document order, with its position. PURE."""
+    """Every start tag carrying `data-decision`, in document order, with its position. PURE.
+
+    ⟳ r1: THE SAME PARSE ON EVERY INTERPRETER. Python 3.14's parser treats `textarea`/`title` (and
+    `xmp`, `iframe`, `noembed`, `noframes`) as raw text; 3.12's — the CI pin — treats only `script`
+    and `style` so, and reported the markup INSIDE a textarea as tags, so one fragment had a
+    different N per interpreter. The list below is the browser's raw-text set, and naming it here
+    makes 3.12 parse like 3.14 (3.14 checks this attribute first, so it is honoured there too).
+    Text inside raw text is TEXT, like a script string: never a decision. `<plaintext>` swallows
+    the rest of the document in a browser (and on 3.14), so nothing after one is a decision either.
+
+    Each found entry is (pos, start-tag text, answer, label, refusal-or-None, details start tags
+    to open). An ancestor stack is kept from start/end tags; an element closed IMPLICITLY (an
+    unclosed `<p hidden>`) stays on it, which can only cause a refusal, never a silent count.
+    """
+
+    CDATA_CONTENT_ELEMENTS = ("script", "style", "xmp", "iframe", "noembed", "noframes",
+                              "textarea", "title")
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=False)
-        self.found: list[tuple[tuple[int, int], str, str]] = []
+        self.found: list[tuple[tuple[int, int], str, str, str, str | None,
+                               list[tuple[tuple[int, int], str]]]] = []
+        self.ids: set[str] = set()
+        self._stack: list[tuple[str, bool, tuple[int, int], str]] = []
+        self._plaintext = False
 
     def handle_starttag(self, tag: str, attrs: list) -> None:
+        if self._plaintext:
+            return
+        names = {k for k, _ in attrs if k}
         for key, value in attrs:
-            if key and key.lower() == DECISION_ATTR:
-                self.found.append((self.getpos(), self.get_starttag_text() or "",
-                                   (value or "").strip()))
+            if key in ("id", "name") and value:
+                self.ids.add(value)
+        hides = bool(names & _DECISION_HIDING_ATTRS)
+        text = self.get_starttag_text() or ""
+        if DECISION_ATTR in names:
+            value = next((v for k, v in attrs if k == DECISION_ATTR), None)
+            label = next((v for k, v in attrs if k == DECISION_LABEL_ATTR), None)
+            refusal = None
+            if tag in _DECISION_REFUSE_ON:
+                refusal = f"it is ON a <{tag}>, where a tag is not shown at the spot"
+            elif hides:
+                refusal = f"its <{tag}> carries {'/'.join(sorted(names & _DECISION_HIDING_ATTRS))}"
+            else:
+                for anc, anc_hides, _, _ in self._stack:
+                    if anc in _DECISION_REFUSE_INSIDE:
+                        refusal = f"it is inside a <{anc}>, which is not rendered"
+                        break
+                    if anc_hides:
+                        refusal = f"it is inside a <{anc}> that is hidden or inert"
+                        break
+            details = [(pos, t) for anc, _, pos, t in self._stack if anc == "details"]
+            if tag == "details":
+                details.append((self.getpos(), text))
+            self.found.append((self.getpos(), text, (value or "").strip(),
+                               (label or "").strip(), refusal, details))
+        if tag == "plaintext":
+            self._plaintext = True
+        elif tag not in _DECISION_VOID:
+            self._stack.append((tag, hides, self.getpos(), text))
+
+    def handle_startendtag(self, tag: str, attrs: list) -> None:
+        # A browser ignores the slash on a non-void element: `<div hidden/>` OPENS a hidden div.
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == tag:
+                del self._stack[i:]
                 return
+
+
+def _decision_offset(markup: str, starts: list[int], pos: tuple[int, int], text: str,
+                     what: str) -> int:
+    """The offset of a start tag the parser reported at `pos`, or CANNOT RUN. PURE."""
+    at = starts[pos[0] - 1] + pos[1]
+    if not text or markup[at:at + len(text)] != text:
+        raise SystemExit(f"brief-compose: CANNOT RUN — {what} was not found where the parser "
+                         "reported it; no tag was placed. Treat as NOT RENDERED.")
+    return at
 
 
 def render_decisions(markup: str) -> tuple[str, int, int]:
     """Tag each `data-decision` element and put the counter under the title. PURE.
 
     Returns (markup, total, remaining). With no decision the markup comes back UNCHANGED.
+    CANNOT RUN (SystemExit) when a decision would not be visible at its spot, or an id collides.
     """
     scan = _DecisionScan()
     scan.feed(markup)
@@ -1155,28 +1264,43 @@ def render_decisions(markup: str) -> tuple[str, int, int]:
     total = len(scan.found)
     if not total:
         return markup, 0, 0
+    for n, ((line, _col), text, _a, _l, refusal, _d) in enumerate(scan.found, 1):
+        if refusal:
+            raise SystemExit(f"brief-compose: CANNOT RUN — decision {n} of {total} ({text} at "
+                             f"line {line}) would be counted but not seen: {refusal}. Move the "
+                             "mark to a visible element. No page was written; treat as NOT RENDERED.")
+    taken = sorted(scan.ids & {DECISION_ID.format(n=n) for n in range(1, total + 1)})
+    if taken:
+        raise SystemExit(f"brief-compose: CANNOT RUN — the fragment already uses id/name "
+                         f"{', '.join(taken)}, which a decision tag needs; the counter's link would "
+                         "go to the fragment's element. Rename it. Treat as NOT RENDERED.")
     # `getpos()` counts lines by "\n" only, so the offsets are rebuilt the same way —
     # `splitlines` would also split on characters the parser does not.
     starts = [0] + [i + 1 for i, ch in enumerate(markup) if ch == "\n"]
-    spots = []
-    for n, ((line, col), text, answer) in enumerate(scan.found, 1):
-        at = starts[line - 1] + col
-        if not text or markup[at:at + len(text)] != text:
-            raise SystemExit(f"brief-compose: CANNOT RUN — decision {n} of {total} was not found "
-                             "where the parser reported it; no tag was placed. Treat as NOT RENDERED.")
+    edits: dict[int, str] = {}
+    for n, (pos, text, answer, label, _r, details) in enumerate(scan.found, 1):
+        at = _decision_offset(markup, starts, pos, text, f"decision {n} of {total}")
+        name = f"{html_escape(label)} — DECISION {n} of {total}" if label else f"DECISION {n} of {total}"
         if answer:
-            tag = (f'<span class="ex-decision ex-decision-done" id="decision-{n}">'
-                   f"🟩 ✍ DECISION {n} of {total} — ANSWERED: {html_escape(answer)}</span>")
+            tag = (f'<span class="ex-decision ex-decision-done" id="{DECISION_ID.format(n=n)}">'
+                   f"🟩 ✍ {name} — ANSWERED: {html_escape(answer)}</span>")
         else:
-            tag = (f'<span class="ex-decision ex-decision-open" id="decision-{n}">'
-                   f"🟨 ✍ DECISION {n} of {total}</span>")
-        spots.append((at + len(text), tag))
-    for at, tag in reversed(spots):
-        markup = markup[:at] + tag + markup[at:]
-    open_ns = [n for n, (_, _, answer) in enumerate(scan.found, 1) if not answer]
+            tag = (f'<span class="ex-decision ex-decision-open" id="{DECISION_ID.format(n=n)}">'
+                   f"🟨 ✍ {name}</span>")
+        edits[at + len(text)] = tag
+        for dpos, dtext in details:
+            if not re.search(r"\sopen(\s|=|/?>)", dtext, re.I):
+                d_at = _decision_offset(markup, starts, dpos, dtext, f"the <details> around decision {n}")
+                edits[d_at + len(dtext) - (2 if dtext.endswith("/>") else 1)] = " open"
+    for at in sorted(edits, reverse=True):
+        markup = markup[:at] + edits[at] + markup[at:]
+    open_ns = [(n, label) for n, (_, _, answer, label, _, _) in enumerate(scan.found, 1)
+               if not answer]
     remaining = len(open_ns)
     if open_ns:
-        nxt = f' · next: <a href="#decision-{open_ns[0]}">DECISION {open_ns[0]}</a>'
+        first, first_label = open_ns[0]
+        shown = f"{html_escape(first_label)} — DECISION {first}" if first_label else f"DECISION {first}"
+        nxt = f' · next: <a href="#{DECISION_ID.format(n=first)}">{shown}</a>'
         counter = (f'<div class="ex-decision-count" role="status">✍ <b>{total}</b> decisions on '
                    f"this page · <b>{remaining}</b> remaining · <b>{total - remaining}</b> "
                    f"answered{nxt}</div>")
@@ -2787,8 +2911,8 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
          "<b>3</b> decisions" in _c3 and "<b>2</b> remaining" in _c3
          and "<b>2</b> decisions" in _c2 and "<b>0</b> remaining" in _c2)
     case("603: the counter links to the FIRST open decision, and each tag is a target",
-         'href="#decision-1"' in _c3 and 'id="decision-1"' in _dd3
-         and 'id="decision-3"' in _dd3 and _c2 != "" and "href=" not in _c2)
+         'href="#ex-decision-1"' in _c3 and 'id="ex-decision-1"' in _dd3
+         and 'id="ex-decision-3"' in _dd3 and _c2 != "" and "href=" not in _c2)
     case("603: an all-answered counter turns green, an open one stays yellow",
          'class="ex-decision-count all-done"' in _dd2
          and 'class="ex-decision-count"' in _dd3)
@@ -2822,6 +2946,135 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
              for v in _reads))
     case("603: composing a decision page twice is byte-identical",
          compose(_d3, "T", css, markup, script, _fixed_at) == _dd3)
+
+    # ── #603 ROUND 1: what the first suite left free (Codex 1-4, Claude F3-F6) ────────────
+    # ⚠ Each case below was written against a mutation that SURVIVED the first suite, or a guard
+    # that did not exist; the manifest names the mutation that each one kills.
+    _d4 = ("<h1>F</h1><p data-decision=\"yes\">A</p><p data-decision>B</p>"
+           "<p data-decision=\"no\">C</p><p data-decision=\"later\">D</p>")
+    _r4 = render_decisions(_d4)
+    _cnt4 = re.search(r'<div class="ex-decision-count[^"]*"[^>]*>(.*?)</div>', _r4[0], re.S)
+    _c4 = _cnt4.group(1) if _cnt4 else ""
+    case("603 r1: 'next' goes to the first OPEN decision, not decision 1 (1 answered, 2 open)",
+         'href="#ex-decision-2"' in _c4 and ">DECISION 2</a>" in _c4
+         and 'href="#ex-decision-1"' in _c3)
+    case("603 r1: the answered count is total minus remaining, at two inputs",
+         "<b>1</b> answered" in _c3 and _r4[1:] == (4, 1) and "<b>3</b> answered" in _c4
+         and "<b>1</b> remaining" in _c4)
+    _ws = render_decisions("<h1>W</h1><p data-decision=\"  \t \">W?</p><p data-decision=\" ok \">V?</p>")
+    case("603 r1: a whitespace-only value is OPEN, and an answer is shown trimmed",
+         _ws[1:] == (2, 1) and "🟨 ✍ DECISION 1 of 2</span>" in _ws[0]
+         and "ANSWERED: ok</span>" in _ws[0])
+    try:
+        _off_bad = _decision_offset("<b>x</b>", [0], (1, 0), "<p>", "decision 1 of 1")
+    except SystemExit as _e:
+        _off_bad = str(_e)
+    case("603 r1: a start tag not found where the parser put it is CANNOT RUN, not a misplaced tag",
+         isinstance(_off_bad, str) and "CANNOT RUN" in _off_bad and "decision 1 of 1" in _off_bad
+         and _decision_offset("ab\n<p>", [0, 3], (2, 0), "<p>", "x") == 3)
+
+    def _refusal(frag: str) -> str:
+        try:
+            render_decisions(frag)
+        except SystemExit as e:
+            return str(e)
+        return ""
+    case("603 r1: a decision INSIDE an element that is not rendered is REFUSED, naming it",
+         all("CANNOT RUN" in _refusal(f) and f"inside a <{t}>" in _refusal(f) for t, f in (
+             ("template", "<h1>x</h1><template><p data-decision>T</p></template>"),
+             ("noscript", "<h1>x</h1><noscript><div><p data-decision>N</p></div></noscript>"),
+             ("datalist", "<h1>x</h1><datalist><p data-decision>L</p></datalist>")))
+         and _refusal("<h1>x</h1><div><section><p data-decision>ok</p></section></div>") == ""
+         and _refusal("<h1>x</h1><template>t</template><p data-decision>ok</p>") == "")
+    case("603 r1: a decision on or inside a HIDDEN or INERT element is REFUSED",
+         "carries hidden" in _refusal("<h1>x</h1><p hidden data-decision>H</p>")
+         and "hidden or inert" in _refusal("<h1>x</h1><div hidden><ul><li data-decision>H</li></ul></div>")
+         and "hidden or inert" in _refusal("<h1>x</h1><div inert><p data-decision>I</p></div>")
+         and _refusal("<h1>x</h1><div hidden>gone</div><p data-decision>shown</p>") == ""
+         and _refusal("<h1>x</h1><div data-hidden=\"1\"><p data-decision>shown</p></div>") == "")
+    case("603 r1: a mark ON an element whose first child is not shown at the spot is REFUSED",
+         all(f"ON a <{t}>" in _refusal(f) for t, f in (
+             ("tr", "<h1>x</h1><table><tr data-decision><td>r</td></tr></table>"),
+             ("option", "<h1>x</h1><select><option data-decision>o</option></select>"),
+             ("textarea", "<h1>x</h1><textarea data-decision>t</textarea>"),
+             ("img", "<h1>x</h1><img data-decision src=\"a.png\">")))
+         and _refusal("<h1>x</h1><table><tr><td data-decision>cell</td></tr></table>") == "")
+    _raw = ("<h1>x</h1><textarea><p data-decision>a</p></textarea><title><b data-decision></title>"
+            "<xmp><i data-decision></xmp><p data-decision>real</p>")
+
+    class _AsOn312(_DecisionScan):
+        # 3.12's parser has no raw-text list of its own beyond script/style; emptying 3.14's
+        # makes THIS interpreter parse the way CI's does, so the case means the same on both.
+        RCDATA_CONTENT_ELEMENTS: tuple = ()
+    _old = _AsOn312()
+    _old.feed(_raw)
+    _old.close()
+    case("603 r1: markup inside textarea/title/xmp is TEXT, never a decision — the same on 3.12 and 3.14",
+         render_decisions(_raw)[1:] == (1, 1) and len(_old.found) == 1
+         and render_decisions("<h1>x</h1><p data-decision>a</p><plaintext><p data-decision>b")[1] == 1)
+    _det = render_decisions("<h1>x</h1><details><summary>S</summary><p data-decision>X</p></details>"
+                            "<details data-decision><summary>T</summary></details>"
+                            "<details open><p data-decision>Y</p></details>")[0]
+    case("603 r1: a decision on or inside <details> OPENS it, so its tag shows on load",
+         "<details open><summary>S</summary>" in _det and "<details data-decision open>" in _det
+         and "<details open><p data-decision>" in _det and "open open" not in _det)
+    case("603 r1: a fragment id/name the tags need is REFUSED, a different one is not",
+         "ex-decision-1" in _refusal("<h1>x</h1><p id=\"ex-decision-1\">I</p><p data-decision>C</p>")
+         and "ex-decision-2" in _refusal("<h1>x</h1><a name=\"ex-decision-2\"></a>"
+                                         "<p data-decision>C</p><p data-decision>D</p>")
+         and _refusal("<h1>x</h1><p id=\"ex-decision-3\">I</p><p data-decision>C</p>"
+                      "<p data-decision>D</p>") == "")
+    _lab = render_decisions("<h1>x</h1><h4 data-decision data-decision-label=\"Q1\">Q?</h4>"
+                            "<p data-decision=\"MIT\" data-decision-label=\"D&lt;7\">L</p>")[0]
+    case("603 r1: a fragment's own label LEADS the tag and the 'next' link, escaped",
+         "🟨 ✍ Q1 — DECISION 1 of 2</span>" in _lab
+         and "🟩 ✍ D&lt;7 — DECISION 2 of 2 — ANSWERED: MIT</span>" in _lab
+         and ">Q1 — DECISION 1</a>" in _lab)
+
+    def _rule(sel: str) -> str:
+        m = re.search(r"(?m)^\s*" + re.escape(sel) + r"\s*\{([^}]*)\}", _dcss)
+        return m.group(1) if m else ""
+    case("603 r1: a tag and the counter never inherit a page's uppercase (the answer is shown as written)",
+         "text-transform: none" in _rule(".ex-decision")
+         and "text-transform: none" in _rule(".ex-decision-count"))
+
+    def _hex_lum(c: str) -> float:
+        h = c.strip().lstrip("#")
+        h = "".join(ch * 2 for ch in h) if len(h) == 3 else h
+        lin = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+               for v in (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+    def _contrast(a: str, b: str) -> float:
+        try:
+            hi, lo = sorted((_hex_lum(a), _hex_lum(b)), reverse=True)
+        except ValueError:
+            return 0.0
+        return (hi + 0.05) / (lo + 0.05)
+
+    def _blk_value(body: str, var: str) -> str:
+        m = re.search(re.escape(var) + r":\s*([^;]+);", body)
+        return m.group(1).strip() if m else ""
+    _os_dark = (re.search(r'\{\s*:root:not\(\[data-theme="light"\]\)\s*\{([^}]*)\}', _dcss)
+                if _dcss else None)
+    _blocks = {"light (html)": _rule("html"),
+               "OS-dark": _os_dark.group(1) if _os_dark else "",
+               "toggle light": _rule(':root[data-theme="light"]'),
+               "toggle dark": _rule(':root[data-theme="dark"]')}
+    _ratios = {(b, ink): _contrast(_blk_value(body, ink), _blk_value(body, ink + "-bg"))
+               for b, body in _blocks.items() for ink in ("--decide", "--decided")}
+    case("603 r1: every tag state is READABLE in every theme block — contrast >= 4.5, OS-dark included",
+         len(_ratios) == 8 and all(r >= 4.5 for r in _ratios.values()))
+    case("603 r1: the OS-dark half carries the DARK values, not the light ones",
+         len(_reads) >= 6 and all(
+             _blk_value(_blocks["OS-dark"], v) == _blk_value(_blocks["toggle dark"], v)
+             != _blk_value(_blocks["light (html)"], v) for v in _reads))
+    _done_reads = vars_read_anywhere(_rule(".ex-decision-done"))
+    case("603 r1: an ANSWERED tag reads the green tokens, and green differs from yellow everywhere",
+         _done_reads == {"--decided", "--decided-bg", "--decided-br"}
+         and vars_read_anywhere(_rule(".ex-decision-count.all-done")) == _done_reads
+         and all(_blk_value(body, "--decided-bg") != _blk_value(body, "--decide-bg") != ""
+                 for body in _blocks.values()))
 
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, and this suite was not keeping it. `check-plan-code`'s

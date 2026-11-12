@@ -580,8 +580,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    for n, ((line, col), text, answer) in enumerate(scan.found, 1):\n",
-        "    for n, ((line, col), text, answer) in enumerate(scan.found, 0):\n"
+        "    for n, (pos, text, answer, label, _r, details) in enumerate(scan.found, 1):\n",
+        "    for n, (pos, text, answer, label, _r, details) in enumerate(scan.found, 0):\n"
       ]
     ],
     "expect": [
@@ -593,8 +593,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "        spots.append((at + len(text), tag))\n",
-        "        spots.append((at, tag))\n"
+        "        edits[at + len(text)] = tag\n",
+        "        edits[at] = tag\n"
       ]
     ],
     "expect": [
@@ -645,8 +645,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "        nxt = f' · next: <a href=\"#decision-{open_ns[0]}\">",
-        "        nxt = f' · next: <a href=\"#decision-{open_ns[-1]}\">"
+        "        first, first_label = open_ns[0]\n",
+        "        first, first_label = open_ns[-1]\n"
       ]
     ],
     "expect": [
@@ -729,6 +729,253 @@
     ],
     "expect": [
       "603: the light and dark tag colours actually differ, and light matches light"
+    ]
+  },
+  {
+    "name": "603 r1: 'next' targets decision 1 whatever is open (Codex 3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        nxt = f' · next: <a href=\"#{DECISION_ID.format(n=first)}\">{shown}</a>'\n",
+        "        nxt = f' · next: <a href=\"#{DECISION_ID.format(n=1)}\">DECISION 1</a>'\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: 'next' goes to the first OPEN decision, not decision 1 (1 answered, 2 open)"
+    ]
+  },
+  {
+    "name": "603 r1: the answered count shows the remaining count (Claude F4 Ma)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "<b>{total - remaining}</b> \"\n",
+        "<b>{remaining}</b> \"\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: the answered count is total minus remaining, at two inputs"
+    ]
+  },
+  {
+    "name": "603 r1: a whitespace-only value counts as ANSWERED (Claude F4 Md)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            self.found.append((self.getpos(), text, (value or \"\").strip(),\n",
+        "            self.found.append((self.getpos(), text, (value or \"\"),\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: a whitespace-only value is OPEN, and an answer is shown trimmed"
+    ]
+  },
+  {
+    "name": "603 r1: the not-where-reported guard is severed (Claude F4 Me)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if not text or markup[at:at + len(text)] != text:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: a start tag not found where the parser put it is CANNOT RUN, not a misplaced tag"
+    ]
+  },
+  {
+    "name": "603 r1: a decision inside template/noscript/datalist is counted (Codex 1, Claude F3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                    if anc in _DECISION_REFUSE_INSIDE:\n",
+        "                    if False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: a decision INSIDE an element that is not rendered is REFUSED, naming it"
+    ]
+  },
+  {
+    "name": "603 r1: a decision on a hidden element is counted (Codex 1)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            elif hides:\n",
+        "            elif False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: a decision on or inside a HIDDEN or INERT element is REFUSED"
+    ]
+  },
+  {
+    "name": "603 r1: a decision inside a hidden element is counted (Codex 1)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                    if anc_hides:\n",
+        "                    if False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: a decision on or inside a HIDDEN or INERT element is REFUSED"
+    ]
+  },
+  {
+    "name": "603 r1: an end tag never closes an ancestor, so a closed hidden div refuses what follows",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                del self._stack[i:]\n",
+        "                pass\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: a decision on or inside a HIDDEN or INERT element is REFUSED"
+    ]
+  },
+  {
+    "name": "603 r1: a mark ON tr/option/textarea/img is tagged anyway (Claude F3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            if tag in _DECISION_REFUSE_ON:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: a mark ON an element whose first child is not shown at the spot is REFUSED"
+    ]
+  },
+  {
+    "name": "603 r1: a refusal is found but the page is rendered anyway",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if refusal:\n            raise SystemExit(",
+        "        if False:\n            raise SystemExit("
+      ]
+    ],
+    "expect": [
+      "603 r1: a decision INSIDE an element that is not rendered is REFUSED, naming it"
+    ]
+  },
+  {
+    "name": "603 r1: the raw-text list is dropped, so the parse differs by interpreter (Claude F3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    CDATA_CONTENT_ELEMENTS = (\"script\", \"style\", \"xmp\", \"iframe\", \"noembed\", \"noframes\",\n                              \"textarea\", \"title\")\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "603 r1: markup inside textarea/title/xmp is TEXT, never a decision — the same on 3.12 and 3.14"
+    ]
+  },
+  {
+    "name": "603 r1: a <details> around a decision is left closed (Claude F3)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                edits[d_at + len(dtext) - (2 if dtext.endswith(\"/>\") else 1)] = \" open\"\n",
+        "                pass\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: a decision on or inside <details> OPENS it, so its tag shows on load"
+    ]
+  },
+  {
+    "name": "603 r1: an id collision with the fragment is not refused (Codex 2, Claude F6)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if taken:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: a fragment id/name the tags need is REFUSED, a different one is not"
+    ]
+  },
+  {
+    "name": "603 r1: the fragment's own label is dropped from the tag (Claude F5)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        name = f\"{html_escape(label)} — DECISION {n} of {total}\" if label else f\"DECISION {n} of {total}\"\n",
+        "        name = f\"DECISION {n} of {total}\"\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: a fragment's own label LEADS the tag and the 'next' link, escaped"
+    ]
+  },
+  {
+    "name": "603 r1: a tag inherits the page's uppercase again (Claude F5)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "         text-transform: none; vertical-align: baseline;",
+        "         vertical-align: baseline;"
+      ]
+    ],
+    "expect": [
+      "603 r1: a tag and the counter never inherit a page's uppercase (the answer is shown as written)"
+    ]
+  },
+  {
+    "name": "603 r1: the OS-dark half gets the LIGHT values (Claude F4 Mb)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    :root:not([data-theme=\"light\"]) { --decide: #1d1600; --decide-bg: #e0bc2a; --decide-br: #f5d24a;\n         --decided: #c9f0d5; --decided-bg: #1f4d2e; --decided-br: #4fae70; }\n",
+        "    :root:not([data-theme=\"light\"]) { --decide: #3a2c00; --decide-bg: #ffe45c; --decide-br: #c99a00;\n         --decided: #14532d; --decided-bg: #d3f2dc; --decided-br: #3d9a5c; }\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: the OS-dark half carries the DARK values, not the light ones"
+    ]
+  },
+  {
+    "name": "603 r1: an answered tag uses the yellow tokens (Claude F4 Mc)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "  .ex-decision-done { border-color: var(--decided-br); background: var(--decided-bg);\n         color: var(--decided); }\n",
+        "  .ex-decision-done { border-color: var(--decide-br); background: var(--decide-bg);\n         color: var(--decide); }\n"
+      ]
+    ],
+    "expect": [
+      "603 r1: an ANSWERED tag reads the green tokens, and green differs from yellow everywhere"
+    ]
+  },
+  {
+    "name": "603 r1: the dark toggle's open tag is white on white (Codex 4)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "  :root[data-theme=\"dark\"] { --decide: #1d1600; --decide-bg: #e0bc2a;",
+        "  :root[data-theme=\"dark\"] { --decide: #ffffff; --decide-bg: #ffffff;"
+      ]
+    ],
+    "expect": [
+      "603 r1: every tag state is READABLE in every theme block — contrast >= 4.5, OS-dark included"
+    ]
+  },
+  {
+    "name": "603 r1: the OS-dark answered tag is white on white (Codex 4)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    :root:not([data-theme=\"light\"]) { --decide: #1d1600; --decide-bg: #e0bc2a; --decide-br: #f5d24a;\n         --decided: #c9f0d5; --decided-bg: #1f4d2e;",
+        "    :root:not([data-theme=\"light\"]) { --decide: #1d1600; --decide-bg: #e0bc2a; --decide-br: #f5d24a;\n         --decided: #ffffff; --decided-bg: #ffffff;"
+      ]
+    ],
+    "expect": [
+      "603 r1: every tag state is READABLE in every theme block — contrast >= 4.5, OS-dark included"
     ]
   }
 ]

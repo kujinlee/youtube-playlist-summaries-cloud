@@ -258,12 +258,12 @@ li::marker{color:var(--fg3)}
   .ex-decision { display: inline-block; margin: 0 .5em .3em 0; padding: .1em .6em;
          border: 1px solid var(--decide-br); border-radius: 4px; background: var(--decide-bg);
          color: var(--decide); font: 700 .78rem/1.5 var(--sans); letter-spacing: .03em;
-         vertical-align: baseline; scroll-margin-top: 4rem; }
+         text-transform: none; vertical-align: baseline; scroll-margin-top: 4rem; }
   .ex-decision-done { border-color: var(--decided-br); background: var(--decided-bg);
          color: var(--decided); }
   .ex-decision-count { margin: .6em 0 1em; padding: .5em .8em; border: 2px solid var(--decide-br);
          border-radius: 6px; background: var(--decide-bg); color: var(--decide);
-         font: 600 .92rem/1.5 var(--sans); }
+         font: 600 .92rem/1.5 var(--sans); text-transform: none; }
   .ex-decision-count.all-done { border-color: var(--decided-br); background: var(--decided-bg);
          color: var(--decided); }
   .ex-decision-count a { color: inherit; }
@@ -275,8 +275,8 @@ li::marker{color:var(--fg3)}
 <header class="top">
   <p class="kicker">Phase 1 spec · awaiting your gate</p>
   <h1>Could a stranger use any of this?</h1>
-<div class="chrome-slot"><div class="chrome"><span class="chrome-when">generated <time>2026-11-11 19:53 · 2f5e3f3d · uncommitted changes</time></span></div></div>
-<div class="ex-decision-count" role="status">✍ <b>11</b> decisions on this page · <b>2</b> remaining · <b>9</b> answered · next: <a href="#decision-7">DECISION 7</a></div>
+<div class="chrome-slot"><div class="chrome"><span class="chrome-when">generated <time>2026-11-11 20:30 · ba9490b2 · uncommitted changes</time></span></div></div>
+<div class="ex-decision-count" role="status">✍ <b>13</b> decisions on this page · <b>2</b> remaining · <b>11</b> answered · next: <a href="#ex-decision-5">C5 corpus content review — DECISION 5</a></div>
   <p class="sub">Spec <code>2026-10-15-marketplace-inventory-design.md</code> · branch <code>marketplace-inventory</code> at <code>e1cd5b8a</code> · PR <strong>376</strong> · anchor <code>harness-ships-elsewhere</code></p>
   <p class="lede">You asked for an inventory of the three efforts and a milestone. This is the plan for
   producing that, not the answer. <strong>It is the only human gate in this process</strong> — after it,
@@ -344,7 +344,7 @@ until the mapping step runs.</p>
 have seen what each one rules out. <strong>Every one of them is still reversible right now.</strong></p>
 
 <div class="dec">
-  <div class="hd" data-decision="Public strangers, full support bar (selection card, 10-15)"><span class="ex-decision ex-decision-done" id="decision-1">🟩 ✍ DECISION 1 of 11 — ANSWERED: Public strangers, full support bar (selection card, 10-15)</span>
+  <div class="hd" data-decision="Public strangers, full support bar (selection card, 10-15)" data-decision-label="D1"><span class="ex-decision ex-decision-done" id="ex-decision-1">🟩 ✍ D1 — DECISION 1 of 13 — ANSWERED: Public strangers, full support bar (selection card, 10-15)</span>
     <span class="tag">D1 · AUDIENCE</span>
     <strong>Public strangers, full support bar.</strong> Works in any repo, documented for a newcomer,
     failure modes handled without you.
@@ -367,7 +367,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </div>
 
 <div class="dec">
-  <div class="hd" data-decision="One evaluation across all three efforts (selection card, 10-15)"><span class="ex-decision ex-decision-done" id="decision-2">🟩 ✍ DECISION 2 of 11 — ANSWERED: One evaluation across all three efforts (selection card, 10-15)</span>
+  <div class="hd" data-decision="One evaluation across all three efforts (selection card, 10-15)" data-decision-label="D2"><span class="ex-decision ex-decision-done" id="ex-decision-2">🟩 ✍ D2 — DECISION 2 of 13 — ANSWERED: One evaluation across all three efforts (selection card, 10-15)</span>
     <span class="tag">D2 · DECOMPOSITION</span>
     <strong>One evaluation across all three efforts</strong>, then a spec per publishable unit.
   </div>
@@ -388,7 +388,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </div>
 
 <div class="dec">
-  <div class="hd" data-decision="A self-published marketplace repo (selection card, 10-15)"><span class="ex-decision ex-decision-done" id="decision-3">🟩 ✍ DECISION 3 of 11 — ANSWERED: A self-published marketplace repo (selection card, 10-15)</span>
+  <div class="hd" data-decision="A self-published marketplace repo (selection card, 10-15)" data-decision-label="D3"><span class="ex-decision ex-decision-done" id="ex-decision-3">🟩 ✍ D3 — DECISION 3 of 13 — ANSWERED: A self-published marketplace repo (selection card, 10-15)</span>
     <span class="tag">D3 · ROUTE</span>
     <strong>A self-published marketplace repo</strong>, installed with
     <code>/plugin marketplace add &lt;repo&gt;</code>.
@@ -411,7 +411,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </div>
 
 <div class="dec">
-  <div class="hd" data-decision="A mechanical scan plus one install experiment (selection card, 10-15)"><span class="ex-decision ex-decision-done" id="decision-4">🟩 ✍ DECISION 4 of 11 — ANSWERED: A mechanical scan plus one install experiment (selection card, 10-15)</span>
+  <div class="hd" data-decision="A mechanical scan plus one install experiment (selection card, 10-15)" data-decision-label="D4"><span class="ex-decision ex-decision-done" id="ex-decision-4">🟩 ✍ D4 — DECISION 4 of 13 — ANSWERED: A mechanical scan plus one install experiment (selection card, 10-15)</span>
     <span class="tag">D4 · METHOD</span>
     <strong>A mechanical scan across all components, plus one real install experiment</strong> on the
     comprehensibility suite, where the experiment calibrates the scan.
@@ -661,7 +661,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   <table>
     <tr><th>What</th><th>The question</th><th>Who answers it</th></tr>
     <tr><td>the <strong>code</strong></td><td>under what licence is it published?</td><td>✅ <strong>ANSWERED — MIT</strong> (D7, below). ⟳ This cell read <em>“you — this is a choice, not a finding”</em> until round 3; it was true when written and the answer is two sections further down</td></tr>
-    <tr><td>the <strong>corpus</strong> — effort (1)'s memory files (<strong>159</strong> here, 157 on <code>master</code>)</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td>a <strong>content review</strong> — ⟳ now <strong>deliverable 11</strong>, listed as yours rather than left as a gap (round 3). Until it lands the corpus’s row reads <code>C5: unanswered</code> and <strong>cannot be <code>SHIP</code></strong></td></tr>
+    <tr><td>the <strong>corpus</strong> — effort (1)'s memory files (<strong>159</strong> here, 157 on <code>master</code>)</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td data-decision data-decision-label="C5 corpus content review"><span class="ex-decision ex-decision-open" id="ex-decision-5">🟨 ✍ C5 corpus content review — DECISION 5 of 13</span>a <strong>content review</strong> — ⟳ now <strong>deliverable 11</strong>, listed as yours rather than left as a gap (round 3). Until it lands the corpus’s row reads <code>C5: unanswered</code> and <strong>cannot be <code>SHIP</code></strong></td></tr>
   </table>
   </div>
   <p class="note">⚠ <strong>Bounded honestly:</strong> no marketplace installed on this machine
@@ -672,7 +672,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </div>
 
 <div class="box warn">
-  <span class="lbl" data-decision="MIT (D7)"><span class="ex-decision ex-decision-done" id="decision-5">🟩 ✍ DECISION 5 of 11 — ANSWERED: MIT (D7)</span>✅ D7 — you chose MIT, and here is what it does and does not cover</span>
+  <span class="lbl" data-decision="MIT, on the marketplace repo; this repo stays unlicensed (11-10 18:41)" data-decision-label="D7"><span class="ex-decision ex-decision-done" id="ex-decision-6">🟩 ✍ D7 — DECISION 6 of 13 — ANSWERED: MIT, on the marketplace repo; this repo stays unlicensed (11-10 18:41)</span>✅ D7 — you chose MIT, and here is what it does and does not cover</span>
   <p><strong>The code half of C5 is settled: MIT.</strong> The comparables were measured rather than
   guessed — <code>oh-my-claudecode</code> ships <strong>MIT</strong> and
   <code>openai/codex-plugin-cc</code> ships <strong>Apache-2.0</strong>, so either would have met a
@@ -689,7 +689,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
     <tr><th>What</th><th>State</th></tr>
     <tr><td>the published harness package</td><td><strong>MIT</strong> — the <code>LICENSE</code> lands on the marketplace repo, whose creation is deferred</td></tr>
     <tr><td>this repository</td><td><strong>unchanged</strong> — public, unlicensed, all rights reserved, until decided separately</td></tr>
-    <tr><td>the copyright holder</td><td>⚠ <strong>not yet named.</strong> No author is declared anywhere, and the git identity is the placeholder <code>t &lt;t@example.com&gt;</code>. Your GitHub account is <code>kujinlee</code> — a legal name or entity is still yours to give, and inventing one would be worse than leaving it visible</td></tr>
+    <tr><td>the copyright holder</td><td data-decision data-decision-label="Copyright holder"><span class="ex-decision ex-decision-open" id="ex-decision-7">🟨 ✍ Copyright holder — DECISION 7 of 13</span>⚠ <strong>not yet named.</strong> No author is declared anywhere, and the git identity is the placeholder <code>t &lt;t@example.com&gt;</code>. Your GitHub account is <code>kujinlee</code> — a legal name or entity is still yours to give, and inventing one would be worse than leaving it visible</td></tr>
   </table>
   </div>
   <p class="note">⚠ <strong>And a correction.</strong> This was described to you as blocking the
@@ -699,7 +699,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </div>
 
 <div class="box warn">
-  <span class="lbl" data-decision="Verdict and evidence are two axes (D5)"><span class="ex-decision ex-decision-done" id="decision-6">🟩 ✍ DECISION 6 of 11 — ANSWERED: Verdict and evidence are two axes (D5)</span>D5 · Your decision, now settled — verdict and evidence are two axes</span>
+  <span class="lbl" data-decision="Verdict and evidence are two axes; confirmed 11-10 18:45 (&quot;Agree&quot;)" data-decision-label="D5"><span class="ex-decision ex-decision-done" id="ex-decision-8">🟩 ✍ D5 — DECISION 8 of 13 — ANSWERED: Verdict and evidence are two axes; confirmed 11-10 18:45 (&quot;Agree&quot;)</span>D5 · Your decision, now settled — verdict and evidence are two axes</span>
   <p>You chose this after finding the contradiction below. It is a <strong>decision of record</strong>
   now, not a recommendation: the three verdicts stay, and every verdict carries an
   <strong>evidence grade</strong> beside it.</p>
@@ -938,7 +938,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 <h2><span class="n">7</span>Four things I would like you to weigh</h2>
 
 <div class="q">
-  <h4 data-decision><span class="ex-decision ex-decision-open" id="decision-7">🟨 ✍ DECISION 7 of 11</span>1 · Is the lopsided evidence acceptable?</h4>
+  <h4 data-decision="Accepted for this milestone; evaluate deeper later (selection card A, 11-09)" data-decision-label="Q1"><span class="ex-decision ex-decision-done" id="ex-decision-9">🟩 ✍ Q1 — DECISION 9 of 13 — ANSWERED: Accepted for this milestone; evaluate deeper later (selection card A, 11-09)</span>1 · Is the lopsided evidence acceptable?</h4>
   <p>Effort (3) gets a real install experiment. Efforts (1) and (2) get argument. <strong>My
   recommendation: accept it</strong> — an install experiment for a CI harness and a memory matcher
   would cost more than their likely verdicts are worth.</p>
@@ -1029,7 +1029,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 </div>
 
 <div class="q">
-  <h4 data-decision="Yes, with a harvest axis (D6)"><span class="ex-decision ex-decision-done" id="decision-8">🟩 ✍ DECISION 8 of 11 — ANSWERED: Yes, with a harvest axis (D6)</span>2 · Is effort (2) worth evaluating at all?</h4>
+  <h4 data-decision="Yes, evaluated for SHIPPING as a portable, engine-agnostic CI layer, not only as a harvest; D6 still applies to its practices (11-10 19:07, 19:11)" data-decision-label="Q2"><span class="ex-decision ex-decision-done" id="ex-decision-10">🟩 ✍ Q2 — DECISION 10 of 13 — ANSWERED: Yes, evaluated for SHIPPING as a portable, engine-agnostic CI layer, not only as a harvest; D6 still applies to its practices (11-10 19:07, 19:11)</span>2 · Is effort (2) worth evaluating at all?</h4>
   <p>CI sharding and the mutation harness are wired into this repository's workflow. Under D1's public
   bar I expect most of it to come out <code>DON'T-SHIP</code>. <strong>My recommendation: evaluate it
   anyway</strong>, because “I expect” is the kind of claim this project keeps finding wrong, and the
@@ -1071,7 +1071,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 </div>
 
 <div class="q">
-  <h4 data-decision="Here, as PR 1's first commit (D8)"><span class="ex-decision ex-decision-done" id="decision-9">🟩 ✍ DECISION 9 of 11 — ANSWERED: Here, as PR 1&#x27;s first commit (D8)</span>3 · Should the stale index claims be fixed here or separately?</h4>
+  <h4 data-decision="Here, as PR 1's first commit (D8)" data-decision-label="Q3"><span class="ex-decision ex-decision-done" id="ex-decision-11">🟩 ✍ Q3 — DECISION 11 of 13 — ANSWERED: Here, as PR 1&#x27;s first commit (D8)</span>3 · Should the stale index claims be fixed here or separately?</h4>
   <p>Three claims in <code>portable-practices.md</code> are wrong — the size, the anchor count, and an
   owed anchor that now exists. The spec puts the corrections inside PR 1.
   <strong>My recommendation: keep them here</strong>, because the inventory is what discovered them and
@@ -1100,7 +1100,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 </div>
 
 <div class="q">
-  <h4 data-decision="Yes, decided first: best-effort, versioned (D9, option A)"><span class="ex-decision ex-decision-done" id="decision-10">🟩 ✍ DECISION 10 of 11 — ANSWERED: Yes, decided first: best-effort, versioned (D9, option A)</span>4 · Does “publishable” need a support policy decided first?</h4>
+  <h4 data-decision="Yes, decided first: best-effort, versioned (D9, option A)" data-decision-label="Q4"><span class="ex-decision ex-decision-done" id="ex-decision-12">🟩 ✍ Q4 — DECISION 12 of 13 — ANSWERED: Yes, decided first: best-effort, versioned (D9, option A)</span>4 · Does “publishable” need a support policy decided first?</h4>
   <p>D1 commits to a public bar, which implies versioning, breaking-change handling, and answering
   strangers' issues. <strong>The spec did not price any of that when this question was written</strong>
   — ⟳ it now does, in §4d, which is D9 below — and the inventory would otherwise
@@ -1175,7 +1175,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
   </div>
 </div>
 
-<div class="box ok" data-decision><span class="ex-decision ex-decision-open" id="decision-11">🟨 ✍ DECISION 11 of 11</span>
+<div class="box ok" data-decision="Approved 11-11 05:53 (&quot;Had I already approved this? If not, I approve&quot;)" data-decision-label="Spec approval"><span class="ex-decision ex-decision-done" id="ex-decision-13">🟩 ✍ Spec approval — DECISION 13 of 13 — ANSWERED: Approved 11-11 05:53 (&quot;Had I already approved this? If not, I approve&quot;)</span>
   <span class="lbl">What happens after you decide — approve, push back or redirect the spec</span>
   <p><strong>Approve</strong> → I write the implementation plan, it gets dual review to convergence,
   then it is built autonomously per the process. <strong>Push back</strong> → I fold your objection the
