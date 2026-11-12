@@ -20327,6 +20327,40 @@ pin 364 -> 368. The page's refresh hint, the docstring and `gen-work-lines.py`'s
 r1: both halves found it mixed trees outside the clone, and the Claude half found it a no-op inside it.
 
 ## 2026-11-11
+The plan for the marketplace inventory is written and its review is finished; nothing is built yet. It turns
+the spec you approved this morning into 22 small steps in five pull requests. The first pull request opens
+with the three corrections to the portable-practices index, as you decided (in the same pull request, not a
+separate one). Then a throwaway local marketplace proves a package can be installed at all, and a scan reads every component for this repository's fingerprints. Next, the
+comprehensibility pages are installed into a made-up stranger's repository and a real third-party one. Last,
+every component gets a verdict, an evidence grade, a price and its cheapest route. Nothing is published:
+the public repository, the licence and its copyright holder stay your steps. The work stops for you if
+making the pages public costs three times the "my next project" bar for most of them. One thing it will
+ask you for: a login token, so the pages' skills can be tried under a fresh home directory. Without it,
+that half is recorded as not run. A second: the page server always uses port 7391, which your own server is
+using, so the trial that serves a page waits until you stop yours; it never stops it for you. The first
+review round found 22 distinct problems (one blocking) and all are folded in. The second round found nine
+more, every one caused by the first round's fixes; they are folded too, mostly by deleting what the first fix
+added rather than adding more. The third and final round found one more, again caused by the previous fix: a
+page server that starts on a free port and then breaks was being filed as "waiting for you to free the port",
+when it is a real failure of the tool. It is now recorded as a failure. Review is closed at the round cap. The
+same part kept producing problems, but it is text about a trial, and the trial itself is the real test, so no
+design review was convened.
+<!--tech-->
+Branch `plan-marketplace-inventory`. Plan `docs/superpowers/plans/2026-11-11-marketplace-inventory.md` for
+spec `docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md` (anchor `harness-ships-elsewhere`):
+22 tasks in slices B-F (D8 corrections = slice B's first commit); new tools `mkt_isolate.py`, `mkt_stage.py`, `mkt_seed_repo.py`,
+`check-shipping-sets.py`, `check-publishability.py`, `check-inventory.py` (rc 3 = D1 checkpoint fired);
+human steps H1-H7 (H7: free port 7391, hard-coded `PORT` in `explainer-serve.py`). Plugin install under a fresh HOME measured working without login (`claude` 2.1.322);
+`claude -p` there is not logged in. Review r1 folded (`docs/reviews/coordinator/marketplace-plan-r1-coordinator.md`). r2 (Claude, 5 MAJOR + 4 MINOR,
+all fix-induced) folded (`docs/reviews/coordinator/marketplace-plan-r2-coordinator.md`): spike GO needs start's
+`serving <world>` + pidfile = listener + a seeded sentinel; recall phase is `"1"`/`"later"` only (D11 "only if"),
+the unresolved state and its checkpoint branch deleted; `../shared/` read edges are closure members. r3 (Codex, 1 MAJOR,
+fix-induced, `task-4-spike`) folded (`docs/reviews/coordinator/marketplace-plan-r3-coordinator.md`): an isolation
+failure (port held, `already serving`, pid mismatch) is INCOMPLETE (H7); the world's verified own server failing
+is a recorded component failure (NO-GO route, H3), Task 14 likewise. Thrashing armed (r2+r3); no Phase 6 for a
+plan document. Closed at the round cap; decision-log DEFER row appended.
+
+## 2026-11-11
 Backlog #495 is fixed, along with your 19:25 request. The mutation sweep now gives every survivor one more run, in a
 fresh copy of the code. A survivor that dies on that second run, the way a first-run kill would (the run finished and
 the case it names went red), is reported as FLAKY: the pull request stays green, and it is never counted as killed,

@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/marketplace-plan-r2-claude.md": "100644 8538c4ecf335555ceec3373651c8e21f52da3f73"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "c316d97a3687b6d88abcdac9464e949274213afb",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 15550 chars, names c316d97a3687",
+  "refused": false,
+  "review": "marketplace-plan-r2-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a4d874045eeadd26a",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
