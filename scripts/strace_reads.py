@@ -2,7 +2,7 @@
 """Parse one `strace -f -yy` log into resolved calls and a per-run read record, or a named refusal (backlog #586,
 plan slices 2 and 3).
 
-    python3 scripts/strace_reads.py --self-test  # 284 cases
+    python3 scripts/strace_reads.py --self-test  # 288 cases
 
 A PURE LIBRARY, no caller yet: slice 4 records with it. Spec:
 `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §2, "Normalising strace's paths", and the
@@ -740,21 +740,22 @@ def _resolve(calls, tree, ctx, cross=False):
                     p = p[:-len(" (deleted)")]
                     if under(p, ctx.copy):
                         return [], "deleted label"
-            elif from_label is False:
+            elif from_label is False or cross:
+                # r2 X1, r3 R3-1: `cross` means the caller compares `every` by TEXT across runs (`record_from_log`).
+                # A SHADOW argument is then a name like any other and gets EVERY check an unlabelled path gets: the
+                # `..` and /proc ones `_cwd_pass` skipped for it, and both link checks. The read view (`cross` False)
+                # still takes the kernel's label, as slice 2 always has. One branch, so no check can be exempt.
+                if from_label is SHADOW:
+                    if ".." in p.split("/"):
+                        return [], "unresolved .."
+                    if PROC.match(p):
+                        return [], "unresolved /proc path"
                 comps = components(p)
                 last = len(comps) if follow else len(comps) - 1
                 if any("/" + "/".join(comps[:n]) in links for n in range(1, last + 1)):
                     return [], "through a runtime link"
                 if not under(p, ctx.copy) and under(os.path.realpath(p), copy_real):
                     return [], "through a pre-existing link"
-            elif cross:
-                # r2 X1: `cross` means the caller compares `every` by TEXT across runs (`record_from_log`). A SHADOW
-                # argument is then a name like any other, so `..` or a /proc magic link in it is unresolved and
-                # refuses. The read view (`cross` False) still takes the kernel's label, as slice 2 always has.
-                if ".." in p.split("/"):
-                    return [], "unresolved .."
-                if PROC.match(p):
-                    return [], "unresolved /proc path"
             if under(p, ctx.workspace):
                 return [], "real checkout"
             rel = rel_to_copy(p, ctx)
@@ -2012,8 +2013,17 @@ def _self_test_body() -> int:
     os.symlink(base / "copy" / "docs", base / "alias")
     case("r1 X3: a socket path through a pre-existing link into the copy is refused",
          lambda: rec([connect(f'"{base}/alias/state"')], rctx).trace, "through a pre-existing link")
+    case("r3 R3-1: a labelled open whose argument goes through a pre-existing link refuses",
+         lambda: rec(in_copy([opened(f"{base}/alias/b.md", "/t/docs/b.md")], str(copy)), rctx).trace, "through a pre-existing link")
+    case("r3 R3-1: a labelled open whose argument goes through a runtime link refuses",
+         lambda: rec([symlink("/t/.home", "/t/a"), opened("/t/a/cur", "/t/docs/b.md")]).trace, "through a runtime link")
+    case("r3 R3-1 control: the same labelled open named directly is kept",
+         lambda: rec(in_copy([opened("/t/docs/b.md", "/t/docs/b.md")], str(copy)), rctx).trace, "complete")
     case("adjacent: the same socket named directly in the copy is kept, in copy form",
          lambda: fields(rec([connect(f'"{copy}/docs/state"')], rctx), "trace", "wrote"), ("complete", ["copy:docs/state"]))
+    case("r3: a socket path in the copy is kept in the read view (never taken for a SHADOW)",
+         lambda: [(c.name, k) for c, k in resolve_log("\n".join([connect('"/t/docs/state"')]) + "\n", REC)[0]],
+         [("connect", ["/t/docs/state"])])
     case("a socket path through a runtime link is refused",
          lambda: rec([symlink("/t/docs", "/tmp/run/L"), connect('"/tmp/run/L/state"')]).trace, "through a runtime link")
     case("a socket path under a repo link is refused",

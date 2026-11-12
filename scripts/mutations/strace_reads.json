@@ -2057,17 +2057,6 @@
   "expect": "a /proc/*/fd path with no label is refused"
  },
  {
-  "name": "a socket path skips the link checks (taken for a shadow)",
-  "file": "scripts/strace_reads.py",
-  "edits": [
-   [
-    "        out.append((\"/\" + \"/\".join(components(text)), False, -1, True))",
-    "        out.append((\"/\" + \"/\".join(components(text)), SHADOW, -1, True))"
-   ]
-  ],
-  "expect": "r1 X3: a socket path through a pre-existing link into the copy is refused"
- },
- {
   "name": "all_named is built from the read view",
   "file": "scripts/strace_reads.py",
   "edits": [
@@ -2237,8 +2226,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "                if \"..\" in p.split(\"/\"):\n                    return [], \"unresolved ..\"\n                if PROC.match(p):",
-    "                if False:\n                    return [], \"unresolved ..\"\n                if PROC.match(p):"
+    "                    if \"..\" in p.split(\"/\"):\n                        return [], \"unresolved ..\"\n                    if PROC.match(p):",
+    "                    if False:\n                        return [], \"unresolved ..\"\n                    if PROC.match(p):"
    ]
   ],
   "expect": "r2 X1: a labelled open whose own argument holds `..` refuses, so a peer's symlink cannot hide behind it"
@@ -2248,8 +2237,8 @@
   "file": "scripts/strace_reads.py",
   "edits": [
    [
-    "                if PROC.match(p):\n                    return [], \"unresolved /proc path\"\n            if under(p, ctx.workspace):",
-    "                if False:\n                    return [], \"unresolved /proc path\"\n            if under(p, ctx.workspace):"
+    "                    if PROC.match(p):\n                        return [], \"unresolved /proc path\"\n                comps = components(p)",
+    "                    if False:\n                        return [], \"unresolved /proc path\"\n                comps = components(p)"
    ]
   ],
   "expect": "r2 X1: a labelled open whose own argument is a /proc magic link refuses"
@@ -2264,5 +2253,27 @@
    ]
   ],
   "expect": "r2 X1: a labelled open whose own argument holds `..` refuses, so a peer's symlink cannot hide behind it"
+ },
+ {
+  "name": "a SHADOW argument skips the link checks in the cross-run view",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "            elif from_label is False or cross:",
+    "            elif from_label is False or (cross and from_label is not SHADOW):"
+   ]
+  ],
+  "expect": "r3 R3-1: a labelled open whose argument goes through a runtime link refuses"
+ },
+ {
+  "name": "a socket path is taken for a shadow",
+  "file": "scripts/strace_reads.py",
+  "edits": [
+   [
+    "        out.append((\"/\" + \"/\".join(components(text)), False, -1, True))",
+    "        out.append((\"/\" + \"/\".join(components(text)), SHADOW, -1, True))"
+   ]
+  ],
+  "expect": "r3: a socket path in the copy is kept in the read view (never taken for a SHADOW)"
  }
 ]
