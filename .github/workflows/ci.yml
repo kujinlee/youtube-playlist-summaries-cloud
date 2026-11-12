@@ -1398,9 +1398,36 @@ jobs:
               echo "::warning::and the WHOLE manifest runs. An unanswered question never narrows a gate."
             fi
           fi
-          python3 scripts/check-plan-code.py --mutate . \
+          # ⟳ backlog #495 r1 (Codex 4 / Claude M1): a FLAKY mutant (survived, then killed on its one re-run)
+          # is GREEN, so nothing red would ever carry its name to a person. This shard's FLAKY lines go to a
+          # file, uploaded below, and `sweep-red-alert.py` files them on master. `tee` keeps the live log;
+          # the harness's OWN exit code is the step's (PIPESTATUS), and a grep that ERRORS (rc > 1, not
+          # "no match") is a red step: a scan that did not run never reads as "no FLAKY".
+          mkdir -p "$RUNNER_TEMP/sweep-flaky"
+          set +e
+          PYTHONUNBUFFERED=1 python3 scripts/check-plan-code.py --mutate . \
             --shard0 "$SHARD_INDEX/$SHARD_TOTAL" \
-            --event "$EVENT" --changed "$CHANGED" ${SEEDS:+--seeds "$SEEDS"}
+            --event "$EVENT" --changed "$CHANGED" ${SEEDS:+--seeds "$SEEDS"} 2>&1 | tee "$RUNNER_TEMP/sweep.log"
+          RC=${PIPESTATUS[0]}
+          grep -F 'mutation FLAKY — ' "$RUNNER_TEMP/sweep.log" > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"
+          G=$?
+          if [ "$G" -gt 1 ]; then
+            echo "::error::the FLAKY scan of this shard's log FAILED (grep rc $G): its FLAKY results are NOT CHECKED"
+            exit 2
+          fi
+          exit "$RC"
+
+      # backlog #495 r1: this shard's FLAKY names, for `mutation-sweep-complete` to file. Never on a pull request
+      # (its alert step does not run there); `overwrite` so a re-run attempt of one shard replaces its own file.
+      - name: Upload this shard's FLAKY mutation names
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sweep-flaky-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/sweep-flaky/
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
 
   mutation-sweep-complete:
     # ⭐ ONE CONTEXT TO REQUIRE, WHOSE NAME DOES NOT MOVE WHEN N DOES. A matrix reports N
@@ -1469,6 +1496,21 @@ jobs:
       # The aggregate step above fails exactly when SWEEP is not `success`, so SWEEP decides here.
       # backlog #534: a `batch/**` push never alerts either. Its red is a batch verdict, read and acted on by
       # `batch-ci.py status` (eject or bisect); nothing it measured has merged, so master is not red.
+      # ⟳ backlog #495 r1 (Codex 4 / Claude M1): every shard's FLAKY names, merged into ONE directory.
+      # ⟳ r2 Codex 2: NOT continue-on-error — a failed download is a red step. The alert step below still runs
+      # (`!cancelled()`, no `success()`), files any red sweep FIRST, then goes red itself when ANY shard's
+      # `shard-<i>.txt` is missing (`read_flaky`, one per entry of the `shard:` matrix): an empty or partial
+      # download is NOT RUN, never "no FLAKY".
+      - name: Download every shard's FLAKY mutation names
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/heads/batch/') }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sweep-flaky-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/sweep-flaky
+
+      # ⟳ backlog #495 r1: the same step also FILES FLAKY mutants — on a green sweep too — as a `sweep-flaky`
+      # issue (or a comment on the open one), the owner's "named AND FILED" (11-11 19:25).
       - name: The FULL sweep on master opens or comments on the sweep-red issue, and never closes one
         if: ${{ !cancelled() && github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/heads/batch/') }}
         env:
@@ -1478,4 +1520,5 @@ jobs:
           SHA: ${{ github.sha }}
           SWEEP: ${{ needs.mutation-sweep.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FLAKY_DIR: ${{ runner.temp }}/sweep-flaky
         run: python3 scripts/sweep-red-alert.py

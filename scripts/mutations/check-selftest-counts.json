@@ -299,6 +299,7 @@
       ]
     ],
     "expect": [
+      "outcomes come back in the given order, not completion order",
       "backlog #506: outcomes come back in the given order when completion is forced to the reverse"
     ]
   },

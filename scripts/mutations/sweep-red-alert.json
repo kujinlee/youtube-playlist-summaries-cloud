@@ -80,5 +80,238 @@
       "a gh failure makes the step RED, never a silent pass (success)",
       "a gh failure makes the step RED, never a silent pass (failure)"
     ]
+  },
+  {
+    "name": "#495 r1: a FLAKY mutant is never filed",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        file_flaky(names, event, sha, run_url)\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r1: a GREEN sweep with FLAKY mutants in two shards OPENS one sweep-flaky issue naming BOTH"
+    ]
+  },
+  {
+    "name": "#495 r1: the FLAKY scan runs BEFORE the red alert, so a missing FLAKY_DIR costs a red its issue",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    alert_red(sweep, event, sha, run_url)\n    # backlog #495 r1: AFTER the red alert",
+        "    # backlog #495 r1: AFTER the red alert"
+      ],
+      [
+        "    return 0\n\n\ndef alert_red",
+        "    alert_red(sweep, event, sha, run_url)\n    return 0\n\n\ndef alert_red"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r1: a MISSING FLAKY_DIR makes the step RED — and only AFTER the red sweep got its issue"
+    ]
+  },
+  {
+    "name": "#495 r1: an unset FLAKY_DIR reads as no FLAKY",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if not flaky_dir:\n        raise RuntimeError(\"FLAKY_DIR is unset",
+        "    if not flaky_dir:\n        return [], []\n        raise RuntimeError(\"FLAKY_DIR is unset"
+      ]
+    ],
+    "expect": [
+      "...an unset FLAKY_DIR RAISES — a scan that did not run is never a scan that found nothing"
+    ]
+  },
+  {
+    "name": "#495 r1: every FLAKY sweep opens a new sweep-flaky issue",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        gh(\"issue\", \"comment\", str(flaky_open[0][\"number\"]), \"--body\", body)\n        print(f\"commented on the open {FLAKY_LABEL}",
+        "        gh(\"issue\", \"create\", \"--label\", FLAKY_LABEL, \"--body\", body, \"--title\", \"x\")\n        print(f\"commented on the open {FLAKY_LABEL}"
+      ]
+    ],
+    "expect": [
+      "...a second one COMMENTS on the open sweep-flaky issue, naming its own, and opens no second issue"
+    ]
+  },
+  {
+    "name": "#495 r1: a FLAKY name seen twice is listed twice",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            if name and name not in names:",
+        "            if name:"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r2 Codex 3: `flaky_names` reads each REAL name WHOLE (`: ` inside it), once each, never a SURVIVED one"
+    ]
+  },
+  {
+    "name": "#495 r1: only the first shard's FLAKY file is read",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "f.read_text(encoding=\"utf-8\") for f in files if f.is_file()))",
+        "f.read_text(encoding=\"utf-8\") for f in files[:1] if f.is_file()))"
+      ]
+    ],
+    "expect": [
+      "...`read_flaky` reads EVERY shard's file (each name once), and only the shards' files",
+      "⭐ #495 r1: a GREEN sweep with FLAKY mutants in two shards OPENS one sweep-flaky issue naming BOTH"
+    ]
+  },
+  {
+    "name": "#495 r1: the FLAKY issue does not name the mutations",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            + \"\".join(f\"- {n}\\n\" for n in names))",
+        "            + \"\")"
+      ]
+    ],
+    "expect": [
+      "...and `flaky_body` NAMES every FLAKY mutation, with its own event, SHA and run",
+      "⭐ #495 r1: a GREEN sweep with FLAKY mutants in two shards OPENS one sweep-flaky issue naming BOTH"
+    ]
+  },
+  {
+    "name": "#495 r1: a sweep with no FLAKY mutant still writes to GitHub",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if not names:\n        print(\"no FLAKY mutation in this sweep\")\n        return\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...a green sweep with NO FLAKY mutant writes nothing to GitHub"
+    ]
+  },
+  {
+    "name": "#495 r2 Codex 2: a missing shard file reads as no FLAKY",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if missing:\n        raise",
+        "    if False:\n        raise"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r2 Codex 2: the REAL step with ONE of the matrix's shard files missing is RED, NOT RUN — never 'no FLAKY'",
+      "⭐ #495 r1: a MISSING FLAKY_DIR makes the step RED — and only AFTER the red sweep got its issue",
+      "⭐ #495 r3 M1: a shard file MISSING still FILES the names the others hold, THEN goes red naming it NOT RUN"
+    ]
+  },
+  {
+    "name": "#495 r2 Codex 2: the shard count is not read from the matrix",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    return n\n\n\ndef read_flaky",
+        "    return 1\n\n\ndef read_flaky"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r2 Codex 2: `shard_count` is the entries of the ONE `shard:` matrix line"
+    ]
+  },
+  {
+    "name": "#495 r2 Codex 2: a workflow with two shard matrix lines is counted by one of them",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if len(rows) != 1:",
+        "    if not rows:"
+      ]
+    ],
+    "expect": [
+      "...two matrix lines, none, or an empty one RAISE — the count is never guessed"
+    ]
+  },
+  {
+    "name": "#495 r2 Codex 2: an empty shard matrix counts as zero shards",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if n < 1:\n        raise",
+        "    if False:\n        raise"
+      ]
+    ],
+    "expect": [
+      "...two matrix lines, none, or an empty one RAISE — the count is never guessed"
+    ]
+  },
+  {
+    "name": "#495 r2 Codex 3: a FLAKY name is cut at its first `: `",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "name, tail, _ = line.split(FLAKY_LINE, 1)[1].rpartition(FLAKY_TAIL)",
+        "name, tail, _ = line.split(FLAKY_LINE, 1)[1].partition(\": \")"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r2 Codex 3: `flaky_names` reads each REAL name WHOLE (`: ` inside it), once each, never a SURVIVED one"
+    ]
+  },
+  {
+    "name": "#495 r2 Codex 3: a FLAKY line without the harness's tail is read at a guess",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            if not tail:\n                raise",
+        "            if False:\n                raise"
+      ]
+    ],
+    "expect": [
+      "...a FLAKY line WITHOUT the harness's tail RAISES — never a name cut at a guess"
+    ]
+  },
+  {
+    "name": "#495 r3 M1: one missing shard file discards the FLAKY names the present files hold",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if names or not missing:\n",
+        "    if not missing:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r3 M1: a shard file MISSING still FILES the names the others hold, THEN goes red naming it NOT RUN"
+    ]
+  },
+  {
+    "name": "#495 r3 M1: a missing shard file raises BEFORE the present files' FLAKY names are filed",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if names or not missing:\n        file_flaky(names, event, sha, run_url)\n    if missing:\n",
+        "    if missing:\n"
+      ],
+      [
+        "    return 0\n\n\ndef alert_red",
+        "    if names or not missing:\n        file_flaky(names, event, sha, run_url)\n    return 0\n\n\ndef alert_red"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r3 M1: a shard file MISSING still FILES the names the others hold, THEN goes red naming it NOT RUN"
+    ]
+  },
+  {
+    "name": "#495 r3 M1: a missing shard file reports 'no FLAKY mutation' for the shards it did not read",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if names or not missing:\n        file_flaky(names, event, sha, run_url)\n    if missing:\n        raise",
+        "    if True:\n        file_flaky(names, event, sha, run_url)\n    if missing:\n        raise"
+      ]
+    ],
+    "expect": [
+      "⭐ #495 r2 Codex 2: the REAL step with ONE of the matrix's shard files missing is RED, NOT RUN — never 'no FLAKY'"
+    ]
   }
 ]

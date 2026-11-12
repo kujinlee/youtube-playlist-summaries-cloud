@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/495-survivor-retry-r1-claude.md": "100644 31e2b8d959a4de0d056acb2017de6ae44c3e6b73",
+    "docs/reviews/codex/495-survivor-retry-r1-codex.md": "100644 1a1b9d962344547ded6c39ff5df4f34c2b2ad505",
+    "docs/reviews/verdicts/495-survivor-retry-r1-codex.verdict.json": "100644 6131e5302b5d1021e41e508859701214c857a869"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "d25b5731bac2c959e9511b3a677eadc3541cffd3",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 7147 chars, names d25b5731bac2",
+  "refused": false,
+  "review": "495-survivor-retry-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a8cd38a4024e15043",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

@@ -1256,5 +1256,18 @@
     "expect": [
       "\u26d4 R3-F3: a worktree creation that made the branch and then FAILED (CANNOT RUN, rc 2) deletes that branch too, so a re-run in the same minute is not refused"
     ]
+  },
+  {
+    "name": "#495 r1 Codex 5: a FLAKY line is read as a failing mutation",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    log = \"\\n\".join(l for l in log.split(\"\\n\") if \"mutation FLAKY \u2014 \" not in l)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "\u2b50 #495 r1 Codex 5: a green FLAKY line is NOT a failure \u2014 only the SURVIVED owner is ejected, never both"
+    ]
   }
 ]

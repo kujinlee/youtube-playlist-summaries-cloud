@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/495-survivor-retry-r3-claude.md": "100644 23ec45e0bde69cb03b47c7ed5f22d7d26e551c6c"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "d89729a54e8255b2ffd51ea4f033bbfb4c43274d",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "r3 adversarial Claude half: verify r2 fixes (symlinks, shard_count/read_flaky, flaky_names); find r2-fold-caused defects",
+  "reason": "claude half filed: 9488 chars, names d89729a54e82",
+  "refused": false,
+  "review": "495-survivor-retry-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a8cd38a4024e15043",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
