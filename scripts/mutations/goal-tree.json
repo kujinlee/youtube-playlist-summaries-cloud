@@ -4747,5 +4747,57 @@
     "expect": [
       "⭐ PR #559 r1: an indented or HTML-bearing group is still a title, escaped, with or without a change-if; the accent style rule for the title exists"
     ]
+  },
+  {
+    "name": "backlog #610: a direct run writes the served page again (the guard is gone)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if a.page and a.out.resolve() == DEFAULT_OUT.resolve() and not os.environ.get(_SS.MAIN_CHECKOUT_ENV):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610: a direct run (bare) never writes the SERVED page, and logs nothing"
+    ]
+  },
+  {
+    "name": "backlog #610: the guard ignores the clone marker, so regen-pages' own build is refused",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and not os.environ.get(_SS.MAIN_CHECKOUT_ENV):\n",
+        ":\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610: ...and inside regen-pages' clone (REGEN_MAIN_CHECKOUT set) the served page IS written"
+    ]
+  },
+  {
+    "name": "backlog #610: the guard refuses an explicit --out preview too",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if a.page and a.out.resolve() == DEFAULT_OUT.resolve() and",
+        "if a.page and"
+      ]
+    ],
+    "expect": [
+      "main wrote the page"
+    ]
+  },
+  {
+    "name": "backlog #610 r1: the guard compares the path's spelling, not its destination",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "a.out.resolve() == DEFAULT_OUT.resolve()",
+        "a.out == DEFAULT_OUT"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610 r1 (X1/F2): the served page spelled another way (served.html) is refused too"
+    ]
   }
 ]
