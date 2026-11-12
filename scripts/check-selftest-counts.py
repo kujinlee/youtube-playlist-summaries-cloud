@@ -963,27 +963,47 @@ def _self_test_body() -> int:
     check("the pool never exceeds the host's cores", pool_size(8, 2), 2)
     check("an unknown core count runs serially, never zero workers", pool_size(None, None), 1)
 
-    # `b` sets the event `a` waits for, so `a` can only see it if both run AT ONCE, and `b` always
-    # completes FIRST. The wait is bounded: a serial pool makes `a` report the miss, never hang.
+    # `a` waits until the COLLECTOR has consumed `b`'s result, so `a` can only see it if both run AT ONCE,
+    # and `b` is always COLLECTED FIRST. The wait is bounded: a serial pool makes `a` report the miss, never hang.
+    # ⛔ backlog #495: `a` used to wait only for `b` to START (an event `b` set). `as_completed` yields futures that
+    # are ALREADY done in no defined order, so when the main thread reached the loop late both were done and
+    # `b` was collected first only by luck — the completion-order mutant SURVIVED two CI runs of PR #489. Now the event
+    # is set by the collector itself (`collecting`, wrapping `as_completed`), AFTER it has taken `b`, so `a`
+    # cannot finish before `b` is collected: the completion order is b, a on every run.
     import threading
 
     def ordered(wait: float):
-        b_ran = threading.Event()
+        consumed = threading.Event()
 
         def job(name: str):
             if name == "a":
-                return ("problem", "a saw b") if b_ran.wait(wait) else ("problem", "a ran alone")
-            b_ran.set()
+                return ("problem", "a saw b") if consumed.wait(wait) else ("problem", "a ran alone")
             return ("problem", "b")
-        return job
+        return job, consumed
 
-    got = run_suites(["a", "b"], ordered(10), 2)
+    def collected(names, wait: float, jobs: int):
+        """`run_suites` with `ordered(wait)`, its `as_completed` wrapped to set the event once the collector
+        has taken a result — the generator resumes only when the loop asks for the NEXT future."""
+        job, consumed = ordered(wait)
+        real = concurrent.futures.as_completed
+
+        def collecting(fs, timeout=None):
+            for fut in real(fs, timeout=timeout):
+                yield fut
+                consumed.set()
+        concurrent.futures.as_completed = collecting
+        try:
+            return run_suites(names, job, jobs)
+        finally:
+            concurrent.futures.as_completed = real
+
+    got = collected(["a", "b"], 10, 2)
     check("two suites run AT ONCE in a pool of two", got[0], ("problem", "a saw b"))
     check("outcomes come back in the given order, not completion order", [g[1] for g in got],
           ["a saw b", "b"])
-    # backlog #506 (1): the case above sees `b` finish first only when the scheduler lets it — `a` can return between
-    # `b` setting the event and `b`'s result being recorded. Here the completion order is FORCED: `as_completed`
-    # yields the futures in reverse, so an implementation returning completion order fails on every run.
+    # backlog #506 (1): the case above once saw `b` finish first only when the scheduler let it (fixed by #495, above).
+    # Here the completion order is FORCED a second way: `as_completed` yields the futures in reverse, so an
+    # implementation returning completion order fails on every run, over THREE suites.
     _real_as_completed = concurrent.futures.as_completed
 
     def _reversed_completion(fs, timeout=None):
@@ -998,7 +1018,7 @@ def _self_test_body() -> int:
           [g[1] for g in _forced], ["a", "b", "c"])
     # The other value of `jobs`: a pool of one is serial, so `a` finishes before `b` starts.
     check("a pool of one runs the suites one at a time",
-          [g[1] for g in run_suites(["a", "b"], ordered(0.3), 1)], ["a ran alone", "b"])
+          [g[1] for g in collected(["a", "b"], 0.3, 1)], ["a ran alone", "b"])
 
     def crashing_job(name: str):
         if name == "boom":

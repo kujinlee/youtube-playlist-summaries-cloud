@@ -538,8 +538,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # PR #496 r2 X1 (2026-11-04): the sweep-red alert helper, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source; every parameter varied by a case, none exempt. ⟳ PR #496 r3: auto-close
     # REMOVED, so `green_actions` and `recorded_shas` are deleted with their parameters, not renamed.
-    "sweep-red-alert.py": ("red_body.event", "red_body.run_url", "red_body.sha",
-                           "red_body.sweep", "step_run_block.workflow_text"),
+    # ⟳ backlog #495 r1 (2026-11-11): + the FLAKY filing's pure parser, body and directory read, each varied by a case.
+    "sweep-red-alert.py": ("flaky_body.event", "flaky_body.names", "flaky_body.run_url", "flaky_body.sha",
+                           "flaky_names.text", "read_flaky.flaky_dir", "red_body.event", "red_body.run_url",
+                           "red_body.sha", "red_body.sweep", "step_run_block.workflow_text"),
     # backlog #362 (2026-10-26; re-pinned at the r2 REDESIGN and again at the r3 SPLIT, which removed the branch reads).
     "session-state.py": (
         "check_summary.rollup",
@@ -1361,6 +1363,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #495 r1 (2026-11-11): check-plan-code.py's re-run snapshot is threaded through run_mutations' OWN
+    # recursion — every external caller passes None and run_mutations sets it to `rerun_snapshot()`'s result.
+    "check-plan-code.py:run_mutations.rerun_from": "an internal recursion parameter: every external call passes None and run_mutations replaces it with `rerun_snapshot(d, ...)` before any mutant runs; the snapshot's effect is varied by the FLAKY end-to-end cases (a suite writing state BESIDE itself must NOT become FLAKY — red when the re-run reuses the first run's tree) and `rerun_fresh`'s direct cases (a CANNOT RUN string, a real snapshot)",
     # backlog #586 slice 1 (2026-11-10): strace-measure.py — its two entry points are driven through ONE helper each
     # (`_read` for analyse_log, `_merge` for merge), which forward their arguments; the helpers' CALLERS vary them.
     "strace-measure.py:analyse_log.samples": "driven through ONE helper, `_read`; its callers vary samples: an EMPTY store, which must gain the line credited to `who` (case `r2 X3`, red under both of review round 2's mutations: no insert, a wrong owner), and one already holding a key, which must keep its first owner",

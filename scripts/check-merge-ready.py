@@ -271,7 +271,12 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     # ⟳ backlog #534: and never on a `batch/**` push, whose red is a batch verdict for `batch-ci.py status`.
     ("ci.yml", "if: ${{ !cancelled() && github.event_name != 'pull_request' && "
                "!startsWith(github.ref, 'refs/heads/batch/') }}"):
-        (1, "the sweep-red alert, which runs on a master push or the schedule and never on a PR or a batch"),
+        (2, "the sweep-red alert, which runs on a master push or the schedule and never on a PR or a batch; "
+            "and (backlog #495 r1) the download of every shard's FLAKY names just before it, under the same gate"),
+    # ⟳ backlog #495 r1 (Codex 4): each sweep shard uploads its FLAKY mutation names for the alert job to
+    # FILE. The opposite of PR-only: a PR's sweep files nothing, so it uploads nothing.
+    ("ci.yml", "if: ${{ !cancelled() && github.event_name != 'pull_request' }}"):
+        (1, "the sweep shard's upload of its FLAKY names, which runs on everything EXCEPT a pull request"),
     ("ci.yml", "pull_request:"):
         (1, "the workflow TRIGGER — says when CI runs, gates nothing"),
     ("ci.yml", "if: github.event_name == 'pull_request'"):

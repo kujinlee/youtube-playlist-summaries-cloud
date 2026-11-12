@@ -3281,8 +3281,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "seed_trees(d, seeds, cleanup), limits=limits)",
-        "seed_trees(d, seeds, cleanup))"
+        "seed_trees(d, seeds, cleanup), limits=limits,\n",
+        "seed_trees(d, seeds, cleanup),\n"
       ]
     ],
     "expect": [
@@ -3822,6 +3822,254 @@
     ],
     "expect": [
       "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step"
+    ]
+  },
+  {
+    "name": "#495: a survivor is never re-run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            _by, _why = rerun_kill(rerun_fresh(rerun_from, fname, src, seeds, limit, mut.get(\"expect\")), wants)",
+        "            _by, _why = [], \"never re-run\""
+      ]
+    ],
+    "expect": [
+      "⭐ #495: a mutant that SURVIVES and is KILLED on its one re-run is FLAKY — the run is NOT red"
+    ]
+  },
+  {
+    "name": "#495: a mutant killed the first time is re-run anyway",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not caught:\n            # ⛔ backlog #495",
+        "        if True:\n            # ⛔ backlog #495"
+      ]
+    ],
+    "expect": [
+      "⭐ #495: a mutant KILLED the first time is never re-run — one run, killed and attributed"
+    ]
+  },
+  {
+    "name": "#495: a FLAKY mutant turns the run red",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                ev_muts[-1][\"flaky\"] = True",
+        "                ev_muts[-1][\"flaky\"] = True\n                ok = False"
+      ]
+    ],
+    "expect": [
+      "⭐ #495: a mutant that SURVIVES and is KILLED on its one re-run is FLAKY — the run is NOT red"
+    ]
+  },
+  {
+    "name": "#495: a FLAKY mutant is counted as killed (left out of the survivors)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            ev_survivors.append(name)\n            _by, _why = rerun_kill(",
+        "            _by, _why = rerun_kill("
+      ]
+    ],
+    "expect": [
+      "...it is never counted as killed: it is among the survivors, its entry not caught, marked flaky"
+    ]
+  },
+  {
+    "name": "#495: a mutant that survives its re-run too is FLAKY, not SURVIVED",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if _why is None:\n                ev_muts[-1][\"flaky\"] = True",
+        "            if True:\n                ev_muts[-1][\"flaky\"] = True"
+      ]
+    ],
+    "expect": [
+      "⭐ #495: a mutant that SURVIVES its re-run too is SURVIVED and RED, exactly as before — after 2 runs"
+    ]
+  },
+  {
+    "name": "#495: the FLAKY report does not name the case that killed the re-run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "fresh tree (by {', '.join(map(repr, _by))}).",
+        "fresh tree (by {''})."
+      ]
+    ],
+    "expect": [
+      "...and the report NAMES the mutation and the case that killed it on the re-run"
+    ]
+  },
+  {
+    "name": "#495: the tally does not name FLAKY mutants",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    _fl = [m[\"name\"] for m in verdict.mutations if m.get(\"flaky\")]",
+        "    _fl = []"
+      ]
+    ],
+    "expect": [
+      "⭐ #495: the tally NAMES a FLAKY mutant on an OK run, and never counts it as killed"
+    ]
+  },
+  {
+    "name": "#495 r1 B1: a re-run kill is accepted without the case it names",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    missing = [w for w in wants if fails.count(w) != 1]",
+        "    missing = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 B1: a re-run red only in an UNRELATED case is SURVIVED and RED, never FLAKY",
+      "⭐ r1 B1: `rerun_kill` accepts ONLY a completed red via every named case, and names why otherwise"
+    ]
+  },
+  {
+    "name": "#495 r1 B1: a re-run that crashed (no summary line) is accepted as a kill",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if summary_total(out) is None:\n        return [], (\"its one re-run went red WITHOUT",
+        "    if False:\n        return [], (\"its one re-run went red WITHOUT"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 B1: `rerun_kill` accepts ONLY a completed red via every named case, and names why otherwise"
+    ]
+  },
+  {
+    "name": "#495 r1 B1: a named case red twice on the re-run is accepted",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if fails.count(w) != 1]",
+        "if w not in fails]"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 B1: `rerun_kill` accepts ONLY a completed red via every named case, and names why otherwise"
+    ]
+  },
+  {
+    "name": "#495 r1 B1: a re-run red with no [FAIL] line and no expect is accepted",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if not fails:\n        return [], \"its one re-run went red but printed",
+        "    if False:\n        return [], \"its one re-run went red but printed"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 B1: `rerun_kill` accepts ONLY a completed red via every named case, and names why otherwise"
+    ]
+  },
+  {
+    "name": "#495 r1 Codex 1: a NONDETERMINISTIC re-run is not refused as such",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if odd:\n        return [], f\"its one re-run was NONDETERMINISTIC",
+        "    if False:\n        return [], f\"its one re-run was NONDETERMINISTIC"
+      ]
+    ],
+    "expect": [
+      "...and the report names the re-run's seed split"
+    ]
+  },
+  {
+    "name": "#495 r1 m2: a re-run that did not complete is not reported as such",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if rc == 2:\n        return [], f\"its one re-run did NOT COMPLETE",
+        "    if False:\n        return [], f\"its one re-run did NOT COMPLETE"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 m2: a re-run that TIMES OUT is SURVIVED and red, and the report says it did NOT COMPLETE"
+    ]
+  },
+  {
+    "name": "#495 r1 m4: the FLAKY report names every red case, not the named one",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return (list(wants) or fails), None",
+        "    return fails, None"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 m4: a re-run red in the named case AND an incidental one is FLAKY, attributed to the NAMED case only"
+    ]
+  },
+  {
+    "name": "#495 r1 Codex 2: the re-run starts from the tree the first run used",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                                 rerun_from=rerun_snapshot(d, cleanup))",
+        "                                 rerun_from=d)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 2: a suite that keeps state BESIDE itself does not carry it into the re-run — SURVIVED, red, never FLAKY"
+    ]
+  },
+  {
+    "name": "#495 r2 Codex 1: the re-run snapshot preserves symlinks, so an absolute link shares state with the first run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        shutil.copytree(d, c / \"t\", ignore=shutil.ignore_patterns(\"__pycache__\"))\n    except (OSError, shutil.Error) as e:\n        return (f\"CANNOT RUN — the re-run snapshot",
+        "        shutil.copytree(d, c / \"t\", symlinks=True, ignore=shutil.ignore_patterns(\"__pycache__\"))\n    except (OSError, shutil.Error) as e:\n        return (f\"CANNOT RUN — the re-run snapshot"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex 1: a suite counting through an ABSOLUTE SYMLINK into its tree does not carry the count into the re-run — SURVIVED, red, never FLAKY"
+    ]
+  },
+  {
+    "name": "#495 r1 m2: the budget is not checked before the re-run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if budget_spent():\n        return 2, (\"CANNOT RUN — the re-run was NOT STARTED",
+        "    if False:\n        return 2, (\"CANNOT RUN — the re-run was NOT STARTED"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 m2: with the budget spent before the re-run, it is NOT STARTED — one run, SURVIVED, red, said so"
+    ]
+  },
+  {
+    "name": "#495 r1: the re-run runs the UNMUTATED file",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            (t / fname).write_text(src)\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #495: a mutant that SURVIVES and is KILLED on its one re-run is FLAKY — the run is NOT red"
+    ]
+  },
+  {
+    "name": "#495 r1: the re-run ignores --seeds",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if seeds:\n            return seed_outcome(",
+        "        if False:\n            return seed_outcome("
+      ]
+    ],
+    "expect": [
+      "...#495 under --seeds: the re-run is under EVERY seed, and survive-then-kill is FLAKY there too"
     ]
   }
 ]
