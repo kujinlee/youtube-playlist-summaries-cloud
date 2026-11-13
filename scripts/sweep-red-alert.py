@@ -2,7 +2,7 @@
 """Open or comment on the `sweep-red` issue after a FULL mutation sweep on master (backlog #330). It NEVER closes one.
 
     python3 scripts/sweep-red-alert.py              # in CI: reads SWEEP, SHA, EVENT, RUN_URL, FLAKY_DIR; acts via gh
-    python3 scripts/sweep-red-alert.py --self-test  # 33 cases
+    python3 scripts/sweep-red-alert.py --self-test  # 40 cases
 
 WHY THIS EXISTS. A pull request's sweep is diff-scoped, so what it does not select is measured only by the full
 sweep on master, AFTER merge. A red full sweep therefore opens an issue labelled `sweep-red` (or comments on the
@@ -388,7 +388,7 @@ def _self_test_body() -> int:
         except ValueError as e:
             return "raised"
     case("⭐ #617: the REAL `ci.yml` writes `shard-$<job-index>.txt` and merges with `merge-multiple: true`",
-         _contract(_real), "ok")
+         ci_flaky_contract(_real), None)
     case("⭐ #617: `ci.yml` writing `shard-$SHARD_TOTAL.txt` (not the 0-based job index) RAISES",
          _contract(_real.replace("sweep-flaky/shard-$SHARD_INDEX.txt", "sweep-flaky/shard-$SHARD_TOTAL.txt")), "raised")
     case("⭐ #617: `ci.yml` downloading with `merge-multiple: false` RAISES",
