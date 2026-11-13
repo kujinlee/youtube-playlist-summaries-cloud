@@ -446,7 +446,8 @@ per question. **It is OFF unless someone starts it**, and with it off everything
   answered: `--status` lists the skipped ones, a session may `--claim` one, and `--retry ID` hands one to
   the answerer. NOT skipped: a question asked after the answerer died (a kill, a crash, a reboot), and one
   that failed or was retried — the page said NOT ANSWERED about each, and the next start answers it. A `--stop` typed after the
-  answerer died makes it a stop on purpose again. A
+  answerer died makes it a stop on purpose again: the questions waiting at that moment stay NOT ANSWERED on
+  their pages and the next start answers them; one asked after that stop is skipped. A
   question asked on `/` or `/latest` names no page and is recorded NOT ANSWERED. The panel reaches a page
   only after the server restarts on a copy that has it.
 

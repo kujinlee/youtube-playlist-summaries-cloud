@@ -532,10 +532,43 @@
     "file": "scripts/ask_answerer.py",
     "edits": [
       [
-        "        if watcher_died(root):\n            # r2:",
-        "        if False:\n            # r2:"
+        "        kept = acknowledge_death(root)\n",
+        "        kept = None\n"
       ]
     ],
     "expect": "r2: a --stop after an unclean end is a stop on purpose — it clears the record, says so, and the next start skips what was asked after it"
+  },
+  {
+    "name": "a --stop after an unclean end forgets the questions waiting at that moment",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "            for q in waiting:\n                append_event(root, {\"e\": \"retry\"",
+        "            for q in []:\n                append_event(root, {\"e\": \"retry\""
+      ]
+    ],
+    "expect": "r3: …and a question asked BEFORE that stop is kept — the page still says NOT ANSWERED after the stop, and the next start answers it and nothing else"
+  },
+  {
+    "name": "a death is acknowledged without the watch lock, so a live watcher's pid file can be removed",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)\n        except OSError:\n            return None\n        pid_file",
+        "            pass\n        except OSError:\n            return None\n        pid_file"
+      ]
+    ],
+    "expect": "r3: a death is acknowledged only when no watcher holds the lock — a live watcher's pid file stays"
+  },
+  {
+    "name": "an answer whose run reported no usage is stamped 0 tokens",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "\"usage NOT reported\" if run.unmeasured else",
+        "\"usage NOT reported\" if False else"
+      ]
+    ],
+    "expect": "r3: an answer whose run reported no usage says so on the page — never a measured-looking 0 tokens"
   }
 ]

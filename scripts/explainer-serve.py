@@ -4488,7 +4488,7 @@ def _self_test_body() -> int:
                       _post_from("/nope", "https://evil.example"),
                       _post_from("/regenerate", "http://127.0.0.1:7391") != 403)
              == (403, 403, 403, 404, True))
-        case("⛔ #625 r2: …and the refusal comes BEFORE the body — a foreign POST whose body is not JSON is a 403, "
+        case("⛔ #625 r2: …and the refusal comes before the body is PARSED — a foreign POST whose body is not JSON is a 403, "
              "where the page's own is a 400",
              lambda: (_post_from("/questions", "https://evil.example", raw=b"{"),
                       _post_from("/questions", "http://127.0.0.1:7391", raw=b"{")) == (403, 400))

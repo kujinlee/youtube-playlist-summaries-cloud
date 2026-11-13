@@ -1436,7 +1436,7 @@ EXPECTED_MUTATIONS = {
     # reader relies on: the claim marker, the caps (both directions of each), Read as the only tool, the suite
     # never starting a real binary, escaping, where an answer may land, what may be replaced, an instruction
     # going to the inbox, the start-up skip, dead-claim recovery, and each panel state.
-    "scripts/ask_answerer.py": 49,
+    "scripts/ask_answerer.py": 52,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a

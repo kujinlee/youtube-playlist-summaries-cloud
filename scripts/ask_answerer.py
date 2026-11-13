@@ -11,7 +11,7 @@ by a headless agent that is not the main session.
     python3 scripts/ask_answerer.py --answered ID  # ...and says it has answered it in the page
     python3 scripts/ask_answerer.py --retry ID     # make a failed or skipped question eligible again
     python3 scripts/ask_answerer.py --inbox        # instructions readers typed: print the unread, mark them read
-    python3 scripts/ask_answerer.py --self-test    # 120 cases; never runs the real `claude`
+    python3 scripts/ask_answerer.py --self-test    # 123 cases; never runs the real `claude`
 
 THE LOOP. `explainer-serve.py` appends every POSTed question to `<root>/questions.md`. The watcher stats that
 file once a second (no model call: an idle watcher costs no tokens) and, for each question the ledger has no
@@ -51,8 +51,11 @@ start (each start records them as skipped: answering a backlog nobody waits on i
 `--retry ID` overrides it for one, `--status` lists them, and a session may `--claim` one). While it is
 stopped on purpose the page says nothing about new questions — the live session answers them, as before
 this script existed. NOT skipped, because the page has said NOT ANSWERED about each: a question asked after
-a watcher ended with no clean exit (a kill, a crash, a reboot — its pid file is still there; a `--stop`
-typed after that clears it, and is a stop on purpose), and a question that failed or was retried. A reader's text cannot forge an entry: `explainer-serve.py` rewrites a `---`
+a watcher ended with no clean exit (a kill, a crash, a reboot — its pid file is still there), and a question
+that failed or was retried. A `--stop` typed after an unclean end is a stop on purpose: it first records the
+questions waiting at that moment as to-be-tried-again, so the page keeps saying NOT ANSWERED about them and the
+next start answers them; a question asked AFTER that stop is skipped like any other.
+A reader's text cannot forge an entry: `explainer-serve.py` rewrites a `---`
 line before it appends (`format_question_entry`); a `questions.md` edited by hand has no such protection. The
 suite's guard against the real `claude` (`_SUITE_BIN_DIR`) holds in the suite's own process; the one child
 process a case starts (`--start`) is kept off it by the `ASK_ANSWERER_CLAUDE` that case passes. The
@@ -773,8 +776,9 @@ def answer_one(root: pathlib.Path, q: Question, caps: Caps, deps: Deps) -> str:
         if not answer:
             raise _Failure("the headless run returned a KIND line and no answer")
         passed_on = kind == "instruction"
+        used = "usage NOT reported" if run.unmeasured else f"{run.tokens:,} tokens"
         stamp = (f"Read at commit {facts.get('sha', 'unknown')} ({facts.get('branch', 'unknown')}), {when}. "
-                 f"Headless {run.model or deps.model}, Read tool only: {run.turns} turns, {run.tokens:,} tokens, "
+                 f"Headless {run.model or deps.model}, Read tool only: {run.turns} turns, {used}, "
                  f"${run.cost_usd:.2f}. It changed nothing but this page."
                  + (f" ⚠ {run.denied} of its file reads were REFUSED, so it may have answered without them."
                     if run.denied else ""))
@@ -788,7 +792,7 @@ def answer_one(root: pathlib.Path, q: Question, caps: Caps, deps: Deps) -> str:
                       "passed_on": passed_on, "unmeasured": run.unmeasured})
         seen = deps.seen_served(q.doc, q.id) if deps.seen_served else ""
         log(root, f"ANSWERED {q.id} on {q.doc}: {'written ' + where if written else 'NOT WRITTEN into the page: ' + where}"
-                  f" · {run.turns} turns, {run.tokens:,} tokens" + (f" · ⚠ {run.denied} read(s) REFUSED" if run.denied else "")
+                  f" · {run.turns} turns, {used}" + (f" · ⚠ {run.denied} read(s) REFUSED" if run.denied else "")
                   + (f" · served page: {seen}" if seen else ""))
         return "answered"
     except _Failure as exc:
@@ -893,6 +897,35 @@ def watcher_pid(root: pathlib.Path) -> int:
 def watcher_died(root: pathlib.Path) -> bool:
     """A watcher that ended WITHOUT its clean exit: its pid file is still there and nothing holds the lock."""
     return (state_dir(root) / "answerer.pid").exists() and not watcher_running(root)
+
+
+def acknowledge_death(root: pathlib.Path) -> int | None:
+    """A stop typed after an unclean end. The pid file that end left is what told the page to say NOT ANSWERED
+    about each waiting question, and what makes the next start skip nothing. Before the file goes, that fact
+    is WRITTEN DOWN: each waiting question gets a `retry` line, so the page still says NOT ANSWERED and no
+    start skips it. Done holding the watch lock, which a starting watcher takes before it writes its pid, so
+    a live watcher's file is never removed. Returns how many were kept, or None when there was no death to
+    acknowledge (a watcher is alive, or no pid file)."""
+    try:
+        fh = open(state_dir(root) / "watch.lock", "a")
+    except OSError:
+        return None
+    with fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return None
+        pid_file = state_dir(root) / "answerer.pid"
+        if not pid_file.exists():
+            return None
+        with ledger_lock(root):
+            st = fold(read_ledger(root)[0])
+            waiting = [q for q in read_questions(root) if q.id not in st]
+            for q in waiting:
+                append_event(root, {"e": "retry", "id": q.id, "at": now_text(),
+                                    "why": "waiting when the answerer was stopped after an unclean end"})
+        pid_file.unlink(missing_ok=True)
+        return len(waiting)
 
 
 def ensure_baseline(root: pathlib.Path, *, every_start: bool) -> int:
@@ -1196,14 +1229,15 @@ def start(root: pathlib.Path, env: dict) -> int:
 def stop(root: pathlib.Path) -> int:
     pid = watcher_pid(root)
     if not pid:
-        if watcher_died(root):
-            # r2: the pid file an unclean end left is what makes the next start skip nothing. A stop typed
-            # after it is a stop on purpose, so it clears that: questions asked from now on are skipped.
-            (state_dir(root) / "answerer.pid").unlink(missing_ok=True)
-            log(root, "stopped after an unclean end: the next start skips what was asked meanwhile")
-            print("ask-answerer: not running — it had ended UNEXPECTEDLY. Stopped on purpose now: the next "
-                  "--start skips questions asked meanwhile (--status lists them)")
+        kept = acknowledge_death(root)
+        if kept is not None:
+            log(root, f"stopped after an unclean end: {kept} waiting question(s) kept for the next start")
+            print("ask-answerer: not running — it had ended UNEXPECTEDLY. Stopped on purpose now: "
+                  f"{kept} question(s) asked before this stop stay NOT ANSWERED on their pages and the next "
+                  "--start answers them; one asked from now on is skipped (--status lists them)")
             return 0
+        pid = watcher_pid(root)              # None with a live watcher: one started while this ran
+    if not pid:
         print("ask-answerer: not running")
         return 0
     os.kill(pid, signal.SIGTERM)
@@ -2032,21 +2066,37 @@ sys.exit(mode.get("rc", 0))
                "CRASHED — OSError: the disk went away" in (state_dir(r) / "answerer.log").read_text()),
               ("the disk went away", True, True, True))
 
+        during = ask(r, "asked after the crash and before the stop", at="2026-11-13 09:20:00")
         io_stop = io.StringIO()
         with contextlib.redirect_stdout(io_stop):
             rc_stop = stop(r)
+        loud_kept = panel_html(r, "p.html", tree(r)["p.html"])
+        gate = open(state_dir(r) / "watch.lock", "a")
+        fcntl.flock(gate, fcntl.LOCK_EX)         # a watcher that holds the lock and has written its pid
+        (state_dir(r) / "answerer.pid").write_text("1\n")
+        alive_kept = (acknowledge_death(r), (state_dir(r) / "answerer.pid").exists())
+        fcntl.flock(gate, fcntl.LOCK_UN)
+        gate.close()
+        (state_dir(r) / "answerer.pid").unlink(missing_ok=True)
         never = mk()
         io_never = io.StringIO()
         with contextlib.redirect_stdout(io_never):
             rc_never = stop(never)
         after_stop = ask(r, "asked after the stop that followed the crash", at="2026-11-13 09:30:00")
         n0 = len(calls())
+        say(OK_REPLY)
         watch(r, CAPS, DEPS, passes=2, sleep=lambda _s: None)
         check("r2: a --stop after an unclean end is a stop on purpose — it clears the record, says so, and the "
               "next start skips what was asked after it",
               (rc_stop, "ended UNEXPECTEDLY" in io_stop.getvalue(), state(r, after_stop.id).get("status"),
-               len(calls()) - n0, watcher_died(r), rc_never, "UNEXPECTEDLY" in io_never.getvalue()),
-              (0, True, "skipped", 0, False, 0, False))
+               watcher_died(r), rc_never, "UNEXPECTEDLY" in io_never.getvalue()),
+              (0, True, "skipped", False, 0, False))
+        check("r3: …and a question asked BEFORE that stop is kept — the page still says NOT ANSWERED after the "
+              "stop, and the next start answers it and nothing else",
+              ("NOT ANSWERED" in loud_kept and "asked after the crash" in loud_kept, state(r, during.id).get("status"),
+               len(calls()) - n0), (True, "answered", 1))
+        check("r3: a death is acknowledged only when no watcher holds the lock — a live watcher's pid file stays",
+              alive_kept + (acknowledge_death(never),), (None, True, None))
 
         r = mk()
         off = ask(r, "asked while the answerer was off")
@@ -2083,6 +2133,9 @@ sys.exit(mode.get("rc", 0))
         z2 = ask(r, "killed after a result with no usage", at="2026-11-13 09:00:01")
         say(result("KIND: question\n\nlate", usage=None), sleep=30, early=True)
         answer_one(r, z2, Caps(timeout_s=1), DEPS)
+        check("r3: an answer whose run reported no usage says so on the page — never a measured-looking 0 tokens",
+              ("usage NOT reported" in tree(r)["p.html"].decode(), ", 0 tokens" in tree(r)["p.html"].decode()),
+              (True, False))
         ev = read_ledger(r)[0]
         check("r2: a result that reports NO usage is unmeasured too — answered or killed, each counts as the "
               "ASSUMED amount; a result that reports some does not",
