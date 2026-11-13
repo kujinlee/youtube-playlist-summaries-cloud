@@ -11,7 +11,7 @@ by a headless agent that is not the main session.
     python3 scripts/ask_answerer.py --answered ID  # ...and says it has answered it in the page
     python3 scripts/ask_answerer.py --retry ID     # make a failed or skipped question eligible again
     python3 scripts/ask_answerer.py --inbox        # instructions readers typed: print the unread, mark them read
-    python3 scripts/ask_answerer.py --self-test    # 108 cases; never runs the real `claude`
+    python3 scripts/ask_answerer.py --self-test    # 118 cases; never runs the real `claude`
 
 THE LOOP. `explainer-serve.py` appends every POSTed question to `<root>/questions.md`. The watcher stats that
 file once a second (no model call: an idle watcher costs no tokens) and, for each question the ledger has no
@@ -38,18 +38,24 @@ labels it `KIND: instruction`, the page says it was passed on and NOT acted on, 
 BOUNDED COST, all visible in `--status`, the log and the page panel: per question `--max-turns`,
 `--max-budget-usd` and a wall-clock kill; per day a question count and a token count (`Caps`; the
 `ASK_ANSWERER_*` variables override each). ⚠ BOUND: the daily caps are checked BEFORE a run, so a day can
-end over the token cap by at most one question's run.
+end over the token cap by at most one question's run. A run that was killed, stopped or printed no result
+reported no usage: it counts as `UNMEASURED_RUN_TOKENS` (an assumption, said in the spend line), never zero.
 
 FAILS IF (the falsifiers `--self-test` runs): a question with no ledger record is not claimed on the next
 pass; a claimed question gets a second claim; a failed run leaves the page looking answered; the model's
 text reaches the page unescaped; any file but the fragment, the page and `<root>/.ask/` is written; the real
 `claude` runs inside the suite; a cap is passed without a refusal.
 
-⚠ BOUNDS, stated: a question asked while NO answerer ran is never answered by a later start (each start
-records them as skipped: answering a backlog nobody waits on is an unbounded spend; `--retry ID` overrides
-it for one). While the answerer is stopped ON PURPOSE the page says nothing about new questions — the live
-session answers them, as before this script existed. A question whose
-text itself contains an entry header (`---`, blank, `## <time> — <page>`) is read as two entries. The
+⚠ BOUNDS, stated: a question asked while the answerer was STOPPED ON PURPOSE is never answered by a later
+start (each start records them as skipped: answering a backlog nobody waits on is an unbounded spend;
+`--retry ID` overrides it for one, `--status` lists them, and a session may `--claim` one). While it is
+stopped on purpose the page says nothing about new questions — the live session answers them, as before
+this script existed. NOT skipped, because the page has said NOT ANSWERED about each: a question asked after
+a watcher ended with no clean exit (a kill, a crash, a reboot — its pid file is still there), and a question
+that failed or was retried. A reader's text cannot forge an entry: `explainer-serve.py` rewrites a `---`
+line before it appends (`format_question_entry`); a `questions.md` edited by hand has no such protection. The
+suite's guard against the real `claude` (`_SUITE_BIN_DIR`) holds in the suite's own process; the one child
+process a case starts (`--start`) is kept off it by the `ASK_ANSWERER_CLAUDE` that case passes. The
 answer is found by the reader through the panel's link, not by the page scrolling to it. A heading inside
 `<details>`, `<pre>`, `<svg>`, a comment or a script is never an insertion point: the answer goes to the end
 of the page. NOT a ratchet: nothing globs this file as a guard; it keeps a `--self-test` and a mutation
@@ -63,6 +69,7 @@ import datetime as _dt
 import fcntl
 import hashlib
 import html
+import io
 import json
 import os
 import pathlib
@@ -223,6 +230,12 @@ def fold(events: list[dict]) -> dict[str, dict]:
     return st
 
 
+def touched(events: list[dict]) -> set[str]:
+    """PURE. Every id the ledger has a line ABOUT (claimed, run, answered, failed, retried) — a baseline's ids
+    are not among them. Such a question was once somebody's to answer, so no later start may skip it."""
+    return {ev["id"] for ev in events if ev.get("e") != "baseline" and isinstance(ev.get("id"), str)}
+
+
 @contextlib.contextmanager
 def ledger_lock(root: pathlib.Path):
     d = state_dir(root)
@@ -246,11 +259,13 @@ def record(root: pathlib.Path, ev: dict) -> None:
 
 def claim(root: pathlib.Path, qid: str, by: str, *, doc: str = "", question: str = "", at: str = "",
           pid: int = 0) -> bool:
-    """THE claim marker. True when this caller now owns the question; False when the ledger already holds any
-    state for it (claimed, answered, failed or in the baseline). Read and append happen under ONE lock, so two
-    callers cannot both be told True."""
+    """THE claim marker. True when this caller now owns the question; False when the ledger already holds a
+    state for it (claimed, answered, failed). A SKIPPED question — asked while no answerer ran — is the live
+    session's to answer, so a session may claim it and the answerer may not. Read and append happen under ONE
+    lock, so two callers cannot both be told True."""
     with ledger_lock(root):
-        if qid in fold(read_ledger(root)[0]):
+        s = fold(read_ledger(root)[0]).get(qid)
+        if s is not None and not (s.get("status") == "skipped" and by != "answerer"):
             return False
         append_event(root, {"e": "claimed", "id": qid, "by": by, "doc": doc, "question": question[:600],
                             "at": at or now_text(), "pid": pid})
@@ -297,17 +312,33 @@ def caps_from(env: dict) -> tuple[Caps, str]:
             return Caps(), f"{name}={raw[:40]!r} is not a number. NOT STARTED."
         if not 0 < v < float("inf"):
             return Caps(), f"{name}={raw[:40]!r} must be above zero. NOT STARTED."
+        if field == "budget_usd" and v < 0.01:
+            return Caps(), (f"{name}={raw[:40]!r} must be at least 0.01: the CLI is given it with two decimals, "
+                            "and 0.00 is not a limit anyone set. NOT STARTED.")
         values[field] = v
     return Caps(**values), ""
 
 
+# What a run that ended with NO usage report counts as against the daily token cap: it was killed, stopped or
+# printed nothing readable, so what it spent is UNKNOWN, and unknown is never counted as zero. An ASSUMPTION,
+# set several times above the two real runs measured for backlog #625 (31,687 and 39,902 tokens).
+UNMEASURED_RUN_TOKENS = 250_000
+
+
+def unmeasured(events: list[dict], day: str) -> int:
+    """PURE. How many runs on `day` ended with no usage reported."""
+    return sum(1 for ev in events if ev.get("e") == "failed" and ev.get("unmeasured")
+               and str(ev.get("at", ""))[:10] == day)
+
+
 def spent(events: list[dict], day: str) -> tuple[int, int]:
     """PURE. (runs started, tokens) on `day` ("YYYY-MM-DD"). A `run` line is written just before each headless
-    run starts, a retry's too; a question refused by a cap, or with no page to read, starts no run."""
+    run starts, a retry's too; a question refused by a cap, or with no page to read, starts no run. A run
+    that reported no usage counts as `UNMEASURED_RUN_TOKENS`."""
     runs = sum(1 for ev in events if ev.get("e") == "run" and str(ev.get("at", ""))[:10] == day)
     tokens = sum(int(ev.get("tokens") or 0) for ev in events
                  if ev.get("e") in ("answered", "failed") and str(ev.get("at", ""))[:10] == day)
-    return runs, tokens
+    return runs, tokens + UNMEASURED_RUN_TOKENS * unmeasured(events, day)
 
 
 def cap_refusal(caps: Caps, runs: int, tokens: int) -> str:
@@ -326,6 +357,14 @@ def spend_line(caps: Caps, runs: int, tokens: int) -> str:
             f"per question at most {caps.max_turns} turns, ${caps.budget_usd:.2f}, {caps.timeout_s} s")
 
 
+def spend_today(events: list[dict], caps: Caps, day: str) -> str:
+    """The spend line for `day`, saying which part of the token count is assumed, not reported."""
+    n = unmeasured(events, day)
+    return spend_line(caps, *spent(events, day)) + (
+        f"; ⚠ {n} run(s) ended with NO usage reported and count as {UNMEASURED_RUN_TOKENS:,} tokens each "
+        "(assumed, not measured)" if n else "")
+
+
 # ── the headless run ──────────────────────────────────────────────────────────────────────────────────────────
 
 class Run(NamedTuple):
@@ -337,6 +376,7 @@ class Run(NamedTuple):
     model: str
     cost_usd: float
     denied: int = 0  # tool calls the run was refused (a Read outside the allowed folders)
+    unmeasured: bool = False  # a process started and reported NO usage: its spend is unknown, never zero
 
 
 def headless_argv(binary: str, caps: Caps, model: str, dirs: tuple[str, ...] = ()) -> list[str]:
@@ -359,7 +399,8 @@ def parse_result(stdout: str, rc: int, stderr: str = "") -> Run:
         d = None
     if not isinstance(d, dict) or d.get("type") != "result":
         said = (stderr.strip() or stdout.strip())[:300] or "nothing"
-        return Run(False, "", f"the headless run printed no result (exit {rc}): {said}", 0, 0, "", 0.0)
+        return Run(False, "", f"the headless run printed no result (exit {rc}): {said}", 0, 0, "", 0.0,
+                   unmeasured=True)
     usage = d.get("usage") if isinstance(d.get("usage"), dict) else {}
     tokens = sum(v for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens",
                              "output_tokens") if isinstance((v := usage.get(k)), int) and v > 0)
@@ -395,8 +436,13 @@ def run_headless(prompt: str, caps: Caps, *, binary: str, model: str, cwd: pathl
         out, err = p.communicate(prompt, timeout=caps.timeout_s)
     except subprocess.TimeoutExpired:
         _kill_group(p)
+        try:                                   # what it printed BEFORE the kill may hold its usage: count it
+            out, err = p.communicate(timeout=5)
+        except Exception:  # noqa: BLE001 — nothing readable came back; the run is then unmeasured, below
+            out, err = "", ""
+        part = parse_result(out or "", -9, err or "")
         return Run(False, "", f"the headless run was killed after {caps.timeout_s} s (the per-question limit)",
-                   0, 0, "", 0.0)
+                   part.tokens, part.turns, part.model, part.cost_usd, unmeasured=part.unmeasured)
     except BaseException:
         _kill_group(p)
         raise
@@ -700,7 +746,7 @@ def answer_one(root: pathlib.Path, q: Question, caps: Caps, deps: Deps) -> str:
     refusal = cap_refusal(caps, *spent(events, now_text()[:10]))
     if not claim(root, q.id, "answerer", doc=q.doc, question=q.text, pid=os.getpid()):
         return "taken"
-    tokens = 0
+    tokens, unknown = 0, False             # unknown: a run started and its usage has not been read
     try:
         if refusal:
             raise _Failure(refusal)
@@ -712,12 +758,13 @@ def answer_one(root: pathlib.Path, q: Question, caps: Caps, deps: Deps) -> str:
             facts = deps.facts(deps.repo)
             when = now_text()
             record(root, {"e": "run", "id": q.id, "at": when})
+            unknown = True
             run = run_headless(build_prompt(q, source or str(fetched), facts, when), caps, binary=deps.binary,
                                model=deps.model, cwd=deps.repo, dirs=(str(root.resolve()),))
         finally:
             if fetched is not None:
                 shutil.rmtree(fetched.parent, ignore_errors=True)
-        tokens = run.tokens
+        tokens, unknown = run.tokens, run.unmeasured
         if not run.ok:
             raise _Failure(run.reason)
         kind, answer = parse_reply(run.text)
@@ -746,13 +793,14 @@ def answer_one(root: pathlib.Path, q: Question, caps: Caps, deps: Deps) -> str:
         reason = str(exc)
     except Stopped:
         record(root, {"e": "failed", "id": q.id, "doc": q.doc, "question": q.text[:600], "at": now_text(),
-                      "reason": "the answerer was stopped while answering this one", "tokens": tokens})
+                      "reason": "the answerer was stopped while answering this one", "tokens": tokens,
+                      "unmeasured": unknown})
         log(root, f"⚠ NOT ANSWERED {q.id} on {q.doc}: stopped mid-answer")
         raise
     except Exception as exc:  # noqa: BLE001 — the boundary: an unforeseen fault is a LOUD failed question
         reason = f"the answerer itself failed ({type(exc).__name__}: {str(exc)[:200]})"
     record(root, {"e": "failed", "id": q.id, "doc": q.doc, "question": q.text[:600], "at": now_text(),
-                  "reason": reason, "tokens": tokens})
+                  "reason": reason, "tokens": tokens, "unmeasured": unknown})
     log(root, f"⚠ NOT ANSWERED {q.id} on {q.doc}: {reason}")
     return "failed"
 
@@ -846,16 +894,19 @@ def watcher_died(root: pathlib.Path) -> bool:
 
 
 def ensure_baseline(root: pathlib.Path, *, every_start: bool) -> int:
-    """Every question with no ledger state is recorded as skipped: it was asked while no answerer ran, and
-    answering a backlog nobody is waiting on is a spend nobody asked for. `every_start` False (`--once`) does
-    it only when the ledger has no baseline at all. Returns how many were skipped, or -1 when none was written."""
+    """Every question the ledger has NEVER had a line about is recorded as skipped: it was asked while no
+    answerer ran, and answering a backlog nobody is waiting on is a spend nobody asked for. A question that was
+    ever claimed, failed or retried is NOT skipped — the page has said NOT ANSWERED about it, and a start is
+    the remedy the page names. `every_start` False (`--once`, and a start after an unclean end) does it only
+    when the ledger has no baseline at all. Returns how many were skipped, or -1 when none was written."""
     with ledger_lock(root):
         events = read_ledger(root)[0]
         first = not any(ev.get("e") == "baseline" for ev in events)
         if not (first or every_start):
             return -1
         st = fold(events)
-        ids = [q.id for q in read_questions(root) if q.id not in st]
+        ever = touched(events)
+        ids = [q.id for q in read_questions(root) if q.id not in st and q.id not in ever]
         if not (first or ids):
             return -1
         append_event(root, {"e": "baseline", "ids": ids, "at": now_text()})
@@ -865,11 +916,18 @@ def ensure_baseline(root: pathlib.Path, *, every_start: bool) -> int:
 def recover_stale(root: pathlib.Path) -> int:
     """Called by a watcher that HOLDS the watch lock, so no other answerer is alive: a question still claimed
     by an answerer was abandoned mid-answer. It becomes a failed question, never a claim that waits for ever."""
-    stale = [(qid, st) for qid, st in fold(read_ledger(root)[0]).items()
+    events = read_ledger(root)[0]
+    stale = [(qid, st) for qid, st in fold(events).items()
              if st.get("status") == "claimed" and st.get("by") == "answerer"]
+    in_run: set = set()                      # ids whose LAST claim was followed by a run: spend unknown
+    for ev in events:
+        if ev.get("e") == "claimed":
+            in_run.discard(ev.get("id"))
+        elif ev.get("e") == "run":
+            in_run.add(ev.get("id"))
     for qid, st in stale:
         record(root, {"e": "failed", "id": qid, "doc": st.get("doc", ""), "question": st.get("question", ""),
-                      "at": now_text(), "tokens": 0,
+                      "at": now_text(), "tokens": 0, "unmeasured": qid in in_run,
                       "reason": f"the answerer stopped before finishing this one (claimed {st.get('at', '?')})"})
         log(root, f"⚠ NOT ANSWERED {qid}: abandoned by an earlier answerer")
     return len(stale)
@@ -914,30 +972,48 @@ def watch(root: pathlib.Path, caps: Caps, deps: Deps, *, once: bool = False, tic
             print(f"ask-answerer: already running for {root} (pid {_pid_file(root) or 'unknown'}). NOT STARTED.",
                   file=sys.stderr)
             return 3
+        # This process HOLDS the lock, so a pid file still here was left by a watcher that ended with no clean
+        # exit. The page showed every question asked since as NOT ANSWERED and named `--start` as the remedy,
+        # so this start answers them instead of skipping them.
+        died = (d / "answerer.pid").exists()
         (d / "answerer.pid").write_text(f"{os.getpid()}\n")
+        clean = False
         try:
-            skipped = ensure_baseline(root, every_start=not once)
+            skipped = ensure_baseline(root, every_start=not once and not died)
+            if died:
+                log(root, "start: the previous answerer ended WITHOUT a clean stop — the questions asked since "
+                          "are answered now, not skipped")
             if skipped >= 0:
                 log(root, f"start: {skipped} question(s) asked while no answerer ran are NOT answered (skipped; "
                           "`--retry ID` makes one eligible)")
             recover_stale(root)
-            log(root, f"watching {root / 'questions.md'} · {spend_line(caps, *spent(read_ledger(root)[0], now_text()[:10]))}")
+            log(root, f"watching {root / 'questions.md'} · {spend_today(read_ledger(root)[0], caps, now_text()[:10])}")
             last, n = None, 0
             while True:
                 sig = _signature(root)
                 if sig != last:
                     process_new(root, caps, deps)
-                    last = _signature(root)
+                    # The signature from BEFORE the pass. A question appended WHILE the pass answered another
+                    # changed the file after `sig` was taken, so the next tick sees a difference and takes
+                    # it. The cost is one more pass after every answer, which reads two files and no model.
+                    last = sig
                 n += 1
                 if once or (passes is not None and n >= passes):
+                    clean = True
                     return 0
                 sleep(tick)
         except Stopped:
+            clean = True
             log(root, "stopped")
             return 0
+        except Exception as exc:
+            log(root, f"⚠ CRASHED — {type(exc).__name__}: {str(exc)[:300]}. The pid file is LEFT in place, so "
+                      "every page says the answerer stopped unexpectedly. Start it again.")
+            raise
         finally:
-            with contextlib.suppress(OSError):
-                (d / "answerer.pid").unlink()
+            if clean:                        # only a clean exit reads as "stopped on purpose"
+                with contextlib.suppress(OSError):
+                    (d / "answerer.pid").unlink()
 
 
 # ── what the SERVER shows: the panel `explainer-serve.py` adds to a page ─────────────────────────────────────
@@ -949,6 +1025,7 @@ def page_items(root: pathlib.Path, rel: str) -> list[dict]:
     if not events:
         return []
     st = fold(events)
+    ever = touched(events)
     items, seen = [], set()
     for q in read_questions(root):
         if page_name(q.doc) != rel:
@@ -956,7 +1033,8 @@ def page_items(root: pathlib.Path, rel: str) -> list[dict]:
         seen.add(q.id)
         s = st.get(q.id)
         if s is None:
-            items.append({"id": q.id, "status": "waiting", "question": q.text, "at": q.at})
+            items.append({"id": q.id, "status": "waiting", "question": q.text, "at": q.at,
+                          "retried": q.id in ever})
         elif s.get("status") != "skipped":
             items.append({**s, "id": q.id, "question": q.text, "asked": q.at})
     for qid, s in st.items():                   # a state whose question left questions.md (the file was trimmed)
@@ -989,6 +1067,10 @@ def panel_lines(items: list[dict], body: bytes, running: bool, now: _dt.datetime
                 out.append(("⚠", "<strong>NOT ANSWERED — the Ask answerer stopped unexpectedly.</strong> "
                                  f"“{asked}” Start it again (<code>python3 scripts/ask_answerer.py --start</code>) "
                                  "or say “read my questions” in the session."))
+            elif it.get("retried"):
+                out.append(("⚠", "<strong>NOT ANSWERED — set to be tried again, and the Ask answerer is not "
+                                 f"running.</strong> “{asked}” Start it (<code>python3 scripts/ask_answerer.py "
+                                 "--start</code>) or say “read my questions” in the session."))
             # stopped on purpose: the answerer is OFF, and the page says nothing new — the session answers
         elif status == "claimed" and by == "session":
             out.append(("⏳", f"<strong>Taken by the main session</strong> at {at}; it answers this one — “{asked}”"))
@@ -1041,7 +1123,8 @@ def panel_rev(root: pathlib.Path, rel: str) -> str:
     items = page_items(root, rel)
     if not items:
         return ""
-    key = [(it["id"], it.get("status"), it.get("by"), bool(it.get("written"))) for it in items]
+    key = [(it["id"], it.get("status"), it.get("by"), bool(it.get("written")), bool(it.get("retried")))
+           for it in items]
     key.append(("running", watcher_running(root), watcher_died(root)))
     return hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()[:10]
 
@@ -1053,7 +1136,7 @@ def status_text(root: pathlib.Path, caps: Caps) -> str:
     st = fold(events)
     pid = watcher_pid(root)
     lines = [f"ask-answerer: {'RUNNING (pid ' + str(pid) + ')' if pid else 'not running'}  ·  folder {root}",
-             f"  caps:    {spend_line(caps, *spent(events, now_text()[:10]))}"]
+             f"  caps:    {spend_today(events, caps, now_text()[:10])}"]
     if bad:
         lines.append(f"  ⚠ {bad} unreadable line(s) in {state_dir(root) / 'ledger.jsonl'} were ignored")
     waiting = pending(root) if events else []
@@ -1068,6 +1151,12 @@ def status_text(root: pathlib.Path, caps: Caps) -> str:
             lines.append(f"  ⚠ FAILED {qid}  {s.get('doc', '')}  {str(s.get('reason', ''))[:160]}")
         elif s.get("status") == "answered" and s.get("by") != "session" and not s.get("written"):
             lines.append(f"  answered, NOT in the page file  {qid}  {s.get('doc', '')}  {str(s.get('where', ''))[:120]}")
+    skipped = [q for q in read_questions(root) if st.get(q.id, {}).get("status") == "skipped"]
+    if skipped:
+        lines.append(f"  skipped  {len(skipped)} asked while no answerer ran: NOT answered here. A session "
+                     "answers one after `--claim ID`; `--retry ID` hands one to the answerer. The newest:")
+        for q in skipped[-5:]:
+            lines.append(f"    {q.id}  {q.doc}  {' '.join(q.text.split())[:80]}")
     unread = [s for s in st.values() if s.get("passed_on") and not s.get("inbox_read")]
     if unread:
         lines.append(f"  inbox:   {len(unread)} unread instruction(s) — python3 scripts/ask_answerer.py --inbox")
@@ -1157,27 +1246,32 @@ def main(argv: list[str], env: dict | None = None) -> int:
                   f"element, then run --answered {q.id}")
             return 0
         s = fold(read_ledger(root)[0]).get(q.id, {})
-        print(f"ask-answerer: {q.id} is already {s.get('status')} (by {s.get('by', 'the baseline')}). "
+        print(f"ask-answerer: {q.id} is already {s.get('status')} (by {s.get('by', 'nobody')}). "
               "Do NOT answer it too.", file=sys.stderr)
         return 3
     if a.answered or a.retry:
         qid = a.answered or a.retry
-        s = fold(read_ledger(root)[0]).get(qid)
-        if s is None:
-            print(f"ask-answerer: the ledger holds no state for {qid!r}", file=sys.stderr)
-            return 2
-        if a.answered and not (s.get("status") == "claimed" and s.get("by") != "answerer"
-                               or s.get("status") == "failed"):
-            print(f"ask-answerer: {qid} is {s.get('status')} by {s.get('by')}; --answered closes a question a "
-                  "session claimed, or a failed one", file=sys.stderr)
-            return 3
-        if a.retry and s.get("status") not in ("failed", "skipped"):
-            print(f"ask-answerer: {qid} is {s.get('status')}; only a failed or skipped question is retried",
-                  file=sys.stderr)
-            return 3
-        record(root, {"e": "session-answered" if a.answered else "retry", "id": qid, "at": now_text(),
-                      "doc": s.get("doc", "")})
-        print(f"{'recorded as answered by the session' if a.answered else 'eligible again'}: {qid}")
+        # Read, judge and append under ONE lock: a retry judged on a state that another caller then changed
+        # would erase that caller's claim or answer, and the question would be run twice.
+        with ledger_lock(root):
+            s = fold(read_ledger(root)[0]).get(qid)
+            if s is None:
+                print(f"ask-answerer: the ledger holds no state for {qid!r}", file=sys.stderr)
+                return 2
+            if a.answered and not (s.get("status") == "claimed" and s.get("by") != "answerer"
+                                   or s.get("status") == "failed"):
+                print(f"ask-answerer: {qid} is {s.get('status')} by {s.get('by')}; --answered closes a question "
+                      "a session claimed, or a failed one", file=sys.stderr)
+                return 3
+            if a.retry and s.get("status") not in ("failed", "skipped"):
+                print(f"ask-answerer: {qid} is {s.get('status')}; only a failed or skipped question is retried",
+                      file=sys.stderr)
+                return 3
+            append_event(root, {"e": "session-answered" if a.answered else "retry", "id": qid, "at": now_text(),
+                                "doc": s.get("doc", "")})
+        print(f"{'recorded as answered by the session' if a.answered else 'eligible again'}: {qid}"
+              + ("" if a.answered or watcher_pid(root) else
+                 " — the answerer is NOT running: start it (--start) or it stays unanswered"))
         return 0
     if a.inbox:
         unread = read_inbox(root)
@@ -1192,6 +1286,7 @@ def main(argv: list[str], env: dict | None = None) -> int:
     def _term(_sig, _frame):
         raise Stopped()
     signal.signal(signal.SIGTERM, _term)
+    signal.signal(signal.SIGINT, _term)      # Ctrl-C on a foreground --watch is a stop on purpose, not a death
     return watch(root, caps, deps, once=a.once)
 
 
@@ -1244,6 +1339,10 @@ mode = json.loads((here / "mode.json").read_text())
 prompt = sys.stdin.read()
 with open(here / "calls.jsonl", "a") as fh:
     fh.write(json.dumps({{"argv": sys.argv[1:], "stdin": prompt, "pid": os.getpid(), "cwd": os.getcwd()}}) + "\\n")
+if mode.get("early"):
+    sys.stdout.write(mode.get("stdout", ""))
+    sys.stdout.flush()
+    mode["stdout"] = ""
 if mode.get("sleep"):
     time.sleep(mode["sleep"])
 sys.stdout.write(mode.get("stdout", ""))
@@ -1261,9 +1360,9 @@ sys.exit(mode.get("rc", 0))
         d.update(over)
         return json.dumps(d)
 
-    def say(stdout: str, rc: int = 0, sleep: float = 0, stderr: str = "") -> None:
+    def say(stdout: str, rc: int = 0, sleep: float = 0, stderr: str = "", early: bool = False) -> None:
         (bin_dir / "mode.json").write_text(json.dumps({"stdout": stdout, "rc": rc, "sleep": sleep,
-                                                       "stderr": stderr}))
+                                                       "stderr": stderr, "early": early}))
 
     def calls() -> list[dict]:
         try:
@@ -1860,6 +1959,107 @@ sys.exit(mode.get("rc", 0))
               [("QUESTION: FIRST-ASKED" in c["stdin"], "QUESTION: SECOND-ASKED" in c["stdin"]) for c in calls()[n0:]],
               [(True, False), (False, True)])
 
+        # ── review round 1 (docs/reviews/coordinator/625-r1-coordinator.md) ─────────────────────────────────────────────
+        r = mk()
+        say(OK_REPLY)
+        during: list[Question] = []
+
+        def asks_first(_s: float) -> None:
+            if not read_questions(r):
+                ask(r, "the FIRST one")
+
+        def compose_and_ask(frag: pathlib.Path, title: str, out: pathlib.Path) -> tuple[int, str]:
+            if not during:
+                during.append(ask(r, "asked DURING the first answer", at="2026-11-13 09:30:00"))
+            return fake_compose(frag, title, out)
+        n0 = len(calls())
+        watch(r, CAPS, DEPS._replace(composer=compose_and_ask), sleep=asks_first, passes=4)
+        check("r1: a question that arrives WHILE another is being answered is answered on the next pass",
+              (len(calls()) - n0, state(r, during[0].id).get("status") if during else "never asked"), (2, "answered"))
+
+        r = mk()
+        watch(r, CAPS, DEPS, once=True)
+        (state_dir(r) / "answerer.pid").write_text("999999\n")          # what a kill, a crash or a reboot leaves
+        lost = ask(r, "asked after the answerer died")
+        loud = panel_html(r, "p.html", tree(r)["p.html"])
+        n0 = len(calls())
+        watch(r, CAPS, DEPS, sleep=lambda _s: None, passes=2)
+        check("r1: a start after an UNCLEAN end answers what the page had shown NOT ANSWERED; it is not skipped",
+              ("NOT ANSWERED" in loud and "--start" in loud, state(r, lost.id).get("status"), len(calls()) - n0,
+               (state_dir(r) / "answerer.pid").exists()), (True, "answered", 1, False))
+
+        r = mk()
+        watch(r, CAPS, DEPS, once=True)
+        again = ask(r, "fails, then is retried while the answerer is off")
+        say("boom", rc=1)
+        watch(r, CAPS, DEPS, once=True)
+        with contextlib.redirect_stdout(io.StringIO()) as said:
+            rc_retry = main(["--retry", again.id], {"EXPLAINER_SERVE_ROOT": str(r)})
+        loud = panel_html(r, "p.html", tree(r)["p.html"])
+        say(OK_REPLY)
+        n0 = len(calls())
+        watch(r, CAPS, DEPS, sleep=lambda _s: None, passes=2)
+        check("r1: a RETRIED question is never skipped — NOT ANSWERED on the page while the answerer is off, said "
+              "by --retry, and answered by the next start",
+              (rc_retry, "NOT running" in said.getvalue(), "NOT ANSWERED" in loud and "--start" in loud,
+               state(r, again.id).get("status"), len(calls()) - n0), (0, True, True, "answered", 1))
+
+        r = mk()
+        watch(r, CAPS, DEPS, once=True)
+
+        def disk_gone(_s: float) -> None:
+            raise OSError("the disk went away")
+
+        def crashed() -> str:
+            try:
+                watch(r, CAPS, DEPS, sleep=disk_gone, passes=3)
+            except OSError as exc:
+                return str(exc)
+            return "returned"
+        check("r1: a watcher that CRASHES leaves its pid file — the page reads it as stopped UNEXPECTEDLY — and "
+              "the log says CRASHED",
+              (crashed(), (state_dir(r) / "answerer.pid").exists(), watcher_died(r),
+               "CRASHED — OSError: the disk went away" in (state_dir(r) / "answerer.log").read_text()),
+              ("the disk went away", True, True, True))
+
+        r = mk()
+        off = ask(r, "asked while the answerer was off")
+        watch(r, CAPS, DEPS, once=True)
+        text = status_text(r, CAPS)
+        check("r1: a skipped question is listed by --status, and a SESSION may claim it; the answerer may not",
+              ("skipped  1 asked" in text and off.id in text, claim(r, off.id, "answerer"),
+               claim(r, off.id, "session"), state(r, off.id).get("by"), claim(r, off.id, "session")),
+              (True, False, True, "session", False))
+
+        r = mk()
+        watch(r, CAPS, DEPS, once=True)
+        t1 = ask(r, "killed AFTER it reported its usage")
+        say(OK_REPLY, sleep=30, early=True)
+        answer_one(r, t1, Caps(timeout_s=1), DEPS)
+        t2 = ask(r, "killed with nothing reported", at="2026-11-13 09:00:01")
+        say(OK_REPLY, sleep=30)
+        answer_one(r, t2, Caps(timeout_s=1), DEPS)
+        ev, day = read_ledger(r)[0], now_text()[:10]
+        check("r1: a killed run is never free — usage printed before the kill is counted; a run that reported "
+              "none counts as the ASSUMED amount, the spend line says so, and the token cap then refuses",
+              (state(r, t1.id).get("tokens"), state(r, t1.id).get("unmeasured"), state(r, t2.id).get("unmeasured"),
+               unmeasured(ev, day), unmeasured(ev, "1999-01-01"), unmeasured([], day), spent(ev, day),
+               "1 run(s) ended with NO usage reported and count as 250,000 tokens each" in spend_today(ev, CAPS, day),
+               spend_today([], Caps(daily_questions=7), "1999-01-01"),
+               "the daily cap is reached" in cap_refusal(Caps(daily_tokens=200_000), *spent(ev, day))),
+              (31687, False, True, 1, 0, 0, (2, 31687 + UNMEASURED_RUN_TOKENS), True,
+               "today 0 of 7 questions, 0 of 3,000,000 tokens; per question at most 10 turns, $0.75, 240 s", True))
+        check("r1: unmeasured means a process started and reported nothing — not a binary that never started",
+              (parse_result("garbage", 1).unmeasured, parse_result(OK_REPLY, 0).unmeasured,
+               run_headless("p", CAPS, binary=str(bin_dir / "absent"), model="sonnet", cwd=td).unmeasured),
+              (True, False, False))
+        check("r1: a per-question budget the CLI would be given as 0.00 is refused; one cent is the least",
+              ("at least 0.01" in caps_from({"ASK_ANSWERER_BUDGET_USD": "0.001"})[1],
+               caps_from({"ASK_ANSWERER_BUDGET_USD": "0.01"})), (True, (Caps(budget_usd=0.01), "")))
+        check("r1: touched — every id the ledger has a line about, never a baseline's",
+              (touched([{"e": "baseline", "ids": ["b"]}, {"e": "claimed", "id": "c"}, {"e": "retry", "id": "d"}]),
+               touched([{"e": "run", "id": "x"}, {"e": "failed", "id": 7}])), ({"c", "d"}, {"x"}))
+
         here, there = mk(), mk()
         watch(here, CAPS, DEPS, once=True)                # a baseline in each: what is asked next is new
         watch(there, CAPS, DEPS, once=True)
@@ -1881,7 +2081,6 @@ sys.exit(mode.get("rc", 0))
             ask(r, "must not be answered by a second watcher")
             n0 = len(calls())
             waits: list[float] = []
-            import io
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
                 rc = watch(r, CAPS, DEPS, once=True, sleep=waits.append)
@@ -2003,7 +2202,6 @@ sys.exit(mode.get("rc", 0))
               fetched, b'<p data-ask-id="held"></p>')
 
         # ── the command line ────────────────────────────────────────────────────────────────────────────────
-        import io
         r = mk()
         ENV = {"EXPLAINER_SERVE_ROOT": str(r), "ASK_ANSWERER_CLAUDE": str(fake), "EXPLAINER_SERVE_PORT": "1"}
 
@@ -2028,7 +2226,7 @@ sys.exit(mode.get("rc", 0))
         watch(r, CAPS, DEPS, once=True)
         rc_status, text = cli("--status")
         check("--status: not running, the caps with today's spend, and the failed question by id",
-              (rc_status, "not running" in text, "today 1 of 40 questions, 0 of 3,000,000 tokens" in text,
+              (rc_status, "not running" in text, "today 1 of 40 questions, 250,000 of 3,000,000 tokens" in text,
                "at most 10 turns, $0.75, 240 s" in text, f"FAILED {qf.id}" in text), (0, True, True, True, True))
         say(OK_REPLY)
         check("--retry: only a failed or skipped question; then the next pass answers it",
@@ -2100,6 +2298,17 @@ sys.exit(mode.get("rc", 0))
                   (stopped_run.returncode, pid_alive(pid), watcher_running(home_ex), watcher_died(home_ex),
                    "stopped" in (state_dir(home_ex) / "answerer.log").read_text().split("\n")[-2]),
                   (0, False, False, False, True))
+            subprocess.run([sys.executable, str(pathlib.Path(__file__).resolve()), "--start"], env=env,
+                           capture_output=True, text=True, timeout=60)
+            pid2 = watcher_pid(home_ex)
+            if pid2:
+                os.kill(pid2, signal.SIGINT)
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < 10 and pid2 and pid_alive(pid2):
+                time.sleep(0.05)
+            check("r1: Ctrl-C is a stop on purpose — the watcher ends, leaves no pid file, and is not read as died",
+                  (pid2 > 0, pid2 != pid, pid_alive(pid2) if pid2 else None, watcher_died(home_ex)),
+                  (True, True, False, False))
             check("off unless started: after --stop a new question starts no run",
                   [len(calls()) for _ in (ask(home_ex, "nobody answers this", doc=f"{stem}.html"), time.sleep(1.5))][0:1],
                   [len(calls())])

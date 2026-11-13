@@ -4,7 +4,7 @@
     "file": "scripts/ask_answerer.py",
     "edits": [
       [
-        "        if qid in fold(read_ledger(root)[0]):\n            return False\n",
+        "        if s is not None and not (s.get(\"status\") == \"skipped\" and by != \"answerer\"):\n            return False\n",
         ""
       ]
     ],
@@ -213,8 +213,8 @@
     "file": "scripts/ask_answerer.py",
     "edits": [
       [
-        "        return \"taken\"\n    tokens = 0",
-        "        pass\n    tokens = 0"
+        "        return \"taken\"\n    tokens, unknown = 0, False",
+        "        pass\n    tokens, unknown = 0, False"
       ]
     ],
     "expect": "a question a live session claimed is left alone: no run, no write"
@@ -290,7 +290,7 @@
     "file": "scripts/ask_answerer.py",
     "edits": [
       [
-        "        record(root, {\"e\": \"failed\", \"id\": q.id, \"doc\": q.doc, \"question\": q.text[:600], \"at\": now_text(),\n                      \"reason\": \"the answerer was stopped while answering this one\", \"tokens\": tokens})\n",
+        "        record(root, {\"e\": \"failed\", \"id\": q.id, \"doc\": q.doc, \"question\": q.text[:600], \"at\": now_text(),\n                      \"reason\": \"the answerer was stopped while answering this one\", \"tokens\": tokens,\n                      \"unmeasured\": unknown})\n",
         ""
       ]
     ],
@@ -301,7 +301,7 @@
     "file": "scripts/ask_answerer.py",
     "edits": [
       [
-        "ensure_baseline(root, every_start=not once)",
+        "ensure_baseline(root, every_start=not once and not died)",
         "ensure_baseline(root, every_start=False)"
       ]
     ],
@@ -378,10 +378,131 @@
     "file": "scripts/ask_answerer.py",
     "edits": [
       [
-        "key = [(it[\"id\"], it.get(\"status\"), it.get(\"by\"), bool(it.get(\"written\"))) for it in items]",
-        "key = [(it[\"id\"],) for it in items]"
+        "    key = [(it[\"id\"], it.get(\"status\"), it.get(\"by\"), bool(it.get(\"written\")), bool(it.get(\"retried\")))\n           for it in items]",
+        "    key = [(it[\"id\"],) for it in items]"
       ]
     ],
     "expect": "rev: moves whenever a question on the page changes state, so an open page reloads"
+  },
+  {
+    "name": "the watcher remembers the file as it was AFTER the pass, so a question that arrived during it waits",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "                    last = sig\n",
+        "                    last = _signature(root)\n"
+      ]
+    ],
+    "expect": "r1: a question that arrives WHILE another is being answered is answered on the next pass"
+  },
+  {
+    "name": "a start after an unclean end skips the questions the page showed NOT ANSWERED",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "every_start=not once and not died)",
+        "every_start=not once)"
+      ]
+    ],
+    "expect": "r1: a start after an UNCLEAN end answers what the page had shown NOT ANSWERED; it is not skipped"
+  },
+  {
+    "name": "a start skips a question the ledger already has a line about (failed, then retried)",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "if q.id not in st and q.id not in ever]",
+        "if q.id not in st]"
+      ]
+    ],
+    "expect": "r1: a RETRIED question is never skipped — NOT ANSWERED on the page while the answerer is off, said by --retry, and answered by the next start"
+  },
+  {
+    "name": "the page says nothing about a retried question while the answerer is off",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "\"retried\": q.id in ever})",
+        "\"retried\": False})"
+      ]
+    ],
+    "expect": "r1: a RETRIED question is never skipped — NOT ANSWERED on the page while the answerer is off, said by --retry, and answered by the next start"
+  },
+  {
+    "name": "a crashed watcher removes its pid file, so the page reads it as stopped on purpose",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "            if clean:                        # only",
+        "            if True:                         # only"
+      ]
+    ],
+    "expect": "r1: a watcher that CRASHES leaves its pid file — the page reads it as stopped UNEXPECTEDLY — and the log says CRASHED"
+  },
+  {
+    "name": "the answerer may claim a skipped question",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "if s is not None and not (s.get(\"status\") == \"skipped\" and by != \"answerer\"):",
+        "if s is not None and not (s.get(\"status\") == \"skipped\"):"
+      ]
+    ],
+    "expect": "r1: a skipped question is listed by --status, and a SESSION may claim it; the answerer may not"
+  },
+  {
+    "name": "--status hides the skipped questions",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    if skipped:\n        lines.append(f\"  skipped",
+        "    if False:\n        lines.append(f\"  skipped"
+      ]
+    ],
+    "expect": "r1: a skipped question is listed by --status, and a SESSION may claim it; the answerer may not"
+  },
+  {
+    "name": "a run that reported no usage counts as zero tokens",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "return runs, tokens + UNMEASURED_RUN_TOKENS * unmeasured(events, day)",
+        "return runs, tokens"
+      ]
+    ],
+    "expect": "r1: a killed run is never free — usage printed before the kill is counted; a run that reported none counts as the ASSUMED amount, the spend line says so, and the token cap then refuses"
+  },
+  {
+    "name": "a killed run's printed usage is thrown away",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "part.tokens, part.turns, part.model, part.cost_usd, unmeasured=part.unmeasured)",
+        "0, 0, \"\", 0.0, unmeasured=part.unmeasured)"
+      ]
+    ],
+    "expect": "r1: a killed run is never free — usage printed before the kill is counted; a run that reported none counts as the ASSUMED amount, the spend line says so, and the token cap then refuses"
+  },
+  {
+    "name": "a per-question budget under one cent is accepted",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "if field == \"budget_usd\" and v < 0.01:",
+        "if field == \"budget_usd\" and v < 0.0:"
+      ]
+    ],
+    "expect": "r1: a per-question budget the CLI would be given as 0.00 is refused; one cent is the least"
+  },
+  {
+    "name": "Ctrl-C is no longer a stop: an interrupted watcher leaves its pid file and reads as died",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    signal.signal(signal.SIGINT, _term)      # Ctrl-C on a foreground --watch is a stop on purpose, not a death\n",
+        ""
+      ]
+    ],
+    "expect": "r1: Ctrl-C is a stop on purpose — the watcher ends, leaves no pid file, and is not read as died"
   }
 ]

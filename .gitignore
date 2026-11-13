@@ -190,6 +190,8 @@ docs/explainers/.serve.pid
 docs/explainers/questions.md
 # backlog #625: the Ask answerer's runtime state — its ledger (question text), inbox, log, lock and pid.
 # Same reason as questions.md above: a queue on one machine, not an artifact, in a PUBLIC repository.
+# ⚠ This does NOT keep a question out of the repository: the answer block written into the PAGE quotes the
+# question, and pages are tracked (the rule three lines up — the Q&A that matters is in the artifact).
 docs/explainers/.ask/
 
 # backlog #362: the in-flight ledger — one line per running background job, what it is FOR and what to do

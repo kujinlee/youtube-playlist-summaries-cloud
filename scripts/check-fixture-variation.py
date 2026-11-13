@@ -255,7 +255,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         # backlog #122's round-1 repair added a containment case against a NESTED root, which is
         # what made the parameter take more than one value. A debt that has become payable and is
         # not paid is what `widened_debt_drift` refuses in the other direction two files over.
-        'format_question_entry.now', 'revision.p',),
+        'revision.p',),
     'gen-backlog-page.py': (
         'build.edited', 'build.generated_at', 'build.sha', 'build.stamp',
         'link_contrast_errors.minimum', 'plain.text', 'report_run.rows',

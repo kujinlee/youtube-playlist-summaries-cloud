@@ -247,6 +247,11 @@ one additionally if a shareable read-only URL is wanted, but the served page is 
 
 ## 5. ARM THE PUSH LOOP, or the Send button is lying
 
+⛔ **If the Ask answerer is running (§6b; `python3 scripts/ask_answerer.py --status` says so), a question this
+monitor reports is the ANSWERER's, not yours.** Do not answer it from the event: the event carries no
+question id, and the answerer has usually claimed it within a second. The page's *Ask* panel shows what
+happened; a NOT ANSWERED line there, and `--status`, give the id that `--claim ID` and `--retry ID` take.
+
 After starting the server, open a persistent monitor on the questions file:
 
 ```
@@ -390,6 +395,8 @@ path, then look at the **notification text**. The DOM said "✓ Sent" in both br
 
 A page whose answers live in the transcript has the problem it was built to solve. Add the answer
 under the section the question came from, recompose, and say in chat that the page is updated.
+⛔ **While the Ask answerer runs (§6b), claim the question first** — `python3 scripts/ask_answerer.py --claim ID`
+must exit 0 — or the answerer may answer it too. With the answerer off, nothing here changes.
 
 The server **injects** a live-reload poller into every HTML it serves (`GET /_rev?p=<page>`), so the
 answer appears where the question was asked with no manual refresh. Three things worth knowing:
@@ -424,10 +431,22 @@ per question. **It is OFF unless someone starts it**, and with it off everything
   when the copy being served does not hold it (a page served from `origin/master`, a page with no fragment).
   The log is `~/explainers/.ask/answerer.log`.
 - **Cost is capped and shown.** Per question: 10 turns, $0.75, 240 s. Per day: 40 questions, 3,000,000
-  tokens. Each has an `ASK_ANSWERER_*` variable. A question past a cap is refused before any run.
-- **Bounds.** A question asked while no answerer ran is not answered by a later start (`--retry ID` or
-  `--once` does it). A question asked on `/` or `/latest` names no page and is recorded NOT ANSWERED. The
-  panel reaches a page only after the server restarts on a copy that has it.
+  tokens. Each has an `ASK_ANSWERER_*` variable. A question past a cap is refused before any run. A run that
+  was killed or stopped before it reported its usage counts as 250,000 tokens — an assumption, and the
+  spend line says how many runs it covers.
+- **The answer quotes the question, and a committed page is PUBLIC.** The answer block opens with the
+  reader's words, in the fragment and the composed page, which are tracked files. That is §6's rule (the
+  Q&A that matters is in the page) and it holds for a session's answers too: read the block before
+  committing the page.
+- **A question costs a run, so the server takes one only from its own pages.** A POST whose `Origin` or
+  `Host` is not this machine (`127.0.0.1`, `localhost`, `::1`) is refused with 403. A reader's text cannot
+  start a second entry or name another page: a `---` line in it is rewritten before it is stored.
+- **Bounds.** A question asked while the answerer was stopped ON PURPOSE is skipped by the next start, not
+  answered: `--status` lists the skipped ones, a session may `--claim` one, and `--retry ID` hands one to
+  the answerer. NOT skipped: a question asked after the answerer died (a kill, a crash, a reboot), and one
+  that failed or was retried — the page said NOT ANSWERED about each, and the next start answers it. A
+  question asked on `/` or `/latest` names no page and is recorded NOT ANSWERED. The panel reaches a page
+  only after the server restarts on a copy that has it.
 
 ## 6a. Deliver the URL, not a path
 

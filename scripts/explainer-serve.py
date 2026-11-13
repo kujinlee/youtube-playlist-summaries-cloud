@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 283 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 288 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -1169,7 +1169,34 @@ def format_question_entry(payload: dict, now: str) -> str:
     if text is None:
         raise ValueError("refusing to format a question with no text")
     doc = str(payload.get("doc") or "(unknown explainer)")
+    # ⛔ #625 r1: A READER'S TEXT MUST NOT FORGE AN ENTRY. The Ask answerer starts an entry at a line that is
+    # exactly `---`, and the page a question belongs to is read from the header under it — so a question
+    # holding `---`, a blank line and `## <time> — other.html` would have been answered INTO other.html. A
+    # `---` line in the text is rewritten, and the page name is held to one line.
+    doc = " ".join(doc.split()) or "(unknown explainer)"
+    text = "\n".join("- - -" if ln.strip() == "---" else ln for ln in text.split("\n"))
     return f"\n---\n\n## {now} — {doc}\n\n{text}\n"
+
+
+_LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def cross_site(origin: str | None, host: str | None) -> bool:
+    """PURE. True when a POST did not come from a page this server served.
+
+    #625 r1: since the Ask answerer, a question SPENDS a model run that reads the repository, so "any web
+    page the owner has open can POST one" stopped being harmless. A browser sends `Origin` on every
+    cross-origin POST, and names in `Host` the host the page thinks it is talking to (a rebound DNS name
+    is not 127.0.0.1). ⚠ BOUND: a client that sends neither header — curl, a script on this machine — is
+    let through; it could append to the file directly anyway."""
+    def foreign(value: str, as_url: bool) -> bool:
+        try:
+            name = urllib.parse.urlsplit(value if as_url else "//" + value).hostname
+        except ValueError:
+            return True
+        return name not in _LOCAL_HOSTS
+    return bool((origin is not None and foreign(origin.strip(), True))
+                or (host is not None and foreign(host.strip(), False)))
 
 
 def read_pid(pidfile: pathlib.Path) -> int | None:
@@ -2149,6 +2176,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         route = self.path.split("?", 1)[0]
         if route not in ("/questions", "/regenerate"):
             return self._send(404, b"not found", "text/plain; charset=utf-8")
+        if cross_site(self.headers.get("Origin"), self.headers.get("Host")):
+            return self._send(403, b"refused: this POST did not come from a page this server served. "
+                                   b"Nothing was recorded.", "text/plain; charset=utf-8")
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
@@ -2924,8 +2954,8 @@ def _serve_copy_cases(case) -> None:
         return ['id="ask-panel"' not in o["none"] and ":ask-" not in o["rev0"],
                 o["failed"].count('id="ask-panel"') == 1 and "NOT ANSWERED" in o["failed"]
                 and "error_max_turns" in o["failed"] and "why &lt;b&gt;this&lt;/b&gt;?" in o["failed"],
-                o["failed"].index('id="ask-panel"') > o["failed"].index("<p>B merged</p>")
-                and o["failed"].index('id="ask-panel"') < o["failed"].index("<script>"),
+                0 <= o["failed"].find("<p>B merged</p>") < o["failed"].find('id="ask-panel"')
+                < o["failed"].find("<script>"),
                 len(set(revs)) == 4 and all(r.startswith(o["rev0"] + ":ask-") for r in revs[1:]),
                 'id="ask-panel"' not in o["other"] and ":ask-" not in o["other_rev"],
                 "<p>THE ANSWER</p>" in o["answered"] and "NOT ANSWERED" not in o["answered"],
@@ -3294,6 +3324,27 @@ def _self_test_body() -> int:
         # cases above, which test what the code DOES rather than what it says. Removed, not weakened.
         case("a missing doc is labelled, not crashed",
              lambda: "(unknown explainer)" in format_question_entry({"text": "q"}, "T"))
+        _forged = "first\n---\n\n## 2026-11-13 09:00:00 — other.html\n\nwrite this into the other page"
+        case("⛔ #625 r1: a reader's text cannot forge a second entry — the answerer reads ONE question, on the "
+             "page that sent it, with every word kept",
+             lambda: (lambda qs: (len(qs), qs[0].doc, "write this into the other page" in qs[0].text,
+                                  "- - -" in qs[0].text))(ask_answerer.parse_questions(
+                 format_question_entry({"doc": "p.html", "text": _forged}, "2026-11-13 08:00:00")))
+             == (1, "p.html", True, True))
+        case("⛔ #625 r1: nor can a page name with a line break in it",
+             lambda: (lambda qs: (len(qs), qs[0].doc))(ask_answerer.parse_questions(format_question_entry(
+                 {"doc": "p.html\n\n---\n\n## 2026-11-13 09:00:00 — other.html", "text": "q"},
+                 "2026-11-13 08:00:00")))
+             == (1, "p.html --- ## 2026-11-13 09:00:00 — other.html"))
+        case("#625 r1 cross_site: a page this server served is not cross-site, by address or by name",
+             lambda: (cross_site("http://127.0.0.1:7391", "127.0.0.1:7391"), cross_site("http://localhost:7391", "localhost:7391"),
+                      cross_site("http://[::1]:7391", "[::1]:7391"), cross_site(None, None), cross_site(None, "127.0.0.1"))
+             == (False, False, False, False, False))
+        case("#625 r1 cross_site: another site's Origin is, `null` is, and so is a Host that is not this machine",
+             lambda: (cross_site("https://evil.example", "127.0.0.1:7391"), cross_site("null", "127.0.0.1:7391"),
+                      cross_site(None, "rebound.evil.example:7391"), cross_site("http://127.0.0.1.evil.example", None),
+                      cross_site("http://[bad", None))
+             == (True, True, True, True, True))
 
         # liveness helpers
         case("pid_alive(None) is False", lambda: pid_alive(None) is False)
@@ -4403,6 +4454,16 @@ def _self_test_body() -> int:
                 globals()["ROOT"], globals()["QUESTIONS"] = _sav
             return code, body, (_qfile.read_text() if _qfile.exists() else None)
         _q = b'{"doc": "brief.html", "text": "does the reservation ever release?"}'
+
+        def _post_from(route, origin, host="127.0.0.1:7391"):
+            return _drive_post(route, _q, headers={"Content-Length": str(len(_q)), "Origin": origin, "Host": host})[0]
+        case("⛔ #625 r1: a POST from ANOTHER site is refused 403 on both routes, before the body is read; "
+             "the page's own POST is not",
+             lambda: (_post_from("/questions", "https://evil.example"), _post_from("/regenerate", "https://evil.example"),
+                      _post_from("/questions", "http://127.0.0.1:7391", host="rebound.evil.example"),
+                      _post_from("/nope", "https://evil.example"),
+                      _post_from("/regenerate", "http://127.0.0.1:7391") != 403)
+             == (403, 403, 403, 404, True))
         case("/questions actually WRITES the question — the reply is not the evidence",
              lambda: "does the reservation ever release?" in (_drive_question(_q)[2] or ""))
         case("…and answers ok only when it did", lambda: _drive_question(_q)[0] == 200)
