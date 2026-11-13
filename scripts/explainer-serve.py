@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 277 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 282 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -112,9 +112,18 @@ def port_from(raw: str) -> tuple[int, str]:
     v = raw.strip()
     if not v:
         return 7391, ""
-    if not v.isdigit() or not 1 <= int(v) <= 65535:
-        return 7391, f"EXPLAINER_SERVE_PORT={raw!r} is not a port (an integer 1..65535). NOT STARTED."
-    return int(v), ""
+    bad = f"EXPLAINER_SERVE_PORT={raw[:40]!r} is not a port (an integer 1..65535). NOT STARTED."
+    # r2 CODEX m4: `str.isdigit` is true of '²' and of every Unicode digit, and `int()` refuses a string past
+    # Python's conversion limit (4,300 digits) — so the shape is checked in ASCII, and `int()`'s refusal is caught.
+    if not (v.isascii() and v.isdigit()):
+        return 7391, bad
+    try:
+        n = int(v)
+    except ValueError:
+        return 7391, bad
+    if not 1 <= n <= 65535:
+        return 7391, bad
+    return n, ""
 
 
 PORT, PORT_ERROR = port_from(os.environ.get("EXPLAINER_SERVE_PORT", ""))
@@ -992,12 +1001,21 @@ def lexical_candidates(url_path: str, root: pathlib.Path) -> list[pathlib.Path]:
     return [p for p in out if os.path.lexists(p)]
 
 
+def retired_name(url_path: str) -> str | None:
+    """PURE. The archive url when the NAME a url asks for is a retired page's (casefolded), else None — policy, the
+    same on every copy, so `retirement` and `decide` ask THIS one function (r2: no second copy of the rule)."""
+    name = requested_name(url_path)
+    if name is not None and name.casefold() in _RETIRED_FOLDED:
+        return _RETIRED_FOLDED[name.casefold()]
+    return None
+
+
 def retirement(url_path: str, root: pathlib.Path) -> tuple[str, str | None]:
     """A request's verdict: a retired NAME (even with no file behind it) is retired; otherwise the very
     candidate the server would serve (`served_candidate`) is `classify`d. -> ("retired", url) | ("refused", why) | ("live", None)."""
-    name = requested_name(url_path)
-    if name is not None and name.casefold() in _RETIRED_FOLDED:
-        return "retired", _RETIRED_FOLDED[name.casefold()]
+    archive = retired_name(url_path)
+    if archive is not None:
+        return "retired", archive
     sc = served_candidate(url_path, root)
     if sc is not None:
         return classify(sc[0], root)           # EXACTLY what the server would serve, walked unresolved
@@ -1535,9 +1553,13 @@ class CopyFetcher:
 def decide(url_path: str, setup: SourceSetup, *, note: str = "", want_local: bool = False) -> Decision:
     """THE decision for one request (backlog #627) — the GET, `/_rev` and a retirement verdict all come from here,
     so no route decides from the working tree alone before master is consulted (r1 Codex 3+4)."""
+    # ⟳ r2 (Codex M1): only the retired NAME a url asks for is decided before master — that is policy, the same on
+    # every copy. Every verdict the WORKING TREE produces (a symlink or hard link to a retired page: "retired"; an
+    # escaping or looping link: "refused") is local metadata, and loses to a regular page in master's tree below.
+    archive = retired_name(url_path)
+    if archive is not None:
+        return Decision("retired", None, archive)
     verdict, info = retirement(url_path, setup.root)
-    if verdict == "retired":                              # a retired page redirects whatever master holds
-        return Decision(verdict, None, info)
     lpath = resolve_page(url_path, setup.root) if verdict == "live" else None
     local = _read_local(lpath) if lpath is not None else None
     lrel = None
@@ -1661,6 +1683,8 @@ _STATE: dict[str, object] = {}
 # its own location, which a staged copy outside git cannot protect). A second guard, independent of
 # regen-pages' refusal: a mutant that disables either one leaves the other standing. ⟳ r1 Claude F1: the round-0
 # guard refused EVERY fetcher, so the handler's fetcher paths could not be tested at all.
+# ⟳ r2 (Codex M2): the CHECKOUT the fetcher moves — the serve copy, `serve_copy_path()` — must be the suite's too:
+# r1 checked only the checkout fetched FROM, so a copy path outside the suite was cloned and checked out.
 _IN_SUITE = False
 _STATE_GUARD = threading.Lock()
 
@@ -1686,7 +1710,8 @@ def serve_state() -> tuple[SourceSetup, CopyFetcher | None]:
             _STATE["setup"] = setup
             _STATE["fetcher"] = (CopyFetcher(lambda: _regen().refresh_serve_copy(setup.checkout))
                                  if setup.mode == "main" and setup.checkout is not None
-                                 and (not _IN_SUITE or _suite_owns(setup.checkout)) else None)
+                                 and (not _IN_SUITE or (_suite_owns(setup.checkout) and _suite_owns(setup.copy)))
+                                 else None)
             _STATE["root"] = ROOT
         return _STATE["setup"], _STATE["fetcher"]  # type: ignore[return-value]
 
@@ -1900,12 +1925,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path in ("/", "/latest"):
             # ⟳ backlog #627 r1 (Codex 3): both copies' pages, so a page merged but not in the working tree is
             # listed and can be /latest. The index names its source too.
-            pages, source = page_list(serve_state()[0])
+            # ⟳ r2 (Codex M3): both routes POKE the fetcher first, exactly as a page GET does, and the index carries
+            # the fetcher's note (a failed fetch, one still running) — so a server opened on `/` alone still sees
+            # a merge, and a failed fetch is never silent on the page that lists everything.
+            setup, fetcher = serve_state()
+            if fetcher is not None:
+                fetcher.poke(FETCH_WAIT)
+            note = fetcher.note() if fetcher else ""
+            pages, source = page_list(setup)
+            source = " · ".join(x for x in (source, note) if x)
             if path == "/":
                 return self._send(200, index_html(ROOT, pages, source).encode(), "text/html; charset=utf-8")
             target = latest_of(pages)
             if not target:
-                return self._send(404, b"no explainers yet", "text/plain; charset=utf-8")
+                return self._send(404, " · ".join(x for x in ("no explainers yet", note) if x).encode(),
+                                  "text/plain; charset=utf-8")
             self.send_response(302)
             self.send_header("Location", target)
             self.end_headers()
@@ -2551,6 +2585,35 @@ def _serve_copy_cases(case) -> None:
     case("⭐ #627 r1 (Codex 4): a local LINK over a page master has serves master's; one master lacks stays refused",
          lambda: world(lambda **w: _local_link(**w)) == (("serve", "master", "<p>A v1</p>"), ("refused", None)))
 
+    # r2 Codex M1 — the CLASS, not the escaping instance: EVERY verdict the working tree produces loses to master's
+    # regular page — a symlink to the retired page, a HARD link to it, an escaping link. Only the retired NAME the
+    # url asks for is policy, decided before master; and a retired link master lacks stays retired.
+    def _local_retired(root, sync, setup, merge, **_):
+        merge("work-lines.html", "<p>work-lines on master</p>", "a retired page master still holds")
+        sync()
+        (root / "work-lines.html").write_text("<p>stale work-lines</p>")
+        a = root / "2026-01-01-topic-a.html"
+        a.unlink()
+        a.symlink_to("work-lines.html")
+        (root / "2026-01-04-brief-y.html").symlink_to("work-lines.html")
+        verdicts = []
+        for u in ("/2026-01-01-topic-a.html", "/2026-01-04-brief-y.html", "/work-lines.html", "/WORK-LINES"):
+            d = decide(u, setup())
+            verdicts.append((d.verdict, d.served.kind if d.served else d.info,
+                             d.served.body.decode() if d.served else None))
+        a.unlink()
+        os.link(root / "work-lines.html", a)                   # a HARD link: no symlink chain to walk
+        d = decide("/2026-01-01-topic-a.html", setup())
+        verdicts.append((d.verdict, d.served.kind if d.served else d.info, d.served.body.decode() if d.served else None))
+        return verdicts
+    case("⭐ #627 r2 (Codex M1): a local symlink or HARD link to the retired page loses to master's page; the retired "
+         "NAME and a link master lacks still redirect",
+         lambda: world(lambda **w: _local_retired(**w))
+         # the 3rd and 4th: the retired NAME redirects though master holds a regular `work-lines.html`
+         == [("serve", "master", "<p>A v1</p>"), ("retired", "/work-lines-archive", None),
+             ("retired", "/work-lines-archive", None), ("retired", "/work-lines-archive", None),
+             ("serve", "master", "<p>A v1</p>")])
+
     # Claude F3 + F5: a COMMITTED local edit is not master's page — it gets the bar, and each label says what it is.
     def _committed(root, main, work, sync, setup, merge, **_):
         sync()
@@ -2636,6 +2699,62 @@ def _serve_copy_cases(case) -> None:
          lambda: [(p, bool(e)) for p, e in map(port_from, ("", " 9001 ", "8000", "abc", "0", "70000", "-5"))]
          == [(7391, False), (9001, False), (8000, False), (7391, True), (7391, True), (7391, True), (7391, True)])
 
+    # r2 CODEX m4 — the CLASS: every string `isdigit` accepts but `int` refuses or ASCII does not spell, and a digit
+    # run past Python's conversion limit. Each is an error said, never a raise.
+    def _port_class():
+        out = []
+        for raw in ("²", "٣٠٠٠", "１２３", "9" * 4301, "65536", "0" * 4301, "000080", "65535"):
+            try:
+                p, e = port_from(raw)
+                out.append((p, bool(e)))
+            except Exception as exc:
+                out.append(type(exc).__name__)
+        return out + [port_from(" 8080 ")]           # a second call site: surrounding blanks are trimmed
+    case("⭐ #627 r2 (Codex m4) port_from: a Unicode digit, a 4301-digit run → an ERROR, never a raise",
+         lambda: _port_class() == [(7391, True)] * 6 + [(80, False), (65535, False), (8080, "")])
+
+    # r2 Codex M2 — the CHECKOUT the server's fetcher moves is the suite's too. An outside copy path gets NO fetcher
+    # (nothing is cloned there); the suite's own gets one, and it is the path EXPLAINER_SERVE_COPY names (identity:
+    # a `serve_copy_path` that answers anything else — Codex's mutant — reddens this case).
+    def _copy_guard(root, copy, **_):
+        real = (globals()["ROOT"], dict(_STATE), os.environ.get("EXPLAINER_SERVE_COPY"))
+        import shutil
+        import tempfile as _tpf
+        # BESIDE the suite's temp dir (its parent), never inside it — `t` itself is inside it.
+        outside = (pathlib.Path(os.path.dirname(_tpf.gettempdir())) / f"not-the-suites-627-copy-{os.getpid()}"
+                   / "master")
+        globals()["ROOT"] = root
+        try:
+            got = []
+            for c in (outside, copy):
+                os.environ["EXPLAINER_SERVE_COPY"] = str(c)
+                _STATE.clear()
+                setup, f = serve_state()
+                got.append((setup.copy == c, f is not None))
+            return got, os.path.lexists(outside.parent)
+        finally:
+            shutil.rmtree(outside.parent, ignore_errors=True)
+            globals()["ROOT"] = real[0]
+            _STATE.clear()
+            _STATE.update(real[1])
+            if real[2] is None:
+                os.environ.pop("EXPLAINER_SERVE_COPY", None)
+            else:
+                os.environ["EXPLAINER_SERVE_COPY"] = real[2]
+    case("⭐ #627 r2 (Codex M2): inside the suite an outside serve copy gets NO fetcher; the suite's copy is the one "
+         "EXPLAINER_SERVE_COPY names, and gets one",
+         lambda: world(lambda **w: _copy_guard(**w)) == ([(True, False), (True, True)], False))
+
+    def _port_at_import():
+        import tempfile as _tpf
+        with _tpf.TemporaryDirectory() as _pt:
+            env = {**os.environ, "EXPLAINER_SERVE_PORT": "²", "EXPLAINER_SERVE_ROOT": _pt}
+            r = subprocess.run([sys.executable, str(pathlib.Path(__file__).resolve()), "--status"],
+                               capture_output=True, text=True, timeout=60, env=env)
+            return r.returncode != 0, "Traceback" in r.stderr, "is not a port" in r.stderr
+    case("#627 r2 (Codex m4) EXPLAINER_SERVE_PORT=² at import: a FAIL line, not a traceback",
+         lambda: _port_at_import() == (True, False, True))
+
     # ── Codex 5, Claude F1 + the Claude half's handler mutants: the routes THROUGH do_GET, on a temp clone ──
     def _drive(url):
         got = {}
@@ -2718,6 +2837,47 @@ def _serve_copy_cases(case) -> None:
          "bar, ?source=local, a failed fetch and a running one all reach the response",
          lambda: _handler_want(world(lambda **w: _through_handler(**w))) == [True] * 9)
 
+
+    # r2 Codex M3 — the CLASS: EVERY route that reads master's copy pokes the fetcher and says its note. `/` and
+    # `/latest` are driven ALONE on a fresh server state (no page GET primes the copy), and the pokes are COUNTED.
+    def _index_routes_fetch(root, copy, sync, merge, origin, **_):
+        real = (globals()["ROOT"], dict(_STATE), os.environ.get("EXPLAINER_SERVE_COPY"), globals()["FETCH_WAIT"])
+        globals()["ROOT"], globals()["FETCH_WAIT"] = root, 0.05
+        os.environ["EXPLAINER_SERVE_COPY"] = str(copy)
+        try:
+            out = []
+            sync()                                        # the copy at A; then master gains a page B
+            for route, page in (("/latest", "2026-01-02-topic-b.html"), ("/", "2026-01-03-topic-c.html")):
+                merge(page, f"<p>{page}</p>", page)
+                _STATE.clear()                            # a fresh server: nothing has been fetched by it
+                _setup, f = serve_state()
+                pokes, real_poke = [], f.poke
+                f.poke = lambda wait, _rp=real_poke: (pokes.append(wait), _rp(wait))[1]
+                _drive(route)
+                if f.thread is not None:
+                    f.thread.join(30)
+                got = _drive(route)
+                out.append((len(pokes), got[2] if route == "/latest" else page in got[1]))
+            origin.rename(origin.with_name("gone.git"))
+            _STATE.clear()
+            _setup, f = serve_state()
+            _drive("/")
+            if f.thread is not None:
+                f.thread.join(30)
+            out.append("FAILED" in _drive("/")[1])
+            return out
+        finally:
+            globals()["ROOT"], globals()["FETCH_WAIT"] = real[0], real[3]
+            _STATE.clear()
+            _STATE.update(real[1])
+            if real[2] is None:
+                os.environ.pop("EXPLAINER_SERVE_COPY", None)
+            else:
+                os.environ["EXPLAINER_SERVE_COPY"] = real[2]
+    case("⭐ #627 r2 (Codex M3): `/` and `/latest` ALONE poke the fetcher, list a page merged since, and the index "
+         "says a FAILED fetch",
+         lambda: world(lambda **w: _index_routes_fetch(**w))
+         == [(2, "/2026-01-02-topic-b.html"), (2, True), True])
 
 
 def _self_test() -> int:

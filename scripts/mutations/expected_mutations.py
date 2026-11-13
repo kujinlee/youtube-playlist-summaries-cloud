@@ -1425,7 +1425,11 @@ EXPECTED_MUTATIONS = {
     # note, poke, ?source=local, /_rev's resolver, kind and failed flag, the suite whitelist, an unreadable object,
     # / and /latest from master, a local link, the merge-base ancestor, case folding, the bar's quoted href, a poke
     # never waiting on another's fetch, a running fetch said, the port range, the 'committed' label, the base prefix.
-    "scripts/explainer-serve.py": 105,
+    # ⟳ #627 review round 2: 105 -> 112, none retired (four re-anchored: the fetcher guard, the page poke, the
+    # index's page list, the port range) — a local retired verdict losing to master's page and the retired name
+    # asked first (Codex M1), the fetcher's copy guard (M2), the index's poke and its fetch note (M3), and
+    # port_from's ASCII shape and caught int() (m4).
+    "scripts/explainer-serve.py": 112,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -2018,7 +2022,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #627: 60 -> 64 — the serve copy checked out at the built sha, the server's fetch really fetching
     # and refusing this repository inside the suite, and main() printing the serve-copy line.
     # ⟳ #627 review round 1: 64 -> 65 — the fetch's second guard: only a repo inside the suite's own temp dir.
-    "scripts/regen-pages.py": 65,
+    # ⟳ #627 review round 2 (Codex M2): 65 -> 72 — every WRITER refuses a destination outside the suite's temp dir:
+    # the fetch target, the clone, a run's private dir, the tree lock, the serve copy, the shared check itself, and
+    # Codex's own mutant (serve_copy_path answering an outside dir), killed by an identity case.
+    "scripts/regen-pages.py": 72,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
