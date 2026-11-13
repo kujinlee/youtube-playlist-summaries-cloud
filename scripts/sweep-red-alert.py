@@ -3,7 +3,7 @@
 (backlog #330, #495, #619). It NEVER closes one.
 
     python3 scripts/sweep-red-alert.py              # in CI: reads SWEEP, SHA, EVENT, RUN_URL, RECORD_DIR; acts via gh
-    python3 scripts/sweep-red-alert.py --self-test  # 41 cases
+    python3 scripts/sweep-red-alert.py --self-test  # 42 cases
 
 WHY THIS EXISTS. A pull request's sweep is diff-scoped, so what it does not select is measured only by the full
 sweep on master, AFTER merge. A red full sweep therefore opens an issue labelled `sweep-red` (or comments on the
@@ -80,9 +80,16 @@ def _is_int(v) -> bool:
     return type(v) is int   # ⛔ not `isinstance`: `True` is an int, and a shard numbered `true` is not shard 1
 
 
+class Unreadable(str):
+    """A record file that did not parse: its reason, carried in place of the record so `check_records` reports it
+    AS ITSELF. A distinct type, so a record whose JSON is merely a string is still "not a shard record"."""
+
+
 def record_problem(record) -> "str | None":
     """PURE. Why `record` is not a shard record of `RECORD_SCHEMA`, or None. Exactly the five keys; `shard` and
     `total` integers with 1 <= shard <= total; `complete` a bool; `flaky` a list of non-empty strings."""
+    if isinstance(record, Unreadable):
+        return f"unreadable: {record}"
     if not isinstance(record, dict) or tuple(sorted(record)) != RECORD_KEYS:
         return f"not a shard record: its keys are {sorted(record) if isinstance(record, dict) else type(record).__name__}, not {list(RECORD_KEYS)}"
     if record["schema"] != RECORD_SCHEMA or not _is_int(record["schema"]):
@@ -133,6 +140,16 @@ def check_records(records: list) -> tuple[list[str], list[str]]:
     return names, problems
 
 
+def _no_duplicate_keys(pairs: list) -> dict:
+    """`json.loads` keeps the LAST of two equal keys, so `{"flaky": ["m"], "flaky": []}` would read as no FLAKY name
+    (round 1 Codex). A record that says two things is refused as unreadable, never read as either."""
+    keys = [k for k, _ in pairs]
+    dup = sorted({k for k in keys if keys.count(k) > 1})
+    if dup:
+        raise ValueError(f"duplicate key(s) {dup}")
+    return dict(pairs)
+
+
 def read_records(record_dir: str) -> tuple[list[str], list[str]]:
     """IO. `check_records` over every `*.json` file under `record_dir`, at ANY depth (each artifact downloads into a
     subdirectory of its own name, backlog #619 R1 (b)). A file that does not parse is a problem, never skipped.
@@ -144,9 +161,9 @@ def read_records(record_dir: str) -> tuple[list[str], list[str]]:
     for f in sorted(root.rglob("*.json")) if root.is_dir() else []:
         where = f.relative_to(root).as_posix()
         try:
-            records.append((where, json.loads(f.read_text(encoding="utf-8"))))
+            records.append((where, json.loads(f.read_text(encoding="utf-8"), object_pairs_hook=_no_duplicate_keys)))
         except (OSError, ValueError) as e:
-            records.append((where, f"unreadable: {e}"))
+            records.append((where, Unreadable(e)))
     return check_records(records)
 
 
@@ -413,6 +430,12 @@ def _self_test_body() -> int:
         case("...a record that does not PARSE is a problem naming its file, and its shard is then missing",
              (_nm, [p.split(":", 1)[0] for p in _pr], any("no record (shard 2)" in p for p in _pr)),
              (["a"], ["sweep-record-1/record.json", "1 of 2 shards have no record (shard 2)"], True))
+        (_d / "sweep-record-1" / "record.json").write_text(
+            '{"schema": 1, "shard": 2, "total": 2, "complete": true, "flaky": ["c"], "flaky": []}', encoding="utf-8")
+        _nm, _pr = read_records(_fd)
+        case("...a record with a DUPLICATE key is unreadable — `{\"flaky\": [m], \"flaky\": []}` never reads as no FLAKY",
+             (_nm, any(p.startswith("sweep-record-1/record.json: unreadable: duplicate key(s) ['flaky']") for p in _pr)),
+             (["a"], True))
 
     # ── backlog #619 R1: the REAL writer's records, read here — one schema, two scripts, a case between them ──
     _w = _writer()

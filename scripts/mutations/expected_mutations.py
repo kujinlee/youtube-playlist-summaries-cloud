@@ -939,7 +939,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-13 backlog #619 R1: 320 -> 328 — the shard RECORD: its shard not the one sliced by, a not-measured
     # run recorded complete, a truthy non-True flaky counted, a failed write left green, its directory not made, no
     # record built for --record, and --record accepted without --mutate or with --only.
-    "scripts/check-plan-code.py": 328,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 328 -> 329, #619 r1 fold (Claude m2): a not-measured run's record dropping the FLAKY names it reached.
+    "scripts/check-plan-code.py": 329,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -1638,7 +1639,9 @@ EXPECTED_MUTATIONS = {
     # disagree, two records for one shard, an incomplete shard not a problem or its names dropped, a missing shard,
     # a name listed twice, file order, the top level only, an unparseable record skipped, and a pull request that
     # files or is not red. Five entries re-bound: the filing order, the unset guard (now RECORD_DIR), the three M1.
-    "scripts/sweep-red-alert.py": 33,
+    # ⟳ 33 -> 37, #619 r1 fold: a duplicate JSON key kept at its last value and an unreadable record's reason lost
+    # (Codex); a shard above the total and a non-list `flaky` accepted (Claude m1).
+    "scripts/sweep-red-alert.py": 37,
     # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
     # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which

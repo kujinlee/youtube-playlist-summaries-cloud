@@ -4177,5 +4177,18 @@
     "expect": [
       "...--record without --mutate, or with --only, is refused rc 2 and writes nothing"
     ]
+  },
+  {
+    "name": "#619 r1 (Claude m2): a not-measured run's record drops the FLAKY names it reached",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    rows = verdict.mutations if isinstance(verdict, Measured) else verdict.entries\n",
+        "    rows = verdict.mutations if isinstance(verdict, Measured) else []\n"
+      ]
+    ],
+    "expect": [
+      "...a NotMeasured verdict is INCOMPLETE, and still records the FLAKY names it reached"
+    ]
   }
 ]

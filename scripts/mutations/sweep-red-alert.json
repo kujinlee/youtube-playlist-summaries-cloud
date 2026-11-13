@@ -407,7 +407,7 @@
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "            records.append((where, f\"unreadable: {e}\"))",
+        "            records.append((where, Unreadable(e)))",
         "            pass"
       ]
     ],
@@ -439,6 +439,58 @@
     ],
     "expect": [
       "⭐ #619 (c): on a PULL REQUEST a missing record, or none, is RED naming it — still with no gh call"
+    ]
+  },
+  {
+    "name": "#619 r1 (Codex): a duplicate JSON key keeps its last value",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        ", object_pairs_hook=_no_duplicate_keys)",
+        ")"
+      ]
+    ],
+    "expect": [
+      "...a record with a DUPLICATE key is unreadable — `{\"flaky\": [m], \"flaky\": []}` never reads as no FLAKY"
+    ]
+  },
+  {
+    "name": "#619 r1 (Codex): an unreadable record is reported as a non-record, its reason lost",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if isinstance(record, Unreadable):\n        return f\"unreadable: {record}\"\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...a record with a DUPLICATE key is unreadable — `{\"flaky\": [m], \"flaky\": []}` never reads as no FLAKY"
+    ]
+  },
+  {
+    "name": "#619 r1 (Claude m1): a shard above the total is accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "1 <= record[\"shard\"] <= record[\"total\"]):",
+        "1 <= record[\"shard\"]):"
+      ]
+    ],
+    "expect": [
+      "⭐ #619: each malformed record is a problem of its own — wrong keys, schema, range, types, names"
+    ]
+  },
+  {
+    "name": "#619 r1 (Claude m1): a `flaky` that is not a list is accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if not isinstance(record[\"flaky\"], list) or not all(",
+        "    if not all("
+      ]
+    ],
+    "expect": [
+      "⭐ #619: each malformed record is a problem of its own — wrong keys, schema, range, types, names"
     ]
   }
 ]
