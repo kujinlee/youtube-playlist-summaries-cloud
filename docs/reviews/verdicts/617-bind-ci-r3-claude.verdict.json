@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/617-bind-ci-r3-claude.md": "100644 1d269b489af3c3bec104e35bc8e2c67f84a3414a"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "a2c28a43c90eafb90baf07a409b59b2a1ec43e4b",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "r3 Claude half: refute ci_flaky_contract (backlog #617 part 1)",
+  "reason": "claude half filed: 7205 chars, names a2c28a43c90e",
+  "refused": false,
+  "review": "617-bind-ci-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/backlog-627",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

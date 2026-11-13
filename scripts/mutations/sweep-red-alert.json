@@ -475,7 +475,7 @@
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    if any(re.search(rf\"(^|[^\\w$]){var}=\", l) for l in lines[st:end]):",
+        "    if any(re.search(rf\"(?<!\\$)(?<!\\$\\{{)\\b{var}\\b(?!:\\s)\", l) for l in lines[st:end]):",
         "    if False:"
       ]
     ],
@@ -494,6 +494,32 @@
     ],
     "expect": [
       "...r2 Codex m2: the writing step's `env:` BELOW its `run:` is not a false red"
+    ]
+  },
+  {
+    "name": "#617 r3: `${V}` is not allowed as an expansion",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "(?<!\\$)(?<!\\$\\{{)\\b{var}",
+        "(?<!\\$)\\b{var}"
+      ]
+    ],
+    "expect": [
+      "...r3: the allow-list is deliberate — `echo \"SHARD_INDEX=$SHARD_INDEX\"` RAISES; `echo \"$SHARD_INDEX\"` does not"
+    ]
+  },
+  {
+    "name": "#617 r3 Claude m3: any `- ` line, a heredoc's included, starts the step",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "startswith(\"- \") and _indent(lines[i]) < _indent(lines[wi])]",
+        "startswith(\"- \")]"
+      ]
+    ],
+    "expect": [
+      "...r3 Claude m3: a `- ` line inside the writing step's script does not move the step start"
     ]
   }
 ]

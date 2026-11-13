@@ -2,7 +2,7 @@
 """Open or comment on the `sweep-red` issue after a FULL mutation sweep on master (backlog #330). It NEVER closes one.
 
     python3 scripts/sweep-red-alert.py              # in CI: reads SWEEP, SHA, EVENT, RUN_URL, FLAKY_DIR; acts via gh
-    python3 scripts/sweep-red-alert.py --self-test  # 49 cases
+    python3 scripts/sweep-red-alert.py --self-test  # 52 cases
 
 WHY THIS EXISTS. A pull request's sweep is diff-scoped, so what it does not select is measured only by the full
 sweep on master, AFTER merge. A red full sweep therefore opens an issue labelled `sweep-red` (or comments on the
@@ -119,14 +119,19 @@ def ci_flaky_contract(workflow_text: str) -> None:
                          f"the FLAKY file name `read_flaky` reads ({SHARD_FILE!r}) is not proven")
     wi, var = writes[0]
     # ⛔ r1 Claude m3: the variable is read from the step that WRITES the file, never from anywhere in the workflow.
-    st = max([i for i in range(wi) if lines[i].lstrip().startswith("- ")], default=0)
+    # r3 Claude m3: the step's own `- ` line is indented LESS than its script — a `- ` line inside a heredoc is not.
+    st = max([i for i in range(wi) if lines[i].lstrip().startswith("- ") and _indent(lines[i]) < _indent(lines[wi])],
+             default=0)
     # r2 Codex m2: the WHOLE step, so an `env:` written below `run:` still counts.
     end = next((i for i in range(st + 1, len(lines)) if lines[i].strip() and _indent(lines[i]) <= _indent(lines[st])),
                len(lines))
-    # ⛔ r2 Codex M1: `env:` names the value only until the script reassigns it.
-    if any(re.search(rf"(^|[^\w$]){var}=", l) for l in lines[st:end]):
-        raise ValueError(f"the step that writes the shard file reassigns `{var}` in its script: the `env:` value no "
-                         f"longer proves the file name, and `read_flaky` reads {SHARD_FILE.format(0)} ..")
+    # ⛔ r2 Codex M1, r3 Claude M1/m2: `env:` names the value only while the script never touches it. An ALLOW-list,
+    # not a list of reassignment spellings (`=`, `+=`, `++`, `let`, `read`, `unset` — r2+r3 thrashed on that list): in
+    # the step, the name may appear only as an expansion `$V` / `${V`, or as its own `V:` key. Any other mention RAISES,
+    # a harmless `echo "V=$V"` included — a deliberate, named red.
+    if any(re.search(rf"(?<!\$)(?<!\$\{{)\b{var}\b(?!:\s)", l) for l in lines[st:end]):
+        raise ValueError(f"the step that writes the shard file mentions `{var}` other than as `${var}`: only an "
+                         f"expansion keeps the `env:` value the file name, and `read_flaky` reads {SHARD_FILE.format(0)} ..")
     if not any(re.fullmatch(rf"\s*{var}:\s*([\"']?)\$\{{\{{\s*strategy\.job-index\s*\}}\}}\1\s*", l)
                for l in lines[st:end]):
         raise ValueError(f"the shard file is named by `${var}`, which is not `${{{{ strategy.job-index }}}}`: "
@@ -465,6 +470,16 @@ def _self_test_body() -> int:
          (_contract(_real.replace('/sweep-flaky/shard-$SHARD_INDEX.txt"', '/sweep-flaky/shard-$SHARD_INDEX.txt".bak')),
           _contract(_real.replace('/sweep-flaky/shard-$SHARD_INDEX.txt"', '/sweep-flaky/shard-$SHARD_INDEX.txt.bak"'))),
          ("raised", "raised"))
+    _grep = "          grep -F 'mutation FLAKY — '"
+    case("⭐ r3 Claude M1: `((V++))`, `let V++`, `V+=1`, `read V`, `unset V` in the writing step each RAISE",
+         [_contract(_real.replace(_grep, "          " + x + "\n" + _grep))
+          for x in ("((SHARD_INDEX++))", "let SHARD_INDEX++", "SHARD_INDEX+=1", "read SHARD_INDEX", "unset SHARD_INDEX")],
+         ["raised"] * 5)
+    case("...r3: the allow-list is deliberate — `echo \"SHARD_INDEX=$SHARD_INDEX\"` RAISES; `echo \"$SHARD_INDEX\"` does not",
+         (_contract(_real.replace(_grep, '          echo "SHARD_INDEX=$SHARD_INDEX"\n' + _grep)),
+          _contract(_real.replace(_grep, '          echo "${SHARD_INDEX}"\n' + _grep))), ("raised", "ok"))
+    case("...r3 Claude m3: a `- ` line inside the writing step's script does not move the step start",
+         _contract(_real.replace(_grep, "          cat <<'MD'\n          - shard summary\n          MD\n" + _grep)), "ok")
     _syn = ("jobs:\n  sweep:\n    steps:\n      - name: shard\n        run: |\n          " + _wr + "\n"
             "        env:\n          SHARD_INDEX: ${{ strategy.job-index }}\n  alert:\n    steps:\n      - " + DOWNLOAD_STEP[2:]
             + "\n        uses: actions/download-artifact@v4\n        with:\n          merge-multiple: true\n")
