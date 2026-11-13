@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 256 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 257 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -1425,6 +1425,10 @@ def _generated(p: pathlib.Path) -> bool:
 
 
 _STATE: dict[str, object] = {}
+# ⛔ Set by `_self_test`: the suite's cases drive `do_GET` against the real ROOT, so inside it the server builds NO
+# fetcher. A second guard, independent of regen-pages' own refusal: a mutant that disables either one leaves the
+# other standing, so no case can fetch into the real repository (one did, under a single-guard design).
+_IN_SUITE = False
 _STATE_GUARD = threading.Lock()
 
 
@@ -1438,7 +1442,7 @@ def serve_state() -> tuple[SourceSetup, CopyFetcher | None]:
             setup = source_setup(ROOT, _regen().serve_copy_path())
             _STATE["setup"] = setup
             _STATE["fetcher"] = (CopyFetcher(lambda: _regen().refresh_serve_copy(setup.checkout))
-                                 if setup.mode == "main" and setup.checkout is not None else None)
+                                 if setup.mode == "main" and setup.checkout is not None and not _IN_SUITE else None)
         return _STATE["setup"], _STATE["fetcher"]  # type: ignore[return-value]
 
 
@@ -1938,6 +1942,7 @@ def _serve_copy_cases(case) -> None:
     case("⛔ #627: inside the suite the server's fetch REFUSES the real repository (no case fetches into it)",
          _real_fetch_refused)
 
+
     # ── choose_source: the rule, each outcome against an ADJACENT input that must not give it ──
     case("#627 choose_source: a page master does not have is the working tree's",
          lambda: (choose_source(b"L", b"L", None), choose_source(b"L", b"L", b"L")) == ("local", "master"))
@@ -2126,6 +2131,21 @@ def _serve_copy_cases(case) -> None:
     case("#627: a FAILED fetch serves the LAST copy and the footer says so",
          lambda: world(lambda **w: _failed_fetch_keeps_copy(**w)) == (True, True, True))
 
+    def _no_fetcher_in_suite(root, **_):
+        # A MAIN-mode checkout (a temp clone, never this repository): outside the suite it would get a fetcher.
+        real_root, real_state = globals()["ROOT"], dict(_STATE)
+        globals()["ROOT"] = root
+        _STATE.clear()
+        try:
+            setup, fetcher = serve_state()
+            return setup.mode, setup.checkout is not None, fetcher
+        finally:
+            globals()["ROOT"] = real_root
+            _STATE.clear()
+            _STATE.update(real_state)
+    case("⛔ #627: inside the suite the server builds NO fetcher for a main checkout — a second, independent guard",
+         lambda: world(lambda **w: _no_fetcher_in_suite(**w)) == ("main", True, None))
+
     def _no_copy_said(setup, **_):
         sp = served_page("/2026-01-01-topic-a.html", setup())
         return sp.kind, "NO MASTER COPY" in sp.label
@@ -2141,6 +2161,7 @@ def _self_test() -> int:
         # ⛔ backlog #627: no case may fetch into the REAL repository — regen-pages' own suite refusal, armed
         # here, so a case that reaches `serve_state` with the real ROOT gets CANNOT RUN, never a fetch.
         _regen()._IN_SUITE = True
+        globals()["_IN_SUITE"] = True
         return _self_test_body()
 
 

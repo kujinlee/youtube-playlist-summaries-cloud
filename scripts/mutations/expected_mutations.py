@@ -1417,10 +1417,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ its review round 1 (Codex X3): 69 -> 72 — the runner in a process group of its own, SIGTERM before
     # SIGKILL on a Refresh timeout, and the press wired through `run_in_group`.
     # ⟳ its review round 2 (F4): 72 -> 73 — the post-SIGKILL drain of a Refresh timeout is BOUNDED.
-    # ⟳ backlog #627: 73 -> 86 — the serve-source rule (overlay only on master's base, an unedited page is
+    # ⟳ backlog #627: 73 -> 87 — the serve-source rule (overlay only on master's base, an unedited page is
     # master's), the fetch's rate limit, bound, failure recorded and cleared, the footer, the yellow bar, preview
-    # detection, master's bytes for an overlay, the no-copy notice, a merged page served, the suite refusal armed.
-    "scripts/explainer-serve.py": 86,
+    # detection, master's bytes for an overlay, the no-copy notice, a merged page served, the suite refusal armed,
+    # and (87) no fetcher built inside the suite.
+    "scripts/explainer-serve.py": 87,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
