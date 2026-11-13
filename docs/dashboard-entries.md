@@ -20552,3 +20552,15 @@ them). The server fetches at most once a minute on page load (`CopyFetcher`, wai
 is named in the footer, on `/` and `/latest` too. Inside the self-test every path either script writes must be
 in the suite's own temp dir. explainer-serve 282 self-test cases, regen-pages 121; mutation pins 73 → 112 and
 60 → 72 after two review rounds. Takes effect on the owner's port once the running server is restarted.
+
+## 2026-11-13
+The redesign that the last review was waiting for has been built. The nightly test sweep runs in many parallel
+pieces, and each piece now writes a small structured record listing its unreliable tests. The step that files them
+reads only those records. It no longer searches log text or reads the CI configuration, so the check that kept
+needing repairs is deleted. A missing, duplicated or unfinished record is reported, never read as "nothing found".
+A pull request now runs the same handoff without filing anything, so a pull request that breaks it fails its own CI.
+
+<!--tech-->
+Backlog #619 R1, PR #580 (branch `b619-shard-records`); backlog #617 part (1) closed as retired. `check-plan-code.py
+--record` writes `{schema, shard, total, complete, flaky}`; `sweep-red-alert.py` `read_records` + `check_records`
+replace `ci_flaky_contract`, `flaky_names`, `shard_count` and `read_flaky`. Mutation pins 39 → 33 and 320 → 328.
