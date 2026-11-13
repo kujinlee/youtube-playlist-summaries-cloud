@@ -45,7 +45,7 @@ spec is the definition.
   asks the owner when the public bar costs ≥ 3× the "my next project" estimate for more than half of the phase-1
   components (Task 21).
 - **Anything outward-facing is a HUMAN step** (section *Human steps*), never done by an agent: creating the
-  published marketplace repository, a marketplace listing, a `LICENSE`, naming the copyright holder, pushing to
+  published marketplace repository, a marketplace listing, a `LICENSE` (holder: `Kujin Lee`, H5, named 2026-11-13), pushing to
   any third-party repository.
 
 ## Global Constraints
@@ -1095,7 +1095,7 @@ from `--render`'s output (the page is derived, never hand-edited), or the invent
 | **H3** | **Re-decide the method if the spike fails** (spec §9: D4 is unachievable; never silently downgrade to paper scoring). | Task 4 NO-GO | the plan stops after slice B |
 | **H7** | **Free port 7391 for the experiment window**: stop your own explainer server (`python3 scripts/explainer-serve.py --stop` in your checkout) and say when; restart it afterwards. The port is a constant, so the stranger's server can only run there (Task 4 Step 2). | Task 4 (b), Task 14/15 serve operations | the serve operations stay CANNOT RUN; the spike is INCOMPLETE, slice C waits, and Task 1 splits into its own PR (Task 4 Step 5) |
 | **H4** | **Answer the D1 checkpoint card** (keep the public bar, or drop to "my next project"). | Task 21 rc 3 | the inventory stays not final |
-| **H5** | **Name the copyright holder** for the MIT `LICENSE` (spec §4: the git identity is a placeholder). | the NEXT milestone | nothing in this plan blocks |
+| **H5** | ✅ **DONE 2026-11-13 03:48 — the copyright holder is `Kujin Lee`** (walkthrough decision 7). The MIT `LICENSE` that H6 adds reads `Copyright (c) <year> Kujin Lee`. | the NEXT milestone | nothing in this plan blocks |
 | **H6** | **Create the published marketplace repository, add its `LICENSE`, any listing, the first tag and `CHANGELOG`** (spec §10, D9). | the NEXT milestone | out of scope here |
 
 ## Before every push (all slices)
