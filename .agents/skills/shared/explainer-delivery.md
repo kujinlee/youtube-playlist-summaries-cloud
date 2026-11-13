@@ -401,6 +401,34 @@ answer appears where the question was asked with no manual refresh. Three things
 - It **will not reload while `#qbox` holds a draft or has focus**, and it preserves scroll. A reader
   mid-question is the one person a reload would hurt most.
 
+## 6b. The Ask answerer — an answer without the main session (backlog #625)
+
+`scripts/ask_answerer.py` answers a question in the page it was asked on, with one headless `claude -p` run
+per question. **It is OFF unless someone starts it**, and with it off everything above is unchanged.
+
+| Do | Command |
+|---|---|
+| Start, stop, look | `python3 scripts/ask_answerer.py --start` · `--stop` · `--status` (running?, today's spend against the caps, questions NOT answered) |
+| Take one question yourself | `--claim ID` (exit 0 = yours, 3 = already taken, 2 = unknown id), answer it in the page as §6 says, then `--answered ID` |
+| Read what readers asked you to DO | `--inbox` (prints the unread instructions and marks them read) |
+| Try a failed or skipped question again | `--retry ID` |
+
+- **One answer per question.** The claim is one line in `~/explainers/.ask/ledger.jsonl`, written under a
+  lock. ⛔ **While the answerer runs, a session answers a question only after `--claim ID` exits 0.** Without
+  the claim both may answer it.
+- **It answers; it never acts.** The run's only tool is Read. The script, not the model, writes the escaped
+  answer into the fragment and recomposes the page. An instruction or a decision is passed to the inbox, and
+  the page says it was passed on and not acted on.
+- **A question with no answer never looks answered.** The server adds an *Ask* panel to the page from the
+  same ledger: being answered, **NOT ANSWERED** with the reason and the retry command, or the answer itself
+  when the copy being served does not hold it (a page served from `origin/master`, a page with no fragment).
+  The log is `~/explainers/.ask/answerer.log`.
+- **Cost is capped and shown.** Per question: 10 turns, $0.75, 240 s. Per day: 40 questions, 3,000,000
+  tokens. Each has an `ASK_ANSWERER_*` variable. A question past a cap is refused before any run.
+- **Bounds.** A question asked while no answerer ran is not answered by a later start (`--retry ID` or
+  `--once` does it). A question asked on `/` or `/latest` names no page and is recorded NOT ANSWERED. The
+  panel reaches a page only after the server restarts on a copy that has it.
+
 ## 6a. Deliver the URL, not a path
 
 A path is not a deliverable — clicking one opens the HTML *source* in an editor, which for a

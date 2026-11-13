@@ -20552,3 +20552,20 @@ them). The server fetches at most once a minute on page load (`CopyFetcher`, wai
 is named in the footer, on `/` and `/latest` too. Inside the self-test every path either script writes must be
 in the suite's own temp dir. explainer-serve 282 self-test cases, regen-pages 121; mutation pins 73 → 112 and
 60 → 72 after two review rounds. Takes effect on the owner's port once the running server is restarted.
+
+## 2026-11-13
+A question you type into a served page can now be answered in that page within about a minute, without the main
+session. A separate small agent reads the page and the repository, and its answer appears under the section you
+asked from. It only answers. When what you typed is an instruction or a decision, the page says "Passed on, not
+acted on" and the text goes to an inbox the main session reads. A question that could not be answered says so on
+the page, with the reason. It is off until it is started with `python3 scripts/ask_answerer.py --start`.
+
+<!--tech-->
+Backlog #625, branch `b625-ask-answerer`. `scripts/ask_answerer.py`: a watcher that stats `questions.md` (no
+model call while idle), one `claude -p` run per question with Read as its only tool, and the script itself writes
+the escaped answer into the fragment and recomposes. State is in the git-ignored `docs/explainers/.ask/`; the
+claim marker is the first ledger line for a question, taken under a lock. Caps: 10 turns, $0.75 and 240 s per
+question; 40 questions and 3,000,000 tokens per day; `--status` prints them. `explainer-serve.py` appends a panel
+of the page's questions and folds their state into `/_rev`. ask_answerer 108 self-test cases and 35 mutations;
+explainer-serve 283 cases, mutation pin 112 → 116. Follow-ups filed: backlog #635 (inbox hook), #636 (`/latest`).
+The panel shows on the owner's port once the running server is restarted.

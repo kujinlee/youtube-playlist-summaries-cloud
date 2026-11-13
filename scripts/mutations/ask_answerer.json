@@ -1,0 +1,387 @@
+[
+  {
+    "name": "the claim marker is gone: a second caller is told it owns the question too",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        if qid in fold(read_ledger(root)[0]):\n            return False\n",
+        ""
+      ]
+    ],
+    "expect": "claim: the first caller owns the question and the second does not, whoever they are"
+  },
+  {
+    "name": "a retry no longer removes the state, so a failed question can never be asked again",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "            st.pop(qid, None)",
+        "            pass"
+      ]
+    ],
+    "expect": "fold: a retry makes a question eligible again; a baseline id is skipped and cannot be claimed"
+  },
+  {
+    "name": "the daily question cap lets one more run through",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    if runs >= caps.daily_questions:",
+        "    if runs > caps.daily_questions:"
+      ]
+    ],
+    "expect": "cap_refusal: refuses AT the cap, not one before it, for questions and for tokens"
+  },
+  {
+    "name": "the daily token cap lets one more run through",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    if tokens >= caps.daily_tokens:",
+        "    if tokens > caps.daily_tokens:"
+      ]
+    ],
+    "expect": "cap_refusal: refuses AT the cap, not one before it, for questions and for tokens"
+  },
+  {
+    "name": "a claim counts as a run, so a question refused by the cap spends the cap",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "if ev.get(\"e\") == \"run\" and",
+        "if ev.get(\"e\") == \"claimed\" and"
+      ]
+    ],
+    "expect": "spent: runs and tokens of ONE day — a failed run's tokens count, a claim with no run does not"
+  },
+  {
+    "name": "a cap of zero or below is accepted",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        if not 0 < v < float(\"inf\"):",
+        "        if False:"
+      ]
+    ],
+    "expect": "caps: a set variable that is not a positive number is an error, never the default"
+  },
+  {
+    "name": "the headless run gets every tool, not Read alone",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "            \"--tools\", \"Read\", \"--strict-mcp-config\",",
+        "            \"--strict-mcp-config\","
+      ]
+    ],
+    "expect": "argv: the slim start-up, Read as the ONLY tool, and both per-question caps"
+  },
+  {
+    "name": "the per-question budget is not passed to the run",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "\"--max-turns\", str(caps.max_turns), \"--max-budget-usd\", f\"{caps.budget_usd:.2f}\",",
+        "\"--max-turns\", str(caps.max_turns),"
+      ]
+    ],
+    "expect": "argv: the slim start-up, Read as the ONLY tool, and both per-question caps"
+  },
+  {
+    "name": "the suite's guard is gone: a self-test could start a binary outside its temp folder",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        if _SUITE_BIN_DIR.resolve() not in real.parents:",
+        "        if False:"
+      ]
+    ],
+    "expect": "the suite cannot start the real claude: any binary outside its own temp folder is refused"
+  },
+  {
+    "name": "a run past its time limit is reported failed but left running",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    except subprocess.TimeoutExpired:\n        _kill_group(p)\n",
+        "    except subprocess.TimeoutExpired:\n"
+      ]
+    ],
+    "expect": "run: past the per-question time limit it is KILLED, and that is a failure with the limit named"
+  },
+  {
+    "name": "the KIND line no longer decides: an instruction is treated as a question",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        kind = \"instruction\" if m.group(1).lower() == \"instruction\" else \"question\"",
+        "        kind = \"question\""
+      ]
+    ],
+    "expect": "reply: the KIND line decides, is never part of the answer, and a missing one means a question"
+  },
+  {
+    "name": "a paragraph of the reply reaches the page unescaped",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "blocks.append(\"<p>\" + _inline(html.escape(\" \".join(para), quote=True)) + \"</p>\")",
+        "blocks.append(\"<p>\" + _inline(\" \".join(para)) + \"</p>\")"
+      ]
+    ],
+    "expect": "render: every character of the reply is escaped — no tag of the model's reaches the page"
+  },
+  {
+    "name": "two matching headings: the answer lands under the first instead of at the end",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    if len(hits) == 1:",
+        "    if hits:"
+      ]
+    ],
+    "expect": "insert: with no heading, two, or one inside an opaque element, the answer goes to the END and says why"
+  },
+  {
+    "name": "opaque elements are not masked, so an answer can land inside a <pre> or a <details>",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "_OPAQUE.sub(lambda m: \" \" * len(m.group(0)), fragment[start:])",
+        "fragment[start:]"
+      ]
+    ],
+    "expect": "insert: with no heading, two, or one inside an opaque element, the answer goes to the END and says why"
+  },
+  {
+    "name": "a fragment that is a link is written through",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        if p.is_symlink():",
+        "        if False:"
+      ]
+    ],
+    "expect": "a fragment that is a link is never written through"
+  },
+  {
+    "name": "a page name may leave the served folder",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    if not name or name.startswith(\".\") or not re.fullmatch(r\"[A-Za-z0-9._-]+\", name):",
+        "    if not name:"
+      ]
+    ],
+    "expect": "page_name: a page in the served folder, or None — never a path that leaves it"
+  },
+  {
+    "name": "a recomposed page that lost the Ask tray replaces the page",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        " or 'id=\"qbox\"' not in composed",
+        ""
+      ]
+    ],
+    "expect": "a recomposed page without the Ask tray replaces nothing"
+  },
+  {
+    "name": "a recomposed page that lost the answer replaces the page",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "if marker not in composed or ",
+        "if "
+      ]
+    ],
+    "expect": "a recomposed page without the answer replaces nothing"
+  },
+  {
+    "name": "a live session's edit made mid-answer is overwritten",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "            if frag.read_text(encoding=\"utf-8\") != before:\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": "a live session edits the fragment mid-answer: its edit survives, and the answer goes in once"
+  },
+  {
+    "name": "the answerer answers a question a live session claimed",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        return \"taken\"\n    tokens = 0",
+        "        pass\n    tokens = 0"
+      ]
+    ],
+    "expect": "a question a live session claimed is left alone: no run, no write"
+  },
+  {
+    "name": "the daily cap is computed and then ignored",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        if refusal:\n            raise _Failure(refusal)\n",
+        ""
+      ]
+    ],
+    "expect": "daily question cap: the question past the cap is NOT sent to the model, and fails saying so"
+  },
+  {
+    "name": "an instruction is answered like a question: no passed-on line",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        passed_on = kind == \"instruction\"",
+        "        passed_on = False"
+      ]
+    ],
+    "expect": "an instruction is NOT acted on: the page says passed on, and it lands in the inbox once"
+  },
+  {
+    "name": "an instruction never reaches the inbox",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "            append_inbox(root, q, answer, when)",
+        "            pass"
+      ]
+    ],
+    "expect": "an instruction is NOT acted on: the page says passed on, and it lands in the inbox once"
+  },
+  {
+    "name": "the run is not given the served folder to read",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "dirs=(str(root.resolve()),))",
+        "dirs=())"
+      ]
+    ],
+    "expect": "the run may read the served folder: its real path is the one --add-dir"
+  },
+  {
+    "name": "a refused read is not said on the page",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "                 + (f\" ⚠ {run.denied} of its file reads were REFUSED, so it may have answered without them.\"\n                    if run.denied else \"\"))",
+        "                 )"
+      ]
+    ],
+    "expect": "a run whose file reads were refused says so on the page and in the log — never a silent guess"
+  },
+  {
+    "name": "an unforeseen fault leaves the claim open instead of a failed question",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    except Exception as exc:  # noqa: BLE001 — the boundary: an unforeseen fault is a LOUD failed question\n        reason = f\"the answerer itself failed ({type(exc).__name__}: {str(exc)[:200]})\"\n",
+        ""
+      ]
+    ],
+    "expect": "a fault inside the answerer is a FAILED question with its cause, never a claim left open"
+  },
+  {
+    "name": "a stop mid-answer records nothing for the question it was on",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        record(root, {\"e\": \"failed\", \"id\": q.id, \"doc\": q.doc, \"question\": q.text[:600], \"at\": now_text(),\n                      \"reason\": \"the answerer was stopped while answering this one\", \"tokens\": tokens})\n",
+        ""
+      ]
+    ],
+    "expect": "a stop mid-answer: the question is recorded NOT answered before the watcher exits"
+  },
+  {
+    "name": "a later start answers the backlog asked while no answerer ran",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "ensure_baseline(root, every_start=not once)",
+        "ensure_baseline(root, every_start=False)"
+      ]
+    ],
+    "expect": "a later start skips what was asked while no answerer ran — and --retry makes one eligible"
+  },
+  {
+    "name": "a question a dead answerer left claimed stays claimed for ever",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "            recover_stale(root)\n",
+        ""
+      ]
+    ],
+    "expect": "on start, a question a dead answerer left claimed becomes NOT ANSWERED; a session's claim stays"
+  },
+  {
+    "name": "recovery fails a live session's claim too",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "             if st.get(\"status\") == \"claimed\" and st.get(\"by\") == \"answerer\"]",
+        "             if st.get(\"status\") == \"claimed\"]"
+      ]
+    ],
+    "expect": "on start, a question a dead answerer left claimed becomes NOT ANSWERED; a session's claim stays"
+  },
+  {
+    "name": "the panel shows a failure's reason unescaped",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "why = html.escape(str(it.get(\"reason\", \"no reason recorded\"))[:500], quote=True)",
+        "why = str(it.get(\"reason\", \"no reason recorded\"))[:500]"
+      ]
+    ],
+    "expect": "panel: a failed question says NOT ANSWERED, with its reason escaped and the retry command"
+  },
+  {
+    "name": "the panel assumes the served bytes hold every answer, so one they lack is never shown",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "            if f'data-ask-id=\"{it[\"id\"]}\"'.encode() in body:",
+        "            if True:"
+      ]
+    ],
+    "expect": "panel: an answer the served bytes do NOT hold is shown in full, however old"
+  },
+  {
+    "name": "the panel shows every page's questions on every page",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        if page_name(q.doc) != rel:\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "panel: a page shows only the questions asked on IT"
+  },
+  {
+    "name": "a machine where the answerer never ran gets a panel",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    events, _bad = read_ledger(root)\n    if not events:\n        return []\n",
+        "    events, _bad = read_ledger(root)\n"
+      ]
+    ],
+    "expect": "no ledger (the answerer never ran on this machine): no panel and no rev"
+  },
+  {
+    "name": "the revision ignores a question's state, so an open page never reloads on an answer",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "key = [(it[\"id\"], it.get(\"status\"), it.get(\"by\"), bool(it.get(\"written\"))) for it in items]",
+        "key = [(it[\"id\"],) for it in items]"
+      ]
+    ],
+    "expect": "rev: moves whenever a question on the page changes state, so an open page reloads"
+  }
+]

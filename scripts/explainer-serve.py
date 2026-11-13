@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 282 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 283 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -98,6 +98,7 @@ import urllib.parse
 from typing import Callable, NamedTuple
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ask_answerer  # noqa: E402
 import page_chrome  # noqa: E402
 import page_markup  # noqa: E402
 
@@ -1259,9 +1260,9 @@ def revision(p: pathlib.Path) -> str:
 # retirement verdict — and `page_list` builds `/` and `/latest` from both copies. Nothing decides from the
 # working tree alone before it: a local symlink to a retired page no longer hides master's valid page.
 #
-# ⛔ OPEN SEAM — backlog #625. Ask answers are written INTO a page in the main checkout's working tree, i.e.
-# they are local edits. Once that page's base differs from master's copy, rule "master+bar" HIDES them behind
-# the yellow bar. #625 needs a commit path for answers (so the base catches up), or an exemption decided here.
+# ⟳ backlog #625 CLOSED THE SEAM THIS COMMENT ONCE NAMED. Ask answers are written INTO a page in the main checkout's
+# working tree, i.e. they are local edits, and rule "master+bar" can hide them. `ask_panel` reads the answerer's
+# ledger at send time and shows any answer the bytes SENT do not hold — so an answer is seen whichever copy serves.
 FETCH_EVERY = 60.0   # seconds between two fetches of origin/master, at most one per window
 # Seconds a page load waits for a fetch IT STARTED (r1 Claude F7: a load that finds one already running does not
 # wait; its footer says the fetch is running). ⚠ BOUND: this bounds the FETCH only. A decision also runs, on the
@@ -1727,7 +1728,30 @@ def page_body(served: Served) -> bytes:
     if served.bar:
         extra += local_bar("/" + urllib.parse.quote(served.rel) + "?" + LOCAL_QUERY)
     extra += source_footer(served.label)
+    extra += ask_panel(served.rel, body)
     return body + extra.encode() + RELOAD_JS.encode()
+
+
+def ask_panel(rel: str, body: bytes) -> str:
+    """backlog #625: the state of every question asked on this page — being answered, NOT ANSWERED with its
+    reason, or the answer itself when the bytes served do not hold it (a page served from master's copy never
+    holds an answer written into the working tree). "" on a machine where the Ask answerer never ran. A fault
+    in the panel is SAID on the page: the page still serves, and a question never looks answered by omission."""
+    try:
+        return ask_answerer.panel_html(ROOT, rel, body)
+    except Exception as exc:  # noqa: BLE001 — the boundary: the page must still be served, and say so
+        return ('<div id="ask-panel" style="margin:2em auto;max-width:60em;padding:.6em 1em;border:2px solid '
+                'currentColor">⚠ The Ask panel FAILED, so the state of the questions asked on this page is NOT '
+                f"SHOWN: {page_markup.escape(type(exc).__name__ + ': ' + str(exc)[:200])}</div>")
+
+
+def ask_rev(rel: str) -> str:
+    """What `/_rev` appends for the page's questions, so an open page reloads when one changes state."""
+    try:
+        rev = ask_answerer.panel_rev(ROOT, rel)
+    except Exception:  # noqa: BLE001 — the page GET says the fault (ask_panel); the poll must not 500 over it
+        return ":ask-failed"
+    return f":ask-{rev}" if rev else ""
 
 
 # The live-reload client. INJECTED BY THE SERVER at send time, never written into the page.
@@ -1992,8 +2016,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             served = served_page((qs.get("p") or [""])[0], setup, note=failed)
             if served is None:
                 return self._send(404, b"no such page", "text/plain; charset=utf-8")
-            return self._send(200, f"{served.rev}:{served.kind}{':fetch-failed' if failed else ''}".encode(),
-                              "text/plain; charset=utf-8")
+            # ⟳ backlog #625: the page's questions are part of the revision — an answer, or a failure to answer,
+            # reloads the open page into it (the reload client never reloads over a half-typed question).
+            return self._send(200, (f"{served.rev}:{served.kind}{':fetch-failed' if failed else ''}"
+                                    + ask_rev(served.rel)).encode(), "text/plain; charset=utf-8")
         if path == "/_stale":
             # "Is this page BEHIND its source?" — a DIFFERENT question from `/_rev`'s "has this
             # page changed?", which is why it is a different endpoint rather than a fourth field
@@ -2839,6 +2865,78 @@ def _serve_copy_cases(case) -> None:
                 "FAILED" in out["failed"] and "<p>B v2</p>" in out["failed"],
                 rev3.endswith(":master:fetch-failed") and rev3.split(":")[0] == rev2.split(":")[0],
                 "still running" in out["pending"]]
+    # backlog #625 — the Ask panel, THROUGH do_GET: a question's state reaches the page it was asked on, and /_rev.
+    def _ask_through_handler(root, copy, merge, **_):
+        real = (globals()["ROOT"], dict(_STATE), os.environ.get("EXPLAINER_SERVE_COPY"), globals()["FETCH_WAIT"])
+        globals()["ROOT"], globals()["FETCH_WAIT"] = root, 0.05
+        os.environ["EXPLAINER_SERVE_COPY"] = str(copy)
+        _STATE.clear()
+        try:
+            _setup, f = serve_state()
+            merge("2026-01-02-topic-b.html", "<p>B merged</p>", "b")
+            _drive("/2026-01-02-topic-b")
+            if f.thread is not None:
+                f.thread.join(30)
+            out = {"none": _drive("/2026-01-02-topic-b")[1], "rev0": _drive("/_rev?p=/2026-01-02-topic-b")[1]}
+            (root / "questions.md").write_text(
+                "# Questions\n\n---\n\n## 2026-01-03 09:00:00 — 2026-01-02-topic-b\n\n**(no section)**\n"
+                "   > (nothing highlighted)\n   Q: why <b>this</b>?\n")
+            q = ask_answerer.read_questions(root)[0]
+            ask_answerer.claim(root, q.id, "answerer", doc=q.doc, question=q.text)
+            out["rev1"] = _drive("/_rev?p=/2026-01-02-topic-b")[1]
+            ask_answerer.record(root, {"e": "failed", "id": q.id, "at": "2026-01-03 09:00:05",
+                                       "reason": "the headless run ended as 'error_max_turns'"})
+            out["failed"] = _drive("/2026-01-02-topic-b")[1]
+            out["rev2"] = _drive("/_rev?p=/2026-01-02-topic-b")[1]
+            out["other"] = _drive("/2026-01-01-topic-a.html")[1]
+            out["other_rev"] = _drive("/_rev?p=/2026-01-01-topic-a.html")[1]
+            ask_answerer.record(root, {"e": "retry", "id": q.id, "at": "2026-01-03 09:01:00"})
+            ask_answerer.claim(root, q.id, "answerer", doc=q.doc, question=q.text)
+            ask_answerer.record(root, {"e": "answered", "id": q.id, "by": "answerer", "at": "2026-01-03 09:01:30",
+                                       "written": False, "where": "served only from origin/master",
+                                       "html": f'<div data-ask-id="{q.id}"><p>THE ANSWER</p></div>'})
+            out["answered"] = _drive("/2026-01-02-topic-b")[1]
+            out["rev3"] = _drive("/_rev?p=/2026-01-02-topic-b")[1]
+            real_panel = ask_answerer.panel_html
+            ask_answerer.panel_html = lambda *a, **k: (_ for _ in ()).throw(ValueError("panel <bug>"))
+            try:
+                out["broken"] = _drive("/2026-01-02-topic-b")[:2]
+            finally:
+                ask_answerer.panel_html = real_panel
+            real_rev = ask_answerer.panel_rev
+            ask_answerer.panel_rev = lambda *a, **k: (_ for _ in ()).throw(ValueError("rev bug"))
+            try:
+                out["broken_rev"] = _drive("/_rev?p=/2026-01-02-topic-b")[:2]
+            finally:
+                ask_answerer.panel_rev = real_rev
+            return out
+        finally:
+            globals()["ROOT"], globals()["FETCH_WAIT"] = real[0], real[3]
+            _STATE.clear()
+            _STATE.update(real[1])
+            if real[2] is None:
+                os.environ.pop("EXPLAINER_SERVE_COPY", None)
+            else:
+                os.environ["EXPLAINER_SERVE_COPY"] = real[2]
+
+    def _ask_want(o):
+        revs = [o["rev0"], o["rev1"], o["rev2"], o["rev3"]]
+        return ['id="ask-panel"' not in o["none"] and ":ask-" not in o["rev0"],
+                o["failed"].count('id="ask-panel"') == 1 and "NOT ANSWERED" in o["failed"]
+                and "error_max_turns" in o["failed"] and "why &lt;b&gt;this&lt;/b&gt;?" in o["failed"],
+                o["failed"].index('id="ask-panel"') > o["failed"].index("<p>B merged</p>")
+                and o["failed"].index('id="ask-panel"') < o["failed"].index("<script>"),
+                len(set(revs)) == 4 and all(r.startswith(o["rev0"] + ":ask-") for r in revs[1:]),
+                'id="ask-panel"' not in o["other"] and ":ask-" not in o["other_rev"],
+                "<p>THE ANSWER</p>" in o["answered"] and "NOT ANSWERED" not in o["answered"],
+                o["broken"][0] == 200 and "<p>B merged</p>" in o["broken"][1]
+                and "The Ask panel FAILED" in o["broken"][1] and "panel &lt;bug&gt;" in o["broken"][1],
+                o["broken_rev"] == (200, o["rev0"] + ":ask-failed")]
+    case("⭐ #625 THROUGH do_GET: a page's questions reach it — nothing with no ledger, NOT ANSWERED with the reason, "
+         "the answer itself when the served bytes lack it, /_rev moves at every state, another page untouched, "
+         "a panel fault SAID on the page and in the revision",
+         lambda: _ask_want(world(lambda **w: _ask_through_handler(**w))) == [True] * 8)
+
     case("⭐ #627 r1 (Codex 5, Claude F1): THROUGH do_GET on a temp clone — merged page, index, /latest, /_rev moves, "
          "bar, ?source=local, a failed fetch and a running one all reach the response",
          lambda: _handler_want(world(lambda **w: _through_handler(**w))) == [True] * 9)
