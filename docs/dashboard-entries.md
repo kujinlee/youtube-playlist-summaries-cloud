@@ -20580,7 +20580,7 @@ the escaped answer into the fragment and recomposes. State is in the git-ignored
 claim marker is the first ledger line for a question, taken under a lock. Caps: 10 turns, $0.75 and 240 s per
 question; 40 questions and 3,000,000 tokens per day; `--status` prints them. `explainer-serve.py` appends a panel
 of the page's questions and folds their state into `/_rev`. ask_answerer 123 self-test cases and 52 mutations;
-explainer-serve 291 cases, mutation pin 112 → 123. Review rounds 1 (11 findings), 2 (5) and 3 (5) are folded: a killed run counts
+explainer-serve 291 cases, mutation pin 112 → 123. Review rounds 1 (11 findings), 2 (5) and 3 (5) are folded; round 4 (3, none a blocker) is filed under the round cap: a killed run counts
 against the token cap, a start no longer skips a question the page showed NOT ANSWERED, and the server refuses a
-POST from another site. Follow-ups filed: backlog #635 (inbox hook), #636 (`/latest`), #638 (a stop can signal a stale pid), #639 (Phase 6 review of the watcher lifecycle: rounds 2 and 3 each found a defect a fix had caused).
+POST from another site. Follow-ups filed: backlog #635 (inbox hook), #636 (`/latest`), #638 (a stop can signal a stale pid), #639 (Phase 6 review of the watcher lifecycle: rounds 2, 3 and 4 each found a defect a fix had caused), #640 (one wrong sentence, one weak case).
 The panel shows on the owner's port once the running server is restarted.
