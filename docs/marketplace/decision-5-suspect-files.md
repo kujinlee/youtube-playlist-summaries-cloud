@@ -21,3 +21,19 @@ process lessons with no infrastructure or personal content.
 
 ⚠ Bound: a grep finds only what it was told to look for. A file can mention something private in plain
 words that no pattern matches. This list narrows your skim; it does not replace it.
+
+## Answered
+
+The owner answered on 2026-11-13 11:25, by one selection card per group:
+
+| # | Answer | What it means when the shipped corpus is built |
+|---|---|---|
+| A (6 files) | **SHIP REDACTED** | The Supabase project ref, the Fly URL and the role names are replaced with placeholders |
+| B (4 files) | **EXCLUDE** | Not in the shipped corpus |
+| C (6 files) | **EXCLUDE** | Not in the shipped corpus |
+| D (6 files) | **SHIP WITH QUOTES PARAPHRASED** | The rules stay; the owner's quotes are replaced with neutral wording |
+| the ~170 other lesson files | **ship as they are** | no change |
+
+So the shipped corpus is 193 files, less the 10 in B and C. The redaction (A) and the paraphrase (D) happen when the
+corpus is built (plan Task 18, step "Build the shipped corpus"), each with a check that greps the output for the
+original strings and fails if any is found. The list above is kept as the record of what was asked.
