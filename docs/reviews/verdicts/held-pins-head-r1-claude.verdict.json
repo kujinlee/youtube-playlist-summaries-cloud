@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/held-pins-head-r1-claude.md": "100644 760fe3cfa4a19e9a6be05aa6f3c72b033f8f6c26",
+    "docs/reviews/codex/held-pins-head-r1-codex.md": "100644 aad8ba71fd38f45c47315faf0b002a2b4fc0d079",
+    "docs/reviews/verdicts/held-pins-head-r1-codex.verdict.json": "100644 d581180dd59ca719d1af125141a29875ebd30b25"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "a4177e28dbaa4d16c07b2af9ce28cd9cd5ae3783",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 8412 chars, names a4177e28dbaa",
+  "refused": false,
+  "review": "held-pins-head-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/hph",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

@@ -29,6 +29,17 @@ THE THREE SIGNALS:
       gh's, else the local object store's; never `updatedAt`, which a comment refreshes. A draft
       whose head date neither source has is UNKNOWN-DRAFT, shown, never assumed fresh.
       ⛔ Only THIS repo's PRs (`isCrossRepository` exactly false): the repo is public.
+      DIRTY-NO-CI (backlog #545) when a master-based PR is `mergeable: CONFLICTING` and its head commit has
+      no check suite whose workflow run is a `pull_request` one: GitHub runs no `pull_request` workflow while a PR conflicts with master,
+      and `gh pr checks` says only "no checks reported" (PR #529, 2026-11-06: about 2 h read as
+      waiting). Keyed on `mergeable`, which GitHub computes for a draft too (PR #537, a draft, 2026-11-08:
+      CONFLICTING, merge state DIRTY, no checks); a draft that conflicts is reported like any PR. A
+      conflicting PR whose head HAS a run is not reported: its checks show, and the owner-held PRs
+      (DIRTY for days, their heads already run) do not nag on every prompt. ⟳ Phase 6 (2026-11-08,
+      `docs/reviews/architecture-review-2026-11-08-dirty-pr-states.md`): DIRTY-NO-CI is the ONLY PR state
+      this adds, and it needs a MEASURED none — a complete, well-formed suite page with no `pull_request`
+      run. Anything else (the run not seen, the page malformed or truncated, mergeability UNKNOWN) is ONE
+      CLI line, UNMEASURED, that is neither stalled nor a hook item: the next prompt re-reads it.
   (c) REVIEW HALVES — `<subject>-r<N>-claude.md` / `-codex.md` in `--scratch` (top level and one
       directory down, not `wt-*`) and in EVERY worktree's `docs/reviews/{claude,codex}/`, the main
       checkout's included. UNPROCESSED when no worktree, and not origin/master, has
@@ -65,7 +76,7 @@ them old unfolded halves, on EVERY prompt).
       `stalled-work-cache` and filed as its own backlog row.
 
     python3 scripts/check-stalled-work.py --scratch <dir>
-    python3 scripts/check-stalled-work.py --self-test  # 183 cases
+    python3 scripts/check-stalled-work.py --self-test  # 225 cases
 
 EXIT CODES (repo convention): 0 = nothing stalled · 1 = something stalled · 2 = CANNOT RUN (git or
 gh failed, or the deadline passed; never a pass). `--hook` always exits 0 — it is advice, and its
@@ -74,16 +85,31 @@ fixed CANNOT RUN block for a check that dies before it can (argparse, an import)
 
 WHAT WOULD MAKE THIS FAIL (its falsifier): a commit on no remote older than 30 min, reachable from a
 worktree HEAD or a local branch; a draft PR whose head commit is over 3 h old; or a review half with
-no coordinator doc at its round and not on origin/master — each reported as clear. Or the hook, with
+no coordinator doc at its round and not on origin/master; or a master-based CONFLICTING PR whose head
+commit's complete, well-formed suite page holds no `pull_request` workflow run — each reported as clear. Or
+an UNMEASURED line, or one that is malformed or truncated, reported as a measured absence of CI. Or the hook, with
 gh hung or git slow, not returning a framed CANNOT RUN inside its timeout. Or a hook block of more
-than 8 item lines, a CLI that drops one, a string reaching
+than 8 item lines, a DIRTY-NO-CI line cut while a lower-tier line is shown, a CLI that drops one, a string reaching
 the block unshaped, or a tip called MERGED whose change differs from master's by a byte.
 
 ⚠ BOUNDS. A Codex capture under `codex-<id>/r<N>.md` carries no subject, so it is seen only once the
 wrapper files it. A half merged to origin/master without its fold is history, not reported. A
 squash merge is not recognised (by design since r2: telling it apart needs a guess). A commit with
 an empty diff has no patch-id, so a tip holding one is never MERGED. Over 100 open PRs is CANNOT RUN
-(no pagination). `HOOK_TIMEOUT_S` mirrors `.claude/settings.json`'s timeout for this hook; the suite
+(no pagination). `mergeable: UNKNOWN` (GitHub has not computed it yet) is not reported as a conflict:
+with no PR CI seen on the head it is an UNMEASURED line in the CLI only, at any age — no grace, no clock
+(Phase 6: the 5 min grace of r2 was measured from the push and timed from the commit, and a future date
+defeated it). A conflict that arrives AFTER the head's run is not reported: the run is
+shown, so it does not read as waiting. "A run" is a check suite whose workflowRun event is `pull_request`
+— not a commit status or another app's check; a head with over 20 check suites and none of them that is,
+or whose page is malformed (r3 Claude R3-F1: a node with no `workflowRun` key, or a run with no string
+`event`), is UNMEASURED: the absence of CI is not claimed, and the hook says nothing (r2 Codex R2-F1; the
+GraphQL `checkSuites` connection filters only by app id or check name, so no page can put `pull_request`
+suites first; measured 2026-11-08: at most 4 suites on any of 187 recent heads). A STALE DRAFT that is
+also UNMEASURED is STALLED-DRAFT: an unmeasured line never hides a stalled one. An empty or malformed `baseRefName` is
+CANNOT RUN, never "not master". A PR whose base is not master is never DIRTY-NO-CI: no `pull_request`
+workflow runs for it at all, so merging master is not its remedy.
+`HOOK_TIMEOUT_S` mirrors `.claude/settings.json`'s timeout for this hook; the suite
 cannot read that file (it is not in the mutation tree), so the mirror is by hand. A draft
 force-pushed without progress gets a fresh committer date and looks young. In `--hook`, a scratchpad
 that cannot be derived is a NOTE, forwarded only beside stalled lines. `git merge-tree --write-tree`
@@ -111,10 +137,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CLEAR, STALLED_RC, CANNOT_RUN = 0, 1, 2
-STALLED_STATES = ("STALLED", "STALLED-DRAFT", "UNKNOWN-DRAFT", "UNPROCESSED")
+STALLED_STATES = ("STALLED", "STALLED-DRAFT", "UNKNOWN-DRAFT", "DIRTY-NO-CI", "UNPROCESSED")
 HALF_RE = re.compile(r"^(?P<subject>.+)-r(?P<n>\d+)-(?P<who>claude|codex)\.md$")
 COORD_RE = re.compile(r"^(?P<subject>.+)-r(?P<n>\d+)-coordinator\.md$")
 MAINLINE = "refs/remotes/origin/master"
+# backlog #545 r1 (Claude R1-F3): the ONLY base a `pull_request` workflow runs for — ci.yml and schema-gates.yml
+# both say `pull_request: branches: [master]`. A PR on any other base gets no PR CI whether it conflicts or not.
+PR_CI_BASE = "master"
+# GitHub's `MergeableState` enum. Anything else is a reply this script does not understand: CANNOT RUN.
+MERGEABLE_STATES = ("MERGEABLE", "CONFLICTING", "UNKNOWN")
+# r2 Codex R2-F3: a base ref name git could hold — non-empty, no whitespace, control or `git check-ref-format`
+# metacharacter. An empty or malformed one is unmeasured: read as "not master" it SILENCED a conflict.
+BASE_REF_RE = re.compile(r"[^\x00-\x20\x7f~^:?*\[\\]{1,255}")
 HOOK_TIMEOUT_S = 30  # .claude/settings.json → UserPromptSubmit → stalled-work.sh → "timeout"
 # ⛔ R2-2 (r2): ONE deadline for the whole measurement, every call given what is LEFT of it. Half the
 # hook's timeout, so the CANNOT RUN is printed with time to spare. Measured 2026-10-30: a real cold
@@ -122,7 +156,12 @@ HOOK_TIMEOUT_S = 30  # .claude/settings.json → UserPromptSubmit → stalled-wo
 DEADLINE_S = 15
 STALL_MIN_S = 30 * 60  # the shortest stall: `--unpushed-minutes`' default
 HOOK_MAX_LINES = 8
-HOOK_TIERS = (("STALLED", "STALLED-DRAFT", "UNKNOWN-DRAFT"), ("UNPROCESSED",), ("MERGED",))
+# ⟳ backlog #545 r1 (Claude R1-F1): DIRTY-NO-CI is a tier of its OWN, FIRST. A dirty head is young by nature
+# (it is what was just pushed), so oldest-first inside the STALLED tier made it the first line the cap cut — and it
+# is the one state whose cost grows while someone waits on it.
+# ⟳ Phase 6 (2026-11-08): it is the ONLY PR state in any tier. UNMEASURED is in none, so it can never be cut for,
+# or crowd out, a measured line.
+HOOK_TIERS = (("DIRTY-NO-CI",), ("STALLED", "STALLED-DRAFT", "UNKNOWN-DRAFT"), ("UNPROCESSED",), ("MERGED",))
 HOOK_TIER = {st: i for i, tier in enumerate(HOOK_TIERS) for st in tier}
 # ⛔ THE REPO IS PUBLIC, SO EVERY PRINTED STRING IS UNTRUSTED TEXT (security review; r1 F1-F3).
 SAFE_RE = re.compile(r"[A-Za-z0-9_./-]+")
@@ -130,8 +169,9 @@ FREE_KEEP_RE = re.compile(r"[^A-Za-z0-9 ._:/,=()'-]")
 UNSAFE_REF = "<ref name withheld: not [A-Za-z0-9_./-]{1,80}>"
 OID_RE = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 GH_QUERY = ("query($owner:String!,$name:String!){repository(owner:$owner,name:$name){"
-            "pullRequests(states:OPEN,first:100){totalCount nodes{number headRefName headRefOid isDraft "
-            "isCrossRepository commits(last:1){nodes{commit{oid committedDate}}}}}}}")
+            "pullRequests(states:OPEN,first:100){totalCount nodes{number headRefName baseRefName headRefOid isDraft "
+            "isCrossRepository mergeable commits(last:1){nodes{commit{oid committedDate "
+            "checkSuites(first:20){totalCount nodes{workflowRun{event}}}}}}}}}}")
 # The patch of every commit, for `git patch-id`. Colour, external diff drivers and textconv are off:
 # a user's config must not change the bytes that are hashed.
 LOG_P = ("log", "-p", "--no-merges", "--no-color", "--no-ext-diff", "--no-textconv", "--format=commit %H")
@@ -370,6 +410,49 @@ def head_commit_ts(row: dict, oid: str) -> "int | None":
     return None
 
 
+def suite_node_ok(n: object) -> bool:
+    """PURE. r3 Claude R3-F1: is one `checkSuites` node the shape the query asked for — `workflowRun{event}` —
+    so that it can count toward a measured absence? The key must be THERE: null (no workflow run, another app's
+    suite) or a run whose `event` is a string. A missing key, a run with no `event`, or a non-string one is
+    malformed, never "no run"."""
+    if not isinstance(n, dict) or "workflowRun" not in n:
+        return False
+    run = n.get("workflowRun")
+    return run is None or (isinstance(run, dict) and isinstance(run.get("event"), str))
+
+
+def head_has_run(row: dict, oid: str) -> "bool | None":
+    """PURE. backlog #545: did a `pull_request` WORKFLOW run on the PR's HEAD commit? True / False, or
+    None when that was not seen: gh's last commit is not the head oid, the `checkSuites` key is missing
+    (r1 Claude R1-F5: never worded as a measured absence), or the suites were truncated before one was found.
+
+    ⟳ r1 Codex R1-F1: NOT the status rollup. The rollup also carries a legacy commit STATUS and other apps'
+    check runs, so its presence does not say PR CI ran. The narrowest true test is a check suite whose
+    `workflowRun.event` is `pull_request`. Measured 2026-11-08 (read-only `gh api graphql`): PR #529's DIRTY
+    heads `4ae91ab3` and `da1d55ad` each carry TWO queued suites, the `cursor` and `claude` apps', with no
+    workflowRun and a null rollup; every open head that ran CI carries two `github-actions` suites whose
+    workflowRun event is `pull_request`, beside those two."""
+    try:
+        commit = row["commits"]["nodes"][-1]["commit"]
+        if not (oid and commit["oid"] == oid):
+            return None
+        suites = commit["checkSuites"]
+        nodes, total = suites["nodes"], suites["totalCount"]
+        # r2 class audit: a `nodes` that is not a list, or a `totalCount` that is not an int, is malformed — `""`
+        # with a total of 0 read as a MEASURED none, and `True == 1` as a complete page.
+        if not isinstance(nodes, list) or not isinstance(total, int) or isinstance(total, bool):
+            return None
+        if any((n.get("workflowRun") or {}).get("event") == "pull_request" for n in nodes):
+            return True
+        # r3 Claude R3-F1: a MEASURED none needs every node well-formed. A node with no `workflowRun` key read as
+        # null, and null as "no run", so a malformed page gave the no-CI diagnosis.
+        if not all(suite_node_ok(n) for n in nodes):
+            return None
+        return False if total == len(nodes) else None
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
+
+
 def pr_node_problem(r: object) -> "str | None":
     """PURE. One gh PR node -> what is wrong with its SHAPE, or None. Every field the verdict reads
     must be there with its type: a missing `isDraft` is not "not a draft", it is unmeasured."""
@@ -382,6 +465,14 @@ def pr_node_problem(r: object) -> "str | None":
             return f"PR #{r['number']} has no boolean {key}"
     if not isinstance(r.get("headRefName"), str):
         return f"PR #{r['number']} has no string headRefName"
+    if not isinstance(r.get("mergeable"), str):  # backlog #545: a missing one is unmeasured, never "no conflict"
+        return f"PR #{r['number']} has no string mergeable"
+    if r["mergeable"] not in MERGEABLE_STATES:  # r1 Claude R1-F2: "conflicting" or "" is not GitHub's enum
+        return f"PR #{r['number']} has a mergeable outside {'/'.join(MERGEABLE_STATES)}"
+    if not isinstance(r.get("baseRefName"), str):  # r1 Claude R1-F3: the base decides whether PR CI can run
+        return f"PR #{r['number']} has no string baseRefName"
+    if not BASE_REF_RE.fullmatch(r["baseRefName"]):  # r2 Codex R2-F3: "" is unmeasured, never "not master"
+        return f"PR #{r['number']} has an empty or malformed baseRefName"
     return None
 
 
@@ -405,8 +496,11 @@ def own_prs(rows: list) -> list[dict]:
             continue
         oid = r.get("headRefOid")
         oid = oid if isinstance(oid, str) and OID_RE.fullmatch(oid) else ""
+        on_ci_base = r.get("baseRefName") == PR_CI_BASE
         out.append({"number": r["number"], "headRefName": safe_ref(r["headRefName"]), "headRefOid": oid,
-                    "isDraft": r["isDraft"], "headCommittedAt": head_commit_ts(r, oid)})
+                    "isDraft": r["isDraft"], "headCommittedAt": head_commit_ts(r, oid),
+                    "conflicting": on_ci_base and r["mergeable"] == "CONFLICTING",
+                    "mergeUnknown": on_ci_base and r["mergeable"] == "UNKNOWN", "headRun": head_has_run(r, oid)})
     return out
 
 
@@ -415,7 +509,9 @@ def pr_fact(pr: dict, local_ts: dict[str, int]) -> dict:
     date is gh's, else the local store's, else None."""
     at = pr.get("headCommittedAt")
     return {"kind": "pr", "number": pr["number"], "ref": pr["headRefName"], "draft": pr["isDraft"],
-            "at": at if at is not None else local_ts.get(pr.get("headRefOid", ""))}
+            "at": at if at is not None else local_ts.get(pr.get("headRefOid", "")),
+            "conflicting": pr.get("conflicting", False), "mergeUnknown": pr.get("mergeUnknown", False),
+            "run": pr.get("headRun")}
 
 
 def pr_item(pr: dict, commit_ts: "int | None", now: float, draft_limit_s: int) -> Item:
@@ -423,17 +519,38 @@ def pr_item(pr: dict, commit_ts: "int | None", now: float, draft_limit_s: int) -
     name is shaped HERE, at render, since a fact never passed through `own_prs` (r2 R2-1)."""
     draft = bool(pr.get("isDraft"))
     head = f"#{int(pr['number'])} {safe_ref(pr['headRefName'])}{' (draft)' if draft else ''}"
+    # backlog #545: GitHub runs no `pull_request` workflow while a PR conflicts with master, and says
+    # nothing — PR #529 read as "waiting" for about 2 h. A conflict whose head HAS a run (from before
+    # master moved) is not reported: its checks are visible, and the owner-held PRs stay quiet.
+    age = 0 if commit_ts is None else max(0, int(now - commit_ts))  # r1 Claude R1-F4: a future date is 0
+    when = "head commit date unknown" if commit_ts is None else f"last commit {fmt_age(age)} ago"
+    # ⟳ r2 Codex R2-F1: the no-CI DIAGNOSIS, and its mandatory remedy, only for a MEASURED none (`False`).
+    if pr.get("conflicting") and pr.get("headRun") is False:
+        return Item("DIRTY-NO-CI", "pr", age, f"PR {head}: DIRTY, no CI run on its head, {when}",
+                    "CI will not run until master is merged in — merge origin/master into the branch and push")
+    # ⟳ Phase 6 (2026-11-08, `docs/reviews/architecture-review-2026-11-08-dirty-pr-states.md`): EVERYTHING the
+    # rule above could not measure — a conflict whose run was not seen (truncated or malformed suites, a missing
+    # key, gh's last commit not the head), or a mergeability GitHub has not computed yet (r1 Claude R1-F2) with no
+    # run seen — is ONE line, UNMEASURED: in the CLI, never a stalled state, never a hook item, no grace and no
+    # clock. The hook re-reads it on the next prompt (no cache); a conflict GitHub settles is DIRTY-NO-CI then.
+    unmeasured = None
+    if (pr.get("conflicting") or pr.get("mergeUnknown")) and pr.get("headRun") is not True:
+        what = ("DIRTY, whether PR CI ran on its head was NOT MEASURED" if pr.get("conflicting")
+                else "GitHub has not computed mergeability yet, no PR CI run seen on its head")
+        unmeasured = Item("UNMEASURED", "pr", age, f"PR {head}: NOTE — {what}, {when}",
+                          "nothing to do yet: the next prompt re-reads it; to look now, open the PR's checks")
+    # An unmeasured line never HIDES a stalled one: the draft rules below come first, and it only replaces "OK".
     if commit_ts is None:
         text = f"{head}: head commit date unknown (not in gh's reply, not local)"
         if draft:
             return Item("UNKNOWN-DRAFT", "pr", 0, text, "open the PR and look: its age cannot be measured")
-        return Item("OK", "pr", 0, text, "nothing to do")
+        return unmeasured or Item("OK", "pr", 0, text, "nothing to do")
     age = int(now - commit_ts)
     text = f"{head}: last commit {fmt_age(age)} ago"
     if draft and age > draft_limit_s:
         return Item("STALLED-DRAFT", "pr", age, text,
                     "a draft with no new commit — push the pending fold, or find who owns it")
-    return Item("OK", "pr", age, text, "nothing to do")
+    return unmeasured or Item("OK", "pr", age, text, "nothing to do")
 
 
 def coordinator_rounds(names_by_tree: dict[str, list[str]]) -> dict[str, tuple[int, str]]:
@@ -503,7 +620,9 @@ def items_from(facts: list[dict], now: float, limit_s: int, draft_limit_s: int,
             out.append(unpushed_item(where, f["branch"], f["path"], f["oldest"], f["count"], now, limit_s,
                                      f["merged"]))
         elif f["kind"] == "pr":
-            out.append(pr_item({"number": f["number"], "headRefName": f["ref"], "isDraft": f["draft"]},
+            out.append(pr_item({"number": f["number"], "headRefName": f["ref"], "isDraft": f["draft"],
+                                "conflicting": f.get("conflicting", False),
+                                "mergeUnknown": f.get("mergeUnknown", False), "headRun": f.get("run")},
                                f["at"], now, draft_limit_s))
         elif f["kind"] == "half":
             out.append(review_item(f, now))
@@ -878,11 +997,21 @@ def _self_test() -> int:
         return _self_test_body()
 
 
-def _row(number, ref, oid, draft=True, cross=False, commit_oid=None, date=None) -> dict:
+# backlog #545 r1: the check suites on a head. Measured 2026-11-08 (read-only `gh api graphql`): PR #529's DIRTY
+# heads carry the `cursor` and `claude` apps' suites, no workflowRun; a head that ran CI adds `github-actions` ones.
+APP_SUITES = ({"workflowRun": None}, {"workflowRun": None})
+PR_SUITE = {"workflowRun": {"event": "pull_request"}}
+PUSH_SUITE = {"workflowRun": {"event": "push"}}
+
+
+def _row(number, ref, oid, draft=True, cross=False, commit_oid=None, date=None, mergeable="MERGEABLE",
+         suites=APP_SUITES, base="master") -> dict:
     """A gh PR node, the shape `GH_QUERY` asks for."""
-    r = {"number": number, "headRefName": ref, "headRefOid": oid, "isDraft": draft, "isCrossRepository": cross}
+    r = {"number": number, "headRefName": ref, "baseRefName": base, "headRefOid": oid, "isDraft": draft,
+         "isCrossRepository": cross, "mergeable": mergeable}
     if date is not None:
-        r["commits"] = {"nodes": [{"commit": {"oid": commit_oid or oid, "committedDate": date}}]}
+        r["commits"] = {"nodes": [{"commit": {"oid": commit_oid or oid, "committedDate": date,
+                                              "checkSuites": {"totalCount": len(suites), "nodes": list(suites)}}}]}
     return r
 
 
@@ -1039,7 +1168,8 @@ def _self_test_body() -> int:
     OWN = _row(5, "feat/x-1.2", OID, date="2026-10-29T10:44:40Z")
     check("own_prs keeps this repo's PR, with gh's committed date of the head",
           lambda: own_prs([OWN]), [{"number": 5, "headRefName": "feat/x-1.2", "headRefOid": OID, "isDraft": True,
-                                    "headCommittedAt": iso_epoch("2026-10-29T10:44:40Z")}])
+                                    "headCommittedAt": iso_epoch("2026-10-29T10:44:40Z"),
+                                    "conflicting": False, "mergeUnknown": False, "headRun": False}])
     check("own_prs DROPS a cross-repository PR", lambda: own_prs([dict(OWN, isCrossRepository=True)]), [])
     def refuses(rows):
         try:
@@ -1100,6 +1230,143 @@ def _self_test_body() -> int:
           lambda: (pr_item(PR, None, NOW, 3600).status, pr_item(READY, None, NOW, 3600).status),
           ("UNKNOWN-DRAFT", "OK"))
     check("iso_epoch reads UTC", lambda: iso_epoch("1970-01-02T00:00:00Z"), 86400)
+
+    # ── backlog #545: a PR that conflicts with master gets NO pull_request CI, silently (PR #529, ~2 h)
+    D = "d" * 40
+    DIRTY_ROW = _row(529, "batch-ci", D, draft=False, date="2026-11-06T10:00:00Z", mergeable="CONFLICTING")
+    CLEAN_ROW = _row(530, "other", "e" * 40, draft=False, date="2026-11-06T10:00:00Z")
+    HELD_ROW = _row(392, "fix/held", "f" * 40, draft=False, date="2026-11-01T10:00:00Z", mergeable="CONFLICTING",
+                    suites=APP_SUITES + (PR_SUITE, PR_SUITE))
+    check("545: own_prs reads a CONFLICTING PR with no PR-CI suite on its head as conflicting, no run; a MERGEABLE one "
+          "as not conflicting",
+          lambda: [(p["number"], p["conflicting"], p["headRun"]) for p in own_prs([DIRTY_ROW, CLEAN_ROW, HELD_ROW])],
+          [(529, True, False), (530, False, False), (392, True, True)])
+    check("545: mergeable UNKNOWN (GitHub still computing) is not a conflict",
+          lambda: own_prs([dict(DIRTY_ROW, mergeable="UNKNOWN")])[0]["conflicting"], False)
+    check("545: own_prs REFUSES a node with no mergeable — unmeasured, never 'no conflict'",
+          lambda: refuses([{k: v for k, v in DIRTY_ROW.items() if k != "mergeable"}]), True)
+    check("545: own_prs REFUSES a non-string mergeable", lambda: refuses([dict(DIRTY_ROW, mergeable=None)]), True)
+    check("545: head_has_run: a pull_request suite is a run, app suites alone are none, a last commit that is not the "
+          "head is unknown",
+          lambda: (head_has_run(HELD_ROW, "f" * 40), head_has_run(DIRTY_ROW, D), head_has_run(DIRTY_ROW, "9" * 40),
+                   head_has_run(_row(1, "b", D), D)), (True, False, None, None))
+    DP = {"number": 529, "headRefName": "batch-ci", "isDraft": False, "conflicting": True, "headRun": False}
+    check("545: a CONFLICTING PR with no run on its head is DIRTY-NO-CI, naming the PR and the remedy",
+          lambda: (lambda i: (i.status, i.text, "merged in" in i.action))(pr_item(DP, NOW - 7200, NOW, 3600)),
+          ("DIRTY-NO-CI", "PR #529 batch-ci: DIRTY, no CI run on its head, last commit 2h00m ago", True))
+    check("545: ...and an unknown head date says so in the line, never a made-up age",
+          lambda: pr_item(DP, None, NOW, 3600).text, "PR #529 batch-ci: DIRTY, no CI run on its head, "
+                                                       "head commit date unknown")
+    check("545: ...aged by its head commit", lambda: pr_item(DP, NOW - 7200, NOW, 3600).age_s, 7200)
+    check("545: a CONFLICTING PR whose head HAS a run (an owner-held PR) is NOT reported",
+          lambda: pr_item(dict(DP, headRun=True), NOW - 99 * 3600, NOW, 3600).status, "OK")
+    check("545: a MERGEABLE PR with no run on its head is NOT reported (CI may simply be queued)",
+          lambda: pr_item(dict(DP, conflicting=False), NOW - 60, NOW, 3600).status, "OK")
+    # ⟳ r2 Codex R2-F1, Phase 6: an UNSEEN run is an UNMEASURED line, never the no-CI diagnosis, never "OK".
+    check("545: a conflict whose head run is UNKNOWN is an UNMEASURED line saying so, never assumed to have CI",
+          lambda: (lambda i: (i.status, "NOT MEASURED" in i.text))(pr_item(dict(DP, headRun=None), None, NOW, 3600)),
+          ("UNMEASURED", True))
+    check("545: a stale DRAFT that is also DIRTY with no run says DIRTY-NO-CI, the cause CI cannot fix itself",
+          lambda: pr_item(dict(DP, isDraft=True), NOW - 10 * 3600, NOW, 3600).status, "DIRTY-NO-CI")
+    check("545: DIRTY-NO-CI is a stalled state and in the hook's FIRST tier, before unfolded halves",
+          lambda: ("DIRTY-NO-CI" in STALLED_STATES, HOOK_TIER.get("DIRTY-NO-CI")), (True, 0))
+    check("545: the gh query asks for mergeable, the base and the head commit's check suites",
+          lambda: ("mergeable" in GH_QUERY, " baseRefName " in GH_QUERY,
+                   "checkSuites(first:20){totalCount nodes{workflowRun{event}}}" in GH_QUERY), (True, True, True))
+    # ── backlog #545 r1 folds. Codex R1-F1: what counts as CI is a `pull_request` WORKFLOW run on the head.
+    check("545 r1: head_has_run: other apps' suites plus a PUSH-event workflow run are no PR CI",
+          lambda: head_has_run(_row(1, "b", D, date="2026-11-06T10:00:00Z", suites=APP_SUITES + (PUSH_SUITE,)), D),
+          False)
+    check("545 r1: head_has_run: suites TRUNCATED before a pull_request one was seen are unknown, never 'none'",
+          lambda: head_has_run({"commits": {"nodes": [{"commit": {"oid": D, "checkSuites": {
+              "totalCount": 21, "nodes": list(APP_SUITES)}}}]}}, D), None)
+    STATUS_ONLY = {"commits": {"nodes": [{"commit": {"oid": D, "committedDate": "2026-11-06T10:00:00Z",
+                                                     "statusCheckRollup": {"state": "PENDING"},
+                                                     "checkSuites": {"totalCount": 0, "nodes": []}}}]}}
+    check("545 r1: a CONFLICTING head whose only signal is a pending commit STATUS is DIRTY-NO-CI (Codex's input)",
+          lambda: (lambda p: pr_item(p, NOW - 600, NOW, 3600).status)(own_prs([dict(DIRTY_ROW, **STATUS_ONLY)])[0]),
+          "DIRTY-NO-CI")
+    # Claude R1-F5: a reply with no `checkSuites` key is unseen, never a measured absence.
+    NO_SUITES = {"commits": {"nodes": [{"commit": {"oid": D, "committedDate": "2026-11-06T10:00:00Z"}}]}}
+    check("545 r1: a head with no checkSuites key is 'NOT MEASURED', not 'no CI run on its head'",
+          lambda: (lambda p: (p["headRun"], "PR CI ran on its head was NOT MEASURED" in pr_item(p, NOW - 600, NOW,
+                                                                                                 3600).text))(
+              own_prs([dict(DIRTY_ROW, **NO_SUITES)])[0]), (None, True))
+    # Claude R1-F2: UNKNOWN is not a conflict, but with no PR CI on the head it is a note, never silence.
+    check("545 r1: own_prs reads UNKNOWN as mergeability-unknown, and CONFLICTING as not",
+          lambda: [(p["conflicting"], p["mergeUnknown"]) for p in own_prs([dict(DIRTY_ROW, mergeable="UNKNOWN"),
+                                                                           DIRTY_ROW])], [(False, True), (True, False)])
+    check("545 r1: own_prs REFUSES a mergeable outside GitHub's enum (lower case 'conflicting')",
+          lambda: refuses([dict(DIRTY_ROW, mergeable="conflicting")]), True)
+    UP = dict(DP, conflicting=False, mergeUnknown=True)
+    check("545 r1: an UNKNOWN-mergeability PR with no run on its head is an UNMEASURED note, aged in its text",
+          lambda: (lambda i: (i.status, i.text))(pr_item(UP, NOW - 7200, NOW, 3600)),
+          ("UNMEASURED", "PR #529 batch-ci: NOTE — GitHub has not computed mergeability yet, no PR CI run seen on "
+                            "its head, last commit 2h00m ago"))
+    check("545 r1: ...but one whose head HAS a run is NOT reported",
+          lambda: pr_item(dict(UP, headRun=True), NOW - 7200, NOW, 3600).status, "OK")
+    # ⟳ Phase 6: UNMEASURED is in no stalled state and no hook tier, and the r1/r2 states are gone from both.
+    check("545 P6: UNMEASURED is neither a stalled state nor in a hook tier; DIRTY-NO-CI is the only PR state in either",
+          lambda: ("UNMEASURED" in STALLED_STATES, "UNMEASURED" in HOOK_TIER,
+                   sorted(st for st in set(STALLED_STATES) | set(HOOK_TIER)
+                          if st not in ("STALLED", "STALLED-DRAFT", "UNKNOWN-DRAFT", "UNPROCESSED", "MERGED"))),
+          (False, False, ["DIRTY-NO-CI"]))
+    # Claude R1-F3: only a master-based PR can get `pull_request` CI, so only it can be DIRTY-NO-CI.
+    check("545 r1: a CONFLICTING or UNKNOWN PR based on another branch is neither conflicting nor unknown here",
+          lambda: [(p["conflicting"], p["mergeUnknown"]) for p in own_prs([
+              dict(DIRTY_ROW, baseRefName="stack/base"),
+              dict(DIRTY_ROW, baseRefName="stack/base", mergeable="UNKNOWN")])],
+          [(False, False), (False, False)])
+    check("545 r1: own_prs REFUSES a node with no baseRefName",
+          lambda: refuses([{k: v for k, v in DIRTY_ROW.items() if k != "baseRefName"}]), True)
+    # Claude R1-F4: a head commit dated in the future (clock skew) is age 0, never negative.
+    check("545 r1: a DIRTY head committed a day in the FUTURE is aged 0, never negative",
+          lambda: pr_item(DP, NOW + 86400, NOW, 3600).age_s, 0)
+    # ── backlog #545 r2 folds. Codex R2-F1: 21 suites, the 20 returned hold no pull_request run (Codex's repro).
+    TRUNC = {"commits": {"nodes": [{"commit": {"oid": D, "committedDate": "2026-11-06T10:00:00Z", "checkSuites": {
+        "totalCount": 21, "nodes": [{"workflowRun": None}] * 20}}}]}}
+    check("545 r2: a CONFLICTING head whose suites were TRUNCATED is UNMEASURED, with no no-CI claim or forced merge",
+          lambda: (lambda i: (i.status, "no CI run on" in i.text, "CI will not run" in i.action))(
+              pr_item(own_prs([dict(DIRTY_ROW, **TRUNC)])[0], NOW - 600, NOW, 3600)), ("UNMEASURED", False, False))
+    # r2 class audit: a malformed suite page is unmeasured, never a measured none.
+    check("545 r2: head_has_run: nodes that are not a list, or a boolean totalCount, are unknown",
+          lambda: [head_has_run({"commits": {"nodes": [{"commit": {"oid": D, "checkSuites": cs}}]}}, D) for cs in (
+              {"totalCount": 0, "nodes": ""}, {"totalCount": True, "nodes": [{"workflowRun": None}]})], [None, None])
+    # r3 Claude R3-F1: a node MISSING `workflowRun`, or a run with no string `event`, is malformed: unknown, never a
+    # measured none. The well-formed null and push-event nodes beside them are the controls.
+    check("545 r3: head_has_run: a suite node with no workflowRun key, an empty run, a null or misspelt event is "
+          "unknown; a null run and a push run are a measured none",
+          lambda: [head_has_run({"commits": {"nodes": [{"commit": {"oid": D, "checkSuites": {
+              "totalCount": 1, "nodes": [n]}}}]}}, D) for n in (
+              {}, {"workflowRun": {}}, {"workflowRun": {"event": None}}, {"workflowRun": {"evnt": "pull_request"}},
+              {"workflowRun": None}, PUSH_SUITE)], [None, None, None, None, False, False])
+    check("545 r3: ...and through own_prs a CONFLICTING head with such a page is UNMEASURED, never DIRTY-NO-CI",
+          lambda: pr_item(own_prs([dict(DIRTY_ROW, commits={"nodes": [{"commit": {
+              "oid": D, "committedDate": "2026-11-06T10:00:00Z", "checkSuites": {"totalCount": 1, "nodes": [{}]}}}]})])[0],
+              NOW - 600, NOW, 3600).status, "UNMEASURED")
+    # ⟳ Phase 6: no grace and no clock. An UNKNOWN head is UNMEASURED at every age — just pushed, dated a day in
+    # the FUTURE (r3 R3-F2's input), committed 20 min before its push (R3-F3's), a day old, undated.
+    check("545 P6: an UNKNOWN head is UNMEASURED at any age, future and undated included, and never stalled",
+          lambda: sorted({(pr_item(UP, t, NOW, 3600).status, pr_item(UP, t, NOW, 3600).status in STALLED_STATES)
+                          for t in (NOW, NOW - 60, NOW + 86400, NOW - 1200, NOW - 86400, None)}),
+          [("UNMEASURED", False)])
+    # An unmeasured line never HIDES a stalled one: a stale or undated DRAFT is still its draft state.
+    check("545 P6: a STALE draft that is UNMEASURED is STALLED-DRAFT, and an UNDATED one is UNKNOWN-DRAFT",
+          lambda: (pr_item(dict(UP, isDraft=True), NOW - 10 * 3600, NOW, 3600).status,
+                   pr_item(dict(DP, isDraft=True, headRun=None), None, NOW, 3600).status),
+          ("STALLED-DRAFT", "UNKNOWN-DRAFT"))
+    check("545 P6: an UNDATED non-draft UNKNOWN head is UNMEASURED, not OK",
+          lambda: pr_item(UP, None, NOW, 3600).text, "PR #529 batch-ci: NOTE — GitHub has not computed mergeability "
+                                                     "yet, no PR CI run seen on its head, head commit date unknown")
+    # Codex R2-F3: an empty or malformed base is unmeasured — CANNOT RUN, never "not master".
+    check("545 r2: own_prs REFUSES an empty baseRefName, and one with a space; accepts a slash",
+          lambda: (refuses([dict(DIRTY_ROW, baseRefName="")]), refuses([dict(DIRTY_ROW, baseRefName="a b")]),
+                   refuses([dict(DIRTY_ROW, baseRefName="stack/base")])), (True, True, False))
+    # Claude R1-F1: the cap must never cut a DIRTY line for an older STALLED one.
+    CAPD = ([Item("STALLED", "unpushed", h * 3600, f"tip{h}", "push") for h in range(1, 9)]
+            + [pr_item(DP, NOW - 600, NOW, 3600)])
+    check("545 r1: with 8 OLDER stalled tips, the young DIRTY-NO-CI line is still in the capped hook block, first",
+          lambda: hook_block(*render(CAPD, {}, [])).split("\n")[1].startswith("DIRTY-NO-CI   pr       PR #529"), True)
 
     # ── coordinator_rounds + review_items
     RND = coordinator_rounds({"wt-331": ["guards-cannot-run-r1-coordinator.md", "guards-cannot-run-r2-coordinator.md",
@@ -1226,7 +1493,13 @@ def _self_test_body() -> int:
           [9, 5, None])
     check("pr_fact: the fields a pr fact keeps", lambda: pr_fact({"number": 3, "headRefName": "q", "isDraft": False,
                                                                  "headRefOid": "", "headCommittedAt": 7}, {}),
-          {"kind": "pr", "number": 3, "ref": "q", "draft": False, "at": 7})
+          {"kind": "pr", "number": 3, "ref": "q", "draft": False, "at": 7, "conflicting": False, "mergeUnknown": False,
+           "run": None})
+    check("545: pr_fact carries the conflict and the head-run facts it is given",
+          lambda: {k: v for k, v in pr_fact({"number": 3, "headRefName": "q", "isDraft": False, "headRefOid": "",
+                                             "headCommittedAt": 7, "conflicting": True, "mergeUnknown": True,
+                                             "headRun": True}, {}).items()
+                   if k in ("conflicting", "mergeUnknown", "run")}, {"conflicting": True, "mergeUnknown": True, "run": True})
     check("review_facts: an unfolded half is ONE fact — its round, writer, NEWEST copy and the latest fold",
           lambda: review_facts([("s-r2-codex.md", NOW - 60, "scratch"), ("s-r2-codex.md", NOW - 90, "wt-x")],
                                {"s": (1, "wt-1")}), [FH])
@@ -1442,6 +1715,42 @@ def _self_test_body() -> int:
               lambda: ([ln.split()[0] for ln in LN if ln.startswith("STALLED")],
                        any("NOT CHECKED: no --scratch" in ln for ln in LN)), ([], True))
 
+        # backlog #545, TWO DISTINCT PR INPUTS IN ONE CASE, through collect: only the DIRTY one is reported
+        R545, L545 = run(["--repo", str(QUIET)], prs=lambda repo, b=None: [DIRTY_ROW, CLEAN_ROW, HELD_ROW], now=NOW)
+        check("545: collect over a DIRTY no-run PR, a CLEAN PR and a held DIRTY PR with a run reports ONLY the first",
+              lambda: (R545, [ln.split(" — ")[0].split(None, 2)[2].split(", last commit")[0] for ln in L545
+                              if ln.startswith("DIRTY-NO-CI")]),
+              (STALLED_RC, ["PR #529 batch-ci: DIRTY, no CI run on its head"]))
+        check("545: ...and the hook block carries that line",
+              lambda: "PR #529 batch-ci: DIRTY" in (hook_block(R545, L545) or ""), True)
+        # A FRESH DRAFT that is DIRTY (PR #537, 2026-11-08: draft, CONFLICTING, mergeStateStatus DIRTY, 0 checks)
+        # is reported though the 3 h draft rule would pass it; a fresh MERGEABLE draft beside it is not.
+        DRAFT_DIRTY = _row(537, "suite-cost-a", "a" * 40, draft=True, date="2027-01-15T07:50:00Z",
+                           mergeable="CONFLICTING")
+        DRAFT_CLEAN = _row(538, "fresh-draft", "b" * 40, draft=True, date="2027-01-15T07:50:00Z")
+        RDD, LDD = run(["--repo", str(QUIET)], prs=lambda repo, b=None: [DRAFT_DIRTY, DRAFT_CLEAN], now=NOW)
+        check("545: collect over a FRESH DIRTY draft and a FRESH MERGEABLE draft reports ONLY the dirty one, aged",
+              lambda: (RDD, [ln.split(" — ")[0].split(None, 2)[2] for ln in LDD if ln.startswith(("DIRTY-NO-CI",
+                                                                                                  "STALLED"))]),
+              (STALLED_RC, ["PR #537 suite-cost-a (draft): DIRTY, no CI run on its head, last commit 10m ago"]))
+        # backlog #545 r1 (Claude R1-F2) and ⟳ Phase 6, through collect: an UNKNOWN no-run PR (10 min old) and a
+        # CONFLICTING one whose suites were truncated are UNMEASURED CLI lines; beside a DIRTY-NO-CI PR and a CLEAN
+        # one, the hook block carries ONLY the DIRTY line. Alone, the two unmeasured ones are rc 0 and no block.
+        UNK_ROW = _row(540, "just-moved", "c" * 40, draft=False, date="2027-01-15T07:50:00Z", mergeable="UNKNOWN")
+        TRUNC_ROW = dict(_row(542, "many-suites", D, draft=False, date="2027-01-15T07:58:00Z",
+                              mergeable="CONFLICTING"), **TRUNC)
+        RUK, LUK = run(["--repo", str(QUIET)], prs=lambda repo, b=None: [UNK_ROW, TRUNC_ROW, DIRTY_ROW, CLEAN_ROW],
+                       now=NOW)
+        RU0, LU0 = run(["--repo", str(QUIET)], prs=lambda repo, b=None: [UNK_ROW, TRUNC_ROW, CLEAN_ROW], now=NOW)
+        check("545 P6: collect: UNKNOWN and truncated PRs are UNMEASURED CLI lines, never in the hook block; alone they "
+              "are rc 0 and no block",
+              lambda: (RUK, sorted(ln.split(":")[0] for ln in LUK if ln.startswith("UNMEASURED")),
+                       [ln.split(":")[0] for ln in (hook_block(RUK, LUK) or "").split("\n")[1:-1]
+                        if not ln.startswith("NOTE")],
+                       RU0, hook_block(RU0, LU0)),
+              (STALLED_RC, ["UNMEASURED    pr       PR #540 just-moved", "UNMEASURED    pr       PR #542 many-suites"],
+               ["DIRTY-NO-CI   pr       PR #529 batch-ci"], CLEAR, None))
+
         def gh_down(repo, b=None):
             raise CannotRun("gh pr list exited 4: no network")
         RCG, LG = run(["--repo", str(QUIET)], prs=gh_down, now=NOW)
@@ -1486,6 +1795,14 @@ def _self_test_body() -> int:
         check("r4 F1, END TO END: gh printing a null node is CANNOT RUN, not an empty pass",
               lambda: stubbed(GOOD.replace('"nodes": [', '"nodes": [null, ').replace('"totalCount": 1', '"totalCount": 2'))[0],
               CANNOT_RUN)
+        check("545, END TO END: the real gh wrapper reports a DIRTY no-run PR and not a CLEAN one beside it",
+              lambda: (lambda r: (r[0], "PR #529 batch-ci: DIRTY" in r[1], "#530 other: DIRTY" in r[1]))(stubbed(
+                  json.dumps({"data": {"repository": {"pullRequests": {"totalCount": 2, "nodes": [
+                      DIRTY_ROW, CLEAN_ROW]}}}}))), (STALLED_RC, True, False))
+        check("545, END TO END: gh printing a node with no mergeable is CANNOT RUN, never silence",
+              lambda: (lambda r: (r[0], "NOT RUN" in r[1]))(stubbed(json.dumps({"data": {"repository": {
+                  "pullRequests": {"totalCount": 1, "nodes": [{k: v for k, v in DIRTY_ROW.items()
+                                                               if k != "mergeable"}]}}}}))), (CANNOT_RUN, True))
         check("gh listing fewer PRs than its totalCount is CANNOT RUN, not a partial pass",
               lambda: stubbed(GOOD.replace('"totalCount": 1', '"totalCount": 101'))[0], CANNOT_RUN)
         # F4, END TO END: the hook script itself, gh hung (its child holding the pipe), must come back

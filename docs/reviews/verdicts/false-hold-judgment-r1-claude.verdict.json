@@ -1,0 +1,28 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 945c83d18632750461d10cac860ce50f04871b08",
+    "docs/reviews/claude/false-hold-judgment-r1-claude.md": "100644 4f0836e12a5af9b1ef57ecc73cc63900a5e3285f",
+    "docs/reviews/codex/false-hold-judgment-r1-codex.md": "100644 24789767cc144513dfd78a91c27d22a3399e740b",
+    "docs/reviews/verdicts/false-hold-judgment-r1-codex.verdict.json": "100644 b1b38f173c7ded9c682837bf6a1fcdad6e73bfd6"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "54667f2cc6e26996f3d0ce17aad719a4fe9d55ab",
+  "intrusions": [],
+  "loosening_answers": {
+    "6bd002a6d73a": "finding",
+    "e8b3c3bfbf22": "finding",
+    "f13e64d753fa": "not a loosening"
+  },
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 12590 chars, names 54667f2cc6e2",
+  "refused": false,
+  "review": "false-hold-judgment-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/fhj",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

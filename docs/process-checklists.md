@@ -187,7 +187,7 @@ A reused agent's context only grows, and every wake-up after an idle wait re-wri
 
 **The coordinator** is NOT reset per PR. Re-reading its context is cheap, and a reset costs a rebuild, about ten turns of re-orientation, and lost nuance while the compaction restore is broken (backlog #396). It restarts (handoff, then `/clear`) only at a natural pause when the owner is present, such as the start of a day.
 
-**Mechanical half:** the statusline caches the weekly percentage in `~/.claude/.rate-limits.json`, and the pacing hook (backlog #399) reads it. At **80%** weekly every prompt carries a one-line WARN with the reset time, shown to the owner too; at **90%** a NEW subagent spawn is denied, and so is a `SendMessage` the main session sends to wake an agent (one a subagent sends, a report, is allowed: the hook reads the caller's `agent_id`, never the recipient's name; work in flight continues). The owner's override is `ALLOW_SPAWN_OVER_LIMIT=1` at launch, or an EXPIRY epoch in the main checkout's `.claude/allow-spawn-over-limit` (gitignored); the deny's user-facing message prints the two-hour one-liner, and the agent is never told it. A stale or malformed cache is a loud CANNOT RUN on every prompt, naming the file; an absent one is said once per session; neither blocks anything. The rules live once, in `scripts/check-usage-pace.py`.
+**Mechanical half:** the statusline caches the weekly percentage in `~/.claude/.rate-limits.json`, and the pacing hook (backlog #399) reads it. At **80%** weekly every prompt carries a one-line WARN with the reset time, shown to the owner too; at **the stop** (its formula, cap and last-day rule are in the module docstring of `scripts/check-usage-pace.py`) — a NEW subagent spawn is denied, and so is a `SendMessage` the main session sends to wake an agent (one a subagent sends, a report, is allowed: the hook reads the caller's `agent_id`, never the recipient's name; work in flight continues). The owner's override is `ALLOW_SPAWN_OVER_LIMIT=1` at launch, or an EXPIRY epoch in the main checkout's `.claude/allow-spawn-over-limit` (gitignored); the deny's user-facing message prints the two-hour one-liner, and the agent is never told it. A stale or malformed cache is a loud CANNOT RUN on every prompt, naming the file; an absent one is said once per session; neither blocks anything. The rules live once, in `scripts/check-usage-pace.py`.
 
 **Every optimization adopted for token usage or speed has a row in [`docs/optimization-register.md`](optimization-register.md) BEFORE adoption** (benefit, realistic risk, the signal that it is materialising, the revert path, when to re-evaluate; owner, 2026-11-01).
 
@@ -933,12 +933,12 @@ a file, answering a question, a one-line correction: naming these costs more tha
 The name gets it a thread. It does **not** get it the review the parent work had.
 
 **Measured, one branch, same reviewers, same gates — the only variable was whether the work had a
-design** (backlog #177, [`docs/velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md) §4 — the controlled experiment):
+design** — ⛔ **the round counts below were WITHDRAWN 2026-09-26; the argument after the table does not depend on them** (backlog #177, [`docs/velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md) §4 — the controlled experiment):
 
 | Work on PR #342 | Had a design? | Outcome |
 |---|---|---|
-| observer-log record | ✅ an architecture review filed beforehand | **CONVERGED by round 3** |
-| verdict path | ❌ opportunistic side job, entered mid-round-3 | **thrashed 3 rounds**, then needed its own architecture review |
+| observer-log record | ✅ an architecture review filed beforehand | ~~CONVERGED by round 3~~ ⛔ WITHDRAWN 2026-09-26 — the round documents contradict it ([`velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md) §4): it reached r5 NOT CONVERGED |
+| verdict path | ❌ opportunistic side job, entered mid-round-3 | ~~thrashed 3 rounds~~ — untraceable (no review stem); it did need its own architecture review |
 
 ⚠ **The fix is NOT more upfront review.** The verdict path was out of scope and untouched when the
 first review ran, so no amount of reviewing at the start would have covered it — and reviewing
@@ -946,11 +946,13 @@ everything upfront to catch what you might stumble into is waterfall. **The gap 
 entering AFTER the review inherits none of it**, while arriving on a branch that already looks
 approved.
 
-So when a side job is sized YES, ask of the side job itself: *does this move a seam — a new module,
-a change to who owns what, a new protocol or vocabulary — or is it logic inside an existing one?*
+So when a side job is sized YES, ask of the side job itself: *does this move a seam — change an EXISTING
+boundary (ownership, a contract between components, a second name or mechanism for an existing thing) — or
+is it logic inside one?* (the definition is `review-method.md` §0 Q0's; a new module that only calls existing
+contracts is logic)
 Seam work wants its design settled before it is built, on a branch of its own.
 
-⟳ **When backlog #177's Q0 lands in `review-method.md` §0, this is the moment that re-asks it** —
+⟳ **Backlog #177's Q0 is in `review-method.md` §0 (landed 2026-11-03), and this is the moment that re-asks it** —
 decided 2026-09-24 with the user, form recorded in that row. Until then the question above is asked
 by hand, and the four signals that say *seam* are in [`docs/superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md`](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) §2 — ⟳ *moved there 2026-09-25 when the spec became their single owner; they are unchanged* — **which are
 OBSERVATIONS, usable now** — *not built* meant **not mechanised**, never *not applicable*, and r1 (Low)

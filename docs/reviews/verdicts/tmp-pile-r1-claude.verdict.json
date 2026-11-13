@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/tmp-pile-r1-claude.md": "100644 3f28849389bd43b7bc8d0740e9866703d9a2f21e",
+    "docs/reviews/codex/tmp-pile-r1-codex.md": "100644 f8209653ccaea0e0b97d8697af139e4d74ba5a7d",
+    "docs/reviews/verdicts/tmp-pile-r1-codex.verdict.json": "100644 7171924ab1f362cf9666e556a9650c383f1e799f"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "2bb30090a90784c256695edfebc2cb3b2055bb0e",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 7927 chars, names 2bb30090a907",
+  "refused": false,
+  "review": "tmp-pile-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/tmp",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

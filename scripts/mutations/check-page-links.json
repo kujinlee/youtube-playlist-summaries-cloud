@@ -1,0 +1,574 @@
+[
+  {
+    "name": "`refs/pull/` is read as a PR href",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "(?<!refs)/pull/",
+        "/pull/"
+      ]
+    ],
+    "expect": [
+      "rule 2: `refs/pull/` (a git ref, not a link) is not a PR href"
+    ]
+  },
+  {
+    "name": "the one place is not exempt",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "EXEMPT_SOURCES = {\"page_markup.py\", \"check-page-links.py\"}",
+        "EXEMPT_SOURCES = {\"check-page-links.py\"}"
+      ]
+    ],
+    "expect": [
+      "rule 2: page_markup.py, the one place, is exempt"
+    ]
+  },
+  {
+    "name": "an unbuilt target's fragment is passed silently, not counted",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            if target is None:\n                unchecked += 1",
+        "            if target is None:\n                pass"
+      ]
+    ],
+    "expect": [
+      "rule 3: a fragment on a page this does not build is COUNTED, not passed silently"
+    ]
+  },
+  {
+    "name": "a dangling fragment is not reported",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "                bad.append(f\"{n} -> /{target}#{frag}\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "rule 3: a fragment with no id on its target page is dangling; one that resolves is not"
+    ]
+  },
+  {
+    "name": "an empty fragment is checked as a link",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        if not sep or not frag:",
+        "        if not sep:"
+      ]
+    ],
+    "expect": [
+      "rule 3: an empty fragment (`#`, a neutralised href) is not a link to check"
+    ]
+  },
+  {
+    "name": "a missing page passes",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        return CANNOT, [f\"CANNOT RUN",
+        "        return OK, [f\"CANNOT RUN"
+      ]
+    ],
+    "expect": [
+      "a missing page is CANNOT RUN, never a pass"
+    ]
+  },
+  {
+    "name": "a dangling fragment does not fail the page check",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    if bad:\n        rc = BROKEN\n",
+        "    if bad:\n"
+      ]
+    ],
+    "expect": [
+      "a page with a dangling fragment FAILS"
+    ]
+  },
+  {
+    "name": "main reads the real tree whatever root it is given",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    src = check_sources(root)",
+        "    src = check_sources(ROOT)"
+      ]
+    ],
+    "expect": [
+      "main --sources: a hand-built href FAILS, and the output names it"
+    ]
+  },
+  {
+    "name": "main drops the page verdict, so missing pages pass",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    return max(rc, prc) if prc != CANNOT else CANNOT",
+        "    return rc"
+      ]
+    ],
+    "expect": [
+      "main --dir: missing pages are CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the self-test exemption is dropped, so expected values read as built hrefs",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        if id(n) in inner or s is None or any(a <= n.lineno <= b for a, b in tests):",
+        "        if id(n) in inner or s is None:"
+      ]
+    ],
+    "expect": [
+      "rule 2: a literal INSIDE the self-test body is test code and exempt"
+    ]
+  },
+  {
+    "name": "the self-test exemption runs to the end of the file again, so production code after it is exempt",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    tests = [(f.lineno, f.end_lineno) for f in ast.walk(tree)",
+        "    tests = [(f.lineno, 10 ** 9) for f in ast.walk(tree)"
+      ]
+    ],
+    "expect": [
+      "rule 2: production code AFTER a self-test is NOT exempt (Codex r1 5)"
+    ]
+  },
+  {
+    "name": "a docstring is read as a built href",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        if id(n) in docs:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "rule 2: a DOCSTRING naming an href is not a built href"
+    ]
+  },
+  {
+    "name": "a `+` chain is not joined, so an href built from pieces is missed",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "rule 2: an href concatenated from pieces that never spell it alone is found (Codex r1 5)"
+    ]
+  },
+  {
+    "name": "a source file that does not parse is passed silently",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        return [f\"{name}:{exc.lineno}: CANNOT READ — the file does not parse ({exc.msg})\"]",
+        "        return []"
+      ]
+    ],
+    "expect": [
+      "rule 2: a file that names a home page and does not parse is reported, never passed"
+    ]
+  },
+  {
+    "name": "rule 1 stops reading the keys text_keys reports",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        out += [m.group(0) for m in page_markup.text_keys(t)]",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "rule 1: a backlog key in plain text is found"
+    ]
+  },
+  {
+    "name": "bare chips are not looked for",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        if chip and t.kind == \"data\" and CHIP_TEXT.match(t.text):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "rule 1: a bare #N chip outside an <a> is found"
+    ]
+  },
+  {
+    "name": "a chip that is itself a link is read as a bare chip",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        chip = (t.kind == \"start\" and t.tag != \"a\" and not t.in_a",
+        "        chip = (t.kind == \"start\""
+      ]
+    ],
+    "expect": [
+      "rule 1: a #N chip that IS a link is fine"
+    ]
+  },
+  {
+    "name": "an <a> inside an <a> is not reported",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    out = [f\"line {_line(page, t.start)}\" for t in tokens if t.tag == \"a\" and t.kind == \"start\" and t.in_a]",
+        "    out = []"
+      ]
+    ],
+    "expect": [
+      "rule 1b: the features row of round 1 — an <a> inside an <a> — is found"
+    ]
+  },
+  {
+    "name": "an <a> left open at the end is not reported",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    return out + ([\"an <a> still open at the end\"] if \"a\" in open_at_end else [])",
+        "    return out"
+      ]
+    ],
+    "expect": [
+      "rule 1b: an <a> left open at the end is found"
+    ]
+  },
+  {
+    "name": "a page with an unlinked key does not fail",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "((\"1\", unlinked_keys(p)), ",
+        "((\"1\", []), "
+      ]
+    ],
+    "expect": [
+      "a page with an unlinked key FAILS"
+    ]
+  },
+  {
+    "name": "a page with an <a> in an <a> does not fail",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "(\"1b\", nested_anchors(p)), ",
+        "(\"1b\", []), "
+      ]
+    ],
+    "expect": [
+      "a page with an <a> in an <a> FAILS"
+    ]
+  },
+  {
+    "name": "a page with a duplicate id does not fail",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "(\"4\", duplicate_ids(p))):",
+        "(\"4\", [])):"
+      ]
+    ],
+    "expect": [
+      "a page with a duplicate id FAILS"
+    ]
+  },
+  {
+    "name": "any element's `name` is read as a fragment target",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        if t.tag == \"a\" and a.get(\"name\"):",
+        "        if a.get(\"name\"):"
+      ]
+    ],
+    "expect": [
+      "rule 3: a `name` on anything but an <a> is not a fragment target"
+    ]
+  },
+  {
+    "name": "a second declaration of an id is not counted",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            (dup if i in seen else seen).add(i)",
+        "            seen.add(i)"
+      ]
+    ],
+    "expect": [
+      "rule 4: an id declared twice is found"
+    ]
+  },
+  {
+    "name": "a JSON script is read as JavaScript",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        if \"src\" in a or kind not in JS_TYPES:",
+        "        if \"src\" in a:"
+      ]
+    ],
+    "expect": [
+      "rule 5: only inline JavaScript is read — not JSON, not src="
+    ]
+  },
+  {
+    "name": "no node reads as no script errors, a pass",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    if node is None:\n        return None, len(found)",
+        "    if node is None:\n        return [], len(found)"
+      ]
+    ],
+    "expect": [
+      "rule 5: no node is CANNOT RUN (None), never an empty list"
+    ]
+  },
+  {
+    "name": "check_pages turns rule 5's CANNOT RUN into a pass",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        rc = CANNOT if rc == OK else rc",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "no node: five clean pages are CANNOT RUN for rule 5, never a pass"
+    ]
+  },
+  {
+    "name": "a script that fails node --check is not reported",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            if r.returncode != 0:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "rule 5: a script that does not parse is found"
+    ]
+  },
+  {
+    "name": "a page whose script fails does not fail",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        lines.append(f\"[FAIL] rule 5: {len(errs)} inline script(s) fail `node --check`: \" + \"; \".join(errs[:6]))",
+        "        rc = OK"
+      ]
+    ],
+    "expect": [
+      "a page with a script that does not parse FAILS"
+    ]
+  },
+  {
+    "name": "every script is parsed, whatever it names, so the prefilter is gone",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    if name in EXEMPT_SOURCES or not any(h in text for h in HOME_PATHS):",
+        "    if name in EXEMPT_SOURCES:"
+      ]
+    ],
+    "expect": [
+      "rule 2: a file naming no home page is not read at all"
+    ]
+  },
+  {
+    "name": "rule 0 is not read",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        outside = page_markup.subset_problems(p)",
+        "        outside = []"
+      ]
+    ],
+    "expect": [
+      "rule 0: a page with r2 3: a self-closed script FAILS"
+    ]
+  },
+  {
+    "name": "a page outside the subset still has its other rules run",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        else:\n            pages[n] = p",
+        "        if True:\n            pages[n] = p"
+      ]
+    ],
+    "expect": [
+      "rule 0: a page outside the subset is named, and its other rules are NOT RUN"
+    ]
+  },
+  {
+    "name": "a `%` format is not read (r2 1)",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "rule 2: Codex r2 1 — a `%`-formatted PR href is found"
+    ]
+  },
+  {
+    "name": "a conversion's literal argument is not substituted",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        t = _literal(a) if a is not None else None",
+        "        t = None"
+      ]
+    ],
+    "expect": [
+      "rule 2: a `%` whose literal pieces are its ARGUMENTS is found"
+    ]
+  },
+  {
+    "name": "a named format field is not looked up",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            a = kwargs.get(field) if field else next(pos, None)",
+        "            a = None if field else next(pos, None)"
+      ]
+    ],
+    "expect": [
+      "rule 2: a `.format` whose literal pieces are its arguments, positional or named, is found"
+    ]
+  },
+  {
+    "name": "`.format` on a literal is not read",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            and node.func.attr in (\"format\", \"join\") and _literal(node.func.value) is not None):",
+        "            and node.func.attr in (\"join\",) and _literal(node.func.value) is not None):"
+      ]
+    ],
+    "expect": [
+      "rule 2: a `.format` whose literal pieces are its arguments, positional or named, is found"
+    ]
+  },
+  {
+    "name": "a join of constants is not read",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        if len(node.args) == 1 and isinstance(node.args[0], (ast.List, ast.Tuple)):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "rule 2: a `\"\".join` of constants is found"
+    ]
+  },
+  {
+    "name": "an f-string's constant parts read as `{}`",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            t = _literal(v.value) if isinstance(v, ast.FormattedValue) and v.format_spec is None else None",
+        "            t = None"
+      ]
+    ],
+    "expect": [
+      "rule 2: an f-string whose CONSTANT parts spell the href is found"
+    ]
+  },
+  {
+    "name": "the parts of a literal are reported again on their own",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            inner.update(id(c) for c in _parts(n))",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "rule 2: a PR href whose number is joined on is found"
+    ]
+  },
+  {
+    "name": "a renderer that RAISES is swallowed as a pass by the property",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "                why = [f\"{type(exc).__name__}: {str(exc)[:120]}\"]",
+        "                why = []"
+      ]
+    ],
+    "expect": [
+      "property: a renderer outside the subset, nesting an <a>, or raising is each reported"
+    ]
+  },
+  {
+    "name": "the property no longer checks for an <a> in an <a>",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "                why = (page_markup.subset_problems(linked) + nested_anchors(linked)",
+        "                why = (page_markup.subset_problems(linked)"
+      ]
+    ],
+    "expect": [
+      "property: a renderer outside the subset, nesting an <a>, or raising is each reported"
+    ]
+  },
+  {
+    "name": "the corpus loses the review's verbatim inputs",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    return list(FUZZ_VERBATIM) + [\"\".join(",
+        "    return [] + [\"\".join("
+      ]
+    ],
+    "expect": [
+      "property: the corpus is the review's inputs plus the seeded draw, the same on every run"
+    ]
+  },
+  {
+    "name": "the corpus is no longer seeded, so two runs differ",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    rng = random.Random(seed)",
+        "    rng = random.Random()"
+      ]
+    ],
+    "expect": [
+      "property: the corpus is the review's inputs plus the seeded draw, the same on every run"
+    ]
+  },
+  {
+    "name": "the property reads one renderer per module, not each one in the table",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        fn = getattr(mods[script], attr)\n",
+        "        fn = getattr(mods[script], attr)\n        if any(n.startswith(script[:-3] + \".\") for n, _ in out):\n            continue\n"
+      ]
+    ],
+    "expect": [
+      "property: every generator renderer in GENERATOR_RENDERERS is read from its own module"
+    ]
+  }
+]

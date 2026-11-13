@@ -1,0 +1,20 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: try_next \u2014 the final message NAMES ITS OWN OUTPUT FILE (marketplace-inventory-r6-codex.md), so it is a report of having written a review, not the review. The review itself was not captured \u2014 see the prompt rule 'YOUR FINAL MESSAGE IS THE REVIEW ITSELF'",
+    "  gpt-6-astra: ok \u2014 5148 chars"
+  ],
+  "dirty": {
+    "docs/reviews/coordinator/marketplace-inventory-r6-coordinator.md": "100644 1e98f9e7143a7a257d7f562d72a7455f70f1b21c"
+  },
+  "exit_code": 3,
+  "gate_ran": true,
+  "head": "4d07ee59d68c801a4199d3660e6b28da72024b32",
+  "intrusions": [],
+  "model": "gpt-6-astra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/239d5d35-b6c3-4091-b870-f25ecc3b5e90/scratchpad/r6/prompt.md",
+  "reason": "5148 chars; NOT PROMOTED: REFUSING \u2014 the promoted review already exists: /Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/7dedb749-0329-4f9f-b967-200febb2bbbf/scratchpad/wt-marketplace/docs/reviews/codex/marketplace-inventory-r6-codex.md",
+  "refused": false,
+  "review": "marketplace-inventory-r6-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

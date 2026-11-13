@@ -165,7 +165,7 @@
       ]
     ],
     "expect": [
-      "...and the tied names are reported in a stable order, because the reader prints them"
+      "backlog #506: tied names given in REVERSE order still come back sorted, under every hash seed"
     ]
   },
   {

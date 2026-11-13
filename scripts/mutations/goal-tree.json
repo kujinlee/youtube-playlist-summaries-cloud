@@ -4,8 +4,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            if rel not in RELATIONS:",
-        "            if False:"
+        "    if rel not in RELATIONS:\n",
+        "    if False:\n"
       ]
     ],
     "expect": [
@@ -17,8 +17,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            if not REFS_RE.fullmatch(refs_text):",
-        "            if not REFS_RE.search(refs_text):"
+        "    if not REFS_RE.fullmatch(refs_text):",
+        "    if not REFS_RE.search(refs_text):"
       ]
     ],
     "expect": [
@@ -56,7 +56,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            if any(t[\"key\"] == key for t in cur[\"threads\"]):",
+        "            if any(x[\"key\"] == t[\"key\"] for x in cur[\"threads\"]):",
         "            if False:"
       ]
     ],
@@ -138,7 +138,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if flying and state in (\"next\", \"notfound\"):",
+        "    if flying and state in (\"next\", \"notfound\", \"superseded\", \"withdrawn\"):",
         "    if flying:"
       ]
     ],
@@ -290,25 +290,12 @@
     ]
   },
   {
-    "name": "with no repo read, a PR link is guessed",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "(f\"https://github.com/{repo}/pull/{n}\" if repo else None)",
-        "f\"https://github.com/{repo}/pull/{n}\""
-      ]
-    ],
-    "expect": [
-      "with no repo read, a PR ref is plain text, never a guessed URL"
-    ]
-  },
-  {
     "name": "tree text is written into the page unescaped",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                   else html.escape(t) for t, h in segments(line, repo))",
-        "                   else t for t, h in segments(line, repo))"
+        "            out.append(html.escape(t))",
+        "            out.append(t)"
       ]
     ],
     "expect": [
@@ -385,8 +372,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "for e in src[\"ledger\"] if not (_ledger_numbers(e) & nums) and not _SS.waits_on_owner(e)]",
-        "for e in src[\"ledger\"] if not (_ledger_numbers(e) & nums)]"
+        "for e in src[\"ledger\"] if not (_ledger_refs(e) & pairs) and not _SS.waits_on_owner(e)]",
+        "for e in src[\"ledger\"] if not (_ledger_refs(e) & pairs)]"
       ]
     ],
     "expect": [
@@ -980,6 +967,3837 @@
     ],
     "expect": [
       "⭐ #389 r1 X4: two plans that DISPLAY alike stay two records, keyed by (checkout, slug)"
+    ]
+  },
+  {
+    "name": "a leading SUPERSEDED marker is not read as superseded",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if m.group(1) == \"SUPERSEDED\"), None)",
+        "if False), None)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: a LEADING SUPERSEDED marker whose PR merged prints ✖ and ITS forward pointer (two M)"
+    ]
+  },
+  {
+    "name": "the forward pointer is a constant, not the row's own M",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "re.findall(r\"#(\\d+)\", ptr.group(1))",
+        "[\"481\"]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: a LEADING SUPERSEDED marker whose PR merged prints ✖ and ITS forward pointer (two M)"
+    ]
+  },
+  {
+    "name": "only the first of several forward pointers is printed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "ptr.group(1))) if ptr else \"\"",
+        "ptr.group(1))[:1]) if ptr else \"\""
+      ]
+    ],
+    "expect": [
+      "backlog #484: several forward pointers in the marker are all printed, each as a backlog ref"
+    ]
+  },
+  {
+    "name": "a WITHDRAWN marker is not read as withdrawn",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif marks:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: a leading WITHDRAWN marker prints ✖ withdrawn (glyph, and `(was X)`)"
+    ]
+  },
+  {
+    "name": "the word anywhere in the Status cell is a fate (r1 H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        marks = [m for m in FATE_RE.finditer(",
+        "        marks = [m for m in re.compile(r\"(SUPERSEDED|WITHDRAWN)\\b([^*]*)\").finditer("
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 H1): the word in the cell's PROSE is not a fate — row 484's own cell, and a negation"
+    ]
+  },
+  {
+    "name": "a marker inside a code span is read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return CODE_SPAN_RE.sub(\"\", status).split",
+        "return status.split"
+      ]
+    ],
+    "expect": [
+      "backlog #484: a marker after `Previously: `, or inside a code span, is history or quotation — not read"
+    ]
+  },
+  {
+    "name": "a marker after `Previously: ` is read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        ".split(HISTORY_CUT, 1)[0]",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 X1): the cell is CUT at its first `Previously:` — prose, spaces, several markers"
+    ]
+  },
+  {
+    "name": "a marker led by an emphasis glyph is read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "|[✅✖]",
+        "|[✅✖⛔]"
+      ]
+    ],
+    "expect": [
+      "backlog #484: a marker led by an EMPHASIS glyph is not a fate (rows 48 and 213's other clauses)"
+    ]
+  },
+  {
+    "name": "only a marker LEADING the cell is read, not the audit's appended one",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "|[✅✖]\\ufe0f?\\s*)(?:",
+        ")(?:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 M1): the audit's APPENDED dated marker is read (rows 124 and 189's shapes)"
+    ]
+  },
+  {
+    "name": "an unbolded marker is read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "r\"\\*\\*(SUPERSEDED|WITHDRAWN)",
+        "r\"(?:\\*\\*)?(SUPERSEDED|WITHDRAWN)"
+      ]
+    ],
+    "expect": [
+      "backlog #484: a LOWERCASE `superseded by` is not a marker (row 327's shape), nor `WITHDRAWN` unbolded"
+    ]
+  },
+  {
+    "name": "WITHDRAWN beats a later SUPERSEDED in one Status cell",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "sup = next((m for m in marks if",
+        "sup = next((m for m in marks[:1] if"
+      ]
+    ],
+    "expect": [
+      "backlog #484: a SUPERSEDED marker beats a WITHDRAWN one in the same cell, in either order"
+    ]
+  },
+  {
+    "name": "the item cell is read as part of the Status cell",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "fate_text(r[\"status\"])",
+        "fate_text(r[\"body\"] + \" \" + r[\"status\"])"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: SUPERSEDED / WITHDRAWN in the TITLE only is not the Status cell — still ✅"
+    ]
+  },
+  {
+    "name": "the second table's rows are read as Items rows (r1 L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if r[\"section\"] != ITEMS_SECTION:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 L1): only the Items table's rows have fates — the second table's same number does not"
+    ]
+  },
+  {
+    "name": "a ✅ Status cell is read as withdrawn",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            fates[r[\"num\"]] = None",
+        "            fates[r[\"num\"]] = (\"withdrawn\", \"withdrawn\") if \"✅\" in r[\"status\"] else None"
+      ]
+    ],
+    "expect": [
+      "backlog #484 adjacent negative: a ✅ Status with no marker still prints ✅ merged"
+    ]
+  },
+  {
+    "name": "the first row's fate wins, not superseded over withdrawn (r1 M3.1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                state = \"superseded\" if any(f[0] == \"superseded\" for f in fated) else \"withdrawn\"",
+        "                state = fated[0][0]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 M3.1): two fated rows — superseded beats withdrawn in either order"
+    ]
+  },
+  {
+    "name": "two rows with one fate print it twice (r1 M3.2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\" · \".join(dict.fromkeys(f[1] for f in fated))",
+        "\" · \".join(f[1] for f in fated)"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r1 M3.2): two rows with the same fate name it once"
+    ]
+  },
+  {
+    "name": "a fate hides a LIVE row's state (r1 M2 / M3.3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if not live_rows and state in",
+        "            if state in"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 M2, Codex 4): a fated row beside a LIVE row keeps the merge ✅, either order"
+    ]
+  },
+  {
+    "name": "a fate hides an OPEN PR (r1 M3.4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "state in (\"merged\", \"next\", \"closed\"):",
+        "state in (\"merged\", \"next\", \"closed\", \"open\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 M3.4): an OPEN PR beats a fate — ⏳ stays, the fate is named"
+    ]
+  },
+  {
+    "name": "only the first backlog ref's fate is read (Codex 4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        fated = [fate_of[n] for n in rows if fate_of[n]]",
+        "        fated = [fate_of[n] for n in rows[:1] if fate_of[n]]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 M2, Codex 4): a fated row beside a LIVE row keeps the merge ✅, either order"
+    ]
+  },
+  {
+    "name": "a fated row's merge subject counts as a live row's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "subj) for n in live_rows)), None)",
+        "subj) for n in rows)), None)"
+      ]
+    ],
+    "expect": [
+      "...and a leaf whose rows are ALL fated, with no PR, is ✖ — not ⬜ next, and not the fated row's merge"
+    ]
+  },
+  {
+    "name": "a fated row's open PR counts as a live row's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"\") for n in live_rows)]",
+        "\"\") for n in rows)]"
+      ]
+    ],
+    "expect": [
+      "...and a leaf whose rows are ALL fated, with no PR, is ✖ — not ⬜ next, and not the fated row's merge"
+    ]
+  },
+  {
+    "name": "a leaf whose rows are all fated, with no PR, stays ⬜ next",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"next\", \"closed\"):",
+        "\"closed\"):"
+      ]
+    ],
+    "expect": [
+      "...and a leaf whose rows are ALL fated, with no PR, is ✖ — not ⬜ next, and not the fated row's merge"
+    ]
+  },
+  {
+    "name": "a leaf whose rows are all fated, with a closed PR, stays ✖ closed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"merged\", \"next\", \"closed\"",
+        "\"merged\", \"next\""
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r1 M3.2): two rows with the same fate name it once"
+    ]
+  },
+  {
+    "name": "a ref to a row the backlog does not have falls back to the merge (Codex 3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif missing:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (Codex 3, r1 L2): a ref to a row the backlog does not have is CANNOT RUN, never ✅"
+    ]
+  },
+  {
+    "name": "a fate hides an in-flight entry",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"notfound\", \"superseded\", \"withdrawn\")",
+        "\"notfound\")"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: an IN-FLIGHT entry beats a fate — ⏳ stays, the fate is named"
+    ]
+  },
+  {
+    "name": "an unread backlog falls back to the merge state",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if fates is None:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: an unreadable backlog makes a backlog-ref leaf CANNOT RUN, never ✅"
+    ]
+  },
+  {
+    "name": "a backlog line the parser refused still yields fates",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if fproblems:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: a partly unreadable backlog leaves no fates, so a backlog leaf is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a code span is a single-backtick pair, not a matching run (r2 X2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "re.compile(r\"(?<!`)(`+)(?!`)(.*?)(?<!`)\\1(?!`)\", re.S)",
+        "re.compile(r\"`[^`]*`\")"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 X2): a code span of N backticks closes only on N — double, triple, an inner backtick"
+    ]
+  },
+  {
+    "name": "an opening backtick run may shorten to pair with a shorter closer",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(`+)(?!`)(.*?)",
+        "(`+)(.*?)"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r2 X2) adjacent: an UNCLOSED run is literal, and two spans do not swallow what is between"
+    ]
+  },
+  {
+    "name": "the cell is cut at Previously: BEFORE code spans are removed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return CODE_SPAN_RE.sub(\"\", status).split(HISTORY_CUT, 1)[0]",
+        "return CODE_SPAN_RE.sub(\"\", status.split(HISTORY_CUT, 1)[0])"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r2): code spans go FIRST — a QUOTED `Previously:` does not cut the cell"
+    ]
+  },
+  {
+    "name": "the cell is cut at its LAST Previously:, not its first",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "status).split(HISTORY_CUT",
+        "status).rsplit(HISTORY_CUT"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 X1): the cell is CUT at its first `Previously:` — prose, spaces, several markers"
+    ]
+  },
+  {
+    "name": "a fate hides a PR gh did not list (r2 X3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "live_rows and state in (\"merged\", \"next\", \"closed\"):",
+        "live_rows and state in (\"merged\", \"next\", \"closed\", \"notfound\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 X3): a PR gh did not list beats a fate — ❓ notfound stays, the fate is named"
+    ]
+  },
+  {
+    "name": "a later REOPENED bold span does not cancel the fate",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "FATE_RE.finditer(t) if not _reopened_after(t, m)]",
+        "FATE_RE.finditer(t)]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 note): a LATER bold span leading with REOPENED cancels the fate (row 327's shape)"
+    ]
+  },
+  {
+    "name": "a reopen with a leading date is not read (row 327's real shape)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(?:\\d{4}-\\d{2}-\\d{2}\\s*[—–-]\\s*)?REOPENED",
+        "REOPENED"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 note): a LATER bold span leading with REOPENED cancels the fate (row 327's shape)"
+    ]
+  },
+  {
+    "name": "the marker's own closing ** opens the reopen scan",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "m.end() + (2 if t.startswith(\"**\", m.end()) else 0)",
+        "m.end()"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r2 note) adjacent: a reopen BEFORE the marker, unbolded, or not LEADING its span cancels nothing"
+    ]
+  },
+  {
+    "name": "a reopen BEFORE the marker cancels it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "BOLD_RE.finditer(t, start)",
+        "BOLD_RE.finditer(t)"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r2 note) adjacent: a reopen BEFORE the marker, unbolded, or not LEADING its span cancels nothing"
+    ]
+  },
+  {
+    "name": "REOPENED anywhere in a later bold span cancels the fate",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "REOPEN_RE.match(b.group(1))",
+        "REOPEN_RE.search(b.group(1))"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r2 note) adjacent: a reopen BEFORE the marker, unbolded, or not LEADING its span cancels nothing"
+    ]
+  },
+  {
+    "name": "the live tree gives a key an id at EVERY occurrence, so ids collide",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if key in ids:\n        return \"\"\n",
+        "    if False:\n        return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "the live tree gives a key its id at its FIRST occurrence only"
+    ]
+  },
+  {
+    "name": "the live tree emits no thread ids, so /goal-tree#t-… links dangle",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "render_tree_html(newest, ids=True,",
+        "render_tree_html(newest, ids=False,"
+      ]
+    ],
+    "expect": [
+      "the page's ids are unique: the live tree has them, the timeline's trees do not"
+    ]
+  },
+  {
+    "name": "the timeline's past trees emit ids too, colliding with the live tree's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "+ '</ul>' + render_tree_html(snap) + '</details>'",
+        "+ '</ul>' + render_tree_html(snap, ids=True) + '</details>'"
+      ]
+    ],
+    "expect": [
+      "the page's ids are unique: the live tree has them, the timeline's trees do not"
+    ]
+  },
+  {
+    "name": "a PR with no repo loses its id, so its thread cannot be linked to",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif a:\n            out.append(f'<span{a}>{html.escape(t)}</span>')\n",
+        "        elif False:\n            out.append(f'<span{a}>{html.escape(t)}</span>')\n"
+      ]
+    ],
+    "expect": [
+      "a PR with no repo still carries its id, on plain text"
+    ]
+  },
+  {
+    "name": "backlog #497: the 48 h boundary is inclusive the wrong way, so a merge exactly 48 h old folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "a > RECENT_HOURS for a in ages",
+        "a >= RECENT_HOURS for a in ages"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a merge is RECENT up to exactly 48 h before the drawing, OLDER one minute past it"
+    ]
+  },
+  {
+    "name": "backlog #497: a merge whose age cannot be read is folded as older",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    except (TypeError, ValueError):\n        return None\n",
+        "    except (TypeError, ValueError):\n        return 10 ** 6\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a merge whose age cannot be read is RECENT — an unread time never folds a leaf away"
+    ]
+  },
+  {
+    "name": "backlog #497: an unread merge minute prints blank",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return TIME_UNREAD\n",
+        "        return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: an unread merge minute says TIME UNREAD, never a blank or a guessed time",
+      "backlog #497: a stored minute prints as the owner's `mm-dd hh:mm`, anything else as TIME UNREAD"
+    ]
+  },
+  {
+    "name": "backlog #497: a zoneless mergedAt is read in this machine's zone — a guessed time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return t.astimezone(tz).strftime(MINUTE_FMT) if t.tzinfo is not None else None",
+        "    return t.astimezone(tz).strftime(MINUTE_FMT)"
+      ]
+    ],
+    "expect": [
+      "backlog #497: gh's mergedAt is converted to the given zone; no zone or no parse is None, never a guess"
+    ]
+  },
+  {
+    "name": "backlog #497: a parked ledger entry turns an unstarted leaf in flight",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    flying = [_SS.clean(e.get(\"what\", \"\"), 160) for e in naming if not is_parked(e)]",
+        "    flying = [_SS.clean(e.get(\"what\", \"\"), 160) for e in naming]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a parked entry does NOT make an unstarted leaf in flight — it is shown as parked"
+    ]
+  },
+  {
+    "name": "backlog #497: the parked bucket is never chosen",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if t.get(\"parked\"):\n        return \"parked\"",
+        "    if False:\n        return \"parked\""
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a parked leaf that has not landed is PARKED; one that merged or closed is aged instead"
+    ]
+  },
+  {
+    "name": "backlog #497: a parked entry naming only landed threads is hidden inside their folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if hits and is_parked(e) and all(t[\"state\"] in LANDED for t in hits):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a parked entry naming only LANDED threads joins that group, naming them — never hidden in a fold"
+    ]
+  },
+  {
+    "name": "backlog #497: a merged leaf with an unread minute takes the latest READ one — a guessed time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    merged_at = max(whens) if whens and all(whens) else None",
+        "    merged_at = max(w for w in whens if w) if whens and any(whens) else None"
+      ]
+    ],
+    "expect": [
+      "backlog #497: a thread's merged_at is its LATEST merge; one unread minute makes it unread; unmerged is None"
+    ]
+  },
+  {
+    "name": "backlog #497: every bucket is drawn open, so nothing folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    shown = [(t, b) for t, b in marked if b in VISIBLE]",
+        "    shown = list(marked)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: the folded leaves are NOT in the text — the count stands for them"
+    ]
+  },
+  {
+    "name": "backlog #497: --print lists a fold's leaves instead of its count line",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            out += [b[3]] if b[3] is not None else _flat(b[4])",
+        "            out += _flat(b[4])"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: --print shows now, recent, queued and parked leaves, labelled, and folds the rest to counts"
+    ]
+  },
+  {
+    "name": "backlog #497: a goal with nothing current is not folded on the page",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if g[\"threads\"] and not shown:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: the page folds `older` and `later` CLOSED with the count in each summary, and folds a goal with nothing current"
+    ]
+  },
+  {
+    "name": "backlog #497: a fold is drawn OPEN",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            out.append(f'<details class=\"fold {b[1]}\"><summary>",
+        "            out.append(f'<details open class=\"fold {b[1]}\"><summary>"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: the page folds `older` and `later` CLOSED with the count in each summary, and folds a goal with nothing current"
+    ]
+  },
+  {
+    "name": "backlog #497: the page's current tree is bucketed at the snapshot time, not the build time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "render_tree_html(newest, ids=True, at=built, qa=qa, seen=seen)",
+        "render_tree_html(newest, ids=True, qa=qa, seen=seen)"
+      ]
+    ],
+    "expect": [
+      "backlog #497: the page's current tree is bucketed at its BUILD time, like --print at its run"
+    ]
+  },
+  {
+    "name": "backlog #497: git is asked for the committer date in the commit's own zone, not the owner's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"-n{MERGED_DEPTH}\", f\"--date=format-local:{MINUTE_FMT}\",",
+        "f\"-n{MERGED_DEPTH}\", f\"--date=format:{MINUTE_FMT}\","
+      ]
+    ],
+    "expect": [
+      "backlog #497: ...asking git for the committer date in the owner's LOCAL zone, minute precision"
+    ]
+  },
+  {
+    "name": "backlog #497: gh's mergedAt is not read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if p.get(\"mergedAt\"):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "backlog #497: collect reads gh's mergedAt for a PR off master's log, as a local minute"
+    ]
+  },
+  {
+    "name": "goal blocks: goals are numbered from 0, not 1-based by their first request's time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    rank = {i: r for r, i in enumerate(order, 1)}",
+        "    rank = {i: r for r, i in enumerate(order)}"
+      ]
+    ],
+    "expect": [
+      "⛔ goal blocks: --print numbers each goal by its first request's time, `GOAL n · slug`"
+    ]
+  },
+  {
+    "name": "goal blocks: --print's goal line drops its number",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return f\"GOAL {n} · {slug}\"",
+        "    return f\"GOAL {slug}\""
+      ]
+    ],
+    "expect": [
+      "⛔ goal blocks: --print numbers each goal by its first request's time, `GOAL n · slug`"
+    ]
+  },
+  {
+    "name": "goal blocks: a past tree's goal sections carry anchors too, so the page's ids collide",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    anchor = f' id=\"goal-{html.escape(slug, quote=True)}\"' if seen is not None else \"\"",
+        "    anchor = f' id=\"goal-{html.escape(slug, quote=True)}\"'"
+      ]
+    ],
+    "expect": [
+      "goal blocks: a past tree's sections carry no anchor, so the page's ids stay unique"
+    ]
+  },
+  {
+    "name": "goal blocks: a goal folded whole loses its numbered heading from the summary",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return (f'<section class=\"goal\"{anchor}><details class=\"fold goal\"><summary>{head}'",
+        "        return (f'<section class=\"goal\"{anchor}><details class=\"fold goal\"><summary>'"
+      ]
+    ],
+    "expect": [
+      "⛔ goal blocks: a goal with nothing current keeps its NUMBERED heading as its closed fold's summary"
+    ]
+  },
+  {
+    "name": "goal blocks: the heading takes the link colour, not the common look's --accent",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "h3.goal-h{margin:.1rem 0 .3rem;color:var(--accent);",
+        "h3.goal-h{margin:.1rem 0 .3rem;color:var(--link);"
+      ]
+    ],
+    "expect": [
+      "goal blocks: the heading colour is the common look's --accent (gold), declared in all four palettes"
+    ]
+  },
+  {
+    "name": "review r1 X1: in-flight ledger work no longer lifts a landed thread to NOW, so it folds away",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if t.get(\"inflight\", \" · in flight: \" in str(t.get(\"detail\", \"\"))):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X1: in-flight ledger work on a MERGED thread is NOW — in --print, and outside every page fold"
+    ]
+  },
+  {
+    "name": "review r1 X1: an open PR mentioned in any thread's detail text counts as represented, so it leaves UNDECLARED",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    named_prs |= {n for g in out_goals for t in g[\"threads\"] for n in t.get(\"open_prs\") or []}",
+        "    named_prs |= {int(m) for g in out_goals for t in g[\"threads\"] for m in re.findall(r\"PR #(\\d+)\", t[\"detail\"])}"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X1: an open PR mentioned only in a ledger entry's text is still UNDECLARED, never hidden"
+    ]
+  },
+  {
+    "name": "review r1 X1: the open PR a backlog row resolved to by its title is not recorded, so it shows as undeclared",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            open_pr = int(p[\"number\"])\n",
+        ""
+      ],
+      [
+        "    resolved = [int(q[\"number\"]) for q in opened]\n",
+        "    resolved = []\n"
+      ]
+    ],
+    "expect": [
+      "review r1 X1 adjacent: a backlog-only thread resolved to an open PR by its TITLE still represents that PR"
+    ]
+  },
+  {
+    "name": "review r1 X2: master's committer date wins over GitHub's mergedAt",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if gh:\n        return gh\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X2: a merged leaf's time is GitHub's mergedAt, not the commit date, and stays RECENT"
+    ]
+  },
+  {
+    "name": "review r1 X2: a backlog-only thread's merge time ignores GitHub's mergedAt",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            whens = [(src.get(\"all_merged_at\") or {}).get(hit[1]) or (src.get(\"merged_at\") or {}).get(hit[0])]",
+        "            whens = [(src.get(\"merged_at\") or {}).get(hit[0])]"
+      ]
+    ],
+    "expect": [
+      "review r1 X2 adjacent: with no mergedAt, the commit date is the fallback (backlog-only path too)"
+    ]
+  },
+  {
+    "name": "review r1 X3: goals are numbered by their place in the file, so a prepended goal renumbers the rest",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    order = sorted(range(len(goals)), key=lambda i: (goals[i][\"requests\"][0][\"when\"], i))",
+        "    order = list(range(len(goals)))"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X3: goals are numbered by their FIRST request's time and anchored by SLUG — prepending or inserting a newer goal moves no number and no anchor"
+    ]
+  },
+  {
+    "name": "review r1 X3: goal anchors use the number, so they move with it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "goal-{html.escape(slug, quote=True)}\"' if seen",
+        "goal-{n}\"' if seen"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X3: goals are numbered by their FIRST request's time and anchored by SLUG — prepending or inserting a newer goal moves no number and no anchor"
+    ]
+  },
+  {
+    "name": "review r1 C2: an unstarted fix or blocker is LATER again, folded under 'later'",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return \"queued\" if t.get(\"relation\") in QUEUED_RELATIONS else \"later\"",
+        "        return \"later\""
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C2: an unstarted fix or blocker is QUEUED (planned), drawn open and labelled; unstarted bookkeeping and side stay LATER"
+    ]
+  },
+  {
+    "name": "review r1 C2: the later fold says 'nothing plans it' again",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"later ({len(later)}) — not started, bookkeeping or an aside\"",
+        "f\"later ({len(later)}) — not started, and nothing plans it\""
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C2: the `later` fold no longer claims 'nothing plans it' — it says what it holds"
+    ]
+  },
+  {
+    "name": "review r1 C3: a negated 'NOT PARKED' parks the thread",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    text = PARKED_NOT_RE.sub(\" \", str(entry.get(\"what\", \"\")))",
+        "    text = str(entry.get(\"what\", \"\"))"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C3: 'parked' is matched in any case where it LEADS a clause, PARKED in capitals anywhere, and a negated one parks nothing"
+    ]
+  },
+  {
+    "name": "review r1 C3: a lower-case 'parked:' leading the entry no longer parks",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            or bool(PARKED_LEAD_RE.search(text)))",
+        "            or False)"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C3: 'parked' is matched in any case where it LEADS a clause, PARKED in capitals anywhere, and a negated one parks nothing"
+    ]
+  },
+  {
+    "name": "review r1 C5: the fold summary is --ink-faint again (below AA in the light theme)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "details.fold summary{cursor:pointer;font-family:var(--mono);font-size:.78rem;color:var(--ink-soft);",
+        "details.fold summary{cursor:pointer;font-family:var(--mono);font-size:.78rem;color:var(--ink-faint);"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C5: fold summaries, goal counts and the goal quote's time are --ink-soft, never --ink-faint"
+    ]
+  },
+  {
+    "name": "review r1 C5: the goal counts are --ink-faint again",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        ".goal-counts{color:var(--ink-soft)}",
+        ".goal-counts{color:var(--ink-faint)}"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C5: fold summaries, goal counts and the goal quote's time are --ink-soft, never --ink-faint"
+    ]
+  },
+  {
+    "name": "review r1 C6: a closed PR is OLDER at any age again",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if state in (\"merged\", \"closed\"):",
+        "    if state == \"merged\":"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C6: a PR closed minutes ago is RECENT, says when, and is drawn open; an old closure is OLDER"
+    ]
+  },
+  {
+    "name": "review r1 C6: a closed PR's close time is not read, so an old closure never folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        closes = [(src.get(\"all_closed_at\") or {}).get(n) for n, f in zip(prs, found) if f[0] == \"closed\"]",
+        "        closes = [None for n, f in zip(prs, found) if f[0] == \"closed\"]"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C6: a PR closed minutes ago is RECENT, says when, and is drawn open; an old closure is OLDER"
+    ]
+  },
+  {
+    "name": "recency is judged only by the time the aggregate state carries, so a recent merge beside an old closure folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        out[\"ended_at\"] = whens + closes",
+        "        out[\"ended_at\"] = closes if state == \"closed\" else whens"
+      ]
+    ],
+    "expect": [
+      "⛔ review r2 X1: a thread is RECENT when ANY of its PRs merged or closed within the window — a merge 3 h ago is not folded because the thread also names a PR closed a month ago"
+    ]
+  },
+  {
+    "name": "an unread ref time counts as old, so a thread whose merge minute was never read is folded away",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "a is not None and a >",
+        "a is None or a >"
+      ]
+    ],
+    "expect": [
+      "review r2 X1 adjacent: every ref old -> still OLDER and folded; one ref's time unread -> RECENT"
+    ]
+  },
+  {
+    "name": "an agenda step naming a row or PR is NOT derived (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if st[\"refs\"]:\n            d = derive_thread(",
+        "        if False:\n            d = derive_thread("
+      ]
+    ],
+    "expect": [
+      "⭐ a step naming a row or PR is derived by the TREE's own derivation, in two distinct worlds"
+    ]
+  },
+  {
+    "name": "a hand tick on a free step is ignored (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif n in ag.get(\"ticked\", []):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "a free step is FREE until ticked by hand, then done — and says which"
+    ]
+  },
+  {
+    "name": "a new agenda does not close the one it replaces (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if cur:\n            prev = cur[-1]",
+        "        if False:\n            prev = cur[-1]"
+      ]
+    ],
+    "expect": [
+      "⭐ a new agenda REPLACES the current one whole, and the old one keeps its states AT replacement"
+    ]
+  },
+  {
+    "name": "a replacement while a source was unread records a guessed state (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "states = [{\"n\": n, \"state\": \"cannot\"}",
+        "states = [{\"n\": n, \"state\": \"merged\"}"
+      ]
+    ],
+    "expect": [
+      "⛔ replaced while a source was unread: the states say CANNOT, never a guessed state"
+    ]
+  },
+  {
+    "name": "a DERIVED agenda step can be ticked by hand (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if steps[n - 1][\"refs\"]:\n            raise Malformed",
+        "        if False:\n            raise Malformed"
+      ]
+    ],
+    "expect": [
+      "⛔ a tick: refused with no agenda, refused on a DERIVED step, refused out of range; a free one ticks"
+    ]
+  },
+  {
+    "name": "an agenda with no window is accepted (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not window:\n        problems.append",
+        "    if False:\n        problems.append"
+      ]
+    ],
+    "expect": [
+      "⛔ a malformed agenda names EVERY problem: a step before a group, a stray line, no window"
+    ]
+  },
+  {
+    "name": "an agenda with no steps is accepted (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not steps:\n        problems.append",
+        "    if False:\n        problems.append"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda with no steps is refused, not recorded as an empty plan"
+    ]
+  },
+  {
+    "name": "a step before any group is accepted (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if when is None:\n                problems.append",
+        "            if False:\n                problems.append"
+      ]
+    ],
+    "expect": [
+      "⛔ a malformed agenda names EVERY problem: a step before a group, a stray line, no window"
+    ]
+  },
+  {
+    "name": "the snapshot never carries the agenda (backlog #499, the call site)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                cur = agendas(read_agenda_log(agenda_path))\n                live[\"agenda\"] = derive_agenda(",
+        "                cur = agendas(read_agenda_log(agenda_path))\n                live[\"agenda\"] = None and derive_agenda("
+      ]
+    ],
+    "expect": [
+      "the logged snapshot carries the agenda, so --page replays it"
+    ]
+  },
+  {
+    "name": "the text output drops the agenda block (backlog #499, the call site)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    ag = agenda_lines(snap)\n    return",
+        "    ag = []\n    return"
+      ]
+    ],
+    "expect": [
+      "⭐ main records an agenda, ticks it, and --print shows it under NEEDS YOU, before the tree"
+    ]
+  },
+  {
+    "name": "a step takes no `waits` from the declared thread with its refs (backlog #499, r1 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"waits\": waits.get(_refset(st[\"refs\"]))}",
+        "\"waits\": None}"
+      ]
+    ],
+    "expect": [
+      "⭐ a step whose row the tree declares `waits on` reads ❌ blocked, as the leaf does (r1 Codex H1)"
+    ]
+  },
+  {
+    "name": "main lends the snapshot's agenda no declared threads (backlog #499, r1 Codex H1, the call site)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src, declared)",
+        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src, [])"
+      ]
+    ],
+    "expect": [
+      "⭐ main lends a step the `waits on` its row's declared thread carries (r1 Codex H1, the call site)"
+    ]
+  },
+  {
+    "name": "a replay record is attached to the last agenda whatever it names (backlog #499, r1 Codex H2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not out or rec.get(\"of\") != out[-1][\"id\"] or out[-1][\"replaced\"] is not None:\n            raise Malformed",
+        "        if not out:\n            raise Malformed"
+      ]
+    ],
+    "expect": [
+      "⛔ a replay record naming a closed or absent agenda is MALFORMED, never dropped or misattributed (r1 Codex H2)"
+    ]
+  },
+  {
+    "name": "a step can be ticked twice (backlog #499, r1 Codex M4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if n in cur[-1][\"ticked\"]:\n            raise Malformed",
+        "        if False:\n            raise Malformed"
+      ]
+    ],
+    "expect": [
+      "⛔ a step already ticked is refused, not ticked twice (r1 Codex M4)"
+    ]
+  },
+  {
+    "name": "`--tick-agenda 0` is read as absent (backlog #499, r1 Codex M5)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if a.tick_agenda is not None:",
+        "        if a.tick_agenda:"
+      ]
+    ],
+    "expect": [
+      "⛔ a missing agenda file is CANNOT RUN (2), and `--tick-agenda 0` is a refused tick (1), never the default run (r1 Codex M3, M5)"
+    ]
+  },
+  {
+    "name": "a missing agenda file escapes as a traceback (backlog #499, r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            except OSError as exc:\n                print(f\"CANNOT RUN — the agenda file",
+        "            except KeyError as exc:\n                print(f\"CANNOT RUN — the agenda file"
+      ]
+    ],
+    "expect": [
+      "⛔ a missing agenda file is CANNOT RUN (2), and `--tick-agenda 0` is a refused tick (1), never the default run (r1 Codex M3, M5)"
+    ]
+  },
+  {
+    "name": "a second `window:` line silently overwrites the first (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if (window if key == \"window\" else change_if) is not None:\n                problems.append",
+        "            if False:\n                problems.append"
+      ]
+    ],
+    "expect": [
+      "⛔ a second `window:` line is refused, not silently overwritten"
+    ]
+  },
+  {
+    "name": "a step's refs are matched in ORDER, not as a set (backlog #499, r2 Codex H2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return frozenset(map(tuple, refs))",
+        "    return tuple(map(tuple, refs))"
+      ]
+    ],
+    "expect": [
+      "⭐ a step waits if ANY declared thread naming the same ref SET waits, in any ref or declaration order (r2 Codex H1, H2)"
+    ]
+  },
+  {
+    "name": "only the first declared thread's wait counts (backlog #499, r2 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if t.get(\"waits\"):\n            said = declared.setdefault(",
+        "        if t.get(\"waits\") and _refset(t[\"refs\"]) not in declared:\n            said = declared.setdefault("
+      ]
+    ],
+    "expect": [
+      "...and EVERY distinct declared wait is said, not only the first (r2 Codex H1)"
+    ]
+  },
+  {
+    "name": "a writer appends after an interrupted write (backlog #499, r2 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if cur and cur[-1][\"replaced\"] is not None:\n        raise Malformed(f\"agenda id",
+        "    if False:\n        raise Malformed(f\"agenda id"
+      ]
+    ],
+    "expect": [
+      "⛔ after an interrupted write (closed, no successor) both writers refuse and append nothing (r2 Codex M3)"
+    ]
+  },
+  {
+    "name": "a malformed agenda log takes the snapshot down (backlog #499, r2 Codex M4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                print(f\"MALFORMED — {exc}\")\n                rc = 1",
+        "                print(f\"MALFORMED — {exc}\")\n                return 1"
+      ]
+    ],
+    "expect": [
+      "⛔ a malformed agenda log is SAID (exit 1, the block reads NOT READ) and the snapshot is STILL logged (r2 Codex M4) — a record MISSING a field included (r3 Codex M3)"
+    ]
+  },
+  {
+    "name": "an agenda record's fields are not checked (backlog #499, r3 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            for key, typ in AGENDA_FIELDS[rec[\"kind\"]]:\n                if not isinstance(",
+        "            for key, typ in ():\n                if not isinstance("
+      ]
+    ],
+    "expect": [
+      "⛔ a record missing a field a reader indexes is MALFORMED, never a KeyError later (r3 Codex M3)"
+    ]
+  },
+  {
+    "name": "a log with no final newline is appended to on the same line (backlog #499, r3 Codex M2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        out = \"\" if not text or text.endswith(\"\\n\") else \"\\n\"",
+        "        out = \"\""
+      ]
+    ],
+    "expect": [
+      "⛔ a log whose last line has no newline is still appended to as SEPARATE records (r3 Codex M2)"
+    ]
+  },
+  {
+    "name": "the joined waits keep declaration order (backlog #499, r3 Codex L4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"; \".join(sorted(v))",
+        "\"; \".join(v)"
+      ]
+    ],
+    "expect": [
+      "the joined waits read the same in either declaration order (r3 Codex L4)"
+    ]
+  },
+  {
+    "name": "the history is oldest first (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for ag in reversed(cur):\n        if ag[\"replaced\"] is None:",
+        "    for ag in cur:\n        if ag[\"replaced\"] is None:"
+      ]
+    ],
+    "expect": [
+      "agenda_history keeps every REPLACED agenda, newest first, the open one left out"
+    ]
+  },
+  {
+    "name": "a step the frozen list omits gets a guessed state (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "state=frozen.get(n) or \"cannot\")",
+        "state=frozen.get(n) or \"next\")"
+      ]
+    ],
+    "expect": [
+      "⛔ a history step keeps its FROZEN state; one the frozen list omits is `cannot`, never re-derived"
+    ]
+  },
+  {
+    "name": "done counts every step that is not cannot (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    done = sum(1 for st in h[\"steps\"] if st[\"state\"] == \"merged\")",
+        "    done = sum(1 for st in h[\"steps\"] if st[\"state\"] != \"cannot\")"
+      ]
+    ],
+    "expect": [
+      "history_line says when each was set and replaced, and how much was done by then"
+    ]
+  },
+  {
+    "name": "--print omits the earlier agendas (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if hist:\n        out.append(f\"  earlier agendas",
+        "    if False:\n        out.append(f\"  earlier agendas"
+      ]
+    ],
+    "expect": [
+      "--print lists the earlier agendas under the current one, newest first, one line each"
+    ]
+  },
+  {
+    "name": "a free step tags every goal (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if refs.intersection(_refset(st[\"refs\"]))]",
+        "if refs.intersection(_refset(st[\"refs\"])) or not st[\"refs\"]]"
+      ]
+    ],
+    "expect": [
+      "a goal is tagged with the steps naming a ref its threads name — never a free step, never a bad agenda"
+    ]
+  },
+  {
+    "name": "a malformed agenda is read for tags (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if snap_agenda({\"agenda\": ag})[0] != \"ok\":\n        return []\n    refs =",
+        "    if not ag or \"malformed\" in ag:\n        return []\n    refs ="
+      ]
+    ],
+    "expect": [
+      "⛔ a malformed agenda value is SAID by --print and the page, and tags no goal — never a crash (r2 Codex H1)"
+    ]
+  },
+  {
+    "name": "the tree is drawn without the agenda's tags (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "goal_agenda_steps(g, snap.get(\"agenda\"))",
+        "goal_agenda_steps(g, None)"
+      ]
+    ],
+    "expect": [
+      "--print tags the goal its step names, and only that goal"
+    ]
+  },
+  {
+    "name": "the page drops the goal's tag (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "html.escape(tag_text(tags)[3:])}</span>' if tags else \"\")",
+        "html.escape(tag_text(tags)[3:])}</span>' if False else \"\")"
+      ]
+    ],
+    "expect": [
+      "the page draws the same tag beside that goal's heading, once"
+    ]
+  },
+  {
+    "name": "the page reads the first step line as the change-if (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if ag.get(\"change_if\"):\n        parts.append(",
+        "    if True:\n        parts.append("
+      ]
+    ],
+    "expect": [
+      "an agenda with no change-if draws every step, none mistaken for the change-if line"
+    ]
+  },
+  {
+    "name": "the page omits the earlier agendas (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if hist:\n        parts.append(f'<h3>Earlier",
+        "    if False:\n        parts.append(f'<h3>Earlier"
+      ]
+    ],
+    "expect": [
+      "the page's AGENDA section: the current steps, then each earlier agenda as ONE collapsed line, newest first"
+    ]
+  },
+  {
+    "name": "the page has no agenda section (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    parts.insert(7, agenda_html(newest))",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ main logs the history IN the snapshot (so --page replays it), and the page draws the agenda under NEEDS YOU, above the tree"
+    ]
+  },
+  {
+    "name": "a malformed agenda is drawn as an empty plan (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return f'<section class=\"agenda\"><h2 class=\"warn\">{html.escape(lines[0])}</h2></section>'",
+        "return f'<section class=\"agenda\"><h2>{html.escape(lines[0])}</h2></section>'"
+      ]
+    ],
+    "expect": [
+      "no agenda: the page SAYS none is recorded; a malformed one is said as a warning"
+    ]
+  },
+  {
+    "name": "the timeline never says an agenda was recorded (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        out.append(f\"agenda recorded: set {ca['at']}, {len(ca.get('steps') or [])} step(s)\")",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "the timeline says when an agenda is recorded, and each step whose state moved"
+    ]
+  },
+  {
+    "name": "the timeline lists every step, moved or not (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if st[\"n\"] in was and was[st[\"n\"]] != st[\"state\"]]",
+        "if st[\"n\"] in was]"
+      ]
+    ],
+    "expect": [
+      "the timeline says when an agenda is recorded, and each step whose state moved"
+    ]
+  },
+  {
+    "name": "the snapshot carries no history (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                live[\"agenda_history\"] = agenda_history(cur)\n",
+        "                live[\"agenda_history\"] = []\n"
+      ]
+    ],
+    "expect": [
+      "⭐ main logs the history IN the snapshot (so --page replays it), and the page draws the agenda under NEEDS YOU, above the tree"
+    ]
+  },
+  {
+    "name": "a frozen state's shape is not checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if rec[\"kind\"] == \"replaced\" and not all(",
+        "            if False and not all("
+      ]
+    ],
+    "expect": [
+      "⛔ a frozen state that is not {n: int, state: str} is MALFORMED where it is read, never a crash later (r1 Codex H1)"
+    ]
+  },
+  {
+    "name": "agenda identity is only its minute (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(pk != \"ok\" or (ca[\"id\"], ca[\"at\"]) != (pa[\"id\"], pa[\"at\"])):",
+        "(pk != \"ok\" or ca[\"at\"] != pa[\"at\"]):"
+      ]
+    ],
+    "expect": [
+      "⛔ a second agenda in the SAME minute is a new agenda, never a false step move (r1 Codex M2)"
+    ]
+  },
+  {
+    "name": "an uncaptured agenda is said to be none (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return \"absent\", None\n",
+        "        return \"none\", None\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a snapshot with NO agenda key says it was not captured — never that there was none (r1 Codex M3)"
+    ]
+  },
+  {
+    "name": "an agenda's id is not checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_is(ag.get(\"id\"), int) and _is(ag.get(\"at\"), str)",
+        "_is(ag.get(\"at\"), str)"
+      ]
+    ],
+    "expect": [
+      "snap_agenda: absent, none, ok, and every malformed shape a reader would index is MALFORMED"
+    ]
+  },
+  {
+    "name": "an agenda's time is not checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _is(ag.get(\"at\"), str) and _is(ag.get(\"window\"), str)",
+        "and _is(ag.get(\"window\"), str)"
+      ]
+    ],
+    "expect": [
+      "snap_agenda: absent, none, ok, and every malformed shape a reader would index is MALFORMED"
+    ]
+  },
+  {
+    "name": "a step's fields are not checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return (_is(steps, list) and all(isinstance(st, dict)",
+        "    return (_is(steps, list) or all(isinstance(st, dict)"
+      ]
+    ],
+    "expect": [
+      "snap_agenda: absent, none, ok, and every malformed shape a reader would index is MALFORMED"
+    ]
+  },
+  {
+    "name": "steps are compared when only one side is a valid agenda (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    elif ck == \"ok\" and pk == \"ok\":",
+        "    elif ck == \"ok\" or pk == \"ok\":"
+      ]
+    ],
+    "expect": [
+      "⛔ a malformed or identity-less agenda on either side never crashes the timeline and never yields a step move — only a valid new agenda is said to be recorded (r2 Codex H1, M2)"
+    ]
+  },
+  {
+    "name": "earlier agendas are not shape-checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return (hist, None) if ok else",
+        "    return (hist, None) if True else"
+      ]
+    ],
+    "expect": [
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too (r3 Codex L2)"
+    ]
+  },
+  {
+    "name": "--print hides unreadable earlier agendas (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if bad:\n        out.append(f\"  ⚠ earlier agendas NOT READ",
+        "    if False:\n        out.append(f\"  ⚠ earlier agendas NOT READ"
+      ]
+    ],
+    "expect": [
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too (r3 Codex L2)"
+    ]
+  },
+  {
+    "name": "the page hides unreadable earlier agendas (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if bad:\n        parts.append(f'<p class=\"warn\">⚠ earlier",
+        "    if False:\n        parts.append(f'<p class=\"warn\">⚠ earlier"
+      ]
+    ],
+    "expect": [
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too (r3 Codex L2)"
+    ]
+  },
+  {
+    "name": "a step's ref entries are not checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                                     and all(_ref_ok(r) for r in st.get(\"refs\", [])) for st in steps)",
+        "                                     for st in steps)"
+      ]
+    ],
+    "expect": [
+      "snap_agenda: absent, none, ok, and every malformed shape a reader would index is MALFORMED"
+    ]
+  },
+  {
+    "name": "a falsy malformed history is read as none (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    hist = snap.get(\"agenda_history\", [])\n",
+        "    hist = snap.get(\"agenda_history\") or []\n"
+      ]
+    ],
+    "expect": [
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too (r3 Codex L2)"
+    ]
+  },
+  {
+    "name": "a ledger thread duplicates a tracked one (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if refs & declared:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "backlog #505: the TRACKED file wins — a ledger thread sharing a ref with any declared thread is not added"
+  },
+  {
+    "name": "a ledger thread under an unknown goal vanishes (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            problems.append(f\"entry {id_}: goal {str(e.get('goal'))!r} is not declared in {THREADS_REL}\")\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: an unknown goal and a bad line are PROBLEMS on the page, never dropped"
+  },
+  {
+    "name": "a ledger thread never reaches the tree (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        g[\"threads\"].append(dict(t, ledger=id_))\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": "backlog #505: a ledger entry's thread hangs under ITS goal, in flight, saying it is not yet on master"
+  },
+  {
+    "name": "a ledger thread looks like a tracked one (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        detail += f\" · declared in the ledger ({t['ledger']}), not yet on master\"\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": "backlog #505: a ledger entry's thread hangs under ITS goal, in flight, saying it is not yet on master"
+  },
+  {
+    "name": "every ledger entry is read as a thread (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not (e.get(\"goal\") or e.get(\"thread\")):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: an entry with no goal or thread hangs nothing (the ledger's ordinary entries)"
+  },
+  {
+    "name": "two ledger entries hang the same PR (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if refs & claimed.keys():\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "backlog #505: two ledger entries hanging the same ref — the FIRST wins, the second is a named problem (r1 Codex M1)"
+  },
+  {
+    "name": "the merge hand-off reads as added + removed (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if {tuple(x) for x in b[k][\"refs\"]} & rr:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": "backlog #505: the MERGE hand-off is one 'declared on master' line, never a false added + removed, even when its key and goal changed (r1 Codex M2)"
+  },
+  {
+    "name": "a number in a thread's prose associates the entry (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return {(k, n) for k, n in t[\"refs\"]} if t else set()",
+        "        return {(k, int(n)) for k, n in REF_RE.findall(str(entry[\"thread\"]))} if t else set()"
+      ]
+    ],
+    "expect": "backlog #505: a ledger thread associates by its STRUCTURED refs, never a number in its prose (r1 Codex M3)"
+  },
+  {
+    "name": "the ledger winner follows file order (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for e in sorted(ledger, key=lambda e: str(e.get(\"id\", \"\"))):\n",
+        "    for e in ledger:\n"
+      ]
+    ],
+    "expect": "backlog #505: the winner of a shared ref is the id that sorts first, whatever the FILE order — a re-add moves an entry to the end and must not move the thread (r2 Codex M1)"
+  },
+  {
+    "name": "the hand-off pairs on any shared ref (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        rr = {x for x in rr if x[0] == \"PR\"} or rr\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: the hand-off pairs on the ledger thread's PR — a sibling sharing only a backlog row is NOT its successor, and a ledger thread with no successor is still REMOVED (r2 Codex M2)"
+  },
+  {
+    "name": "a ledger problem is invisible on the timeline (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    out += [f\"ledger problem, new: {q}\" for q in sorted(cq - pq)]\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: a ledger problem appearing and clearing is on the timeline, never 'no change' (r2 Codex L1)"
+  },
+  {
+    "name": "#509: a step's goals are never collected (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "out.setdefault(n, []).append(goal_head(i, g[\"slug\"]))",
+        "out.setdefault(n, [])"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: a step's goals are goal_agenda_steps read backwards — two goals on one step, one goal on two, none on a free or unclaimed step",
+      "⭐ #509: each step line ends with its goals; an unclaimed step says `no goal`; a free step says nothing"
+    ]
+  },
+  {
+    "name": "#509: NOW ignores the ledger's inflight flag (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if ((t.get(\"inflight\") or t.get(\"open_prs\")",
+        "if ((False or t.get(\"open_prs\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509: NOW lists a parked thread (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and not t.get(\"parked\")\n                    and (t[\"state\"] not in _FINISHED",
+        "\n                    and (t[\"state\"] not in _FINISHED"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509: STALE flags a merge from BEFORE the plan (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _STAMP.fullmatch(ag[\"at\"]) and ended > ag[\"at\"]",
+        "and _STAMP.fullmatch(ag[\"at\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: STALE names a thread merged AFTER the plan was set that no step names — not one merged before, not one a step names"
+    ]
+  },
+  {
+    "name": "#509: STALE flags a merge a step names (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and not named.intersection(_refset(t.get(\"refs\") or [])) and label not in seen",
+        "and label not in seen"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: STALE names a thread merged AFTER the plan was set that no step names — not one merged before, not one a step names"
+    ]
+  },
+  {
+    "name": "#509: STALE compares a non-stamp as text (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _STAMP.fullmatch(ag[\"at\"]) and ended",
+        "and ended"
+      ]
+    ],
+    "expect": [
+      "#509: an agenda stamp that is not `YYYY-MM-DD HH:MM` flags nothing stale rather than compare text"
+    ]
+  },
+  {
+    "name": "#509: focus lists done steps (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if st[\"state\"] not in (\"merged\", \"closed\") and st[\"refs\"]:",
+        "if st[\"refs\"]:"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: focus groups the steps NOT done by goal, a step under each goal it serves; an unclaimed step is `no goal`; a free or done step is not listed"
+    ]
+  },
+  {
+    "name": "#509: a finished plan is not flagged (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"done\": bool(ag[\"steps\"]) and all(",
+        "\"done\": False and all("
+      ]
+    ],
+    "expect": [
+      "⭐ #509: a plan whose every step is done says so, and its focus line is gone"
+    ]
+  },
+  {
+    "name": "#509: the step line drops its goal (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "goal = (\" → \" + \", \".join(sg.get(st[\"n\"]) or [\"no goal\"])) if st[\"refs\"] else \"\"",
+        "goal = \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ #509: each step line ends with its goals; an unclaimed step says `no goal`; a free step says nothing"
+    ]
+  },
+  {
+    "name": "#509: STALE is shown in the lede colour (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "parts.append(f'<p class=\"warn\">{_html_line(text, repo)}</p>')",
+        "parts.append(f'<p class=\"lede\">{_html_line(text, repo)}</p>')"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: the page lays out what is in flight and the focus as lists above the steps, and STALE once in the warning colour"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex M1: a step's goals are numbered in file order (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for i, g in sorted(zip(goal_numbers(goals), goals), key=lambda ig: ig[0]):  # the TREE's numbers, in order (r1 Codex M1)",
+        "    for i, g in enumerate(goals, 1):"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: a step's goals are goal_agenda_steps read backwards — two goals on one step, one goal on two, none on a free or unclaimed step"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex M1: NOW numbers goals in file order (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for i, g in sorted(zip(goal_numbers(goals), goals), key=lambda ig: ig[0]):  # the TREE's numbers (r1 Codex M1)",
+        "    for i, g in enumerate(goals, 1):"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex M2: NOW drops the ledger work no goal claims (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    now += [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": _one_line(",
+        "    now += [] if 1 else [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": _one_line("
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex L1: the age line shows for a snapshot older than the plan (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_STAMP.fullmatch(ag[\"at\"]) and at >= ag[\"at\"]:",
+        "_STAMP.fullmatch(ag[\"at\"]):"
+      ]
+    ],
+    "expect": [
+      "⭐ #509 r1 Codex L1: the age line says how old the plan is beside the snapshot's own time; none when the snapshot is older, or either stamp is not a minute stamp"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex L1: the age line is never shown (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        out.append((\"age\", f\"age: set",
+        "        0 and out.append((\"age\", f\"age: set"
+      ]
+    ],
+    "expect": [
+      "⭐ #509 r1 Codex L1: the age line says how old the plan is beside the snapshot's own time; none when the snapshot is older, or either stamp is not a minute stamp"
+    ]
+  },
+  {
+    "name": "#509: NOW lists a finished thread a stale ledger entry flags (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                    and (t[\"state\"] not in _FINISHED or t.get(\"open_prs\"))):",
+        "                    and (True or t.get(\"open_prs\"))):"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509 r2 Codex L1: only MERGED counts as finished (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_FINISHED = (\"merged\", \"closed\", \"superseded\", \"withdrawn\")",
+        "_FINISHED = (\"merged\",)"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509 r2 Codex L2: the age drops whole days (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_dt.datetime.strptime(ag[\"at\"], MINUTE_FMT)).total_seconds()",
+        "_dt.datetime.strptime(ag[\"at\"], MINUTE_FMT)).seconds"
+      ]
+    ],
+    "expect": [
+      "#509 r2 Codex L2: the age counts whole days — Jan 31 23:55 to Mar 1 00:05 is 672 h 10 m (28 days)"
+    ]
+  },
+  {
+    "name": "#509 r3 Codex L1: an impossible date crashes the page (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        except ValueError:\n            mins = None\n",
+        "        except OverflowError:\n            mins = None\n"
+      ]
+    ],
+    "expect": [
+      "#509 r3 Codex L1: an impossible date (Feb 30, 24:00) renders the page with no age line rather than crash"
+    ]
+  },
+  {
+    "name": "#509 r3 Codex L2: a same-minute merge is stale (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and ended > ag[\"at\"]",
+        "and ended >= ag[\"at\"]"
+      ]
+    ],
+    "expect": [
+      "#509 r3 Codex L2: a merge in the SAME minute the plan was set is not stale; one a minute later is"
+    ]
+  },
+  {
+    "name": "the recap counts a piece of work once per goal it serves (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "items = agenda_now_items(d)   # one piece of work under two goals is ONE piece",
+        "items = list(d[\"now\"])   #"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a step under two goals counted once"
+    ]
+  },
+  {
+    "name": "the recap counts a step once per goal it serves (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    left = d.get(\"left\", 0)   # every step",
+        "    left = d.get(\"left\", 0) + sum(len(v) for v in d[\"focus\"].values()) - len({st[\"n\"] for sts in d[\"focus\"].values() for st in sts})   # every step"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a step under two goals counted once"
+    ]
+  },
+  {
+    "name": "a piece of work under two goals is listed twice (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "hits = [g for g in groups if x[\"label\"] in g[\"labels\"] or prs & g[\"prs\"]]",
+        "hits = [g for g in groups if g[\"item\"][\"goals\"] == [x[\"goal\"]] and x[\"label\"] in g[\"labels\"]]"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: each piece of work in flight is ONE line, with a chip for every goal it serves",
+      "⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a step under two goals counted once"
+    ]
+  },
+  {
+    "name": "an in-flight line shows only its first goal (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{\"\".join(chip(g) for g in x[\"goals\"])}",
+        "{chip(x[\"goals\"][0])}"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: each piece of work in flight is ONE line, with a chip for every goal it serves"
+    ]
+  },
+  {
+    "name": "an in-flight line drops the work's purpose (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "repo)}</span>' if x[\"what\"] else \"\")",
+        "repo)}</span>' if False else \"\")"
+      ]
+    ],
+    "expect": [
+      "owner 11-05 14:37: an in-flight line says the work's PURPOSE, the thread's `what`"
+    ]
+  },
+  {
+    "name": "the agenda heading is the long sentence again (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "'<h2 class=\"agenda-h\">Agenda</h2>',",
+        "f'<h2>{html.escape(lines[0])}</h2>',"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the agenda heading is a short title in the goals' accent style; the plan's time, its AGE and its window sit on a meta line beneath (r4 X1: the page's age line)"
+    ]
+  },
+  {
+    "name": "the page drops the plan's age (r4 X1, owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    age = f\" ({d['mins'] // 60}",
+        "    age = \"\" if 1 else f\" ({d['mins'] // 60}"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the agenda heading is a short title in the goals' accent style; the plan's time, its AGE and its window sit on a meta line beneath (r4 X1: the page's age line)"
+    ]
+  },
+  {
+    "name": "the focus loses its step numbers (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'<li><b>{st[\"n\"]}.</b> {_html_line(st[\"text\"], repo)}</li>'",
+        "f'<li>{_html_line(st[\"text\"], repo)}</li>'"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the focus is the next steps under a chip per goal, in step order, one step per line"
+    ]
+  },
+  {
+    "name": "the goal chip is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "chip = lambda g: f'<span class=\"chip\">{html.escape(g)}</span>'",
+        "chip = lambda g: f'<span class=\"chip\">{g}</span>'"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "the in-flight purpose is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "<span class=\"what\">— {_html_line(x[\"what\"], repo)}",
+        "<span class=\"what\">— {x[\"what\"]}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "the agenda window is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{age} · {html.escape(ag[\"window\"])}</p>",
+        "{age} · {ag[\"window\"]}</p>"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "the change-if is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "changes if: {html.escape(ag.get(\"change_if\") or \"\")}",
+        "changes if: {ag.get(\"change_if\") or \"\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "a recap tie picks the alphabetically larger goal (agenda-digest r1 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "key=lambda kv: len(kv[1]))   # ties keep",
+        "key=lambda kv: (len(kv[1]), kv[0]))   # ties keep"
+      ]
+    ],
+    "expect": [
+      "r1 Codex L1: a TIE keeps the first goal in step order, never the alphabetically larger one"
+    ]
+  },
+  {
+    "name": "an open free step is not counted as left (agenda-digest r1 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "left = sum(st[\"state\"] not in (\"merged\", \"closed\") for st in ag[\"steps\"])",
+        "left = sum(st[\"state\"] not in (\"merged\", \"closed\") and bool(st[\"refs\"]) for st in ag[\"steps\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: an open FREE step is still left — the recap never says none is left while one shows open"
+    ]
+  },
+  {
+    "name": "work under no goal loses its purpose (agenda-digest r1 Codex M2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"what\": _one_line(u.get(\"what\")), \"running\": False",
+        "\"what\": \"\", \"running\": False"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M2: work under no goal keeps its purpose, cut to one line"
+    ]
+  },
+  {
+    "name": "the page drops the recap (agenda-digest r2 Codex M2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    parts.append(f'<p class=\"recap\">{html.escape(agenda_recap(d))}</p>')",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M2/M3: the page SHOWS the recap sentence and the undeclared-PR count"
+    ]
+  },
+  {
+    "name": "the page drops the undeclared-PR count (agenda-digest r2 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if d[\"undeclared\"] else \"\") + \"</ul>\"\n",
+        "if False else \"\") + \"</ul>\"\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M2/M3: the page SHOWS the recap sentence and the undeclared-PR count"
+    ]
+  },
+  {
+    "name": "Focus says no step left while a free step is open (agenda-digest r2 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{\"no remaining step names a goal\" if d[\"left\"] else \"no step left\"}",
+        "{\"no step left\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: with only a FREE step open, Focus says no remaining step names a goal — never 'no step left'"
+    ]
+  },
+  {
+    "name": "the purpose's references are plain text (agenda-digest r2 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "<span class=\"what\">— {_html_line(x[\"what\"], repo)}</span>",
+        "<span class=\"what\">— {html.escape(x[\"what\"])}</span>"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L1: a reference in an in-flight purpose is a LINK, like everywhere else on the page"
+    ]
+  },
+  {
+    "name": "the recap always says goals (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"goal{'s' if len(goals_now) != 1 else ''}\"",
+        "f\"goals\""
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps"
+    ]
+  },
+  {
+    "name": "the free-step recap always says step (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{left} step{'s' if left != 1 else ''} left, none",
+        "{left} step left, none"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps"
+    ]
+  },
+  {
+    "name": "a later entry's purpose is dropped (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it[\"what\"] = it[\"what\"] or x[\"what\"]",
+        "it[\"what\"] = it[\"what\"]"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: one item under two goals keeps the purpose a LATER entry gives when the first has none"
+    ]
+  },
+  {
+    "name": "a later empty entry erases an item's purpose (agenda-digest r3 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " = it[\"what\"] or x[\"what\"]",
+        " = x[\"what\"]"
+      ]
+    ],
+    "expect": [
+      "r3 Codex L1: an item's purpose is never ERASED by a later entry for it that has none"
+    ]
+  },
+  {
+    "name": "the agenda heading loses the accent colour (agenda-digest r3 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "h2.agenda-h{margin:.4rem 0 .1rem;color:var(--accent);",
+        "h2.agenda-h{margin:.4rem 0 .1rem;color:red;"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Codex L2 (owner 11-05 14:37): the agenda heading is drawn in the goals' ACCENT colour, as they are"
+    ]
+  },
+  {
+    "name": "a declared wait does not stop work counting as running (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and not t.get(\"waits\"),",
+        ","
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: an open PR (or a row resolved to one) with no wait RUNS; a declared wait, or no PR, is OWED"
+    ]
+  },
+  {
+    "name": "a backlog row resolved to an open PR is not running (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "bool(ops or t[\"state\"] == \"open\")",
+        "(t[\"state\"] == \"open\")"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: an open PR (or a row resolved to one) with no wait RUNS; a declared wait, or no PR, is OWED"
+    ]
+  },
+  {
+    "name": "the page drops undeclared open PRs from Running now (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "run = [x for x in items if x[\"running\"]] + list(d.get(\"stray\") or [])",
+        "run = [x for x in items if x[\"running\"]]"
+      ]
+    ],
+    "expect": [
+      "owner 15:45: an open PR no goal declares is listed under Running now BY ITS TITLE — never only counted"
+    ]
+  },
+  {
+    "name": "an owed item never says what it waits for (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{_html_line(x[\"waits\"], repo) if x[\"waits\"] else \"not recorded\"}",
+        "{\"not recorded\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: each owed item says what it WAITS for, and one with no declared wait says so, never a guess"
+    ]
+  },
+  {
+    "name": "the page hides that jobs and agents are invisible to it (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        + '<p class=\"lede\">open PRs only: a background job or an agent is not visible to this page</p>'\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "owner 15:45: the page says a background job or agent is NOT visible to it, under Running now"
+    ]
+  },
+  {
+    "name": "the recap leaves undeclared PRs out of running (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "+ len(d.get(\"stray\") or [])   # an undeclared open PR is running too",
+        "+ 0   #"
+      ]
+    ],
+    "expect": [
+      "owner 15:45: the recap counts running (an undeclared PR too) and owed, apart"
+    ]
+  },
+  {
+    "name": "a wait declared under a later goal is lost (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it[\"waits\"] = it[\"waits\"] or x.get(\"waits\")",
+        "it[\"waits\"] = it[\"waits\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: one item under two goals with a wait declared under EITHER is owed, whichever comes first"
+    ]
+  },
+  {
+    "name": "a merged item runs despite its wait (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it[\"running\"] = (it[\"running\"] or x.get(\"running\", False)) and not it[\"waits\"]",
+        "it[\"running\"] = (it[\"running\"] or x.get(\"running\", False))"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: one item under two goals with a wait declared under EITHER is owed, whichever comes first"
+    ]
+  },
+  {
+    "name": "the empty Owed list says nothing (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "+ (\"\" if owed else \"<li>nothing owed</li>\")",
+        "+ \"\""
+      ]
+    ],
+    "expect": [
+      "owner 15:45: with nothing at all, both lists say so"
+    ]
+  },
+  {
+    "name": "a declared wait is neither linked nor escaped (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_html_line(x[\"waits\"], repo) if",
+        "x[\"waits\"] if"
+      ]
+    ],
+    "expect": [
+      "owner 15:45: a declared wait's reference LINKS and is escaped"
+    ]
+  },
+  {
+    "name": "the page puts running work under Owed (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "owed = [x for x in items if not x[\"running\"]]",
+        "owed = list(items)"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: the page lists running work and OWED work apart — each item in exactly one list"
+    ]
+  },
+  {
+    "name": "an unread row hides the thread's open PR (running-vs-owed r1 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "ops = t.get(\"open_prs\") or (",
+        "ops = ("
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex H1: a thread naming an OPEN PR runs even when its backlog row cannot be read"
+    ]
+  },
+  {
+    "name": "a thread's named open PRs are not recorded (running-vs-owed r1 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{n for n in prs if n in src[\"open\"]} | ",
+        "set() | "
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex H1 / backlog #518: a NAMED open PR that no row's title resolves to still runs, its row unread"
+    ]
+  },
+  {
+    "name": "items merge by label, so one PR counts twice (running-vs-owed r1 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "x[\"label\"] in g[\"labels\"] or prs & g[\"prs\"]",
+        "x[\"label\"] in g[\"labels\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: one open PR reached by two declarations (its number; a row whose title resolves to it) is ONE running item",
+      "⭐ r1 Codex M1: …and a wait declared on EITHER declaration holds that one item as owed"
+    ]
+  },
+  {
+    "name": "an item's key is its label, not its PR (running-vs-owed r1 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"prs\": list(ops)})",
+        "\"prs\": []})"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: one open PR reached by two declarations (its number; a row whose title resolves to it) is ONE running item",
+      "⭐ r1 Codex M1: …and a wait declared on EITHER declaration holds that one item as owed"
+    ]
+  },
+  {
+    "name": "a thread with an open PR but an unread row is hidden (running-vs-owed r2 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " or t.get(\"open_prs\") or t[\"state\"] in",
+        " or t[\"state\"] in"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex H1: a thread naming an open PR, its row unread and NO ledger entry, is still listed as running"
+    ]
+  },
+  {
+    "name": "a thread records only its first open PR (running-vs-owed r2 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{n for n in prs if n in src[\"open\"]}",
+        "{n for n in prs[:1] if n in src[\"open\"]}"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: a thread naming TWO open PRs is one item with a row resolved to its SECOND, and that row's wait holds it"
+    ]
+  },
+  {
+    "name": "an entry sharing a PR with two items joins only the first (running-vs-owed r2 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        for o in hits[1:]:",
+        "        for o in []:"
+      ]
+    ],
+    "expect": [
+      "r2 Codex M1: an entry sharing a PR with TWO items joins them into one, in first-seen order"
+    ]
+  },
+  {
+    "name": "an undeclared PR's number is not checked (running-vs-owed r2 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if isinstance(u, dict) and isinstance(u.get(\"pr\"), int)]",
+        "if isinstance(u, dict)]"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L1: an undeclared PR whose number is not an integer is not listed, and nothing crashes"
+    ]
+  },
+  {
+    "name": "a thread owns only the first PR its rows resolve to (running-vs-owed r3 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " | set(resolved))",
+        " | set())"
+      ]
+    ],
+    "expect": [
+      "r3 Codex M1: …so neither resolved PR is reported UNDECLARED"
+    ]
+  },
+  {
+    "name": "a resolved PR beyond the first is reported undeclared (running-vs-owed r3 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for n in t.get(\"open_prs\") or []}",
+        "for n in (t.get(\"open_prs\") or [])[:1]}"
+      ]
+    ],
+    "expect": [
+      "r3 Codex M1: …so neither resolved PR is reported UNDECLARED"
+    ]
+  },
+  {
+    "name": "joining two items drops the later one's wait (running-vs-owed r3 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_fold_item(g[\"item\"], o[\"item\"][\"goals\"], o[\"item\"])",
+        "_fold_item(g[\"item\"], o[\"item\"][\"goals\"], dict(o[\"item\"], waits=None))"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Codex L1: joining two items keeps a wait from EITHER, and running from either when none waits"
+    ]
+  },
+  {
+    "name": "joining two items drops the later one's running (running-vs-owed r3 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "o[\"item\"][\"goals\"], o[\"item\"])\n",
+        "o[\"item\"][\"goals\"], dict(o[\"item\"], running=False))\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Codex L1: joining two items keeps a wait from EITHER, and running from either when none waits"
+    ]
+  },
+  {
+    "name": "timeline story: a landed PR is not named as landed (owner 11-05 17:28)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    landed = [r for r, a, b in trans if b == \"merged\" and a != \"merged\"]",
+        "    landed = []"
+      ]
+    ],
+    "expect": [
+      "timeline story: each kind is named by its ref — landed, added, moved with its new state, removed, a goal"
+    ]
+  },
+  {
+    "name": "timeline story: a moved thread shows its glyph, not its new state",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    moved = [f\"{r} → {b}\" for r, a, b in trans if b != \"merged\" and a != b]",
+        "    moved = [f\"{r} → {a}\" for r, a, b in trans if b != \"merged\" and a != b]"
+      ]
+    ],
+    "expect": [
+      "timeline story: each kind is named by its ref — landed, added, moved with its new state, removed, a goal"
+    ]
+  },
+  {
+    "name": "timeline story: every ref is named, so a busy entry runs past one line",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\", \".join(refs[:3])",
+        "\", \".join(refs[:5])"
+      ]
+    ],
+    "expect": [
+      "timeline story: past three refs it counts the rest, so one sentence stays one line"
+    ]
+  },
+  {
+    "name": "timeline story: an unknown change kind yields no count",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    out = \"; \".join(bits) or f\"{len(ch)} change(s)\"",
+        "    out = \"; \".join(bits) or \"x\""
+      ]
+    ],
+    "expect": [
+      "timeline story: a line of no known kind still yields a sentence — a count, never an empty summary"
+    ]
+  },
+  {
+    "name": "timeline story: the asks are not told",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(n(\"needs you, new: \"), \"a new ask for you\"",
+        "(0, \"a new ask for you\""
+      ]
+    ],
+    "expect": [
+      "timeline story: the asks and the agenda are told by kind"
+    ]
+  },
+  {
+    "name": "the timeline summary repeats the first change line, not the story",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "<span class=\"story\">{html.escape(story(ch))}</span>",
+        "<span class=\"story\">{html.escape(ch[0])}</span>"
+      ]
+    ],
+    "expect": [
+      "the timeline entry's summary is the story; its change lines sit muted inside, not in the summary"
+    ]
+  },
+  {
+    "name": "the older timeline entries never fold",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if i == len(log) - 1 - TIMELINE_SHOWN:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "past the newest TIMELINE_SHOWN entries the rest fold into ONE older block, which counts them"
+    ]
+  },
+  {
+    "name": "the older block is never closed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if len(log) > TIMELINE_SHOWN:\n        parts.append('</details>')\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and the older block closes after the oldest entry, so the page's tags balance"
+    ]
+  },
+  {
+    "name": "the older block opens even on a short timeline",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if len(log) > TIMELINE_SHOWN:\n",
+        "    if True:\n"
+      ],
+      [
+        "        if i == len(log) - 1 - TIMELINE_SHOWN:",
+        "        if i == len(log) - 1 - min(TIMELINE_SHOWN, len(log) - 1):"
+      ]
+    ],
+    "expect": [
+      "a timeline no longer than TIMELINE_SHOWN has no older block"
+    ]
+  },
+  {
+    "name": "nothing waiting is shown as a bright heading again (owner 11-05 17:28)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if st == \"none\":   # owner",
+        "    if False:   # owner"
+      ]
+    ],
+    "expect": [
+      "owner 17:28: NOTHING waiting is said quietly — a muted line, never a bright NEEDS YOU heading"
+    ]
+  },
+  {
+    "name": "a detail-only change on a merged thread is told as another landing (timeline-story r1 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if b == \"merged\" and a != \"merged\"]",
+        "if b == \"merged\"]"
+      ]
+    ],
+    "expect": [
+      "timeline story: a detail that SAYS '→ ✅ merged' is not a landing, and a detail-only change is not a move (r1 P2)"
+    ]
+  },
+  {
+    "name": "a hand-off keeps its ledger note in the ref (timeline-story r1 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "ref(c[20:].split(\" (was in the ledger\", 1)[0])",
+        "ref(c[20:])"
+      ]
+    ],
+    "expect": [
+      "timeline story, from the REAL producer: a hand-off names its ref alone, never the ledger note (r1 P2)"
+    ]
+  },
+  {
+    "name": "a plan newly owing is told as progress (timeline-story r1 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(n(\"plan not ticked closed, new: \"), \"a plan newly owing\"",
+        "(0, \"a plan newly owing\""
+      ]
+    ],
+    "expect": [
+      "timeline story: a plan newly owed, one no longer owing and progress are three different words (r1 P2)"
+    ]
+  },
+  {
+    "name": "an added thread's ref keeps its state and detail (timeline-story r2 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for c in ch if c.startswith(\"added [\") for k, _, rest in [c[6:].partition(\": \")]]",
+        "for c in ch if c.startswith(\"added [\") for k, rest in [(c[6:], c[6:].partition(\": \")[2])]]"
+      ]
+    ],
+    "expect": [
+      "timeline story, from the REAL producer: an added thread is named by its key alone, never its state or detail (r2 P2)"
+    ]
+  },
+  {
+    "name": "a wording-only snapshot is told as one change (timeline-story r3 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if ch == [NO_READER_CHANGE]:   # timeline-story r3 P2",
+        "    if False:   # timeline-story r3 P2"
+      ]
+    ],
+    "expect": [
+      "timeline story, from the REAL producer: a wording-only snapshot says so, never '1 change(s)' (r3 P2)"
+    ]
+  },
+  {
+    "name": "an added thread already merged is told only as added (backlog #520 PR)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        r for r, rest in added if rest.startswith(GLYPH[\"merged\"])]",
+        "        ]"
+      ],
+      [
+        "(\"added\", [r for r, rest in added if not rest.startswith(GLYPH[\"merged\"])]),",
+        "(\"added\", [r for r, rest in added]),"
+      ]
+    ],
+    "expect": [
+      "timeline story: a thread added already merged is told as landed, not merely added"
+    ]
+  },
+  {
+    "name": "backlog #518: resolved PRs are collected only when no named PR or merge takes precedence",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    resolved = [int(q[\"number\"]) for q in opened]\n    if prs:",
+        "    resolved = [int(q[\"number\"]) for q in opened] if not prs and not any(re.search(rf\"\\(backlog #{n}\\)\", s_) for _, _, s_ in src.get(\"merged_rows\") or [] for n in live_rows) else []\n    if prs:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #518: a MIXED thread — one row merged, another resolving to an open PR — owns that PR, and its wait holds it",
+      "⭐ backlog #518: …and a named MERGED PR beside a row resolving to an open PR owns it too"
+    ]
+  },
+  {
+    "name": "backlog #518: a finished leaf that owns an open PR is dropped from the agenda",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(t[\"state\"] not in _FINISHED or t.get(\"open_prs\"))):   # backlog #518",
+        "t[\"state\"] not in _FINISHED):   # backlog #518"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #518: a MIXED thread — one row merged, another resolving to an open PR — owns that PR, and its wait holds it"
+    ]
+  },
+  {
+    "name": "an agenda step's refs are not checked where the log is read (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if rec[\"kind\"] == \"agenda\" and not all(_ref_ok(x) for st in rec[\"steps\"] for x in st[\"refs\"]):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref that is not a list is MALFORMED where it is read (backlog #504)"
+    ]
+  },
+  {
+    "name": "a ref of any length passes (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "len(r) == 2 and r[0] in REF_KINDS",
+        "r[0] in REF_KINDS"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref with three parts is MALFORMED where it is read (backlog #504)"
+    ]
+  },
+  {
+    "name": "a ref of an unknown kind passes (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "r[0] in REF_KINDS and _is(r[1], int)",
+        "_is(r[0], str) and _is(r[1], int)"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref of an unknown kind is MALFORMED where it is read (backlog #504)"
+    ]
+  },
+  {
+    "name": "a ref whose number is a bool or a string passes (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _is(r[1], int)",
+        "and isinstance(r[1], (int, str))"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref whose number is not an int (a bool, a string) is MALFORMED (backlog #504)"
+    ]
+  },
+  {
+    "name": "a lone-newline log is kept ahead of the first record (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        pos = m.end()\n",
+        "        keep = m.end() if pos == m.start() else keep\n        pos = m.end()\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a log that is a lone newline is emptied too, so the first record is not preceded by a blank line (backlog #504)"
+    ]
+  },
+  {
+    "name": "a whitespace-only log is not emptied (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            fh.truncate(keep)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ a log that is only whitespace, with no final newline, is emptied before the newline repair — no blank line left ahead of the first record (backlog #504)"
+    ]
+  },
+  {
+    "name": "trailing blanks after a record are kept (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not _blank(raw[pos:].decode(\"utf-8\")):",
+        "    if raw[pos:]:"
+      ]
+    ],
+    "expect": [
+      "⛔ a log whose last line is blanks after a record leaves no blank line before the next write (backlog #504)"
+    ]
+  },
+  {
+    "name": "the known ref kinds include one the step grammar does not write (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        ".group(1).split(\"|\"))",
+        ".group(1).split(\"|\") + [\"zzz\"])"
+      ]
+    ],
+    "expect": [
+      "the known ref kinds are exactly the alternatives of the step grammar, each one parsed by it (backlog #504)"
+    ]
+  },
+  {
+    "name": "blanks on the last record's own line are cut (backlog #504, r2 Codex F1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        keep = len(raw)                          # a last line with no line ending",
+        "        keep = pos + len(raw[pos:].rstrip())                          # a last line with no line ending"
+      ]
+    ],
+    "expect": [
+      "⛔ a CRLF log is kept byte for byte ahead of the appended record — the blank repair never cuts into a record or its line ending (backlog #504, r2 Codex F1)"
+    ]
+  },
+  {
+    "name": "a CR is taken for data when the blank tail is measured (backlog #504, r2 Codex F1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_EOL_B = re.compile(_EOL.pattern.encode())",
+        "_EOL_B = re.compile(rb\"\\n\")"
+      ]
+    ],
+    "expect": [
+      "⛔ a blank tail the reader skips is cut, whatever its whitespace or line ending — one meaning of blank for the reader and the cut (backlog #504, r3 Claude N2)"
+    ]
+  },
+  {
+    "name": "a lone CR does not end a line, for the reader or the writers (backlog #504, r3 Claude N1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_EOL = re.compile(r\"\\r\\n|\\r|\\n\")",
+        "_EOL = re.compile(r\"\\r?\\n\")"
+      ]
+    ],
+    "expect": [
+      "⛔ a log whose lines end in a lone CR is read AND written: the writers' line model is the reader's (backlog #504, r3 Claude N1)"
+    ]
+  },
+  {
+    "name": "the blank repair's blank is narrower than the reader's (backlog #504, r3 Claude N2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not _blank(raw[pos:m.start()].decode(\"utf-8\")):",
+        "        if raw[pos:m.start()].strip(b\" \\t\\r\\n\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ a blank tail the reader skips is cut, whatever its whitespace or line ending — one meaning of blank for the reader and the cut (backlog #504, r3 Claude N2)"
+    ]
+  },
+  {
+    "name": "the blank tail is cut before the log is validated (backlog #504, r2 Codex F3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        lines, said = write(agendas(_agenda_records(text, path.name)))\n        if keep != len(raw):\n            fh.truncate(keep)\n",
+        "        if keep != len(raw):\n            fh.truncate(keep)\n        lines, said = write(agendas(_agenda_records(text, path.name)))\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a log recording refuses as malformed is left unchanged — nothing is cut before it is validated (backlog #504, r2 Codex F3)"
+    ]
+  },
+  {
+    "name": "the step grammar is read case-insensitively (backlog #504, r2 Codex F2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "REF_RE = page_markup.KEY_REF      #",
+        "REF_RE = re.compile(page_markup.KEY_REF.pattern, re.I)      #"
+      ]
+    ],
+    "expect": [
+      "⛔ no `<word> #7` the step grammar accepts names a kind outside the known ref kinds — a case-insensitive or regrouped grammar is caught (backlog #504, r2 Codex F2)"
+    ]
+  },
+  {
+    "name": "a snapshot step's refs are iterated without checking it is a list (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                                     and _is(st.get(\"refs\", []), list)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ an earlier agenda's step whose refs is not a list is SAID by snap_history and the page replay, never a TypeError (backlog #504)"
+    ]
+  },
+  {
+    "name": "a snapshot's steps may share an n (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\n            and len({st[\"n\"] for st in steps}) == len(steps))",
+        ")"
+      ]
+    ],
+    "expect": [
+      "⛔ a current agenda with two steps of one n is MALFORMED, so two identical snapshots report no step move (backlog #504)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 never reads the row's own words",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        it[\"flag\"] = settled_in_prose(r[\"status\"])   #",
+        "        it[\"flag\"] = None   #"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #496 FAILS-IF: on the 2026-11-03 corpus backlog #306 is flagged as settled; backlog #384 (a head rewritten, no decision word) is NOT — that class moved to the PR-time check, a separate backlog row"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 reads the WHOLE status, before the marker too",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    tail = status[status.rfind(NEEDS_OWNER):]\n    m = next(",
+        "    tail = status\n    m = next("
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 1: a DECIDED BEFORE the last marker is an older question, never this one"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 matches any case of 'decided'",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "SETTLED_WORDS = re.compile(r\"\\bDECIDED",
+        "SETTLED_WORDS = re.compile(r\"(?i)\\bDECIDED"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 1: a lower-case 'decided' is prose about a future call (backlog #384's own tail)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 drops `answered by the owner`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "|\\banswered by the owner\\b\")",
+        "\")"
+      ]
+    ],
+    "expect": [
+      "backlog #496 clause 1: `answered by the owner` after the marker flags too"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 ignores a negation before the word (r1 Codex R4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    m = next((m for m in SETTLED_WORDS.finditer(tail) if not NEGATED.search(tail[:m.start()])), None)",
+        "    m = SETTLED_WORDS.search(tail)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 1: `not DECIDED` after the marker does not flag (r1 Codex R4)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1's negation drops `not yet`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "NEGATED = re.compile(r\"\\b(?:not|never)(?:\\s+yet)?\\s*$\"",
+        "NEGATED = re.compile(r\"\\b(?:not|never)\\s*$\""
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 1: `not yet answered by the owner` does not flag (r1 Codex R4)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1's negation reads a `not` anywhere before the word",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(?:\\s+yet)?\\s*$\", re.I)",
+        "(?:\\s+yet)?\", re.I)"
+      ]
+    ],
+    "expect": [
+      "backlog #496 clause 1: a `not` FAR before the word does not negate it (adjacent to R4)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 gives up at the first, negated, word",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "SETTLED_WORDS.finditer(tail) if not",
+        "list(SETTLED_WORDS.finditer(tail))[:1] if not"
+      ]
+    ],
+    "expect": [
+      "backlog #496 clause 1: a negated word does not hide a LATER un-negated one"
+    ]
+  },
+  {
+    "name": "backlog #496: a cross-reference overwrites clause 1's own words (r1 Claude F6)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " - {r[\"num\"]}) if it[\"flag\"] is None else []:",
+        " - {r[\"num\"]}):"
+      ]
+    ],
+    "expect": [
+      "backlog #496: clause 1 wins over a cross-reference to a decided row (r1 Claude F6)"
+    ]
+  },
+  {
+    "name": "backlog #406: the sibling memo is never consulted, so every call in the sweep re-executes the sibling",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if memo is not None and path in memo:\n        return memo[path]",
+        "    if False and memo is not None and path in memo:\n        return memo[path]"
+      ]
+    ],
+    "expect": [
+      "backlog #406: the same sibling twice is ONE import",
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
+    ]
+  },
+  {
+    "name": "backlog #406: a miss is never stored in the memo, so every call in the sweep re-executes the sibling",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        memo[path] = mod\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: the same sibling twice is ONE import",
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
+    ]
+  },
+  {
+    "name": "backlog #406: the memo is ON by default, so a caller outside any sweep is served a rewritten sibling stale",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_SIBLING_MEMO: dict | None = None",
+        "_SIBLING_MEMO: dict | None = {}"
+      ]
+    ],
+    "expect": [
+      "backlog #406: OUTSIDE a sweep, the same sibling twice is TWO imports",
+      "backlog #406: OUTSIDE a sweep, a sibling REWRITTEN in this process is imported afresh",
+      "backlog #406: OUTSIDE a sweep, a SAME-SIZE rewrite with the mtime put back is the new source, never a stale .pyc (r1 Codex F1, Claude F2)",
+      "backlog #406: OUTSIDE a sweep, a change ONLY in a file the sibling's import loads is seen (r1 Codex F2)"
+    ]
+  },
+  {
+    "name": "backlog #406: the memo is keyed on the NAME, so one name in two directories shares a module",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "path in memo:\n        return memo[path]",
+        "name in memo:\n        return memo[name]"
+      ],
+      [
+        "        memo[path] = mod\n",
+        "        memo[name] = mod\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: one name in two directories is two imports — the memo is keyed on the PATH"
+    ]
+  },
+  {
+    "name": "backlog #406 r1 Claude F2: the sibling is loaded through its __pycache__, so a same-stamp rewrite is served a stale .pyc",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    exec(compile(pathlib.Path(path).read_bytes(), path, \"exec\", dont_inherit=True), mod.__dict__)\n",
+        "    spec.loader.exec_module(mod)\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: OUTSIDE a sweep, a SAME-SIZE rewrite with the mtime put back is the new source, never a stale .pyc (r1 Codex F1, Claude F2)"
+    ]
+  },
+  {
+    "name": "backlog #406: the sweep's restore is not in finally, so a sweep that raises leaves the memo on",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    try:\n        yield\n    finally:\n        _SIBLING_MEMO = saved\n",
+        "    yield\n    _SIBLING_MEMO = saved\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: a sweep that RAISES leaves no memo on — every call after it is a fresh import again"
+    ]
+  },
+  {
+    "name": "backlog #406: the sweep never restores the previous state, so the memo stays on after it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    finally:\n        _SIBLING_MEMO = saved\n",
+        "    finally:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: a sweep that RAISES leaves no memo on — every call after it is a fresh import again"
+    ]
+  },
+  {
+    "name": "backlog #406: a nested sweep starts its own memo, so what it imported is lost when it ends",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    _SIBLING_MEMO = {} if saved is None else saved\n",
+        "    _SIBLING_MEMO = {}\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
+    ]
+  },
+  {
+    "name": "backlog #406: the outside-a-sweep probe is taken INSIDE the self-test's sweep, so it observes the memo, not a real caller",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    outside = _sibling_outside_probe()\n    with _sibling_sweep():\n",
+        "    with _sibling_sweep():\n        outside = _sibling_outside_probe()\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: OUTSIDE a sweep, the same sibling twice is TWO imports",
+      "backlog #406: OUTSIDE a sweep, a sibling REWRITTEN in this process is imported afresh",
+      "backlog #406: OUTSIDE a sweep, a SAME-SIZE rewrite with the mtime put back is the new source, never a stale .pyc (r1 Codex F1, Claude F2)",
+      "backlog #406: OUTSIDE a sweep, a change ONLY in a file the sibling's import loads is seen (r1 Codex F2)"
+    ]
+  },
+  {
+    "name": "backlog #406: the self-test body runs outside any sweep, so the suite re-executes every sibling (the speedup unwired)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    with _sibling_sweep():\n        return _self_test_cases(outside=outside)",
+        "    if True:\n        return _self_test_cases(outside=outside)"
+      ]
+    ],
+    "expect": [
+      "backlog #406: the same sibling twice is ONE import",
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
+    ]
+  },
+  {
+    "name": "backlog #406: the sibling is compiled under goal-tree's own `from __future__` flags (dont_inherit dropped)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "path, \"exec\", dont_inherit=True)",
+        "path, \"exec\")"
+      ]
+    ],
+    "expect": [
+      "backlog #406: a sibling compiles as ITSELF, never under goal-tree's own `from __future__` flags"
+    ]
+  },
+  {
+    "name": "the Ask tray is not lifted: the tray-less fragment page overwrites the composed one",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if why:\n        out.write_text(f\"<!doctype html><meta charset=utf-8>\"",
+        "    if True:\n        out.write_text(f\"<!doctype html><meta charset=utf-8>\""
+      ]
+    ],
+    "expect": [
+      "⛔ the written page carries the Ask tray, lifted by brief-compose — and says so"
+    ]
+  },
+  {
+    "name": "--page prints only the headline of why the tray is missing",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            + [\"   \" + line for line in why.splitlines()]\n",
+        "            + [\"   \" + why.splitlines()[0]]\n"
+      ]
+    ],
+    "expect": [
+      "⛔ --page says the tray is missing, with EVERY line of the reason"
+    ]
+  },
+  {
+    "name": "an answer renders OPEN, interlaced with the tree",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return (f'<details class=\"qa\"><summary>{head}</summary><div class=\"qa-body\">'",
+        "    return (f'<details class=\"qa\" open><summary>{head}</summary><div class=\"qa-body\">'"
+      ]
+    ],
+    "expect": [
+      "⛔ answers: EVERY Q&A renders COLLAPSED — a <details> with no `open` attribute (the clutter remedy)"
+    ]
+  },
+  {
+    "name": "an answer whose key left the tree is dropped silently",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not gone:\n        return \"\"\n",
+        "    if True:\n        return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⛔ answers: a key no longer on the tree lands in ONE collapsed 'Older questions' section at the BOTTOM"
+    ]
+  },
+  {
+    "name": "a thread's answers are never attached to its key",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if a and qa:   # the key's FIRST",
+        "        if False:   # the key's FIRST"
+      ]
+    ],
+    "expect": [
+      "⛔ answers: a thread's answers sit beside its key's FIRST occurrence on the live tree, counted"
+    ]
+  },
+  {
+    "name": "an answers entry missing a field is skipped, not refused",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if bad:\n        return [], f\"{path.name}: entr",
+        "    if False:\n        return [], f\"{path.name}: entr"
+      ]
+    ],
+    "expect": [
+      "⛔ answers file: missing = none yet; unreadable or an entry missing a field is REFUSED by name, never skipped"
+    ]
+  },
+  {
+    "name": "an answer's body is not escaped (PR #558 r1 B)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "paras = \"\".join(f\"<p>{html.escape(p.strip())}</p>\"",
+        "paras = \"\".join(f\"<p>{p.strip()}</p>\""
+      ]
+    ],
+    "expect": [
+      "⛔ r1 B: the answer BODY is escaped, every paragraph"
+    ]
+  },
+  {
+    "name": "an answer's `asked` is not escaped (PR #558 r1 B)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'<time>{html.escape(r[\"asked\"])}</time> '",
+        "f'<time>{r[\"asked\"]}</time> '"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 B: `asked` is escaped"
+    ]
+  },
+  {
+    "name": "an Older-questions key is not escaped (PR #558 r1 B)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'<p class=\"qa-key\">{html.escape(k)}</p>",
+        "f'<p class=\"qa-key\">{k}</p>"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 B: an Older-questions KEY is escaped"
+    ]
+  },
+  {
+    "name": "the answers-file error line is not escaped (PR #558 r1 B)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "NOT shown: {html.escape(answers_error)}",
+        "NOT shown: {answers_error}"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 B: the answers-file ERROR line is escaped"
+    ]
+  },
+  {
+    "name": "the tray is asked of the exit code, not the file (PR #558 r1 B)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not _has_tray(written):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 B: brief-compose exiting 0 with NO tray on disk is reported, and the page is still written"
+    ]
+  },
+  {
+    "name": "a non-list `answers` is not refused (PR #558 r1 A)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not isinstance(rows, list):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 A: a malformed SHAPE is refused by name, never raised — `answers` null or a number, a non-text `asked`, a top-level list"
+    ]
+  },
+  {
+    "name": "a non-text `asked` is not refused (PR #558 r1 A)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if odd:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 A: a malformed SHAPE is refused by name, never raised — `answers` null or a number, a non-text `asked`, a top-level list"
+    ]
+  },
+  {
+    "name": "a thread's marker is drawn inside its closed fold (PR #558 r1 C)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if hoist is None:\n                out.append(qa_html(",
+        "            if True:\n                out.append(qa_html("
+      ]
+    ],
+    "expect": [
+      "⛔ r1 C: a thread's 💬 marker is OUTSIDE every closed fold, naming the thread it belongs to"
+    ]
+  },
+  {
+    "name": "a fold's hoisted markers are never drawn (PR #558 r1 C)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                       + (_hoisted(mine) if hoist is None else \"\"))",
+        "                       + \"\")"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 C: a thread's 💬 marker is OUTSIDE every closed fold, naming the thread it belongs to"
+    ]
+  },
+  {
+    "name": "a folded goal's hoisted thread markers are never drawn (PR #558 r1 C)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'{asked}{_hoisted(mine) if hoist is None else \"\"}</section>')",
+        "f'{asked}</section>')"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 C: a thread's 💬 marker is OUTSIDE every closed fold, naming the thread it belongs to"
+    ]
+  },
+  {
+    "name": "a ledger entry matches a thread by NUMBER, dropping the kind (PR #558 r1 E)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    naming = [e for e in src[\"ledger\"] if _ledger_refs(e) & _thread_refs(t)]",
+        "    naming = [e for e in src[\"ledger\"] if {n for _, n in _ledger_refs(e)} & {n for _, n in _thread_refs(t)}]"
+      ]
+    ],
+    "expect": [
+      "⛔ PR #558 r1 E: ledger PR #N attaches to PR #N, never to backlog #N; bare #N and an id's -N name nothing"
+    ]
+  },
+  {
+    "name": "a bare #N in a ledger entry's text names a thread of either kind (PR #558 r1 E)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return {(k, int(n)) for k, n in REF_RE.findall(f\"{entry.get('id', '')} {entry.get('what', '')}\")}",
+        "    return {(k, int(n)) for n in re.findall(r\"#(\\d+)\", str(entry.get('what', ''))) for k in (\"PR\", \"backlog\")}"
+      ]
+    ],
+    "expect": [
+      "...an entry naming only a bare #N is IN FLIGHT UNDER NO GOAL, never hung on a thread with that number"
+    ]
+  },
+  {
+    "name": "text no UTF-8 writer can encode is not refused (PR #558 r2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if unenc:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `key` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_encodes(r[f]) for f in (\"key\", ",
+        "_encodes(r[f]) for f in ("
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `q` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(\"key\", \"q\", \"a\", \"asked\") if isinstance",
+        "(\"key\", \"a\", \"asked\") if isinstance"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `a` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"q\", \"a\", \"asked\") if isinstance(r.get",
+        "\"q\", \"asked\") if isinstance(r.get"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `asked` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"a\", \"asked\") if isinstance(r.get(f), str))]",
+        "\"a\") if isinstance(r.get(f), str))]"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "an answers file it may not read raises (PR #558 r3 L3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    except (ValueError, KeyError, TypeError, OSError) as e:",
+        "    except (ValueError, KeyError, TypeError) as e:"
+      ]
+    ],
+    "expect": [
+      "⛔ r3 L3: an answers file it may not read is refused by name, never raised"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex L2: the page drops the first line of All steps (its first group title) (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        for k, ln in agenda_step_items(snap, ag)) + \"</pre>\")",
+        "        for k, ln in agenda_step_items(snap, ag)[1:]) + \"</pre>\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #509 r1 Codex L2: the page keeps every when heading and every step, whatever lines sit above them"
+    ]
+  },
+  {
+    "name": "agenda group labels render as plain step text, not titles (owner 11-11 14:52)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "</span>' if k == \"when\" else _html_line(ln, repo)",
+        "</span>' if False else _html_line(ln, repo)"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-11 14:52: each `## <when>` group in All steps is a TITLE (its own span, in the accent), and no step line is one"
+    ]
+  },
+  {
+    "name": "a group is told from a step by indentation again (PR #559 r1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "</span>' if k == \"when\" else",
+        "</span>' if not ln.startswith(\" \") else"
+      ]
+    ],
+    "expect": [
+      "⭐ PR #559 r1: an indented or HTML-bearing group is still a title, escaped, with or without a change-if; the accent style rule for the title exists"
+    ]
+  },
+  {
+    "name": "a group title is not escaped (PR #559 r1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'<span class=\"ag-when\">{_html_line(ln, repo)}</span>'",
+        "f'<span class=\"ag-when\">{ln}</span>'"
+      ]
+    ],
+    "expect": [
+      "⭐ PR #559 r1: an indented or HTML-bearing group is still a title, escaped, with or without a change-if; the accent style rule for the title exists"
+    ]
+  },
+  {
+    "name": "the group title loses its accent style rule (PR #559 r1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "  font-weight:700;color:var(--accent)}\n",
+        "  font-weight:700}\n"
+      ]
+    ],
+    "expect": [
+      "⭐ PR #559 r1: an indented or HTML-bearing group is still a title, escaped, with or without a change-if; the accent style rule for the title exists"
+    ]
+  },
+  {
+    "name": "backlog #610: a direct run writes the served page again (the guard is gone)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if a.page and a.out.resolve() == DEFAULT_OUT.resolve() and not os.environ.get(_SS.MAIN_CHECKOUT_ENV):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610: a direct run (bare) never writes the SERVED page, and logs nothing"
+    ]
+  },
+  {
+    "name": "backlog #610: the guard ignores the clone marker, so regen-pages' own build is refused",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and not os.environ.get(_SS.MAIN_CHECKOUT_ENV):\n",
+        ":\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610: ...and inside regen-pages' clone (REGEN_MAIN_CHECKOUT set) the served page IS written"
+    ]
+  },
+  {
+    "name": "backlog #610: the guard refuses an explicit --out preview too",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if a.page and a.out.resolve() == DEFAULT_OUT.resolve() and",
+        "if a.page and"
+      ]
+    ],
+    "expect": [
+      "main wrote the page"
+    ]
+  },
+  {
+    "name": "backlog #610 r1: the guard compares the path's spelling, not its destination",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "a.out.resolve() == DEFAULT_OUT.resolve()",
+        "a.out == DEFAULT_OUT"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #610 r1 (X1/F2): the served page spelled another way (served.html) is refused too"
     ]
   }
 ]

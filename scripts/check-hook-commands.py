@@ -73,7 +73,9 @@ LAUNCHER = "run-hook.sh"
 # registered is refused: an unregistered hook is a gate with no caller.
 # ⟳ 2026-10-28: empty. `check-memory-index-budget.sh` was listed here, waiting on the owner's decision;
 # the owner chose to register it (dashboard ask 2026-10-19/9, answered on a selection card 2026-10-28).
-UNREGISTERED: dict[str, str] = {}
+UNREGISTERED: dict[str, str] = {
+    "usage-pace-run.sh": "not a hook: the helper the three usage-pace hooks call to run origin/master's guard (backlog #522)",
+}
 
 
 class Malformed(Exception):

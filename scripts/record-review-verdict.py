@@ -2,7 +2,7 @@
 """Record the verdict a CLAUDE review half leaves — the same record a Codex run leaves.
 
     python3 scripts/record-review-verdict.py --review-id <subject>-r<N>-claude --head <sha> [--prompt <brief>]
-    python3 scripts/record-review-verdict.py --self-test  # 98 cases
+    python3 scripts/record-review-verdict.py --self-test  # 100 cases
 
 Run by the COORDINATOR after a Claude half is filed at `docs/reviews/claude/<review-id>.md`.
 
@@ -180,13 +180,17 @@ def resolve_head(root: str, head: str) -> "str | None":
 
 
 def claude_record(*, review_id: str, head: str, dirty: "dict[str, str] | None", tree: str,
-                  prompt: "str | None", chars: int, verdict: str) -> dict:
+                  prompt: "str | None", chars: int, verdict: str,
+                  answers: "dict[str, str] | None" = None) -> dict:
     """PURE. `codex-review.verdict_record`, with the fields that say a Claude half left it.
 
-    `dirty` is what `reviewed_state` OBSERVED, passed through unchanged — `None` stays `None`."""
+    `dirty` is what `reviewed_state` OBSERVED, passed through unchanged — `None` stays `None`.
+    `answers` (backlog #508) is `codex-review.loosening_answers` of the filed review: the half's answer
+    to each line the merge gate flagged, which `check-merge-ready` reads from this record."""
     rec = _cx.verdict_record(gate_ran=True, exit_code=0, review_id=review_id,
                              reason=f"claude half filed: {chars} chars, names {head[:12]}",
-                             head=head, dirty=dirty, prompt=prompt, tree=tree)
+                             head=head, dirty=dirty, prompt=prompt, tree=tree,
+                             loosening_answers=answers)
     rec["tool"] = TOOL
     rec["writer"] = WRITER
     rec["verdict"] = verdict
@@ -245,7 +249,8 @@ def main(argv: "list[str]", root: "str | None" = None) -> int:
         return refuse(f"{problem}\n  review: {rpath}")
     rec = claude_record(review_id=args.review_id, head=head, dirty=dirty, tree=root,
                         prompt=args.prompt, chars=len((body or "").strip()),
-                        verdict=review_verdict(body or "") or "")
+                        verdict=review_verdict(body or "") or "",
+                        answers=_cx.loosening_answers(body or ""))
     err = _cx.write_verdict(vpath, rec)
     if err:
         print(f"CANNOT RUN — the verdict could not be written ({err}). TREAT THIS AS NOT RUN.",
@@ -356,6 +361,10 @@ def _self_test_body() -> int:
          (_rec2["review"], _rec2["head"], _rec2["tree"], _rec2["prompt"], "4321" in _rec2["reason"],
           _rec2["dirty"], _rec2.get("verdict")),
          ("y-claude-r3.md", OTHER, "/u", None, True, {"lib/a.ts": "100644 ab"}, "NOT CONVERGED"))
+    case("#508: the record carries the review's answers to the merge gate's flagged lines",
+         claude_record(review_id="x-r1-claude", head=H, dirty={}, tree="/t", prompt=None, chars=900,
+                       verdict="CONVERGED", answers={"0123456789ab": "finding"}).get("loosening_answers"),
+         {"0123456789ab": "finding"})
     case("...and an overlay that could not be read stays None — UNUSABLE, never clean",
          claude_record(review_id="z-r1-claude", head=H, dirty=None, tree="/t", prompt=None,
                        chars=1, verdict="CONVERGED")["dirty"], None)
@@ -428,7 +437,10 @@ def _self_test_body() -> int:
         case("a head that is not a commit here: refused, nothing written",
              (rc, os.path.exists(os.path.join(root, verdict))), (RC_REFUSED, False))
         case("...and says it is not a commit", "is not a commit" in out, True)
-        write(review, GOOD.replace(H, h1))
+        # backlog #508: an answers section in the body (r2: answers are read ONLY from it), so the
+        # end-to-end record must carry it.
+        write(review, GOOD.replace(H, h1).replace(
+            "\n\nVERDICT:", "\n\n## Loosening answers\nLOOSENING-CHECK 0123456789ab: not a loosening\n\nVERDICT:"))
         # A good review filed where this tool would look for it, so ONLY the writer rule can refuse.
         write("docs/reviews/claude/x-r1-codex.md", GOOD.replace(H, h1))
         rc, out = run("--review-id", "x-r1-codex", "--head", h1)
@@ -441,6 +453,8 @@ def _self_test_body() -> int:
             if os.path.exists(os.path.join(root, verdict)) else {}
         case("...under the FULL sha, though it was handed an abbreviation", _v.get("head"), h1)
         case("...as the claude writer", _v.get("writer"), "claude")
+        case("#508: ...with the review's answer to a flagged line, read by codex-review's parser",
+             _v.get("loosening_answers"), {"0123456789ab": "not a loosening"})
         before = pathlib.Path(root, verdict).read_bytes() if _v else b""
         rc, out = run("--review-id", rid, "--head", h1)
         case("an existing verdict is NOT overwritten", rc, RC_REFUSED)

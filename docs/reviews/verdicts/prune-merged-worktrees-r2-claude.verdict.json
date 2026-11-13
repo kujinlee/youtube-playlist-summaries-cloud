@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/prune-merged-worktrees-r2-claude.md": "100644 7e8c39c72d09f4e66d668628ebcc2a4588b9380e"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "e2a10f592443b28186c85ef7afa554baf23229bf",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/review-prune-r2.md",
+  "reason": "claude half filed: 13568 chars, names e2a10f592443",
+  "refused": false,
+  "review": "prune-merged-worktrees-r2-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/prune-wt",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

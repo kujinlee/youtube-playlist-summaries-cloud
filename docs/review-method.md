@@ -20,6 +20,60 @@ recalled instead of read. ⛔ **Consulting this card is the step. If you are abo
 memory, that is the defect.** `scripts/check-review-decision.py` answers Q1, Q4 and Q5 from the
 recorded evidence — run it rather than reasoning.
 
+### Q0 · Which instrument? — asked BEFORE Q1, and the one question here keyed on judgement
+
+Q1–Q6 choose **how much** adversarial diff review to run. Q0 asks whether that is the right
+**instrument** at all, keyed on **what kind of wrongness the change can have** (backlog #177; design
+in [`superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md`](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) §2).
+
+⛔ **THIS IS THE EXCEPTION TO Q1's *"keyed on the changed path set, not on judgement"* — on purpose.**
+A path says WHAT changed; it cannot say what kind of wrongness that change can have. Do not "fix" the
+order back to path-first: Q1 still decides dosage from paths, once Q0 has picked the instrument. The
+reason review alone is not enough, in this repository's own words (`check-vocabulary-collisions.py`):
+*"every gate this project owns asks 'is this correct?', which is a LOCAL question and can always be
+answered yes by patching. A duplicated mechanism is never locally incorrect."*
+
+| The change… | Its wrongness looks like | PRIMARY instrument | Review's part |
+|---|---|---|---|
+| **moves a seam** — changes an EXISTING boundary: who owns a piece of data or a decision moves, a contract between two components changes, or a second name or mechanism appears for something that already exists. A new module that only calls existing contracts is *logic* | a design that fights itself; each fix locally correct | an **architecture review BEFORE building** (`dev-process.md` Phase 6) | Q1 onward, on what is then built |
+| is **logic inside an existing seam** | a wrong branch, a missed case | **the normal loop** — Q1 onward, unchanged | all of it |
+| is a **surface** — a parser, matcher or classifier over open-ended input | inputs nobody thought of | a **corpus run** over real, unseen inputs | the CLAIMS made about it (a safety property in a comment) |
+| is a **guard** — a check, gate or test whose job is to go red | a check that cannot fail; wiring nothing asserts | the **mutation sweep** (`scripts/check-plan-code.py --mutate`), mutating the CALL SITE too | what the sweep cannot reach |
+| is **prose only** | under-specified forever — the *prose floor* | Q1's **one round**, inside the round cap (Q4c) | stop at the prose floor (*Non-convergence means different things on a DOCUMENT and on CODE*) |
+
+- **An approved spec counts as the seam's design review** — Phase 1's human gate already examined the boundary;
+  the round-1 Q0 line names the spec instead of a fresh architecture review.
+- **Recommended, not enforced** — *seam* is judged, so nothing refuses a branch without the review; the Q0 line
+  records the call and the FAILS-IF below catches a wrong one afterwards (owner, 2026-11-03).
+- **More than one kind** → each instrument it earns; a seam goes first, because the rest review what
+  it settles.
+- **Re-asked when a side job enters mid-slice** — [`process-checklists.md`](process-checklists.md) →
+  *A side job inherits NO design approval from the slice it arrived in* names that moment.
+- **Record the answer** in round 1's coordinator document (Q6), beside the round cap — one line:
+  the kind, and the instrument run.
+
+⛔ **HYBRID — the user's decision (spec, *Decisions of record* 2), not derived.** The ENTRY is judged,
+because no definition of *seam* exists that a script can read. The ESCALATION — *has this branch
+started behaving like a seam problem?* — is meant to be mechanical, over the spec §2's four
+SEAM-not-LOGIC signals: fixes locally correct but non-terminating; each fix ADDS code; machinery that
+manages a problem rather than doing work; two names for one concept. ⚠ **That half is NOT BUILT:**
+its calibration (spec §3) has not started, and an uncalibrated signal is the one outcome §3 exists to
+prevent. Until it reports, read the four signals by hand at each round, and Q5 remains the trigger.
+
+**Evidence, by source.** Surface: six review rounds found about seven lexical edge cases, one corpus
+run over 5,287 unseen inputs produced 456 fires and 2 discrepancies, both bugs in the ground-truth
+rule (`docs/memory/dual-review-what-it-catches.md`). Guard: on `scripts/check-closing-table.py`, a
+mutation reverting the whole change at its call site survived at 151/151 and was found by mutating,
+not by reading (`docs/memory/unit-coverage-does-not-compose.md`, R9-1). Seam: `decision-card-soundness`
+hit signals 1 and 4 (spec §2). ⛔ **Do NOT cite the observer-log / verdict-path round counts** —
+withdrawn 2026-09-26 ([`velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md) §4).
+
+**FAILS IF:** a change Q0 sent to the normal loop later meets Q5's thrashing shape — judged by Q5's own
+causal test, not by a count of the four signals, which are prompts until calibrated — in a component Q0
+did not call a seam — or a corpus run or mutation sweep
+finds a class of defect on a change Q0 sent to review alone. Either way Q0 chose wrong: say so in that
+round's document. A round-1 coordinator document with no Q0 line means it was not asked.
+
 ### Q1 · Full loop, or one round?
 
 Keyed on the **changed path set**, not on judgement.
@@ -63,6 +117,17 @@ settled three earlier findings on the branch that built this.
    line exactly `VERDICT: CONVERGED` or `VERDICT: NOT CONVERGED`** — fixed positions, matched whole,
    nothing else in the file read for either, so no quote, fence or comment can stand in for them
    (PR #457 r2). The tool refuses a tree not at that head, and records its uncommitted overlay.
+   ⟳ **backlog #508: append `python3 scripts/check-merge-ready.py --flagged-block` to a Claude
+   half's brief** (`codex-review.py` appends it itself). The half ends its review, just before the
+   `VERDICT:` line, with a line that is exactly `## Loosening answers` followed only by lines
+   `LOOSENING-CHECK <id>: not a loosening` or `…: finding: <why>`. Nothing outside that section is
+   read, and any other line inside it makes the whole section a finding (r2); so does a second such
+   heading, or an id after the `VERDICT:` line (r3). The merge gate clears a
+   "loosens a gate" HOLD only for lines answered that way in a verdict on the exact tree it merges.
+   A finding stands until a later round of the same half answers `not a loosening` on that tree.
+   ⛔ So **commit the backlog, dashboard and goal-thread ticks BEFORE the final round**: only the
+   round's own review records may change after it, and any other edit is `reviewed a different tree`.
+   ⚠ A Claude half's overlay is captured when its verdict is RECORDED: record before any fold edit.
 5. ⛔ **EVERY FINDING NAMES A SAMPLE, NOT A SCOPE — say what you did about that.** A finding's
    boundary is the evidence the reviewer happened to have, never the extent of the defect. **Each
    finding must state whether siblings were searched for, HOW, and what turned up** — "grepped the
@@ -142,6 +207,16 @@ before any finding exists, so it is never decided mid-loop.
 | **4** | round 3's fold changed a guarded path | one half, scoped to that fold | each **FILED as a backlog row**, unless a **BLOCKER** (folded) |
 | **5** | round 4 folded a BLOCKER | one half, scoped to that fix — the **last** round | **all FILED**; a BLOCKER is also notified to the human **and HOLDS the PR** until they answer |
 | **6+** | never | — | — |
+
+**⟳ A REDESIGN RESTARTS THE COUNT** (the owner, 2026-11-09 10:41: *"simply because some arbitrary cap prevent review doesn't
+sound correct"*). The cap bounds the rounds spent on **one design**. When a round's answer is REDESIGN (*The stop
+condition*, below), the redesigned artifact is **new material**: its next round is a **design review at round 1**, with
+both halves. It is never a round past the cap, and never skipped because the cap was reached. Record it as a new
+review id (`<subject>-redesign-r1-*`), and give the old design's last coordinator document a `REDESIGNED → <new id>`
+line. **What it does NOT reopen:** findings on the old design stay disposed; the new round reviews the mechanism that
+replaced them. A second redesign of the same subject goes to the human: two redesigns mean the problem is not yet
+understood, and a third cap would only hide that. *Measured case:* the backlog #586 spec reached r3, was redesigned
+at the cap (a dedicated recording job), and the redesign shipped unreviewed until the owner asked why.
 
 A **BLOCKER** is a finding that passes **all three** tests, each checkable from the finding's own
 text — anything else is filed, however it is graded:

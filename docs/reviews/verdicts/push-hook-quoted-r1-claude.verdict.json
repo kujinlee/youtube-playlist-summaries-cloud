@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/push-hook-quoted-r1-claude.md": "100644 bc761cfbed96033fcff4d1abbe77017191627e7a",
+    "docs/reviews/codex/push-hook-quoted-r1-codex.md": "100644 4b1edb48836fcc65aecbeeb226a122bd4769c7d0",
+    "docs/reviews/verdicts/push-hook-quoted-r1-codex.verdict.json": "100644 ee10b6927d99ec9858319973a2997cae271150fd"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "ed8e0ac456a19038c2019b1d44a640aad9abf681",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 13227 chars, names ed8e0ac456a1",
+  "refused": false,
+  "review": "push-hook-quoted-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/phq",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

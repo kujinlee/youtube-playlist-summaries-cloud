@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The merge gate's loosening HOLD: why every master merge voided the answers, and what option A changes</title>
+
+
+<style>
+:root{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+.bad{color:var(--red)} .warn{color:var(--amber)}
+.rev{border:1px solid var(--rule);border-radius:7px;background:var(--panel);padding:4px 18px 14px;margin:20px 0}
+.rev h3{margin-top:14px}
+.chip{display:inline-block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;
+  border-radius:10px;border:1px solid var(--amber);color:var(--amber);margin-left:8px;vertical-align:middle}
+.chip.set{border-color:var(--verified-br);color:var(--verified)}
+.chip.ret{border-color:var(--red);color:var(--red)}
+.rev dl{margin:8px 0;display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:15px}
+.rev dt{color:var(--fg3);font-weight:600}
+.rev dd{margin:0}
+.ans{margin-top:12px;border:1px dashed var(--rule);border-radius:5px;padding:9px 12px;
+  color:var(--fg3);font-size:14.5px;background:var(--bg)}
+.ans b{color:var(--fg2)}
+@media (max-width:560px){ .rev dl{grid-template-columns:1fr} }
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4;
+         /* The two tokens the text-style scheme SPENDS. On `html` for the same reason
+            `--rule` is: specificity 0,0,1 loses to a page's own `:root` (0,1,0), and SHIM
+            is concatenated AFTER the fragment, so anything declared at equal specificity
+            here would silently beat every page that styles itself. MEASURED 2026-10-06:
+            6 of the 21 recomposable pages declare no `--accent` and 8 declare no `--em`,
+            so without this the scheme resolves to nothing on a third of them and the
+            switcher becomes a control that changes an attribute nothing styles.
+            `--accent` DELIBERATELY FOLLOWS `--structure` rather than naming a colour:
+            `--structure` already has a light and a dark value, so accent parity is a
+            consequence rather than a second thing to keep in sync. `--em` has no existing
+            source and therefore needs an explicit pair -- see the dark block. */
+         --accent: var(--structure, #33607a); --em: #2d4a7c; }
+  /* ⛔ `--em`'s SECOND HALF IS KEYED ON THE THEME ATTRIBUTE, NOT ON THE MEDIA QUERY, and
+     that placement is the whole point. Putting it in the OS-dark block made the compose
+     fail immediately and correctly: a media query contributes NO specificity, so a page
+     whose light palette does not declare `--em` would keep the DARK value when the reader
+     toggles to light — the HALF-LIVE toggle that measured 1.03:1 on 2026-09-08. Only 13 of
+     the 21 recomposable pages declare `--em` at all, so that was the common case, not the
+     corner. Keyed on `[data-theme]` the two halves beat the media block in both
+     directions and no page is required to declare anything. */
+  :root[data-theme="light"] { --em: #2d4a7c; }
+  :root[data-theme="dark"]  { --em: #9db8e8; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied.
+     ⚠ THAT IS TRUE PER TOKEN AND A TRAP PER PALETTE (backlog #105). A media query adds ZERO
+     specificity, so each fragment token beats this rule unconditionally and each undeclared one
+     falls through to it. Declare SOME tokens under [data-theme="light"] and the toggle goes
+     half-live: declared tokens follow it, the rest stay pinned to the OS — measured 2026-09-08 at
+     1.03:1 body contrast, dark on dark. A palette is declared WHOLE or NOT AT ALL; none leaves the
+     page dark and readable. Enforcement is backlog #102's; compose already refuses the half-live
+     toggle (PR #283). */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}:root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}:root[data-scheme="1"]{--head:var(--fg);--prose:var(--fg);--emph:var(--fg)}:root[data-scheme="2"]{--head:var(--accent);--prose:var(--fg2);--emph:var(--fg)}.ex-body{color:var(--prose)}.ex-body h1,.ex-body h2,.ex-body h3,.ex-body h4{color:var(--head)}.ex-body strong,.ex-body b{color:var(--emph)}.schemer{display:inline-flex;align-items:center;gap:.3em}.schemer .lbl{color:var(--ink-soft,inherit)}.schemer button{background:none;border:1px solid transparent;border-radius:1em;padding:0 .55em;cursor:pointer;color:inherit;font:inherit}.schemer button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+
+
+<div class="wrap ex-body">
+
+<h1>The merge gate's loosening HOLD: why every master merge voided the answers, and what option A changes</h1>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-11-08 20:29 · 8c861e2e · uncommitted changes</time></span></div></div>
+<p class="horizon">as of <code>5b537493</code> (master, PR #540 merged) · 2026-11-08 ~11:40 PST. <b>Option A is DECIDED, not BUILT</b>: you chose it at 11:33 on backlog #544, and its build on branch <code>answer-binds-file</code> has not landed. Everything below about A describes the design that was briefed, not shipped code. Code quoted from <code>scripts/check-merge-ready.py</code> on master.</p>
+
+<div class="reading">
+<b>The reading I chose:</b> <i>how the merge gate's <b>loosening HOLD</b> works today; why each merge of master into a PR threw away the reviewers' "not a loosening" answers on every OTHER open PR; and what option A keeps, changes and newly lets through.</i> Not the other HOLD kinds (deploy, <code>NO-REVIEW:</code>, missing local tests).
+</div>
+
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at the newest page. This page: <code>http://127.0.0.1:7391/2026-11-08-topic-loosening-answer-binding.html</code>
+<ol>
+<li><b>To ask:</b> hover a heading (or select any sentence) → <b>ask</b> → type → <b>Send</b>. Then say <i>“read my questions”</i> in the session; the answer is written into this page.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and a reboot stops it, which is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+
+<div class="toc">
+<b>Where this goes</b>
+<ol>
+<li><a href="#what">What the loosening HOLD is, and why it exists</a></li>
+<li><a href="#today">How an answer is recorded and checked today</a></li>
+<li><a href="#void">Why a merge of master voided everyone's answers</a></li>
+<li><a href="#options">Option A vs B vs C</a></li>
+<li><a href="#risk">What A newly lets through — the honest residual</a></li>
+<li><a href="#closed">What stays fail closed</a></li>
+<li><a href="#measured">What was measured vs. inferred</a></li>
+</ol>
+</div>
+
+<h2 id="what">1. What the loosening HOLD is, and why it exists</h2>
+<p class="lede">The gate cannot read intent. So any PR that <b>removes or rewrites a line near a failure path</b> in a gate file is held until a reviewer says, line by line, that the branch still refuses everything master refused.</p>
+<ul>
+<li><b>A gate file</b> is any script: <code>GATE_CODE</code> matches <code>scripts/*.{py,sh,ts,js,…}</code>, <code>scripts/ci/…</code> and <code>.claude/hooks/…</code> (<code>check-merge-ready.py:683</code>).</li>
+<li><b>A failure path</b> is a line matching <code>FAIL_PATH</code> (<code>:670</code>): <code>FAIL</code>, <code>failure</code>, <code>return 1</code>, <code>exit 2</code>, <code>sys.exit(…)</code> other than 0, <code>raise</code>, <code>assert</code>, <code>deny</code>; Node adds <code>throw</code> and non-zero <code>process.exit</code>.</li>
+<li><b>"Near"</b> is within <code>FAIL_WINDOW = 5</code> old-file lines (<code>:841</code>). <code>failure_path_removals</code> (<code>:866</code>) collects every removed code line in that window, except a line re-added identically (a move) or one whose only change is a <i>rising</i> self-test count.</li>
+</ul>
+<p><b>Why the reviewer judges, not the gate.</b> The detector is syntactic: <code>if bad: return 1</code> → <code>if bad or other: return 1</code> refuses more, and <code>→ if bad and False: return 1</code> refuses less, and both look the same to it. The comment above <code>VERDICT_DIR</code> (<code>:918–931</code>) records the measurement that moved the judgment: <i>of 21 loosening HOLDs judged in writing, 19 were judged FALSE by the PR's own side and 2 real</i> (PRs #400–#519). Before backlog #508 the PR's author judged its own HOLD. You moved that to the reviewer on 2026-11-05 (card A).</p>
+
+<h2 id="today">2. How an answer is recorded and checked today</h2>
+<ol>
+<li><b>Each flagged line gets an id</b>: <code>flag_id</code> (<code>:949</code>) is a hash of <i>file path + the removed line's text + which occurrence</i>. It is <b>not</b> tied to a tree: the same removed line on the same file keeps its id across rounds and merges.</li>
+<li><b>The final round's prompt carries the list</b> (<code>flagged_block</code>, <code>:972</code>; <code>check-merge-ready.py --pr N --flagged-block</code> prints it). The reviewer ends its review with:
+<pre><code>## Loosening answers
+LOOSENING-CHECK fb89f268396d: not a loosening
+LOOSENING-CHECK 712c0aacc4cf: finding: &lt;what the branch now lets through&gt;</code></pre>
+Any other line in that section makes the whole section a finding.</li>
+<li><b>The answers go into the verdict file</b> <code>docs/reviews/verdicts/&lt;subject&gt;-r&lt;N&gt;-&lt;half&gt;.verdict.json</code>, parsed by ONE parser (<code>codex-review.py:896 loosening_answers</code>). The verdict also records <code>head</code> (the commit reviewed) and <code>dirty</code> (any uncommitted files the reviewer was handed, <code>codex-review.py:1005 reviewed_state</code>). A Claude half's verdict is written by <code>record-review-verdict.py</code> from the filed review.</li>
+<li><b>At merge time, <code>review_answers</code> (<code>:1060</code>)</b> reads every verdict the branch adds. It keeps one only if the gate ran, it names a 40/64-hex head, and <b><code>tree_matches</code> (<code>:1003</code>) says the reviewed tree IS the tree being merged</b>: every path of both trees, apart from the round's own records (<code>REVIEW_RECORD</code>), must be identical.</li>
+<li><b>The same-half rule</b> (<code>standing_findings</code>, <code>:1024</code>): a <code>finding</code> answer counts from a verdict on ANY tree, and is retired only by a <i>later round of the same subject and the same half</i> answering that id <code>not a loosening</code> on the tree being merged. The other half's assent never retires it.</li>
+</ol>
+<div class="k warn">The binding in step 4 is the whole story of backlog #544. Its comment (<code>:933–934</code>) reads: <i>"What may differ between the reviewed tree and the merging one: the round's own records. Nothing else — a docs edit after the round also voids its answers (owner: the EXACT tree)."</i></div>
+
+<h2 id="void">3. Why a merge of master voided everyone's answers</h2>
+<p>Every open PR has to merge master in before it merges (the gate refuses a stale base). Merging master changes <i>some</i> files in the PR's tree — almost never the flagged ones. But the exact-tree rule compares <b>every</b> path, so any change voids every answer.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 250" role="img" aria-label="Three open PRs; merging PR 1 into master changes master; each of PR 2 and PR 3 merges master in and its answers die">
+<style>.t{font:13px -apple-system,Segoe UI,sans-serif;fill:var(--fg2)} .h{font:600 13px -apple-system,Segoe UI,sans-serif;fill:var(--fg)} .ln{stroke:var(--fg3);stroke-width:1.5;fill:none} .ok{fill:var(--greenbg);stroke:var(--verified-br)} .dead{fill:var(--redbg);stroke:var(--red)} .m{fill:var(--panel);stroke:var(--rule)}</style>
+<rect class="m" x="20" y="20" width="160" height="40" rx="5"/><text class="h" x="36" y="45">master</text>
+<rect class="m" x="20" y="100" width="160" height="40" rx="5"/><text class="h" x="36" y="125">master + PR 1</text>
+<path class="ln" d="M100 60 L100 100"/><text class="t" x="108" y="86">PR 1 merges</text>
+<rect class="ok" x="300" y="20" width="200" height="40" rx="5"/><text class="t" x="314" y="45">PR 2 · answers on tree T2 ✓</text>
+<rect class="ok" x="540" y="20" width="200" height="40" rx="5"/><text class="t" x="554" y="45">PR 3 · answers on tree T3 ✓</text>
+<rect class="dead" x="300" y="170" width="200" height="56" rx="5"/><text class="t" x="314" y="193">PR 2 + master → tree T2′</text><text class="t" x="314" y="213">answers void ✗ (T2′ ≠ T2)</text>
+<rect class="dead" x="540" y="170" width="200" height="56" rx="5"/><text class="t" x="554" y="193">PR 3 + master → tree T3′</text><text class="t" x="554" y="213">answers void ✗ (T3′ ≠ T3)</text>
+<path class="ln" d="M180 120 L400 170"/><path class="ln" d="M180 120 L640 170"/>
+<path class="ln" d="M400 60 L400 170" stroke-dasharray="4 4"/><path class="ln" d="M640 60 L640 170" stroke-dasharray="4 4"/>
+</svg>
+<figcaption>With N PRs open, each merge to master voids the answers of the other N−1. Each voided PR needs another review round, run only to re-answer the same ids. Then its own merge voids the remaining ones again.</figcaption>
+</figure>
+<div class="scroll"><table>
+<tr><th>When</th><th>PR</th><th>What the extra round re-answered</th><th>Flagged files changed since the answered round?</th></tr>
+<tr><td>11-06 20:24</td><td>PR #522</td><td>6 ids, after a docs-only merge of master (PR #528)</td><td>No — the three gate scripts byte-identical to the reviewed tree (<code>d71e8bb5</code>); backlog #544's row</td></tr>
+<tr><td>11-08 08:51</td><td>PR #539, round 6</td><td>2 ids in <code>check-stalled-work.py</code>, after merges of PR #537 and PR #538</td><td>No — <code>git diff 7c241286 HEAD -- scripts/check-stalled-work.py</code> empty, and master's copy unmoved</td></tr>
+<tr><td>11-08 09:50</td><td>PR #536, round 8</td><td>26 ids across <code>regen-pages.py</code>, <code>regen-pages.sh</code>, <code>explainer-serve.py</code>, after merges of PR #538 and PR #539</td><td>No — <code>git diff ae36ce7e HEAD</code> over the three files empty (Codex round 8)</td></tr>
+</table></div>
+<p>Each of those rounds was a whole review half (an agent, or a Codex run), spent to say again what had already been said about files that had not changed. Codex round 8's whole finding was that the diff was empty.</p>
+
+<h2 id="options">4. Option A vs B vs C</h2>
+<div class="scroll"><table>
+<tr><th>Option</th><th>An answer SURVIVES when…</th><th>An answer DIES when…</th><th>Today's 3 extra rounds</th></tr>
+<tr><td><b>C — exact tree</b> (master today)</td><td>every path except the round's own records is identical</td><td>any change anywhere: a doc, a log, an unrelated script, a merge of master</td><td>all 3 paid</td></tr>
+<tr><td><b>A — flagged file</b> ✔ chosen</td><td>the flagged line's FILE has the same git object id (blob) in the merging tree as in the reviewed tree (dirty overlay included)</td><td>any byte of that file changes, including a master change merged in; the file is renamed or deleted; the reviewed head cannot be read</td><td>all 3 saved</td></tr>
+<tr><td><b>B — file + master's copy</b></td><td>as A, AND master's copy of that file is unchanged since the review</td><td>as A, plus: master changed that file even when the merge left the PR's copy the same</td><td>all 3 saved (inferred: master did not touch those files)</td></tr>
+</table></div>
+<p><b>Why A and B are close.</b> If master changes the flagged file, merging master in normally changes the PR's copy too, and A kills the answer anyway. B differs only when the merge keeps the PR's copy byte-identical while master's moved, for example when the PR rewrote the whole file and the conflict resolved to "ours". Then the <i>base</i> of the diff moved, so the flagged lines are judged against a different "before". In that case some flag ids change and need fresh answers anyway, because an id hashes the removed base text. Only ids whose removed text survived unchanged would keep an answer under A that B would void. <span class="tag i">inferred from the code, not tested</span></p>
+
+<h2 id="risk">5. What A newly lets through — the honest residual</h2>
+<div class="k red"><b>The real gap: a change to a DIFFERENT file that changes what the flagged line MEANS.</b> The flagged line <code>if not proof_ok(x): return 1</code> sits in <code>scripts/gate.py</code>. A reviewer answered that its rewrite is not a loosening. Later, master merges a change to <code>scripts/helpers.py</code> making <code>proof_ok</code> return <code>True</code> in a new case, or changing a constant <code>gate.py</code> imports. <b>A keeps the answer</b>, because <code>gate.py</code>'s blob did not change. <b>C would have voided it</b> and forced a re-read. This is by design: A binds to the file, not to what the file depends on.</div>
+<p><b>How big is it?</b></p>
+<ul>
+<li><b>Changes on the PR's own branch after the final round are still caught elsewhere.</b> <code>check-review-recorded.py:104</code> fails a branch whose every recorded round has guarded code committed after it. Backlog #426 exempts only code that arrived through a merge of master. So the residual is limited to <b>changes arriving from master</b> (inferred from those two sources; not exercised here).</li>
+<li><b>Changes from master were reviewed in their own PRs</b>, but against master, not against this PR's rewrite. Nobody re-judges the <i>interaction</i>. That is the accepted bound.</li>
+<li><b>The detector already has a larger blind spot that A does not touch:</b> it flags only <i>removed or rewritten</i> lines. An inserted early <code>return 0</code> above a check removes nothing and is never flagged, under A or C. <span class="tag i">inferred from <code>failure_path_removals</code>' docstring</span></li>
+</ul>
+<p><b>How to narrow it, if you want to:</b> bind each answer to the blobs of the flagged file <i>and its import closure</i>, the gate scripts it loads. The scoped mutation sweep already computes such a closure for its manifest selection (backlog #330, extended by backlog #498 to modules loaded by filename). Reusing it would void an answer when <code>helpers.py</code> changes, while still surviving a docs merge or an unrelated script. Cost: more voids than A; it is still far fewer than C. <span class="tag i">a proposal, not built</span></p>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p style="font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;opacity:.7;margin:0">You asked · answered 11-08 19:40</p>
+<p><em>“A file staying the same doesn't guarantee its imported files stay the same. If we follow every import as a tree, can we determine there is no hidden ripple effect? And if we treat the same version of an external import as the same, we only need to examine the internal imports. Is this thinking sound?”</em></p>
+<h3>Yes, it is sound, and it is the standard answer. With two catches, both measured here.</h3>
+<p><b>The idea is a content-addressed build.</b> It is how Bazel and Nix decide whether a cached result still holds. Hash the file together with everything it transitively loads. If that hash is unchanged, the answer still holds. Your shortcut also matches practice: an external package at the same pinned version counts as the same, as a lockfile treats it. The Python standard library is pinned by the Python version, and CI already pins that (<code>check-python-pin.py</code>). So only the repo's own files need walking. It is also the "How to narrow it" proposal just above, which needed a tree, and you have just described the tree.</p>
+<p><b>Catch 1: in this repo, the tree cannot be found by reading <code>import</code> lines.</b> Take the gate itself, <code>scripts/check-merge-ready.py</code>.</p>
+<ul>
+<li>Its <code>import</code> lines (lines 47–60 on master) name only standard-library modules.</li>
+<li>Its repo-internal dependencies are all dynamic. It loads 2 sibling scripts by file path through <code>_import_sibling</code> (<code>check-dashboard-entry.py</code> and <code>check-plan-code.py</code>). It also runs 3 more as subprocesses: <code>check-dashboard-entry.py</code>, <code>check-review-recorded.py</code> and <code>check-review-rounds.py</code>.</li>
+<li>A walker that reads <code>import</code> statements would find <b>0 of those 5 edges</b>, and would say "no ripple" exactly where the ripple is.</li>
+<li>The pattern is common: 32 files under <code>scripts/</code> load code with <code>_import_sibling</code> or <code>importlib</code>.</li>
+</ul>
+<p>The repo has already paid for this lesson. The mutation sweep's manifest selection (backlog #330) had to be extended by backlog #498 to follow modules loaded <i>by filename</i>, because import-only reachability missed them. So the tree must be built by the same rules as that selector, or traced by running the gate, not parsed from imports. A tree that misses an edge fails toward "safe", which is the dangerous direction.</p>
+<p><b>Catch 2: the tighter the binding, the more often an answer is voided.</b> Measured on master from 11-01 to now:</p>
+<ul>
+<li>71 merges in total.</li>
+<li>8 touched <code>check-merge-ready.py</code> itself (≈11%). That is how often today's option A voids an answer about that file.</li>
+<li>47 touched anything under <code>scripts/</code> (≈66%). That is the most a crude "all of <code>scripts/</code>" closure could void. The old exact-tree rule voided on 100%.</li>
+</ul>
+<p>A precise closure would void somewhere between 11% and 66% for this file. I have not measured the exact figure; it needs the closure built first.</p>
+<p><b>What it still would not prove.</b> Even a perfect closure only tells you that nothing the line depends on changed. When something did change, it tells you to re-read the line; it cannot tell whether that change matters. So it narrows the residual; it does not remove it. The remaining blind spot (§5, third bullet) is separate: the detector flags only removed or rewritten lines, so an inserted early <code>return 0</code> is never flagged at all.</p>
+<p><b>My recommendation.</b> Keep option A for now. File "bind to the traced closure" as the next step, reusing the sweep selector's reachability so the two can never disagree about what a file depends on. It is filed as a backlog row in the next docs batch. Changing what binds stays your call (backlog #544 was your card).</p>
+</div>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p style="font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;opacity:.7;margin:0">You asked · answered 11-08 20:00</p>
+<p><em>“So, as a heuristic, check only the immediate file, not related files (internal imports)?”</em></p>
+<h3>Yes. Option A is exactly that heuristic, and the measured reason is that one hop already costs almost as much as everything.</h3>
+<p>Option A binds an answer to the flagged file alone. I checked the middle ground you are implicitly asking about: the file <i>plus its direct internal dependencies</i>, one hop. For the gate, those are the 5 edges above. Merges to master since 11-01, out of 71:</p>
+<ul>
+<li><b>Immediate file only</b> (<code>check-merge-ready.py</code>): 8 (≈11%).</li>
+<li><b>File plus one hop</b> (adding <code>check-dashboard-entry.py</code>, <code>check-plan-code.py</code>, <code>check-review-recorded.py</code> and <code>check-review-rounds.py</code>): 37 (≈52%).</li>
+<li><b>Anything under <code>scripts/</code></b>: 47 (≈66%).</li>
+</ul>
+<p><b>Why one hop is so expensive:</b> 34 of those 37 are <code>check-plan-code.py</code> alone. It is the mutation harness, and almost every scripts PR touches it. So the cost of a closure is set by its most-changed member, not by its size. One busy file pulls the "safer" option almost all the way to "void on every scripts merge".</p>
+<p><b>Why the immediate-file heuristic is acceptable here, not merely cheap.</b> What it gives up is the interaction case: a dependency changed on master and quietly changed what the flagged line means. Three things bound that case.</p>
+<ul>
+<li>The dependency change had its own review and gates when it merged.</li>
+<li>The merged tree still runs the full CI, including the mutation sweep. A dependency change that broke the flagged line's <i>tested</i> behaviour goes red there.</li>
+<li>A line edited on the PR branch after the last review is still caught by <code>check-review-recorded.py</code>.</li>
+</ul>
+<p>What remains is an untested change in meaning, arriving through a dependency, on a line whose own file did not change. ⚠ I have <b>not</b> measured how often that happens; it is inferred to be rare, not shown. If it ever bites, the tool to reach for is the traced closure, with <code>check-plan-code.py</code> handled specially, for example by binding to the one function the file uses rather than the whole file.</p>
+</div>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p style="font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;opacity:.7;margin:0">You asked · answered 11-08 20:10</p>
+<p><em>“I also asked if a periodic (or rule-based) full sweep without the cache can be a safety net (insurance) to detect a false verdict.”</em></p>
+<h3>Yes, and for mutation verdicts that insurance already runs, and it fired this morning. For loosening answers, a sweep cannot catch a false one, but a periodic AUDIT can.</h3>
+<p><b>Mutation verdicts: the safety net exists and is uncached.</b></p>
+<ul>
+<li>A pull request runs only the manifests its diff selects.</li>
+<li>Every push to master runs the <b>full</b> sweep, every manifest. A daily schedule (<code>cron: '23 7 * * *'</code>, <code>.github/workflows/ci.yml</code>) runs it again even when nothing merges. A red result opens a <code>sweep-red</code> issue.</li>
+<li>Nothing in it is a reused verdict. Each mutant runs in its own fresh process, so the caches can never hand a mutant the unmutated answer (§5 of the CI sweep-speed page).</li>
+</ul>
+<p><b>Evidence that it works:</b> the scheduled run at 11-08 14:21 UTC on <code>311d3631</code> went <b>red</b>. That red is how the 120-second limit problem was found; it was fixed in PR #538. Every master push since (<code>4d7766f8</code> through <code>b15e4f96</code>, five runs) is green. The <code>sweep-red</code> issue #499 is still open and should be closed against those runs; I'll do that in the docs batch.</p>
+<p><b>Loosening answers: a sweep is the wrong tool.</b> A loosening answer is a reviewer's judgement about what a line <i>means</i> ("the branch still refuses everything master refused"), not a test result. Re-running tests cannot falsify it. If a test could detect the loosening, the mutation sweep would already be the gate, and the HOLD exists precisely for lines where tests cannot tell stricter from looser.</p>
+<p><b>But your insurance idea does fit the residual here, as a rule-based audit rather than a gate.</b></p>
+<ul>
+<li><b>The audit:</b> after each merge, for every <code>not a loosening</code> answer the merge relied on, check whether any file in the flagged file's closure changed between the commit the answer was given on and the merged commit.</li>
+<li>If none changed, there is nothing to do. If one did, list it for a re-read.</li>
+<li>It costs only <code>git log</code> arithmetic, with no reviewer, and it never blocks a merge.</li>
+</ul>
+<p>That gives the closure's <i>coverage</i> without its 52% void rate. The immediate-file rule stays the merge gate, and the closure check becomes the insurance that catches the interaction case after the fact. ⚠ After the fact means the line is already on master when the audit flags it. The fix then becomes a follow-up PR, not a blocked merge. That is the trade, and it is the same one the daily full sweep makes.</p>
+<p><b>Recommendation:</b> file this audit as the concrete form of the backlog row from the first answer. It replaces "bind to the closure", which costs 52%, with "audit against the closure", which costs no merges. It goes in the next docs batch, and building it is your call.</p>
+</div>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p style="font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;opacity:.7;margin:0">You asked · answered 11-08 20:25</p>
+<p><em>“This seems to be a cheap remedy after the fact. Compare this re-read strictly (case C?)”</em></p>
+<h3>The re-read itself can be exactly as strict as C. What differs is WHEN it happens and HOW OFTEN, and C wins only on timing.</h3>
+<p>Both are the same instrument: a review round answers <code>LOOSENING-CHECK &lt;id&gt;</code> for the flagged line, read on the new tree. If the audit's re-read uses that same protocol, as I would build it, the strictness of each read is identical. The comparison is about everything around the read:</p>
+<table style="border-collapse:collapse;margin:.6rem 0;font-size:.92rem">
+<tr><th style="text-align:left;padding:4px 10px;border-bottom:1px solid #888"></th><th style="text-align:left;padding:4px 10px;border-bottom:1px solid #888">C (exact tree, the old rule)</th><th style="text-align:left;padding:4px 10px;border-bottom:1px solid #888">A + the audit (backlog #580)</th></tr>
+<tr><td style="padding:4px 10px"><b>When the re-read happens</b></td><td style="padding:4px 10px">Before merge. A loosening never reaches master.</td><td style="padding:4px 10px">After merge. A real loosening sits on master until the follow-up lands.</td></tr>
+<tr><td style="padding:4px 10px"><b>What triggers it</b></td><td style="padding:4px 10px">Any change to the tree, including a docs edit: 100% of master merges.</td><td style="padding:4px 10px">A change inside the flagged file's closure: at most ≈52% for the gate's own file (measured above). Usually less, since most answers are on files with smaller closures.</td></tr>
+<tr><td style="padding:4px 10px"><b>What it can catch</b></td><td style="padding:4px 10px">Every interaction, with no assumption.</td><td style="padding:4px 10px">Every interaction <i>through the closure</i>. It is as good as the closure is complete: a missed dynamic edge is a silent gap. C has no such dependency.</td></tr>
+<tr><td style="padding:4px 10px"><b>Measured cost</b></td><td style="padding:4px 10px">One extra review round per open sibling PR per merge. On 11-08 that meant PR #539 needed a round 6 and PR #536 a round 8 purely to re-answer, with no code change.</td><td style="padding:4px 10px">No merge blocked. A <code>git log</code> query per merge, plus a re-read only for answers it lists.</td></tr>
+</table>
+<p><b>So, strictly:</b> C is safer on two counts. It catches the problem before it lands, and it does not depend on the closure being right. The audit gives up both in exchange for not re-reviewing on every merge. Where the closure is complete, the two catch the <i>same set</i> of meaning changes. C's extra triggers, from files outside the closure, cannot change what the line means; they only cost rounds.</p>
+<p><b>Is "after the fact" acceptable here?</b> For these gates, I think yes, with one condition.</p>
+<ul>
+<li>A loosening in a merge gate is a gate that briefly lets more through. It is not a production defect.</li>
+<li>Its exposure window is the time until the audit runs plus one follow-up PR. That is about the same window the daily mutation sweep already accepts for untested code.</li>
+<li><b>The condition:</b> the audit must fail loudly when it cannot compute a closure, reporting CANNOT RUN, never silence. Otherwise a closure that silently comes back empty turns "insurance" into a check that cannot fire.</li>
+</ul>
+<p>⚠ The exposure window is inferred from how the sweep behaves; the audit is not built, so nothing about it is measured yet.</p>
+<p><b>If you want C's timing without C's cost,</b> there is a middle variant. Run the same closure check <i>before</i> merge, inside <code>check-merge-ready.py</code>, but only for answers whose closure changed. That is A plus closure binding, the 52% option from the second answer: pre-merge timing, paid only when the closure moved. I have added this to backlog #580 as its alternative, so the choice between "after the fact, nearly free" and "before merge, ≈half the rounds" is yours when it is built.</p>
+</div>
+
+<h2 id="closed">6. What stays fail closed</h2>
+<p>A changes ONE comparison: the whole tree becomes the flagged file. Everything else in the HOLD stays as it is (per the build brief; verify against the shipped code once it lands):</p>
+<ul>
+<li>an id with no answer stays HELD;</li>
+<li>an answer from a verdict whose gate did not run, that names no head, or that is not JSON does not count;</li>
+<li>a <code>dirty: null</code> record (the wrapper could not describe the tree) does not count (<code>tree_matches</code>' "not a dict" rule);</li>
+<li>a reviewed head that cannot be read here does not count;</li>
+<li>a <code>finding</code> answer from ANY verdict stands until a later round of the <b>same half</b> clears it;</li>
+<li>the flagged file renamed or deleted in either tree does not count;</li>
+<li>the other HOLD reasons are untouched: a falling self-test count, a dropped gate invocation, pin falls, deploys, <code>NO-REVIEW:</code>.</li>
+</ul>
+<p>And the merge itself stays yours to see: a HOLD the gate cannot clear is still verified line by line before any merge.</p>
+
+<h2 id="measured">7. What was measured vs. inferred</h2>
+<div class="scroll"><table>
+<tr><th>Claim</th><th>Status</th><th>Source</th></tr>
+<tr><td>The HOLD flags removed or rewritten lines within 5 lines of a failure word in a gate file</td><td><span class="tag m">read in code</span></td><td><code>check-merge-ready.py:670, :683, :841, :866</code></td></tr>
+<tr><td>19 of 21 written loosening judgments were false HOLDs</td><td><span class="tag m">quoted</span></td><td>comment above <code>VERDICT_DIR</code>, <code>:918–931</code> (its own measurement, 11-06)</td></tr>
+<tr><td>Answers count only on the exact tree, records excepted</td><td><span class="tag m">read in code</span></td><td><code>tree_matches :1003</code>, <code>review_answers :1060</code>, comment <code>:933</code></td></tr>
+<tr><td>A finding is retired only by a later round of the same half</td><td><span class="tag m">read in code</span></td><td><code>standing_findings :1024</code></td></tr>
+<tr><td>PR #539 round 6 and PR #536 round 8 were pure re-attestations over byte-identical flagged files</td><td><span class="tag m">measured</span></td><td>empty <code>git diff</code>s run in those rounds (the round documents under <code>docs/reviews/</code>)</td></tr>
+<tr><td>PR #522 re-held 6 ids after a docs-only merge</td><td><span class="tag m">quoted</span></td><td>backlog #544's row</td></tr>
+<tr><td>A saves all three of those rounds</td><td><span class="tag i">inferred</span></td><td>follows from the empty diffs; A is not built</td></tr>
+<tr><td>B saves them too (master did not touch those files)</td><td><span class="tag i">inferred</span></td><td>checked for PR #539 only; not for PR #536</td></tr>
+<tr><td>Post-round branch changes are still caught by <code>check-review-recorded</code></td><td><span class="tag i">inferred</span></td><td><code>check-review-recorded.py:104</code> docstring and backlog #426; not exercised here</td></tr>
+<tr><td>A misses a helper or constant change in another file</td><td><span class="tag i">by design</span></td><td>the A design: bind to the flagged file's blob only</td></tr>
+<tr><td>The import-closure narrowing is feasible by reusing the sweep's closure</td><td><span class="tag i">proposal</span></td><td>backlog #330, backlog #498; not built or measured</td></tr>
+</table></div>
+
+</div>
+
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var TK='explainer-scheme',TA='data-scheme',TD='3';var box=document.getElementById('schemer');if(box){function sset(s){if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}var bs=box.querySelectorAll('button[data-s]');for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}box.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;if(b)sset(b.getAttribute('data-s'));});var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}sset(sv==='1'||sv==='2'?sv:TD);}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');function tell(m){if(say){say.textContent=m;say.setAttribute('data-refresh',m);}}if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){tell('opened as a file \u2014 no server to rebuild it; run the generator');return;}r.disabled=true;tell('rebuilding\u2026');fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){tell('rebuilt WITH A WARNING: '+j.warning);return;}location.reload();}).catch(function(e){r.disabled=false;tell('could not rebuild: '+e.message);});});}var bars=document.querySelectorAll('.chrome-slot .chrome');var slot=null,bar=null;for(var bi=0;bi<bars.length;bi++){if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];slot=bar.closest('.chrome-slot');break;}}if(!bar&&bars.length){bar=bars[0];slot=bar.closest('.chrome-slot');}var sch=document.getElementById('schemer');if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);if(bar&&bar.querySelector('#chrome-theme,#schemer')){var tailPx=0;var ctls=bar.querySelectorAll('#chrome-theme,#schemer');var pin=function(on){if(bar.classList.contains('chrome-pinned')===on)return;bar.classList.toggle('chrome-pinned',on);if(!on)sync();};var io=null;var arm=function(){if(!window.IntersectionObserver)return;if(io)io.disconnect();io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};var sync=function(){if(bar.classList.contains('chrome-pinned'))return;var h=bar.getBoundingClientRect().height;slot.style.minHeight=h+'px';document.documentElement.style.setProperty('--chrome-h',h+'px');var sb=slot.getBoundingClientRect().bottom,m=Infinity;for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));arm();};sync();if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}else{window.addEventListener('resize',sync);}if(!window.IntersectionObserver){var fb=function(){var r=slot.getBoundingClientRect();pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||document.documentElement.clientHeight));};fb();window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}})();</script>
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div></div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

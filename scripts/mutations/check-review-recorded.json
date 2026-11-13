@@ -135,8 +135,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if not seen:\n            return False\n        return (is_absent(seen) and is_absent(now)) or now == seen",
-        "        if not seen:\n            return False\n        return True"
+        "        if not seen:\n            return master_explains(p, master, now)\n        return (is_absent(seen) and is_absent(now)) or now == seen",
+        "        if not seen:\n            return master_explains(p, master, now)\n        return True"
       ]
     ],
     "expect": [
@@ -786,5 +786,456 @@
       "a LIST dirty is unusable too \u2014 a real head with an overlay nothing can read is the same vacuous comparison a NULL one is, and one record on disk actually carries it",
       "...as is a STRING dirty, so the rule is the TYPE and not a list of bad values"
     ]
+  },
+  {
+    "name": "#426: the master subtraction is reverted, so a master-only change is charged again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            return master_explains(p, master, now)",
+        "            return False"
+      ]
+    ],
+    "expect": "#426 FAILS IF (pure): a path whose only post-round change is master's is not charged"
+  },
+  {
+    "name": "#426: no merge could be built, and that reads as explained",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if master is None:\n        return False\n    entries, conflicted = master",
+        "    if master is None:\n        return True\n    entries, conflicted = master"
+      ]
+    ],
+    "expect": "#426: no merge could be built -> NOT explained, the round stays required"
+  },
+  {
+    "name": "#426: a CONFLICTED path is explained like a clean one",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if p in conflicted:\n        return False",
+        "    if False:\n        return False"
+      ]
+    ],
+    "expect": "#426 trap 1: a CONFLICTED path is never explained, even when HEAD equals the merge"
+  },
+  {
+    "name": "#426: HEAD deleting a file the merge keeps is explained",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return not is_absent(now) and now == want",
+        "    return is_absent(now) or now == want"
+      ]
+    ],
+    "expect": "#426: a file HEAD deleted that the merge keeps is NOT explained"
+  },
+  {
+    "name": "#426: a merge-tree that did not run is parsed as a tree",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if rc not in (0, 1):\n        return None",
+        "    if rc not in (0, 1, 128):\n        return None"
+      ]
+    ],
+    "expect": "#426 trap 3: a merge-tree that did not run is None, never 'clean'"
+  },
+  {
+    "name": "#426: an empty merge-tree output is parsed as a tree named ''",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not tree.strip():\n        return None",
+        "    if False:\n        return None"
+      ]
+    ],
+    "expect": "#426 trap 3: ...and empty output on rc 0 is None, not a tree named ''"
+  },
+  {
+    "name": "#426: the conflict names are dropped, so every merge reads clean",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return tree.strip(), frozenset(p for p in rest if p)",
+        "    return tree.strip(), frozenset()"
+      ]
+    ],
+    "expect": "#426: a conflicted merge-tree still has a tree, and NAMES the conflicts"
+  },
+  {
+    "name": "#426: the gatherer never builds the master side",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "final_entries(guarded), master_side(head, onto, guarded))",
+        "final_entries(guarded), None)"
+      ]
+    ],
+    "expect": "#426 through the gatherer: a master-only change clears the round"
+  },
+  {
+    "name": "#426: the gatherer merges the round with itself instead of with master",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "master_side(head, onto, guarded))",
+        "master_side(head, head, guarded))"
+      ]
+    ],
+    "expect": "#426 through the gatherer: the round's head, `onto` and the guarded paths are passed"
+  },
+  {
+    "name": "merge-delta r1 Codex H1: a failed HEAD ls-tree is 'every path absent' again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if got.returncode != 0:\n        raise RuntimeError(f\"CANNOT RUN \u2014 git ls-tree HEAD failed",
+        "    if got.returncode != 0:\n        return {}\n        raise RuntimeError(f\"CANNOT RUN \u2014 git ls-tree HEAD failed"
+      ]
+    ],
+    "expect": "merge-delta r1 Codex H1: a failed HEAD `ls-tree` is CANNOT RUN, never 'all absent'"
+  },
+  {
+    "name": "merge-delta r1 Codex H1: the HEAD ls-tree failure check is deleted",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if got.returncode != 0:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "merge-delta r1 Codex H1: a failed HEAD `ls-tree` is CANNOT RUN, never 'all absent'"
+  },
+  {
+    "name": "merge-delta r1 Codex M2: a failed merged-tree ls-tree reads as an empty clean merge",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if ls.returncode != 0:\n            return None",
+        "        if ls.returncode != 0:\n            return {}, frozenset()"
+      ]
+    ],
+    "expect": "merge-delta r1 Codex M2 / Claude L1: a failed `ls-tree` of the merged tree is None"
+  },
+  {
+    "name": "merge-delta r1 Claude L1: the merged-tree ls-tree failure check is deleted",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if ls.returncode != 0:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "merge-delta r1 Codex M2 / Claude L1: a failed `ls-tree` of the merged tree is None"
+  },
+  {
+    "name": "merge-delta r1 Claude M2: onto is HEAD itself, not the merge base",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    mb = git(\"merge-base\", base, \"HEAD\")",
+        "    mb = git(\"rev-parse\", \"HEAD\")"
+      ]
+    ],
+    "expect": "#426, PR #487's shape: the genuine change is charged, master's two files are not"
+  },
+  {
+    "name": "merge-delta r1 Claude M2: a failed merge-base is read as its (empty) output",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return mb.stdout.strip() if mb.returncode == 0 else None",
+        "    return mb.stdout.strip() if True else None"
+      ]
+    ],
+    "expect": "merge-delta r1 Claude M2: an unresolvable base has no `onto`, never an empty one"
+  },
+  {
+    "name": "merge-delta r1 Claude M1: merge-tree reads the branch's own .gitattributes again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return [f\"--attr-source={empty_tree}\",\n",
+        "    return [\"-c\", \"core.quotePath=true\",\n"
+      ]
+    ],
+    "expect": "merge-delta r1 Claude M1 (pure): merge-tree runs with no tree attribute source"
+  },
+  {
+    "name": "merge-delta r2: the isolated merge inherits the caller's environment again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    env = {\"GIT_DIR\": git_dir,",
+        "    env = {**os.environ, \"GIT_DIR\": git_dir,"
+      ]
+    ],
+    "expect": "merge-delta r2 Codex M1: a `GIT_CONFIG_COUNT` driver does not clear it"
+  },
+  {
+    "name": "merge-delta r2 Codex M2: the system gitattributes is read again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "\"GIT_ATTR_NOSYSTEM\": \"1\", \"GIT_TERMINAL_PROMPT\"",
+        "\"GIT_TERMINAL_PROMPT\""
+      ]
+    ],
+    "expect": "merge-delta r2 Codex M2 (pure): the isolated merge reads no system attributes"
+  },
+  {
+    "name": "merge-delta r2: the system config is read again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "\"HOME\": home, \"GIT_CONFIG_NOSYSTEM\": \"1\",",
+        "\"HOME\": home,"
+      ]
+    ],
+    "expect": "merge-delta r2 (pure): the isolated environment inherits nothing from the caller"
+  },
+  {
+    "name": "merge-delta r2: the global config is read again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "           \"GIT_CONFIG_GLOBAL\": \"/dev/null\", \"GIT_ATTR_NOSYSTEM\"",
+        "           \"GIT_ATTR_NOSYSTEM\""
+      ]
+    ],
+    "expect": "merge-delta r2 (pure): the isolated environment inherits nothing from the caller"
+  },
+  {
+    "name": "merge-delta r2: the merge runs in the REAL repository's GIT_DIR again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        env = isolated_env(git_dir, home,",
+        "        env = isolated_env(str(objects.parent), home,"
+      ]
+    ],
+    "expect": "merge-delta r2 Codex M1: a repository `merge.text.driver` does not clear it"
+  },
+  {
+    "name": "merge-delta r2: the isolated repository borrows no objects",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            (info / \"alternates\").write_text(",
+        "            (info / \"alternates-x\").write_text("
+      ]
+    ],
+    "expect": "merge-delta r2 control: the isolated merge of this conflict IS built, and names it"
+  },
+  {
+    "name": "merge-delta r2: a failure to build the isolated repository crashes",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        except OSError:\n            ok = False",
+        "        except ZeroDivisionError:\n            ok = False"
+      ]
+    ],
+    "expect": "merge-delta r2: no `git` to build the isolated repository builds no master side"
+  },
+  {
+    "name": "merge-delta r2: no isolated repository is used anyway",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if iso is None:\n            return None",
+        "        if False:\n            return None"
+      ]
+    ],
+    "expect": "merge-delta r2: no `git` to build the isolated repository builds no master side"
+  },
+  {
+    "name": "merge-delta r2: the isolated merge gets no PATH",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        env[\"PATH\"] = path\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": "merge-delta r2: no `git` to build the isolated repository builds no master side"
+  },
+  {
+    "name": "merge-delta r2: no PATH falls back to the caller's",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if path:\n",
+        "    path = path or os.environ[\"PATH\"]\n    if path:\n"
+      ]
+    ],
+    "expect": "merge-delta r2 (pure): ...and no PATH is no PATH, never the caller's"
+  },
+  {
+    "name": "merge-delta r3 M1: HEAD's lookup passes the paths as a pathspec again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    got = git(*ls_tree_argv(\"HEAD\"))\n",
+        "    got = git(\"ls-tree\", \"-z\", \"HEAD\", \"--\", *paths)\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: HEAD's lookup finds a `:/` name by its exact bytes"
+  },
+  {
+    "name": "merge-delta r3 M1: the merged tree's lookup passes the paths as a pathspec again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        ls = iso(*ls_tree_argv(tree))\n",
+        "        ls = iso(\"ls-tree\", \"-z\", tree, \"--\", *paths)\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: the merged tree's lookup finds a `:/` name too"
+  },
+  {
+    "name": "merge-delta r3 M1: the listing does not recurse",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            \"ls-tree\", \"-r\", \"-t\", \"-z\", \"--full-tree\", tree]\n",
+        "            \"ls-tree\", \"-t\", \"-z\", \"--full-tree\", tree]\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: HEAD's lookup finds a `:/` name by its exact bytes"
+  },
+  {
+    "name": "merge-delta r3 M1: the listing drops the trees on the way",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "\"ls-tree\", \"-r\", \"-t\", \"-z\", \"--full-tree\", tree]\n",
+        "\"ls-tree\", \"-r\", \"-z\", \"--full-tree\", tree]\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: a path that is a DIRECTORY in HEAD still has an entry, as before"
+  },
+  {
+    "name": "merge-delta r3 M1: the listing leaves precomposition to the repository",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return [\"-c\", \"core.precomposeunicode=false\",\n            \"ls-tree\", \"-r\", \"-t\", \"-z\", \"--full-tree\", tree]\n",
+        "    return [\n            \"ls-tree\", \"-r\", \"-t\", \"-z\", \"--full-tree\", tree]\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1 (pure): the lookup lists the whole tree, with no path in its argv"
+  },
+  {
+    "name": "merge-delta r3 M1: the selection returns the whole listing",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return {p: listing[p] for p in paths if p in listing}\n",
+        "    return dict(listing)\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1 (pure): only the EXACT names asked for are selected"
+  },
+  {
+    "name": "merge-delta r3 M1: the isolated runner decodes strictly",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "                return _run_git([\"git\", *args], cwd=tmp, env=env)",
+        "                return subprocess.run([\"git\", *args], cwd=tmp, env=env, capture_output=True, text=True)"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: the merged tree's lookup finds a name holding non-UTF-8 bytes"
+  },
+  {
+    "name": "merge-delta r3 L1: the temp dir is removed only on the normal path",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        yield run if ok else None\n    finally:\n        shutil.rmtree(tmp, ignore_errors=True)\n",
+        "        yield run if ok else None\n    except BaseException:\n        raise\n    shutil.rmtree(tmp, ignore_errors=True)\n"
+      ]
+    ],
+    "expect": "merge-delta r3 L1: a crash in the isolated setup leaves no `crr-merge-*` dir"
+  },
+  {
+    "name": "merge-delta r4 BLOCKER: every git read is captured in TEXT mode again (universal newlines)",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    p = subprocess.run(argv, capture_output=True, **kw)\n    return subprocess.CompletedProcess(p.args, p.returncode, git_text(p.stdout), git_text(p.stderr))",
+        "    return subprocess.run(argv, capture_output=True, text=True, encoding=\"utf-8\", errors=\"surrogateescape\", **kw)"
+      ]
+    ],
+    "expect": "merge-delta r4 BLOCKER: the full CLI charges the edited LF name beside a CR twin"
+  },
+  {
+    "name": "merge-delta r4 BLOCKER: the repository reader `_git` alone is text mode again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return _run_git([\"git\", \"-C\", str(ROOT), *args])",
+        "    return subprocess.run([\"git\", \"-C\", str(ROOT), *args], capture_output=True, text=True, encoding=\"utf-8\", errors=\"surrogateescape\")"
+      ]
+    ],
+    "expect": "merge-delta r4 BLOCKER: the full CLI charges the edited LF name beside a CR twin"
+  },
+  {
+    "name": "merge-delta r4: the isolated runner alone is text mode again, CR read as LF",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "subprocess.CompletedProcess:\n                return _run_git([\"git\", *args], cwd=tmp, env=env)",
+        "subprocess.CompletedProcess:\n                return subprocess.run([\"git\", *args], cwd=tmp, env=env, capture_output=True, text=True, encoding=\"utf-8\", errors=\"surrogateescape\")"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: the merged tree's lookup finds a name holding a carriage return"
+  },
+  {
+    "name": "merge-delta r4 M2: `changed_paths`' diff decodes strictly in text mode again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    diff = _git(*diff_argv(merge_base.stdout.strip()))",
+        "    diff = subprocess.run([\"git\", \"-C\", str(ROOT), *diff_argv(merge_base.stdout.strip())], capture_output=True, text=True)"
+      ]
+    ],
+    "expect": "merge-delta r4 M2: `changed_paths` keeps a CR, an LF and a raw 0xe9 byte apart"
+  },
+  {
+    "name": "merge-delta r4 M2: `added_paths`' diff decodes strictly in text mode again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    out = _git(*diff_argv(mb.stdout.strip(), added_only=True))",
+        "    out = subprocess.run([\"git\", \"-C\", str(ROOT), *diff_argv(mb.stdout.strip(), added_only=True)], capture_output=True, text=True)"
+      ]
+    ],
+    "expect": "merge-delta r4 M2: `added_paths` keeps a CR, an LF and a raw 0xe9 byte apart"
+  },
+  {
+    "name": "merge-delta r4 M2: `git_text` replaces a non-UTF-8 byte instead of keeping it",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return raw.decode(\"utf-8\", \"surrogateescape\")",
+        "    return raw.decode(\"utf-8\", \"replace\")"
+      ]
+    ],
+    "expect": "merge-delta r4 M2: `changed_paths` keeps a CR, an LF and a raw 0xe9 byte apart"
+  },
+  {
+    "name": "merge-delta r4: the absent == absent arm of `master_explains` is restored",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    want = entries.get(p, ABSENT_ENTRY)\n    return not is_absent(now) and now == want",
+        "    want = entries.get(p, ABSENT_ENTRY)\n    return (is_absent(want) and is_absent(now)) or now == want"
+      ]
+    ],
+    "expect": "merge-delta r4: absent in HEAD AND in the merge is charged (only a lying lookup gives it)"
   }
 ]

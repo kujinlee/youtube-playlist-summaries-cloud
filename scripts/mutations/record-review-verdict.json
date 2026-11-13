@@ -99,8 +99,8 @@
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "head=head, dirty=dirty, prompt=prompt, tree=tree)",
-        "head=head, dirty=None, prompt=prompt, tree=tree)"
+        "head=head, dirty=dirty, prompt=prompt, tree=tree,",
+        "head=head, dirty=None, prompt=prompt, tree=tree,"
       ]
     ],
     "expect": [
@@ -291,5 +291,27 @@
       "...nor is the first line read after the body is stripped: line 1 is line 1",
       "a declaration under a blank first line: refused as HEAD NOT NAMED, nothing written"
     ]
+  },
+  {
+    "name": "#508: the Claude half's verdict is recorded without the filed review's answers",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "                        answers=_cx.loosening_answers(body or \"\"))",
+        "                        answers=None)"
+      ]
+    ],
+    "expect": "#508: ...with the review's answer to a flagged line, read by codex-review's parser"
+  },
+  {
+    "name": "#508: claude_record drops the answers it is given",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "                             loosening_answers=answers)",
+        "                             loosening_answers=None)"
+      ]
+    ],
+    "expect": "#508: the record carries the review's answers to the merge gate's flagged lines"
   }
 ]

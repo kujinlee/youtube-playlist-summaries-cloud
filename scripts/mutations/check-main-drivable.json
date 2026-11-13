@@ -2612,5 +2612,97 @@
    "...and SIGALRM's handler is restored after a normal, a timed-out and a late-alarm reconcile (r7 L2)"
   ],
   "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "backlog #231: argv_forwarders loses its memo, so every caller rebuilds it",
+  "edits": [
+   [
+    "@_memo_by_node\ndef argv_forwarders(",
+    "def argv_forwarders("
+   ]
+  ],
+  "expect": [
+   "\u26d4 argv_forwarders is memoised: a second tree gets ITS answer, and the first tree's answer is the memo's entry for it (backlog #231)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "backlog #231: dispatches_a_suite loses its memo, so every caller rebuilds it",
+  "edits": [
+   [
+    "@_memo_by_node\ndef dispatches_a_suite(",
+    "def dispatches_a_suite("
+   ]
+  ],
+  "expect": [
+   "\u26d4 dispatches_a_suite is memoised: a second tree gets ITS answer, and the first tree's answer is the memo's entry for it (backlog #231)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "backlog #231: suite_entries loses its memo, so every caller rebuilds it",
+  "edits": [
+   [
+    "@_memo_by_node\ndef suite_entries(",
+    "def suite_entries("
+   ]
+  ],
+  "expect": [
+   "\u26d4 suite_entries is memoised: a second tree gets ITS answer, and the first tree's answer is the memo's entry for it (backlog #231)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "backlog #231: suite_reachable loses its memo, so every caller rebuilds it",
+  "edits": [
+   [
+    "@_memo_by_node\ndef suite_reachable(",
+    "def suite_reachable("
+   ]
+  ],
+  "expect": [
+   "\u26d4 suite_reachable is memoised: a second tree gets ITS answer, and the first tree's answer is the memo's entry for it (backlog #231)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "backlog #231: _dead_branch_ids loses its memo, so every caller rebuilds it",
+  "edits": [
+   [
+    "@_memo_by_node\ndef _dead_branch_ids(",
+    "def _dead_branch_ids("
+   ]
+  ],
+  "expect": [
+   "\u26d4 _dead_branch_ids is memoised: a second tree gets ITS answer, and the first tree's answer is the memo's entry for it (backlog #231)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "backlog #231: classify loses its memo, so the live reconcile re-classifies the named guards",
+  "edits": [
+   [
+    "@functools.lru_cache(maxsize=256)\ndef classify(",
+    "def classify("
+   ]
+  ],
+  "expect": [
+   "\u26d4 classify is memoised on (text, path): the same pair is a hit, a different TEXT gets its own routes and a different PATH its own path (backlog #231)",
+   "the live reconcile reuses the seven named real-guard verdicts (backlog #231)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "backlog #231: the named real-guard cases classify under a path the live reconcile does not use, so it misses",
+  "edits": [
+   [
+    "classify(f.read_text(), f\"scripts/{f.name}\")",
+    "classify(f.read_text(), f\"{f.name}\")"
+   ]
+  ],
+  "expect": [
+   "the live reconcile reuses the seven named real-guard verdicts (backlog #231)"
+  ],
+  "file": "scripts/check-main-drivable.py"
  }
 ]

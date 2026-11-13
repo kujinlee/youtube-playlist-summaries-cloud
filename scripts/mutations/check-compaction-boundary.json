@@ -621,5 +621,267 @@
     "expect": [
       "⭐ FAILS IF a log error changes the decision: an armed plan and an unwritable log still ALLOW, one snapshot (r3 Codex 2)"
     ]
+  },
+  {
+    "name": "the monitor signal ignores the watcher flag",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if any(st[\"open\"] and not st[\"watcher\"] and (st[\"expires\"]",
+        "    if any(st[\"open\"] and (st[\"expires\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ the explainer QUESTION WATCHER alone is no signal: it waits on the human and has no end (backlog #537)"
+    ]
+  },
+  {
+    "name": "one watcher silences EVERY monitor, a CI monitor beside it included",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "and not st[\"watcher\"] and (st[\"expires\"]",
+        "and not any(m[\"watcher\"] for m in scanned[\"monitors\"].values()) and (st[\"expires\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ the question watcher beside a CI monitor still gives monitor"
+    ]
+  },
+  {
+    "name": "the watcher is not recorded at all: every question watcher blocks again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "\"watcher\": question_watcher(inp.get(\"command\")),",
+        "\"watcher\": False,"
+      ]
+    ],
+    "expect": [
+      "⭐ the explainer QUESTION WATCHER alone is no signal: it waits on the human and has no end (backlog #537)",
+      "⭐ the REAL watcher shapes are watchers: the 5 the transcripts hold, verbatim, then the path and N varied"
+    ]
+  },
+  {
+    "name": "the END anchor is dropped (`fullmatch` -> `match`): a filter's FILE argument, or work after it, is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "any(t.fullmatch(command)",
+        "any(t.match(command)"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-1: a filter's FILE argument reads another source — `| cat FIFO`, awk or grep given a file (r2 Codex R2-1)",
+      "⭐ a template is anchored at the END: work after the watcher is no watcher, after a newline too"
+    ]
+  },
+  {
+    "name": "the START anchor is dropped: work before the watcher is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "WATCHER_HEAD = r\"tail -n",
+        "WATCHER_HEAD = r\".*tail -n"
+      ]
+    ],
+    "expect": [
+      "⭐ a template is anchored at the START: work before the watcher is no watcher"
+    ]
+  },
+  {
+    "name": "the path's character class admits glob and brace characters: one path expands into several",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "(?:~|/[A-Za-z0-9._/-]*)",
+        "(?:~|/[^ ]*)"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-3: brace or glob expansion turns one path into several (r2 Codex R2-3)"
+    ]
+  },
+  {
+    "name": "the path loses its directory boundary: .../myexplainers/questions.md is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "/[A-Za-z0-9._/-]*)/explainers/",
+        "/[A-Za-z0-9._/-]*)/[a-z]*explainers/"
+      ]
+    ],
+    "expect": [
+      "⭐ ADJACENT to a real shape: no -F, an N that is not digits, a directory that only ENDS in `explainers`"
+    ]
+  },
+  {
+    "name": "the `~` path is no longer allowed: the canonical watcher blocks again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "WATCHER_PATH = r\"(?:~|/",
+        "WATCHER_PATH = r\"(?:/"
+      ]
+    ],
+    "expect": [
+      "⭐ the REAL watcher shapes are watchers: the 5 the transcripts hold, verbatim, then the path and N varied"
+    ]
+  },
+  {
+    "name": "N is any word, not digits: `-n0;gh` runs a command and is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "tail -n ?[0-9]+ -F",
+        "tail -n ?\\S+ -F"
+      ]
+    ],
+    "expect": [
+      "⭐ ADJACENT to a real shape: no -F, an N that is not digits, a directory that only ENDS in `explainers`"
+    ]
+  },
+  {
+    "name": "-F is optional: a one-shot tail is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "[0-9]+ -F \" + WATCHER_PATH",
+        "[0-9]+ (?:-F )?\" + WATCHER_PATH"
+      ]
+    ],
+    "expect": [
+      "⭐ ADJACENT to a real shape: no -F, an N that is not digits, a directory that only ENDS in `explainers`"
+    ]
+  },
+  {
+    "name": "the literal is read as a regex, not escaped: its `|` and `*` stop meaning themselves",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "re.escape(shape)",
+        "shape"
+      ]
+    ],
+    "expect": [
+      "⭐ the REAL watcher shapes are watchers: the 5 the transcripts hold, verbatim, then the path and N varied"
+    ]
+  },
+  {
+    "name": "anything but a string reaches the regex and raises",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "isinstance(command, str) and any(",
+        "any("
+      ]
+    ],
+    "expect": [
+      "an unbalanced quote is no watcher; neither is anything but a string"
+    ]
+  },
+  {
+    "name": "shape S1 is dropped from the templates: that real watcher blocks again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    ' 2>/dev/null | awk \\'/^\\\\*\\\\*/{s=$0} /^   > /{q=substr($0,6)} /^   Q: /{printf \"%s | quoted: %s | %s\\\\n\", (s?s:\"(no section)\"), (q?substr(q,1,160):\"(nothing highlighted)\"), $0; fflush(); q=\"\"}\\'',   # S1: 136× — explainer-delivery.md §5, the canonical watcher\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ the REAL watcher shapes are watchers: the 5 the transcripts hold, verbatim, then the path and N varied"
+    ]
+  },
+  {
+    "name": "shape S2 is dropped from the templates: that real watcher blocks again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    \" | grep --line-buffered -v '^\\\\s*$'\",   # S2: 2× — blank lines dropped\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ the REAL watcher shapes are watchers: the 5 the transcripts hold, verbatim, then the path and N varied"
+    ]
+  },
+  {
+    "name": "shape S3 is dropped from the templates: that real watcher blocks again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    ' 2>&1 | awk \\'/^\\\\*\\\\*/{s=$0} /^   > /{q=substr($0,6)} /^   Q: /{printf \"ASK | %s | quoted: %s | %s\\\\n\", (s?s:\"(no section)\"), (q?substr(q,1,160):\"(nothing highlighted)\"), $0; fflush(); q=\"\"}\\'',   # S3: 1× — §5 with an `ASK` prefix\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ the REAL watcher shapes are watchers: the 5 the transcripts hold, verbatim, then the path and N varied"
+    ]
+  },
+  {
+    "name": "shape S4 is dropped from the templates: that real watcher blocks again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    \" 2>/dev/null | grep --line-buffered -E '^## 20|^\\\\*\\\\*[0-9]+ ·|^   Q:'\",   # S4: 1× — grep for headings and questions\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ the REAL watcher shapes are watchers: the 5 the transcripts hold, verbatim, then the path and N varied"
+    ]
+  },
+  {
+    "name": "shape S5 is dropped from the templates: that real watcher blocks again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    \" 2>&1 | grep -E --line-buffered 'Q:|^## |question|asked|ERROR|No such file'\",   # S5: 1× — grep, with errors\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ the REAL watcher shapes are watchers: the 5 the transcripts hold, verbatim, then the path and N varied"
+    ]
+  },
+  {
+    "name": "the path's character class admits a space: tail follows two files, one a CI log",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "9._/-]*)/explainers/questions",
+        "9._/ -]*)/explainers/questions"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 F1: a SECOND file INSIDE the path position — a space, a `$IFS` word-split, a `~user` home — is no watcher (widening the path's character class must go red)"
+    ]
+  },
+  {
+    "name": "the path's character class admits `$`: an unquoted `$IFS` splits the path into two files",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "r\"(?:~|/[A-Za-z0-9._/-]*)/explainers",
+        "r\"(?:~|/[A-Za-z0-9._/$-]*)/explainers"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 F1: a SECOND file INSIDE the path position — a space, a `$IFS` word-split, a `~user` home — is no watcher (widening the path's character class must go red)"
+    ]
+  },
+  {
+    "name": "the `~` alternative admits `~user`: another user's home is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "(?:~|/[A-Za-z0-9",
+        "(?:~[a-z]*|/[A-Za-z0-9"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 F1: a SECOND file INSIDE the path position — a space, a `$IFS` word-split, a `~user` home — is no watcher (widening the path's character class must go red)"
+    ]
   }
 ]

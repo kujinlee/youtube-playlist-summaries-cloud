@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/pace-stop-message-r1-claude.md": "100644 a53a44ae1373dcfb7733c2f8717ec4ba7805caf9",
+    "docs/reviews/codex/pace-stop-message-r1-codex.md": "100644 d30aba9f1c1e7ff3c3a3a99bb7cb62c40e865deb",
+    "docs/reviews/verdicts/pace-stop-message-r1-codex.verdict.json": "100644 5e0dcd152e7dc2b8b8d9fc223f6fcb72e3be894f"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "599362671e9db61eddca2d6d5408d73ffdd0a362",
+  "intrusions": [],
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 4845 chars, names 599362671e9d",
+  "refused": false,
+  "review": "pace-stop-message-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/psm",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

@@ -119,6 +119,7 @@ the product.
   * ⛔ **The two are SEPARATE ROLES and that separation is the decision.** Links were gold on 52 of 68 pages because they reused `--accent`; the owner's verdict was *"gold is too strong for the purpose"* for links while gold stays correct for titles. A page that spends one token on both jobs cannot express that.
   * ⚠ **NEITHER IS A SEMANTIC COLOUR.** `--verified`/`--cool` mean *measured* and `--hot` means *defect* on these pages; `text_style_css`'s own docstring records that spending either on emphasis would make every styled phrase assert something it does not mean.
   * ⚠ **The DEFAULT is not the convention, which is why this entry exists.** `brief-compose`'s shim supplies `--accent: var(--structure, …)` — the *border* colour — and supplies no link rule at all, so a page that declares neither gets a heading at **1.29:1** and links at the user agent's **1.92:1**. Both measured on one page, 2026-10-19, after passing every guard.
+- **Agenda** — the coordinator's stated plan: the window it covers, the conditions that would change it, and ordered steps grouped by when. A step that names a backlog row or PR takes its state from that row, exactly as a goal-tree leaf does; a **free step** names neither and is done only when ticked by hand. A new agenda **replaces** the current one whole, and the replaced one is kept with each step's state at that moment. Distinguished from a **plan**, which in this tooling means an implementation-plan file; the page still calls the agenda *the current plan*, the owner's word.
 
 ## Verification Stack (Repo Tooling)
 
@@ -139,6 +140,10 @@ The vocabulary for the machinery that checks the project's claims *about itself*
 - **Structural line** — a line of a workflow file that is YAML **structure**, as opposed to **content** (a block scalar's body, a comment). Added 2026-09-21 by the architecture review on the workflow-reading guards, which found **three guards had each built this distinction privately and no review round could say so, because there was no word for it** — the same failure that created this whole section. ⚠ **The distinction is not decidable line-by-line, and that is the trap rather than a nicety.** Whether a line is structure depends on lines above it, so a line-local reader must guess — and an unrecognised shape defaults to *structure*, which is the unsafe direction. Backlog #154 measured this: **eleven** distinct block-scalar openers were read as structure across three review rounds, and one — YAML's explicit-key form, whose key and indicator sit on different lines — is unreachable by any line-local rule at all. The terminating move is therefore not a wider pattern but a **soundness check**: refuse what cannot be classified. ⛔ An earlier version of this entry blamed the level a reader is applied at (*"correct about a step, weaker about a file"*). That was **false** — `_structural()` has one call site and it is the whole file — and it was the third copy of one wrong sentence, each fixed a round apart.
 - **Soundness check** — a **guard's falsifier for its own reader**: an enumeration of every line matching what the guard looks for, each of which must be *accounted for*, so a shape the reader does not understand becomes a **cannot-run** instead of a silent wrong answer. `check-merge-ready.unaccounted_mentions` is the worked example; its argument is *"a hand-rolled parser CANNOT be made correct. It CAN be made unable to be silently wrong."* Distinct from a **falsifier**, which protects a *claim*: a soundness check protects the *reading the claim was derived from*. A guard can have a perfect falsifier over a reader that saw the wrong lines.
 
+- **Canon** — the ONE file that owns a mechanism's or a decision's statement. Added 2026-10-17 by the architecture review on `claim-propagation`, which found that **four review rounds could only name the instance in front of them, because this file had no term for a claim stated at several sites and updated at one** — `grep -niE "propagat|restat|more than one place"` over this file returned nothing. Identical shape to the Verification Stack's own origin, one component over. A canon is declared in `check-canonical-source.py`'s `CANONS` and carries a `<!-- canon: <name> -->` marker; `docs/adr/0015` is the worked decision.
+- **Recital** — a restatement of a canon's content at another site. A **citation** is a link to the canon instead. ⭐ **A citation cannot drift; a recital can** — which is the whole reason the distinction has a name. ⛔ **THE TWO REMEDIES FOR A SECOND COPY ARE OPPOSITES, AND THIS REPOSITORY HAS DECIDED BETWEEN THEM:** *refuse the second copy* (`check-canonical-source.py`, 2026-10-14) is the decided one; *require every site to agree* (`check-claim-propagation.py`'s copy-policing half, built over four rounds two days later) is superseded by ADR-0015. Building the second while the first existed is `a second implementation of one rule drifts` — this repo's most-measured defect — applied to its own guards.
+- **Decision symbol** — the stable string a decision is referred to BY (`D9`, `DON'T-SHIP`, `harvest: practice` — whose canon is [docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md](docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md), cited rather than restated here, which is this entry obeying its own rule), as against the prose that explains it. The distinction is what makes a canon enforceable at all: prose is **paraphrased** at every site, so no matcher polices it, while a symbol is stable and a token oracle can hold it. ⚠ **A symbol short enough to be a substring of something else is not usable as a token** — measured 2026-10-17: `D1` occurs in 121 files of the walked population and the explainer CSS carries `#c5c1b9` 232 times. Tokens are therefore distinctive multi-word forms, and the measurement is re-run rather than assumed when one is added.
+- **Citing site** — a file that may discuss a canon's mechanism provided it links to the canon. Distinct from an **exemption**, which excuses a whole file (`docs/reviews/**`, `docs/dashboard-entries.md`) on the stated principle *"a record, not a rule a reader follows"*. ⛔ **A citing site's recital is NOT checked for agreement** — `check-canonical-source.py:322` is `hit and not _cites(...)`, so a site that cites may contradict the canon and the guard returns `[]`; measured, three reader-facing sites held a superseded recital for a full round (backlog #289). The guard enforces **one place**, never **one claim**.
 The next four terms are about **what an assertion observes**, added 2026-10-19 by the architecture review on the chrome reachability instrument. Its finding was the same one that created this whole section: **six consecutive rounds argued the difference between these four without a shared word for any of them**, so each round could only name the instance in front of it. ⚠ They are ordered weakest to strongest, and **each is strictly weaker than the next — none implies the one after it.** That is the entire point: three separate rounds assumed one of them implied another.
 
 - **Wiring** — the control is present in the markup, and the CSS and script that act on it are present and *parse*. Decidable from text, and this is what `page_chrome.assert_wired` actually claims. ⚠ A **parse** is not an **execution**: `node --check` accepts a program whose first statement is `throw`.
@@ -154,3 +159,46 @@ The next four terms are about **what an assertion observes**, added 2026-10-19 b
 - A **reader** distinguishes **structural lines** from content; a **soundness check** is what makes it fail loudly rather than quietly when it cannot. A shared reader without one concentrates a blind spot across every caller.
 - A **coverage verdict** is earned only over green **controls**, with **recorded** equal to **declared**, and no entry a **cannot-run**.
 - A **ratchet** protects a count; a **falsifier** protects a claim. A ratchet with no falsifier ratchets nothing.
+- A **canon** owns a statement; a **citing site** links to it; a **recital** is the copy that drifts. A guard over canons proves *one place*, so **agreement between a canon and its citing sites is enforced by review, never by the guard** — the price ADR-0015 accepts deliberately.
+
+## Recall (Repo Tooling)
+
+The vocabulary for how the assistant's recorded experience reaches it at the moment it applies. Named with the owner
+2026-11-03 (backlog #198), after three architecture reviews argued this subsystem in words this file did not contain.
+
+- **Lesson** — one rule learned from a past failure or an owner decision, recorded on its own together with the moment
+  it applies. The unit everything else in this section is about.
+  _Avoid_: memory entry, note, "a memory". **Memory** stays the name of the whole store of lessons, never one of them.
+- **Trigger** — the part of a lesson that describes the moment it applies, written as a situation the assistant would
+  be in, not as the subject the lesson is about. Exactly one per lesson; it describes a *kind* of **situation**, and it
+  is what a lesson is matched *from*.
+  _Avoid_: hook (collides with the harness's hooks), cue, "FIRES-WHEN" (that is only how it is spelled on disk).
+- **Lesson index** — the list of every lesson that the assistant sees at all times, one line each. That line is the
+  **first clause of the lesson's trigger**, never a text of its own, so the index cannot say something its lessons do not
+  (decided 2026-11-03). _Avoid_: hook line, summary, "the memory index row" as if it were written separately.
+- **Situation** — one step of the assistant's work, described in a line before the step starts; what lessons are
+  matched *against*. A trigger names a kind of situation; a situation is one actual instance.
+  _Avoid_: step (that is the plan's unit, and a situation need not come from a plan), moment, context.
+- **Arm** — to match every situation of a plan against every lesson's trigger in one pass, before the plan's first step,
+  and keep the answers. Slow (a model call), so it happens once per plan, never per step. Arming a plan also arms its
+  step banners; the word covers both.
+  _Avoid_: match, precompute, index.
+- **Fire** — a lesson **fires** when a situation it was armed for begins: it is shown to the assistant then, with no new
+  matching. A lesson can only fire for a plan that was armed; editing a situation after arming makes its answers stale,
+  and a stale answer is refused rather than shown. _Avoid_: serve, deliver, trigger (as a verb — the trigger is the text).
+- **Already embodied** — a lesson is already embodied in a situation when the situation's own line already does what
+  the lesson asks. Its trigger fits, and it still does **not** fire: recall exists to change what the assistant is about
+  to do, and a reminder of what it is already doing is noise that teaches it to ignore recall. A property of the
+  *pair* (lesson, situation), never of either alone. _Avoid_: already followed, redundant, duplicate.
+- **Recall** — the whole path by which a lesson reaches the assistant at its situation: arm, then fire. "Recall missed"
+  means a lesson that should have fired did not.
+  _Avoid_: retrieval, search, lookup.
+- **Unreadable plan** — a plan whose situations cannot all be read. It is refused as a whole, loudly, and never armed
+  with the situations that could be read: silently arming part of a plan would look like a plan whose other steps
+  simply matched nothing. _Avoid_: plan verdict (that is the check, not the thing it finds).
+
+### Relationships
+
+- A **lesson** has exactly one **trigger**; the **lesson index** shows the trigger's first clause, never a second text.
+- A trigger names a *kind* of **situation**; **arming** a plan matches each of its situations against every trigger once.
+- A lesson **fires** at a situation it was armed for, unless it is **already embodied** there. Arm, then fire, is **recall**.

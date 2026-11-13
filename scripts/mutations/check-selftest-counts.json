@@ -1,41 +1,15 @@
 [
   {
-    "name": "printed_total takes the FIRST summary instead of the last",
+    "name": "printed_total stops reading the borrowed summary rule (backlog #506 r2: the rule moved to check-plan-code's summary_total)",
     "file": "scripts/check-selftest-counts.py",
     "edits": [
       [
-        "        if m:\n            total = int(m.group(2))\n    return total",
-        "        if m:\n            return int(m.group(2))\n    return total"
+        "    return _summary_total()(out)\n",
+        "    return None\n"
       ]
     ],
     "expect": [
-      "an earlier quoted summary does not win over the real one",
-      "a trailing SECOND summary is what gets read (known limit)"
-    ]
-  },
-  {
-    "name": "the `passed` requirement is dropped, so any ratio counts",
-    "file": "scripts/check-selftest-counts.py",
-    "edits": [
-      [
-        "        if \"passed\" not in line:\n            continue",
-        "        if False:\n            continue"
-      ]
-    ],
-    "expect": [
-      "a ratio on a line without the word is ignored"
-    ]
-  },
-  {
-    "name": "the `N of M` arm is dropped from RATIO",
-    "file": "scripts/check-selftest-counts.py",
-    "edits": [
-      [
-        "RATIO = re.compile(r\"\\b(\\d+)\\s*(?:/|\\s+of\\s+)\\s*(\\d+)\\b\")",
-        "RATIO = re.compile(r\"\\b(\\d+)\\s*(?:/)\\s*(\\d+)\\b\")"
-      ]
-    ],
-    "expect": [
+      "a `12/12 self-test cases passed` summary reads 12",
       "`32 of 32 … passed` reads 32"
     ]
   },
@@ -241,8 +215,8 @@
     "file": "scripts/check-selftest-counts.py",
     "edits": [
       [
-        "        for name in sorted(pinned & found if only is None else pinned & found & only):",
-        "        for name in sorted(pinned & found):"
+        "    names = sorted(pinned & found if only is None else pinned & found & only)",
+        "    names = sorted(pinned & found)"
       ]
     ],
     "expect": [
@@ -300,6 +274,178 @@
     "expect": [
       "string and import edges are BOTH closed to a fixpoint",
       "helper -> (import) -> script loaded by path -> suite is reached"
+    ]
+  },
+  {
+    "name": "#487: the pool runs one suite at a time",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:",
+        "    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:"
+      ]
+    ],
+    "expect": [
+      "two suites run AT ONCE in a pool of two"
+    ]
+  },
+  {
+    "name": "#487: outcomes are returned in completion order",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    return [outcomes[name] for name in names]",
+        "    return list(outcomes.values())"
+      ]
+    ],
+    "expect": [
+      "outcomes come back in the given order, not completion order",
+      "backlog #506: outcomes come back in the given order when completion is forced to the reverse"
+    ]
+  },
+  {
+    "name": "#487: a worker that raises reads as a pass",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "                outcomes[name] = (\"cannot\", f\"{name}: the check itself crashed \"",
+        "                outcomes[name] = None and (\"cannot\", f\"{name}: the check itself crashed \""
+      ]
+    ],
+    "expect": [
+      "a worker that RAISES is CANNOT RUN, never a pass",
+      "a suite that cannot START is CANNOT RUN, never a pass"
+    ]
+  },
+  {
+    "name": "#487: every suite shares one home",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "            return check_one(root / \"scripts\" / name, child_env(Path(td)), count_drift, run)",
+        "            return check_one(root / \"scripts\" / name, child_env(root), count_drift, run)"
+      ]
+    ],
+    "expect": [
+      "every suite runs under its OWN home, never a shared one"
+    ]
+  },
+  {
+    "name": "#487: the pool ignores the host's core count",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    return max(1, min(want, cpus or 1))",
+        "    return max(1, want)"
+      ]
+    ],
+    "expect": [
+      "the pool never exceeds the host's cores",
+      "an unknown core count runs serially, never zero workers"
+    ]
+  },
+  {
+    "name": "#487: a timed-out suite is skipped as a pass",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "        return (\"cannot\", f\"{name}: --self-test did not finish. NOT CHECKED.\")",
+        "        return None"
+      ]
+    ],
+    "expect": [
+      "a TIMED-OUT suite in the pool is CANNOT RUN, never a pass"
+    ]
+  },
+  {
+    "name": "#487 r1: the suite is not started in its own session",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "                            start_new_session=True)",
+        "                            start_new_session=False)"
+      ]
+    ],
+    "expect": [
+      "a TIMED-OUT suite's descendants are killed with it, never left running"
+    ]
+  },
+  {
+    "name": "#487 r1: a timeout kills only the direct child",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "        kill_group(proc, grace)\n        raise",
+        "        proc.kill()\n        proc.wait()\n        raise"
+      ]
+    ],
+    "expect": [
+      "a TIMED-OUT suite's descendants are killed with it, never left running"
+    ]
+  },
+  {
+    "name": "#487 r1: SIGTERM is never followed by SIGKILL",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    for sig in (signal.SIGTERM, signal.SIGKILL):",
+        "    for sig in (signal.SIGTERM,):"
+      ]
+    ],
+    "expect": [
+      "a TIMED-OUT suite's descendants are killed with it, never left running"
+    ]
+  },
+  {
+    "name": "#487 r1: a suite killed by a signal is reported red, not CANNOT RUN",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    if rc < 0:\n        return (\"cannot\"",
+        "    if False:\n        return (\"cannot\""
+      ]
+    ],
+    "expect": [
+      "a suite KILLED BY A SIGNAL is CANNOT RUN even after printing a passing count"
+    ]
+  },
+  {
+    "name": "#487 r1: a CANNOT RUN suite hides the red ones",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    if problems:\n        print(\"declared self-test counts disagree",
+        "    if problems and not cannot:\n        print(\"declared self-test counts disagree"
+      ]
+    ],
+    "expect": [
+      "with a CANNOT RUN suite the red suites are STILL printed, and rc is 2"
+    ]
+  },
+  {
+    "name": "#487 r1: `main` drops --jobs, so the pool is silently serial",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "audit(ROOT, POPULATION, pc.count_drift, pc.child_env, only, jobs)",
+        "audit(ROOT, POPULATION, pc.count_drift, pc.child_env, only)"
+      ]
+    ],
+    "expect": [
+      "`main` passes --jobs through to the pool"
+    ]
+  },
+  {
+    "name": "#487 r1: --jobs 0 is accepted",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    if n < 1:\n        raise argparse.ArgumentTypeError",
+        "    if n < 0:\n        raise argparse.ArgumentTypeError"
+      ]
+    ],
+    "expect": [
+      "--jobs 0 is refused before anything runs"
     ]
   }
 ]

@@ -6,6 +6,8 @@
 # command exits non-zero and is delivered to the failure event.
 # and the goal tree alone after an edit of docs/goal-threads.md (backlog #363). The decisions and the
 # runner live in scripts/regen-pages.py, which has the cases; this file only hands it the payload.
+# ⛔ backlog #408: every page is built from a FRESH origin/master tree (a new private temp tree each run), never from
+# the checkout this hook runs in — that checkout may be behind master and hold uncommitted edits.
 #
 #     bash .claude/hooks/regen-pages.sh --self-test     # runs scripts/regen-pages.py --self-test
 #

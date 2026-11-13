@@ -9,8 +9,12 @@ relationship of work threads (or lack there of)?"*
 **Run the logger FIRST, and print what it printed** (backlog #363), so the chat and the page agree:
 
 ```bash
-python3 scripts/goal-tree.py --snapshot --page --print
+python3 scripts/regen-pages.py --page goal-tree; python3 scripts/goal-tree.py --print
 ```
+
+The first command snapshots and renders from a FRESH `origin/master` tree (backlog #408), never from this checkout;
+the second prints the snapshot it just logged. ⛔ If the first says `CANNOT RUN — pages NOT rebuilt`, nothing was
+snapshotted and the printed tree is the LAST snapshot replayed: say so above it.
 
 It reads the RELATIONS from `docs/goal-threads.md` and DERIVES every leaf's state from `git log origin/master`,
 `gh pr list` and `.claude/inflight.jsonl`; it logs the snapshot to the main checkout's git-ignored `.claude/goal-tree-log.jsonl` only when the tree
@@ -30,10 +34,17 @@ It prints the NEEDS YOU block first: decisions only the owner can make, open now
    - **side**: the owner's aside.
 
    An open PR no goal names is printed under **UNDECLARED** by the script, never folded in.
+
+   ⤳ **Work still in flight is declared in the LEDGER, not the file** (backlog #505): the page reads the file from
+   master, so a line added on a PR branch is invisible until the merge. Declare it when the work starts —
+   `python3 scripts/session-state.py --add <id> "<what>" "<on done>" --goal <slug> --thread "<relation> · <refs> · <what>"`
+   — and the page hangs it under the goal at once, marked *declared in the ledger*. Put the same line in the file in
+   the PR; once master has it, the file's line wins and the ledger's is not drawn twice.
 3. **Name each thread by its backlog row or PR, never `T1`/`T2`**: those numbers were reused across maps and
    confused the reader. The file's grammar refuses a thread that names neither.
 4. **States are the script's:** ✅ merged (SHA) · ⏳ open or in flight · ⬜ next · ❌ waits (declared) · ✖ closed ·
-   ⚠ CANNOT RUN. Never print a state the script did not just read.
+   ✖ superseded (→ backlog #M, where the goal went) or withdrawn, read from the backlog row's Status cell and
+   beating the merge · ⚠ CANNOT RUN. Never print a state the script did not just read.
 
 Format: a fenced box-drawing tree (`├─ │ └─`), the root on top, one line per leaf. Then a one-line
 **"What changed since the last tree"** (the page's newest timeline entry), and close with the CHECK/RESULT table.

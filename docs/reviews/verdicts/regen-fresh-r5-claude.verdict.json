@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 5bc78e4d519e3f8f1501fe276bbd63fdb14b1088",
+    "docs/reviews/claude/regen-fresh-r5-claude.md": "100644 f40f4dd18396aeecbad3b67bbbe4bfceafe57c80"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "8d1327f8098d4b7bed04e8d2f829a55b76fb5356",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 5712 chars, names 8d1327f8098d",
+  "refused": false,
+  "review": "regen-fresh-r5-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/rgf",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

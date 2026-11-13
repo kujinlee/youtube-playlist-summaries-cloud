@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 228 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 282 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -92,6 +92,7 @@ import signal
 import socket
 import subprocess
 import threading
+import time
 import sys
 import urllib.parse
 from typing import Callable, NamedTuple
@@ -100,9 +101,35 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import page_chrome  # noqa: E402
 import page_markup  # noqa: E402
 
-PORT = 7391
+# backlog #627: an agent's PREVIEW server serves its own worktree's pages on a port of its own —
+# `EXPLAINER_SERVE_ROOT=<worktree>/docs/explainers EXPLAINER_SERVE_PORT=7419 python3 scripts/explainer-serve.py`.
+# Unset, both are what they always were: port 7391 and `~/explainers` (the main checkout's pages).
+
+
+def port_from(raw: str) -> tuple[int, str]:
+    """PURE. (port, error) for an `EXPLAINER_SERVE_PORT` value: blank is 7391; anything but an integer in
+    1..65535 is an ERROR, said by every mode but `--self-test` — never a traceback at import (r1 Claude F9)."""
+    v = raw.strip()
+    if not v:
+        return 7391, ""
+    bad = f"EXPLAINER_SERVE_PORT={raw[:40]!r} is not a port (an integer 1..65535). NOT STARTED."
+    # r2 CODEX m4: `str.isdigit` is true of '²' and of every Unicode digit, and `int()` refuses a string past
+    # Python's conversion limit (4,300 digits) — so the shape is checked in ASCII, and `int()`'s refusal is caught.
+    if not (v.isascii() and v.isdigit()):
+        return 7391, bad
+    try:
+        n = int(v)
+    except ValueError:
+        return 7391, bad
+    if not 1 <= n <= 65535:
+        return 7391, bad
+    return n, ""
+
+
+PORT, PORT_ERROR = port_from(os.environ.get("EXPLAINER_SERVE_PORT", ""))
 HOST = "127.0.0.1"
-ROOT = pathlib.Path.home() / "explainers"
+ROOT = (pathlib.Path(os.environ["EXPLAINER_SERVE_ROOT"].strip()).expanduser()
+        if os.environ.get("EXPLAINER_SERVE_ROOT", "").strip() else pathlib.Path.home() / "explainers")
 PIDFILE = ROOT / ".serve.pid"
 QUESTIONS = ROOT / "questions.md"
 MAX_BODY = 64 * 1024
@@ -114,6 +141,11 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent
 # only because of where the caller stood is a check that will one day stand somewhere else.
 REPO = SCRIPTS.parent
 REGEN_TIMEOUT = 300
+# A page whose rebuild is pressed while the owner watches gets a tighter bound than the
+# default. Backlog #497, the owner 2026-11-04 01:07: the goal tree refreshes on a click, so
+# a click must answer within a minute, never hang for five. MEASURED 2026-11-04: `goal-tree.py --page`
+# took 7.08, 7.95 and 6.41 s, so the bound is max(60, 2 x the slowest = 15.9) = 60 s.
+REGEN_TIMEOUTS = {"goal-tree": 60}
 # ⚠ The ONLY pages `POST /regenerate` may rebuild. A dict of LITERALS, deliberately: the
 # caller names a key, never a path or an argument, so nothing it sends reaches the
 # command line. Adding a page here is a visible act; resolving one from the request
@@ -123,6 +155,70 @@ REGEN_TIMEOUT = 300
 # file, while rebuilding two DIFFERENT pages at once is harmless and stays parallel.
 REGEN_LOCKS: dict[str, "threading.Lock"] = {}
 REGEN_LOCKS_GUARD = threading.Lock()
+# backlog #408: a Refresh press runs the generator THROUGH this runner (`--page <key>`), never directly.
+REGEN_RUNNER = "regen-pages.py"
+# Seconds a timed-out runner gets, after SIGTERM, to kill its generators, remove its tree and exit.
+REGEN_GRACE = 15
+# Seconds the pipes are drained after SIGKILL before they are CLOSED (review r2 F4): a descendant that left the
+# group (`setsid`) can hold them open for ever, and EOF is never waited for past this bound.
+REGEN_DRAIN = 2
+
+
+def _signal_group(pgid: int, sig: int) -> None:
+    try:
+        os.killpg(pgid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _reap_killed(p: subprocess.Popen) -> None:
+    """After SIGKILL to `p`'s group: drain its pipes for at most REGEN_DRAIN s, then CLOSE them and reap `p`
+    itself, without waiting for EOF from a descendant outside the group (review r2 F4 — an unbounded
+    `communicate()` here waited 3.08 s, and for ever, on one)."""
+    try:
+        p.communicate(timeout=REGEN_DRAIN)
+    except subprocess.TimeoutExpired:
+        for f in (p.stdout, p.stderr):
+            try:
+                f.close()
+            except OSError:
+                pass
+        try:
+            p.wait(timeout=REGEN_DRAIN)
+        except subprocess.TimeoutExpired:
+            pass                                       # SIGKILLed already; nothing more can be sent
+
+
+def run_in_group(argv: list[str], *, timeout: float) -> subprocess.CompletedProcess:
+    """`subprocess.run(argv, capture_output=True, text=True, timeout=timeout)`, with the runner in a process
+    group of its own (backlog #408, review r1 X3). On a timeout the GROUP gets SIGTERM — the runner's handler
+    then kills its generators' groups, removes its tree and closes its lock — and SIGKILL only after
+    REGEN_GRACE s; then the timeout is raised as before. Before this a timeout SIGKILLed the runner alone, so
+    its generator ran on while the lock it was built under was released. ⚠ The 504 therefore comes up to
+    REGEN_GRACE s after the click's bound when the runner is slow to stop, plus at most 2 x REGEN_DRAIN s for
+    a descendant that left the group and holds the pipes (`_reap_killed`). ⚠ BOUND: such a descendant is not
+    killed, only no longer waited for — the same bound `regen-pages.py` states."""
+    p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                         text=True, start_new_session=True)
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _signal_group(p.pid, signal.SIGTERM)
+        try:
+            p.communicate(timeout=REGEN_GRACE)
+        except subprocess.TimeoutExpired:
+            _signal_group(p.pid, signal.SIGKILL)
+            _reap_killed(p)
+        raise
+    except BaseException:
+        _signal_group(p.pid, signal.SIGKILL)
+        _reap_killed(p)
+        raise
+    return subprocess.CompletedProcess(argv, p.returncode, out, err)
+
+
+# What a Refresh press runs the runner with. A module name, so the suite can stand in for it.
+REGEN_EXEC = run_in_group
 REGENERABLE = {
     "dashboard": "gen-dashboard.py",
     "backlog-table": "gen-backlog-page.py",
@@ -161,7 +257,10 @@ PAGE_SOURCES = {
     # The declared threads only: the snapshot log is git-ignored (no checkout would carry it, which the
     # every-source-is-a-real-file case below would refuse), and the STATES move with gh and git, which
     # no file carries — so "fresh" here means "nothing re-declared since", not "gh agrees".
-    "goal-tree": ["docs/goal-threads.md"],
+    # The answers file too (PR #558 r1 F): the page shows answers to questions asked on it, so an answer added
+    # after the build lights the banner. ⚠ The page is built from origin/master, so an answer reaches it only
+    # after its PR merges; until then the banner says "stale" only in a checkout that holds the edit.
+    "goal-tree": ["docs/goal-threads.md", "docs/goal-tree-answers.json"],
 }
 # ⛔ THE ONLY PAGES WITH NO `/_stale` BANNER, and why — the self-test holds this set EQUAL to the
 # keys whose source list is empty, so an empty list can never appear on another page silently.
@@ -902,12 +1001,21 @@ def lexical_candidates(url_path: str, root: pathlib.Path) -> list[pathlib.Path]:
     return [p for p in out if os.path.lexists(p)]
 
 
+def retired_name(url_path: str) -> str | None:
+    """PURE. The archive url when the NAME a url asks for is a retired page's (casefolded), else None — policy, the
+    same on every copy, so `retirement` and `decide` ask THIS one function (r2: no second copy of the rule)."""
+    name = requested_name(url_path)
+    if name is not None and name.casefold() in _RETIRED_FOLDED:
+        return _RETIRED_FOLDED[name.casefold()]
+    return None
+
+
 def retirement(url_path: str, root: pathlib.Path) -> tuple[str, str | None]:
     """A request's verdict: a retired NAME (even with no file behind it) is retired; otherwise the very
     candidate the server would serve (`served_candidate`) is `classify`d. -> ("retired", url) | ("refused", why) | ("live", None)."""
-    name = requested_name(url_path)
-    if name is not None and name.casefold() in _RETIRED_FOLDED:
-        return "retired", _RETIRED_FOLDED[name.casefold()]
+    archive = retired_name(url_path)
+    if archive is not None:
+        return "retired", archive
     sc = served_candidate(url_path, root)
     if sc is not None:
         return classify(sc[0], root)           # EXACTLY what the server would serve, walked unresolved
@@ -961,10 +1069,12 @@ def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     return sc[1] if sc is not None else None
 
 
-def index_html(root: pathlib.Path) -> str:
+def index_html(root: pathlib.Path, pages: list[tuple[str, float]] | None = None, source: str = "") -> str:
+    """The `/` page. `pages` (name, mtime), newest first, default the root's own; ⟳ #627 r1 (Codex 3): the server
+    passes `page_list`'s, which holds master's pages too, and `source`, the footer naming where they come from."""
     rows = []
-    for p in explainers(root):
-        when = _dt.datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+    for name, mtime in (pages if pages is not None else [(p.name, p.stat().st_mtime) for p in explainers(root)]):
+        when = _dt.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
         # ⛔ THE HREF WAS ENCODED AND THE LINK TEXT WAS NOT — the identical defect fixed in
         # `source_shell` twelve lines of diff away, missed because the line LOOKS like it already
         # handles a hostile name. It handles the half that does not matter here. MEASURED with a
@@ -973,7 +1083,7 @@ def index_html(root: pathlib.Path) -> str:
         # output name from `--slug` with no validation, so a slug taken from a topic or a heading
         # lands verbatim in a filename and thence in this list. `gen-goals-page.py` escapes every
         # filesystem-derived value it renders — the convention exists and this site was the outlier.
-        rows.append(f'<li><a href="/{urllib.parse.quote(p.name)}">{page_markup.escape(p.name)}</a>'
+        rows.append(f'<li><a href="/{urllib.parse.quote(name)}">{page_markup.escape(name)}</a>'
                     f'<span> · {when}</span></li>')
     body = "\n".join(rows) or "<li><em>No explainers yet.</em></li>"
     doc = (
@@ -1001,6 +1111,7 @@ def index_html(root: pathlib.Path) -> str:
         "<p>Newest first. <code>/latest</code> always redirects to the top one — "
         "bookmark that.</p><ul>" + body + "</ul>"
         "<script>" + page_chrome.chrome_script() + "</script>"
+        + (source_footer(source) if source else "")
     )
     # Codex Medium: this is a page PRODUCER carrying a control, and nothing checked it.
     # A future edit dropping either palette or the script would ship a dead button.
@@ -1114,6 +1225,511 @@ def revision(p: pathlib.Path) -> str:
     return f"{st.st_mtime_ns}:{st.st_size}"
 
 
+# ── backlog #627: WHICH COPY a page is served from, and the footer that SAYS so ─────────────────────────────────
+#
+# WHY. `~/explainers` is the main checkout's `docs/explainers/`, and the main checkout is behind origin/master
+# and holds uncommitted edits — so a page merged in PR #563 never showed on the owner's server. A TRACKED page
+# is now served from the SERVE COPY, a standing `git clone --shared` that follows origin/master
+# (`regen-pages.py` → `move_serve_copy`, the one mechanism that materialises master; this file never clones).
+# It is moved by every `fresh` rebuild — the on-merge hook among them — and by `CopyFetcher`, a fetch at most
+# once every FETCH_EVERY s, started by a page load and never holding it past FETCH_WAIT s.
+#
+# ⟳ r1 (Codex 1+2, Claude F2): master's bytes are read from GIT OBJECTS, by the copy's HEAD sha
+# (`master_tree` + `cat-file blob <oid>`), never from the copy's working tree. An object named by a sha cannot
+# change under a concurrent `checkout --force`, so the footer's sha and the bytes sent are one observation, and a
+# file deleted from the copy's working tree is not "not on master". The copy's working tree is read only for an
+# index entry's mtime. Every decision reads its bytes ONCE, into `Served.body`; nothing re-reads a path.
+#
+# THE RULE, `choose_source` — for one page, given the working-tree bytes (`local`), the bytes committed at the
+# main checkout's HEAD (`base`), master's bytes (`master`) and the page at merge-base(HEAD, master) (`ancestor`):
+#   master is None (not on master, or no copy yet)  -> "local"       the working tree, as before
+#   local absent, or == master                      -> "master"      master's page
+#   local == ancestor (unedited since master's line) -> "master"     master's page, no bar
+#   local edited AND base == master                 -> "overlay"     the edit, on top of master
+#   local edited AND base != master                 -> "master+bar"  master's page, a YELLOW BAR linking the edit
+# ⟳ r1 (Claude F3): "unedited" is judged against the ANCESTOR, not HEAD: a commit on a branch that changed the
+# page is an edit even though the working tree equals HEAD. When HEAD is an ancestor of master (the usual case)
+# the ancestor IS the base, so the rule is the round-0 rule.
+# and every HTML page gets a footer naming its source (`source_label`): `master @ <sha>`, `local edits on <sha>`,
+# or `PREVIEW — agent worktree, not merged` (a server whose root is in a LINKED worktree serves that tree as is).
+# ⚠ A failed fetch is never silent: the label carries `⚠ last fetch FAILED …` until a fetch succeeds; a fetch
+# still running when the page is sent says so too (Codex 6).
+#
+# ⟳ r1 (Codex 3+4, Claude F5): ONE chooser, `decide`, answers every page question — the GET, `/_rev`, a
+# retirement verdict — and `page_list` builds `/` and `/latest` from both copies. Nothing decides from the
+# working tree alone before it: a local symlink to a retired page no longer hides master's valid page.
+#
+# ⛔ OPEN SEAM — backlog #625. Ask answers are written INTO a page in the main checkout's working tree, i.e.
+# they are local edits. Once that page's base differs from master's copy, rule "master+bar" HIDES them behind
+# the yellow bar. #625 needs a commit path for answers (so the base catches up), or an exemption decided here.
+FETCH_EVERY = 60.0   # seconds between two fetches of origin/master, at most one per window
+# Seconds a page load waits for a fetch IT STARTED (r1 Claude F7: a load that finds one already running does not
+# wait; its footer says the fetch is running). ⚠ BOUND: this bounds the FETCH only. A decision also runs, on the
+# request thread, at most five read-only git calls (`rev-parse`, `ls-tree` once per sha, `cat-file` ×2–3,
+# `merge-base` once per pair), each bounded by `_git_bytes`'s 10 s timeout.
+FETCH_WAIT = 2.0
+PREVIEW_LABEL = "PREVIEW — agent worktree, not merged"
+LOCAL_QUERY = "source=local"   # `?source=local` serves the working tree's page, labelled, under the yellow bar
+_SHA40 = re.compile(r"[0-9a-f]{40}")
+_REGULAR = ("100644", "100755")   # the only tree entries master's page is served from; a symlink is REFUSED
+
+
+def choose_source(local: bytes | None, base: bytes | None, master: bytes | None,
+                  ancestor: bytes | None | object = None, *, ancestor_known: bool = False) -> str:
+    """PURE. Which copy of ONE page is served: "local" | "master" | "overlay" | "master+bar" (rule above).
+    `ancestor` (the page at merge-base(HEAD, master)) counts only when `ancestor_known`; otherwise `base` stands
+    in for it — the round-0 rule, right whenever HEAD is an ancestor of master."""
+    if master is None:
+        return "local"
+    if local is None or local == master:
+        return "master"
+    if local == (ancestor if ancestor_known else base):
+        return "master"
+    if base == master:
+        return "overlay"
+    return "master+bar"
+
+
+def source_label(kind: str, master_sha: str | None, head_sha: str | None, *, standing: bool = False,
+                 note: str = "", why: str = "") -> str:
+    """PURE. The footer's source line for a page served as `kind` (`choose_source`, or "preview", "no-copy", or
+    "asked-local" for `?source=local`). `why` refines a "local" or "asked-local" page (r1 Claude F5): what the
+    working tree's copy IS relative to master. `note` (a failed fetch, a missing copy) is appended, never dropped."""
+    m, h = (master_sha or "?")[:12], (head_sha or "?")[:12]
+    if kind == "preview":
+        label = PREVIEW_LABEL
+    elif kind in ("master", "master+bar"):
+        label = f"master @ {m}"
+    elif kind == "overlay":
+        label = f"local edits on {m}"
+    elif kind == "no-copy":
+        label = f"the working tree on {h} — master's copy UNAVAILABLE, so nothing here is checked against master"
+    elif kind == "asked-local":
+        label = {"same": f"the working tree on {h} — the same bytes as master @ {m}",
+                 "behind": f"the working tree on {h} — unedited, but master @ {m} has moved on",
+                 "overlay": f"local edits on {m}"}.get(
+            why, f"local edits on {h} — NOT master's page (its base is not master's copy)")
+    elif standing:
+        # A generated page: git-ignored, so never on master, and built from a fresh origin/master by regen-pages.
+        label = "generated from origin/master — its build commit is in the page's bar"
+    elif why == "deleted":
+        label = f"the working tree on {h} — no local edits; this page is DELETED on master @ {m}"
+    elif why == "committed":
+        label = f"committed on {h} — not on master"
+    else:
+        label = f"local edits on {h} — not on master"
+    return label + (f" · {note}" if note else "")
+
+
+def source_footer(label: str) -> str:
+    """The fixed footer every served HTML page carries (backlog #627's FAILS-IF: a page that names no source)."""
+    return ('<div id="ex-source" style="position:fixed;right:.5rem;bottom:.4rem;z-index:2147483647;'
+            'font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;padding:.15rem .5rem;border-radius:4px;'
+            'background:#1f2937;color:#f9fafb;opacity:.92">Source: ' + page_markup.escape(label) + "</div>")
+
+
+def local_bar(href: str) -> str:
+    """The YELLOW BAR over master's page when the working tree holds an edit whose base is not master's copy."""
+    return ('<div id="ex-local-bar" style="position:fixed;left:0;right:0;top:0;z-index:2147483647;'
+            'background:#fde047;color:#111;font:14px/1.4 ui-sans-serif,system-ui,sans-serif;padding:.35rem .8rem">'
+            "This page has LOCAL EDITS that are not shown: their base is not master's copy, so master's page is "
+            f'served. <a style="color:#111;font-weight:700" href="{page_markup.escape(href)}">See the local edits</a>'
+            "</div>")
+
+
+class Served(NamedTuple):
+    """One page's serving decision, observed ONCE (r1 Codex 2, Claude F2): the page's path inside its root
+    (`rel`, its true spelling), the BYTES sent, how it was chosen, the footer line, and `rev`, what `/_rev`
+    compares — master's blob id, or the local file's mtime:size."""
+    rel: str
+    body: bytes
+    kind: str
+    label: str
+    bar: bool          # True: master's page is served OVER local edits — the yellow bar is shown
+    rev: str
+
+
+class Decision(NamedTuple):
+    """`decide`'s answer: ("serve", Served, None) | ("retired", None, archive url) | ("refused", None, why) |
+    ("missing", None, None)."""
+    verdict: str
+    served: Served | None
+    info: str | None
+
+
+class SourceSetup(NamedTuple):
+    """Where a served root's pages come from, observed once. `checkout`: the git top level holding the root;
+    `prefix`: the root's path inside it (`docs/explainers/`); `copy`: the serve copy's top level."""
+    mode: str                          # "main" | "preview" (the root is in a LINKED worktree)
+    root: pathlib.Path
+    checkout: pathlib.Path | None
+    prefix: str
+    copy: pathlib.Path
+
+
+def _git_bytes(args: list[str], cwd: pathlib.Path) -> tuple[int, bytes]:
+    """One read-only git call: (rc, stdout bytes); 127 when git cannot be run, 124 on a 10 s timeout."""
+    try:
+        r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return 127, b""
+    return r.returncode, r.stdout
+
+
+def _git_line(args: list[str], cwd: pathlib.Path) -> str | None:
+    rc, out = _git_bytes(args, cwd)
+    return out.decode("utf-8", "replace").strip() if rc == 0 else None
+
+
+_REGEN_MOD = None
+
+
+def _regen():
+    """`regen-pages.py`, loaded once: the serve copy's mechanism lives there, never a second copy here."""
+    global _REGEN_MOD
+    if _REGEN_MOD is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_regen_pages_for_serve", SCRIPTS / REGEN_RUNNER)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        _REGEN_MOD = mod
+    return _REGEN_MOD
+
+
+def source_setup(root: pathlib.Path, copy: pathlib.Path) -> SourceSetup:
+    """Observe where `root` lives: preview when its checkout is a LINKED worktree (its git dir is not the common
+    one); main otherwise — including when git cannot say, which then serves the working tree, labelled."""
+    base = resolve_or_none(root) or root
+    top = _git_line(["rev-parse", "--show-toplevel"], base) if base.is_dir() else None
+    if top is None:
+        return SourceSetup("main", root, None, "", copy)
+    gd = _git_line(["rev-parse", "--path-format=absolute", "--absolute-git-dir"], base)
+    common = _git_line(["rev-parse", "--path-format=absolute", "--git-common-dir"], base)
+    prefix = _git_line(["rev-parse", "--show-prefix"], base) or ""
+    mode = "preview" if gd and common and os.path.realpath(gd) != os.path.realpath(common) else "main"
+    return SourceSetup(mode, root, pathlib.Path(top), prefix, copy)
+
+
+def copy_head(copy: pathlib.Path) -> str | None:
+    """The serve copy's HEAD sha, read from its `.git/HEAD` (it is always detached), or None."""
+    try:
+        head = (copy / ".git" / "HEAD").read_text().strip()
+    except OSError:
+        return None
+    return head if _SHA40.fullmatch(head) else None
+
+
+_TREE_CACHE: dict[tuple[str, str, str], dict[str, tuple[str, str]]] = {}
+_MB_CACHE: dict[tuple[str, str, str], str | None] = {}
+
+
+def master_tree(copy: pathlib.Path, sha: str, prefix: str) -> dict[str, tuple[str, str]] | None:
+    """master's pages at `sha`, from git objects: {path inside the root: (mode, blob id)}, or None when the copy's
+    git cannot list it. Cached per sha — a tree named by a sha never changes, so the cache cannot go stale."""
+    key = (str(copy), sha, prefix)
+    if key in _TREE_CACHE:
+        return _TREE_CACHE[key]
+    rc, out = _git_bytes(["ls-tree", "-r", "-z", "--full-tree", sha, *(["--", prefix] if prefix else [])], copy)
+    if rc != 0:
+        return None
+    tree: dict[str, tuple[str, str]] = {}
+    for rec in out.decode("utf-8", "surrogateescape").split("\0"):
+        meta, _, path = rec.partition("\t")
+        parts = meta.split()
+        if len(parts) == 3 and path.startswith(prefix):
+            tree[path[len(prefix):]] = (parts[0], parts[2])
+    if len(_TREE_CACHE) > 64:
+        _TREE_CACHE.clear()
+    _TREE_CACHE[key] = tree
+    return tree
+
+
+def _merge_base(checkout: pathlib.Path, head: str, master: str) -> str | None:
+    key = (str(checkout), head, master)
+    if key not in _MB_CACHE:
+        if len(_MB_CACHE) > 64:
+            _MB_CACHE.clear()
+        _MB_CACHE[key] = _git_line(["merge-base", head, master], checkout)
+    return _MB_CACHE[key]
+
+
+def _blob_at(checkout: pathlib.Path, rev: str | None, path: str) -> bytes | None:
+    if not rev:
+        return None
+    rc, out = _git_bytes(["cat-file", "blob", f"{rev}:{path}"], checkout)
+    return out if rc == 0 else None
+
+
+def _true_name(rel: str, names) -> str:
+    """`rel` as the tree spells it: itself when present, else the ONE entry equal to it case-folded (r1 Claude F4:
+    APFS finds `/TOPIC.html` as `topic.html`, git does not), else `rel` unchanged."""
+    if rel in names:
+        return rel
+    hits = [n for n in names if n.casefold() == rel.casefold()]
+    return hits[0] if len(hits) == 1 else rel
+
+
+def _url_rels(url_path: str) -> list[str]:
+    """The paths inside a root a request may name, in `page_candidates`' order — decoded once, `.`/`..` collapsed
+    against the root (never above it), then `.html` for an extensionless final segment; servable types only."""
+    bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
+    rel = posixpath.normpath("/" + bare.lstrip("/")).lstrip("/")
+    if not rel or rel in (".", "..") or "\0" in rel:
+        return []
+    out = [rel] + ([rel + ".html"] if "." not in rel.rsplit("/", 1)[-1] else [])
+    return [r for r in out if pathlib.PurePosixPath(r).suffix.lower() in SERVABLE]
+
+
+def _read_local(p: pathlib.Path) -> tuple[bytes, str] | None:
+    """The working tree's bytes and their revision, read ONCE; None when the file vanished (r1 Claude F2)."""
+    try:
+        st = p.stat()
+        return p.read_bytes(), f"l-{st.st_mtime_ns}:{st.st_size}"
+    except OSError:
+        return None
+
+
+class CopyFetcher:
+    """At most ONE fetch of origin/master per `every` s, run off the request thread (backlog #627).
+
+    `poke(wait)` starts a fetch when one is due and none is running, then waits at most `wait` s for a fetch IT
+    STARTED — so a page load is never held past that bound, and the last copy is served meanwhile. A failed fetch
+    is RECORDED (`error`) and named in every label (`note`) until a fetch succeeds; it is never retried inside the
+    window. A fetch still running when a page is sent is said too (r1 Codex 6)."""
+
+    def __init__(self, sync: Callable[[], str], every: float = FETCH_EVERY, clock: Callable[[], float] = time.monotonic):
+        self.sync, self.every, self.clock = sync, every, clock
+        self.lock = threading.Lock()
+        self.last_try: float | None = None
+        self.started_at: str = ""
+        self.thread: threading.Thread | None = None
+        self.sha: str | None = None
+        self.error: tuple[str, str] | None = None
+
+    def due(self) -> bool:
+        return self.last_try is None or self.clock() - self.last_try >= self.every
+
+    def poke(self, wait: float) -> bool:
+        """True when this call STARTED a fetch."""
+        with self.lock:
+            running = self.running()
+            started = not running and self.due()
+            if started:
+                self.last_try = self.clock()
+                self.started_at = _dt.datetime.now().strftime("%H:%M:%S")
+                self.thread = threading.Thread(target=self._run, daemon=True)
+                self.thread.start()
+            t = self.thread
+        if started and t is not None and wait > 0:
+            t.join(wait)
+        return started
+
+    def running(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+    def _run(self) -> None:
+        try:
+            sha = self.sync()
+        except Exception as exc:                      # noqa: BLE001 - recorded and SAID on every page
+            self.error = (_dt.datetime.now().strftime("%H:%M:%S"), " ".join(f"{type(exc).__name__}: {exc}".split())[:200])
+        else:
+            self.sha, self.error = sha, None
+
+    def failure(self) -> str:
+        """The failed-fetch note alone — what `/_rev` folds into a revision, so an open page gains the warning."""
+        if self.error is None:
+            return ""
+        when, why = self.error
+        return f"⚠ last fetch of origin/master FAILED at {when} ({why}) — serving the last copy"
+
+    def note(self) -> str:
+        """Everything a sent page must say about the fetch: a failure, and a fetch still running."""
+        running = (f"⏳ a fetch of origin/master started at {self.started_at} is still running — this is the copy "
+                   "it found" if self.running() else "")
+        return " · ".join(s for s in (self.failure(), running) if s)
+
+
+def decide(url_path: str, setup: SourceSetup, *, note: str = "", want_local: bool = False) -> Decision:
+    """THE decision for one request (backlog #627) — the GET, `/_rev` and a retirement verdict all come from here,
+    so no route decides from the working tree alone before master is consulted (r1 Codex 3+4)."""
+    # ⟳ r2 (Codex M1): only the retired NAME a url asks for is decided before master — that is policy, the same on
+    # every copy. Every verdict the WORKING TREE produces (a symlink or hard link to a retired page: "retired"; an
+    # escaping or looping link: "refused") is local metadata, and loses to a regular page in master's tree below.
+    archive = retired_name(url_path)
+    if archive is not None:
+        return Decision("retired", None, archive)
+    verdict, info = retirement(url_path, setup.root)
+    lpath = resolve_page(url_path, setup.root) if verdict == "live" else None
+    local = _read_local(lpath) if lpath is not None else None
+    lrel = None
+    if lpath is not None:
+        lrel = lpath.relative_to(resolve_or_none(setup.root) or setup.root).as_posix()
+        try:
+            lrel = posixpath.join(posixpath.dirname(lrel), _true_name(lpath.name, os.listdir(lpath.parent)))
+        except OSError:
+            pass
+        lrel = lrel.removeprefix("./")
+    if setup.mode == "preview" or setup.checkout is None:
+        if verdict != "live":
+            return Decision(verdict, None, info)
+        if local is None:
+            return Decision("missing", None, None)
+        if setup.mode == "preview":
+            return Decision("serve", Served(lrel, local[0], "preview", source_label("preview", None, None), False,
+                                            local[1]), None)
+        return Decision("serve", Served(lrel, local[0], "no-copy", source_label(
+            "no-copy", None, None, standing=_generated(lpath),
+            note=note or "⚠ NO MASTER COPY: the served root is in no git checkout"), False, local[1]), None)
+    master_sha = copy_head(setup.copy)
+    tree = master_tree(setup.copy, master_sha, setup.prefix) if master_sha else None
+    head_sha = _git_line(["rev-parse", "HEAD"], setup.checkout)
+    mrel, mentry = None, None
+    if tree is not None:
+        for r in _url_rels(url_path):
+            t = _true_name(r, tree)
+            if t in tree:
+                mrel, mentry = t, tree[t]
+                break
+    if mentry is not None and mentry[0] not in _REGULAR:
+        return Decision("refused", None, f"master's entry for {mrel} is not a regular file (mode {mentry[0]})")
+    master = None
+    if mentry is not None:
+        rc, blob = _git_bytes(["cat-file", "blob", mentry[1]], setup.copy)
+        master = blob if rc == 0 else None
+        if master is None:
+            tree = None                                   # the copy's objects cannot be read: say so, never "absent"
+    if tree is None:
+        if verdict != "live":
+            return Decision(verdict, None, info)
+        if local is None:
+            return Decision("missing", None, None)
+        why = ("⚠ NO MASTER COPY yet (the first fetch has not landed) — the working tree is served" if master_sha
+               is None else f"⚠ master's copy at {master_sha[:12]} cannot be READ — the working tree is served")
+        return Decision("serve", Served(lrel, local[0], "no-copy", source_label(
+            "no-copy", master_sha, head_sha, standing=_generated(lpath),
+            note=" · ".join(s for s in (note, why) if s)), False, local[1]), None)
+    if master is None and verdict != "live":
+        return Decision(verdict, None, info)              # neither copy can serve it: the local verdict stands
+    if local is None and master is None:
+        return Decision("missing", None, None)
+    rel = mrel if mrel is not None else lrel
+    path_in = f"{setup.prefix}{rel}"
+    base = _blob_at(setup.checkout, head_sha, path_in)
+    mb = _merge_base(setup.checkout, head_sha, master_sha) if head_sha else None
+    ancestor = base if mb == head_sha else _blob_at(setup.checkout, mb, path_in)
+    lbytes = local[0] if local is not None else None
+    kind = choose_source(lbytes, base, master, ancestor, ancestor_known=mb is not None)
+    if kind == "local":                                   # not on master: what IS the working tree's copy?
+        why = ("deleted" if lbytes == base and ancestor is not None and mb is not None
+               else "committed" if lbytes == base and base is not None else "")
+        return Decision("serve", Served(lrel, lbytes, "local", source_label(
+            "local", master_sha, head_sha, standing=_generated(lpath), note=note, why=why), False, local[1]), None)
+    if want_local and local is not None:
+        why = {"master": "same" if lbytes == master else "behind", "overlay": "overlay"}.get(kind, "")
+        return Decision("serve", Served(lrel, lbytes, "asked-local", source_label(
+            "asked-local", master_sha, head_sha, note=note, why=why), False, local[1]), None)
+    if kind == "overlay":
+        return Decision("serve", Served(lrel, lbytes, "overlay", source_label("overlay", master_sha, head_sha,
+                                                                            note=note), False, local[1]), None)
+    return Decision("serve", Served(rel, master, kind, source_label(kind, master_sha, head_sha, note=note),
+                                    kind == "master+bar", f"m-{mentry[1]}"), None)
+
+
+def served_page(url_path: str, setup: SourceSetup, *, note: str = "", want_local: bool = False) -> Served | None:
+    """`decide`'s Served, or None when nothing is served (missing, retired or refused)."""
+    return decide(url_path, setup, note=note, want_local=want_local).served
+
+
+def page_list(setup: SourceSetup) -> tuple[list[tuple[str, float]], str]:
+    """`/` and `/latest`'s pages — the working tree's live pages AND master's (r1 Codex 3: a page merged but not
+    in the working tree is listed) — as (name, mtime), newest first; and the index's source line. A master-only
+    page's mtime is its file's in the serve copy (when it was checked out), 0 when that file is absent."""
+    pages = {p.name: p.stat().st_mtime for p in explainers(setup.root)}
+    if setup.mode == "preview":
+        return sorted(pages.items(), key=lambda kv: (kv[1], kv[0]), reverse=True), PREVIEW_LABEL
+    sha = copy_head(setup.copy) if setup.checkout is not None else None
+    tree = master_tree(setup.copy, sha, setup.prefix) if sha else None
+    if tree is None:
+        label = "the working tree only — master's copy UNAVAILABLE"
+    else:
+        label = f"master @ {sha[:12]}, and this checkout's pages not on master"
+        for rel, (mode, _oid) in tree.items():
+            if ("/" in rel or not rel.endswith(".html") or rel.endswith(FRAGMENT_SUFFIX) or mode not in _REGULAR
+                    or rel.casefold() in _RETIRED_FOLDED or rel in pages):
+                continue
+            try:
+                pages[rel] = (setup.copy / setup.prefix / rel).stat().st_mtime
+            except OSError:
+                pages[rel] = 0.0
+    return sorted(pages.items(), key=lambda kv: (kv[1], kv[0]), reverse=True), label
+
+
+def latest_of(pages: list[tuple[str, float]]) -> str | None:
+    """`/latest`'s target from `page_list`'s pages: the newest DATED one (see DATED)."""
+    found = [n for n, _ in pages if DATED.match(n)]
+    return "/" + urllib.parse.quote(found[0]) if found else None
+
+
+def _generated(p: pathlib.Path | None) -> bool:
+    """A page a generator in REGENERABLE writes (git-ignored, built from a fresh origin/master by regen-pages)."""
+    return p is not None and p.name.removesuffix(".html") in REGENERABLE
+
+
+_STATE: dict[str, object] = {}
+# ⛔ Set by `_self_test`. Inside the suite the server builds a fetcher ONLY for a checkout inside the suite's own
+# temp directory (`fixture_git.isolated()`'s `fixture-tmp-*`), and none for anything else — the real checkout
+# behind the module-level ROOT included, wherever the scripts are staged (r1 Codex 5: regen-pages' guard keys on
+# its own location, which a staged copy outside git cannot protect). A second guard, independent of
+# regen-pages' refusal: a mutant that disables either one leaves the other standing. ⟳ r1 Claude F1: the round-0
+# guard refused EVERY fetcher, so the handler's fetcher paths could not be tested at all.
+# ⟳ r2 (Codex M2): the CHECKOUT the fetcher moves — the serve copy, `serve_copy_path()` — must be the suite's too:
+# r1 checked only the checkout fetched FROM, so a copy path outside the suite was cloned and checked out.
+_IN_SUITE = False
+_STATE_GUARD = threading.Lock()
+
+
+def _suite_owns(p: pathlib.Path | None) -> bool:
+    """Is `p` inside the temp directory THIS suite's isolation block made? False outside such a block."""
+    import tempfile
+    td = tempfile.tempdir
+    if p is None or not td or not os.path.basename(td).startswith("fixture-tmp-"):
+        return False
+    real, base = os.path.realpath(p), os.path.realpath(td)
+    return real != base and real.startswith(base + os.sep)
+
+
+def serve_state() -> tuple[SourceSetup, CopyFetcher | None]:
+    """This server's SourceSetup and fetcher, made on first use. A preview server has no fetcher: it serves its
+    own worktree as is. The fetcher's sync is `regen-pages.refresh_serve_copy` on the root's own checkout."""
+    with _STATE_GUARD:
+        # Keyed by ROOT: observed once per served root (the suite swaps ROOT to temp roots).
+        # The key is written LAST, so an observation that raised is made again, never left half-recorded.
+        if _STATE.get("root") != ROOT:
+            setup = source_setup(ROOT, _regen().serve_copy_path())
+            _STATE["setup"] = setup
+            _STATE["fetcher"] = (CopyFetcher(lambda: _regen().refresh_serve_copy(setup.checkout))
+                                 if setup.mode == "main" and setup.checkout is not None
+                                 and (not _IN_SUITE or (_suite_owns(setup.checkout) and _suite_owns(setup.copy)))
+                                 else None)
+            _STATE["root"] = ROOT
+        return _STATE["setup"], _STATE["fetcher"]  # type: ignore[return-value]
+
+
+def page_body(served: Served) -> bytes:
+    """The bytes sent for a served page: the decision's bytes, then — for HTML — the yellow bar when master's page
+    hides local edits, the source footer, and the live-reload client. All APPENDED, so a page lacking `</body>`
+    gets them. The bar's link is built from the page's own path, never the raw request (r1 Claude F6)."""
+    body = served.body
+    if pathlib.PurePosixPath(served.rel).suffix.lower() != ".html":
+        return body
+    extra = ""
+    if served.bar:
+        extra += local_bar("/" + urllib.parse.quote(served.rel) + "?" + LOCAL_QUERY)
+    extra += source_footer(served.label)
+    return body + extra.encode() + RELOAD_JS.encode()
+
+
 # The live-reload client. INJECTED BY THE SERVER at send time, never written into the page.
 #
 # WHY INJECTED RATHER THAN AUTHORED INTO THE HTML. The question tray is lifted verbatim from one
@@ -1186,7 +1802,20 @@ RELOAD_JS = """
   // cannot reach the server we cannot trust the staleness answer either.
   var serverMsg = '';   // owned by poll()      — "I cannot reach the server"
   var staleMsg  = '';   // owned by pollStale() — "the output is behind its source"
-  function render() { say(serverMsg || staleMsg); }
+  //
+  // ⛔ AND A THIRD WRITER THE 09-02 FIX DID NOT SEE: THE REFRESH BUTTON — backlog #502. Its
+  // handler (page_chrome.py) writes "rebuilding…" into this span, and render() blanked it on the
+  // next 2 s poll. MEASURED 2026-11-04 in Chrome: blank at 0.85 s, reload at 7.9 s, so the click
+  // looked dead and the owner clicked twice. The button's text is the answer to what the reader
+  // just DID, so it outranks the stale warning; the handler marks it with `data-refresh`, and a
+  // reload (the only way a rebuild ends well) clears the mark with the page.
+  // ⚠ BUT NOT THE OUTAGE — r1 CODEX MEDIUM. The first version put the claim FIRST, and a claim
+  // never expires: a rebuild left hanging, or one that failed, then hid "server not responding"
+  // for as long as the page stayed open. An unreachable server outranks everything, as above.
+  function render() {
+    var s = document.getElementById('chrome-refresh-say');
+    say(serverMsg || (s && s.getAttribute('data-refresh')) || staleMsg);
+  }
   var misses = 0;
   // ⛔ NOT 1. A single failed poll is a blip — a laptop waking, a restart mid-request — and
   // shouting on the first one trains the reader to ignore the message, which is worse than
@@ -1293,17 +1922,41 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
-        if path == "/":
-            return self._send(200, index_html(ROOT).encode(), "text/html; charset=utf-8")
-        if path == "/latest":
-            target = latest_target(ROOT)
+        if path in ("/", "/latest"):
+            # ⟳ backlog #627 r1 (Codex 3): both copies' pages, so a page merged but not in the working tree is
+            # listed and can be /latest. The index names its source too.
+            # ⟳ r2 (Codex M3): both routes POKE the fetcher first, exactly as a page GET does, and the index carries
+            # the fetcher's note (a failed fetch, one still running) — so a server opened on `/` alone still sees
+            # a merge, and a failed fetch is never silent on the page that lists everything.
+            setup, fetcher = serve_state()
+            if fetcher is not None:
+                fetcher.poke(FETCH_WAIT)
+            note = fetcher.note() if fetcher else ""
+            pages, source = page_list(setup)
+            source = " · ".join(x for x in (source, note) if x)
+            if path == "/":
+                return self._send(200, index_html(ROOT, pages, source).encode(), "text/html; charset=utf-8")
+            target = latest_of(pages)
             if not target:
-                return self._send(404, b"no explainers yet", "text/plain; charset=utf-8")
+                return self._send(404, " · ".join(x for x in ("no explainers yet", note) if x).encode(),
+                                  "text/plain; charset=utf-8")
             self.send_response(302)
             self.send_header("Location", target)
             self.end_headers()
             return
-        verdict, info = retirement(path, ROOT)
+        # ⟳ backlog #627 r1 (Codex 4): the retirement verdict comes from `decide`, after master is consulted, for
+        # every route but the server's own endpoints — a local symlink can no longer hide master's valid page.
+        # ⚠ The server's own endpoints never call `serve_state` here: `/src/` must not read the environment.
+        own = path in ("/_rev", "/_stale") or path.startswith("/src/")
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        decision = None
+        if not own:
+            setup, fetcher = serve_state()
+            if fetcher is not None:
+                fetcher.poke(FETCH_WAIT)
+            decision = decide(path, setup, note=fetcher.note() if fetcher else "",
+                              want_local=LOCAL_QUERY in query.split("&"))
+        verdict, info = (decision.verdict, decision.info) if decision is not None else retirement(path, ROOT)
         if verdict == "retired":
             self.send_response(302)
             self.send_header("Location", info)
@@ -1327,10 +1980,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # report on a file this server would already serve (self-tested: rejects `/secret.env`
             # and `/../../etc/hosts` the same as `safe_path` does).
             qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
-            target = resolve_page((qs.get("p") or [""])[0], ROOT)
-            if target is None or not target.is_file():
+            # ⟳ backlog #627: through `served_page`, the GET's own decision, so a copy that moved (or a page that
+            # flipped between master's and the local one) changes the revision and reloads an open tab. The poll
+            # also POKES the fetcher without waiting, so an open tab sees a merge within FETCH_EVERY s.
+            # ⟳ r1 (Codex 6): a FAILED fetch is part of the revision, so an open page reloads into the warning. A
+            # fetch merely RUNNING is not: it starts once a minute, and would reload every open tab twice a minute.
+            setup, fetcher = serve_state()
+            if fetcher is not None:
+                fetcher.poke(0)
+            failed = fetcher.failure() if fetcher else ""
+            served = served_page((qs.get("p") or [""])[0], setup, note=failed)
+            if served is None:
                 return self._send(404, b"no such page", "text/plain; charset=utf-8")
-            return self._send(200, revision(target).encode(), "text/plain; charset=utf-8")
+            return self._send(200, f"{served.rev}:{served.kind}{':fetch-failed' if failed else ''}".encode(),
+                              "text/plain; charset=utf-8")
         if path == "/_stale":
             # "Is this page BEHIND its source?" — a DIFFERENT question from `/_rev`'s "has this
             # page changed?", which is why it is a different endpoint rather than a fourth field
@@ -1383,23 +2046,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, text.encode(), "text/plain; charset=utf-8")
             rel = str(target.relative_to(resolve_or_none(root) or root))
             return self._send(200, source_shell(rel, text).encode(), "text/html; charset=utf-8")
-        resolved = resolve_page(path, ROOT)
-        if resolved is None or not resolved.is_file():
+        # ⟳ backlog #627: master's copy, the working tree, or master's page under a yellow bar — `decide`, above,
+        # after a due fetch was started and waited on for at most FETCH_WAIT s. Its bytes were read ONCE, there.
+        served = decision.served if decision is not None else None
+        if served is None:
             return self._send(404, b"not found", "text/plain; charset=utf-8")
         ctype = {".html": "text/html; charset=utf-8", ".md": "text/markdown; charset=utf-8",
                  ".css": "text/css", ".js": "text/javascript",
-                 ".svg": "image/svg+xml", ".png": "image/png"}[resolved.suffix.lower()]
-        body = resolved.read_bytes()
-        if resolved.suffix.lower() == ".html":
-            body += RELOAD_JS.encode()   # appended, so a page that lacks </body> still gets it
-        return self._send(200, body, ctype)
+                 ".svg": "image/svg+xml", ".png": "image/png"}[pathlib.PurePosixPath(served.rel).suffix.lower()]
+        return self._send(200, page_body(served), ctype)
 
     def _regenerate(self, payload: dict) -> None:
         """Rebuild one derived page. Backlog #77.
 
         ⚠ THE ALLOW-LIST IS THE WHOLE SECURITY ARGUMENT, and it is a dict of literals:
         the caller names a KEY, never a path, an argument or a command. Nothing the
-        caller sends reaches the command line — a request for an unknown page is a 400
+        caller sends reaches the command line but a string PROVEN to be one of those keys
+        (backlog #408: the runner's `--page <key>`) — a request for an unknown page is a 400
         naming the legal set, not an attempt to resolve it. `shell=False` (a list argv)
         and a timeout are the belt to that brace.
 
@@ -1415,14 +2078,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(400, body.encode("utf-8"), "text/plain; charset=utf-8")
         with REGEN_LOCKS_GUARD:
             lock = REGEN_LOCKS.setdefault(want, threading.Lock())
+        limit = REGEN_TIMEOUTS.get(want, REGEN_TIMEOUT)
+        # ⛔ review r2 X2: the bound is the CLICK's, not the subprocess's. The deadline is taken BEFORE the
+        # lock, the lock wait is bounded by it, and the rebuild gets only what is left — so a second click
+        # waiting on a first answers with the timeout at the bound, never a full bound later.
+        deadline = time.monotonic() + limit
         try:
-            with lock:
-                r = subprocess.run([sys.executable, str(SCRIPTS / script)],
-                                   capture_output=True, text=True, timeout=REGEN_TIMEOUT)
+            if not lock.acquire(timeout=limit):
+                raise subprocess.TimeoutExpired(cmd=script, timeout=limit)
+            try:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise subprocess.TimeoutExpired(cmd=script, timeout=limit)
+                # ⛔ backlog #408: through the ONE runner, which builds from a fresh origin/master tree
+                # and says CANNOT RUN (exit 2) rather than build from this server's own, possibly stale,
+                # checkout. `want` reaches the argv only once `script` proved it an allow-list KEY (a
+                # list argv, no shell), and the runner checks it against the same table again.
+                # ⛔ review r1 X3: in a process group of its own, stopped with SIGTERM on a timeout, so the runner
+                # ends its generators before it lets go of the lock — see `run_in_group`.
+                r = REGEN_EXEC([sys.executable, str(SCRIPTS / REGEN_RUNNER), "--page", want], timeout=left)
+            finally:
+                lock.release()
         except subprocess.TimeoutExpired:
             # A timeout is NOT a failure to report as "rebuilt". The reader is told the
             # page may now be half-written, because silence here reads as success.
-            return self._send(504, (f"{script} did not finish in {REGEN_TIMEOUT}s — the page "
+            return self._send(504, (f"{script} did not finish in {limit}s — the page "
                                     f"may be unchanged. NOT REBUILT.").encode(),
                               "text/plain; charset=utf-8")
         if r.returncode != 0:
@@ -1527,6 +2207,685 @@ def status() -> int:
 
 # ── self-test ────────────────────────────────────────────────────────────────────────────────────
 
+def _serve_copy_cases(case) -> None:
+    """backlog #627's cases: which copy a page is served from, the footer naming it, the yellow bar, the fetch's
+    rate limit and bound, and a failed fetch SAID. Real git, in temp repositories only — `origin` is a bare repo
+    on disk, so no network is reached and no port is bound. Every rule is asserted at two distinct inputs."""
+    import tempfile as _tf
+    G = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "init.defaultBranch=master",
+         "-c", "advice.detachedHead=false"]
+
+    def git(cwd, *a):
+        r = subprocess.run([*G, *a], cwd=cwd, capture_output=True, text=True, timeout=30)
+        if r.returncode:
+            raise RuntimeError(f"fixture git {a} failed: {r.stderr.strip()[:200]}")
+        return r.stdout.strip()
+
+    def _real_fetch_refused():
+        calls = []                     # a recording git that refuses: even a mutant cannot reach the real repo
+
+        def no_real_git(args, cwd, timeout=None):
+            calls.append(args[:2])
+            return 1, "must not run"
+        try:
+            _regen().refresh_serve_copy(REPO, git=no_real_git)
+        except _regen().CannotRun as exc:
+            return "never fetches" in str(exc) and calls == []
+        return False
+    case("⛔ #627: inside the suite the server's fetch REFUSES the real repository (no case fetches into it)",
+         _real_fetch_refused)
+
+
+    # ── choose_source: the rule, each outcome against an ADJACENT input that must not give it ──
+    case("#627 choose_source: a page master does not have is the working tree's",
+         lambda: (choose_source(b"L", b"L", None), choose_source(b"L", b"L", b"L")) == ("local", "master"))
+    case("#627 choose_source: no local file, or one equal to master's, is master's page",
+         lambda: (choose_source(None, None, b"M"), choose_source(b"M", b"B", b"M"), choose_source(b"X", b"B", b"M"))
+         == ("master", "master", "master+bar"))
+    case("#627 choose_source: an UNEDITED page (local == base) in a checkout behind master is master's, no bar",
+         lambda: (choose_source(b"B", b"B", b"M"), choose_source(b"E", b"B", b"M")) == ("master", "master+bar"))
+    case("#627 choose_source: an edit is overlaid ONLY when its base equals master's copy",
+         lambda: (choose_source(b"E", b"M", b"M"), choose_source(b"E", b"B", b"M")) == ("overlay", "master+bar"))
+
+    # ── source_label: each source named, distinctly ──
+    _S, _H = "a" * 40, "b" * 40
+    case("#627 source_label: master, overlay, preview and an unmerged page each name their source",
+         lambda: [source_label(k, _S, _H) for k in ("master", "overlay", "preview", "local")]
+         == [f"master @ {_S[:12]}", f"local edits on {_S[:12]}", PREVIEW_LABEL,
+             f"local edits on {_H[:12]} — not on master"])
+    case("#627 source_label: a note (a failed fetch) is appended, never dropped",
+         lambda: (source_label("master", _S, _H, note="⚠ X"), source_label("master", _S, _H))
+         == (f"master @ {_S[:12]} · ⚠ X", f"master @ {_S[:12]}"))
+    _S2, _H2 = "c" * 40, "d" * 40
+    case("#627 source_label: OTHER shas are the ones named; `standing` turns an unmerged page into a generated one",
+         lambda: (source_label("overlay", _S2, _H2), source_label("asked-local", _S2, _H2),
+                  source_label("local", _S2, _H2, standing=True), source_label("local", _S2, _H2, standing=False))
+         == (f"local edits on {_S2[:12]}",
+             f"local edits on {_H2[:12]} — NOT master's page (its base is not master's copy)",
+             "generated from origin/master — its build commit is in the page's bar",
+             f"local edits on {_H2[:12]} — not on master"))
+
+    def _copy_heads():
+        with _tf.TemporaryDirectory() as td:
+            t = pathlib.Path(td)
+            (t / "detached" / ".git").mkdir(parents=True)
+            (t / "detached" / ".git" / "HEAD").write_text(_S2 + "\n")
+            (t / "on-branch" / ".git").mkdir(parents=True)
+            (t / "on-branch" / ".git" / "HEAD").write_text("ref: refs/heads/master\n")
+            return [copy_head(t / d) for d in ("detached", "on-branch", "absent")]
+    case("#627 copy_head: a detached copy's sha; None for a copy on a branch, or no copy at all",
+         lambda: _copy_heads() == [_S2, None, None])
+
+    # ── CopyFetcher: at most one fetch per window, a bounded wait, a failure SAID ──
+    def _rate():
+        now, calls = [0.0], []
+        f = CopyFetcher(lambda: calls.append(1) or "c" * 40, every=60, clock=lambda: now[0])
+        out = [f.poke(5)]
+        now[0] = 59.0
+        out.append(f.poke(5))
+        now[0] = 60.0
+        out.append(f.poke(5))
+        return out, len(calls)
+    case("#627 fetcher: at most ONE fetch per minute — a second load inside the window fetches nothing",
+         lambda: _rate() == ([True, False, True], 2))
+
+    def _bounded():
+        gate = threading.Event()
+        f = CopyFetcher(lambda: gate.wait(10) and "d" * 40, every=60)
+        t0 = time.monotonic()
+        started = f.poke(0.2)
+        took = time.monotonic() - t0
+        gate.set()
+        f.thread.join(5)
+        return started, took < 2.0, f.sha == "d" * 40
+    case("#627 fetcher: a slow fetch never holds the page load past its bound, and still lands",
+         lambda: _bounded() == (True, True, True))
+
+    def _fails():
+        now, boom = [0.0], [True]
+
+        def sync():
+            if boom[0]:
+                raise RuntimeError("remote unreachable")
+            return "e" * 40
+        f = CopyFetcher(sync, every=60, clock=lambda: now[0])
+        f.poke(5)
+        said = f.note()
+        boom[0], now[0] = False, 61.0
+        f.poke(5)
+        return ("FAILED" in said and "remote unreachable" in said and "last copy" in said), f.note()
+    case("#627 fetcher: a FAILED fetch is said on every page until a fetch succeeds",
+         lambda: _fails() == (True, ""))
+
+    # ── end to end, real git: a bare origin, a main checkout behind it, the serve copy ──
+    def world(fn):
+        with _tf.TemporaryDirectory() as td:
+            t = pathlib.Path(os.path.realpath(td))
+            origin, work, main = t / "origin.git", t / "work", t / "main"
+            git(t, "init", "--quiet", "--bare", str(origin))
+            git(t, "clone", "--quiet", str(origin), str(work))
+            (work / "docs" / "explainers").mkdir(parents=True)
+            (work / "docs" / "explainers" / "2026-01-01-topic-a.html").write_text("<p>A v1</p>")
+            git(work, "add", "-A")
+            git(work, "commit", "--quiet", "-m", "a v1")
+            git(work, "push", "--quiet", "origin", "HEAD:master")
+            git(t, "clone", "--quiet", str(origin), str(main))
+            copy = t / "cache" / "master"
+            regen = _regen()
+            root = main / "docs" / "explainers"
+
+            def merge(name, text, msg):
+                (work / "docs" / "explainers" / name).write_text(text)
+                git(work, "add", "-A")
+                git(work, "commit", "--quiet", "-m", msg)
+                git(work, "push", "--quiet", "origin", "HEAD:master")
+                return git(work, "rev-parse", "HEAD")
+
+            def sync():
+                return regen.refresh_serve_copy(main, copy)
+            return fn(t=t, origin=origin, work=work, main=main, root=root, copy=copy, merge=merge, sync=sync,
+                      setup=lambda: source_setup(root, copy))
+
+    def _merged_within_a_minute(merge, sync, setup, **_):
+        now = [0.0]
+        f = CopyFetcher(sync, every=FETCH_EVERY, clock=lambda: now[0])
+        f.poke(30)
+        sha = merge("2026-01-02-topic-b.html", "<p>B merged</p>", "b")
+        now[0] = FETCH_EVERY - 1
+        f.poke(30)
+        before = served_page("/2026-01-02-topic-b.html", setup())
+        now[0] = FETCH_EVERY
+        f.poke(30)
+        after = served_page("/2026-01-02-topic-b", setup())
+        return (before is None, after is not None and after.body.decode() == "<p>B merged</p>",
+                after is not None and after.label == f"master @ {sha[:12]}")
+    case("⭐ #627 FAILS-IF: a page merged to origin/master is served from the next fetch, within a minute",
+         lambda: world(lambda **w: _merged_within_a_minute(**w)) == (True, True, True))
+
+    def _labels(root, main, merge, sync, setup, **_):
+        sync()
+        page = root / "2026-01-01-topic-a.html"
+        clean = served_page("/2026-01-01-topic-a.html", setup())
+        clean_text = clean.body.decode()           # read NOW: the copy moves below
+        page.write_text("<p>A edited on master's base</p>")
+        overlay = served_page("/2026-01-01-topic-a.html", setup())
+        sha2 = merge("2026-01-01-topic-a.html", "<p>A v2</p>", "a v2")
+        sync()                                        # master moves on; the edit's base is now behind
+        barred = served_page("/2026-01-01-topic-a.html", setup())
+        asked = served_page("/2026-01-01-topic-a.html", setup(), want_local=True)
+        head = _git_line(["rev-parse", "HEAD"], main)
+        return [(clean.kind, clean.label, clean_text),
+                (overlay.kind, overlay.label, overlay.body.decode()),
+                (barred.kind, barred.label, barred.body.decode(), barred.bar),
+                (asked.kind, asked.body.decode(), asked.label.startswith(f"local edits on {head[:12]}"))], sha2
+
+    def _labels_want(got):
+        rows, sha2 = got
+        return (rows[0][0] == "master" and rows[0][2] == "<p>A v1</p>" and rows[0][1].startswith("master @ ")
+                and rows[1][0] == "overlay" and rows[1][1].startswith("local edits on ")
+                and rows[1][2] == "<p>A edited on master's base</p>"
+                and rows[2] == ("master+bar", f"master @ {sha2[:12]}", "<p>A v2</p>", True)
+                and rows[3] == ("asked-local", "<p>A edited on master's base</p>", True))
+    case("#627: unedited → master @ sha; edit on master's base → overlaid; base behind master → master's page + bar",
+         lambda: _labels_want(world(lambda **w: _labels(**w))))
+
+    def _bar_html(root, sync, setup, merge, **_):
+        sync()
+        (root / "2026-01-01-topic-a.html").write_text("<p>edit</p>")
+        merge("2026-01-01-topic-a.html", "<p>A v2</p>", "a v2")
+        sync()
+        u = "/2026-01-01-topic-a.html"
+        barred = page_body(served_page(u, setup())).decode()
+        (root / "2026-01-01-topic-a.html").unlink()
+        plain = page_body(served_page(u, setup())).decode()
+        return ('id="ex-local-bar"' in barred and f"?{LOCAL_QUERY}" in barred,
+                'id="ex-local-bar"' in plain, 'id="ex-source"' in barred and 'id="ex-source"' in plain)
+    case("#627: the yellow bar (linking ?source=local) is on master's page ONLY over hidden local edits",
+         lambda: world(lambda **w: _bar_html(**w)) == (True, False, True))
+
+    def _every_page_footed(root, sync, setup, **_):
+        sync()
+        (root / "2026-01-03-brief-unmerged.html").write_text("<p>new</p>")
+        (root / "dashboard.html").write_text("<p>generated</p>")
+        (root / "x.css").write_text("p{}")
+        out = []
+        for u in ("/2026-01-01-topic-a.html", "/2026-01-03-brief-unmerged.html", "/dashboard"):
+            sp = served_page(u, setup())
+            out.append(page_body(sp).decode().count('id="ex-source"') == 1 and sp.label.strip() != "")
+        sp = served_page("/x.css", setup())
+        out.append("ex-source" in page_body(sp).decode())
+        labels = [served_page(u, setup()).label for u in ("/2026-01-03-brief-unmerged.html", "/dashboard")]
+        return (out, labels[0].startswith("local edits on ") and "not on master" in labels[0],
+                labels[1].startswith("generated from origin/master"))
+    case("⭐ #627 FAILS-IF: every served HTML page's footer names its source — master, unmerged, generated",
+         lambda: world(lambda **w: _every_page_footed(**w)) == ([True, True, True, False], True, True))
+
+    def _preview(t, main, root, copy, sync, **_):
+        sync()
+        wt = t / "wt"
+        git(main, "worktree", "add", "--quiet", "--detach", str(wt))
+        (wt / "docs" / "explainers" / "2026-01-01-topic-a.html").write_text("<p>agent draft</p>")
+        pv = served_page("/2026-01-01-topic-a.html", source_setup(wt / "docs" / "explainers", copy))
+        mn = served_page("/2026-01-01-topic-a.html", source_setup(root, copy))
+        return (pv.kind, pv.label, pv.body.decode()), mn.kind
+    case("#627: a server whose root is in a LINKED worktree serves it as is, labelled PREVIEW",
+         lambda: world(lambda **w: _preview(**w)) == (("preview", PREVIEW_LABEL, "<p>agent draft</p>"), "master"))
+
+    def _setup_names_its_copy(t, root, copy, sync, **_):
+        sync()
+        other = t / "elsewhere" / "master"
+        a, b = source_setup(root, copy), source_setup(root, other)
+        sa, sb = served_page("/2026-01-01-topic-a.html", a), served_page("/2026-01-01-topic-a.html", b)
+        return (a.copy == copy, b.copy == other, sa.kind, sb.kind, "NO MASTER COPY" in sb.label)
+    case("#627 source_setup: the copy it is given is the one served from — another path, never made, has no copy",
+         lambda: world(lambda **w: _setup_names_its_copy(**w)) == (True, True, "master", "no-copy", True))
+
+    def _failed_fetch_keeps_copy(origin, copy, sync, merge, setup, **_):
+        first = sync()
+        merge("2026-01-02-topic-b.html", "<p>B</p>", "b")
+        origin.rename(origin.with_name("gone.git"))
+        f = CopyFetcher(sync, every=60)
+        f.poke(30)
+        sp = served_page("/2026-01-01-topic-a.html", setup(), note=f.note())
+        return (copy_head(copy) == first, "FAILED" in sp.label and sp.label.startswith(f"master @ {first[:12]}"),
+                served_page("/2026-01-02-topic-b.html", setup()) is None)
+    case("#627: a FAILED fetch serves the LAST copy and the footer says so",
+         lambda: world(lambda **w: _failed_fetch_keeps_copy(**w)) == (True, True, True))
+
+    def _no_fetcher_in_suite(root, t, **_):
+        # ⟳ r1 (Codex 5, Claude F1): a WHITELIST. The same MAIN-mode checkout gets a fetcher while it is inside the
+        # temp dir this suite's isolation block made, and NONE once that dir is not the suite's — the shape the real
+        # repository has, and the staged copy in no git repository has too. Building a fetcher fetches nothing.
+        real_root, real_state, real_td = globals()["ROOT"], dict(_STATE), _tf.tempdir
+        out = []
+        try:
+            for td in (real_td, str(t)):                  # the suite's fixture-tmp-* dir; then a dir that is not
+                _tf.tempdir = td
+                globals()["ROOT"] = root
+                _STATE.clear()
+                setup, fetcher = serve_state()
+                out.append((setup.mode, setup.checkout is not None, fetcher is not None))
+            return out
+        finally:
+            _tf.tempdir = real_td
+            globals()["ROOT"] = real_root
+            _STATE.clear()
+            _STATE.update(real_state)
+    case("⛔ #627: inside the suite the server builds a fetcher ONLY for a checkout inside the suite's own temp dir",
+         lambda: world(lambda **w: _no_fetcher_in_suite(**w)) == [("main", True, True), ("main", True, False)])
+
+    def _no_copy_said(setup, **_):
+        sp = served_page("/2026-01-01-topic-a.html", setup())
+        return sp.kind, "NO MASTER COPY" in sp.label
+    case("#627: before the first fetch lands, the working tree is served and the footer SAYS there is no copy",
+         lambda: world(lambda **w: _no_copy_said(**w)) == ("no-copy", True))
+
+    # ══ round 1 (docs/reviews/coordinator/627-serve-master-r1-coordinator.md): one block per finding ══
+
+    # Codex 1, Claude F5-R2: master's bytes come from the copy's OBJECTS. A copy whose file is gone still serves
+    # master's page; a copy whose objects cannot be read is SAID (no-copy), never "not on master".
+    def _damaged_copy(root, copy, sync, merge, setup, **_):
+        sync()
+        merge("2026-01-02-topic-b.html", "<p>B</p>", "b")
+        sync()
+        (copy / "docs" / "explainers" / "2026-01-02-topic-b.html").unlink()
+        file_gone = served_page("/2026-01-02-topic-b.html", setup())
+        alt = copy / ".git" / "objects" / "info" / "alternates"
+        alt.rename(alt.with_name("alternates.off"))
+        said = []
+        for clear in (False, True):          # the tree still cached (its BLOB unreadable); then the tree itself
+            if clear:
+                _TREE_CACHE.clear()
+            a = served_page("/2026-01-01-topic-a.html", setup())
+            said.append((a.kind, "cannot be READ" in a.label, "not on master" in a.label))
+        return (file_gone.kind, file_gone.body.decode()), said, served_page("/2026-01-02-topic-b.html", setup())
+    case("⭐ #627 r1 (Codex 1): a copy missing a FILE serves master's object; unreadable objects are SAID, never "
+         "'not on master'",
+         lambda: world(lambda **w: _damaged_copy(**w))
+         == (("master", "<p>B</p>"), [("no-copy", True, False)] * 2, None))
+
+    # Codex 2, Claude F2: the bytes are read ONCE, when decided — a page deleted after the decision is still sent
+    # whole, and a page gone before it is a 404, never a crash.
+    def _bytes_once(root, sync, setup, **_):
+        sync()
+        page = root / "2026-01-03-brief-unmerged.html"
+        page.write_text("<p>U1</p>")
+        sp = served_page("/2026-01-03-brief-unmerged.html", setup())
+        page.unlink()
+        return ("<p>U1</p>" in page_body(sp).decode(), sp.rev.startswith("l-"),
+                served_page("/2026-01-03-brief-unmerged.html", setup()))
+    case("#627 r1 (Codex 2): a page's bytes are read once, at the decision; a vanished page is missing, not a crash",
+         lambda: world(lambda **w: _bytes_once(**w)) == (True, True, None))
+
+    def _read_local_two():
+        with _tf.TemporaryDirectory() as td:
+            a, b = pathlib.Path(td) / "a.html", pathlib.Path(td) / "b.html"
+            a.write_bytes(b"one")
+            b.write_bytes(b"three")
+            ra, rb = _read_local(a), _read_local(b)
+            return (ra[0], ra[1].endswith(":3"), rb[0], rb[1].endswith(":5"), _read_local(pathlib.Path(td) / "c"))
+    case("#627 r1 _read_local: each file's own bytes and size; None for a file that is not there",
+         lambda: _read_local_two() == (b"one", True, b"three", True, None))
+
+    # Codex 3: `/` and `/latest` list master's pages too.
+    def _index_both(root, sync, merge, setup, **_):
+        before = [n for n, _ in page_list(setup())[0]]
+        merge("2026-02-01-topic-merged.html", "<p>M</p>", "m")
+        sync()
+        old = root / "2026-01-05-brief-local.html"
+        old.write_text("<p>L</p>")
+        os.utime(old, (1_000_000_000, 1_000_000_000))
+        pages, label = page_list(setup())
+        names = [n for n, _ in pages]
+        return ("2026-02-01-topic-merged.html" in before, "2026-02-01-topic-merged.html" in names,
+                "2026-01-05-brief-local.html" in names, latest_of(pages), label.startswith("master @ "))
+    case("⭐ #627 r1 (Codex 3): the index and /latest hold master's pages — a merged page absent from the tree is listed",
+         lambda: world(lambda **w: _index_both(**w)) == (False, True, True, "/2026-02-01-topic-merged.html", True))
+    # Each input of the chooser and the index, VARIED at one call site apiece: the same root under master's copy,
+    # a preview and a missing copy; a note and none; want_local on and off; an explicit page list and source line.
+    def _varied(root, sync, merge, setup, **_):
+        merge("2026-02-01-topic-merged.html", "<p>M</p>", "m")
+        sync()
+        s = setup()
+        preview = SourceSetup("preview", s.root, s.checkout, s.prefix, s.copy)
+        gone = SourceSetup("main", s.root, s.checkout, s.prefix, s.copy.parent / "no-such-copy")
+        lists = [(sorted(n for n, _ in page_list(x)[0]), page_list(x)[1].split(" @ ")[0]) for x in (s, preview, gone)]
+        u = "/2026-02-01-topic-merged.html"
+        ds = [(d.served.kind if d.served else d.verdict, d.served is not None and "WARN-627" in d.served.label)
+              for d in (decide(u, s, note="WARN-627", want_local=False), decide(u, preview, note="", want_local=True),
+                        decide(u, gone, note="WARN-627", want_local=True),
+                        decide("/2026-01-01-topic-a.html", s, want_local=True),
+                        decide("/2026-01-01-topic-a.html", s, want_local=False))]
+        ix = index_html(root, [("2026-03-03-topic-given.html", 1.0)], "SOURCE-627")
+        bare = index_html(root, [], "")
+        return lists, ds, ("2026-03-03-topic-given.html" in ix, "SOURCE-627" in ix, "SOURCE-627" in bare,
+                           "2026-03-03-topic-given.html" in bare)
+    case("#627 r1: page_list, decide and index_html each answer to EVERY input — setup, note, want_local, pages, "
+         "source",
+         lambda: world(lambda **w: _varied(**w))
+         == ([(["2026-01-01-topic-a.html", "2026-02-01-topic-merged.html"], "master"),
+              (["2026-01-01-topic-a.html"], PREVIEW_LABEL),
+              (["2026-01-01-topic-a.html"], "the working tree only — master's copy UNAVAILABLE")],
+             [("master", True), ("missing", False), ("missing", False), ("asked-local", False), ("master", False)],
+             (True, True, False, False)))
+    case("#627 r1 latest_of: the newest DATED page, never a standing one; None when there is none",
+         lambda: (latest_of([("dashboard.html", 9.0), ("2026-01-02-x.html", 5.0), ("2026-01-09-y.html", 1.0)]),
+                  latest_of([("dashboard.html", 9.0)])) == ("/2026-01-02-x.html", None))
+
+    # Codex 4: a working-tree symlink (refused locally) no longer hides master's regular page.
+    def _local_link(t, root, sync, setup, **_):
+        sync()
+        (t / "outside.html").write_text("<p>outside</p>")
+        a = root / "2026-01-01-topic-a.html"
+        a.unlink()
+        a.symlink_to(t / "outside.html")
+        (root / "2026-01-04-brief-x.html").symlink_to(t / "outside.html")
+        da, dn = decide("/2026-01-01-topic-a.html", setup()), decide("/2026-01-04-brief-x.html", setup())
+        # `served` may be None (a mutant that refuses before master): a VALUE, never an AttributeError, so the case
+        # fails by its own name and `check-plan-code` can attribute the kill to it (#627 CI attribution fix).
+        return ((da.verdict, da.served.kind if da.served else None, da.served.body.decode() if da.served else None),
+                (dn.verdict, dn.served))
+    case("⭐ #627 r1 (Codex 4): a local LINK over a page master has serves master's; one master lacks stays refused",
+         lambda: world(lambda **w: _local_link(**w)) == (("serve", "master", "<p>A v1</p>"), ("refused", None)))
+
+    # r2 Codex M1 — the CLASS, not the escaping instance: EVERY verdict the working tree produces loses to master's
+    # regular page — a symlink to the retired page, a HARD link to it, an escaping link. Only the retired NAME the
+    # url asks for is policy, decided before master; and a retired link master lacks stays retired.
+    def _local_retired(root, sync, setup, merge, **_):
+        merge("work-lines.html", "<p>work-lines on master</p>", "a retired page master still holds")
+        sync()
+        (root / "work-lines.html").write_text("<p>stale work-lines</p>")
+        a = root / "2026-01-01-topic-a.html"
+        a.unlink()
+        a.symlink_to("work-lines.html")
+        (root / "2026-01-04-brief-y.html").symlink_to("work-lines.html")
+        verdicts = []
+        for u in ("/2026-01-01-topic-a.html", "/2026-01-04-brief-y.html", "/work-lines.html", "/WORK-LINES"):
+            d = decide(u, setup())
+            verdicts.append((d.verdict, d.served.kind if d.served else d.info,
+                             d.served.body.decode() if d.served else None))
+        a.unlink()
+        os.link(root / "work-lines.html", a)                   # a HARD link: no symlink chain to walk
+        d = decide("/2026-01-01-topic-a.html", setup())
+        verdicts.append((d.verdict, d.served.kind if d.served else d.info, d.served.body.decode() if d.served else None))
+        return verdicts
+    case("⭐ #627 r2 (Codex M1): a local symlink or HARD link to the retired page loses to master's page; the retired "
+         "NAME and a link master lacks still redirect",
+         lambda: world(lambda **w: _local_retired(**w))
+         # the 3rd and 4th: the retired NAME redirects though master holds a regular `work-lines.html`
+         == [("serve", "master", "<p>A v1</p>"), ("retired", "/work-lines-archive", None),
+             ("retired", "/work-lines-archive", None), ("retired", "/work-lines-archive", None),
+             ("serve", "master", "<p>A v1</p>")])
+
+    # Claude F3 + F5: a COMMITTED local edit is not master's page — it gets the bar, and each label says what it is.
+    def _committed(root, main, work, sync, setup, merge, **_):
+        sync()
+        u = "/2026-01-01-topic-a.html"
+        (root / "2026-01-01-topic-a.html").write_text("<p>A committed</p>")
+        (root / "2026-01-06-brief-mine.html").write_text("<p>mine</p>")
+        git(main, "add", "-A")
+        git(main, "commit", "--quiet", "-m", "local")
+        sp, asked = served_page(u, setup()), served_page(u, setup(), want_local=True)
+        mine = served_page("/2026-01-06-brief-mine.html", setup()).label
+        (work / "docs" / "explainers" / "2026-01-01-topic-a.html").unlink()
+        merge("2026-01-07-topic-c.html", "<p>C</p>", "delete a")
+        sync()
+        git(main, "reset", "--quiet", "--hard", "HEAD~1")   # topic-a unedited again; master has deleted it
+        gone = served_page(u, setup()).label
+        return ((sp.kind, sp.bar, asked.body.decode()), mine.startswith("committed on "),
+                "DELETED on master" in gone)
+    case("⭐ #627 r1 (Claude F3, F5): a committed edit is barred, not hidden; 'committed' and 'deleted on master' said",
+         lambda: world(lambda **w: _committed(**w)) == (("master+bar", True, "<p>A committed</p>"), True, True))
+    case("#627 r1 choose_source: the merge-base ancestor stands in for base ONLY when known",
+         lambda: (choose_source(b"E", b"E", b"M", b"M", ancestor_known=True),
+                  choose_source(b"E", b"E", b"M", b"E", ancestor_known=True),
+                  choose_source(b"E", b"E", b"M", b"M", ancestor_known=False))
+         == ("master+bar", "master", "master"))
+
+    _S3, _H3 = "e" * 40, "f" * 40
+    case("#627 r1 source_label: each `why` names what the working tree's copy IS, at two shas",
+         lambda: [source_label("asked-local", s, h, why=w) for s, h in ((_S3, _H3), (_H3, _S3))
+                  for w in ("same", "behind", "overlay")]
+         + [source_label("local", _S3, _H3, why=w) for w in ("deleted", "committed")]
+         == [f"the working tree on {_H3[:12]} — the same bytes as master @ {_S3[:12]}",
+             f"the working tree on {_H3[:12]} — unedited, but master @ {_S3[:12]} has moved on",
+             f"local edits on {_S3[:12]}",
+             f"the working tree on {_S3[:12]} — the same bytes as master @ {_H3[:12]}",
+             f"the working tree on {_S3[:12]} — unedited, but master @ {_H3[:12]} has moved on",
+             f"local edits on {_H3[:12]}",
+             f"the working tree on {_H3[:12]} — no local edits; this page is DELETED on master @ {_S3[:12]}",
+             f"committed on {_H3[:12]} — not on master"])
+    case("#627 r1 source_label: a no-copy page says master's copy is unavailable, with its note",
+         lambda: (source_label("no-copy", None, _H3, note="⚠ N"), source_label("no-copy", None, _S3))
+         == (f"the working tree on {_H3[:12]} — master's copy UNAVAILABLE, so nothing here is checked against "
+             "master · ⚠ N",
+             f"the working tree on {_S3[:12]} — master's copy UNAVAILABLE, so nothing here is checked against master"))
+
+    # Claude F4: a case-variant URL finds master's page by the tree's own spelling.
+    case("#627 r1 (Claude F4) _true_name: exact wins; else the ONE case-folded match; an ambiguous one is left as is",
+         lambda: (_true_name("A.html", ["A.html", "a.html"]), _true_name("TOPIC.HTML", ["topic.html", "b.html"]),
+                  _true_name("X.html", ["x.html", "X.HTML"]), _true_name("q.html", ["b.html"]))
+         == ("A.html", "topic.html", "X.html", "q.html"))
+
+    def _case_url(sync, setup, **_):
+        sync()
+        sp = served_page("/2026-01-01-TOPIC-A.html", setup())
+        return sp.kind, sp.rel, sp.body.decode()
+    case("#627 r1 (Claude F4): a case-variant URL is served master's page under the tree's spelling",
+         lambda: world(lambda **w: _case_url(**w)) == ("master", "2026-01-01-topic-a.html", "<p>A v1</p>"))
+
+    # Claude F6: the bar's link is built from the page's path — never `//host`, whatever the request said.
+    case("#627 r1 (Claude F6): the bar links /<the page's own path>?source=local, quoted; a non-barred page has none",
+         lambda: [(f'href="{h}"' in page_body(Served(r, b"<p>x</p>", "master+bar", "L", bar, "m-1")).decode())
+                  for r, h, bar in (("a b.html", "/a%20b.html?source=local", True),
+                                    ("d/e.html", "/d/e.html?source=local", True),
+                                    ("a b.html", "/a%20b.html?source=local", False))]
+         == [True, True, False])
+
+    # Claude F7 + Codex 6: a fetch someone ELSE started is never waited on; a running fetch is SAID.
+    def _no_wait_on_others():
+        gate = threading.Event()
+        f = CopyFetcher(lambda: gate.wait(10) and "a" * 40, every=60)
+        first = f.poke(0)
+        t0 = time.monotonic()
+        second = f.poke(3)
+        took = time.monotonic() - t0
+        said, failed = f.note(), f.failure()
+        gate.set()
+        f.thread.join(5)
+        return first, second, took < 1.0, "still running" in said, failed, f.note()
+    case("⭐ #627 r1 (Claude F7, Codex 6): a poke never waits on a fetch it did not start; a running fetch is SAID",
+         lambda: _no_wait_on_others() == (True, False, True, True, "", ""))
+
+    # Claude F9: a bad port is an error said by main, never a traceback at import.
+    case("#627 r1 (Claude F9) port_from: blank → 7391; a port → itself; anything else → an error, never a raise",
+         lambda: [(p, bool(e)) for p, e in map(port_from, ("", " 9001 ", "8000", "abc", "0", "70000", "-5"))]
+         == [(7391, False), (9001, False), (8000, False), (7391, True), (7391, True), (7391, True), (7391, True)])
+
+    # r2 CODEX m4 — the CLASS: every string `isdigit` accepts but `int` refuses or ASCII does not spell, and a digit
+    # run past Python's conversion limit. Each is an error said, never a raise.
+    def _port_class():
+        out = []
+        for raw in ("²", "٣٠٠٠", "１２３", "9" * 4301, "65536", "0" * 4301, "000080", "65535"):
+            try:
+                p, e = port_from(raw)
+                out.append((p, bool(e)))
+            except Exception as exc:
+                out.append(type(exc).__name__)
+        return out + [port_from(" 8080 ")]           # a second call site: surrounding blanks are trimmed
+    case("⭐ #627 r2 (Codex m4) port_from: a Unicode digit, a 4301-digit run → an ERROR, never a raise",
+         lambda: _port_class() == [(7391, True)] * 6 + [(80, False), (65535, False), (8080, "")])
+
+    # r2 Codex M2 — the CHECKOUT the server's fetcher moves is the suite's too. An outside copy path gets NO fetcher
+    # (nothing is cloned there); the suite's own gets one, and it is the path EXPLAINER_SERVE_COPY names (identity:
+    # a `serve_copy_path` that answers anything else — Codex's mutant — reddens this case).
+    def _copy_guard(root, copy, **_):
+        real = (globals()["ROOT"], dict(_STATE), os.environ.get("EXPLAINER_SERVE_COPY"))
+        import shutil
+        import tempfile as _tpf
+        # BESIDE the suite's temp dir (its parent), never inside it — `t` itself is inside it.
+        outside = (pathlib.Path(os.path.dirname(_tpf.gettempdir())) / f"not-the-suites-627-copy-{os.getpid()}"
+                   / "master")
+        globals()["ROOT"] = root
+        try:
+            got = []
+            for c in (outside, copy):
+                os.environ["EXPLAINER_SERVE_COPY"] = str(c)
+                _STATE.clear()
+                setup, f = serve_state()
+                got.append((setup.copy == c, f is not None))
+            return got, os.path.lexists(outside.parent)
+        finally:
+            shutil.rmtree(outside.parent, ignore_errors=True)
+            globals()["ROOT"] = real[0]
+            _STATE.clear()
+            _STATE.update(real[1])
+            if real[2] is None:
+                os.environ.pop("EXPLAINER_SERVE_COPY", None)
+            else:
+                os.environ["EXPLAINER_SERVE_COPY"] = real[2]
+    case("⭐ #627 r2 (Codex M2): inside the suite an outside serve copy gets NO fetcher; the suite's copy is the one "
+         "EXPLAINER_SERVE_COPY names, and gets one",
+         lambda: world(lambda **w: _copy_guard(**w)) == ([(True, False), (True, True)], False))
+
+    def _port_at_import():
+        import tempfile as _tpf
+        with _tpf.TemporaryDirectory() as _pt:
+            env = {**os.environ, "EXPLAINER_SERVE_PORT": "²", "EXPLAINER_SERVE_ROOT": _pt}
+            r = subprocess.run([sys.executable, str(pathlib.Path(__file__).resolve()), "--status"],
+                               capture_output=True, text=True, timeout=60, env=env)
+            return r.returncode != 0, "Traceback" in r.stderr, "is not a port" in r.stderr
+    case("#627 r2 (Codex m4) EXPLAINER_SERVE_PORT=² at import: a FAIL line, not a traceback",
+         lambda: _port_at_import() == (True, False, True))
+
+    # ── Codex 5, Claude F1 + the Claude half's handler mutants: the routes THROUGH do_GET, on a temp clone ──
+    def _drive(url):
+        got = {}
+        h = object.__new__(Handler)
+        h.path = url
+        h._send = lambda code, body, ctype: got.update(code=code, body=body)
+        h.send_response = lambda code: got.update(code=code)
+        h.send_header = lambda k, v: got.update({k: v})
+        h.end_headers = lambda: None
+        h.do_GET()
+        return got.get("code"), got.get("body", b"").decode(errors="replace"), got.get("Location")
+
+    def _through_handler(root, copy, sync, merge, origin, **_):
+        real = (globals()["ROOT"], dict(_STATE), os.environ.get("EXPLAINER_SERVE_COPY"), globals()["FETCH_WAIT"])
+        globals()["ROOT"], globals()["FETCH_WAIT"] = root, 0.05
+        os.environ["EXPLAINER_SERVE_COPY"] = str(copy)
+        _STATE.clear()
+        try:
+            now = [0.0]
+            _setup, f = serve_state()
+            f.clock = lambda: now[0]
+
+            def settle():
+                if f.thread is not None:
+                    f.thread.join(30)
+
+            def tick():
+                now[0] += FETCH_EVERY + 1
+            out = {}
+            sha = merge("2026-01-02-topic-b.html", "<p>B merged</p>", "b")
+            _drive("/2026-01-02-topic-b")
+            settle()
+            out["merged"] = _drive("/2026-01-02-topic-b")[:2]
+            out["index"] = _drive("/")[1]
+            out["latest"] = _drive("/latest")[2]
+            rev1 = _drive("/_rev?p=/2026-01-02-topic-b")[1]
+            (root / "2026-01-01-topic-a.html").write_text("<p>A local edit</p>")
+            merge("2026-01-01-topic-a.html", "<p>A v2</p>", "a v2")
+            merge("2026-01-02-topic-b.html", "<p>B v2</p>", "b v2")
+            tick()
+            _drive("/_rev?p=/2026-01-02-topic-b")
+            settle()
+            rev2 = _drive("/_rev?p=/2026-01-02-topic-b")[1]
+            out["plain"] = _drive("/2026-01-01-topic-a.html")[1]
+            out["asked"] = _drive("/2026-01-01-topic-a.html?source=local")[1]
+            origin.rename(origin.with_name("gone.git"))
+            tick()
+            _drive("/2026-01-02-topic-b")
+            settle()
+            out["failed"] = _drive("/2026-01-02-topic-b")[1]
+            rev3 = _drive("/_rev?p=/2026-01-02-topic-b")[1]
+            gate = threading.Event()
+            _STATE["fetcher"] = CopyFetcher(lambda: gate.wait(10) and sha, every=60)
+            out["pending"] = _drive("/2026-01-02-topic-b")[1]
+            gate.set()
+            # a mutant that never pokes leaves `thread` None: that is the case FAILING, not a crash — a raise would put
+            # ` — AttributeError…` after the case name and `check-plan-code` could not attribute the kill to it.
+            if _STATE["fetcher"].thread is not None:
+                _STATE["fetcher"].thread.join(5)
+            return out, rev1, rev2, rev3, sha
+        finally:
+            globals()["ROOT"], globals()["FETCH_WAIT"] = real[0], real[3]
+            _STATE.clear()
+            _STATE.update(real[1])
+            if real[2] is None:
+                os.environ.pop("EXPLAINER_SERVE_COPY", None)
+            else:
+                os.environ["EXPLAINER_SERVE_COPY"] = real[2]
+
+    def _handler_want(got):
+        out, rev1, rev2, rev3, sha = got
+        return [out["merged"][0] == 200 and "<p>B merged</p>" in out["merged"][1]
+                and f"master @ {sha[:12]}" in out["merged"][1],
+                "2026-01-02-topic-b.html" in out["index"] and 'id="ex-source"' in out["index"],
+                out["latest"] == "/2026-01-02-topic-b.html",
+                rev1.startswith("m-") and rev1.endswith(":master") and rev2 != rev1 and rev2.endswith(":master"),
+                "<p>A v2</p>" in out["plain"] and 'id="ex-local-bar"' in out["plain"],
+                "<p>A local edit</p>" in out["asked"] and 'id="ex-local-bar"' not in out["asked"],
+                "FAILED" in out["failed"] and "<p>B v2</p>" in out["failed"],
+                rev3.endswith(":master:fetch-failed") and rev3.split(":")[0] == rev2.split(":")[0],
+                "still running" in out["pending"]]
+    case("⭐ #627 r1 (Codex 5, Claude F1): THROUGH do_GET on a temp clone — merged page, index, /latest, /_rev moves, "
+         "bar, ?source=local, a failed fetch and a running one all reach the response",
+         lambda: _handler_want(world(lambda **w: _through_handler(**w))) == [True] * 9)
+
+
+    # r2 Codex M3 — the CLASS: EVERY route that reads master's copy pokes the fetcher and says its note. `/` and
+    # `/latest` are driven ALONE on a fresh server state (no page GET primes the copy), and the pokes are COUNTED.
+    def _index_routes_fetch(root, copy, sync, merge, origin, **_):
+        real = (globals()["ROOT"], dict(_STATE), os.environ.get("EXPLAINER_SERVE_COPY"), globals()["FETCH_WAIT"])
+        globals()["ROOT"], globals()["FETCH_WAIT"] = root, 0.05
+        os.environ["EXPLAINER_SERVE_COPY"] = str(copy)
+        try:
+            out = []
+            sync()                                        # the copy at A; then master gains a page B
+            for route, page in (("/latest", "2026-01-02-topic-b.html"), ("/", "2026-01-03-topic-c.html")):
+                merge(page, f"<p>{page}</p>", page)
+                _STATE.clear()                            # a fresh server: nothing has been fetched by it
+                _setup, f = serve_state()
+                pokes, real_poke = [], f.poke
+                f.poke = lambda wait, _rp=real_poke: (pokes.append(wait), _rp(wait))[1]
+                _drive(route)
+                if f.thread is not None:
+                    f.thread.join(30)
+                got = _drive(route)
+                out.append((len(pokes), got[2] if route == "/latest" else page in got[1]))
+            origin.rename(origin.with_name("gone.git"))
+            _STATE.clear()
+            _setup, f = serve_state()
+            _drive("/")
+            if f.thread is not None:
+                f.thread.join(30)
+            out.append("FAILED" in _drive("/")[1])
+            return out
+        finally:
+            globals()["ROOT"], globals()["FETCH_WAIT"] = real[0], real[3]
+            _STATE.clear()
+            _STATE.update(real[1])
+            if real[2] is None:
+                os.environ.pop("EXPLAINER_SERVE_COPY", None)
+            else:
+                os.environ["EXPLAINER_SERVE_COPY"] = real[2]
+    case("⭐ #627 r2 (Codex M3): `/` and `/latest` ALONE poke the fetcher, list a page merged since, and the index "
+         "says a FAILED fetch",
+         lambda: world(lambda **w: _index_routes_fetch(**w))
+         == [(2, "/2026-01-02-topic-b.html"), (2, True), True])
+
+
 def _self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
     import fixture_git
@@ -1535,9 +2894,43 @@ def _self_test() -> int:
 
 
 def _self_test_body() -> int:
+    # ⛔ backlog #627: no case may fetch into the REAL repository — regen-pages' own suite refusal, armed
+    # here, so a case that reaches `serve_state` with the real ROOT gets CANNOT RUN, never a fetch. Armed in
+    # the BODY, not the `with` block: check-fixture-git-isolation reads every function that block calls as the
+    # isolated suite, and `_regen` is also the server's runtime import.
+    _regen()._IN_SUITE = True
+    globals()["_IN_SUITE"] = True
     import tempfile
     ok = 0
     cases: list[tuple[str, Callable[[], object]]] = []
+
+    def _run_reload_js(claimed: bool, stale: bool, down: bool = False) -> str:
+        """Run RELOAD_JS on a stub page whose span reads "rebuilding…"; return the span's text
+        after both polls settle, or a CANNOT RUN string (never equal to any expected value).
+        `down`: every fetch rejects and the interval fires twice more, so three polls miss."""
+        import json as _j
+        js = RELOAD_JS.strip().removeprefix("<script>").removesuffix("</script>")
+        stub = ("var span={textContent:'rebuilding\\u2026',a:{},getAttribute:function(k){return k in this.a?this.a[k]:null;},"
+                "setAttribute:function(k,v){this.a[k]=String(v);}};"
+                "if(CLAIMED)span.setAttribute('data-refresh','rebuilding\\u2026');"
+                "var G=globalThis;G.document={getElementById:function(i){return i==='chrome-refresh-say'?span:null;},"
+                "querySelectorAll:function(){return [];},addEventListener:function(){},activeElement:null,visibilityState:'visible'};"
+                "G.window=G;G.scrollY=0;G.scrollTo=function(){};G.addEventListener=function(){};G.setInterval=function(f){G.tick=f;};"
+                "Object.defineProperty(G,'location',{configurable:true,value:{pathname:'/x.html',reload:function(){}}});"
+                "G.sessionStorage={getItem:function(){return null;},setItem:function(){},removeItem:function(){}};"
+                "G.fetch=function(u){if(DOWN)return Promise.reject(new Error('down'));var t=u.indexOf('/_stale')===0?(STALE?'stale docs/x.md':'fresh'):'r1';"
+                "return Promise.resolve({ok:true,text:function(){return Promise.resolve(t);}});};"
+                ).replace("CLAIMED", _j.dumps(claimed)).replace("STALE", _j.dumps(stale)).replace("DOWN", _j.dumps(down))
+        prog = stub + js + ("\nif(%s){G.tick();G.tick();}" % _j.dumps(down)) + "\nsetTimeout(function(){console.log(JSON.stringify(span.textContent));},50);"
+        try:
+            r = subprocess.run(["node", "-e", prog], capture_output=True, text=True, timeout=30)
+            if r.returncode:
+                return f"CANNOT RUN: node rc={r.returncode} {r.stderr.strip()[:160]}"
+            return _j.loads(r.stdout.strip().splitlines()[-1])
+        except FileNotFoundError:
+            return "CANNOT RUN: node is not on PATH — treat this as NOT RUN"
+        except Exception as e:
+            return f"CANNOT RUN: {e}"
 
     def case(name, fn):
         cases.append((name, fn))
@@ -1875,6 +3268,20 @@ def _self_test_body() -> int:
         # COMMENTS above that quote the old call while explaining why it is gone. A check about
         # code that prose can satisfy is measuring the wrong population; this one strips line
         # comments first. `_stale_no_url_literals` below guards the strip's one precondition.
+        # ⛔ BEHAVIOUR, RUN UNDER NODE — backlog #502. The client blanked the Refresh button's
+        # "rebuilding…" 0.85 s into a 7.9 s rebuild (measured in Chrome), so a click looked dead.
+        # A substring check cannot see that: the defect was a correct-looking render() meeting a
+        # writer in ANOTHER file. So this runs the real RELOAD_JS against a stub page, twice from
+        # one start — span claimed by the Refresh button, and not — and reads the span after both
+        # polls settle. The unclaimed world must still be blanked or warned, or the claim test
+        # would pass on a client that never writes at all.
+        case("a Refresh claim survives both polls; an unclaimed span is still the polls' (run)",
+             lambda: _run_reload_js(claimed=True, stale=False) == "rebuilding\u2026"
+                     and _run_reload_js(claimed=True, stale=True) == "rebuilding\u2026"
+                     and _run_reload_js(claimed=False, stale=False) == ""
+                     and _run_reload_js(claimed=False, stale=True).startswith("docs/x.md has changed")
+                     # r1 CODEX MEDIUM: the claim must NOT outrank an unreachable server
+                     and _run_reload_js(claimed=True, stale=True, down=True).startswith("server not responding"))
         case("no poll clears the whole status line; each owns its own state",
              lambda: "say('')" not in _js_code_only(RELOAD_JS)
                      and "serverMsg" in RELOAD_JS and "staleMsg" in RELOAD_JS)
@@ -2916,19 +4323,19 @@ def _self_test_body() -> int:
         # not at the WIRING.
         def _drive_regen_route(payload_bytes):
             _regen_calls.clear()
-            _real = subprocess.run
+            _real = globals()["REGEN_EXEC"]
             def _spy(*a, **k):
                 _regen_calls.append((a, k))
                 return _ok_runner(*a, **k)
             try:
-                subprocess.run = _spy               # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _spy
                 return _drive_post("/regenerate", payload_bytes)
             finally:
-                subprocess.run = _real              # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _real
         case("POST /regenerate REACHES the allow-list the seven cases above defend",
              lambda: (_drive_regen_route(json.dumps({"page": _page}).encode()),
                       len(_regen_calls) == 1
-                      and _regen_calls[0][0][0][1] == str(SCRIPTS / REGENERABLE[_page]))[1])
+                      and _regen_calls[0][0][0][1:] == [str(SCRIPTS / REGEN_RUNNER), "--page", _page])[1])
 
         # ⛔ r3 MEDIUM 5 — `_send`'s Content-TYPE VALUE was unasserted; only its presence was.
         # `send_header("Content-Type", ctype)` -> a hardcoded `"text/plain"` survived 188/188, i.e.
@@ -2989,15 +4396,15 @@ def _self_test_body() -> int:
             _regen_calls.clear()
             h = object.__new__(Handler)
             h._send = lambda code, body, ctype: got.update(code=code, body=body)
-            _real = subprocess.run
+            _real = globals()["REGEN_EXEC"]
             def _spy(*a, **k):
                 _regen_calls.append((a, k))
                 return runner(*a, **k)
             try:
-                subprocess.run = _spy            # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _spy
                 Handler._regenerate(h, payload)
             finally:
-                subprocess.run = _real           # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _real
             return got.get("code"), got.get("body", b"")
         def _timeout_runner(*_a, **_k):
             raise subprocess.TimeoutExpired(cmd="x", timeout=REGEN_TIMEOUT)
@@ -3041,17 +4448,65 @@ def _self_test_body() -> int:
                          for k in REGENERABLE))
         # ⛔ WHAT WOULD ACTUALLY HAVE RUN — the claim "nothing the caller sends reaches the command
         # line", asserted against the recorded argv rather than against the reply.
-        case("the argv is exactly [python, SCRIPTS/<allow-listed script>] — nothing else",
+        case("the argv is exactly [python, SCRIPTS/regen-pages.py, --page, <allow-list key>] — nothing else",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
-                      _regen_calls[0][0][0] == [sys.executable,
-                                                str(SCRIPTS / REGENERABLE[_page])])[1])
+                      _regen_calls[0][0][0] == [sys.executable, str(SCRIPTS / REGEN_RUNNER),
+                                                "--page", _page])[1])
+        # ⛔ backlog #408: EVERY key reaches the runner as itself — a lookup that resolved all of them to
+        # one page, or passed the generator's script name, would rebuild the wrong page or none.
+        case("backlog #408: every allow-listed page is routed through the runner under its OWN key",
+             lambda: [(_drive_regen({"page": k}, _ok_runner), _regen_calls[0][0][0][1:])[1]
+                      for k in sorted(REGENERABLE)]
+                     == [[str(SCRIPTS / REGEN_RUNNER), "--page", k] for k in sorted(REGENERABLE)])
         case("…and it is a LIST argv with no shell — `shell=False` is the belt to that brace",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
                       isinstance(_regen_calls[0][0][0], list)
                       and not _regen_calls[0][1].get("shell", False))[1])
+        # review r2 X2: the rebuild gets what is LEFT of the click's bound, so it is just under the bound, never over.
+        _bounded = lambda kw, b: b - 1 < (kw.get("timeout") or 0) <= b
         case("…and it is bounded by REGEN_TIMEOUT, not left to run forever",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
-                      _regen_calls[0][1].get("timeout") == REGEN_TIMEOUT)[1])
+                      _bounded(_regen_calls[0][1], REGEN_TIMEOUT))[1])
+        # ⛔ Backlog #497: the goal tree is rebuilt on a click while the owner watches, so it gets
+        # its own 60 s bound — and only it; every other page keeps the default.
+        case("the goal tree's rebuild is bounded by its own 60 s, not the 300 s default",
+             lambda: (_regen_calls.clear(), _drive_regen({"page": "goal-tree"}, _ok_runner),
+                      _bounded(_regen_calls[0][1], 60))[2])
+        case("…and a page with no bound of its own still gets REGEN_TIMEOUT",
+             lambda: "backlog-table" not in REGEN_TIMEOUTS and (
+                 _regen_calls.clear(), _drive_regen({"page": "backlog-table"}, _ok_runner),
+                 _bounded(_regen_calls[0][1], REGEN_TIMEOUT))[2])
+        case("…and a goal-tree timeout names the 60 s it actually waited",
+             lambda: b"did not finish in 60s" in _drive_regen({"page": "goal-tree"}, _timeout_runner)[1])
+        # ⛔ review r2 X2 (Codex's input, scaled): two overlapping clicks. The second waited for the lock and then
+        # got a FULL bound of its own — 79 ms and 159 ms at a 100 ms limit. Scaled to a 1.0 s limit and 0.75 s
+        # rebuilds (the second click 50 ms after the first), unfixed is ~1.45 s; the bound with slack is 1.25 s.
+        def _overlap(limit=1.0, build=0.75):
+            def _sleepy(*_a, timeout=None, **_k):
+                if timeout is not None and timeout < build:
+                    time.sleep(max(timeout, 0))
+                    raise subprocess.TimeoutExpired(cmd="x", timeout=timeout)
+                time.sleep(build)
+                return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+            got: list = []
+            def _click():
+                h = object.__new__(Handler)
+                t0 = time.monotonic()
+                h._send = lambda code, body, ctype: got.append((code, time.monotonic() - t0, body))
+                Handler._regenerate(h, {"page": "goal-tree"})
+            _real, _bound = globals()["REGEN_EXEC"], REGEN_TIMEOUTS["goal-tree"]
+            try:
+                globals()["REGEN_EXEC"], REGEN_TIMEOUTS["goal-tree"] = _sleepy, limit
+                ts = [threading.Thread(target=_click) for _ in range(2)]
+                ts[0].start(); time.sleep(0.05); ts[1].start()
+                for t in ts:
+                    t.join()
+            finally:
+                globals()["REGEN_EXEC"], REGEN_TIMEOUTS["goal-tree"] = _real, _bound
+            return sorted(c for c, _, _ in got), max(e for _, e, _ in got) <= limit + 0.25, got
+        case("⛔ review r2 X2: two overlapping Refresh clicks BOTH answer within the bound — the deadline is taken "
+             "before the lock, and a click that cannot finish answers with the timeout",
+             lambda: _overlap()[:2] == ([200, 504], True))
         # ⛔ THE 500 ARM IS THE SIBLING OF ROUND 1'S OWN HEADLINE, three lines below it, and it was
         # left uncased — *after fixing, SEARCH for the class*, failing one `if` later. A generator
         # that exits non-zero must not report a rebuild.
@@ -3071,6 +4526,69 @@ def _self_test_body() -> int:
         # and ratchet entries are different things, and this is a place they legitimately differ.
         case("…including a SIGNAL-killed generator, whose returncode is negative",
              lambda: _drive_regen({"page": _page}, _sig_runner)[0] == 500)
+
+        # ⛔⛔ review r1 X3: a Refresh TIMEOUT must stop the runner's whole group, SIGTERM first. Real children: a
+        # "runner" that records the SIGTERM it gets, and starts a child in its group that writes a marker 1.5 s on.
+        import tempfile as _tf
+        _gd = pathlib.Path(_tf.mkdtemp(prefix="serve-group-"))
+        (_gd / "runner.py").write_text(
+            "import os, signal, subprocess, sys, time\nd = sys.argv[1]\n"
+            "def term(*_):\n    open(os.path.join(d, 'termed'), 'w').write('1')\n    sys.exit(143)\n"
+            "signal.signal(signal.SIGTERM, term)\n"
+            "subprocess.Popen([sys.executable, '-c', 'import sys, time; time.sleep(1.5); "
+            "open(sys.argv[1], \"w\").write(\"late\")', os.path.join(d, 'late')])\n"
+            "open(os.path.join(d, 'started'), 'w').write('1')\ntime.sleep(30)\n")
+
+        def _group_timeout():
+            try:
+                run_in_group([sys.executable, str(_gd / "runner.py"), str(_gd)], timeout=0.8)
+                raised = False
+            except subprocess.TimeoutExpired:
+                raised = True
+            time.sleep(1.2)
+            return raised, (_gd / "started").exists(), (_gd / "termed").exists(), (_gd / "late").exists()
+        _gt = _group_timeout()
+        case("⛔⛔ review r1 X3: a Refresh timeout sends the RUNNER SIGTERM first — so it can stop its generators "
+             "and release its lock — and still raises the timeout",
+             lambda: _gt[:3] == (True, True, True))
+        case("⛔⛔ review r1 X3: ...and the runner's whole process group is gone: its child never writes its marker",
+             lambda: _gt[3] is False)
+        # ⛔⛔ review r2 F4: a runner whose descendant LEFT the group (`setsid`) and holds its pipes. The Refresh
+        # timeout must still come back within its bounds, never when that descendant chooses to exit.
+        (_gd / "escaper.py").write_text(
+            "import os, subprocess, sys, time\nd = sys.argv[1]\n"
+            "q = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'], start_new_session=True)\n"
+            "open(os.path.join(d, 'escaped.pid'), 'w').write(str(q.pid))\ntime.sleep(30)\n")
+
+        def _escaped_timeout():
+            saved = (globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"])
+            globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"] = 0.3, 0.3
+            t0 = time.monotonic()
+            try:
+                run_in_group([sys.executable, str(_gd / "escaper.py"), str(_gd)], timeout=0.8)
+                raised = False
+            except subprocess.TimeoutExpired:
+                raised = True
+            finally:
+                globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"] = saved
+            took = time.monotonic() - t0
+            try:
+                os.kill(int((_gd / "escaped.pid").read_text()), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
+            return raised, (_gd / "escaped.pid").exists(), took < 5
+        _esc = _escaped_timeout()
+        case("⛔⛔ review r2 F4: a Refresh timeout whose runner left a descendant OUTSIDE its group holding the pipes "
+             "still raises within its bounds — the drain is bounded, never a wait for that descendant's EOF",
+             lambda: _esc == (True, True, True))
+        case("review r1 X3: run_in_group returns what subprocess.run would — exit code, stdout, stderr",
+             lambda: (lambda r: (r.returncode, r.stdout, r.stderr))(run_in_group(
+                 [sys.executable, "-c", "import sys; print('o'); print('e', file=sys.stderr); sys.exit(4)"],
+                 timeout=30)) == (4, "o\n", "e\n"))
+        case("review r1 X3: a Refresh press runs the runner through run_in_group, not a bare subprocess.run",
+             lambda: REGEN_EXEC is run_in_group)
+        import shutil as _sh
+        _sh.rmtree(_gd, ignore_errors=True)
 
         # ── r1 MEDIUM 6: `status()` reported success with nothing listening ──────────────────
         # ⛔ `return 0 if running else 1` -> `return 0` passed **149/149**. This is the one command
@@ -3230,6 +4748,8 @@ def _self_test_body() -> int:
         case("the failure line is `[FAIL] ` at BOTH report sites — the shape check-plan-code parses",
              lambda: _runner_src().count('print(f"  [FAIL] ') == 2 and _BAD not in _runner_src())
 
+        _serve_copy_cases(case)   # backlog #627
+
         for name, fn in cases:
             try:
                 result = fn()          # called EXACTLY once — a case may have side effects
@@ -3261,6 +4781,9 @@ def main() -> int:
     a = ap.parse_args()
     if a.self_test:
         return _self_test()
+    if PORT_ERROR:
+        print(f"FAIL: {PORT_ERROR}", file=sys.stderr)
+        return 2
     if a.stop:
         return stop()
     if a.status:

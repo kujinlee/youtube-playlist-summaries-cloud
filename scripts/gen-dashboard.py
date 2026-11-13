@@ -100,6 +100,11 @@ def _contrast(a: str, b: str) -> float:
 _inline = page_markup.render_inline
 
 
+# Inline markup with NO key links — for text that is itself the body of a link. ONE function,
+# shared with `gen-features-page`'s row links (backlog #470 round 1: the class, not the instance).
+_inline_unlinked = page_markup.render_unlinked
+
+
 def _prose(text: str, drop_headline: bool = False, settled: bool = False,
            resolver: dict | None = None) -> str:
     """Blank-line-separated paragraphs, first one as the LEDE.
@@ -961,10 +966,11 @@ def build(entries, days, prs, pr_error, git_error, window,
                     continue
                 n = int(m.group(1))
                 note = PR_NOTE[pr_state(n, _pr_cache, _pr_budget)]
-                slug = _repo_once(_repo_box)
-                if slug:
-                    body = (f'<a href="https://github.com/{_html.escape(slug)}'
-                            f'/pull/{n}">{_inline(o["text"])}</a>')
+                href = page_markup.key_link("PR", n, _repo_once(_repo_box))
+                if href:
+                    # `_inline_unlinked`: the option text sits inside this link, so a key in it
+                    # must not become a second, nested `<a>`.
+                    body = f'<a href="{_html.escape(href)}">{_inline_unlinked(o["text"])}</a>'
                 else:
                     body = _inline(o["text"])
                 opt_items.append(f'<li><span class="otext">{body}</span>'
@@ -2697,6 +2703,15 @@ def _self_test_body(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          _with_run(lambda *a, **k: _R(0, '{"nameWithOwner":"o/r"}', ""),
                    lambda: repo_slug()), "o/r")
 
+    # ── backlog #470: an option naming a PR links through `page_markup.key_link`, and a key in the
+    # option's own text is NOT nested into a second link inside it. One reply serves both gh calls.
+    _ents470 = parse_entries("## 2026-08-29 [needs-you]\nPick.\n\n**Decide:** Pick.\n"
+                             "- merge PR #7 for backlog #3\n- do not\n<!--tech-->\nx.\n")
+    _opt470 = _with_run(lambda *a, **k: _R(0, '{"nameWithOwner":"o/r","number":7,"state":"OPEN"}', ""),
+                        lambda: _B(_ents470, bucket_days(["2026-08-29"], _ents470, 2, "2026-08-29")))
+    case("a PR option links to its PR, built by key_link",
+         '<a href="https://github.com/o/r/pull/7">merge PR #7 for backlog #3</a>' in _opt470, True)
+
     v, err = _with_run(lambda *a, **k: _R(0, "not json at all", ""), open_prs)
     case("open_prs: unparseable gh output is a could-not-tell, not zero",
          (v, bool(err)), (None, True))
@@ -3473,6 +3488,16 @@ def main(argv: list[str]) -> int:
     a = ap.parse_args(argv)
     if a.self_test:
         return _self_test()
+    # Every `PR #N` this page renders links to GitHub (backlog #470); no GitHub remote -> plain text.
+    page_markup.use_repo(page_markup.origin_repo(ROOT))
+    # A `backlog #N` naming no row is marked text, not a link to nothing (backlog #470).
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location("_gbp_rows", ROOT / "scripts" / "gen-backlog-page.py")
+    _gbp = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_gbp)
+    _warn = _gbp.publish_rows(ROOT)
+    if _warn:
+        print(_warn, file=sys.stderr)
     if a.window < 1:
         print(f"CANNOT RUN — --window must be at least 1, got {a.window}.", file=sys.stderr)
         return 2
@@ -3512,6 +3537,8 @@ def main(argv: list[str]) -> int:
     frag = build(entries, days, prs, pr_error, git_error, a.window, exemptions,
                  exempt_error, _store_label(store), store_error,
                  page_chrome.provenance(_dt.datetime.now().strftime('%Y-%m-%d %H:%M'), ROOT))
+    # Every key left as TEXT by whichever path rendered it becomes a link (backlog #470).
+    frag = page_markup.link_html(frag, page_markup.REPO)
     if a.fragment_only:
         # Codex Medium: the gate was only on the composed path, so a fragment could ship
         # a dead control. Every write of this page goes through it now.

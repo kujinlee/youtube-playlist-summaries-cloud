@@ -160,8 +160,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "_write(path, entries, raw)\n\n\ndef ledger_done",
-        "_write(path, entries, [])\n\n\ndef ledger_done"
+        "_write(path, entries, raw)\n\n\ndef ledger_take",
+        "_write(path, entries, [])\n\n\ndef ledger_take"
       ]
     ],
     "expect": [
@@ -641,8 +641,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "ledger_path=str(main[0] / LEDGER_REL))",
-        "ledger_path=\"\")"
+        "ledger_path=str(main[0] / LEDGER_REL), sweep",
+        "ledger_path=\"\", sweep"
       ]
     ],
     "expect": [
@@ -836,8 +836,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "\"at\": now, \"kind\": kind})",
-        "\"at\": now, \"kind\": KIND_ROUTINE})"
+        "\"at\": now, \"kind\": kind}\n",
+        "\"at\": now, \"kind\": KIND_ROUTINE}\n"
       ]
     ],
     "expect": [
@@ -1103,6 +1103,378 @@
     ],
     "expect": [
       "⭐ r3 R3-5: an --override with no '=', naming no entry, or naming an already-declared entry is REFUSED (rc 2) with a message, and a flag outside its mode is refused; a valid override still proposes (rc 0); nothing was written"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: a gh failure on the issue list reads as none open",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if issues is None:",
+        "        if issues is None and False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: gh failing on the issue list prints CANNOT READ, marked — never silence, never 'none'"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: the open issues are counted but not named",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            for i in issues[:SWEEP_RED_SHOWN]:",
+        "            for i in issues[:0]:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: an open sweep-red issue is in the block, by number, title and url"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: collect() does not read the sweep-red issues",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                  ledger_path=str(main[0] / LEDGER_REL), sweep_red=fetch_sweep_red(root, run))",
+        "                  ledger_path=str(main[0] / LEDGER_REL))"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: collect() — the hook's entry — prints CANNOT READ when only the issue list fails, beside the PRs"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: a gh failure on the issue list is an empty list",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        return None, f\"gh exited {rc}: {out.strip()[:160]}\"",
+        "        return [], None"
+      ]
+    ],
+    "expect": [
+      "...a gh failure is (None, why), and a malformed element is unparseable, never a crash"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: an issue element missing its fields is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "isinstance(i, dict) and {\"number\", \"title\", \"url\"} <= i.keys()",
+        "isinstance(i, dict)"
+      ]
+    ],
+    "expect": [
+      "...a gh failure is (None, why), and a malformed element is unparseable, never a crash"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: the CANNOT READ line is not marked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "\"CHECKED, never as green.\" + mark)",
+        "\"CHECKED, never as green.\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: gh failing on the issue list prints CANNOT READ, marked — never silence, never 'none'"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: a long issue list drops the rest without a count",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            if len(issues) > SWEEP_RED_SHOWN:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "...a long issue list names SWEEP_RED_SHOWN and counts the rest"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: the issue list includes closed issues",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "\"--label\", \"sweep-red\", \"--state\", \"open\", \"--json\", \"number,title,url\"],\n                  root, ISSUE_TIMEOUT)",
+        "\"--label\", \"sweep-red\", \"--json\", \"number,title,url\"],\n                  root, ISSUE_TIMEOUT)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, in the root given, within ISSUE_TIMEOUT"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: the issue reader asks gh in the wrong directory",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                  root, ISSUE_TIMEOUT)",
+        "                  Path(\".\"), ISSUE_TIMEOUT)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, in the root given, within ISSUE_TIMEOUT"
+    ]
+  },
+  {
+    "name": "a goal is stored without its thread (owner 2026-11-05)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if bool(goal) != bool(thread):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "backlog #505: a goal without a thread (or the reverse) is REFUSED, never half-stored"
+  },
+  {
+    "name": "the goal and thread are never stored (owner 2026-11-05)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                       | ({\"goal\": goal, \"thread\": thread} if goal else {}))",
+        "                       )"
+      ]
+    ],
+    "expect": "backlog #505: --goal and --thread are STORED on the entry"
+  },
+  {
+    "name": "--goal outside --add does nothing silently (owner 2026-11-05)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                                   (\"--goal\", args.goal is not None and not args.add),\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: --goal outside --add is a stray flag, CANNOT RUN"
+  },
+  {
+    "name": "backlog #507: --done never checks the thread",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            warn = thread_handoff(closing, main, run) if closing is not None else None",
+        "            warn = None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #507: main --done on an untracked thread removes the entry AND warns on stderr"
+    ]
+  },
+  {
+    "name": "backlog #507: a tracked ref is matched as a prefix (PR #30 inside PR #305)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    tracked = {tuple(r) for g in goals",
+        "    tracked = {(r[0], int(str(r[1])[:2])) for g in goals"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …`PR #30` is not tracked by a line naming `PR #305`, but `PR #305` is"
+    ]
+  },
+  {
+    "name": "backlog #507: an unreadable threads file reads as tracked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if rc != 0:\n        return f\"⚠ thread NOT CHECKED",
+        "    if rc != 0:\n        return None\n        return f\"⚠ thread NOT CHECKED"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …an unreadable threads file says NOT CHECKED, never 'tracked'"
+    ]
+  },
+  {
+    "name": "backlog #507: every thread is treated as tracked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if refs & tracked:",
+        "    if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #507: a thread whose PR no tracked line names is WARNED, naming the line and its goal",
+      "⭐ backlog #507: main --done on an untracked thread removes the entry AND warns on stderr"
+    ]
+  },
+  {
+    "name": "backlog #507: a blank thread is checked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if not isinstance(thread, str) or not thread.strip():",
+        "    if not isinstance(thread, str):"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …an entry with no thread is silent"
+    ]
+  },
+  {
+    "name": "backlog #507: no ref of the thread is looked for, so a tracked thread warns",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    refs = {tuple(r) for r in mine[\"refs\"]}",
+        "    refs = set()"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …a tracked line naming the same ref (a backlog row among others) is silent"
+    ]
+  },
+  {
+    "name": "backlog #507 r1: a tracked line's whole text is searched, not its refs field",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "for t in g[\"threads\"] for r in t[\"refs\"]}",
+        "for t in g[\"threads\"] for r in t[\"refs\"]} | {(k, int(n)) for k, n in re.findall(r\"\\b(PR|backlog) #(\\d+)\", out)}"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r1: a ref named only in a tracked line's WHAT is not a declaration — it warns"
+    ]
+  },
+  {
+    "name": "backlog #507 r2: a threads file goal-tree refuses reads as tracked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    except gt.Malformed as e:\n        return f\"⚠ thread NOT CHECKED",
+        "    except gt.Malformed as e:\n        return None\n        return f\"⚠ thread NOT CHECKED"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r2: a file goal-tree REFUSES (a stray heading) is NOT CHECKED, even when it names the ref"
+    ]
+  },
+  {
+    "name": "backlog #507 r2: an entry thread that does not parse is silent",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if mine is None:\n        return f\"⚠ this entry",
+        "    if mine is None:\n        return None\n        return f\"⚠ this entry"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r2: an entry thread that does not parse says so"
+    ]
+  },
+  {
+    "name": "backlog #507 r3: --done reads the entry before the lock that removes it",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            closing = ledger_take(led, args.done)\n",
+        "            closing = next((e for e in read_ledger(led)[0] if e.get(\"id\") == args.done), None)\n            ledger_take(led, args.done)\n"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r3: --done checks the entry it REMOVED, so a re-add racing it still warns"
+    ]
+  },
+  {
+    "name": "backlog #507 r3: an entry thread written with its bullet is not normalised",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "gt.parse_thread_line(\"- \" + thread.removeprefix(\"- \"))",
+        "gt.parse_thread_line(\"- \" + thread)"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r3: an entry thread written WITH its bullet (`- fix · …`) reads as goal-tree reads it"
+    ]
+  },
+  {
+    "name": "backlog #507 r3: refs compare by number alone",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if refs & tracked:\n        return None\n",
+        "    if {r[1] for r in refs} & {r[1] for r in tracked}:\n        return None\n"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r3: refs compare by KIND too — `backlog #30` does not track `PR #30`"
+    ]
+  },
+  {
+    "name": "backlog #408: REGEN_MAIN_CHECKOUT is ignored, so a generator in its private clone reads the clone's empty ledger",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    named = os.environ.get(MAIN_CHECKOUT_ENV, \"\")",
+        "    named = \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #408: a generator run from its private `clone --shared` names the MAIN checkout the runner put in REGEN_MAIN_CHECKOUT"
+    ]
+  },
+  {
+    "name": "backlog #408: the name in REGEN_MAIN_CHECKOUT is trusted as text, so a linked worktree passes for the main checkout",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if named and os.path.realpath(Path(common).parent) != os.path.realpath(named):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #408: ...but a name that is a LINKED worktree, or relative, is refused, never trusted as text"
+    ]
+  },
+  {
+    "name": "review r3 R3-F2: the same-repository check is skipped, so a REGEN_MAIN_CHECKOUT naming another repository is honoured",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if named and not _same_repository(root, common, run):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F2: a REGEN_MAIN_CHECKOUT naming ANOTHER repository's main checkout is refused, from a clone and from a real checkout alike; and from a non-repository, which no alternates tie to it"
+    ]
+  },
+  {
+    "name": "review r3 R3-F2: any alternates file passes, so a clone of one repository honours another repository's main checkout",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    return any(os.path.isabs(ln.strip()) and os.path.realpath(ln.strip()) == want for ln in lines)",
+        "    return bool(lines)"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F2: a REGEN_MAIN_CHECKOUT naming ANOTHER repository's main checkout is refused, from a clone and from a real checkout alike; and from a non-repository, which no alternates tie to it"
+    ]
+  },
+  {
+    "name": "review r3 R3-F2: a shared common dir is not recognised, so a linked worktree of THIS repository refuses its own main checkout",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if os.path.realpath(own) == os.path.realpath(common):\n        return True\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #408: a generator run from its private `clone --shared` names the MAIN checkout the runner put in REGEN_MAIN_CHECKOUT"
     ]
   }
 ]

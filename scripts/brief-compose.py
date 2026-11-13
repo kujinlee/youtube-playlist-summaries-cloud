@@ -35,7 +35,18 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 194 cases
+    python3 scripts/brief-compose.py --self-test  # 226 cases
+
+DECISION TAGS (backlog #603, 2026-11-11)
+---------------------------------------
+A fragment marks each decision it asks of the owner with `data-decision` on the element where
+it is asked (empty = open; a value = the answer given). The composed page shows a yellow
+`🟨 ✍ DECISION n of N` tag there (green with the answer once answered) and a counter under the
+title, all derived from the marks — see `render_decisions`. `data-decision-label="D7"` makes the tag
+lead with the fragment's own name for it. A mark the owner could not SEE (hidden, inert, in a
+`template`/`noscript`/`select`, on a table row or a raw-text element, or in the collapsed part of a
+`<details>`) is CANNOT RUN. ⚠ Nothing checks that a fragment marks EVERY decision it asks (backlog #615): an unmarked
+question is invisible to the counter.
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -54,6 +65,7 @@ import datetime as _dt
 import os
 import pathlib
 import re
+from html import escape as html_escape
 from html.parser import HTMLParser
 import sys
 import tempfile
@@ -969,7 +981,14 @@ def extract_tray(html: str, fragment_css: str = "") -> tuple[str, str, str]:
             f"brief-compose: incomplete tray in source "
             f"(css={bool(css)} markup={bool(div)} script={idx >= 0 and end > idx})"
         )
-    return css, div.group(0), html[idx:end + len("</script>")]
+    # ⛔ THE LAZY MATCH STOPS ONE `</div>` SHORT on a tray whose inner div nests another (backlog #470,
+    # review round 2): `<div id="tray"><div class="in">…<div class="trow">…</div>\n</div>` ends at the
+    # trow's and the inner div's closes, so every composed page left `#tray` open at `</body>`, and the
+    # next compose lifted that truncated copy verbatim. Closing what the slice opened repairs a truncated
+    # source and a whole one alike, in ONE pass.
+    markup = div.group(0)
+    markup += "</div>" * (len(re.findall(r"<div\b", markup)) - markup.count("</div>"))
+    return css, markup, html[idx:end + len("</script>")]
 
 
 def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
@@ -1064,6 +1083,298 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
             f"<script>{page_chrome.chrome_script()}</script>")
 
 
+# ── BACKLOG #603: DECISION TAGS ─────────────────────────────────────────────────────────
+# The owner, 2026-11-11 06:03: "when we review a document and decisions need to be made based
+# on the document contents, selection card may interfere with the workflow. Just show me
+# decision points clearly as a contract document mark signature lines with yellow tag (and show
+# total number of decisions and remaining number of decisions etc.)"
+#
+# THE MARKUP, in the fragment: any element carrying `data-decision`. No value (or an empty one)
+# is an OPEN decision; a value is the ANSWER that was given, and the tag turns green with it:
+#     <p data-decision>Approve D1 — the audience is a stranger?</p>
+#     <p data-decision="Approved 11-11, keep the stranger">Approve D1 …?</p>
+# It is the same shape as the `data-derived` claims a fragment already carries.
+#
+# ⛔ THE NUMBERS ARE DERIVED, NEVER TYPED. `n of N`, the total and the remaining count all come
+# from ONE list — the parse below — so the counter cannot disagree with the tags it counts, and
+# a fragment has nowhere to type a number. Asked of the PARSE, not a regex: a `data-decision`
+# inside an attribute value or a script string is not markup and is not counted.
+DECISION_ATTR = "data-decision"
+# ⟳ r1 (Claude F5): a fragment that already numbers its decisions its own way ("D7", "Q1") says so
+# with `data-decision-label`, and the tag LEADS with that label. Without it, "DECISION 5" on a page
+# that says "D5" throughout reads as the wrong decision.
+DECISION_LABEL_ATTR = "data-decision-label"
+# ⟳ r1 (Codex 2, Claude F6): the ids are NAMESPACED (`ex-`, like every class this script owns), and
+# a fragment that already uses one is REFUSED — a namespace makes a collision unlikely, the refusal
+# makes it impossible. `getElementById` returns the FIRST match, so a collision sends "next" to the
+# fragment's element instead of the tag.
+DECISION_ID = "ex-decision-{n}"
+
+# ⟳ r1 (Codex 1, Claude F3): A DECISION THE OWNER CANNOT SEE MUST NOT BE COUNTED. A tag inserted as
+# the marked element's first child is invisible, or not at the spot, in three ways — and each is
+# REFUSED at compose time (CANNOT RUN, naming the element), never rendered as a counted, unseen tag:
+#   • ON one of these, the span is dropped, foster-parented out of a table, or shown as literal text
+#     (raw text), or the element has no inside (void);
+_DECISION_REFUSE_ON = frozenset({
+    "table", "thead", "tbody", "tfoot", "tr", "colgroup", "caption",
+    "select", "option", "optgroup", "datalist",
+    "textarea", "title", "xmp", "iframe", "noembed", "noframes", "plaintext",
+    "script", "style", "template", "noscript", "head", "html",
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
+    "track", "wbr",
+})
+#   • INSIDE one of these, nothing is rendered at all (template content is inert; noscript is not
+#     shown with scripting on; a select shows only option text);
+_DECISION_REFUSE_INSIDE = frozenset({"template", "noscript", "select", "datalist"})
+#   • on or inside an element carrying one of these attributes, nothing is rendered.
+_DECISION_HIDING_ATTRS = frozenset({"hidden", "inert"})
+#   • ⟳ r3 (Claude F1): ON or INSIDE `<svg>`/`<math>` — foreign content, whose scope boundaries
+#     (`foreignObject`, `desc`, `mi`, `mtext`, …) this scanner does not model. REFUSED rather than
+#     taught more of the HTML spec: no fragment has a mark there, and a refusal tells the author
+#     to move it. Both are also `_P_SCOPE` stops, so a `<p>` is never closed from inside them.
+_DECISION_REFUSE_FOREIGN = frozenset({"svg", "math"})
+#   • ON a `<details>`, or inside one anywhere but its (first) `<summary>`, the tag is in the part
+#     that is collapsed until the reader opens it. ⟳ r2 (Codex 1, 2): r1 OPENED such a `<details>`
+#     instead, and both ways it could fail were found — a quoted ` open ` in another attribute read
+#     as the `open` attribute, and a named group (`name=`) shows only one of its sections on load.
+#     The auto-open is REMOVED, not patched: a mark there is refused, telling the author to move it
+#     outside the `<details>` or onto its `<summary>` (always shown). No fragment had one.
+# ⟳ r2 (Codex 3): A START TAG THAT CLOSES AN OPEN `<p>`. HTML ends a paragraph implicitly when one
+# of these opens while a `p` is "in button scope" (searching down the stack, stopped by a scope
+# boundary) — so `<p hidden>x<div data-decision>` puts the div BESIDE the hidden p, not inside it.
+# `table` closes a p only in no-quirks mode and is left out: keeping the p can only refuse.
+_P_CLOSERS = frozenset({
+    "address", "article", "aside", "blockquote", "center", "details", "dialog", "dir", "div", "dl",
+    "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "main", "menu", "nav", "ol",
+    "p", "search", "section", "summary", "ul", "h1", "h2", "h3", "h4", "h5", "h6", "pre",
+    "listing", "form", "li", "dd", "dt", "plaintext", "hr", "xmp",
+})
+# ⟳ r3 (Claude F1): `svg`/`math` stand in for the foreign scope boundaries inside them — stopping
+# at the ROOT is a superset of stopping at `foreignObject`/`mi`/…, and keeping a p can only refuse.
+_P_SCOPE = frozenset({"applet", "caption", "html", "table", "td", "th", "marquee", "object",
+                      "template", "button", "svg", "math"})
+# A FORMATTING element closed with the p is RE-OPENED by the browser around what follows (the
+# "active formatting elements"), hidden attribute and all — so a hidden one keeps the p open here.
+_FORMATTING = frozenset({"a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small",
+                         "strike", "strong", "tt", "u"})
+_DECISION_VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+                            "meta", "source", "track", "wbr"})
+
+# ⚠ ITS OWN TOKENS, declared the way SHIM declares its defaults: on `html` (specificity 0,0,1),
+# so a page that wants other colours wins by declaring them on `:root`. The dark half is given
+# BOTH ways — under the OS media query AND keyed on `[data-theme]` — for the reason SHIM's
+# `--em` records: a media query has no specificity, so a toggle keyed only there goes half-live.
+# A pair (ink, background, border) always comes from ONE block, so contrast never mixes halves.
+# Emitted ONLY on a page that has a decision: every other page composes byte-identical to before.
+# ⟳ r1 (Claude F5): `text-transform: none` — a tag inside a page's uppercase label (`.box .lbl`)
+# inherited it, and the owner's recorded answer was shown rewritten in capitals.
+DECISION_CSS = """
+  html { --decide: #3a2c00; --decide-bg: #ffe45c; --decide-br: #c99a00;
+         --decided: #14532d; --decided-bg: #d3f2dc; --decided-br: #3d9a5c; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --decide: #1d1600; --decide-bg: #e0bc2a; --decide-br: #f5d24a;
+         --decided: #c9f0d5; --decided-bg: #1f4d2e; --decided-br: #4fae70; }
+  }
+  :root[data-theme="light"] { --decide: #3a2c00; --decide-bg: #ffe45c; --decide-br: #c99a00;
+         --decided: #14532d; --decided-bg: #d3f2dc; --decided-br: #3d9a5c; }
+  :root[data-theme="dark"] { --decide: #1d1600; --decide-bg: #e0bc2a; --decide-br: #f5d24a;
+         --decided: #c9f0d5; --decided-bg: #1f4d2e; --decided-br: #4fae70; }
+  .ex-decision { display: inline-block; margin: 0 .5em .3em 0; padding: .1em .6em;
+         border: 1px solid var(--decide-br); border-radius: 4px; background: var(--decide-bg);
+         color: var(--decide); font: 700 .78rem/1.5 var(--sans); letter-spacing: .03em;
+         text-transform: none; vertical-align: baseline; scroll-margin-top: 4rem; }
+  .ex-decision-done { border-color: var(--decided-br); background: var(--decided-bg);
+         color: var(--decided); }
+  .ex-decision-count { margin: .6em 0 1em; padding: .5em .8em; border: 2px solid var(--decide-br);
+         border-radius: 6px; background: var(--decide-bg); color: var(--decide);
+         font: 600 .92rem/1.5 var(--sans); text-transform: none; }
+  .ex-decision-count.all-done { border-color: var(--decided-br); background: var(--decided-bg);
+         color: var(--decided); }
+  .ex-decision-count a { color: inherit; }
+"""
+
+
+_DETAILS_REFUSAL = ("it is in a <details> outside its <summary>, which is collapsed until the reader "
+                    "opens it — move the mark outside the <details>, or onto its <summary>")
+
+
+def _foreign_refusal(tag: str) -> str:
+    return (f"it is on or inside a <{tag}>, foreign content whose visibility this check does not "
+            f"model — move the mark outside the <{tag}>")
+
+
+class _DecisionScan(HTMLParser):
+    """Every start tag carrying `data-decision`, in document order, with its position. PURE.
+
+    ⟳ r1: THE SAME PARSE ON EVERY INTERPRETER. Python 3.14's parser treats `textarea`/`title` (and
+    `xmp`, `iframe`, `noembed`, `noframes`) as raw text; 3.12's — the CI pin — treats only `script`
+    and `style` so, and reported the markup INSIDE a textarea as tags, so one fragment had a
+    different N per interpreter. The list below is the browser's raw-text set, and naming it here
+    makes 3.12 parse like 3.14 (3.14 checks this attribute first, so it is honoured there too).
+    Text inside raw text is TEXT, like a script string: never a decision. `<plaintext>` swallows
+    the rest of the document in a browser (and on 3.14), so nothing after one is a decision either.
+
+    Each found entry is (pos, start-tag text, answer, label, refusal-or-None). An ancestor stack is
+    kept from start/end tags, and a `<p>` is closed where HTML closes it implicitly (`_close_p`). Any
+    OTHER element closed implicitly stays on the stack, which errs toward refusal.
+
+    ⚠ THE BOUND, CORRECTED r3 (Claude F2) — r2 said a stale stack "can only cause a refusal, never a
+    silent count", and that is FALSE. An EXPLICIT end tag pops the nearest same-named entry with no
+    scope check and no re-opening of active formatting elements, so MISNESTED hidden markup is
+    counted and not seen: `<p>a<b hidden>c</p><div data-decision>` (the browser re-opens the hidden
+    `b`), `<div><b hidden>x</div><p data-decision>`, `<p hidden>x<object></p><div data-decision>`
+    (the browser ignores that `</p>`), and an end tag crossing a table cell. Every such shape is
+    hostile misnesting; no real fragment has one. Not fixed here by teaching the scanner more of
+    the parser — that is the thrashing filed for a Phase 6 review (docs/backlog.md).
+    """
+
+    CDATA_CONTENT_ELEMENTS = ("script", "style", "xmp", "iframe", "noembed", "noframes",
+                              "textarea", "title")
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.found: list[tuple[tuple[int, int], str, str, str, str | None]] = []
+        self.ids: set[str] = set()
+        # [tag, hides, collapsed (a non-summary child of a <details>), a <summary> already seen]
+        self._stack: list[list] = []
+        self._plaintext = False
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if self._plaintext:
+            return
+        if tag in _P_CLOSERS:
+            self._close_p()
+        names = {k for k, _ in attrs if k}
+        for key, value in attrs:
+            if key in ("id", "name") and value:
+                self.ids.add(value)
+        hides = bool(names & _DECISION_HIDING_ATTRS)
+        text = self.get_starttag_text() or ""
+        collapsed = False
+        if self._stack and self._stack[-1][0] == "details":
+            if tag == "summary" and not self._stack[-1][3]:
+                self._stack[-1][3] = True
+            else:
+                collapsed = True
+        if DECISION_ATTR in names:
+            value = next((v for k, v in attrs if k == DECISION_ATTR), None)
+            label = next((v for k, v in attrs if k == DECISION_LABEL_ATTR), None)
+            refusal = None
+            if tag in _DECISION_REFUSE_ON:
+                refusal = f"it is ON a <{tag}>, where a tag is not shown at the spot"
+            elif hides:
+                refusal = f"its <{tag}> carries {'/'.join(sorted(names & _DECISION_HIDING_ATTRS))}"
+            elif tag == "details" or collapsed:
+                refusal = _DETAILS_REFUSAL
+            elif tag in _DECISION_REFUSE_FOREIGN:
+                refusal = _foreign_refusal(tag)
+            else:
+                for anc, anc_hides, anc_collapsed, _ in self._stack:
+                    if anc in _DECISION_REFUSE_FOREIGN:
+                        refusal = _foreign_refusal(anc)
+                        break
+                    if anc in _DECISION_REFUSE_INSIDE:
+                        refusal = f"it is inside a <{anc}>, which is not rendered"
+                        break
+                    if anc_hides:
+                        refusal = f"it is inside a <{anc}> that is hidden or inert"
+                        break
+                    if anc_collapsed:
+                        refusal = _DETAILS_REFUSAL
+                        break
+            self.found.append((self.getpos(), text, (value or "").strip(),
+                               (label or "").strip(), refusal))
+        if tag == "plaintext":
+            self._plaintext = True
+        elif tag not in _DECISION_VOID:
+            self._stack.append([tag, hides, collapsed, False])
+
+    def _close_p(self) -> None:
+        """Close an open `<p>` the way HTML does when a `_P_CLOSERS` tag starts."""
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == "p":
+                if any(e[0] in _FORMATTING and e[1] for e in self._stack[i + 1:]):
+                    return
+                self._stack = self._stack[:i]
+                return
+            if self._stack[i][0] in _P_SCOPE:
+                return
+
+    def handle_startendtag(self, tag: str, attrs: list) -> None:
+        # A browser ignores the slash on a non-void element: `<div hidden/>` OPENS a hidden div.
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == tag:
+                del self._stack[i:]
+                return
+
+
+def _decision_offset(markup: str, starts: list[int], pos: tuple[int, int], text: str,
+                     what: str) -> int:
+    """The offset of a start tag the parser reported at `pos`, or CANNOT RUN. PURE."""
+    at = starts[pos[0] - 1] + pos[1]
+    if not text or markup[at:at + len(text)] != text:
+        raise SystemExit(f"brief-compose: CANNOT RUN — {what} was not found where the parser "
+                         "reported it; no tag was placed. Treat as NOT RENDERED.")
+    return at
+
+
+def render_decisions(markup: str) -> tuple[str, int, int]:
+    """Tag each `data-decision` element and put the counter under the title. PURE.
+
+    Returns (markup, total, remaining). With no decision the markup comes back UNCHANGED.
+    CANNOT RUN (SystemExit) when a decision would not be visible at its spot, or an id collides.
+    """
+    scan = _DecisionScan()
+    scan.feed(markup)
+    scan.close()
+    total = len(scan.found)
+    if not total:
+        return markup, 0, 0
+    for n, ((line, _col), text, _a, _l, refusal) in enumerate(scan.found, 1):
+        if refusal:
+            raise SystemExit(f"brief-compose: CANNOT RUN — decision {n} of {total} ({text} at "
+                             f"line {line}) would be counted but not seen: {refusal}. Move the "
+                             "mark to a visible element. No page was written; treat as NOT RENDERED.")
+    taken = sorted(scan.ids & {DECISION_ID.format(n=n) for n in range(1, total + 1)})
+    if taken:
+        raise SystemExit(f"brief-compose: CANNOT RUN — the fragment already uses id/name "
+                         f"{', '.join(taken)}, which a decision tag needs; the counter's link would "
+                         "go to the fragment's element. Rename it. Treat as NOT RENDERED.")
+    # `getpos()` counts lines by "\n" only, so the offsets are rebuilt the same way —
+    # `splitlines` would also split on characters the parser does not.
+    starts = [0] + [i + 1 for i, ch in enumerate(markup) if ch == "\n"]
+    edits: dict[int, str] = {}
+    for n, (pos, text, answer, label, _r) in enumerate(scan.found, 1):
+        at = _decision_offset(markup, starts, pos, text, f"decision {n} of {total}")
+        name = f"{html_escape(label)} — DECISION {n} of {total}" if label else f"DECISION {n} of {total}"
+        if answer:
+            tag = (f'<span class="ex-decision ex-decision-done" id="{DECISION_ID.format(n=n)}">'
+                   f"🟩 ✍ {name} — ANSWERED: {html_escape(answer)}</span>")
+        else:
+            tag = (f'<span class="ex-decision ex-decision-open" id="{DECISION_ID.format(n=n)}">'
+                   f"🟨 ✍ {name}</span>")
+        edits[at + len(text)] = tag
+    for at in sorted(edits, reverse=True):
+        markup = markup[:at] + edits[at] + markup[at:]
+    open_ns = [(n, label) for n, (_, _, answer, label, _) in enumerate(scan.found, 1)
+               if not answer]
+    remaining = len(open_ns)
+    if open_ns:
+        first, first_label = open_ns[0]
+        shown = f"{html_escape(first_label)} — DECISION {first}" if first_label else f"DECISION {first}"
+        nxt = f' · next: <a href="#{DECISION_ID.format(n=first)}">{shown}</a>'
+        counter = (f'<div class="ex-decision-count" role="status">✍ <b>{total}</b> decisions on '
+                   f"this page · <b>{remaining}</b> remaining · <b>{total - remaining}</b> "
+                   f"answered{nxt}</div>")
+    else:
+        counter = (f'<div class="ex-decision-count all-done" role="status">✍ <b>{total}</b> '
+                   f"decisions on this page · <b>0</b> remaining · all answered</div>")
+    return page_chrome.place_bar(markup, counter), total, remaining
+
+
 def compose(content: str, title: str, css: str, markup: str, script: str,
             generated_at: str = "") -> str:
     """Content fragment + extracted tray -> one self-contained document."""
@@ -1133,9 +1444,14 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # STRING each guard actually receives. The guards were green about a corpus that did
     # not contain the subject.
     scheme_css = page_chrome.text_style_css()
+    # BACKLOG #603: the decision tags and their counter, derived from `data-decision` in the
+    # fragment. Their stylesheet joins the read corpus below like every other block this
+    # function appends — a block written into the page is checked as part of the page.
+    body, decisions, _remaining = render_decisions(body)
+    decision_css = DECISION_CSS if decisions else ""
     assert_theme_complete(page_css, live_control,
                           css + "\n" + page_chrome.chrome_css() + "\n"
-                          + scheme_css + "\n" + SHIM)
+                          + scheme_css + "\n" + SHIM + "\n" + decision_css)
     chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)
     # ⭐ BACKLOG #376 — THE SWITCHER BY DEFAULT. Its CSS styles only `.ex-body …`, which was
     # hand-authored on 5 of 89 tracked pages, so a fragment that forgot it shipped with Theme
@@ -1160,7 +1476,7 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # fragment's own `#tray …` overrides — which is what `head` legitimately contains, and
     # what a selector scan could never tell apart from the tray's own rules.
     styled = (head + SHIM + "\n" + TRAY_BEGIN + "\n" + css + "\n" + TRAY_END
-              + "\n" + chrome_css + "\n</style>")
+              + "\n" + chrome_css + "\n" + decision_css + "</style>")
     doc = (
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
@@ -1384,6 +1700,14 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     css, markup, script = extract_tray(good)
     case("extracts only tray CSS rules", "#tray{a:1}" in css and "body{d:4}" not in css)
     case("extracts the tray markup", markup.startswith('<div id="tray"'))
+    _nested = good.replace('<textarea id="qbox"></textarea>',
+                           '<textarea id="qbox"></textarea>\n  <div class="trow"><span></span>\n  </div>')
+    _m = extract_tray(_nested)[1]
+    case("a tray whose inner div nests another is extracted CLOSED, every div it opens (r2)",
+         _m.endswith("</div>") and _m.count("<div") == _m.count("</div>") == 3)
+    _m2 = extract_tray(_nested.replace("</div></div><script>", "</div><script>"))[1]
+    case("...and a TRUNCATED source tray, as composed pages carried it, is closed in one pass",
+         _m2.count("<div") == _m2.count("</div>") == 3)
     case("extracts the trailing script", "/questions" in script)
 
     # ⛔ THE FAILURE LINE IS A CONTRACT WITH ANOTHER PROGRAM, pinned here on the PRODUCER side
@@ -2614,6 +2938,266 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
         _written = _self.read_text(encoding="utf-8")
         case("main lifts from the OTHER page, not the one it is overwriting",
              _rc == 0 and "#tray{a:1}" in _written and "#tray{zz:9}" not in _written)
+
+    # ── BACKLOG #603: DECISION TAGS, LIKE A CONTRACT'S SIGNATURE LINES ───────────────────
+    # The owner, 11-11 06:03: a decision on a page under review is marked AT THE SPOT, as a
+    # yellow tag, with a total/remaining counter at the top — not a selection card. The
+    # fragment marks one with `data-decision` (empty = open, a value = the answer given).
+    # ⚠ TWO DISTINCT INPUTS for every derived number, so no case is satisfied by a constant
+    # its own fixture supplies (memory: exercise the producer at two distinct inputs).
+    _d3 = ("<title>x</title><style>:root{--good:#0f0}</style>"
+           "<h1>Title</h1><p>intro</p>"
+           "<p data-decision>Approve D1?</p>"
+           "<p data-decision=\"Yes &lt;keep&gt; it\">Approve D2?</p>"
+           "<p title='<b data-decision>' data-x=1>not one</p>"
+           "<script>var s = '<p data-decision>';</script>"
+           "<div data-decision=\"\">Approve D3?</div>")
+    _dd3 = compose(_d3, "T", css, markup, script, _fixed_at)
+    _tags3 = re.findall(r'<span class="ex-decision ex-decision-(open|done)"[^>]*>([^<]*)</span>', _dd3)
+    case("603: decisions are tagged n of N in document order, and only real markup counts",
+         [t[1].split(" — ")[0] for t in _tags3]
+         == ["🟨 ✍ DECISION 1 of 3", "🟩 ✍ DECISION 2 of 3", "🟨 ✍ DECISION 3 of 3"])
+    case("603: each tag sits AT its spot — right after the marked element opens",
+         "<p data-decision><span class=\"ex-decision ex-decision-open\"" in _dd3
+         and "<div data-decision=\"\"><span class=\"ex-decision ex-decision-open\"" in _dd3
+         and _dd3.find("DECISION 1 of 3") < _dd3.find("Approve D1?")
+         < _dd3.find("DECISION 2 of 3") < _dd3.find("Approve D2?"))
+    case("603: an answered decision renders green WITH its answer, escaped",
+         [t[0] for t in _tags3] == ["open", "done", "open"]
+         and "🟩 ✍ DECISION 2 of 3 — ANSWERED: Yes &lt;keep&gt; it" in _dd3)
+    _count3 = re.search(r'<div class="ex-decision-count[^"]*"[^>]*>(.*?)</div>', _dd3, re.S)
+    _d2 = ("<title>x</title><style>:root{--good:#0f0}</style>"
+           "<h1>Other</h1><p data-decision=\"no\">A?</p><p data-decision=\"yes\">B?</p>")
+    _dd2 = compose(_d2, "T", css, markup, script, _fixed_at)
+    _count2 = re.search(r'<div class="ex-decision-count[^"]*"[^>]*>(.*?)</div>', _dd2, re.S)
+    _c3 = _count3.group(1) if _count3 else ""
+    _c2 = _count2.group(1) if _count2 else ""
+    case("603: the counter is DERIVED — total and remaining follow the tags, at two inputs",
+         "<b>3</b> decisions" in _c3 and "<b>2</b> remaining" in _c3
+         and "<b>2</b> decisions" in _c2 and "<b>0</b> remaining" in _c2)
+    case("603: the counter links to the FIRST open decision, and each tag is a target",
+         'href="#ex-decision-1"' in _c3 and 'id="ex-decision-1"' in _dd3
+         and 'id="ex-decision-3"' in _dd3 and _c2 != "" and "href=" not in _c2)
+    case("603: an all-answered counter turns green, an open one stays yellow",
+         'class="ex-decision-count all-done"' in _dd2
+         and 'class="ex-decision-count"' in _dd3)
+    case("603: the counter is at the TOP — under the title, above every decision",
+         -1 < _dd3.find("</h1>") < _dd3.find("ex-decision-count\"") < _dd3.find("intro")
+         < _dd3.find("DECISION 1 of 3"))
+    _dcss = globals().get("DECISION_CSS", "")
+    case("603: the decision stylesheet ships only with a decision",
+         _dcss.strip() != "" and _dcss.strip() in _dd3 and _dcss.strip() not in doc
+         and "ex-decision" not in doc)
+
+    def _vars_in(sel: str) -> set[str]:
+        return {n for b in re.findall(re.escape(sel) + r"\s*\{([^}]*)\}", _dcss)
+                for n in declared_vars(b)}
+
+    def _value_in(sel: str, var: str) -> str:
+        blk = re.search(re.escape(sel) + r"\s*\{([^}]*)\}", _dcss)
+        val = blk and re.search(re.escape(var) + r":\s*([^;]+);", blk.group(1))
+        return val.group(1).strip() if val else ""
+    _reads = {v for v in vars_read_anywhere(_dcss) if v.startswith("--decide")}
+    _dark_media = re.search(r"@media \(prefers-color-scheme: dark\)\s*\{(.*?)\}\s*\}", _dcss, re.S)
+    case("603: every tag colour has a light AND a dark value, keyed on the theme both ways",
+         len(_reads) >= 6
+         and _reads <= _vars_in("html") and _reads <= _vars_in(':root[data-theme="light"]')
+         and _reads <= _vars_in(':root[data-theme="dark"]')
+         and _dark_media is not None and _reads <= declared_vars(_dark_media.group(1)))
+    case("603: the light and dark tag colours actually differ, and light matches light",
+         len(_reads) >= 6 and all(
+             _value_in("html", v) != _value_in(':root[data-theme="dark"]', v) != ""
+             and _value_in("html", v) == _value_in(':root[data-theme="light"]', v)
+             for v in _reads))
+    case("603: composing a decision page twice is byte-identical",
+         compose(_d3, "T", css, markup, script, _fixed_at) == _dd3)
+
+    # ── #603 ROUND 1: what the first suite left free (Codex 1-4, Claude F3-F6) ────────────
+    # ⚠ Each case below was written against a mutation that SURVIVED the first suite, or a guard
+    # that did not exist; the manifest names the mutation that each one kills.
+    _d4 = ("<h1>F</h1><p data-decision=\"yes\">A</p><p data-decision>B</p>"
+           "<p data-decision=\"no\">C</p><p data-decision=\"later\">D</p>")
+    _r4 = render_decisions(_d4)
+    _cnt4 = re.search(r'<div class="ex-decision-count[^"]*"[^>]*>(.*?)</div>', _r4[0], re.S)
+    _c4 = _cnt4.group(1) if _cnt4 else ""
+    case("603 r1: 'next' goes to the first OPEN decision, not decision 1 (1 answered, 2 open)",
+         'href="#ex-decision-2"' in _c4 and ">DECISION 2</a>" in _c4
+         and 'href="#ex-decision-1"' in _c3)
+    case("603 r1: the answered count is total minus remaining, at two inputs",
+         "<b>1</b> answered" in _c3 and _r4[1:] == (4, 1) and "<b>3</b> answered" in _c4
+         and "<b>1</b> remaining" in _c4)
+    _ws = render_decisions("<h1>W</h1><p data-decision=\"  \t \">W?</p><p data-decision=\" ok \">V?</p>")
+    case("603 r1: a whitespace-only value is OPEN, and an answer is shown trimmed",
+         _ws[1:] == (2, 1) and "🟨 ✍ DECISION 1 of 2</span>" in _ws[0]
+         and "ANSWERED: ok</span>" in _ws[0])
+    try:
+        _off_bad = _decision_offset("<b>x</b>", [0], (1, 0), "<p>", "decision 1 of 1")
+    except SystemExit as _e:
+        _off_bad = str(_e)
+    case("603 r1: a start tag not found where the parser put it is CANNOT RUN, not a misplaced tag",
+         isinstance(_off_bad, str) and "CANNOT RUN" in _off_bad and "decision 1 of 1" in _off_bad
+         and _decision_offset("ab\n<p>", [0, 3], (2, 0), "<p>", "x") == 3)
+
+    def _refusal(frag: str) -> str:
+        try:
+            render_decisions(frag)
+        except SystemExit as e:
+            return str(e)
+        return ""
+    case("603 r1: a decision INSIDE an element that is not rendered is REFUSED, naming it",
+         all("CANNOT RUN" in _refusal(f) and f"inside a <{t}>" in _refusal(f) for t, f in (
+             ("template", "<h1>x</h1><template><p data-decision>T</p></template>"),
+             ("noscript", "<h1>x</h1><noscript><div><p data-decision>N</p></div></noscript>"),
+             ("datalist", "<h1>x</h1><datalist><p data-decision>L</p></datalist>")))
+         and _refusal("<h1>x</h1><div><section><p data-decision>ok</p></section></div>") == ""
+         and _refusal("<h1>x</h1><template>t</template><p data-decision>ok</p>") == "")
+    case("603 r1: a decision on or inside a HIDDEN or INERT element is REFUSED",
+         "carries hidden" in _refusal("<h1>x</h1><p hidden data-decision>H</p>")
+         and "hidden or inert" in _refusal("<h1>x</h1><div hidden><ul><li data-decision>H</li></ul></div>")
+         and "hidden or inert" in _refusal("<h1>x</h1><div inert><p data-decision>I</p></div>")
+         and _refusal("<h1>x</h1><div hidden>gone</div><p data-decision>shown</p>") == ""
+         and _refusal("<h1>x</h1><div data-hidden=\"1\"><p data-decision>shown</p></div>") == "")
+    case("603 r1: a mark ON an element whose first child is not shown at the spot is REFUSED",
+         all(f"ON a <{t}>" in _refusal(f) for t, f in (
+             ("tr", "<h1>x</h1><table><tr data-decision><td>r</td></tr></table>"),
+             ("option", "<h1>x</h1><select><option data-decision>o</option></select>"),
+             ("textarea", "<h1>x</h1><textarea data-decision>t</textarea>"),
+             ("img", "<h1>x</h1><img data-decision src=\"a.png\">")))
+         and _refusal("<h1>x</h1><table><tr><td data-decision>cell</td></tr></table>") == "")
+    _raw = ("<h1>x</h1><textarea><p data-decision>a</p></textarea><title><b data-decision></title>"
+            "<xmp><i data-decision></xmp><p data-decision>real</p>")
+
+    class _AsOn312(_DecisionScan):
+        # 3.12's parser has no raw-text list of its own beyond script/style; emptying 3.14's
+        # makes THIS interpreter parse the way CI's does, so the case means the same on both.
+        RCDATA_CONTENT_ELEMENTS: tuple = ()
+    _old = _AsOn312()
+    _old.feed(_raw)
+    _old.close()
+    case("603 r1: markup inside textarea/title/xmp is TEXT, never a decision — the same on 3.12 and 3.14",
+         render_decisions(_raw)[1:] == (1, 1) and len(_old.found) == 1
+         and render_decisions("<h1>x</h1><p data-decision>a</p><plaintext><p data-decision>b")[1] == 1)
+    # ⟳ r2 (Codex 1, 2): the r1 auto-open is gone; Codex's two fragments are refused, not opened.
+    case("603 r2: a decision ON or in the collapsed part of a <details> is REFUSED, naming the fix",
+         all("in a <details> outside its <summary>" in _refusal(f)
+             and "onto its <summary>" in _refusal(f) for f in (
+                 "<h1>x</h1><details><summary>S</summary><p data-decision>X</p></details>",
+                 "<h1>x</h1><details data-decision><summary>T</summary></details>",
+                 "<h1>x</h1><details open><div><p data-decision>Y</p></div></details>",
+                 '<h1>x</h1><details title=" open "><summary>S</summary>\n  <p data-decision>X</p>\n</details>',
+                 '<h1>x</h1><details name="g" open><summary>A</summary><p data-decision>1</p></details>',
+                 "<h1>x</h1><details><summary>S</summary><summary data-decision>2nd</summary></details>"))
+         and _refusal("<h1>x</h1><details><summary data-decision>S</summary><p>b</p></details>") == ""
+         and _refusal("<h1>x</h1><details><p>b</p><summary><b data-decision>S</b></summary></details>") == ""
+         and _refusal("<h1>x</h1><details><summary>S</summary></details><p data-decision>after</p>") == "")
+    # ⟳ r2 (Codex 3): Codex's exact fragment — the div closes the hidden p, so it is visible.
+    case("603 r2: a block start tag closes an open <p>, as HTML does — but not across a scope "
+         "boundary, nor past a hidden formatting element the browser re-opens",
+         _refusal("<h1>x</h1><p hidden>Hidden paragraph<div data-decision>Visible sibling</div>") == ""
+         and _refusal("<h1>x</h1><p hidden>a<ul><li data-decision>v</li></ul>") == ""
+         and "hidden or inert" in _refusal("<h1>x</h1><p hidden>a<span data-decision>in</span></p>")
+         and "hidden or inert" in _refusal("<h1>x</h1><p hidden><button><div data-decision>b</div></button>")
+         and "hidden or inert" in _refusal("<h1>x</h1><p>a<b hidden>c<div data-decision>d</div>")
+         and render_decisions("<h1>x</h1><p hidden>h<div data-decision>v</div>")[1:] == (1, 1))
+    # ⟳ r3 (Claude F3): the p-closure sets and the formatting check, pinned in BOTH directions.
+    case("603 r3: only a HIDDEN formatting element keeps the p; li/hr/h2 close it; object is a scope stop",
+         _refusal("<h1>x</h1><p hidden>a<b>c<div data-decision>d</div>") == ""
+         and _refusal("<h1>x</h1><p hidden>x<li data-decision>l</li>") == ""
+         and _refusal("<h1>x</h1><p hidden>x<hr><span data-decision>s</span>") == ""
+         and _refusal("<h1>x</h1><p hidden>x<h2 data-decision>h</h2>") == ""
+         and "hidden or inert" in _refusal("<h1>x</h1><p hidden>x<object><div data-decision>o</div>"))
+    # ⟳ r3 (Claude F1): the reviewer's four SVG/MathML shapes, each counted-not-seen under r2.
+    case("603 r3: a decision on or inside <svg>/<math> is REFUSED, and a hidden p stays open across them",
+         all("CANNOT RUN" in _refusal(f) for f in (
+             "<h1>x</h1><p hidden>x<svg><foreignObject><div data-decision>fo</div></foreignObject></svg>",
+             "<h1>x</h1><p hidden>x<svg><desc><div data-decision>desc</div></desc></svg>",
+             "<h1>x</h1><p hidden>x<math><mi><div data-decision>mi</div></mi></math>",
+             "<h1>x</h1><p hidden>x<math><mtext><div data-decision>mt</div></mtext></math>",
+             "<h1>x</h1><svg data-decision><rect/></svg>"))
+         and "inside a <svg>, foreign" in _refusal(
+             "<h1>x</h1><div><svg><foreignObject><p data-decision>v</p></foreignObject></svg></div>")
+         and "inside a <math>, foreign" in _refusal("<h1>x</h1><math><mtext><b data-decision>m</b></mtext></math>")
+         and "hidden or inert" in _refusal("<h1>x</h1><p hidden>x<svg><foreignObject><div>d</div>"
+                                           "</foreignObject></svg><span data-decision>s</span>")
+         and _refusal("<h1>x</h1><svg><rect/></svg><p data-decision>after</p>") == "")
+    case("603 r1: a fragment id/name the tags need is REFUSED, a different one is not",
+         "ex-decision-1" in _refusal("<h1>x</h1><p id=\"ex-decision-1\">I</p><p data-decision>C</p>")
+         and "ex-decision-2" in _refusal("<h1>x</h1><a name=\"ex-decision-2\"></a>"
+                                         "<p data-decision>C</p><p data-decision>D</p>")
+         and _refusal("<h1>x</h1><p id=\"ex-decision-3\">I</p><p data-decision>C</p>"
+                      "<p data-decision>D</p>") == "")
+    _lab = render_decisions("<h1>x</h1><h4 data-decision data-decision-label=\"Q1\">Q?</h4>"
+                            "<p data-decision=\"MIT\" data-decision-label=\"D&lt;7\">L</p>")[0]
+    case("603 r1: a fragment's own label LEADS the tag and the 'next' link, escaped",
+         "🟨 ✍ Q1 — DECISION 1 of 2</span>" in _lab
+         and "🟩 ✍ D&lt;7 — DECISION 2 of 2 — ANSWERED: MIT</span>" in _lab
+         and ">Q1 — DECISION 1</a>" in _lab)
+
+    def _rule(sel: str) -> str:
+        m = re.search(r"(?m)^\s*" + re.escape(sel) + r"\s*\{([^}]*)\}", _dcss)
+        return m.group(1) if m else ""
+    case("603 r1: a tag and the counter never inherit a page's uppercase (the answer is shown as written)",
+         "text-transform: none" in _rule(".ex-decision")
+         and "text-transform: none" in _rule(".ex-decision-count"))
+
+    # ⟳ r2 (Codex 4): a colour this cannot FULLY evaluate is REFUSED (ValueError → ratio 0 → the
+    # case goes red), never read by its first six digits. `#rrggbb00` is transparent text that the
+    # r1 version passed as 10.72:1.
+    def _hex_lum(c: str) -> float:
+        m = re.fullmatch(r"#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})", c.strip())
+        if not m:
+            raise ValueError(f"not a hex colour this check can evaluate: {c!r}")
+        h = m.group(1)
+        h = "".join(ch * 2 for ch in h) if len(h) <= 4 else h
+        if len(h) == 8 and h[6:].lower() != "ff":
+            raise ValueError(f"{c!r} is not opaque: its contrast depends on what is behind it")
+        lin = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+               for v in (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+    def _contrast(a: str, b: str) -> float:
+        try:
+            hi, lo = sorted((_hex_lum(a), _hex_lum(b)), reverse=True)
+        except ValueError:
+            return 0.0
+        return (hi + 0.05) / (lo + 0.05)
+
+    def _blk_value(body: str, var: str) -> str:
+        m = re.search(re.escape(var) + r":\s*([^;]+);", body)
+        return m.group(1).strip() if m else ""
+    _os_dark = (re.search(r'\{\s*:root:not\(\[data-theme="light"\]\)\s*\{([^}]*)\}', _dcss)
+                if _dcss else None)
+    _blocks = {"light (html)": _rule("html"),
+               "OS-dark": _os_dark.group(1) if _os_dark else "",
+               "toggle light": _rule(':root[data-theme="light"]'),
+               "toggle dark": _rule(':root[data-theme="dark"]')}
+    _ratios = {(b, ink): _contrast(_blk_value(body, ink), _blk_value(body, ink + "-bg"))
+               for b, body in _blocks.items() for ink in ("--decide", "--decided")}
+    case("603 r1: every tag state is READABLE in every theme block — contrast >= 4.5, OS-dark included",
+         len(_ratios) == 8 and all(r >= 4.5 for r in _ratios.values()))
+
+    def _unreadable(c: str) -> bool:
+        try:
+            _hex_lum(c)
+        except ValueError:
+            return True
+        return False
+    case("603 r2: the contrast check REFUSES a colour it cannot fully evaluate (alpha, rgba/hsla, named, var)",
+         all(_unreadable(c) for c in ("#3a2c0000", "#3a2c00fe", "#fff0", "rgba(0, 0, 0, 1)",
+                                      "hsla(0, 0%, 0%, 1)", "rgb(0 0 0)", "yellow", "var(--x)", "", "#ggg"))
+         and not any(_unreadable(c) for c in ("#3a2c00", "#3a2c00ff", "#fff", "#ffff"))
+         and _contrast("#3a2c0000", "#ffe45c00") == 0.0)
+    case("603 r1: the OS-dark half carries the DARK values, not the light ones",
+         len(_reads) >= 6 and all(
+             _blk_value(_blocks["OS-dark"], v) == _blk_value(_blocks["toggle dark"], v)
+             != _blk_value(_blocks["light (html)"], v) for v in _reads))
+    _done_reads = vars_read_anywhere(_rule(".ex-decision-done"))
+    case("603 r1: an ANSWERED tag reads the green tokens, and green differs from yellow everywhere",
+         _done_reads == {"--decided", "--decided-bg", "--decided-br"}
+         and vars_read_anywhere(_rule(".ex-decision-count.all-done")) == _done_reads
+         and all(_blk_value(body, "--decided-bg") != _blk_value(body, "--decide-bg") != ""
+                 for body in _blocks.values()))
+
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, and this suite was not keeping it. `check-plan-code`'s
     # harness attributes a kill with `startswith("[FAIL] ")` then `[7:]`. This printed

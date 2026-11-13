@@ -163,5 +163,16 @@
    ]
   ],
   "expect": "the page's backlog band lists exactly the rows match_rows places, for every node"
+ },
+ {
+  "name": "a linked row's text renders its keys as links again, nesting an <a> in the row's <a> (backlog #470 r1)",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "            # or the page carries an `<a>` in an `<a>` — 29 rows did (backlog #470 review round 1).\n            body = f'<a href=\"{esc(href)}\">{inline_unlinked(text)}</a>'",
+    "            # or the page carries an `<a>` in an `<a>` — 29 rows did (backlog #470 review round 1).\n            body = f'<a href=\"{esc(href)}\">{inline_md(text)}</a>'"
+   ]
+  ],
+  "expect": "a key in a linked row's text is not a second <a> inside the row's link"
  }
 ]

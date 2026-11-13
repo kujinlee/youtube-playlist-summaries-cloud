@@ -2756,7 +2756,6 @@ def _self_test_body() -> int:
         births = {s: _dt.datetime(2026, 10, 1, 12, tzinfo=_dt.timezone.utc).timestamp()
                   for s in ("one", "two", "live")}
         before = {p.name: p.read_text() for p in pd.iterdir()}
-        _ino_before = {p.name: p.stat().st_ino for p in pd.iterdir()}
         rc, rep = run(pd, tdir, str(root), False, births)
         case("⛔ the DRY RUN writes nothing", (rc, {p.name: p.read_text() for p in pd.iterdir()}
                                               == before, "DRY RUN" in rep), (0, True, True))
@@ -2774,7 +2773,14 @@ def _self_test_body() -> int:
         for q in pd.iterdir():
             q.write_text(before[q.name])
             os.utime(q, (1_700_000_000, 1_700_000_000)) if q.name == "one.md" else None
+        # ⟳ backlog #483: F5 once compared inode NUMBERS recorded before an earlier --write had
+        # already freed that inode, and the filesystem reused the number for this run's temp file
+        # (5 in 200 parallel runs on Linux). An OPEN handle keeps the old inode alive across the
+        # --write, so its number cannot be reused, and `samestat` asks the identity question.
+        _old_fd = os.open(pd / "two.md", os.O_RDONLY)
         rc, rep = run(pd, tdir, str(root), True, births)
+        _replaced = not os.path.samestat(os.fstat(_old_fd), (pd / "two.md").stat())
+        os.close(_old_fd)
         case("--write applies the `keep` rows, and only them",
              (rc, (pd / "two.md").read_text().split("\n")[2], (pd / "live.md").read_text()
               == before["live.md"], "wrote 2 plan file(s)" in rep),
@@ -2782,7 +2788,7 @@ def _self_test_body() -> int:
         case("⛔ --write keeps the file's mtime: the page dates plans by it",
              int((pd / "one.md").stat().st_mtime), 1_700_000_000)
         case("⛔ F5: --write REPLACES the file (a new inode, via os.replace) and leaves no temp file",
-             ((pd / "two.md").stat().st_ino != _ino_before["two.md"],
+             (_replaced,
               [x.name for x in pd.iterdir() if "backfill-tmp" in x.name]), (True, []))
         (pd / "three.md").write_text("# three\n\n- [x] a\n")
         (root / ".claude" / "last-plan").write_text("plan: .claude/plans/three.md\nsha256: x\n")

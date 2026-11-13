@@ -12,6 +12,8 @@ WHY THIS FILE EXISTS (measured 2026-10-26).
 WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from `gh` ALONE:
   - number, branch, head, draft, mergeability, a check summary (`NO CHECKS` when none ran), and the
     NAMES of failing checks;
+  - the open `sweep-red` issues (PR #496 r1 C4) — a red FULL mutation sweep on master opens one, and a green one only
+    comments on it (PR #496 r3: closing is a person's act); a `gh` failure here is CANNOT READ, never "none";
   - the IN-FLIGHT LEDGER, `.claude/inflight.jsonl` (gitignored) IN THE MAIN CHECKOUT — `main_checkout`, so a
     linked worktree reads and writes the one ledger every session sees (backlog #361's PR): one line per background job, added with
     `--add ID WHAT ON_DONE` and removed with `--done ID`. It is written BY HAND, so an empty ledger reads
@@ -27,7 +29,7 @@ WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from
   - `gh` failing, timing out, unparseable output or a malformed element is CANNOT RUN, never an empty
     list, and a timeout SAYS it timed out;
   - a list as long as LIMIT says MAY BE TRUNCATED;
-  - the one call is bounded (TIMEOUT s, under the hook's 60 s cap) and gets no stdin;
+  - the two calls are bounded (TIMEOUT + ISSUE_TIMEOUT s, under the hook's 60 s cap) and get no stdin;
   - the ledger is read by ONE rule for the block and for every update — one `open(O_NOFOLLOW)`, one `fstat`, one
     read: a symlink, a non-regular file (a FIFO would block the read) or a file over MAX_LEDGER is NOT READ, and an
     update REFUSES it rather than rewrite what it could not read (backlog #369); it is split on b"\\n" only and written
@@ -51,7 +53,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --add ID WHAT ON_DONE [--kind owner-wait|owner-instruction|routine]
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 102 cases
+    python3 scripts/session-state.py --self-test  # 132 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -71,13 +73,18 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LEDGER_REL = ".claude/inflight.jsonl"
-TIMEOUT = 30      # the one `gh` call, under the hook's 60 s harness timeout
+# backlog #408: the main checkout a page generator's private clone came from, set by `regen-pages.py` (`main_checkout`)
+MAIN_CHECKOUT_ENV = "REGEN_MAIN_CHECKOUT"
+TIMEOUT = 30      # the `gh pr list` call; with ISSUE_TIMEOUT, 45 s under the hook's 60 s harness timeout
+ISSUE_TIMEOUT = 15   # the `gh issue list` call for open `sweep-red` issues (PR #496 r1 C4)
+SWEEP_RED_SHOWN = 3  # open sweep-red issues named in the block; the rest is a count
 LIMIT = 100
 MAX_LEDGER = 64 * 1024
 TITLE_WIDTH = 120    # the compact block's one line per ledger entry (backlog: context floor)
@@ -332,7 +339,8 @@ def normalise_what(what: str) -> str:
     return what
 
 
-def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None) -> None:
+def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None,
+               goal: str | None = None, thread: str | None = None) -> None:
     """`kind` is DECLARED by the caller. Left out, it is `guess_kind` of the entry — the WIDE reading, so an owner entry
     written without `--kind` is stored as the owner entry it looks like and never as `routine` (r3 R3-1: storing the
     strict-prefix answer made every R2-1 phrasing routine again, and the declared field then bypassed the fallback).
@@ -341,26 +349,77 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
         raise ValueError("an empty id could never be shown or removed")
     if kind is not None and kind not in KINDS:
         raise ValueError(f"kind {kind!r} is not one of {', '.join(KINDS)}")
+    if bool(goal) != bool(thread):
+        raise ValueError("--goal and --thread go together: a thread is hung under a goal (backlog #505)")
     what = normalise_what(what)
     if kind is None:
         kind = guess_kind({"what": what, "on_done": on_done})
     with _locked(path):
         entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
-        entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind})
+        entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind}
+                       | ({"goal": goal, "thread": thread} if goal else {}))
         _write(path, entries, raw)
 
 
-def ledger_done(path: Path, id_: str) -> bool:
+def ledger_take(path: Path, id_: str) -> dict | None:
+    """Remove the entry `id_` and return it — read UNDER the lock that removes it (done-thread-check r3 Codex: reading it
+    before the lock checked an entry a concurrent re-add had already replaced). None when there is no such id."""
     if not id_.strip():
         raise ValueError("an empty id names no job")
     with _locked(path):
         entries, raw = _for_update(path)
-        kept = [e for e in entries if e.get("id") != id_]
-        if len(kept) == len(entries):
-            return False
-        _write(path, kept, raw)
-        return True
+        gone = [e for e in entries if e.get("id") == id_]
+        if not gone:
+            return None
+        _write(path, [e for e in entries if e.get("id") != id_], raw)
+        return gone[-1]
+
+
+def ledger_done(path: Path, id_: str) -> bool:
+    return ledger_take(path, id_) is not None
+
+
+THREADS_REL = "docs/goal-threads.md"
+
+
+def _goal_tree():
+    """goal-tree.py, loaded by path at CALL time (it imports this file at load time, so not at ours)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_goal_tree_for_handoff", Path(__file__).with_name("goal-tree.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def thread_handoff(entry: dict, main: Path, run=_run, gt=None) -> str | None:
+    """Backlog #507: closing an entry that carries a ledger THREAD hands the thread to `docs/goal-threads.md` on
+    master — the goal tree stops showing the ledger's copy. None when a thread that goal-tree's OWN parser reads from
+    `origin/master` names one of the entry's refs; otherwise the warning, naming the line to add. Measured 2026-11-05
+    04:38: PR #505 merged with its thread only in the ledger, and `--done` left the merged work on no goal without a word.
+    ⛔ ONE GRAMMAR (done-thread-check r1/r2 Codex): a hand-rolled reader matched refs in a line's WHAT, a bullet above
+    every goal, a file goal-tree refuses, and missed `PR #030` = `PR #30`. Both sides go through `parse_thread_line` /
+    `parse_threads` and compare parsed (kind, number) pairs; a file that cannot be read OR parsed is NOT CHECKED, said."""
+    thread, goal = entry.get("thread"), entry.get("goal")
+    if not isinstance(thread, str) or not thread.strip():
+        return None
+    add = f"add under `## GOAL {goal}` of {THREADS_REL}:  - {thread}"
+    gt = gt or _goal_tree()
+    mine, why = gt.parse_thread_line("- " + thread.removeprefix("- "))   # r3: goal-tree's own ledger normalisation
+    if mine is None:
+        return f"⚠ this entry's thread does not parse ({why}), so the goal tree never showed it; fix it, then {add}"
+    refs = {tuple(r) for r in mine["refs"]}
+    rc, out = run(["git", "show", f"origin/master:{THREADS_REL}"], main, 10)
+    if rc != 0:
+        return f"⚠ thread NOT CHECKED — origin/master:{THREADS_REL} could not be read (exit {rc}: {clean(out, 100)}); if no tracked line names it, {add}"
+    try:
+        goals = gt.parse_threads(out)
+    except gt.Malformed as e:
+        return f"⚠ thread NOT CHECKED — origin/master:{THREADS_REL} is malformed ({clean(str(e), 120)}); if no tracked line names it, {add}"
+    tracked = {tuple(r) for g in goals for t in g["threads"] for r in t["refs"]}
+    if refs & tracked:
+        return None
+    return f"⚠ this entry's thread is on NO tracked goal on origin/master — the goal tree drops it now; {add}"
 
 
 def migrate_kinds(path: Path, overrides: dict[str, str] | None = None, apply: bool = False) -> list[tuple[str, str, str, str]]:
@@ -478,7 +537,7 @@ def _compact_ledger(head: list[str], ledger: list[dict], problems: list[str], ma
 
 def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], ledger_problems: list[str],
            now: str, truncated: bool = False, mark: str = "", compact: bool = False, ledger_path: str = "",
-           owner_elsewhere: int = 0) -> str:
+           owner_elsewhere: int = 0, sweep_red: tuple[list[dict] | None, str | None] | None = None) -> str:
     """The block, pure: everything is passed in, every value goes through clean(). `mark` is appended to each line that
     reports a state NOT READ — chosen where the failure is decided, never by searching the text, so a branch or a
     ledger entry that merely CONTAINS a failure word is not marked (PR #425 r4 C4-F3). Empty by default.
@@ -517,6 +576,19 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
                 L.append(f"      ⚠ gh omitted {', '.join(missing)} — this PR's state is UNREADABLE, not unknown-but-fine" + mark)
             if failing:
                 L.append(f"      failing: {', '.join(failing[:6])}{' …' if len(failing) > 6 else ''}")
+    if sweep_red is not None:   # None: this caller did not read the issues (the compaction snapshot)
+        issues, issue_error = sweep_red
+        if issues is None:
+            L.append(f"SWEEP-RED ISSUES: CANNOT READ — {clean(issue_error)}. Treat the master mutation sweep as NOT "
+                     "CHECKED, never as green." + mark)
+        elif not issues:
+            L.append("SWEEP-RED ISSUES: none open (gh answered).")
+        else:
+            L.append(f"SWEEP-RED ISSUES ({len(issues)}) — the FULL mutation sweep went red on master; read the run:")
+            for i in issues[:SWEEP_RED_SHOWN]:
+                L.append(f"  #{clean(i.get('number'), 10)} {clean(i.get('title'), 120)} {clean(i.get('url'), 120)}")
+            if len(issues) > SWEEP_RED_SHOWN:
+                L.append(f"  … {len(issues) - SWEEP_RED_SHOWN} more open sweep-red issue(s) (`gh issue list --label sweep-red`)")
     if owner_elsewhere:   # the caller prints the owner entries whole in a section of its own (the compaction snapshot)
         L.append(f"IN-FLIGHT LEDGER ({LEDGER_REL}): {owner_elsewhere} owner entr{'y' if owner_elsewhere == 1 else 'ies'} "
                  "listed whole under 'Pending OWNER decisions'; the rest:" if ledger or ledger_problems else
@@ -547,12 +619,52 @@ def main_checkout(root: Path, run=_run) -> tuple[Path, str | None]:
     written to) a linked worktree's own `.claude/`, it is a ledger nobody reads — measured 2026-10-28, a worktree
     snapshot said "none RECORDED" while the main ledger held 6 jobs. The same `--git-common-dir` rule as
     `check-ci-watched.py`'s `sentinel_for` (on master): the parent of `git rev-parse --path-format=absolute --git-common-dir`. An answer that is not an absolute,
-    existing directory is refused, never resolved against the cwd."""
-    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], root, 10)
+    existing directory is refused, never resolved against the cwd.
+    ⛔ backlog #408, review r2: a page generator runs in a private CLONE of origin/master (`regen-pages.py`), whose
+    own common dir is the clone's, so the rule above would name the clone and its empty `.claude/`. The runner
+    therefore names the main checkout it cloned in `MAIN_CHECKOUT_ENV`. That name is never trusted as text: git
+    is asked from THAT path, and it is honoured only when git names it as its own main checkout AND it is THIS
+    repository's (review r3 R3-F2): `root`'s own common dir is that one, or `root` is a `clone --shared` whose
+    `objects/info/alternates` names that common dir's `objects`. (`remote.origin.url` cannot say: the runner
+    points the clone's `origin` at GitHub.) An inherited name for another repository is refused, never honoured."""
+    named = os.environ.get(MAIN_CHECKOUT_ENV, "")
+    if named and not os.path.isabs(named):
+        return root, f"{MAIN_CHECKOUT_ENV}={clean(named, 100)!r} is not an absolute path"
+    common, why = _common_dir(Path(named) if named else root, run)
+    if why:
+        return root, why
+    if named and os.path.realpath(Path(common).parent) != os.path.realpath(named):
+        return root, (f"{MAIN_CHECKOUT_ENV}={clean(named, 100)!r} is not a main checkout "
+                      f"(git names {clean(common, 100)!r} as its common dir)")
+    if named and not _same_repository(root, common, run):
+        return root, (f"{MAIN_CHECKOUT_ENV}={clean(named, 100)!r} is not a checkout of the repository {root} "
+                      "belongs to (neither its common dir nor its clone's alternates); refused")
+    return Path(common).parent, None
+
+
+def _common_dir(where: Path, run=_run) -> tuple[str, str | None]:
+    """(the absolute, existing common git dir asked from `where`, None), or ('', why)."""
+    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], where, 10)
     common = out.strip() if rc == 0 else ""
     if not common or "\n" in common or not os.path.isabs(common) or not os.path.isdir(common):
-        return root, f"git rev-parse --git-common-dir gave no usable path (exit {rc}: {clean(out, 100)})"
-    return Path(common).parent, None
+        return "", f"git rev-parse --git-common-dir gave no usable path (exit {rc}: {clean(out, 100)})"
+    return common, None
+
+
+def _same_repository(root: Path, common: str, run=_run) -> bool:
+    """Is `root` a checkout of the repository whose common dir is `common`: it shares that common dir, or its
+    own common dir's `objects/info/alternates` names `<common>/objects` (a `clone --shared` of it)."""
+    own, why = _common_dir(root, run)
+    if why:
+        return False
+    if os.path.realpath(own) == os.path.realpath(common):
+        return True
+    want = os.path.realpath(os.path.join(common, "objects"))
+    try:
+        lines = Path(own, "objects", "info", "alternates").read_text().splitlines()
+    except OSError:
+        return False
+    return any(os.path.isabs(ln.strip()) and os.path.realpath(ln.strip()) == want for ln in lines)
 
 
 def guess_kind(entry: dict) -> str:
@@ -616,12 +728,30 @@ def fetch(root: Path, run=_run, main: tuple[Path, str | None] | None = None
     return prs, pr_error, ledger, problems, prs is not None and len(prs) >= LIMIT
 
 
+def fetch_sweep_red(root: Path, run=_run) -> tuple[list[dict] | None, str | None]:
+    """(open `sweep-red` issues, None), or (None, why). PR #496 r1 C4: a red FULL mutation sweep on master opens one
+    (`ci.yml`, `mutation-sweep-complete`), and nothing in this repository read it — so the alert reached only whoever
+    watched GitHub notifications. A gh failure is a reason, which `render` prints as CANNOT READ, never as none."""
+    rc, out = run(["gh", "issue", "list", "--label", "sweep-red", "--state", "open", "--json", "number,title,url"],
+                  root, ISSUE_TIMEOUT)
+    if rc != 0:
+        return None, f"gh exited {rc}: {out.strip()[:160]}"
+    try:
+        issues = json.loads(out)
+        if not isinstance(issues, list) or not all(isinstance(i, dict) and {"number", "title", "url"} <= i.keys()
+                                                   for i in issues):
+            raise ValueError("not a list of issue objects")
+    except ValueError as exc:
+        return None, f"gh output unparseable ({exc})"
+    return issues, None
+
+
 def collect(root: Path, run=_run, now: str | None = None) -> str:
     now = now or time.strftime("%Y-%m-%d %H:%M %Z")
     main = main_checkout(root, run)
     prs, pr_error, ledger, problems, truncated = fetch(root, run, main)
     return render(prs, pr_error, ledger, problems, now, truncated=truncated, compact=True,
-                  ledger_path=str(main[0] / LEDGER_REL))
+                  ledger_path=str(main[0] / LEDGER_REL), sweep_red=fetch_sweep_red(root, run))
 
 
 def self_test() -> int:
@@ -931,6 +1061,35 @@ def _self_test_body() -> int:
          (render(None, "gh exited 4", [], [], "T", mark=" <M>").splitlines()[1].endswith(" <M>"),
           "<M>" in render(None, "gh exited 4", [], [], "T")), (True, False))
     case("an answered empty list says none", "OPEN PRS: none (gh answered)." in render([], None, [], [], "T"), True)
+    # PR #496 r1 C4: a red FULL mutation sweep on master opens a `sweep-red` issue, and nothing READ it.
+    red = [{"number": 501, "title": "Full mutation sweep red on master (push, 2fdbeb7e)", "url": "https://x/issues/501"}]
+    out = render([], None, [], [], "T", sweep_red=(red, None))
+    case("⭐ r1 C4: an open sweep-red issue is in the block, by number, title and url",
+         ("SWEEP-RED ISSUES (1)" in out, "#501 Full mutation sweep red on master (push, 2fdbeb7e) https://x/issues/501" in out),
+         (True, True))
+    out = render([], None, [], [], "T", sweep_red=(None, "gh exited 4: auth"), mark=" <M>")
+    case("⭐ r1 C4: gh failing on the issue list prints CANNOT READ, marked — never silence, never 'none'",
+         ("SWEEP-RED ISSUES: CANNOT READ — gh exited 4: auth" in out,
+          any(l.startswith("SWEEP-RED ISSUES: CANNOT READ") and l.endswith(" <M>") for l in out.splitlines()),
+          "none open" in out), (True, True, False))
+    case("...an answered empty issue list says none open",
+         "SWEEP-RED ISSUES: none open (gh answered)." in render([], None, [], [], "T", sweep_red=([], None)), True)
+    out = render([], None, [], [], "T", compact=True,
+                 sweep_red=([dict(red[0], number=600 + i) for i in range(SWEEP_RED_SHOWN + 2)], None))
+    case("...a long issue list names SWEEP_RED_SHOWN and counts the rest",
+         (sum(1 for l in out.splitlines() if l.startswith("  #6")), "… 2 more open sweep-red issue(s)" in out),
+         (SWEEP_RED_SHOWN, True))
+    case("...and a caller that did not read the issues prints no issue line at all",
+         "SWEEP-RED" in render([], None, [], [], "T"), False)
+    case("⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, in the root given, within ISSUE_TIMEOUT",
+         (lambda seen_i: (fetch_sweep_red(Path("/r1"), lambda c, w, timeout=TIMEOUT: (seen_i.append((c, w, timeout)), (0, "[]"))[1]),
+                          seen_i))([]),
+         (([], None), [(["gh", "issue", "list", "--label", "sweep-red", "--state", "open", "--json", "number,title,url"],
+                        Path("/r1"), ISSUE_TIMEOUT)]))
+    case("...a gh failure is (None, why), and a malformed element is unparseable, never a crash",
+         (fetch_sweep_red(Path("."), lambda c, w, timeout=TIMEOUT: (1, "HTTP 502\n")),
+          (fetch_sweep_red(Path("."), lambda c, w, timeout=TIMEOUT: (0, '[{"number": 1}]'))[1] or "").startswith("gh output unparseable")),
+         ((None, "gh exited 1: HTTP 502"), True))
     out = render([pr, dict(pr, number=8, statusCheckRollup=[])], None, [], [], "T")
     case("a PR line carries number, branch, head, draft, mergeability and checks",
          "PR #7 `b` head abcdef12 DRAFT · DIRTY · checks: 1 fail" in out, True)
@@ -980,6 +1139,14 @@ def _self_test_body() -> int:
         case("done removes exactly that job", (ledger_done(led, "job2"), [e["id"] for e in read_ledger(led)[0]]),
              (True, ["job1"]))
         case("done on an unknown id says False", ledger_done(led, "nope"), False)
+        ledger_add(led, "job5", "build backlog #505", "merge", "T4", goal="g", thread="fix · PR #30 · x")
+        case("backlog #505: --goal and --thread are STORED on the entry",
+             [(e.get("goal"), e.get("thread")) for e in read_ledger(led)[0] if e["id"] == "job5"], [("g", "fix · PR #30 · x")])
+        case("backlog #505: a goal without a thread (or the reverse) is REFUSED, never half-stored",
+             [attempt(lambda: ledger_add(led, "j6", "w", "d", "T", goal="g")),
+              attempt(lambda: ledger_add(led, "j6", "w", "d", "T", thread="fix · PR #1 · x"))], ["raised ValueError"] * 2)
+        case("backlog #505: --goal outside --add is a stray flag, CANNOT RUN", main(["--goal", "g"], root=root, run=NO_GIT), 2)
+        ledger_done(led, "job5")   # the cases below count this ledger's entries
         refused = []
         for fn, args in ((ledger_add, (led, " ", "w", "d", "T")), (ledger_done, (led, ""))):
             try:
@@ -1074,7 +1241,7 @@ def _self_test_body() -> int:
 
         def fake(cmd, cwd, timeout=TIMEOUT):
             seen.append((cmd[:3], timeout))
-            return 0, json.dumps([pr])
+            return 0, json.dumps(red if cmd[:3] == ["gh", "issue", "list"] else [pr])
         out = collect(root, run=fake, now="T")
         git_calls = []
         fetch(root, run=lambda c, w, timeout=TIMEOUT: (git_calls.append(c[0]), (0, "[]"))[1], main=(root, None))
@@ -1084,10 +1251,15 @@ def _self_test_body() -> int:
         got = fetch(root / "fetch-nogit", lambda c, w, timeout=TIMEOUT: (asked_git.append(c[0]), (128, "not a repo"))[1])
         case("...and without one it asks git itself, and says the main checkout could not be found",
              (asked_git, any("main checkout could not be found" in p for p in got[3])), (["gh", "git"], True))
-        case("collect() asks gh ONCE, within the timeout, and wires the PR and the ledger into one block",
-             (len([c for c, _ in seen if c[0] == "gh"]), [c for c, _ in seen if c[0] == "gh"][0], all(t <= TIMEOUT for _, t in seen),
-              "PR #7 " in out, "[job1]" in out),
-             (1, ["gh", "pr", "list"], True, True, True))
+        case("collect() asks gh for the PRs and the sweep-red issues ONCE each, within the timeouts, and wires the PR, "
+             "the issue and the ledger into one block",
+             ([c for c, _ in seen if c[0] == "gh"], all(t <= TIMEOUT for _, t in seen),
+              "PR #7 " in out, "[job1]" in out, "#501 Full mutation sweep red" in out),
+             ([["gh", "pr", "list"], ["gh", "issue", "list"]], True, True, True, True))
+        out = collect(root, run=lambda c, w, timeout=TIMEOUT: (1, "HTTP 502") if c[:3] == ["gh", "issue", "list"]
+                      else fake(c, w, timeout), now="T")
+        case("⭐ r1 C4: collect() — the hook's entry — prints CANNOT READ when only the issue list fails, beside the PRs",
+             ("SWEEP-RED ISSUES: CANNOT READ — gh exited 1: HTTP 502" in out, "PR #7 " in out), (True, True))
         case("⭐ floor: collect() — the hook's own entry — prints the COMPACT block, naming the file with every entry",
              f"full: {root / LEDGER_REL}" in out, True)
         bare = root / "no-ledger-here"
@@ -1170,6 +1342,74 @@ def _self_test_body() -> int:
         case("main --add then --done round-trips under the ROOT given; --done '' is refused (2), not the block",
              (added, seen_ids, removed, read_ledger(r2 / LEDGER_REL)[0], empty_done), (0, ["k"], 0, [], 2))
 
+        # backlog #507: --done on an entry with a thread checks master's tracked lines
+        _rq = '> 2026-11-05 04:38 "q"\n'
+        _tracked = "## GOAL g\n" + _rq + "- fix · PR #305 · other\n- fix · backlog #11, PR #9 · z\n"
+        _show = lambda text, rc=0: (lambda c, w, timeout=TIMEOUT: (rc, text) if c[:2] == ["git", "show"] else (128, "no"))  # noqa: E731
+        _e = lambda t: {"id": "j", "goal": "g", "thread": t}  # noqa: E731
+        case("⭐ backlog #507: a thread whose PR no tracked line names is WARNED, naming the line and its goal",
+             (lambda w: (w is not None, "- fix · PR #30 · x" in (w or ""), "## GOAL g" in (w or "")))(
+                 thread_handoff(_e("fix · PR #30 · x"), root, _show(_tracked))), (True, True, True))
+        case("backlog #507: …a tracked line naming the same ref (a backlog row among others) is silent",
+             thread_handoff(_e("fix · backlog #11 · y"), root, _show(_tracked)), None)
+        case("backlog #507: …`PR #30` is not tracked by a line naming `PR #305`, but `PR #305` is",
+             [thread_handoff(_e(f"fix · PR #{n} · x"), root, _show(_tracked)) is None for n in (30, 305)], [False, True])
+        case("backlog #507: …an unreadable threads file says NOT CHECKED, never 'tracked'",
+             "NOT CHECKED" in (thread_handoff(_e("fix · PR #9 · x"), root, _show("fatal: bad", 128)) or ""), True)
+        case("backlog #507 r1: a ref named only in a tracked line's WHAT is not a declaration — it warns",
+             thread_handoff(_e("fix · PR #30, backlog #12 · x"), root,
+                            _show("## GOAL g\n" + _rq + "- fix · PR #99 · follow PR #30 and backlog #12\n")) is None, False)
+        case("backlog #507 r1: a bullet ABOVE any goal heading does not count; one under ANOTHER goal does",
+             [thread_handoff(_e("fix · PR #30 · x"), root, _show(t)) is None
+              for t in ("- fix · PR #30 · stray\n## GOAL g\n" + _rq, "## GOAL other\n" + _rq + "- fix · PR #30 · there\n")], [False, True])
+        case("backlog #507 r2: refs compare as PARSED numbers — a tracked `PR #030` tracks the entry's `PR #30`",
+             thread_handoff(_e("fix · PR #30 · x"), root, _show("## GOAL g\n" + _rq + "- fix · PR #030 · x\n")), None)
+        case("backlog #507 r2: a file goal-tree REFUSES (a stray heading) is NOT CHECKED, even when it names the ref",
+             "NOT CHECKED" in (thread_handoff(_e("fix · PR #30 · x"), root,
+                                             _show("## GOAL g\n" + _rq + "- fix · PR #30 · x\n## Notes\n")) or ""), True)
+        case("backlog #507 r2: an entry thread that does not parse says so",
+             "does not parse" in (thread_handoff(_e("fix PR #30"), root, _show(_tracked)) or ""), True)
+        case("backlog #507 r3: an entry thread written WITH its bullet (`- fix · …`) reads as goal-tree reads it",
+             thread_handoff(_e("- fix · backlog #11 · y"), root, _show(_tracked)), None)
+        case("backlog #507 r3: refs compare by KIND too — `backlog #30` does not track `PR #30`",
+             thread_handoff(_e("fix · PR #30 · x"), root, _show("## GOAL g\n" + _rq + "- fix · backlog #30 · x\n")) is None,
+             False)
+        _other = root / "other-main"
+        case("backlog #507 r3: master's file is read in the checkout `main` names, not another",
+             [thread_handoff(_e("fix · PR #30 · x"), m, lambda c, w, timeout=TIMEOUT: (0, "## GOAL g\n" + _rq + "- fix · PR #30 · x\n")
+                             if w == _other else (128, "not here")) is None for m in (_other, root)], [True, False])
+        _stub = types.SimpleNamespace(parse_thread_line=lambda line: (None, "the stub refuses"), Malformed=ValueError)
+        case("backlog #507 r3: the thread is parsed by the goal-tree module handed in",
+             "the stub refuses" in (thread_handoff(_e("fix · PR #30 · x"), root, _show(_tracked), gt=_stub) or ""), True)
+        case("backlog #507: …an entry with no thread is silent",
+             [thread_handoff({"id": "j"}, root, _show(_tracked)), thread_handoff(_e("  "), root, _show(_tracked))], [None, None])
+        _err = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(_err):
+            main(["--add", "t7", "build", "merge", "--goal", "g", "--thread", "fix · PR #30 · x"], root=r2, run=_show(_tracked))
+            _rc7 = main(["--done", "t7"], root=r2, run=_show(_tracked))
+        case("⭐ backlog #507: main --done on an untracked thread removes the entry AND warns on stderr",
+             (_rc7, read_ledger(r2 / LEDGER_REL)[0], "- fix · PR #30 · x" in _err.getvalue()), (0, [], True))
+        # r3 Codex MAJOR: a re-add landing between a pre-lock read and the lock — simulated by re-adding as the lock is taken
+        with redirect_stdout(io.StringIO()):
+            main(["--add", "t8", "build", "merge", "--goal", "g", "--thread", "fix · backlog #11 · y"], root=r2, run=_show(_tracked))
+        _real_locked, _err8 = _locked, io.StringIO()
+
+        @contextmanager
+        def _racing(path):
+            with _real_locked(path):
+                _e8, _raw8 = _for_update(path)
+                _write(path, [e for e in _e8 if e.get("id") != "t8"]
+                       + [{"id": "t8", "what": "w", "on_done": "d", "at": "x", "kind": "build", "goal": "g",
+                           "thread": "fix · PR #31 · re-added"}], _raw8)
+                yield
+        globals()["_locked"] = _racing
+        try:
+            with redirect_stdout(io.StringIO()), redirect_stderr(_err8):
+                main(["--done", "t8"], root=r2, run=_show(_tracked))
+        finally:
+            globals()["_locked"] = _real_locked
+        case("backlog #507 r3: --done checks the entry it REMOVED, so a re-add racing it still warns",
+             ("- fix · PR #31 · re-added" in _err8.getvalue(), read_ledger(r2 / LEDGER_REL)[0]), (True, []))
         case("⭐ an entry that only MENTIONS the owner is not a wait; one marked WAITS-ON-OWNER: is",
              [waits_on_owner({"what": "PAUSED 04:03 by owner: resume later"}),
               waits_on_owner({"what": f"{OWNER_MARKER} roles page answers", "on_done": "fold"}),
@@ -1195,6 +1435,43 @@ def _self_test_body() -> int:
              ((repo.resolve(), None), True))
         case("a rev-parse answer that is not an absolute directory is refused, never resolved against the cwd",
              main_checkout(wt, lambda c, w, timeout=TIMEOUT: (0, "[{\"number\": 1}]\n"))[0], wt)
+        # ⛔ backlog #408, review r2: a generator in a private CLONE is told the main checkout by the runner, and that
+        # name is honoured only when git, asked from it, names it as its own main checkout.
+        # The clone is a REAL `clone --shared`, as the runner makes it (review r3 R3-F2: the name is honoured only for
+        # a root that is this repository's — its common dir, or a clone whose alternates name it).
+        clone, other = root / "private-clone", root / "other-repo"
+        subprocess.run(["git", "clone", "--shared", "--no-checkout", "--quiet", str(repo), str(clone)],
+                       capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
+        other.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=other, capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
+        _saved_env = os.environ.get(MAIN_CHECKOUT_ENV)
+        try:
+            os.environ[MAIN_CHECKOUT_ENV] = str(repo)
+            _named_main = main_checkout(clone, _run)
+            _named_from_wt = main_checkout(wt, _run)
+            _named_from_nonrepo = main_checkout(root, _run)
+            os.environ[MAIN_CHECKOUT_ENV] = str(wt)
+            _named_linked = main_checkout(clone, _run)
+            os.environ[MAIN_CHECKOUT_ENV] = "mainrepo"
+            _named_rel = main_checkout(clone, _run)
+            os.environ[MAIN_CHECKOUT_ENV] = str(other)
+            _other_from_clone = main_checkout(clone, _run)
+            _other_from_wt = main_checkout(wt, _run)
+        finally:
+            os.environ.pop(MAIN_CHECKOUT_ENV, None)
+            if _saved_env is not None:
+                os.environ[MAIN_CHECKOUT_ENV] = _saved_env
+        case("⭐ backlog #408: a generator run from its private `clone --shared` names the MAIN checkout the "
+             "runner put in REGEN_MAIN_CHECKOUT",
+             (_named_main, _named_from_wt), ((repo.resolve(), None), (repo.resolve(), None)))
+        case("⛔ backlog #408: ...but a name that is a LINKED worktree, or relative, is refused, never trusted as text",
+             (_named_linked[0], "is not a main checkout" in str(_named_linked[1]), _named_rel[0],
+              "not an absolute path" in str(_named_rel[1])), (clone, True, clone, True))
+        case("⛔ review r3 R3-F2: a REGEN_MAIN_CHECKOUT naming ANOTHER repository's main checkout is refused, from a clone "
+             "and from a real checkout alike; and from a non-repository, which no alternates tie to it",
+             [(r[0], "is not a checkout of the repository" in str(r[1]))
+              for r in (_other_from_clone, _other_from_wt, _named_from_nonrepo)],
+             [(clone, True), (wt, True), (root, True)])
         out = collect(wt, run=gh_only, now="T")
         case("⭐ collect() run in a LINKED WORKTREE shows the MAIN checkout's ledger — never 'none RECORDED'",
              ("[main-job] Codex r2 on PR #7" in out, "none RECORDED" in out), (True, False))
@@ -1226,6 +1503,11 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                     help="what the owner has to do with the entry, declared and never inferred: `owner-wait` (a decision waits "
                          "on them), `owner-instruction` (something they told us to do) or `routine`. Every reader prints the "
                          "first two WHOLE and trims `routine`. Left out, it is what the text looks like (`guess_kind`)")
+    ap.add_argument("--goal", metavar="SLUG",
+                    help="with --add and --thread: the `## GOAL <slug>` of docs/goal-threads.md this work serves (backlog #505)")
+    ap.add_argument("--thread", metavar="LINE",
+                    help="with --add and --goal: `<relation> · <refs> · <what>`, the threads file's own grammar. The goal "
+                         "tree shows it under the goal until master's docs/goal-threads.md declares the same refs")
     ap.add_argument("--done", metavar="ID")
     ap.add_argument("--migrate-kinds", action="store_true",
                     help="print the kind each entry has or would get; with --apply, back the ledger up to "
@@ -1238,10 +1520,12 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
         return self_test()
     stray = [flag for flag, on in (("--apply", args.apply and not args.migrate_kinds),
                                    ("--override", bool(args.override) and not args.migrate_kinds),
-                                   ("--kind", args.kind is not None and not args.add)) if on]
+                                   ("--kind", args.kind is not None and not args.add),
+                                   ("--goal", args.goal is not None and not args.add),
+                                   ("--thread", args.thread is not None and not args.add)) if on]
     if stray:   # r3 R3-5: a flag given outside the mode that reads it did nothing and said nothing
         print(f"CANNOT RUN — {', '.join(stray)} only means something with "
-              f"{'--migrate-kinds' if stray[0] != '--kind' else '--add'}; nothing was done", file=sys.stderr)
+              f"{'--migrate-kinds' if stray[0] in ('--apply', '--override') else '--add'}; nothing was done", file=sys.stderr)
         return 2
     main, main_err = main_checkout(root, run)
     led = main / LEDGER_REL   # a worktree session's --add goes where every reader looks
@@ -1261,11 +1545,16 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                 print(f"  {id_:<28} {now_:<17} -> {want:<17} ({why})")
             return 0
         if args.add:
-            ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"), args.kind)
+            ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"), args.kind,
+                       args.goal, args.thread)
             print(f"ledger: added {args.add[0]}")
             return 0
         if args.done is not None:
-            print(f"ledger: {'removed' if ledger_done(led, args.done) else 'no such id'} {args.done}")
+            closing = ledger_take(led, args.done)
+            print(f"ledger: {'removed' if closing is not None else 'no such id'} {args.done}")
+            warn = thread_handoff(closing, main, run) if closing is not None else None
+            if warn:   # backlog #507: a warning, never a refusal — the entry is already closed
+                print(warn, file=sys.stderr)
             return 0
     except (OSError, ValueError) as exc:
         print(f"CANNOT RUN — ledger {led}: {exc}", file=sys.stderr)

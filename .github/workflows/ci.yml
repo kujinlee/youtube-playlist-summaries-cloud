@@ -15,12 +15,26 @@ on:
   pull_request:
     branches: [master]
   push:
-    branches: [master]
+    # backlog #534: `batch/**` is a BATCH — origin/master plus every ready PR head, assembled by
+    # `scripts/batch-ci.py`. Its push runs the FULL sweep (`check-plan-code.select_manifests` sweeps the whole
+    # manifest on any event but a pull request) plus the ordinary suite, ONCE for many PRs, before they merge.
+    # Its shards fail fast (see `mutation-sweep`) and its red never files a `sweep-red` issue (see the alert).
+    branches: [master, 'batch/**']
+  # backlog #330: THE FULL SWEEP'S BACKSTOP. A pull request runs only the manifests its diff selects,
+  # and a text-bound defect in an UNSELECTED manifest (backlog #109's orphaned anchor) is seen only by
+  # running the whole manifest — which every master push does, and this does daily even when nothing
+  # merges. A red one opens (or comments on) a `sweep-red` issue: see `mutation-sweep-complete`.
+  schedule:
+    - cron: '23 7 * * *'
 
-# A new push to the same PR cancels the previous run.
+# A new push to the same PR cancels the previous run. ⛔ A PUSH TO MASTER IS NEVER CANCELLED
+# (backlog #405 r1): cancelling it let a later docs-only merge (whose own sweep is skipped) erase an
+# earlier scripts merge's `verify` and full sweep with no signal, leaving that merge unmeasured.
+# backlog #534: a `batch/**` push is a push too, so it is never cancelled either — and each batch has its own
+# branch name, so its group holds only its own run.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -402,6 +416,14 @@ jobs:
       # deferred). Every hook mode exits 0; the suite runs the hooks themselves.
       - name: compaction-state self-test
         run: python3 scripts/compaction-state.py --self-test
+      # backlog #428: the push gate's detection (quote-stripped, FAIL CLOSED). The suite also RUNS
+      # `.claude/hooks/block-default-branch-push.sh` over a fixture clone on a feature branch and on master.
+      - name: push-command self-test
+        run: python3 scripts/push-command.py --self-test
+      # PR #542 round 1 (C-F7): the hook's OWN suite ran nowhere, so rules 2 and 3 (force, `+refspec`,
+      # --no-verify, hooksPath, ALLOW_PLAN_LEAK) and the input/jq refusals could regress with CI green.
+      - name: block-default-branch-push hook self-test
+        run: bash .claude/hooks/block-default-branch-push.sh --self-test
       # backlog #440: the PreCompact boundary hook (defer an auto compaction mid-work, up to 1.5 x W).
       - name: check-compaction-boundary self-test
         run: python3 scripts/check-compaction-boundary.py --self-test
@@ -623,12 +645,49 @@ jobs:
       - name: Explainer delivery is described in ONE place
         run: python3 scripts/check-explainer-delivery.py
 
-      # ⛔ NOT a generalisation of the step above — that wording was this guard's own defect
+      # ⛔ ONE RULE, ONE PLACE — FOR DOCUMENTS, AND IT IS THE MECHANICAL HALF OF A CONVENTION
+      # THAT FAILED TWICE IN TWO ROUNDS. Measured on `marketplace-inventory`, 2026-10-16: two
+      # adversarial rounds produced 18 then 21 findings, and 14 of the second round's were
+      # introduced by the first's own fix. ONE mechanism was behind thirteen of them — a rule
+      # stated in several places, and the fold updating the site the finding named. Round 1's
+      # Blocking ("§5 requires a declared set; nothing in §7 produces one") then RECURRED one
+      # round later in the same pair of sections, which is what armed the architecture review.
+      # The coordinator had already written the mechanism against itself after round 2 and then
+      # reproduced it in the very next round, so a checklist competing with recall is not the
+      # remedy.
+      #
+      # ⟳⛔ 2026-10-17, ADR-0015 — EVERYTHING ABOVE IS HISTORY, AND THE STEP NO LONGER DOES IT.
+      # The two prose checks (*a retired claim is not re-asserted*, *a live claim reaches every
+      # declared site*) are DELETED; `check-canonical-source.py` now owns that concern with the
+      # opposite remedy — it refuses the second copy rather than requiring every copy to agree.
+      # What this step checks is ONE thing: a page's DERIVED figure agrees with the producer that
+      # computes it. ⚠ The history is kept because it is why the derived half exists; the old step
+      # NAME is not, because the name is what a reader sees on a red required check.
+      # ⚠⚠ The rename was found by round 5's Claude half, not by the fold that deleted the checks —
+      # which had corrected `CONTEXT.md` and `explainer-delivery.md` and not swept the workflow.
+      # The note nine lines below (*"that wording was this guard's own defect … corrected at all
+      # three sites it stood at"*) is this repository paying for a wrong name on this same guard
+      # for the second time.
+      - name: A page's derived figure agrees with its producer
+        run: python3 scripts/check-claim-propagation.py
+
+      - name: claim-propagation self-test
+        run: python3 scripts/check-claim-propagation.py --self-test
+
+      # ⛔ NOT a generalisation of `check-explainer-delivery.py` — that wording was this guard's
+      # own defect
+      # ⟳ r6 CLAUDE M6: this read *"the step above"*, which is now the claim-propagation step
+      # and is NOT what the sentence describes — the contrast is with the DELIVERY guard and its
+      # `PAGE_SKILLS` enumeration. A positional reference broke when a step was renamed between
+      # it and its subject: `a-positional-read-needs-a-verified-shape`, in prose.
       # (r6 CLAUDE H5) and is corrected at all three sites it stood at. Same PATTERN, two
       # guards, because what each forbids differs in KIND: that one forbids a RUNNABLE
       # PROCEDURE (oracle: a fenced code block, scoped to `.agents/skills/*/SKILL.md`) and
       # also asserts enumeration completeness over its `PAGE_SKILLS`; this one forbids a
-      # SYMBOL (oracle: a token substring over four directories and three extensions).
+      # SYMBOL (oracle: a token substring over four directories PLUS THE REPO ROOT and FOUR
+      # extensions — `*.md`,
+      # `*.py`, `*.sh` and `*.html`; ⟳ r6 CODEX: this said THREE, which ADR-0015's `*.html`
+      # widening made false the same day, in a comment the fold did not sweep).
       # Measured: in this guard's population `explainer-serve.py` carries 34 non-exempt
       # sites, so a token oracle there would fire on the scripts that call it.
       # Added after the handoff-path and corpus-search instructions drifted across SIX
@@ -706,8 +765,10 @@ jobs:
       # compares what it PRINTED with what its docstring DECLARES, the same way
       # check-test-counts.py treats the jest suite. Five of the nine declarations were stale on the
       # first run; it also caught a defect in itself, which is why it is in its own population.
+      # Backlog #487: the suites run four at a time (ubuntu-latest has 4 vCPUs; the script caps the
+      # pool at the host's cores). Serially this step took 167-197 s. It still RE-RUNS every suite.
       - name: Declared self-test counts match the suites
-        run: python3 scripts/check-selftest-counts.py
+        run: python3 scripts/check-selftest-counts.py --jobs 4
 
       - name: check-selftest-counts self-test
         run: python3 scripts/check-selftest-counts.py --self-test
@@ -802,6 +863,25 @@ jobs:
       - name: page_chrome self-test
         run: python3 scripts/page_chrome.py --self-test
 
+      # The strace-log path resolver (backlog #586 slice 2). A library with no caller yet, not a
+      # check-* guard, so `check-ratchet-contract.py` neither sees it nor should. THIS STEP stops its
+      # --self-test going unrun; scripts/mutations/strace_reads.json stops it going vacuous.
+      - name: strace_reads self-test
+        run: python3 scripts/strace_reads.py --self-test
+
+      # One link function for every key (backlog #470). `--sources` is rule 2: no href to a key's
+      # home page is built in scripts/ outside page_markup.key_link. The page rules (1, 1b, 3, 4, 5)
+      # read BUILT pages: `--build --ci` builds the four a checkout can build (dashboard, goals and
+      # features as fragments, the backlog table whole) from the real docs, and checks them. The
+      # goal-tree page renders from the local goal-tree log, which CI does not have: NOT RUN here,
+      # said so in the step's output, and run locally with `--build`. Needs node (rule 5), set up above.
+      - name: check-page-links self-test
+        run: python3 scripts/check-page-links.py --self-test
+      - name: check-page-links (one link function)
+        run: python3 scripts/check-page-links.py --sources
+      - name: check-page-links (built pages, what a checkout can build)
+        run: python3 scripts/check-page-links.py --build --ci
+
       # ── The project dashboard: the page, its grammar, and the gate that feeds it ──
       #
       # A person who was away reads this page instead of the transcript. It is only worth
@@ -843,8 +923,8 @@ jobs:
       #
       # ⚠ That 43 is HISTORY — it pins the one-off equivalence demonstration, not the live
       # count, which has since grown (a 44th entry closed a fail-open found in review). For
-      # the current number run the step; EXPECTED_MUTATIONS in check-plan-code.py is what
-      # actually enforces it. Do not restate a live count here — see ff5857b.
+      # the current number run the step; EXPECTED_MUTATIONS in
+      # scripts/mutations/expected_mutations.py (backlog #533) is what actually enforces it. Do not restate a live count here — see ff5857b.
       #
       # What this protects is unchanged from the step it replaces: the mutation evidence
       # describes the code that ships. It is now literally true rather than true-by-copy.
@@ -1016,12 +1096,32 @@ jobs:
     # `copy2` preserves mtime and size, so the repository's own 89-file cache arrived looking
     # current.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # ⟳ 2026-11-06, backlog #506: the SCHEDULED sweep runs every suite under TWO hash seeds (see `--seeds`
+    # below), so its shard does about twice the work — slowest shard ~1,184s at one seed (N=18), so ~2,400s
+    # PREDICTED, not measured, at two. 60 on the schedule only; every other event keeps 30.
+    # ⟳ r1 fold: the second seed runs in its own COPY of the staged tree (Codex M1), made ONCE per run
+    # (shard) and shared by its controls and mutants. Measured on a Mac, a 30-mutant slice: 32.5 s unseeded,
+    # 57.6 s seeded (the per-mutant copies it replaced took 201-414 s). Not measured on this runner; the
+    # first nightly is the measurement, and a timeout still files `sweep-red`.
+    # ⛔ PR #538 (backlog #558): THE SWEEP'S TIME BUDGET IS THIS VALUE, AND THE HARNESS NEVER PARSES THIS FILE FOR IT.
+    # The anchor `&sweep-limit` is aliased into the sweep step's env (`SWEEP_TIMEOUT_MINUTES: *sweep-limit`), so the
+    # runner evaluates ONE YAML node for both the job's kill and the harness's budget; `check-plan-code.ci_deadline`
+    # reads that integer (less SWEEP_HEADROOM, 120 s) from the step's environment and counts it from the epoch the
+    # job's first step writes. A missing or non-integer value is CANNOT RUN in every shard, never a default. Keep
+    # the anchor on this line, the alias in the sweep step, and ONE timeout-minutes in this job (a step-level one
+    # would kill the step before the budget ran out): `check-plan-code.sweep_limit_pin`, run by its self-test, reds
+    # the PR that breaks any of the three. (Architecture review 2026-11-08, sweep-deadline: this replaced a YAML
+    # subset reader that three review rounds kept finding holes in.)
+    timeout-minutes: &sweep-limit ${{ github.event_name == 'schedule' && 60 || 30 }}
     strategy:
       # ⛔ NOT fail-fast. A surviving mutation in shard 3 says nothing about shards 4-8, and
       # cancelling them turns one finding into an unknown — the reader needs every survivor
       # from the first run, not whichever one happened to fail first.
-      fail-fast: false
+      # ⟳ backlog #534: EXCEPT on a `batch/**` push. A batch needs a VERDICT and one culprit, not the
+      # inventory: `batch-ci.py status` ejects the PR that owns the first red manifest (or bisects), and the
+      # re-assembled batch sweeps everything again, so the shards the first red cancels are re-run anyway.
+      # The reason above still holds for a pull request, master and the schedule, which keep `false`.
+      fail-fast: ${{ startsWith(github.ref, 'refs/heads/batch/') }}
       matrix:
         # ⛔ ONLY THE LENGTH OF THIS LIST MATTERS. The step below takes I from
         # `strategy.job-index` and N from `strategy.job-total`, so the shards are 1..job-total
@@ -1100,7 +1200,7 @@ jobs:
         # PREDICTED, not measured — per-shard work from the same per-entry costs, then x 1.24:
         #   N=16    mean 1136s -> slowest ~1409s  1.28x
         #   N=20    mean  968s -> slowest ~1201s  1.50x  (exactly on the line; 1.28x at a 1.45 spread)
-        #   N=24    mean  851s -> slowest ~1055s  1.71x  (1.46x at the worst 1.45 spread seen) <- chosen
+        #   N=24    mean  851s -> slowest ~1055s  1.71x  (1.46x at the worst 1.45 spread seen) <- chosen 10-30
         #   N=28    mean  766s -> slowest  ~950s  1.90x
         # ⚠ CONCURRENCY — MEASURED on this branch's own run 41065653565 (PR #445 r1): the account ran
         # EXACTLY 20 jobs at once, 13:44Z-14:24Z, with no max-parallel set. (An earlier reading of
@@ -1111,8 +1211,97 @@ jobs:
         # to end is backlog #415's measurement. The limit is shared by every concurrent PR's jobs.
         # The first CI run of this branch is the measurement — REOPEN #231 if any shard there
         # exceeds 1,500s.
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+        #
+        # ⟳ 2026-11-03: 24 -> 18, backlog #415 — ONE WAVE. A pull request's CI + schema-gates runs
+        # hold `verify` + 1 schema job + N shards; at N=24 that is 26 against the 20-job limit, so
+        # six shards queue. At N=18 it is exactly 20. Since PR #449 memoised `check-main-drivable`
+        # the shards are much shorter: MEASURED on run 41564172713 (7d9d2665, N=24) the shard mean
+        # was 835s, slowest 1,111s (1.33x), six shards waited up to 736s, and the required check
+        # reported at 1,668s. PREDICTED, not measured: with a 250-334s per-shard floor that does not
+        # divide, N=18 gives a mean of ~1,000-1,030s and a slowest of ~1,330s at that 1.33x spread
+        # (~1,490s at the worst 1.45x seen) — 1.21-1.35x inside `timeout-minutes: 30`, so less
+        # headroom than 24's. MEASURED, paired on one master (1fef3d5d), quiet queue, backlog #415:
+        # N=18 run 41607028370 reported the required check at 1,194s (slowest shard 1,184s, mean
+        # 993s, no shard waited); N=24 run 41609884078 at 1,704s (slowest 1,001s, six waited up to
+        # 746s). N=18 is 30% faster end to end.
+        # REOPEN #231 if any shard exceeds 1,500s.
+        #
+        # ⟳ 2026-11-07: 18 -> 24, backlog #231 — ITS TRIGGER FIRED A THIRD TIME. MEASURED on master push
+        # run 42387350733 (fcf00068, N=18): shards 3, 12 and 14 were CANCELLED at 30m; a re-run cancelled
+        # shard 3 again at 30m14s (1,344s of mutant work, re-control at 57 of 70 when killed at 1,814s;
+        # ESTIMATED, not measured, ~1,881s to finish) and shard 12 took 29m41s. Shard 12's complete log gives the floor that does NOT divide
+        # by N: ~25s setup + ~247s control + ~247s re-control = ~520s.
+        # PREDICTED, not measured: shard 3 at N=24 = 1,344 x 18/24 + ~537 = ~1,545s — INSIDE the 30m
+        # timeout by only ~14%, and OVER the 1,500s line below, so this buys a green master, not
+        # headroom; backlog #231 stays open (reopened in PR #532) and the next lever is per-suite cost
+        # (the ~64s `gen-backlog-page` cases, a 103s `R2-2` case), not a larger N. (11-03's measured
+        # 1,001s slowest shard at N=24 was on a manifest ~1.6x lighter, so it does not support today.)
+        # The cost is a SECOND WAVE: 24 + `verify` + `schema-gates` = 26 against the account's 20-job
+        # limit, so six shards wait for a first-wave shard to finish (~1,000-1,140s today), and the
+        # limit is shared by every concurrent run — this PR's own run had a shard wait 1,986s. That is
+        # latency, not `timeout-minutes` (queue time is not charged), and no watcher has an age bound.
+        # MEASURED on this change's own run 42432742676 (PR #533, c3d85c6d, N=24): all 24 shards green,
+        # mean 1,300s, slowest 1,499s / 1,460s / 1,459s (job wall clock) — 1.20x inside 30m, and AT the
+        # 1,500s line, as predicted. PREDICTED, not measured: further manifest growth risks crossing it.
+        # REOPEN #231 if any shard exceeds 1,500s.
+        #
+        # ⟳ 2026-11-09: 24 -> 38, backlog #231 — THE BUDGET RAN OUT ON MASTER WITH NO SURVIVOR. MEASURED on master
+        # push run 42634452353 (4a6f1577): shard 16 stopped at its 1,680s budget on attempts 1 AND 2 (the second with
+        # 17 re-controls not reached). Slowest shard, last seven master push runs at N=24 (`gh run view --json jobs`,
+        # job wall clock): 1683 (42634452353, censored by the kill), 1669 (42625034608), 1656 (42609802269), 1535
+        # (42592911465), 1538 (42568439765), 1474 (42561057231), 1262 (42529027472); a different shard each run
+        # (16, 19, 6, 19, 16, 7, 2). max/mean spread 1.12-1.22x (worst complete: 1.22, run 42609802269).
+        # THE COST MODEL, from all 24 logs of run 42625034608 (8e052493, 4,505 entries over 91 targets), by the
+        # `[k/M]` timestamp method above (0 name mismatches over 4,505): per shard in seconds, summed over 24,
+        #   setup (job start -> first control line)     637   (~27 a shard)
+        #   control + re-control                     11,067   (~461 a shard; DOES NOT divide by N)
+        #   mutation work                            23,014   (divides by N)
+        # Per shard, re-partitioned by `shard_slice` with each entry's measured cost and each target's median control
+        # cost: N=24 gives mean 1,446.6s (model), against 1,450.75s MEASURED on the same run (mean of
+        # `completedAt - startedAt` over its 24 shards, `gh run view 42625034608 --attempt 1 --json jobs`). That check is
+        # IN-SAMPLE: the costs were fitted on that run, so it shows the partition arithmetic is consistent, not that the
+        # model predicts. The floor barely moves with N, because a shard still touches 53-64 of the 91 targets at N=38
+        # (65-70 at N=24): floor mean 491s at 24, 470s at 38.
+        # COST OF MORE SHARDS, MEASURED by `shard_slice` over the 4,505 entries: control-suite runs rise ~1.37x (1,620
+        # target-shard pairs at N=24, 2,218 at N=38): in aggregate ~37% more control runs that a flaky suite could turn
+        # into CANNOT RUN at the after-control check (per target the rise ranges from 0 to ~58%) — the failure this
+        # change fixes, by a different route.
+        # ⛔ WHY 38 — THE JOB COUNT, COUNTED: run 42634452353 holds 26 jobs (24 shards + `verify` +
+        # `mutation-sweep-complete`, which waits for the matrix), and its push also starts `schema-gates.yml`'s
+        # `schema-gates` (`prod-drift` is skipped on push). So 38 shards + `verify` + `schema-gates` = 40 jobs compete
+        # for runners, and `mutation-sweep-complete` runs after them. At N=24 that is 26 against the account's 20-job
+        # limit. On an otherwise idle account 40 fill two batches of 20, so N = 40 - 2 = 38 keeps the shard work in two
+        # waves. This is a SOFT choice, not a cliff: slots free ONE AT A TIME (first-wave shards end across a
+        # 1.12-1.22x spread; `verify` 281-443s and `schema-gates` ~2 min leave early), so N=40's two extra jobs would
+        # wait for the 19th and 20th slot, not a whole shard duration; and the 20 are SHARED by every concurrent run
+        # and repository on the account, which shifts every wave.
+        # PREDICTED, not measured (model above, same per-entry costs):
+        #   N=36    mean 1,112s
+        #   N=38    mean 1,075s, work 606s + floor 470s  -> slowest 1,075 x 1.22 = ~1,312s (21.9 min, 1.37x inside 30m)
+        #   N=40    mean 1,042s  (two extra jobs: a third wave)
+        # At the worst spread ever recorded here (1.45x, 10-30, a lighter manifest) N=38 would be ~1,559s — over the
+        # 1,500s line, inside the 1,680s budget. End to end, two waves of ~1,075-1,312s give ~2,150-2,620s on a quiet
+        # queue, against 2,744-3,470s MEASURED to `mutation-sweep-complete` on the six green runs above (they include
+        # other runs' queueing, so this is not a paired comparison). Runner-time rises ~18% (38 x 1,075 against
+        # 24 x 1,447); the repository is public, so that costs no money. Mutation work per shard falls 24/38, but the
+        # shard only to ~0.74x, because the floor does not divide.
+        # LIFESPAN, PREDICTED (not measured): the manifest grows ~200 entries a day (2,512 on 10-30, 4,505 today). On
+        # the model above the slowest shard at N=38 returns to the 1,500s line when work per shard grows from 606s to
+        # (1,500 / 1.22) - 470 = 759s, a 25% rise, ~1,100 entries: about 5-6 days. This REVERSES the 11-07 note ("the
+        # next lever is per-suite cost, not a larger N") as RELIEF while master is red; it does not answer it. The
+        # structural lever stays per-suite cost and the control floor, and is tracked as backlog #588.
+        # MEASUREMENT: PR #550's own run 42660040212 sweeps the full manifest at N=38 (`ci.yml` is a harness path, so
+        # selection is FULL) and is the first measurement; the first master push run is the second.
+        # Backlog #231 closes only after TWO CONSECUTIVE master push runs with every shard under 1,500s.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
     steps:
+      # ⛔ FIRST, BEFORE CHECKOUT — PR #538 r2 fold (backlog #558). `check-plan-code.ci_deadline` counts the
+      # sweep's time budget from this epoch, so checkout, setup and `npm ci` are spent FROM the budget, not
+      # added after it (a budget counted from the sweep's own start fell past the kill). A run on CI with no
+      # epoch is CANNOT RUN; `check-plan-code`'s self-test pins this step as the job's first, and the name once.
+      - name: Record when this job started (the sweep's time budget counts from here)
+        run: echo "SWEEP_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
       # ⚠ fetch-depth: 0 for parity with `verify`, not because the sweep reads history — it
       # copies the tree into a temp dir with no `.git` at all. Keeping the two checkouts
       # identical means a guard that grows a history-reading case does not fail HERE for a
@@ -1163,210 +1352,88 @@ jobs:
       # not a canonical ASCII `I/N` (bounded to four digits, no Unicode digits, no leading zeros, no
       # surrounding whitespace), refuses `0 <= I < N` violations, and refuses an empty value — each
       # with a CANNOT RUN sentence and a case in `check-plan-code.py`'s own suite.
-      # ── backlog #173, raised by the owner TWICE and measured rather than estimated ──────
-      # "this sweep time become quite a drag as it happens every merge even for small changes".
-      # MEASURED on run 35889056587: the sweep was 8m12s of a 10m22s job — 79% of the gate — and
-      # three of the five pull requests merged that week changed no code at all. When no
-      # `scripts/**` file changed, the sweep mutates UNCHANGED code against UNCHANGED suites, so
-      # it can only reproduce the previous result: skipping it loses nothing BY CONSTRUCTION.
-      #
-      # ⛔⛔ A STEP-LEVEL `if:`, NEVER A WORKFLOW-LEVEL `paths:` FILTER — backlog #137 already paid
-      # for that distinction. A `paths:` filter means the context never appears on a docs-only pull
-      # request, and *a required check that never reports leaves a pull request pending for ever*.
-      # A step conditional keeps the job running and reporting, so the check stays required.
-      #
-      # ⛔ AND IT FAILS TOWARD RUNNING. If the base ref cannot be resolved the answer is `true`,
-      # because an undetermined diff must not silently skip a gate — "cannot run is a failure,
-      # never a pass" applies to the DECISION to skip just as much as to the sweep itself.
-      - name: Did any mutated code or manifest change?
-        id: mutated_code
-        run: |
-          set -u
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="origin/${{ github.base_ref }}"
-          else
-            BASE="HEAD^"
-          fi
-          if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
-            echo "base '$BASE' does not resolve — running the sweep rather than guessing"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # `scripts/` covers both the delivered guards and `scripts/mutations/**`, which is the
-          # whole of what the sweep reads. Anything else cannot change a mutation verdict.
-          # ⛔ THE DECISION IS NOT MADE HERE. This block collects the diff and calls
-          # `check-plan-code.sweep_needed`, which is pure, has seven cases and a mutation entry.
-          # A `run:` block has none of those, and that is exactly how the shard rule shipped wrong
-          # in three consecutive rounds with every gate green — see the comment on that step.
-          #
-          # ⛔⛔ AND THE ANSWER IS READ FROM STDOUT, NOT FROM AN EXIT CODE — MEASURED, because the
-          # first version of this block used `if python3 - <<EOF` and would have DISABLED THE GATE
-          # ENTIRELY. `check-plan-code.py` cannot be imported under a custom module name: a frozen
-          # dataclass needs the module registered in `sys.modules`, so `exec_module` raises. A
-          # raise is a non-zero exit, `if` reads that as false, and the sweep would have been
-          # skipped on EVERY run while the job stayed green. Printing the verdict separates "the
-          # answer is no" from "the question could not be asked" — the distinction the exit code
-          # silently collapsed.
-          # ⛔⛔ THE DIFF'S EXIT STATUS IS CHECKED, AND `|| true` IS GONE — r4, found independently
-          # by BOTH review halves and the coordinator, the only three-way overlap of the round.
-          # `|| true` made "the diff could not be taken" indistinguishable from "nothing changed":
-          # the redirect had already truncated the file, so Python read `[]`, and `sweep_needed([])`
-          # is False -> SKIP. MEASURED with a `git` shim that resolves `rev-parse --verify` and
-          # fails `diff` (the shape of a missing merge base): `changed=false`, exit 0, and a log
-          # line asserting *"no scripts/ file changed"* — a FALSE STATEMENT ABOUT THE WORLD rather
-          # than an error, so the `::warning::` arm below was never reached and nothing in the log
-          # told a reader the gate had been skipped.
-          #
-          # ⛔ `[]` IS NOT `None`, AND THAT WAS THE WHOLE BUG. `sweep_needed` has always had a
-          # `None` arm for exactly this condition, with a case pinning it — but the shell could
-          # express "no paths changed" and had NO WAY to express "I could not find out", so that
-          # arm was UNREACHABLE FROM ITS ONLY CALL SITE. The callee was correct and the guarantee
-          # was still absent: *unit coverage does not compose — mutate the CALL SITE*.
-          # ⚠ The only thing protecting this today is `fetch-depth: 0` on this job's checkout, and
-          # that setting's own comment says it is there "for parity with `verify`, not because the
-          # sweep reads history" — an incidental guard that invites its own removal.
-          # ⛔ `-z` IS LOAD-BEARING (r6 CODEX finding 2). Without it `git` C-QUOTES any non-ASCII
-          # path — measured in a real repo: `"scripts/\303\251.py"` — which does not start with a
-          # staged root, so `sweep_needed` returned False and the WHOLE GATE was skipped while a
-          # `scripts/` file had changed. That is a VERDICT defect, and it refutes three rounds of
-          # my own claim that this component's logic was undented while only its log was wrong.
-          # ⚠ `changed_from_nul` REFUSES newline-delimited input, so dropping `-z` here produces
-          # `None` and RUNS the sweep rather than silently reinstating the bug.
-          if git diff --name-only -z "$BASE"...HEAD > /tmp/changed.txt; then
-            DIFF_TAKEN=1
-          else
-            DIFF_TAKEN=0
-            echo "::warning::git diff against $BASE failed — the changed-file set is UNDETERMINED,"
-            echo "::warning::so the sweep RUNS. An unanswered question must never skip a gate."
-          fi
-          # ⛔ THE VERDICT AND THE EVIDENCE COME FROM THE SAME OWNER. The first version of the log
-          # line below re-listed the staged roots as a `grep -E` alternation here in YAML, which is
-          # a SECOND IMPLEMENTATION of `SWEEP_RELEVANT_ROOTS` — the drift class this repo has paid
-          # for 17 times, and one a weaker stand-in passes what the real rule would refuse. So the
-          # module prints the verdict on line 1 and the matching paths after it; the shell reports
-          # what it is given and decides nothing.
-          VERDICT_OUT=$(DIFF_TAKEN="$DIFF_TAKEN" python3 - <<'PYEOF' || echo "ERROR"
-          import importlib.util, os, pathlib, sys
-          spec = importlib.util.spec_from_file_location("cpc", "scripts/check-plan-code.py")
-          mod = importlib.util.module_from_spec(spec)
-          sys.modules["cpc"] = mod                     # a frozen dataclass needs this
-          spec.loader.exec_module(mod)
-          # `None` means the diff could not be taken, which `sweep_needed` answers with True.
-          # This is the line that makes that arm reachable; before it, nothing could produce None.
-          # ⛔ NOT `splitlines()` — that is what passed C-quoted paths straight into the
-          # predicate (r6 CODEX finding 2). `changed_from_nul` owns the parse and REFUSES input it
-          # cannot trust, returning None, which `sweep_needed` answers by running the sweep.
-          changed = (mod.changed_from_nul(pathlib.Path("/tmp/changed.txt").read_text())
-                     if os.environ["DIFF_TAKEN"] == "1" else None)
-          # ⛔⛔ THE DECISION IS NOT MADE HERE — AND FOR AN HOUR IT WAS. The three-way
-          # classification was written inline in this block, twenty lines under the comment above
-          # that forbids exactly that, and it is now `check-plan-code.sweep_verdict`: pure, nine
-          # cases, three mutation entries. The rule is not a style point — ALL 1,655 mutation
-          # entries in this repository target `scripts/`, and `.github/` has ZERO, so logic living
-          # here is unmeasurable by construction. Every significant finding on this branch landed
-          # in the unmeasured areas while the covered code held under three rounds.
-          verdict = mod.sweep_verdict(changed, os.environ["DIFF_TAKEN"] == "1")
-          print(verdict)
-          need = verdict != "SKIP"
-          # Line 2+ is EVIDENCE, and which evidence depends on the verdict: for RUN, the staged
-          # paths that forced it; for SKIP, the staged-but-unswept paths that fell in the measured
-          # hole (r5 CLAUDE M1). Both come from the module, so the shell owns no copy of either set.
-          if need and changed is not None:
-              for p in [c for c in changed
-                        if c.strip() and c.startswith(mod.SWEEP_RELEVANT_ROOTS)][:20]:
-                  print(p)
-          elif not need:
-              for p in mod.sweep_skipped_hole(changed)[:20]:
-                  print(p)
-          PYEOF
-          )
-          VERDICT=$(printf '%s\n' "$VERDICT_OUT" | head -1)
-          MATCHED=$(printf '%s\n' "$VERDICT_OUT" | tail -n +2)
-          # On the SKIP path the same lines are the skipped-set paths, not the matched ones.
-          HOLE=""
-          [ "$VERDICT" = "SKIP" ] && HOLE="$MATCHED"
-          case "$VERDICT" in
-            SKIP)
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              # ⛔⛔ THIS MESSAGE HAS BEEN WRONG TWICE, AND BOTH WORDINGS ARE RECORDED BECAUSE THE
-              # SHAPE REPEATS. v1 claimed "no scripts/ file changed" on a path where the diff had
-              # FAILED — a false statement about the world rather than an error. v2 claimed
-              # "nothing the harness stages changed" while `docs` IS staged, and asserted
-              # "unchanged suites" one line above its own warning that a docs change can alter a
-              # suite result (r5 CLAUDE M1: self-contradicting in adjacent lines, and byte-identical
-              # whether the hole was crossed or not). v3 DISCRIMINATES, and the discrimination is
-              # computed by `check-plan-code.sweep_skipped_hole` — not by a grep alternation here,
-              # which would be a second implementation of SWEEP_SKIP_ROOTS.
-              if [ -n "$HOLE" ]; then
-                echo "no path under check-plan-code.SWEEP_RELEVANT_ROOTS changed against $BASE,"
-                echo "⚠ BUT these changed paths are STAGED and NOT swept — the measured hole:"
-                printf '%s\n' "$HOLE"
-                echo "⚠ So this skip is NOT free: a change in that set CAN alter a suite result"
-                echo "(measured — check-anon-exposure 74/74 -> exit 1). backlog #173 pinned the"
-                echo "decision to skip it; backlog #330 is the selector that would remove the trade."
-              else
-                echo "nothing under check-plan-code.SWEEP_RELEVANT_ROOTS changed against $BASE, and"
-                echo "nothing in the skipped set either — the sweep would mutate unchanged code"
-                echo "against unchanged suites, so it can only reproduce the previous result."
-              fi
-              ;;
-            RUN-UNPARSED)
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              echo "::warning::the diff was taken but its paths could not be trusted —"
-              # ⛔ NO BACKTICKS IN A DOUBLE-QUOTED STRING. The first version of this line wrote
-              # the flag as `-z` in backticks and bash ran it as COMMAND SUBSTITUTION: the log read
-              # "-z: command not found" and the sentence lost the very word it was about. That is
-              # the exact footgun docs/dev-process.md records ("any backtick inside a double-quoted
-              # bash string is command substitution, and it has silently skipped a review gate"),
-              # committed by the person citing it, in a warning about dishonest log lines.
-              echo "::warning::not NUL-delimited, so the -z flag is missing or git quoted a path."
-              echo "the changed-file set is UNDETERMINED, so the sweep runs rather than"
-              echo "skipping a gate on an unanswered question. No path list is shown"
-              echo "BECAUSE THERE IS NONE — saying otherwise is what r6 CLAUDE M1 caught."
-              ;;
-            RUN)
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              # ⛔ THE REASON IS REPORTED, NOT ASSUMED. This arm used to print "scripts/ changed"
-              # unconditionally, so on the undetermined-diff path it asserted a changed file set it
-              # had just failed to read — a smaller instance of the very defect above, where the
-              # SKIP arm's "no scripts/ file changed" was a false statement rather than an error.
-              # A log line must never claim to know something this step could not determine.
-              if [ "$DIFF_TAKEN" = "0" ]; then
-                echo "the diff could not be taken, so the sweep runs without a changed-file list."
-              else
-                echo "a staged path changed, so the sweep runs:"
-                printf '%s\n' "$MATCHED"
-              fi
-              ;;
-            *)
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              echo "::warning::could not decide whether the sweep is needed ($VERDICT) —"
-              echo "::warning::running it rather than skipping a gate on an unanswered question"
-              ;;
-          esac
-
+      # ── backlog #330 (approved by the owner 2026-11-02): a PULL REQUEST runs only the manifests
+      # whose SUBJECT changed; a master push and the schedule run the WHOLE manifest. ─────────────
+      # It replaces backlog #173's binary skip, every one of whose error modes was TOTAL (a failed
+      # diff, an unrecognised staged path and every `docs/` change each skipped the whole gate).
+      # ⛔ THE DECISION IS NOT MADE HERE. `check-plan-code.select_manifests` makes it — pure, with
+      # cases and mutation entries; a `run:` block has neither, which is how the shard rule shipped
+      # wrong in three consecutive rounds with every gate green. This block collects the diff and
+      # passes the event; it interprets nothing.
+      # ⛔ IT FAILS TOWARD MORE. A diff that fails leaves NO list, and a missing, unreadable or
+      # untrusted list selects the WHOLE manifest — never a skip. The selection, with the changed
+      # path that selected each manifest (or "full: <why>"), is the first thing the step prints.
+      # ⛔ A STEP, NEVER A `paths:` FILTER (backlog #137): every shard always runs and reports, and a
+      # shard holding none of the selection says "nothing to do" and passes, so the REQUIRED
+      # `mutation-sweep-complete` reports on every pull request, one that selects nothing included.
+      # ⚠ `-z` is load-bearing (r6 CODEX finding 2): without it git C-QUOTES non-ASCII paths, and
+      # `changed_from_nul` refuses such a list (-> the whole manifest). `--no-renames` lists a
+      # rename's SOURCE too (backlog #480), so renaming a guard away still selects its readers.
+      # ⚠ The shard flag needs no arithmetic here: `--shard0` takes the matrix's 0-based index, and
+      # the shards split the SELECTED entries round-robin (`shard_slice`, unchanged).
       - name: Mutation manifest against the delivered scripts (one shard)
-        if: steps.mutated_code.outputs.changed == 'true'
         env:
           SHARD_INDEX: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          RUN_ID: ${{ github.run_id }}
+          # The job's own timeout-minutes, the SAME YAML node (an alias of `&sweep-limit` above): the harness's budget.
+          SWEEP_TIMEOUT_MINUTES: *sweep-limit
+        # ⟳ 2026-11-06, backlog #506 — THE CLASS CHECK. A mutant can be "killed" only when a hash order falls
+        # the right way (measured: dropping `sorted()` in check-review-decision survived under 4 seeds of
+        # 0-599), and then it reds an unrelated PR's sweep about once in N runs. On the SCHEDULE only, every
+        # suite runs under two PYTHONHASHSEEDs: 0, and one that changes every run (1 + run_id mod 2**32-1,
+        # never 0), so the daily sweep samples a new seed each day. A mutant killed under one and not the
+        # other is NONDETERMINISTIC, the shard is red, and `sweep-red-alert` files it like any red sweep —
+        # the log names both seeds, so it reproduces with `--seeds A,B`.
+        # ⛔ NOT ON PULL REQUESTS (the coordinator's call, 2026-11-06): doubling a PR's ~20-minute sweep and
+        # its share of the account's 20 concurrent jobs costs every PR to catch a ~1-in-120 defect class.
         run: |
-          # ⛔ NO LOGIC LIVES HERE ANY MORE — ROUND 6 M1, AND IT IS WHY THIS ONE GUARD SHIPPED
-          # WRONG IN THREE CONSECUTIVE ROUNDS WITH EVERY GATE GREEN. `grep -rln SHARD_INDEX` over
-          # `scripts/ tests/ .claude/` returned NOTHING: a `run:` block has no self-test, no
-          # mutation entry and no caller, and `check-ratchet-contract`'s population is
-          # `scripts/*.{py,sh}` plus `.claude/hooks/*` — never `.github/workflows/`. So every
-          # version of the rule written here was unmeasurable by construction:
-          #   v1  no I-side check at all -> an absent index became a valid shard 1, all N jobs
-          #       measuring one slice and all reporting green      (round 1 M2a, round 5 L2)
-          #   v2  a bash `case` on `*[!0-9]*` -> bash arithmetic is FIXED WIDTH, so
-          #       18446744073709551616 wrapped to 1                (round 5 codex Low)
-          #   v3  a Python parser using `isdigit()` -> UNICODE-WIDE, so `٠` became shard 1
-          #                                                        (round 6 L1)
-          # The 0->1 conversion now lives in `parse_shard`, which has a suite, mutation entries
-          # and ratchet coverage. The workflow interpolates two strings and asserts nothing.
-          python3 scripts/check-plan-code.py --mutate . \
-            --shard0 "$SHARD_INDEX/$SHARD_TOTAL"
+          set -u
+          SEEDS=""
+          if [ "$EVENT" = "schedule" ]; then
+            SEEDS="0,$(( 1 + RUN_ID % 4294967295 ))"
+          fi
+          CHANGED="$RUNNER_TEMP/changed.txt"
+          rm -f "$CHANGED"
+          if [ "$EVENT" = "pull_request" ]; then
+            if ! git diff --name-only -z --no-renames "origin/$BASE_REF"...HEAD > "$CHANGED"; then
+              rm -f "$CHANGED"
+              echo "::warning::git diff against origin/$BASE_REF failed, so there is no changed-file list"
+              echo "::warning::and the WHOLE manifest runs. An unanswered question never narrows a gate."
+            fi
+          fi
+          # ⟳ backlog #495 r1 (Codex 4 / Claude M1): a FLAKY mutant (survived, then killed on its one re-run)
+          # is GREEN, so nothing red would ever carry its name to a person. This shard's FLAKY lines go to a
+          # file, uploaded below, and `sweep-red-alert.py` files them on master. `tee` keeps the live log;
+          # the harness's OWN exit code is the step's (PIPESTATUS), and a grep that ERRORS (rc > 1, not
+          # "no match") is a red step: a scan that did not run never reads as "no FLAKY".
+          mkdir -p "$RUNNER_TEMP/sweep-flaky"
+          set +e
+          PYTHONUNBUFFERED=1 python3 scripts/check-plan-code.py --mutate . \
+            --shard0 "$SHARD_INDEX/$SHARD_TOTAL" \
+            --event "$EVENT" --changed "$CHANGED" ${SEEDS:+--seeds "$SEEDS"} 2>&1 | tee "$RUNNER_TEMP/sweep.log"
+          RC=${PIPESTATUS[0]}
+          grep -F 'mutation FLAKY — ' "$RUNNER_TEMP/sweep.log" > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"
+          G=$?
+          if [ "$G" -gt 1 ]; then
+            echo "::error::the FLAKY scan of this shard's log FAILED (grep rc $G): its FLAKY results are NOT CHECKED"
+            exit 2
+          fi
+          exit "$RC"
+
+      # backlog #495 r1: this shard's FLAKY names, for `mutation-sweep-complete` to file. Never on a pull request
+      # (its alert step does not run there); `overwrite` so a re-run attempt of one shard replaces its own file.
+      - name: Upload this shard's FLAKY mutation names
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sweep-flaky-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/sweep-flaky/
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
 
   mutation-sweep-complete:
     # ⭐ ONE CONTEXT TO REQUIRE, WHOSE NAME DOES NOT MOVE WHEN N DOES. A matrix reports N
@@ -1382,6 +1449,11 @@ jobs:
     # reports red and does NOT block the merge button. Nothing in this file can do that for
     # you; say it in the pull request.
     needs: mutation-sweep
+    # backlog #330: `issues: write` for the alert step below, and nothing else. `contents: read`
+    # for the checkout that holds the alert's helper — read, never write.
+    permissions:
+      contents: read
+      issues: write
     # ⚠ `always()`, so a failed or cancelled matrix still REPORTS. Without it this job is
     # SKIPPED when a shard fails, and a skipped required check is the pending-forever shape
     # this job exists to avoid.
@@ -1389,6 +1461,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # The alert step runs `scripts/sweep-red-alert.py`, so the checkout and Python come BEFORE
+      # the aggregate step: that step exits 1 on a red sweep, which skips every later step without
+      # its own `if:`, and the red path is exactly when the alert must run. ⟳ PR #496 r3: no
+      # `fetch-depth: 0` — the full history was for the ancestry rule a green no longer applies.
+      - uses: actions/checkout@v4
+
+      # The same pin as every other job in this file. `check-python-pin.py` asks it of every job,
+      # and `EXEMPT_JOBS` is deliberately EMPTY — an empty allow-list is the strongest form.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       # `needs.<job>.result` over a matrix is the AGGREGATE — `success` only when every shard
       # succeeded — so this cannot pass while a shard is red, cancelled or skipped.
       - name: Every shard of the mutation sweep reported green
@@ -1403,9 +1487,44 @@ jobs:
           fi
           echo "the mutation sweep is green in every shard"
 
-      # The same pin as every other job in this file. `check-python-pin.py` asks it of jobs
-      # that run no Python too, and `EXEMPT_JOBS` is deliberately EMPTY — an empty allow-list
-      # is the strongest form, so this is two lines of YAML instead of the first entry in it.
-      - uses: actions/setup-python@v5
+      # ── backlog #330: A RED FULL SWEEP ON MASTER MUST BE SEEN BY SOMEONE WHO WAS AWAY ──────────
+      # A pull request's sweep is diff-scoped, so what it does not select is measured only here,
+      # AFTER merge — and a red master run that nobody opens is the silent failure the owner's
+      # approval was conditional on ("as long as there are full sweep to detect error eventually").
+      # So it opens an issue labelled `sweep-red`, or comments on the open one rather than piling up
+      # duplicates; `session-state.py` lists the open ones at every SessionStart (PR #496 r1 C4).
+      # ⟳ PR #496 r3: a GREEN full sweep NEVER closes one. It comments "full sweep green at <sha>,
+      # run <url>" on each open issue, and with none open writes nothing. Three rounds each found a
+      # way for a close rule to erase a red it did not cover, so there is no close rule: closing is
+      # a person's act after reading the issue. The cases: `scripts/sweep-red-alert.py`.
+      # Pull requests never reach this step: their red is on the PR itself.
+      # ⚠ `!cancelled()`: a run a person cancelled neither alerts nor comments (backlog #482, r1 C6).
+      # The aggregate step above fails exactly when SWEEP is not `success`, so SWEEP decides here.
+      # backlog #534: a `batch/**` push never alerts either. Its red is a batch verdict, read and acted on by
+      # `batch-ci.py status` (eject or bisect); nothing it measured has merged, so master is not red.
+      # ⟳ backlog #495 r1 (Codex 4 / Claude M1): every shard's FLAKY names, merged into ONE directory.
+      # ⟳ r2 Codex 2: NOT continue-on-error — a failed download is a red step. The alert step below still runs
+      # (`!cancelled()`, no `success()`), files any red sweep FIRST, then goes red itself when ANY shard's
+      # `shard-<i>.txt` is missing (`read_flaky`, one per entry of the `shard:` matrix): an empty or partial
+      # download is NOT RUN, never "no FLAKY".
+      - name: Download every shard's FLAKY mutation names
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/heads/batch/') }}
+        uses: actions/download-artifact@v4
         with:
-          python-version: '3.12'
+          pattern: sweep-flaky-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/sweep-flaky
+
+      # ⟳ backlog #495 r1: the same step also FILES FLAKY mutants — on a green sweep too — as a `sweep-flaky`
+      # issue (or a comment on the open one), the owner's "named AND FILED" (11-11 19:25).
+      - name: The FULL sweep on master opens or comments on the sweep-red issue, and never closes one
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/heads/batch/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          SWEEP: ${{ needs.mutation-sweep.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FLAKY_DIR: ${{ runner.temp }}/sweep-flaky
+        run: python3 scripts/sweep-red-alert.py

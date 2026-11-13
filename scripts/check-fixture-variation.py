@@ -258,7 +258,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'format_question_entry.now', 'revision.p',),
     'gen-backlog-page.py': (
         'build.edited', 'build.generated_at', 'build.sha', 'build.stamp',
-        'link_contrast_errors.minimum', 'md.text', 'plain.text', 'report_run.rows',
+        'link_contrast_errors.minimum', 'plain.text', 'report_run.rows',
         'report_run.unread', 'report_unread.unread', 'rows_of.text',),
     'gen-dashboard.py': (
         'commit_dates.window', 'contrast_failures.minimum',),
@@ -274,8 +274,9 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     # about itself — it exits 0 while carrying it.
     'page_chrome.py': (
         'assert_wired.page',),
+    # ⟳ backlog #470: `scan.s` leaves — the key-link cases call `scan` on a second input.
     'page_markup.py': (
-        'escape.s', 'scan.s',),
+        'escape.s',),
     'prior-art.py': (
         'search.show_all',),
     'subject_status.py': (
@@ -313,6 +314,64 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #586 slice 2 (2026-11-12): the strace-log path resolver, pinned in the commit that creates it. DERIVED by
+    # running `analyse()` on the delivered source: 9 keys, every one varied by a case (none exempt).
+    # ⟳ 2026-11-12 slice 3 (the default-deny classifier and record assembly): re-DERIVED by `analyse()`, 9 + 11 = 20.
+    "strace_reads.py": ("classify.call", "copy_norm.ctx", "copy_norm.path", "cross_run.records", "decode_path.s",
+                        "exempt_write.path", "measurement_disagrees.doc", "merge_seeds.a", "merge_seeds.b", "norm.path",
+                        "parse_log.text", "process_tree.calls", "process_tree.root", "record_from_log.ctx",
+                        "record_from_log.strace_version", "record_from_log.text", "rel_to_copy.ctx", "rel_to_copy.path",
+                        "resolve_log.ctx", "resolve_log.text"),
+    # backlog #586 slice 1 (2026-11-10): the strace measurement instrument, which joined this population when its
+    # review-round-1 fold gave it a `--self-test`. DERIVED by running `analyse()` on the delivered source: 8 keys,
+    # every one reached through ONE forwarding helper (`_read`, `_merge`) and EXEMPT below naming the cases that vary it.
+    # ⟳ backlog #601 (2026-11-11): re-derived, 8 -> 7 keys; `analyse_log.copies` left with the removal classification.
+    "strace-measure.py": ("analyse_log.log", "analyse_log.samples", "analyse_log.shapes",
+                          "analyse_log.who", "merge.dirs", "merge.jobs", "merge.out"),
+    # backlog #397 (2026-11-09): the CI-duration tripwire, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source. ⟳ r1 fold: re-derived, 36 -> 47 keys, none lost — combine_rc, is_timeout_kill,
+    # last_complete_week, pct_text and valid_week are new, and main / record_main / report_main gained gh, today, clock.
+    "ci-durations.py": ("append_log.fetched", "append_log.path", "combine_rc.rc_rec", "combine_rc.rc_rep", "compare_weeks.min_samples",
+                        "compare_weeks.rows", "compare_weeks.week", "fetch.budget_s", "fetch.clock", "fetch.gh", "fetch.since",
+                        "fetch.skip", "format_report.min_samples", "format_report.verdicts", "format_report.week", "is_rise.cur_median",
+                        "is_rise.prev_median", "is_timeout_kill.annotations", "iso_week.merged_at", "job_rows.jobs",
+                        "job_rows.merged_at", "job_rows.pr", "job_rows.sha", "last_complete_week.today", "main.argv", "main.gh",
+                        "main.today", "new_rows.existing", "new_rows.fetched", "parse_log.text", "pct_text.cur", "pct_text.prev",
+                        "pick_ci_run.runs", "pick_ci_run.sha", "previous_week.week", "read_log.path", "record_main.budget_s",
+                        "record_main.clock", "record_main.gh", "record_main.path", "record_main.since", "report_main.min_samples",
+                        "report_main.path", "report_main.today", "report_main.week", "valid_week.week", "verdict_rc.verdicts"),
+    # backlog #589 (2026-11-09): the merged-worktree archiver. DERIVED by running `analyse()` on the delivered source:
+    # 30 keys; the 17 single-value parameters CI found were each VARIED by a new or adjusted case, none EXEMPT.
+    "prune-merged-worktrees.py": ("archive_note.archive", "archive_note.b", "check_prs.rows", "dev_of.p", "evaluate.b",
+                                  "evaluate.cwd", "evaluate.cwds", "evaluate.idx", "evaluate.logged", "evaluate.now",
+                                  "evaluate.refused", "evaluate.wt", "git_link.path", "hook_lines.archive",
+                                  "hook_lines.note", "hook_lines.root", "hook_lines.rows", "hook_lines.stopped",
+                                  "load_refused.p", "main.argv", "parse_lsof.text", "parse_time.s",
+                                  "parse_worktrees.porcelain", "pr_index.rows", "run.argv", "run.budget", "run.devf",
+                                  "run.now", "undo_cmd.dest", "undo_cmd.old"),
+    # backlog #534 (2026-11-06): the batch full sweep, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; every parameter varied by a case except `main.root`, EXEMPT with its reason.
+    # ⟳ batch-ci r1 fold: re-derived — 25 -> 41 keys, none lost: `classify`, `import_closure`, `latest_run`,
+    # `merge_ready_admits` and `widen` are new, and `members_of`/`merge_into` gained direct call sites. Five are
+    # EXEMPT (`members_of.root`/`.run`, `merge_into.run`/`.sha`/`.wt`), each with its reason.
+    # ⟳ batch-ci r2 fold: re-derived — 41 -> 47 keys. `import_closure.*` and `widen.*` (4) leave with the home-grown
+    # closure they belonged to (deleted, not renamed: R2-F2 attributes through `check-plan-code.select_manifests`);
+    # `answer_records`, `attribute.reach`, `first_red`, `merge_into.clean_only` and `reached` (10) join. The
+    # `merge_into.sha`/`.wt` exemptions are deleted: the R2-F3 e2e merges real PR heads in a second worktree.
+    # ⟳ batch-ci r3 fold: re-derived — 47 -> 52 keys, none lost. `postcondition.*` (5) joins: the whole-file check
+    # that replaced the hunk-level `_moved` (private, so never a key). Its two direct call sites vary all five.
+    "batch-ci.py": ("answer_records.texts", "attribute.diffs", "attribute.found", "attribute.reach",
+                    "batch_name.now", "bisection_order.members", "classify.jobs", "classify.latest",
+                    "failures.entries", "failures.log", "first_red.latest", "first_red.runs", "latest_run.runs",
+                    "main.argv", "main.now", "main.out", "main.root", "main.run", "members_of.root",
+                    "members_of.run", "members_of.tip", "merge_into.clean_only", "merge_into.run", "merge_into.sha",
+                    "merge_into.wt", "merge_message.n", "merge_message.sha", "merge_ready_admits.conflict_ok",
+                    "merge_ready_admits.rc", "merge_ready_admits.text", "parse_conflicts.text",
+                    "parse_member.parents", "parse_member.subject", "postcondition.base", "postcondition.ours",
+                    "postcondition.policy", "postcondition.result", "postcondition.theirs", "pr_ci_green.rollup", "reached.diffs",
+                    "reached.harness", "reached.modules", "reached.select", "reached.sources", "resolve_hunk.base",
+                    "resolve_hunk.ours", "resolve_hunk.policy", "resolve_hunk.theirs", "resolve_text.path",
+                    "resolve_text.text", "select.exclude", "select.prs"),
     # backlog #438 (2026-11-01): the per-PR battery runner, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
     # ⟳ PR #465 r1 fold: `classify.*`, `digest.inputs`, `git_refs.argv`, `last_green.*` and `read_ledger.path` leave with
@@ -419,6 +478,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "uncovered.sources",
     ),
     # backlog #361 (2026-10-28): pinned in the commit that creates it; re-pinned at the PR #425 r2 REDESIGN the r3 SPLIT (`mentioned` deleted) and the r4 DEFER (`audit`, `explicit_names`, `bound_keys` deleted).
+    # backlog #428 (2026-11-08): the push gate's detection, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source: `segments.cmd`, varied by 26 direct call sites.
+    # ⟳ 2026-11-08, PR #542 round 3 fold (Phase 6 design (b)): `segments` is DELETED with the r2 reader, so its
+    # key is removed deliberately; the fold's two public functions replace it. RE-DERIVED by running `analyse()`
+    # on the delivered source: `decide.cmd/cur/default/has_remote` and `lex.cmd`, every one varied.
+    "push-command.py": ("decide.cmd", "decide.cur", "decide.default", "decide.has_remote", "lex.cmd"),
     "compaction-state.py": (
         "main.argv",
         "main.aux_timeout",
@@ -474,6 +539,13 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "worktrees.root",
         "worktrees.run",
     ),
+    # PR #496 r2 X1 (2026-11-04): the sweep-red alert helper, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; every parameter varied by a case, none exempt. ⟳ PR #496 r3: auto-close
+    # REMOVED, so `green_actions` and `recorded_shas` are deleted with their parameters, not renamed.
+    # ⟳ backlog #495 r1 (2026-11-11): + the FLAKY filing's pure parser, body and directory read, each varied by a case.
+    "sweep-red-alert.py": ("flaky_body.event", "flaky_body.names", "flaky_body.run_url", "flaky_body.sha",
+                           "flaky_names.text", "read_flaky.flaky_dir", "red_body.event", "red_body.run_url",
+                           "red_body.sha", "red_body.sweep", "step_run_block.workflow_text"),
     # backlog #362 (2026-10-26; re-pinned at the r2 REDESIGN and again at the r3 SPLIT, which removed the branch reads).
     "session-state.py": (
         "check_summary.rollup",
@@ -529,7 +601,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "run.plan_dir",
         "run.root", "run.tdir", "run.write",
     ),
-    # The logged goal tree (backlog #363). Every parameter is varied by a case; none is exempt.
+    # The logged goal tree (backlog #363; `row_fates`, backlog #484). Every parameter is varied by a
+    # case; none is exempt.
     "goal-tree.py": (
         "append_if_changed.path", "append_if_changed.snap", "changes.cur", "changes.prev",
         "collect.root", "collect.run", "consolidate.items", "counts_conflict.item", "derive.goals",
@@ -538,7 +611,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "needs_from_backlog.text", "needs_from_dashboard.text", "needs_from_ledger.entries",
         "needs_html.snap", "needs_lines.snap", "needs_owner.row", "needs_state.snap",
         "parse_threads.text", "read_log.path", "render_page.built", "render_page.live",
-        "render_page.log", "render_text.snap", "segments.repo", "segments.text", "tree_lines.snap",
+        "render_page.log", "render_text.snap", "row_fates.text",
+        # ⟳ backlog #470: `segments.*` leave — `segments` moved into `page_markup.key_segments` (the
+        # name in goal-tree is now an alias, not a definition), and is examined by page_markup's suite.
+        "tree_lines.snap",
         "write_page.built", "write_page.live", "write_page.log", "write_page.out",
     ),
     # Every generated page rebuilt on merge (owner decision D3). Every parameter varied; none exempt.
@@ -601,6 +677,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "audit.root",
         "main.argv",
         "main.root",
+    ),
+    # ⟳ 2026-10-16: the claim-propagation guard arrives. Key set DERIVED by running this
+    # file's own `analyse()` against it, as the refusal message instructs — not guessed.
+    "check-claim-propagation.py": (
+        "audit.root",
     ),
     "check-main-drivable.py": (
         # ⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW. `reads_the_live_world` and
@@ -713,6 +794,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # driving it that way immediately printed a CANNOT RUN naming `docs/memory/MEMORY.md`
     # about a temp fixture it had never opened. The pin and that defect have the same cause.
     "check-memory-index-budget.py": ('budget_facts.label', 'budget_facts.limit', 'budget_facts.n_chars', 'budget_verdict.label', 'budget_verdict.limit', 'budget_verdict.n_chars', 'index_chars.path', 'main.argv', 'main.index', 'main.limit', 'render.f', 'unknown_args.argv', 'warn_threshold.limit'),
+    # backlog #470 (2026-11-03): the key-link guard, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    # ⟳ review round 1: + rules 1b, 4, 5 and the page-set / node parameters of `check_pages`, re-derived.
+    "check-page-links.py": ("built_hrefs.name", "built_hrefs.text", "check_pages.d", "check_pages.names",
+                            "check_pages.node", "check_sources.root", "dangling.pages", "duplicate_ids.page",
+                            "fragment_targets.own", "fragment_targets.page", "ids.page", "inline_scripts.page",
+                            "main.argv", "main.root", "nested_anchors.page", "script_errors.node",
+                            "script_errors.pages", "unlinked_keys.page"),
     "check-memory-link.py": ('link_verdict.is_symlink', 'link_verdict.link_exists', 'link_verdict.n_entries', 'link_verdict.target', 'link_verdict.tracked', 'slug_for.repo'),
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher, pinned in the commit that creates it
     # — this guard REFUSED the file until it was, the fifth time it has caught a new script
@@ -1252,8 +1341,13 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     'peer-sites.py': (
         'changed_lines.path', 'changed_lines.ref', 'containers.src',
         'parse_hunks.diff', 'report.src', 'report.touched',),
+    # ⟳ backlog #470: + the key-link functions, re-derived by running `analyse()`.
+    # ⟳ review round 1: + `page_tokens`, `render_unlinked`, `use_rows`, re-derived.
     'page_markup.py': (
-        'escape.s', 'safe_href.url', 'scan.s', 'trim_url_tail.url',),
+        'escape.s', 'key_link.key', 'key_link.kind', 'key_link.repo', 'key_segments.repo',
+        'key_segments.text', 'link_html.page', 'link_html.repo', 'link_keys.repo', 'link_keys.text',
+        'page_tokens.page', 'render_unlinked.s', 'repo_from_remote.url', 'safe_href.url', 'scan.keys',
+        'scan.s', 'thread_id.key', 'trim_url_tail.url', 'use_repo.repo', 'use_rows.rows',),
     'prior-art.py': (
         'search.show_all', 'search.terms',),
     'subject_status.py': (
@@ -1273,6 +1367,35 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #495 r1 (2026-11-11): check-plan-code.py's re-run snapshot is threaded through run_mutations' OWN
+    # recursion — every external caller passes None and run_mutations sets it to `rerun_snapshot()`'s result.
+    "check-plan-code.py:run_mutations.rerun_from": "an internal recursion parameter: every external call passes None and run_mutations replaces it with `rerun_snapshot(d, ...)` before any mutant runs; the snapshot's effect is varied by the FLAKY end-to-end cases (a suite writing state BESIDE itself must NOT become FLAKY — red when the re-run reuses the first run's tree) and `rerun_fresh`'s direct cases (a CANNOT RUN string, a real snapshot)",
+    # backlog #586 slice 1 (2026-11-10): strace-measure.py — its two entry points are driven through ONE helper each
+    # (`_read` for analyse_log, `_merge` for merge), which forward their arguments; the helpers' CALLERS vary them.
+    "strace-measure.py:analyse_log.samples": "driven through ONE helper, `_read`; its callers vary samples: an EMPTY store, which must gain the line credited to `who` (case `r2 X3`, red under both of review round 2's mutations: no insert, a wrong owner), and one already holding a key, which must keep its first owner",
+    "strace-measure.py:analyse_log.shapes": "driven through ONE helper, `_read`; its callers vary shapes (an empty store per case, and the store `_stores` reads back to check each shape's owner)",
+    "strace-measure.py:analyse_log.who": "driven through ONE helper, `_read`; its callers vary who (`case`, and `second.py`, whose lines must be credited to it and not to the store's earlier owner)",
+    "strace-measure.py:analyse_log.log": "a temp-file path written by `_read`; analyse_log decides on the file's CONTENT, which every case varies",
+    "strace-measure.py:merge.dirs": "driven through ONE helper, `_merge`; its callers vary dirs: one directory, and two directories each holding one shard, where BOTH targets and BOTH shards must be merged (cases `r2 X4`, red under review round 2's mutation that reads only the last directory)",
+    "strace-measure.py:merge.jobs": "driven through ONE helper, `_merge`; its callers vary jobs (None, and a `gh run view --json jobs` view with a job that has no completedAt)",
+    "strace-measure.py:merge.out": "a temp-file path `_merge` reads back; merge writes the same document wherever it goes",
+    # backlog #397 (2026-11-09): ci-durations.py — temp-file paths, and the three entry points driven through ONE
+    # helper each (`rec`, `rep`, `cli`), so their parameters have one call site; the helpers' CALLERS vary them.
+    # ⟳ r1 fold: `fetch.*` and `append_log.path` exemptions deleted (now varied at direct call sites); the wrong
+    # `main.argv` reason ("the record path needs the network") deleted — main takes an injected gh (R1-F6).
+    "ci-durations.py:read_log.path": "a temp-file path; read_log decides on the file's content, which parse_log's own cases vary",
+    "ci-durations.py:record_main.budget_s": "driven through ONE helper, `rec`, which forwards **kw; its callers vary budget_s (the default, 35 with a fake clock, and -1)",
+    "ci-durations.py:record_main.clock": "driven through ONE helper, `rec`, which forwards **kw; its callers vary clock (time.monotonic, and a fake clock that advances 10 s per gh call)",
+    "ci-durations.py:main.gh": "driven through ONE helper, `cli`; its callers vary gh (a broken gh on the --report paths, and a fake gh whose PR is already logged on the record + report paths)",
+    "ci-durations.py:main.argv": "driven through ONE helper, `cli`; its callers vary argv (--report with --week 2026-W45, with --week 2025-W53, without --week; and the default record + report, with and without --budget-s -1, over two logs)",
+    "ci-durations.py:main.today": "driven through ONE helper, `cli`; its callers vary today (2026-11-10, and a non-date that must crash into rc 2)",
+    # backlog #534 (2026-11-06): batch-ci.py's main() runs against ONE fixture clone — every repository, PR and run
+    # it acts on lives inside that clone and its fake gh, and those ARE varied (five batches, eight PRs, three runs).
+    "batch-ci.py:main.root": "main() is driven against ONE fixture clone: building a second clone would vary the path and nothing main decides on; what it decides on (the batches, PRs, runs and trees inside that clone and the fake gh) is varied across the e2e's calls",
+    # batch-ci r1 fold: the direct calls added for R1-F7 run over that same one clone, and the union fixture's one repo.
+    "batch-ci.py:members_of.root": "members_of() is called against the ONE fixture clone, like main(); what it decides on is the TIP, varied (a batch with members, and master with none)",
+    "batch-ci.py:members_of.run": "the e2e's ONE runner, real git over the fixture clone; a second runner would vary nothing members_of decides on, which is the tip's history",
+    "batch-ci.py:merge_into.run": "merge_into() is driven through ONE helper (`merged`) in the union fixture, whose runner is real git; what it decides on is the two sides' CONTENT, varied across five real merges (and through plan/land in the main e2e)",
     # backlog #440 (2026-11-01): check-compaction-boundary.py's main() is driven once.
     # backlog #457 (2026-11-01): check-agent-large-read.py's main() is driven from one helper.
     "check-agent-large-read.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",

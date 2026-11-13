@@ -385,5 +385,558 @@
     "expect": [
       "#394: the kind and the parents are READ from the marker"
     ]
+  },
+  {
+    "name": "layout: a label is never cut",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if not inner.endswith(\":\") or len(inner) > _LAYOUT_LABEL_MAX or m.start() == 0:\n",
+        "        if True:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a bold lead-in label starts its own block"
+    ]
+  },
+  {
+    "name": "layout: a label mid-sentence is cut",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if prev and (prev.isalnum() or prev == \",\"):\n            continue\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "layout: a label mid-sentence (a letter before it) is not split"
+    ]
+  },
+  {
+    "name": "layout: a nested label is cut",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if not _layout_depth0(h, m.start()):\n            continue\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "layout: a label nested inside another element is not split"
+    ]
+  },
+  {
+    "name": "layout: the glyph stays behind",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                p = r\n",
+        "                break\n"
+      ]
+    ],
+    "expect": [
+      "layout: a glyph before a label travels with the label"
+    ]
+  },
+  {
+    "name": "layout: provenance ends inside parentheses",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "and paren == 0 and (k + 1",
+        "and (k + 1"
+      ]
+    ],
+    "expect": [
+      "layout: the filed-provenance clause is its own muted line, ending outside parentheses"
+    ]
+  },
+  {
+    "name": "layout: the leading (filed) marker is not set apart",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if m and _layout_text0(h)[0]:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a leading (filed …) marker and a found-provenance are both set apart"
+    ]
+  },
+  {
+    "name": "layout: enumeration ignores parentheses",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if m and paren == 0 and at_word and m.group(1) in alphabet:\n",
+        "            if m and at_word and m.group(1) in alphabet:\n"
+      ]
+    ],
+    "expect": [
+      "layout: markers inside parentheses are not a list"
+    ]
+  },
+  {
+    "name": "layout: enumeration ignores order",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                if idx == len(run):\n",
+        "                if True:\n"
+      ]
+    ],
+    "expect": [
+      "layout: markers out of order are not a list"
+    ]
+  },
+  {
+    "name": "layout: the depth-0 mask counts text inside elements",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if depth == 0:\n            for k in range(i, m.start()):\n",
+        "        if True:\n            for k in range(i, m.start()):\n"
+      ]
+    ],
+    "expect": [
+      "layout: markers inside a code span are not a list"
+    ]
+  },
+  {
+    "name": "layout: the last list item is dropped",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    items = [seg[a:b] for a, b in zip(cuts, cuts[1:] + [len(seg)])]\n",
+        "    items = [seg[a:b] for a, b in zip(cuts, cuts[1:])]\n"
+      ]
+    ],
+    "expect": [
+      "layout: same words, same order, over every fixture"
+    ]
+  },
+  {
+    "name": "layout: a whitespace-only gap is its own block",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if merged and not h[a:b].strip():          # a whitespace-only gap joins the block before it\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "layout: no real row renders a whitespace-only block"
+    ]
+  },
+  {
+    "name": "layout: the card bypasses layout_body",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "      <div class=\"prose\">{layout_body(md(r['body']))}</div>\n",
+        "      <div class=\"prose\">{md(r['body'])}</div>\n"
+      ]
+    ],
+    "expect": [
+      "layout: the card renders its body through layout_body"
+    ]
+  },
+  {
+    "name": "layout r1: a marker is not carried with its label",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                                  or _LAYOUT_MARKER.fullmatch(tok)) \\\n",
+        "                                  or False) \\\n"
+      ]
+    ],
+    "expect": [
+      "layout: an enumeration marker travels with the bold label it opens (r1 Claude F1)",
+      "layout: no real row has a block whose visible text ends in a bare marker (r1 Claude F1)"
+    ]
+  },
+  {
+    "name": "layout r1: a bold span inside the provenance is not a stop",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if name == \"strong\":                      # a bold span inside: give up, not cut\n",
+        "            if False:                      # a bold span inside: give up, not cut\n"
+      ]
+    ],
+    "expect": [
+      "layout: a ⭐ glyph, a bold span or an in-element sentence end before the end means NO muted line"
+    ]
+  },
+  {
+    "name": "layout r1: a glyph inside the provenance is not a stop",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if c in _LAYOUT_PROV_STOP:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a ⭐ glyph, a bold span or an in-element sentence end before the end means NO muted line"
+    ]
+  },
+  {
+    "name": "layout r1: a sentence end inside an element still cuts the provenance",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if stack:                                 # a sentence ends inside <em>: no clean cut\n",
+        "            if False:                                 # a sentence ends inside <em>: no clean cut\n"
+      ]
+    ],
+    "expect": [
+      "layout: a ⭐ glyph, a bold span or an in-element sentence end before the end means NO muted line"
+    ]
+  },
+  {
+    "name": "layout r1: the provenance has no word cap",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if len(visible_text(h[start:k + 1]).split()) > _LAYOUT_PROV_WORDS:\n",
+        "            if len(visible_text(h[start:k + 1]).split()) > 10 ** 6:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a provenance clause over 40 words is not muted (r1 Claude F2)",
+      "layout: no real row has a muted line over 40 words or holding ⭐/⛔ (r1 Claude F2)"
+    ]
+  },
+  {
+    "name": "layout r1: only a period ends the provenance",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "elif c in \".?!\"",
+        "elif c == \".\""
+      ]
+    ],
+    "expect": [
+      "layout: the provenance ends at its first ? as well as ."
+    ]
+  },
+  {
+    "name": "layout r1: a code span's text is scanned for the provenance's end",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if \"code\" in stack:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a sentence end inside a code span does not end the provenance"
+    ]
+  },
+  {
+    "name": "layout r1: a marker run is never refused",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if len(run) >= 2 and _enum_run_ok(seg, run):\n",
+        "        if len(run) >= 2:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a run whose item opens with or/and is a sentence, not a list (r1 Codex M1, row 378)",
+      "layout: a marker after a reference word (exit, step …) is not a list marker",
+      "layout: a run with an item under three words is not a list (r1 Claude F3)",
+      "layout: a run with an item opening on a comma is not a list"
+    ]
+  },
+  {
+    "name": "layout r1: a reference word does not refuse a run",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if before and before[-1].lower().strip(\".,;:\") in _LAYOUT_ENUM_REF_WORDS:\n",
+        "        if before and before[-1].lower().strip(\".,;:\") in ():\n"
+      ]
+    ],
+    "expect": [
+      "layout: a marker after a reference word (exit, step …) is not a list marker"
+    ]
+  },
+  {
+    "name": "layout r1: a short item does not refuse a run",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if len(words) < _LAYOUT_ENUM_MIN_WORDS:\n",
+        "        if not words:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a run with an item under three words is not a list (r1 Claude F3)"
+    ]
+  },
+  {
+    "name": "layout r1: an or/and item does not refuse a run",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "words[0].lower() in _LAYOUT_ENUM_JOINERS or",
+        "False or"
+      ]
+    ],
+    "expect": [
+      "layout: a run whose item opens with or/and is a sentence, not a list (r1 Codex M1, row 378)"
+    ]
+  },
+  {
+    "name": "layout r1: a comma item does not refuse a run",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        " or words[0].startswith(\",\"):",
+        ":"
+      ]
+    ],
+    "expect": [
+      "layout: a run with an item opening on a comma is not a list"
+    ]
+  },
+  {
+    "name": "layout r1: the same-words check counts a block break as zero-width",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if 0 < i < len(o) and not (o[i - 1].isspace() or o[i].isspace()):\n",
+        "            if False and not (o[i - 1].isspace() or o[i].isspace()):\n"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses a block break where the source had no space (r1 Claude F4)"
+    ]
+  },
+  {
+    "name": "layout r2: the same-words check compares only the visible text, not the original HTML",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if stack or n_html.replace(\"\\x00\", \"\") != old:\n",
+        "        if stack:\n"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses two words joined across an original <br> (r2 Codex 3)"
+    ]
+  },
+  {
+    "name": "layout r2: the same-words check keeps the list items it should strip",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                            or (t.group(0) == \"<li>\" and stack and stack[-1][2]))\n",
+        "                            )\n"
+      ]
+    ],
+    "expect": [
+      "layout: same words, same order, over every fixture"
+    ]
+  },
+  {
+    "name": "layout r2: the same-words check does not count an original <br> as a break",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        br = re.compile(r\"<br\\s*/?>\")\n",
+        "        br = re.compile(r\"(?!)\")\n"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses two words joined across an original <br> (r2 Codex 3)"
+    ]
+  },
+  {
+    "name": "layout r3: the same-words check drops the visible-text comparison",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if visible_text(old) != visible_text(new):\n            return False\n        out: list[str] = []\n",
+        "        out: list[str] = []\n"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses a wrapper inserted inside a tag (r3 Claude F1)"
+    ]
+  },
+  {
+    "name": "layout r3: a closer need not match the tag it pops",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                if not stack or stack[-1][0] != t.group(2):\n                    return False\n",
+        "                if not stack:\n                    return False\n"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses a stray <li> and a mismatched closer (r3 Claude F2)"
+    ]
+  },
+  {
+    "name": "layout r3: a <li> under any wrapper is stripped, not only under ol.enum",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "and stack and stack[-1][2]))",
+        "and stack and stack[-1][1]))"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses a stray <li> and a mismatched closer (r3 Claude F2)"
+    ]
+  },
+  {
+    "name": "the word diff splits a key into two tokens, so <del>/<ins> cut it away from its link",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return WORD_OR_KEY.findall(visible_text(h))\n",
+        "    return visible_text(h).split()\n"
+      ]
+    ],
+    "expect": [
+      "word_diff keeps a key whole, so no <del>/<ins> splits it away from any link"
+    ]
+  },
+  {
+    "name": "publish_rows tells page_markup nothing, so a missing row links to an id no page carries",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    page_markup.use_rows(r[\"num\"] for r in rows)\n    return None",
+        "    return None"
+      ]
+    ],
+    "expect": "publish_rows: the rows THIS parser reads are the rows that exist (backlog #470)"
+  },
+  {
+    "name": "an unreadable backlog is swallowed: no warning, so the reader is not told keys may dangle",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        return (f\"⚠ backlog rows NOT READ ({exc.__class__.__name__}: {exc}) — every backlog key \"\n                \"links, a missing row included\")",
+        "        return None"
+      ]
+    ],
+    "expect": "publish_rows: an unreadable backlog WARNS and leaves every key linked, never an empty set"
+  },
+  {
+    "name": "a long one-block row is never named (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) >= 2:",
+        "    if len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) >= 1:"
+      ]
+    ],
+    "expect": "unlaid_rows: a long row with no cue is named; a cued one and a short one are not"
+  },
+  {
+    "name": "a short one-liner is named a wall of text (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return [r[\"num\"] for r in rows if len(r[\"body\"]) >= min_chars and _one_block(",
+        "    return [r[\"num\"] for r in rows if True and _one_block("
+      ]
+    ],
+    "expect": "unlaid_rows: a long row with no cue is named; a cued one and a short one are not"
+  },
+  {
+    "name": "the wall threshold drifts from its measured 600 (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "LAYOUT_MIN_CHARS = 600\n",
+        "LAYOUT_MIN_CHARS = 1300\n"
+      ]
+    ],
+    "expect": "unlaid_rows: a long row with no cue is named; a cued one and a short one are not"
+  },
+  {
+    "name": "the Status cell is drawn as one paragraph again (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "{layout_body(md(r['status']))}",
+        "{md(r['status'])}"
+      ]
+    ],
+    "expect": "the Status cell is laid out by the same rules as the body (owner 2026-11-05, backlog #40)"
+  },
+  {
+    "name": "the diff loses its label breaks (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return \" \".join(out).replace(DIFF_BREAK, '<span class=\"brk\"></span>')",
+        "    return \" \".join(out)"
+      ]
+    ],
+    "expect": "word_diff breaks before a lead-in label after a sentence end, not after a comma (owner 2026-11-05)"
+  },
+  {
+    "name": "the diff breaks a label mid-sentence (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    for c in sorted(_label_cuts(h), reverse=True):\n",
+        "    for c in sorted({m.start() for m in _LAYOUT_LABEL.finditer(h)}, reverse=True):\n"
+      ]
+    ],
+    "expect": "word_diff breaks only where the BODY does — never after a glyph mid-sentence, inside a code span, or at an over-long label; a literal ¶ or the sentinel itself stays text (row-cues r1 Codex M2, M3)"
+  },
+  {
+    "name": "the diff's break token is a character rows can contain (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "DIFF_BREAK = \"\\ue000\"\n",
+        "DIFF_BREAK = \"¶\"\n"
+      ]
+    ],
+    "expect": "word_diff breaks only where the BODY does — never after a glyph mid-sentence, inside a code span, or at an over-long label; a literal ¶ or the sentinel itself stays text (row-cues r1 Codex M2, M3)"
+  },
+  {
+    "name": "a row that carries the sentinel keeps it (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    h = md(t.replace(DIFF_BREAK, \"\"))\n",
+        "    h = md(t)\n"
+      ]
+    ],
+    "expect": "word_diff breaks only where the BODY does — never after a glyph mid-sentence, inside a code span, or at an over-long label; a literal ¶ or the sentinel itself stays text (row-cues r1 Codex M2, M3)"
+  },
+  {
+    "name": "a laid-out list is named a wall of text (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return outside == h or len(",
+        "    return True or len("
+      ]
+    ],
+    "expect": "unlaid_rows: a long row laid out as an (a) (b) list is NOT a wall (row-cues r1 Codex M4)"
+  },
+  {
+    "name": "a list excuses the wall in front of it (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return outside == h or len(visible_text(outside)) >= LAYOUT_MIN_CHARS",
+        "    return outside == h"
+      ]
+    ],
+    "expect": "unlaid_rows: a list does NOT excuse a wall of prose in front of it (row-cues r2 Codex M1)"
   }
 ]

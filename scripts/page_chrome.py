@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 233 cases
+    python3 scripts/page_chrome.py --self-test          # 234 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -1015,18 +1015,24 @@ def chrome_script() -> str:
         f"sset(sv==={TEXT_OPT_OUTS[0]!r}||sv==={TEXT_OPT_OUTS[1]!r}?sv:TD);}}"
         "var r=document.getElementById('chrome-refresh'),"
         "say=document.getElementById('chrome-refresh-say');"
+        # ⛔ EVERY WRITE GOES THROUGH `tell`, WHICH ALSO CLAIMS THE SPAN — backlog #502. The
+        # live-reload client (`RELOAD_JS` in explainer-serve.py) writes this same span every 2 s
+        # and used to blank it: MEASURED 2026-11-04 in Chrome, "rebuilding…" was gone 0.85 s
+        # after the click and the reload came at 7.9 s, so a click looked like it did nothing
+        # and the owner clicked twice. The claim (`data-refresh`) is what that client yields to.
+        "function tell(m){if(say){say.textContent=m;say.setAttribute('data-refresh',m);}}"
         "if(r){r.addEventListener('click',function(){"
         "if(location.protocol==='file:'){"
-        "if(say)say.textContent='opened as a file \\u2014 no server to rebuild it; "
-        "run the generator';return;}"
-        "r.disabled=true;if(say)say.textContent='rebuilding\\u2026';"
+        "tell('opened as a file \\u2014 no server to rebuild it; "
+        "run the generator');return;}"
+        "r.disabled=true;tell('rebuilding\\u2026');"
         "fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},"
         "body:JSON.stringify({page:r.getAttribute('data-page')})})"
         ".then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});"
         "return x.json();})"
-        ".then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();})"
+        ".then(function(j){if(j&&j.warning){tell('rebuilt WITH A WARNING: '+j.warning);return;}location.reload();})"
         ".catch(function(e){r.disabled=false;"
-        "if(say)say.textContent='could not rebuild: '+e.message;});});}"
+        "tell('could not rebuild: '+e.message);});});}"
         # ── THE PIN. Applied here and never in the markup, so the pin and the space it
         # needs arrive together. A bar with NO control is left exactly where it is: 17 of
         # 20 real fragments are stamp-only, and pinning those spends 38px of every viewport
@@ -1592,6 +1598,13 @@ def _self_test_body() -> int:
              "file:" in js and "no server to rebuild it" in js, True)
         case("...and re-enables itself after a failure", "r.disabled=false" in js, True)
         case("...and reports the server's own reason", "could not rebuild: " in js, True)
+        # ⛔ backlog #502: the live-reload client yields the span ONLY to a `data-refresh` claim, so
+        # a message written any other way is blanked on its next 2 s poll (measured: 0.85 s). The
+        # one raw write is the one inside `tell`, and every message reaches the reader through it.
+        case("...and every refresh message CLAIMS the span, so the reload poll cannot blank it",
+             (js.count("say.textContent=") == 1
+              and "function tell(m){if(say){say.textContent=m;say.setAttribute('data-refresh',m);}}" in js
+              and js.count("tell(") == 5), True)
 
         # --- provenance. Lives here, not in a generator, because two pages computing "what
         # was this built from" two ways is the drift this module exists to stop.

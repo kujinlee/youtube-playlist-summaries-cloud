@@ -152,5 +152,817 @@
    ]
   ],
   "expect": "url: abutting bold is markup, not URL"
+ },
+ {
+  "name": "with no repo read, a PR link is guessed",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        return f\"https://github.com/{repo}/pull/{key}\" if repo and key.isdigit() else None",
+    "        return f\"https://github.com/{repo}/pull/{key}\" if key.isdigit() else None"
+   ]
+  ],
+  "expect": "key_link: a PR with NO repo is no link, never a guessed URL"
+ },
+ {
+  "name": "a non-numeric backlog key becomes a link",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        return f\"/backlog-table#i{key}\" if key.isdigit() and not missing_row(kind, key) else None",
+    "        return f\"/backlog-table#i{key}\" if not missing_row(kind, key) else None"
+   ]
+  ],
+  "expect": "key_link: a non-numeric backlog key is no link"
+ },
+ {
+  "name": "an unknown key kind is silently no link, so a caller can grow its own",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    raise ValueError(f\"key_link: unknown key kind {kind!r}\")",
+    "    return None"
+   ]
+  ],
+  "expect": "key_link: an unknown kind RAISES"
+ },
+ {
+  "name": "the thread id drops its t- prefix, so the tree and its links disagree with the spec",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return f\"t-{key}\"",
+    "    return key"
+   ]
+  ],
+  "expect": "key_link: thread"
+ },
+ {
+  "name": "keys in prose are no longer linked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        if keys and c in \"bP\":",
+    "        if False and c in \"bP\":"
+   ]
+  ],
+  "expect": "scan: a backlog key in prose is a link"
+ },
+ {
+  "name": "a key inside a link's text is linked again, nesting an <a> in an <a>",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "{scan(m.group(1), False)}</a>')",
+    "{scan(m.group(1))}</a>')"
+   ]
+  ],
+  "expect": "scan: a key inside a link's text is not nested into a second link"
+ },
+ {
+  "name": "bold stops passing the key switch down, so a key in bold is plain",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "out.append(f\"<strong>{scan(body, keys)}</strong>\")",
+    "out.append(f\"<strong>{scan(body, False)}</strong>\")"
+   ]
+  ],
+  "expect": "scan: a key inside bold is still a link"
+ },
+ {
+  "name": "a key glued to a preceding word is linked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "KEY_REF = re.compile(r\"\\b(backlog|PR) #(\\d+)\\b\")",
+    "KEY_REF = re.compile(r\"(backlog|PR) #(\\d+)\\b\")"
+   ]
+  ],
+  "expect": "scan: a word character before is not a key"
+ },
+ {
+  "name": "a GitHub remote is not recognised, so no page ever links a PR",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    m = GITHUB_REMOTE.search(url)\n    return m.group(1) if m else None",
+    "    return None"
+   ]
+  ],
+  "expect": "repo_from_remote: https"
+ },
+ {
+  "name": "the open-element stack is reset at a comment, so text after it inside an <a> is linked (Codex r1 3)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        if kind == \"data\":\n            out.append(Tok(\"data\"",
+    "        if kind == \"comment\":\n            stack.clear()\n        if kind == \"data\":\n            out.append(Tok(\"data\""
+   ]
+  ],
+  "expect": "link_html: a comment inside an <a> keeps the <a> open \u2014 no <a> in an <a>"
+ },
+ {
+  "name": "a <button> is no longer exempt, so an <a> is put inside one",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "\"button\", \"select\", \"option\", \"svg\"})",
+    "\"select\", \"option\", \"svg\"})"
+   ]
+  ],
+  "expect": "link_html: text inside a <button> is not linked (an <a> there is invalid)"
+ },
+ {
+  "name": "an exempt element never closes, so the text after it is never linked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "                del stack[len(tags) - 1 - tags[::-1].index(tag):]",
+    "                pass"
+   ]
+  ],
+  "expect": "link_html: an exempt element closes \u2014 text after it is linked again"
+ },
+ {
+  "name": "an element marked missing is not exempt, so its key is linked a second time",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "(tag, tag in NO_LINK or _marked(attrs))",
+    "(tag, tag in NO_LINK)"
+   ]
+  ],
+  "expect": "link_html: a marked missing row is not linked again"
+ },
+ {
+  "name": "a start tag inside an <a> is not marked, so a nested <a> is invisible",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        in_a = any(t == \"a\" for t, _ in stack)",
+    "        in_a = False"
+   ]
+  ],
+  "expect": "page_tokens: a start tag opened inside an <a> is marked"
+ },
+ {
+  "name": "an <a> left open is not reported at the end",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return out, [t for t, _ in stack]\n",
+    "    return out, []\n"
+   ]
+  ],
+  "expect": "page_tokens: an unclosed <a> is reported open at the end, with what holds it"
+ },
+ {
+  "name": "character references are not decoded, so an encoded key is never linked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        d = _html.unescape(m.group(0))",
+    "        d = m.group(0)"
+   ]
+  ],
+  "expect": "link_html: an encoded `&#35;` is a key, linked with its raw spelling kept"
+ },
+ {
+  "name": "the raw text after a node's last key is dropped",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        out += [page[pos:t.start], \"\".join(pieces), raw[at:]]",
+    "        out += [page[pos:t.start], \"\".join(pieces)]"
+   ]
+  ],
+  "expect": "link_html: two keys in one node, and the text around them, kept byte for byte"
+ },
+ {
+  "name": "a missing row is no longer missing, so it links to an id no page carries",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return kind == \"backlog\" and ROWS is not None and str(key).isdigit() and int(key) not in ROWS",
+    "    return False"
+   ]
+  ],
+  "expect": "key_link: a backlog row that does not exist is no link"
+ },
+ {
+  "name": "a missing row renders as bare text, unmarked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        return f'<span class=\"{MISSING_CLASS}\" title=\"no such backlog row\">{text_html}</span>'",
+    "        return text_html"
+   ]
+  ],
+  "expect": "link_html: a missing row is MARKED text, never a link to nothing"
+ },
+ {
+  "name": "scan drops a missing row's marker, leaving it bare text",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if m and (key_link(m.group(1), m.group(2), REPO) or missing_row(m.group(1), m.group(2))):",
+    "            if m and key_link(m.group(1), m.group(2), REPO):"
+   ]
+  ],
+  "expect": "scan: a missing row in prose is marked text"
+ },
+ {
+  "name": "the goal card id loses its g- prefix, so a slug can collide with the chrome's ids (Claude r1 F6)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return f\"g-{slug}\"",
+    "    return slug"
+   ]
+  ],
+  "expect": "key_link: goal"
+ },
+ {
+  "name": "render_unlinked links keys, so a key in a link's body is a second <a>",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return scan(escape(s), False)",
+    "    return scan(escape(s))"
+   ]
+  ],
+  "expect": "render_unlinked: a key stays text, the rest is still markup"
+ },
+ {
+  "name": "link_html splices into a page outside the subset again (r2)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    require_subset(page)\n    tokens, _ = page_tokens(page)",
+    "    tokens, _ = page_tokens(page)"
+   ]
+  ],
+  "expect": [
+   "subset: Codex r2 4 — a self-closed <a/> is refused"
+  ]
+ },
+ {
+  "name": "require_subset raises nothing",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    if problems:\n        raise OutsideSubset(problems)",
+    "    if False:\n        raise OutsideSubset(problems)"
+   ]
+  ],
+  "expect": [
+   "subset: Codex r2 3 — a self-closed <script/> is refused"
+  ]
+ },
+ {
+  "name": "a non-void element may self-close",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "                if x not in VOID and not any(t in FOREIGN for t in stack):",
+    "                if False:"
+   ]
+  ],
+  "expect": [
+   "subset: a non-void element that self-closes"
+  ]
+ },
+ {
+  "name": "foreign content may not self-close",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "not any(t in FOREIGN for t in stack)",
+    "True"
+   ]
+  ],
+  "expect": [
+   "subset: a page of our own shape is inside it"
+  ]
+ },
+ {
+  "name": "a void element is pushed, so it is never closed",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            elif x not in VOID:\n                stack.append(x)",
+    "            else:\n                stack.append(x)"
+   ]
+  ],
+  "expect": [
+   "subset: a page of our own shape is inside it"
+  ]
+ },
+ {
+  "name": "an end tag closes ANY open match, not the top",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            elif top == x:\n                stack.pop()",
+    "            elif x in stack:\n                stack.pop()"
+   ]
+  ],
+  "expect": [
+   "subset: an end tag out of order"
+  ]
+ },
+ {
+  "name": "an element left open at the end is not reported",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    out += [f\"end of page: <{t}> is never closed\" for t in reversed(stack)]",
+    ""
+   ]
+  ],
+  "expect": [
+   "subset: an element never closed"
+  ]
+ },
+ {
+  "name": "an end tag on a void element is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if x in VOID:\n                out.append(f\"{where}: </{x}> ends a void element\")",
+    "            if False:\n                out.append(f\"{where}: </{x}> ends a void element\")"
+   ]
+  ],
+  "expect": [
+   "subset: an end tag on a void element"
+  ]
+ },
+ {
+  "name": "a literal < in text is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if \"<\" in span:",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: a literal `<` in text"
+  ]
+ },
+ {
+  "name": "a script body is read as text",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if top in RAW_TEXT:\n                continue\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "subset: a page of our own shape is inside it"
+  ]
+ },
+ {
+  "name": "a reference with no ; in TEXT is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if _BARE_REF.search(span):",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: a reference with no `;` in text, numeric too"
+  ]
+ },
+ {
+  "name": "a reference with no ; in an ATTRIBUTE is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if _BARE_REF.search(raw):",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: a reference with no `;` in an ATTRIBUTE"
+  ]
+ },
+ {
+  "name": "a numeric reference followed by a letter reads as terminated",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "#[0-9]+(?![0-9;])",
+    "#[0-9]+(?![A-Za-z0-9;])"
+   ]
+  ],
+  "expect": [
+   "subset: a reference with no `;` in text, numeric too"
+  ]
+ },
+ {
+  "name": "text a browser moves out of a table is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if top in _TABLE_CHILDREN and x.strip(ASCII_WHITESPACE):",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: text a browser moves out of a table"
+  ]
+ },
+ {
+  "name": "an element a browser moves out of a table is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if top in _TABLE_CHILDREN and x not in _TABLE_CHILDREN[top]:",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: an element a browser moves out of a table"
+  ]
+ },
+ {
+  "name": "an element a browser drops from a select is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if top == \"select\" and x not in _SELECT_CHILDREN:",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: an element a browser drops from a <select>"
+  ]
+ },
+ {
+  "name": "a start tag inside an RCDATA element is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if top in RAW_TEXT | RCDATA:",
+    "            if top in RAW_TEXT:"
+   ]
+  ],
+  "expect": [
+   "subset: a start tag inside <title>, as 3.12's html.parser reports it"
+  ]
+ },
+ {
+  "name": "an unsupported element is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if x in UNSUPPORTED:",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: an unsupported element"
+  ]
+ },
+ {
+  "name": "an implied </p> is not modelled",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    if tag in _P_CLOSERS and find({\"p\"}, _BUTTON_SCOPE):",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "subset: an implied </p>"
+  ]
+ },
+ {
+  "name": "an implied </li> is not modelled",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    if tag == \"li\":\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": [
+   "subset: an implied </li>"
+  ]
+ },
+ {
+  "name": "an <li> searches past its own list",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        return find({\"li\"}, {\"ul\", \"ol\", \"menu\", \"table\", \"td\", \"th\"})",
+    "        return find({\"li\"}, set())"
+   ]
+  ],
+  "expect": [
+   "subset: an <li> in a NESTED list closes nothing"
+  ]
+ },
+ {
+  "name": "an implied </dd> is not modelled",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        return find({\"dt\", \"dd\"}, {\"dl\", \"table\", \"td\", \"th\"})",
+    "        return None"
+   ]
+  ],
+  "expect": [
+   "subset: an implied </dd>"
+  ]
+ },
+ {
+  "name": "an implied heading end is not modelled",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    if tag in _HEADINGS and stack and stack[-1] in _HEADINGS:",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "subset: an implied heading end"
+  ]
+ },
+ {
+  "name": "an implied </option> is not modelled",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    if tag in (\"option\", \"optgroup\") and stack and stack[-1] == \"option\":",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "subset: an implied </option>"
+  ]
+ },
+ {
+  "name": "an implied </button> is not modelled",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    if tag in (\"button\", \"form\"):",
+    "    if tag in (\"form\",):"
+   ]
+  ],
+  "expect": [
+   "subset: an implied </button>"
+  ]
+ },
+ {
+  "name": "a table part searches past its own table",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if t == \"table\":\n                return None\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "subset: a table NESTED in a cell closes nothing"
+  ]
+ },
+ {
+  "name": "an implied </td> is not modelled",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if t in _TABLE_DEPTH and _TABLE_DEPTH[t] >= _TABLE_DEPTH[tag]:",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: an implied </td>"
+  ]
+ },
+ {
+  "name": "bytes a start tag swallowed are accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if span != raw:",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: bytes a start tag swallowed"
+  ]
+ },
+ {
+  "name": "bytes after an end tag are accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if not re.fullmatch(rf\"</{re.escape(x)}\\s*>\", span, re.I):",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: bytes after an end tag"
+  ]
+ },
+ {
+  "name": "bytes before the first token are accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    if page and (not ev or ev[0][1] != 0):",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "subset: bytes before the first token"
+  ]
+ },
+ {
+  "name": "a comment's end is not checked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if span != f\"<!--{x}-->\" or \"--!>\" in x or x.startswith((\">\", \"->\")):",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: a comment not closed by -->, read as a comment"
+  ]
+ },
+ {
+  "name": "any declaration is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if not re.fullmatch(r\"<!doctype\\s+html\\s*>\", span, re.I):",
+    "            if False:"
+   ]
+  ],
+  "expect": [
+   "subset: a declaration other than the HTML doctype"
+  ]
+ },
+ {
+  "name": "a processing instruction or CDATA is accepted",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        else:\n            out.append(f\"{where}: a {kind.replace('_', ' ')}",
+    "        elif False:\n            out.append(f\"{where}: a {kind.replace('_', ' ')}"
+   ]
+  ],
+  "expect": [
+   "subset: a processing instruction"
+  ]
+ },
+ {
+  "name": "3.12's AssertionError on a marked section escapes as a crash",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    except AssertionError as exc:",
+    "    except ZeroDivisionError as exc:"
+   ]
+  ],
+  "expect": [
+   "subset: an AssertionError from inside html.parser is a refusal, never a crash"
+  ]
+ },
+ {
+  "name": "the exempt stack holds only exempt elements again, so an inner close pops the marked outer (r2 5b)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if tag not in VOID:\n                stack.append((tag, tag in NO_LINK or _marked(attrs)))",
+    "            if tag in NO_LINK or _marked(attrs):\n                stack.append((tag, True))"
+   ]
+  ],
+  "expect": [
+   "page_tokens: Codex r2 5b — an UNMARKED inner element's close does not pop the marked outer one"
+  ]
+ },
+ {
+  "name": "a named reference with no ; is one decode piece again (r2 7)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "|[A-Za-z][A-Za-z0-9]*;)|[\\s\\S]\")",
+    "|[A-Za-z][A-Za-z0-9]*;?)|[\\s\\S]\")"
+   ]
+  ],
+  "expect": [
+   "_decode_map: Codex r2 7 — a named reference with no `;` is not one piece"
+  ]
+ },
+ {
+  "name": "a URL closed by a quote, `>` or `&` cuts its reference in half again (Claude r3 F1)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            url = drop_cut_reference(url)\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "url: Claude r3 F1 — a URL in double quotes ends before `&quot;`",
+   "url: Claude r3 F1 — a URL in quotes, apostrophes, angle brackets or before `&` is inside the subset",
+   "url: no character `escape` rewrites can cut a reference at either end of a URL"
+  ]
+ },
+ {
+  "name": "the punctuation a dropped reference exposes is no longer trimmed",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        cut = trim_url_tail(re.sub(r\"&[A-Za-z0-9#]*$\", \"\", url))",
+    "        cut = re.sub(r\"&[A-Za-z0-9#]*$\", \"\", url)"
+   ]
+  ],
+  "expect": [
+   "url: a reference cut off a URL exposes punctuation, which is trimmed too"
+  ]
+ },
+ {
+  "name": "a bare URL inside a link's own text is linked again, nesting an <a> (Claude r3 F2)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        m = INLINE_URL.match(s, i) if keys else None",
+    "        m = INLINE_URL.match(s, i)"
+   ]
+  ],
+  "expect": [
+   "scan: Claude r3 F2 — a URL as a link's text is not nested into a second link",
+   "render_unlinked: a bare URL in a link body stays text"
+  ]
+ },
+ {
+  "name": "a markdown link inside an unlinked body is an <a> again",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        if keys and c == \"[\":",
+    "        if c == \"[\":"
+   ]
+  ],
+  "expect": [
+   "render_unlinked: a markdown link in a link body prints as itself, never a second <a>"
+  ]
+ },
+ {
+  "name": "the p-closers set loses the seven names r3 found missing (Claude r3 F3)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "\"blockquote\", \"center\", \"details\", \"dialog\", \"dir\",",
+    "\"blockquote\", \"details\", \"dialog\","
+   ],
+   [
+    "\"section\", \"summary\", \"ul\",",
+    "\"section\", \"ul\","
+   ],
+   [
+    "\"pre\", \"listing\", \"form\", \"li\", \"dd\", \"dt\",",
+    "\"pre\", \"form\","
+   ]
+  ],
+  "expect": [
+   "subset: Claude r3 F3 — each start tag the review found closing a <p> is an implied end tag"
+  ]
+ },
+ {
+  "name": "table whitespace is Python's again, so `&nbsp;` in a table passes (Claude r3 F3)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "x.strip(ASCII_WHITESPACE)",
+    "x.strip()"
+   ]
+  ],
+  "expect": [
+   "subset: Claude r3 F3 — `&nbsp;` directly inside a table is text a browser moves out"
+  ]
+ },
+ {
+  "name": "<object> leaves button scope, so a <p> outside it is closed by a <div> inside it",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "\"marquee\", \"object\", \"template\",",
+    "\"marquee\", \"template\","
+   ]
+  ],
+  "expect": [
+   "subset: a <p> outside an <object> is not in button scope, so a <div> in it closes nothing"
+  ]
  }
 ]

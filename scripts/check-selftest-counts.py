@@ -52,7 +52,10 @@ FAILS IF
   * a declared count disagrees with the count the suite printed;
   * a pinned script no longer declares a count, or an unpinned script starts to;
   * a child suite exits non-zero (its own cases are red — the count means nothing);
-  * a child prints no parseable `N/M … passed` line  -> exit 2, CANNOT RUN, never a pass.
+  * a child prints no parseable `N/M … passed` line  -> exit 2, CANNOT RUN, never a pass;
+  * a child times out (its whole process group is killed), is killed by a signal even after
+    printing a passing count, or the check of one crashes inside the pool -> exit 2, CANNOT RUN;
+    the red suites are still printed alongside.
 
 SCOPED MODE — THE LOCAL GATE (backlog #402)
 --------------------------------------------
@@ -74,22 +77,34 @@ eight days, while CI runs it on every PR anyway. So locally the gate is SCOPED:
 
 The unscoped run stays CI's (`.github/workflows/ci.yml`), unchanged.
 
+THE SUITES RUN IN A POOL (backlog #487)
+----------------------------------------
+Measured on docs-only CI runs, the serial loop took 167 s and 197 s of a 6–7 min `verify` job. The
+suites are independent subprocesses, so `--jobs N` (default 4, capped at the host's cores) runs them
+at once. It still RE-RUNS every suite — reusing `verify`'s results would cost the independence this
+script exists for (backlog #69). Each suite gets its OWN temp HOME, the report is in name order
+whatever finished first, and a worker that raises or a suite that times out is CANNOT RUN.
+
 Usage:
     python3 scripts/check-selftest-counts.py                       # every pinned suite (CI)
     python3 scripts/check-selftest-counts.py --changed             # the local gate
     python3 scripts/check-selftest-counts.py --changed --base <ref>
     python3 scripts/check-selftest-counts.py --only check-run-hook.py fixture_git.py
-    python3 scripts/check-selftest-counts.py --self-test  # 40 cases
+    python3 scripts/check-selftest-counts.py --jobs 1                # serially
+    python3 scripts/check-selftest-counts.py --self-test  # 60 cases
 """
 from __future__ import annotations
 
 import argparse
 import ast
+import concurrent.futures
 import importlib.util
-import re
+import os
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -105,6 +120,14 @@ SCRIPTS = ROOT / "scripts"
 # separately verified against the real suites and were all ACCURATE — including the two that print
 # no total at all, whose case lines were counted by hand (10 and 11).
 POPULATION: frozenset[str] = frozenset({
+    # ⟳ 2026-11-12, backlog #586 slice 2: pinned in the commit that creates it (a library, no caller yet).
+    "strace_reads.py",
+    # ⟳ 2026-10-16, pinned in the commit that creates it. Its suite went 23 → 25 → 27 → 30
+    # while it was being written — twice because a mutation proved a case was missing — so a
+    # docstring count with no reader would have been wrong three times in one hour. ⚠ Backlog
+    # #291's branch shipped exactly this defect (`check-doc-citations.py` declared a count and
+    # was absent here), which is why this entry lands with the guard rather than after it.
+    "check-claim-propagation.py",
     # ⟳ 2026-10-07: gained a `--self-test`, so its declared count needs a reader.
     "codex-frontier-model.py",
     # ⟳ 2026-10-31: pinned in the commit that creates it (the review-round cap's Claude verdict).
@@ -119,6 +142,12 @@ POPULATION: frozenset[str] = frozenset({
     "session-state.py",
     # ⟳ 2026-10-28 (backlog #361): pinned in the commit that creates it.
     "compaction-state.py",
+    # ⟳ 2026-11-04 (PR #496 r2 X1): the sweep-red alert helper, pinned in the commit that creates it.
+    "sweep-red-alert.py",
+    # ⟳ 2026-11-06 (backlog #534): the batch full sweep, pinned in the commit that creates it.
+    "batch-ci.py",
+    # ⟳ 2026-11-09 (backlog #397): the CI-duration tripwire, pinned in the commit that creates it.
+    "ci-durations.py",
     # ⟳ 2026-10-30 (backlog #410): pinned in the commit that creates it.
     "check-stalled-work.py",
     # ⟳ 2026-11-01 (backlog #440): pinned in the commit that creates it.
@@ -152,6 +181,8 @@ POPULATION: frozenset[str] = frozenset({
     "gates-for-pr.py",
     # ⟳ 2026-10-29 (backlog #393): the plan-leak push gate, pinned in the commit that creates it.
     "check-plan-leak.py",
+    # ⟳ 2026-11-08 (backlog #428): the push gate's detection, pinned in the commit that creates it.
+    "push-command.py",
     # ⟳ 2026-09-29, backlog #191: pinned in the commit that creates `recall-llm.py`. Its own
     # docstring is the only place its case count is stated, and a count nothing verifies is the
     # drift this file exists to refuse — doing that on a brand-new file would be that shape one
@@ -270,6 +301,7 @@ POPULATION: frozenset[str] = frozenset({
     "gen-work-lines.py",
     "backfill-work-lines.py",
     "goal-tree.py",               # backlog #363, pinned on arrival
+    "check-page-links.py",        # backlog #470, pinned on arrival
     "regen-pages.py",             # backlog #363 / owner decision D3, pinned on arrival
     "page_chrome.py",
     "peer-sites.py",
@@ -310,19 +342,15 @@ POPULATION: frozenset[str] = frozenset({
     "check-usage-pace.py",           # backlog #399 — pinned in the commit that creates it.
 })
 
-# The denominator is the total. Scripts differ on the words around it, so the line is matched on
-# the RATIO plus the word `passed` rather than on any one phrasing. Requiring `passed` is what
-# stops an unrelated "3/4 files" line being read as a case total.
-#
-# The `N of M` arm is not speculative: `check-paid-caller-arrival.py` prints
-# "32 of 32 self-test cases passed". It declares no count today so it is out of population, but a
-# parser that silently cannot read a form the repo already uses would turn a future member into a
-# CANNOT RUN for a reason nobody would look for. Enumerated from what the scripts actually print,
-# not from what a summary line ought to look like.
-RATIO = re.compile(r"\b(\d+)\s*(?:/|\s+of\s+)\s*(\d+)\b")
+# The denominator is the total, read from the suite's summary LINE. ⟳ 2026-11-06 (backlog #506 r2 Codex M1): the
+# rule that recognises that line is `check-plan-code.py`'s `summary_total` — ONE definition, borrowed below, because
+# the mutation harness asks the same question ("did this suite print its summary?") and its own copy, a substring
+# test for `passed`, read a case NAME as a summary. This script's copy was the RATIO plus the word `passed` anywhere on
+# a line; a whole-line match over the enumerated shapes (including the `N of M` arm that
+# `check-paid-caller-arrival.py`'s "32 of 32 self-test cases passed" needs) replaced both.
 
 
-BORROWED = ("count_drift", "child_env")
+BORROWED = ("count_drift", "child_env", "summary_total")
 
 
 def borrow_errors(mod) -> list[str]:
@@ -405,14 +433,47 @@ def population_errors(found: set[str], pinned: frozenset[str]) -> list[str]:
     return out
 
 
-def run_self_test(script: Path, env: dict[str, str]) -> tuple[int, str]:
-    proc = subprocess.run([sys.executable, str(script), "--self-test"],
-                          cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=600)
-    return proc.returncode, proc.stdout + proc.stderr
+def run_self_test(script: Path, env: dict[str, str], timeout: float = 600,
+                  grace: float = 2.0) -> tuple[int, str]:
+    """`script --self-test` in its OWN session, so a timeout reaches every process it started.
+
+    ⛔ `subprocess.run(timeout=…)` kills only the direct child. A suite that started a helper and
+    hung left that helper running after CANNOT RUN — holding a core the pool's other slots wanted,
+    and writing into a temp HOME that was being deleted (PR #487 r1). So the whole group gets
+    SIGTERM, then SIGKILL after `grace`. A descendant that leaves the group (`setsid`) is not
+    reached — the same stated bound as the repo's hooks."""
+    proc = subprocess.Popen([sys.executable, str(script), "--self-test"], cwd=str(ROOT), env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_group(proc, grace)
+        raise
+    return proc.returncode, out + err
+
+
+def kill_group(proc: subprocess.Popen, grace: float) -> None:
+    """SIGTERM to `proc`'s process group, SIGKILL to it after `grace`, then reap `proc`.
+
+    The leader is NOT reaped until after the SIGKILL, so the group id cannot be reused by an
+    unrelated process in between."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except ProcessLookupError:
+            break
+        if sig == signal.SIGTERM:
+            time.sleep(grace)
+    try:
+        proc.communicate(timeout=grace)
+    except subprocess.TimeoutExpired:   # a pipe held by a process that escaped the group
+        proc.kill()
+        proc.wait()
 
 
 def printed_total(out: str) -> int | None:
-    """The denominator of the LAST `N/M … passed` line, or None if there is none.
+    """The denominator of the LAST summary line, or None if there is none — `check-plan-code`'s `summary_total`.
 
     ⚠ LAST, NOT FIRST, and this script is why. The first version took the first match and was
     wrong on its OWN suite: the case labels here quote example summaries (`` `12/12 … passed` ``),
@@ -426,49 +487,107 @@ def printed_total(out: str) -> int | None:
     surfaces as a loud DRIFT (77 vs 6), not a silent pass. The case below pins that behaviour so
     it is a known shape rather than a surprise.
     """
-    total = None
-    for line in out.split("\n"):
-        if "passed" not in line:
-            continue
-        m = RATIO.search(line)
-        if m:
-            total = int(m.group(2))
-    return total
+    return _summary_total()(out)
+
+
+_SUMMARY: list = []
+
+
+def _summary_total():
+    """`check-plan-code.py`'s `summary_total`, loaded once. `main` primes it before the pool starts, so the suites'
+    threads never race to load it."""
+    if not _SUMMARY:
+        _SUMMARY.append(_load_plan_code().summary_total)
+    return _SUMMARY[0]
+
+
+# ── the pool (backlog #487) ─────────────────────────────────────────────────────────────────────
+# MEASURED on docs-only CI runs: this step took 167 s and 197 s of a 6–7 min `verify` job, because it
+# ran every pinned suite ONE AFTER ANOTHER. The suites are independent subprocesses, so they now run
+# in a bounded pool. ⛔ It still RE-RUNS every suite; reusing `verify`'s own results would make this
+# a less independent observer, which is the whole of backlog #69.
+DEFAULT_JOBS = 4   # ubuntu-latest has 4 vCPUs; capped below by the host's count either way
+
+
+def pool_size(requested: int | None, cpus: int | None) -> int:
+    """How many suites run at once: the request (default DEFAULT_JOBS), never more than the host's
+    cores, never fewer than one. An UNKNOWN core count (`os.cpu_count()` is None) is one — serial is
+    slower, never wrong."""
+    want = DEFAULT_JOBS if requested is None else requested
+    return max(1, min(want, cpus or 1))
+
+
+def run_suites(names: list[str], job, jobs: int) -> list[tuple[str, str] | None]:
+    """`job(name)` for every name, at most `jobs` at once; the outcomes IN THE ORDER OF `names`.
+
+    ⚠ ORDER IS THE GIVEN ORDER, NEVER COMPLETION ORDER — so a report reads the same on every run
+    and a diff of two reports shows a real change, not a scheduling accident.
+
+    ⛔ A WORKER THAT RAISES IS CANNOT RUN, NEVER A PASS. Before the pool an exception in the loop
+    crashed the whole script loudly; inside a pool a future's exception is only seen if someone
+    asks for it, so a dropped one would read as a suite with nothing wrong."""
+    outcomes: dict[str, tuple[str, str] | None] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = {pool.submit(job, name): name for name in names}
+        for fut in concurrent.futures.as_completed(futures):
+            name = futures[fut]
+            try:
+                outcomes[name] = fut.result()
+            except Exception as exc:  # noqa: BLE001 — reported as CANNOT RUN, by name
+                outcomes[name] = ("cannot", f"{name}: the check itself crashed "
+                                            f"({type(exc).__name__}: {exc}). NOT CHECKED.")
+    return [outcomes[name] for name in names]
+
+
+def check_one(script: Path, env: dict[str, str], count_drift, run=None) -> tuple[str, str] | None:
+    """One suite's verdict: None (its count agrees), ("problem", why) or ("cannot", why)."""
+    name = script.name
+    try:
+        rc, out = (run or run_self_test)(script, env)
+    except subprocess.TimeoutExpired:
+        return ("cannot", f"{name}: --self-test did not finish. NOT CHECKED.")
+    if rc < 0:
+        return ("cannot", f"{name}: --self-test was killed by signal {-rc} before it finished, "
+                          f"so whatever count it printed is not a verdict. NOT CHECKED.")
+    if rc != 0:
+        return ("problem", f"{name}: --self-test exited {rc} — its own cases are red, so its "
+                           f"declared count proves nothing. Fix the suite first.")
+    total = printed_total(out)
+    if total is None:
+        return ("cannot", f"{name}: --self-test printed no `N/M … passed` line, so the count "
+                          f"could not be read. NOT CHECKED.")
+    doc = ast.get_docstring(ast.parse(script.read_text(encoding="utf-8"))) or ""
+    why = count_drift(doc, total)
+    return ("problem", f"{name}: {why}") if why else None
 
 
 def audit(root: Path, pinned: frozenset[str], count_drift, child_env,
-          only: frozenset[str] | None = None) -> tuple[list[str], list[str]]:
+          only: frozenset[str] | None = None, jobs: int = 1, run=None) -> tuple[list[str], list[str]]:
     """(problems, cannot_run). Kept separate so a cannot-run is never reported as a pass.
 
-    `only` scopes which suites RUN; the population ratchet always covers every script."""
+    `only` scopes which suites RUN; the population ratchet always covers every script. `jobs`
+    suites run at once (`run_suites`); `run` replaces `run_self_test`, for the self-test.
+
+    ⛔ EVERY SUITE GETS ITS OWN HOME. Serially, one shared temp HOME was harmless — one suite at a
+    time. Concurrently, two suites writing the same `~/…` path would collide, which is the
+    shared-directory shape backlog #388's flake had. This parent does not redirect TMPDIR itself:
+    each suite's `fixture_git.isolated()` nests its own `fixture-tmp-*` scratch directory under it and
+    removes it on exit (backlog #512), so two concurrent suites never share one. That keeps
+    `check-run-hook.world_base`'s ancestors (backlog #388) the same, plus one sparse directory."""
     problems: list[str] = []
     cannot: list[str] = []
 
     found = declaring_scripts(root, count_drift)
     problems.extend(population_errors(found, pinned))
 
-    with tempfile.TemporaryDirectory() as td:
-        env = child_env(Path(td))
-        for name in sorted(pinned & found if only is None else pinned & found & only):
-            script = root / "scripts" / name
-            try:
-                rc, out = run_self_test(script, env)
-            except subprocess.TimeoutExpired:
-                cannot.append(f"{name}: --self-test did not finish. NOT CHECKED.")
-                continue
-            if rc != 0:
-                problems.append(f"{name}: --self-test exited {rc} — its own cases are red, so its "
-                                f"declared count proves nothing. Fix the suite first.")
-                continue
-            total = printed_total(out)
-            if total is None:
-                cannot.append(f"{name}: --self-test printed no `N/M … passed` line, so the count "
-                              f"could not be read. NOT CHECKED.")
-                continue
-            doc = ast.get_docstring(ast.parse(script.read_text(encoding="utf-8"))) or ""
-            why = count_drift(doc, total)
-            if why:
-                problems.append(f"{name}: {why}")
+    def job(name: str) -> tuple[str, str] | None:
+        with tempfile.TemporaryDirectory() as td:
+            return check_one(root / "scripts" / name, child_env(Path(td)), count_drift, run)
+
+    names = sorted(pinned & found if only is None else pinned & found & only)
+    for outcome in run_suites(names, job, jobs):
+        if outcome is not None:
+            (problems if outcome[0] == "problem" else cannot).append(outcome[1])
     return problems, cannot
 
 
@@ -520,9 +639,11 @@ def reached(changed: set[str], sources: dict[str, str]) -> set[str]:
     suite loads BY FILE NAME (`spec_from_file_location`) puts that helper's own imports inside the
     suite exactly as an `import` would, so a one-hop string edge left helper -> (import) -> loaded
     script -> suite unreached (PR #450 r1, Codex finding 2, constructed). The cost of closing the
-    string edge is real and accepted: `check-plan-code.py` holds every script's path as a dictionary
-    KEY (`EXPECTED_MUTATIONS`), so a change to any of them reaches it and, through it, whatever loads
-    or names it. Over-selecting is the safe direction; the full run is CI's."""
+    string edge is real and accepted: any script that names many others in a string reaches every one
+    of them, and through it whatever loads or names it. (⟳ backlog #533: the largest such list, the
+    `EXPECTED_MUTATIONS` pins keyed by every script's path, moved out of `check-plan-code.py` into
+    `scripts/mutations/expected_mutations.py`, which is not a `scripts/*.py` source here, so that cost
+    shrank.) Over-selecting is the safe direction; the full run is CI's."""
     refs = {name: code_refs(src) for name, src in sources.items()}
     reach = set(changed)
     grew = True
@@ -569,21 +690,51 @@ def changed_scope(root: Path, pinned: frozenset[str], base: str) -> frozenset[st
     return frozenset(n for n in pinned if f"scripts/{n}" in reach)
 
 
-def main() -> int:
-    if "--self-test" in sys.argv:
+def _positive(text: str) -> int:
+    n = int(text)
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"--jobs must be at least 1, got {n}")
+    return n
+
+
+def report(problems: list[str], cannot: list[str]) -> int:
+    """Print every failure, and return 2 if any suite is CANNOT RUN, else 1 if any is red, else 0.
+
+    ⚠ BOTH LISTS ARE PRINTED. Returning after the CANNOT RUN list hid the red suites until the
+    CANNOT RUN was fixed and the run repeated (PR #487 r1)."""
+    if problems:
+        print("declared self-test counts disagree with what the suites printed:\n")
+        for p in problems:
+            print(f"  ✗ {p}")
+    if cannot:
+        print("CANNOT RUN — a declared count could not be read. Treat these as NOT CHECKED:\n",
+              file=sys.stderr)
+        for c in cannot:
+            print(f"  ? {c}", file=sys.stderr)
+        return 2
+    return 1 if problems else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if "--self-test" in argv:
         return self_test()
     ap = argparse.ArgumentParser(description="Every declared --self-test case count, checked by running it.")
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--only", nargs="+", metavar="SCRIPT", help="check only these pinned suites")
     mode.add_argument("--changed", action="store_true", help="check only the suites this branch can move")
     ap.add_argument("--base", default="origin/master", help="the ref --changed diffs against")
-    args = ap.parse_args(sys.argv[1:])
+    ap.add_argument("--jobs", type=_positive, default=None, metavar="N",
+                    help=f"suites run at once (default {DEFAULT_JOBS}, capped at the host's cores)")
+    args = ap.parse_args(argv)
+    jobs = pool_size(args.jobs, os.cpu_count())
 
     try:
         pc = _load_plan_code()
     except (ImportError, OSError) as exc:
         print(f"CANNOT RUN — {exc}. Treat this as NOT RUN.", file=sys.stderr)
         return 2
+    _SUMMARY[:] = [pc.summary_total]
 
     only = None
     try:
@@ -597,23 +748,15 @@ def main() -> int:
     scope = ("" if only is None else
              " (scope: --only)" if args.only else f" (scope: --changed against {args.base})")
 
-    problems, cannot = audit(ROOT, POPULATION, pc.count_drift, pc.child_env, only)
+    problems, cannot = audit(ROOT, POPULATION, pc.count_drift, pc.child_env, only, jobs)
 
-    if cannot:
-        print("CANNOT RUN — a declared count could not be read. Treat these as NOT CHECKED:\n",
-              file=sys.stderr)
-        for c in cannot:
-            print(f"  ? {c}", file=sys.stderr)
-        return 2
-    if problems:
-        print("declared self-test counts disagree with what the suites printed:\n")
-        for p in problems:
-            print(f"  ✗ {p}")
-        return 1
+    rc = report(problems, cannot)
+    if rc:
+        return rc
 
     if only is None:
         print(f"self-test counts: {len(POPULATION)} script(s) declare a count, "
-              f"every one verified by running it")
+              f"every one verified by running it ({jobs} at a time)")
     elif not only:
         print(f"self-test counts: nothing to check{scope} — no changed file reaches a pinned suite; "
               f"the population ratchet passed over all {len(POPULATION)}. The full run is CI's.")
@@ -814,6 +957,190 @@ def _self_test_body() -> int:
         check("--changed outside a git checkout is CANNOT RUN, never an empty scope",
               str(result(lambda: changed_scope(other, frozenset({"ok.py"}), "HEAD"))).startswith(
                   "CannotScope: `git diff"), True)
+
+    # ── the pool (backlog #487) ──
+    check("the pool defaults to DEFAULT_JOBS on a host with more cores", pool_size(None, 16), DEFAULT_JOBS)
+    check("the pool never exceeds the host's cores", pool_size(8, 2), 2)
+    check("an unknown core count runs serially, never zero workers", pool_size(None, None), 1)
+
+    # `a` waits until the COLLECTOR has consumed `b`'s result, so `a` can only see it if both run AT ONCE,
+    # and `b` is always COLLECTED FIRST. The wait is bounded: a serial pool makes `a` report the miss, never hang.
+    # ⛔ backlog #495: `a` used to wait only for `b` to START (an event `b` set). `as_completed` yields futures that
+    # are ALREADY done in no defined order, so when the main thread reached the loop late both were done and
+    # `b` was collected first only by luck — the completion-order mutant SURVIVED two CI runs of PR #489. Now the event
+    # is set by the collector itself (`collecting`, wrapping `as_completed`), AFTER it has taken `b`, so `a`
+    # cannot finish before `b` is collected: the completion order is b, a on every run.
+    import threading
+
+    def ordered(wait: float):
+        consumed = threading.Event()
+
+        def job(name: str):
+            if name == "a":
+                return ("problem", "a saw b") if consumed.wait(wait) else ("problem", "a ran alone")
+            return ("problem", "b")
+        return job, consumed
+
+    def collected(names, wait: float, jobs: int):
+        """`run_suites` with `ordered(wait)`, its `as_completed` wrapped to set the event once the collector
+        has taken a result — the generator resumes only when the loop asks for the NEXT future."""
+        job, consumed = ordered(wait)
+        real = concurrent.futures.as_completed
+
+        def collecting(fs, timeout=None):
+            for fut in real(fs, timeout=timeout):
+                yield fut
+                consumed.set()
+        concurrent.futures.as_completed = collecting
+        try:
+            return run_suites(names, job, jobs)
+        finally:
+            concurrent.futures.as_completed = real
+
+    got = collected(["a", "b"], 10, 2)
+    check("two suites run AT ONCE in a pool of two", got[0], ("problem", "a saw b"))
+    check("outcomes come back in the given order, not completion order", [g[1] for g in got],
+          ["a saw b", "b"])
+    # backlog #506 (1): the case above once saw `b` finish first only when the scheduler let it (fixed by #495, above).
+    # Here the completion order is FORCED a second way: `as_completed` yields the futures in reverse, so an
+    # implementation returning completion order fails on every run, over THREE suites.
+    _real_as_completed = concurrent.futures.as_completed
+
+    def _reversed_completion(fs, timeout=None):
+        concurrent.futures.wait(list(fs), timeout=timeout)
+        return list(reversed(list(fs)))
+    concurrent.futures.as_completed = _reversed_completion
+    try:
+        _forced = run_suites(["a", "b", "c"], lambda n: ("problem", n), 3)
+    finally:
+        concurrent.futures.as_completed = _real_as_completed
+    check("backlog #506: outcomes come back in the given order when completion is forced to the reverse",
+          [g[1] for g in _forced], ["a", "b", "c"])
+    # The other value of `jobs`: a pool of one is serial, so `a` finishes before `b` starts.
+    check("a pool of one runs the suites one at a time",
+          [g[1] for g in collected(["a", "b"], 0.3, 1)], ["a ran alone", "b"])
+
+    def crashing_job(name: str):
+        if name == "boom":
+            raise RuntimeError("worker died")
+        return None
+
+    got = run_suites(["boom", "fine"], crashing_job, 2)
+    check("a worker that RAISES is CANNOT RUN, never a pass",
+          got[0] is not None and got[0][0] == "cannot" and "worker died" in got[0][1], True)
+    check("…and the other suites are still checked", got[1], None)
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "scripts").mkdir()
+        decl = '"""x\n\n    --self-test  # 1 cases\n"""\nimport os, sys\n'
+        homes = root / "homes"
+        homes.mkdir()
+        for n in ("h1.py", "h2.py"):
+            (root / "scripts" / n).write_text(
+                decl + f'open({str(homes / n)!r}, "w").write(os.environ["HOME"])\nprint("1/1 passed")\n')
+        pinned = frozenset({"h1.py", "h2.py"})
+        audit(root, pinned, cd, pc.child_env, jobs=2)
+        seen = {n: (homes / n).read_text() if (homes / n).exists() else None for n in pinned}
+        check("every suite runs under its OWN home, never a shared one",
+              None not in seen.values() and seen["h1.py"] != seen["h2.py"], True)
+
+        def fake(script: Path, env):
+            if script.name == "h1.py":
+                raise subprocess.TimeoutExpired("x", 600)
+            raise OSError("cannot start")
+        problems, cannot = audit(root, pinned, cd, pc.child_env, jobs=2, run=fake)
+        check("a TIMED-OUT suite in the pool is CANNOT RUN, never a pass",
+              problems == [] and any(c.startswith("h1.py: --self-test did not finish") for c in cannot), True)
+        check("a suite that cannot START is CANNOT RUN, never a pass",
+              any(c.startswith("h2.py: the check itself crashed") for c in cannot), True)
+
+    # ── PR #487 r1: a run that could not complete, and what `main` reports ──
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        # The helper IGNORES SIGTERM, so only the SIGKILL that follows it can remove the helper.
+        pidfile = root / "helper.pid"
+        (root / "hangs.py").write_text(
+            "import subprocess, sys, time\n"
+            "h = subprocess.Popen([sys.executable, '-c', 'import signal, time; "
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
+            f"open({str(pidfile)!r}, 'w').write(str(h.pid))\n"
+            "time.sleep(60)\n")
+        timed_out = False
+        try:
+            run_self_test(root / "hangs.py", dict(os.environ), timeout=3, grace=0.2)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        helper = int(pidfile.read_text()) if pidfile.exists() else None
+        gone = False
+        for _ in range(40):
+            try:
+                os.kill(helper, 0) if helper else None
+            except ProcessLookupError:
+                gone = True
+                break
+            time.sleep(0.05)
+        if helper and not gone:
+            os.kill(helper, signal.SIGKILL)   # never leave the probe's own helper behind
+        check("a TIMED-OUT suite's descendants are killed with it, never left running",
+              (timed_out, helper is not None, gone), (True, True, True))
+
+        (root / "dies.py").write_text(
+            "import os, signal\nprint('1/1 passed', flush=True)\nos.kill(os.getpid(), signal.SIGKILL)\n")
+        got = check_one(root / "dies.py", dict(os.environ), cd)
+        check("a suite KILLED BY A SIGNAL is CANNOT RUN even after printing a passing count",
+              got is not None and got[0] == "cannot" and got[1].startswith(
+                  "dies.py: --self-test was killed by signal 9"), True)
+
+        # The contrasting inputs: a suite that FINISHES returns its own rc and output, under the env
+        # it was given; and a count the docstring disagrees with is a named problem.
+        (root / "echo.py").write_text("import os, sys\nprint(os.environ['MARK'])\nsys.exit(3)\n")
+        check("a suite that finishes in time returns its rc and output, under the env it was given",
+              run_self_test(root / "echo.py", {**os.environ, "MARK": "m7"}, timeout=60, grace=1.0),
+              (3, "m7\n"))
+        (root / "drifts.py").write_text('"""x"""\n')
+        check("a printed count the docstring disagrees with is a problem, by name",
+              check_one(root / "drifts.py", {}, lambda doc, total: f"declares 2, printed {total}",
+                        run=lambda script, env: (0, "1/1 passed")),
+              ("problem", "drifts.py: declares 2, printed 1"))
+
+    import contextlib
+    import io
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = report(["red.py: drift"], ["hung.py: did not finish"])
+    check("with a CANNOT RUN suite the red suites are STILL printed, and rc is 2",
+          (rc, "red.py: drift" in out.getvalue(), "hung.py" in err.getvalue()), (2, True, True))
+    with contextlib.redirect_stdout(io.StringIO()):
+        alone = (report(["red.py: drift"], []), report([], []))
+    check("red suites alone are rc 1, nothing wrong is rc 0", alone, (1, 0))
+
+    # `main`'s own wiring: the audit and the plan-code import are replaced, the core count fixed.
+    seen_jobs: list[int] = []
+
+    def fake_audit(root, pinned, count_drift, child_env, only=None, jobs=1, run=None):
+        seen_jobs.append(jobs)
+        return [], []
+    import types
+    saved = (globals()["audit"], globals()["_load_plan_code"], os.cpu_count)
+    globals()["audit"] = fake_audit
+    globals()["_load_plan_code"] = lambda: types.SimpleNamespace(count_drift=cd, child_env=pc.child_env,
+                                                                      summary_total=pc.summary_total)
+    os.cpu_count = lambda: 8
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = main(["--jobs", "3"])
+        check("`main` passes --jobs through to the pool", (rc, seen_jobs), (0, [3]))
+        seen_jobs.clear()
+        code = None
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                main(["--jobs", "0"])
+            except SystemExit as exc:
+                code = exc.code
+        check("--jobs 0 is refused before anything runs", (code, seen_jobs), (2, []))
+    finally:
+        globals()["audit"], globals()["_load_plan_code"], os.cpu_count = saved
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

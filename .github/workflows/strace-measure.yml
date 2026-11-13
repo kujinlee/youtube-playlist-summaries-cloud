@@ -1,0 +1,85 @@
+# backlog #586, plan slice 1 (Task 1.1): measure strace on a GitHub-hosted ubuntu runner.
+#
+# The spec's FIRST build step (§2, "prove the recorder can run"): locate or install strace, prove ptrace works by
+# tracing `git`, then trace every manifest target's `--self-test` under two fixed seeds and keep what the later
+# slices pin (the syscall names, the ioctl tokens, whether -yy decorates AT_FDCWD, the refusal triggers,
+# TRACE_FACTOR) plus raw log lines for slice 2's fixtures. `scripts/strace-measure.py` does the work; this file
+# interprets nothing.
+#
+# NOT a required check, and nothing reads its result but a human writing the measurement doc. It runs on a pull
+# request only when this file or the driver changes, and on demand.
+name: strace-measure
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/strace-measure.yml
+      - scripts/strace-measure.py
+
+permissions:
+  contents: read
+
+jobs:
+  strace-measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    env:
+      # Two fixed, distinct PYTHONHASHSEED values. Slice 4's `record-reads` job reuses them VERBATIM, so a read set
+      # recorded there is comparable to what this measured.
+      RECORD_SEEDS: '0,1109'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # `node_modules/typescript` is part of the staged tree (`check-plan-code.HARNESS_TREE`).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: The Python pin took effect
+        run: python3 scripts/check-python-pin.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Locate or install strace
+        run: command -v strace || (sudo apt-get update && sudo apt-get install -y strace)
+
+      # The ptrace probe. If ptrace is denied this step fails, and that failure IS the measurement: the plan's
+      # decision gate then takes slice 2F (the audit-hook recorder).
+      - name: ptrace probe (trace git, find its execve)
+        run: |
+          strace -V
+          # Two commands, not `a && b`: under `bash -e` a failing NON-final command of an && list does not stop
+          # the step, so a denied ptrace would have left it green (review round 1, Claude F6).
+          strace -f -o /tmp/p.log git --version
+          grep -q execve /tmp/p.log
+          echo "probe: $(grep -c execve /tmp/p.log) execve line(s)"
+
+      - name: The log reader's own cases
+        run: python3 scripts/strace-measure.py --self-test
+
+      - name: Measure this shard
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: python3 scripts/strace-measure.py --shard "$SHARD/6" --seeds "$RECORD_SEEDS" --out out
+
+      - name: Upload the shard's measurement
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strace-measure-${{ github.run_id }}-${{ matrix.shard }}
+          path: out/
+          retention-days: 90
+          if-no-files-found: warn
