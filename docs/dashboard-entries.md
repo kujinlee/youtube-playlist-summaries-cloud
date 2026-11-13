@@ -20501,6 +20501,17 @@ by the sha256 of its whole output. 413 self-test cases (4 new), 3 new mutations.
 hook runs origin/master's copy (backlog #522).
 
 ## 2026-11-13
+A pilot now sends the most expensive thinking to a stronger model, Fable 5.2, which costs twice as much per token as Opus. It
+covers architecture reviews, review loops that keep finding fixes of fixes, and writing specs and plans. Everything else
+stays as it was. The pilot is recorded with the evidence to read and a rule for keeping or dropping it when the usage-reset
+promotion ends. With only a few subjects a week the result will point a direction, not prove one.
+
+<!--tech-->
+Owner selection card A, 2026-11-13 ~03:00 PST. Register row 23 (`docs/optimization-register.md`) and backlog #630. Evidence:
+`rounds_at_termination`, coordinator round docs, `gh pr view --json createdAt,mergedAt`, and `~/.claude/meter/log.jsonl`
+(CANNOT RUN since the 11-13 reset). Revert: drop `model: "fable"` from those spawns.
+
+## 2026-11-13
 The explainer server now serves a merged page from a copy that follows `origin/master`, so a page merged to
 master shows on your port within a minute. It no longer depends on your main checkout, which is behind master and
 holds your edits. A page you have edited locally is shown when its base is master's version. When its base is
