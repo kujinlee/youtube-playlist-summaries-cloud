@@ -21,6 +21,19 @@
   --ink:#42403a; --ink-soft:#605c55; --ink-faint:#716c63; --structure:#e2dcd2;
   --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
 }
+:root[data-theme="light"]{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#716c63; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#716c63; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
   --fg:#c5c1b9; --fg2:#a4a099; --fg3:#8c8880; --strong:#eae6de;
@@ -243,7 +256,7 @@ li::marker{color:var(--fg3)}
 #modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
   border-radius:20px;margin-left:.4rem;white-space:nowrap}
 /* ---- end Ask tray ---- */
-.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}:root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}:root[data-scheme="1"]{--head:var(--fg);--prose:var(--fg);--emph:var(--fg)}:root[data-scheme="2"]{--head:var(--accent);--prose:var(--fg2);--emph:var(--fg)}.ex-body{color:var(--prose)}.ex-body h1,.ex-body h2,.ex-body h3,.ex-body h4{color:var(--head)}.ex-body strong,.ex-body b{color:var(--emph)}.schemer{display:inline-flex;align-items:center;gap:.3em}.schemer .lbl{color:var(--ink-soft,inherit)}.schemer button{background:none;border:1px solid transparent;border-radius:1em;padding:0 .55em;cursor:pointer;color:inherit;font:inherit}.schemer button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
 
   html { --decide: #3a2c00; --decide-bg: #ffe45c; --decide-br: #c99a00;
          --decided: #14532d; --decided-bg: #d3f2dc; --decided-br: #3d9a5c; }
@@ -271,12 +284,13 @@ li::marker{color:var(--fg3)}
 </head>
 <body>
 
+<div class="ex-body">
 <div class="wrap">
 <header class="top">
   <p class="kicker">Phase 1 spec · awaiting your gate</p>
   <h1>Could a stranger use any of this?</h1>
-<div class="chrome-slot"><div class="chrome"><span class="chrome-when">generated <time>2026-11-11 20:30 · ba9490b2 · uncommitted changes</time></span></div></div>
-<div class="ex-decision-count" role="status">✍ <b>13</b> decisions on this page · <b>2</b> remaining · <b>11</b> answered · next: <a href="#ex-decision-5">C5 corpus content review — DECISION 5</a></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-11-13 03:55 · 916fa47e · uncommitted changes</time></span></div></div>
+<div class="ex-decision-count" role="status">✍ <b>13</b> decisions on this page · <b>1</b> remaining · <b>12</b> answered · next: <a href="#ex-decision-5">C5 corpus content review — DECISION 5</a></div>
   <p class="sub">Spec <code>2026-10-15-marketplace-inventory-design.md</code> · branch <code>marketplace-inventory</code> at <code>e1cd5b8a</code> · PR <strong>376</strong> · anchor <code>harness-ships-elsewhere</code></p>
   <p class="lede">You asked for an inventory of the three efforts and a milestone. This is the plan for
   producing that, not the answer. <strong>It is the only human gate in this process</strong> — after it,
@@ -366,6 +380,19 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   </div>
 </div>
 
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-09 19:15): Let's aim for this. If we hit significant barriers we will change course, but for now we have to find out the real cost.</b></p>
+<p><b>Recorded: D1 stays &ldquo;public strangers, full support bar&rdquo;. It is now a working target that the measured cost can overturn, rather than a fixed commitment.</b></p>
+<p><b>The spec already has the tool that measures the real cost: D4's install experiment.</b> It installs the comprehensibility suite into a repository that has never seen it. Each blocker and each degraded result it hits is something a stranger would also hit. That turns the cost from a guess into a list.</p>
+<p><b>What is missing is the moment where you change course.</b> <span class="tag m">checked</span> The spec's &sect;9 falsifiers already make one decision come back to you: &ldquo;if the install experiment cannot be made to run at all,&rdquo; D4 is re-decided with you. Nothing does the same for D1. As written, a public bar that turns out to be very expensive would simply be paid. My proposal, to fold into the spec when PR #376 resumes:</p>
+<ul>
+<li><b>Record the cost per component.</b> For each one: the work to reach the public bar (docs, failure handling, decoupling) beside the work to reach &ldquo;install into my own next project&rdquo;. The inventory then shows the price of the bar, not just a verdict.</li>
+<li><b>Add a D1 checkpoint after the install experiment.</b> If the bar costs far more than the softer target for most components, the inventory comes back to you as a selection card: keep D1, or drop to &ldquo;my next project&rdquo;. It does not silently continue.</li>
+</ul>
+<p><span class="tag i">inferred, not measured</span> I expect effort (2), the CI and mutation harness, to be the first place that cost shows up. It is the most tied to this repository's workflow.</p>
+<p><b>Status:</b> PR #376 is still parked. Work is paused until tomorrow, per your 15:37 instruction, so I have not edited the spec yet. Ask on the other sections as you go; I am watching for questions.</p>
+</div>
+
 <div class="dec">
   <div class="hd" data-decision="One evaluation across all three efforts (selection card, 10-15)" data-decision-label="D2"><span class="ex-decision ex-decision-done" id="ex-decision-2">🟩 ✍ D2 — DECISION 2 of 13 — ANSWERED: One evaluation across all three efforts (selection card, 10-15)</span>
     <span class="tag">D2 · DECOMPOSITION</span>
@@ -385,6 +412,19 @@ have seen what each one rules out. <strong>Every one of them is still reversible
       effort on making (3) genuinely installable instead. This is question 2 at the bottom.</p>
     </div>
   </div>
+</div>
+
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-09 19:18): This may well be the case, but we have to explore ways to publish (1) and (2), then find the cost.</b></p>
+<p><b>Recorded: D2 stays as one evaluation across all three efforts. For (1) and (2), a likely DON'T-SHIP is not enough on its own: the inventory has to look for a way to publish them and price it.</b></p>
+<p><b>What the spec already does</b> <span class="tag m">checked</span>. A component that cannot ship can still be <i>harvested</i> (D6, &sect;4c). It gets <code>harvest: practice</code> when it yields a written, transferable practice even though no code travels. That covers one way to publish: as a practice document.</p>
+<p><b>What it does not do.</b> A verdict says whether the component travels <i>as it is</i>. It does not ask what it would take to make it travel. For (1) and (2) that is the question you are asking. My proposal, alongside the D1 cost record above:</p>
+<ul>
+<li><b>Record the cheapest route for each component that is not SHIP.</b> For example: decouple it behind a config file, ship it as a template repository rather than a plugin, ship only the portable core, or publish it as a practice. Note the estimated work beside each route.</li>
+<li><b>The verdict stays honest.</b> The route and its cost sit next to the verdict and never upgrade it, the same rule the spec already applies to harvest. The milestone then lists what is publishable now, what could be at a known price, and what is not worth it.</li>
+</ul>
+<p><span class="tag i">inferred, not measured</span> For effort (2) I expect &ldquo;ship the portable core&rdquo; to be the candidate. The sharding and verdict caching are generic. The wiring to this repository's workflows is not.</p>
+<p>The spec edit waits for PR #376 to resume, like the D1 checkpoint.</p>
 </div>
 
 <div class="dec">
@@ -408,6 +448,11 @@ have seen what each one rules out. <strong>Every one of them is still reversible
       as a destination. It stays available as a later, separate milestone.</p>
     </div>
   </div>
+</div>
+
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-09 19:18): Yes, this is the current goal.</b></p>
+<p><b>Recorded: D3 stays as a self-published marketplace repo.</b> The official list remains a possible later milestone, separate from this one. No spec change is needed. The spec's &sect;7 item 0 spike still has to prove that this artifact can travel that route, by packaging one skill and one script and invoking them from another repository. That falsifier stays as written.</p>
 </div>
 
 <div class="dec">
@@ -435,6 +480,23 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   </div>
 </div>
 
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-09 19:19): Yes, this is the current plan.</b></p>
+<p><b>Recorded: D4 stays.</b> The plan is a mechanical scan of every component, plus one real install experiment on the comprehensibility suite to calibrate the scan. That fits your D1 answer. Your D1 answer asks for the real cost of the public bar, and the install experiment is what measures it. The D1 checkpoint I proposed above would run right after it.</p>
+<p><b>All four decisions are now confirmed</b> (D1, D2, D3 and D4). Two of your answers add work that the spec does not yet carry. When PR #376 resumes, I will fold them in: a D1 cost checkpoint, and a cheapest route with its cost for every component that is not SHIP. Folding them in is a spec change, so you will see it walked through again before the spec is approved. The spec is the human gate.</p>
+</div>
+
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-09 19:29): It can be phased. First publish the easier part (comprehensibility, plus memory recall if feasible), then evaluate the rest. The aim is to get at least some useful part to the public, then publish more later.</b></p>
+<p><b>Recorded: publishing is phased.</b> This fits D2 rather than replacing it, with one change worth stating:</p>
+<ul>
+<li><b>D2 still says &ldquo;one evaluation across all three&rdquo;</b>, but the depth can now differ by phase. Effort (3) and, if feasible, effort (1) get the full treatment: install experiment, publishing route, cost. Effort (2) gets the scan and a first estimate of its cheapest route, and its deep evaluation moves to a later phase.</li>
+<li><b>The milestone's definition of done moves.</b> It becomes &ldquo;a first useful subset is installable from the marketplace repo by a stranger&rdquo;, not &ldquo;every component has a final verdict&rdquo;. Later phases are their own milestones.</li>
+</ul>
+<p><b>Why that order is right</b> <span class="tag i">inferred</span>. Effort (3) is already shaped like a plugin, and the install experiment runs on it anyway. Effort (1) is small (about 3,500 lines across three files, section 3), but it depends on a memory corpus that is personal to this project. &ldquo;If feasible&rdquo; there means: can it ship with an empty corpus and a way for a stranger to grow their own? That is the first thing to test for it.</p>
+<p>This is a third spec change to fold in when PR #376 resumes, alongside the D1 checkpoint and the cheapest-route record.</p>
+</div>
+
 <div class="box acc">
   <span class="lbl">The interaction worth noticing</span>
   <p>D1 and D4 hold each other up, and D1 and D2 pull against each other. The public bar is what makes
@@ -445,7 +507,45 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 
 <hr class="hr">
 
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-09 19:21): We have to find out how far we can go first. So for now we explore, experiment, then find the cost.</b></p>
+<p><b>Recorded: nothing gets softened up front.</b> The order is explore, then experiment, then cost, and only then decide whether any bar comes down. If something is softened, D1 is still the first candidate, but on measured cost, not on my prediction.</p>
+<p>That changes how the milestone should read. It is an <i>exploration</i> milestone: its output is &ldquo;how far each effort can go, and at what price&rdquo;, not a final ship list. The two spec folds already noted (the D1 cost checkpoint and the cheapest publishing route with its cost) are the places where that price gets written down.</p>
+</div>
+
 <h2><span class="n">3</span>The scope, and a result that arrived before the work did</h2>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-09 19:23): This part needs to be updated.</b> Done below. Every figure was re-derived at master <code>cfad72b3</code> (11-09) by counting lines in the files, not copied from the old text. The 10-15/10-16 version is kept, collapsed, at the end of this section.</p>
+</div>
+
+<p><b>The headline: every effort grew, and effort (3) grew the most.</b> In the 3&frac12; weeks since this section was written, effort (3)'s code grew by 42%. The scope is a moving target, so the spec has to measure it at the moment the inventory runs, never in advance.</p>
+
+<table>
+<tr><th>Measure</th><th>10-15 / 10-16</th><th>11-09 (<code>cfad72b3</code>)</th><th>Change</th></tr>
+<tr><td>The nine files <code>portable-practices.md</code> enumerates (4 skills, the delivery contract, <code>brief-compose</code>, <code>explainer-serve</code>, <code>page_chrome</code>, <code>page_markup</code>)</td><td>6,542</td><td><b>11,237</b></td><td>1.72&times;</td></tr>
+<tr><td>Effort (3) Python: the six files</td><td>10,373</td><td><b>15,222</b> (brief-compose 2,648 &middot; explainer-serve 3,526 &middot; page_chrome 2,759 &middot; page_markup 1,307 &middot; gen-dashboard 3,588 &middot; gen-goals-page 1,394)</td><td>1.47&times;</td></tr>
+<tr><td>Effort (3) skills (the four <code>SKILL.md</code>)</td><td>604</td><td>604</td><td>unchanged</td></tr>
+<tr><td>Effort (3) total, with shared contracts</td><td>11,624</td><td><b>16,503</b> &#9888;</td><td>1.42&times;</td></tr>
+<tr><td>Effort (1): <code>recall-llm.py</code> / <code>check-surface-recall.py</code> / hook</td><td>2,550 / &ndash; / &ndash;</td><td>2,557 / 827 / 113</td><td>almost flat</td></tr>
+<tr><td>Effort (1): memory files</td><td>157</td><td>182 in <code>docs/memory/</code></td><td>+25</td></tr>
+<tr><td>Effort (2): <code>check-plan-code.py</code> / <code>ci.yml</code></td><td>not measured</td><td>7,349 / 1,444 lines</td><td>&ndash;</td></tr>
+</table>
+<p>&#9888; The shared-contract figure is now the three files in <code>.agents/skills/shared/</code> (explainer-delivery 393, handoff-path 211, corpus-search 73 = 677). I did not check that these are the same three that made up the 647 on 10-15. <span class="tag i">unverified</span></p>
+<p>&#9888; <b>The index is now further off.</b> <code>portable-practices.md</code> still headlines &ldquo;~11,000 lines&rdquo; with &ldquo;10,373 across six files&rdquo;. The nine files it enumerates now total more than the headline, and the six Python files are at 15,222. This is the decay this section described, still happening. It argues once more for counting at the time of use.</p>
+
+<h3>Effort (2) changed in kind, not just in size</h3>
+<p>On 10-15 this row said &ldquo;sharding shipped, 8 shards, 353 s per shard&rdquo;. Since then, from <code>git log</code> on master:</p>
+<ul>
+<li><b>Selection by diff</b> (PR #496): a PR's sweep runs only the mutation manifests its diff selects. The full sweep runs on master and on a schedule.</li>
+<li><b>Sharding grew to 38 shards</b> (PR #550). The number of mutations kept growing, and the shard time limit kept firing. The first full master sweep on 38 shards was green, with the slowest shard at 1,294 s.</li>
+<li><b>Batch CI</b> (PR #529) reuses one full sweep's verdicts across a batch of ready PRs. It is built but has never run, because PRs rarely pile up. Revisit it when backlog #560 lands.</li>
+<li><b>Observed-reach selection</b> (backlog #586): the spec is approved (PR #552). It picks a PR's guards by what their tests were <i>seen</i> to read under <code>strace -f</code>. The plan is in review.</li>
+</ul>
+<p><b>What this means for D2's &ldquo;explore ways to publish (2)&rdquo;:</b> <span class="tag i">inferred</span> The generic part is now clearer: shard planning, diff-based selection, verdict reuse, and observed-reach tracing. The wiring to this repository's <code>ci.yml</code> (1,444 lines) is the part that does not travel. That points at &ldquo;ship the portable core&rdquo; as the route to cost first.</p>
+
+<p><b>Not re-derived here:</b> the component <i>count</i> (24 on 10-15). It needs the spec's mapping step, which assigns every file to a component. A line count cannot stand in for it. The roadmap status of Q0 was not re-checked either.</p>
+
+<details><summary><b>As written 10-15 / 10-16</b> (kept for the record; its figures are stale)</summary>
 
 <p>Twenty-four components, derived from disk on <strong>2026-10-15</strong> rather than recalled —
 <strong>17</strong> comprehensibility, <strong>3</strong> velocity, <strong>4</strong> recall.</p>
@@ -611,6 +711,8 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 
 <hr class="hr">
 
+</details>
+
 <h2><span class="n">4</span>The five criteria, and the two that cannot be counted</h2>
 
 <div class="scroll">
@@ -661,7 +763,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   <table>
     <tr><th>What</th><th>The question</th><th>Who answers it</th></tr>
     <tr><td>the <strong>code</strong></td><td>under what licence is it published?</td><td>✅ <strong>ANSWERED — MIT</strong> (D7, below). ⟳ This cell read <em>“you — this is a choice, not a finding”</em> until round 3; it was true when written and the answer is two sections further down</td></tr>
-    <tr><td>the <strong>corpus</strong> — effort (1)'s memory files (<strong>159</strong> here, 157 on <code>master</code>)</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td data-decision data-decision-label="C5 corpus content review"><span class="ex-decision ex-decision-open" id="ex-decision-5">🟨 ✍ C5 corpus content review — DECISION 5 of 13</span>a <strong>content review</strong> — ⟳ now <strong>deliverable 11</strong>, listed as yours rather than left as a gap (round 3). Until it lands the corpus’s row reads <code>C5: unanswered</code> and <strong>cannot be <code>SHIP</code></strong></td></tr>
+    <tr><td>the <strong>corpus</strong> — effort (1)'s memory files (<strong>159</strong> here, 157 on <code>master</code>)</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td data-decision data-decision-label="C5 corpus content review"><span class="ex-decision ex-decision-open" id="ex-decision-5">🟨 ✍ C5 corpus content review — DECISION 5 of 13</span>a <strong>content review</strong> — ⟳ now <strong>deliverable 11</strong>, listed as yours rather than left as a gap (round 3). Until it lands the corpus’s row reads <code>C5: unanswered</code> and <strong>cannot be <code>SHIP</code></strong>. ⏳ <strong>⟳ 11-13 03:48: list prepared, waiting on your check.</strong> You asked for <em>“a list of suspected files for me to check”</em>; it is <a href="https://github.com/kujinlee/youtube-playlist-summaries-cloud/blob/master/docs/marketplace/decision-5-suspect-files.md"><code>docs/marketplace/decision-5-suspect-files.md</code></a> — 22 files in four groups (production infrastructure, business plans, your local machine, your own words), no credential values found. This stays open until you answer each group yes or no.</td></tr>
   </table>
   </div>
   <p class="note">⚠ <strong>Bounded honestly:</strong> no marketplace installed on this machine
@@ -689,13 +791,27 @@ have seen what each one rules out. <strong>Every one of them is still reversible
     <tr><th>What</th><th>State</th></tr>
     <tr><td>the published harness package</td><td><strong>MIT</strong> — the <code>LICENSE</code> lands on the marketplace repo, whose creation is deferred</td></tr>
     <tr><td>this repository</td><td><strong>unchanged</strong> — public, unlicensed, all rights reserved, until decided separately</td></tr>
-    <tr><td>the copyright holder</td><td data-decision data-decision-label="Copyright holder"><span class="ex-decision ex-decision-open" id="ex-decision-7">🟨 ✍ Copyright holder — DECISION 7 of 13</span>⚠ <strong>not yet named.</strong> No author is declared anywhere, and the git identity is the placeholder <code>t &lt;t@example.com&gt;</code>. Your GitHub account is <code>kujinlee</code> — a legal name or entity is still yours to give, and inventing one would be worse than leaving it visible</td></tr>
+    <tr><td>the copyright holder</td><td data-decision="Kujin Lee (owner, 11-13 03:48)" data-decision-label="Copyright holder"><span class="ex-decision ex-decision-done" id="ex-decision-7">🟩 ✍ Copyright holder — DECISION 7 of 13 — ANSWERED: Kujin Lee (owner, 11-13 03:48)</span>✅ <strong>Kujin Lee</strong> — your answer, 11-13 03:48: <em>“use my name &quot;Kujin Lee&quot;”</em>. The marketplace repo’s MIT <code>LICENSE</code> will read <code>Copyright (c) &lt;year&gt; Kujin Lee</code>. ⟳ This cell read <em>“not yet named”</em> until then: no author was declared anywhere and the git identity is the placeholder <code>t &lt;t@example.com&gt;</code>, so the name was yours to give, never one to infer</td></tr>
   </table>
   </div>
   <p class="note">⚠ <strong>And a correction.</strong> This was described to you as blocking the
   milestone. It was not: the spec can be approved, the scan built and the inventory produced without
   it, because publication is deferred out of this milestone. The earlier framing overstated the
   urgency.</p>
+</div>
+
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-10 18:41): I didn't mean to license the whole repo. I want to carve the tooling out as a general plugin, like mattpocock's skills. Would a separate repo help?</b></p>
+<p><b>Yes. A separate repo is already the plan.</b> D3 in the spec is "a self-published marketplace repo, installed with <code>/plugin marketplace add &lt;repo&gt;</code>", and D7 puts the MIT <code>LICENSE</code> on that repo only. The paragraph above was arguing against putting a <code>LICENSE</code> at <em>this</em> repo's root. It was not saying you had asked for that. I phrased it badly.</p>
+<p><b>The two repos:</b></p>
+<div class="scroll"><table>
+<tr><th>Repo</th><th>Holds</th><th>Licence</th></tr>
+<tr><td>this one (<code>youtube-playlist-summaries-cloud</code>)</td><td>the product, plus the harness as it is developed and used</td><td>unchanged: public but unlicensed, so people may read it but have no right to reuse it</td></tr>
+<tr><td>the new marketplace repo (name not chosen; its creation is deferred to after this milestone)</td><td>only the parts that pass the inventory, packaged as plugins (skills, hooks, scripts, commands)</td><td><b>MIT</b></td></tr>
+</table></div>
+<p><b>The difference from mattpocock/skills:</b> that repo installs with <code>npx skills add</code> and carries skills only. A Claude Code marketplace repo can carry skills, hooks, slash commands and agents, which most of this harness is made of.</p>
+<p>⚠ <b>The real cost is keeping the two repos in step.</b> The harness keeps evolving here, so the marketplace repo needs an export step: copy the published parts across, minus this project's own config. Each component's "cheapest publish route" (your 11-09 fold (b), e.g. config-decouple) is that export step's cost, priced per component. The inventory measures it; it does not assume it is free.</p>
+<p><b>Nothing changes in the spec:</b> D3 and D7 already say this. I will add one sentence to the D7 paragraph saying the licence scope follows from the separate repo, so it is not misread again.</p>
 </div>
 
 <div class="box warn">
@@ -866,6 +982,11 @@ question was asked against it.</p>
   question waiting for you.</p>
 </div>
 
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-10 18:45): Agree.</b></p>
+<p><b>Already recorded as D5:</b> three decisive verdicts, with an evidence grade (<code>measured</code> / <code>inherited</code> / <code>argued</code> / <code>none</code>) recorded beside each. Your 11-09 answer on lopsided evidence also stands: efforts (1) and (2) get <code>argued</code> for this milestone, and the stricter option in the note above (no <code>SHIP</code> without <code>measured</code> or <code>inherited</code> evidence) is not taken.</p>
+</div>
+
 <hr class="hr">
 
 <h2><span class="n">5</span>Where this plan is weakest</h2>
@@ -1026,6 +1147,31 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
     silently”</em> — is <strong>struck</strong>: it priced an outcome that had never been measured.
     That travels to any packaging ecosystem, which is what D6 is for.</p>
   </div>
+
+  <div class="box warn">
+    <span class="lbl">✅ You answered this (11-09 19:45) — accept it for now, deeper later</span>
+    <p><strong>Recorded: the lopsided evidence is accepted for this milestone.</strong> Effort (3)
+    keeps its real install experiment. Efforts (1) and (2) get a scan plus the cheapest publishing
+    route and its cost, not an experiment each. That follows from two earlier answers: D2 at 19:18,
+    <em>“we have to explore ways to publish (1) and (2), then find the cost”</em>, and the phasing at
+    19:29, which publishes comprehensibility first and evaluates the rest later.</p>
+    <p>⚠ <strong>The cost, stated so nobody mistakes it later:</strong> until their later phase,
+    the verdicts for (1) and (2) rest on argument rather than measurement, and the inventory must say
+    so in their evidence field (D5: <code>argued</code>, never <code>measured</code>). A deeper
+    evaluation of either one is a later phase, not this milestone.</p>
+  </div>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-10 18:50): What do you mean by "accept it"? What is accepted?</b></p>
+<p><b>What is accepted is an unevenness in how strong the evidence behind each verdict is.</b> The inventory gives each of the three efforts a verdict (SHIP, NEEDS-WORK or DON'T-SHIP). The question is what that verdict rests on:</p>
+<div class="scroll"><table>
+<tr><th>Effort</th><th>How its verdict is reached</th><th>Evidence grade (D5)</th></tr>
+<tr><td>(3) comprehensibility suite</td><td>We actually install it in a separate repo and run it: the <b>install experiment</b></td><td><code>measured</code></td></tr>
+<tr><td>(1) memory recall</td><td>The mechanical scan, plus my reasoning about it, plus the cheapest publishing route and its cost. Nobody installs it anywhere</td><td><code>argued</code></td></tr>
+<tr><td>(2) CI harness (guards, mutation sweep)</td><td>The same as (1)</td><td><code>argued</code></td></tr>
+</table></div>
+<p>"Accept it" means you agree that, <b>for this milestone</b>, the verdicts for (1) and (2) may rest on argument rather than on a real install, and that each is labelled <code>argued</code> so nobody reads it as proven. The alternative was an install experiment for each of them too. That roughly doubles the milestone.</p>
+<p><b>What is not accepted:</b> treating an <code>argued</code> verdict as final. When (1) or (2) comes up for publishing in a later phase, it gets its own experiment first. Your 11-09 phasing answer already says that: comprehensibility first, the rest evaluated later.</p>
+</div>
 </div>
 
 <div class="q">
@@ -1068,6 +1214,30 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
     — but for the harvest, not for the shipping. That is a cheaper and better-defined reason than
     <em>“I expect <code>DON'T-SHIP</code> but might be wrong.”</em></p>
   </div>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-10 19:07): Any project that uses GitHub and a mutation sweep has to solve the long-sweep problem. Effort (2) is a series of fixes for it: a partial sweep chosen by closure during development, sharding in CI, CI&rsquo;s own partial sweep chosen by closure, and an occasional full sweep that catches what the partial one missed, after merge. So effort (2) applies to any such project.</b></p>
+<p><b>Agreed, and it changes what the inventory should test for effort (2).</b> D6 treated (2) as mainly a source of transferable practices. Your point is that the <em>problem</em> it solves is general, so the <em>tooling</em> may travel too, not just the ideas. That makes it a candidate to ship, not only to harvest. The four pieces you list each have a different portability:</p>
+<div class="scroll"><table>
+<tr><th>Piece</th><th>Tied to this repo by</th><th>Likely route</th></tr>
+<tr><td>Sharding the sweep across a GitHub Actions matrix</td><td>Little: the matrix only needs a list of targets and a command</td><td>Portable as a reusable workflow</td></tr>
+<tr><td>A scheduled full sweep after merge that opens an issue when red (<code>sweep-red</code>)</td><td>Little: a schedule, a command, and <code>gh issue create</code></td><td>Portable as a reusable workflow</td></tr>
+<tr><td>Choosing a partial sweep by closure (which mutations a change can affect)</td><td>The closure is computed for this repo&rsquo;s Python guard scripts</td><td>Needs work: the stranger&rsquo;s language needs its own closure. ⭐ Backlog #586&rsquo;s strace recording observes the files a suite actually reads, with no language parser, which may be the portable form</td></tr>
+<tr><td>The mutation engine itself (<code>check-plan-code.py --mutate</code>, manifests in <code>scripts/mutations/</code>)</td><td>Heavily: hand-written mutations bound to this repo&rsquo;s scripts by text anchors</td><td>Not portable. A stranger would bring their own engine</td></tr>
+</table></div>
+<p>⚠ <b>One thing the inventory has to check before calling any of this SHIP</b> <span class="tag i">from my knowledge, not measured</span>. Projects that already do mutation testing mostly use an established engine (for example Stryker, mutmut, PIT or cargo-mutants), and some of those have their own incremental modes. So the honest test is whether our sharding and closure layer adds something on top of those engines, not whether it works here. The likely result is a thin, engine-agnostic CI layer (shard, select, full sweep after merge), with an adapter per engine.</p>
+<p><b>What I will change when PR #376 resumes:</b> effort (2) is evaluated for shipping as a portable core (the CI layer above), not for the harvest alone. The scan also compares it against established engines&rsquo; incremental modes. This is a spec change, so you will see it in the next walkthrough. Your earlier answers stand: in this milestone, (2) still gets a scan and a cost estimate, not an install experiment.</p>
+</div>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-10 19:11): If a project uses GitHub and a mutation sweep, can they install the CI sharding?</b></p>
+<p><b>Not today, but it is close.</b> Two things stand in the way:</p>
+<ul>
+<li><b>It is wired into this repo.</b> The sharding is the <code>mutation-sweep</code> matrix job in our <code>ci.yml</code>, and the split itself is a flag of <em>our</em> mutation engine (<code>check-plan-code.py --mutate</code> runs shard I of N, round-robin). A stranger&rsquo;s engine has no such flag.</li>
+<li><b>A Claude Code marketplace installs into Claude Code, not into GitHub Actions.</b> CI pieces are &ldquo;installed&rdquo; differently: the stranger adds one line to their own workflow pointing at ours (<code>uses: &lt;owner&gt;/&lt;repo&gt;/.github/workflows/mutation-shards.yml@v1</code>), which GitHub allows from any public repo. The same marketplace repo can host that file, so it is still one place to publish.</li>
+</ul>
+<p><b>What would make it installable:</b> a reusable workflow that knows nothing about our engine. It would take three inputs: a command that lists the targets, a command that mutates one target, and N. It would then fan the targets out round-robin over N jobs, never cancel the other shards when one fails, and open a <code>sweep-red</code> issue from the scheduled full run. The stranger writes the two commands for their engine. That is the &ldquo;portable core&rdquo; route, and its cost is what the inventory should price.</p>
+<p>⚠ <b>Check first whether their engine already does it</b> <span class="tag i">from memory, not verified</span>. I believe some engines have their own shard option (cargo-mutants, for example). Where one does, our workflow adds only the matrix and the sweep-red issue, which is a smaller thing to ship.</p>
+<p><b>The practices travel even where the workflow does not.</b> These were measured here, and each is already argued in our <code>ci.yml</code>: split targets round-robin, not in contiguous blocks (a 1.15&times; spread between shards against 17.9&times;); the control pass does not shrink as N grows, so the speedup has a ceiling; choose N from measured shard times against the job timeout, not by guessing; and do not fail fast. Those are the D6 harvest, whatever the shipping verdict turns out to be.</p>
+</div>
 </div>
 
 <div class="q">
@@ -1183,11 +1353,44 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
   the milestone changes shape.</p>
   <p class="note">Either way, highlight anything on this page and press <strong>ask</strong>. That is
   what it is for, and it is the only part of this process where disagreeing is cheap.</p>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-11 05:53): Had I already approved this? If not, I approve.</b></p>
+<p><b>No, it was not approved before. Recorded now: you approve the spec, 11-11 05:53.</b> The spec&rsquo;s status line still read &ldquo;awaiting the owner&rsquo;s walkthrough of the changed sections&rdquo;, and no earlier answer on either page said approve.</p>
+<p><b>What the approval carries, so nothing is assumed silently:</b></p>
+<ul>
+<li><b>The two open questions on the 11-10 changes page</b> had no answer. I am taking my recommendations, which you can still overturn. (1) The D1 checkpoint fires when the public bar costs at least 3&times; the softer target for more than half of the phase-1 components. (2) &ldquo;If feasible&rdquo; for recall means two conditions: recall is useful to a stranger whose memory corpus starts empty, and our own corpus passes your content review.</li>
+<li><b>Three changes from your 11-10 evening answers</b> still have to be folded in: the D7 sentence (the licence scope follows from the separate marketplace repo); effort (2) evaluated for shipping as a portable CI layer (shard, select, full sweep after merge), compared with established engines; and the installation channel for CI pieces (a reusable workflow, not the plugin marketplace).</li>
+</ul>
+<p><b>Next:</b> I fold those into the spec and mark it approved. One capped review round checks the folded sections. Then I merge master into the branch (10 conflicts) and merge PR #376 when <code>check-merge-ready</code> says READY. The implementation plan follows, with dual review, as this box says. You will not be asked again unless the review finds something that would change the goal.</p>
+</div>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-11 05:58): If I need to make a decision on a point, can you clearly flag it so that I don&rsquo;t miss it? Taking your own recommendation is fine this time, but I need to know clearly when you need my decisions.</b></p>
+<p><b>Yes. You missed those two because I asked them in the wrong place.</b> They sat in a section of the 11-10 changes page titled &ldquo;Two things I would like you to check&rdquo;. In chat I only said I was waiting on your walkthrough, and never showed you a selection card. A standing rule already says every decision goes in a selection card, and I broke it by treating the page as the place to ask.</p>
+<p><b>From now on, a page explains a decision; it is never where I ask it.</b> Each decision I need from you will appear in three places:</p>
+<ol>
+<li><b>A selection card in chat</b> (the A/B/C card) when the page is delivered, one question per decision.</li>
+<li><b>A numbered <code>⛔ DECISIONS FOR YOU: N</code> box at the top of the page</b>, each item linking to its section.</li>
+<li><b>The ⛔ line at the top of every status message</b>, naming each one until you answer it.</li>
+</ol>
+<p>When I take my own recommendation because no answer came, I will label it <b>TAKEN BY DEFAULT — overturn?</b> in that ⛔ line, not in a paragraph. I have saved this as a memory, so it applies in later sessions too.</p>
+</div>
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-11 06:03): During a document review, a selection card may interrupt the workflow. Mark decision points the way a contract marks signature lines, with a yellow tag, and show how many decisions there are in total and how many remain.</b></p>
+<p><b>Agreed. That replaces item 1 of my previous answer for pages.</b> Here is the new convention:</p>
+<ul>
+<li><b>At each decision point in the page</b>, a yellow tag like <span style="background:#ffd84d;color:#000;font-weight:700;padding:.1rem .45rem;border-radius:3px">✍ DECISION 1 of 3</span>, placed exactly where your answer is needed.</li>
+<li><b>At the top of the page</b>, a counter such as &ldquo;Decisions: 3 total · 1 remaining&rdquo;, with each one linking to its tag. An answered tag turns green and the remaining count goes down.</li>
+<li><b>No selection cards for decisions on a page you are reviewing.</b> Cards are still used for decisions that come up in chat.</li>
+<li><b>In chat</b>, the ⛔ line still names every open decision until you answer it, so a page you haven&rsquo;t opened can&rsquo;t hide one.</li>
+</ul>
+<p>I have updated the memory. To make the tag and counter automatic rather than hand-written, the page builder (<code>brief-compose.py</code>) needs a small change: a decision tag that the counter adds up. I have added it to my list of owed work. Until it is built, I will write the tags by hand.</p>
+</div>
 </div>
 
 </div>
+</div>
 
-
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var TK='explainer-scheme',TA='data-scheme',TD='3';var box=document.getElementById('schemer');if(box){function sset(s){if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}var bs=box.querySelectorAll('button[data-s]');for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}box.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;if(b)sset(b.getAttribute('data-s'));});var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}sset(sv==='1'||sv==='2'?sv:TD);}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');function tell(m){if(say){say.textContent=m;say.setAttribute('data-refresh',m);}}if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){tell('opened as a file \u2014 no server to rebuild it; run the generator');return;}r.disabled=true;tell('rebuilding\u2026');fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){tell('rebuilt WITH A WARNING: '+j.warning);return;}location.reload();}).catch(function(e){r.disabled=false;tell('could not rebuild: '+e.message);});});}var bars=document.querySelectorAll('.chrome-slot .chrome');var slot=null,bar=null;for(var bi=0;bi<bars.length;bi++){if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];slot=bar.closest('.chrome-slot');break;}}if(!bar&&bars.length){bar=bars[0];slot=bar.closest('.chrome-slot');}var sch=document.getElementById('schemer');if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);if(bar&&bar.querySelector('#chrome-theme,#schemer')){var tailPx=0;var ctls=bar.querySelectorAll('#chrome-theme,#schemer');var pin=function(on){if(bar.classList.contains('chrome-pinned')===on)return;bar.classList.toggle('chrome-pinned',on);if(!on)sync();};var io=null;var arm=function(){if(!window.IntersectionObserver)return;if(io)io.disconnect();io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};var sync=function(){if(bar.classList.contains('chrome-pinned'))return;var h=bar.getBoundingClientRect().height;slot.style.minHeight=h+'px';document.documentElement.style.setProperty('--chrome-h',h+'px');var sb=slot.getBoundingClientRect().bottom,m=Infinity;for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));arm();};sync();if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}else{window.addEventListener('resize',sync);}if(!window.IntersectionObserver){var fb=function(){var r=slot.getBoundingClientRect();pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||document.documentElement.clientHeight));};fb();window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}})();</script>
 <div id="tray"><div class="in">
   <div id="qt"></div>
   <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>

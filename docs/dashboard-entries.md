@@ -20511,6 +20511,22 @@ Owner selection card A, 2026-11-13 ~03:00 PST. Register row 23 (`docs/optimizati
 `rounds_at_termination`, coordinator round docs, `gh pr view --json createdAt,mergedAt`, and `~/.claude/meter/log.jsonl`
 (CANNOT RUN since the 11-13 reset). Revert: drop `model: "fable"` from those spawns.
 
+## 2026-11-13 [needs-you]
+Two of the marketplace walkthrough's open decisions moved. The copyright holder is now Kujin Lee, as you asked, and
+the spec, the plan and the walkthrough page all say so; the licence for the published plugin repository will carry
+that name. For the memory-file content review you asked for a list of files to check, and it is ready: 22 files in
+four groups (production infrastructure, business plans, your local machine, and your own words). No passwords or
+keys were found. The walkthrough page also now keeps the answers you were given on it, which the version on master
+had lost.
+
+**Waiting on you:** say yes or no for each group in `docs/marketplace/decision-5-suspect-files.md`. Until then memory
+recall cannot be marked ready to publish.
+<!--tech-->
+Walkthrough decision 7 answered (`data-decision="Kujin Lee (owner, 11-13 03:48)"`), decision 5 still open with a
+link to the list. Spec §4 licence bullet and plan H5 updated. The fragment is a 3-way merge (base `2e79f464`) of the
+owner's local copy onto master's tagged one: 15 answered blocks (0 on master before), no conflicts; the .html was
+recomposed with `scripts/brief-compose.py`.
+
 ## 2026-11-13
 The explainer server now serves a merged page from a copy that follows `origin/master`, so a page merged to
 master shows on your port within a minute. It no longer depends on your main checkout, which is behind master and
