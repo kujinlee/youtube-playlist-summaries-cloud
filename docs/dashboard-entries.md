@@ -20528,6 +20528,18 @@ owner's local copy onto master's tagged one: 15 answered blocks (0 on master bef
 recomposed with `scripts/brief-compose.py`.
 
 ## 2026-11-13
+An architecture review looked at a check that kept needing repairs: four review rounds in a row, each fix opened a new
+hole. The check tries to prove that the nightly test sweep hands its list of unreliable tests to the step that files
+them, and it does so by reading the text of the CI configuration. The review found that this cannot be made complete,
+and that each repair made it wrong somewhere new. A redesign that was already planned removes the need for it. The
+check stays as it is, with no more repairs, and is deleted when the redesign lands.
+
+<!--tech-->
+Backlog #629 closed; backlog #619 and backlog #617 amended. `docs/reviews/architecture-review-2026-11-13-629.md`.
+Subject: `ci_flaky_contract` in `scripts/sweep-red-alert.py` (PR #573). No code changed. First run of the Fable
+pilot (backlog #630).
+
+## 2026-11-13
 The explainer server now serves a merged page from a copy that follows `origin/master`, so a page merged to
 master shows on your port within a minute. It no longer depends on your main checkout, which is behind master and
 holds your edits. A page you have edited locally is shown when its base is master's version. When its base is
