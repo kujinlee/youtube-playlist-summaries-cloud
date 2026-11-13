@@ -20607,3 +20607,26 @@ migration names the column. Migration
 paid call: 429 `correction-limit-reached`, or 503 `correction-limit-unavailable` (fails closed).
 `STRUCTURAL_REFUSALS` maps each `StructuralFailureReason` to a 422 with `code: structure-<reason>`.
 Reservation (backlog #61) deliberately not built; the unbounded race is recorded there.
+
+## 2026-11-13
+The corrections spending fix (the 2026-10-24 entry above) was brought up to date with everything
+merged since, and its red checks were traced to one cause and fixed. It is still not live: the new
+database function has to go out to production before the code is merged.
+
+The 26 red checks were one failure counted 26 times. Five rows this branch touches in the backlog
+had no "kind" label (two were new, three lost theirs when the branch was last brought up to date),
+and the backlog page's own tests refuse that. Every other check on the list runs those tests first,
+so each of them reported the same thing.
+
+One thing found on the way and filed, not fixed here: two of the correction spending tests read a
+shared setting that other tests change and do not put back, so they can fail depending on the order
+the tests run in. They pass on their own.
+<!--tech-->
+PR #392, branch `fix/correction-spend-on-failure`. `origin/master` merged in (one conflict, this
+file). `⟦kind: …⟧` restored on backlog #61, #62, #63 and added to backlog #345, #346;
+`gen-backlog-page.py --self-test` 246/247 → 247/247, which is what `check-selftest-counts.py`
+(`verify`) and every mutation-sweep shard were reporting. No guarded path changed, so no review
+round was added; round 5 (Codex, CONVERGED) saw the final tree. Local: tsc clean, 2937 unit,
+integration 545 (540 passed + 3 skipped + 2 order-dependent, filed as backlog #637), schema gates
+with `M4_PHASE=post`. Migration `0028_correction_allowance.sql` is unchanged and not yet applied to
+production.
