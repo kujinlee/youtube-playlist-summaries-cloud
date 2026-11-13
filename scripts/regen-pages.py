@@ -4,7 +4,7 @@
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
     python3 scripts/regen-pages.py --page backlog-table    # one page (the edit hooks, the Refresh button)
-    python3 scripts/regen-pages.py --self-test             # 115 cases
+    python3 scripts/regen-pages.py --self-test             # 117 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —
@@ -465,8 +465,10 @@ def serve_copy_path() -> pathlib.Path:
 
 def move_serve_copy(main: pathlib.Path, sha: str, copy: pathlib.Path, git=_git) -> None:
     """Move the serve copy to `sha` — cloning it (`--shared --no-checkout`) when it does not exist yet — and read
-    it back: its git dir its own, its HEAD `sha`, no tracked file modified. CannotRun naming the step; on any
-    failure the copy is left where it was, so the server goes on serving the LAST copy and says why."""
+    it back: its git dir its own, its HEAD `sha`, no tracked file modified. CannotRun naming the step. ⟳ r1
+    (Claude F8): a failure BEFORE the checkout leaves the copy where it was; one AFTER it (the read-back) can
+    leave the copy at `sha`. Either way the server stays consistent: it reads the copy's HEAD and its bytes
+    from that same commit's objects, so a footer never names one commit over another's page."""
     copy.parent.mkdir(parents=True, exist_ok=True)
     copy = pathlib.Path(os.path.realpath(copy.parent)) / copy.name
     if not os.path.lexists(copy):
@@ -489,13 +491,29 @@ def move_serve_copy(main: pathlib.Path, sha: str, copy: pathlib.Path, git=_git) 
         raise CannotRun(f"the serve copy is not clean after the checkout (exit {rc}: {_brief(dirty)})")
 
 
+def _inside_suite_tmp(p: pathlib.Path) -> bool:
+    """Is `p` strictly inside a `fixture-tmp-*` temp dir — the one `fixture_git.isolated()` makes for the suite?
+    ⚠ An INDEPENDENT copy of explainer-serve's `_suite_owns`, on purpose: one guard each, so a mutant that
+    removes one is caught by the other."""
+    td = tempfile.tempdir
+    if not td or not os.path.basename(td).startswith("fixture-tmp-"):
+        return False
+    real, base = os.path.realpath(p), os.path.realpath(td)
+    return real != base and real.startswith(base + os.sep)
+
+
 def refresh_serve_copy(repo: pathlib.Path = ROOT, copy: pathlib.Path | None = None, git=_git,
                        wait: float = SERVE_COPY_LOCK_WAIT) -> str:
     """The server's fetch (backlog #627): `fetch_master` in the main checkout of `repo`, then `move_serve_copy`,
     both under `tree_lock` so it never races a rebuild's fetch. Returns the sha the copy now stands at.
-    ⛔ Refused inside this file's suite for any checkout of this repository, as `fresh` is."""
+    ⛔ Refused inside this file's suite for any checkout of this repository, as `fresh` is — and, ⟳ r1 (Codex 5,
+    Claude F1), for ANY repo outside the temp dir the suite's isolation block made: where ROOT is in no git
+    repository (the mutation harness's staged copy) the first clause answers False, so it alone protected nothing."""
     if _IN_SUITE and _is_this_repository(pathlib.Path(repo)):
         raise CannotRun("the self-test never fetches into the real repository, or any checkout of it")
+    if _IN_SUITE and not _inside_suite_tmp(pathlib.Path(repo)):
+        raise CannotRun(f"the self-test fetches only a repo inside its own temp dir, and {repo} is outside the "
+                        "suite's temp dir")
     main, _common = main_of(repo, git)
     with tree_lock(main, wait):
         sha = fetch_master(main, git)
@@ -1636,6 +1654,24 @@ def _self_test_cases() -> int:
     r_real = outcome(lambda: refresh_serve_copy(ROOT, serve, git=no_real_git))
     case("⛔ #627: the server's fetch refuses this repository inside the suite (it never fetches the real one)",
          (r_real[0], "never fetches" in str(r_real[1]), real_calls), ("CANNOT RUN", True, []))
+    # ⟳ r1 (Codex 5, Claude F1): ROOT in NO repository (the mutation harness's staged copy) made the guard above
+    # answer False. The second clause is a WHITELIST: only a repo inside the temp dir this block made is fetched.
+    # Two outsiders: one beside the block's temp dir (never a repository, so only the whitelist refuses it), and
+    # ROOT's own parent, which is this repository in a checkout but in NONE in the harness's staged copy. Either
+    # guard may refuse that one; what is asserted is that it IS refused and git never runs.
+    for i, outsider in enumerate((pathlib.Path(os.path.dirname(tempfile.gettempdir())) / "not-the-suites-627",
+                                  ROOT.parent)):
+        out_calls: list = []
+
+        def out_git(args, cwd, timeout=GIT_TIMEOUT, _c=out_calls):
+            _c.append(args[:2])
+            return 1, "must not run"
+        r_out = outcome(lambda: refresh_serve_copy(outsider, tmp / f"serve-out-{i}" / "master", git=out_git))
+        case(f"⛔ #627 r1: the server's fetch refuses a repo OUTSIDE the suite's own temp dir, in git or not ({i})",
+             (r_out[0], any(m in str(r_out[1]) for m in (("outside the suite's temp dir",),
+                                                           ("outside the suite's temp dir", "never fetches"))[i]),
+              out_calls,
+              os.path.lexists(tmp / f"serve-out-{i}")), ("CANNOT RUN", True, [], False))
 
     def _main_says(line):
         buf = io.StringIO()

@@ -1421,7 +1421,11 @@ EXPECTED_MUTATIONS = {
     # master's), the fetch's rate limit, bound, failure recorded and cleared, the footer, the yellow bar, preview
     # detection, master's bytes for an overlay, the no-copy notice, a merged page served, the suite refusal armed,
     # and (87) no fetcher built inside the suite.
-    "scripts/explainer-serve.py": 87,
+    # ⟳ #627 review round 1: 87 -> 105, none retired (nine re-anchored to the one chooser) — the handler's fetch
+    # note, poke, ?source=local, /_rev's resolver, kind and failed flag, the suite whitelist, an unreadable object,
+    # / and /latest from master, a local link, the merge-base ancestor, case folding, the bar's quoted href, a poke
+    # never waiting on another's fetch, a running fetch said, the port range, the 'committed' label, the base prefix.
+    "scripts/explainer-serve.py": 105,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -2013,7 +2017,8 @@ EXPECTED_MUTATIONS = {
     # catching a non-zero sys.exit.
     # ⟳ backlog #627: 60 -> 64 — the serve copy checked out at the built sha, the server's fetch really fetching
     # and refusing this repository inside the suite, and main() printing the serve-copy line.
-    "scripts/regen-pages.py": 64,
+    # ⟳ #627 review round 1: 64 -> 65 — the fetch's second guard: only a repo inside the suite's own temp dir.
+    "scripts/regen-pages.py": 65,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
