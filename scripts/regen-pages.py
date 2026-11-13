@@ -1608,8 +1608,16 @@ def _self_test_cases() -> int:
     case("⛔ #627: the serve copy is a `--shared` clone of the MAIN checkout — its objects come through alternates",
          (serve / ".git" / "objects" / "info" / "alternates").read_text().strip(),
          str(pathlib.Path(os.path.realpath(real_main)) / ".git" / "objects"))
+    # A recording git that refuses: the case can NEVER reach the real repository, even under a mutant that
+    # removes the refusal (one did, and its `fetch_master` ran in the real main checkout — PR for #627).
+    real_calls: list = []
+
+    def no_real_git(args, cwd, timeout=GIT_TIMEOUT):
+        real_calls.append(args[:2])
+        return 1, "must not run"
+    r_real = outcome(lambda: refresh_serve_copy(ROOT, serve, git=no_real_git))
     case("⛔ #627: the server's fetch refuses this repository inside the suite (it never fetches the real one)",
-         outcome(lambda: refresh_serve_copy(ROOT, serve))[0], "CANNOT RUN")
+         (r_real[0], "never fetches" in str(r_real[1]), real_calls), ("CANNOT RUN", True, []))
 
     def _main_says(line):
         buf = io.StringIO()

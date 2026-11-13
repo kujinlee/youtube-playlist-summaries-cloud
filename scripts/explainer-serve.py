@@ -1925,10 +1925,15 @@ def _serve_copy_cases(case) -> None:
         return r.stdout.strip()
 
     def _real_fetch_refused():
+        calls = []                     # a recording git that refuses: even a mutant cannot reach the real repo
+
+        def no_real_git(args, cwd, timeout=None):
+            calls.append(args[:2])
+            return 1, "must not run"
         try:
-            _regen().refresh_serve_copy(REPO)
+            _regen().refresh_serve_copy(REPO, git=no_real_git)
         except _regen().CannotRun as exc:
-            return "never fetches" in str(exc)
+            return "never fetches" in str(exc) and calls == []
         return False
     case("⛔ #627: inside the suite the server's fetch REFUSES the real repository (no case fetches into it)",
          _real_fetch_refused)
