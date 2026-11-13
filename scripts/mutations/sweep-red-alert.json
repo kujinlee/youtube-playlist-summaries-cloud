@@ -319,8 +319,8 @@
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    if not re.search(rf\"^\\s*{var}:",
-        "    if False and re.search(rf\"^\\s*{var}:"
+        "    if not any(re.fullmatch(rf\"\\s*{var}:",
+        "    if False and any(re.fullmatch(rf\"\\s*{var}:"
       ]
     ],
     "expect": [
@@ -332,8 +332,8 @@
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    if \"merge-multiple: true\" not in block:\n",
-        "    if False:\n"
+        "    if len(withs) != 1 or not any(",
+        "    if False and not any("
       ]
     ],
     "expect": [
@@ -345,12 +345,12 @@
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "            break\n        block.append(l.strip())\n",
-        "            pass\n        block.append(l.strip())\n"
+        "        if _indent(lines[i]) <= ind:\n            break\n",
+        "        if _indent(lines[i]) <= ind:\n            pass\n"
       ]
     ],
     "expect": [
-      "...a SECOND `merge-multiple: true` elsewhere does not rescue the download step's `false`"
+      "...r1 Claude m4: the download step ENDS at the next step — a later step's `with:` is not read as its own"
     ]
   },
   {
@@ -377,6 +377,84 @@
     ],
     "expect": [
       "⭐ #617: the REAL step under a `ci.yml` without `merge-multiple: true` is RED naming it, never 'no FLAKY'"
+    ]
+  },
+  {
+    "name": "#617 r1 Codex M1: a comment line counts as the shard-file write",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    return \"\" if line.lstrip().startswith(\"#\") else re.sub(",
+        "    return line if line.lstrip().startswith(\"#\") else re.sub("
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: a COMMENT naming the shard file is not the write — the real redirect renamed RAISES"
+    ]
+  },
+  {
+    "name": "#617 r1 Codex M1: an inline ` #` comment counts as the shard-file write",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "re.sub(r\"\\s+#.*$\", \"\", line)",
+        "line"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: a COMMENT naming the shard file is not the write — the real redirect renamed RAISES"
+    ]
+  },
+  {
+    "name": "#617 r1 Codex M2: merge-multiple is read from any child block of the step, not only `with:`",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    withs = [i for i in step if lines[i].strip() == \"with:\"]",
+        "    withs = [i for i in step if lines[i].strip().endswith(\":\")][-1:]"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M2: `merge-multiple: true` under the step's `env:` (with `with:` false) RAISES"
+    ]
+  },
+  {
+    "name": "#617 r1 Claude m4: a line at the step's own indent does not end its block",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        if _indent(lines[i]) <= ind:\n",
+        "        if _indent(lines[i]) < ind:\n"
+      ]
+    ],
+    "expect": [
+      "...r1 Claude m4: the download step ENDS at the next step — a later step's `with:` is not read as its own"
+    ]
+  },
+  {
+    "name": "#617 r1 Claude m4: two download steps of that name are accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if len(starts) != 1:\n        raise ValueError(f\"{len(starts)} `{DOWNLOAD_STEP}`",
+        "    if len(starts) < 1:\n        raise ValueError(f\"{len(starts)} `{DOWNLOAD_STEP}`"
+      ]
+    ],
+    "expect": [
+      "...r1 Claude m4: a SECOND download step of that name RAISES — which one is read is never guessed"
+    ]
+  },
+  {
+    "name": "#617 r1 Claude m3: the job-index variable is read from anywhere in the workflow",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "               for l in lines[st:wi]):",
+        "               for l in lines):"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude m3: the job index set in ANOTHER step does not vouch for the writing step's 1-based variable"
     ]
   }
 ]

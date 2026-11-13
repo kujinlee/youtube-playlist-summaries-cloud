@@ -2,7 +2,7 @@
 """Open or comment on the `sweep-red` issue after a FULL mutation sweep on master (backlog #330). It NEVER closes one.
 
     python3 scripts/sweep-red-alert.py              # in CI: reads SWEEP, SHA, EVENT, RUN_URL, FLAKY_DIR; acts via gh
-    python3 scripts/sweep-red-alert.py --self-test  # 40 cases
+    python3 scripts/sweep-red-alert.py --self-test  # 46 cases
 
 WHY THIS EXISTS. A pull request's sweep is diff-scoped, so what it does not select is measured only by the full
 sweep on master, AFTER merge. A red full sweep therefore opens an issue labelled `sweep-red` (or comments on the
@@ -103,32 +103,62 @@ DOWNLOAD_STEP = "- name: Download every shard's FLAKY mutation names"
 
 
 def ci_flaky_contract(workflow_text: str) -> None:
-    """PURE. RAISES unless `ci.yml` hands this script the files `read_flaky` reads (backlog #617 part 1, PR #564 r3 m2).
+    """PURE. RAISES unless two links between `ci.yml` and `read_flaky` hold (backlog #617 part 1, PR #564 r3 m2). It
+    checks ONLY these two; a drifted download `path:` or artifact `pattern:` is still red, through `read_flaky`'s
+    missing-file report (r1 Claude m1).
     Two copies with no case between them before: (a) the shard step writes `sweep-flaky/shard-$V.txt` with exactly one
     such line, and `V` is `${{ strategy.job-index }}` (0-based, as `range(shards)` reads) — `$SHARD_TOTAL` there
     writes one file N times; (b) the download step merges every artifact into ONE directory (`merge-multiple: true`)
     — without it each shard lands in its own subdirectory. Either drift makes every master FLAKY scan NOT RUN."""
-    writes = re.findall(r"sweep-flaky/shard-\$\{?([A-Za-z_]+)\}?\.txt", workflow_text)
+    # ⛔ r1 Codex M1/m: comments never count — a `#` line, or a ` #` tail, is dropped before any match.
+    lines = [_uncomment(l) for l in workflow_text.splitlines()]
+    writes = [(i, m.group(1)) for i, l in enumerate(lines)
+              for m in re.finditer(r'>\s*"?[^"\s>]*sweep-flaky/shard-"?\$\{?([A-Za-z_]+)\}?"?\.txt', l)]
     if len(writes) != 1:
-        raise ValueError(f"{len(writes)} `sweep-flaky/shard-$<VAR>.txt` writes in the workflow, not one: "
+        raise ValueError(f"{len(writes)} redirects to `sweep-flaky/shard-$<VAR>.txt` in the workflow, not one: "
                          f"the FLAKY file name `read_flaky` reads ({SHARD_FILE!r}) is not proven")
-    var = writes[0]
-    if not re.search(rf"^\s*{var}:\s*\$\{{\{{\s*strategy\.job-index\s*\}}\}}\s*$", workflow_text, re.M):
+    wi, var = writes[0]
+    # ⛔ r1 Claude m3: the variable is read from the step that WRITES the file, never from anywhere in the workflow.
+    st = max([i for i in range(wi) if lines[i].lstrip().startswith("- ")], default=0)
+    if not any(re.fullmatch(rf"\s*{var}:\s*([\"']?)\$\{{\{{\s*strategy\.job-index\s*\}}\}}\1\s*", l)
+               for l in lines[st:wi]):
         raise ValueError(f"the shard file is named by `${var}`, which is not `${{{{ strategy.job-index }}}}`: "
                          f"`read_flaky` reads {SHARD_FILE.format(0)} .. per 0-based index, so the names would not match")
-    lines = workflow_text.splitlines()
     starts = [i for i, l in enumerate(lines) if l.strip() == DOWNLOAD_STEP]
     if len(starts) != 1:
         raise ValueError(f"{len(starts)} `{DOWNLOAD_STEP}` steps in the workflow, not one")
-    ind = len(lines[starts[0]]) - len(lines[starts[0]].lstrip())
-    block = []
-    for l in lines[starts[0] + 1:]:
-        if l.strip() and len(l) - len(l.lstrip()) <= ind:
+    step = _children(lines, starts[0], _indent(lines[starts[0]]) + 2)   # `- name:` puts the keys 2 to the right
+    withs = [i for i in step if lines[i].strip() == "with:"]
+    # ⛔ r1 Codex M2: `merge-multiple` counts only as a DIRECT child of the step's `with:`, never under `env:`.
+    if len(withs) != 1 or not any(re.fullmatch(r"merge-multiple:\s*([\"']?)true\1", lines[i].strip())
+                                  for i in _children(lines, withs[0], None)):
+        raise ValueError(f"the `{DOWNLOAD_STEP[8:]}` step does not set `with: merge-multiple: true`: each shard's "
+                         f"file would land in its own subdirectory, and `read_flaky` reads one directory")
+
+
+def _uncomment(line: str) -> str:
+    """PURE. `line` without a YAML/shell comment: '' for a `#` line, else the text before the first ` #`."""
+    return "" if line.lstrip().startswith("#") else re.sub(r"\s+#.*$", "", line)
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def _children(lines: list[str], head: int, depth: int | None) -> list[int]:
+    """PURE. Indices of the non-blank lines in `lines[head]`'s indented block whose indent is `depth` (None: the
+    first child's) — the block ends at the first non-blank line indented no deeper than the head."""
+    out, ind = [], _indent(lines[head])
+    for i in range(head + 1, len(lines)):
+        if not lines[i].strip():
+            continue
+        if _indent(lines[i]) <= ind:
             break
-        block.append(l.strip())
-    if "merge-multiple: true" not in block:
-        raise ValueError(f"the `{DOWNLOAD_STEP[8:]}` step does not set `merge-multiple: true`: each shard's file "
-                         f"would land in its own subdirectory, and `read_flaky` reads one directory")
+        if depth is None:
+            depth = _indent(lines[i])
+        if _indent(lines[i]) == depth:
+            out.append(i)
+    return out
 
 
 def read_flaky(flaky_dir: str, shards: int) -> tuple[list[str], list[str]]:
@@ -399,7 +429,35 @@ def _self_test_body() -> int:
          "raised")
     case("...no shard-file write at all RAISES, and so does a second one",
          (_contract(_real.replace("sweep-flaky/shard-", "sweep-flaky/part-")),
-          _contract(_real + "\n# sweep-flaky/shard-$SHARD_INDEX.txt\n")), ("raised", "raised"))
+          _contract(_real + '\n          echo x > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"\n')),
+         ("raised", "raised"))
+    _m1 = _real.replace('> "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"',
+                        '> "$RUNNER_TEMP/sweep-flaky/part-$SHARD_INDEX.txt"  # was > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"')
+    case("⭐ r1 Codex M1: a COMMENT naming the shard file is not the write — the real redirect renamed RAISES",
+         (_m1 != _real, _contract(_m1),
+          _contract(_real.replace('> "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"\n',
+                                  '> "$RUNNER_TEMP/sweep-flaky/part-$SHARD_INDEX.txt"\n'
+                                  '          # > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"\n'))),
+         (True, "raised", "raised"))
+    _m2 = _real.replace("          merge-multiple: true\n",
+                        "          merge-multiple: false\n        env:\n          merge-multiple: true\n")
+    case("⭐ r1 Codex M2: `merge-multiple: true` under the step's `env:` (with `with:` false) RAISES",
+         (_m2 != _real, _contract(_m2)), (True, "raised"))
+    case("...r1 Codex m: quoting the job index, quoting `true`, or an inline comment is NOT a false red",
+         _contract(_real.replace("SHARD_INDEX: ${{ strategy.job-index }}", 'SHARD_INDEX: "${{ strategy.job-index }}"')
+                   .replace("merge-multiple: true", "merge-multiple: 'true'   # one directory")
+                   .replace("shard-$SHARD_INDEX.txt", 'shard-"$SHARD_INDEX".txt')), "ok")
+    _path = "          path: ${{ runner.temp }}/sweep-flaky\n"
+    case("...r1 Claude m4: the download step ENDS at the next step — a later step's `with:` is not read as its own",
+         (_real.count(_path), _contract(_real.replace(_path, _path + "      - name: later\n        uses: x\n"
+                                                      "        with:\n          merge-multiple: true\n"))), (1, "ok"))
+    case("...r1 Claude m4: a SECOND download step of that name RAISES — which one is read is never guessed",
+         _contract(_real + "\n      " + DOWNLOAD_STEP + "\n        uses: x\n        with:\n          merge-multiple: false\n"),
+         "raised")
+    case("⭐ r1 Claude m3: the job index set in ANOTHER step does not vouch for the writing step's 1-based variable",
+         _contract(_real.replace("SHARD_INDEX: ${{ strategy.job-index }}", "SHARD_INDEX: ${{ matrix.shard }}")
+                   + "\n  other:\n    steps:\n      - name: y\n        env:\n          SHARD_INDEX: ${{ strategy.job-index }}\n"),
+         "raised")
     case("...`read_flaky` reads the file name the contract proved", SHARD_FILE.format(3), "shard-3.txt")
 
     # ── the workflow step's real `run:` block, against a fake gh ──
