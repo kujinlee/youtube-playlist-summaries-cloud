@@ -20538,3 +20538,17 @@ check stays as it is, with no more repairs, and is deleted when the redesign lan
 Backlog #629 closed; backlog #619 and backlog #617 amended. `docs/reviews/architecture-review-2026-11-13-629.md`.
 Subject: `ci_flaky_contract` in `scripts/sweep-red-alert.py` (PR #573). No code changed. First run of the Fable
 pilot (backlog #630).
+
+## 2026-11-13
+The explainer server now serves a merged page from a copy that follows `origin/master`, so a page merged to
+master shows on your port within a minute. It no longer depends on your main checkout, which is behind master and
+holds your edits. A page you have edited locally is shown when its base is master's version. When its base is
+older, master's page is shown under a yellow bar that links your edits. Every page's footer now names its source.
+
+<!--tech-->
+Backlog #627, branch `627-serve-master`. The serve copy is a `git clone --shared` moved by `regen-pages.py`
+(`move_serve_copy`, `refresh_serve_copy`, and `serve_copy_line` on every fresh rebuild, the on-merge hook's among
+them). The server fetches at most once a minute on page load (`CopyFetcher`, waiting at most 2 s); a failed fetch
+is named in the footer, on `/` and `/latest` too. Inside the self-test every path either script writes must be
+in the suite's own temp dir. explainer-serve 282 self-test cases, regen-pages 121; mutation pins 73 → 112 and
+60 → 72 after two review rounds. Takes effect on the owner's port once the running server is restarted.

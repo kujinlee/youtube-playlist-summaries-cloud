@@ -4,7 +4,7 @@
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
     python3 scripts/regen-pages.py --page backlog-table    # one page (the edit hooks, the Refresh button)
-    python3 scripts/regen-pages.py --self-test             # 107 cases
+    python3 scripts/regen-pages.py --self-test             # 121 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —
@@ -226,8 +226,25 @@ def main_of(repo: pathlib.Path, git=_git) -> tuple[pathlib.Path, pathlib.Path]:
     return pathlib.Path(common).parent, pathlib.Path(common)
 
 
+def _suite_may_write(p: pathlib.Path, what: str, *, base_ok: bool = False) -> None:
+    """⛔ r2 (Codex M2): inside the suite, EVERY path this file writes — the fetch target, the tree lock, a run's
+    private dir, the clone, the serve copy's destination — must be inside the temp dir `fixture_git.isolated()`
+    made (`base_ok`: that dir itself too, for a parent that `mkdtemp`s under it). CannotRun otherwise. r1 checked
+    only the REPO a fetch came from, so a destination outside the suite was cloned and checked out. Each WRITER
+    calls this itself, so no caller can hand one a path the suite does not own. No-op outside the suite."""
+    if not _IN_SUITE:
+        return
+    td = tempfile.tempdir
+    is_base = (base_ok and bool(td) and os.path.basename(td).startswith("fixture-tmp-")
+               and os.path.realpath(p) == os.path.realpath(td))
+    if not (is_base or _inside_suite_tmp(p)):
+        raise CannotRun(f"the self-test writes only inside its own temp dir, and {what} {p} is outside the "
+                        "suite's temp dir")
+
+
 def fetch_master(main: pathlib.Path, git=_git) -> str:
     """`git fetch origin master` in the main checkout — refs and objects only — and the sha it resolves to."""
+    _suite_may_write(main, "the fetch target")
     rc, out = git(["fetch", "--quiet", REMOTE, BRANCH], main)
     if rc != 0:
         raise CannotRun(f"`git fetch {REMOTE} {BRANCH}` failed (exit {rc}: {_brief(out)}){lock_hint(out)}")
@@ -288,6 +305,7 @@ def clone_tree(main: pathlib.Path, sha: str, url: str, tree: pathlib.Path, git=_
     objects are read through alternates, so the main repository is never written; every other git call runs
     with `cwd=tree`, INSIDE the clone, each only once `_real_dir` has found `tree` a real directory.
     CannotRun naming the step."""
+    _suite_may_write(tree, "the clone")
     rc, out = git(["clone", "--shared", "--no-checkout", "--quiet", str(main), str(tree)], tree.parent)
     if rc != 0:
         raise CannotRun(f"`git clone --shared` of {main} into {tree} failed (exit {rc}: {_brief(out)})"
@@ -313,6 +331,7 @@ class Private:
     same-user swap racing it: out of scope (module docstring → THREAT MODEL)."""
 
     def __init__(self, scratch: str | None = None):
+        _suite_may_write(pathlib.Path(scratch or tempfile.gettempdir()), "a run's private dir's parent", base_ok=True)
         self.path = pathlib.Path(os.path.realpath(tempfile.mkdtemp(prefix=PRIVATE_PREFIX, dir=scratch)))
         self.fd = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         st = os.fstat(self.fd)
@@ -375,6 +394,7 @@ def tree_lock(main: pathlib.Path, wait: float = LOCK_WAIT):
     fetch's ref lock and write the same pages. CannotRun when it is not free within `wait` s. ⛔ Released by
     CLOSING, never `LOCK_UN`: an unlock would release it for a generator that inherited it, too."""
     path = main / LOCK_REL
+    _suite_may_write(path, "the tree lock")
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as fh:
         deadline = time.monotonic() + wait
@@ -439,6 +459,102 @@ def _fresh_once(repo: pathlib.Path, **kw) -> tuple[pathlib.Path, str]:
     """`fresh` entered and left: the (tree, sha) it produced. For the suite's real-git cases."""
     with fresh(repo, **kw) as got:
         return got
+
+
+# ── backlog #627: the SERVE COPY — a standing `git clone --shared` that follows origin/master ──────────────────
+# The explainer server (`scripts/explainer-serve.py`) serves a tracked page from THIS copy, never from the main
+# checkout's working tree, which is behind master and holds uncommitted edits (PR #563's page showed only on an
+# agent's preview port). It is the same mechanism as `fresh` — `fetch_master` in the main checkout (refs and
+# objects only), then a `--shared` clone that reads the objects through alternates, so the main repository is
+# never written — except that the copy STANDS: it is moved, never re-made, so a page load costs a checkout of
+# the changed files, not a clone. Two callers move it, both under `tree_lock`: every `fresh` run (the on-merge
+# hook, `--all`, `--page`), through `serve_copy_line`, and the server's own fetch at most once a minute
+# (`refresh_serve_copy`). Nothing else writes in it — it is read-only to everything but these two.
+# ⚠ It lives OUTSIDE every checkout (`~/.cache/explainer-serve/master`, or `SERVE_COPY_ENV`), so no branch can
+# commit it and no `git status` in the main checkout shows it.
+SERVE_COPY_ENV = "EXPLAINER_SERVE_COPY"
+SERVE_COPY_LOCK_WAIT = 30   # seconds the server's background fetch waits for a rebuild holding the tree lock
+
+
+def serve_copy_path() -> pathlib.Path:
+    """The serve copy's top level: `SERVE_COPY_ENV` when set, else `~/.cache/explainer-serve/master`. Read at
+    CALL time, so a suite's isolated `HOME` is honoured."""
+    v = os.environ.get(SERVE_COPY_ENV, "").strip()
+    return pathlib.Path(v).expanduser() if v else pathlib.Path.home() / ".cache" / "explainer-serve" / "master"
+
+
+def move_serve_copy(main: pathlib.Path, sha: str, copy: pathlib.Path, git=_git) -> None:
+    """Move the serve copy to `sha` — cloning it (`--shared --no-checkout`) when it does not exist yet — and read
+    it back: its git dir its own, its HEAD `sha`, no tracked file modified. CannotRun naming the step. ⟳ r1
+    (Claude F8): a failure BEFORE the checkout leaves the copy where it was; one AFTER it (the read-back) can
+    leave the copy at `sha`. Either way the server stays consistent: it reads the copy's HEAD and its bytes
+    from that same commit's objects, so a footer never names one commit over another's page."""
+    _suite_may_write(copy, "the serve copy")         # r2 Codex M2: the DESTINATION, before anything is made
+    copy.parent.mkdir(parents=True, exist_ok=True)
+    copy = pathlib.Path(os.path.realpath(copy.parent)) / copy.name
+    if not os.path.lexists(copy):
+        rc, out = git(["clone", "--shared", "--no-checkout", "--quiet", str(main), str(copy)], copy.parent)
+        if rc != 0:
+            raise CannotRun(f"`git clone --shared` of {main} into the serve copy {copy} failed "
+                            f"(exit {rc}: {_brief(out)}){lock_hint(out)}")
+    _real_dir(copy, "the serve copy's checkout")
+    rc, gd = git(["rev-parse", "--absolute-git-dir"], copy)
+    if rc != 0 or gd != str(copy / ".git"):
+        raise CannotRun(f"the serve copy {copy} is no clone of its own (its git dir is {_brief(gd)!r}, exit {rc})")
+    rc, out = git(["-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", "--detach", sha], copy)
+    if rc != 0:
+        raise CannotRun(f"the serve copy's checkout of {sha[:12]} failed (exit {rc}: {_brief(out)})")
+    rc, head = git(["rev-parse", "HEAD"], copy)
+    if head != sha or rc != 0:
+        raise CannotRun(f"the serve copy reads back HEAD {_brief(head)!r} (exit {rc}), not {REMOTE}/{BRANCH} {sha}")
+    rc, dirty = git(["status", "--porcelain", "--untracked-files=no"], copy)
+    if dirty or rc != 0:
+        raise CannotRun(f"the serve copy is not clean after the checkout (exit {rc}: {_brief(dirty)})")
+
+
+def _inside_suite_tmp(p: pathlib.Path) -> bool:
+    """Is `p` strictly inside a `fixture-tmp-*` temp dir — the one `fixture_git.isolated()` makes for the suite?
+    ⚠ An INDEPENDENT copy of explainer-serve's `_suite_owns`, on purpose: one guard each, so a mutant that
+    removes one is caught by the other."""
+    td = tempfile.tempdir
+    if not td or not os.path.basename(td).startswith("fixture-tmp-"):
+        return False
+    real, base = os.path.realpath(p), os.path.realpath(td)
+    return real != base and real.startswith(base + os.sep)
+
+
+def refresh_serve_copy(repo: pathlib.Path = ROOT, copy: pathlib.Path | None = None, git=_git,
+                       wait: float = SERVE_COPY_LOCK_WAIT) -> str:
+    """The server's fetch (backlog #627): `fetch_master` in the main checkout of `repo`, then `move_serve_copy`,
+    both under `tree_lock` so it never races a rebuild's fetch. Returns the sha the copy now stands at.
+    ⛔ Refused inside this file's suite for any checkout of this repository, as `fresh` is — and, ⟳ r1 (Codex 5,
+    Claude F1), for ANY repo outside the temp dir the suite's isolation block made: where ROOT is in no git
+    repository (the mutation harness's staged copy) the first clause answers False, so it alone protected nothing."""
+    if _IN_SUITE and _is_this_repository(pathlib.Path(repo)):
+        raise CannotRun("the self-test never fetches into the real repository, or any checkout of it")
+    if _IN_SUITE and not _inside_suite_tmp(pathlib.Path(repo)):
+        raise CannotRun(f"the self-test fetches only a repo inside its own temp dir, and {repo} is outside the "
+                        "suite's temp dir")
+    main, _common = main_of(repo, git)
+    with tree_lock(main, wait):
+        sha = fetch_master(main, git)
+        move_serve_copy(main, sha, copy if copy is not None else serve_copy_path(), git)
+    return sha
+
+
+def serve_copy_line(tree: pathlib.Path, sha: str, move=move_serve_copy, copy: pathlib.Path | None = None) -> str | None:
+    """What a `fresh` run prints about the serve copy, after moving it to `sha` (the on-merge half of #627). None
+    for a tree no `fresh` made (it has no main checkout to move from — the suite's fake trees). A failure is
+    SAID, never raised: the pages were still rebuilt, and the server serves its last copy until its own fetch."""
+    main = _TREE_MAIN.get(str(tree))
+    if main is None:
+        return None
+    try:
+        move(pathlib.Path(main), sha, copy if copy is not None else serve_copy_path())
+    except Exception as exc:                          # noqa: BLE001 - named in the line, never swallowed
+        return (f"⚠  serve copy NOT moved to {REMOTE}/{BRANCH} {sha[:12]}: {exc} — the explainer server serves "
+                f"its last copy until its next fetch")
+    return f"↻ serve copy moved to {REMOTE}/{BRANCH} {sha[:12]}"
 
 
 def may_merge(cmd: str) -> bool:
@@ -636,7 +752,8 @@ def cannot_run_line(exc: Exception) -> str:
             f"served page is unchanged and may be STALE (backlog #408).")
 
 
-def main(argv: list[str] | None = None, *, stdin=None, run=launch, pages=None, tree_for=fresh) -> int:
+def main(argv: list[str] | None = None, *, stdin=None, run=launch, pages=None, tree_for=fresh,
+         serve_line=serve_copy_line) -> int:
     ap = argparse.ArgumentParser(description="Rebuild every generated page (owner decision D3).")
     ap.add_argument("--hook", action="store_true", help="read a PostToolUse payload on stdin")
     ap.add_argument("--all", action="store_true", help="rebuild every page now")
@@ -668,10 +785,15 @@ def main(argv: list[str] | None = None, *, stdin=None, run=launch, pages=None, t
         try:
             with tree_for() as (tree, sha):
                 t0 = time.monotonic()
+                # backlog #627: the serve copy follows the same fresh master, BEFORE the generators run, so a
+                # merged explainer is served as soon as the merge's hook has fetched it.
+                copy_said = serve_line(tree, sha)
                 results = regen(names, table, run, tree=tree)
         except CannotRun as exc:
             print(cannot_run_line(exc))
             return 2 if loud else 0
+        if copy_said:
+            print(copy_said)
         if a.page is not None:
             if results[0]["tail"]:
                 print(results[0]["tail"])
@@ -1499,6 +1621,153 @@ def _self_test_cases() -> int:
         inside3 = (r3_sha, (rt3 / "page.txt").read_text(), rt3 != rt)
     case("⭐ REAL git: the next run is a NEW tree at the new master, never the old one moved",
          (inside3, untouched()), ((v3, "v3\n", True), True))
+
+    # ── backlog #627: the SERVE COPY the explainer server serves merged pages from ──
+    serve = tmp / "serve-cache" / "master"
+    with fresh(real_main, wait=5, scratch=str(rscr)) as (rt5, r5_sha):
+        said5 = serve_copy_line(rt5, r5_sha, copy=serve)
+        bad5 = serve_copy_line(rt5, r5_sha, move=lambda m, s, c: (_ for _ in ()).throw(CannotRun("disk full")),
+                               copy=serve)
+    case("⭐ #627: a fresh rebuild (the on-merge hook's) MOVES the serve copy to the master it built, and says so",
+         (said5, sh("rev-parse", "HEAD", cwd=serve), (serve / "page.txt").read_text(), untouched()),
+         (f"↻ serve copy moved to origin/master {v3[:12]}", v3, "v3\n", True))
+    case("#627: a serve copy that could NOT be moved is SAID, never raised, and names why",
+         ("NOT moved" in (bad5 or ""), "disk full" in (bad5 or ""),
+          serve_copy_line(tmp / "no-such-tree", v3, copy=tmp / "never-made" / "master"),
+          os.path.lexists(tmp / "never-made")),
+         (True, True, None, False))
+    move_serve_copy(real_main, v2, serve)
+    at_v2 = (sh("rev-parse", "HEAD", cwd=serve), (serve / "page.txt").read_text())
+    got_r = refresh_serve_copy(real_main, serve, wait=5)
+    case("⭐ #627: the server's fetch moves the copy from an OLD master to the current one — and only the copy",
+         (at_v2, got_r, sh("rev-parse", "HEAD", cwd=serve), (serve / "page.txt").read_text(), untouched()),
+         ((v2, "v2\n"), v3, v3, "v3\n", True))
+    (serve / "page.txt").write_text("hand edit in the copy\n")
+    move_serve_copy(real_main, v3, serve)
+    case("#627: a hand edit in the serve copy is overwritten by the next move (the copy is read-only by contract)",
+         (serve / "page.txt").read_text(), "v3\n")
+    case("⛔ #627: the serve copy is a `--shared` clone of the MAIN checkout — its objects come through alternates",
+         (serve / ".git" / "objects" / "info" / "alternates").read_text().strip(),
+         str(pathlib.Path(os.path.realpath(real_main)) / ".git" / "objects"))
+    # A SECOND copy, from a DIFFERENT main, through a recording git: the copy, main and git given are the ones
+    # used (fixture-variation: each parameter at two distinct values), and the first copy is not touched.
+    other_copy, other_calls = tmp / "serve-other" / "master", []
+
+    def rec_git(args, cwd, timeout=GIT_TIMEOUT):
+        other_calls.append(args[0])
+        return _git(args, cwd, timeout)
+    move_serve_copy(seed, v2, other_copy, git=rec_git)
+    at_other = (sh("rev-parse", "HEAD", cwd=other_copy),
+                (other_copy / ".git" / "objects" / "info" / "alternates").read_text().strip(),
+                other_calls[:1], sh("rev-parse", "HEAD", cwd=serve))
+    got_other = refresh_serve_copy(real_main, other_copy, wait=5)
+    case("#627: the copy, main and git each come from the caller — a second copy cloned from another main, "
+         "then refreshed, moves only itself",
+         (at_other, got_other, sh("rev-parse", "HEAD", cwd=other_copy), sh("rev-parse", "HEAD", cwd=serve)),
+         ((v2, str(pathlib.Path(os.path.realpath(seed))) + "/.git/objects", ["clone"], v3), v3, v3, v3))
+    # A recording git that refuses: the case can NEVER reach the real repository, even under a mutant that
+    # removes the refusal (one did, and its `fetch_master` ran in the real main checkout — PR for #627).
+    real_calls: list = []
+
+    def no_real_git(args, cwd, timeout=GIT_TIMEOUT):
+        real_calls.append(args[:2])
+        return 1, "must not run"
+    r_real = outcome(lambda: refresh_serve_copy(ROOT, serve, git=no_real_git))
+    case("⛔ #627: the server's fetch refuses this repository inside the suite (it never fetches the real one)",
+         (r_real[0], "never fetches" in str(r_real[1]), real_calls), ("CANNOT RUN", True, []))
+    # ⟳ r1 (Codex 5, Claude F1): ROOT in NO repository (the mutation harness's staged copy) made the guard above
+    # answer False. The second clause is a WHITELIST: only a repo inside the temp dir this block made is fetched.
+    # Two outsiders: one beside the block's temp dir (never a repository, so only the whitelist refuses it), and
+    # ROOT's own parent, which is this repository in a checkout but in NONE in the harness's staged copy. Either
+    # guard may refuse that one; what is asserted is that it IS refused and git never runs.
+    for i, outsider in enumerate((pathlib.Path(os.path.dirname(tempfile.gettempdir())) / "not-the-suites-627",
+                                  ROOT.parent)):
+        out_calls: list = []
+
+        def out_git(args, cwd, timeout=GIT_TIMEOUT, _c=out_calls):
+            _c.append(args[:2])
+            return 1, "must not run"
+        r_out = outcome(lambda: refresh_serve_copy(outsider, tmp / f"serve-out-{i}" / "master", git=out_git))
+        case(f"⛔ #627 r1: the server's fetch refuses a repo OUTSIDE the suite's own temp dir, in git or not ({i})",
+             (r_out[0], any(m in str(r_out[1]) for m in (("outside the suite's temp dir",),
+                                                           ("outside the suite's temp dir", "never fetches"))[i]),
+              out_calls,
+              os.path.lexists(tmp / f"serve-out-{i}")), ("CANNOT RUN", True, [], False))
+
+    # ⛔ r2 (Codex M2) — the CLASS: every path a WRITER makes must be the suite's, not only the repo a fetch comes
+    # from. One outsider DESTINATION (beside the block's temp dir, never inside it), handed to each writer in turn
+    # with REAL git, so a mutant that drops a writer's guard really writes there — and the case sees it. Removed
+    # after, whatever the outcome; a mutant's write lands in that one directory and nowhere else.
+    _dest = pathlib.Path(os.path.dirname(tempfile.gettempdir())) / f"not-the-suites-627-dest-{os.getpid()}"
+    try:
+        _w = {
+            "refresh_serve_copy": outcome(lambda: refresh_serve_copy(real_main, _dest / "rsc" / "master", wait=5)),
+            "move_serve_copy": outcome(lambda: move_serve_copy(real_main, v3, _dest / "msc" / "master")),
+            "fresh scratch": outcome(lambda: _fresh_once(real_main, wait=5, scratch=str(_dest / "fs"))),
+            "clone_tree": outcome(lambda: clone_tree(real_main, v3, str(tmp / "origin.git"), _dest / "ct" / "tree")),
+            "tree_lock": outcome(lambda: tree_lock(_dest / "tl", wait=1).__enter__()),
+            "fetch_master": outcome(lambda: fetch_master(_dest / "fm")),
+        }
+        case("⭐ #627 r2 (Codex M2): EVERY writer refuses a destination outside the suite's temp dir, and none is made",
+             ({k: (v[0], "outside the suite's temp dir" in str(v[1])) for k, v in _w.items()},
+              os.path.lexists(_dest) and sorted(os.listdir(_dest))),
+             ({k: ("CANNOT RUN", True) for k in _w}, False))
+    finally:
+        shutil.rmtree(_dest, ignore_errors=True)
+    # ...and the CONTROL: the same writers handed the suite's OWN paths run, and run git there — a guard that refused
+    # everything would pass the case above. `git` records each call's cwd and delegates to the real one.
+    _cwds: list[str] = []
+
+    def _rec_git(args, cwd, *a, **k):
+        _cwds.append(os.path.realpath(cwd))
+        return _git(args, cwd, *a, **k)
+    _in_tree = tmp / "ct-627-in" / "tree"
+    _in_tree.parent.mkdir(parents=True, exist_ok=True)
+    # A different source, sha and url from the outsider call above, each read back: the clone is of `seed`, at v2,
+    # with origin set to the url given.
+    _in_url = "file:///not-a-real-origin-627.git"
+    _ok = (outcome(lambda: clone_tree(tmp / "seed", v2, _in_url, _in_tree, git=_rec_git))[0],
+           outcome(lambda: fetch_master(real_main, git=_rec_git))[0])
+    case("#627 r2 (Codex M2) control: a writer handed the suite's OWN path runs, and runs git there",
+         (_ok, os.path.realpath(_in_tree) in _cwds, os.path.realpath(real_main) in _cwds,
+          sh("rev-parse", "HEAD", cwd=_in_tree), sh("remote", "get-url", "origin", cwd=_in_tree)),
+         (("ok", "ok"), True, True, v2, _in_url))
+    # The DEFAULT destination — `copy=None` — is `serve_copy_path()`: the env's path when set, else `~/.cache/…`
+    # under the suite's isolated HOME. Identity, and a real move through the default: a `serve_copy_path` that
+    # answers any other path (Codex's r2 mutant: a fixed outside dir) reddens this case, and is refused besides.
+    _env_copy = tmp / "scp-627" / "master"
+    _saved_env = os.environ.get(SERVE_COPY_ENV)
+    try:
+        os.environ.pop(SERVE_COPY_ENV, None)
+        _default = serve_copy_path()
+        os.environ[SERVE_COPY_ENV] = str(_env_copy)
+        _named = serve_copy_path()
+        _moved = outcome(lambda: refresh_serve_copy(real_main, wait=5))
+    finally:
+        if _saved_env is None:
+            os.environ.pop(SERVE_COPY_ENV, None)
+        else:
+            os.environ[SERVE_COPY_ENV] = _saved_env
+    case("#627 r2 (Codex M2): serve_copy_path is the env's path, else ~/.cache/explainer-serve/master; copy=None "
+         "moves exactly that copy",
+         (_default == pathlib.Path.home() / ".cache" / "explainer-serve" / "master", _named == _env_copy,
+          _moved[0], (_env_copy / ".git").is_dir() and sh("rev-parse", "HEAD", cwd=_env_copy) == _moved[1]),
+         (True, True, "ok", True))
+    # ...and the copy a fresh run moves (the on-merge half) is refused there too: said, never raised, never made.
+    with fresh(real_main, wait=5, scratch=str(rscr)) as (_r2t, _r2sha):
+        _r2line = serve_copy_line(_r2t, _r2sha, copy=_dest / "scl" / "master")
+    case("#627 r2 (Codex M2): the on-merge serve-copy move SAYS it refused an outside copy, and made nothing",
+         ("NOT moved" in _r2line and "outside the suite's temp dir" in _r2line, os.path.lexists(_dest)), (True, False))
+    shutil.rmtree(_dest, ignore_errors=True)
+
+    def _main_says(line):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            main(["--all"], stdin=io.StringIO(""), run=lambda s, t, w: (0, ""), pages={"x": "x.py"},
+                 tree_for=fake_tree, serve_line=lambda t, s: line)
+        return buf.getvalue()
+    case("#627: main() prints the serve-copy line a rebuild produced, and nothing when there is none",
+         ("SERVE-LINE-627" in _main_says("SERVE-LINE-627"), "serve copy" in _main_says(None)), (True, False))
 
     # The old fixed path, `.claude/regen-tree`, in each state that made the reuse design destroy work.
     old = real_main / ".claude" / "regen-tree"
