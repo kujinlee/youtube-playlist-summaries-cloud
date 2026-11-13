@@ -98,6 +98,39 @@ def shard_count(workflow_text: str) -> int:
     return n
 
 
+SHARD_FILE = "shard-{}.txt"   # `read_flaky`'s per-shard file; `ci_flaky_contract` proves `ci.yml` writes the same
+DOWNLOAD_STEP = "- name: Download every shard's FLAKY mutation names"
+
+
+def ci_flaky_contract(workflow_text: str) -> None:
+    """PURE. RAISES unless `ci.yml` hands this script the files `read_flaky` reads (backlog #617 part 1, PR #564 r3 m2).
+    Two copies with no case between them before: (a) the shard step writes `sweep-flaky/shard-$V.txt` with exactly one
+    such line, and `V` is `${{ strategy.job-index }}` (0-based, as `range(shards)` reads) — `$SHARD_TOTAL` there
+    writes one file N times; (b) the download step merges every artifact into ONE directory (`merge-multiple: true`)
+    — without it each shard lands in its own subdirectory. Either drift makes every master FLAKY scan NOT RUN."""
+    writes = re.findall(r"sweep-flaky/shard-\$\{?([A-Za-z_]+)\}?\.txt", workflow_text)
+    if len(writes) != 1:
+        raise ValueError(f"{len(writes)} `sweep-flaky/shard-$<VAR>.txt` writes in the workflow, not one: "
+                         f"the FLAKY file name `read_flaky` reads ({SHARD_FILE!r}) is not proven")
+    var = writes[0]
+    if not re.search(rf"^\s*{var}:\s*\$\{{\{{\s*strategy\.job-index\s*\}}\}}\s*$", workflow_text, re.M):
+        raise ValueError(f"the shard file is named by `${var}`, which is not `${{{{ strategy.job-index }}}}`: "
+                         f"`read_flaky` reads {SHARD_FILE.format(0)} .. per 0-based index, so the names would not match")
+    lines = workflow_text.splitlines()
+    starts = [i for i, l in enumerate(lines) if l.strip() == DOWNLOAD_STEP]
+    if len(starts) != 1:
+        raise ValueError(f"{len(starts)} `{DOWNLOAD_STEP}` steps in the workflow, not one")
+    ind = len(lines[starts[0]]) - len(lines[starts[0]].lstrip())
+    block = []
+    for l in lines[starts[0] + 1:]:
+        if l.strip() and len(l) - len(l.lstrip()) <= ind:
+            break
+        block.append(l.strip())
+    if "merge-multiple: true" not in block:
+        raise ValueError(f"the `{DOWNLOAD_STEP[8:]}` step does not set `merge-multiple: true`: each shard's file "
+                         f"would land in its own subdirectory, and `read_flaky` reads one directory")
+
+
 def read_flaky(flaky_dir: str, shards: int) -> tuple[list[str], list[str]]:
     """IO. `(names, missing)`: every FLAKY name in the PRESENT files of `shard-0.txt` .. `shard-<shards-1>.txt` under
     `flaky_dir` (`ci.yml` names each shard's file by its 0-based `strategy.job-index`), and the names of the ABSENT
@@ -107,7 +140,7 @@ def read_flaky(flaky_dir: str, shards: int) -> tuple[list[str], list[str]]:
     if not flaky_dir:
         raise RuntimeError("FLAKY_DIR is unset: the FLAKY scan did NOT RUN — treat the sweep's FLAKY results as "
                            "NOT CHECKED")
-    files = [pathlib.Path(flaky_dir) / f"shard-{i}.txt" for i in range(shards)]
+    files = [pathlib.Path(flaky_dir) / SHARD_FILE.format(i) for i in range(shards)]
     missing = [f.name for f in files if not f.is_file()]
     return flaky_names("\n".join(f.read_text(encoding="utf-8") for f in files if f.is_file())), missing
 
@@ -145,7 +178,9 @@ def main(env=None) -> int:
     event, run_url = env.get("EVENT", ""), env.get("RUN_URL", "")
     alert_red(sweep, event, sha, run_url)
     # backlog #495 r1: AFTER the red alert, so a missing FLAKY_DIR (which raises) can never cost a red its issue.
-    shards = shard_count(WORKFLOW.read_text(encoding="utf-8"))
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    ci_flaky_contract(workflow)   # backlog #617: a drifted `ci.yml` is NOT RUN here, not "files missing"
+    shards = shard_count(workflow)
     names, missing = read_flaky(env.get("FLAKY_DIR", ""), shards)
     # ⛔ r3 Claude M1: the names the PRESENT files hold are FILED first; only THEN does a missing file go red. With
     # files missing and no name read, nothing is filed — "no FLAKY mutation" would be a claim about unread shards.
@@ -344,6 +379,29 @@ def _self_test_body() -> int:
             _bad.append(True)
     case("...two matrix lines, none, or an empty one RAISE — the count is never guessed", _bad, [True, True, True])
 
+    # ── backlog #617 part 1 (PR #564 r3 m2): `ci.yml` writes and merges the files `read_flaky` reads ──
+    _real = WORKFLOW.read_text(encoding="utf-8")
+    def _contract(text):
+        try:
+            ci_flaky_contract(text)
+            return "ok"
+        except ValueError as e:
+            return "raised"
+    case("⭐ #617: the REAL `ci.yml` writes `shard-$<job-index>.txt` and merges with `merge-multiple: true`",
+         _contract(_real), "ok")
+    case("⭐ #617: `ci.yml` writing `shard-$SHARD_TOTAL.txt` (not the 0-based job index) RAISES",
+         _contract(_real.replace("sweep-flaky/shard-$SHARD_INDEX.txt", "sweep-flaky/shard-$SHARD_TOTAL.txt")), "raised")
+    case("⭐ #617: `ci.yml` downloading with `merge-multiple: false` RAISES",
+         _contract(_real.replace("merge-multiple: true", "merge-multiple: false")), "raised")
+    case("...a SECOND `merge-multiple: true` elsewhere does not rescue the download step's `false`",
+         _contract(_real.replace("merge-multiple: true", "merge-multiple: false")
+                   + "\n  later:\n    steps:\n      - uses: x\n        with:\n          merge-multiple: true\n"),
+         "raised")
+    case("...no shard-file write at all RAISES, and so does a second one",
+         (_contract(_real.replace("sweep-flaky/shard-", "sweep-flaky/part-")),
+          _contract(_real + "\n# sweep-flaky/shard-$SHARD_INDEX.txt\n")), ("raised", "raised"))
+    case("...`read_flaky` reads the file name the contract proved", SHARD_FILE.format(3), "shard-3.txt")
+
     # ── the workflow step's real `run:` block, against a fake gh ──
     wf = WORKFLOW.read_text(encoding="utf-8")
     run_block = step_run_block(wf)
@@ -458,6 +516,13 @@ def _self_test_body() -> int:
         case("⭐ #495 r3 M1: a shard file MISSING still FILES the names the others hold, THEN goes red naming it NOT RUN",
              (rc != 0, f"- {_n1}\n" in (_fi or [{}])[0].get("body", ""), "shard-5.txt" in out, "NOT RUN" in out,
               f"1 of {n_shards} shard files" in out), (True, True, True, True, True))
+        # backlog #617: the REAL step, run against a `ci.yml` whose download step lost `merge-multiple: true`.
+        _ci = repo / ".github" / "workflows" / "ci.yml"
+        _ci.write_text(wf.replace("merge-multiple: true", "merge-multiple: false"), encoding="utf-8")
+        rc, out = step("success", "c")
+        _ci.write_text(wf, encoding="utf-8")
+        case("⭐ #617: the REAL step under a `ci.yml` without `merge-multiple: true` is RED naming it, never 'no FLAKY'",
+             (rc != 0, "merge-multiple: true" in out, "no FLAKY mutation" in out), (True, True, False))
         (bin_ / "gh").write_text("#!/bin/sh\necho 'HTTP 502' >&2\nexit 1\n")
         for sweep in ("success", "failure"):
             rc, out = step(sweep, "c")

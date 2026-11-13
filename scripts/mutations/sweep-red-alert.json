@@ -211,8 +211,8 @@
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    return n\n\n\ndef read_flaky",
-        "    return 1\n\n\ndef read_flaky"
+        "    return n\n\n\nSHARD_FILE",
+        "    return 1\n\n\nSHARD_FILE"
       ]
     ],
     "expect": [
@@ -312,6 +312,71 @@
     ],
     "expect": [
       "⭐ #495 r2 Codex 2: the REAL step with ONE of the matrix's shard files missing is RED, NOT RUN — never 'no FLAKY'"
+    ]
+  },
+  {
+    "name": "#617: the shard file's variable is not checked to be the 0-based job index",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if not re.search(rf\"^\\s*{var}:",
+        "    if False and re.search(rf\"^\\s*{var}:"
+      ]
+    ],
+    "expect": [
+      "⭐ #617: `ci.yml` writing `shard-$SHARD_TOTAL.txt` (not the 0-based job index) RAISES"
+    ]
+  },
+  {
+    "name": "#617: the download step's merge-multiple is not checked",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if \"merge-multiple: true\" not in block:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #617: `ci.yml` downloading with `merge-multiple: false` RAISES"
+    ]
+  },
+  {
+    "name": "#617: the download step's block runs on past the step, to the end of the workflow",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            break\n        block.append(l.strip())\n",
+        "            pass\n        block.append(l.strip())\n"
+      ]
+    ],
+    "expect": [
+      "...a SECOND `merge-multiple: true` elsewhere does not rescue the download step's `false`"
+    ]
+  },
+  {
+    "name": "#617: two shard-file writes are accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if len(writes) != 1:\n",
+        "    if len(writes) < 1:\n"
+      ]
+    ],
+    "expect": [
+      "...no shard-file write at all RAISES, and so does a second one"
+    ]
+  },
+  {
+    "name": "#617: main does not check the ci.yml contract",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    ci_flaky_contract(workflow)   #",
+        "    pass   #"
+      ]
+    ],
+    "expect": [
+      "⭐ #617: the REAL step under a `ci.yml` without `merge-multiple: true` is RED naming it, never 'no FLAKY'"
     ]
   }
 ]
