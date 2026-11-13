@@ -69,6 +69,11 @@ THE CALLERS — three hooks, registered through `.claude/hooks/run-hook.sh`, eac
                            LOUD every time. ⚠ BOUND: the state is touched only while the cache is absent
                            (so the common path runs no git), so a cache that appears and is then deleted
                            again within ONE session is not announced a second time.
+                           A WARN whose whole text is unchanged is also said once per session (backlog #628):
+                           any change in its text (zone, stop, the 0.1% reading) speaks again; REFUSE-SPAWN,
+                           CANNOT RUN and a WARN with a NOT RUN part are never deduplicated. Bounds: a
+                           session keeps its id across /compact, so a WARN given before it is not repeated
+                           until its text changes; two sessions taking turns each hear every notice.
     usage-pace-spawn.sh    PreToolUse on Agent: at REFUSE-SPAWN, deny, unless overridden. Otherwise allow,
                            silently.
     usage-pace-wake.sh     PreToolUse on SendMessage (r1 M1, the OWNER's option A, 2026-10-30): at
@@ -158,12 +163,13 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 409 cases
+    python3 scripts/check-usage-pace.py --self-test  # 416 cases
 """
 from __future__ import annotations
 
 import datetime
 import functools
+import hashlib
 import json
 import math
 import os
@@ -255,6 +261,8 @@ PAYLOAD_MAX_BYTES = 1024 * 1024
 READ_DEADLINE_S = 1.0
 
 OK, WARN, REFUSE, CANNOT_RUN = "OK", "WARN", "REFUSE-SPAWN", "CANNOT RUN"
+# A WARN carrying this says part of its reading could NOT be taken: it is never deduplicated (#628 r1 claude M1).
+NOT_RUN_MARK = "treat it as NOT RUN"
 RC = {OK: 0, WARN: 1, CANNOT_RUN: 2, REFUSE: 3}
 
 DEFAULT_CACHE = os.path.join("~", ".claude", ".rate-limits.json")
@@ -546,7 +554,7 @@ def band_note(meter: str | None, now: float, resets: float, weekly: float, why: 
     trend_note = (f" Above the weekly trend ({pct(trend)} now: {TREND_PER_DAY:g}%/day + {TREND_BASE:g}) — a guide, "
                   f"not a verdict." if weekly > trend else "")
     if band is None:
-        return (f" pace: today's band is UNKNOWN — start% cannot be read ({start_why}): treat it as NOT RUN, "
+        return (f" pace: today's band is UNKNOWN — start% cannot be read ({start_why}): {NOT_RUN_MARK}, "
                 f"never as fine.{trend_note}", BAND_UNKNOWN)
     zone = band_zone(weekly, band)
     spent = "" if start is None else f" · started {pct(start)}, spent {edge(weekly - start)}"
@@ -606,7 +614,7 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
     try:
         five = window(rl, "five_hour", now, FIVE_HOUR_S)
     except Malformed as e:
-        five, five_note = None, f" The five-hour window is unreadable ({e}): treat it as NOT RUN."
+        five, five_note = None, f" The five-hour window is unreadable ({e}): {NOT_RUN_MARK}."
     if five is not None and five[1] > now and five[0] >= FIVE_HOUR_WARN_AT:
         five_note = (f" Five-hour usage is {pct(five[0])} (WARN at {pct(FIVE_HOUR_WARN_AT)}), "
                      f"resets {local_time(five[1])}.")
@@ -838,18 +846,20 @@ def session_of(payload: str) -> str | None:
     except ValueError:
         return None
     sid = doc.get("session_id") if isinstance(doc, dict) else None
-    if not isinstance(sid, str) or not sid.strip() or len(sid) > 200 or "\n" in sid:
+    if not isinstance(sid, str) or not sid.strip() or len(sid) > 200 or "\n" in sid or "\t" in sid:
         return None
     return sid.strip()
 
 
-def told_this_session(payload: str, root: str) -> bool:
-    """True when the absent-cache notice was ALREADY given in this session, so the prompt stays silent; else
-    records this session and returns False. Any doubt (no session_id, no main checkout, an unwritable state
-    file) returns False, so the notice is LOUD rather than lost."""
+def told_this_session(payload: str, root: str, key: str = "") -> bool:
+    """True when the notice `key` names (empty: the absent-cache notice) was ALREADY given in this session, so the
+    prompt stays silent; else records it and returns False. Any doubt (no session_id, no main checkout, an
+    unwritable state file) returns False, so the notice is LOUD rather than lost. One line of state: a different
+    notice in between makes the next repeat speak again (backlog #628)."""
     sid = session_of(payload)
     if sid is None:
         return False
+    sid = f"{sid}\t{key}" if key else sid  # a tab never occurs in a usable sid, so no sid forges a key (r1 C2)
     main, _ = main_checkout(root)
     if main is None:
         return False
@@ -1045,6 +1055,20 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
                 payload = read_payload() or ""  # unusable stdin: no session, so the notice is said
             if told_this_session(payload, args.root):
                 out = None
+        # backlog #628: a WARN whose WHOLE text is unchanged is said once per session — it repeats on every prompt and
+        # on the owner's screen (its token cost is NOT measured). Any change in the text (zone, stop, the 0.1% reading,
+        # trend or days left) speaks again; REFUSE-SPAWN, CANNOT RUN and a WARN with a NOT RUN part never dedupe.
+        elif verdict == WARN and out and NOT_RUN_MARK not in message:
+            if payload is None:
+                payload = read_payload() or ""  # no usable stdin means no session: the WARN is said
+            if told_this_session(payload, args.root, "warn:" + hashlib.sha256(out.encode()).hexdigest()[:16]):
+                out = None
+        # Every other prompt (OK, REFUSE-SPAWN, a stale or malformed cache) moves the state on, so WARN → OK → the same
+        # WARN speaks again: a return to a zone is a zone change (r1 C1). Its answer is ignored — none is deduplicated.
+        else:
+            if payload is None:
+                payload = read_payload() or ""
+            told_this_session(payload, args.root, "seen:" + verdict)
     else:
         if args.hook == "wake" and verdict == REFUSE and not override[0]:
             if payload is None:
@@ -2509,6 +2533,28 @@ def _self_test_body() -> int:
                    for _ in range(2)], [True, True])
             check("main: the stale notice names the --cache path",
                   cpath in drive(cache(85, age=3600), "--hook", "prompt", root=wt, payload=sess("s-3"))[1], True)
+            warn = [bool(drive(cache(85), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-4"))[1]) for _ in range(3)]
+            check("⭐ #628: an unchanged WARN is said once per session, then silent", warn, [True, False, False])
+            check("#628: a changed reading speaks again; a new session is told again",
+                  (bool(drive(cache(86), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-4"))[1]),
+                   bool(drive(cache(86), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-5"))[1])), (True, True))
+            check("#628: REFUSE-SPAWN is never deduplicated",
+                  [bool(drive(cache(99), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-5"))[1]) for _ in range(2)],
+                  [True, True])
+            check("#628 r1 C1: WARN → OK → the same WARN speaks again; so do WARN → REFUSE and WARN → stale → WARN",
+                  [bool(drive(c, "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-6"))[1])
+                   for c in (cache(85), cache(50), cache(85), cache(99), cache(85), cache(85, age=3600), cache(85))],
+                  [True, False, True, True, True, True, True])
+            fresh()
+            check("#628 r1 C2: a session id carrying a tab is no session; one ending in a WARN key forges nothing",
+                  (session_of(sess("a\twarn:0")), (told_this_session(sess("a"), wt, "warn:x"),
+                                                     told_this_session(sess("a warn:x"), wt))), (None, (False, False)))
+            fresh()
+            check("#628 r1 M1: a WARN whose band cannot be read (no meter) is said on every prompt",
+                  [bool(drive(cache(85), "--hook", "prompt", "--meter", os.path.join(tmp, "no-meter"), root=wt,
+                              payload=sess("s-7"))[1]) for _ in range(2)], [True, True])
+            check("#628: a WARN with no session_id is LOUD every time",
+                  [bool(drive(cache(85), "--hook", "prompt", root=wt, payload="{}")[1]) for _ in range(2)], [True, True])
             check("main: a MALFORMED cache warns on every prompt of a session",
                   [bool(drive("{", "--hook", "prompt", root=wt, payload=sess("s-3"))[1]) for _ in range(2)],
                   [True, True])

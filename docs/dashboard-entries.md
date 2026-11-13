@@ -20489,3 +20489,13 @@ its two conditions), dashboard tags = A (build, backlog #623). The 2026-11-11/2 
 as PR #562 `eebb1ac7`). Refresh: `explainer-serve.py` PID 30306 started 2026-11-05 12:08, older than PR #536 (`64e4b67a`,
 11-08) and PR #561 (`c7e06274`, 11-11); restarted as PID 97947 at 05:23; a POST /regenerate for goal-tree returned
 `{"ok": true}` in 46.5 s and rewrote `~/explainers/goal-tree.html`. Backlog #624 files the class.
+
+## 2026-11-12
+The usage-pace warning now appears once per session while its reading is unchanged, instead of on every message. It speaks
+again as soon as the percentage, the zone or the stop changes. The hard refusal and the "cannot read the meter" warning
+still appear every time.
+
+<!--tech-->
+Backlog #628, branch `628-pace-once`. `told_this_session` in `scripts/check-usage-pace.py` takes a key; a WARN is keyed
+by the sha256 of its whole output. 413 self-test cases (4 new), 3 new mutations. Takes effect once merged, because the
+hook runs origin/master's copy (backlog #522).

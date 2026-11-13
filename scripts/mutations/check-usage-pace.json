@@ -434,7 +434,7 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        five, five_note = None, f\" The five-hour window is unreadable ({e}): treat it as NOT RUN.\"",
+        "        five, five_note = None, f\" The five-hour window is unreadable ({e}): {NOT_RUN_MARK}.\"",
         "        return cannot(f\"the cache is malformed: {e}\")"
       ]
     ],
@@ -855,8 +855,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if sid is None:\n        return False\n    main, _ = main_checkout(root)",
-        "    if sid is None:\n        return True\n    main, _ = main_checkout(root)"
+        "    if sid is None:\n        return False\n    sid = f\"{sid}\\t{key}\"",
+        "    if sid is None:\n        return True\n    sid = f\"{sid}\\t{key}\""
       ]
     ],
     "expect": [
@@ -881,8 +881,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        " or \"\\n\" in sid:",
-        ":"
+        "len(sid) > 200 or \"\\n\" in sid or ",
+        "len(sid) > 200 or "
       ]
     ],
     "expect": [
@@ -1477,7 +1477,7 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        return (f\" pace: today's band is UNKNOWN — start% cannot be read ({start_why}): treat it as NOT RUN, \"\n                f\"never as fine.{trend_note}\", BAND_UNKNOWN)",
+        "        return (f\" pace: today's band is UNKNOWN — start% cannot be read ({start_why}): {NOT_RUN_MARK}, \"\n                f\"never as fine.{trend_note}\", BAND_UNKNOWN)",
         "        return \"\", BAND_UNKNOWN"
       ]
     ],
@@ -2596,6 +2596,84 @@
     ],
     "expect": [
       "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+    ]
+  },
+  {
+    "name": "#628: an unchanged WARN is never deduplicated",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        elif verdict == WARN and out and NOT_RUN_MARK not in message:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ #628: an unchanged WARN is said once per session, then silent"
+    ]
+  },
+  {
+    "name": "#628: the WARN key ignores the session",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    sid = f\"{sid}\\t{key}\" if key else sid",
+        "    sid = key or sid"
+      ]
+    ],
+    "expect": [
+      "#628: a changed reading speaks again; a new session is told again"
+    ]
+  },
+  {
+    "name": "#628: REFUSE-SPAWN is deduplicated too",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "verdict == WARN and out and NOT_RUN_MARK",
+        "verdict in (WARN, REFUSE) and out and NOT_RUN_MARK"
+      ]
+    ],
+    "expect": [
+      "#628: REFUSE-SPAWN is never deduplicated"
+    ]
+  },
+  {
+    "name": "#628 r1 C1: an intervening verdict does not move the state",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "            told_this_session(payload, args.root, \"seen:\" + verdict)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "#628 r1 C1: WARN → OK → the same WARN speaks again; so do WARN → REFUSE and WARN → stale → WARN"
+    ]
+  },
+  {
+    "name": "#628 r1 C2: a tab in a session id is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " or \"\\n\" in sid or \"\\t\" in sid:",
+        " or \"\\n\" in sid:"
+      ]
+    ],
+    "expect": [
+      "#628 r1 C2: a session id carrying a tab is no session; one ending in a WARN key forges nothing"
+    ]
+  },
+  {
+    "name": "#628 r1 M1: a WARN with a NOT RUN part is deduplicated",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "verdict == WARN and out and NOT_RUN_MARK not in message:",
+        "verdict == WARN and out:"
+      ]
+    ],
+    "expect": [
+      "#628 r1 M1: a WARN whose band cannot be read (no meter) is said on every prompt"
     ]
   }
 ]
