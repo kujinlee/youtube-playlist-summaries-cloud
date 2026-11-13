@@ -161,7 +161,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 413 cases
+    python3 scripts/check-usage-pace.py --self-test  # 415 cases
 """
 from __future__ import annotations
 
@@ -842,7 +842,7 @@ def session_of(payload: str) -> str | None:
     except ValueError:
         return None
     sid = doc.get("session_id") if isinstance(doc, dict) else None
-    if not isinstance(sid, str) or not sid.strip() or len(sid) > 200 or "\n" in sid:
+    if not isinstance(sid, str) or not sid.strip() or len(sid) > 200 or "\n" in sid or "\t" in sid:
         return None
     return sid.strip()
 
@@ -855,7 +855,7 @@ def told_this_session(payload: str, root: str, key: str = "") -> bool:
     sid = session_of(payload)
     if sid is None:
         return False
-    sid = f"{sid} {key}" if key else sid
+    sid = f"{sid}\t{key}" if key else sid  # a tab never occurs in a usable sid, so no sid forges a key (r1 C2)
     main, _ = main_checkout(root)
     if main is None:
         return False
@@ -1059,6 +1059,12 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
                 payload = read_payload() or ""  # no usable stdin means no session: the WARN is said
             if told_this_session(payload, args.root, "warn:" + hashlib.sha256(out.encode()).hexdigest()[:16]):
                 out = None
+        # Every other prompt (OK, REFUSE-SPAWN, a stale or malformed cache) moves the state on, so WARN → OK → the same
+        # WARN speaks again: a return to a zone is a zone change (r1 C1). Its answer is ignored — none is deduplicated.
+        else:
+            if payload is None:
+                payload = read_payload() or ""
+            told_this_session(payload, args.root, "seen:" + verdict)
     else:
         if args.hook == "wake" and verdict == REFUSE and not override[0]:
             if payload is None:
@@ -2531,6 +2537,14 @@ def _self_test_body() -> int:
             check("#628: REFUSE-SPAWN is never deduplicated",
                   [bool(drive(cache(99), "--hook", "prompt", root=wt, payload=sess("s-5"))[1]) for _ in range(2)],
                   [True, True])
+            check("#628 r1 C1: WARN → OK → the same WARN speaks again; so do WARN → REFUSE and WARN → stale → WARN",
+                  [bool(drive(c, "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-6"))[1])
+                   for c in (cache(85), cache(50), cache(85), cache(99), cache(85), cache(85, age=3600), cache(85))],
+                  [True, False, True, True, True, True, True])
+            fresh()
+            check("#628 r1 C2: a session id carrying a tab is no session; one ending in a WARN key forges nothing",
+                  (session_of(sess("a\twarn:0")), (told_this_session(sess("a"), wt, "warn:x"),
+                                                     told_this_session(sess("a warn:x"), wt))), (None, (False, False)))
             check("#628: a WARN with no session_id is LOUD every time",
                   [bool(drive(cache(85), "--hook", "prompt", root=wt, payload="{}")[1]) for _ in range(2)], [True, True])
             check("main: a MALFORMED cache warns on every prompt of a session",
