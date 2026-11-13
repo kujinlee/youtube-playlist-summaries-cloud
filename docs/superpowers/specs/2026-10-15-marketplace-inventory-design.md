@@ -448,11 +448,11 @@ never put. So:
 - **this repository stays as it is** — public, unlicensed, all rights reserved — until someone
   decides that separately. ⟳ 11-11 (§2c): this follows from D3's separate marketplace repo, which is what
   the owner wanted;
-- ⚠ **the copyright holder is not yet named.** No author is declared anywhere (`package.json` has no
+- ✅ **the copyright holder is named: `Kujin Lee`** (⟳ owner, 2026-11-13 03:48, walkthrough decision 7:
+  *"use my name \"Kujin Lee\""*). Before that no author was declared anywhere (`package.json` has no
   author field, the only `Copyright` line in the tree belongs to a vendored dependency, and the git
-  identity is the placeholder `t <t@example.com>`). The GitHub account is `kujinlee`. **A legal name
-  or entity is a one-line decision the owner still owns**, and inventing one would be worse than
-  leaving it visible.
+  identity is the placeholder `t <t@example.com>`), so the name was the owner's to give, never one to
+  infer. The marketplace repo's MIT `LICENSE` reads `Copyright (c) <year> Kujin Lee`.
 
 ⚠ **Bound, stated rather than hidden:** no installed marketplace on this machine requires licence
 metadata, so this is not a mechanical blocker to *installing* — it is a blocker to *publishing*,
