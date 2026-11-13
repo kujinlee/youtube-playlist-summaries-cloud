@@ -2154,7 +2154,7 @@ EXPECTED_MUTATIONS = {
     # anchors) and 2 expects renamed (the trend case's tighter edges). 8 new: U1 (UNKNOWN back to OK), C2 (the last
     # day exclusive again), L5 (no age bound; the bound two midnights back), L1 (today's key and the window's key in
     # UTC: Claude r1's surviving mutation and its twin), L2 (the trend line ±0.05: Claude r1's survivor and its twin).
-    "scripts/check-usage-pace.py": 201,
+    "scripts/check-usage-pace.py": 202,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
