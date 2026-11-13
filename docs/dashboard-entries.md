@@ -20499,3 +20499,19 @@ still appear every time.
 Backlog #628, branch `628-pace-once`. `told_this_session` in `scripts/check-usage-pace.py` takes a key; a WARN is keyed
 by the sha256 of its whole output. 413 self-test cases (4 new), 3 new mutations. Takes effect once merged, because the
 hook runs origin/master's copy (backlog #522).
+
+## 2026-11-13 [needs-you]
+Two of the marketplace walkthrough's open decisions moved. The copyright holder is now Kujin Lee, as you asked, and
+the spec, the plan and the walkthrough page all say so; the licence for the published plugin repository will carry
+that name. For the memory-file content review you asked for a list of files to check, and it is ready: 22 files in
+four groups (production infrastructure, business plans, your local machine, and your own words). No passwords or
+keys were found. The walkthrough page also now keeps the answers you were given on it, which the version on master
+had lost.
+
+**Waiting on you:** say yes or no for each group in `docs/marketplace/decision-5-suspect-files.md`. Until then memory
+recall cannot be marked ready to publish.
+<!--tech-->
+Walkthrough decision 7 answered (`data-decision="Kujin Lee (owner, 11-13 03:48)"`), decision 5 still open with a
+link to the list. Spec §4 licence bullet and plan H5 updated. The fragment is a 3-way merge (base `2e79f464`) of the
+owner's local copy onto master's tagged one: 15 answered blocks (0 on master before), no conflicts; the .html was
+recomposed with `scripts/brief-compose.py`.
