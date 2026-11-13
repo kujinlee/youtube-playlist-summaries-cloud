@@ -1616,7 +1616,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 20 -> 23, backlog #495 r3 fold (Claude M1): one missing shard file discards the present files' names, the
     # raise runs before the filing, and "no FLAKY mutation" printed for unread shards. Five entries re-bound to the
     # split read/raise (the filing call, the red-alert order, the unset guard, the missing raise, the shard loop).
-    "scripts/sweep-red-alert.py": 23,
+    "scripts/sweep-red-alert.py": 39,
     # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
     # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which

@@ -211,8 +211,8 @@
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    return n\n\n\ndef read_flaky",
-        "    return 1\n\n\ndef read_flaky"
+        "    return n\n\n\nSHARD_FILE",
+        "    return 1\n\n\nSHARD_FILE"
       ]
     ],
     "expect": [
@@ -312,6 +312,214 @@
     ],
     "expect": [
       "⭐ #495 r2 Codex 2: the REAL step with ONE of the matrix's shard files missing is RED, NOT RUN — never 'no FLAKY'"
+    ]
+  },
+  {
+    "name": "#617: the shard file's variable is not checked to be the 0-based job index",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if not any(re.fullmatch(rf\"\\s*{var}:",
+        "    if False and any(re.fullmatch(rf\"\\s*{var}:"
+      ]
+    ],
+    "expect": [
+      "⭐ #617: `ci.yml` writing `shard-$SHARD_TOTAL.txt` (not the 0-based job index) RAISES"
+    ]
+  },
+  {
+    "name": "#617: the download step's merge-multiple is not checked",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if len(withs) != 1 or not any(",
+        "    if False and not any("
+      ]
+    ],
+    "expect": [
+      "⭐ #617: `ci.yml` downloading with `merge-multiple: false` RAISES"
+    ]
+  },
+  {
+    "name": "#617: the download step's block runs on past the step, to the end of the workflow",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        if _indent(lines[i]) <= ind:\n            break\n",
+        "        if _indent(lines[i]) <= ind:\n            pass\n"
+      ]
+    ],
+    "expect": [
+      "...r1 Claude m4: the download step ENDS at the next step — a later step's `with:` is not read as its own"
+    ]
+  },
+  {
+    "name": "#617: two shard-file writes are accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if len(writes) != 1:\n",
+        "    if len(writes) < 1:\n"
+      ]
+    ],
+    "expect": [
+      "...no shard-file write at all RAISES, and so does a second one"
+    ]
+  },
+  {
+    "name": "#617: main does not check the ci.yml contract",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    ci_flaky_contract(workflow)   #",
+        "    pass   #"
+      ]
+    ],
+    "expect": [
+      "⭐ #617: the REAL step under a `ci.yml` without `merge-multiple: true` is RED naming it, never 'no FLAKY'"
+    ]
+  },
+  {
+    "name": "#617 r1 Codex M1: a comment line counts as the shard-file write",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    return \"\" if line.lstrip().startswith(\"#\") else re.sub(",
+        "    return line if line.lstrip().startswith(\"#\") else re.sub("
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: a COMMENT naming the shard file is not the write — the real redirect renamed RAISES"
+    ]
+  },
+  {
+    "name": "#617 r1 Codex M1: an inline ` #` comment counts as the shard-file write",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "re.sub(r\"\\s+#.*$\", \"\", line)",
+        "line"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: a COMMENT naming the shard file is not the write — the real redirect renamed RAISES"
+    ]
+  },
+  {
+    "name": "#617 r1 Codex M2: merge-multiple is read from any child block of the step, not only `with:`",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    withs = [i for i in step if lines[i].strip() == \"with:\"]",
+        "    withs = [i for i in step if lines[i].strip().endswith(\":\")][-1:]"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M2: `merge-multiple: true` under the step's `env:` (with `with:` false) RAISES"
+    ]
+  },
+  {
+    "name": "#617 r1 Claude m4: a line at the step's own indent does not end its block",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        if _indent(lines[i]) <= ind:\n",
+        "        if _indent(lines[i]) < ind:\n"
+      ]
+    ],
+    "expect": [
+      "...r1 Claude m4: the download step ENDS at the next step — a later step's `with:` is not read as its own"
+    ]
+  },
+  {
+    "name": "#617 r1 Claude m4: two download steps of that name are accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if len(starts) != 1:\n        raise ValueError(f\"{len(starts)} `{DOWNLOAD_STEP}`",
+        "    if len(starts) < 1:\n        raise ValueError(f\"{len(starts)} `{DOWNLOAD_STEP}`"
+      ]
+    ],
+    "expect": [
+      "...r1 Claude m4: a SECOND download step of that name RAISES — which one is read is never guessed"
+    ]
+  },
+  {
+    "name": "#617 r1 Claude m3: the job-index variable is read from anywhere in the workflow",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "               for l in lines[st:end]):",
+        "               for l in lines):"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude m3: the job index set in ANOTHER step does not vouch for the writing step's 1-based variable"
+    ]
+  },
+  {
+    "name": "#617 r2 Codex m1: trailing text after `.txt` is accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "\\.txt\"?(?=[\\s;|&)]|$)', l)]",
+        "\\.txt\"?', l)]"
+      ]
+    ],
+    "expect": [
+      "...r2 Codex m1: a redirect to `shard-$SHARD_INDEX.txt.bak` (or `\"...txt\".bak`) is not the shard file"
+    ]
+  },
+  {
+    "name": "#617 r2 Codex M1: a reassignment of the index in the writing step's script is not checked",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if any(re.search(rf\"(?<!\\$)(?<!\\$\\{{)\\b{var}\\b(?!:\\s)\", l) for l in lines[st:end]):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: the writing step's script REASSIGNING the index (`SHARD_INDEX=$SHARD_TOTAL`) RAISES"
+    ]
+  },
+  {
+    "name": "#617 r2 Codex m2: the step ends at the write, so an env: below run: is not seen",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    end = next((i for i in range(st + 1",
+        "    end = wi or next((i for i in range(st + 1"
+      ]
+    ],
+    "expect": [
+      "...r2 Codex m2: the writing step's `env:` BELOW its `run:` is not a false red"
+    ]
+  },
+  {
+    "name": "#617 r3: `${V}` is not allowed as an expansion",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "(?<!\\$)(?<!\\$\\{{)\\b{var}",
+        "(?<!\\$)\\b{var}"
+      ]
+    ],
+    "expect": [
+      "...r3: the allow-list is deliberate — `echo \"SHARD_INDEX=$SHARD_INDEX\"` RAISES; `echo \"$SHARD_INDEX\"` does not"
+    ]
+  },
+  {
+    "name": "#617 r3 Claude m3: any `- ` line, a heredoc's included, starts the step",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "startswith(\"- \") and _indent(lines[i]) < _indent(lines[wi])]",
+        "startswith(\"- \")]"
+      ]
+    ],
+    "expect": [
+      "...r3 Claude m3: a `- ` line inside the writing step's script does not move the step start"
     ]
   }
 ]
