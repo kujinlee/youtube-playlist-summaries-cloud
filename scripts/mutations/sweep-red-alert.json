@@ -95,36 +95,6 @@
     ]
   },
   {
-    "name": "#495 r1: the FLAKY scan runs BEFORE the red alert, so a missing FLAKY_DIR costs a red its issue",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    alert_red(sweep, event, sha, run_url)\n    # backlog #495 r1: AFTER the red alert",
-        "    # backlog #495 r1: AFTER the red alert"
-      ],
-      [
-        "    return 0\n\n\ndef alert_red",
-        "    alert_red(sweep, event, sha, run_url)\n    return 0\n\n\ndef alert_red"
-      ]
-    ],
-    "expect": [
-      "⭐ #495 r1: a MISSING FLAKY_DIR makes the step RED — and only AFTER the red sweep got its issue"
-    ]
-  },
-  {
-    "name": "#495 r1: an unset FLAKY_DIR reads as no FLAKY",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    if not flaky_dir:\n        raise RuntimeError(\"FLAKY_DIR is unset",
-        "    if not flaky_dir:\n        return [], []\n        raise RuntimeError(\"FLAKY_DIR is unset"
-      ]
-    ],
-    "expect": [
-      "...an unset FLAKY_DIR RAISES — a scan that did not run is never a scan that found nothing"
-    ]
-  },
-  {
     "name": "#495 r1: every FLAKY sweep opens a new sweep-flaky issue",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
@@ -138,33 +108,6 @@
     ]
   },
   {
-    "name": "#495 r1: a FLAKY name seen twice is listed twice",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "            if name and name not in names:",
-        "            if name:"
-      ]
-    ],
-    "expect": [
-      "⭐ #495 r2 Codex 3: `flaky_names` reads each REAL name WHOLE (`: ` inside it), once each, never a SURVIVED one"
-    ]
-  },
-  {
-    "name": "#495 r1: only the first shard's FLAKY file is read",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "f.read_text(encoding=\"utf-8\") for f in files if f.is_file()))",
-        "f.read_text(encoding=\"utf-8\") for f in files[:1] if f.is_file()))"
-      ]
-    ],
-    "expect": [
-      "...`read_flaky` reads EVERY shard's file (each name once), and only the shards' files",
-      "⭐ #495 r1: a GREEN sweep with FLAKY mutants in two shards OPENS one sweep-flaky issue naming BOTH"
-    ]
-  },
-  {
     "name": "#495 r1: the FLAKY issue does not name the mutations",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
@@ -174,7 +117,7 @@
       ]
     ],
     "expect": [
-      "...and `flaky_body` NAMES every FLAKY mutation, with its own event, SHA and run",
+      "`flaky_body` NAMES every FLAKY mutation, with its own event, SHA and run",
       "⭐ #495 r1: a GREEN sweep with FLAKY mutants in two shards OPENS one sweep-flaky issue naming BOTH"
     ]
   },
@@ -192,334 +135,310 @@
     ]
   },
   {
-    "name": "#495 r2 Codex 2: a missing shard file reads as no FLAKY",
+    "name": "#495 r1: the records are read BEFORE the red alert, so an unset RECORD_DIR costs a red its issue",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    if missing:\n        raise",
-        "    if False:\n        raise"
-      ]
-    ],
-    "expect": [
-      "⭐ #495 r2 Codex 2: the REAL step with ONE of the matrix's shard files missing is RED, NOT RUN — never 'no FLAKY'",
-      "⭐ #495 r1: a MISSING FLAKY_DIR makes the step RED — and only AFTER the red sweep got its issue",
-      "⭐ #495 r3 M1: a shard file MISSING still FILES the names the others hold, THEN goes red naming it NOT RUN"
-    ]
-  },
-  {
-    "name": "#495 r2 Codex 2: the shard count is not read from the matrix",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    return n\n\n\nSHARD_FILE",
-        "    return 1\n\n\nSHARD_FILE"
-      ]
-    ],
-    "expect": [
-      "⭐ #495 r2 Codex 2: `shard_count` is the entries of the ONE `shard:` matrix line"
-    ]
-  },
-  {
-    "name": "#495 r2 Codex 2: a workflow with two shard matrix lines is counted by one of them",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    if len(rows) != 1:",
-        "    if not rows:"
-      ]
-    ],
-    "expect": [
-      "...two matrix lines, none, or an empty one RAISE — the count is never guessed"
-    ]
-  },
-  {
-    "name": "#495 r2 Codex 2: an empty shard matrix counts as zero shards",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    if n < 1:\n        raise",
-        "    if False:\n        raise"
-      ]
-    ],
-    "expect": [
-      "...two matrix lines, none, or an empty one RAISE — the count is never guessed"
-    ]
-  },
-  {
-    "name": "#495 r2 Codex 3: a FLAKY name is cut at its first `: `",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "name, tail, _ = line.split(FLAKY_LINE, 1)[1].rpartition(FLAKY_TAIL)",
-        "name, tail, _ = line.split(FLAKY_LINE, 1)[1].partition(\": \")"
-      ]
-    ],
-    "expect": [
-      "⭐ #495 r2 Codex 3: `flaky_names` reads each REAL name WHOLE (`: ` inside it), once each, never a SURVIVED one"
-    ]
-  },
-  {
-    "name": "#495 r2 Codex 3: a FLAKY line without the harness's tail is read at a guess",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "            if not tail:\n                raise",
-        "            if False:\n                raise"
-      ]
-    ],
-    "expect": [
-      "...a FLAKY line WITHOUT the harness's tail RAISES — never a name cut at a guess"
-    ]
-  },
-  {
-    "name": "#495 r3 M1: one missing shard file discards the FLAKY names the present files hold",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    if names or not missing:\n",
-        "    if not missing:\n"
-      ]
-    ],
-    "expect": [
-      "⭐ #495 r3 M1: a shard file MISSING still FILES the names the others hold, THEN goes red naming it NOT RUN"
-    ]
-  },
-  {
-    "name": "#495 r3 M1: a missing shard file raises BEFORE the present files' FLAKY names are filed",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    if names or not missing:\n        file_flaky(names, event, sha, run_url)\n    if missing:\n",
-        "    if missing:\n"
+        "    alert_red(sweep, event, sha, run_url)\n    # backlog #495 r1: AFTER the red alert",
+        "    # backlog #495 r1: AFTER the red alert"
       ],
       [
         "    return 0\n\n\ndef alert_red",
-        "    if names or not missing:\n        file_flaky(names, event, sha, run_url)\n    return 0\n\n\ndef alert_red"
+        "    alert_red(sweep, event, sha, run_url)\n    return 0\n\n\ndef alert_red"
       ]
     ],
     "expect": [
-      "⭐ #495 r3 M1: a shard file MISSING still FILES the names the others hold, THEN goes red naming it NOT RUN"
+      "⭐ #495 r1: an unset RECORD_DIR makes the step RED — and only AFTER the red sweep got its issue"
     ]
   },
   {
-    "name": "#495 r3 M1: a missing shard file reports 'no FLAKY mutation' for the shards it did not read",
+    "name": "#619: an unset RECORD_DIR reads as no record problem at all",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    if names or not missing:\n        file_flaky(names, event, sha, run_url)\n    if missing:\n        raise",
-        "    if True:\n        file_flaky(names, event, sha, run_url)\n    if missing:\n        raise"
+        "        raise RuntimeError(\"RECORD_DIR is unset",
+        "        return [], []\n        raise RuntimeError(\"RECORD_DIR is unset"
       ]
     ],
     "expect": [
-      "⭐ #495 r2 Codex 2: the REAL step with ONE of the matrix's shard files missing is RED, NOT RUN — never 'no FLAKY'"
+      "an unset RECORD_DIR RAISES — a read that did not run is never a read that found nothing"
     ]
   },
   {
-    "name": "#617: the shard file's variable is not checked to be the 0-based job index",
+    "name": "#495 r3 M1: one missing shard record discards the FLAKY names the present records hold",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    if not any(re.fullmatch(rf\"\\s*{var}:",
-        "    if False and any(re.fullmatch(rf\"\\s*{var}:"
+        "    if names or not problems:\n",
+        "    if not problems:\n"
       ]
     ],
     "expect": [
-      "⭐ #617: `ci.yml` writing `shard-$SHARD_TOTAL.txt` (not the 0-based job index) RAISES"
+      "⭐ #495 r3 M1: a shard's record MISSING still FILES the names the others hold, THEN goes red naming it"
     ]
   },
   {
-    "name": "#617: the download step's merge-multiple is not checked",
+    "name": "#495 r3 M1: a missing shard record raises BEFORE the present records' FLAKY names are filed",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    if len(withs) != 1 or not any(",
-        "    if False and not any("
+        "    if names or not problems:\n        file_flaky(names, event, sha, run_url)\n    if problems:\n",
+        "    if problems:\n"
+      ],
+      [
+        "    return 0\n\n\ndef alert_red",
+        "    if names or not problems:\n        file_flaky(names, event, sha, run_url)\n    return 0\n\n\ndef alert_red"
       ]
     ],
     "expect": [
-      "⭐ #617: `ci.yml` downloading with `merge-multiple: false` RAISES"
+      "⭐ #495 r3 M1: a shard's record MISSING still FILES the names the others hold, THEN goes red naming it"
     ]
   },
   {
-    "name": "#617: the download step's block runs on past the step, to the end of the workflow",
+    "name": "#495 r3 M1: records with problems and no name report 'no FLAKY mutation' for shards never read",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "        if _indent(lines[i]) <= ind:\n            break\n",
-        "        if _indent(lines[i]) <= ind:\n            pass\n"
+        "    if names or not problems:\n        file_flaky(",
+        "    if True:\n        file_flaky("
       ]
     ],
     "expect": [
-      "...r1 Claude m4: the download step ENDS at the next step — a later step's `with:` is not read as its own"
+      "⭐ #619: a RECORD_DIR that was never downloaded is RED, NOT CHECKED — never 'no FLAKY'"
     ]
   },
   {
-    "name": "#617: two shard-file writes are accepted",
+    "name": "#619: a record with an extra key is accepted",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    if len(writes) != 1:\n",
-        "    if len(writes) < 1:\n"
+        "tuple(sorted(record)) != RECORD_KEYS",
+        "not set(RECORD_KEYS) <= set(record)"
       ]
     ],
     "expect": [
-      "...no shard-file write at all RAISES, and so does a second one"
+      "⭐ #619: each malformed record is a problem of its own — wrong keys, schema, range, types, names"
     ]
   },
   {
-    "name": "#617: main does not check the ci.yml contract",
+    "name": "#619: a record of another schema is accepted",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    ci_flaky_contract(workflow)   #",
-        "    pass   #"
-      ]
-    ],
-    "expect": [
-      "⭐ #617: the REAL step under a `ci.yml` without `merge-multiple: true` is RED naming it, never 'no FLAKY'"
-    ]
-  },
-  {
-    "name": "#617 r1 Codex M1: a comment line counts as the shard-file write",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    return \"\" if line.lstrip().startswith(\"#\") else re.sub(",
-        "    return line if line.lstrip().startswith(\"#\") else re.sub("
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Codex M1: a COMMENT naming the shard file is not the write — the real redirect renamed RAISES"
-    ]
-  },
-  {
-    "name": "#617 r1 Codex M1: an inline ` #` comment counts as the shard-file write",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "re.sub(r\"\\s+#.*$\", \"\", line)",
-        "line"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Codex M1: a COMMENT naming the shard file is not the write — the real redirect renamed RAISES"
-    ]
-  },
-  {
-    "name": "#617 r1 Codex M2: merge-multiple is read from any child block of the step, not only `with:`",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    withs = [i for i in step if lines[i].strip() == \"with:\"]",
-        "    withs = [i for i in step if lines[i].strip().endswith(\":\")][-1:]"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Codex M2: `merge-multiple: true` under the step's `env:` (with `with:` false) RAISES"
-    ]
-  },
-  {
-    "name": "#617 r1 Claude m4: a line at the step's own indent does not end its block",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "        if _indent(lines[i]) <= ind:\n",
-        "        if _indent(lines[i]) < ind:\n"
-      ]
-    ],
-    "expect": [
-      "...r1 Claude m4: the download step ENDS at the next step — a later step's `with:` is not read as its own"
-    ]
-  },
-  {
-    "name": "#617 r1 Claude m4: two download steps of that name are accepted",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    if len(starts) != 1:\n        raise ValueError(f\"{len(starts)} `{DOWNLOAD_STEP}`",
-        "    if len(starts) < 1:\n        raise ValueError(f\"{len(starts)} `{DOWNLOAD_STEP}`"
-      ]
-    ],
-    "expect": [
-      "...r1 Claude m4: a SECOND download step of that name RAISES — which one is read is never guessed"
-    ]
-  },
-  {
-    "name": "#617 r1 Claude m3: the job-index variable is read from anywhere in the workflow",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "               for l in lines[st:end]):",
-        "               for l in lines):"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Claude m3: the job index set in ANOTHER step does not vouch for the writing step's 1-based variable"
-    ]
-  },
-  {
-    "name": "#617 r2 Codex m1: trailing text after `.txt` is accepted",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "\\.txt\"?(?=[\\s;|&)]|$)', l)]",
-        "\\.txt\"?', l)]"
-      ]
-    ],
-    "expect": [
-      "...r2 Codex m1: a redirect to `shard-$SHARD_INDEX.txt.bak` (or `\"...txt\".bak`) is not the shard file"
-    ]
-  },
-  {
-    "name": "#617 r2 Codex M1: a reassignment of the index in the writing step's script is not checked",
-    "file": "scripts/sweep-red-alert.py",
-    "edits": [
-      [
-        "    if any(re.search(rf\"(?<!\\$)(?<!\\$\\{{)\\b{var}\\b(?!:\\s)\", l) for l in lines[st:end]):",
+        "    if record[\"schema\"] != RECORD_SCHEMA or not _is_int(record[\"schema\"]):",
         "    if False:"
       ]
     ],
     "expect": [
-      "⭐ r2 Codex M1: the writing step's script REASSIGNING the index (`SHARD_INDEX=$SHARD_TOTAL`) RAISES"
+      "⭐ #619: each malformed record is a problem of its own — wrong keys, schema, range, types, names"
     ]
   },
   {
-    "name": "#617 r2 Codex m2: the step ends at the write, so an env: below run: is not seen",
+    "name": "#619: a bool passes as an integer shard or schema",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "    end = next((i for i in range(st + 1",
-        "    end = wi or next((i for i in range(st + 1"
+        "    return type(v) is int",
+        "    return isinstance(v, int)"
       ]
     ],
     "expect": [
-      "...r2 Codex m2: the writing step's `env:` BELOW its `run:` is not a false red"
+      "⭐ #619: each malformed record is a problem of its own — wrong keys, schema, range, types, names"
     ]
   },
   {
-    "name": "#617 r3: `${V}` is not allowed as an expansion",
+    "name": "#619: shard 0 is accepted",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "(?<!\\$)(?<!\\$\\{{)\\b{var}",
-        "(?<!\\$)\\b{var}"
+        "and 1 <= record[\"shard\"] <= record[\"total\"]",
+        "and record[\"shard\"] <= record[\"total\"]"
       ]
     ],
     "expect": [
-      "...r3: the allow-list is deliberate — `echo \"SHARD_INDEX=$SHARD_INDEX\"` RAISES; `echo \"$SHARD_INDEX\"` does not"
+      "⭐ #619: each malformed record is a problem of its own — wrong keys, schema, range, types, names"
     ]
   },
   {
-    "name": "#617 r3 Claude m3: any `- ` line, a heredoc's included, starts the step",
+    "name": "#619: a non-bool `complete` is accepted",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "startswith(\"- \") and _indent(lines[i]) < _indent(lines[wi])]",
-        "startswith(\"- \")]"
+        "    if type(record[\"complete\"]) is not bool:",
+        "    if False:"
       ]
     ],
     "expect": [
-      "...r3 Claude m3: a `- ` line inside the writing step's script does not move the step start"
+      "⭐ #619: each malformed record is a problem of its own — wrong keys, schema, range, types, names"
+    ]
+  },
+  {
+    "name": "#619: an empty FLAKY name is accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "all(isinstance(n, str) and n.strip() for n",
+        "all(isinstance(n, str) for n"
+      ]
+    ],
+    "expect": [
+      "⭐ #619: each malformed record is a problem of its own — wrong keys, schema, range, types, names"
+    ]
+  },
+  {
+    "name": "#619: no record at all is not a problem",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if not records:\n        problems.append",
+        "    if False:\n        problems.append"
+      ]
+    ],
+    "expect": [
+      "...no record at all is a problem, never 'no FLAKY'"
+    ]
+  },
+  {
+    "name": "#619: records that disagree on the total are accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if len(totals) > 1:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "...records that DISAGREE on the total are a problem — which shards exist is unknown"
+    ]
+  },
+  {
+    "name": "#619 (b): two records claiming one shard are accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        if rec[\"shard\"] in seen:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #619 (b): TWO records claiming one shard is a problem naming both — never one read over the other"
+    ]
+  },
+  {
+    "name": "#619: an incomplete shard is not a problem",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        if not rec[\"complete\"]:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #619: an INCOMPLETE shard is a problem, and its FLAKY names are STILL read"
+    ]
+  },
+  {
+    "name": "#619: an incomplete shard's FLAKY names are dropped",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "names.extend(n for n in rec[\"flaky\"] if n not in names)",
+        "names.extend(n for n in rec[\"flaky\"] if n not in names and rec[\"complete\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ #619: an INCOMPLETE shard is a problem, and its FLAKY names are STILL read"
+    ]
+  },
+  {
+    "name": "#619: a shard with no record is not a problem",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        if missing:\n            problems.append",
+        "        if False:\n            problems.append"
+      ]
+    ],
+    "expect": [
+      "⭐ #619: one shard of three with no record is a problem NAMING it — and the others' names are kept"
+    ]
+  },
+  {
+    "name": "#619: a FLAKY name in two shards is listed twice",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "names.extend(n for n in rec[\"flaky\"] if n not in names)\n    return names",
+        "names.extend(rec[\"flaky\"])\n    return names"
+      ]
+    ],
+    "expect": [
+      "⭐ #619: every shard's record present — the FLAKY names WHOLE, in SHARD order, each once; no problem"
+    ]
+  },
+  {
+    "name": "#619: the FLAKY names are listed in file order, not shard order",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    for _, rec in sorted(valid, key=lambda wr: (wr[1][\"shard\"], wr[0])):\n        names.extend",
+        "    for _, rec in valid:\n        names.extend"
+      ]
+    ],
+    "expect": [
+      "⭐ #619: every shard's record present — the FLAKY names WHOLE, in SHARD order, each once; no problem"
+    ]
+  },
+  {
+    "name": "#619 (b): only the top level of RECORD_DIR is read, not each artifact's subdirectory",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "root.rglob(\"*.json\")",
+        "root.glob(\"*.json\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #619 (b): `read_records` walks every artifact's SUBDIRECTORY, and reads only `*.json`"
+    ]
+  },
+  {
+    "name": "#619: a record that does not parse is skipped",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            records.append((where, f\"unreadable: {e}\"))",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "...a record that does not PARSE is a problem naming its file, and its shard is then missing"
+    ]
+  },
+  {
+    "name": "#619 (c): a pull request files like master",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if event == \"pull_request\":\n",
+        "    if event == \"pull_request_\":\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #619 (c): on a PULL REQUEST, valid records pass and NOTHING reaches GitHub — red sweep or green"
+    ]
+  },
+  {
+    "name": "#619 (c): a pull request's record problems are not red",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        if problems:\n            raise RuntimeError(f\"the shard records under RECORD_DIR {record_dir!r} are NOT VALID",
+        "        if False:\n            raise RuntimeError(f\"the shard records under RECORD_DIR {record_dir!r} are NOT VALID"
+      ]
+    ],
+    "expect": [
+      "⭐ #619 (c): on a PULL REQUEST a missing record, or none, is RED naming it — still with no gh call"
     ]
   }
 ]

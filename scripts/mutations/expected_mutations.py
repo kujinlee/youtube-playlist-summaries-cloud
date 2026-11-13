@@ -936,7 +936,10 @@ EXPECTED_MUTATIONS = {
     # before the re-run, the unmutated re-run, the unseeded re-run. Each verified red on a temp copy via its case.
     # ⟳ 2026-11-11 backlog #495 r2 fold (Codex 1): 319 -> 320 — the re-run snapshot preserving symlinks again (an
     # absolute link into the tree shares the first run's count). Verified red via its case on a temp copy.
-    "scripts/check-plan-code.py": 320,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-13 backlog #619 R1: 320 -> 328 — the shard RECORD: its shard not the one sliced by, a not-measured
+    # run recorded complete, a truthy non-True flaky counted, a failed write left green, its directory not made, no
+    # record built for --record, and --record accepted without --mutate or with --only.
+    "scripts/check-plan-code.py": 328,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -1628,7 +1631,14 @@ EXPECTED_MUTATIONS = {
     # ⟳ 20 -> 23, backlog #495 r3 fold (Claude M1): one missing shard file discards the present files' names, the
     # raise runs before the filing, and "no FLAKY mutation" printed for unread shards. Five entries re-bound to the
     # split read/raise (the filing call, the red-alert order, the unset guard, the missing raise, the shard loop).
-    "scripts/sweep-red-alert.py": 39,
+    # ⟳ 39 -> 33, backlog #619 R1 (architecture review 2026-11-13, #629): the log grep, the per-job-index shard files
+    # and `ci_flaky_contract` RETIRED with their 24 entries (dedupe, one file read, a missing shard file, shard_count
+    # x3, flaky_names x2, the contract x16). 18 added for the records: an extra
+    # key, another schema, a bool as an int, shard 0, a non-bool `complete`, an empty name, no record, totals that
+    # disagree, two records for one shard, an incomplete shard not a problem or its names dropped, a missing shard,
+    # a name listed twice, file order, the top level only, an unparseable record skipped, and a pull request that
+    # files or is not red. Five entries re-bound: the filing order, the unset guard (now RECORD_DIR), the three M1.
+    "scripts/sweep-red-alert.py": 33,
     # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
     # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which
