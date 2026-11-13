@@ -4,7 +4,7 @@
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
     python3 scripts/regen-pages.py --page backlog-table    # one page (the edit hooks, the Refresh button)
-    python3 scripts/regen-pages.py --self-test             # 114 cases
+    python3 scripts/regen-pages.py --self-test             # 115 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —
@@ -1593,8 +1593,10 @@ def _self_test_cases() -> int:
          (said5, sh("rev-parse", "HEAD", cwd=serve), (serve / "page.txt").read_text(), untouched()),
          (f"↻ serve copy moved to origin/master {v3[:12]}", v3, "v3\n", True))
     case("#627: a serve copy that could NOT be moved is SAID, never raised, and names why",
-         ("NOT moved" in (bad5 or ""), "disk full" in (bad5 or ""), serve_copy_line(tmp / "no-such-tree", v3, copy=serve)),
-         (True, True, None))
+         ("NOT moved" in (bad5 or ""), "disk full" in (bad5 or ""),
+          serve_copy_line(tmp / "no-such-tree", v3, copy=tmp / "never-made" / "master"),
+          os.path.lexists(tmp / "never-made")),
+         (True, True, None, False))
     move_serve_copy(real_main, v2, serve)
     at_v2 = (sh("rev-parse", "HEAD", cwd=serve), (serve / "page.txt").read_text())
     got_r = refresh_serve_copy(real_main, serve, wait=5)
@@ -1608,6 +1610,22 @@ def _self_test_cases() -> int:
     case("⛔ #627: the serve copy is a `--shared` clone of the MAIN checkout — its objects come through alternates",
          (serve / ".git" / "objects" / "info" / "alternates").read_text().strip(),
          str(pathlib.Path(os.path.realpath(real_main)) / ".git" / "objects"))
+    # A SECOND copy, from a DIFFERENT main, through a recording git: the copy, main and git given are the ones
+    # used (fixture-variation: each parameter at two distinct values), and the first copy is not touched.
+    other_copy, other_calls = tmp / "serve-other" / "master", []
+
+    def rec_git(args, cwd, timeout=GIT_TIMEOUT):
+        other_calls.append(args[0])
+        return _git(args, cwd, timeout)
+    move_serve_copy(seed, v2, other_copy, git=rec_git)
+    at_other = (sh("rev-parse", "HEAD", cwd=other_copy),
+                (other_copy / ".git" / "objects" / "info" / "alternates").read_text().strip(),
+                other_calls[:1], sh("rev-parse", "HEAD", cwd=serve))
+    got_other = refresh_serve_copy(real_main, other_copy, wait=5)
+    case("#627: the copy, main and git each come from the caller — a second copy cloned from another main, "
+         "then refreshed, moves only itself",
+         (at_other, got_other, sh("rev-parse", "HEAD", cwd=other_copy), sh("rev-parse", "HEAD", cwd=serve)),
+         ((v2, str(pathlib.Path(os.path.realpath(seed))) + "/.git/objects", ["clone"], v3), v3, v3, v3))
     # A recording git that refuses: the case can NEVER reach the real repository, even under a mutant that
     # removes the refusal (one did, and its `fetch_master` ran in the real main checkout — PR for #627).
     real_calls: list = []

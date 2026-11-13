@@ -20510,5 +20510,5 @@ older, master's page is shown under a yellow bar that links your edits. Every pa
 Backlog #627, branch `627-serve-master`. The serve copy is a `git clone --shared` moved by `regen-pages.py`
 (`move_serve_copy`, `refresh_serve_copy`, and `serve_copy_line` on every fresh rebuild, the on-merge hook's among
 them). The server fetches at most once a minute on page load (`CopyFetcher`, waiting at most 2 s); a failed fetch
-is named in the footer. explainer-serve 257 self-test cases (18 new), regen-pages 114 (7 new); 14 + 4 new
+is named in the footer. explainer-serve 260 self-test cases (21 new), regen-pages 115 (8 new); 14 + 4 new
 mutations. Takes effect on the owner's port once the running server is restarted.

@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 257 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 260 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -1963,6 +1963,25 @@ def _serve_copy_cases(case) -> None:
     case("#627 source_label: a note (a failed fetch) is appended, never dropped",
          lambda: (source_label("master", _S, _H, note="⚠ X"), source_label("master", _S, _H))
          == (f"master @ {_S[:12]} · ⚠ X", f"master @ {_S[:12]}"))
+    _S2, _H2 = "c" * 40, "d" * 40
+    case("#627 source_label: OTHER shas are the ones named; `standing` turns an unmerged page into a generated one",
+         lambda: (source_label("overlay", _S2, _H2), source_label("asked-local", _S2, _H2),
+                  source_label("local", _S2, _H2, standing=True), source_label("local", _S2, _H2, standing=False))
+         == (f"local edits on {_S2[:12]}",
+             f"local edits on {_H2[:12]} — NOT master's page (its base is not master's copy)",
+             "generated from origin/master — its build commit is in the page's bar",
+             f"local edits on {_H2[:12]} — not on master"))
+
+    def _copy_heads():
+        with _tf.TemporaryDirectory() as td:
+            t = pathlib.Path(td)
+            (t / "detached" / ".git").mkdir(parents=True)
+            (t / "detached" / ".git" / "HEAD").write_text(_S2 + "\n")
+            (t / "on-branch" / ".git").mkdir(parents=True)
+            (t / "on-branch" / ".git" / "HEAD").write_text("ref: refs/heads/master\n")
+            return [copy_head(t / d) for d in ("detached", "on-branch", "absent")]
+    case("#627 copy_head: a detached copy's sha; None for a copy on a branch, or no copy at all",
+         lambda: _copy_heads() == [_S2, None, None])
 
     # ── CopyFetcher: at most one fetch per window, a bounded wait, a failure SAID ──
     def _rate():
@@ -2119,6 +2138,15 @@ def _serve_copy_cases(case) -> None:
     case("#627: a server whose root is in a LINKED worktree serves it as is, labelled PREVIEW",
          lambda: world(lambda **w: _preview(**w)) == (("preview", PREVIEW_LABEL, "<p>agent draft</p>"), "master"))
 
+    def _setup_names_its_copy(t, root, copy, sync, **_):
+        sync()
+        other = t / "elsewhere" / "master"
+        a, b = source_setup(root, copy), source_setup(root, other)
+        sa, sb = served_page("/2026-01-01-topic-a.html", a), served_page("/2026-01-01-topic-a.html", b)
+        return (a.copy == copy, b.copy == other, sa.kind, sb.kind, "NO MASTER COPY" in sb.label)
+    case("#627 source_setup: the copy it is given is the one served from — another path, never made, has no copy",
+         lambda: world(lambda **w: _setup_names_its_copy(**w)) == (True, True, "master", "local", True))
+
     def _failed_fetch_keeps_copy(origin, copy, sync, merge, setup, **_):
         first = sync()
         merge("2026-01-02-topic-b.html", "<p>B</p>", "b")
@@ -2158,14 +2186,16 @@ def _self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
     import fixture_git
     with fixture_git.isolated():
-        # ⛔ backlog #627: no case may fetch into the REAL repository — regen-pages' own suite refusal, armed
-        # here, so a case that reaches `serve_state` with the real ROOT gets CANNOT RUN, never a fetch.
-        _regen()._IN_SUITE = True
-        globals()["_IN_SUITE"] = True
         return _self_test_body()
 
 
 def _self_test_body() -> int:
+    # ⛔ backlog #627: no case may fetch into the REAL repository — regen-pages' own suite refusal, armed
+    # here, so a case that reaches `serve_state` with the real ROOT gets CANNOT RUN, never a fetch. Armed in
+    # the BODY, not the `with` block: check-fixture-git-isolation reads every function that block calls as the
+    # isolated suite, and `_regen` is also the server's runtime import.
+    _regen()._IN_SUITE = True
+    globals()["_IN_SUITE"] = True
     import tempfile
     ok = 0
     cases: list[tuple[str, Callable[[], object]]] = []
