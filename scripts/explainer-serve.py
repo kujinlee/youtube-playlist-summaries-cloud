@@ -2581,7 +2581,10 @@ def _serve_copy_cases(case) -> None:
         a.symlink_to(t / "outside.html")
         (root / "2026-01-04-brief-x.html").symlink_to(t / "outside.html")
         da, dn = decide("/2026-01-01-topic-a.html", setup()), decide("/2026-01-04-brief-x.html", setup())
-        return (da.verdict, da.served.kind, da.served.body.decode()), (dn.verdict, dn.served)
+        # `served` may be None (a mutant that refuses before master): a VALUE, never an AttributeError, so the case
+        # fails by its own name and `check-plan-code` can attribute the kill to it (#627 CI attribution fix).
+        return ((da.verdict, da.served.kind if da.served else None, da.served.body.decode() if da.served else None),
+                (dn.verdict, dn.served))
     case("⭐ #627 r1 (Codex 4): a local LINK over a page master has serves master's; one master lacks stays refused",
          lambda: world(lambda **w: _local_link(**w)) == (("serve", "master", "<p>A v1</p>"), ("refused", None)))
 
@@ -2810,7 +2813,10 @@ def _serve_copy_cases(case) -> None:
             _STATE["fetcher"] = CopyFetcher(lambda: gate.wait(10) and sha, every=60)
             out["pending"] = _drive("/2026-01-02-topic-b")[1]
             gate.set()
-            _STATE["fetcher"].thread.join(5)
+            # a mutant that never pokes leaves `thread` None: that is the case FAILING, not a crash — a raise would put
+            # ` — AttributeError…` after the case name and `check-plan-code` could not attribute the kill to it.
+            if _STATE["fetcher"].thread is not None:
+                _STATE["fetcher"].thread.join(5)
             return out, rev1, rev2, rev3, sha
         finally:
             globals()["ROOT"], globals()["FETCH_WAIT"] = real[0], real[3]
