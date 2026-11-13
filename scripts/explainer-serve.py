@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 239 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 256 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -101,9 +101,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import page_chrome  # noqa: E402
 import page_markup  # noqa: E402
 
-PORT = 7391
+# backlog #627: an agent's PREVIEW server serves its own worktree's pages on a port of its own —
+# `EXPLAINER_SERVE_ROOT=<worktree>/docs/explainers EXPLAINER_SERVE_PORT=7419 python3 scripts/explainer-serve.py`.
+# Unset, both are what they always were: port 7391 and `~/explainers` (the main checkout's pages).
+PORT = int(os.environ.get("EXPLAINER_SERVE_PORT", "").strip() or 7391)
 HOST = "127.0.0.1"
-ROOT = pathlib.Path.home() / "explainers"
+ROOT = (pathlib.Path(os.environ["EXPLAINER_SERVE_ROOT"].strip()).expanduser()
+        if os.environ.get("EXPLAINER_SERVE_ROOT", "").strip() else pathlib.Path.home() / "explainers")
 PIDFILE = ROOT / ".serve.pid"
 QUESTIONS = ROOT / "questions.md"
 MAX_BODY = 64 * 1024
@@ -1187,6 +1191,270 @@ def revision(p: pathlib.Path) -> str:
     return f"{st.st_mtime_ns}:{st.st_size}"
 
 
+# ── backlog #627: WHICH COPY a page is served from, and the footer that SAYS so ─────────────────────────────────
+#
+# WHY. `~/explainers` is the main checkout's `docs/explainers/`, and the main checkout is behind origin/master
+# and holds uncommitted edits — so a page merged in PR #563 never showed on the owner's server. A TRACKED page
+# is now served from the SERVE COPY, a standing `git clone --shared` that follows origin/master
+# (`regen-pages.py` → `move_serve_copy`, the one mechanism that materialises master; this file never clones).
+# It is moved by every `fresh` rebuild — the on-merge hook among them — and by `CopyFetcher`, a fetch at most
+# once every FETCH_EVERY s, started by a page load and never holding it past FETCH_WAIT s.
+#
+# THE RULE, `choose_source` — for one page, given the working-tree bytes (`local`), the bytes committed at the
+# main checkout's HEAD (`base`) and master's bytes (`master`):
+#   master is None (not on master, or no copy yet)  -> "local"       the working tree, as before
+#   local absent, == master, or == base (unedited)  -> "master"      master's page
+#   local edited AND base == master                 -> "overlay"     the edit, on top of master
+#   local edited AND base != master                 -> "master+bar"  master's page, a YELLOW BAR linking the edit
+# and every HTML page gets a footer naming its source (`source_label`): `master @ <sha>`, `local edits on <sha>`,
+# or `PREVIEW — agent worktree, not merged` (a server whose root is in a LINKED worktree serves that tree as is).
+# ⚠ A failed fetch is never silent: the label carries `⚠ last fetch FAILED …` until a fetch succeeds.
+#
+# ⛔ OPEN SEAM — backlog #625. Ask answers are written INTO a page in the main checkout's working tree, i.e.
+# they are local edits. Once that page's base differs from master's copy, rule "master+bar" HIDES them behind
+# the yellow bar. #625 needs a commit path for answers (so the base catches up), or an exemption decided here.
+FETCH_EVERY = 60.0   # seconds between two fetches of origin/master, at most one per window
+FETCH_WAIT = 2.0     # seconds a page load waits for a fetch it started; past it, the last copy is served
+PREVIEW_LABEL = "PREVIEW — agent worktree, not merged"
+LOCAL_QUERY = "source=local"   # `?source=local` serves the working tree's page, labelled, under the yellow bar
+_SHA40 = re.compile(r"[0-9a-f]{40}")
+
+
+def choose_source(local: bytes | None, base: bytes | None, master: bytes | None) -> str:
+    """PURE. Which copy of ONE page is served: "local" | "master" | "overlay" | "master+bar" (rule above)."""
+    if master is None:
+        return "local"
+    if local is None or local == master or local == base:
+        return "master"
+    if base == master:
+        return "overlay"
+    return "master+bar"
+
+
+def source_label(kind: str, master_sha: str | None, head_sha: str | None, *, standing: bool = False,
+                 note: str = "") -> str:
+    """PURE. The footer's source line for a page served as `kind` (`choose_source`, or "preview", or "asked-local"
+    for `?source=local`). `note` (a failed fetch, a missing copy) is appended, never dropped."""
+    m, h = (master_sha or "?")[:12], (head_sha or "?")[:12]
+    if kind == "preview":
+        label = PREVIEW_LABEL
+    elif kind in ("master", "master+bar"):
+        label = f"master @ {m}"
+    elif kind == "overlay":
+        label = f"local edits on {m}"
+    elif kind == "asked-local":
+        label = f"local edits on {h} — NOT master's page (its base is not master's copy)"
+    elif standing:
+        # A generated page: git-ignored, so never on master, and built from a fresh origin/master by regen-pages.
+        label = "generated from origin/master — its build commit is in the page's bar"
+    else:
+        label = f"local edits on {h} — not on master"
+    return label + (f" · {note}" if note else "")
+
+
+def source_footer(label: str) -> str:
+    """The fixed footer every served HTML page carries (backlog #627's FAILS-IF: a page that names no source)."""
+    return ('<div id="ex-source" style="position:fixed;right:.5rem;bottom:.4rem;z-index:2147483647;'
+            'font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;padding:.15rem .5rem;border-radius:4px;'
+            'background:#1f2937;color:#f9fafb;opacity:.92">Source: ' + page_markup.escape(label) + "</div>")
+
+
+def local_bar(href: str) -> str:
+    """The YELLOW BAR over master's page when the working tree holds an edit whose base is not master's copy."""
+    return ('<div id="ex-local-bar" style="position:fixed;left:0;right:0;top:0;z-index:2147483647;'
+            'background:#fde047;color:#111;font:14px/1.4 ui-sans-serif,system-ui,sans-serif;padding:.35rem .8rem">'
+            "This page has LOCAL EDITS that are not shown: their base is not master's copy, so master's page is "
+            f'served. <a style="color:#111;font-weight:700" href="{page_markup.escape(href)}">See the local edits</a>'
+            "</div>")
+
+
+class Served(NamedTuple):
+    """One page's serving decision: the file whose bytes are sent, how it was chosen, and the footer line."""
+    path: pathlib.Path
+    kind: str
+    label: str
+    bar: bool          # True: master's page is served OVER local edits — the yellow bar is shown
+
+
+class SourceSetup(NamedTuple):
+    """Where a served root's pages come from, observed once. `checkout`: the git top level holding the root;
+    `prefix`: the root's path inside it (`docs/explainers/`); `copy`: the serve copy's top level."""
+    mode: str                          # "main" | "preview" (the root is in a LINKED worktree)
+    root: pathlib.Path
+    checkout: pathlib.Path | None
+    prefix: str
+    copy: pathlib.Path
+
+
+def _git_bytes(args: list[str], cwd: pathlib.Path) -> tuple[int, bytes]:
+    """One read-only git call: (rc, stdout bytes); 127 when git cannot be run, 124 on a 10 s timeout."""
+    try:
+        r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return 127, b""
+    return r.returncode, r.stdout
+
+
+def _git_line(args: list[str], cwd: pathlib.Path) -> str | None:
+    rc, out = _git_bytes(args, cwd)
+    return out.decode("utf-8", "replace").strip() if rc == 0 else None
+
+
+_REGEN_MOD = None
+
+
+def _regen():
+    """`regen-pages.py`, loaded once: the serve copy's mechanism lives there, never a second copy here."""
+    global _REGEN_MOD
+    if _REGEN_MOD is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_regen_pages_for_serve", SCRIPTS / REGEN_RUNNER)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        _REGEN_MOD = mod
+    return _REGEN_MOD
+
+
+def source_setup(root: pathlib.Path, copy: pathlib.Path) -> SourceSetup:
+    """Observe where `root` lives: preview when its checkout is a LINKED worktree (its git dir is not the common
+    one); main otherwise — including when git cannot say, which then serves the working tree, labelled."""
+    base = resolve_or_none(root) or root
+    top = _git_line(["rev-parse", "--show-toplevel"], base) if base.is_dir() else None
+    if top is None:
+        return SourceSetup("main", root, None, "", copy)
+    gd = _git_line(["rev-parse", "--path-format=absolute", "--absolute-git-dir"], base)
+    common = _git_line(["rev-parse", "--path-format=absolute", "--git-common-dir"], base)
+    prefix = _git_line(["rev-parse", "--show-prefix"], base) or ""
+    mode = "preview" if gd and common and os.path.realpath(gd) != os.path.realpath(common) else "main"
+    return SourceSetup(mode, root, pathlib.Path(top), prefix, copy)
+
+
+def copy_head(copy: pathlib.Path) -> str | None:
+    """The serve copy's HEAD sha, read from its `.git/HEAD` (it is always detached), or None."""
+    try:
+        head = (copy / ".git" / "HEAD").read_text().strip()
+    except OSError:
+        return None
+    return head if _SHA40.fullmatch(head) else None
+
+
+class CopyFetcher:
+    """At most ONE fetch of origin/master per `every` s, run off the request thread (backlog #627).
+
+    `poke(wait)` starts a fetch when one is due and none is running, then waits at most `wait` s for it — so a
+    page load is never held past that bound, and the last copy is served meanwhile. A failed fetch is RECORDED
+    (`error`) and named in every label (`note`) until a fetch succeeds; it is never retried inside the window."""
+
+    def __init__(self, sync: Callable[[], str], every: float = FETCH_EVERY, clock: Callable[[], float] = time.monotonic):
+        self.sync, self.every, self.clock = sync, every, clock
+        self.lock = threading.Lock()
+        self.last_try: float | None = None
+        self.thread: threading.Thread | None = None
+        self.sha: str | None = None
+        self.error: tuple[str, str] | None = None
+
+    def due(self) -> bool:
+        return self.last_try is None or self.clock() - self.last_try >= self.every
+
+    def poke(self, wait: float) -> bool:
+        """True when this call STARTED a fetch."""
+        with self.lock:
+            running = self.thread is not None and self.thread.is_alive()
+            started = not running and self.due()
+            if started:
+                self.last_try = self.clock()
+                self.thread = threading.Thread(target=self._run, daemon=True)
+                self.thread.start()
+            t = self.thread
+        if t is not None and wait > 0:
+            t.join(wait)
+        return started
+
+    def _run(self) -> None:
+        try:
+            sha = self.sync()
+        except Exception as exc:                      # noqa: BLE001 - recorded and SAID on every page
+            self.error = (_dt.datetime.now().strftime("%H:%M:%S"), " ".join(f"{type(exc).__name__}: {exc}".split())[:200])
+        else:
+            self.sha, self.error = sha, None
+
+    def note(self) -> str:
+        if self.error is None:
+            return ""
+        when, why = self.error
+        return f"⚠ last fetch of origin/master FAILED at {when} ({why}) — serving the last copy"
+
+
+def served_page(url_path: str, setup: SourceSetup, *, note: str = "", want_local: bool = False) -> Served | None:
+    """THE serving decision for one request (backlog #627) — the GET and `/_rev` both call it, so a page and its
+    live-reload revision can never disagree about which file they mean. None when neither copy has the page."""
+    local = resolve_page(url_path, setup.root)
+    if setup.mode == "preview" or setup.checkout is None:
+        if local is None:
+            return None
+        if setup.mode == "preview":
+            return Served(local, "preview", source_label("preview", None, None), False)
+        return Served(local, "local", source_label("local", None, None, standing=_generated(local),
+                                                   note=note or "⚠ NO MASTER COPY: the served root is in no git checkout"), False)
+    copy_root = setup.copy / setup.prefix
+    master_sha = copy_head(setup.copy)
+    master = resolve_page(url_path, copy_root) if master_sha and copy_root.is_dir() else None
+    if local is None and master is None:
+        return None
+    if master_sha is None:
+        note = note or "⚠ NO MASTER COPY yet (the first fetch has not landed) — the working tree is served"
+    head_sha = _git_line(["rev-parse", "HEAD"], setup.checkout)
+    if want_local and local is not None:
+        return Served(local, "asked-local", source_label("asked-local", master_sha, head_sha, note=note), False)
+    if local is not None:
+        rel = local.relative_to(resolve_or_none(setup.root) or setup.root).as_posix()
+    else:
+        rel = master.relative_to(resolve_or_none(copy_root) or copy_root).as_posix()
+    rc, base = _git_bytes(["cat-file", "blob", f"HEAD:{setup.prefix}{rel}"], setup.checkout)
+    kind = choose_source(local.read_bytes() if local is not None else None, base if rc == 0 else None,
+                         master.read_bytes() if master is not None else None)
+    path = local if kind in ("local", "overlay") else master
+    return Served(path, kind, source_label(kind, master_sha, head_sha, standing=_generated(path), note=note),
+                  kind == "master+bar")
+
+
+def _generated(p: pathlib.Path) -> bool:
+    """A page a generator in REGENERABLE writes (git-ignored, built from a fresh origin/master by regen-pages)."""
+    return p.name.removesuffix(".html") in REGENERABLE
+
+
+_STATE: dict[str, object] = {}
+_STATE_GUARD = threading.Lock()
+
+
+def serve_state() -> tuple[SourceSetup, CopyFetcher | None]:
+    """This server's SourceSetup and fetcher, made on first use. A preview server has no fetcher: it serves its
+    own worktree as is. The fetcher's sync is `regen-pages.refresh_serve_copy` on the root's own checkout."""
+    with _STATE_GUARD:
+        # Keyed by ROOT: observed once per served root (the suite swaps ROOT to temp roots).
+        if _STATE.get("root") != ROOT:
+            _STATE["root"] = ROOT
+            setup = source_setup(ROOT, _regen().serve_copy_path())
+            _STATE["setup"] = setup
+            _STATE["fetcher"] = (CopyFetcher(lambda: _regen().refresh_serve_copy(setup.checkout))
+                                 if setup.mode == "main" and setup.checkout is not None else None)
+        return _STATE["setup"], _STATE["fetcher"]  # type: ignore[return-value]
+
+
+def page_body(served: Served, url_path: str) -> bytes:
+    """The bytes sent for a served page: the file, then — for HTML — the yellow bar when master's page hides local
+    edits, the source footer, and the live-reload client. All APPENDED, so a page lacking `</body>` gets them."""
+    body = served.path.read_bytes()
+    if served.path.suffix.lower() != ".html":
+        return body
+    extra = ""
+    if served.bar:
+        extra += local_bar(url_path.split("?", 1)[0] + "?" + LOCAL_QUERY)
+    extra += source_footer(served.label)
+    return body + extra.encode() + RELOAD_JS.encode()
+
+
 # The live-reload client. INJECTED BY THE SERVER at send time, never written into the page.
 #
 # WHY INJECTED RATHER THAN AUTHORED INTO THE HTML. The question tray is lifted verbatim from one
@@ -1413,10 +1681,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # report on a file this server would already serve (self-tested: rejects `/secret.env`
             # and `/../../etc/hosts` the same as `safe_path` does).
             qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
-            target = resolve_page((qs.get("p") or [""])[0], ROOT)
-            if target is None or not target.is_file():
+            # ⟳ backlog #627: through `served_page`, the GET's own decision, so a copy that moved (or a page that
+            # flipped between master's and the local one) changes the revision and reloads an open tab. The poll
+            # also POKES the fetcher without waiting, so an open tab sees a merge within FETCH_EVERY s.
+            setup, fetcher = serve_state()
+            if fetcher is not None:
+                fetcher.poke(0)
+            served = served_page((qs.get("p") or [""])[0], setup, note=fetcher.note() if fetcher else "")
+            if served is None or not served.path.is_file():
                 return self._send(404, b"no such page", "text/plain; charset=utf-8")
-            return self._send(200, revision(target).encode(), "text/plain; charset=utf-8")
+            return self._send(200, f"{revision(served.path)}:{served.kind}".encode(), "text/plain; charset=utf-8")
         if path == "/_stale":
             # "Is this page BEHIND its source?" — a DIFFERENT question from `/_rev`'s "has this
             # page changed?", which is why it is a different endpoint rather than a fourth field
@@ -1469,16 +1743,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, text.encode(), "text/plain; charset=utf-8")
             rel = str(target.relative_to(resolve_or_none(root) or root))
             return self._send(200, source_shell(rel, text).encode(), "text/html; charset=utf-8")
-        resolved = resolve_page(path, ROOT)
-        if resolved is None or not resolved.is_file():
+        # ⟳ backlog #627: master's copy, the working tree, or master's page under a yellow bar — `served_page`;
+        # a due fetch is started first and waited on for at most FETCH_WAIT s.
+        setup, fetcher = serve_state()
+        if fetcher is not None:
+            fetcher.poke(FETCH_WAIT)
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        served = served_page(path, setup, note=fetcher.note() if fetcher else "",
+                             want_local=LOCAL_QUERY in query.split("&"))
+        if served is None or not served.path.is_file():
             return self._send(404, b"not found", "text/plain; charset=utf-8")
+        resolved = served.path
         ctype = {".html": "text/html; charset=utf-8", ".md": "text/markdown; charset=utf-8",
                  ".css": "text/css", ".js": "text/javascript",
                  ".svg": "image/svg+xml", ".png": "image/png"}[resolved.suffix.lower()]
-        body = resolved.read_bytes()
-        if resolved.suffix.lower() == ".html":
-            body += RELOAD_JS.encode()   # appended, so a page that lacks </body> still gets it
-        return self._send(200, body, ctype)
+        return self._send(200, page_body(served, path), ctype)
 
     def _regenerate(self, payload: dict) -> None:
         """Rebuild one derived page. Backlog #77.
@@ -1631,10 +1910,232 @@ def status() -> int:
 
 # ── self-test ────────────────────────────────────────────────────────────────────────────────────
 
+def _serve_copy_cases(case) -> None:
+    """backlog #627's cases: which copy a page is served from, the footer naming it, the yellow bar, the fetch's
+    rate limit and bound, and a failed fetch SAID. Real git, in temp repositories only — `origin` is a bare repo
+    on disk, so no network is reached and no port is bound. Every rule is asserted at two distinct inputs."""
+    import tempfile as _tf
+    G = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "init.defaultBranch=master",
+         "-c", "advice.detachedHead=false"]
+
+    def git(cwd, *a):
+        r = subprocess.run([*G, *a], cwd=cwd, capture_output=True, text=True, timeout=30)
+        if r.returncode:
+            raise RuntimeError(f"fixture git {a} failed: {r.stderr.strip()[:200]}")
+        return r.stdout.strip()
+
+    def _real_fetch_refused():
+        try:
+            _regen().refresh_serve_copy(REPO)
+        except _regen().CannotRun as exc:
+            return "never fetches" in str(exc)
+        return False
+    case("⛔ #627: inside the suite the server's fetch REFUSES the real repository (no case fetches into it)",
+         _real_fetch_refused)
+
+    # ── choose_source: the rule, each outcome against an ADJACENT input that must not give it ──
+    case("#627 choose_source: a page master does not have is the working tree's",
+         lambda: (choose_source(b"L", b"L", None), choose_source(b"L", b"L", b"L")) == ("local", "master"))
+    case("#627 choose_source: no local file, or one equal to master's, is master's page",
+         lambda: (choose_source(None, None, b"M"), choose_source(b"M", b"B", b"M"), choose_source(b"X", b"B", b"M"))
+         == ("master", "master", "master+bar"))
+    case("#627 choose_source: an UNEDITED page (local == base) in a checkout behind master is master's, no bar",
+         lambda: (choose_source(b"B", b"B", b"M"), choose_source(b"E", b"B", b"M")) == ("master", "master+bar"))
+    case("#627 choose_source: an edit is overlaid ONLY when its base equals master's copy",
+         lambda: (choose_source(b"E", b"M", b"M"), choose_source(b"E", b"B", b"M")) == ("overlay", "master+bar"))
+
+    # ── source_label: each source named, distinctly ──
+    _S, _H = "a" * 40, "b" * 40
+    case("#627 source_label: master, overlay, preview and an unmerged page each name their source",
+         lambda: [source_label(k, _S, _H) for k in ("master", "overlay", "preview", "local")]
+         == [f"master @ {_S[:12]}", f"local edits on {_S[:12]}", PREVIEW_LABEL,
+             f"local edits on {_H[:12]} — not on master"])
+    case("#627 source_label: a note (a failed fetch) is appended, never dropped",
+         lambda: (source_label("master", _S, _H, note="⚠ X"), source_label("master", _S, _H))
+         == (f"master @ {_S[:12]} · ⚠ X", f"master @ {_S[:12]}"))
+
+    # ── CopyFetcher: at most one fetch per window, a bounded wait, a failure SAID ──
+    def _rate():
+        now, calls = [0.0], []
+        f = CopyFetcher(lambda: calls.append(1) or "c" * 40, every=60, clock=lambda: now[0])
+        out = [f.poke(5)]
+        now[0] = 59.0
+        out.append(f.poke(5))
+        now[0] = 60.0
+        out.append(f.poke(5))
+        return out, len(calls)
+    case("#627 fetcher: at most ONE fetch per minute — a second load inside the window fetches nothing",
+         lambda: _rate() == ([True, False, True], 2))
+
+    def _bounded():
+        gate = threading.Event()
+        f = CopyFetcher(lambda: gate.wait(10) and "d" * 40, every=60)
+        t0 = time.monotonic()
+        started = f.poke(0.2)
+        took = time.monotonic() - t0
+        gate.set()
+        f.thread.join(5)
+        return started, took < 2.0, f.sha == "d" * 40
+    case("#627 fetcher: a slow fetch never holds the page load past its bound, and still lands",
+         lambda: _bounded() == (True, True, True))
+
+    def _fails():
+        now, boom = [0.0], [True]
+
+        def sync():
+            if boom[0]:
+                raise RuntimeError("remote unreachable")
+            return "e" * 40
+        f = CopyFetcher(sync, every=60, clock=lambda: now[0])
+        f.poke(5)
+        said = f.note()
+        boom[0], now[0] = False, 61.0
+        f.poke(5)
+        return ("FAILED" in said and "remote unreachable" in said and "last copy" in said), f.note()
+    case("#627 fetcher: a FAILED fetch is said on every page until a fetch succeeds",
+         lambda: _fails() == (True, ""))
+
+    # ── end to end, real git: a bare origin, a main checkout behind it, the serve copy ──
+    def world(fn):
+        with _tf.TemporaryDirectory() as td:
+            t = pathlib.Path(os.path.realpath(td))
+            origin, work, main = t / "origin.git", t / "work", t / "main"
+            git(t, "init", "--quiet", "--bare", str(origin))
+            git(t, "clone", "--quiet", str(origin), str(work))
+            (work / "docs" / "explainers").mkdir(parents=True)
+            (work / "docs" / "explainers" / "2026-01-01-topic-a.html").write_text("<p>A v1</p>")
+            git(work, "add", "-A")
+            git(work, "commit", "--quiet", "-m", "a v1")
+            git(work, "push", "--quiet", "origin", "HEAD:master")
+            git(t, "clone", "--quiet", str(origin), str(main))
+            copy = t / "cache" / "master"
+            regen = _regen()
+            root = main / "docs" / "explainers"
+
+            def merge(name, text, msg):
+                (work / "docs" / "explainers" / name).write_text(text)
+                git(work, "add", "-A")
+                git(work, "commit", "--quiet", "-m", msg)
+                git(work, "push", "--quiet", "origin", "HEAD:master")
+                return git(work, "rev-parse", "HEAD")
+
+            def sync():
+                return regen.refresh_serve_copy(main, copy)
+            return fn(t=t, origin=origin, main=main, root=root, copy=copy, merge=merge, sync=sync,
+                      setup=lambda: source_setup(root, copy))
+
+    def _merged_within_a_minute(merge, sync, setup, **_):
+        now = [0.0]
+        f = CopyFetcher(sync, every=FETCH_EVERY, clock=lambda: now[0])
+        f.poke(30)
+        sha = merge("2026-01-02-topic-b.html", "<p>B merged</p>", "b")
+        now[0] = FETCH_EVERY - 1
+        f.poke(30)
+        before = served_page("/2026-01-02-topic-b.html", setup())
+        now[0] = FETCH_EVERY
+        f.poke(30)
+        after = served_page("/2026-01-02-topic-b", setup())
+        return (before is None, after is not None and after.path.read_text() == "<p>B merged</p>",
+                after is not None and after.label == f"master @ {sha[:12]}")
+    case("⭐ #627 FAILS-IF: a page merged to origin/master is served from the next fetch, within a minute",
+         lambda: world(lambda **w: _merged_within_a_minute(**w)) == (True, True, True))
+
+    def _labels(root, main, merge, sync, setup, **_):
+        sync()
+        page = root / "2026-01-01-topic-a.html"
+        clean = served_page("/2026-01-01-topic-a.html", setup())
+        clean_text = clean.path.read_text()           # read NOW: the copy moves below
+        page.write_text("<p>A edited on master's base</p>")
+        overlay = served_page("/2026-01-01-topic-a.html", setup())
+        sha2 = merge("2026-01-01-topic-a.html", "<p>A v2</p>", "a v2")
+        sync()                                        # master moves on; the edit's base is now behind
+        barred = served_page("/2026-01-01-topic-a.html", setup())
+        asked = served_page("/2026-01-01-topic-a.html", setup(), want_local=True)
+        head = _git_line(["rev-parse", "HEAD"], main)
+        return [(clean.kind, clean.label, clean_text),
+                (overlay.kind, overlay.label, overlay.path.read_text()),
+                (barred.kind, barred.label, barred.path.read_text(), barred.bar),
+                (asked.kind, asked.path.read_text(), asked.label.startswith(f"local edits on {head[:12]}"))], sha2
+
+    def _labels_want(got):
+        rows, sha2 = got
+        return (rows[0][0] == "master" and rows[0][2] == "<p>A v1</p>" and rows[0][1].startswith("master @ ")
+                and rows[1][0] == "overlay" and rows[1][1].startswith("local edits on ")
+                and rows[1][2] == "<p>A edited on master's base</p>"
+                and rows[2] == ("master+bar", f"master @ {sha2[:12]}", "<p>A v2</p>", True)
+                and rows[3] == ("asked-local", "<p>A edited on master's base</p>", True))
+    case("#627: unedited → master @ sha; edit on master's base → overlaid; base behind master → master's page + bar",
+         lambda: _labels_want(world(lambda **w: _labels(**w))))
+
+    def _bar_html(root, sync, setup, merge, **_):
+        sync()
+        (root / "2026-01-01-topic-a.html").write_text("<p>edit</p>")
+        merge("2026-01-01-topic-a.html", "<p>A v2</p>", "a v2")
+        sync()
+        u = "/2026-01-01-topic-a.html"
+        barred = page_body(served_page(u, setup()), u).decode()
+        (root / "2026-01-01-topic-a.html").unlink()
+        plain = page_body(served_page(u, setup()), u).decode()
+        return ('id="ex-local-bar"' in barred and f"?{LOCAL_QUERY}" in barred,
+                'id="ex-local-bar"' in plain, 'id="ex-source"' in barred and 'id="ex-source"' in plain)
+    case("#627: the yellow bar (linking ?source=local) is on master's page ONLY over hidden local edits",
+         lambda: world(lambda **w: _bar_html(**w)) == (True, False, True))
+
+    def _every_page_footed(root, sync, setup, **_):
+        sync()
+        (root / "2026-01-03-brief-unmerged.html").write_text("<p>new</p>")
+        (root / "dashboard.html").write_text("<p>generated</p>")
+        (root / "x.css").write_text("p{}")
+        out = []
+        for u in ("/2026-01-01-topic-a.html", "/2026-01-03-brief-unmerged.html", "/dashboard"):
+            sp = served_page(u, setup())
+            out.append(page_body(sp, u).decode().count('id="ex-source"') == 1 and sp.label.strip() != "")
+        sp = served_page("/x.css", setup())
+        out.append("ex-source" in page_body(sp, "/x.css").decode())
+        labels = [served_page(u, setup()).label for u in ("/2026-01-03-brief-unmerged.html", "/dashboard")]
+        return (out, labels[0].startswith("local edits on ") and "not on master" in labels[0],
+                labels[1].startswith("generated from origin/master"))
+    case("⭐ #627 FAILS-IF: every served HTML page's footer names its source — master, unmerged, generated",
+         lambda: world(lambda **w: _every_page_footed(**w)) == ([True, True, True, False], True, True))
+
+    def _preview(t, main, root, copy, sync, **_):
+        sync()
+        wt = t / "wt"
+        git(main, "worktree", "add", "--quiet", "--detach", str(wt))
+        (wt / "docs" / "explainers" / "2026-01-01-topic-a.html").write_text("<p>agent draft</p>")
+        pv = served_page("/2026-01-01-topic-a.html", source_setup(wt / "docs" / "explainers", copy))
+        mn = served_page("/2026-01-01-topic-a.html", source_setup(root, copy))
+        return (pv.kind, pv.label, pv.path.read_text()), mn.kind
+    case("#627: a server whose root is in a LINKED worktree serves it as is, labelled PREVIEW",
+         lambda: world(lambda **w: _preview(**w)) == (("preview", PREVIEW_LABEL, "<p>agent draft</p>"), "master"))
+
+    def _failed_fetch_keeps_copy(origin, copy, sync, merge, setup, **_):
+        first = sync()
+        merge("2026-01-02-topic-b.html", "<p>B</p>", "b")
+        origin.rename(origin.with_name("gone.git"))
+        f = CopyFetcher(sync, every=60)
+        f.poke(30)
+        sp = served_page("/2026-01-01-topic-a.html", setup(), note=f.note())
+        return (copy_head(copy) == first, "FAILED" in sp.label and sp.label.startswith(f"master @ {first[:12]}"),
+                served_page("/2026-01-02-topic-b.html", setup()) is None)
+    case("#627: a FAILED fetch serves the LAST copy and the footer says so",
+         lambda: world(lambda **w: _failed_fetch_keeps_copy(**w)) == (True, True, True))
+
+    def _no_copy_said(setup, **_):
+        sp = served_page("/2026-01-01-topic-a.html", setup())
+        return sp.kind, "NO MASTER COPY" in sp.label
+    case("#627: before the first fetch lands, the working tree is served and the footer SAYS there is no copy",
+         lambda: world(lambda **w: _no_copy_said(**w)) == ("local", True))
+
+
+
 def _self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
     import fixture_git
     with fixture_git.isolated():
+        # ⛔ backlog #627: no case may fetch into the REAL repository — regen-pages' own suite refusal, armed
+        # here, so a case that reaches `serve_state` with the real ROOT gets CANNOT RUN, never a fetch.
+        _regen()._IN_SUITE = True
         return _self_test_body()
 
 
@@ -3486,6 +3987,8 @@ def _self_test_body() -> int:
         # silently satisfy a lower bound.
         case("the failure line is `[FAIL] ` at BOTH report sites — the shape check-plan-code parses",
              lambda: _runner_src().count('print(f"  [FAIL] ') == 2 and _BAD not in _runner_src())
+
+        _serve_copy_cases(case)   # backlog #627
 
         for name, fn in cases:
             try:
