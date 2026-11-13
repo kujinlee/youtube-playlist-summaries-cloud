@@ -11,7 +11,7 @@ by a headless agent that is not the main session.
     python3 scripts/ask_answerer.py --answered ID  # ...and says it has answered it in the page
     python3 scripts/ask_answerer.py --retry ID     # make a failed or skipped question eligible again
     python3 scripts/ask_answerer.py --inbox        # instructions readers typed: print the unread, mark them read
-    python3 scripts/ask_answerer.py --self-test    # 118 cases; never runs the real `claude`
+    python3 scripts/ask_answerer.py --self-test    # 120 cases; never runs the real `claude`
 
 THE LOOP. `explainer-serve.py` appends every POSTed question to `<root>/questions.md`. The watcher stats that
 file once a second (no model call: an idle watcher costs no tokens) and, for each question the ledger has no
@@ -38,8 +38,8 @@ labels it `KIND: instruction`, the page says it was passed on and NOT acted on, 
 BOUNDED COST, all visible in `--status`, the log and the page panel: per question `--max-turns`,
 `--max-budget-usd` and a wall-clock kill; per day a question count and a token count (`Caps`; the
 `ASK_ANSWERER_*` variables override each). ⚠ BOUND: the daily caps are checked BEFORE a run, so a day can
-end over the token cap by at most one question's run. A run that was killed, stopped or printed no result
-reported no usage: it counts as `UNMEASURED_RUN_TOKENS` (an assumption, said in the spend line), never zero.
+end over the token cap by at most one question's run. A run that was killed, stopped, printed no result or
+printed one with no usage in it reported no usage: it counts as `UNMEASURED_RUN_TOKENS` (an assumption, said in the spend line), never zero.
 
 FAILS IF (the falsifiers `--self-test` runs): a question with no ledger record is not claimed on the next
 pass; a claimed question gets a second claim; a failed run leaves the page looking answered; the model's
@@ -51,8 +51,8 @@ start (each start records them as skipped: answering a backlog nobody waits on i
 `--retry ID` overrides it for one, `--status` lists them, and a session may `--claim` one). While it is
 stopped on purpose the page says nothing about new questions — the live session answers them, as before
 this script existed. NOT skipped, because the page has said NOT ANSWERED about each: a question asked after
-a watcher ended with no clean exit (a kill, a crash, a reboot — its pid file is still there), and a question
-that failed or was retried. A reader's text cannot forge an entry: `explainer-serve.py` rewrites a `---`
+a watcher ended with no clean exit (a kill, a crash, a reboot — its pid file is still there; a `--stop`
+typed after that clears it, and is a stop on purpose), and a question that failed or was retried. A reader's text cannot forge an entry: `explainer-serve.py` rewrites a `---`
 line before it appends (`format_question_entry`); a `questions.md` edited by hand has no such protection. The
 suite's guard against the real `claude` (`_SUITE_BIN_DIR`) holds in the suite's own process; the one child
 process a case starts (`--start`) is kept off it by the `ASK_ANSWERER_CLAUDE` that case passes. The
@@ -327,7 +327,7 @@ UNMEASURED_RUN_TOKENS = 250_000
 
 def unmeasured(events: list[dict], day: str) -> int:
     """PURE. How many runs on `day` ended with no usage reported."""
-    return sum(1 for ev in events if ev.get("e") == "failed" and ev.get("unmeasured")
+    return sum(1 for ev in events if ev.get("e") in ("answered", "failed") and ev.get("unmeasured")
                and str(ev.get("at", ""))[:10] == day)
 
 
@@ -404,6 +404,7 @@ def parse_result(stdout: str, rc: int, stderr: str = "") -> Run:
     usage = d.get("usage") if isinstance(d.get("usage"), dict) else {}
     tokens = sum(v for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens",
                              "output_tokens") if isinstance((v := usage.get(k)), int) and v > 0)
+    silent = tokens <= 0                   # r2: a result object that reports no usage is unmeasured as well
     turns = d.get("num_turns") if isinstance(d.get("num_turns"), int) else 0
     used = d.get("modelUsage") if isinstance(d.get("modelUsage"), dict) else {}
     model = ", ".join(sorted(str(k) for k in used)) or ""
@@ -413,10 +414,11 @@ def parse_result(stdout: str, rc: int, stderr: str = "") -> Run:
     if d.get("is_error") or d.get("subtype") != "success":
         why = f"the headless run ended as {str(d.get('subtype'))[:60]!r} (exit {rc})"
         return Run(False, "", why + (f": {text.strip()[:200]}" if text.strip() else ""), tokens, turns, model,
-                   float(cost))
+                   float(cost), unmeasured=silent)
     if not text.strip():
-        return Run(False, "", "the headless run returned an empty answer", tokens, turns, model, float(cost))
-    return Run(True, text, "", tokens, turns, model, float(cost), denied)
+        return Run(False, "", "the headless run returned an empty answer", tokens, turns, model, float(cost),
+                   unmeasured=silent)
+    return Run(True, text, "", tokens, turns, model, float(cost), denied, unmeasured=silent)
 
 
 def run_headless(prompt: str, caps: Caps, *, binary: str, model: str, cwd: pathlib.Path,
@@ -783,7 +785,7 @@ def answer_one(root: pathlib.Path, q: Question, caps: Caps, deps: Deps) -> str:
         record(root, {"e": "answered", "id": q.id, "by": "answerer", "doc": q.doc, "question": q.text[:600],
                       "at": when, "html": block, "written": written, "where": where, "tokens": run.tokens,
                       "turns": run.turns, "model": run.model or deps.model, "cost_usd": run.cost_usd,
-                      "passed_on": passed_on})
+                      "passed_on": passed_on, "unmeasured": run.unmeasured})
         seen = deps.seen_served(q.doc, q.id) if deps.seen_served else ""
         log(root, f"ANSWERED {q.id} on {q.doc}: {'written ' + where if written else 'NOT WRITTEN into the page: ' + where}"
                   f" · {run.turns} turns, {run.tokens:,} tokens" + (f" · ⚠ {run.denied} read(s) REFUSED" if run.denied else "")
@@ -1194,6 +1196,14 @@ def start(root: pathlib.Path, env: dict) -> int:
 def stop(root: pathlib.Path) -> int:
     pid = watcher_pid(root)
     if not pid:
+        if watcher_died(root):
+            # r2: the pid file an unclean end left is what makes the next start skip nothing. A stop typed
+            # after it is a stop on purpose, so it clears that: questions asked from now on are skipped.
+            (state_dir(root) / "answerer.pid").unlink(missing_ok=True)
+            log(root, "stopped after an unclean end: the next start skips what was asked meanwhile")
+            print("ask-answerer: not running — it had ended UNEXPECTEDLY. Stopped on purpose now: the next "
+                  "--start skips questions asked meanwhile (--status lists them)")
+            return 0
         print("ask-answerer: not running")
         return 0
     os.kill(pid, signal.SIGTERM)
@@ -2022,6 +2032,22 @@ sys.exit(mode.get("rc", 0))
                "CRASHED — OSError: the disk went away" in (state_dir(r) / "answerer.log").read_text()),
               ("the disk went away", True, True, True))
 
+        io_stop = io.StringIO()
+        with contextlib.redirect_stdout(io_stop):
+            rc_stop = stop(r)
+        never = mk()
+        io_never = io.StringIO()
+        with contextlib.redirect_stdout(io_never):
+            rc_never = stop(never)
+        after_stop = ask(r, "asked after the stop that followed the crash", at="2026-11-13 09:30:00")
+        n0 = len(calls())
+        watch(r, CAPS, DEPS, passes=2, sleep=lambda _s: None)
+        check("r2: a --stop after an unclean end is a stop on purpose — it clears the record, says so, and the "
+              "next start skips what was asked after it",
+              (rc_stop, "ended UNEXPECTEDLY" in io_stop.getvalue(), state(r, after_stop.id).get("status"),
+               len(calls()) - n0, watcher_died(r), rc_never, "UNEXPECTEDLY" in io_never.getvalue()),
+              (0, True, "skipped", 0, False, 0, False))
+
         r = mk()
         off = ask(r, "asked while the answerer was off")
         watch(r, CAPS, DEPS, once=True)
@@ -2049,6 +2075,23 @@ sys.exit(mode.get("rc", 0))
                "the daily cap is reached" in cap_refusal(Caps(daily_tokens=200_000), *spent(ev, day))),
               (31687, False, True, 1, 0, 0, (2, 31687 + UNMEASURED_RUN_TOKENS), True,
                "today 0 of 7 questions, 0 of 3,000,000 tokens; per question at most 10 turns, $0.75, 240 s", True))
+        r = mk()
+        watch(r, CAPS, DEPS, once=True)
+        z1 = ask(r, "answered by a run that reported no usage")
+        say(result("KIND: question\n\nAn answer with no usage.", usage={}))
+        answer_one(r, z1, CAPS, DEPS)
+        z2 = ask(r, "killed after a result with no usage", at="2026-11-13 09:00:01")
+        say(result("KIND: question\n\nlate", usage=None), sleep=30, early=True)
+        answer_one(r, z2, Caps(timeout_s=1), DEPS)
+        ev = read_ledger(r)[0]
+        check("r2: a result that reports NO usage is unmeasured too — answered or killed, each counts as the "
+              "ASSUMED amount; a result that reports some does not",
+              (state(r, z1.id).get("status"), state(r, z1.id).get("unmeasured"), state(r, z2.id).get("status"),
+               state(r, z2.id).get("unmeasured"), unmeasured(ev, day), spent(ev, day),
+               parse_result(result("x", usage={"output_tokens": 0}), 0).unmeasured,
+               parse_result(result("x", subtype="error_max_turns", usage={}), 0).unmeasured,
+               parse_result(result("", usage={}), 0).unmeasured, parse_result(result("x", usage={"output_tokens": 1}), 0).unmeasured),
+              ("answered", True, "failed", True, 2, (2, 2 * UNMEASURED_RUN_TOKENS), True, True, True, False))
         check("r1: unmeasured means a process started and reported nothing — not a binary that never started",
               (parse_result("garbage", 1).unmeasured, parse_result(OK_REPLY, 0).unmeasured,
                run_headless("p", CAPS, binary=str(bin_dir / "absent"), model="sonnet", cwd=td).unmeasured),

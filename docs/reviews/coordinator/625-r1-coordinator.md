@@ -1,5 +1,28 @@
 # Round 1 — `625` (backlog #625, the Ask answerer) — coordinator
 
+```yaml
+round: 1
+fixes_nontrivial: true
+subject: 625
+halves:
+  codex: ran
+  claude: ran
+findings:
+  - {id: X1, severity: High, aim: deliverable, fix_induced: false, component: watch-loop, disposition: fixed}
+  - {id: X2, severity: High, aim: deliverable, fix_induced: false, component: spend-accounting, disposition: fixed}
+  - {id: X3, severity: High, aim: deliverable, fix_induced: false, component: question-entry, disposition: fixed}
+  - {id: X4, severity: Medium, aim: deliverable, fix_induced: false, component: ledger-lock, disposition: fixed}
+  - {id: C1, severity: High, aim: deliverable, fix_induced: false, component: watcher-lifecycle, disposition: fixed}
+  - {id: C2, severity: Medium, aim: deliverable, fix_induced: false, component: watcher-lifecycle, disposition: fixed}
+  - {id: C4, severity: Medium, aim: deliverable, fix_induced: false, component: post-guard, disposition: fixed}
+  - {id: C5, severity: Medium, aim: deliverable, fix_induced: false, component: documents, disposition: fixed}
+  - {id: C6, severity: Medium, aim: deliverable, fix_induced: false, component: documents, disposition: fixed}
+  - {id: C7, severity: Low, aim: deliverable, fix_induced: false, component: caps, disposition: fixed}
+  - {id: C9, severity: Low, aim: instrument, fix_induced: false, component: suite-guard, disposition: declined}
+```
+
+X1–X4 are Codex 1–4 and C1–C9 are Claude 1–9 in the table below. Claude 3 is X2 and Claude 8 is X3.
+
 Both halves reviewed commit 953d5e6c concurrently. Both end NOT CONVERGED.
 
 - Codex: `docs/reviews/codex/625-r1-codex.md` — 4 findings (3 HIGH, 1 MEDIUM). Loosening questions: none.

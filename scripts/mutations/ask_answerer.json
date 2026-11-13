@@ -504,5 +504,38 @@
       ]
     ],
     "expect": "r1: Ctrl-C is a stop on purpose — the watcher ends, leaves no pid file, and is not read as died"
+  },
+  {
+    "name": "a result that reports no usage counts as a measured zero",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    silent = tokens <= 0   ",
+        "    silent = False         "
+      ]
+    ],
+    "expect": "r2: a result that reports NO usage is unmeasured too — answered or killed, each counts as the ASSUMED amount; a result that reports some does not"
+  },
+  {
+    "name": "an ANSWERED run that reported no usage is left out of the day's unmeasured count",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "ev.get(\"e\") in (\"answered\", \"failed\") and ev.get(\"unmeasured\")",
+        "ev.get(\"e\") == \"failed\" and ev.get(\"unmeasured\")"
+      ]
+    ],
+    "expect": "r2: a result that reports NO usage is unmeasured too — answered or killed, each counts as the ASSUMED amount; a result that reports some does not"
+  },
+  {
+    "name": "a --stop after an unclean end leaves the record, so the next start answers what was asked after it",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        if watcher_died(root):\n            # r2:",
+        "        if False:\n            # r2:"
+      ]
+    ],
+    "expect": "r2: a --stop after an unclean end is a stop on purpose — it clears the record, says so, and the next start skips what was asked after it"
   }
 ]

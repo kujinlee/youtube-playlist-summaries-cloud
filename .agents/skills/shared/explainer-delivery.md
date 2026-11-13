@@ -432,19 +432,21 @@ per question. **It is OFF unless someone starts it**, and with it off everything
   The log is `~/explainers/.ask/answerer.log`.
 - **Cost is capped and shown.** Per question: 10 turns, $0.75, 240 s. Per day: 40 questions, 3,000,000
   tokens. Each has an `ASK_ANSWERER_*` variable. A question past a cap is refused before any run. A run that
-  was killed or stopped before it reported its usage counts as 250,000 tokens — an assumption, and the
+  reported no usage — killed, stopped, or a result with no usage in it — counts as 250,000 tokens — an assumption, and the
   spend line says how many runs it covers.
 - **The answer quotes the question, and a committed page is PUBLIC.** The answer block opens with the
   reader's words, in the fragment and the composed page, which are tracked files. That is §6's rule (the
   Q&A that matters is in the page) and it holds for a session's answers too: read the block before
   committing the page.
-- **A question costs a run, so the server takes one only from its own pages.** A POST whose `Origin` or
-  `Host` is not this machine (`127.0.0.1`, `localhost`, `::1`) is refused with 403. A reader's text cannot
-  start a second entry or name another page: a `---` line in it is rewritten before it is stored.
+- **A question costs a run, so the server takes one only from its own pages.** A POST whose `Host` is not
+  this machine (`127.0.0.1`, `localhost`, `::1`), or whose `Origin` is not that same host and port, is
+  refused with 403 — another site on this machine included. A reader's text cannot
+  start a second entry or name another page: a `---` line in it is rewritten before it is stored, and a carriage return is stored as a line break.
 - **Bounds.** A question asked while the answerer was stopped ON PURPOSE is skipped by the next start, not
   answered: `--status` lists the skipped ones, a session may `--claim` one, and `--retry ID` hands one to
   the answerer. NOT skipped: a question asked after the answerer died (a kill, a crash, a reboot), and one
-  that failed or was retried — the page said NOT ANSWERED about each, and the next start answers it. A
+  that failed or was retried — the page said NOT ANSWERED about each, and the next start answers it. A `--stop` typed after the
+  answerer died makes it a stop on purpose again. A
   question asked on `/` or `/latest` names no page and is recorded NOT ANSWERED. The panel reaches a page
   only after the server restarts on a copy that has it.
 

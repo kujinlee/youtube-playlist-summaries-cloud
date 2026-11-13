@@ -20566,8 +20566,8 @@ model call while idle), one `claude -p` run per question with Read as its only t
 the escaped answer into the fragment and recomposes. State is in the git-ignored `docs/explainers/.ask/`; the
 claim marker is the first ledger line for a question, taken under a lock. Caps: 10 turns, $0.75 and 240 s per
 question; 40 questions and 3,000,000 tokens per day; `--status` prints them. `explainer-serve.py` appends a panel
-of the page's questions and folds their state into `/_rev`. ask_answerer 118 self-test cases and 46 mutations;
-explainer-serve 288 cases, mutation pin 112 → 120. Review round 1 (11 findings) is folded: a killed run counts
+of the page's questions and folds their state into `/_rev`. ask_answerer 120 self-test cases and 49 mutations;
+explainer-serve 291 cases, mutation pin 112 → 123. Review rounds 1 (11 findings) and 2 (5) are folded: a killed run counts
 against the token cap, a start no longer skips a question the page showed NOT ANSWERED, and the server refuses a
 POST from another site. Follow-ups filed: backlog #635 (inbox hook), #636 (`/latest`).
 The panel shows on the owner's port once the running server is restarted.
