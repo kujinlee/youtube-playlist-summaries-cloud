@@ -2,7 +2,7 @@
 """Open or comment on the `sweep-red` issue after a FULL mutation sweep on master (backlog #330). It NEVER closes one.
 
     python3 scripts/sweep-red-alert.py              # in CI: reads SWEEP, SHA, EVENT, RUN_URL, FLAKY_DIR; acts via gh
-    python3 scripts/sweep-red-alert.py --self-test  # 46 cases
+    python3 scripts/sweep-red-alert.py --self-test  # 49 cases
 
 WHY THIS EXISTS. A pull request's sweep is diff-scoped, so what it does not select is measured only by the full
 sweep on master, AFTER merge. A red full sweep therefore opens an issue labelled `sweep-red` (or comments on the
@@ -113,15 +113,22 @@ def ci_flaky_contract(workflow_text: str) -> None:
     # ⛔ r1 Codex M1/m: comments never count — a `#` line, or a ` #` tail, is dropped before any match.
     lines = [_uncomment(l) for l in workflow_text.splitlines()]
     writes = [(i, m.group(1)) for i, l in enumerate(lines)
-              for m in re.finditer(r'>\s*"?[^"\s>]*sweep-flaky/shard-"?\$\{?([A-Za-z_]+)\}?"?\.txt', l)]
+              for m in re.finditer(r'>\s*"?[^"\s>]*sweep-flaky/shard-"?\$\{?([A-Za-z_]+)\}?"?\.txt"?(?=[\s;|&)]|$)', l)]   # r2 Codex m1: not `.txt.bak`
     if len(writes) != 1:
         raise ValueError(f"{len(writes)} redirects to `sweep-flaky/shard-$<VAR>.txt` in the workflow, not one: "
                          f"the FLAKY file name `read_flaky` reads ({SHARD_FILE!r}) is not proven")
     wi, var = writes[0]
     # ⛔ r1 Claude m3: the variable is read from the step that WRITES the file, never from anywhere in the workflow.
     st = max([i for i in range(wi) if lines[i].lstrip().startswith("- ")], default=0)
+    # r2 Codex m2: the WHOLE step, so an `env:` written below `run:` still counts.
+    end = next((i for i in range(st + 1, len(lines)) if lines[i].strip() and _indent(lines[i]) <= _indent(lines[st])),
+               len(lines))
+    # ⛔ r2 Codex M1: `env:` names the value only until the script reassigns it.
+    if any(re.search(rf"(^|[^\w$]){var}=", l) for l in lines[st:end]):
+        raise ValueError(f"the step that writes the shard file reassigns `{var}` in its script: the `env:` value no "
+                         f"longer proves the file name, and `read_flaky` reads {SHARD_FILE.format(0)} ..")
     if not any(re.fullmatch(rf"\s*{var}:\s*([\"']?)\$\{{\{{\s*strategy\.job-index\s*\}}\}}\1\s*", l)
-               for l in lines[st:wi]):
+               for l in lines[st:end]):
         raise ValueError(f"the shard file is named by `${var}`, which is not `${{{{ strategy.job-index }}}}`: "
                          f"`read_flaky` reads {SHARD_FILE.format(0)} .. per 0-based index, so the names would not match")
     starts = [i for i, l in enumerate(lines) if l.strip() == DOWNLOAD_STEP]
@@ -448,6 +455,21 @@ def _self_test_body() -> int:
                    .replace("merge-multiple: true", "merge-multiple: 'true'   # one directory")
                    .replace("shard-$SHARD_INDEX.txt", 'shard-"$SHARD_INDEX".txt')), "ok")
     _path = "          path: ${{ runner.temp }}/sweep-flaky\n"
+    _wr = 'grep -F x f > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"'
+    case("⭐ r2 Codex M1: the writing step's script REASSIGNING the index (`SHARD_INDEX=$SHARD_TOTAL`) RAISES",
+         (_real.count('          grep -F \'mutation FLAKY — \''),
+          _contract(_real.replace("          grep -F 'mutation FLAKY — '",
+                                  "          SHARD_INDEX=$SHARD_TOTAL\n          grep -F 'mutation FLAKY — '"))),
+         (1, "raised"))
+    case("...r2 Codex m1: a redirect to `shard-$SHARD_INDEX.txt.bak` (or `\"...txt\".bak`) is not the shard file",
+         (_contract(_real.replace('/sweep-flaky/shard-$SHARD_INDEX.txt"', '/sweep-flaky/shard-$SHARD_INDEX.txt".bak')),
+          _contract(_real.replace('/sweep-flaky/shard-$SHARD_INDEX.txt"', '/sweep-flaky/shard-$SHARD_INDEX.txt.bak"'))),
+         ("raised", "raised"))
+    _syn = ("jobs:\n  sweep:\n    steps:\n      - name: shard\n        run: |\n          " + _wr + "\n"
+            "        env:\n          SHARD_INDEX: ${{ strategy.job-index }}\n  alert:\n    steps:\n      - " + DOWNLOAD_STEP[2:]
+            + "\n        uses: actions/download-artifact@v4\n        with:\n          merge-multiple: true\n")
+    case("...r2 Codex m2: the writing step's `env:` BELOW its `run:` is not a false red",
+         (_contract(_syn), _contract(_syn.replace("job-index", "job-total"))), ("ok", "raised"))
     case("...r1 Claude m4: the download step ENDS at the next step — a later step's `with:` is not read as its own",
          (_real.count(_path), _contract(_real.replace(_path, _path + "      - name: later\n        uses: x\n"
                                                       "        with:\n          merge-multiple: true\n"))), (1, "ok"))

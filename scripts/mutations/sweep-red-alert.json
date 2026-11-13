@@ -449,12 +449,51 @@
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "               for l in lines[st:wi]):",
+        "               for l in lines[st:end]):",
         "               for l in lines):"
       ]
     ],
     "expect": [
       "⭐ r1 Claude m3: the job index set in ANOTHER step does not vouch for the writing step's 1-based variable"
+    ]
+  },
+  {
+    "name": "#617 r2 Codex m1: trailing text after `.txt` is accepted",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "\\.txt\"?(?=[\\s;|&)]|$)', l)]",
+        "\\.txt\"?', l)]"
+      ]
+    ],
+    "expect": [
+      "...r2 Codex m1: a redirect to `shard-$SHARD_INDEX.txt.bak` (or `\"...txt\".bak`) is not the shard file"
+    ]
+  },
+  {
+    "name": "#617 r2 Codex M1: a reassignment of the index in the writing step's script is not checked",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if any(re.search(rf\"(^|[^\\w$]){var}=\", l) for l in lines[st:end]):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: the writing step's script REASSIGNING the index (`SHARD_INDEX=$SHARD_TOTAL`) RAISES"
+    ]
+  },
+  {
+    "name": "#617 r2 Codex m2: the step ends at the write, so an env: below run: is not seen",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    end = next((i for i in range(st + 1",
+        "    end = wi or next((i for i in range(st + 1"
+      ]
+    ],
+    "expect": [
+      "...r2 Codex m2: the writing step's `env:` BELOW its `run:` is not a false red"
     ]
   }
 ]

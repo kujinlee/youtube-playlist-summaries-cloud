@@ -1,0 +1,23 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 1703 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f40a45e552a62e8450547f8134ab2d0c9a9be4fb",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/617-r2-codex.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "loosening_answers": {
+    "bc5e0abc80bf": "not a loosening"
+  },
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/617-r2-prompt.md",
+  "reason": "1703 chars",
+  "refused": false,
+  "review": "617-bind-ci-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/backlog-627"
+}
