@@ -1417,7 +1417,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ its review round 1 (Codex X3): 69 -> 72 — the runner in a process group of its own, SIGTERM before
     # SIGKILL on a Refresh timeout, and the press wired through `run_in_group`.
     # ⟳ its review round 2 (F4): 72 -> 73 — the post-SIGKILL drain of a Refresh timeout is BOUNDED.
-    "scripts/explainer-serve.py": 73,
+    # ⟳ backlog #627: 73 -> 86 — the serve-source rule (overlay only on master's base, an unedited page is
+    # master's), the fetch's rate limit, bound, failure recorded and cleared, the footer, the yellow bar, preview
+    # detection, master's bytes for an overlay, the no-copy notice, a merged page served, the suite refusal armed.
+    "scripts/explainer-serve.py": 86,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -2007,7 +2010,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ PR #536's CI sweep: 58 -> 60, none retired — four kills went red with no `[FAIL]` name because the suite
     # RAISED between cases; the crash guard that now names such a red has two: its `[FAIL]` print, and its
     # catching a non-zero sys.exit.
-    "scripts/regen-pages.py": 60,
+    # ⟳ backlog #627: 60 -> 64 — the serve copy checked out at the built sha, the server's fetch really fetching
+    # and refusing this repository inside the suite, and main() printing the serve-copy line.
+    "scripts/regen-pages.py": 64,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than

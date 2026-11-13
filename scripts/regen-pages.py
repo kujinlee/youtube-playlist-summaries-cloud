@@ -482,10 +482,10 @@ def move_serve_copy(main: pathlib.Path, sha: str, copy: pathlib.Path, git=_git) 
     if rc != 0:
         raise CannotRun(f"the serve copy's checkout of {sha[:12]} failed (exit {rc}: {_brief(out)})")
     rc, head = git(["rev-parse", "HEAD"], copy)
-    if rc != 0 or head != sha:
+    if head != sha or rc != 0:
         raise CannotRun(f"the serve copy reads back HEAD {_brief(head)!r} (exit {rc}), not {REMOTE}/{BRANCH} {sha}")
     rc, dirty = git(["status", "--porcelain", "--untracked-files=no"], copy)
-    if rc != 0 or dirty:
+    if dirty or rc != 0:
         raise CannotRun(f"the serve copy is not clean after the checkout (exit {rc}: {_brief(dirty)})")
 
 
@@ -494,7 +494,7 @@ def refresh_serve_copy(repo: pathlib.Path = ROOT, copy: pathlib.Path | None = No
     """The server's fetch (backlog #627): `fetch_master` in the main checkout of `repo`, then `move_serve_copy`,
     both under `tree_lock` so it never races a rebuild's fetch. Returns the sha the copy now stands at.
     ⛔ Refused inside this file's suite for any checkout of this repository, as `fresh` is."""
-    if _IN_SUITE and _is_this_repository(repo):
+    if _IN_SUITE and _is_this_repository(pathlib.Path(repo)):
         raise CannotRun("the self-test never fetches into the real repository, or any checkout of it")
     main, _common = main_of(repo, git)
     with tree_lock(main, wait):
