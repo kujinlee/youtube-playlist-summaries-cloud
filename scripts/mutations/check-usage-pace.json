@@ -855,8 +855,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if sid is None:\n        return False\n    main, _ = main_checkout(root)",
-        "    if sid is None:\n        return True\n    main, _ = main_checkout(root)"
+        "    if sid is None:\n        return False\n    sid = f\"{sid} {key}\"",
+        "    if sid is None:\n        return True\n    sid = f\"{sid} {key}\""
       ]
     ],
     "expect": [
@@ -2596,6 +2596,45 @@
     ],
     "expect": [
       "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+    ]
+  },
+  {
+    "name": "#628: an unchanged WARN is never deduplicated",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        elif verdict == WARN and out:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ #628: an unchanged WARN is said once per session, then silent"
+    ]
+  },
+  {
+    "name": "#628: the WARN key ignores the session",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    sid = f\"{sid} {key}\" if key else sid",
+        "    sid = key or sid"
+      ]
+    ],
+    "expect": [
+      "#628: a changed reading speaks again; a new session is told again"
+    ]
+  },
+  {
+    "name": "#628: REFUSE-SPAWN is deduplicated too",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "verdict == WARN and out:",
+        "verdict in (WARN, REFUSE) and out:"
+      ]
+    ],
+    "expect": [
+      "#628: REFUSE-SPAWN is never deduplicated"
     ]
   }
 ]
