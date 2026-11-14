@@ -4071,5 +4071,124 @@
     "expect": [
       "...#495 under --seeds: the re-run is under EVERY seed, and survive-then-kill is FLAKY there too"
     ]
+  },
+  {
+    "name": "#619 (a): the record's shard is not the one the run was sliced by",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    index, total = shard if shard is not None else (1, 1)\n",
+        "    index, total = (1, 1)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #619: `shard_record` holds the shard and total it is GIVEN, `complete` for a Measured verdict, and only the names whose `flaky` is exactly True",
+      "⭐ #619 (a): each record's shard is the --shard0 value PARSED (1-based), its total the shard count"
+    ]
+  },
+  {
+    "name": "#619: a not-measured run's record says it completed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "\"complete\": isinstance(verdict, Measured),\n",
+        "\"complete\": True,\n"
+      ]
+    ],
+    "expect": [
+      "...a NotMeasured verdict is INCOMPLETE, and still records the FLAKY names it reached",
+      "...a run whose controls are RED writes an INCOMPLETE record, shard 1 of 1"
+    ]
+  },
+  {
+    "name": "#619: a truthy non-True flaky marks a name FLAKY",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "[m[\"name\"] for m in rows if m.get(\"flaky\") is True]",
+        "[m[\"name\"] for m in rows if m.get(\"flaky\")]"
+      ]
+    ],
+    "expect": [
+      "⭐ #619: `shard_record` holds the shard and total it is GIVEN, `complete` for a Measured verdict, and only the names whose `flaky` is exactly True"
+    ]
+  },
+  {
+    "name": "#619: a record that cannot be written leaves the shard green",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            why = write_record(a.record, record)\n            if why:\n",
+        "            why = write_record(a.record, record)\n            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #619: a record that cannot be WRITTEN is rc 2 and CANNOT RUN — never a green shard without one"
+    ]
+  },
+  {
+    "name": "#619: a record write's directory is not made",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        p.parent.mkdir(parents=True, exist_ok=True)\n        tmp = ",
+        "        tmp = "
+      ]
+    ],
+    "expect": [
+      "⭐ #619 END TO END: two shards' main() runs write records the REAL reader reads — the FLAKY name filed, no problem"
+    ]
+  },
+  {
+    "name": "#619: main builds no record for --record",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        record = shard_record(shard, verdict) if a.record is not None else None\n",
+        "        record = None\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #619 END TO END: two shards' main() runs write records the REAL reader reads — the FLAKY name filed, no problem"
+    ]
+  },
+  {
+    "name": "#619: --record without --mutate is not refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if a.record is not None and not a.mutate:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "...--record without --mutate, or with --only, is refused rc 2 and writes nothing"
+    ]
+  },
+  {
+    "name": "#619: --record with --only is not refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if a.record is not None and a.only:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "...--record without --mutate, or with --only, is refused rc 2 and writes nothing"
+    ]
+  },
+  {
+    "name": "#619 r1 (Claude m2): a not-measured run's record drops the FLAKY names it reached",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    rows = verdict.mutations if isinstance(verdict, Measured) else verdict.entries\n",
+        "    rows = verdict.mutations if isinstance(verdict, Measured) else []\n"
+      ]
+    ],
+    "expect": [
+      "...a NotMeasured verdict is INCOMPLETE, and still records the FLAKY names it reached"
+    ]
   }
 ]

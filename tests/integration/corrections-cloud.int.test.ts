@@ -1,7 +1,8 @@
 // NOT RUN WITHOUT A LIVE STACK. global-setup.ts applies migrations and refuses to run if it cannot.
 // A skipped money assertion reporting green is worse than a red one — do NOT add describe.skip here.
 //
-// ✅ EXECUTED 2026-08-24 against a live local stack: 7/7. (The header previously said these were
+// ✅ EXECUTED 2026-08-24 against a live local stack: 7/7; RE-EXECUTED 2026-10-24 with the backlog #62
+// cases added: 10/10. (The header previously said these were
 // unrun predictions — they are now measurements.)
 //
 // ⚠ SIGNATURES VERIFIED 2026-08-24 by opening helpers/clients.ts and helpers/seed.ts:
@@ -36,10 +37,12 @@ import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 
 jest.mock('@/lib/gemini', () => ({
-  fixSummary: jest.fn(async (md: string) => ({
-    text: md.replace('Clawcode', 'Claude Code'),
-    usage: { promptTokens: 1000, outputTokens: 500 },
-  })),
+  // Does what the real fixSummary does with the caller's meter (backlog #62): one usage per billed
+  // attempt, pushed before the attempt is kept or discarded.
+  fixSummary: jest.fn(async (md: string, _c: string, opts: { meter?: { attempts: unknown[] } }) => {
+    opts.meter?.attempts.push({ promptTokens: 1000, outputTokens: 500 });
+    return { text: md.replace('Clawcode', 'Claude Code') };
+  }),
   extractQuickView: jest.fn(async () => ({ tldr: 'Corrected TL;DR.', takeaways: ['Corrected point'] })),
   assertCorrectionInputWithinCap: jest.fn(async () => {}),
   SUMMARY_MODEL: 'gemini-2.5-flash',
@@ -164,13 +167,61 @@ it('§7 an oversized corrections field never reaches Gemini — 400, and no Gemi
   expect(fixSummary).not.toHaveBeenCalled();
 });
 
-it('§7 the correction records spend, bounded — the ledger moves by the measured amount', async () => {
-  const day = new Date().toISOString().slice(0, 10);
-  const readLedger = async () =>
-    (await svc.from('spend_ledger').select('actual_cents').eq('day', day).maybeSingle()).data?.actual_cents ?? 0;
+// ⚠ OWN ROWS ONLY (round 1, L3). These used to assert a delta on the GLOBAL spend_ledger, which any
+// concurrent writer on the same UTC day moves. `correction_spend` is keyed by the fresh owner this
+// test seeded, so nothing else can touch it. The ledger write itself is covered by
+// record-correction-spend.int.test.ts, against the RPC directly.
+const utcDay = () => new Date().toISOString().slice(0, 10);
+const ownRow = async (ownerId: string) => (await svc.from('correction_spend').select('calls, cents')
+  .eq('owner_id', ownerId).eq('day', utcDay()).maybeSingle()).data;
+
+it('§7 the correction records spend, bounded — the owner counter moves by the measured amount', async () => {
   const s = await seedCorrectable();
-  const before = await readLedger();
+  expect(await ownRow(s.ownerId)).toBeNull();
   await press(s.videoId, s.playlistId, { corrections: 'Clawcode -> Claude Code' });
   // usage { 1000, 500 } -> ceil((1000*30 + 500*250)/1e6) = ceil(0.155) = 1c
-  expect(await readLedger() - before).toBe(1);
+  expect(await ownRow(s.ownerId)).toEqual({ calls: 1, cents: 1 });
+});
+
+it('#62 a correction the validator REFUSES still records its spend — the owner counter moves', async () => {
+  // The production defect, end to end through the real RPC: before the fix a refused press left
+  // correction_spend with 0 rows and spend_ledger unmoved (measured on prod 2026-08-24).
+  const s = await seedCorrectable();
+  jest.mocked(fixSummary).mockImplementationOnce(async (_md, _c, opts) => {
+    opts.meter?.attempts.push({ promptTokens: 1000, outputTokens: 500 });
+    return { text: MD.replace(/## 1\. Intro[\s\S]*$/, '') };   // a section deleted: refused every time
+  });
+  const res = await press(s.videoId, s.playlistId, { corrections: 'delete the intro' });
+  expect(res.status).toBe(422);
+  expect((await res.json()).code).toBe('structure-section-count');
+  expect(await ownRow(s.ownerId)).toEqual({ calls: 1, cents: 1 });
+  const stored = (await s.blob.get(s.principal, s.key))!.toString('utf-8');
+  expect(stored).toBe(MD);                                              // nothing was saved
+});
+
+it('#62 r1 at the daily limit the PRESS is refused — 429, no Gemini call, the counter unmoved', async () => {
+  // The round-1 High, through the REAL allowance RPC (0028): 0026's limit used to refuse only the
+  // bookkeeping, so press N+1 was billed and recorded nowhere.
+  const { data: cfg } = await svc.from('guardrail_config')
+    .select('correction_max_calls_per_owner_day').eq('id', true).single();
+  const N = cfg!.correction_max_calls_per_owner_day as number;
+  const s = await seedCorrectable();
+  await svc.from('correction_spend').insert({ owner_id: s.ownerId, day: utcDay(), calls: N, cents: N });
+  const res = await press(s.videoId, s.playlistId, { corrections: 'Clawcode -> Claude Code' });
+  expect(res.status).toBe(429);
+  expect((await res.json()).code).toBe('correction-limit-reached');
+  expect(fixSummary).not.toHaveBeenCalled();
+  expect(await ownRow(s.ownerId)).toEqual({ calls: N, cents: N });
+  expect((await s.blob.get(s.principal, s.key))!.toString('utf-8')).toBe(MD);
+});
+
+it('#62 r1 one press under the limit still goes through', async () => {
+  const { data: cfg } = await svc.from('guardrail_config')
+    .select('correction_max_calls_per_owner_day').eq('id', true).single();
+  const N = cfg!.correction_max_calls_per_owner_day as number;
+  const s = await seedCorrectable();
+  await svc.from('correction_spend').insert({ owner_id: s.ownerId, day: utcDay(), calls: N - 1, cents: 0 });
+  const res = await press(s.videoId, s.playlistId, { corrections: 'Clawcode -> Claude Code' });
+  expect(res.status).toBe(200);
+  expect(await ownRow(s.ownerId)).toEqual({ calls: N, cents: 1 });
 });
