@@ -50,10 +50,10 @@ oversized ledger with only the new entry and `--done` reported a recorded id as 
 list prints `NO CHECKS`.
 
     python3 scripts/session-state.py                 # print the block (what the hook runs)
-    python3 scripts/session-state.py --add ID WHAT ON_DONE [--kind owner-wait|owner-instruction|routine]
+    python3 scripts/session-state.py --add ID WHAT ON_DONE --goal SLUG [--thread LINE] [--kind owner-wait|owner-instruction|routine]
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 132 cases
+    python3 scripts/session-state.py --self-test  # 134 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -339,6 +339,13 @@ def normalise_what(what: str) -> str:
     return what
 
 
+# backlog #514 (c), the owner's rule of 2026-11-05 13:54: work in flight is never added under no goal. The AGENT names
+# the goal; when none fits it PROPOSES one, named for the objective that groups the work, and the owner picks.
+ADD_NEEDS_GOAL = ("--add needs --goal <slug>: name the `## GOAL` of docs/goal-threads.md this work serves. When no "
+                  "goal fits, propose a new goal named for its objective (the owner picks the name or counter-proposes) "
+                  "and add it under that slug")
+
+
 def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None,
                goal: str | None = None, thread: str | None = None) -> None:
     """`kind` is DECLARED by the caller. Left out, it is `guess_kind` of the entry — the WIDE reading, so an owner entry
@@ -349,8 +356,10 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
         raise ValueError("an empty id could never be shown or removed")
     if kind is not None and kind not in KINDS:
         raise ValueError(f"kind {kind!r} is not one of {', '.join(KINDS)}")
-    if bool(goal) != bool(thread):
-        raise ValueError("--goal and --thread go together: a thread is hung under a goal (backlog #505)")
+    # backlog #514 (c): a GOAL alone is stored — goal-tree places an entry no thread's ref names by its goal field, and
+    # work with no backlog row or PR yet has no thread to declare. A thread still needs its goal (backlog #505).
+    if thread and not goal:
+        raise ValueError("--thread needs --goal: a thread is hung under a goal (backlog #505)")
     what = normalise_what(what)
     if kind is None:
         kind = guess_kind({"what": what, "on_done": on_done})
@@ -358,7 +367,7 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
         entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
         entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind}
-                       | ({"goal": goal, "thread": thread} if goal else {}))
+                       | ({"goal": goal} if goal else {}) | ({"thread": thread} if thread else {}))
         _write(path, entries, raw)
 
 
@@ -765,6 +774,7 @@ def _self_test_body() -> int:
     import io
     import threading
     from contextlib import redirect_stdout
+    from contextlib import redirect_stderr as _rs514
 
     failures = 0
     ran = 0
@@ -907,10 +917,10 @@ def _self_test_body() -> int:
                "new-lower": "waits-on-owner (card when back): pick A or B"}
         with redirect_stdout(io.StringIO()), _rs(io.StringIO()):
             for id_, what_ in phr.items():
-                main(["--add", id_, what_, "d"], root=w3, run=_nogit)
-            main(["--add", "plain", "run the nightly job", "d"], root=w3, run=_nogit)
-            main(["--add", "declared", "WAITS-ON-OWNER: pick", "d", "--kind", "routine"], root=w3, run=_nogit)
-            main(["--add", "new-instr", "OWNER 23:41: do the next thing now (owner: 'when convenient')", "d"], root=w3, run=_nogit)   # a re-add
+                main(["--add", id_, what_, "d", "--goal", "g"], root=w3, run=_nogit)
+            main(["--add", "plain", "run the nightly job", "d", "--goal", "g"], root=w3, run=_nogit)
+            main(["--add", "declared", "WAITS-ON-OWNER: pick", "d", "--kind", "routine", "--goal", "g"], root=w3, run=_nogit)
+            main(["--add", "new-instr", "OWNER 23:41: do the next thing now (owner: 'when convenient')", "d", "--goal", "g"], root=w3, run=_nogit)   # a re-add
         led3 = {e["id"]: e for e in read_ledger(w3 / LEDGER_REL)[0]}
         blk = render(None, "x", [*led3.values(), *newer], [], "now", compact=True)
         case("⭐ r3 R3-1: `--add` with NO --kind stores the kind the text looks like — the reviewer's three phrasings are owner kinds, "
@@ -1142,9 +1152,30 @@ def _self_test_body() -> int:
         ledger_add(led, "job5", "build backlog #505", "merge", "T4", goal="g", thread="fix · PR #30 · x")
         case("backlog #505: --goal and --thread are STORED on the entry",
              [(e.get("goal"), e.get("thread")) for e in read_ledger(led)[0] if e["id"] == "job5"], [("g", "fix · PR #30 · x")])
-        case("backlog #505: a goal without a thread (or the reverse) is REFUSED, never half-stored",
+        case("backlog #514 (c): a goal WITHOUT a thread is stored (goal-tree places it by that field); a thread without "
+             "a goal is still REFUSED, never half-stored",
              [attempt(lambda: ledger_add(led, "j6", "w", "d", "T", goal="g")),
-              attempt(lambda: ledger_add(led, "j6", "w", "d", "T", thread="fix · PR #1 · x"))], ["raised ValueError"] * 2)
+              [(e.get("goal"), "thread" in e) for e in read_ledger(led)[0] if e["id"] == "j6"],
+              attempt(lambda: ledger_add(led, "j7", "w", "d", "T", thread="fix · PR #1 · x"))],
+             ["accepted", [("g", False)], "raised ValueError"])
+        ledger_done(led, "j6")
+        _r514 = Path(tempfile.mkdtemp(prefix="ss-514-"))
+        try:
+            _e514 = io.StringIO()
+            with redirect_stdout(io.StringIO()), _rs514(_e514):
+                _rcs = [main(["--add", "nog", "w", "d"], root=_r514, run=NO_GIT),
+                        main(["--add", "g-only", "w", "d", "--goal", "g"], root=_r514, run=NO_GIT),
+                        main(["--add", "g-thr", "w", "d", "--goal", "h", "--thread", "fix · PR #3 · x"], root=_r514, run=NO_GIT)]
+            _msg = _e514.getvalue()
+            case("⭐ backlog #514 (c): `--add` with neither --goal nor --thread is REFUSED (exit 2) and writes nothing; "
+                 "with --goal alone, or --goal and --thread, it is accepted — three inputs, ONE case",
+                 (_rcs, [(e["id"], e.get("goal")) for e in read_ledger(_r514 / LEDGER_REL)[0]]),
+                 ([2, 0, 0], [("g-only", "g"), ("g-thr", "h")]))
+            case("backlog #514 (c): ...and the refusal says to NAME the goal, and when none fits to PROPOSE one named for "
+                 "its objective (the owner picks)",
+                 ("--goal" in _msg, "propose" in _msg and "objective" in _msg and "owner picks" in _msg), (True, True))
+        finally:
+            shutil.rmtree(_r514, ignore_errors=True)
         case("backlog #505: --goal outside --add is a stray flag, CANNOT RUN", main(["--goal", "g"], root=root, run=NO_GIT), 2)
         ledger_done(led, "job5")   # the cases below count this ledger's entries
         refused = []
@@ -1201,7 +1232,7 @@ def _self_test_body() -> int:
              attempt(ledger_add, fifo, "n", "w", "d", "T"), "refused")
         from contextlib import redirect_stderr
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            big_rc = main(["--add", "n", "w", "d"], root=big.parent.parent, run=NO_GIT)
+            big_rc = main(["--add", "n", "w", "d", "--goal", "g"], root=big.parent.parent, run=NO_GIT)
         case("main --add on an oversized ledger exits 2 (CANNOT RUN), file untouched",
              (big_rc, big.read_bytes() == before), (2, True))
         at = root / "at-cap" / LEDGER_REL
@@ -1335,7 +1366,7 @@ def _self_test_body() -> int:
         r2.mkdir()
         from contextlib import redirect_stderr
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            added = main(["--add", "k", "Codex r1 on PR #1", "record it"], root=r2, run=NO_GIT)
+            added = main(["--add", "k", "Codex r1 on PR #1", "record it", "--goal", "g"], root=r2, run=NO_GIT)
             seen_ids = [e["id"] for e in read_ledger(r2 / LEDGER_REL)[0]]
             removed = main(["--done", "k"], root=r2, run=NO_GIT)
             empty_done = main(["--done", ""], root=r2, run=NO_GIT)
@@ -1480,7 +1511,7 @@ def _self_test_body() -> int:
         case("collect() where git cannot name the main checkout SAYS the real ledger may not have been read",
              "in a linked worktree the real one was NOT READ" in collect(bare, run=NO_GIT, now="T"), True)
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            wt_add = main(["--add", "wt-job", "CI watch PR #8", "read gh"], root=wt, run=gh_only)
+            wt_add = main(["--add", "wt-job", "CI watch PR #8", "read gh", "--goal", "g"], root=wt, run=gh_only)
             in_main = [e["id"] for e in read_ledger(repo / LEDGER_REL)[0]]
             wt_done = main(["--done", "main-job"], root=wt, run=gh_only)
         case("⭐ --add and --done run from a LINKED WORKTREE write the MAIN checkout's ledger, never the worktree's",
@@ -1504,9 +1535,10 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                          "on them), `owner-instruction` (something they told us to do) or `routine`. Every reader prints the "
                          "first two WHOLE and trims `routine`. Left out, it is what the text looks like (`guess_kind`)")
     ap.add_argument("--goal", metavar="SLUG",
-                    help="with --add and --thread: the `## GOAL <slug>` of docs/goal-threads.md this work serves (backlog #505)")
+                    help="REQUIRED with --add (backlog #514 (c)): the `## GOAL <slug>` of docs/goal-threads.md this work "
+                         "serves (backlog #505). When none fits, propose a goal named for its objective; the owner picks")
     ap.add_argument("--thread", metavar="LINE",
-                    help="with --add and --goal: `<relation> · <refs> · <what>`, the threads file's own grammar. The goal "
+                    help="optional, with --add and --goal: `<relation> · <refs> · <what>`, the threads file's own grammar. The goal "
                          "tree shows it under the goal until master's docs/goal-threads.md declares the same refs")
     ap.add_argument("--done", metavar="ID")
     ap.add_argument("--migrate-kinds", action="store_true",
@@ -1545,6 +1577,9 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                 print(f"  {id_:<28} {now_:<17} -> {want:<17} ({why})")
             return 0
         if args.add:
+            if not (args.goal or args.thread):
+                print(f"CANNOT RUN — {ADD_NEEDS_GOAL}; nothing was added", file=sys.stderr)
+                return 2
             ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"), args.kind,
                        args.goal, args.thread)
             print(f"ledger: added {args.add[0]}")

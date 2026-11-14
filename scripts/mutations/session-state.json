@@ -1223,22 +1223,22 @@
     ]
   },
   {
-    "name": "a goal is stored without its thread (owner 2026-11-05)",
+    "name": "a thread is stored without its goal (owner 2026-11-05; goal-only allowed by backlog #514 (c))",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    if bool(goal) != bool(thread):\n",
+        "    if thread and not goal:\n",
         "    if False:\n"
       ]
     ],
-    "expect": "backlog #505: a goal without a thread (or the reverse) is REFUSED, never half-stored"
+    "expect": "backlog #514 (c): a goal WITHOUT a thread is stored (goal-tree places it by that field); a thread without a goal is still REFUSED, never half-stored"
   },
   {
     "name": "the goal and thread are never stored (owner 2026-11-05)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "                       | ({\"goal\": goal, \"thread\": thread} if goal else {}))",
+        "                       | ({\"goal\": goal} if goal else {}) | ({\"thread\": thread} if thread else {}))",
         "                       )"
       ]
     ],
@@ -1475,6 +1475,45 @@
     ],
     "expect": [
       "⭐ backlog #408: a generator run from its private `clone --shared` names the MAIN checkout the runner put in REGEN_MAIN_CHECKOUT"
+    ]
+  },
+  {
+    "name": "backlog #514 (c): --add with no goal is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            if not (args.goal or args.thread):\n                print(f\"CANNOT RUN — {ADD_NEEDS_GOAL}",
+        "            if False:\n                print(f\"CANNOT RUN — {ADD_NEEDS_GOAL}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (c): `--add` with neither --goal nor --thread is REFUSED (exit 2) and writes nothing; with --goal alone, or --goal and --thread, it is accepted — three inputs, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #514 (c): a goal-only entry is refused",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if thread and not goal:\n",
+        "    if not (thread and goal):\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (c): `--add` with neither --goal nor --thread is REFUSED (exit 2) and writes nothing; with --goal alone, or --goal and --thread, it is accepted — three inputs, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #514 (c): the refusal never says to propose a goal",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "When no \"\n                  \"goal fits, propose a new goal named for its objective (the owner picks the name or counter-proposes) \"",
+        "\"\n                  \""
+      ]
+    ],
+    "expect": [
+      "backlog #514 (c): ...and the refusal says to NAME the goal, and when none fits to PROPOSE one named for its objective (the owner picks)"
     ]
   }
 ]

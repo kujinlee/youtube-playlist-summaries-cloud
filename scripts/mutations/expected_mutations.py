@@ -406,7 +406,11 @@ EXPECTED_MUTATIONS = {
     # 355 -> 360 (round 3 fold): the UTF-8 check skipping each of its four fields, and an unreadable file raising.
     # Then 360 -> 364 (PR #559, agenda group titles + r1 fold): group labels as plain text, by indentation again,
     # a title unescaped, the title's accent rule removed; one re-bound to `agenda_step_items`.
-    "scripts/goal-tree.py": 368,  # 364 -> 368 (backlog #610, + r1 alias): only regen-pages' clone writes the served page
+    # ⟳ 2026-11-14, backlog #514 (d): 368 -> 379, none retired. Eleven new: an entry placed by its own `goal` field —
+    # the field unread, read before a ref match, a goal-only entry parsed as a thread, its undeclared goal unreported or
+    # unflagged, the placed branch undrawn, a parked one drawn as in flight, the goal folded away, the agenda leaving
+    # placed entries out or listing a parked one, and a move to the goal read as "no longer in flight".
+    "scripts/goal-tree.py": 379,  # 368 -> 379 (backlog #514 (d)): a ledger entry is placed by its own goal field
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1625,7 +1629,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #408 r2: 109 -> 111 — `main_checkout` honours the runner's REGEN_MAIN_CHECKOUT (ignored; trusted as text).
     # ⟳ backlog #408 r3 (R3-F2): 111 -> 114 — the name is honoured only for THIS repository: the same-repository check
     # skipped, any alternates file passing, and a shared common dir not recognised.
-    "scripts/session-state.py": 114,
+    # ⟳ 2026-11-14, backlog #514 (c): 114 -> 117, two re-bound (a thread without its goal; the stored fields), three new:
+    # `--add` with no goal accepted, a goal-only entry refused, the refusal not saying to propose a goal.
+    "scripts/session-state.py": 117,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on

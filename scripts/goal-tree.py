@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 483 cases
+    python3 scripts/goal-tree.py --self-test                 # 495 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -337,6 +337,12 @@ def ledger_threads(goals: list[dict], ledger: list[dict]) -> tuple[list[dict], l
         if not (e.get("goal") or e.get("thread")):
             continue
         id_ = _SS.clean(e.get("id", ""), 60)
+        if not e.get("thread"):
+            # backlog #514 (d): a GOAL with no thread hangs no thread — `derive` places the entry by its goal when no
+            # ref of it matches. Its goal is still checked: an undeclared one is a problem, never guessed.
+            if str(e.get("goal")) not in by_slug:
+                problems.append(f"entry {id_}: goal " + repr(str(e.get("goal"))) + f" is not declared in {THREADS_REL}")
+            continue
         t, bad = parse_thread_line("- " + str(e.get("thread") or "").removeprefix("- "))
         if bad:
             problems.append(f"entry {id_}: its thread is not read — {bad}")
@@ -586,13 +592,29 @@ def derive(goals: list[dict], src: dict, now: str) -> dict:
                   for n, p in sorted(src["open"].items()) if n not in named_prs]
     pairs = {r for g in out_goals for t in g["threads"] for r in _thread_refs(t)}
     unnamed = [e for e in src["ledger"] if not (_ledger_refs(e) & pairs) and not _SS.waits_on_owner(e)]
+    # backlog #514 (d): an entry no ref places is placed by its OWN `goal` field when that names a DECLARED goal
+    # (measured 11-14: 4 of 12 entries naming a goal showed under no goal). A ref match always wins — it is the
+    # structured association; the field is read only when none exists. An undeclared goal is never guessed: the entry
+    # stays under no goal, flagged on its own line. The key is set only on a goal that HAS a placed entry, so a tree
+    # with none fingerprints as before and logs no snapshot that differs only by an empty list.
+    slugs = {g["slug"] for g in out_goals}
+    placed: dict = {}
+    for e in unnamed:
+        if isinstance(e.get("goal"), str) and e["goal"] in slugs:
+            placed.setdefault(e["goal"], []).append({"id": _SS.clean(e.get("id", ""), 60),
+                                                     "what": _SS.clean(e.get("what", ""), 160),
+                                                     "parked": is_parked(e)})
+    out_goals = [dict(g, placed=placed[g["slug"]]) if g["slug"] in placed else g for g in out_goals]
+    unnamed = [e for e in unnamed if not (isinstance(e.get("goal"), str) and e["goal"] in slugs)]
     loose = [{"id": _SS.clean(e.get("id", ""), 60), "what": _SS.clean(e.get("what", ""), 160)}
+             | ({"goal_undeclared": _SS.clean(str(e["goal"]), 60)} if e.get("goal") else {})
              for e in unnamed if not is_parked(e)]
     # backlog #497: a parked entry naming no thread of any goal is its own group — shown, never dropped. So is one
     # whose every named thread has LANDED: its leaves are folded as older, and work that landed is not what is
     # parked (backlog #489). Matching is by (kind, number) since PR #558 r1 E, so `PR #376` no longer reaches a
     # `backlog #376` thread; a landed thread the entry really names still routes it here.
     parked_loose = [{"id": _SS.clean(e.get("id", ""), 60), "what": _SS.clean(e.get("what", ""), 160)}
+                    | ({"goal_undeclared": _SS.clean(str(e["goal"]), 60)} if e.get("goal") else {})
                     for e in unnamed if is_parked(e)]
     for e in src["ledger"]:
         hits = [t for g in out_goals for t in g["threads"] if _ledger_refs(e) & _thread_refs(t)]
@@ -670,8 +692,14 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
     out += [f"ledger problem, new: {q}" for q in sorted(cq - pq)]
     out += [f"ledger problem, cleared: {q}" for q in sorted(pq - cq)]
     pl, cl = {u["id"] for u in prev["inflight_loose"]}, {u["id"] for u in cur["inflight_loose"]}
+    # backlog #514 (d): an entry placed by its goal field is still in flight — moving there is one line, not a removal
+    def placed(s):
+        return {u["id"]: g["slug"] for g in s["goals"] for u in g.get("placed") or []}
+    pp_, cp_ = placed(prev), placed(cur)
     out += [f"in flight, under no goal: {i}" for i in sorted(cl - pl)]
-    out += [f"no longer in flight: {i}" for i in sorted(pl - cl)]
+    out += [f"in flight, placed under goal {cp_[i]} by its goal field: {i}" for i in sorted(cp_)
+            if pp_.get(i) != cp_[i]]
+    out += [f"no longer in flight: {i}" for i in sorted((pl | set(pp_)) - cl - set(cp_))]
     (pk, pa), (ck, ca) = snap_agenda(prev), snap_agenda(cur)
     # ⛔ identity is the agenda's (id, at), and steps are compared ONLY between two VALID agendas with the same one:
     # two agendas recorded in one minute are different plans, and an agenda missing its identity is no basis for a
@@ -1457,6 +1485,10 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
     now, named = [], frozenset().union(*(_refset(st["refs"]) for st in ag["steps"]))
     late, seen = [], set()
     for i, g in sorted(zip(goal_numbers(goals), goals), key=lambda ig: ig[0]):  # the TREE's numbers (r1 Codex M1)
+        # backlog #514 (d): an entry placed by its goal field is in flight under that goal. Its wait stays None: the
+        # ledger records no `waits` field (session-state writes id, what, on_done, at, kind, goal, thread)
+        now += [{"label": u["id"], "goal": goal_head(i, g["slug"]), "running": False, "what": _one_line(u.get("what")),
+                 "waits": None} for u in g.get("placed") or [] if isinstance(u, dict) and "id" in u and not u.get("parked")]
         for t in g["threads"]:
             label = t["key"].split(" · ", 1)[-1]
             # the ledger's `inflight` flag, not only the state: a thread whose row has not landed reads `cannot` while
@@ -1713,9 +1745,10 @@ def _goal_blocks(g: dict, at, n: int, tags: list[int] = ()) -> list:
         folds.append(("later", f"later ({len(later)}) — not started, bookkeeping or an aside",
                       f"… {len(later)} later (collapsed on the page)", later, "later"))
     rels = [r for r in RELATIONS if any(t["relation"] == r for t, _ in shown)]
-    if not g["threads"]:
+    placed = g.get("placed") or []
+    if not g["threads"] and not placed:
         lines.append("└─ (no thread declared)")
-    n_items = len(rels) + len(folds)
+    n_items = len(rels) + bool(placed) + len(folds)
     for ri, rel in enumerate(rels):
         last_rel = ri == n_items - 1
         lines.append(("└─ " if last_rel else "├─ ") + rel)
@@ -1723,15 +1756,28 @@ def _goal_blocks(g: dict, at, n: int, tags: list[int] = ()) -> list:
         for ti, (t, b) in enumerate(ts):
             stem = "   " if last_rel else "│  "
             lines.append(stem + ("└─ " if ti == len(ts) - 1 else "├─ ") + _leaf(t, b))
+    if placed:
+        # backlog #514 (d): ledger entries placed by their own `goal` field — no declared thread names their refs
+        last = len(rels) == n_items - 1
+        lines.append(("└─ " if last else "├─ ") + "in flight by its goal field (ledger; no declared thread names it)")
+        for pi, u in enumerate(placed):
+            lines.append(("   " if last else "│  ") + ("└─ " if pi == len(placed) - 1 else "├─ ")
+                         + (f'⬜ parked · {u["id"]} · {u["what"]} — parked, placed by its goal field' if u.get("parked")
+                            else f'⏳ {u["id"]} · {u["what"]} — in flight, placed by its goal field'))
     blocks: list = [("pre", lines)]
     for fi, (cls, summary, text, ts, b) in enumerate(folds):
-        stem = "└─ " if len(rels) + fi == n_items - 1 else "├─ "
+        stem = "└─ " if len(rels) + bool(placed) + fi == n_items - 1 else "├─ "
         blocks.append(("fold", cls, stem + summary, stem + text, [("pre", [_leaf(t, b, rel=True) for t in ts])]))
     counts = None
-    if g["threads"] and not shown:
+    if g["threads"] and not shown and not placed:
         # Nothing current: the WHOLE goal folds on the page, its counts beside its heading; the text is unchanged.
         counts = "nothing current (" + ", ".join(f"{len(f[3])} {f[0]}" for f in folds) + ")"
     return [("goal", n, g["slug"], g["requests"][0], counts, list(tags), blocks), ("pre", [""])]
+
+
+def _undeclared_goal_flag(u: dict) -> str:
+    """backlog #514 (d): a ledger entry whose `goal` names no declared goal says so on its own line — never guessed."""
+    return f" · ⚠ its goal {u['goal_undeclared']!r} is not declared in {THREADS_REL}" if u.get("goal_undeclared") else ""
 
 
 def tree_blocks(snap: dict, at=None) -> list:
@@ -1757,13 +1803,14 @@ def tree_blocks(snap: dict, at=None) -> list:
         lines.append("IN FLIGHT, UNDER NO GOAL (from .claude/inflight.jsonl)")
         for i, u in enumerate(snap["inflight_loose"]):
             lines.append(("└─ " if i == len(snap["inflight_loose"]) - 1 else "├─ ")
-                         + f'{u["id"]} · {u["what"]}')
+                         + f'{u["id"]} · {u["what"]}' + _undeclared_goal_flag(u))
         lines.append("")
     parked_loose = snap.get("parked_loose") or []
     if parked_loose:
         lines.append("PARKED / QUEUED — NO GOAL (parked ledger entries naming no live thread; shown, never dropped)")
         for i, u in enumerate(parked_loose):
             lines.append(("└─ " if i == len(parked_loose) - 1 else "├─ ") + f'{u["id"]} · {u["what"]}'
+                         + _undeclared_goal_flag(u)
                          + (" · names only LANDED threads: " + "; ".join(u["landed"]) if u.get("landed") else ""))
         lines.append("")
     plans = snap.get("plans") or []
@@ -2867,6 +2914,67 @@ def _self_test_cases(*, outside: dict) -> int:
          [("side · PR #7", None), (None, "relation"), (None, "refs"), (None, "a")])
     case("backlog #505: an entry with no goal or thread hangs nothing (the ledger's ordinary entries)",
          ledger_threads(_g2, [{"id": "x", "what": "PR #30"}]) == (_g2, []), True)
+    # ── backlog #514 (d): an entry no ref places is placed by its OWN `goal` field (measured 11-14: 4 of 12 entries
+    # naming a goal showed IN FLIGHT, UNDER NO GOAL). Each world is built here; `_g2` declares goals g and h.
+    _pl = derive(_g2, src(ledger=[{"id": "p1", "what": "pacing work", "goal": "h"},
+                                  {"id": "p2", "what": "memory audit", "goal": "g"}]), "2026-01-02 00:00")
+    case("⭐ backlog #514 (d): an entry matching no thread's ref is placed under the DECLARED goal its `goal` names — "
+         "two entries, two goals, in ONE case — never under no goal, and a goal-only entry is no ledger problem",
+         ([g.get("placed") or [] for g in _pl["goals"]], _pl["inflight_loose"], _pl["ledger_problems"]),
+         ([[{"id": "p2", "what": "memory audit", "parked": False}],
+           [{"id": "p1", "what": "pacing work", "parked": False}]], [], []))
+    _pt = derive(_g2, src(ledger=[{"id": "p3", "what": "w", "goal": "g", "thread": "side · 5h pacing"}]), "T")
+    case("backlog #514 (d): a goal with an UNREADABLE thread is still placed under the goal, and the bad thread is "
+         "still a named problem (never dropped)",
+         ([len(g.get("placed") or []) for g in _pt["goals"]], _pt["inflight_loose"],
+          [p.split(" — ")[0] for p in _pt["ledger_problems"]]),
+         ([1, 0], [], ["entry p3: its thread is not read"]))
+    _pu = derive(_g2, src(ledger=[{"id": "p4", "what": "w", "goal": "nope"}]), "T")
+    case("⛔ backlog #514 (d): a `goal` naming NO declared goal is never guessed — the entry stays IN FLIGHT, UNDER NO "
+         "GOAL, flagged on its line and named as a ledger problem",
+         ([g.get("placed") or [] for g in _pu["goals"]], _pu["inflight_loose"], _pu["ledger_problems"]),
+         ([[], []], [{"id": "p4", "what": "w", "goal_undeclared": "nope"}],
+          ["entry p4: goal 'nope' is not declared in docs/goal-threads.md"]))
+    case("backlog #514 (d): ...and the printed tree says so on the entry's own line",
+         any("p4 · w" in l and "goal 'nope' is not declared" in l for l in render_text(_pu).splitlines()), True)
+    _pr = derive(_g2, src(ledger=[{"id": "p5", "what": "CI on PR #21", "goal": "g"}]), "T")
+    case("backlog #514 (d): a REF match wins over the `goal` field — the entry hangs on the thread naming PR #21 "
+         "(goal h), and is not placed under g",
+         ([g.get("placed") or [] for g in _pr["goals"]],
+          ["in flight: CI on PR #21" in t["detail"] for g in _pr["goals"] for t in g["threads"]]),
+         ([[], []], [False, True]))
+    _pw = derive(_g2, src(ledger=[{"id": "p6", "what": "WAITS-ON-OWNER: pick A or B", "goal": "g"},
+                                  {"id": "p7", "what": "PARKED by the owner until later", "goal": "g"}]), "T")
+    case("backlog #514 (d): an owner-wait with a goal stays a NEED (placed nowhere); a PARKED one is placed under its "
+         "goal marked parked, not in the no-goal parked list",
+         ([g.get("placed") or [] for g in _pw["goals"]], _pw["inflight_loose"], _pw["parked_loose"]),
+         ([[{"id": "p7", "what": "PARKED by the owner until later", "parked": True}], []], [], []))
+    _pl_txt = render_text(_pl).splitlines()
+    _h_at = next(i for i, l in enumerate(_pl_txt) if l.startswith("GOAL ") and "· h " in l + " ")
+    case("⭐ backlog #514 (d): the printed tree draws a placed entry INSIDE its goal's block, says it was placed by its "
+         "goal field, and prints no IN FLIGHT, UNDER NO GOAL section",
+         (any("p1 · pacing work" in l and "by its goal field" in l
+              for l in _pl_txt[_h_at:next((i for i, l in enumerate(_pl_txt) if i > _h_at and not l.strip()), None)]),
+          any("UNDER NO GOAL" in l for l in _pl_txt)), (True, False))
+    case("backlog #514 (d): the page draws it too (one block structure)", ("p1 · pacing work" in render_tree_html(_pl), "by its goal field" in render_tree_html(_pl)), (True, True))
+    case("backlog #514 (d): a PARKED placed entry is drawn as parked under its goal",
+         any("p7" in l and "parked" in l for l in render_text(_pw).splitlines()), True)
+    _pf = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · PR #20 · long merged\n'),
+                 src(ledger=[{"id": "p8", "what": "w", "goal": "g"}],
+                     merged_at={"aaaa111": "2026-01-01 00:00"}), "2026-03-01 00:00")
+    case("backlog #514 (d): a goal whose threads are all OLDER does not fold away a placed entry — it is current work",
+         [b[4] for b in tree_blocks(_pf) if b[0] == "goal"], [None])
+    _pd = agenda_digest(derive(_g2, src(ledger=[{"id": "p1", "what": "pacing work", "goal": "h"},
+                                                {"id": "p2", "what": "memory audit", "goal": "g"},
+                                                {"id": "p7", "what": "PARKED by the owner until later", "goal": "g"}]),
+                               "2026-01-02 00:00"), {"steps": [], "at": "2026-01-02 00:00"})
+    case("backlog #514 (d): the agenda's NOW lists a placed entry under its goal's head, never 'no goal'; a parked "
+         "one is not listed; its wait is None (the ledger records no `waits` field — session-state writes none)",
+         sorted((x["label"], x["goal"], x["waits"]) for x in _pd["now"] if x["label"].startswith("p")),
+         [("p1", "GOAL 2 · h", None), ("p2", "GOAL 1 · g", None)])
+    _ploose = derive(_g2, src(ledger=[{"id": "p1", "what": "pacing work"}]), "T1")
+    case("backlog #514 (d): an entry moving from no goal to its goal is ONE timeline line, never 'no longer in flight'",
+         [l for l in changes(_ploose, _pl) if "p1" in l], ["in flight, placed under goal h by its goal field: p1"])
     case("a PR merged off master's log says so, with gh's SHA",
          one("- side · PR #23 · c\n", src())["detail"], "merged time unread · bbbb2222 — not on master's log")
     case("a PR gh did not list is NOT FOUND, never a guess",
