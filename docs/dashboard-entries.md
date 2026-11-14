@@ -20554,6 +20554,19 @@ in the suite's own temp dir. explainer-serve 282 self-test cases, regen-pages 12
 60 → 72 after two review rounds. Takes effect on the owner's port once the running server is restarted.
 
 ## 2026-11-13
+A second architecture review looked at the tool that reads system-call traces to learn which files a check really
+touches. Two review rounds in a row had each found a safety check that one kind of file path was skipping. The review
+found the cause: the rule "check this path" was written in three places, and a new kind of path was left out of all
+three by default. Today's code has no gap in the 27 path forms tested. A small change (about 11 lines, plus one test
+that compares the two kinds of path) stops the gap from coming back, and is filed to be built before the next stage
+of that work.
+
+<!--tech-->
+Backlog #626 closed; backlog #633 and backlog #634 filed. `docs/reviews/architecture-review-2026-11-13-626.md`.
+Subject: the slice-3 cross-run view in `scripts/strace_reads.py` (PR #567, backlog #586). No code changed. A
+differential harness gave 22, 19, 10 and 0 violations at the four heads. Second run of the Fable pilot (backlog #630).
+
+## 2026-11-13
 The redesign that the last review was waiting for has been built. The nightly test sweep runs in many parallel
 pieces, and each piece now writes a small structured record listing its unreliable tests. The step that files them
 reads only those records. It no longer searches log text or reads the CI configuration, so the check that kept
@@ -20563,4 +20576,4 @@ A pull request now runs the same handoff without filing anything, so a pull requ
 <!--tech-->
 Backlog #619 R1, PR #580 (branch `b619-shard-records`); backlog #617 part (1) closed as retired. `check-plan-code.py
 --record` writes `{schema, shard, total, complete, flaky}`; `sweep-red-alert.py` `read_records` + `check_records`
-replace `ci_flaky_contract`, `flaky_names`, `shard_count` and `read_flaky`. Mutation pins 39 → 33 and 320 → 328.
+replace `ci_flaky_contract`, `flaky_names`, `shard_count` and `read_flaky`. Mutation pins 39 → 37 and 320 → 329; two review rounds, backlog #635 filed.

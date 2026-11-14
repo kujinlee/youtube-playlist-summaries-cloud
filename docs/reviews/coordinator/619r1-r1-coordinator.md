@@ -27,9 +27,9 @@ Both ran the self-tests. Codex's loosening flags all point at `ci_flaky_contract
   by the existing malformed-record case.
 - **Cm2** no mutant held a NotMeasured run's record keeping the FLAKY names it reached. One mutant added.
 - **Cm3** a record names no run attempt: after "re-run all jobs", a stale artifact can be read as current. Not silent
-  (the dead shard makes the sweep red). Filed as backlog #633 (1).
+  (the dead shard makes the sweep red). Filed as backlog #635 (1).
 - **Cm4** on a pull request the alert step holds a `GH_TOKEN` that can write issues, though the PR path makes no `gh`
-  call (a mutant pins that). Filed as backlog #633 (2); fixing it here re-adds a `!= 'pull_request'` gate mention.
+  call (a mutant pins that). Filed as backlog #635 (2); fixing it here re-adds a `!= 'pull_request'` gate mention.
 
 Self-tests: `sweep-red-alert.py` 42/42, `check-plan-code.py` 450/450. Pins: sweep-red-alert 33 → 37, check-plan-code
 328 → 329. Mutants swept on a temp copy outside the repo.
