@@ -19,7 +19,9 @@ previous message, in prose, and it did not register. A glyph would have.
 
 **How to apply:**
 
-- Lead the message with the state, not the explanation: `⏳ **Waiting** — <what>, <since/eta>`.
+- Lead the message with the state, not the explanation: `⏳ **Waiting** — <clock time> — <what>, started <time>`.
+  The CLOCK TIME from `date` is required ([[waiting-lines-carry-a-timestamp]]), and the age must be measured, not
+  repeated ([[a-waiting-line-must-measure-age]]).
 - Use it every time a turn ends with work still in flight, and when answering "is X ready?".
 - Pair it with what needs them meanwhile — usually "nothing".
 - On completion, switch the glyph rather than dropping it: `✅ **Done** — <what>`.

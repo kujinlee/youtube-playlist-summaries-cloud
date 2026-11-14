@@ -1,11 +1,14 @@
 ---
 name: schema-gates-in-ci-merged
-description: "FIRES-WHEN: citing PR #297 or the schema gates in CI — ⭐ MERGED PR #297 (squash 3168f028) — the 15 schema gates run in CI on a database built from the repo in 14s; 93s job, ZERO added wall clock. 4 review rounds, 24 findings, EVERY round found its defects in the previous round's FIXES. Nightly prod-drift is built but its cron is deliberately UNARMED pending a secret"
+description: "FIRES-WHEN: citing PR #297 or the schema gates in CI — ⭐ MERGED PR #297 (squash 3168f028) — the 15 schema gates run in CI on a database built from the repo in 14s; 93s job, ZERO added wall clock. 4 review rounds, 24 findings, EVERY round found its defects in the previous round's FIXES. prod-drift cron ARMED 2026-09-15 (09:00 UTC)"
 metadata:
   type: project
 ---
 
 **Merged 2026-09-14, squash `3168f028`.** `.github/workflows/schema-gates.yml` + `scripts/ci/`.
+**Current state (verified 2026-11-14 in the workflow file):** `schema-gates` runs on every PR with NO `paths:` filter
+(removed by backlog #137, [[schema-gates-required-137-merged]]) and is a REQUIRED check; `prod-drift` runs on a
+`cron: '0 9 * * *'` schedule (ARMED 2026-09-15, after a real run passed) plus `workflow_dispatch`.
 
 ## What exists now
 
@@ -13,19 +16,18 @@ metadata:
                                        27 migrations + 3 fixtures, asserts M4 PRESENT
     scripts/ci/{storage,auth}-service-fixture.sql, seed-corpus.sql
     scripts/check-storage-independence.py   holds the storage fixture to its own claim
-    job `schema-gates`   path-filtered, per push/PR, 93s in CI, runs BESIDE verify
+    job `schema-gates`   per push/PR (path filter since removed, #137), 93s in CI, runs BESIDE verify
     job `prod-drift`     production drift — the only genuinely scheduled subject
 
 **Run it locally:** `scripts/ci/start-schema-db.sh m4_schema_gates` then
 `PGCONTAINER=m4_schema_gates M4_PHASE=post scripts/check-schema-gates.sh`.
 
-## ⛔ THE ONE THING WAITING ON A HUMAN
+## History: the cron was held unarmed for two days
 
-`prod-drift` needs repository secret **`CLAUDE_RO_DATABASE_URL`**. Its cron is **deliberately not
-armed** — arming an alarm that cannot pass produces a nightly red until someone adds the credential,
-and backlog #56 measured that as how a gate gets switched off. The job still REFUSES loudly (rc=2)
-whenever it runs without the secret; it is simply not scheduled. **To arm: uncomment the two lines in
-the trigger block.** `workflow_dispatch` works meanwhile, and all four steps were driven locally.
+At merge `prod-drift` lacked repository secret **`CLAUDE_RO_DATABASE_URL`**, so its cron was deliberately not armed —
+an alarm that cannot pass produces a nightly red, and backlog #56 measured that as how a gate gets switched off. The
+job REFUSES loudly (rc=2) without the secret. ✅ The secret was added and the schedule ARMED 2026-09-15, only after a
+real run against production passed (see the comment block in the workflow).
 
 ## The sizing I inherited was wrong in both directions — check estimates like this
 

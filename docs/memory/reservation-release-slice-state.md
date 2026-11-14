@@ -6,18 +6,39 @@ metadata:
   originSessionId: 7746a733-7051-4952-85dd-526eb71dd21b
 ---
 
-**Goal:** Fix the reserve-only `spend_ledger` leak so failed/cancelled generation+serve attempts return budget (release-only, spend-aware), unblocking the Fly.io deploy. Today `reserved_cents` is add-only, never released → ~3 cheap failures self-DoS all users till UTC midnight. See [[local-cloud-validation-run]].
+**✅ MERGED to master — PR #22, merge commit `54e0591` (2026-07-17).** Branch `feat/reservation-release-lifecycle`,
+deleted. Migration **0020_reservation_release.sql**. This is a history record; nothing here is in flight.
 
-**✅ MERGED to master — PR #22, merge commit `54e0591` (2026-07-17).** Branch `feat/reservation-release-lifecycle` (off master @ 329b3b5) pushed, PR'd (user chose Push+PR+merge), merged, remote+local branch deleted. Spec §2.4c note (H-R2-1 residual, commit 4cb87bb) added before merge. 2 pre-existing unstaged files (docs/local-validation-findings.md, supabase/config.toml) deliberately left OUT of the slice — still modified in the working tree, user's unrelated local-env work. **Residual follow-up (not blocking): live-Gemini verification of the class-A {429,503}-bills-nothing premise before flipping CLOUD_GEMINI_RELEASE_VERIFIED (§9 gate, doc `docs/reservation-release-live-gate.md`); and the deferred settle slice closes §2.4b/§2.4c crash/requeue residuals.** History below retained for context.
+**What it fixed:** `spend_ledger.reserved_cents` was add-only, never released, so ~3 cheap failures self-DoS'd all
+users until UTC midnight. Failed/cancelled generation + serve attempts now return budget (release-only, spend-aware),
+which unblocked the Fly.io deploy. See [[local-cloud-validation-run]].
 
-**✅ PHASE 1 COMPLETE — spec CONVERGED (7 rounds) + USER-APPROVED (2026-07-16).** `docs/superpowers/specs/2026-07-15-reservation-release-lifecycle-design.md` (v7, commit `b123b49`). Reviews saved `docs/reviews/reservation-release-spec-v{1..7}-*`.
+**Open residuals at merge (not blocking):**
+- live-Gemini verification of the class-A {429,503}-bills-nothing premise before flipping
+  `CLOUD_GEMINI_RELEASE_VERIFIED` (§9 gate, `docs/reservation-release-live-gate.md`);
+- the deferred settle slice closes spec §2.4b/§2.4c crash/requeue residuals (4a rare class-B timeout-after-metering,
+  150¢; 4b worker-crash-before-terminal, 150¢, count-unbounded — mitigated by graceful drain);
+- M1 doc-only Medium (a never-metered attempts>=1 requeue cancelled-while-queued is now KEPT) + 5 deferred Lows.
+  T14/H-R2-1/M1 bite only at operator-raised `summary/dig_max_attempts>=2` (shipped = 1 CHECK → latent as shipped).
 
-**✅ PHASE 2 COMPLETE — implementation plan CONVERGED (2026-07-16), commit `ce1c499`.** `docs/superpowers/plans/2026-07-16-reservation-release-lifecycle.md` (v5). **Round-4 dual review BOTH CONVERGED (0 Blocking/0 High); Claude: "the gate round — proceed to implementation."** Convergence trail (Highs/round): v1(1/2)→v2(2/0)→v3(1/1)→v4(0/0). Every finding across 4 rounds was test-scaffolding/interface mechanics; the money SQL/classifier/latch design verified-closed by both reviewers' holistic passes since v1 (no under-count/over-release/SQL error). Plan reviews saved `docs/reviews/plan-reservation-release-v{1..4}-{codex,claude}.md`. Post-Plan Gate satisfied (convergence; no `.claude/plan-gate-pending` sentinel).
+**Key design (money path, user-approved):** RELEASE iff `releaseGateOpen() && classifyGeminiFailure(err,ourSignal)==='release'
+&& !billing.metered`. The classifier releases ONLY a pre-send NonRetryableError or Google/dig HTTP status ∈ **{429,503}**
+(never 500/502/504), via a cause-chain walk. A **billing latch** (job-scoped) is set at the `model.generateContent`
+primitive before parse. Guarded decrement + `ledger_audit` (never a silent clamp); day-correct via
+`created_at::date at utc`; the reaper never releases; serve uses a per-attempt token + `settle_serve_model`; prod gate =
+compile-time const false (test-only env override).
 
-**✅ PHASE 3 COMPLETE — ALL 12 TASKS implemented + per-task-reviewed clean via `superpowers:subagent-driven-development`** (2026-07-16). SDD ledger: `.superpowers/sdd/progress.md`. Commits ce1c499(plan)→2fd29c6(HEAD): da0775a T1 ledger_audit, 12ed4cc T2 fail_job 6-arg+JobQueue widening, c68c249 T3 request_cancel_job, 9e2253b T4 cancel_playlist CTE, f55446c T5 serve token+settle_serve_model, 3d2966f T6 classifier, 40c1acf T5-regression fix, 9fc96c4 T7 billing latch, 0e62e0c T9 transcript cause (ran BEFORE T8), 4df1439 T8 dig typed err+latch, 97157c8 T10 worker-runner release decision (keystone), 07ccb53 T11 serve-doc settle, 7e766ad T12 e2e behaviors 1-26+live-gate doc (dedicated file docs/reservation-release-live-gate.md), 2fd29c6 T12 review-Minor fixes. All in migration **0020_reservation_release.sql**. Env: Docker/local-Supabase UP, 0020 applied; full unit 2336/2336, reservation-release integration 26/26, tsc clean.
+## History
 
-**✅ WHOLE-BRANCH DUAL REVIEW CONVERGED over 3 rounds (2026-07-17) → NOW AT HUMAN MERGE GATE.** HEAD **c7f0cf1**. Trail: R1 Codex✅/opus found **H1** (per-attempt latch vs per-job reservation cross-attempt under-count) → fixed **T13** durable `jobs.ever_metered` (bf3bed3+a2d5dff hardening `and not p_metered`); R2 Codex✅/opus found **H-R2-1** (ever_metered persisted lazily by fail_job under live lease only → metered job that loses lease → reaper requeues with ever_metered=false → un-gated cancel under-counts) → fixed **T14** cancel-release gated on `attempts=0` (c7f0cf1: never-claimed ⟹ never-metered, provably safe; claim +1 monotonic, reaper preserves attempts); R3 **BOTH reviewers CONVERGED 0 Blocking/0 High** — fix introduced nothing new, exhaustive negative result "no 3rd under-count path" (4 gated release sites) held from both independently. Full unit 2336/2336, full integration 421 pass, reservation-release 32/32, tsc exit 0. Reviews: `.superpowers/sdd/whole-branch-{codex,claude}-round{1,2,3}.md`. Ledger `.superpowers/sdd/progress.md`. **Only residual = M1 doc-only Medium (over-count fairness: a never-metered attempts>=1 requeue cancelled-while-queued is now KEPT — both reviewers, no code change wanted, recommend 1-line spec §2.4 note) + 5 deferred Low. T14/H-R2-1/M1 only bite at operator-raised summary/dig_max_attempts>=2 (shipped=1 CHECK → all latent/safe as-shipped).** ▶ **MERGE/PUSH/DEPLOY = HUMAN GATE (branch NOT pushed; do NOT do autonomously).** 2 pre-existing UNSTAGED files (docs/local-validation-findings.md BUG-7/6, supabase/config.toml local auth) = UNRELATED local-env work, deliberately kept out of every slice commit — flag at merge, do not commit.
-
-**Key design (money-path, all locked & user-approved):** release-only + spend-aware (no actual_cents); scope = generation + serve; RELEASE iff `releaseGateOpen() && classifyGeminiFailure(err,ourSignal)==='release' && !billing.metered`; classify releases ONLY pre-send NonRetryableError OR Google/dig HTTP status ∈ **{429,503}** (never 500/502/504) via cause-chain walk; **billing latch** (job-scoped positive flag) set at the `model.generateContent` PRIMITIVE before parse (terminal-correct — fires on throw path); `isNonRetryable(err)` walks the cause chain so a WRAPPED NonRetryableError is non-retryable; guarded decrement + `ledger_audit` (never silent clamp); day-correct via `created_at::date at utc` / stored serve day; reaper never releases; serve per-attempt token + `settle_serve_model`; prod gate = compile-time const false (test-only env override). Accepted residuals §2.4: 4a rare class-B timeout-after-metering (150¢), 4b worker-crash-before-terminal (150¢, count-unbounded) — mitigated by graceful drain, closed by the deferred settle slice.
-
-**Codex how-to:** `codex exec --dangerously-bypass-approvals-and-sandbox -m gpt-5.5 "<prompt>"` via coordinator Bash (run_in_background + dangerouslyDisableSandbox); model from `python3 scripts/codex-frontier-model.py`. See [[running-codex]], [[process-conventions]].
+- **Phase 1** spec converged in 7 rounds, user-approved 2026-07-16:
+  `docs/superpowers/specs/2026-07-15-reservation-release-lifecycle-design.md` (v7, `b123b49`).
+- **Phase 2** plan converged 2026-07-16 (`ce1c499`, v5); Highs per round v1(1/2)→v2(2/0)→v3(1/1)→v4(0/0); every finding
+  was test scaffolding — the money SQL was verified-closed since v1.
+- **Phase 3** 12 tasks via subagent-driven development (2026-07-16), `ce1c499`→`2fd29c6`; unit 2336/2336.
+- **Whole-branch dual review, 3 rounds (2026-07-17):** R1 found **H1** (per-attempt latch vs per-job reservation
+  under-count) → T13 durable `jobs.ever_metered`; R2 found **H-R2-1** (ever_metered persisted lazily, lost on lease
+  loss → reaper requeue → un-gated cancel under-counts) → T14 cancel-release gated on `attempts=0`; R3 both halves
+  0 Blocking/0 High, "no 3rd under-count path" (4 gated release sites). Integration 421 pass, reservation-release 32/32.
+  Reviews: `.superpowers/sdd/whole-branch-{codex,claude}-round{1,2,3}.md`.
+- At the time, Codex ran as a raw `codex exec` from the coordinator; that recipe is superseded by
+  `scripts/codex-review.py` — see [[running-codex]], [[process-conventions]].

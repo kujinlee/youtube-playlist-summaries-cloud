@@ -50,7 +50,7 @@ rounds; apply D1+D2 → the next one appears in the other 29 guards).
 each guard's whole suite per mutation, so subprocess-heavy guards cost time × mutations:
 `check-rc-contract` 29.1s × 15 and `check-surface-recall` 18.9s × 19, vs `check-ratchet-contract` at
 0.12s × 16. Budget 15 → 30. ⛔ **#217's trigger is a SECOND raise** — once is prudence, twice is a
-budget nobody is keeping.
+budget nobody is keeping. (#217 and #213 are both ✅ closed in `docs/backlog.md` as of 2026-11-14.)
 
 ## Three guards caught three of my mistakes; I caught none
 

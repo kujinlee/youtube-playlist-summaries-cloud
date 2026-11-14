@@ -5,24 +5,20 @@ metadata:
   type: project
 ---
 
-> Split out of [[MEMORY.md]] on 2026-10-19 because the index had grown to **26,930 characters
-> against the harness's 24,985-CHARACTER limit** and was being silently truncated mid-session —
-> **8 index rows** were dropped before any of it was read, and *which* rows survived was not a
-> choice anyone made. ⟳ This first said "27,805 bytes" and "roughly 30 rows"; the unit was wrong and
-> the count was a mean-row-size estimate dressed as a measurement.
-> Rows below are **VERBATIM**; they carry PR numbers and SHAs that cannot be re-derived.
->
-> ⛔ **This is history, not current state.** Following the pattern of [[m4-superseded-trail]], these
-> rows are now reached by the matcher on the trigger above rather than loaded on every turn — so they
-> arrive when someone asks which PR shipped what, and cost nothing otherwise. Relative links resolve
-> because this file sits in the same directory as the entries it points at.
+**The rule:** this file is HISTORY, never current state — read [[launch-roadmap-state]] for what is true now. ⛔ NEW
+slice rows go HERE, never in `MEMORY.md`: the index loads whole on every turn and is silently truncated past 24,985
+characters (`scripts/check-memory-index-budget.py` enforces). Rows below are **VERBATIM** — they carry PR numbers and
+SHAs that cannot be re-derived, so some carry counts that were true when written (e.g. "SIX paths").
+
+History: split out of the index 2026-10-19, when it stood at 26,930 characters and 8 rows had stopped arriving.
+Pattern borrowed from [[m4-superseded-trail]]. Relative links resolve because this file sits beside its entries.
 
 ## Slice history (all MERGED unless noted — open the file for PR/SHA)
 
 - [⭐⭐ chrome-bar + Phase 6 — #378 MERGED](chrome-bar-reachable-378-merged.md) — `11c1d5db`, NOT CONVERGED, 1 Blocking FILED. ⭐⭐ The suite is **monotone**: 17 added bytes kill the feature, all gates green (manifests 2.0% additive). The 8-round gate cleared on a **prose-only** round — `is_prose()` · #300/#304/#305/#306 OPEN
 - [⭐⭐ recall fold — PR #360 MERGED](recall-fold-360-merged.md) — `5128b99b`, **merged NOT CONVERGED with 3 Highs open**. 9 rounds; each fix CREATED the next instance. ⭐⭐ The fix was already in the repo at `check-ci-watched.py:860` and reached **zero** siblings → ADR-0014
-- [⭐⭐ backlog #154 — PR #331 READY](backlog-154-dash-scalar-ready-331.md) — `0791ca6f`, **not merged**. EIGHT rounds, each a NEW GRANULARITY (line→node→document→key-depth). Fix changed KIND: **refuse, don't widen**. ⭐ My class-fix made 6 mutations UNKILLABLE, suite green — only the sweep saw it
-- [⭐ arch review #153 — PR #329 READY](arch-review-153-workflow-readers.md) — `ccff9878`, **not merged**. Verdict: extract `_structural()`, NOT parse. Found a **LIVE false green** → #154 first. 4 rounds; #155 SIZE NOT KNOWN → size by ATTEMPTING
+- [⭐⭐ backlog #154 — PR #331 READY](backlog-154-dash-scalar-ready-331.md) — `0791ca6f`, **not merged**. EIGHT rounds, each a NEW GRANULARITY (line→node→document→key-depth). Fix changed KIND: **refuse, don't widen**. ⭐ My class-fix made 6 mutations UNKILLABLE, suite green — only the sweep saw it · (✅ since MERGED as `b7ec0c42`, verified in git 2026-11-14)
+- [⭐ arch review #153 — PR #329 READY](arch-review-153-workflow-readers.md) — `ccff9878`, **not merged**. Verdict: extract `_structural()`, NOT parse. Found a **LIVE false green** → #154 first. 4 rounds; #155 SIZE NOT KNOWN → size by ATTEMPTING · (✅ since MERGED as `5ffe6017`, verified in git 2026-11-14)
 - [M4 superseded trail](m4-superseded-trail.md) — history only, split out of the RESUME file when it outgrew the read limit. Fork (a), `0028` cannot be a migration, Phase 6 ran TWICE
 - [⭐⭐ pin-python — #317](pin-python-317-merged.md) — `e7ed8c1a`. **TEN defects, ONE function, 7 rounds**, all one root cause. ⭐ I tested the CONTAINER's shape not its CONTENTS (2×); a fix landed at the WRONG LAYER (2×); my pre-committed falsifier FIRED
 - [⭐⭐ closing-table r7–r11 — #327 + #328](closing-table-r7-r8-merged-327.md) — the independent read #325 shipped without. 16 findings/5 rounds. Marker fired on **96.7%→49%**, false-sentence firings **372→0**. ⛔ `check-review-recorded` keys on CODEX VERDICTS, not commit order — 2 of 5 reds
@@ -32,7 +28,7 @@ metadata:
 - [#137 schema-gates REQUIRED — #315+#316](schema-gates-required-137-merged.md) — ⭐ `[verify, schema-gates]` live. The deleted filter had a SECOND CONSUMER (#138)
 - [peer-sites — #313](peer-sites-merged-pr-313.md) — `14063fe5`. Ships with NO caller by design (#134). ⛔ `NO-REVIEW:` must start the line
 - [#122 manifest seeded — #311](seed-manifest-122-merged.md) — 42 entries, 7 live defects. ⛔ Codex timed out ALL 3 rounds; #129/#130 open
-- [Split #295: /src/ half — #310](split-295-src-root-merged.md) — ⛔ #295 STILL OPEN, do NOT merge as-is; restart half parked
+- [Split #295: /src/ half — #310](split-295-src-root-merged.md) — ⛔ #295 STILL OPEN, do NOT merge as-is; restart half parked · (✅ #295 since RETIRED by PR #359 `446025ab`, its work refiled as backlog #193)
 - [Guard-ratchet scope — #298](guard-coverage-scope-merged.md) — ⭐ saw 41 guards, ignored 14 on tables it BUILDS; now has a falsifier
 - [Schema gates in CI — #297](schema-gates-in-ci-merged.md) — ⭐ 15 gates, 93s, zero added wall clock. ⛔ nightly cron UNARMED
 - [#91 coverage-verdict union — #269](coverage-verdict-union-91-merged.md) — ⭐ 374 mutations / 0 survivors
