@@ -5091,8 +5091,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "it[\"waits\"] = _join_waits(it[\"waits\"], x.get(\"waits\"))",
-        "it[\"waits\"] = it[\"waits\"] or x.get(\"waits\")"
+        "it[\"waits\"] = _join_waits(it[\"waits\"], x.get(\"waits\"))   # backlog #514 r2: every distinct wait, never the first only\n    it[\"running\"] = (it[\"running\"] or x.get(\"running\", False)) and not it[\"waits\"]",
+        "it[\"waits\"] = it[\"waits\"] or x.get(\"waits\")\n    it[\"running\"] = (it[\"running\"] or x.get(\"running\", False)) and not it[\"waits\"]"
       ]
     ],
     "expect": [
