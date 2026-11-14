@@ -50,3 +50,8 @@ needs no suite and takes a second.
 (`local-sweep-guard` reached 4 rounds with NO decision-log row) — I logged every bet on the watched branch and
 none on this one. ⛔ **Every per-round gate (anchors, decision log, review rounds) is run on EVERY branch with a
 review round, not on the one I am thinking about.** A retroactive row is the honest repair; it is not a bet.
+
+**⭐ A MERGE of a manifest orphans anchors too (11-06 03:00, PR #516).** I resolved a goal-tree.json conflict as "master's list + my
+NEW entries" — and silently took master's copy of 4 entries my branch had RE-BOUND. CI: 12 shards red in 30 s, "anchor NOT FOUND".
+Codex r3 approved it and my spot check passed, because both looked only at the NEW entries. Merge a manifest PER ENTRY, three-way
+(ours-changed & theirs-unchanged → ours), then assert EVERY anchor occurs in its file before pushing.

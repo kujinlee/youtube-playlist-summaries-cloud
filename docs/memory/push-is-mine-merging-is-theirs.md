@@ -78,3 +78,10 @@ rates over 30 merged PRs: a LOOSENING of a gate (baseline edit, pin/total/case-c
 5 of a failure path in a gate file — 5/30), a migration (deploy first), a `NO-REVIEW:` waiver (NO-ENTRY does not
 hold), and app code without a local `test:integration` + `test:e2e` run at that head — which I run myself, then
 pass `--app-tests-passed <head>`. ⚠ Deploy is still the owner's; a merge HOLD is theirs. Branch `merge-when-ready-rule`.
+
+⛔⟳ **2026-11-06 16:39 — THE OWNER, AGAIN: "if a PR passed all gates, merge without waiting for my decision. This has been
+a house rule for a while."** I had parked PR #522 (backlog #508) "for the owner BY DESIGN" because its HOLD was a
+loosening flag on check-merge-ready's own failure paths — and notified them instead of verifying. **That was wrong.** A
+HOLD is VERIFIED LINE BY LINE by me (see [[a-waiver-hold-is-paid-for-with-a-review]]); false ⇒ MERGE. A PR "touching the
+gate itself" is NOT a category that goes to the owner. Only a HOLD I verify as a REAL loosening / deploy / data loss goes
+to them. Never write "holds for the owner by design" in a handoff.

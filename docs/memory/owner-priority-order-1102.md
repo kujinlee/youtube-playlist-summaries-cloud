@@ -39,3 +39,11 @@ roles-page item answered (all as recommended), spec PR #474 drafted and walked t
 "needs you" sets with one source each — *blocking now* (in-flight ledger) and *waiting until picked* (backlog
 `status: needs-you`). Backlog readability: *"without changing current wording … line break, indenting"* — layout only,
 falsifier = identical visible words over every real row.
+
+**⟳ 2026-11-12 02:34, the owner (CURRENT ORDER — supersedes everything above):** *"I would put dev-speed, token-saving, then
+others. but avoid starvation. if high impact dev-speed and token-savings items are done, others should be paid attention too"*
+1. **dev speed** (#586 slices 2+, high-impact speed rows) · 2. **token saving** (#503 and other high-impact token rows) ·
+3. **others** — public-plugin build (PR #562 plan), product (#139 🔴, PR #392), comprehensibility follow-ups.
+**Anti-starvation is part of the rule:** once the HIGH-IMPACT items of 1 and 2 are done, 3 gets real attention — do not keep
+mining low-impact speed/token rows to stay in lanes 1–2. (Earlier the same minute I recorded card B as "plugin before token";
+the owner corrected that.)

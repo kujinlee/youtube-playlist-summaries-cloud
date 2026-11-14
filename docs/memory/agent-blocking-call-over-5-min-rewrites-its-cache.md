@@ -5,7 +5,9 @@ metadata:
   type: feedback
 ---
 
-Measured 2026-11-01 (usage audit, 10-30..11-01, 230M weighted): **agent cache re-writes were 19.2% of the TOTAL** — 226 of 227 came right after ONE blocking tool call longer than 5 minutes (sleep/wait loops 5.4%, mutation sweeps 4.5%, other gates 3.8%), every day (20/18/22%). Agents use a 5-minute prompt cache; the coordinator's is 1 hour.
+**CURRENT RULE (owner 11-13 21:41, "about 3% of usage is wasted"): an agent NEVER waits on CI.** When its PR is pushed and only CI remains, it ends with a final report (head SHA, HOLD verdicts, pilot record); the COORDINATOR waits with a background shell (0 tokens idle), then merges or re-merges master itself. Measured 11-13: two Fable agents polled CI ~7 h through 3–4 conflict-restart cycles, ~135k context per poll, 15–30 polls/h; the weekly meter went 22% → 25% with no new work. Put this line in every build/fold brief.
+
+Older rule, still true inside an agent's real work — measured 2026-11-01 (usage audit, 10-30..11-01, 230M weighted): **agent cache re-writes were 19.2% of the TOTAL** — 226 of 227 came right after ONE blocking tool call longer than 5 minutes (sleep/wait loops 5.4%, mutation sweeps 4.5%, other gates 3.8%), every day (20/18/22%). Agents use a 5-minute prompt cache; the coordinator's is 1 hour.
 
 **Rule:** in every agent brief: "no single tool call may block longer than ~270 s. Start a long job in the background writing to a log file, then poll it with foreground calls of `sleep 240` + a status check, each under 270 s; still ONE final report." A poll costs a cache READ (0.1×); a >5-min call costs a re-WRITE of the whole context (1.25×).
 

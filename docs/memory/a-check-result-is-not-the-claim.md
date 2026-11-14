@@ -301,3 +301,15 @@ the guards themselves (`python3 a && python3 b && git commit …`). An `echo rc=
 **2026-10-29: a gate scanned HEAD while a rebase had STOPPED on a conflict**, so HEAD was master and it said `hits: 0` over 0 lines; the push then sent the branch ref, unscanned. It was clean, but by luck. **Gate on the exact ref being pushed** (`--head $(git rev-parse <branch>)`), and never chain a push after a rebase without checking that it finished.
 
 **2026-10-30/31, another instance: a setting verified in a FRESH session is not live in the CURRENT one.** I reported autoCompactWindow=300000 as "live" because a test `claude -p` session honoured it. But settings files load at launch, and the coordinator session ran on at 592k/1000k until the owner saw it in the HUD. **How to apply:** for any config change, ask WHICH process reads it and WHEN; then verify in the process that matters (here: the HUD context %, or `/autocompact` for the running session).
+
+## ⭐ "every CI check passes" over a list that was 3 lines (measured 2026-11-04)
+
+Across a compaction I kept re-running `while read c … done < $S/gates499b.txt` and reported **"every CI `check-*`
+step passes"** four times. That file held the **3 PR-only gates**; the full list (73 steps) was a sibling file. A
+check outside it (`check-decision-scheme.py`, trigger 3 and then CANNOT RUN on my new row) was red the whole time,
+and I found it only by running it by hand.
+
+**How to apply:** derive the list from `.github/workflows/ci.yml` AT THE MOMENT OF RUNNING, never from a scratch file
+(Python `re`, not BSD `sed`: `\s` silently fails there and turns all 73 into rc 127, i.e. NOT RUN), and put the COUNT
+in the claim: "73/73 CI check steps", never "every". A fresh worktree also needs the `node_modules` symlink, or
+`check-plan-code --self-test` goes red on the environment, not the change.

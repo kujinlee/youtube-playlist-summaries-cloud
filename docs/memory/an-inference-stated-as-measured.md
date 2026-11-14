@@ -65,3 +65,8 @@ is not. Related: [[concurrent-agents-go-wrong]], [[ask-an-agent-to-refute-not-co
 were independent new subjects, not consequences of a previous fix. The stop signal was different —
 three rounds each finding another *unbudgeted implementation cost* meant review had become the wrong
 instrument for the remaining question. See [[cost-is-not-the-objective-improvement-is]].
+
+**2026-11-10, a DISPOSITION this time (plan-586 r5).** I wrote "removing `settled` costs calls, not correctness" in a
+coordinator doc and briefed a fold on it. Unmeasured: ~50,000 calls/day vs 1,000/hour, so the report never finishes.
+The fold agent caught it only because the brief said STOP if removal breaks something. **When a disposition trades
+correctness for COST, put a number on the cost before briefing** — and keep a STOP clause in fold briefs.

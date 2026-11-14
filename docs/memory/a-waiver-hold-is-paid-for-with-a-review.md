@@ -16,3 +16,12 @@ stopping the progress when I cannot answer (such as sleeping)."*
 [[a-blocking-question-while-afk-costs-the-whole-night]]). Everything else: decide, or buy a review. Making the merge
 check say "a recorded review clears this" instead of "tell the owner" is backlog #374. Related:
 [[push-is-mine-merging-is-theirs]].
+
+**⭐ Put the flagged block in the FINAL round's prompt (measured 2026-11-08).** A "loosens a gate" HOLD is cleared
+only by `## Loosening answers` lines in a verdict recorded on the EXACT current tree. And an id that a half once
+answered as a finding can be withdrawn only by a later round of THE SAME half (Claude cannot clear Codex's). On
+11-08, PRs #536, #538 and #539 each converged and then still HELD. That cost five extra narrow rounds: Claude, then a
+Codex re-clear, for two of them. The prompts had never included `check-merge-ready.py --pr N --flagged-block`, and every
+merge of master voids the old answers. Fix: append that block to the last round's prompt, and use the half that raised
+any finding. Also move `.claude/transcript-reference-warnings.log` (untracked, rewritten by a hook) out of the worktree
+before recording a verdict, because the verdict fingerprints untracked files.

@@ -15,7 +15,7 @@
 - [⭐⭐ An inference stated as MEASURED](an-inference-stated-as-measured.md) — **3× in ONE document**, each caught by the NEXT round, never me. The fix is PARAGRAPH STRUCTURE, not "verify agent output" — a cost figure invented to support a sound argument is the tell
 - [⭐⭐ A retrospective number needs provenance](a-retrospective-number-needs-provenance.md) — recall is fiction and THE CORRECTIONS FAIL TOO (**0 for 5**). DERIVE; cite the SYMBOL, not the line
 - [⭐⭐ Concurrent agents go wrong](concurrent-agents-go-wrong.md) — the WRONG SUBJECT, a report that never arrives, one Postgres → a FALSE BLOCKING. ⭐⭐ **A LIVE AGENT'S FILE IS NOT STATIC** — cost TWICE in one night (appended to it; `git add -A`'d it). Stage EXPLICIT PATHS. RULE in `docs/review-method.md`
-- [⭐⭐ An anchor is unbound by ANY nearby edit](a-mutation-anchor-is-unbound-by-any-edit-nearby.md) — 7 orphaned in ONE session; one was a BLOCKING red CI step. Use the HARNESS's own rule, over EVERY manifest
+- [⭐⭐ An anchor is unbound by ANY nearby edit](a-mutation-anchor-is-unbound-by-any-edit-nearby.md) — 7 orphaned in ONE session; one was a BLOCKING red CI step. Use the HARNESS's own rule, over EVERY manifest; a manifest MERGE needs a per-entry 3-way + every-anchor check
 - [⭐⭐ "Cannot die" may mean a SECOND clause](cannot-die-may-mean-a-second-clause.md) — I deleted on that reading TWICE in two commits; both reversed by the next review. **4 masking pairs in one file.** Construct an input, and ask what ELSE answers this
 - [⭐ A mutation loses its binding](a-mutation-loses-its-binding.md) — anchors bind by TEXT, so a refactor ORPHANS them; promoting one drops its fake-`HOME` redirect
 - [What mutation testing proves](what-mutation-testing-proves.md) — load-bearing, never complete; a MUTATION can be masked like a fixture
@@ -28,10 +28,11 @@
 - [⭐ A BOUND enumerates what is WITNESSED](a-bound-enumerates-what-is-witnessed.md) — I listed what the seam TOUCHES; the cases covered 3 of 4. The missing one reinstated the defect the harness exists for. ⚠ A caveat headed "stated rather than hidden" that is wrong is worse than none
 - [⭐⭐ Assert the emitted artifact PARSES](assert-the-emitted-artifact-parses.md) — 201 cases green over invalid JS; every control dead, and the browser's "0 flips" read as success. `}{` balances
 - [⭐ A test that cannot fail](a-test-that-cannot-fail.md) — what observation makes this FAIL? Removing a signal hollows out its falsifier
-- [⭐⭐ Ask an agent to REFUTE, not confirm](ask-an-agent-to-refute-not-confirm.md) — 4-for-4 on 2026-09-23: the refuting prompts caught a wrong correction I had ALREADY PUBLISHED; the confirming one shipped a summary contradicting its own table. ⚠ The gap is VERIFICATION/RESEARCH agents — review halves already have a mandate (33 docs); I claimed otherwise without grepping
+- [⭐⭐ Ask an agent to REFUTE, not confirm](ask-an-agent-to-refute-not-confirm.md) — 4-for-4 on 09-23: refuting prompts caught a wrong correction I had published; the gap is VERIFICATION/RESEARCH agents
 - [⛔ About to start a review loop? Rounds are CAPPED](review-rounds-capped-at-r3.md) — owner 10-31: both halves r1, alternate r2-r3, r4+ FILE unless BLOCKER; r1-r3 caught 83% of fixes
 - [⭐ Dual review: what it catches](dual-review-what-it-catches.md) — halves NOT redundant; the finding-reviewer right 3/3; ⭐ and **review is the wrong instrument for a SURFACE** — 6 rounds ≈ 7 edge cases, one corpus run ≈ 5,287
 - [⭐⭐ Running Codex](running-codex.md) — a "timeout" is MY `--timeout`: DOUBLE it (900s default, 2700-3600 for big reviews). Run from the coordinator
+- [⛔ Codex FILES what a prompt says is filed](a-reviewer-told-findings-are-filed-files-them.md) — "a non-BLOCKER is filed" → it opened GitHub issue #513 itself. Write: REPORT only; do not touch GitHub
 - [It exists under a name I didn't search](it-already-exists-under-a-name-i-didnt-search.md) — ⭐ 3× in ONE day. Check before proposing to BUILD
 - [Parallel branches, ONE log](parallel-branches-append-to-one-log.md) — ⭐ 3 same-day PRs: #1 clean, rest CONFLICT
 - [A report format is a CONTRACT](a-report-format-is-a-contract.md) — ⭐ "0 red cases" over a shape the harness can't parse
@@ -42,6 +43,7 @@
 - [A mock tests the contract you IMAGINED](a-mocked-boundary-tests-the-contract-you-imagined.md) — ⭐ 2,808 green tests, 500s on first live press
 - [A privilege ≠ a CAPABILITY](a-privilege-is-not-a-capability.md) — ⭐ `has_table_privilege` said granted
 - [True of the name, silent on the layer](true-about-the-name-silent-about-the-layer.md) — ⭐ right about the object NAMED, silent on what overrides it
+- [⛔ Edited backlog.md? Run gen-backlog-page --self-test too](backlog-edit-needs-gen-backlog-page-selftest.md) — its REAL-row cases (kind, 600-char layout) are a doc guard no check-* runs; missed → 23 CANNOT RUN shards (PR #547)
 - [⛔ Run the PR-only gates BEFORE push](run-pr-only-gates-before-push.md) — namespace + fixture-variation went red on 3 PRs; an ffmpeg flake HID one for an hour
 - [Worktree push needs a refspec](push-from-a-worktree-needs-an-explicit-refspec.md) — ⭐ reads SESSION cwd; the block kills the WHOLE Bash call
 - [A gate's CHANNEL can be weaker](a-gates-channel-can-be-weaker-than-the-gate.md) — ⭐ a refusal on hook stdout reached NOBODY
@@ -96,28 +98,39 @@
 - [⛔ A DECLARATION is not the act](a-declaration-is-not-the-act.md) — `--watching` only RECORDS a claim. Arm the Monitor FIRST, then declare. Measured: **43m blind on a red CI**, found only because the user asked about something else
 - [⛔ About to REUSE a teammate or PARK an agent?](usage-is-cache-rewrites-of-parked-agents.md) — reused teammates were ~70% of weighted usage (cache RE-WRITES after idling); fresh agent per slice+round, coordinator /clear only at natural pauses (owner 10-30)
 - [⛔ About to make the owner approve/run a COMMAND?](no-command-approval-ceremony.md) — never; it's ceremony. Sandbox off only for network/docker; dry-run first; a backup ref/.bak before anything destructive (owner 10-30)
-- [⛔ About to spawn an Agent? Pick its MODEL](route-agents-by-task-model.md) — Sonnet for mechanical work (merges, round records, test pins, HOLD checks, logs); Opus for builds, design folds, Claude review halves. Owner 10-30: weekly 26% after 17h
-- [⛔ Briefing an agent that waits on a long job?](agent-blocking-call-over-5-min-rewrites-its-cache.md) — no tool call over ~270 s: agent cache expires at 5 min; re-writes were **19.2% of ALL usage** (11-01 audit). Background + poll in <270 s chunks
-- [⛔ Near a usage stop?](a-budget-stop-is-soft-with-a-reserve.md) — SOFT stop + PACE LINE (owner 11-01): start% + 1.5×remaining÷days-to-reset, from START-OF-DAY meter; last day 97; token items first; only whole items; ⛔ a DAILY CronCreate wake-up (re-arm per session); a cold midnight wake ≈360k
-- [⛔ Choosing what to work on next?](owner-priority-order-1102.md) — owner 11-02: ONE goal, two lanes — DIRECTION (comprehensibility) while they are present, THROUGHPUT (dev speed) while AFK; product 3rd; token work done unless 11-06 says otherwise
+- [⛔ About to spawn an Agent? Pick its MODEL](route-agents-by-task-model.md) — Sonnet for mechanical work (merges, round records, test pins, HOLD checks, logs); Opus for builds, folds, review halves; FABLE pilot (11-13) for Phase 6/stuck loops + specs/plans, measuring PRODUCTIVITY
+- [⛔ Briefing an agent that waits on CI or a long job?](agent-blocking-call-over-5-min-rewrites-its-cache.md) — NEVER let it wait on CI: it reports, I background-poll (11-13: ~3 weekly points burned polling). No call over ~270 s
+- [⛔ 5h limit: pace by block clock; WAKE at reset](a-usage-limit-stop-needs-a-wake-at-reset.md) — fixed block; cap costs TIME not budget; ahead>15 → ≤2 agents; at 100% wake reset+1m
+- [⛔ Correcting a memory? Rewrite its TOP](memory-files-are-audited-weekly.md) — current rule first, never append ⟳; weekly audit (owner 11-13)
+- [⛔ Near a usage stop?](a-budget-stop-is-soft-with-a-reserve.md) — ⟳ owner 11-09: ELASTIC: casual = steady ~14%/day, PUSH days by need (owner says, or I propose visibly), floor ≥8%/later day; wind-down not hard stop; this week Mon 70–72, Tue 78–80, Wed 88–90, Thu→reset all. AFK: ONE retry, a 2nd same failure → file + notify + switch, never grind. Last day: use it all
+- [⛔ Choosing what to work on next?](owner-priority-order-1102.md) — owner 11-12 02:34: dev speed → token saving → others (plugin, product); NO STARVATION — once high-impact 1–2 are done, others get attention
 - [⛔ Deciding how much to start/parallelise/verify?](behavior-follows-the-budget-situation.md) — MODE from the pace line: TIGHT vs AMPLE (room > 2× next item); invariants hold in both; coarse until evidence; REASSESS at each weekly reset (owner 11-02)
 - [⛔ Writing '⏳ Waiting on…' or briefing a long job?](a-waiting-line-must-measure-age.md) — 3 stalls on 10-30: agents promised to report after a background job and never did; my waiting line never checked AGE. Foreground + one report AS THE FINAL TEXT (no SendMessage, reversed 11-01); stall check (#410)
+- [⛔ A PR is ready? PUSH it to CI now](push-to-ci-as-soon-as-ready.md) — CI costs no usage (owner 11-06); never stagger; before a usage stop, push all ready
+- [⛔ Rebase/merge = ONE command that completes or ABORTS](a-rebase-is-one-command-that-completes-or-aborts.md) — a usage cut can freeze only a conflict left open between turns; a reserve can't help (the meter is whole %). ⭐ After review: MERGE master in, never rebase — a rebase orphans every verdict
 - [⭐ A side job gets a NAME first](a-side-job-gets-a-name-first.md) — over ~5 calls or a tracked file → slug + branch BEFORE the first edit. One sentinel, so ANNOUNCE the swap
 - [⏳ BANNERS + waiting lines carry a TIMESTAMP](waiting-lines-carry-a-timestamp.md) — ⭐ asked 2026-10-06, re-asked for BANNERS 2026-10-19: clock in the `▶` heading. I had shrunk the rule to its glyph
 - [⛔ Parallel threads need a GOAL TREE](parallel-threads-need-a-thread-map.md) — root = user request; each thread tagged fix/blocker/bookkeeping/side, named by backlog row (never reused T1/T2); one-line banner carries the tag
+- [⛔ Watching questions.md? One-shot background poll, not Monitor](no-question-watch-while-owner-afk.md) — Monitor expires 30 min, each empty wake ≈30k tokens; a poll that exits on the first question costs 0 idle
 - [⏳ Show a WAITING SIGNAL, not prose](show-a-waiting-signal-not-prose.md) — asked for 2026-09-23: lead with `⏳ **Waiting** — <what>`; "still running" buried in a paragraph does not register
 - [⭐ The user does NOT follow in real time](the-user-does-not-follow-in-real-time.md) — ⛔ banner BEFORE each step, format SETTLED 10-16: `## ▶ [mm-dd hh:mm] STEP n of N` — prepended, no tz/seconds/`·`. Sub-steps too: `▸ [mm-dd hh:mm] 5.3 — …`. ⭐⭐ This LINE omitted the stamp for 3 days and I copied the line, not the file
+- [⛔ Building an explainer page? DRAW it](explainer-pages-lead-with-diagrams.md) — owner 11-12: "diagrams make it much easier to follow"; inline SVG for every flow/rule/before-after, house gold headings
 - [⭐ A title is SCANNED, not read](a-title-is-scanned-not-read.md) — asked 2026-10-02: lead with the concrete SCOPE, then the finding. An essayistic title says what was LEARNED and hides what was TOUCHED. The body still argues
 - [⭐ How to shape a message to me](how-to-shape-a-message-to-me.md) — LEAD with the conclusion, state READINESS separately from ownership, and ⛔ CLOSE with the repo's **CHECK/RESULT table** (`process-checklists.md`), never prose
 - [⭐⭐ Never close with a promise](never-close-with-a-promise.md) — ⛔ **5th instance 2026-09-25.** The Stop guard EXISTS and was INERT — I never armed it. ARM `begin-plan.py` for review/fold loops too, not just implementation
 - [⭐⭐ Blocking on a gate that does not EXIST](a-blocking-question-while-afk-costs-the-whole-night.md) — ⛔ 10-26 STANDING: no answer → take my (recommended) option unless CRITICAL (deploy, data loss, spend, a real loosening HOLD). AskUserQuestion BLOCKS (6.5h idle, 2-line change). ⭐⭐ Worse 10-19: I cited "the owner's call" — **0 hits in 5 process docs** — and folded 5 rounds / 20h. GREP the rule and QUOTE it, or there isn't one
+- [⛔ Work with no fitting GOAL?](i-propose-goal-names-the-owner-picks.md) — owner 11-05: I PROPOSE a goal named for its objective (often a feature); they pick or rename. Never leave "no goal"
 - [⭐ Putting a choice to the user](putting-a-choice-to-the-user.md) — TAG A/B/C + a question exit; never two options that are the SAME action; decide it yourself when obvious
 - [⭐ Name and define every reference](name-and-define-every-reference.md) — never a bare `#39` or `M4`; gloss jargon on first use. Do NOT try to script it
-- [⛔ PUSH is mine; MERGE WHEN READY](push-is-mine-merging-is-theirs.md) — house rule 2026-10-25: `check-merge-ready` READY ⇒ merge; HOLD (rc 3) ⇒ notify, don't merge. No PR for unconverged work — EXCEPT a DRAFT at slice start, which is how the full sweep reaches CI
-- [⛔ A low-risk HOLD is paid for with a REVIEW, not a wait](a-waiver-hold-is-paid-for-with-a-review.md) — 10-27: waiver/false HOLD → decide if trivial, else one refuting review and merge on it; only CRITICAL stops
+- [⛔ PUSH is mine; MERGE WHEN READY](push-is-mine-merging-is-theirs.md) — `check-merge-ready` READY ⇒ merge; HOLD ⇒ I VERIFY it line by line, false ⇒ MERGE (owner re-said 11-06: never park a gated PR "for the owner by design"). No PR for unconverged work except a slice-start DRAFT
+- [⛔ A low-risk HOLD is paid for with a REVIEW, not a wait](a-waiver-hold-is-paid-for-with-a-review.md) — 10-27: decide if trivial, else one refuting review. ⭐ 11-08: put `--flagged-block` in the FINAL round; only the half that raised a finding can clear it
 - [⭐ Defaults I decide myself](defaults-i-decide-myself.md) — small spend incl. a bounded prod write (measure the ledger); lighter verification. ⛔ NOT the CI wait — `--auto` is UNSAFE here, it once put a red on master
+- [⛔ Owner 11-13: copyright Kujin Lee, ff is mine, 0028 approved](owner-decisions-1113-marketplace-ff-392.md) — ⚠ docs/memory IS the live memory dir: never reset it in the ff
+- [Fable limit resets are MANUAL](fable-limit-resets-are-manual.md) — owner presses Settings > Usage; refunds Fable weekly + whole 5h bar; expire 2027-03-08; suggest only when a Fable run is blocked
+- [Stranger experiment token (H2 done)](stranger-token-h2-done.md) — ~/.config/claude-stranger/token, 0600; pass via CLAUDE_CODE_OAUTH_TOKEN, never print it
+- [⛔ Need port 7391? Free it yourself](may-free-port-7391.md) — owner 11-13: stop their explainer server when work needs the port (H7), then RESTART it and say so
 - [⭐ Restart Docker, do not record CANNOT RUN](restart-docker-dont-record-cannot-run.md) — user instruction 2026-09-22. A visible Docker Desktop window is NOT a responsive daemon; `open -a Docker` is a no-op and the backend needs SIGKILL
-- [Process conventions](process-conventions.md) — branch + PR for EVERY change; spec = human gate; ticks in-convo, file at milestones; resume reads the RUNNING SYSTEM
+- [Process conventions](process-conventions.md) — branch + PR for EVERY change; spec = human gate; resume reads the RUNNING SYSTEM
 - [⛔ Specs/plans are WALKED THROUGH, not approved](document-approval-is-interactive.md) — an interactive page they can question; a yes/no on a 243-line doc is a rubber stamp BY CONSTRUCTION, and Phase 1 is the ONLY human gate
 - [⛔ EVERY decision is a selection card](print-selection-cards-in-chat.md) — ⛔⛔ **ALWAYS AskUserQuestion.** The user SKIMS; prose questions are NOT SEEN
 - [⭐ "FIRST" can mean before-shipping](first-can-mean-first-before-shipping.md) — open the referenced item and quote ITS trigger
@@ -130,6 +143,7 @@
 
 ## Environments & product context
 
+- [⛔ Mac slow / processes killed / a memwatch notification?](memwatch-watchdog-fseventsd.md) — 11-09 freeze was fseventsd at 44 GB; a launchd watchdog (~/.claude/memwatch) warns at 2 GB; the fix needs sudo, so it's the owner's
 - [Local cloud validation](local-cloud-validation-run.md) — local Supabase (:3001); worker needs env-load + Node 22+
 - [Access tiers vision](access-tiers-vision.md) — free tier built; the billing layer is the gap
 - [backlog.md stays Markdown](backlog-md-stays-markdown.md) — decided 2026-09-10; don't re-derive the JSON question

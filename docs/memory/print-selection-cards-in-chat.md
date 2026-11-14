@@ -138,3 +138,18 @@ The user: *"you recommended in a transcript which I may or may not read (mostly 
 must be a selection card."* **How to apply:** when relaying ANY report, grep it for "owner could", "optionally",
 "your call", "if you prefer" — each is a fork for the user, and goes on a card in the same turn, never into a table row.
 "Optional" is not "not a decision"; it is a decision with a default.
+
+## ⟳ 2026-11-11 05:58 — A QUESTION ON AN EXPLAINER PAGE IS ALSO UNASKED
+
+The 11-10 spec-changes walkthrough page held two decisions ("a number for the D1 checkpoint", "what 'if feasible'
+means") in a section titled *"Two things I would like you to check"*. No card was ever shown; my chat lines said
+"waiting on your walkthrough". The owner reviewed the OTHER page, never saw them, approved the spec, and I took my
+own recommendations. The owner: *"If I need to make a decision on a point, can you clearly flag them so that I don't
+miss? … I need to know clearly when you need my decisions."*
+
+**How to apply (⟳ refined by the owner 11-11 06:03):** while the owner is REVIEWING a document, a selection card
+INTERRUPTS the review — do NOT pop cards for decisions that live on a page. Instead mark each decision in the page like
+a SIGNATURE LINE in a contract: a YELLOW "✍ DECISION n of N" tag at the spot, plus a counter at the top of the page
+("Decisions: N total · M remaining"), each answered one flipping to answered. Still name the open ones in the ⛔ line of
+every chat status message. Selection cards stay the rule for decisions raised in CHAT, not on a page under review. When I take my own
+recommendation for lack of an answer, say so in the ⛔ line as **TAKEN BY DEFAULT — overturn?**, never in prose.

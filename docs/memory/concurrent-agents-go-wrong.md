@@ -5,6 +5,8 @@ metadata:
   type: feedback
 ---
 
+**CURRENT RULE (owner 11-13 21:54/21:55, until backlog #641 closes): never run two agents in parallel whose PRs can touch the same file** (in practice any two that add a dashboard entry or a backlog row) — "inconvenient but effective". Parallel only when their changed files are disjoint. I also MERGE one PR at a time and re-merge master into the next only after its predecessor lands. Why: each merge made the others conflict and restart CI; 11-13 that cost 47% of two agents' tokens (backlog #641, PR #584).
+
 > Merged 4 memories, bodies kept VERBATIM. Former names (still referenced by other memories): `subagent-interference-open-question`, `a-reviewer-can-review-the-wrong-subject`, `a-forks-report-can-never-arrive`, `concurrent-agents-share-more-than-you-think`
 
 ## subagent interference open question

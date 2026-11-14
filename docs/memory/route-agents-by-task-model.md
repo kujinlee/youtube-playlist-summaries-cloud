@@ -1,6 +1,6 @@
 ---
 name: route-agents-by-task-model
-description: "FIRES-WHEN: about to spawn an Agent — pick `model` by task: Sonnet for MECHANICAL work (merges/re-merges, recording rounds, small test pins, HOLD/evidence checks, log reading, measurement), Opus only for builds, design folds and Claude review halves. Owner 2026-10-30 18:48, weekly usage 26% after 17h"
+description: "FIRES-WHEN: about to spawn an Agent — pick `model` by task: Sonnet for MECHANICAL work (merges/re-merges, recording rounds, small test pins, HOLD/evidence checks, log reading, measurement), Opus for builds, design folds and Claude review halves; FABLE (`model: \"fable\"`) for Phase 6 / stuck loops and spec+plan writing (pilot, owner 11-13). Owner 2026-10-30 18:48"
 metadata:
   node_type: memory
   type: feedback
@@ -33,3 +33,13 @@ The owner checks unused OpenAI quota themselves.
 
 **Every optimization carries its RISK, tracked and re-evaluated (owner 11-01 10:18):** "there might be overlooked risks introduced by optimization efforts. Those risks need to be well understood before making a decision in realistic terms. We may re-evaluate our decisions later and if risks outweigh benefits, we need to adjust, revert or fine-tune." **How to apply:** before adopting an optimization, state its realistic risk (what breaks, how likely, cost of one occurrence) next to its realistic benefit; record it in `docs/optimization-register.md` with the signal that would show the risk materialising and the revert path; re-evaluate at the register's trigger. Evidence it is real: #458's r1 found 5 dropped rule clauses; the global trim's benefit was ~0.04%.
 **…and re-evaluation must be EVIDENCE-backed (owner 11-01 10:19: "re-evaluation has to be backed by evidence").** Each register row names its evidence source (a command/log) and a decision rule (the observation that triggers adjust/revert). Never revert or keep an optimization on opinion; a re-evaluation records the evidence it read. A row with no evidence source gets one started.
+
+**FABLE 5.2 PILOT (owner 11-13 ~03:00, option A, during a reset promotion):** pass `model: "fable"` for (1) Phase 6 architecture reviews and stuck/THRASHING loops (#629, #626, #586's exhausted routes), and (2) writing specs and implementation plans. Everything else unchanged: the coordinator, builds and folds stay on Opus, mechanical work on Sonnet, and the Claude review halves on Opus. **Why:** the article the owner pasted (Fable at 2x Opus per token, ahead on long-horizon/open work) plus the owner's own experience: "When I switched to Opus 5.2 from Opus 5, I felt hugh productivity gain. So measuring actual productivity might be important." **What the pilot measures is PRODUCTIVITY, not just price:** rounds to termination (`rounds_at_termination` in the decision log), fix-induced findings per subject (thrashing), and branch-open to merge time. Meter % per subject is recorded too, once the meter log works again (CANNOT RUN since the 11-13 reset). Each Fable subject is compared against the Opus history. **How to apply:** tag each Fable subject in its decision-log row and in `docs/optimization-register.md`. Re-judge on evidence when the promotion ends; the sample is small (a few subjects a week), so the result is directional only, and the write-up says so.
+
+**⟳ 2026-11-13 05:40, the owner — Fable/Opus COMPARISON week (card A "B as a comparison").** Reason: the regression
+(`~/.claude/meter/regress.py`) had 0 Fable tokens, and the weekly meter fits at R²=0.03, so only Fable-heavy days next to
+Opus-heavy ones can identify Fable's cost. This week: folds and builds ALTERNATE Fable / Opus per task of the same kind;
+review halves stay as before; the Fable Phase 6 reviews (backlog #629, #626) run now. One record per task in the backlog
+#630 pilot evidence: model, rounds to converge, findings a later round caught, wall time, tokens. Mechanical work stays
+Sonnet. Expected spend ~1.3–1.5× normal on Fable days; the reset refund is UNVERIFIED (Gemini text,
+[[fable-limit-resets-are-manual]]).
