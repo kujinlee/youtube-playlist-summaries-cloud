@@ -176,7 +176,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 442 cases
+    python3 scripts/check-usage-pace.py --self-test  # 445 cases
 """
 from __future__ import annotations
 
@@ -634,7 +634,8 @@ def evaluate(text: str | None, now: float, missing: str = "the cache is missing"
     """The RULE: (verdict, one-line message) from the cache's text (None = no file) at `now`. No I/O, and
     TOTAL: a time this platform cannot format is CANNOT RUN, never an exception (r1 X1/M3). `parts`, when given,
     receives `five`: the five-hour sentence alone ("" when FREE or never reached), which the spawn and wake gates
-    attach to an allowed call (r1 fold, Claude M2)."""
+    attach to an allowed call (r1 fold, Claude M2), and `alone`: True when the WARN exists ONLY for that sentence,
+    so its weekly text is context and gets no once-per-session key (r2 fold)."""
     try:
         return _evaluate(text, now, missing, path, meter, meter_why, meter_cut, parts)
     except Malformed as e:
