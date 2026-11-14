@@ -1495,8 +1495,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    if thread and not goal:\n",
-        "    if not (thread and goal):\n"
+        "if thread and not goal:",
+        "if not (thread and goal):"
       ]
     ],
     "expect": [
