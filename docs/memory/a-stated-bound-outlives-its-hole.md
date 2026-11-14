@@ -8,6 +8,8 @@ metadata:
   modified: 2026-09-13T05:56:19.137Z
 ---
 
+**The rule: before triaging a long-standing red, ask whether the assertion's PREMISE is still true; when you close a hole, grep for everything that ASSERTS the hole (comment, backlog row, pinning test) and invert it; a closed hole's description changes TENSE. To verify a claim about a guard, construct the world where the sentence should fail and run it — and confirm the sabotage bit.**
+
 **Measured 2026-09-12, PR #296.** `scripts/mutate-live-schema-check.sh` asserted, as an expected
 **pass**: *"BOUND: a bare INDEX on an M4 relation still PASSES — `idx:` carries no relation name."*
 It scored ✗ and took the whole fifteen-gate schema suite red for two weeks. It was triaged to me as

@@ -1,24 +1,21 @@
 ---
 name: a-rebase-is-one-command-that-completes-or-aborts
-description: About to rebase or merge near a usage limit (or any time)? Run it as ONE command that completes or aborts itself — a conflict must never stay open across a turn boundary
+description: "About to rebase or merge (near a usage limit or any time), or to bring master into a reviewed branch? ONE command that completes or aborts; after review, MERGE master in, never rebase"
 metadata:
   type: feedback
 ---
 
-Owner 2026-11-05 21:01 asked whether keeping 0.02% in reserve would stop a usage-limit cut from freezing a merge
-mid-conflict. It cannot: the statusline meter reports WHOLE percents (`used_percentage: 98`, measured), so a 0.02% reserve is
-invisible, and the reading lags. What works is structural: a tool call already dispatched runs to completion even if the next
-model call is refused, so the only freezable state is a conflict left open BETWEEN turns.
+**The rule:**
+1. **Run a rebase/merge as ONE Bash call that completes or aborts itself** — `git rebase … || git rebase --abort`, `git merge … || git merge --abort`. Resolve a conflict deliberately afterwards, from a clean tree. A conflict must never stay open across a turn boundary.
+2. **After a review round, MERGE master in — never REBASE.** A verdict names the commit it reviewed; a rebase rewrites every commit and orphans every verdict.
+3. **After resolving any log conflict, diff each log against `origin/master`** and expect exactly this branch's lines.
 
-**Why:** a cut leaves `rebase in progress` until someone finishes or aborts it; every other cut state (pushed, no PR; edits not
-committed) is harmless and found by the stalled-work hook and the wake-up.
+**Why:** a tool call already dispatched runs to completion even if the next model call is refused, so the only state a usage cut can freeze is a conflict left open BETWEEN turns (`rebase in progress`). Every other cut state (pushed, no PR; uncommitted edits) is harmless and found by the stalled-work hook and the wake-up. The GitHub squash-merge is already atomic.
 
-**How to apply:** `git rebase … || git rebase --abort` (and `git merge … || git merge --abort`) in ONE Bash call; resolve a
-conflict deliberately afterwards, from a clean tree. The GitHub squash-merge is already atomic. Related: [[a-budget-stop-is-soft-with-a-reserve]].
+## History
 
-**⭐ After a review round, MERGE master in — never REBASE (measured 11-05 22:00, twice).** A verdict names the commit it reviewed;
-a rebase rewrites every commit, so `check-review-recorded.py` reads "N round(s) recorded no commit … UNKNOWN" and CI's `verify`
-goes red (PR #517), and the only cure is ANOTHER confirmation round (#522 r10). `git merge origin/master` keeps the reviewed
-commits and passes with no extra round (#498). ⚠ `keep-both.py` on a REBASE duplicated a branch's decision-log rows and left a
-blank JSONL line, and on a merge put the dashboard entry inside master's last entry — after either, diff each log against
-`origin/master` and expect exactly this branch's lines.
+- **Owner 2026-11-05 21:01** asked whether a 0.02% reserve would prevent a mid-conflict freeze. It cannot: the statusline meter reports WHOLE percents (`used_percentage: 98`, measured), and the reading lags. The fix is structural (rule 1).
+- **Measured 11-05 22:00, twice:** a rebase after review made `check-review-recorded.py` read "N round(s) recorded no commit … UNKNOWN" and CI `verify` red (PR #517); the only cure was another confirmation round (#522 r10). `git merge origin/master` kept the reviewed commits and passed with no extra round (#498).
+- A keep-both conflict resolution on a REBASE duplicated a branch's decision-log rows and left a blank JSONL line; on a merge it put the dashboard entry inside master's last entry. (The memory originally named a `keep-both.py` helper; no such script is tracked in the repo as of 2026-11-14 — see [[parallel-branches-append-to-one-log]] for keep-both resolution.)
+
+Related: [[a-budget-stop-is-soft-with-a-reserve]].
