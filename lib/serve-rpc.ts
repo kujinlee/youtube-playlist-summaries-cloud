@@ -31,6 +31,20 @@ export async function callRpcBounded<T>(
   timeoutMs: ReserveRpcBudget | SettleRpcBudget,
   label: string,
 ): Promise<RpcOutcome<T>> {
+  return raceRpc(make, timeoutMs, label);
+}
+
+/**
+ * The same bounded wait for a caller OUTSIDE the serve lease, where there is no lease budget to
+ * brand against (backlog #62: the two correction RPCs). One mechanism, two doors: the brand stays on
+ * the serve door — serve-budget.ts mints only what the lease spends (serve-budget-population.test.ts)
+ * — and this door takes a plain duration.
+ */
+export async function raceRpc<T>(
+  make: (signal: AbortSignal) => PromiseLike<{ data: T; error: unknown }>,
+  timeoutMs: number,
+  label: string,
+): Promise<RpcOutcome<T>> {
   const ctrl = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expiry = new Promise<{ kind: 'timeout' }>((resolve) => {

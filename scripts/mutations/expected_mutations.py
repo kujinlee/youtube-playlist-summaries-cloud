@@ -1433,7 +1433,14 @@ EXPECTED_MUTATIONS = {
     # index's page list, the port range) — a local retired verdict losing to master's page and the retired name
     # asked first (Codex M1), the fetcher's copy guard (M2), the index's poke and its fetch note (M3), and
     # port_from's ASCII shape and caught int() (m4).
-    "scripts/explainer-serve.py": 112,
+    # ⟳ 2026-11-13, backlog #625: 112 -> 116 — the Ask panel reaching the page, /_rev folding the questions in, and
+    # a fault in either SAID (the panel on the page, the revision as `:ask-failed`).
+    "scripts/explainer-serve.py": 123,
+    # ⟳ 2026-11-13, backlog #625: the Ask answerer, pinned in the commit that creates it. One entry per rule a
+    # reader relies on: the claim marker, the caps (both directions of each), Read as the only tool, the suite
+    # never starting a real binary, escaping, where an answer may land, what may be replaced, an instruction
+    # going to the inbox, the start-up skip, dead-claim recovery, and each panel state.
+    "scripts/ask_answerer.py": 52,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a

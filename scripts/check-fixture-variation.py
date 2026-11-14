@@ -255,7 +255,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         # backlog #122's round-1 repair added a containment case against a NESTED root, which is
         # what made the parameter take more than one value. A debt that has become payable and is
         # not paid is what `widened_debt_drift` refuses in the other direction two files over.
-        'format_question_entry.now', 'revision.p',),
+        'revision.p',),
     'gen-backlog-page.py': (
         'build.edited', 'build.generated_at', 'build.sha', 'build.stamp',
         'link_contrast_errors.minimum', 'plain.text', 'report_run.rows',
@@ -314,6 +314,29 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #625 (2026-11-13): the Ask answerer, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source: 85 keys; two are EXEMPT as table loops, every other one is varied.
+    "ask_answerer.py": ("answer_block.body_html", "answer_block.passed_on", "answer_block.qid",
+                        "answer_block.question", "answer_block.stamp", "answer_block.when", "answer_one.caps",
+                        "answer_one.deps", "answer_one.q", "answer_one.root", "build_prompt.facts",
+                        "build_prompt.q", "build_prompt.source", "build_prompt.when", "cap_refusal.caps",
+                        "cap_refusal.runs", "cap_refusal.tokens", "caps_from.env", "check.doc", "check.qid",
+                        "claim.at", "claim.by", "claim.doc", "claim.pid", "claim.qid", "claim.question",
+                        "claim.root", "fold.events", "headless_argv.binary", "headless_argv.caps",
+                        "headless_argv.dirs", "headless_argv.model", "insert_answer.block",
+                        "insert_answer.fragment", "insert_answer.section", "main.argv", "main.env",
+                        "page_name.doc", "panel_html.body", "panel_html.now", "panel_html.rel",
+                        "panel_html.root", "panel_lines.body", "panel_lines.died", "panel_lines.items",
+                        "panel_lines.now", "panel_lines.running", "panel_rev.rel", "panel_rev.root",
+                        "parse_questions.text", "parse_reply.text", "parse_result.rc", "parse_result.stderr",
+                        "parse_result.stdout", "pending.root", "pid_alive.pid", "read_inbox.root",
+                        "read_ledger.root", "read_questions.root", "render_answer.text",
+                        "run_headless.binary", "run_headless.caps", "run_headless.cwd", "run_headless.dirs",
+                        "run_headless.model", "run_headless.prompt", "served_bytes.port", "served_has.port",
+                        "served_root.env", "spent.day", "spent.events", "split_body.body", "state_dir.root",
+                        "status_text.caps", "status_text.root", "watch.caps", "watch.deps", "watch.once",
+                        "watch.passes", "watch.root", "watch.sleep", "watch.tick", "watcher_died.root",
+                        "watcher_pid.root", "watcher_running.root",),
     # backlog #586 slice 2 (2026-11-12): the strace-log path resolver, pinned in the commit that creates it. DERIVED by
     # running `analyse()` on the delivered source: 9 keys, every one varied by a case (none exempt).
     # ⟳ 2026-11-12 slice 3 (the default-deny classifier and record assembly): re-DERIVED by `analyse()`, 9 + 11 = 20.
@@ -1369,6 +1392,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #625 (2026-11-13): ask_answerer.py — two PURE functions each driven by ONE table loop. This scan
+    # compares argument EXPRESSIONS, so a loop variable reads as one value; the ROWS vary.
+    "ask_answerer.py:page_name.doc": "one table loop of 13 rows (a page, a slug, a query string, a path that leaves the folder, the state folder, a fragment, an encoded slash); guarded by the manifest entry that drops the containment test, which dies via the case naming it",
+    "ask_answerer.py:parse_reply.text": "one table loop of 6 rows (instruction, question, a KIND line in the wrong case, the label inside a sentence, an unknown kind, a KIND line alone); guarded by the manifest entry that reads every reply as a question, which dies via the case naming it",
     # backlog #495 r1 (2026-11-11): check-plan-code.py's re-run snapshot is threaded through run_mutations' OWN
     # recursion — every external caller passes None and run_mutations sets it to `rerun_snapshot()`'s result.
     "check-plan-code.py:run_mutations.rerun_from": "an internal recursion parameter: every external call passes None and run_mutations replaces it with `rerun_snapshot(d, ...)` before any mutant runs; the snapshot's effect is varied by the FLAKY end-to-end cases (a suite writing state BESIDE itself must NOT become FLAKY — red when the re-run reuses the first run's tree) and `rerun_fresh`'s direct cases (a CANNOT RUN string, a real snapshot)",

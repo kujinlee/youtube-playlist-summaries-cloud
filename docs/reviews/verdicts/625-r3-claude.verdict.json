@@ -1,0 +1,26 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/625-r3-claude.md": "100644 71066c74cb363183b11f6b40bf4d9fa316751f79",
+    "scripts/ask_answerer.py": "100644 80d4dc7208dc9160ee2c5f4750907b8fd1d3370f",
+    "scripts/explainer-serve.py": "100755 b2cd7e5e71e4abe48b3b20b487ed622cd2972200",
+    "scripts/mutations/ask_answerer.json": "100644 67a2c864f04e799724acef583bc272fb74259b70",
+    "scripts/mutations/expected_mutations.py": "100644 5e8fff340103022d38477cde852310d5ce3ba274",
+    "scripts/mutations/explainer-serve.json": "100644 048f96163718a045b5f8957997ffc1a8fc309632"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "b471cb87426b2fbe17859a939a0691eea5519951",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/b625/claude-r3-brief.md",
+  "reason": "claude half filed: 10660 chars, names b471cb87426b",
+  "refused": false,
+  "review": "625-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/b625",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
