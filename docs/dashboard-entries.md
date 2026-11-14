@@ -20673,3 +20673,21 @@ round was added; round 5 (Codex, CONVERGED) saw the final tree. Local: tsc clean
 integration 545 (540 passed + 3 skipped + 2 order-dependent, filed as backlog #637), schema gates
 with `M4_PHASE=post`. Migration `0028_correction_allowance.sql` is unchanged and not yet applied to
 production.
+## 2026-11-13
+A question you type into a served page can now be answered in that page within about a minute, without the main
+session. A separate small agent reads the page and the repository, and its answer appears under the section you
+asked from. It only answers. When what you typed is an instruction or a decision, the page says "Passed on, not
+acted on" and the text goes to an inbox the main session reads. A question that could not be answered says so on
+the page, with the reason. It is off until it is started with `python3 scripts/ask_answerer.py --start`.
+
+<!--tech-->
+Backlog #625, branch `b625-ask-answerer`. `scripts/ask_answerer.py`: a watcher that stats `questions.md` (no
+model call while idle), one `claude -p` run per question with Read as its only tool, and the script itself writes
+the escaped answer into the fragment and recomposes. State is in the git-ignored `docs/explainers/.ask/`; the
+claim marker is the first ledger line for a question, taken under a lock. Caps: 10 turns, $0.75 and 240 s per
+question; 40 questions and 3,000,000 tokens per day; `--status` prints them. `explainer-serve.py` appends a panel
+of the page's questions and folds their state into `/_rev`. ask_answerer 123 self-test cases and 52 mutations;
+explainer-serve 291 cases, mutation pin 112 → 123. Review rounds 1 (11 findings), 2 (5) and 3 (5) are folded; round 4 (3, none a blocker) is filed under the round cap: a killed run counts
+against the token cap, a start no longer skips a question the page showed NOT ANSWERED, and the server refuses a
+POST from another site. Follow-ups filed: backlog #635 (inbox hook), #636 (`/latest`), #638 (a stop can signal a stale pid), #639 (Phase 6 review of the watcher lifecycle: rounds 2, 3 and 4 each found a defect a fix had caused), #640 (one wrong sentence, one weak case).
+The panel shows on the owner's port once the running server is restarted.
