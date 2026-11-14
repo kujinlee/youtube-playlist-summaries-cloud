@@ -8,7 +8,12 @@ metadata:
   modified: 2026-08-16T04:37:43.927Z
 ---
 
-**Candidate rule, deliberately NOT written into `docs/portable-practices.md` yet (2026-08-15).**
+**Status (checked 2026-11-14): still an UNPROMOTED candidate — do not cite it as a rule.** It never earned a
+`portable-practices.md` section (§13 went to a different rule, "Code inside a document is never run", 2026-08-17).
+The operative stopping rule for review loops is now the owner's **round cap** (2026-10-31: r4+ findings are FILED
+unless a BLOCKER) — [[review-rounds-capped-at-r3]].
+
+**Candidate rule, deliberately NOT written into `docs/portable-practices.md` (2026-08-15).**
 
 > When the defect class shifts from the artifact to the artifact's own **bookkeeping**, the review has
 > stopped measuring the design, and the next dollar is better spent on execution than on reading.

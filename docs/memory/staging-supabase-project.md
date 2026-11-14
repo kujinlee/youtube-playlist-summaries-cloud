@@ -1,6 +1,6 @@
 ---
 name: staging-supabase-project
-description: "FIRES-WHEN: needing the throwaway staging Supabase project — Throwaway hosted Supabase project neeufoxdbgbpkjukzzuc (yps-m14-staging) created 2026-08-11 for the M1.4 B-group checks — DELETE IT when B3/B4 are done"
+description: "FIRES-WHEN: seeing project ref neeufoxdbgbpkjukzzuc (yps-m14-staging), or deciding whether a check needs hosted infra — the throwaway staging project was DELETED 2026-08-12; record any new external resource the moment it is created"
 metadata:
   node_type: memory
   type: project
@@ -8,26 +8,21 @@ metadata:
   modified: 2026-08-11T16:36:26.827Z
 ---
 
-**⚠ AN EXTERNAL RESOURCE EXISTS THAT THE REPO DOES NOT CREATE.** Recorded here at the moment of
-creation, because that is exactly the discipline [[process-conventions]] says was missing when
-prod drifted to migration `0022` unrecorded.
+**The staging project `neeufoxdbgbpkjukzzuc` (`yps-m14-staging`) NO LONGER EXISTS — deleted 2026-08-12**
+(`docs/roadmap-to-launch.md`: Gate B3's money clause tested an unreachable state and was replaced by a CI test,
+`tests/integration/serve-md-unreadable-no-charge.test.ts`, so hosted infra was no longer needed; prod verified
+untouched afterwards). Nothing to clean up. Prod is `uykwcybxqgewmbltroxf`.
 
-- **Project `neeufoxdbgbpkjukzzuc`** — name `yps-m14-staging`, org `pmxcbkdbfggdoynjxqxp`, us-east-1,
-  created **2026-08-11**. Second project in the org (prod is `uykwcybxqgewmbltroxf`); expected to sit
-  in the free tier, **not verified against billing**.
-- **Why it exists:** the M1.4 B-group checks need *hosted* infra (real TLS, real pooler, real network),
-  which is **not** the same as needing *production*. Running them here meant no Storage policy was
-  revoked on live data. User decision, 2026-08-11.
-- **State:** all 25 migrations, 12 tables all `rls_forced`, private `artifacts` bucket with both
-  policies, test user `m14-staging@example.com` (owner `9e440cb5-0a70-42b9-998c-40760e1c9bcd`),
-  password auth ENABLED (safe here; it is deliberately OFF on prod), ~10 synced videos + blobs.
-- **🗑 DELETE IT when B3/B4 finish** — `supabase projects delete neeufoxdbgbpkjukzzuc`. Nothing in the
-  repo references it; if this memory is lost it becomes an orphan nobody can explain.
-- Credentials/URLs were written to the **session scratchpad only** (never the repo, never git). They
-  die with the session — recreate via `supabase projects api-keys --project-ref neeufoxdbgbpkjukzzuc`.
+**Rule it carries:** an external resource the repo does not create is recorded **at the moment of creation**, with
+its delete condition — the discipline [[process-conventions]] says was missing when prod drifted to migration `0022`
+unrecorded. Credentials go to the session scratchpad only, never the repo.
 
-**Worth keeping even after deletion:** applying the full migration set to a blank database proved for
-the first time that it **builds a correct schema from scratch** (25/25, 12 tables, all `rls_forced`).
-Prod's incremental history had never tested that, and no CI job does either.
+**Worth keeping:** applying the full migration set to a blank database there proved for the first time that it
+**builds a correct schema from scratch** (25/25 migrations, 12 tables, all `rls_forced`). Prod's incremental history
+had never tested that.
 
-See [[launch-roadmap-state]] for the B-group results themselves.
+## History
+- Created 2026-08-11 (org `pmxcbkdbfggdoynjxqxp`, us-east-1; free tier assumed, not verified against billing) for the
+  M1.4 B-group checks, which needed *hosted* infra (real TLS, pooler, network) — not *production*. User decision
+  2026-08-11: run them there so no Storage policy was revoked on live data. Test user `m14-staging@example.com`,
+  password auth enabled there only (deliberately OFF on prod). See [[launch-roadmap-state]] for the B-group results.
