@@ -447,8 +447,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        return WARN",
-        "    if zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        return WARN"
+        "    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        if parts",
+        "    if zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        if parts"
       ]
     ],
     "expect": [
@@ -803,8 +803,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if text is not None and text.strip() == sid:\n        return True",
-        "    if False:\n        return True"
+        "    prev = \"\" if prev == sid else prev[len(sid) + 1:] if prev and prev.startswith(sid + \"\\t\") else None",
+        "    prev = None"
       ]
     ],
     "expect": [
@@ -829,8 +829,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "text.strip() == sid:",
-        "text.strip() != \"\":"
+        "    if prev == key:\n        return prev",
+        "    if text and text.strip():\n        return key"
       ]
     ],
     "expect": [
@@ -855,8 +855,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if sid is None:\n        return False\n    sid = f\"{sid}\\t{key}\"",
-        "    if sid is None:\n        return True\n    sid = f\"{sid}\\t{key}\""
+        "    if sid is None:\n        return None\n    line = ",
+        "    if sid is None:\n        return key\n    line = "
       ]
     ],
     "expect": [
@@ -2498,8 +2498,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        ", BAND_UNKNOWN):\n        return WARN, f\"⚠ usage pace",
-        "):\n        return WARN, f\"⚠ usage pace"
+        "or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        if parts",
+        "or zone in (WIND_DOWN, NO_NEW_STARTS):\n        if parts"
       ]
     ],
     "expect": [
@@ -2616,8 +2616,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    sid = f\"{sid}\\t{key}\" if key else sid",
-        "    sid = key or sid"
+        "    prev = \"\" if prev == sid else prev[len(sid) + 1:] if prev and prev.startswith(sid + \"\\t\") else None",
+        "    prev = \"\" if prev == sid else prev.split(\"\\t\", 1)[-1] if prev else None"
       ]
     ],
     "expect": [
@@ -2892,12 +2892,64 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        parts[\"five\"] = five_note",
-        "        pass"
+        "        parts[\"five\"], parts[\"alone\"] = five_note, False",
+        "        parts[\"alone\"] = False"
       ]
     ],
     "expect": [
       "⭐ r1 fold: the spawn hook at weekly 50% and 5h 100% ALLOWS and tells the model STOP + the WAKE time"
+    ]
+  },
+  {
+    "name": "#645 r2 fold: the 5h sentence and the weekly text share ONE key again (the whole message)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "            wkey = \"\" if parts.get(\"alone\") else digest(weekly)",
+        "            wkey = digest(message)"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 fold: an unchanged 5h zone is silent when the weekly figure moves (10 → 11 → 12, 5h 75)"
+    ]
+  },
+  {
+    "name": "#645 r2 fold: a WARN that exists only for the 5h sentence is never marked alone",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "            parts[\"alone\"] = zone not in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN)",
+        "            parts[\"alone\"] = False"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 fold: an unchanged 5h zone is silent when the weekly figure moves (10 → 11 → 12, 5h 75)"
+    ]
+  },
+  {
+    "name": "#645 r2 fold: a moved weekly WARN re-says the unchanged 5h sentence",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "                out = prompt_output(WARN, weekly)",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 fold: a moved weekly WARN speaks again (#628) WITHOUT re-saying an unchanged 5h zone"
+    ]
+  },
+  {
+    "name": "#645 r2 fold: a 5h zone change re-says the unchanged weekly WARN",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "                out = prompt_output(WARN, f\"⚠ usage pace:{five}\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 fold: a 5h zone change speaks with the weekly figure fixed (weekly 10 and weekly 85, 5h 75 → 85)"
     ]
   }
 ]

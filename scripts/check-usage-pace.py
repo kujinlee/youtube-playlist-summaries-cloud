@@ -685,7 +685,7 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
     if five is not None and five[1] > now:   # a passed reset is last block's reading: it adds nothing
         five_note = block_note(five[0], five[1], now)
     if parts is not None:
-        parts["five"] = five_note
+        parts["five"], parts["alone"] = five_note, False
     stop, days = refuse_at(now, resets), days_after_today(now, resets)
     # backlog #525 M1: the rise's NEXT real stop. The last night (the hard limit) starts before the rise's 99% end
     # whenever LAST_NIGHT_S > RISE_END_S, so the 99% end is then never a stop and must not be named as one.
@@ -730,6 +730,8 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
     if use_it:   # below the WARN line on the last day is the MOST room to lose: it is said, never silent
         return WARN, f"{use_it}Weekly usage is {pct(weekly)}; the stop is {pct_up(stop)}.{stop_note}{line_note}{five_note}"
     if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):
+        if parts is not None:   # r2 fold: the WARN exists ONLY for the 5h sentence; the weekly text is context
+            parts["alone"] = zone not in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN)
         return WARN, f"⚠ usage pace: weekly usage is {pct(weekly)}.{line_note}{five_note}"
     return OK, line_note.strip()
 
@@ -924,26 +926,40 @@ def told_this_session(payload: str, root: str, key: str = "") -> bool:
     prompt stays silent; else records it and returns False. Any doubt (no session_id, no main checkout, an
     unwritable state file) returns False, so the notice is LOUD rather than lost. One line of state: a different
     notice in between makes the next repeat speak again (backlog #628)."""
+    return last_notice(payload, root, key) == key
+
+
+def last_notice(payload: str, root: str, key: str = "") -> str | None:
+    """The key last recorded for THIS session (None: none, another session's, or any doubt), and records `key`.
+    `told_this_session` is `last_notice(...) == key`; the WARN path reads the previous key to compare its weekly and
+    5h parts separately (r2 fold)."""
     sid = session_of(payload)
     if sid is None:
-        return False
-    sid = f"{sid}\t{key}" if key else sid  # a tab never occurs in a usable sid, so no sid forges a key (r1 C2)
+        return None
+    line = f"{sid}\t{key}" if key else sid  # a tab never occurs in a usable sid, so no sid forges a key (r1 C2)
     main, _ = main_checkout(root)
     if main is None:
-        return False
+        return None
     state = os.path.join(main, NOTICE_STATE_FILE)
     text, _ = read_regular(state, 4096)
-    if text is not None and text.strip() == sid:
-        return True
+    prev = None if text is None else text.strip()
+    prev = "" if prev == sid else prev[len(sid) + 1:] if prev and prev.startswith(sid + "\t") else None
+    if prev == key:
+        return prev
     try:
         os.makedirs(os.path.dirname(state), exist_ok=True)
         tmp = f"{state}.{os.getpid()}.tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(sid + "\n")
+            fh.write(line + "\n")
         os.replace(tmp, state)
     except OSError:
         pass
-    return False
+    return prev
+
+
+def digest(text: str) -> str:
+    """A short, stable key for a notice's text (backlog #628's dedup key)."""
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
 def safe_time(t: float) -> str:
@@ -1132,11 +1148,25 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
         # backlog #628: a WARN whose WHOLE text is unchanged is said once per session — it repeats on every prompt and
         # on the owner's screen (its token cost is NOT measured). Any change in the text (zone, stop, the 0.1% reading,
         # trend or days left) speaks again; REFUSE-SPAWN, CANNOT RUN and a WARN with a NOT RUN part never dedupe.
+        # r2 fold (Codex MAJOR): the 5h sentence is keyed APART from the weekly text, which carries the weekly figure —
+        # one key let a 1-point weekly move re-say an unchanged 5h zone. Each part speaks when ITS text changed; a
+        # weekly text that is only context for the 5h sentence (`alone`) is no notice and never speaks by itself.
         elif verdict == WARN and out and NOT_RUN_MARK not in message:
             if payload is None:
                 payload = read_payload() or ""  # no usable stdin means no session: the WARN is said
-            if told_this_session(payload, args.root, "warn:" + hashlib.sha256(out.encode()).hexdigest()[:16]):
+            five = parts.get("five", "")
+            weekly = message[:-len(five)] if five and message.endswith(five) else message
+            wkey = "" if parts.get("alone") else digest(weekly)
+            fkey = digest(five) if five else ""
+            prev = last_notice(payload, args.root, f"warn:{wkey}:{fkey}")
+            pw, pf = prev[5:].split(":", 1) if prev and prev.startswith("warn:") and prev.count(":") == 2 else (None, None)
+            say_weekly, say_five = bool(wkey) and wkey != pw, bool(fkey) and fkey != pf
+            if not (say_weekly or say_five):
                 out = None
+            elif say_weekly and not say_five and five:
+                out = prompt_output(WARN, weekly)
+            elif say_five and not say_weekly and wkey:
+                out = prompt_output(WARN, f"⚠ usage pace:{five}")
         # Every other prompt (OK, REFUSE-SPAWN, a stale or malformed cache) moves the state on, so WARN → OK → the same
         # WARN speaks again: a return to a zone is a zone change (r1 C1). Its answer is ignored — none is deduplicated.
         else:
@@ -2691,6 +2721,25 @@ def _self_test_body() -> int:
                               payload=sess("s-blk-move"))[1]) for u in (70, 75, 80, 80.1, 85, 90, 95, 100)]
             check("⭐ r1 fold: a 5h reading that moves INSIDE one zone is silent; a zone change speaks",
                   seq, [True, False, False, True, False, True, False, True])
+            # ⭐ r2 fold (Codex MAJOR): the 5h sentence is deduplicated on its OWN key. The whole-output hash carried the
+            # weekly figure, so an unchanged AT MOST 2 AGENTS was said again whenever the weekly meter moved 1 point.
+            def say(weekly: float, five: float, sid: str) -> str:
+                return drive(cache(weekly, five=five, five_reset=NOW + 9000), "--hook", "prompt", "--meter", mpath,
+                             root=wt, payload=sess(sid))[1]
+
+            fresh()
+            check("⭐ r2 fold: an unchanged 5h zone is silent when the weekly figure moves (10 → 11 → 12, 5h 75)",
+                  [bool(say(w, 75, "s-r2-a")) for w in (10, 11, 12)], [True, False, False])
+            fresh()
+            _z = [say(10, u, "s-r2-b") for u in (75, 85)] + [say(85, u, "s-r2-c") for u in (75, 85)]
+            check("⭐ r2 fold: a 5h zone change speaks with the weekly figure fixed (weekly 10 and weekly 85, 5h 75 → 85)",
+                  (bool(_z[0]), "NO NEW AGENTS" in _z[1], bool(_z[2]), "NO NEW AGENTS" in _z[3],
+                   "weekly usage is 85" in _z[3]), (True, True, True, True, False))
+            fresh()
+            _w = [say(w, 75, "s-r2-d") for w in (85, 86, 86)]
+            check("⭐ r2 fold: a moved weekly WARN speaks again (#628) WITHOUT re-saying an unchanged 5h zone",
+                  ("AT MOST 2 AGENTS" in _w[0], "weekly usage is 86" in _w[1], "5h block" in _w[1], _w[2]),
+                  (True, True, False, ""))
             check("5h block: a FREE block says nothing at all",
                   drive(cache(10, five=60), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-blk2")), (0, ""))
             check("#628: REFUSE-SPAWN is never deduplicated",
