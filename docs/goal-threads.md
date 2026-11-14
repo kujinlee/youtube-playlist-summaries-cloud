@@ -83,7 +83,6 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-07 20:06 "I will be AFK mostly until Monday Nov. 9th. Meanwhile, try to fix remaining high impact backlogs on dev-speed-first, token-usage-first, comprehensibility-suite, guard-harness-audit"
 > 2026-11-10 08:25 "last night I reviewed http://127.0.0.1:7391/2026-10-15-brief-marketplace-inventory-walkthrough.html let's add this initiative to current focus."
 - fix · backlog #509 · each agenda step shows the goal it serves, derived from the thread lines, and a NOW line shows what is in flight
-- fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this; APPROVED by the owner 11-11 05:53, folded as section 2c, round 7 converged
 - fix · backlog #504 · the agenda log's record check refuses a step whose refs are not (kind, number) pairs
 - fix · backlog #514 · in-flight work is added with a goal, or says why it has none
 - fix · backlog #515 · an agenda step for a partly-done row is not ticked by its PR's merge
@@ -214,3 +213,10 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-13 16:22 "if memory file contains more information than necessary, will it harm the performance or doesn't matter much"
 > 2026-11-13 16:25 "Rewrite the file I just edited so the current rule comes first. -> not just that file. I would audit all other memory files. And make such audit to be done periodically (weekly or monthly?)"
 - fix · PR #585 · one-time audit: every memory file opens with its current rule; the always-loaded index 24,843 → 21,888 characters
+
+## GOAL harness-ships-elsewhere
+> 2026-11-10 08:25 "last night I reviewed http://127.0.0.1:7391/2026-10-15-brief-marketplace-inventory-walkthrough.html let's add this initiative to current focus."
+> 2026-11-14 08:29 "this is related with harness-plugin. the marketplace work is largely about comprehensibility. By the way, let's make uniform goal name and internal work name(?) such as harness-plugin vs marketplace-work seems to be same. Let's use only one of them."
+- fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this; APPROVED by the owner 11-11 05:53, folded as section 2c, round 7 converged
+- fix · backlog #384 · the comprehensibility suite's overarching design: the pages are a large part of what the plugin ships
+- fix · backlog #644 · one piece of work has one name: goal, anchor, feature node and ledger id agree, and a check keeps them agreeing
