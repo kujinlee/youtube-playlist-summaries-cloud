@@ -153,6 +153,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #503 · measure whether agents spawned close together share one cached start-up
 - fix · backlog #444 · revisit Opus-vs-Sonnet routing once the meter regression has a ratio · waits on days of meter data
 - blocker · backlog #513 · the usage hook runs the checked-out branch's guard, so an unmerged branch sets the stop
+- fix · backlog #630 · the Fable 5.2 pilot: a comparison week of Fable against Opus per task, reported at the 11-20 reset
 ## GOAL dev-speed-first
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
 > 2026-11-02 09:09 "let's make development speed issues higher priority than others"
@@ -203,6 +204,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #586, PR #557 · slice 1 of observed-reach selection: strace records each suite's reads on the runner, so a PR's mutation sweep can be chosen by what the suites actually read
 - fix · backlog #641, PR #584 · the shared dashboard log makes parallel PRs conflict and restart CI: filed with its measurement
 - bookkeeping · backlog #643, PR #584 · `npm run test:e2e` is never fully green locally (F5c fails on master; production smoke needs auth fixtures)
+- fix · backlog #619, PR #580 · the mutation sweep reads one record per shard, so a lost, duplicated or unfinished shard goes red instead of reading as clean
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
