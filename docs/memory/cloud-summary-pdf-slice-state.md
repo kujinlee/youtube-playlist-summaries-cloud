@@ -7,6 +7,8 @@ metadata:
   originSessionId: 7746a733-7051-4952-85dd-526eb71dd21b
 ---
 
+**CURRENT STATUS: code MERGED (PR #14, `bce5b48`, 2026-07-12); the T12 deploy-verification checklist `docs/reviews/spec-cloud-pdf-deploy-verification.md` still reads "⏳ PENDING" with no results recorded (checked 2026-11-14); `docs/roadmap-to-launch.md` Parking Lot says it "folds into 1.4/3.1". Do not cite the PDF route as verified in prod without checking that file and `flyctl` first.**
+
 **Cloud summary PDF generation slice** (the "cloud doc generation" work deferred by Stage 2c, scoped to **summary PDF only** — cloud dig generation + dig PDF split to later specs). Branch `feat/cloud-summary-pdf` off master.
 
 **Status (2026-07-12): ✅ MERGED to master — PR #14, merge commit `bce5b48`.** All 12 tasks done via subagent-driven-development, each per-task dual-reviewed (Codex gpt-5.5 + Claude) to convergence; whole-branch dual review CLEAN both passes (0 Blocking/High). Human explicitly authorized push+PR+merge this session (auto-merge grant was spent → merge was a human gate). Local + remote feat/cloud-summary-pdf branches deleted; local master synced. full unit 2076/2076, tsc 0, integration 341/343 (2 pre-existing skips). **Remaining: T12 Phase-4 deploy verification (operational, needs live container — see checklist doc) before enabling the route in prod.**

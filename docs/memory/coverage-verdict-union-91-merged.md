@@ -30,7 +30,7 @@ Round 4 introduced no regression and its own fix survived being attacked as a su
 
 ## ✅ WAS ESCALATED — and ANSWERED BY EVENTS, not by a reply (closed 2026-09-09)
 
-`dev-process.md` fires Phase 6 at four non-converging rounds. **The literal trigger fired** (round 4
+`dev-process.md` then fired Phase 6 at four non-converging rounds *(superseded: Phase 6 now arms on THRASHING — two consecutive rounds whose findings came from the previous fix — and four rounds only obliges asking; `docs/dev-process.md`)*. **The literal trigger fired** (round 4
 found a self-contradicting artifact) **and the CAUSE the r3 rule named was measured FALSE** — the
 three narrators (`evidence()` subject, `verify_evidence` mode, `main()` mode) all derive from the
 flag and agree. `review-method.md` says read the trigger off the cause, so Phase 6 was **not**

@@ -8,6 +8,8 @@ metadata:
   modified: 2026-09-22T21:21:36.020Z
 ---
 
+**CURRENT RULE: a case asserting a derived value must exercise its producer at two DISTINCT inputs, inside ONE case, varying every component.** And when a fix REPLACES a population, producer or mechanism, build one fixture where the OLD and NEW differ at every site that reads them, then sever the fix and check the case reddens (2026-10-21, below).
+
 Measured over rounds 3–5 of the `unheralded` banner-guard review (branch
 `banner-work-without-banner`, 2026-09-22). **Eleven** freezable derived-value sites in one delivered
 file; **nine single-edit constant-freezes survived** a 150-case suite. For three consecutive rounds a
