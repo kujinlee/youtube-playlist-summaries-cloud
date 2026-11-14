@@ -265,18 +265,9 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
             "runs on every event, and gates nothing"),
     ("ci.yml", "EVENT: ${{ github.event_name }}"):
         (2, "the event handed to the sweep's selector and to the sweep-red alert — gates no step"),
-    # backlog #330: the alert runs on everything EXCEPT a pull request — the opposite of PR-only.
-    # ⟳ PR #496 r1 C4: one step now opens, comments on, or CLOSES the issue, so it runs on a green
-    # run too (`!cancelled()`, not `failure()`).
-    # ⟳ backlog #534: and never on a `batch/**` push, whose red is a batch verdict for `batch-ci.py status`.
-    ("ci.yml", "if: ${{ !cancelled() && github.event_name != 'pull_request' && "
-               "!startsWith(github.ref, 'refs/heads/batch/') }}"):
-        (2, "the sweep-red alert, which runs on a master push or the schedule and never on a PR or a batch; "
-            "and (backlog #495 r1) the download of every shard's FLAKY names just before it, under the same gate"),
-    # ⟳ backlog #495 r1 (Codex 4): each sweep shard uploads its FLAKY mutation names for the alert job to
-    # FILE. The opposite of PR-only: a PR's sweep files nothing, so it uploads nothing.
-    ("ci.yml", "if: ${{ !cancelled() && github.event_name != 'pull_request' }}"):
-        (1, "the sweep shard's upload of its FLAKY names, which runs on everything EXCEPT a pull request"),
+    # ⟳ backlog #619 R1 (2026-11-13): the sweep-red alert, its record download and each shard's record upload no
+    # longer skip a pull request — on a PR they VALIDATE the records and file nothing (architecture review
+    # 2026-11-13, #629 (c)) — so their two `!= 'pull_request'` mentions are gone, not moved.
     ("ci.yml", "pull_request:"):
         (1, "the workflow TRIGGER — says when CI runs, gates nothing"),
     ("ci.yml", "if: github.event_name == 'pull_request'"):

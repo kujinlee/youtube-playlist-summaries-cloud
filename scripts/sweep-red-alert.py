@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Open or comment on the `sweep-red` issue after a FULL mutation sweep on master (backlog #330). It NEVER closes one.
+"""Read every mutation-sweep shard's RECORD; on master, open or comment on the `sweep-red` and `sweep-flaky` issues
+(backlog #330, #495, #619). It NEVER closes one.
 
-    python3 scripts/sweep-red-alert.py              # in CI: reads SWEEP, SHA, EVENT, RUN_URL, FLAKY_DIR; acts via gh
-    python3 scripts/sweep-red-alert.py --self-test  # 52 cases
+    python3 scripts/sweep-red-alert.py              # in CI: reads SWEEP, SHA, EVENT, RUN_URL, RECORD_DIR; acts via gh
+    python3 scripts/sweep-red-alert.py --self-test  # 42 cases
 
 WHY THIS EXISTS. A pull request's sweep is diff-scoped, so what it does not select is measured only by the full
 sweep on master, AFTER merge. A red full sweep therefore opens an issue labelled `sweep-red` (or comments on the
@@ -18,14 +19,22 @@ act after reading it. A stale open alert fails toward MORE alarm, the direction 
 
 ⟳ backlog #495 r1 (Codex 4 / Claude M1): A FLAKY MUTANT IS FILED. The harness re-runs a survivor once, and one
 killed on that re-run is FLAKY — GREEN, so the sweep is `success` and nothing above would ever write. The owner's
-rule (11-11 19:25) is "named AND FILED". So each shard writes its `mutation FLAKY — <name>: ` lines to a file,
-the files reach this job as artifacts in `FLAKY_DIR`, and ANY FLAKY name — on a green sweep or a red one — opens
-an issue labelled `sweep-flaky` listing them (or comments on the open one). It never closes one either.
-⟳ r2 Codex 2: a `FLAKY_DIR` that is unset, or lacks ANY shard's `shard-<i>.txt` (one per entry of `ci.yml`'s
-`shard:` matrix, `shard_count`), RAISES: a scan that did not run is NOT a scan that found nothing.
-⟳ r3 Claude M1: a missing shard file no longer DISCARDS the names the present files hold — those are FILED first,
-and THEN the step raises, naming the missing files as NOT RUN (the "file first, then go red" order of the red alert).
-⟳ r2 Codex 3: a name runs to the harness's FIXED tail (`FLAKY_TAIL`), never to the first `: ` — real names hold one.
+rule (11-11 19:25) is "named AND FILED": ANY FLAKY name, on a green sweep or a red one, opens an issue labelled
+`sweep-flaky` listing them (or comments on the open one). It never closes one either.
+
+⟳ backlog #619 R1 (architecture review 2026-11-13, #629): THE HANDOFF IS A STRUCTURED RECORD, NOT A LOG GREP. Each
+shard's `check-plan-code.py --mutate ... --record <path>` writes ONE JSON record — `schema`, the `shard` and `total`
+it parsed from `--shard0` and sliced by, whether its run was `complete`, and its `flaky` names — and each record is
+its own artifact, downloaded into its own subdirectory of `RECORD_DIR`. This script reads only those records (it
+walks the subdirectories, and reads a record's identity from its CONTENT, never its path) and never reads `ci.yml`:
+the shard count is the records' own `total`. It replaces a grep of the log for the harness's report line, a file
+per 0-based job index, and `ci_flaky_contract`, a text parser of `ci.yml` that proved two links between them and
+thrashed through three review rounds (backlog #617, #629). Any record missing, malformed, duplicated, out of range,
+disagreeing on the total or INCOMPLETE is a problem; the names the valid records hold are FILED first, and THEN the
+step raises — "file first, then go red", as the red alert does (#495 r3 Claude M1).
+⛔ ON A PULL REQUEST IT ONLY VALIDATES (`EVENT` is `pull_request`): the same upload, download and read run, any
+problem is red, and NOTHING is filed — so a pull request that breaks the record path is red on its own CI, not on
+master after merge.
 
 A `gh` call that fails raises, so the CI step goes red and the run says so — never a silent pass.
 """
@@ -34,7 +43,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
@@ -43,11 +51,12 @@ import tempfile
 LABEL = "sweep-red"
 MARKER = "<!-- sweep-red-sha: {sha} -->"
 FLAKY_LABEL = "sweep-flaky"
-FLAKY_LINE = "mutation FLAKY — "
-FLAKY_TAIL = ": SURVIVED its first run, then KILLED on its one re-run"   # what `check-plan-code` prints after <name>
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
-STEP_NAME = "- name: The FULL sweep on master opens or comments on the sweep-red issue, and never closes one"
+STEP_NAME = ("- name: Read every shard's record; on master open or comment on the sweep-red and sweep-flaky issues, "
+             "never closing one")
+RECORD_SCHEMA = 1   # `check-plan-code.shard_record` writes this; a record of any other schema is a problem
+RECORD_KEYS = ("complete", "flaky", "schema", "shard", "total")
 
 
 def red_body(sweep: str, event: str, sha: str, run_url: str) -> str:
@@ -59,25 +68,6 @@ def red_body(sweep: str, event: str, sha: str, run_url: str) -> str:
             f"{MARKER.format(sha=sha)}")
 
 
-def flaky_names(text: str) -> list[str]:
-    """PURE. The mutation names on the harness's `mutation FLAKY — <name>: SURVIVED its first run, then KILLED ...`
-    lines in `text`, first seen first, each once. A line may carry a log prefix (a timestamp, `✗`).
-    ⛔ r2 Codex 3: the name runs from the marker to the LAST `FLAKY_TAIL` — never to the first `: `, which real
-    manifest names contain (`#495: a survivor is never re-run` read as `#495`). A marker line WITHOUT the tail
-    RAISES: the harness's line changed shape, and a name cut at a guess is a wrong name filed as right."""
-    names: list[str] = []
-    for line in text.split("\n"):
-        if FLAKY_LINE in line:
-            name, tail, _ = line.split(FLAKY_LINE, 1)[1].rpartition(FLAKY_TAIL)
-            if not tail:
-                raise RuntimeError(f"a FLAKY line without the harness's tail {FLAKY_TAIL!r}: {line.strip()[:200]!r} "
-                                   f"— its name cannot be read, so the FLAKY scan did NOT RUN")
-            name = name.strip()
-            if name and name not in names:
-                names.append(name)
-    return names
-
-
 def flaky_body(names: list[str], event: str, sha: str, run_url: str) -> str:
     """PURE. The issue body or comment for FLAKY mutants: each NAMED, with the commit and run they were seen in."""
     return (f"The mutation sweep on master ({event}, {sha}) reported {len(names)} FLAKY mutation(s): each SURVIVED "
@@ -86,105 +76,95 @@ def flaky_body(names: list[str], event: str, sha: str, run_url: str) -> str:
             + "".join(f"- {n}\n" for n in names))
 
 
-def shard_count(workflow_text: str) -> int:
-    """PURE. How many shards the sweep runs: the entries of the ONE `shard: [...]` matrix line in `ci.yml`. RAISES
-    unless there is exactly one such line with at least one entry — a count guessed is a scan bounded by a guess."""
-    rows = [l for l in workflow_text.splitlines() if re.match(r"\s*shard:\s*\[", l)]
-    if len(rows) != 1:
-        raise ValueError(f"{len(rows)} `shard: [...]` matrix lines in the workflow, not one: the shard count is unknown")
-    n = len([x for x in rows[0].split("[", 1)[1].split("]", 1)[0].split(",") if x.strip()])
-    if n < 1:
-        raise ValueError("the `shard: [...]` matrix is empty: the shard count is unknown")
-    return n
+def _is_int(v) -> bool:
+    return type(v) is int   # ⛔ not `isinstance`: `True` is an int, and a shard numbered `true` is not shard 1
 
 
-SHARD_FILE = "shard-{}.txt"   # `read_flaky`'s per-shard file; `ci_flaky_contract` proves `ci.yml` writes the same
-DOWNLOAD_STEP = "- name: Download every shard's FLAKY mutation names"
+class Unreadable(str):
+    """A record file that did not parse: its reason, carried in place of the record so `check_records` reports it
+    AS ITSELF. A distinct type, so a record whose JSON is merely a string is still "not a shard record"."""
 
 
-def ci_flaky_contract(workflow_text: str) -> None:
-    """PURE. RAISES unless two links between `ci.yml` and `read_flaky` hold (backlog #617 part 1, PR #564 r3 m2). It
-    checks ONLY these two; a drifted download `path:` or artifact `pattern:` is still red, through `read_flaky`'s
-    missing-file report (r1 Claude m1).
-    Two copies with no case between them before: (a) the shard step writes `sweep-flaky/shard-$V.txt` with exactly one
-    such line, and `V` is `${{ strategy.job-index }}` (0-based, as `range(shards)` reads) — `$SHARD_TOTAL` there
-    writes one file N times; (b) the download step merges every artifact into ONE directory (`merge-multiple: true`)
-    — without it each shard lands in its own subdirectory. Either drift makes every master FLAKY scan NOT RUN."""
-    # ⛔ r1 Codex M1/m: comments never count — a `#` line, or a ` #` tail, is dropped before any match.
-    lines = [_uncomment(l) for l in workflow_text.splitlines()]
-    writes = [(i, m.group(1)) for i, l in enumerate(lines)
-              for m in re.finditer(r'>\s*"?[^"\s>]*sweep-flaky/shard-"?\$\{?([A-Za-z_]+)\}?"?\.txt"?(?=[\s;|&)]|$)', l)]   # r2 Codex m1: not `.txt.bak`
-    if len(writes) != 1:
-        raise ValueError(f"{len(writes)} redirects to `sweep-flaky/shard-$<VAR>.txt` in the workflow, not one: "
-                         f"the FLAKY file name `read_flaky` reads ({SHARD_FILE!r}) is not proven")
-    wi, var = writes[0]
-    # ⛔ r1 Claude m3: the variable is read from the step that WRITES the file, never from anywhere in the workflow.
-    # r3 Claude m3: the step's own `- ` line is indented LESS than its script — a `- ` line inside a heredoc is not.
-    st = max([i for i in range(wi) if lines[i].lstrip().startswith("- ") and _indent(lines[i]) < _indent(lines[wi])],
-             default=0)
-    # r2 Codex m2: the WHOLE step, so an `env:` written below `run:` still counts.
-    end = next((i for i in range(st + 1, len(lines)) if lines[i].strip() and _indent(lines[i]) <= _indent(lines[st])),
-               len(lines))
-    # ⛔ r2 Codex M1, r3 Claude M1/m2: `env:` names the value only while the script never touches it. An ALLOW-list,
-    # not a list of reassignment spellings (`=`, `+=`, `++`, `let`, `read`, `unset` — r2+r3 thrashed on that list): in
-    # the step, the name may appear only as an expansion `$V` / `${V`, or as its own `V:` key. Any other mention RAISES,
-    # a harmless `echo "V=$V"` included — a deliberate, named red.
-    if any(re.search(rf"(?<!\$)(?<!\$\{{)\b{var}\b(?!:\s)", l) for l in lines[st:end]):
-        raise ValueError(f"the step that writes the shard file mentions `{var}` other than as `${var}`: only an "
-                         f"expansion keeps the `env:` value the file name, and `read_flaky` reads {SHARD_FILE.format(0)} ..")
-    if not any(re.fullmatch(rf"\s*{var}:\s*([\"']?)\$\{{\{{\s*strategy\.job-index\s*\}}\}}\1\s*", l)
-               for l in lines[st:end]):
-        raise ValueError(f"the shard file is named by `${var}`, which is not `${{{{ strategy.job-index }}}}`: "
-                         f"`read_flaky` reads {SHARD_FILE.format(0)} .. per 0-based index, so the names would not match")
-    starts = [i for i, l in enumerate(lines) if l.strip() == DOWNLOAD_STEP]
-    if len(starts) != 1:
-        raise ValueError(f"{len(starts)} `{DOWNLOAD_STEP}` steps in the workflow, not one")
-    step = _children(lines, starts[0], _indent(lines[starts[0]]) + 2)   # `- name:` puts the keys 2 to the right
-    withs = [i for i in step if lines[i].strip() == "with:"]
-    # ⛔ r1 Codex M2: `merge-multiple` counts only as a DIRECT child of the step's `with:`, never under `env:`.
-    if len(withs) != 1 or not any(re.fullmatch(r"merge-multiple:\s*([\"']?)true\1", lines[i].strip())
-                                  for i in _children(lines, withs[0], None)):
-        raise ValueError(f"the `{DOWNLOAD_STEP[8:]}` step does not set `with: merge-multiple: true`: each shard's "
-                         f"file would land in its own subdirectory, and `read_flaky` reads one directory")
+def record_problem(record) -> "str | None":
+    """PURE. Why `record` is not a shard record of `RECORD_SCHEMA`, or None. Exactly the five keys; `shard` and
+    `total` integers with 1 <= shard <= total; `complete` a bool; `flaky` a list of non-empty strings."""
+    if isinstance(record, Unreadable):
+        return f"unreadable: {record}"
+    if not isinstance(record, dict) or tuple(sorted(record)) != RECORD_KEYS:
+        return f"not a shard record: its keys are {sorted(record) if isinstance(record, dict) else type(record).__name__}, not {list(RECORD_KEYS)}"
+    if record["schema"] != RECORD_SCHEMA or not _is_int(record["schema"]):
+        return f"schema {record['schema']!r}, not {RECORD_SCHEMA}"
+    if not (_is_int(record["shard"]) and _is_int(record["total"]) and 1 <= record["shard"] <= record["total"]):
+        return f"shard {record['shard']!r} of {record['total']!r} is not 1 <= shard <= total"
+    if type(record["complete"]) is not bool:
+        return f"`complete` is {record['complete']!r}, not true or false"
+    if not isinstance(record["flaky"], list) or not all(isinstance(n, str) and n.strip() for n in record["flaky"]):
+        return f"`flaky` is {record['flaky']!r}, not a list of mutation names"
+    return None
 
 
-def _uncomment(line: str) -> str:
-    """PURE. `line` without a YAML/shell comment: '' for a `#` line, else the text before the first ` #`."""
-    return "" if line.lstrip().startswith("#") else re.sub(r"\s+#.*$", "", line)
+def check_records(records: list) -> tuple[list[str], list[str]]:
+    """PURE. `(names, problems)` over `records`, a list of `(where, parsed JSON)` — `where` is used ONLY to name a
+    problem, never to identify a shard. `names`: every valid record's FLAKY names, in shard order, each once.
+    `problems`: no record at all; a malformed one; records that disagree on `total`; two records for one shard;
+    a shard of 1..total with no record; a record whose run was not `complete` (its names are still in `names`)."""
+    valid, problems = [], []
+    for where, rec in records:
+        why = record_problem(rec)
+        if why:
+            problems.append(f"{where}: {why}")
+        else:
+            valid.append((where, rec))
+    if not records:
+        problems.append("no shard record at all: the shard count is unknown and NO shard's FLAKY results were read")
+    totals = sorted({r["total"] for _, r in valid})
+    if len(totals) > 1:
+        problems.append(f"the records disagree on the shard total ({', '.join(map(str, totals))}): which shards "
+                        f"exist is unknown")
+    seen: dict = {}
+    for where, rec in sorted(valid, key=lambda wr: (wr[1]["shard"], wr[0])):
+        if rec["shard"] in seen:
+            problems.append(f"two records claim shard {rec['shard']}: {seen[rec['shard']]} and {where}")
+        seen.setdefault(rec["shard"], where)
+        if not rec["complete"]:
+            problems.append(f"shard {rec['shard']} of {rec['total']} ({where}) did not complete its run: its FLAKY "
+                            f"results cover only the mutations it reached")
+    if len(totals) == 1:
+        missing = [i for i in range(1, totals[0] + 1) if i not in seen]
+        if missing:
+            problems.append(f"{len(missing)} of {totals[0]} shards have no record (shard "
+                            f"{', '.join(map(str, missing[:8]))}{', ...' if len(missing) > 8 else ''})")
+    names: list[str] = []
+    for _, rec in sorted(valid, key=lambda wr: (wr[1]["shard"], wr[0])):
+        names.extend(n for n in rec["flaky"] if n not in names)
+    return names, problems
 
 
-def _indent(line: str) -> int:
-    return len(line) - len(line.lstrip())
+def _no_duplicate_keys(pairs: list) -> dict:
+    """`json.loads` keeps the LAST of two equal keys, so `{"flaky": ["m"], "flaky": []}` would read as no FLAKY name
+    (round 1 Codex). A record that says two things is refused as unreadable, never read as either."""
+    keys = [k for k, _ in pairs]
+    dup = sorted({k for k in keys if keys.count(k) > 1})
+    if dup:
+        raise ValueError(f"duplicate key(s) {dup}")
+    return dict(pairs)
 
 
-def _children(lines: list[str], head: int, depth: int | None) -> list[int]:
-    """PURE. Indices of the non-blank lines in `lines[head]`'s indented block whose indent is `depth` (None: the
-    first child's) — the block ends at the first non-blank line indented no deeper than the head."""
-    out, ind = [], _indent(lines[head])
-    for i in range(head + 1, len(lines)):
-        if not lines[i].strip():
-            continue
-        if _indent(lines[i]) <= ind:
-            break
-        if depth is None:
-            depth = _indent(lines[i])
-        if _indent(lines[i]) == depth:
-            out.append(i)
-    return out
-
-
-def read_flaky(flaky_dir: str, shards: int) -> tuple[list[str], list[str]]:
-    """IO. `(names, missing)`: every FLAKY name in the PRESENT files of `shard-0.txt` .. `shard-<shards-1>.txt` under
-    `flaky_dir` (`ci.yml` names each shard's file by its 0-based `strategy.job-index`), and the names of the ABSENT
-    ones. ⛔ r2 Codex 2: an absent file is never read as "no FLAKY" — `main` raises on a non-empty `missing`.
-    ⛔ r3 Claude M1: but only AFTER filing `names`, so one missing file never discards the others' names. RAISES
-    when `flaky_dir` is unset."""
-    if not flaky_dir:
-        raise RuntimeError("FLAKY_DIR is unset: the FLAKY scan did NOT RUN — treat the sweep's FLAKY results as "
-                           "NOT CHECKED")
-    files = [pathlib.Path(flaky_dir) / SHARD_FILE.format(i) for i in range(shards)]
-    missing = [f.name for f in files if not f.is_file()]
-    return flaky_names("\n".join(f.read_text(encoding="utf-8") for f in files if f.is_file())), missing
+def read_records(record_dir: str) -> tuple[list[str], list[str]]:
+    """IO. `check_records` over every `*.json` file under `record_dir`, at ANY depth (each artifact downloads into a
+    subdirectory of its own name, backlog #619 R1 (b)). A file that does not parse is a problem, never skipped.
+    RAISES when `record_dir` is unset."""
+    if not record_dir:
+        raise RuntimeError("RECORD_DIR is unset: the shard records were NOT READ — treat the sweep's FLAKY results "
+                           "as NOT CHECKED")
+    root, records = pathlib.Path(record_dir), []
+    for f in sorted(root.rglob("*.json")) if root.is_dir() else []:
+        where = f.relative_to(root).as_posix()
+        try:
+            records.append((where, json.loads(f.read_text(encoding="utf-8"), object_pairs_hook=_no_duplicate_keys)))
+        except (OSError, ValueError) as e:
+            records.append((where, Unreadable(e)))
+    return check_records(records)
 
 
 def file_flaky(names: list[str], event: str, sha: str, run_url: str) -> None:
@@ -218,21 +198,26 @@ def main(env=None) -> int:
     env = os.environ if env is None else env
     sweep, sha = env.get("SWEEP", ""), env.get("SHA", "")
     event, run_url = env.get("EVENT", ""), env.get("RUN_URL", "")
+    record_dir = env.get("RECORD_DIR", "")
+    # ⛔ backlog #619 R1 (c): a pull request VALIDATES the records and files nothing — its red is on the PR itself.
+    if event == "pull_request":
+        names, problems = read_records(record_dir)
+        if problems:
+            raise RuntimeError(f"the shard records under RECORD_DIR {record_dir!r} are NOT VALID — the handoff master "
+                               f"files FLAKY mutants from is broken on this branch: " + "; ".join(problems))
+        print(f"the shard records are valid ({len(names)} FLAKY name(s)); a pull request files nothing")
+        return 0
     alert_red(sweep, event, sha, run_url)
-    # backlog #495 r1: AFTER the red alert, so a missing FLAKY_DIR (which raises) can never cost a red its issue.
-    workflow = WORKFLOW.read_text(encoding="utf-8")
-    ci_flaky_contract(workflow)   # backlog #617: a drifted `ci.yml` is NOT RUN here, not "files missing"
-    shards = shard_count(workflow)
-    names, missing = read_flaky(env.get("FLAKY_DIR", ""), shards)
-    # ⛔ r3 Claude M1: the names the PRESENT files hold are FILED first; only THEN does a missing file go red. With
-    # files missing and no name read, nothing is filed — "no FLAKY mutation" would be a claim about unread shards.
-    if names or not missing:
+    # backlog #495 r1: AFTER the red alert, so a missing RECORD_DIR (which raises) can never cost a red its issue.
+    names, problems = read_records(record_dir)
+    # ⛔ #495 r3 Claude M1: the names the valid records hold are FILED first; only THEN does a problem go red. With
+    # problems and no name read, nothing is filed — "no FLAKY mutation" would be a claim about unread shards.
+    if names or not problems:
         file_flaky(names, event, sha, run_url)
-    if missing:
-        raise RuntimeError(f"FLAKY_DIR {env.get('FLAKY_DIR', '')!r} lacks {len(missing)} of {shards} shard files "
-                           f"({', '.join(missing[:5])}{', ...' if len(missing) > 5 else ''}): the FLAKY scan did NOT "
-                           f"RUN for them — treat THOSE shards' FLAKY results as NOT CHECKED ({len(names)} FLAKY "
-                           f"name(s) read from the other shards were filed above)")
+    if problems:
+        raise RuntimeError(f"the shard records under RECORD_DIR {record_dir!r} have {len(problems)} problem(s): "
+                           + "; ".join(problems) + f" — treat THOSE shards' FLAKY results as NOT CHECKED "
+                           f"({len(names)} FLAKY name(s) read from the valid records were filed above)")
     return 0
 
 
@@ -336,6 +321,21 @@ def _self_test() -> int:
         return _self_test_body()
 
 
+def _rec(shard: int, total: int, flaky=(), complete=True) -> dict:
+    """A shard record spelled with LITERAL keys — never `RECORD_KEYS` — so a renamed key in the reader is red here."""
+    return {"schema": 1, "shard": shard, "total": total, "complete": complete, "flaky": list(flaky)}
+
+
+def _writer():
+    """`check-plan-code.py`, loaded: the WRITER of the records this script reads (backlog #619 R1)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("check_plan_code_619", ROOT / "scripts" / "check-plan-code.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod   # a dataclass resolves its module through `sys.modules`
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _self_test_body() -> int:
     ok = fail = 0
 
@@ -368,150 +368,102 @@ def _self_test_body() -> int:
     except ValueError:
         _raised = True
     case("a step with no `run:` of its own RAISES — the next step's is never borrowed", _raised, True)
-    # ⛔ r2 Codex 3: REAL manifest names (`scripts/mutations/check-plan-code.json`), each holding `: `, in the line
-    # shape the harness prints (`  ✗ ` + its report line, a log timestamp before it).
-    _n1, _n2, _n3 = ("#495: a survivor is never re-run", "#495: a FLAKY mutant turns the run red",
-                     "#495 r1 B1: a re-run kill is accepted without the case it names")
-    _t = FLAKY_TAIL + " in a fresh tree (by 'f returns one: got 2'). Not red, and NOT counted as killed: x\n"
-    _log = (f"2026-11-11T01:02:03Z   ✗ {FLAKY_LINE}{_n1}{_t}"
-            "mutation SURVIVED — real one: the suite stayed green\n"
-            f"  ✗ {FLAKY_LINE}{_n2}{_t}{FLAKY_LINE}{_n3}{_t}{FLAKY_LINE}{_n1}{_t}")
-    case("⭐ #495 r2 Codex 3: `flaky_names` reads each REAL name WHOLE (`: ` inside it), once each, never a SURVIVED one",
-         (flaky_names(_log), flaky_names("mutation SURVIVED — real one: x\n")), ([_n1, _n2, _n3], []))
-    try:
-        flaky_names(f"{FLAKY_LINE}{_n1}: KILLED somehow\n")
-        _raised_t = False
-    except RuntimeError as e:
-        _raised_t = "did NOT RUN" in str(e)
-    case("...a FLAKY line WITHOUT the harness's tail RAISES — never a name cut at a guess", _raised_t, True)
-    case("...and the harness prints exactly `FLAKY_LINE` + name + `FLAKY_TAIL`, so the tail read here is the one made",
-         f'f"{FLAKY_LINE}{{name}}{FLAKY_TAIL}' in (ROOT / "scripts" / "check-plan-code.py").read_text(encoding="utf-8"),
-         True)
     _b1, _b2 = flaky_body(["m one", "m two"], "push", B, "https://run/1"), flaky_body(["m three"], "schedule", C,
                                                                                       "https://run/2")
-    case("...and `flaky_body` NAMES every FLAKY mutation, with its own event, SHA and run",
+    case("`flaky_body` NAMES every FLAKY mutation, with its own event, SHA and run",
          [all(t in b for t in ts) for b, ts in ((_b1, ("- m one\n", "- m two\n", "push", B, "https://run/1",
                                                       "2 FLAKY")),
                                                 (_b2, ("- m three\n", "schedule", C, "https://run/2", "1 FLAKY")))]
          + ["m one" in _b2], [True, True, False])
+
+    # ── backlog #619 R1: the records, pure ──
+    # ⛔ REAL manifest names (`scripts/mutations/check-plan-code.json`), each holding `: ` — the log grep this replaces
+    # cut a name at a guess (#495 r2 Codex 3); a record carries it whole.
+    _n1, _n2, _n3 = ("#495: a survivor is never re-run", "#495: a FLAKY mutant turns the run red",
+                     "#495 r1 B1: a re-run kill is accepted without the case it names")
+    _all3 = [("a", _rec(2, 3, [_n2, _n1])), ("b", _rec(1, 3, [_n1, _n3])), ("c", _rec(3, 3))]
+    case("⭐ #619: every shard's record present — the FLAKY names WHOLE, in SHARD order, each once; no problem",
+         check_records(_all3), ([_n1, _n3, _n2], []))
+    case("⭐ #619: one shard of three with no record is a problem NAMING it — and the others' names are kept",
+         check_records(_all3[:2]), ([_n1, _n3, _n2], ["1 of 3 shards have no record (shard 3)"]))
+    case("...no record at all is a problem, never 'no FLAKY'",
+         check_records([]), ([], ["no shard record at all: the shard count is unknown and NO shard's FLAKY "
+                                  "results were read"]))
+    case("⭐ #619 (b): TWO records claiming one shard is a problem naming both — never one read over the other",
+         [p for p in check_records(_all3 + [("d", _rec(2, 3, ["x"]))])[1]], ["two records claim shard 2: a and d"])
+    case("...records that DISAGREE on the total are a problem — which shards exist is unknown",
+         check_records([("a", _rec(1, 2)), ("b", _rec(2, 3))])[1][:1],
+         ["the records disagree on the shard total (2, 3): which shards exist is unknown"])
+    case("⭐ #619: an INCOMPLETE shard is a problem, and its FLAKY names are STILL read",
+         check_records([("a", _rec(1, 2, ["m"], complete=False)), ("b", _rec(2, 2))]),
+         (["m"], ["shard 1 of 2 (a) did not complete its run: its FLAKY results cover only the mutations it reached"]))
+    _bad = [("keys", {**_rec(1, 1), "extra": 1}), ("nokey", {k: v for k, v in _rec(1, 1).items() if k != "complete"}),
+            ("list", [1]), ("schema", {**_rec(1, 1), "schema": 2}), ("bool", {**_rec(1, 1), "shard": True}),
+            ("zero", _rec(0, 1)), ("over", _rec(3, 2)), ("str", {**_rec(1, 1), "total": "1"}),
+            ("cmp", {**_rec(1, 1), "complete": 1}), ("names", _rec(1, 1, [""])), ("nlist", {**_rec(1, 1), "flaky": "m"}),
+            ("sbool", {**_rec(1, 1), "schema": True}), ("txt", "unreadable: x")]
+    case("⭐ #619: each malformed record is a problem of its own — wrong keys, schema, range, types, names",
+         [p.split(":", 1)[0] for p in check_records(_bad)[1] if not p.startswith(("no shard", "1 of"))],
+         [w for w, _ in _bad])
+    case("...and a malformed record holds no names that are read", check_records([("x", {**_rec(1, 1, ["m"]),
+                                                                                      "schema": 2})])[0], [])
+    case("...a valid record's identity is its CONTENT: shard 1 of 1 at a path naming shard 5 is shard 1",
+         check_records([("sweep-record-5/record.json", _rec(1, 1, ["m"]))]), (["m"], []))
     try:
-        read_flaky("", 1)
+        read_records("")
         _raised_f = False
     except RuntimeError as e:
-        _raised_f = "did NOT RUN" in str(e)
-    case("...an unset FLAKY_DIR RAISES — a scan that did not run is never a scan that found nothing", _raised_f, True)
+        _raised_f = "NOT READ" in str(e)
+    case("an unset RECORD_DIR RAISES — a read that did not run is never a read that found nothing", _raised_f, True)
     with tempfile.TemporaryDirectory() as _fd:
-        case("⭐ #495 r2 Codex 2: an EMPTY FLAKY_DIR reports every shard's file missing, and no name",
-             read_flaky(_fd, 2), ([], ["shard-0.txt", "shard-1.txt"]))
-        pathlib.Path(_fd, "shard-0.txt").write_text(f"Z {FLAKY_LINE}a{_t}", encoding="utf-8")
-        case("...a PARTIAL download (shard-0 of 2) reports the missing shard and only it — and the present one's names",
-             read_flaky(_fd, 2), (["a"], ["shard-1.txt"]))
-        pathlib.Path(_fd, "shard-1.txt").write_text(f"Z {FLAKY_LINE}b{_t}Z {FLAKY_LINE}a{_t}", encoding="utf-8")
-        pathlib.Path(_fd, "notes.txt").write_text(f"Z {FLAKY_LINE}not a shard file{_t}", encoding="utf-8")
-        case("...`read_flaky` reads EVERY shard's file (each name once), and only the shards' files",
-             read_flaky(_fd, 2), (["a", "b"], []))
-    _wf3 = "jobs:\n  s:\n    strategy:\n      matrix:\n        # shard: [not, this]\n        shard: [1, 2, 3]\n"
-    case("⭐ #495 r2 Codex 2: `shard_count` is the entries of the ONE `shard:` matrix line", shard_count(_wf3), 3)
-    _bad = []
-    for _w in (_wf3 + "        shard: [1]\n", "jobs: {}\n", "        shard: []\n"):
-        try:
-            shard_count(_w)
-            _bad.append(False)
-        except ValueError:
-            _bad.append(True)
-    case("...two matrix lines, none, or an empty one RAISE — the count is never guessed", _bad, [True, True, True])
+        _d = pathlib.Path(_fd)
+        case("an EMPTY RECORD_DIR is the no-record problem", read_records(_fd)[1][:1],
+             ["no shard record at all: the shard count is unknown and NO shard's FLAKY results were read"])
+        for _i, _r in ((0, _rec(1, 2, ["a"])), (1, _rec(2, 2, ["b"]))):
+            (_d / f"sweep-record-{_i}").mkdir()
+            (_d / f"sweep-record-{_i}" / "record.json").write_text(json.dumps(_r), encoding="utf-8")
+        (_d / "notes.txt").write_text(json.dumps(_rec(9, 9)), encoding="utf-8")
+        case("⭐ #619 (b): `read_records` walks every artifact's SUBDIRECTORY, and reads only `*.json`",
+             read_records(_fd), (["a", "b"], []))
+        (_d / "sweep-record-1" / "record.json").write_text('{"schema": 1,', encoding="utf-8")
+        _nm, _pr = read_records(_fd)
+        case("...a record that does not PARSE is a problem naming its file, and its shard is then missing",
+             (_nm, [p.split(":", 1)[0] for p in _pr], any("no record (shard 2)" in p for p in _pr)),
+             (["a"], ["sweep-record-1/record.json", "1 of 2 shards have no record (shard 2)"], True))
+        (_d / "sweep-record-1" / "record.json").write_text(
+            '{"schema": 1, "shard": 2, "total": 2, "complete": true, "flaky": ["c"], "flaky": []}', encoding="utf-8")
+        _nm, _pr = read_records(_fd)
+        case("...a record with a DUPLICATE key is unreadable — `{\"flaky\": [m], \"flaky\": []}` never reads as no FLAKY",
+             (_nm, any(p.startswith("sweep-record-1/record.json: unreadable: duplicate key(s) ['flaky']") for p in _pr)),
+             (["a"], True))
 
-    # ── backlog #617 part 1 (PR #564 r3 m2): `ci.yml` writes and merges the files `read_flaky` reads ──
-    _real = WORKFLOW.read_text(encoding="utf-8")
-    def _contract(text):
-        try:
-            ci_flaky_contract(text)
-            return "ok"
-        except ValueError as e:
-            return "raised"
-    case("⭐ #617: the REAL `ci.yml` writes `shard-$<job-index>.txt` and merges with `merge-multiple: true`",
-         ci_flaky_contract(_real), None)
-    case("⭐ #617: `ci.yml` writing `shard-$SHARD_TOTAL.txt` (not the 0-based job index) RAISES",
-         _contract(_real.replace("sweep-flaky/shard-$SHARD_INDEX.txt", "sweep-flaky/shard-$SHARD_TOTAL.txt")), "raised")
-    case("⭐ #617: `ci.yml` downloading with `merge-multiple: false` RAISES",
-         _contract(_real.replace("merge-multiple: true", "merge-multiple: false")), "raised")
-    case("...a SECOND `merge-multiple: true` elsewhere does not rescue the download step's `false`",
-         _contract(_real.replace("merge-multiple: true", "merge-multiple: false")
-                   + "\n  later:\n    steps:\n      - uses: x\n        with:\n          merge-multiple: true\n"),
-         "raised")
-    case("...no shard-file write at all RAISES, and so does a second one",
-         (_contract(_real.replace("sweep-flaky/shard-", "sweep-flaky/part-")),
-          _contract(_real + '\n          echo x > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"\n')),
-         ("raised", "raised"))
-    _m1 = _real.replace('> "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"',
-                        '> "$RUNNER_TEMP/sweep-flaky/part-$SHARD_INDEX.txt"  # was > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"')
-    case("⭐ r1 Codex M1: a COMMENT naming the shard file is not the write — the real redirect renamed RAISES",
-         (_m1 != _real, _contract(_m1),
-          _contract(_real.replace('> "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"\n',
-                                  '> "$RUNNER_TEMP/sweep-flaky/part-$SHARD_INDEX.txt"\n'
-                                  '          # > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"\n'))),
-         (True, "raised", "raised"))
-    _m2 = _real.replace("          merge-multiple: true\n",
-                        "          merge-multiple: false\n        env:\n          merge-multiple: true\n")
-    case("⭐ r1 Codex M2: `merge-multiple: true` under the step's `env:` (with `with:` false) RAISES",
-         (_m2 != _real, _contract(_m2)), (True, "raised"))
-    case("...r1 Codex m: quoting the job index, quoting `true`, or an inline comment is NOT a false red",
-         _contract(_real.replace("SHARD_INDEX: ${{ strategy.job-index }}", 'SHARD_INDEX: "${{ strategy.job-index }}"')
-                   .replace("merge-multiple: true", "merge-multiple: 'true'   # one directory")
-                   .replace("shard-$SHARD_INDEX.txt", 'shard-"$SHARD_INDEX".txt')), "ok")
-    _path = "          path: ${{ runner.temp }}/sweep-flaky\n"
-    _wr = 'grep -F x f > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"'
-    case("⭐ r2 Codex M1: the writing step's script REASSIGNING the index (`SHARD_INDEX=$SHARD_TOTAL`) RAISES",
-         (_real.count('          grep -F \'mutation FLAKY — \''),
-          _contract(_real.replace("          grep -F 'mutation FLAKY — '",
-                                  "          SHARD_INDEX=$SHARD_TOTAL\n          grep -F 'mutation FLAKY — '"))),
-         (1, "raised"))
-    case("...r2 Codex m1: a redirect to `shard-$SHARD_INDEX.txt.bak` (or `\"...txt\".bak`) is not the shard file",
-         (_contract(_real.replace('/sweep-flaky/shard-$SHARD_INDEX.txt"', '/sweep-flaky/shard-$SHARD_INDEX.txt".bak')),
-          _contract(_real.replace('/sweep-flaky/shard-$SHARD_INDEX.txt"', '/sweep-flaky/shard-$SHARD_INDEX.txt.bak"'))),
-         ("raised", "raised"))
-    _grep = "          grep -F 'mutation FLAKY — '"
-    case("⭐ r3 Claude M1: `((V++))`, `let V++`, `V+=1`, `read V`, `unset V` in the writing step each RAISE",
-         [_contract(_real.replace(_grep, "          " + x + "\n" + _grep))
-          for x in ("((SHARD_INDEX++))", "let SHARD_INDEX++", "SHARD_INDEX+=1", "read SHARD_INDEX", "unset SHARD_INDEX")],
-         ["raised"] * 5)
-    case("...r3: the allow-list is deliberate — `echo \"SHARD_INDEX=$SHARD_INDEX\"` RAISES; `echo \"$SHARD_INDEX\"` does not",
-         (_contract(_real.replace(_grep, '          echo "SHARD_INDEX=$SHARD_INDEX"\n' + _grep)),
-          _contract(_real.replace(_grep, '          echo "${SHARD_INDEX}"\n' + _grep))), ("raised", "ok"))
-    case("...r3 Claude m3: a `- ` line inside the writing step's script does not move the step start",
-         _contract(_real.replace(_grep, "          cat <<'MD'\n          - shard summary\n          MD\n" + _grep)), "ok")
-    _syn = ("jobs:\n  sweep:\n    steps:\n      - name: shard\n        run: |\n          " + _wr + "\n"
-            "        env:\n          SHARD_INDEX: ${{ strategy.job-index }}\n  alert:\n    steps:\n      - " + DOWNLOAD_STEP[2:]
-            + "\n        uses: actions/download-artifact@v4\n        with:\n          merge-multiple: true\n")
-    case("...r2 Codex m2: the writing step's `env:` BELOW its `run:` is not a false red",
-         (_contract(_syn), _contract(_syn.replace("job-index", "job-total"))), ("ok", "raised"))
-    case("...r1 Claude m4: the download step ENDS at the next step — a later step's `with:` is not read as its own",
-         (_real.count(_path), _contract(_real.replace(_path, _path + "      - name: later\n        uses: x\n"
-                                                      "        with:\n          merge-multiple: true\n"))), (1, "ok"))
-    case("...r1 Claude m4: a SECOND download step of that name RAISES — which one is read is never guessed",
-         _contract(_real + "\n      " + DOWNLOAD_STEP + "\n        uses: x\n        with:\n          merge-multiple: false\n"),
-         "raised")
-    case("⭐ r1 Claude m3: the job index set in ANOTHER step does not vouch for the writing step's 1-based variable",
-         _contract(_real.replace("SHARD_INDEX: ${{ strategy.job-index }}", "SHARD_INDEX: ${{ matrix.shard }}")
-                   + "\n  other:\n    steps:\n      - name: y\n        env:\n          SHARD_INDEX: ${{ strategy.job-index }}\n"),
-         "raised")
-    case("...`read_flaky` reads the file name the contract proved", SHARD_FILE.format(3), "shard-3.txt")
+    # ── backlog #619 R1: the REAL writer's records, read here — one schema, two scripts, a case between them ──
+    _w = _writer()
+    import coverage_verdict as _cv
+    _m = _cv.Measured(files={}, declared=2, mutations=[{"name": _n1, "measured": True, "flaky": True},
+                                                         {"name": "k", "measured": True}], survivors=[_n1],
+                      controls_green=True)
+    _nmv = _cv.NotMeasured.from_counts([{"name": _n3, "measured": True, "flaky": True}], 4)
+    _recs = [("w1", _w.shard_record((1, 2), _m)), ("w2", _w.shard_record((2, 2), _nmv))]
+    case("⭐ #619: `check-plan-code.shard_record`'s records READ here: both shards, their FLAKY names, the "
+         "not-measured one INCOMPLETE",
+         check_records(_recs), ([_n1, _n3], ["shard 2 of 2 (w2) did not complete its run: its FLAKY results "
+                                             "cover only the mutations it reached"]))
+    case("...and an unsharded run's record is shard 1 of 1", check_records([("w", _w.shard_record(None, _m))]),
+         ([_n1], []))
 
     # ── the workflow step's real `run:` block, against a fake gh ──
     wf = WORKFLOW.read_text(encoding="utf-8")
     run_block = step_run_block(wf)
     case("the alert step's run block runs this helper", "python3 scripts/sweep-red-alert.py" in run_block, True)
-    _dl = wf.split("- name: Download every shard's FLAKY mutation names", 1)[-1].split("- name:", 1)[0]
-    case("⭐ #495 r2 Codex 2: the download step exists and is NOT continue-on-error — a failed download is a red step",
-         ("actions/download-artifact" in _dl, "continue-on-error" in _dl), (True, False))
+    _dl = wf.split("- name: Download every shard's sweep record", 1)[-1].split("- name:", 1)[0]
+    case("⭐ #619 (b): the download step exists, is NOT continue-on-error, and does NOT merge the artifacts",
+         ("actions/download-artifact" in _dl, "continue-on-error" in _dl, "merge-multiple" in _dl), (True, False, False))
     with tempfile.TemporaryDirectory() as td:
         repo, bin_ = pathlib.Path(td) / "repo", pathlib.Path(td) / "bin"
         (repo / "scripts").mkdir(parents=True)
         bin_.mkdir()
         shutil.copy(__file__, repo / "scripts" / "sweep-red-alert.py")
-        (repo / ".github" / "workflows").mkdir(parents=True)   # r2 Codex 2: the helper reads the REAL shard count
-        shutil.copy(WORKFLOW, repo / ".github" / "workflows" / "ci.yml")
-        n_shards = shard_count(wf)
         (bin_ / "gh").write_text(FAKE_GH)
         (bin_ / "gh").chmod(0o755)
         # A REAL commit, so a green AT the failing commit is a green any coverage rule would accept: the strongest
@@ -526,18 +478,21 @@ def _self_test_body() -> int:
             g("commit", "-q", "--allow-empty", "-m", c)
             sha[c] = g("rev-parse", "HEAD")
         state = pathlib.Path(td) / "gh.json"
+        n_shards = 6
 
-        def step(sweep: str, at: str, flaky: "dict | None" = None, flaky_dir: "str | None" = None,
-                 drop: tuple = ()) -> tuple[int, str]:
-            """`flaky`: {shard file: its FLAKY lines} written to a FRESH FLAKY_DIR holding EVERY shard's file (an
-            empty one by default) except those named in `drop`; `flaky_dir` overrides the path."""
+        def step(sweep: str, at: str, flaky: "dict | None" = None, record_dir: "str | None" = None,
+                 drop: tuple = (), event: str = "push") -> tuple[int, str]:
+            """`flaky`: {shard: its FLAKY names}, written as a FRESH RECORD_DIR holding EVERY shard's record, each in
+            its own artifact subdirectory as `download-artifact` lays them out, except the shards in `drop`."""
             fd = pathlib.Path(tempfile.mkdtemp(dir=td))
-            for fname, text in {**{f"shard-{i}.txt": "" for i in range(n_shards)}, **(flaky or {})}.items():
-                if fname not in drop:
-                    (fd / fname).write_text(text, encoding="utf-8")
+            for i in range(1, n_shards + 1):
+                if i not in drop:
+                    (fd / f"sweep-record-{i - 1}").mkdir()
+                    (fd / f"sweep-record-{i - 1}" / "record.json").write_text(
+                        json.dumps(_rec(i, n_shards, (flaky or {}).get(i, ()))), encoding="utf-8")
             e = dict(os.environ, PATH=f"{bin_}{os.pathsep}{os.environ.get('PATH', '')}", FAKE_GH_STATE=str(state),
-                     SWEEP=sweep, SHA=sha.get(at, at), EVENT="push", RUN_URL=f"https://run/{sweep}/{at}",
-                     FLAKY_DIR=str(fd) if flaky_dir is None else flaky_dir)
+                     SWEEP=sweep, SHA=sha.get(at, at), EVENT=event, RUN_URL=f"https://run/{sweep}/{at}",
+                     RECORD_DIR=str(fd) if record_dir is None else record_dir)
             r = subprocess.run(["bash", "-c", "set -eu\n" + run_block], cwd=repo, env=e, capture_output=True,
                                text=True)
             return r.returncode, r.stdout + r.stderr
@@ -578,46 +533,49 @@ def _self_test_body() -> int:
         case("a green with NO issue open writes nothing to GitHub", (rc, writes(st()["calls"]), st()["issues"]),
              (0, [], []))
         # ── backlog #495 r1 (Codex 4 / Claude M1): a FLAKY mutant is FILED, on a green sweep too ──
-        _fa = {"shard-0.txt": f"Z {FLAKY_LINE}alpha{_t}", "shard-3.txt": f"Z {FLAKY_LINE}beta{_t}"}
         state.write_text(json.dumps({"issues": [], "calls": []}))
-        rc, out = step("success", "c", _fa)
+        rc, out = step("success", "c", {1: ["alpha"], 4: [_n1]})
         _fi = [i for i in st()["issues"] if i["labels"] == [FLAKY_LABEL]]
         case("⭐ #495 r1: a GREEN sweep with FLAKY mutants in two shards OPENS one sweep-flaky issue naming BOTH",
-             (rc, len(_fi), [n in (_fi or [{}])[0].get("body", "") for n in ("- alpha\n", "- beta\n")],
+             (rc, len(_fi), [n in (_fi or [{}])[0].get("body", "") for n in ("- alpha\n", f"- {_n1}\n")],
               [i for i in st()["issues"] if LABEL in i["labels"]]), (0, 1, [True, True], []))
-        rc, out = step("success", "c", {"shard-2.txt": f"Z {FLAKY_LINE}gamma{_t}"})
+        rc, out = step("success", "c", {3: ["gamma"]})
         case("...a second one COMMENTS on the open sweep-flaky issue, naming its own, and opens no second issue",
              (rc, len(st()["issues"]), "- gamma\n" in (st()["issues"][0]["comments"] or [{}])[-1].get("body", "")),
              (0, 1, True))
-        rc, out = step("failure", "c", {"shard-0.txt": f"Z {FLAKY_LINE}delta{_t}"})
+        rc, out = step("failure", "c", {1: ["delta"]})
         case("...a RED sweep with a FLAKY mutant files BOTH: a sweep-red issue and the FLAKY names",
              (rc, sorted(i["labels"][0] for i in st()["issues"]),
               "- delta\n" in (st()["issues"][0]["comments"] or [{}])[-1].get("body", "")),
              (0, sorted([LABEL, FLAKY_LABEL]), True))
         state.write_text(json.dumps({"issues": [], "calls": []}))
-        rc, out = step("success", "c", {"shard-0.txt": ""})
-        case("...a green sweep with NO FLAKY mutant writes nothing to GitHub", (rc, writes(st()["calls"])), (0, []))
-        rc, out = step("failure", "c", flaky_dir=str(pathlib.Path(td) / "never-downloaded"))
-        case("⭐ #495 r1: a MISSING FLAKY_DIR makes the step RED — and only AFTER the red sweep got its issue",
-             (rc != 0, "did NOT RUN" in out, [i["labels"] for i in st()["issues"]]), (True, True, [[LABEL]]))
-        state.write_text(json.dumps({"issues": [], "calls": []}))
-        rc, out = step("success", "c", {"shard-0.txt": ""}, drop=(f"shard-{n_shards - 1}.txt",))
-        case("⭐ #495 r2 Codex 2: the REAL step with ONE of the matrix's shard files missing is RED, NOT RUN — never "
-             "'no FLAKY'", (rc != 0, f"shard-{n_shards - 1}.txt" in out, "no FLAKY mutation" in out), (True, True, False))
-        # ⛔ r3 Claude M1: the review's own run — every shard file but one present, a FLAKY name in shard-0.
-        state.write_text(json.dumps({"issues": [], "calls": []}))
-        rc, out = step("success", "c", {"shard-0.txt": f"Z {FLAKY_LINE}{_n1}{_t}"}, drop=("shard-5.txt",))
-        _fi = [i for i in st()["issues"] if i["labels"] == [FLAKY_LABEL]]
-        case("⭐ #495 r3 M1: a shard file MISSING still FILES the names the others hold, THEN goes red naming it NOT RUN",
-             (rc != 0, f"- {_n1}\n" in (_fi or [{}])[0].get("body", ""), "shard-5.txt" in out, "NOT RUN" in out,
-              f"1 of {n_shards} shard files" in out), (True, True, True, True, True))
-        # backlog #617: the REAL step, run against a `ci.yml` whose download step lost `merge-multiple: true`.
-        _ci = repo / ".github" / "workflows" / "ci.yml"
-        _ci.write_text(wf.replace("merge-multiple: true", "merge-multiple: false"), encoding="utf-8")
         rc, out = step("success", "c")
-        _ci.write_text(wf, encoding="utf-8")
-        case("⭐ #617: the REAL step under a `ci.yml` without `merge-multiple: true` is RED naming it, never 'no FLAKY'",
-             (rc != 0, "merge-multiple: true" in out, "no FLAKY mutation" in out), (True, True, False))
+        case("...a green sweep with NO FLAKY mutant writes nothing to GitHub", (rc, writes(st()["calls"])), (0, []))
+        rc, out = step("failure", "c", record_dir="")
+        case("⭐ #495 r1: an unset RECORD_DIR makes the step RED — and only AFTER the red sweep got its issue",
+             (rc != 0, "NOT READ" in out, [i["labels"] for i in st()["issues"]]), (True, True, [[LABEL]]))
+        state.write_text(json.dumps({"issues": [], "calls": []}))
+        rc, out = step("success", "c", record_dir=str(pathlib.Path(td) / "never-downloaded"))
+        case("⭐ #619: a RECORD_DIR that was never downloaded is RED, NOT CHECKED — never 'no FLAKY'",
+             (rc != 0, "no shard record at all" in out, "no FLAKY mutation" in out, writes(st()["calls"])),
+             (True, True, False, []))
+        # ⛔ #495 r3 Claude M1: every shard's record but one present, a FLAKY name in shard 1.
+        state.write_text(json.dumps({"issues": [], "calls": []}))
+        rc, out = step("success", "c", {1: [_n1]}, drop=(5,))
+        _fi = [i for i in st()["issues"] if i["labels"] == [FLAKY_LABEL]]
+        case("⭐ #495 r3 M1: a shard's record MISSING still FILES the names the others hold, THEN goes red naming it",
+             (rc != 0, f"- {_n1}\n" in (_fi or [{}])[0].get("body", ""), f"1 of {n_shards} shards have no record "
+              "(shard 5)" in out, "NOT CHECKED" in out), (True, True, True, True))
+        # ── backlog #619 R1 (c): a PULL REQUEST validates the same records and files NOTHING ──
+        state.write_text(json.dumps({"issues": [], "calls": []}))
+        _pr = [step("failure", "c", {2: ["eps"]}, event="pull_request"), step("success", "c", event="pull_request")]
+        case("⭐ #619 (c): on a PULL REQUEST, valid records pass and NOTHING reaches GitHub — red sweep or green",
+             ([rc for rc, _ in _pr], st()["calls"]), ([0, 0], []))
+        _prb = [step("success", "c", drop=(6,), event="pull_request"),
+                step("success", "c", record_dir=str(pathlib.Path(td) / "never-downloaded"), event="pull_request")]
+        case("⭐ #619 (c): on a PULL REQUEST a missing record, or none, is RED naming it — still with no gh call",
+             ([(rc != 0, "NOT VALID" in out) for rc, out in _prb], "shard 6" in _prb[0][1], st()["calls"]),
+             ([(True, True), (True, True)], True, []))
         (bin_ / "gh").write_text("#!/bin/sh\necho 'HTTP 502' >&2\nexit 1\n")
         for sweep in ("success", "failure"):
             rc, out = step(sweep, "c")

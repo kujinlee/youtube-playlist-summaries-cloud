@@ -1404,33 +1404,25 @@ jobs:
               echo "::warning::and the WHOLE manifest runs. An unanswered question never narrows a gate."
             fi
           fi
-          # ⟳ backlog #495 r1 (Codex 4 / Claude M1): a FLAKY mutant (survived, then killed on its one re-run)
-          # is GREEN, so nothing red would ever carry its name to a person. This shard's FLAKY lines go to a
-          # file, uploaded below, and `sweep-red-alert.py` files them on master. `tee` keeps the live log;
-          # the harness's OWN exit code is the step's (PIPESTATUS), and a grep that ERRORS (rc > 1, not
-          # "no match") is a red step: a scan that did not run never reads as "no FLAKY".
-          mkdir -p "$RUNNER_TEMP/sweep-flaky"
-          set +e
+          # ⟳ backlog #619 R1 (was #495 r1's log grep): a FLAKY mutant (survived, then killed on its one re-run)
+          # is GREEN, so nothing red would ever carry its name to a person. The harness writes this shard's
+          # RECORD — the shard and total it parsed from --shard0 and sliced by, whether its run completed, its
+          # FLAKY names — uploaded below as its own artifact; `sweep-red-alert.py` reads every shard's. A run
+          # that dies before writing one leaves its shard MISSING, which the reader reports: never "no FLAKY".
           PYTHONUNBUFFERED=1 python3 scripts/check-plan-code.py --mutate . \
-            --shard0 "$SHARD_INDEX/$SHARD_TOTAL" \
-            --event "$EVENT" --changed "$CHANGED" ${SEEDS:+--seeds "$SEEDS"} 2>&1 | tee "$RUNNER_TEMP/sweep.log"
-          RC=${PIPESTATUS[0]}
-          grep -F 'mutation FLAKY — ' "$RUNNER_TEMP/sweep.log" > "$RUNNER_TEMP/sweep-flaky/shard-$SHARD_INDEX.txt"
-          G=$?
-          if [ "$G" -gt 1 ]; then
-            echo "::error::the FLAKY scan of this shard's log FAILED (grep rc $G): its FLAKY results are NOT CHECKED"
-            exit 2
-          fi
-          exit "$RC"
+            --shard0 "$SHARD_INDEX/$SHARD_TOTAL" --record "$RUNNER_TEMP/sweep-record/record.json" \
+            --event "$EVENT" --changed "$CHANGED" ${SEEDS:+--seeds "$SEEDS"}
 
-      # backlog #495 r1: this shard's FLAKY names, for `mutation-sweep-complete` to file. Never on a pull request
-      # (its alert step does not run there); `overwrite` so a re-run attempt of one shard replaces its own file.
-      - name: Upload this shard's FLAKY mutation names
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+      # backlog #619 R1: this shard's record, as an artifact of ITS OWN (one record per artifact, never merged), for
+      # `mutation-sweep-complete` to read. ON A PULL REQUEST TOO: there the reader only validates, so a PR that
+      # breaks the record path, this upload or the download is red on its own CI (architecture review #629 (c)).
+      # `overwrite` so a re-run attempt of one shard replaces its own record.
+      - name: Upload this shard's sweep record
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: sweep-flaky-${{ strategy.job-index }}
-          path: ${{ runner.temp }}/sweep-flaky/
+          name: sweep-record-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/sweep-record/
           retention-days: 7
           if-no-files-found: error
           overwrite: true
@@ -1497,28 +1489,29 @@ jobs:
       # run <url>" on each open issue, and with none open writes nothing. Three rounds each found a
       # way for a close rule to erase a red it did not cover, so there is no close rule: closing is
       # a person's act after reading the issue. The cases: `scripts/sweep-red-alert.py`.
-      # Pull requests never reach this step: their red is on the PR itself.
+      # On a pull request the step only VALIDATES the shard records and files nothing: its red is on the PR itself.
       # ⚠ `!cancelled()`: a run a person cancelled neither alerts nor comments (backlog #482, r1 C6).
       # The aggregate step above fails exactly when SWEEP is not `success`, so SWEEP decides here.
       # backlog #534: a `batch/**` push never alerts either. Its red is a batch verdict, read and acted on by
       # `batch-ci.py status` (eject or bisect); nothing it measured has merged, so master is not red.
-      # ⟳ backlog #495 r1 (Codex 4 / Claude M1): every shard's FLAKY names, merged into ONE directory.
-      # ⟳ r2 Codex 2: NOT continue-on-error — a failed download is a red step. The alert step below still runs
-      # (`!cancelled()`, no `success()`), files any red sweep FIRST, then goes red itself when ANY shard's
-      # `shard-<i>.txt` is missing (`read_flaky`, one per entry of the `shard:` matrix): an empty or partial
-      # download is NOT RUN, never "no FLAKY".
-      - name: Download every shard's FLAKY mutation names
-        if: ${{ !cancelled() && github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/heads/batch/') }}
+      # ⟳ backlog #619 R1 (was #495 r1's merged directory of grep files): every shard's record, each artifact in
+      # a SUBDIRECTORY of its own name — NO `merge-multiple`, so two records can never land on one path, and the
+      # reader takes a record's shard from its CONTENT, never its path. ⟳ #495 r2 Codex 2: NOT continue-on-error —
+      # a failed download is a red step. The step below still runs (`!cancelled()`, no `success()`), files any red
+      # sweep FIRST, then goes red itself when any shard of the records' own `total` has no record: an empty or
+      # partial download is NOT RUN, never "no FLAKY". On a pull request too (#629 (c)).
+      - name: Download every shard's sweep record
+        if: ${{ !cancelled() && !startsWith(github.ref, 'refs/heads/batch/') }}
         uses: actions/download-artifact@v4
         with:
-          pattern: sweep-flaky-*
-          merge-multiple: true
-          path: ${{ runner.temp }}/sweep-flaky
+          pattern: sweep-record-*
+          path: ${{ runner.temp }}/sweep-records
 
       # ⟳ backlog #495 r1: the same step also FILES FLAKY mutants — on a green sweep too — as a `sweep-flaky`
-      # issue (or a comment on the open one), the owner's "named AND FILED" (11-11 19:25).
-      - name: The FULL sweep on master opens or comments on the sweep-red issue, and never closes one
-        if: ${{ !cancelled() && github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/heads/batch/') }}
+      # issue (or a comment on the open one), the owner's "named AND FILED" (11-11 19:25). On a pull request
+      # (`EVENT`) it only validates the records: no `gh` call, red on any problem (backlog #619 R1).
+      - name: Read every shard's record; on master open or comment on the sweep-red and sweep-flaky issues, never closing one
+        if: ${{ !cancelled() && !startsWith(github.ref, 'refs/heads/batch/') }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -1526,5 +1519,5 @@ jobs:
           SHA: ${{ github.sha }}
           SWEEP: ${{ needs.mutation-sweep.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          FLAKY_DIR: ${{ runner.temp }}/sweep-flaky
+          RECORD_DIR: ${{ runner.temp }}/sweep-records
         run: python3 scripts/sweep-red-alert.py
