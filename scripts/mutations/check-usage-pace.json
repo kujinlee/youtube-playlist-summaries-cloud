@@ -53,16 +53,16 @@
     ]
   },
   {
-    "name": "the five-hour WARN becomes strictly above 90",
+    "name": "the 5h block's 90% NO NEW AGENTS line becomes strictly above 90",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "five[0] >= FIVE_HOUR_WARN_AT",
-        "five[0] > FIVE_HOUR_WARN_AT"
+        "if used >= FIVE_HOUR_WARN_AT or ahead",
+        "if used > FIVE_HOUR_WARN_AT or ahead"
       ]
     ],
     "expect": [
-      "five-hour 90 is WARN"
+      "⭐ 5h block: 90 at 95% elapsed is NO NEW AGENTS though BEHIND the clock (fixed string)"
     ]
   },
   {
@@ -2674,6 +2674,149 @@
     ],
     "expect": [
       "#628 r1 M1: a WARN whose band cannot be read (no meter) is said on every prompt"
+    ]
+  },
+  {
+    "name": "#645: the FREE edge becomes inclusive (ahead 15 is no longer free)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "ahead > BLOCK_FREE_AHEAD:",
+        "ahead >= BLOCK_FREE_AHEAD:"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block boundary: ahead EXACTLY 15 (65 at 50%) is still FREE"
+    ]
+  },
+  {
+    "name": "#645: the NO NEW AGENTS edge becomes inclusive (ahead 30 is no longer 2 agents)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "ahead > BLOCK_TWO_AHEAD:",
+        "ahead >= BLOCK_TWO_AHEAD:"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block boundary: ahead EXACTLY 30 (80 at 50%) is still AT MOST 2 AGENTS"
+    ]
+  },
+  {
+    "name": "#645: the FREE margin moves off 15",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BLOCK_FREE_AHEAD = 15.0",
+        "BLOCK_FREE_AHEAD = 15.2"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: ahead 15.1 (65.1 at 50%) is AT MOST 2 AGENTS, a WARN"
+    ]
+  },
+  {
+    "name": "#645: the 2-agent margin moves off 30",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BLOCK_TWO_AHEAD = 30.0",
+        "BLOCK_TWO_AHEAD = 30.2"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: ahead 30.1 (80.1 at 50%) is NO NEW AGENTS, the whole message (fixed string)"
+    ]
+  },
+  {
+    "name": "#645: used ≥ 90% no longer stops new agents when behind the clock",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if used >= FIVE_HOUR_WARN_AT or ahead > BLOCK_TWO_AHEAD:",
+        "if ahead > BLOCK_TWO_AHEAD:"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: 90 at 95% elapsed is NO NEW AGENTS though BEHIND the clock (fixed string)"
+    ]
+  },
+  {
+    "name": "#645: STOP needs more than 100%",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if used >= HARD_LIMIT:\n        return BLOCK_STOP",
+        "    if used > HARD_LIMIT:\n        return BLOCK_STOP"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block STOP: 100% says stop and WAKE at reset + 1 min, by clock time (fixed string)"
+    ]
+  },
+  {
+    "name": "#645: the wake is AT the reset, not reset + 1 min",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BLOCK_WAKE_AFTER_S = 60",
+        "BLOCK_WAKE_AFTER_S = 0"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block STOP: 100% says stop and WAKE at reset + 1 min, by clock time (fixed string)"
+    ]
+  },
+  {
+    "name": "#645: elapsed counts from the reset, not the block start",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(now - (resets - FIVE_HOUR_S)) * 100",
+        "(now - resets) * 100"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block FREE: 60% used at 60% elapsed (ahead 0) adds nothing"
+    ]
+  },
+  {
+    "name": "#645: elapsed is not clamped at 0",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "min(max((now - (resets - FIVE_HOUR_S)) * 100 / FIVE_HOUR_S, 0.0), 100.0)",
+        "min((now - (resets - FIVE_HOUR_S)) * 100 / FIVE_HOUR_S, 100.0)"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: a reset 30 min BEYOND 5 h is a block not yet begun (elapsed 0, never negative): 15 is FREE"
+    ]
+  },
+  {
+    "name": "#645: a 5h block note is never said (the old 90% WARN gone too)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        five_note = block_note(five[0], five[1], now)",
+        "        five_note = \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: an unchanged AT MOST 2 AGENTS WARN is said once per session (#628), then silent"
+    ]
+  },
+  {
+    "name": "#645: the block note carries the moving ahead figure, so #628 never dedupes it",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return (f\" 5h block: AT MOST 2 AGENTS — used {pct(used)}, more than",
+        "        return (f\" 5h block: AT MOST 2 AGENTS — ahead {ahead!r}, used {pct(used)}, more than"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: AT MOST 2 AGENTS, the whole message (fixed string)"
     ]
   }
 ]

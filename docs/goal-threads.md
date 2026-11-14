@@ -153,6 +153,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #444 · revisit Opus-vs-Sonnet routing once the meter regression has a ratio · waits on days of meter data
 - blocker · backlog #513 · the usage hook runs the checked-out branch's guard, so an unmerged branch sets the stop
 - fix · backlog #630 · the Fable 5.2 pilot: a comparison week of Fable against Opus per task, reported at the 11-20 reset
+- fix · backlog #645 · the 5-hour meter is paced against its fixed block clock: free, at most 2 agents, no new agents, or stop and wake at reset + 1 min (owner card A, 11-13 16:20)
 ## GOAL dev-speed-first
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
 > 2026-11-02 09:09 "let's make development speed issues higher priority than others"

@@ -11,12 +11,12 @@ every refresh:
 
 Either window may be absent. The owner verified the cached value equals `/usage` on 2026-10-30 06:14.
 
-THE VERDICTS (the weekly window decides; the five-hour window can only add a warning):
+THE VERDICTS (the weekly window decides; the five-hour window can only add a warning — its 5h BLOCK CLOCK zone, below):
 
     OK            weekly below 80%
     WARN          weekly 80% or more — names the % (floored to 0.1, never rounded up) and the reset time
                   in local time WITH its zone abbreviation, so a reset across a DST change is unambiguous;
-                  also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level;
+                  also: a 5h block zone other than FREE, or a five-hour window that cannot be read, at any weekly level;
                   and the DAY BAND's WIND-DOWN or NO NEW STARTS zone, at any weekly level (below)
     REFUSE-SPAWN  weekly at or over the stop: 100% − 5% × the days left after today, never above 97% (backlog #500) —
                   except on the LAST DAY, when the 97% cap rises linearly to 99% at 1 h before the reset (backlog #510)
@@ -43,6 +43,13 @@ rounds, no new build or review loop); at its top or over, NO NEW STARTS. The las
 14.3%/day since the window began + 8 adds a trend note. WIND-DOWN and NO NEW STARTS are WARN, because the prompt hook
 speaks only on WARN; so is an UNKNOWN band (no start%, or one from before yesterday, and no override — said as NOT
 RUN), since an unknown start% never reads as fine (pace-band r1 U1). NORMAL leaves the verdict alone.
+
+THE 5h BLOCK CLOCK (backlog #645, the owner 2026-11-13 16:20, card A) paces the five-hour meter against its FIXED
+block: it starts at `five_hour.resets_at` − 5 h, elapsed% = time since then / 5 h, ahead = used% − elapsed%
+(`block_zone`). ahead ≤ 15 is FREE (nothing said); 15 < ahead ≤ 30 is AT MOST 2 AGENTS (no new Fable agent); ahead > 30
+or used ≥ 90% is NO NEW AGENTS; used 100% is STOP, which prints the WAKE time, the reset + 1 min. Each is a WARN, never a
+REFUSE; a five-hour reset that has passed adds nothing (it is last block's reading). The sentence names no elapsed% or
+ahead, which move every few minutes, so an unchanged zone keeps its text and backlog #628 says it once per session.
 
 ⟳ PR #446 r1 (X1/M3): a bad FIVE-HOUR window no longer disables the weekly verdict. It was CANNOT RUN, so a
 valid weekly 95% beside a five-hour `resets_at` of 1e300 let a spawn through — the row's own FAILS IF. Now
@@ -242,7 +249,16 @@ TAIL_TOO_SHORT = ("the meter log is over its read bound and the part read does n
                   "today's start%")
 TAIL_CONTRACT_BROKEN = ("the meter log is over its read bound and the part read holds a row stamped more than an hour "
                         "before an earlier row, so the log's rows are not stamped as they are appended")
-FIVE_HOUR_WARN_AT = 90.0
+# THE 5h BLOCK CLOCK (backlog #645, the owner 11-13 16:20, selection card A). The five-hour meter is paced against
+# its FIXED block: the block starts at `five_hour.resets_at` − 5 h, elapsed% = time since then / 5 h, and
+# ahead = used% − elapsed%. ahead ≤ 15 is FREE (nothing said); 15 < ahead ≤ 30 is AT MOST 2 AGENTS (no new Fable
+# agent); ahead > 30, or used ≥ 90%, is NO NEW AGENTS; used 100% is STOP, with a WAKE at the reset + 1 min.
+# A GUIDE like the day band: a WARN, never a REFUSE — the weekly verdict alone moves the stop.
+FIVE_HOUR_WARN_AT = 90.0          # used% at or over which the block is NO NEW AGENTS, whatever its clock
+BLOCK_FREE_AHEAD = 15.0
+BLOCK_TWO_AHEAD = 30.0
+BLOCK_WAKE_AFTER_S = 60
+BLOCK_FREE, BLOCK_TWO, BLOCK_NO_START, BLOCK_STOP = "FREE", "AT MOST 2 AGENTS", "NO NEW AGENTS", "STOP"
 MAX_AGE_S = 15 * 60
 # The statusline and this hook read the same clock, so a cache from the future is a broken writer, not skew.
 # 5 s covers a write racing the read and float rounding of `at`, nothing more (r1 X3: it was 60 s, which let
@@ -563,6 +579,39 @@ def band_note(meter: str | None, now: float, resets: float, weekly: float, why: 
             f"{ZONE_TEXT[zone]}.{trend_note}", zone)
 
 
+def block_zone(used: float, resets: float, now: float) -> tuple[str, float, float]:
+    """(zone, elapsed%, ahead) of the five-hour block that resets at `resets` (backlog #645). Elapsed is clamped to
+    0–100, so a reset up to the horizon slack beyond 5 h reads as a block not yet begun. Pure."""
+    elapsed = min(max((now - (resets - FIVE_HOUR_S)) * 100 / FIVE_HOUR_S, 0.0), 100.0)
+    ahead = used - elapsed
+    if used >= HARD_LIMIT:
+        return BLOCK_STOP, elapsed, ahead
+    if used >= FIVE_HOUR_WARN_AT or ahead > BLOCK_TWO_AHEAD:
+        return BLOCK_NO_START, elapsed, ahead
+    if ahead > BLOCK_FREE_AHEAD:
+        return BLOCK_TWO, elapsed, ahead
+    return BLOCK_FREE, elapsed, ahead
+
+
+def block_note(used: float, resets: float, now: float) -> str:
+    """The 5h block's sentence, or "" when FREE. It names the zone, the used% and the reset — never elapsed% or
+    ahead, which move every few minutes, so an unchanged zone keeps its text and #628 says it once per session."""
+    zone, _, ahead = block_zone(used, resets, now)
+    if zone == BLOCK_FREE:
+        return ""
+    if zone == BLOCK_STOP:
+        return (f" 5h block: STOP — used {pct(used)}: start and wake no agent; WAKE at "
+                f"{local_time(resets + BLOCK_WAKE_AFTER_S)} (the block's reset + 1 min) to restart agents.")
+    if zone == BLOCK_TWO:
+        return (f" 5h block: AT MOST 2 AGENTS — used {pct(used)}, more than {BLOCK_FREE_AHEAD:g} points ahead of the "
+                f"block clock (used% − the block's elapsed%): keep at most 2 agents running and start no new Fable "
+                f"agent. Block resets {local_time(resets)}.")
+    why = (f"at or over {pct(FIVE_HOUR_WARN_AT)}" if used >= FIVE_HOUR_WARN_AT
+           else f"more than {BLOCK_TWO_AHEAD:g} points ahead of the block clock")
+    return (f" 5h block: NO NEW AGENTS — used {pct(used)}, {why}: start no new agent; work in flight continues. "
+            f"Block resets {local_time(resets)}.")
+
+
 def cannot(reason: str) -> tuple[str, str]:
     return CANNOT_RUN, (f"⚠ usage pace: CANNOT RUN — {reason}. The weekly usage is UNKNOWN: treat this as "
                         f"NOT RUN, never as fine. Spawns are not blocked. Unknown is not a stop: keep working.")
@@ -615,9 +664,8 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
         five = window(rl, "five_hour", now, FIVE_HOUR_S)
     except Malformed as e:
         five, five_note = None, f" The five-hour window is unreadable ({e}): {NOT_RUN_MARK}."
-    if five is not None and five[1] > now and five[0] >= FIVE_HOUR_WARN_AT:
-        five_note = (f" Five-hour usage is {pct(five[0])} (WARN at {pct(FIVE_HOUR_WARN_AT)}), "
-                     f"resets {local_time(five[1])}.")
+    if five is not None and five[1] > now:   # a passed reset is last block's reading: it adds nothing
+        five_note = block_note(five[0], five[1], now)
     stop, days = refuse_at(now, resets), days_after_today(now, resets)
     # backlog #525 M1: the rise's NEXT real stop. The last night (the hard limit) starts before the rise's 99% end
     # whenever LAST_NIGHT_S > RISE_END_S, so the 99% end is then never a stop and must not be named as one.
@@ -1973,10 +2021,45 @@ def _self_test_body() -> int:
             check(f"an 'at' of {label} is CANNOT RUN, in a SHORT message", (v, len(msg) < 400), (CANNOT_RUN, True))
 
         # ── the five-hour window: WARN only, and never able to disable the weekly verdict ──────────
-        check("five-hour 89.9 adds nothing", kind(cache(10, five=89.9)), OK)
+        # ⭐ backlog #645, the owner 11-13 16:20 (selection card A): the 5h meter is paced against its FIXED block clock,
+        # elapsed% = (now − (resets_at − 5 h)) / 5 h, ahead = used% − elapsed%. FIVE_RESET is NOW + 2 h, so elapsed is 60%
+        # there; HALF_RESET (NOW + 2.5 h) puts elapsed at exactly 50%, LATE_RESET (NOW + 15 min) at exactly 95%.
+        HALF_RESET, LATE_RESET = NOW + 9000, NOW + 900
+        check("⭐ 5h block FREE: 60% used at 60% elapsed (ahead 0) adds nothing", kind(cache(10, five=60)), OK)
+        check("⭐ 5h block boundary: ahead EXACTLY 15 (65 at 50%) is still FREE",
+              kind(cache(10, five=65, five_reset=HALF_RESET)), OK)
+        check("⭐ 5h block: ahead 15.1 (65.1 at 50%) is AT MOST 2 AGENTS, a WARN",
+              ("AT MOST 2 AGENTS" in ev(cache(10, five=65.1, five_reset=HALF_RESET))[1],
+               kind(cache(10, five=65.1, five_reset=HALF_RESET))), (True, WARN))
+        check("⭐ 5h block: AT MOST 2 AGENTS, the whole message (fixed string)", ev(cache(10, five=75.1))[1],
+              "⚠ usage pace: weekly usage is 10%. 5h block: AT MOST 2 AGENTS — used 75.1%, more than 15 points ahead "
+              "of the block clock (used% − the block's elapsed%): keep at most 2 agents running and start no new Fable "
+              "agent. Block resets Fri 01-15 02:00 PST.")
+        check("⭐ 5h block boundary: ahead EXACTLY 30 (80 at 50%) is still AT MOST 2 AGENTS",
+              "AT MOST 2 AGENTS" in ev(cache(10, five=80, five_reset=HALF_RESET))[1], True)
+        check("⭐ 5h block: ahead 30.1 (80.1 at 50%) is NO NEW AGENTS, the whole message (fixed string)",
+              ev(cache(10, five=80.1, five_reset=HALF_RESET))[1],
+              "⚠ usage pace: weekly usage is 10%. 5h block: NO NEW AGENTS — used 80.1%, more than 30 points ahead of "
+              "the block clock: start no new agent; work in flight continues. Block resets Fri 01-15 02:30 PST.")
+        check("⭐ 5h block: 89.9 at 95% elapsed (behind the clock) is FREE", kind(cache(10, five=89.9, five_reset=LATE_RESET)),
+              OK)
+        check("⭐ 5h block: 90 at 95% elapsed is NO NEW AGENTS though BEHIND the clock (fixed string)",
+              ev(cache(10, five=90, five_reset=LATE_RESET))[1],
+              "⚠ usage pace: weekly usage is 10%. 5h block: NO NEW AGENTS — used 90%, at or over 90%: start no new "
+              "agent; work in flight continues. Block resets Fri 01-15 00:15 PST.")
+        check("⭐ 5h block: a reset 30 min BEYOND 5 h is a block not yet begun (elapsed 0, never negative): 15 is FREE",
+              kind(cache(10, five=15, five_reset=NOW + FIVE_HOUR_S + 1800)), OK)
         check("five-hour 90 is WARN", kind(cache(10, five=90)), WARN)
-        check("the five-hour WARN names that window and its reset (fixed string)", ev(cache(10, five=90))[1],
-              "⚠ usage pace: weekly usage is 10%. Five-hour usage is 90% (WARN at 90%), resets Fri 01-15 02:00 PST.")
+        check("⭐ 5h block STOP: 100% says stop and WAKE at reset + 1 min, by clock time (fixed string)",
+              ev(cache(10, five=100))[1],
+              "⚠ usage pace: weekly usage is 10%. 5h block: STOP — used 100%: start and wake no agent; WAKE at "
+              "Fri 01-15 02:01 PST (the block's reset + 1 min) to restart agents.")
+        check("⭐ 5h block STOP rides on a weekly REFUSE, never downgrading it",
+              (kind(cache(98.5, five=100)), "WAKE at Fri 01-15 02:01 PST" in ev(cache(98.5, five=100))[1]),
+              (REFUSE, True))
+        check("⭐ 5h block: a STALE cache at 5h 100% is CANNOT RUN and names no block zone",
+              (kind(cache(10, five=100, age=MAX_AGE_S + 1)), "5h block" in ev(cache(10, five=100, age=MAX_AGE_S + 1))[1]),
+              (CANNOT_RUN, False))
         check("a five-hour window whose reset passed adds nothing", kind(cache(10, five=99, five_reset=NOW)), OK)
         check("five-hour 100 never REFUSES", kind(cache(10, five=100)), WARN)
         check("five-hour 95 never downgrades a weekly REFUSE", kind(cache(98.5, five=95)), REFUSE)
@@ -2538,6 +2621,15 @@ def _self_test_body() -> int:
             check("#628: a changed reading speaks again; a new session is told again",
                   (bool(drive(cache(86), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-4"))[1]),
                    bool(drive(cache(86), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-5"))[1])), (True, True))
+            blk = [bool(drive(cache(10, five=80, five_reset=NOW + 9000), "--hook", "prompt", "--meter", mpath, root=wt,
+                              payload=sess("s-blk"))[1]) for _ in range(3)]
+            check("⭐ 5h block: an unchanged AT MOST 2 AGENTS WARN is said once per session (#628), then silent",
+                  blk, [True, False, False])
+            check("5h block: a moved 5h reading speaks again; a FREE block says nothing at all",
+                  (bool(drive(cache(10, five=81, five_reset=NOW + 9000), "--hook", "prompt", "--meter", mpath, root=wt,
+                              payload=sess("s-blk"))[1]),
+                   drive(cache(10, five=60), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-blk2"))),
+                  (True, (0, "")))
             check("#628: REFUSE-SPAWN is never deduplicated",
                   [bool(drive(cache(99), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-5"))[1]) for _ in range(2)],
                   [True, True])
