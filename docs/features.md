@@ -49,13 +49,13 @@ state: absent
 for: Un-sticks a dig job whose worker went to sleep at the wrong moment.
 expected-because: dig inherits the same worker exit-window race a summary does, but `listByPlaylist` hard-filters `job_kind = 'summary'` (lib/storage/supabase/supabase-job-queue.ts:28), so the read-path recoverer in app/api/jobs/route.ts cannot see it.
 
-### correct-a-summary
+### corrections-in-cloud
 state: built
 for: Lets a reader fix something a summary got wrong and get the corrected version back.
 anchors: corrections-in-cloud
 areas: (cloud/quality)
 
-### share-and-export
+### share-and-download
 state: built
 for: Lets a summary be read by someone without an account, and taken away as a PDF or an HTML document.
 anchors: share-and-download
@@ -65,7 +65,7 @@ state: absent
 for: Lets a reader who arrived by a share link expand a section the way its owner can.
 expected-because: the share route renders with `dig: false` (app/s/[token]/route.ts:110), so the same document is deeper for its owner than for the person they sent it to — a difference the share link does not announce.
 
-### sync-with-a-local-vault
+### cloud-sync
 state: built
 for: Keeps one video's summary coherent between a person's local vault and the hosted copy.
 anchors: cloud-sync
@@ -82,7 +82,7 @@ state: built
 for: Keeps an idle service cheap to leave running, without a visitor paying for that in waiting.
 areas: (ops)
 
-### bounded-serve-path
+### serve-path-bounding
 state: built
 for: Keeps a reader's wait for a summary short and predictable, however much work it takes to produce.
 anchors: serve-path-bounding
@@ -93,13 +93,13 @@ for: Keeps one generation paid for once, and the total spend under a ceiling the
 anchors: serve-money-guard
 areas: (cloud/money)
 
-### artifact-addressing
+### stable-blob-addressing
 state: built
 for: Gives a stored artifact an address that survives a title change and a re-summarisation.
 anchors: stable-blob-addressing
 areas: (product / addressing)
 
-#### blob-key-encoding
+#### cloud-blob-key-encoding
 state: built
 for: Lets a video titled in any language be stored in and served from cloud storage.
 anchors: cloud-blob-key-encoding
@@ -116,7 +116,7 @@ areas: (cloud/security)
 
 ## DEV INFRASTRUCTURE
 
-### deploy-verification
+### prod-smoke
 state: built
 for: Proves by machine that what serves production is what was meant to ship.
 anchors: prod-smoke
@@ -133,7 +133,7 @@ for: Gives the rules this project works by a mechanical enforcer, instead of a r
 anchors: dev-speed-first
 areas: (tooling)
 
-### status-pages
+### status-visibility
 state: built
 for: Lets a person who was away see where the work stands and what needs a decision from them.
 anchors: status-visibility
@@ -155,13 +155,13 @@ state: absent
 for: Drew every plan as a line back to the plan it branched from.
 expected-because: retired 2026-10-28 into the goal-tree node above (the owner's decision D2, backlog #389) — two pages answering which threads are live left the reader with neither; a frozen record of it, with plan contents withheld pending backlog #194, is at http://127.0.0.1:7391/work-lines-archive.
 
-### explainer-pages
+### explanation-on-demand
 state: built
 for: Lets a person have a subject they choose explained in a page they can ask questions inside.
 anchors: explanation-on-demand
 areas: (comprehensibility/explainers)
 
-### review-loop
+### review-decides-itself
 state: built
 for: Lets a review loop choose its own next step from recorded evidence rather than from recall.
 anchors: review-decides-itself
@@ -173,7 +173,7 @@ for: Makes the way this project is built reusable by another repository, rather 
 anchors: harness-ships-elsewhere
 areas: (process / deliverable #2)
 
-#### harness-installs-elsewhere
+#### harness-ships-elsewhere
 state: absent
 for: Lets someone who has never seen this repository install the harness and use it in their own.
 expected-because: the harness is written down but has never been installed anywhere else. Its own coupling measurement puts 9 repo-specific items in `brief/SKILL.md`'s ground-truth command list alone — 4 bare guard names, 4 document paths and 1 tool name, belonging to this repo's process rather than to any plugin — so a component can read as project-independent and still be unusable. (Corrected 2026-10-16 by the marketplace-inventory round-1 review: the literal `scripts/check-*` does not occur in that file, and 5 of the 9 are neither paths nor file invocations, so a path-and-invocation scan cannot see them.)
