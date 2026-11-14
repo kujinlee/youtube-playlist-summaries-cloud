@@ -20582,6 +20582,21 @@ shipped corpus*), and the walkthrough fragment (C5 cell, `data-decision` set; re
 counter reads 13 decisions, 0 remaining). Resolves the `[needs-you]` entry `2026-11-13/2` (PR #577).
 
 ## 2026-11-13
+You changed your answer on the memory-file review, and the project now says so everywhere it had recorded the earlier
+one. The files about production infrastructure are no longer shipped redacted: they are left out, together with the
+business-plan files and the files about your own machine, 16 files in all. The files that quote you still ship, but each
+quote is reduced to the essence of its example, with no names, dates, numbers or project details. The other lesson
+files ship as they are.
+
+Nothing waits on you for this. The shipped copy is made later, and its checks fail if any original quote text is left
+or any of the 16 left-out files is present.
+<!--tech-->
+Walkthrough decision 5 re-answered 2026-11-13 17:15, replacing the 11:25 answer (A ship redacted). Updated in
+`docs/marketplace/decision-5-suspect-files.md` (Answered), spec §7 item 11, plan H1 and Task 18 (*Build the shipped
+corpus*: two output-reading checks, one for quote text, one for the 16 excluded files), and the walkthrough fragment
+(C5 cell `data-decision`; recomposed with `scripts/brief-compose.py`, 0 remaining). Shipped corpus: 193 files less 16.
+
+## 2026-11-13
 A question you type into a served page can now be answered in that page within about a minute, without the main
 session. A separate small agent reads the page and the repository, and its answer appears under the section you
 asked from. It only answers. When what you typed is an instruction or a decision, the page says "Passed on, not
