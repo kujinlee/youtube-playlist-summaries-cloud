@@ -1223,22 +1223,22 @@
     ]
   },
   {
-    "name": "a thread is stored without its goal (owner 2026-11-05; goal-only allowed by backlog #514 (c))",
+    "name": "a goal is stored without its thread (owner 2026-11-05)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    if thread and not goal:\n",
+        "    if bool(goal) != bool(thread):\n",
         "    if False:\n"
       ]
     ],
-    "expect": "backlog #514 (c): a goal WITHOUT a thread is stored (goal-tree places it by that field); a thread without a goal is still REFUSED, never half-stored"
+    "expect": "backlog #505: a goal without a thread (or the reverse) is REFUSED, never half-stored"
   },
   {
     "name": "the goal and thread are never stored (owner 2026-11-05)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "                       | ({\"goal\": goal} if goal else {}) | ({\"thread\": thread} if thread else {}))",
+        "                       | ({\"goal\": goal, \"thread\": thread} if goal else {}))",
         "                       )"
       ]
     ],
@@ -1487,20 +1487,7 @@
       ]
     ],
     "expect": [
-      "⭐ backlog #514 (c): `--add` with neither --goal nor --thread is REFUSED (exit 2) and writes nothing; with --goal alone, or --goal and --thread, it is accepted — three inputs, ONE case"
-    ]
-  },
-  {
-    "name": "backlog #514 (c): a goal-only entry is refused",
-    "file": "scripts/session-state.py",
-    "edits": [
-      [
-        "if thread and not goal:",
-        "if not (thread and goal):"
-      ]
-    ],
-    "expect": [
-      "⭐ backlog #514 (c): `--add` with neither --goal nor --thread is REFUSED (exit 2) and writes nothing; with --goal alone, or --goal and --thread, it is accepted — three inputs, ONE case"
+      "⭐ backlog #514 (c): `--add` with neither --goal nor --thread is REFUSED (exit 2); one without the other is refused too (backlog #505); only --goal WITH --thread is written — four inputs, ONE case"
     ]
   },
   {
@@ -1508,12 +1495,51 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "When no \"\n                  \"goal fits, propose a new goal named for its objective (the owner picks the name or counter-proposes) \"",
-        "\"\n                  \""
+        "propose a new goal named for its objective (the owner picks the name or counter-proposes) ",
+        ""
       ]
     ],
     "expect": [
       "backlog #514 (c): ...and the refusal says to NAME the goal, and when none fits to PROPOSE one named for its objective (the owner picks)"
+    ]
+  },
+  {
+    "name": "backlog #514 r1: a declared wait is never stored",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                       | ({\"waits\": waits.strip()} if waits and waits.strip() else {})\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 r1: `waits` is STORED on the entry, trimmed — two inputs in ONE case: a declared wait, and a blank one stored as no field at all"
+    ]
+  },
+  {
+    "name": "backlog #514 r1 (Claude F6): a blank or padded goal is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if goal is not None and (not goal.strip() or goal != goal.strip()):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "backlog #514 r1 (Claude F6): a blank goal, or one carrying surrounding whitespace, is REFUSED with its thread; a clean slug is accepted"
+    ]
+  },
+  {
+    "name": "backlog #514 r1: --waits is never passed from the command line",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                       args.goal, args.thread, args.waits)",
+        "                       args.goal, args.thread)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (c): `--add` with neither --goal nor --thread is REFUSED (exit 2); one without the other is refused too (backlog #505); only --goal WITH --thread is written — four inputs, ONE case"
     ]
   }
 ]

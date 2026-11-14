@@ -410,7 +410,10 @@ EXPECTED_MUTATIONS = {
     # the field unread, read before a ref match, a goal-only entry parsed as a thread, its undeclared goal unreported or
     # unflagged, the placed branch undrawn, a parked one drawn as in flight, the goal folded away, the agenda leaving
     # placed entries out or listing a parked one, and a move to the goal read as "no longer in flight".
-    "scripts/goal-tree.py": 379,  # 368 -> 379 (backlog #514 (d)): a ledger entry is placed by its own goal field
+    # ⟳ 2026-11-14, backlog #514 r1 fold: 379 -> 388, none retired. Nine new: a declared wait dropped (placed, loose,
+    # the field unread), a ref disagreeing with the goal silent or an agreeing one reported, the undeclared goal cleaned
+    # before it is quoted, a placed entry now on a thread read as gone (twice), parking a placed entry no change.
+    "scripts/goal-tree.py": 388,  # 379 -> 388 (backlog #514 r1): waits, ref-vs-goal, verbatim goal, timeline
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1631,7 +1634,10 @@ EXPECTED_MUTATIONS = {
     # skipped, any alternates file passing, and a shared common dir not recognised.
     # ⟳ 2026-11-14, backlog #514 (c): 114 -> 117, two re-bound (a thread without its goal; the stored fields), three new:
     # `--add` with no goal accepted, a goal-only entry refused, the refusal not saying to propose a goal.
-    "scripts/session-state.py": 117,
+    # ⟳ 2026-11-14, backlog #514 r1 fold: 117 -> 119. #505's pairing RESTORED (Codex: goal-only was a loosening), so
+    # the two re-bound #505 entries are master's again and "a goal-only entry is refused" is retired (it is #505's own
+    # mutation now); three new: a declared wait never stored, a blank or padded goal accepted, --waits never passed.
+    "scripts/session-state.py": 119,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
