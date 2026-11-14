@@ -20566,6 +20566,21 @@ Backlog #626 closed; backlog #633 and backlog #634 filed. `docs/reviews/architec
 Subject: the slice-3 cross-run view in `scripts/strace_reads.py` (PR #567, backlog #586). No code changed. A
 differential harness gave 22, 19, 10 and 0 violations at the four heads. Second run of the Fable pilot (backlog #630).
 
+## 2026-11-13 [resolved: 2026-11-13/2]
+The last open decision on the marketplace walkthrough is answered, so none are waiting on you now. The memory files
+that mention production infrastructure will ship with the project reference, the Fly address and the role names
+replaced by placeholders. The business-plan files and the files about your own machine will be left out. The files
+that quote you will ship with the quotes reworded and the rules kept. The other lesson files ship as they are.
+
+None of this changes a file yet: the shipped copy is made later, and each step there has a check that searches the
+result for the original text and fails if any is left.
+<!--tech-->
+Walkthrough decision 5 (corpus content review, C5) answered by owner selection cards, 2026-11-13 11:25: A ship
+redacted (6), B exclude (4), C exclude (6), D ship paraphrased (6). Recorded in
+`docs/marketplace/decision-5-suspect-files.md` (Answered), spec §7 item 11, plan H1 and Task 18 (new step *Build the
+shipped corpus*), and the walkthrough fragment (C5 cell, `data-decision` set; recomposed with `scripts/brief-compose.py`,
+counter reads 13 decisions, 0 remaining). Resolves the `[needs-you]` entry `2026-11-13/2` (PR #577).
+
 ## 2026-10-24
 A correction that fails now counts against the spending limits, and once someone has used up
 today's corrections, the next one is refused before anything is paid for. Until now, when a
