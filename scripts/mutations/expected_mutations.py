@@ -413,7 +413,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-14, backlog #514 r1 fold: 379 -> 388, none retired. Nine new: a declared wait dropped (placed, loose,
     # the field unread), a ref disagreeing with the goal silent or an agreeing one reported, the undeclared goal cleaned
     # before it is quoted, a placed entry now on a thread read as gone (twice), parking a placed entry no change.
-    "scripts/goal-tree.py": 388,  # 379 -> 388 (backlog #514 r1): waits, ref-vs-goal, verbatim goal, timeline
+    # ⟳ 2026-11-14, backlog #514 r2 fold: 388 -> 395. One retired (the placed entry's `what` lookup: the handoff is
+    # matched by id now) and 8 new: a thread's agenda reads only its line's wait, the entries not kept on the thread,
+    # the leaf not saying an entry's wait, a join keeping the first wait only, a joined wait said twice, a handoff
+    # matched to any entry, a parked handoff read as in flight, the story not counting parking. Three rebound.
+    "scripts/goal-tree.py": 395,  # 388 -> 395 (backlog #514 r2): thread-hung waits, handoff by id, parked handoff
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
