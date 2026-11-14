@@ -31,6 +31,7 @@ and reached nobody; that project's backlog #95). Two instances, one shape.
 - Before trusting a gate, name the channel and ask who reads it. Hook stdout and Bash stdout reach
   the assistant, not the human.
 - Prefer rendering a gap where the reader already looks over refusing in a log.
-- The durable fix is structural: `gen-backlog-page.py` **never runs in CI**, not even its self-test,
-  so nothing on a shared machine could see the gap. See [[a-check-result-is-not-the-claim]] and
+- The durable fix is structural: in 2026-09 `gen-backlog-page.py` **never ran in CI**, not even its
+  self-test, so nothing on a shared machine could see the gap. *(Changed by 2026-11-14: its suite now runs in CI's
+  mutation sweep via `scripts/mutations/gen-backlog-page.json`; see [[backlog-edit-needs-gen-backlog-page-selftest]].)* See [[a-check-result-is-not-the-claim]] and
   [[a-convention-catches-what-you-read]].

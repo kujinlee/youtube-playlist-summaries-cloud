@@ -8,6 +8,12 @@ metadata:
   modified: 2026-08-24T22:38:17.763Z
 ---
 
+**The rule:** a mocked external boundary is an ASSUMPTION, not a test of it. For any paid/external call the first
+LIVE run is its own gate (Phase 4) — SAMPLE it several times, not once, and put the real returned bytes into the
+regression fixtures.
+
+## History
+
 **MEASURED 2026-08-24.** Backlog #23 slice A (corrections in the cloud) shipped to prod as release
 v8 with 12 tasks, 4 gates green, 5 spec rounds, dual adversarial review, 25/25 mutations caught, and
 2,808 unit tests passing. **The first live press returned HTTP 500.**
@@ -45,7 +51,8 @@ silent about the layer that actually decides — and of [[check-the-assumption-n
   in one run. The defect was upstream of the guard that caught it — fix the producer, never loosen
   the guard ([[quote-the-code-dont-characterise-it]]).
 
-**Residue found in the same run, NOT yet filed** (user owns filing, [[feedback-agree-before-filing]]):
-a failed correction **pays and records nothing** (`record_correction_spend` is only reached on
-success — prod `correction_spend` stayed empty after a real paid call), and the corrections text is
-**stored before** the correction is applied, so the row can carry a correction the document lacks.
+**Residue found in the same run:** (1) a failed correction **pays and records nothing** (`record_correction_spend`
+reached only on success) — later filed as backlog **#62**, now ✅ closed (verified 2026-11-14); (2) the corrections
+text is **stored before** the correction is applied, so a row can carry a correction the document lacks — no matching
+backlog row found by a grep on 2026-11-14 (unverified whether it was filed under other words). Filing no longer
+waits on the user (reversed 2026-09-28 — [[feedback-agree-before-filing]]).

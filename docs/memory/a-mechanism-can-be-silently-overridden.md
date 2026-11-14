@@ -8,6 +8,9 @@ metadata:
   modified: 2026-08-20T04:02:56.983Z
 ---
 
+**The rule:** ask of any guard, option or ordering primitive — *what would I observe if it were silently doing
+nothing?* If the answer is "the same thing I observe now", it is not yet evidence. RUN it.
+
 **A mechanism can be present, accepted by the API, and doing nothing.** Both defects in the M3.1-B
 prod smoke (PR #119) had this shape, and neither was findable by reading the code.
 
@@ -38,10 +41,7 @@ test after the first failure — so when the session-bearing check reported NOT 
 abandoned the three checks that need **no** session, in exactly the situation the suite is most
 useful. The A-suite's rungs share ordering; these build their own contexts and do not.
 
-## The rule
-
-**Ask of any guard, option or ordering primitive: what would I observe if it were silently doing
-nothing?** If the answer is "the same thing I observe now", it is not yet evidence. Run it.
+## Related
 
 Same family as [[guard-operands-from-one-closure]] and
 [[test-harness-can-launder-failures]]; the running-it-beats-reading-it half is

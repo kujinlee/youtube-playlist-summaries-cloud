@@ -5,6 +5,12 @@ metadata:
   type: feedback
 ---
 
+**The rule:** after any push, **arm the `Monitor` FIRST, then run `check-ci-watched.py --watching`** — the
+declaration is the receipt for the watch, never a replacement. If only one happens, it must be the Monitor. Any
+command that RECORDS (`--watching`, `--tick`, `--arm`, `--decide`) is a declaration: ask what act it is the receipt for.
+
+## History
+
 **Measured 2026-10-06, PR #366.** CI went red at 13:49:18 and I noticed at 14:32:44 — **43m 26s**,
 and only because the user asked about an unrelated background task.
 

@@ -10,7 +10,10 @@ metadata:
 
 ⭐ **MEASURE A FILED ROW'S PROPOSED RULE AGAINST THE REAL CORPUS BEFORE BUILDING IT.** The
 diagnosis in a well-written finding is usually right; the **fix it proposes** is a guess made
-before anyone looked at the data.
+before anyone looked at the data. **The same holds for a REVIEW finding's "Fix."** — run its falsifier against
+the fix before believing it (2 rounds lost on PR #296 to that).
+
+## History
 
 **Measured 2026-09-09, backlog #98.** The row proposed: *"walk merged commits, extract the item
 ids their messages name, and refuse when an id's row carries no closure marker."* Over **1,497**

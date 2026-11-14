@@ -1,6 +1,6 @@
 ---
 name: a-budget-stop-is-soft-with-a-reserve
-description: "About to start work near a usage stop? The stop is SOFT: start only what can FINISH inside the reserve; never strand running work"
+description: "About to start work, or to stop, near the weekly usage line? ELASTIC: casual ~14%/day on the trend line, PUSH days by need, every later day keeps ≥8%; wind down, never hard-stop or strand running work; on the last day use it all"
 metadata:
   node_type: memory
   type: feedback
@@ -8,38 +8,60 @@ metadata:
   modified: 2026-11-01T23:29:14.505Z
 ---
 
-Owner 2026-11-01 14:26: "Try to have some rainy day room to finish your current work. Stopping current work unfinished might be unproductive if you have to repeat it. So avoid hard stop."
+**CURRENT RULE (owner 2026-11-09 15:12–15:32; supersedes every earlier pace line below).** The numbers live in
+`scripts/check-usage-pace.py` (THE ELASTIC DAY BAND, `TREND_PER_DAY = 14.3`) — the script is the truth.
 
-**⟳⟳ 2026-11-09 15:12, the owner — SUPERSEDES the 1.5× front-load and the 100−5×days hard stop above.** "ideally spend 12% to 20% per day may balance work speed and keeping reasonable usage for latter days ... we need to have ideal trend line (with some flexibility margin)". Measured why: by 11-09 (day 4 of 7) the meter was 70% and the old hard stop (85%) left later days only ~5 pts each.
-- **Week of 11-09 only (owner 15:27, A–B per day, cumulative meter):** Mon 11-09 70–72 · Tue 11-10 78–80 · Wed 11-11 88–90 · Thu 11-12 → Fri 02:00 reset: use ALL remaining. (Replaces the 15:12 "8%/day" figures.)
-- **From the next reset:** daily spend 12–20% (no new starts once a day has spent 20%); TREND LINE = 14.3 × days-since-reset, with at most +8 pts above it (early front-loading allowed inside the band, never past it). Idle days roll forward, but no day exceeds 20%. Last day: use the rest (the 11-05 rule still holds).
-- **AFK blocker budget (same message):** an unexpected failure gets ONE retry; a SECOND failure of the same kind → stop that path, file a backlog row with evidence, one PushNotification, switch to other ready work. An incident burning ~2 pts without progress is a DESIGN question for the owner, not something to grind through. Owner's examples: re-running sweeps that kept hitting the timeout (root cause: ever-growing case count); oversized sweep scope (being fixed by closure, #586).
-- **Why:** the goal is to do more with less as token management and the dev-process algorithms improve; a fixed band makes that improvement visible (work per %) instead of absorbing it into faster spend.
-- **⟳ 15:25, the owner: "daily range of A-B. hard stop may cause waste so that some graceful wind down would be necessary".** A=12, B=20 (% of the week per day). Below A: normal, start whole items whose cost fits under B. A→B is the WIND-DOWN zone: finish running work and its review rounds; start only small items that finish before B; no new build or review loop. At B: no new starts, running work still finishes (a small overshoot past B is accepted), then push/record/hand off so nothing is stranded. The trend line (+8 band) stays as the weekly guard above this.
-- **⟳ 15:32, the owner — ELASTIC, not a daily quota (supersedes the fixed 12–20 range and the +8 band as RULES; they become the casual default):** "I want elastic schedule based on need. Not a rigid goal for every day. Someday, we may want to finish work faster ... but when we are in casual pace, spend steady pace." → CASUAL (default): steady ~14 %/day along the trend line, wind down past it. PUSH day: by need — the owner says so, or I PROPOSE one visibly with the reason (never silently); may exceed the line, borrowing from later days. The ONE hard invariant: every remaining day keeps ≥ 8 % (push-day ceiling = 100 − 8 × days left after it). A push is never spent grinding through a blocker (AFK one-retry rule still holds). The owner rejected a fixed smooth taper (18→10.6) at 15:28 as too rigid.
-- **TODO:** `scripts/check-usage-pace.py` still computes the OLD line — change it (branch + review) as the first item on 11-10.
+- **ELASTIC, not a daily quota.** The owner: *"I want elastic schedule based on need. Not a rigid goal for every day.
+  Someday, we may want to finish work faster ... but when we are in casual pace, spend steady pace."*
+  - **CASUAL (default):** steady ~14%/day along the trend line (14.3 × days since reset; a note above +8). Day band
+    A=12 / B=20 % of the week. Below A: start whole items whose cost fits under B. **A→B is WIND-DOWN:** finish running
+    work and its review rounds, start only small items that finish before B, no new build or review loop. At B: no new
+    starts; running work finishes (small overshoot accepted), then push/record/hand off.
+  - **PUSH day:** by need — the owner says so, or I PROPOSE one visibly with the reason (never silently); may exceed the
+    line, borrowing from later days.
+  - **The ONE hard invariant:** every remaining day keeps ≥ 8% (push-day ceiling = 100 − 8 × days left after it).
+- **The stop is SOFT** (owner 11-01 14:26: *"Try to have some rainy day room to finish your current work. Stopping
+  current work unfinished might be unproductive if you have to repeat it. So avoid hard stop."*). A stop governs
+  STARTS, never running work. Size the WHOLE item (build + capped review rounds + folds + merge) plus a ~2–3 pt
+  rainy-day reserve before starting; if it does not fit, file it instead.
+- **AFK blocker budget (11-09):** an unexpected failure gets ONE retry; a SECOND failure of the same kind → stop that
+  path, file a backlog row with evidence, one PushNotification, switch to other ready work. ~2 pts burned without
+  progress is a DESIGN question for the owner, not something to grind through.
+- **Last day / last night before the reset: use it all.** Room under the line is LOST at the reset; an unknown meter
+  is not a stop; the "after the reset" queue is not a reason to wait — pull its smallest item forward. Owner 11-05
+  20:46: *"do not stop tonight as un-used capacity by the reset time (tomorrow 2am) will be lost"*. Only the hard 100%
+  limit stops work; always leave a background job or wake-up armed when a turn ends.
+- **Resume after a pace stop:** a DAILY recurring `CronCreate` (cron `7 0 * * *`, prompt starting "Pace-line wake-up
+  (scheduled, not the owner). If the owner's latest message asked to pause, reply one line and do nothing"). It is
+  session-only and expires after 7 days: RE-ARM in every new session and at the weekly reset; DELETE it when the owner
+  pauses. (5-hour-limit stops are separate: [[a-usage-limit-stop-needs-a-wake-at-reset]].)
+- What to DO with the room (TIGHT vs AMPLE) is [[behavior-follows-the-budget-situation]]; this note only sets the line.
 
-**Rule (original 11-01):** a usage stop (e.g. "stop new builds at 58% weekly") governs STARTS, never running work. Before starting an item, check meter + its estimated cost (whole item: build + capped review rounds + folds + merge, not just the first stage) + a rainy-day reserve (~2–3 points for an unexpected extra round, a red CI, a merge-cascade round) ≤ the stop. If not, file it (ledger + backlog) instead of starting it. Work already running always finishes, even past the stop.
+**Why:** a half-finished item costs MORE later (re-read, re-merge master, often re-review — the merge cascade). The
+weekly allowance is use-it-or-lose-it, so a fixed stop wastes what idle days leave. A fixed band makes improvement in
+token management visible as work per %, instead of absorbing it into faster spend.
 
-**Why:** a half-finished item costs MORE later: the next agent re-reads, re-merges master and often re-reviews (the merge cascade). Stopping at the line wastes what was spent.
+## History (superseded, condensed)
 
-**⟳ 2026-11-01 15:28, the owner: the stop is a PACE LINE, not a fixed %.** "I may not work every day so when we try to save usage limit, it may actually not use all usage limit." The weekly allowance is use-it-or-lose-it at the reset, so a fixed stop wastes what idle days leave. Rule: read `seven_day.used_percentage` and `resets_at` from `~/.claude/meter/log.jsonl`; today's line = 100 − reserve(3) − (remaining% ÷ days to reset) × (days to reset after today). Skipped days roll forward automatically (the meter stays put while the line rises); on the last day before the reset the line is 97%. Overspend early is the worse error (it blocks work for days), so the line is even-paced, never front-loaded.
+- **11-01 (original):** fixed stop % governing starts; #450 was started at 55% sized by its first stage only — wrong shape.
+- **11-01 15:28:** pace line = 100 − 3 − (remaining% ÷ days) × days-after-today (*"I may not work every day so when we
+  try to save usage limit, it may actually not use all usage limit."*). **15:38:** front-load ×1.5 (*"As we implement
+  remaining high impact token management items, growth rate of usage will be slower, so I think it would be better to
+  be a little aggresive earlier than later days to reset."*).
+- **11-02 01:33:** stopped at 22:56 on the line, nothing woke me, 2.5 h lost (*"how will you resume by yourself?"*) →
+  one-shot cron, then **01:39** daily recurring. Measured 01:44: a midnight fire is COLD, ~179k context × 2 ≈ 360k
+  weighted (not ~22k, the warm figure). Better lever (01:52): at a natural pause with no agents running, hand off and
+  start a NEW session (first call ~85k, measured 67–86k, vs 179k). ⚠ I first said no timer existed outside /loop —
+  [[it-already-exists-under-a-name-i-didnt-search]].
+- **11-05 08:47 (#510):** hard stop 100 − 5 × days left, capped 97, rising to 99 on the last day. **19:44:** I idled
+  ~1 h at 97% on the last day (*"if you are not working on anything the remaining 3% will be lost when weekly reset
+  happen tomorrow 2 am"*, *"fix token management logic so that remaining capacity will not be wasted"*) → hook says USE
+  IT (#521).
+- **11-09:** by day 4 of 7 the meter was 70% and the 85% hard stop left later days ~5 pts each → owner *"ideally spend
+  12% to 20% per day may balance work speed and keeping reasonable usage for latter days ... we need to have ideal trend
+  line (with some flexibility margin)"*, then *"daily range of A-B. hard stop may cause waste so that some graceful wind
+  down would be necessary"*, then ELASTIC (above). A fixed smooth taper (18→10.6) was rejected at 15:28 as too rigid.
+  That week's per-day targets (Mon 70–72 · Tue 78–80 · Wed 88–90 · Thu→Fri 02:00 reset all) expired at the 11-13 reset.
+- The "change `check-usage-pace.py`" TODO is DONE: the script now carries the elastic day band (verified 2026-11-14).
 
-**⟳ 2026-11-01 15:38, the owner: FRONT-LOAD it a little.** "As we implement remaining high impact token management items, growth rate of usage will be slower, so I think it would be better to be a little aggresive earlier than later days to reset." Rule now, from START-OF-DAY values (first meter-log row after local midnight; never re-derive from the current meter, which drifts): today's line = start% + 1.5 × (100 − start%) ÷ days-to-reset-from-midnight, capped at 97; the last day before the reset = 97. Spend the extra on token items first, since they are what makes later days cheaper. Risk: if the burn does not drop, later days get ~8/day instead of ~9.4 (11-01 numbers); still never past the 3-pt reserve.
-
-**⟳ 2026-11-05 08:47, the owner (backlog #510): the PACE LINE is a guide; the HARD STOP is separate.** The stop is 100% − 5% × the days left after today, capped at 97% — except on the last day, when the cap rises linearly to 99% at 1 h before the reset (only on a fresh meter reading; a stale one is CANNOT RUN). Measured burn ~11%/day, so a flat 97% idled the last afternoon.
-
-**How to apply:** on 11-01 #450 was started at 55% by its first stage only — wrong shape; size the whole item. Related: [[route-agents-by-task-model]], [[usage-is-cache-rewrites-of-parked-agents]].
-
-**⟳ 2026-11-02 01:33, the owner: "how will you resume by yourself?"** On 11-01 22:56 I stopped on the line, wrote "next work starts after midnight", and nothing woke me: idle until the owner asked at 01:31 (2.5 h lost). **Rule: BEFORE ending a turn on a pace-line stop, arm `CronCreate` (deferred; load via ToolSearch) as a ONE-SHOT at ~00:07 the next day** (recurring: false, an off-minute), prompt = "pace-line wake-up: read the meter, compute today's line, continue the ranked token items in AFK". Quote the job's actual next-run time from the tool result in the stop message. Bounds: session-only (dies if Claude exits); fires only while idle. ⚠ I first told the owner no timer existed outside /loop — wrong; I had not searched the deferred tools ([[it-already-exists-under-a-name-i-didnt-search]]).
-
-**⟳ 2026-11-02 01:39, the owner compared one-shot vs daily → DAILY RECURRING.** A one-shot depends on me remembering at every stop (the exact failure). Use `CronCreate` cron `7 0 * * *`, recurring, prompt starting "Pace-line wake-up (scheduled, not the owner). If the owner's latest message asked to pause, reply one line and do nothing". It is session-only and expires after 7 days: RE-ARM in every new session and at the weekly reset; DELETE it when the owner pauses work. **Cost, measured 01:44:** the coordinator cache is 1 h, so a midnight fire is COLD: ~179k context × 2 ≈ 360k weighted (not the ~22k I first said, which was the warm figure). Free when it starts work (any resume pays that rewrite); pure waste when it fires and does nothing. Keeping the cache warm by pings breaks even only for gaps under ~16 h AND a certain resume: not done. **Better lever (01:52):** at a natural pause with NO agents running, write the handoff and have the owner start a NEW session: first call ~85k (measured 67–86k) vs 179k, so the restart costs about the same and every later call is ~half.
-
-**⟳ 2026-11-02 02:20:** what to DO with the room (TIGHT vs AMPLE behaviour, and the weekly reassessment) lives in [[behavior-follows-the-budget-situation]]; this note only computes the line.
-
-**⟳ 2026-11-05 19:44, the owner: "if you are not working on anything the remaining 3% will be lost when weekly reset happen tomorrow 2 am" — then "fix token management logic so that remaining capacity will not be wasted".** I had idled ~1 h at 97% (stop 98.6%) on the LAST day, reading "start only work that finishes before the reset", a pace line equal to usage, and a stale-meter CANNOT RUN as reasons to stop. **On the last day, room under the stop is LOST at the reset: keep starting small items that fit; an unknown meter is not a stop.** The hook now says USE IT (backlog #521). The "after the reset" queue is NOT a reason to wait — pull its smallest item forward.
-
-⟳ **11-05 20:46, the owner, again and stronger: "do not stop tonight as un-used capacity by the reset time (tomorrow 2am)
-will be lost".** On the LAST NIGHT the soft stop (98.7% → 99%) is not a reason to stop either — the reserve it protects is
-lost at the reset too. Keep working until the reset; always leave a background job or a wake-up armed when a turn ends, so
-the night does not end on a quiet turn. Only the hard 100% limit stops work, and it costs nothing so close to the reset.
+Related: [[route-agents-by-task-model]], [[usage-is-cache-rewrites-of-parked-agents]].
