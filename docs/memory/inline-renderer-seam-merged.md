@@ -1,12 +1,16 @@
 ---
 name: inline-renderer-seam-merged
-description: "FIRES-WHEN: citing backlog #71, PR #180, or the shared page renderer — Backlog #71 MERGED — PR #180, squash 0972c55, 2026-08-30. One renderer (scripts/page_markup.py) for all four page generators; #72 and #73 filed alongside; Phase 6 candidates 3 and 4 still open"
+description: "FIRES-WHEN: citing backlog #71, PR #180, or the shared page renderer — Backlog #71 MERGED — PR #180, squash 0972c55, 2026-08-30. One renderer (scripts/page_markup.py) for all four page generators; keep the per-file EXPECTED_MUTATIONS split; #72/#73 filed alongside"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 026980a1-ac42-4306-9327-ecd78a7e933b
   modified: 2026-08-31T01:13:13.957Z
 ---
+
+**The rule: inline markup on every generated page goes through ONE renderer, `scripts/page_markup.py`
+(underscore = importable library; hyphenated `scripts/*.py` are executables). Do not re-add inline
+cases to a generator, and do not collapse `EXPECTED_MUTATIONS` to a total.**
 
 **MERGED 2026-08-30 — PR #180, squash `0972c55`, branch deleted.** Phase 6 **candidate 1** from
 `docs/reviews/architecture-review-2026-08-30.md`. Spec:
@@ -37,12 +41,9 @@ split distinguishes a relocation from a deletion. Do not "simplify" that to a to
 docstring-self-declaration route is unreachable — same shape as the review's finding A, one layer
 out); **#73** 🟢 `discover_ratchets` is dead code reached only from its own self-test, blocked on #72.
 
-**Still open:** Phase 6 **candidate 3** (the `HOME` question — measured: harness passes under a
-redirected home 73/0, writing nothing; the trade is destruction-hazard removal vs output-path
-fidelity, since six scripts resolve `Path.home()` at module level) and **candidate 4** (flatten the
-verification stack — its arithmetic improved, since the same stack now defends four pages).
-
-⚠ **`docs/roadmap-to-launch.md` still says "PR OPEN"** for this section — it should read merged via
-#180. Ride that tick in the next docs PR rather than pushing to master.
+**Closed since (per `docs/roadmap-to-launch.md`, 2026-08-30):** Phase 6 candidate 3 (the `HOME`
+question) merged as PR #181 (`ebec7bc`); candidate 4 (flatten the verification stack) closed as
+answered — decided with the user to LEVEL the stack, not flatten it; residue is backlog #74. The
+roadmap section now reads ✅ MERGED (PR #180). #72 and #73 were still open rows on 2026-11-14.
 
 Lessons: [[a-report-format-is-a-contract]], [[measure-the-population-the-code-actually-sees]].
