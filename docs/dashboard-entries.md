@@ -20691,3 +20691,15 @@ explainer-serve 291 cases, mutation pin 112 → 123. Review rounds 1 (11 finding
 against the token cap, a start no longer skips a question the page showed NOT ANSWERED, and the server refuses a
 POST from another site. Follow-ups filed: backlog #635 (inbox hook), #636 (`/latest`), #638 (a stop can signal a stale pid), #639 (Phase 6 review of the watcher lifecycle: rounds 2, 3 and 4 each found a defect a fix had caused), #640 (one wrong sentence, one weak case).
 The panel shows on the owner's port once the running server is restarted.
+
+## 2026-11-13
+The redesign that the last review was waiting for has been built. The nightly test sweep runs in many parallel
+pieces, and each piece now writes a small structured record listing its unreliable tests. The step that files them
+reads only those records. It no longer searches log text or reads the CI configuration, so the check that kept
+needing repairs is deleted. A missing, duplicated or unfinished record is reported, never read as "nothing found".
+A pull request now runs the same handoff without filing anything, so a pull request that breaks it fails its own CI.
+
+<!--tech-->
+Backlog #619 R1, PR #580 (branch `b619-shard-records`); backlog #617 part (1) closed as retired. `check-plan-code.py
+--record` writes `{schema, shard, total, complete, flaky}`; `sweep-red-alert.py` `read_records` + `check_records`
+replace `ci_flaky_contract`, `flaky_names`, `shard_count` and `read_flaky`. Mutation pins 39 → 37 and 320 → 329; two review rounds, backlog #642 filed.

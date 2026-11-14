@@ -1,0 +1,27 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/619r1-r1-claude.md": "100644 dd720d85218649b3acecb50578c4b9a414a95c52",
+    "docs/reviews/codex/619r1-r1-codex.md": "100644 e4a11c6827d20ec2eadb5baade9c63a1dc941d6f",
+    "docs/reviews/verdicts/619r1-r1-codex.verdict.json": "100644 4f9104475e4caba3c6a3e70edec1e85bb88c7ebc",
+    "scripts/mutations/check-plan-code.json": "100644 a00a91bff6c5307a8427cdf95b31a3dae35024d6",
+    "scripts/mutations/expected_mutations.py": "100644 ec7203add8a5b691808370f3c0f276339e4f442a",
+    "scripts/mutations/sweep-red-alert.json": "100644 38ee75ad560449a2aa6cb4abf859cac398ed5bab",
+    "scripts/sweep-red-alert.py": "100644 74ffb7586ec859c89289f2c40a881564de336c4c"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "66da14d23bf2517218eda40c6ae455b364bc8676",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 6883 chars, names 66da14d23bf2",
+  "refused": false,
+  "review": "619r1-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/b619",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

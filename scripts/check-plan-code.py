@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 443 cases
+    python3 scripts/check-plan-code.py --self-test          # 450 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -2630,6 +2630,38 @@ def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None, only=N
             + (f" under PYTHONHASHSEED {', '.join(map(str, _seeds))}" if _seeds else ""))
 
 
+# ── backlog #619 R1: the shard RECORD — what `sweep-red-alert.py` reads, instead of grepping this log ──
+RECORD_SCHEMA = 1   # `sweep-red-alert.RECORD_SCHEMA` must equal this; its cross-case reads records written here
+
+
+def shard_record(shard: "tuple[int, int] | None", verdict) -> dict:
+    """PURE. The record of ONE `--mutate` run (backlog #619 R1). ⛔ `shard` is the value `main` PARSED from the shard
+    flag and passed to `mutate_delivered` — the slice this run actually measured — never a second read of the
+    environment (architecture review 2026-11-13 #629, (a)); an unsharded run is shard 1 of 1. `complete` is whether
+    the run produced a coverage verdict (`Measured`); a `NotMeasured` run's FLAKY names are still recorded — they are
+    the mutations it DID reach — and the reader treats the shard as incomplete. `flaky` holds a name only when its
+    entry's `flaky` is exactly `True`, the value `_mutate_root` sets."""
+    index, total = shard if shard is not None else (1, 1)
+    rows = verdict.mutations if isinstance(verdict, Measured) else verdict.entries
+    return {"schema": RECORD_SCHEMA, "shard": index, "total": total, "complete": isinstance(verdict, Measured),
+            "flaky": [m["name"] for m in rows if m.get("flaky") is True]}
+
+
+def write_record(path: str, record: dict) -> "str | None":
+    """IO. Write `record` as JSON to `path` (its directories made), through a temporary file and `os.replace`, so a
+    reader never sees half a record. Returns None, or the CANNOT RUN sentence for a write that failed."""
+    p = pathlib.Path(path)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(tmp, p)
+    except OSError as e:
+        return (f"CANNOT RUN — the shard record could not be written to {path}: {e}. The sweep's FLAKY results "
+                f"for this shard are NOT RECORDED; treat them as NOT CHECKED.")
+    return None
+
+
 # One terminal row, so an update cannot wrap. ⟳ r1 M2: labels are manifest names written for a
 # review document — measured across all 434, the longest is 232 characters and 81 exceed 100.
 PROGRESS_WIDTH = 79
@@ -2814,6 +2846,99 @@ def _budget_wiring(root: pathlib.Path) -> dict:
             if saved[_k] is not None:
                 os.environ[_k] = saved[_k]
     out["torn"] = torn
+    return out
+
+
+def _record_wiring(td: pathlib.Path) -> dict:
+    """backlog #619 R1: `main(["--mutate", …, "--record", …])` end to end, the way the CI shard step runs it, and
+    the records read back by `sweep-red-alert.read_records` from an artifact-shaped download directory.
+    {key: (rc, stdout + stderr)}, plus "read": what the reader made of the two shards' records (or why it could not).
+
+    ⛔ A SMALL FUNCTION WITH ONE `main()` CALL SITE, driven from a table — see `_budget_wiring` (PR #400 r1 H1).
+    The fixture root holds `scripts/fl.py`: mutant "f returns two" SURVIVES its first run and is killed on its one
+    re-run — FLAKY — because its suite counts MUTATED runs in a file OUTSIDE the tree (`PC619_STATE`); mutant
+    "g returns two" is killed at once. `PC619_RED` makes the suite red unmutated, so the controls fail."""
+    root, dl, st = td / "root", td / "dl", td / "state"
+    for _rel in HARNESS_TREE:
+        (root / _rel).mkdir(parents=True, exist_ok=True)
+    (root / "scripts" / "mutations").mkdir(parents=True, exist_ok=True)
+    st.mkdir()
+    (root / "scripts" / "fl.py").write_text(
+        'import os, pathlib, sys\n'
+        'def f():\n    return 1\n\n\n'
+        'def g():\n    return 1\n\n\n'
+        'def _self_test():\n'
+        '    if os.environ.get("PC619_RED"):\n'
+        '        print("  [FAIL] the controls are red: got 1 want 0")\n'
+        '        print("1/2 passed")\n'
+        '        return 1\n'
+        '    if f() != 1:\n'
+        '        runs = pathlib.Path(os.environ["PC619_STATE"]) / "f-runs.txt"\n'
+        '        n = int(runs.read_text()) + 1 if runs.exists() else 1\n'
+        '        runs.write_text(str(n))\n'
+        '        if n >= 2:\n'
+        '            print("  [FAIL] f returns one: got %r" % f())\n'
+        '            print("1/2 passed")\n'
+        '            return 1\n'
+        '    if g() != 1:\n'
+        '        print("  [FAIL] g returns one: got %r" % g())\n'
+        '        print("1/2 passed")\n'
+        '        return 1\n'
+        '    print("2/2 passed")\n'
+        '    return 0\n\n\n'
+        'if __name__ == "__main__":\n'
+        '    sys.exit(_self_test())\n')
+    (root / "scripts" / "mutations" / "fl.json").write_text(json.dumps(
+        [{"name": "f returns two", "file": "scripts/fl.py", "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
+          "expect": "f returns one"},
+         {"name": "g returns two", "file": "scripts/fl.py", "edits": [["def g():\n    return 1", "def g():\n    return 2"]],
+          "expect": "g returns one"}]))
+    (td / "a-file").write_text("x")
+    _gh = ("CI", "GITHUB_EVENT_NAME", JOB_START_VAR, LIMIT_VAR, "PC619_STATE", "PC619_RED")
+    saved = {k: os.environ.pop(k, None) for k in _gh}
+    saved_pins = dict(EXPECTED_MUTATIONS)
+    out: dict = {}
+    _rec = lambda name: str(dl / name / "record.json")  # noqa: E731
+    try:
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS["scripts/fl.py"] = 2
+        os.environ["PC619_STATE"] = str(st)
+        for key, red, argv in (
+                ("s0", False, ["--mutate", str(root), "--allow-long-local", "--shard0", "0/2", "--record", _rec("sweep-record-0")]),
+                ("s1", False, ["--mutate", str(root), "--allow-long-local", "--shard0", "1/2", "--record", _rec("sweep-record-1")]),
+                ("red", True, ["--mutate", str(root), "--allow-long-local", "--record", str(td / "red" / "record.json")]),
+                ("blocked", False, ["--mutate", str(root), "--allow-long-local", "--record",
+                                    str(td / "a-file" / "record.json")]),
+                ("nomutate", False, ["--record", str(td / "nm" / "record.json")]),
+                ("only", False, ["--mutate", str(root), "--only", "scripts/fl.py", "--record",
+                                 str(td / "only" / "record.json")])):
+            if red:
+                os.environ["PC619_RED"] = "1"
+            else:
+                os.environ.pop("PC619_RED", None)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf), _suite_owns_the_pins():
+                out[key] = (main(argv), buf.getvalue())
+    finally:
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS.update(saved_pins)
+        for _k in _gh:
+            os.environ.pop(_k, None)
+            if saved[_k] is not None:
+                os.environ[_k] = saved[_k]
+    import importlib.util
+    try:
+        spec = importlib.util.spec_from_file_location("sweep_red_alert_619",
+                                                      pathlib.Path(__file__).with_name("sweep-red-alert.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        out["read"] = mod.read_records(str(dl))
+    except Exception as e:   # reported as the case's `got`, so a broken reader is a red CASE, never a crash
+        out["read"] = f"the reader could not run: {type(e).__name__}: {e}"
+    out["records"] = {k: json.loads(p.read_text()) if p.exists() else None
+                      for k, p in (("s0", dl / "sweep-record-0" / "record.json"),
+                                   ("s1", dl / "sweep-record-1" / "record.json"), ("red", td / "red" / "record.json"),
+                                   ("nomutate", td / "nm" / "record.json"), ("only", td / "only" / "record.json"))}
     return out
 
 
@@ -4217,6 +4342,34 @@ def _self_test_body() -> int:
             # ⟳ PR #400 r1 H1, re-measured: the cost was the NUMBER of `main(["--mutate"…])` call
             # sites (check-main-drivable analyses each — 209s vs 50s on master), not the rebind. ONE
             # call site, driven from a table.
+            # ── backlog #619 R1: the shard RECORD, written by main() and READ by sweep-red-alert ──
+            _m619 = Measured(files={}, declared=3, mutations=[{"name": "a", "measured": True, "flaky": True},
+                                                             {"name": "b", "measured": True, "flaky": 1},
+                                                             {"name": "c", "measured": True}], survivors=["a"], controls_green=True)
+            case("⭐ #619: `shard_record` holds the shard and total it is GIVEN, `complete` for a Measured verdict, and "
+                 "only the names whose `flaky` is exactly True",
+                 (shard_record((3, 7), _m619), shard_record(None, _m619)["shard"], shard_record(None, _m619)["total"]),
+                 ({"schema": 1, "shard": 3, "total": 7, "complete": True, "flaky": ["a"]}, 1, 1))
+            case("...a NotMeasured verdict is INCOMPLETE, and still records the FLAKY names it reached",
+                 shard_record((2, 2), NotMeasured.from_counts([{"name": "z", "measured": True, "flaky": True}], 3)),
+                 {"schema": 1, "shard": 2, "total": 2, "complete": False, "flaky": ["z"]})
+            with tempfile.TemporaryDirectory() as _td619:
+                _rw = _record_wiring(pathlib.Path(_td619))
+            case("⭐ #619 END TO END: two shards' main() runs write records the REAL reader reads — the FLAKY name "
+                 "filed, no problem",
+                 ([_rw[k][0] for k in ("s0", "s1")], _rw["read"]), ([0, 0], (["f returns two"], [])))
+            case("⭐ #619 (a): each record's shard is the --shard0 value PARSED (1-based), its total the shard count",
+                 sorted((_rw["records"][k] or {}).get("shard", 0) for k in ("s0", "s1")) +
+                 sorted((_rw["records"][k] or {}).get("total", 0) for k in ("s0", "s1")), [1, 2, 2, 2])
+            case("...a run whose controls are RED writes an INCOMPLETE record, shard 1 of 1",
+                 (_rw["red"][0], {k: (_rw["records"]["red"] or {}).get(k) for k in ("shard", "total", "complete")}),
+                 (1, {"shard": 1, "total": 1, "complete": False}))
+            case("⭐ #619: a record that cannot be WRITTEN is rc 2 and CANNOT RUN — never a green shard without one",
+                 (_rw["blocked"][0], "CANNOT RUN — the shard record could not be written" in _rw["blocked"][1]), (2, True))
+            case("...--record without --mutate, or with --only, is refused rc 2 and writes nothing",
+                 ([_rw[k][0] for k in ("nomutate", "only")], [_rw["records"][k] for k in ("nomutate", "only")],
+                  "--record only means something with --mutate" in _rw["nomutate"][1],
+                  "--record and --only" in _rw["only"][1]), ([2, 2], [None, None], True, True))
             _wired = _budget_wiring(_r)
             _rc_local, _rc_flag, _rc_cifalse, _rc_ci = (_wired[k][0] for k in ("local", "flag", "cifalse", "ci"))
             _rc_only, _out_only = _wired["only"][0], io.StringIO(_wired["only"][1])
@@ -7373,6 +7526,9 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
     ap.add_argument("--changed", metavar="FILE",
                     help="With --event: the pull request's `git diff --name-only -z` output. "
                          "Unreadable or untrusted -> the WHOLE manifest, never fewer.")
+    ap.add_argument("--record", metavar="PATH",
+                    help="with --mutate: write this run's shard record (its shard, total, whether it completed, "
+                         "and its FLAKY names) as JSON to PATH — what sweep-red-alert.py reads (backlog #619 R1)")
     ap.add_argument("--compare", metavar="DIR",
                     help="diff each assembled file against DIR/<name> and FAIL on any "
                          "difference. WITHOUT THIS the check reads only the plan's copy "
@@ -7484,6 +7640,14 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         print("CANNOT RUN — --only and --allow-long-local only mean something with --mutate ROOT. "
               "NOTHING WAS MEASURED.", file=sys.stderr)
         return 2
+    if a.record is not None and not a.mutate:
+        print("CANNOT RUN — --record only means something with --mutate ROOT. NOTHING WAS MEASURED.",
+              file=sys.stderr)
+        return 2
+    if a.record is not None and a.only:
+        print("CANNOT RUN — --record and --only: a record speaks for a whole shard, and --only measures part of "
+              "one. NOTHING WAS MEASURED.", file=sys.stderr)
+        return 2
     if (a.event is not None or a.changed is not None) and not a.mutate:
         print("CANNOT RUN — --event and --changed only mean something with --mutate ROOT. "
               "NOTHING WAS MEASURED.", file=sys.stderr)
@@ -7583,6 +7747,8 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
             hold.close()
             print(report[0], file=sys.stderr)
             return 2
+        # ⛔ backlog #619 R1 (a): built from the SAME `shard` this run was sliced by — never re-read from the env.
+        record = shard_record(shard, verdict) if a.record is not None else None
         # r1 F1: a budget stop is the LAST line of the log, after the verdict line, where a reader of a
         # red shard looks first.
         stops = [r for r in report if r.startswith(BUDGET_STOP)]
@@ -7638,6 +7804,14 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         for r in stops:
             print(f"  \u2717 {r}", flush=True)
         sys.stdout.flush()
+        if record is not None:
+            why = write_record(a.record, record)
+            if why:
+                hold.close()
+                print(why, file=sys.stderr)
+                return 2
+            print(f"shard record written to {a.record}: shard {record['shard']} of {record['total']}, "
+                  f"{'complete' if record['complete'] else 'INCOMPLETE'}, {len(record['flaky'])} FLAKY", flush=True)
         hold.close()
         return 0 if ok else 1
     # THE ONLY WAY TO REACH HERE IS A BARE INVOCATION — no `--self-test`, no `--mutate`, and

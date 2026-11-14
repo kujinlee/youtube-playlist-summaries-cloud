@@ -566,8 +566,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # `analyse()` on the delivered source; every parameter varied by a case, none exempt. ⟳ PR #496 r3: auto-close
     # REMOVED, so `green_actions` and `recorded_shas` are deleted with their parameters, not renamed.
     # ⟳ backlog #495 r1 (2026-11-11): + the FLAKY filing's pure parser, body and directory read, each varied by a case.
-    "sweep-red-alert.py": ("flaky_body.event", "flaky_body.names", "flaky_body.run_url", "flaky_body.sha",
-                           "flaky_names.text", "read_flaky.flaky_dir", "red_body.event", "red_body.run_url",
+    # ⟳ backlog #619 R1 (2026-11-13): the log parser and the shard-file read RETIRED with the grep they read; the
+    # record reader and its checker in their place. DERIVED by `analyse()` on the delivered source.
+    "sweep-red-alert.py": ("check_records.records", "flaky_body.event", "flaky_body.names", "flaky_body.run_url",
+                           "flaky_body.sha", "read_records.record_dir", "red_body.event", "red_body.run_url",
                            "red_body.sha", "red_body.sweep", "step_run_block.workflow_text"),
     # backlog #362 (2026-10-26; re-pinned at the r2 REDESIGN and again at the r3 SPLIT, which removed the branch reads).
     "session-state.py": (
