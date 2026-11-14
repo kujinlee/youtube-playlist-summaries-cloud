@@ -201,7 +201,14 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #586, PR #552 · spec approved 11-09: a PR's mutation sweep picks the guards whose tests were SEEN to read a changed file (strace -f), so a docs-only PR stops sweeping 67 of 89 manifests
 - fix · backlog #586 · the plan: a committed shadow ledger read at BASE (owner 11-09 14:55, card A); redesign review round 1, then the plan PR and slices 1-5 (slice 1 measures strace on the CI runner)
 - fix · backlog #586, PR #557 · slice 1 of observed-reach selection: strace records each suite's reads on the runner, so a PR's mutation sweep can be chosen by what the suites actually read
+- fix · backlog #641, PR #584 · the shared dashboard log makes parallel PRs conflict and restart CI: filed with its measurement
+- bookkeeping · backlog #643, PR #584 · `npm run test:e2e` is never fully green locally (F5c fails on master; production smoke needs auth fixtures)
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
-- fix · PR #392 · corrections: the daily limit is enforced before the paid call, and every attempt is metered · waits on the owner (HELD: migration 0028 deploys first)
+- fix · PR #392 · corrections: the daily limit is enforced before the paid call, and every attempt is metered · waits on product work resuming: the owner parked the Fly deploy 2026-11-14 06:45 (migration 0028 is applied)
+
+## GOAL memory-hygiene
+> 2026-11-13 16:22 "if memory file contains more information than necessary, will it harm the performance or doesn't matter much"
+> 2026-11-13 16:25 "Rewrite the file I just edited so the current rule comes first. -> not just that file. I would audit all other memory files. And make such audit to be done periodically (weekly or monthly?)"
+- fix · PR #585 · one-time audit: every memory file opens with its current rule; the always-loaded index 24,843 → 21,888 characters
