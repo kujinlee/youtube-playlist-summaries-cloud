@@ -2196,7 +2196,7 @@ EXPECTED_MUTATIONS = {
     # WARN anchor `five[0] >= FIVE_HOUR_WARN_AT` is gone: now the block's `used >= FIVE_HOUR_WARN_AT`). 11 new: both
     # zone edges inclusive, both margins moved, the 90% rule dropped, STOP at > 100, the wake at the reset, elapsed from
     # the reset, no clamp at 0, no note at all, and a moving `ahead` figure in the note.
-    "scripts/check-usage-pace.py": 213,
+    "scripts/check-usage-pace.py": 219,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
