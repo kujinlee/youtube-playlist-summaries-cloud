@@ -875,16 +875,17 @@ word); an inventory row never carries it (Task 19 refuses it). **If H1 (or H2) l
 is re-run, then `check-inventory.py` and Task 21 — a recall row moving to `"1"` changes the checkpoint's
 population, and the checkpoint is answered over the new one.
 
-**Build the shipped corpus (step added 2026-11-13, from the owner's answers to walkthrough decision 5).** The shipped
-memory corpus is built from `docs/memory/`, never edited in place there. Per `docs/marketplace/decision-5-suspect-files.md`
-→ *Answered*: **group A** (6 files) is **redacted**: the Supabase project ref, the Fly URL and the role names are
-replaced with placeholders; **groups B and C** (10 files) are **excluded**; **group D** (6 files) has the owner's quotes
-**paraphrased** into neutral wording with every rule kept; the ~170 other files are copied as they are. Each of the
-two transforms has its own check, and **each check reads the BUILT OUTPUT**, not the transform's code: it greps the
-output tree for the original ref, URL, role names (redaction) and for the quote text (paraphrase), and **fails if
-any is found**. The originals are DERIVED at check time from the source files, never typed into the check, so the
-check neither goes stale nor itself publishes the ref. A check that finds no originals to look for in the SOURCE is a
-failure (CANNOT RUN), not a pass. The corpus row's C5 moves off `unanswered` only when the build and both checks pass.
+**Build the shipped corpus (step added 2026-11-13, from the owner's answers to walkthrough decision 5; ⟳ replaced
+2026-11-13 17:15, when group A went from "ship redacted" to "exclude").** The shipped memory corpus is built from
+`docs/memory/`, never edited in place there. Per `docs/marketplace/decision-5-suspect-files.md` → *Answered*:
+**groups A, B and C** (16 files) are **excluded**; **group D** (6 files) has each of the owner's quotes
+**paraphrased and anonymized** into the essence of the example only, with every rule kept and no names, dates,
+numbers or project details from the quote; the ~170 other files are copied as they are. Two checks, and **each reads
+the BUILT OUTPUT**, not the transform's code: (1) it searches the output tree for the original quote text and
+**fails if any is found**; (2) it fails if any of the 16 excluded files is present in the output. The originals are
+DERIVED at check time from the source files, never typed into the check. A check that finds no quotes to look for in the
+SOURCE D files is a failure (CANNOT RUN), not a pass. The corpus row's C5 moves off `unanswered` only when the build and
+both checks pass.
 
 **FAILS IF:** the probe ran with any path under this repository's `docs/memory/` in its `RunRecord.opened`; or a
 recall row has `phase: "1"` while `recall.a` is not `true` or `recall.b` is not `"pass"`; or any inventory row has
@@ -1101,7 +1102,7 @@ from `--render`'s output (the page is derived, never hand-edited), or the invent
 
 | # | Step | Needed by | If it does not happen |
 |---|---|---|---|
-| **H1** | ✅ **ANSWERED 2026-11-13 11:25 (walkthrough decision 5)** — **C5 content review of the memory corpus** (`docs/memory/`): A ship redacted, B exclude, C exclude, D ship with quotes paraphrased, the rest as they are (`docs/marketplace/decision-5-suspect-files.md` → *Answered*). The answer takes effect only when Task 18's *Build the shipped corpus* step and its checks pass. Spec §7 item 11. | the recall phase decision (D11 (b)) | the corpus row stays `C5: unanswered`; recall rows are `"later"` (D11's "only if"; Task 18). If H1 lands later and passes with `recall.a` true, Task 18's phase step, `check-inventory.py` and Task 21 re-run |
+| **H1** | ✅ **ANSWERED 2026-11-13 17:15 (walkthrough decision 5; ⟳ replaced the 11:25 answer)** — **C5 content review of the memory corpus** (`docs/memory/`): A, B and C exclude (16 files), D ship with each quote paraphrased and anonymized, the rest as they are (`docs/marketplace/decision-5-suspect-files.md` → *Answered*). The answer takes effect only when Task 18's *Build the shipped corpus* step and its checks pass. Spec §7 item 11. | the recall phase decision (D11 (b)) | the corpus row stays `C5: unanswered`; recall rows are `"later"` (D11's "only if"; Task 18). If H1 lands later and passes with `recall.a` true, Task 18's phase step, `check-inventory.py` and Task 21 re-run |
 | **H2** | **A login token for the skill half of the experiment**: run `claude setup-token` and save the token to a file outside the repository (path told to the coordinator, never pasted into chat or committed). | Task 14/15 skill half | the skill half is CANNOT RUN; the four page skills stay `argued` |
 | **H3** | **Re-decide the method if the spike fails** (spec §9: D4 is unachievable; never silently downgrade to paper scoring). | Task 4 NO-GO | the plan stops after slice B |
 | **H7** | **Free port 7391 for the experiment window**: stop your own explainer server (`python3 scripts/explainer-serve.py --stop` in your checkout) and say when; restart it afterwards. The port is a constant, so the stranger's server can only run there (Task 4 Step 2). | Task 4 (b), Task 14/15 serve operations | the serve operations stay CANNOT RUN; the spike is INCOMPLETE, slice C waits, and Task 1 splits into its own PR (Task 4 Step 5) |

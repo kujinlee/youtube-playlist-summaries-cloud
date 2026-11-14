@@ -1208,13 +1208,13 @@ and is a candidate follow-up if either survives.
    makes this fail: an inventory row for the corpus carrying a `SHIP` verdict while item 11 is
    outstanding.
 
-   ✅ **CORPUS CONTENT REVIEW ANSWERED, owner, 2026-11-13 11:25** (walkthrough decision 5, one card per group of
-   `docs/marketplace/decision-5-suspect-files.md`): **A** (production infrastructure, 6 files) ship **redacted**: the
-   Supabase project ref, the Fly URL and the role names become placeholders; **B** (business plans and costs, 4 files)
-   **exclude**; **C** (local machine, 6 files) **exclude**; **D** (the owner's own words, 6 files) ship with quotes
-   **paraphrased**, rules kept, neutral wording; the other ~170 lesson files ship as they are. The redaction and the
-   paraphrase happen when the shipped corpus is built, each with a check that greps the output for the original ref, URL,
-   role names and quote text and fails if any is found (plan Task 18). The corpus row's C5 can therefore move off
+   ✅ **CORPUS CONTENT REVIEW ANSWERED, owner, 2026-11-13 17:15** (walkthrough decision 5): **A** (production
+   infrastructure, 6 files), **B** (business plans and costs, 4 files) and **C** (local machine, 6 files) are all
+   **excluded**; **D** (the owner's own words, 6 files) ship with each quote **paraphrased and anonymized**: the essence
+   of the example only, no names, dates, numbers or project details; the other ~170 lesson files ship as they are, so the
+   shipped corpus is 193 files less the 16 in A to C. ⟳ This replaced the 11:25 answer, which had A shipping redacted.
+   The paraphrase happens when the shipped corpus is built, with a check that searches the output for the original quote
+   text and fails if any is found (plan Task 18). The corpus row's C5 can therefore move off
    `unanswered` once that build and its checks pass; until then it stays `C5: unanswered`.
 
 **What PR 1 explicitly does NOT do:** publish anything, create the **published** marketplace repo, or
