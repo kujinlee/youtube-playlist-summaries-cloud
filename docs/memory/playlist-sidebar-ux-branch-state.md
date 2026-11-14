@@ -7,9 +7,15 @@ metadata:
   originSessionId: 7746a733-7051-4952-85dd-526eb71dd21b
 ---
 
+**✅ MERGED to master — PR #17 (merge commit 592db35, 2026-07-14).** Human authorized
+"merge now, both defaults kept" (D3 simple confirm modal + D1 auto-backfill once/session — both
+shipped as-is). Local+remote feat/playlist-sidebar-ux branch deleted. Post-merge follow-ups below
+still open (non-blocking). BUG-6 naming + full hard-delete now live on master.
+
 Branch `feat/playlist-sidebar-ux` (off master @ 1118898). Started 2026-07-13 on user's
 "start playlist-UX branch. I will comeback later" (AFK — Conditional AFK: autonomous through
-plan+impl to convergence; **merge is the human gate**, notify then). See
+plan+impl to convergence; merge was then the human gate — now merge-when-READY, see
+[[push-is-mine-merging-is-theirs]]). See
 [[local-cloud-validation-run]] (BUG-6 + delete came from that live run) and
 [[process-conventions]].
 
@@ -38,10 +44,7 @@ auto-on-mount once/session; D3 simple confirm modal (not type-to-confirm); D5 bl
 returns 200 (invisible orphans accepted). Active-job delete is best-effort, NOT true quiescence
 (handlers don't poll ctx.isCancelled — out of scope).
 
-**✅ MERGED to master — PR #17 (merge commit 592db35, 2026-07-14).** Human authorized
-"merge now, both defaults kept" (D3 simple confirm modal + D1 auto-backfill once/session — both
-shipped as-is). Local+remote feat/playlist-sidebar-ux branch deleted. Post-merge follow-ups below
-still open (non-blocking). BUG-6 naming + full hard-delete now live on master.
+## History (pre-merge state)
 
 **(history) ✅ IMPLEMENTATION COMPLETE — MERGEABLE, awaiting HUMAN merge authorization (HEAD cf6a039).**
 All 10 SDD tasks landed + reviewed (T6 migration & T9 delete route got FULL dual review; rest
@@ -55,7 +58,7 @@ exact regression test behavior 6c; +unsupported→501; +ref-reset-on-account-swi
 Feature commits 849c144(T1)…7d1ca1f(T10) + review-fixes 70f64a4(T6)/84d5530(T9)/30caf2e(merge-gate);
 docs cf6a039(whole-branch review).
 
-**NEXT = HUMAN MERGE GATE:** push feat/playlist-sidebar-ux → PR → merge via
+**(pre-merge, superseded) NEXT = HUMAN MERGE GATE:** push feat/playlist-sidebar-ux → PR → merge via
 superpowers:finishing-a-development-branch (`--repo kujinlee/youtube-playlist-summaries-cloud`, see
 [[gh-two-remotes-footgun]]). Do NOT merge autonomously. Post-merge follow-ups (in review doc):
 post-delete blob re-sweep OR UUID-scoped blob namespace; cloud Playwright harness + un-skip delete E2E.

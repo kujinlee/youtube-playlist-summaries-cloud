@@ -28,5 +28,8 @@ T-numbers were RE-USED across maps (T2 meant different work before and after com
 - A switch gets one line saying WHY (e.g. "→ [blocker] CI red on ffmpeg").
 - A thread switch or a background notification still gets its line — the switch is what the reader loses.
 - Re-print the map whenever a thread is added, finishes, or merges.
+- The tree now has a mechanism: `/goal-tree` (`.claude/commands/goal-tree.md` → `scripts/goal-tree.py --print`;
+  served page via `python3 scripts/regen-pages.py --page goal-tree`). Relations are DECLARED in
+  `docs/goal-threads.md` — record a new thread there, don't only print it.
 
 See [[the-user-does-not-follow-in-real-time]], [[waiting-lines-carry-a-timestamp]].

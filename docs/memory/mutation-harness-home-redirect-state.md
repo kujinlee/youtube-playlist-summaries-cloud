@@ -56,8 +56,7 @@ means writing into the real tree — [[a-mutation-loses-its-binding]].
 `docs/roadmap-to-launch.md`'s inline-renderer section said **PR OPEN**; corrected to merged via #180.
 Batched rather than pushed to master alone.
 
-## Open
+## Open at merge time (2026-08-30)
 
-1. The merge (human gate).
-2. The **candidate 4** recommendation — see [[a-costbenefit-finding-expires-when-the-denominator-moves]].
-   Not filed; filing is the user's step.
+The **candidate 4** recommendation — see [[a-costbenefit-finding-expires-when-the-denominator-moves]].
+It was left unfiled then as "the user's step"; since 2026-09-28 filing needs no ask ([[feedback-agree-before-filing]]).

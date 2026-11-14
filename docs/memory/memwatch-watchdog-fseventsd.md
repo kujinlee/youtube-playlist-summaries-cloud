@@ -23,4 +23,5 @@ don't record stream clients); Cursor watching 67 worktrees was the likely load (
   `--test` forces every notification. Check it is loaded: `launchctl print gui/$(id -u)/com.kujinlee.memwatch`.
 - The remedy needs sudo, so it is the owner's: `sudo killall fseventsd` or a reboot.
 
-Pending at write time: auto-prune merged worktrees from the session-start hook (repo PR, side job).
+Auto-prune of merged worktrees now runs at SessionStart: `scripts/prune-merged-worktrees.py`, called from
+`.claude/hooks/session-state.sh` (backlog #589, PR #551 `cfad72b3`).
