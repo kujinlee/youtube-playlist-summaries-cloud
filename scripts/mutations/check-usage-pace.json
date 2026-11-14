@@ -53,16 +53,16 @@
     ]
   },
   {
-    "name": "the five-hour WARN becomes strictly above 90",
+    "name": "the 5h block's 90% NO NEW AGENTS line becomes strictly above 90",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "five[0] >= FIVE_HOUR_WARN_AT",
-        "five[0] > FIVE_HOUR_WARN_AT"
+        "if used >= FIVE_HOUR_WARN_AT or ahead",
+        "if used > FIVE_HOUR_WARN_AT or ahead"
       ]
     ],
     "expect": [
-      "five-hour 90 is WARN"
+      "⭐ 5h block: 90 at 95% elapsed is NO NEW AGENTS though BEHIND the clock (fixed string)"
     ]
   },
   {
@@ -213,8 +213,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if verdict != REFUSE or override[0]:\n        return None\n    return json.dumps({\"systemMessage\"",
-        "    if verdict not in (REFUSE, WARN) or override[0]:\n        return None\n    return json.dumps({\"systemMessage\""
+        "    if verdict != REFUSE or override[0]:\n        if not block.strip():",
+        "    if verdict not in (REFUSE, WARN) or override[0]:\n        if not block.strip():"
       ]
     ],
     "expect": [
@@ -369,8 +369,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut)\n    except Malformed as e:",
-        "        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut)\n    except ZeroDivisionError as e:"
+        "        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut, parts)\n    except Malformed as e:",
+        "        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut, parts)\n    except ZeroDivisionError as e:"
       ]
     ],
     "expect": [
@@ -738,8 +738,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        out = gate_output(verdict, message, override)",
-        "        out = None if args.hook == \"wake\" else gate_output(verdict, message, override)"
+        "        out = gate_output(verdict, message, override, parts.get(\"five\", \"\"))",
+        "        out = None if args.hook == \"wake\" else gate_output(verdict, message, override, parts.get(\"five\", \"\"))"
       ]
     ],
     "expect": [
@@ -920,8 +920,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut)",
-        "evaluate(text, now, reason, meter=meter_text, meter_why=meter_why, meter_cut=meter_cut)"
+        "evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut, parts)",
+        "evaluate(text, now, reason, meter=meter_text, meter_why=meter_why, meter_cut=meter_cut, parts=parts)"
       ]
     ],
     "expect": [
@@ -1490,8 +1490,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut)",
-        "    verdict, message = evaluate(text, now, reason, cache_path)"
+        "    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut, parts)",
+        "    verdict, message = evaluate(text, now, reason, cache_path, parts=parts)"
       ]
     ],
     "expect": [
@@ -2122,8 +2122,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "cache_path, meter_text, meter_why, meter_cut)",
-        "cache_path, meter_text, meter_why)"
+        "cache_path, meter_text, meter_why, meter_cut, parts)",
+        "cache_path, meter_text, meter_why, parts=parts)"
       ]
     ],
     "expect": [
@@ -2674,6 +2674,230 @@
     ],
     "expect": [
       "#628 r1 M1: a WARN whose band cannot be read (no meter) is said on every prompt"
+    ]
+  },
+  {
+    "name": "#645: the FREE edge becomes inclusive (ahead 15 is no longer free)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "ahead > BLOCK_FREE_AHEAD:",
+        "ahead >= BLOCK_FREE_AHEAD:"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block boundary: ahead EXACTLY 15 (65 at 50%) is still FREE"
+    ]
+  },
+  {
+    "name": "#645: the NO NEW AGENTS edge becomes inclusive (ahead 30 is no longer 2 agents)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "ahead > BLOCK_TWO_AHEAD:",
+        "ahead >= BLOCK_TWO_AHEAD:"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block boundary: ahead EXACTLY 30 (80 at 50%) is still AT MOST 2 AGENTS"
+    ]
+  },
+  {
+    "name": "#645: the FREE margin moves off 15",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BLOCK_FREE_AHEAD = 15.0",
+        "BLOCK_FREE_AHEAD = 15.2"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: ahead 15.1 (65.1 at 50%) is AT MOST 2 AGENTS, a WARN"
+    ]
+  },
+  {
+    "name": "#645: the 2-agent margin moves off 30",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BLOCK_TWO_AHEAD = 30.0",
+        "BLOCK_TWO_AHEAD = 30.2"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: ahead 30.1 (80.1 at 50%) is NO NEW AGENTS, the whole message (fixed string)"
+    ]
+  },
+  {
+    "name": "#645: used ≥ 90% no longer stops new agents when behind the clock",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if used >= FIVE_HOUR_WARN_AT or ahead > BLOCK_TWO_AHEAD:",
+        "if ahead > BLOCK_TWO_AHEAD:"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: 90 at 95% elapsed is NO NEW AGENTS though BEHIND the clock (fixed string)"
+    ]
+  },
+  {
+    "name": "#645: STOP needs more than 100%",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if used >= HARD_LIMIT:\n        return BLOCK_STOP",
+        "    if used > HARD_LIMIT:\n        return BLOCK_STOP"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block STOP: 100% says stop and WAKE at reset + 1 min, by clock time (fixed string)"
+    ]
+  },
+  {
+    "name": "#645: the wake is AT the reset, not reset + 1 min",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BLOCK_WAKE_AFTER_S = 60",
+        "BLOCK_WAKE_AFTER_S = 0"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block STOP: 100% says stop and WAKE at reset + 1 min, by clock time (fixed string)"
+    ]
+  },
+  {
+    "name": "#645: elapsed counts from the reset, not the block start",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(now - (resets - FIVE_HOUR_S)) * 100",
+        "(now - resets) * 100"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block FREE: 60% used at 60% elapsed (ahead 0) adds nothing"
+    ]
+  },
+  {
+    "name": "#645: elapsed is not clamped at 0",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "max((now - (resets - FIVE_HOUR_S)) * 100 / FIVE_HOUR_S, 0.0)",
+        "((now - (resets - FIVE_HOUR_S)) * 100 / FIVE_HOUR_S)"
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: a reset 30 min BEYOND 5 h is a block not yet begun (elapsed 0, never negative): 15 is FREE"
+    ]
+  },
+  {
+    "name": "#645: a 5h block note is never said (the old 90% WARN gone too)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        five_note = block_note(five[0], five[1], now)",
+        "        five_note = \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ 5h block: an unchanged AT MOST 2 AGENTS WARN is said once per session (#628), then silent"
+    ]
+  },
+  {
+    "name": "#645 r1 fold: the AT MOST 2 AGENTS text carries used% again, so a move inside the zone is said again",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return (f\" 5h block: AT MOST 2 AGENTS — more than",
+        "        return (f\" 5h block: AT MOST 2 AGENTS — used {pct(used)}, more than"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold: a 5h reading that moves INSIDE one zone is silent; a zone change speaks"
+    ]
+  },
+  {
+    "name": "#645 r1 fold: the NO NEW AGENTS text carries used% again, so a move inside the zone is said again",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return (f\" 5h block: NO NEW AGENTS — {why}:",
+        "    return (f\" 5h block: NO NEW AGENTS — used {pct(used)}, {why}:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold: a 5h reading that moves INSIDE one zone is silent; a zone change speaks"
+    ]
+  },
+  {
+    "name": "#645 r1 fold: the STOP wake time floors to the minute, so a reset with seconds wakes before reset + 1 min",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "{local_time(resets + BLOCK_WAKE_AFTER_S, exact=True)}",
+        "{local_time(resets + BLOCK_WAKE_AFTER_S)}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold (Codex MINOR): a reset 30 s past the minute WAKEs at reset + 60 s EXACTLY, never the minute before"
+    ]
+  },
+  {
+    "name": "#645 r1 fold: an absent or null five-hour window reads as FREE again",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if five is None:   # r1 fold",
+        "        if False:   # r1 fold"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold: weekly 10 with a ABSENT five-hour window is a WARN that says the 5h block is NOT RUN",
+      "⭐ r1 fold: weekly 10 with a null five-hour window is a WARN that says the 5h block is NOT RUN",
+      "⭐ r1 fold: weekly 98.5 with a ABSENT five-hour window still REFUSES, and says the 5h block is NOT RUN"
+    ]
+  },
+  {
+    "name": "#645 r1 fold: the spawn and wake gates allow silently again, whatever the 5h zone",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if not block.strip():\n            return None",
+        "        if True:\n            return None"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold: gate with a 5h note ALLOWS with the note as additionalContext — no permissionDecision"
+    ]
+  },
+  {
+    "name": "#645 r1 fold: main() does not hand the 5h sentence to the gate (the call site)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        out = gate_output(verdict, message, override, parts.get(\"five\", \"\"))",
+        "        out = gate_output(verdict, message, override)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold: the spawn hook at weekly 50% and 5h 100% ALLOWS and tells the model STOP + the WAKE time",
+      "⭐ r1 fold: the wake hook at weekly 50% and 5h 100% ALLOWS and tells the model STOP + the WAKE time"
+    ]
+  },
+  {
+    "name": "#645 r1 fold: evaluate never records the 5h sentence in parts",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        parts[\"five\"] = five_note",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold: the spawn hook at weekly 50% and 5h 100% ALLOWS and tells the model STOP + the WAKE time"
     ]
   }
 ]

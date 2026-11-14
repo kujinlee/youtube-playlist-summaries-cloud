@@ -9,14 +9,14 @@ every refresh:
     {"at": <epoch>, "rate_limits": {"five_hour":  {"used_percentage": N, "resets_at": <epoch>},
                                     "seven_day":  {"used_percentage": N, "resets_at": <epoch>}}}
 
-Either window may be absent. The owner verified the cached value equals `/usage` on 2026-10-30 06:14.
+Either window may be absent (no seven_day is CANNOT RUN; no five_hour is a 5h UNKNOWN, said as NOT RUN). The owner verified the cached value equals `/usage` on 2026-10-30 06:14.
 
-THE VERDICTS (the weekly window decides; the five-hour window can only add a warning):
+THE VERDICTS (the weekly window decides; the five-hour window can only add a warning — its 5h BLOCK CLOCK zone, below):
 
     OK            weekly below 80%
     WARN          weekly 80% or more — names the % (floored to 0.1, never rounded up) and the reset time
                   in local time WITH its zone abbreviation, so a reset across a DST change is unambiguous;
-                  also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level;
+                  also: a 5h block zone other than FREE, or a five-hour window that cannot be read or is absent, at any weekly level;
                   and the DAY BAND's WIND-DOWN or NO NEW STARTS zone, at any weekly level (below)
     REFUSE-SPAWN  weekly at or over the stop: 100% − 5% × the days left after today, never above 97% (backlog #500) —
                   except on the LAST DAY, when the 97% cap rises linearly to 99% at 1 h before the reset (backlog #510)
@@ -43,6 +43,16 @@ rounds, no new build or review loop); at its top or over, NO NEW STARTS. The las
 14.3%/day since the window began + 8 adds a trend note. WIND-DOWN and NO NEW STARTS are WARN, because the prompt hook
 speaks only on WARN; so is an UNKNOWN band (no start%, or one from before yesterday, and no override — said as NOT
 RUN), since an unknown start% never reads as fine (pace-band r1 U1). NORMAL leaves the verdict alone.
+
+THE 5h BLOCK CLOCK (backlog #645, the owner 2026-11-13 16:20, card A) paces the five-hour meter against its FIXED
+block: it starts at `five_hour.resets_at` − 5 h, elapsed% = time since then / 5 h, ahead = used% − elapsed%
+(`block_zone`). ahead ≤ 15 is FREE (nothing said); 15 < ahead ≤ 30 is AT MOST 2 AGENTS (no new Fable agent); ahead > 30
+or used ≥ 90% is NO NEW AGENTS; used 100% is STOP, which prints the WAKE time, the reset + 1 min, exact to the second.
+Each is a WARN, never a REFUSE; a five-hour reset that has passed adds nothing (it is last block's reading). The sentence
+names NO moving figure — no used%, elapsed% or ahead, which move every few minutes — so a reading that moves inside one
+zone keeps its text and backlog #628 says it once per session; a zone change speaks (r1 fold). A fresh cache with NO
+five-hour window (absent or null) is a 5h UNKNOWN, said as NOT RUN — never read as FREE (r1 fold). The zones are spawn
+rules, so the spawn and wake gates also ATTACH the sentence to every call they allow, never denying on it (r1 fold).
 
 ⟳ PR #446 r1 (X1/M3): a bad FIVE-HOUR window no longer disables the weekly verdict. It was CANNOT RUN, so a
 valid weekly 95% beside a five-hour `resets_at` of 1e300 let a spawn through — the row's own FAILS IF. Now
@@ -74,8 +84,11 @@ THE CALLERS — three hooks, registered through `.claude/hooks/run-hook.sh`, eac
                            CANNOT RUN and a WARN with a NOT RUN part are never deduplicated. Bounds: a
                            session keeps its id across /compact, so a WARN given before it is not repeated
                            until its text changes; two sessions taking turns each hear every notice.
-    usage-pace-spawn.sh    PreToolUse on Agent: at REFUSE-SPAWN, deny, unless overridden. Otherwise allow,
-                           silently.
+    usage-pace-spawn.sh    PreToolUse on Agent: at REFUSE-SPAWN, deny, unless overridden. Otherwise allow —
+                           silently, unless the 5h block is not FREE: then the allow carries its sentence as
+                           additionalContext, with no permissionDecision (backlog #645 r1 fold; the docs list
+                           additionalContext for PreToolUse — NOT measured on this machine). Never deduplicated:
+                           each spawn is the moment the rule applies. The wake gate does the same.
     usage-pace-wake.sh     PreToolUse on SendMessage (r1 M1, the OWNER's option A, 2026-10-30): at
                            REFUSE-SPAWN, deny a message SENT BY THE MAIN SESSION, unless overridden. A
                            message sent BY A SUBAGENT is a report upward — finishing work in flight, not
@@ -163,7 +176,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 416 cases
+    python3 scripts/check-usage-pace.py --self-test  # 442 cases
 """
 from __future__ import annotations
 
@@ -242,7 +255,16 @@ TAIL_TOO_SHORT = ("the meter log is over its read bound and the part read does n
                   "today's start%")
 TAIL_CONTRACT_BROKEN = ("the meter log is over its read bound and the part read holds a row stamped more than an hour "
                         "before an earlier row, so the log's rows are not stamped as they are appended")
-FIVE_HOUR_WARN_AT = 90.0
+# THE 5h BLOCK CLOCK (backlog #645, the owner 11-13 16:20, selection card A). The five-hour meter is paced against
+# its FIXED block: the block starts at `five_hour.resets_at` − 5 h, elapsed% = time since then / 5 h, and
+# ahead = used% − elapsed%. ahead ≤ 15 is FREE (nothing said); 15 < ahead ≤ 30 is AT MOST 2 AGENTS (no new Fable
+# agent); ahead > 30, or used ≥ 90%, is NO NEW AGENTS; used 100% is STOP, with a WAKE at the reset + 1 min.
+# A GUIDE like the day band: a WARN, never a REFUSE — the weekly verdict alone moves the stop.
+FIVE_HOUR_WARN_AT = 90.0          # used% at or over which the block is NO NEW AGENTS, whatever its clock
+BLOCK_FREE_AHEAD = 15.0
+BLOCK_TWO_AHEAD = 30.0
+BLOCK_WAKE_AFTER_S = 60
+BLOCK_FREE, BLOCK_TWO, BLOCK_NO_START, BLOCK_STOP = "FREE", "AT MOST 2 AGENTS", "NO NEW AGENTS", "STOP"
 MAX_AGE_S = 15 * 60
 # The statusline and this hook read the same clock, so a cache from the future is a broken writer, not skew.
 # 5 s covers a write racing the read and float rounding of `at`, nothing more (r1 X3: it was 60 s, which let
@@ -563,6 +585,44 @@ def band_note(meter: str | None, now: float, resets: float, weekly: float, why: 
             f"{ZONE_TEXT[zone]}.{trend_note}", zone)
 
 
+def block_zone(used: float, resets: float, now: float) -> tuple[str, float, float]:
+    """(zone, elapsed%, ahead) of the five-hour block that resets at `resets` (backlog #645). Elapsed is clamped at 0,
+    so a reset up to the horizon slack beyond 5 h reads as a block not yet begun. There is no upper clamp: the only
+    caller passes a reset still ahead (`resets > now`), so elapsed is below 100 (r1 m2: the old one was unreachable). Pure."""
+    elapsed = max((now - (resets - FIVE_HOUR_S)) * 100 / FIVE_HOUR_S, 0.0)
+    ahead = used - elapsed
+    if used >= HARD_LIMIT:
+        return BLOCK_STOP, elapsed, ahead
+    if used >= FIVE_HOUR_WARN_AT or ahead > BLOCK_TWO_AHEAD:
+        return BLOCK_NO_START, elapsed, ahead
+    if ahead > BLOCK_FREE_AHEAD:
+        return BLOCK_TWO, elapsed, ahead
+    return BLOCK_FREE, elapsed, ahead
+
+
+def block_note(used: float, resets: float, now: float) -> str:
+    """The 5h block's sentence, or "" when FREE. It names the zone, its reason and the reset — NO moving figure: not
+    used%, elapsed% or ahead, which move every few minutes (the 5h meter climbs a point every ~3 min at a full burn), so
+    a reading that moves INSIDE one zone keeps its text and #628 says it once per session (r1 fold, both halves: the
+    text carried `used%`, so every 1-point move was said again). A zone change speaks; so does NO NEW AGENTS' REASON
+    changing from the clock to the 90% line, once. The STOP wake is exact (`exact=True`): a reset with seconds shows
+    them, so the printed wake is never before the reset + 1 min (r1 Codex MINOR)."""
+    zone, _, _ = block_zone(used, resets, now)
+    if zone == BLOCK_FREE:
+        return ""
+    if zone == BLOCK_STOP:
+        return (f" 5h block: STOP — at the {pct(HARD_LIMIT)} limit: start and wake no agent; WAKE at "
+                f"{local_time(resets + BLOCK_WAKE_AFTER_S, exact=True)} (the block's reset + 1 min) to restart agents.")
+    if zone == BLOCK_TWO:
+        return (f" 5h block: AT MOST 2 AGENTS — more than {BLOCK_FREE_AHEAD:g} points ahead of the "
+                f"block clock (used% − the block's elapsed%): keep at most 2 agents running and start no new Fable "
+                f"agent. Block resets {local_time(resets)}.")
+    why = (f"at or over {pct(FIVE_HOUR_WARN_AT)}" if used >= FIVE_HOUR_WARN_AT
+           else f"more than {BLOCK_TWO_AHEAD:g} points ahead of the block clock")
+    return (f" 5h block: NO NEW AGENTS — {why}: start no new agent; work in flight continues. "
+            f"Block resets {local_time(resets)}.")
+
+
 def cannot(reason: str) -> tuple[str, str]:
     return CANNOT_RUN, (f"⚠ usage pace: CANNOT RUN — {reason}. The weekly usage is UNKNOWN: treat this as "
                         f"NOT RUN, never as fine. Spawns are not blocked. Unknown is not a stop: keep working.")
@@ -570,17 +630,20 @@ def cannot(reason: str) -> tuple[str, str]:
 
 def evaluate(text: str | None, now: float, missing: str = "the cache is missing",
              path: str = DEFAULT_CACHE, meter: str | None | bool = False, meter_why: str = "",
-             meter_cut: bool = False) -> tuple[str, str]:
+             meter_cut: bool = False, parts: dict | None = None) -> tuple[str, str]:
     """The RULE: (verdict, one-line message) from the cache's text (None = no file) at `now`. No I/O, and
-    TOTAL: a time this platform cannot format is CANNOT RUN, never an exception (r1 X1/M3)."""
+    TOTAL: a time this platform cannot format is CANNOT RUN, never an exception (r1 X1/M3). `parts`, when given,
+    receives `five`: the five-hour sentence alone ("" when FREE or never reached), which the spawn and wake gates
+    attach to an allowed call (r1 fold, Claude M2)."""
     try:
-        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut)
+        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut, parts)
     except Malformed as e:
         return cannot(f"the cache is malformed: {e}")
 
 
 def _evaluate(text: str | None, now: float, missing: str, path: str,
-              meter: str | None | bool = False, meter_why: str = "", meter_cut: bool = False) -> tuple[str, str]:
+              meter: str | None | bool = False, meter_why: str = "", meter_cut: bool = False,
+              parts: dict | None = None) -> tuple[str, str]:
     if text is None:
         return cannot(missing)
     try:
@@ -615,9 +678,14 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
         five = window(rl, "five_hour", now, FIVE_HOUR_S)
     except Malformed as e:
         five, five_note = None, f" The five-hour window is unreadable ({e}): {NOT_RUN_MARK}."
-    if five is not None and five[1] > now and five[0] >= FIVE_HOUR_WARN_AT:
-        five_note = (f" Five-hour usage is {pct(five[0])} (WARN at {pct(FIVE_HOUR_WARN_AT)}), "
-                     f"resets {local_time(five[1])}.")
+    else:
+        if five is None:   # r1 fold (Codex MAJOR, Claude m1): ABSENT or null is a 5h UNKNOWN, never read as FREE
+            five_note = (" 5h block: UNKNOWN — the cache has no five-hour window, so the block clock cannot be read: "
+                         f"{NOT_RUN_MARK}, never as fine.")
+    if five is not None and five[1] > now:   # a passed reset is last block's reading: it adds nothing
+        five_note = block_note(five[0], five[1], now)
+    if parts is not None:
+        parts["five"] = five_note
     stop, days = refuse_at(now, resets), days_after_today(now, resets)
     # backlog #525 M1: the rise's NEXT real stop. The last night (the hard limit) starts before the rise's 99% end
     # whenever LAST_NIGHT_S > RISE_END_S, so the 99% end is then never a stop and must not be named as one.
@@ -982,10 +1050,15 @@ def prompt_output(verdict: str, message: str, override: tuple[bool, str] = (Fals
     return json.dumps(out)
 
 
-def gate_output(verdict: str, message: str, override: tuple[bool, str]) -> str | None:
-    """The PreToolUse answer of the spawn and wake gates: a deny at REFUSE-SPAWN unless overridden."""
+def gate_output(verdict: str, message: str, override: tuple[bool, str], block: str = "") -> str | None:
+    """The PreToolUse answer of the spawn and wake gates: a deny at REFUSE-SPAWN unless overridden. Any other call is
+    ALLOWED; when the 5h block is not FREE (`block`, the five-hour sentence) the allow carries it as additionalContext
+    and sets NO permissionDecision, so the permission flow is untouched (r1 fold, Claude M2: the zones are SPAWN rules,
+    and the prompt hook alone said them only when the owner typed — an AFK run climbed to the limit unwarned)."""
     if verdict != REFUSE or override[0]:
-        return None
+        if not block.strip():
+            return None
+        return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": block.strip()}})
     return json.dumps({"systemMessage": f"{message} {owner_text(override)}".rstrip(),
                        "hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                               "permissionDecisionReason": message}})
@@ -1040,7 +1113,8 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
     # The meter matters only beside a readable cache, so a stalled cache costs ONE deadline, not two (r1 C4).
     meter_text, meter_why, meter_cut = ((None, "", False) if text is None else
                                         read_meter(os.path.expanduser(args.meter), METER_MAX_BYTES))
-    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut)
+    parts: dict = {}
+    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut, parts)
     if args.hook is None:
         print(f"{verdict}: {message}" if message else f"{verdict}: weekly usage is below {pct(WARN_AT)}")
         return RC[verdict]
@@ -1075,7 +1149,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
                 payload = read_payload() or ""  # unusable stdin: neither a report nor a control message, so denied
             if len(payload) <= PAYLOAD_MAX_BYTES and (sent_by_subagent(payload) or is_control_message(payload)):
                 verdict = OK
-        out = gate_output(verdict, message, override)
+        out = gate_output(verdict, message, override, parts.get("five", ""))
     if out:
         print(out)
     return 0
@@ -1120,7 +1194,9 @@ def _self_test_body() -> int:
     WEEK_RESET = NOW + 3 * 86400          # Mon 01-18 00:00 PST
     FIVE_RESET = NOW + 2 * 3600           # Fri 01-15 02:00 PST
 
-    def cache(weekly: object = 10, five: object = None, age: float = 0, *, week_reset: object = WEEK_RESET,
+    # r1 fold (Codex MAJOR, Claude m1): a fresh cache with no five-hour window is now a 5h UNKNOWN, said as NOT RUN, so
+    # the default cache carries a FREE five-hour reading (0% at 60% elapsed) and `five=None` OMITS the window.
+    def cache(weekly: object = 10, five: object = 0, age: float = 0, *, week_reset: object = WEEK_RESET,
               five_reset: object = FIVE_RESET, drop: str = "", at: object = None) -> str:
         rl: dict = {}
         if weekly is not None:
@@ -1973,14 +2049,73 @@ def _self_test_body() -> int:
             check(f"an 'at' of {label} is CANNOT RUN, in a SHORT message", (v, len(msg) < 400), (CANNOT_RUN, True))
 
         # ── the five-hour window: WARN only, and never able to disable the weekly verdict ──────────
-        check("five-hour 89.9 adds nothing", kind(cache(10, five=89.9)), OK)
+        # ⭐ backlog #645, the owner 11-13 16:20 (selection card A): the 5h meter is paced against its FIXED block clock,
+        # elapsed% = (now − (resets_at − 5 h)) / 5 h, ahead = used% − elapsed%. FIVE_RESET is NOW + 2 h, so elapsed is 60%
+        # there; HALF_RESET (NOW + 2.5 h) puts elapsed at exactly 50%, LATE_RESET (NOW + 15 min) at exactly 95%.
+        HALF_RESET, LATE_RESET = NOW + 9000, NOW + 900
+        check("⭐ 5h block FREE: 60% used at 60% elapsed (ahead 0) adds nothing", kind(cache(10, five=60)), OK)
+        check("⭐ 5h block boundary: ahead EXACTLY 15 (65 at 50%) is still FREE",
+              kind(cache(10, five=65, five_reset=HALF_RESET)), OK)
+        check("⭐ 5h block: ahead 15.1 (65.1 at 50%) is AT MOST 2 AGENTS, a WARN",
+              ("AT MOST 2 AGENTS" in ev(cache(10, five=65.1, five_reset=HALF_RESET))[1],
+               kind(cache(10, five=65.1, five_reset=HALF_RESET))), (True, WARN))
+        check("⭐ 5h block: AT MOST 2 AGENTS, the whole message (fixed string)", ev(cache(10, five=75.1))[1],
+              "⚠ usage pace: weekly usage is 10%. 5h block: AT MOST 2 AGENTS — more than 15 points ahead "
+              "of the block clock (used% − the block's elapsed%): keep at most 2 agents running and start no new Fable "
+              "agent. Block resets Fri 01-15 02:00 PST.")
+        check("⭐ 5h block boundary: ahead EXACTLY 30 (80 at 50%) is still AT MOST 2 AGENTS",
+              "AT MOST 2 AGENTS" in ev(cache(10, five=80, five_reset=HALF_RESET))[1], True)
+        check("⭐ 5h block: ahead 30.1 (80.1 at 50%) is NO NEW AGENTS, the whole message (fixed string)",
+              ev(cache(10, five=80.1, five_reset=HALF_RESET))[1],
+              "⚠ usage pace: weekly usage is 10%. 5h block: NO NEW AGENTS — more than 30 points ahead of "
+              "the block clock: start no new agent; work in flight continues. Block resets Fri 01-15 02:30 PST.")
+        check("⭐ 5h block: 89.9 at 95% elapsed (behind the clock) is FREE", kind(cache(10, five=89.9, five_reset=LATE_RESET)),
+              OK)
+        check("⭐ 5h block: 90 at 95% elapsed is NO NEW AGENTS though BEHIND the clock (fixed string)",
+              ev(cache(10, five=90, five_reset=LATE_RESET))[1],
+              "⚠ usage pace: weekly usage is 10%. 5h block: NO NEW AGENTS — at or over 90%: start no new "
+              "agent; work in flight continues. Block resets Fri 01-15 00:15 PST.")
+        check("⭐ 5h block: a reset 30 min BEYOND 5 h is a block not yet begun (elapsed 0, never negative): 15 is FREE",
+              kind(cache(10, five=15, five_reset=NOW + FIVE_HOUR_S + 1800)), OK)
         check("five-hour 90 is WARN", kind(cache(10, five=90)), WARN)
-        check("the five-hour WARN names that window and its reset (fixed string)", ev(cache(10, five=90))[1],
-              "⚠ usage pace: weekly usage is 10%. Five-hour usage is 90% (WARN at 90%), resets Fri 01-15 02:00 PST.")
+        check("⭐ 5h block STOP: 100% says stop and WAKE at reset + 1 min, by clock time (fixed string)",
+              ev(cache(10, five=100))[1],
+              "⚠ usage pace: weekly usage is 10%. 5h block: STOP — at the 100% limit: start and wake no agent; WAKE at "
+              "Fri 01-15 02:01 PST (the block's reset + 1 min) to restart agents.")
+        check("⭐ r1 fold (Codex MINOR): a reset 30 s past the minute WAKEs at reset + 60 s EXACTLY, never the minute before",
+              "WAKE at Fri 01-15 02:01:30 PST (the block's reset + 1 min)" in ev(cache(10, five=100, five_reset=FIVE_RESET + 30))[1],
+              True)
+        check("⭐ 5h block STOP rides on a weekly REFUSE, never downgrading it",
+              (kind(cache(98.5, five=100)), "WAKE at Fri 01-15 02:01 PST" in ev(cache(98.5, five=100))[1]),
+              (REFUSE, True))
+        check("⭐ 5h block: a STALE cache at 5h 100% is CANNOT RUN and names no block zone",
+              (kind(cache(10, five=100, age=MAX_AGE_S + 1)), "5h block" in ev(cache(10, five=100, age=MAX_AGE_S + 1))[1]),
+              (CANNOT_RUN, False))
         check("a five-hour window whose reset passed adds nothing", kind(cache(10, five=99, five_reset=NOW)), OK)
         check("five-hour 100 never REFUSES", kind(cache(10, five=100)), WARN)
         check("five-hour 95 never downgrades a weekly REFUSE", kind(cache(98.5, five=95)), REFUSE)
-        check("no five-hour window is fine", kind(cache(50)), OK)
+        # ⭐ r1 fold (Codex MAJOR, Claude m1): a fresh cache whose five-hour window is ABSENT or null is a 5h UNKNOWN — its
+        # own NOT RUN sentence, a WARN — and never hides or downgrades the weekly verdict.
+        def null5(c: str) -> str:
+            d = json.loads(c)
+            d["rate_limits"]["five_hour"] = None
+            return json.dumps(d)
+        for label, c10, c85, c98 in (("ABSENT", cache(10, five=None), cache(85, five=None), cache(98.5, five=None)),
+                                     ("null", null5(cache(10, five=None)), null5(cache(85, five=None)),
+                                      null5(cache(98.5, five=None)))):
+            v10, m10 = ev(c10)
+            check(f"⭐ r1 fold: weekly 10 with a {label} five-hour window is a WARN that says the 5h block is NOT RUN",
+                  (v10, "5h block: UNKNOWN" in m10, NOT_RUN_MARK in m10), (WARN, True, True))
+            v85, m85 = ev(c85)
+            check(f"r1 fold: weekly 85 with a {label} five-hour window keeps the weekly WARN text, and adds the 5h NOT RUN",
+                  (v85, m85.startswith("⚠ usage pace: weekly usage is 85% (WARN at 80%"), "5h block: UNKNOWN" in m85),
+                  (WARN, True, True))
+            v98, m98 = ev(c98)
+            check(f"⭐ r1 fold: weekly 98.5 with a {label} five-hour window still REFUSES, and says the 5h block is NOT RUN",
+                  (v98, "5h block: UNKNOWN" in m98), (REFUSE, True))
+        check("r1 fold: the ABSENT five-hour sentence (fixed string)", ev(cache(10, five=None))[1],
+              "⚠ usage pace: weekly usage is 10%. 5h block: UNKNOWN — the cache has no five-hour window, so the block "
+              "clock cannot be read: treat it as NOT RUN, never as fine.")
         five_horizon = NOW + FIVE_HOUR_S + HORIZON_SLACK_S
         for label, five, fr in (("resets_at 1e300", 50, 1e300), ("a nanosecond resets_at", 50, NOW * 1e9),
                                 ("a millisecond resets_at", 50, NOW * 1e3), ("resets_at -1e300", 50, -1e300),
@@ -2292,6 +2427,13 @@ def _self_test_body() -> int:
             check("gate: REFUSE with the override allows", gate_output(REFUSE, "msg", (True, "env")), None)
             check("gate: WARN, CANNOT RUN and OK allow", [gate_output(v, "m", closed) for v in (WARN, CANNOT_RUN, OK)],
                   [None, None, None])
+            check("⭐ r1 fold: gate with a 5h note ALLOWS with the note as additionalContext — no permissionDecision",
+                  [json.loads(gate_output(v, "m", ov, " 5h block: X.") or "{}") for v, ov in
+                   ((WARN, closed), (OK, closed), (CANNOT_RUN, closed), (REFUSE, (True, "env")))],
+                  [{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "5h block: X."}}] * 4)
+            check("r1 fold: gate at REFUSE with a 5h note still DENIES",
+                  json.loads(gate_output(REFUSE, "m", closed, " 5h block: X.") or "{}")
+                  .get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
             check("the REFUSE message (the model's) names no override", any(
                 s in r95 for s in (OVERRIDE_ENV, "allow-spawn-over-limit", "date +%s", "touch")), False)
 
@@ -2538,6 +2680,19 @@ def _self_test_body() -> int:
             check("#628: a changed reading speaks again; a new session is told again",
                   (bool(drive(cache(86), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-4"))[1]),
                    bool(drive(cache(86), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-5"))[1])), (True, True))
+            blk = [bool(drive(cache(10, five=80, five_reset=NOW + 9000), "--hook", "prompt", "--meter", mpath, root=wt,
+                              payload=sess("s-blk"))[1]) for _ in range(3)]
+            check("⭐ 5h block: an unchanged AT MOST 2 AGENTS WARN is said once per session (#628), then silent",
+                  blk, [True, False, False])
+            # ⭐ r1 fold (both halves, MAJOR): the text names no moving figure, so a reading that moves INSIDE one zone is
+            # silent, and a zone change speaks. At 50% elapsed: 70/75/80 are AT MOST 2 AGENTS (ahead 20/25/30), 80.1 and 85
+            # NO NEW AGENTS by the clock, 90 and 95 NO NEW AGENTS by the 90% line (a changed REASON is said once), 100 STOP.
+            seq = [bool(drive(cache(10, five=u, five_reset=NOW + 9000), "--hook", "prompt", "--meter", mpath, root=wt,
+                              payload=sess("s-blk-move"))[1]) for u in (70, 75, 80, 80.1, 85, 90, 95, 100)]
+            check("⭐ r1 fold: a 5h reading that moves INSIDE one zone is silent; a zone change speaks",
+                  seq, [True, False, False, True, False, True, False, True])
+            check("5h block: a FREE block says nothing at all",
+                  drive(cache(10, five=60), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-blk2")), (0, ""))
             check("#628: REFUSE-SPAWN is never deduplicated",
                   [bool(drive(cache(99), "--hook", "prompt", "--meter", mpath, root=wt, payload=sess("s-5"))[1]) for _ in range(2)],
                   [True, True])
@@ -2579,7 +2734,8 @@ def _self_test_body() -> int:
             os.makedirs(os.path.join(home, ".claude"))
             live = os.path.join(home, ".claude", ".rate-limits.json")
 
-            def hook_env(weekly: float | None, **env_extra: str) -> dict:
+            def hook_env(weekly: float | None, five: float = 0.0, **env_extra: str) -> dict:
+                """`five` is the five-hour used% of a block reset 2 h from now (elapsed 60%); 0 is FREE (r1 fold)."""
                 if weekly is None:
                     if os.path.exists(live):
                         os.remove(live)
@@ -2587,7 +2743,9 @@ def _self_test_body() -> int:
                     t = time.time()
                     with open(live, "w") as fh:
                         json.dump({"at": t, "rate_limits": {"seven_day": {"used_percentage": weekly,
-                                                                          "resets_at": t + 86400}}}, fh)
+                                                                          "resets_at": t + 86400},
+                                                            "five_hour": {"used_percentage": five,
+                                                                          "resets_at": t + 7200}}}, fh)
                 env = {k: v for k, v in os.environ.items() if k != OVERRIDE_ENV}
                 env.update(HOME=home, CLAUDE_PROJECT_DIR=main_co, **env_extra)
                 return env
@@ -2595,8 +2753,8 @@ def _self_test_body() -> int:
             last_err = [""]
 
             def hook(name: str, weekly: float | None, co: str = wt, stdin: str = '{"tool_name":"Agent","tool_input":{}}',
-                     **env_extra: str) -> tuple[int, str]:
-                env = hook_env(weekly, **env_extra)
+                     five: float = 0.0, **env_extra: str) -> tuple[int, str]:
+                env = hook_env(weekly, five, **env_extra)
                 p = subprocess.run(["bash", os.path.join(co, ".claude", "hooks", "run-hook.sh"), name], cwd=co,
                                    env=env, input=stdin, capture_output=True, text=True, timeout=30)
                 last_err[0] = p.stderr     # r6: the launcher's CANNOT RUN reason goes to stderr, its JSON is fixed
@@ -2699,6 +2857,20 @@ def _self_test_body() -> int:
             check("run-hook: the wake hook allows the main session's shutdown_request at 98.5%",
                   hook("usage-pace-wake.sh", 98.5, stdin=shut), (0, ""))
             check("run-hook: the wake hook allows at 50%", hook("usage-pace-wake.sh", 50, stdin=to_agent), (0, ""))
+            # ⭐ r1 fold (Claude M2): a 5h zone is a SPAWN rule, so the spawn and wake gates carry it to the model at the
+            # moment of the call — ALLOWED, never denied (a WARN) — not only on the owner's next prompt.
+            def ctx(out: str) -> str:
+                return hso(out).get("hookSpecificOutput", {}).get("additionalContext", "")
+            for gname, gin in (("spawn", '{"tool_name":"Agent","tool_input":{}}'), ("wake", to_agent)):
+                _rc, _out = hook(f"usage-pace-{gname}.sh", 50, stdin=gin, five=100)
+                check(f"⭐ r1 fold: the {gname} hook at weekly 50% and 5h 100% ALLOWS and tells the model STOP + the WAKE time",
+                      (_rc, decision(_out), hso(_out).get("hookSpecificOutput", {}).get("hookEventName"),
+                       ctx(_out).startswith("5h block: STOP"), "WAKE at" in ctx(_out)),
+                      (0, None, "PreToolUse", True, True))
+            check("r1 fold: the spawn hook at weekly 50% and 5h 75% (AT MOST 2 AGENTS at 60% elapsed) attaches that zone",
+                  ctx(hook("usage-pace-spawn.sh", 50, five=75.1)[1]).startswith("5h block: AT MOST 2 AGENTS"), True)
+            check("r1 fold: the spawn hook at weekly 98.5% and 5h 100% still DENIES",
+                  decision(hook("usage-pace-spawn.sh", 98.5, five=100)[1]), "deny")
             # The bound is on real stdin, so these go through it: in-process, `main()` gets the string whole (r4 X2).
             check("run-hook: a shutdown_request followed by over 1 MiB of spaces on stdin is DENIED at 98.5% (r4 X2)",
                   decision(hook("usage-pace-wake.sh", 98.5, stdin=shut + " " * (PAYLOAD_MAX_BYTES + 16))[1]), "deny")
