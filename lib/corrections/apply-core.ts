@@ -1,8 +1,9 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { fixSummary, extractQuickView, assertCorrectionInputWithinCap, SUMMARY_MODEL } from '@/lib/gemini';
+import type { UsageMeter } from '@/lib/gemini';
 import {
   MAX_TRANSCRIBE_INPUT_TOKENS, MAX_TRANSCRIBE_OUTPUT_TOKENS, MAX_TRANSCRIPT_INPUT_BYTES,
-  MAX_SUMMARY_OUTPUT_TOKENS, correctionActualCents,
+  MAX_SUMMARY_OUTPUT_TOKENS, PROMPT_SCHEMA_OVERHEAD_TOKENS, correctionActualCents,
 } from '@/lib/gemini-cost';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
 import { stripQuickViewCallout, insertQuickViewCallout } from '@/lib/quick-view-callout';
@@ -38,14 +39,54 @@ export interface ApplyCorrectionInput {
   signal: AbortSignal;
   /** Absent on the LOCAL branch by design — withCaps then returns the base config unchanged. */
   caps?: CloudGeminiCaps;
+  /** REQUIRED and CALLER-OWNED (backlog #62). It is filled as each paid attempt returns, so the
+   *  caller can record spend after this function THROWS — the structural validator, a failed
+   *  quick-view, an exhausted retry. A spend figure on the result would exist only on success. */
+  meter: UsageMeter;
 }
 
 export interface ApplyCorrectionResult {
   content: string;
   tldr: string;
   takeaways: string[];
-  /** null means "the SDK reported no usage", NOT "free". */
-  actualCents: number | null;
+}
+
+/** The most one fixSummary attempt can cost under CORRECTION_CAPS — the figure 0026's header derives
+ *  its 12¢ per-call ceiling from (`correctionActualCents({8192+4000, 8192})` = 3¢, × 3 attempts).
+ *  Prompt: the preflight refuses a document over `summaryOutputTokens` tokens, and
+ *  PROMPT_SCHEMA_OVERHEAD_TOKENS (4,000) covers the instructions plus the ≤1,000-code-point
+ *  corrections field. Output: `maxOutputTokens` is set to `summaryOutputTokens`, thinking budget 0. */
+const CORRECTION_PROMPT_BOUND_TOKENS = CORRECTION_CAPS.summaryOutputTokens + PROMPT_SCHEMA_OVERHEAD_TOKENS;
+const CORRECTION_OUTPUT_BOUND_TOKENS = CORRECTION_CAPS.summaryOutputTokens;
+export const CORRECTION_WORST_ATTEMPT_CENTS = correctionActualCents({
+  promptTokens: CORRECTION_PROMPT_BOUND_TOKENS, outputTokens: CORRECTION_OUTPUT_BOUND_TOKENS,
+});
+
+/**
+ * Price a correction from its meter. Each attempt is priced as its own call and the ceilings summed:
+ * that is how 0026 derives its 12¢ per-call ceiling (3 attempts × 3¢), and pricing the summed
+ * tokens once would round below it.
+ *
+ * NEVER UNDER-COUNTS (round 1, Codex H2). A field the SDK did not report is charged at the bound
+ * CORRECTION_CAPS enforces for that field, and the field it DID report is kept — so an attempt with
+ * no metadata costs CORRECTION_WORST_ATTEMPT_CENTS, an over-count by construction, and is never
+ * dropped. `estimated` counts the attempts whose figure includes a bound.
+ *
+ * Counts fixSummary only. extractQuickView's usage is NOT included — the SDK reports it on a
+ * different call and nothing in this repo reads it yet; adding it is a separate measurement, not an
+ * assumption to bury here.
+ */
+export function meteredCorrectionCents(meter: UsageMeter): { cents: number; estimated: number } {
+  let cents = 0;
+  let estimated = 0;
+  for (const a of meter.attempts) {
+    if (a.promptTokens == null || a.outputTokens == null) estimated++;
+    cents += correctionActualCents({
+      promptTokens: a.promptTokens ?? CORRECTION_PROMPT_BOUND_TOKENS,
+      outputTokens: a.outputTokens ?? CORRECTION_OUTPUT_BOUND_TOKENS,
+    });
+  }
+  return { cents, estimated };
 }
 
 /**
@@ -69,8 +110,8 @@ export async function applyCorrection(input: ApplyCorrectionInput): Promise<Appl
     );
   }
 
-  const { text: fixed, usage } = await fixSummary(
-    stripped, input.corrections, { signal: input.signal, caps: input.caps },
+  const { text: fixed } = await fixSummary(
+    stripped, input.corrections, { signal: input.signal, caps: input.caps, meter: input.meter },
   );
   // Validate BEFORE paying for quick-view: a structural failure discards the correction, so there is
   // no reason to buy an extraction of a document that is about to be thrown away.
@@ -80,9 +121,5 @@ export async function applyCorrection(input: ApplyCorrectionInput): Promise<Appl
     content: insertQuickViewCallout(fixed, tldr, takeaways, input.tags),
     tldr,
     takeaways,
-    // Counts fixSummary only. extractQuickView's usage is NOT included — the SDK reports it on a
-    // different call and nothing in this repo reads it yet; adding it is a separate measurement, not
-    // an assumption to bury here.
-    actualCents: usage ? correctionActualCents(usage) : null,
   };
 }

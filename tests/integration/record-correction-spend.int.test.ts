@@ -3,8 +3,11 @@
 //   newUser(): Promise<{ user: { id }, email, password }>   signInAs(email, password): Promise<{ client, userId }>
 //   anonSession(): Promise<{ client, userId }>              — `userClient` does not exist
 // ✅ EXECUTED 2026-08-24 against a live local stack: 9/9, plus all three step-5/6 mutations caught.
+// ✅ RE-EXECUTED 2026-10-24 with the four 0028 correction_allowance cases added: 13/13.
 import { createClient } from '@supabase/supabase-js';
 import { adminClient, newUser, signInAs } from './helpers/clients';
+import { FIX_SUMMARY_RETRIES } from '@/lib/gemini';
+import { CORRECTION_WORST_ATTEMPT_CENTS } from '@/lib/corrections/apply-core';
 import {
   correctionActualCents, MAX_SUMMARY_OUTPUT_TOKENS, PROMPT_SCHEMA_OVERHEAD_TOKENS,
 } from '@/lib/gemini-cost';
@@ -134,11 +137,51 @@ it('the anon ROLE cannot execute it', async () => {
 // changes MAX_SUMMARY_OUTPUT_TOKENS to remember this row exists.
 it('the ceiling covers the worst case §5.1 can produce, and N x ceiling stays a minority of the cap', async () => {
   const { correction_max_cents: ceiling, correction_max_calls_per_owner_day: N } = await cfg();
-  const worst = correctionActualCents({
+  // Derived from the same symbols the route prices with (round 2): a press is ONE call, so the LIVE
+  // ceiling must cover every attempt of it at the per-attempt bound.
+  const worst = CORRECTION_WORST_ATTEMPT_CENTS * (FIX_SUMMARY_RETRIES + 1);
+  expect(CORRECTION_WORST_ATTEMPT_CENTS).toBe(correctionActualCents({
     promptTokens: MAX_SUMMARY_OUTPUT_TOKENS + PROMPT_SCHEMA_OVERHEAD_TOKENS,
     outputTokens: MAX_SUMMARY_OUTPUT_TOKENS,
-  }) * 3;                                     // fixSummary retries twice (gemini.ts:473)
+  }));
   expect(ceiling).toBeGreaterThanOrEqual(worst);
   const { data } = await svc.from('guardrail_config').select('daily_cap_cents').eq('id', true).single();
   expect(N * ceiling).toBeLessThan(data!.daily_cap_cents / 2);
+});
+
+// ── 0028 correction_allowance — the read the route makes BEFORE the paid call (backlog #62 r1) ──
+describe('correction_allowance', () => {
+  it('reports 0 calls for an owner with no press today, and 0026\'s call limit', async () => {
+    const { correction_max_calls_per_owner_day } = await cfg();
+    const { client } = await freshUserClient();
+    const { data, error } = await client.rpc('correction_allowance');
+    expect(error).toBeNull();
+    expect(data).toEqual({ calls: 0, max_calls: correction_max_calls_per_owner_day });
+  });
+
+  it('counts what record_correction_spend recorded for THIS owner today', async () => {
+    const { client } = await freshUserClient();
+    await client.rpc('record_correction_spend', { p_cents: 1 });
+    await client.rpc('record_correction_spend', { p_cents: 1 });
+    expect((await client.rpc('correction_allowance')).data.calls).toBe(2);
+  });
+
+  it('cannot see another owner\'s count — the owner is auth.uid(), never a parameter', async () => {
+    const a = await freshUserClient();
+    await a.client.rpc('record_correction_spend', { p_cents: 1 });
+    const b = await freshUserClient();
+    expect((await b.client.rpc('correction_allowance')).data.calls).toBe(0);
+  });
+
+  it('the anon ROLE cannot execute it', async () => {
+    // Same distinction as the record_correction_spend case above: the anon KEY with no session.
+    const client = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+    const { error } = await client.rpc('correction_allowance');
+    expect(error).not.toBeNull();
+    expect(error!.message).toMatch(/permission denied|not find the function/i);
+  });
 });

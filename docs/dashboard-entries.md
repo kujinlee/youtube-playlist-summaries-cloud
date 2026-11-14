@@ -20596,6 +20596,83 @@ Walkthrough decision 5 re-answered 2026-11-13 17:15, replacing the 11:25 answer 
 corpus*: two output-reading checks, one for quote text, one for the 16 excluded files), and the walkthrough fragment
 (C5 cell `data-decision`; recomposed with `scripts/brief-compose.py`, 0 remaining). Shipped corpus: 193 files less 16.
 
+## 2026-10-24
+A correction that fails now counts against the spending limits, and once someone has used up
+today's corrections, the next one is refused before anything is paid for. Until now, when a
+correction was thrown away (for example because the model deleted a section), Gemini had already
+been paid and nothing was written down, so a person could keep spending while every counter read
+zero. Retried corrections were also under-counted, because only the last try was recorded.
+
+What is counted now: every try that is sent to Gemini. Each try is counted at the most it could
+cost the moment it is sent. If Gemini then answers and says how much it used, the real figure
+replaces that estimate. So a try that is thrown away, cut off by a disconnect or a timeout, or
+answered without usage figures is still counted. Walking away from a correction no longer gets around
+the daily limit. The cost of this is that a try which failed before Gemini did any work is counted
+too. That is deliberate: it errs toward stopping spending, never toward letting it slip past a limit.
+It is not free, though: those counted-but-unused cents also go into the shared daily total that every
+other kind of work is checked against, so during a Gemini outage they can use up that total sooner
+(at most 72¢ per person per day).
+
+The spending record is written on every outcome, success or failure. If writing it is slow, the
+person waits at most three extra seconds, and the answer they get does not change. Once the daily
+limit is reached, the next correction gets a plain "limit reached, try tomorrow" message and Gemini
+is never called.
+
+What is still open:
+- Corrections sent at the same moment can all slip under the limit, and there is no cap on how many.
+  The ones that slip are not counted anywhere, including in the overall daily spending total. This is
+  the existing reservation item, backlog #61, and the overall cap is still not checked before a
+  correction.
+- The short summary refreshed after each correction (the quick view) is still not counted.
+- If writing the spending record fails, it is logged but never retried later.
+
+The same branch replaces the confusing error a user saw when a correction was thrown away (*"corrected
+document does not start with a YAML frontmatter delimiter"*) with a plain sentence saying what
+happened and that nothing was saved.
+
+This is not live yet. When it ships, the new database function has to go out before the code, or
+every correction will be refused.
+<!--tech-->
+Backlog #62 and #63, branch `fix/correction-spend-on-failure`, after three review rounds.
+`fixSummary` pushes a provisional `{null, null}` entry into a caller-owned `UsageMeter` when each
+attempt is dispatched, and replaces it with the reported usage when a response arrives. Each field
+is replaced independently. No error shape is classified. Round 3 found that a body-read timeout on
+SDK 0.24.1 is a plain DOMException `AbortError` with the signal untouched, which the round-2
+classification missed. A cancel is now the caller's signal alone, so an SDK timeout is retried. The
+real-SDK cases are in `tests/lib/gemini-fix-summary-real-sdk.test.ts`. The other dead name-checks
+are filed as backlog #345. `serveCloud` records from the meter in a `finally` via
+`recordCorrectionSpend`: ONE call, `raceRpc`-bounded at `CORRECTION_RPC_TIMEOUT_MS`, never throws.
+A null field is charged at the `CORRECTION_CAPS` bound (`CORRECTION_WORST_ATTEMPT_CENTS` = 3¢).
+Round 1's over-ceiling split is removed. `correction-ceiling.test.ts` proves
+(`FIX_SUMMARY_RETRIES` + 1) × 3¢ fits 0026's declared per-call default, and fails if any other
+migration names the column. Migration
+`0028_correction_allowance.sql` is a SECURITY DEFINER read of the owner's count, checked before any
+paid call: 429 `correction-limit-reached`, or 503 `correction-limit-unavailable` (fails closed).
+`STRUCTURAL_REFUSALS` maps each `StructuralFailureReason` to a 422 with `code: structure-<reason>`.
+Reservation (backlog #61) deliberately not built; the unbounded race is recorded there.
+
+## 2026-11-13
+The corrections spending fix (the 2026-10-24 entry above) was brought up to date with everything
+merged since, and its red checks were traced to one cause and fixed. It is still not live: the new
+database function has to go out to production before the code is merged.
+
+The 26 red checks were one failure counted 26 times. Five rows this branch touches in the backlog
+had no "kind" label (two were new, three lost theirs when the branch was last brought up to date),
+and the backlog page's own tests refuse that. Every other check on the list runs those tests first,
+so each of them reported the same thing.
+
+One thing found on the way and filed, not fixed here: two of the correction spending tests read a
+shared setting that other tests change and do not put back, so they can fail depending on the order
+the tests run in. They pass on their own.
+<!--tech-->
+PR #392, branch `fix/correction-spend-on-failure`. `origin/master` merged in (one conflict, this
+file). `⟦kind: …⟧` restored on backlog #61, #62, #63 and added to backlog #345, #346;
+`gen-backlog-page.py --self-test` 246/247 → 247/247, which is what `check-selftest-counts.py`
+(`verify`) and every mutation-sweep shard were reporting. No guarded path changed, so no review
+round was added; round 5 (Codex, CONVERGED) saw the final tree. Local: tsc clean, 2937 unit,
+integration 545 (540 passed + 3 skipped + 2 order-dependent, filed as backlog #637), schema gates
+with `M4_PHASE=post`. Migration `0028_correction_allowance.sql` is unchanged and not yet applied to
+production.
 ## 2026-11-13
 A question you type into a served page can now be answered in that page within about a minute, without the main
 session. A separate small agent reads the page and the repository, and its answer appears under the section you
