@@ -20703,3 +20703,18 @@ A pull request now runs the same handoff without filing anything, so a pull requ
 Backlog #619 R1, PR #580 (branch `b619-shard-records`); backlog #617 part (1) closed as retired. `check-plan-code.py
 --record` writes `{schema, shard, total, complete, flaky}`; `sweep-red-alert.py` `read_records` + `check_records`
 replace `ci_flaky_contract`, `flaky_names`, `shard_count` and `read_flaky`. Mutation pins 39 → 37 and 320 → 329; two review rounds, backlog #642 filed.
+
+## 2026-11-14
+Every memory file has been audited once, as you asked on 11-13. Each one now opens with the rule as it stands
+today, and older versions of the rule are condensed below it, so a rule is no longer read in a form a later
+correction replaced. Seven contradictions between files were fixed to match your newer decisions, for example
+"never merge" in an old file now reads "merge when ready". The always-loaded index shrank from 24,843 to 21,888
+characters, safely under the 24,985 limit past which it is cut off without warning. Your own words are kept
+word for word. The weekly check of changed files comes next.
+
+<!--tech-->
+In-flight id `memory-audit`, branch `memory-audit-once`. Base `7895b74c` commits the live folder (13 edited, 14 new
+files never committed). 122 of 195 files rewritten, none merged or deleted, no slug changed; folder 1,324 KB →
+1,056 KB; two files gained missing frontmatter. Checks: `check-memory-index-budget`, `check-docs`,
+`check-canonical-source`, `check-reference-namespace` OK. A coordinator spot check of long quotations found the
+owner quotes kept, re-wrapped. Not done here: the CI shape check and the weekly routine (option B).

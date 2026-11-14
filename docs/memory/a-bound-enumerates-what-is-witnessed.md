@@ -8,8 +8,14 @@ metadata:
   modified: 2026-10-07T09:39:00.429Z
 ---
 
+**The rule:** write a BOUND paragraph by listing the ASSERTIONS and asking what each would notice —
+never by listing the arguments the seam touches. A self-aware caveat that is wrong is worse than none.
+
+## History
+
 **Measured 2026-10-06/07, PR #364 round 5 (High 1, in the deliverable).** I added a `measure_fn`
-seam to `check-page-contrast.py` and wrote the careful bound paragraph myself:
+seam to `check-page-contrast.py` *(not on `master` as of 2026-11-14: PR #364's branch
+`unify-explainer-style` was never merged)* and wrote the careful bound paragraph myself:
 
 > ⚠ THE BOUND, STATED RATHER THAN HIDDEN. A `measure_fn` double covers this function's DECISION
 > path — corpus resolution, **palette selection**, verdict rendering, refusal routing.

@@ -8,6 +8,10 @@ metadata:
   modified: 2026-08-08T20:25:42.619Z
 ---
 
+**The rule: classify every guard SHAPE (caller is wrong → reject) or SEQUENCE (caller was merely
+second → reconcile, never a raw rejection), and ask of each: what does it do when the caller is merely
+SECOND?** Enforced by `scripts/check-guard-coverage.py`.
+
 **Measured 2026-08-08 (PR #57, `0b27094`), run as the opening of round 8 rather than as part of it.**
 
 | | Asks | A violation means | Must |
@@ -54,4 +58,4 @@ count. A count ratchet would fire on legitimate work (adding a guard *should* ch
 everyone to bump the number.
 
 See [[unsatisfiable-ordering-is-the-tell]], [[what-mutation-testing-proves]],
-[[what-mutation-testing-proves]], [[blob-addressing-spec-state]].
+[[blob-addressing-spec-state]], [[guard-coverage-scope-merged]] (the ratchet's later scope fix, 41 → 55 guards).

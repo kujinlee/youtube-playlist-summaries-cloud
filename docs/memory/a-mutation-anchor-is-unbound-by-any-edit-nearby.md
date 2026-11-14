@@ -1,6 +1,6 @@
 ---
 name: a-mutation-anchor-is-unbound-by-any-edit-nearby
-description: "FIRES-WHEN: editing a file mutation anchors bind to — a rename, a comment, a merge resolution — ⭐⭐ SEVEN anchors orphaned in ONE session by ordinary edits — a comment insertion, a case rename, a merge resolution. One was a BLOCKING red CI step. The 15-second check is the harness's OWN rule, and re-typing a broader one reproduced bugs already on record"
+description: "FIRES-WHEN: editing (or merging, or resolving a conflict in) a script or manifest that mutation anchors bind to, on ANY branch in flight. Run the harness's own all-manifest resolve; merge manifests per entry"
 metadata: 
   node_type: memory
   type: feedback
@@ -8,45 +8,21 @@ metadata:
   modified: 2026-09-23T00:31:37.819Z
 ---
 
-2026-09-22, across PRs #332 and #333. **Seven manifest bindings were orphaned by edits that had
-nothing to do with mutation testing**, and each cost a different amount depending on how it was
-found:
-
-| What broke it | Found by | Cost |
-|---|---|---|
-| a comment INSERTED into a two-line anchor | a 35-minute sweep, `NOT MEASURED — treat as NOT CHECKED` | 35 min |
-| a case RENAME (an `expect` naming a case that no longer existed) | the same sweep | 35 min |
-| a comment REWRITE, anchor spanned 3 comment lines + a `return` | **a review round** — it was a **Blocking**, a red required CI step | a whole round |
-| four more, from restructuring the code the anchors point at | the 15-second check | seconds |
-
-**Why:** anchors bind by **TEXT**. Any edit that changes, splits or moves the anchored span unbinds
-it, and *nothing says so* until something applies the manifest. A multi-line anchor that includes
-**comment lines** is the most fragile kind — comments are exactly what gets rewritten.
+**The rule: after ANY edit to a manifested script — a comment, a rename, a merge resolution — on EVERY branch in flight, run the all-manifest resolve before pushing: for each `scripts/mutations/*.json` entry, `src.count(anchor) == 1`, plus the harness's own `expect` rule (exact equality against the case names that went RED, exactly one match). It needs no suite and takes seconds.**
 
 **How to apply:**
-- ⭐ **Run the 15-second check before any sweep, over EVERY manifest.** The rule is the harness's
-  own single line, `check-plan-code.py:1451` — exact equality against the case names that went
-  **RED**, exactly one match required — plus `src.count(anchor) == 1`.
-- ⛔ **Do not re-type a BROADER pre-check.** Mine reproduced two of the three bugs already recorded
-  for an earlier ad-hoc copy: `expect` is sometimes a bare **string** (iterating it yields one
-  "orphan" per character), and a duplicate-anchor rule **stricter than the harness's** invents
-  failures. A checker re-typed per use degrades — see [[a-second-implementation-of-one-rule-drifts]].
-- ⚠ **Derive the population.** My first corrected run covered **2 of 4** manifests, which is exactly
-  how the Blocking got past me. Glob `scripts/mutations/*.json`; never pick.
-- **Anchor on CODE, not comments.** When re-anchoring, prefer the statement plus the *next section's
-  header* over the preceding comment block — the comment above a line is what people rewrite.
-- **A merge resolution is an edit like any other** and orphans anchors the same way.
+- **Use the HARNESS's own rule, never a broader re-typed one** — mine reproduced recorded bugs (`expect` is sometimes a bare string, so iterating it yields one "orphan" per character; a duplicate rule stricter than the harness's invents failures). Cite the rule in `check-plan-code.py` by symbol. See [[a-second-implementation-of-one-rule-drifts]].
+- **Derive the population: glob `scripts/mutations/*.json`, never pick.** A run over 2 of 4 manifests is how a Blocking got past me.
+- **Anchor on CODE, not comments** — prefer the statement plus the next section's header; comment lines are what gets rewritten.
+- **A manifest MERGE is per entry, three-way:** ours-changed & theirs-unchanged → ours; then assert EVERY anchor occurs in its file. Never "master's list + my new entries".
+- ⛔ **Every per-round gate (anchors, decision log, review rounds) runs on every branch with a review round**, not just the one I am thinking about.
 
-See [[a-mutation-loses-its-binding]] (the earlier, narrower instance),
-[[a-measurement-is-only-as-good-as-its-corpus]], [[a-check-result-is-not-the-claim]].
+**Why:** anchors bind by TEXT; any edit that changes, splits or moves the span unbinds it, and nothing says so until the manifest is applied — often in CI.
 
-⟳ **2026-10-25 — AGAIN, on the branch I was NOT watching (PR #400).** I re-resolved every anchor after every
-fold on `merge-when-ready-rule` — and never once on `local-sweep-guard`, which edited `check-plan-code.py`'s
-verdict printers and orphaned FOUR existing entries (two guarding the very property the branch extended). The
-review found it. ⛔ **The check is per BRANCH, not per habit: after ANY edit to a manifested script, on every
-branch in flight, run the all-manifest resolve** (`for m in scripts/mutations/*.json … s.count(anchor) == 1`) — it
-needs no suite and takes a second.
-⟳ **…and the SAME night, the same branch, a SECOND per-branch miss:** `check-decision-scheme` trigger 1 failed in CI
-(`local-sweep-guard` reached 4 rounds with NO decision-log row) — I logged every bet on the watched branch and
-none on this one. ⛔ **Every per-round gate (anchors, decision log, review rounds) is run on EVERY branch with a
-review round, not on the one I am thinking about.** A retroactive row is the honest repair; it is not a bet.
+## History (condensed)
+
+- **2026-09-22, PRs #332/#333:** seven bindings orphaned by unrelated edits — a comment inserted into a two-line anchor and a case rename (found by a 35-minute sweep, `NOT MEASURED`); a comment rewrite across a 3-comment-line anchor (found by a review round as a **Blocking** red CI step); four from restructuring (found by the 15-second check).
+- **2026-10-25, PR #400:** re-resolved anchors after every fold on `merge-when-ready-rule` but never on `local-sweep-guard`, which orphaned FOUR entries; the review found it. Same night, same branch: `check-decision-scheme` failed in CI — 4 rounds with no decision-log row (a retroactive row was the honest repair).
+- **11-06 03:00, PR #516:** resolved a `goal-tree.json` conflict as "master's list + my NEW entries", silently taking master's copy of 4 entries I had re-bound → 12 shards red in 30 s, "anchor NOT FOUND". Codex r3 and my spot check both looked only at new entries.
+
+See [[a-mutation-loses-its-binding]] (the earlier, narrower instance), [[a-measurement-is-only-as-good-as-its-corpus]], [[a-check-result-is-not-the-claim]].

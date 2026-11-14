@@ -8,6 +8,14 @@ metadata:
   modified: 2026-08-09T01:19:07.111Z
 ---
 
+**The rule:** when a guard is measured BOTH too permissive and too strict, stop tuning the threshold — it is asking
+for a credential the honest party cannot present. Find one that is durable for the honest caller and unavailable to
+anyone else, or ask whether the requirement is real at all. ⚠ In the measured case the requirement was NOT real: the
+resolution (round 10, PR #59) was to **delete the mechanism** and make it a caller obligation. Re-measure the
+mechanism before accepting a reviewer's framing of it.
+
+## History
+
 **Measured 2026-08-08 (round 8 → PR #58, `dc92859`).** Round 7's generation-ownership fence, in one
 round, from two independent reviewers:
 

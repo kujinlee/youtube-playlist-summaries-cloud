@@ -8,6 +8,14 @@ metadata:
   modified: 2026-09-09T19:12:15.089Z
 ---
 
+**The rule:** parallel branches that each append to `docs/dashboard-entries.md` and the roadmap WILL conflict
+pairwise — decide the shape before opening a second one (stack the branches or batch into one PR). When resolving:
+(1) assert by performing a real merge in a throwaway worktree, never trust `git merge-tree`; (2) "keep both" must
+duplicate a shared header line by hand (`grep -c '^## <date>'` must rise); (3) put the side already on master first
+(entry ids are positional); (4) `ast.parse` every touched `.py` and run the gates BEFORE `git commit` on the merge.
+
+## History and detail
+
 Three branches cut from master on the same day (PRs #191, #192, #193 on 2026-09-01) each appended a
 block to the END of `docs/dashboard-entries.md` and inserted a section at the SAME roadmap anchor.
 The first merges clean; **every subsequent one conflicts** — measured: #192 conflicted on

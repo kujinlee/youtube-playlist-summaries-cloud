@@ -31,13 +31,14 @@ rewritten from *presence* to **measured WCAG ratio** — see
   the successor question is the same one, now asked of `--mutate .`. Carried into **backlog #69**.
 - **`--ink-3` is sub-AA as BODY TEXT on the backlog page** — 4.26:1 on `--ground`, 4.22:1 light /
   4.40:1 dark on `--pending-bg` (`h2`, `.cnt`, `.rootref`, figure captions). Pre-existing, **not** a
-  link defect, **NOT FILED** — filing is the user's step ([[feedback-agree-before-filing]]).
+  link defect, **NOT FILED** at the time, when filing was the user's step; ⟳ since 2026-09-28 I file without
+asking ([[feedback-agree-before-filing]]), so this is fileable if still true.
 - Round 3 was never run. Round 2 converged with nothing outstanding, and the user chose to merge.
 
 ## The queue after this
 
 ~~Backlog **#70**~~ (done, `da5cd27`) → **#69** (external `--self-test` count ratchet) → **#67/#68**
-(concurrent-agent interference; the Codex gate failing silently). See [[launch-roadmap-state.md]].
+(concurrent-agent interference; the Codex gate failing silently). See [[launch-roadmap-state]]. ⟳ #69 is ✅ closed in `docs/backlog.md` (checked 2026-11-14).
 
 ⚠ `.remember/remember.md` and `docs/dashboard-entries.md` both describe this branch as OPEN in
 places written before the merge. **Git is the truth** — check `git log --oneline -3` on master.

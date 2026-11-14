@@ -8,6 +8,10 @@ metadata:
   modified: 2026-08-12T01:02:05.036Z
 ---
 
+**The rule:** on Supabase Storage a 404 does NOT prove absence — an RLS denial returns the same bytes. A guard that must
+tell *missing* from *denied* has to consult `provesAbsence` (false for `SupabaseBlobStore`) or corroborating state,
+never `statusCode`. And before calling a measured mechanism a live bug, ask what caller reaches that state.
+
 **Measured 2026-08-11** (M1.4 item B3, hosted staging). The raw Storage error is **byte-identical**
 for an object that exists but whose owner policy was dropped, and one that never existed:
 
@@ -49,6 +53,7 @@ non-404 status and *would* pass. The guard is **narrower than its comment claims
 **Fix lead:** `serve_model_charge.attempt_count >= 1` already records that a model was successfully
 written for that `doc_key`, so a later *absent* read there is corroborated-suspicious.
 
-Repro harness: `scratchpad/b3-serve.ts` (phases 0–3) + `scratchpad/b3-raw.ts` (gitignored), staging
-project `neeufoxdbgbpkjukzzuc` — **do not delete it until B3 re-runs green**
-([[staging-supabase-project]]).
+Repro harness at the time: `scratchpad/b3-serve.ts` (phases 0–3) + `scratchpad/b3-raw.ts` (gitignored), against staging
+project `neeufoxdbgbpkjukzzuc` ([[staging-supabase-project]]). ⚠ That project has since been DELETED — the
+`schema-gates.yml` comment of 2026-09-15 calls it "the deleted `yps-m14-staging` throwaway" — so a B3 re-run needs a
+new environment.

@@ -27,11 +27,14 @@ requested thing, standing, until they say otherwise. Treating a general tool-use
 than an explicit project gate turns an autonomous phase back into an AFK-blocking one, which is the
 exact cost [[process-conventions]] exists to prevent.
 
-**How to apply.** Round owed → dispatch BOTH halves and report findings. The only branch worth
+**How to apply.** Round owed → dispatch the half(s) the topology owes and report findings: round 1
+BOTH halves; rounds 2+ ONE half, alternating, with a `REVIEW GAP: <half> — alternation` line (owner
+2026-10-28); from round 4 findings are FILED unless a BLOCKER (`docs/review-method.md` → *Round
+topology*, §0 Q4c). The only branch worth
 raising is a reviewer that genuinely **cannot** run (not installed, auth failure, usage limit,
 HTTP error) — and even then `docs/plugins.md` says do not wait or ask: fall back to the other
 reviewer immediately and note the gap in the review doc. ⛔ A `REVIEW GAP:` marker is for a reviewer
-that could not run, never one that was not asked. See [[dual-review-what-it-catches]] for
+that could not run or the documented alternation, never one I chose not to ask. See [[dual-review-what-it-catches]] for
 why skipping a half is expensive, and [[running-codex]] — a timeout is
 usually mine, so DOUBLE it before calling Codex unavailable.
 

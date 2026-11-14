@@ -8,6 +8,13 @@ metadata:
   modified: 2026-08-24T18:28:15.568Z
 ---
 
+**The rule:** a hang is a MISSING measurement, not a negative one — say *"could not determine"* and pick a different
+probe. Before believing a liveness check, ask what it actually opens (`nc -z` a socket, `docker info` the daemon API,
+only a real query the database). Never read `$?` after a pipe when the exit code is the claim (full pipe rules:
+[[a-check-result-is-not-the-claim]]).
+
+## History
+
 **2026-08-24. Told the user "Docker is down, so the migration never ran" on the evidence of ONE
 `docker info` that hung.** Never checked the socket, never checked whether Docker Desktop was
 running, never tried to start it, and never checked whether Postgres was reachable at all. The user

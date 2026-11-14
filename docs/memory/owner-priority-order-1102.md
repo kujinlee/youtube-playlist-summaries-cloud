@@ -1,41 +1,43 @@
 ---
 name: owner-priority-order-1102
-description: "Choosing what to work on next? Owner 11-02: ONE goal, two lanes — DIRECTION (comprehensibility, needs the owner: do it while they are present) and THROUGHPUT (dev speed: while AFK); YouTube product third"
+description: "Choosing what to work on next? Owner 11-12 02:34: dev speed → token saving → others (plugin, product, comprehensibility follow-ups), with NO STARVATION of the others once the high-impact items are done"
 metadata:
   type: project
 ---
 
-**Owner, 2026-11-02 09:05**, after the token-usage work was judged done (high-impact builds shipped, effect measured at
-the 11-06 reset): *"Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and
-development speed enhancement. After these, original youtube playlist product at 3rd priority."*
+## The order (current — owner, 2026-11-12 02:34, supersedes every earlier ordering)
 
-1. **Comprehensibility suite, published as a public plugin.** Gated on the owner's walkthroughs: backlog #384 (roles
-   page `docs/explainers/2026-10-28-topic-suite-roles-review.html`, several answers open) and PR #376 (the
-   marketplace-inventory spec, "could a stranger use any of this", parked 11-01). Phase 1 is the human gate
-   ([[document-approval-is-interactive]]), so walkthroughs come first when the owner is present.
-2. **Development speed.** Speed backlog rows, led by #405 (mutation harness stops at the named case) and #406.
-3. **The YouTube product** (PR #392 and the rest).
+> *"I would put dev-speed, token-saving, then others. but avoid starvation. if high impact dev-speed and token-savings
+> items are done, others should be paid attention too"*
 
-**Why:** supersedes the 10-30 "token usage FIRST" ordering ([[behavior-follows-the-budget-situation]]); token work
-returns to the front only if the 11-06 measurement shows no drop.
-**How to apply:** while a priority-1 item waits on the owner, work priority 2 autonomously; do not start product work
-ahead of 1 and 2.
+1. **Dev speed** — backlog #586 slices 2+, high-impact speed rows.
+2. **Token saving** — backlog #503 and other high-impact token rows.
+3. **Others** — public-plugin build (PR #562 plan), the YouTube product (backlog #139 🔴, PR #392), comprehensibility
+   follow-ups.
 
-**⟳ 2026-11-02 09:09, the owner:** *"let's make development speed issues higher priority than others."* The order is now
-**1. development speed, 2. comprehensibility suite → public plugin, 3. the YouTube product.** Speed rows go first even
-when a suite walkthrough is answered; the suite walkthroughs (#384, PR #376) still happen whenever the owner offers them.
+**Anti-starvation is part of the rule:** once the HIGH-IMPACT items of 1 and 2 are done, 3 gets real attention — do
+not keep mining low-impact speed/token rows to stay in lanes 1–2.
 
-**⟳ 2026-11-02 09:12, the owner:** *"comprehensibility side is also closely intertwined … If I cannot correctly understand what you
-are doing or how the project is progressing, dev speed in local sense doesn't have much meaning. It may be tactically fast, but
-heading to wrong direction (strategically incorrect or operationally sub-optimal)."* So: **one goal, two lanes.** DIRECTION
-(comprehensibility: #384 suite design, PR #376 plugin spec, anything that lets the owner steer) goes first WHILE THE OWNER IS
-PRESENT, because it needs their time; THROUGHPUT (speed rows #405, #406, #448–#451 …) runs while they are AFK. Passive signal
-for the direction lane: owner messages per day asking "what is this?" / "read my questions" / a re-ask, from the transcripts;
-reported at the 11-06 reassessment ([[behavior-follows-the-budget-situation]]).
+**Still standing from 11-02 (not superseded):** work that needs the owner's time (walkthroughs, anything that lets
+them steer) is done WHILE THEY ARE PRESENT; autonomous lanes run while they are AFK. The owner, 11-02 09:12: *"If I
+cannot correctly understand what you are doing or how the project is progressing, dev speed in local sense doesn't
+have much meaning. It may be tactically fast, but heading to wrong direction (strategically incorrect or operationally
+sub-optimal)."* Phase 1 is the human gate ([[document-approval-is-interactive]]).
 
-**⟳ 2026-11-02 09:29 walkthrough results.** PR #376 (plugin inventory): **D2 KEPT** — inventory all three efforts before
-any per-unit spec; next step there is a re-merge (92 commits behind) and a refresh, not a narrowing. Backlog #384: every
-roles-page item answered (all as recommended), spec PR #474 drafted and walked through; the owner refined D1 into TWO
-"needs you" sets with one source each — *blocking now* (in-flight ledger) and *waiting until picked* (backlog
-`status: needs-you`). Backlog readability: *"without changing current wording … line break, indenting"* — layout only,
-falsifier = identical visible words over every real row.
+**How to apply:** pick from lane 1, then 2; check whether their high-impact items are done before preferring a
+low-impact one over lane 3. Budget mode: [[behavior-follows-the-budget-situation]].
+
+## History
+
+- **11-02 09:05:** *"Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and
+  development speed enhancement. After these, original youtube playlist product at 3rd priority."* (Superseded the
+  10-30 "token usage FIRST" ordering.) Comprehensibility gated on backlog #384 and PR #376.
+- **11-02 09:09:** *"let's make development speed issues higher priority than others."* → speed, comprehensibility,
+  product.
+- **11-02 09:12:** one goal, two lanes — DIRECTION (comprehensibility, while present) and THROUGHPUT (speed rows #405,
+  #406, #448–#451, while AFK).
+- **11-02 09:29 walkthrough results:** PR #376 D2 KEPT (inventory all three efforts first; re-merge needed). Backlog
+  #384 roles-page items answered as recommended; spec PR #474 drafted; D1 refined into two "needs you" sets — *blocking
+  now* (in-flight ledger) and *waiting until picked* (backlog `status: needs-you`). Backlog readability: *"without
+  changing current wording … line break, indenting"*.
+- **11-12 02:34:** I first recorded card B as "plugin before token"; the owner corrected it to the order above.

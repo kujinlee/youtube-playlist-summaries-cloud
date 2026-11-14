@@ -11,16 +11,16 @@ It can then detect drift between the copies and simultaneously forbid the only f
 it.** The fix for a drifted copy is to delete it and cite the source; that deletion is exactly what
 such a guard refuses.
 
+**How to apply:** before re-wording a copy to satisfy a drift guard, ask **what fix does this guard FORBID?** If it
+forbids deleting the stale copy, the guard is the defect — prefer a refuse-the-second-copy / cite-the-source guard
+(`check-canonical-source.py`, ADR-0015).
+
 **MEASURED 2026-10-17, `marketplace-inventory` / backlog #297.**
 
-⛔ **LOCATOR — CORRECTED 2026-10-19 BY r1 CODEX #8, AND THE FIRST FIX WAS THE SAME BUG AGAIN.** The script is **not on `master`** *(as of 2026-10-19; if PR #376 is squash-merged this sentence stops being true and a live copy exists — re-check before relying on it)*.
-- **Immutable identity:** `d06da80c62da50973e55bec956bc0d8215266b94:scripts/check-claim-propagation.py`. A full SHA names one object forever.
-- **Retrieval route, not an identity:** PR #376 — `git fetch origin refs/pull/376/head`, then read the SHA above.
-- ⚠ **`refs/pull/376/head` is NOT a pin and citing it alone was wrong.** It FOLLOWS the PR head: measured 2026-10-19 it was `2e0ad1ef`, already moved past the `d06da80c` the finding below was measured on. A bare path, a branch name and a pull ref are all MOVING locators; only the SHA is not.
-- ⚠ **Residual risk, stated rather than hidden:** GitHub's retention of pull refs is documented practice, not a guaranteed archive. If PR #376 is closed unmerged and the ref is reaped, the SHA still names the object but nothing may serve it.
+**LOCATOR:** measured on `d06da80c62da50973e55bec956bc0d8215266b94:scripts/check-claim-propagation.py` (a full SHA; a path, branch or `refs/pull/N/head` is a MOVING locator — that was a 2026-10-19 correction). PR #376 has since squash-merged (`d18167ce`), so a live `scripts/check-claim-propagation.py` exists on `master` (verified 2026-11-14); it may differ from the measured SHA.
 
 `scripts/check-claim-propagation.py`'s `LIVE` registry registered `d5-ship-plus-argued` and
-`d8-corrections-land-here` at `[SPEC, PAGE]`. Its rule: a token present at some declared sites and
+`d8-corrections-land-here` at `[SPEC, PAGE]` (those two entries are no longer in the live script, checked 2026-11-14). Its rule: a token present at some declared sites and
 absent at others is a problem (*"reached only some of its sites"*). So:
 
 - three claims were drifted between the spec and the page, and the gate was **green over all three**

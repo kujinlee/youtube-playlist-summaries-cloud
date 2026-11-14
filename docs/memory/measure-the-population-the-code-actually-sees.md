@@ -1,6 +1,6 @@
 ---
 name: measure-the-population-the-code-actually-sees
-description: "FIRES-WHEN: about to trust a measurement, a filter, or a negative result — Twice in one session I measured a renderer over whole FILES when the generator only ever passes it a few parsed strings — 145 predicted emphasis spans were really 0, and \\\"read off the live page\\\" was really a simulation"
+description: "FIRES-WHEN: about to trust a count, a filter, a grep, a negative result or a feasibility probe — measure what the CONSUMER actually sees, by calling its own parser; a filter is a hypothesis about the source's vocabulary"
 metadata: 
   node_type: memory
   type: feedback
@@ -8,192 +8,58 @@ metadata:
   modified: 2026-09-09T02:09:06.506Z
 ---
 
-**MEASURED 2026-08-30 (backlog #71), twice, both written into documents as fact before being caught.**
+**The rule: derive a population by asking the CONSUMER — call its own parser (`b.parse(...)`,
+`g.collect(...)`), use the splitter it uses, run the guard against the real callee. Never glob the
+source file, hand-copy its grammar, or trust a synthetic stand-in.** A filter, regex or `^anchor` you
+wrote is a HYPOTHESIS about the source's vocabulary; the source is the authority.
 
-1. **145 → 0.** I fed whole `docs/adr/*.md` files through each renderer to size the blast radius.
-   Fair for three of four generators — but `gen-goals-page` renders **only the one-line `Goal:`
-   strings**: 39 of them, containing **zero** emphasis spans, links, code spans or bold. The spec
-   claimed 145 emphasis spans and 17 links would start rendering there. The page's output does not
-   change at all. Caught by **generating the page** and finding 0 `<em>` where 145 were predicted.
-2. **"On the live page" was a simulation.** I reported 10 crossed spans / 15 markup-in-code as read
-   from `backlog-table.html`. Those came from re-rendering every LINE of `docs/backlog.md`. The page
-   itself said **6 and 10**; the generator's own parser yields **7 and 12** over 213 parsed cells.
-   Three subjects, three numbers, all defensible — and I attributed one to another.
+Before trusting a NEGATIVE result (zero hits, "absent", "settled"), do one of:
+- **check a known positive** — and confirm WHICH object matched, not merely that something did;
+- **ask the source for its vocabulary** (`--jq '[.[]|.state] | unique'`) instead of listing the
+  values you expect;
+- **allowlist DONE, never blocklist not-done** (`status=="completed"` plus a floor on how many exist);
+- **split on a content marker, not an offset**, asserting the marker occurs exactly once;
+- **compare case- and whitespace-insensitively** when the medium can transform text (CSS uppercase,
+  wrapped lines);
+- **enumerate before reading a range** — get the item count from the document
+  (`grep -nE "^#+ (H|M|L)[0-9] " <review>`) and reconcile it with what you acted on; a teammate's
+  stated counts are a free falsifier.
 
-3. **⭐ 10 → 0, and it got FILED AND MERGED. 2026-09-01, backlog #81.** I reported *"`Decide:`
-   appears **zero times** in `docs/dashboard-entries.md`"* and built a whole backlog row on it —
-   *"the ask grammar has NEVER been used, so the settle mechanism has never fired"*. It shipped in
-   PR #199. **It is false.** The true count is **10**, and the gate's own `decisions()` resolves them
-   to **3 real decisions across 2 entries**; the store already rendered **3 settled ask blocks, 0
-   live**, two of them predating the filing. The mechanism had worked since 2026-08-31.
-   **The cause: `grep -c '^Decide:'` → 0, because every real occurrence is `**Decide:**` in bold.**
-   An anchored pattern cannot see an emphasised marker. Caught only by rendering the page the row
-   demanded and noticing three settled blocks where there should have been one.
+**Why:** a renderer's blast radius is what REACHES it, not the file the text lives in; and a negative
+count is the most dangerous shape — zero reads as "the feature is dead" when it usually means "my
+pattern is wrong", with no output to sanity-check.
 
-4. **⭐⭐ 2 of 11, IN A SECURITY GUARD, AND THE REVIEW CAUGHT IT ONE ROUND LATER. 2026-09-06,
-   backlog #99, PR #234.** A code review found that `--pause` let a newline into
-   `.claude/executing-plan`, injecting a live `plan:` field so the Stop guard supervised a
-   *different* plan. I fixed it with `if "\n" in why or "\r" in why`. **The next review round found
-   that guard defeated by EIGHT more separators** — `\v \f \x1c \x1d \x1e \x85 U+2028 U+2029 —
-   because the readers (`parse_sentinel`, `strip_field`) split with `str.splitlines()`, which
-   honours **eleven**. I had hand-written a copy of the consumer's rule and covered two of them.
-   Codex named the two Unicode ones; **enumerating the actual `splitlines()` set found the other
-   six**. Fixed as `len(cleaned.splitlines()) > 1` — ask the function the reader calls — and the
-   self-test now *derives* its separator corpus the same way, so the test cannot fall behind either.
+**How to apply:**
+- Name the subject of every count in the same sentence ("on the rendered page", "over parsed rows",
+  "per source line" are three claims).
+- **The writer must ask the reader's parser, not imitate it.** The tell is a character list, regex or
+  `^anchor` hand-written where the consumer has a function. ⚠ That means *whichever* splitter the
+  specific consumer uses — `splitlines()` is not universally right.
+- **A marker humans emphasise will appear in bold in the wild** (`**Decide:**`, `NO-ENTRY:`,
+  `REVIEW GAP:`) — match with the consumer's parser, never `^marker`.
+- **From a synthetic run, ask: what is the real callee's signature, and did I open it?**
+- **Never wait on `pgrep -f` for a name that appears in the waiting command** — wait on a signal the
+  subject emits (a completion marker, a sentinel file, `run_in_background` exit).
+- **Before a feasibility probe, write the sentence it must support** and ask whether the counted thing
+  could be fully present while the sentence stays false — availability is a proxy for validity.
+- **A fix inside a heredoc is not a fix.** If the repair does not land in a file that outlives the
+  turn (memory, script, checklist), it is an instance fix wearing the word "class".
 
-5. **⭐⭐ THE SAME FUNCTION, THE OPPOSITE DIRECTION — I used `splitlines()` where the subject uses
-   `split("\n")`. 2026-09-08, PR #270.** `check-plan-file-tags.py` exists to fence the tag grammar
-   `check-plan-code.extract` used to parse, and its whole premise is *the fence and the parser must
-   agree on what a tag is*. I iterated `text.splitlines()`; `extract` iterates `md.split("\n")`.
-   **Eight of nine separators disagreed, every one in the direction that HIDES a live tag**: given
-   `x<SEP>```\n<!-- file: m.py -->`, the separator opened a fence in my guard that never opens in
-   the parser, so the tag was skipped as "fenced" while `extract()` returned `files=['m.py']` and
-   my guard returned **0 findings**. Fixed to `split("\n")`; 0 disagreements across all nine after.
-   ⚠ **#4 said "ask the function the reader calls" and I reached for `splitlines()` as if it were
-   universally the right one.** It is only right when the *consumer* calls it. The rule is not
-   "prefer `splitlines()`" — it is *use whichever splitter the specific consumer uses*.
-   ⚠ And my first re-measurement said `\r` still disagreed: **a defect in the TEST**, because
-   `read_text()` does universal-newline translation, so I fed `extract()` a raw string and the fence
-   a translated file. Route both sides through the same read before calling a difference real.
-
-**⚠ THE WRITER MUST ASK THE READER'S PARSER, NOT IMITATE IT.** Instances 1-3 are a *reader*
-measuring the wrong population; #4 is a *writer* validating against a hand-copy of the reader's
-grammar. Same root: a second implementation of one rule. The tell is a **character list, a regex, or
-a `^anchor` written by hand where the consumer has a function**. Lengthening the list rebuilds the
-defect one release later.
-
-**⚠ THE EMPHASIS BLIND SPOT IS A RECURRING CLASS, not one grep.** Three instances, all 2026-09-01:
-`REVIEW GAP:` (fixed once already), `NO-ENTRY:` in `**bold**` unrecognised by `check-dashboard-entry`,
-and this. **A marker that humans emphasise will be emphasised in the wild** — match it with the
-consumer's parser, never with `^marker`.
-
-**Why:** a renderer's blast radius is a property of *what reaches it*, not of the file the text lives
-in. Files contain headers, prose and table scaffolding a generator never passes to a renderer.
-And a *negative* count is the most dangerous shape: zero hits reads as "the feature is dead" when it
-often means "my pattern is wrong" — there is no output to sanity-check against.
-
-**How to apply:** derive the population **by calling the consumer's own parser** (`b.parse(...)`,
-`g.collect(...)`), never by globbing the source. And when reporting a count, **name its subject in the
-same sentence** — "on the rendered page", "over parsed rows", "per source line" are three different
-claims. Related: [[a-positional-read-needs-a-verified-shape]],
-[[check-the-assumption-not-just-the-code]], [[a-retrospective-number-needs-provenance]],
-[[quote-the-code-dont-characterise-it]].
-
-⟳ **2026-09-22 — THE SUBTLEST FORM YET: THE RUN WAS CORRECT AND THE CONCLUSION WAS ABOUT A
-DIFFERENT SUBJECT.** Writing an architecture review, I tested whether `check-fixture-variation`
-would catch a frozen step number by running `analyse` on a **synthetic** function I wrote for the
-purpose — `render_banner(steps, index)` — where `index` genuinely is a parameter. It flagged, as it
-should. I then published, into the review AND into backlog #164, that the row's own worked example
-*"would be caught"*. **The real subject is `check-banner-armed.decide(texts, armed, steps, …)`
-(`:503`), where the step rides INSIDE `texts` and there is no `decide.step` at all.** Re-measured
-against the real signature: `findings=[]`. The row had been right; my correction was wrong.
-
-⭐ **The tell I missed: I never ran the guard against the SUBJECT THE ROW NAMED.** Nothing in my
-transcript shows `decide` being opened before the conclusion was written. A synthetic fixture proves
-what the tool does to *that fixture*; it is evidence about the real subject only if the shapes
-match, and "does this quantity appear as a parameter?" is precisely the shape that differed.
-
-⭐⭐ **Ask, before writing any conclusion from a synthetic run: *what is the real callee's
-signature, and did I open it?*** If the finding is about whether a tool SEES something, the
-synthetic and the real subject must agree on the structure that decides visibility.
-
-Caught by asking an idle agent to REFUTE the finding rather than confirm it — an adversarial prompt
-found in minutes what a confirming one would have ratified. See [[dual-review-what-it-catches]] and
-[[a-filed-finding-s-proposed-fix-is-a-hypothesis]].
-
----
-
-## ⟳⟳ 2026-09-26/27 — SIX instances in ONE session, and the repair I announced each time was DISPOSABLE
-
-⛔ **This is the session's dominant defect and the one I handled worst.** Six distinct instances, each
-"fixed" inside a throwaway heredoc or one-off bash line, so **nothing survived the tool call.** Measured
-the next morning when the user asked what I had done to stop repeating it: of ~8 instances, **2 were in
-memory and 6 were nowhere.**
-
-| # | the filter I wrote | what the source actually emits | cost |
-|---|---|---|---|
-| 1 | `grep -v RECONSTRUCTED` to exclude a file | a `backlog.md` row mentioning **both** terms on one line | hid the very site I was enumerating |
-| 2 | `grep -c "statement about the local figure's…"` | the sentence **wraps**, so no single line contains it | reported present text as absent |
-| 3 | `tail -n +10` for a 10-line header | off by one; kept a blank line | reported a reviewer's testimony as **ALTERED** |
-| 4 | `[class*=float]` for the selection floater | the element's class is **`askbtn`** | declared a working affordance broken |
-| 5 | `txt.includes('Sixteen of nineteen')` | CSS `text-transform: uppercase` → `innerText` returns **SIXTEEN OF NINETEEN** | declared rendered content missing |
-| 6 | `select(.state=="PENDING" or "IN_PROGRESS")` on `gh pr checks` | a **QUEUED** check is neither, and `verify` had not appeared yet | **"CI settled" while CI had not started** |
-
-⭐ **THE ONE-LINE RULE, and it is the same for all six:** *the filter is a HYPOTHESIS about the source's
-vocabulary; the source is the authority.* Before trusting a negative result, do one of:
-
-- **check against a known positive** — a case you are certain about. #4 and #5 both died to this in one
-  step (`observer-family`'s answer was known; the label was on screen).
-- **ask the source for its vocabulary** rather than guessing it — for state machines, enumerate what
-  actually appears (`--jq '[.[]|.state] | unique'`) instead of listing the values you expect.
-- **invert to an allowlist of DONE**, never a blocklist of not-done — #6's fix. `status=="completed"` for
-  all, plus a floor on how many checks must exist.
-- **split on a content marker, not an offset** — #3's fix, asserting the marker occurs exactly once.
-- **compare case- and whitespace-insensitively** when the medium may transform the text — #2, #5.
-
-⛔ **AND THE PART THAT MAKES THIS ENTRY DIFFERENT FROM THE FIVE ABOVE IT: a fix inside a heredoc is not a
-fix.** I wrote a no-stray-pipe assertion for a markdown row, congratulated myself on a "class fix", and it
-evaporated with the tool call — then the *same* pipe defect recurred within the hour because the second
-occurrence was a different command. **If the repair does not land in a file that outlives the turn — a
-memory, a script, a checklist — it is an instance fix wearing the word "class".** Related:
+Related: [[a-positional-read-needs-a-verified-shape]], [[check-the-assumption-not-just-the-code]],
+[[a-retrospective-number-needs-provenance]], [[quote-the-code-dont-characterise-it]],
 [[after-fixing-search-for-the-class]], [[a-check-result-is-not-the-claim]].
 
-⟳ **2026-10-04, AND IT COST THREE WRONG PROGRESS REPORTS — a watcher that matched ITSELF.**
-`until ! pgrep -f "partial-sweep.py"; do sleep 60; done` can never terminate: `pgrep -f` matches on
-the **whole command line**, and the waiter's own command line contains the string `partial-sweep.py`
-inside its quoted pattern. So the loop found "a process" forever, I reported *"still RUNNING"* three
-times, and a stale waiter from an earlier sweep had been spinning on the same bug for over an hour.
-The real signal was the output file's **mtime**, unchanged for 23 minutes.
+## History (condensed; every instance was written up as fact before being caught)
 
-⛔⛔ **AND THE KNOWN-POSITIVE CHECK THIS FILE PRESCRIBES WAS ALSO WRONG.** I ran
-`pgrep -f "[p]artial-sweep[.]py"`, got three PIDs, and read that as *the pattern finds the real
-sweep*. All three were the stale **waiters** — the bracket trick protects the pattern, not the
-haystack, and their command lines held the unbracketed literal. **A known-positive check is only
-evidence if you confirm WHICH object matched**, not that something did.
-
-**How to apply:** never wait on `pgrep` for a process whose name appears in the waiting command.
-Wait on a signal the subject itself emits and the watcher cannot contain — a completion marker in
-the output (`until grep -q "^elapsed" out`), a sentinel file, or the process's exit via
-`run_in_background`. See [[a-hang-is-not-a-diagnosis]].
-
-⟳ **2026-10-05 — AND ONCE AGAINST MY OWN READING, not a script.** I read an adversarial review
-with `sed -n '144,214p'` and `sed -n '214,270p'`, line ranges chosen by eye from a heading scan
-that grepped `^## ` while the findings were `^### `. The ranges silently truncated, **two findings
-of eleven were never read**, and I reported the round folded. The only thing that surfaced it was
-the teammate's own summary stating counts — *3 Mediums, 4 Lows* — that did not match what I had
-acted on.
-
-⭐ **A RANGE IS NOT A POPULATION.** Enumerate first, then read:
-
-    grep -nE "^#+ (H|M|L)[0-9] " <review>
-
-**How to apply:** before acting on any structured document — a review, a backlog, a report — get
-the COUNT of items from the document itself and reconcile it against the number you acted on. A
-heading grep that returns fewer items than the summary claims is the cheap version of this check,
-and it would have fired here in one second. ⚠ The same applies to a teammate's report: its counts
-are a free falsifier for your own reading, so compare them rather than skimming past them.
-
-⟳ **2026-10-20 — I MEASURED THAT AN INPUT *EXISTED* AND REPORTED THAT THE SCHEME WAS *FEASIBLE*.**
-Designing a redesign-or-accretion mechanism, I proposed deriving the component partition from files
-touched between review rounds, anchored on each verdict's `head` SHA. I then "proved feasibility":
-**176 of 261 verdicts carry a `head`, 20 subjects have ≥2 resolvable heads, 32% unresolvable** —
-all correct, all irrelevant. The previous session had already measured and recorded that *"the
-commit anchor is ambiguous because the verdict records what the reviewer SAW, not the fold"*, plus
-two more refutations (19 of 27 cited finding locations are reviewer-invented fixtures, so the
-finding→file join does not exist; and *touched by the fix* ≠ *caused by the fix*). The owner caught
-it in one sentence — *"last session it was determined that git history doesn't give clear signal
-because real cause of defect cannot be known"* — and the transcript confirmed it verbatim.
-
-⭐ **AVAILABILITY IS A PROXY FOR VALIDITY AND READS EXACTLY LIKE IT.** A count of how many inputs
-are *present* is a satisfying, concrete, easily-green number; whether the input *means* what the
-design needs is the question, and it had already been answered NO.
-
-**Why:** a feasibility probe answers whichever question is cheapest to measure, and existence is
-always cheaper than meaning. Three decimal figures in a table made a refuted premise look
-freshly established.
-
-**How to apply:** before probing feasibility, write down the SENTENCE the probe is meant to
-support, then ask whether the thing being counted could be fully present while the sentence stays
-false. If it could, the probe measures availability and the design is still unvalidated. ⚠ And when
-the user says *"it was determined last session"*, grep the transcript before defending the design —
-see [[the-answer-may-only-exist-in-the-transcript]], which is where the verbatim conclusion was.
+| date | what I measured | what the consumer saw |
+|---|---|---|
+| 2026-08-30 (#71) | whole `docs/adr/*.md` through each renderer: 145 emphasis spans, 17 links would render | `gen-goals-page` renders only 39 one-line `Goal:` strings: **0** — caught by generating the page |
+| 2026-08-30 | "on the live page": 10 crossed spans / 15 markup-in-code (re-rendered every LINE) | page said **6 and 10**; the generator's parser **7 and 12** over 213 cells |
+| 2026-09-01 (#81, shipped in PR #199) | `grep -c '^Decide:'` → 0, "the ask grammar has NEVER been used" | **10** occurrences, all `**Decide:**`; `decisions()` → 3 real decisions, 3 settled blocks |
+| 2026-09-06 (#99, PR #234) | security guard `"\n" in why or "\r" in why` | readers split with `str.splitlines()`, honouring **eleven** separators — 2 of 11 covered; fixed as `len(cleaned.splitlines()) > 1`, corpus derived the same way |
+| 2026-09-08 (PR #270) | `check-plan-file-tags.py` iterated `splitlines()` | `extract` iterates `split("\n")`: **8 of 9** separators disagreed, all hiding a live tag; also `read_text()` universal-newline translation made `\r` look like a disagreement in the TEST |
+| 2026-09-22 (#164) | `check-fixture-variation` on a synthetic `render_banner(steps, index)` → "would be caught" | real `check-banner-armed.decide(texts, armed, steps, …)` carries the step inside `texts`: `findings=[]`. Caught by asking an agent to REFUTE ([[dual-review-what-it-catches]], [[a-filed-finding-s-proposed-fix-is-a-hypothesis]]) |
+| 2026-09-26/27 | six disposable filters in one session: `grep -v RECONSTRUCTED`; a grep for a wrapped sentence; `tail -n +10` off by one; `[class*=float]` (real class `askbtn`); `includes('Sixteen of nineteen')` under CSS uppercase; `gh pr checks` filter missing **QUEUED** → "CI settled" before CI started | of ~8 instances, **2 were in memory and 6 nowhere** the next morning |
+| 2026-10-04 | `until ! pgrep -f "partial-sweep.py"` — matched its own command line; "still RUNNING" reported three times; `[p]artial-sweep[.]py` matched three stale WAITERS | the output file's mtime had not moved for 23 minutes ([[a-hang-is-not-a-diagnosis]]) |
+| 2026-10-05 | review read with `sed -n` ranges from a `^## ` scan while findings were `^### ` | **2 of 11 findings never read**; the teammate's "3 Mediums, 4 Lows" did not match |
+| 2026-10-20 | "feasibility": 176 of 261 verdicts carry a `head`, 20 subjects ≥2 heads, 32% unresolvable | already refuted the session before; the owner: *"last session it was determined that git history doesn't give clear signal because real cause of defect cannot be known"* — confirmed verbatim in the transcript ([[the-answer-may-only-exist-in-the-transcript]]) |

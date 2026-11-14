@@ -5,17 +5,35 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: a6abe358-4c0b-44cb-a058-5446372998ef
-  modified: 2026-10-30T16:18:29.708Z
+  modified: 2026-11-03T22:30:32.818Z
 ---
 
-**Never make the owner approve or run a complex shell command as a safety step.** They said on 2026-10-30: *"do not ask me to run a bash command. instead, devise a dry-run or recovery means if the command actually make harmful side effects. asking me to check complex bash command is just a ceremony not a real gate."*
+**The rule:** never make the owner approve or run a complex shell command as a safety step. **Recoverability
+REPLACES the ask:** use a dry-run where one exists, and make a recovery point before anything destructive — then
+no permission is needed.
 
-**Why:** nobody audits a 20-line command at a glance, so the approval proves nothing and spends their attention. On 10-30 I set `dangerouslyDisableSandbox: true` on most Bash calls out of habit, including local git commits and file edits that didn't need it. Each one can prompt.
+The owner, 2026-10-30: *"do not ask me to run a bash command. instead, devise a dry-run or recovery means if the
+command actually make harmful side effects. asking me to check complex bash command is just a ceremony not a real
+gate."* Restated 2026-11-03: *"rule was to make means to recover if something go wrong… if you have ways to restore,
+you don't need to ask me a permission."*
+
+**Why:** nobody audits a 20-line command at a glance, so the approval proves nothing and spends their attention.
 
 **How to apply:**
-- Set `dangerouslyDisableSandbox` only where the sandbox really blocks the call: a network push or `gh` call, or docker. Local git commits, edits and test runs go through the sandbox.
-- Before anything with side effects, use a DRY-RUN where one exists: `git push --dry-run`, a diff or `--stat` preview, a `--self-test` on a copy.
-- Before anything destructive, make a RECOVERY point: a backup ref before a rebase or reset (`git branch backup/<x>`), a `.bak` copy before editing the owner's config (as done for `statusline.sh`). Never write to master.
-- The owner's own interactive commands (a login, `/clear`) are still theirs. That is not what this rule covers.
+- `dangerouslyDisableSandbox` only where the sandbox really blocks the call: a network push or `gh` call, or docker.
+  Local git commits, edits and test runs go through the sandbox.
+- DRY-RUN first where one exists: `git push --dry-run`, a diff or `--stat` preview, a `--self-test` on a copy.
+- RECOVERY point before anything destructive: a backup ref before a rebase/reset (`git branch backup/<x>`), a `.bak`
+  before editing the owner's config. Never write to master.
+- Anything git cannot restore (untracked files, temp dirs, `~/` config) gets a copy — a tarball or `.bak` in the
+  scratchpad — before removal. ⛔ **An AGENT BRIEF that allows a deletion must say so too** — agents don't load this
+  memory (11-03: a fold agent deleted 3 temp dirs on an "only if empty" condition, with no copy).
+- Limits (owner, 11-03): a backup is temporary — delete it once nothing went wrong, and deleting a backup needs no
+  backup; scratch made to be temporary (the scratchpad, `mktemp` dirs) is exempt. The rule protects WORK.
+- The owner's own interactive commands (a login, `/clear`) are still theirs.
+- A PreToolUse gate for this is backlog #492 (open as of 2026-11-14).
+
+**History:** on 10-30 I set `dangerouslyDisableSandbox: true` on most Bash calls out of habit, including local git
+commits and edits that didn't need it; each can prompt.
 
 Related: [[defaults-i-decide-myself]], [[a-check-result-is-not-the-claim]].

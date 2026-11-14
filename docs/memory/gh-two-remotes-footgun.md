@@ -8,6 +8,10 @@ metadata:
   modified: 2026-08-04T23:03:38.131Z
 ---
 
+**The rule: this checkout has ONE remote (`origin` = `kujinlee/youtube-playlist-summaries-cloud`), so
+bare `gh pr` is unambiguous. `official-plugins` is the OLD, frozen repo — never edit or push to it;
+"local" means this working dir / `-cloud` run with `STORAGE_BACKEND=local`.**
+
 ✅ **RESOLVED 2026-08-04 — `git remote remove upstream`.** The working dir now has exactly one
 remote (`origin` = `kujinlee/youtube-playlist-summaries-cloud`), so bare `gh pr` commands can no
 longer resolve to the wrong repo. Verified: `gh pr list` with no `--repo` returns #47/#46/#45 from
@@ -32,6 +36,5 @@ nothing**. Removing the ambiguity beats remembering to work around it.
 heredoc breaks on the apostrophes and backticks these bodies contain. That rule is independent of
 remotes. `gh api repos/OWNER/REPO/...` (explicit path) was never affected by either issue.
 
-**Pending doc edit (not yet landed):** `docs/dev-process.md` Phase 5 still describes the two-remotes
-footgun and mandates `--repo`. Per the repo's own batching rule it rides the next open branch rather
-than getting a standalone PR. Related: [[process-conventions]], [[stage-1c-supabase-adapters]].
+**Doc edit landed:** `docs/dev-process.md` no longer mentions the two-remotes footgun or mandates
+`--repo` (grep verified 2026-11-14). Related: [[process-conventions]], [[stage-1c-supabase-adapters]].

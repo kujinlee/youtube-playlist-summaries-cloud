@@ -8,11 +8,12 @@ metadata:
   modified: 2026-09-28T19:03:40.099Z
 ---
 
-⛔ **THE RULE WAS REVERSED BY THE USER ON 2026-09-28, in writing, in an explainer page comment.**
-The filename is kept because two memory files and `docs/process-checklists.md` cite it; a rename
-would dangle them for no gain.
+**CURRENT RULE (user, 2026-09-28): file and amend backlog rows WITHOUT asking — ACT, then report.
+WAIT only when the GOAL itself is in question** (you do not know what they want, or the nature of the
+issue is still being established). The filename is kept (it predates the reversal) because other memory
+files and `docs/process-checklists.md` cite it.
 
-**What they said, verbatim:** *"if you find something incorrect, why wait for approval? The human
+**What they said, verbatim, in an explainer page comment:** *"if you find something incorrect, why wait for approval? The human
 gate should not become a barrier to correct something. I prefer you to create backlog or amend
 backlog without my approval as I cannot read all your chat log and I don't want to accumulate
 necessary actions to be delayed because of my inaction. Important thing is whether you and me are
@@ -41,11 +42,11 @@ for work already discussed, a row whose premise I just measured to be false — 
 A finding whose **nature** is still being argued, or a decision that would **move the goal** — wait.
 
 ⛔ **WHAT THIS DOES NOT COVER, stated so it is not over-read.** They authorised filing and amending.
-It is NOT a blanket authority over every human gate: `docs/dev-process.md` makes **merging** a human
-gate for its own reasons (blast radius), and outward-facing or irreversible actions — deploy, delete,
-spend, push to a shared branch — were not what they were answering. Merging a **docs-only backlog
-filing** is covered, because in this repo a backlog row cannot exist without a PR, so refusing that
-merge would re-create exactly the delay they are removing. Anything wider needs its own ruling.
+It is NOT a blanket authority over every human gate: outward-facing or irreversible actions — deploy,
+delete, open-ended spend — were not what they were answering. ⟳ **Merging is no longer a blanket human
+gate** (owner 2026-10-25, `docs/dev-process.md`): `check-merge-ready.py` READY ⇒ merge; a HOLD goes to the
+human. So a backlog filing PR merges when READY like any other ([[push-is-mine-merging-is-theirs]]).
+*(Superseded 2026-09-28 wording: merging was a human gate, with docs-only backlog filings carved out.)*
 
 ⚠ **The reason they gave matters as much as the rule:** *"I cannot read all your chat log."* Acting
 and reporting is not a convenience — **their attention is the scarce resource**, and a question is a

@@ -5,6 +5,13 @@ metadata:
   type: feedback
 ---
 
+**The rule: green gates are not evidence a DESIGN is right.** Every gate here answers *"is this
+correct?"* — a local question patching can always answer yes — so a wrong shape emits a stream of
+fixable defects and each fix makes the gates greener. The design gate is Phase 6, and it is now armed
+on **THRASHING** (two consecutive rounds whose findings came from the previous round's own fix, one
+component), not on a count; reaching four rounds obliges *asking* thrashing-or-prose-floor and does
+not fire (`docs/dev-process.md`, `docs/review-method.md` §0 Q4c).
+
 **Diagnosed 2026-08-09, after twelve rounds of patching one mechanism.**
 
 Assertions, mutations, guard coverage, adversarial review — all answer **"is this correct?"** That
@@ -45,7 +52,8 @@ protocol); `check-sentinel-meanings.py` + `check-vocabulary-collisions.py` wired
 `check-schema-gates.sh` (now 6 gates), **both allowlists failing on STALE entries** so they cannot
 become standing permission; Phase 6 armed on **4 non-converging rounds**; the fix→redesign stop
 condition at **2** consecutive self-caused rounds; concern→mechanism table + "what already does
-this?" in the spec template.
+this?" in the spec template. ⟳ Later superseded: the "4 non-converging rounds" trigger was replaced by
+the THRASHING condition stated at the top (the four-round mark now obliges asking, and is the round cap).
 
 See [[one-rule-one-place]], [[quote-the-code-dont-characterise-it]],
 [[an-instrument-that-edits-the-repo-corrupts-its-peers]].

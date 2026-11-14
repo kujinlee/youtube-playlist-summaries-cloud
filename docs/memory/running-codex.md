@@ -1,103 +1,49 @@
 ---
 name: running-codex
-description: "FIRES-WHEN: about to dispatch, wait on, or fall back from a Codex review — ⭐⭐ Codex operationally: a \"timeout\" is almost always MY --timeout (DOUBLE it, default 900s, big reviews 2700-3600), and run it from the coordinator with dangerouslyDisableSandbox"
+description: "FIRES-WHEN: about to dispatch, wait on, or fall back from a Codex review — run it through scripts/codex-review.py from the coordinator; a \"timeout\" is almost always MY --timeout (DOUBLE it; default 900s, big reviews 2700-3600); the prompt says \"your final message IS the review; write no file\""
 metadata:
   type: feedback
 ---
 
-> Merged 2 memories, bodies kept VERBATIM. Former names (still referenced by other memories): `codex-timeout-raise-it-dont-fall-back`, `codex-sandbox-run-from-coordinator`
+**The rule as it stands:**
+1. **Run Codex only through `scripts/codex-review.py`**, from the coordinator's Bash with `dangerouslyDisableSandbox: true`,
+   prompt via `--prompt-file` (never a shell argument). The wrapper already closes stdin (`stdin=subprocess.DEVNULL`)
+   and passes `-s danger-full-access` so the reviewer can reach the Docker socket. Do NOT dispatch the
+   `codex:codex-rescue` subagent here — nested `codex exec` fails with `Operation not permitted` in its sandbox.
+2. **Scale `--timeout` to the job before dispatching.** Default 900 s (verified 2026-11-14). A review that sweeps a
+   2,000-line file or runs a mutation harness needs `--timeout 2700`–`3600`; compare with what the Claude half takes.
+3. **On a timeout: DOUBLE it and re-run ONCE.** Fall back to a Claude adversarial half only if it times out again at the
+   larger budget or fails for a non-timeout reason (auth, HTTP 4xx/5xx, usage limit). A timeout is a statement about MY
+   budget, not about Codex being unavailable — user, 2026-09-16: *"we had it before and doubling timeout limit
+   resolved"*. The wrapper buffers, so a 45-minute review is silent for 45 minutes; a quiet file is not a hang.
+4. **Every prompt carries "your final message IS the review; write no file"** (and "REPORT only; do not touch GitHub",
+   see [[a-reviewer-told-findings-are-filed-files-them]]). After the run: `grep 'verdict: gate_ran' <task output>` and
+   `git status` the worktree BEFORE staging; never `| tail -2` the wrapper output (it dropped the capture path).
+5. **If a review says it could not run the suite, the gate did not run** — whatever the exit code.
 
-## codex timeout raise it dont fall back
+**Why:** the halves catch different classes ([[dual-review-what-it-catches]]); every self-inflicted "Codex unavailable"
+merges a branch on single-half review.
 
-⛔ **When `scripts/codex-review.py` reports `timed out — any partial message is an incomplete
-review`, the FIRST move is to raise `--timeout`, not to fall back to a Claude stand-in.**
+**How to apply:** the canonical contract (exit codes 0/1/2/3, `--review-id`, `--out` outside the repo) is in
+`docs/plugins.md` → Code Review; read it there rather than from here. See [[a-hang-is-not-a-diagnosis]],
+[[check-the-assumption-not-just-the-code]], [[seed-manifest-122-merged]], `docs/dev-process.md`, [[process-conventions]].
 
-**The user's words, 2026-09-16: *"we had it before and doubling timeout limit resolved"*** — so this
-is a RECURRING condition with a KNOWN fix, not a fresh diagnosis to make each time.
+## History (merged from `codex-timeout-raise-it-dont-fall-back`, `codex-sandbox-run-from-coordinator`)
 
-**The knob:** `scripts/codex-review.py --timeout <seconds>`, **default 900 (15 minutes)**
-(`:666`). I had never passed it.
-
-**Measured 2026-09-16 on PR #311:** three rounds, three "timeouts", each returning ≈15 minutes after
-dispatch — i.e. every one hit the default wall exactly. The Claude half of the *same* review took
-**40–60 minutes** each time. So the review was simply longer than the budget I gave it, and I
-concluded from that that **Codex was unavailable** and invoked `docs/plugins.md`'s fallback three
-times. That branch merged on **single-half review** as a result, with `REVIEW GAP: codex` recorded in
-all three round documents — a real loss, because that file's own notes say the two halves catch
-different classes.
-
-**Why I got it wrong:** a timeout is a statement about MY budget, not about the other side. This
-project already has [[a-hang-is-not-a-diagnosis]] for exactly this shape and I walked into it anyway,
-because the wrapper's message *says* "timed out" and `plugins.md` lists a timed-out run under
-"unavailable" — which is true only once the timeout is appropriate to the task.
-
-**How to apply:**
-- ⭐ **Scale the timeout to the JOB before dispatching.** A review that sweeps a 2,000-line file, runs
-  a ~12-minute mutation harness, and applies dozens of mutations needs **45–60 min**
-  (`--timeout 2700`–`3600`), not 15. Compare against what the Claude half takes for the same brief.
-- **On a timeout: DOUBLE IT AND RE-RUN ONCE.** Only fall back if it times out again at the larger
-  budget, or fails for a non-timeout reason (auth, HTTP 4xx/5xx, usage limit).
-- ⚠ `plugins.md`'s *"do not wait, do not retry"* is about **not burning time on a genuinely absent
-  reviewer**. It is not a licence to accept a self-inflicted deadline as evidence of absence.
-- The wrapper is right to refuse a partial review — that behaviour is not the problem and should not
-  be changed.
-
-⭐ **WHAT THE RE-RUN BOUGHT, measured (PR #312, merged `08af5c3b`).** At `--timeout 3600` Codex
-completed first try and found **two live defects on master** that three Claude rounds had swept past:
-a filename carrying markup straight into `/src/`'s `<title>`/`<header>`, and `/secret%2eenv` bypassing
-a path rule `/secret.env` obeyed. Neither is deeper than what the Claude halves found — they are a
-**different habit of attack**: Claude tested hostile CONTENT and hostile PATHS exhaustively; Codex
-tested a hostile FILENAME and an ENCODED spelling of a path already covered. That is what
-`docs/plugins.md` means by *the two halves catch different classes*, and it is what a self-inflicted
-deadline threw away three times.
-
-⚠ **`plugins.md` had a SECOND paragraph giving the same bad advice** — *"treat a quiet output file as
-a hang after ~2–3 minutes"* — and it survived the first repair because I fixed the paragraph I was
-looking at. The wrapper buffers, so a 45-minute review is silent for 45 minutes. Both corrected.
-
-See [[a-hang-is-not-a-diagnosis]], [[dual-review-what-it-catches]],
-[[check-the-assumption-not-just-the-code]], [[seed-manifest-122-merged]].
-
-## codex sandbox run from coordinator
-
-> **⚠ CORRECTED 2026-08-07 — THIS NOTE COVERED THE OUTER SANDBOX ONLY, AND I TREATED IT AS THE CLASS.**
-> There are **two independent sandboxes**. `dangerouslyDisableSandbox` governs whether *we* may launch
-> the process. `codex exec` then applies its **own** Seatbelt policy to itself, defaulting to
-> `workspace-write` — so in round 7 the reviewer could not open the Docker socket
-> (`dial unix …/docker.sock: operation not permitted`), reported `0/35 mutations … SQL did not run`,
-> and **reviewed by reading while the gate reported success**.
-> Fix: `scripts/codex-review.py` now passes `-s danger-full-access` (verified). `trust_level =
-> "trusted"` does NOT substitute — it governs approval prompts, not socket access — and no narrower
-> mode works, because the socket lives outside every workspace root.
-> **If a review says it could not run the suite, the gate did not run.** See `docs/plugins.md`.
-
-Codex adversarial reviews must be run from the **coordinator (main loop)** via the Bash tool with `dangerouslyDisableSandbox: true`:
-
-```
-# run in a run_in_background:true Bash (dangerouslyDisableSandbox:true). NOTE: GNU `timeout` is
-# NOT on macOS (exit 127 "command not found") and there's no gtimeout — use a bash watchdog:
-M="$(python3 scripts/codex-frontier-model.py)"
-codex exec --sandbox read-only -m "$M" "$(cat <promptfile>)" < /dev/null > <outfile> 2>&1 &
-CPID=$!; ( sleep 900; kill -TERM $CPID 2>/dev/null; sleep 3; kill -KILL $CPID 2>/dev/null ) & WD=$!
-wait $CPID; RC=$?; kill -TERM $WD 2>/dev/null; echo "CODEX_EXIT=$RC"
-```
-
-**Two guards, both required:**
-- **`< /dev/null`** — see below; prevents the stdin-block hang (this is the guard that actually fixed the observed hang).
-- **A watchdog killer** (15 min) — bounds ANY hang (network/model stall). Do NOT use `timeout`/`gtimeout` on macOS (neither exists → exit 127, the review silently doesn't run). Use the background `( sleep 900; kill … ) &` pattern above (or a perl fork+alarm wrapper). A hung job then gets killed and the bg task NOTIFIES within the window instead of waiting forever. If it times out, treat as the Codex-unavailable fallback (a single re-run is fine, then run a Claude adversarial pass per `docs/plugins.md`).
-
-**CRITICAL — always redirect `< /dev/null`.** `codex exec` prints `Reading additional input from stdin...` and BLOCKS on stdin even when the prompt is passed as an argument. In a `run_in_background: true` Bash the shell's stdin is an open pipe that never sends EOF, so codex hangs **forever** (observed 2026-07-09: a Task-1 review stuck 1h40m, output frozen at that one line — the process is alive, the bg job never notifies, `pkill -f "codex exec"` to clear). `< /dev/null` gives instant EOF so codex proceeds with the arg prompt. Earlier runs that omitted it only worked by luck (stdin happened to be closed); make it deterministic. Bounded-wait check: if the output file is stuck at `Reading additional input from stdin...` and not growing → it's the stdin hang, not a slow review; kill + relaunch with `< /dev/null` (a single re-run is fine, then fall back to a Claude adversarial pass per `docs/plugins.md`).
-
-Do **NOT** dispatch the `codex:codex-rescue` subagent in this environment — it runs inside a restricted sandbox where nested `codex exec` fails with `Operation not permitted` (cannot create temp files / init the app-server client), and it self-reports it can only forward to `task` (can't poll/status/write files). That is the recurring "Codex unavailable → fall back to Claude" gap.
-
-**Why it works:** the outer sandbox override gives `codex` real filesystem/temp access, while codex's *own* `--sandbox read-only` flag keeps it review-only (no edits). Validated 2026-07-09 (returned `SANDBOX_OK`, model `gpt-5.5`, codex v0.142.5).
-
-**How to apply:** for any `codex:rescue` / adversarial-review gate, invoke codex directly via coordinator Bash and capture output to `docs/reviews/...-codex.md`. Pass the prompt as an argument (not stdin). Keeps the true dual-review (Codex + Claude) intact instead of substituting. See [[dev-process]], [[process-conventions]]; governance lives in `docs/plugins.md` (Codex fallback section) — candidate to codify there once the user confirms.
-
-
-⛔ **2026-10-26 — EVERY PROMPT CARRIES "your final message IS the review; write no file", AND I READ THE WRAPPER'S
-VERDICT LINE, NOT THE FILE.** Without the rule, a Codex round wrote its review as a FILE: the wrapper recorded
-`gate_ran=false`, and I read the self-written file as if it were the gate — for one round CI and I disagreed until
-`check-review-rounds` went red. The next round wrote a file AND a backlog row into the worktree, and my commit staged
-the row unread. After a Codex run: `grep 'verdict: gate_ran' <task output>` and `git status` the worktree BEFORE
-staging; never `| tail -2` the wrapper output (it dropped the capture path).
+- **2026-07-09:** a Task-1 review hung 1h40m on `Reading additional input from stdin...` — `codex exec` blocks on an
+  open stdin pipe in a background Bash. Fixed by `< /dev/null` (now `stdin=DEVNULL` in the wrapper). GNU `timeout` does
+  not exist on macOS (exit 127). Also found: the `codex:codex-rescue` subagent cannot run nested `codex exec`.
+- **2026-08-07 (round 7):** two independent sandboxes — `dangerouslyDisableSandbox` governs launching; `codex exec`
+  applied its own `workspace-write` policy, could not open `docker.sock`, reported `0/35 mutations … SQL did not run`,
+  and reviewed by reading while the gate reported success. Fix: `-s danger-full-access`; `trust_level = "trusted"` does
+  not substitute.
+- **2026-09-16 (PR #311):** three rounds, three "timeouts", each ≈15 min after dispatch (the 900 s default exactly)
+  while the Claude half took 40–60 min. I fell back three times; the branch merged on single-half review with
+  `REVIEW GAP: codex` in all three round docs. `plugins.md` also carried "treat a quiet output file as a hang after
+  ~2–3 minutes" — both paragraphs corrected.
+- **PR #312 (`08af5c3b`):** at `--timeout 3600` Codex completed first try and found two live defects three Claude rounds
+  missed — a filename carrying markup into `/src/`'s `<title>`/`<header>`, and `/secret%2eenv` bypassing a rule
+  `/secret.env` obeyed. A different habit of attack (hostile FILENAME, ENCODED spelling), not a deeper one.
+- **2026-10-26:** without the "write no file" line, a Codex round wrote its review as a FILE; the wrapper recorded
+  `gate_ran=false` and I read the self-written file as the gate until `check-review-rounds` went red. The next round
+  wrote a file AND a backlog row into the worktree, and my commit staged the row unread.

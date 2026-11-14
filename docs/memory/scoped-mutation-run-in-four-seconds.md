@@ -1,6 +1,6 @@
 ---
 name: scoped-mutation-run-in-four-seconds
-description: "FIRES-WHEN: I need to know whether a FEW new mutation entries are killed, and the full `--mutate .` sweep is too slow — ⭐ 8 shards in parallel on a laptop TIMES OUT and reports NOT MEASURED (suites are internally multi-core); a pruned COPY of HARNESS_TREE runs one manifest in 4s. ⚠ And `--shard n/N` does NOT isolate a file: shard_slice is round-robin"
+description: "FIRES-WHEN: I need to know whether a FEW mutation entries are killed and the full `--mutate .` sweep is too slow — PARTIAL locally with `--only <script>` (only manifests whose file MOVED), FULL sweep on CI shards; 8 local shards TIME OUT → NOT MEASURED; `--shard` is round-robin and cannot isolate a file"
 metadata: 
   node_type: memory
   type: project
@@ -8,12 +8,25 @@ metadata:
   modified: 2026-10-07T09:38:38.865Z
 ---
 
+**The standing decision (user, restated 2026-10-25): PARTIAL sweep locally, FULL sweep in CI on shards.**
+- Locally: `python3 scripts/check-plan-code.py --mutate . --only <script>` (built-in since backlog #208, PR #400
+  `ba4d2c28`). It labels itself *"a DIAGNOSTIC slice, not the gate"*. A local run estimated past 10 min is REFUSED
+  (`--allow-long-local` overrides for one run). Before a sweep, `git diff --stat` the scripts + manifests and sweep a
+  heavy manifest only if ITS file or manifest moved.
+- The gate is the whole manifest in CI — push to the (draft) PR.
+- ⛔ Do not run N shards in parallel on the laptop; ⚠ `--shard n/N` cannot scope to one file.
+- ⛔ A kill alone does not discriminate: pair it with a NEGATIVE CONTROL on the pre-fix tree.
+
+**Why:** co-scoping an unchanged 183-entry manifest with a 41-entry one cost ~4 hours while the user waited.
+
+## History and detail
+
 **Measured 2026-10-06/07, PR #364.** Two ways to run the mutation harness locally, one of which
 cannot work on a 12-core laptop.
 
 ## ⛔ 8 shards in parallel LOCALLY is a CANNOT RUN, not a slow pass
 
-`SUITE_TIMEOUT = 120` in `check-plan-code.py`. Ran `--mutate . --shard0 i/8` × 8 concurrently;
+`SUITE_TIMEOUT = 120` in `check-plan-code.py` (since backlog #558 a mutant's limit derives from its control, ×20, ceiling 600 s; controls keep 120). Ran `--mutate . --shard0 i/8` × 8 concurrently;
 **6 of 8 shards reported `NOT MEASURED`** because `check-rc-contract.py --self-test` blew the cap
 during the *control* pass. Measured alone it is **29.3s wall but 154s of CPU** (user 92 + sys 62) —
 it spawns subprocesses, so it wants ~5.3 cores by itself. 8 × that on 12 cores is a ~3.5× stretch.
@@ -27,7 +40,7 @@ contiguous block spreads across all N (a contiguous split hands 183 entries to o
 the cap while siblings idle; that is what killed #365's first attempt). There is **no per-file
 filter**. A handoff told me `--shard` would isolate a file; it does not.
 
-## ✅ The scoped run: a pruned COPY, ~4 seconds
+## The pruned-COPY recipe, ~4 seconds (predates `--only`; still valid when a manifest must run in isolation)
 
 1. `rsync -a` **every** `HARNESS_TREE` path into a temp tree — read the tuple, do not guess.
    ⟳ **2026-10-17: THIS LINE SAID "six" AND THE COUNT HAD GONE STALE — the tuple is seven now
@@ -65,8 +78,8 @@ evidence that counted was the **pair**: pre-fix tree → `1 mutation, 0 killed, 
 → `16 killed, 16 attributed`. Same harness, same tree, opposite verdicts.
 See [[the-control-refuted-the-premise]], [[a-case-can-pass-for-an-ambient-reason]].
 
-⛔ **2026-10-25 — THE STANDING DECISION: PARTIAL SWEEP LOCALLY, FULL SWEEP IN CI ON SHARDS** (the user
-restated it after this cost). I kept the form and broke the scope — **one co-scoped manifest cost FOUR HOURS.** I swept
+**2026-10-25 — the cost behind the standing decision.** I kept the form and broke the scope — **one co-scoped
+manifest cost FOUR HOURS.** I swept
 `check-merge-ready` (30–41 entries) TOGETHER with `check-main-drivable` (183, a 438-case suite per
 mutation) twice: **~2h10m and 81m+**, while the user waited. Alone, merge-ready's 41 took **9.6s**.
 main-drivable had changed by ONE line (a `MAIN_DEBT` removal) and its 183/183 did not need re-running

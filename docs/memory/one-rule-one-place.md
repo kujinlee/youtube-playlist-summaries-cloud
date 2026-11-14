@@ -5,7 +5,13 @@ metadata:
   type: feedback
 ---
 
-> Merged 2 memories, bodies kept VERBATIM. Former names (still referenced by other memories): `two-mechanisms-for-one-concern`, `a-shared-function-can-hold-half-a-contract`
+**The rule:** one mechanism per concern. Before adding a coordination mechanism, ask *"what already serves this
+concern?"* and enumerate the WRITERS and the identity each carries. Duplicate vocabulary (`lease_token` on two
+tables, `attempts` vs `lease_attempts`) is the shadow of a duplicate protocol. And when de-duplicating, enumerate the
+contract's clauses FIRST — a shared function holding PART of a contract is worse than two copies, because it looks
+like the whole rule.
+
+> Merged 2 memories, bodies kept verbatim below. Former names (still referenced by other memories): `two-mechanisms-for-one-concern`, `a-shared-function-can-hold-half-a-contract`
 
 ## two mechanisms for one concern
 

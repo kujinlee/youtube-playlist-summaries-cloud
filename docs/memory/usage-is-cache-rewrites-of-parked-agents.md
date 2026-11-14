@@ -19,5 +19,5 @@ Measured over the 24 h before the 10-29 halt. The weights are API list prices us
 **Why:** the weekly limit was halting work for about a day, every week, for several weeks. Raw token shares misled me at first: 99% of raw tokens are reads, but reads are cheap. The owner caught that I hadn't weighted cache costs or counted reset overhead.
 
 **How to apply:** finish the in-flight work with the existing agent, then retire it. Brief a fresh one for the next fold or round. Don't hold an agent idle "until I say go": let it exit, and brief a fresh one later. Don't ask for a coordinator /clear per PR while the backlog #396 restore is broken.
-The statusline caches the weekly % in `~/.claude/.rate-limits.json`. Backlog #399 is the planned pacing hook.
+The statusline caches the weekly % in `~/.claude/.rate-limits.json`. Backlog #399 (the pacing hook) is ✅ closed (checked 2026-11-14); #396 (the compaction-snapshot restore) is still open.
 Related: [[a-signal-needs-its-base-rate]], [[always-choose-subagent-driven-execution]].

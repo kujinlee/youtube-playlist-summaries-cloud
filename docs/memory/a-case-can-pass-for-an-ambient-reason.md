@@ -5,6 +5,12 @@ metadata:
   type: feedback
 ---
 
+**The rule:** (1) BUILD the world a case needs — never borrow the ambient one; (2) **flip the thing the case NAMES
+and check that case goes red** — run the falsifier, do not just state it. Two species: an ambient premise, and a
+NAME that drifted from its BODY.
+
+## Species 1 — the ambient world (PR #311)
+
 Four times while seeding one file's mutation manifest (PR #311), a case passed while asserting
 nothing, because its premise depended on the environment rather than on state it built:
 
@@ -36,7 +42,7 @@ See [[a-measurement-is-only-as-good-as-its-corpus]], [[measure-the-population-th
 
 ---
 
-## ⭐⭐⭐ 2026-10-15 — FIVE MORE on one file, and the tell is NAME vs BODY
+## Species 2 — NAME vs BODY: 2026-10-15, FIVE MORE on one file
 
 Building `scripts/check-doc-citations.py` (backlog #49) produced **five** ambient cases across three
 review rounds. The ambient-world shape above is one species; these were a second:

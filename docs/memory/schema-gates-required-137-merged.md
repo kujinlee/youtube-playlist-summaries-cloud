@@ -61,10 +61,11 @@ the collateral derivation.** An "optimization" that has accreted a second job is
 - **SEVEN cases passed for an AMBIENT reason**, incl. a `PATH_LIMIT` case built FROM the constant
   (so the input moved with the mutation) and a raising fake reader that CRASHED instead of failing.
 
-## ⚠ Expect this: two doc files are at ZERO SLACK
+## Doc line budgets are blocking
 
-`docs/dev-process.md` 220/220 and `docs/plugins.md` 260/260. One appended line turns gate 6 red —
-now **blocking**, not ignorable. That refusal is correct; move detail out, do not raise the budget.
+At merge `docs/dev-process.md` was 220/220 and `docs/plugins.md` 260/260 (zero slack). Measured 2026-11-14: 214/220 and
+166/260 (budgets in `scripts/check-docs.py`). One line past budget turns the gate red and it is **blocking**; that
+refusal is correct — move detail out, do not raise the budget.
 
 Related: [[a-gates-channel-can-be-weaker-than-the-gate]] (the defect's shape),
 [[review-convergence-is-not-the-final-tree-gate]] (round 5 was the FINAL-TREE round, scoped to the

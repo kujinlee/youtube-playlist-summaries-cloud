@@ -7,6 +7,8 @@ metadata:
   originSessionId: 85979056-578d-429d-82a7-aaa8678bb1d9
 ---
 
+**CURRENT RULE: the real per-video cost is ≈ 8¢ on Flash; the 150¢ is a worst-case RESERVATION — never lower it. The fix is the real-cost settle slice, still in the `docs/roadmap-to-launch.md` Parking Lot (checked 2026-11-14; `actual_cents` stays 0 until it lands).**
+
 **Question (2026-07-22):** is the 150¢ per-video charge over-estimated? **Answer: massively — by ~37×.**
 Done as the first pass of the [[launch-roadmap-state]] "periodic cost recalibration" item.
 

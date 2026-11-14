@@ -8,6 +8,13 @@ metadata:
   modified: 2026-08-11T01:32:45.576Z
 ---
 
+**The rule:** a premise about existing code must PASTE the lines with `file:line`, or say **unverified** in the same
+sentence. And cite the code that PERFORMS the behaviour — the reader, executor, consumer — never the code that PREPARES
+it ("is written", "is unchanged", "is supported" prove nothing about an outcome). Of every measured defect, also ask
+**"what caller reaches this state?"** Both rules are in `docs/review-method.md`.
+
+## History
+
 **Measured 2026-08-08 (round 10, PR #59).** I built an ownership mechanism on the premise that
 `worker_id` was stable config. `worker/main.ts:69` says:
 
@@ -42,7 +49,7 @@ the mechanism**. See [[a-fence-wrong-both-ways-asks-the-wrong-credential]] (the 
 
 ---
 
-## The sharpening, measured 2026-08-10 — quoting is not enough
+### The sharpening, measured 2026-08-10 — quoting is not enough
 
 Three times in one session I **did** quote code, and was still wrong, because I quoted the wrong end
 of the mechanism:

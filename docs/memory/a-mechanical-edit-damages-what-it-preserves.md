@@ -6,6 +6,13 @@ metadata:
   type: feedback
 ---
 
+**The rule:** a bulk/scripted edit damages what it was meant to PRESERVE. Take a control count BEFORE the first
+edit and watch it fall by exactly the intended amount; treat nested scopes as atomic; assert on the cells/lines you
+did NOT intend to change; never re-implement the consumer's parser (use its exported one, e.g. `check-docs.py`'s
+`CELL_SPLIT`). The tell that it went wrong is a test that still PASSES.
+
+## History
+
 **MEASURED 2026-09-09, `retire-plan-mode` PR 2 (#271).** Deleting 143 test cases by hand was
 not viable, so I wrote an AST pruner. It worked — and it damaged code that was supposed to
 survive **three separate times**, each by a different blind spot in how it modelled Python:

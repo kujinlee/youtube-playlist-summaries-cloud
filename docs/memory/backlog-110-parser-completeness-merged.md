@@ -1,12 +1,14 @@
 ---
 name: backlog-110-parser-completeness-merged
-description: "FIRES-WHEN: citing backlog #110 or PR #287 — ⭐ Backlog #110 — PR #287 open. 4 rounds; BOTH Blockings were the row's own defect reintroduced by its own fix. Report population must EQUAL read population"
+description: "FIRES-WHEN: citing backlog #110 or PR #287, or fixing a parser that silently drops input — ⭐ MERGED 050913f6. The fix is an invariant: report population must EQUAL read population; BOTH Blockings were the row's own defect reintroduced by its own fix"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 24bed3bc-51b2-4b47-b1fe-a488b2d3db19
   modified: 2026-09-10T19:21:28.519Z
 ---
+
+**RULE that came out of it: a parser that may skip input must REPORT exactly what it fails to READ — assert report population == read population, not an allowlist of malformations.**
 
 ✅ **MERGED 2026-09-10 as `050913f6`** (PR #287, squashed, branch deleted). CI green on the PR
 and the gates re-run on master after the squash: 165/165 · 59/59 · 89/89 · all ratchets rc=0 ·

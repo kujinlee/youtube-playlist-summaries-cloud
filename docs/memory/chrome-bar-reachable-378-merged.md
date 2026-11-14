@@ -1,12 +1,20 @@
 ---
 name: chrome-bar-reachable-378-merged
-description: "FIRES-WHEN: working on page_chrome, the chrome bar, backlog rows 304/305/306, or asking why a fold-then-review loop will not terminate — PR #378 merged NOT CONVERGED with a Blocking finding filed, and the gate that blocked it for 8 rounds cleared on a prose-only round."
+description: "FIRES-WHEN: working on page_chrome, the chrome bar, backlog rows 300/304/306, or a fold-then-review loop will not terminate — a containment suite cannot see ADDED code; a round that FILES (prose) clears check-review-recorded. PR #378 merged 11c1d5db NOT CONVERGED"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 014deb4c-b607-46d5-b015-d204f337780e
   modified: 2026-10-19T20:53:12.551Z
 ---
+
+**RULES carried forward (current):**
+1. **A containment assertion over emitted text is blind to ADDED code** — the suite and the mutation
+   manifests are monotone in the source text (details below). Backlog #304 is the fix direction.
+2. **A fold-then-review loop that "has no fixed point" usually has one nobody fed:** hold the fold
+   UNCOMMITTED so the verdict's `dirty` overlay covers it, or FILE rather than fold — `is_prose()`
+   (RUN it, do not read it) treats review docs, `docs/backlog.md`, the roadmap, `dashboard-entries.md`
+   and `CONTEXT.md` as prose, so a filing round clears the gate.
 
 **PR #378 `chrome-bar-reachable` MERGED 2026-10-19 as `11c1d5db`**, squashed, on the owner's
 explicit call, **NOT CONVERGED with one Blocking finding filed rather than patched.** 38 commits,
@@ -38,18 +46,17 @@ FOLDS changes no guarded path and clears the gate.** That is what finally cleare
 CI (`check-review-recorded (PR only) -> success`), after eight rounds of being blamed on a
 procedure with no fixed point.
 
-## What is still OPEN — do not assume this branch closed them
+## Row status (verified 2026-11-14 in `docs/backlog.md`)
 
-* **#300 stays OPEN**: the producer is fixed and mutation-covered; **the existing pages are not
+* **#300 🟡 OPEN**: the producer is fixed and mutation-covered; **the existing pages are not
   regenerated.**
-* **#304** instrument slice (L) · **#305** console-error read (S) — ⛔ its first remedy, *execute
-  under Node*, was REFUTED: jsdom has no layout and no `IntersectionObserver`, so the script takes
-  its fallback at `page_chrome.py:1172` where `0 - 0 <= 0` pins **both** pages — it returns the
-  healthy page's answer for the dead one · **#306** backfill the round-document headers (S), which
-  is minutes and is the one action that would have prevented the whole review.
-* **#301, #303** unchanged.
+* **#304** 🟠 instrument slice (L) · **#306** 🟠 backfill the round-document headers (S) — minutes, and the
+  one action that would have prevented the whole review.
+* **#305 ✅ closed** (console-error read). Its first remedy, *execute under Node*, had been REFUTED: jsdom
+  has no layout and no `IntersectionObserver`, so the script's fallback pins **both** pages.
+* **#301 ✅**, **#303 🟢**.
 
-## My own errors on this slice, because three of them recurred
+## History — my own errors on this slice, because three of them recurred
 
 * **I deferred to a human gate that does not exist** — `grep -ci "owner's call"` is **0** across all
   five process docs — and five rounds were folded past an armed stop condition. See
