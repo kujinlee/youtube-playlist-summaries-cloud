@@ -2192,7 +2192,11 @@ EXPECTED_MUTATIONS = {
     # anchors) and 2 expects renamed (the trend case's tighter edges). 8 new: U1 (UNKNOWN back to OK), C2 (the last
     # day exclusive again), L5 (no age bound; the bound two midnights back), L1 (today's key and the window's key in
     # UTC: Claude r1's surviving mutation and its twin), L2 (the trend line ±0.05: Claude r1's survivor and its twin).
-    "scripts/check-usage-pace.py": 202,
+    # ⟳ 2026-11-14, backlog #645 (the 5h block clock): 202 -> 213, none retired. 1 re-bound (the old five-hour 90%
+    # WARN anchor `five[0] >= FIVE_HOUR_WARN_AT` is gone: now the block's `used >= FIVE_HOUR_WARN_AT`). 11 new: both
+    # zone edges inclusive, both margins moved, the 90% rule dropped, STOP at > 100, the wake at the reset, elapsed from
+    # the reset, no clamp at 0, no note at all, and a moving `ahead` figure in the note.
+    "scripts/check-usage-pace.py": 213,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
