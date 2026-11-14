@@ -2616,8 +2616,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    prev = \"\" if prev == sid else prev[len(sid) + 1:] if prev and prev.startswith(sid + \"\\t\") else None",
-        "    prev = \"\" if prev == sid else prev.split(\"\\t\", 1)[-1] if prev else None"
+        "    prev = None if text is None else text.strip()\n    prev = \"\" if prev == sid else prev[len(sid) + 1:] if prev and prev.startswith(sid + \"\\t\") else None",
+        "    prev = None if text is None else text.strip()\n    prev = \"\" if prev == sid else prev.split(\"\\t\", 1)[-1] if prev else None"
       ]
     ],
     "expect": [
@@ -2878,8 +2878,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        out = gate_output(verdict, message, override, parts.get(\"five\", \"\"))",
-        "        out = gate_output(verdict, message, override)"
+        "        out = gate_output(verdict, message, override, parts.get(\"five\", \"\"))\n    if out:",
+        "        out = gate_output(verdict, message, override)\n    if out:"
       ]
     ],
     "expect": [
