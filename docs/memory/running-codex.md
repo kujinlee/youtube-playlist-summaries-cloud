@@ -26,7 +26,7 @@ merges a branch on single-half review.
 
 **How to apply:** the canonical contract (exit codes 0/1/2/3, `--review-id`, `--out` outside the repo) is in
 `docs/plugins.md` → Code Review; read it there rather than from here. See [[a-hang-is-not-a-diagnosis]],
-[[check-the-assumption-not-just-the-code]], [[seed-manifest-122-merged]], [[dev-process]], [[process-conventions]].
+[[check-the-assumption-not-just-the-code]], [[seed-manifest-122-merged]], `docs/dev-process.md`, [[process-conventions]].
 
 ## History (merged from `codex-timeout-raise-it-dont-fall-back`, `codex-sandbox-run-from-coordinator`)
 
