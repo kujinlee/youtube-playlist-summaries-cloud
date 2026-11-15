@@ -20807,3 +20807,18 @@ append-only audit log with per-run tokens. Records now carry a 4th `ALWAYS:` ent
 ships only git-tracked files and refuses `.claude/plans` however it is reached. Cases: 49→67 and 63→72. Mutations:
 50/50 and 54/54. `spike-record.md`, `isolation-baseline.md` and `spend-log.md` are corrected. Coordinator doc:
 `docs/reviews/coordinator/harness-ships-elsewhere-b-r1-coordinator.md`.
+
+## 2026-11-15
+The second review of the marketplace tools found two more ways your private plans folder could end up in a
+package: by spelling its name in different capitals, which a Mac treats as the same folder, and through a
+shortcut folder that git does not track. Both are closed, along with the same capitals mistake in seven other
+places. The test world now checks itself every time it runs a command, not only when asked. One sentence claimed
+more than was measured about your login keychain: it now says only that neither tool reported being logged in.
+<!--tech-->
+PR #594 round-2 fold (Codex 1–5; Claude half a gap by alternation): `mkt_stage.py` compares every exclusion
+folded (NFKC + casefold) and walks a declared path one component at a time, so each link must be tracked and no
+component may sit under `.claude/plans`; index names are decoded with `os.fsdecode`. `mkt_isolate.py` folds its
+three "inside a checkout" checks, and `run_isolated` runs the `sys.path` and git-config probes itself. Cases:
+72→89 and 67→73. Mutations: 67/67 and 57/57. The round-1 bet on `staging` lost (Codex 3). Filed backlog #656 and
+#657. Commits `f065e2ea`, `1196ae9d`. Coordinator doc:
+`docs/reviews/coordinator/harness-ships-elsewhere-b-r2-coordinator.md`.
