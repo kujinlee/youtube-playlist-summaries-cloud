@@ -20750,3 +20750,15 @@ plan's slice table still calls it `mkt-spike`; the owner ruled one name on 11-14
 only. Re-measured with `git show a4f6d4b5:<file> | wc -l`: nine files 6,542 (6,542 / 3,599 = 1.82); six Python
 files 10,373 + four `SKILL.md` 604 + three shared contracts 647 = 11,624; `explainer-delivery.md` lines 118, 158,
 235 at `a4f6d4b5` are the three `python3 scripts/...` invocations.
+
+## 2026-11-15
+The marketplace work has its first tool: a way to try the harness the way a stranger would, on a fresh account
+with nothing of this project on it, and to say exactly what that test could and could not see.
+<!--tech-->
+Marketplace-inventory plan Task 2: `scripts/mkt_isolate.py` (`build_world`, `preflight`, `run_isolated`, CLI) builds
+a world under an empty root — fresh HOME and TMPDIR, a PATH of allow-listed symlinks only, an env built from nothing —
+and captures Python file opens and launches with a `sitecustomize` audit hook. Every record lists what it cannot see
+(non-Python programs, Python run without the hook, network, pre-hook startup). Preflight refuses a world that the
+author's environment would reach (root or HOME entry inside the repo, extra env keys, the explainer port listening).
+49 self-test cases, 34 mutations, wired per W1-W8. `docs/marketplace/isolation-baseline.md`, `README.md` and
+`spend-log.md` added.

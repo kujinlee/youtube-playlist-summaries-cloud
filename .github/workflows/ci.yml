@@ -869,6 +869,12 @@ jobs:
       - name: strace_reads self-test
         run: python3 scripts/strace_reads.py --self-test
 
+      # The stranger-world isolation tool (marketplace-inventory plan, Task 2). A library, not a
+      # check-* guard, so `check-ratchet-contract.py` neither sees it nor should. THIS STEP stops its
+      # --self-test going unrun; scripts/mutations/mkt_isolate.json stops it going vacuous.
+      - name: mkt_isolate self-test
+        run: python3 scripts/mkt_isolate.py --self-test
+
       # One link function for every key (backlog #470). `--sources` is rule 2: no href to a key's
       # home page is built in scripts/ outside page_markup.key_link. The page rules (1, 1b, 3, 4, 5)
       # read BUILT pages: `--build --ci` builds the four a checkout can build (dashboard, goals and

@@ -2327,4 +2327,9 @@ EXPECTED_MUTATIONS = {
     # branches (SHADOW argument, the cross-run view, `_meets` both directions, `_cross_forms`, bare descriptors).
     # ARITHMETIC: 184 + 19 = 203. ⟳ round 2 fold: 3 added (a SHADOW `..`, a SHADOW /proc link, the `cross` flag) = 206; 1 re-bound (the resolver refusal, now `cross=True`), 1 re-targeted (a socket SHADOW now names the link check). ⟳ round 3 fold: 2 re-bound (the SHADOW `..` and /proc lines moved into the shared branch), 1 added (a SHADOW argument skips the link checks), 1 re-targeted (a socket taken for a SHADOW no longer reddens a link case; it drops the socket from the READ view, now a case) = 207.
     "scripts/strace_reads.py": 207,
+    # ⟳ 2026-11-15, marketplace-inventory plan Task 2: the stranger-world isolation tool, pinned in the commit that
+    # creates it. One entry per build_world refusal and env rule, per preflight reason, per read_audit rule (parse,
+    # dedupe, posix_spawn echo, unobservable entries), per run_isolated rule (path, PATH lookup, log reset, env, cwd,
+    # timeout), the hook itself and the CLI's three exits: 34.
+    "scripts/mkt_isolate.py": 34,
 }

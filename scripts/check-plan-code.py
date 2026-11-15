@@ -5559,6 +5559,8 @@ def _self_test_body() -> int:
                                       "scripts/gen-goals-page.py",
                                       "scripts/gen-work-lines.py",
                                       "scripts/goal-tree.py",
+                                      # ⟳ 2026-11-15, marketplace-inventory Task 2: a library.
+                                      "scripts/mkt_isolate.py",
                                       # ⟳ 2026-09-23, backlog #166 + #170 — the ONE owner of
                                       # the observer-log record. A LIBRARY, not a guard, so
                                       # `check-ratchet-contract`'s population never sees it;
