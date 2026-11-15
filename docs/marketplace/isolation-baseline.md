@@ -14,14 +14,17 @@ author's site-packages). The environment is built from nothing: `HOME`, `TMPDIR`
 Preflight refuses to start if the author's environment would reach in — any env key or VALUE other than the world's,
 a world root inside a checkout, a Python whose `sys.path` holds anything outside the world and its stdlib, a git that
 reports a `credential.*` or URL-rewrite key — and `run_isolated` refuses a cwd outside the world (the script's
-docstring lists every reason).
+docstring lists every reason). `run_isolated` repeats the env/layout checks and the two measured ones (Python's
+`sys.path`, git's config) on every run (r2 Codex 4); the HOME and bindir entry checks and the explainer port are
+preflight's alone. A path is compared against a checkout FOLDED (case and Unicode form), so a case alias of the
+checkout on a case-insensitive volume is refused too.
 
 ## Interpreter and packages
 
 | What | Value | Measured by |
 |---|---|---|
 | Interpreter | Python 3.14.4 | `python3 -V` |
-| Package set | none: `importlib.metadata.distributions()` in the world is `[]` | measured 2026-11-15 11:27 by `run_isolated` in a fresh world. It is VERIFIED per run, not assumed: `preflight` refuses a Python whose `sys.path` holds a site-packages entry or anything outside the world (r1 Codex 2, Claude m2) |
+| Package set | none: `importlib.metadata.distributions()` in the world is `[]` | measured 2026-11-15 11:27 by `run_isolated` in a fresh world. It is VERIFIED per run, not assumed: `run_isolated` itself asks the world's `python3` for its `sys.path` before starting the command and refuses one that holds a site-packages entry or anything outside the world, whether or not `preflight` was called (r1 Codex 2, Claude m2; r2 Codex 4). Bound: only the allow-listed Pythons in `bin/` are asked; an interpreter the command reaches by a path of its own is not |
 | Rejected interpreter | macOS's `/usr/bin/python3` shim | it re-execs the Command Line Tools Python, which does not see the world's `pyvenv.cfg`; if it is the allowed `python3`, preflight's probe sees the foreign `sys.path` and refuses |
 
 ## Allow-listed commands, with versions
@@ -75,8 +78,10 @@ Claude M1).
   by the tool and carries no author state; the self-test's environment case drops `__CF_` keys for that reason.
 - **(e) The OS keychain is NOT isolated, and cannot be from here.** The world runs as the author's OS user; a fresh
   `HOME` does not change which login keychain macOS answers from. No credential helper reaches it any more (c), and
-  `claude auth status` → `loggedIn: false` and `gh auth status` → not logged in, measured in a world (Claude r1 m2),
-  so neither tool reads it today. A program that asks the keychain directly would be answered as the author.
+  `claude auth status` → `loggedIn: false` and `gh auth status` → not logged in, measured in a world (Claude r1 m2).
+  That is ALL that was measured: neither tool reported an identity. Whether either one — or anything else a world
+  starts — reads the keychain is UNVERIFIED (r2 Codex 5); nothing here observes keychain access. A program that asks
+  the keychain directly would be answered as the author.
   **The observation that would show it:** a world run that succeeds at something needing the author's identity —
   `claude auth status` reporting `loggedIn: true`, a private clone succeeding, `security find-generic-password`
   returning an item. Removing the bound needs a second OS user; every `RunRecord` states it as `ALWAYS:`.
