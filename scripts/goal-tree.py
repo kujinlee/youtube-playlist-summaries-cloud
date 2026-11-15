@@ -3013,10 +3013,11 @@ def _self_test_cases(*, outside: dict) -> int:
          ([g.get("placed") or [] for g in _pw["goals"]], _pw["inflight_loose"], _pw["parked_loose"]),
          ([[{"id": "p7", "what": "PARKED by the owner until later", "parked": True}], []], [], []))
     _pl_txt = render_text(_pl).splitlines()
-    _h_at = next(i for i, l in enumerate(_pl_txt) if l.startswith("GOAL ") and "· h " in l + " ")
+    # a missing goal line is a RED case, never a StopIteration that hides every [FAIL] line (mutation sweep, 11-14)
+    _h_at = next((i for i, l in enumerate(_pl_txt) if l.startswith("GOAL ") and "· h " in l + " "), None)
     case("⭐ backlog #514 (d): the printed tree draws a placed entry INSIDE its goal's block, says it was placed by its "
          "goal field, and prints no IN FLIGHT, UNDER NO GOAL section",
-         (any("p1 · pacing work" in l and "by its goal field" in l
+         (_h_at is not None and any("p1 · pacing work" in l and "by its goal field" in l
               for l in _pl_txt[_h_at:next((i for i, l in enumerate(_pl_txt) if i > _h_at and not l.strip()), None)]),
           any("UNDER NO GOAL" in l for l in _pl_txt)), (True, False))
     case("backlog #514 (d): the page draws it too (one block structure)", ("p1 · pacing work" in render_tree_html(_pl), "by its goal field" in render_tree_html(_pl)), (True, True))
