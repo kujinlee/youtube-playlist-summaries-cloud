@@ -20773,6 +20773,8 @@ calls (`COLLECT_BOUNDS`, each + DRAIN) against the SessionStart `timeout` read f
 `TIMEOUT` 30 -> 21 to keep 5 s of margin. `check-plan-code.py` stages `.claude/settings.json` for that
 case. session-state: 161 -> 150 cases, 145 -> 140 mutations. The marker step's `if:` is seen only by
 the first scheduled run after merge.
+
+## 2026-11-15
 The goal tree now says why each waiting item is waiting, as you asked on 11-14. When work is recorded, the tool now
 asks one question: does it wait on a pull request or a backlog row to finish? The answer is a reference such as
 "PR #442", or "none". The page looks that reference up every time it is drawn. If the work is still open the line
