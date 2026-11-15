@@ -92,7 +92,7 @@
   "file": "scripts/mkt_isolate.py",
   "edits": [
    [
-    "        if _inside(world.root, top):",
+    "        if _reaches(world.root, top):",
     "        if False:"
    ]
   ],
@@ -125,7 +125,7 @@
   "file": "scripts/mkt_isolate.py",
   "edits": [
    [
-    "            if any(_inside(entry, top) for top in _checkouts()):\n                reasons.append(f\"HOME/",
+    "            if any(_reaches(entry, top) for top in _checkouts()):\n                reasons.append(f\"HOME/",
     "            if False:\n                reasons.append(f\"HOME/"
    ]
   ],
@@ -158,7 +158,7 @@
   "file": "scripts/mkt_isolate.py",
   "edits": [
    [
-    "            if any(_inside(entry, top) for top in _checkouts()):\n                reasons.append(f\"allow-listed command",
+    "            if any(_reaches(entry, top) for top in _checkouts()):\n                reasons.append(f\"allow-listed command",
     "            if False:\n                reasons.append(f\"allow-listed command"
    ]
   ],
@@ -466,8 +466,8 @@
   "file": "scripts/mkt_isolate.py",
   "edits": [
    [
-    "    bad = boundary(world)\n    if bad:",
-    "    bad = boundary(world)\n    if False:"
+    "    bad = boundary(world)\n    if not bad:",
+    "    bad = []\n    if not bad:"
    ]
   ],
   "expect": "run_isolated refuses a world whose HOME value is not its own, and starts nothing"
@@ -548,5 +548,82 @@
    ]
   ],
   "expect": "the child's environment is the world's, key for key, plus a fresh run token (bar macOS's __CF_ keys)"
+ },
+ {
+  "name": "run_isolated does not measure the world's Python and git",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        bad = measured(world)\n",
+    "        bad = []\n"
+   ]
+  ],
+  "expect": "run_isolated refuses a world whose Python sees site-packages, with no preflight call before it"
+ },
+ {
+  "name": "the world root is compared exact, so a case alias of the checkout is outside it",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "_reaches(world.root, top)",
+    "_inside(world.root, top)"
+   ]
+  ],
+  "expect": "preflight refuses a world root inside a CASE ALIAS of the repository"
+ },
+ {
+  "name": "a HOME entry is compared exact, so a case alias of the checkout is outside it",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "any(_reaches(entry, top) for top in _checkouts()):\n                reasons.append(f\"HOME/",
+    "any(_inside(entry, top) for top in _checkouts()):\n                reasons.append(f\"HOME/"
+   ]
+  ],
+  "expect": "preflight refuses a HOME entry that resolves into a case alias of the repo"
+ },
+ {
+  "name": "a command is compared exact, so a case alias of the checkout is outside it",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "any(_reaches(entry, top) for top in _checkouts()):\n                reasons.append(f\"allow-listed command",
+    "any(_inside(entry, top) for top in _checkouts()):\n                reasons.append(f\"allow-listed command"
+   ]
+  ],
+  "expect": "preflight refuses an allow-listed command that resolves into a case alias of the repository"
+ },
+ {
+  "name": "_reaches compares the spellings as given",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    a, b = fold(str(Path(path).resolve())), fold(str(Path(top).resolve()))",
+    "    a, b = str(Path(path).resolve()), str(Path(top).resolve())"
+   ]
+  ],
+  "expect": "preflight refuses a world root inside a CASE ALIAS of the repository"
+ },
+ {
+  "name": "fold does not fold case",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    return unicodedata.normalize(\"NFKC\", text).casefold()",
+    "    return unicodedata.normalize(\"NFKC\", text)"
+   ]
+  ],
+  "expect": "fold: two spellings one case-insensitive filesystem holds as ONE name fold to one string — by case and by Unicode form — and a different name does not"
+ },
+ {
+  "name": "fold does not normalise the Unicode form",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "unicodedata.normalize(\"NFKC\", text).casefold()",
+    "text.casefold()"
+   ]
+  ],
+  "expect": "fold: two spellings one case-insensitive filesystem holds as ONE name fold to one string — by case and by Unicode form — and a different name does not"
  }
 ]

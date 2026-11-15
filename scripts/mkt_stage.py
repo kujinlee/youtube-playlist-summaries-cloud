@@ -2,7 +2,7 @@
 """Package declared files into a throwaway local marketplace, and install one of its plugins in a stranger's world
 (marketplace-inventory plan, Task 3; spec §6 and §7 item 0).
 
-    python3 scripts/mkt_stage.py --self-test  # 72 cases
+    python3 scripts/mkt_stage.py --self-test  # 89 cases
     python3 scripts/mkt_stage.py --out DIR --package NAME --version V [--skill PATH]... [--file PATH]...
                                  [--marketplace NAME]
 
@@ -23,10 +23,17 @@ real `claude`, in a world built by `mkt_isolate`. Where `claude` is absent (CI h
 `NOT RUN: claude missing` and is counted as not run. It is tallied apart from the N/N line in both places, so the
 declared count is the same with and without `claude`; a live failure still prints `[FAIL]` and exits 1.
 
-What ships is what git TRACKS (r1 Claude M3): an untracked or gitignored file — a link or the file it ends at — is
-CANNOT RUN, named, never shipped and never skipped. Paths under PRIVATE (`.claude/plans`) are refused even when
-tracked (r1 Codex 1).
-Bounds: a tracked file ships its working-tree bytes, not its committed ones; `install` is exercised
+What ships is what git TRACKS (r1 Claude M3): an untracked or gitignored file is CANNOT RUN, named, never shipped
+and never skipped — and so is every LINK walked on the way to a file, in its parents or in a link's target (r2
+Codex 2: a path is walked a component at a time, never resolved in one step). Paths under PRIVATE (`.claude/plans`)
+are refused even when tracked (r1 Codex 1), under any case alias (r2 Codex 1). The rule for every path comparison
+here: an EXCLUSION (private, `.agents/skills` in `files`, the plugin's metadata directory, an out directory inside
+the repository, two destinations colliding) compares FOLDED (`_under`, `mkt_isolate.fold`); an INCLUSION (a link
+target inside the repository, tracked by git) compares EXACT. Both err towards refusing.
+Bounds: a HARD link to a private file is a tracked file like any other and is not seen; an alias that is neither
+case nor Unicode form (HFS+'s ignorable characters) is not folded; a link with an absolute target is followed only
+when the target is spelled below the resolved repository root; a tracked file ships its working-tree bytes, not its
+committed ones; `install` is exercised
 here only against a stand-in for `run_isolated` (the first live install is the plan's Task 4).
 """
 from __future__ import annotations
@@ -46,7 +53,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from mkt_isolate import CannotRun, World, build_world, run_isolated
+from mkt_isolate import CannotRun, World, build_world, fold, run_isolated
 
 REPO = Path(__file__).resolve().parent.parent
 # The marketplace's default name. A local, throwaway one: never the published marketplace (spec §6, §10).
@@ -63,6 +70,8 @@ META = ".claude-plugin"
 # when tracked: the author's private plans. `.git` needs no entry — git tracks nothing under it, and only a tracked
 # file ships (r1 Claude M3).
 PRIVATE = (".claude/plans",)
+# How many links one declared path may walk through before it is called a loop (Linux's own limit is 40).
+MAX_LINKS = 40
 
 
 @dataclasses.dataclass(frozen=True)
@@ -77,12 +86,15 @@ def plan(spec: PackageSpec, repo: Path) -> list[tuple[Path, str]]:
     """Every (source file, path under the plugin root) `spec` ships, links resolved. Writes nothing."""
     top = Path(repo).resolve()
     tracked = _tracked(top)
-    dests: dict[str, Path] = {}
+    dests: dict[str, tuple[Path, str]] = {}
 
     def add(src: Path, dest: str) -> None:
-        if dest in dests:
-            raise CannotRun(f"two declarations land on {dest} in package {spec.name}: {dests[dest]} and {src}")
-        dests[dest] = src
+        # Folded: two destinations that differ only in case are ONE file where the package is installed on a
+        # case-insensitive filesystem, and the second copy would overwrite the first.
+        if fold(dest) in dests:
+            raise CannotRun(f"two declarations land on {dest} in package {spec.name}: {dests[fold(dest)][0]} and "
+                            f"{src}")
+        dests[fold(dest)] = (src, dest)
 
     for s in spec.skills:
         rel = _declared(s)
@@ -99,15 +111,15 @@ def plan(spec: PackageSpec, repo: Path) -> list[tuple[Path, str]]:
         real = _real(top / rel, top, rel, tracked)
         if not real.is_file():
             raise CannotRun(f"{rel} is not a regular file: `files` takes files (a skill directory goes in `skills`)")
-        if _below(real, top / SKILLS_HOME):
+        if _under(real.relative_to(top), SKILLS_HOME):
             raise CannotRun(f"{rel} is under {SKILLS_HOME}: declare its skill directory in `skills`, which is what "
                             f"lands it at skills/<name>")
-        if rel.split("/")[0] == META:
+        if _under(rel, META):
             raise CannotRun(f"{rel} would land in the plugin's own {META}, which staging writes")
         add(real, rel)
     if not dests:
         raise CannotRun(f"package {spec.name} declares no files: an empty package cannot be staged")
-    return [(src, dest) for dest, src in dests.items()]
+    return list(dests.values())
 
 
 def _declared(path: str) -> str:
@@ -119,13 +131,23 @@ def _declared(path: str) -> str:
 
 
 def _below(path: Path, top: Path) -> bool:
+    """EXACT: `path` is `top` or lexically below it. For a path that MUST be inside (an inclusion)."""
     return path == top or top in path.parents
+
+
+def _under(path, top) -> bool:
+    """FOLDED (`mkt_isolate.fold`): `path` is `top` or below it under any case or Unicode-form alias. For a path
+    that must NOT be inside (an exclusion): on a case-insensitive filesystem `.CLAUDE/PLANS` is `.claude/plans`
+    (r2 Codex 1). On a case-sensitive one this refuses a differently-cased sibling too, which costs a rename."""
+    a, b = fold(Path(path).as_posix()), fold(Path(top).as_posix())
+    return a == b or a.startswith(b.rstrip("/") + "/")
 
 
 def _tracked(top: Path) -> frozenset[str]:
     """Every path git tracks in `top` (repo-relative, posix). Asked of a git started with no config but the
     repository's own and no inherited GIT_* variable, so a caller's env cannot point it at another index. A
-    repository git cannot list is CANNOT RUN: what is tracked cannot then be told."""
+    repository git cannot list is CANNOT RUN: what is tracked cannot then be told. Names are decoded as the
+    filesystem's (`os.fsdecode`), so a tracked name that is not UTF-8 is a name like any other (r2 Codex 3)."""
     env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": os.environ.get("HOME", "/"), "LANG": "C",
            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
     try:
@@ -136,33 +158,54 @@ def _tracked(top: Path) -> frozenset[str]:
     if p.returncode != 0:
         raise CannotRun(f"{top} is not a git checkout git can list (rc {p.returncode}: "
                         f"{p.stderr.decode(errors='replace').strip()}): staging ships tracked files only")
-    return frozenset(x.decode() for x in p.stdout.split(b"\0") if x)
+    return frozenset(os.fsdecode(x) for x in p.stdout.split(b"\0") if x)
 
 
 def _real(path: Path, top: Path, rel: str, tracked: frozenset[str] = frozenset()) -> Path:
-    """`path` with every link followed. Refused when absent, dangling, looping, outside the repository `top`, under
-    a PRIVATE path, or not tracked: the link itself (where `path` is one) and the file it ends at must both be
-    tracked, so an untracked or gitignored file never ships (r1 Claude M3)."""
-    if not os.path.lexists(path):
-        raise CannotRun(f"{rel} does not exist in {top}")
-    try:
-        real = path.resolve(strict=True)
-    except (OSError, RuntimeError):
-        raise CannotRun(f"{rel} is a dangling or looping link") from None
-    if not _below(real, top):
-        raise CannotRun(f"{rel} resolves to {real}, outside the repository {top}: staging it would ship a file "
-                        f"the repository does not hold")
-    lex = path.parent.resolve() / path.name         # where the entry itself sits, its parents' links followed
-    for at in (lex, real):
-        inner = at.relative_to(top).as_posix() if _below(at, top) else ""
+    """`path` (lexically below the resolved `top`) with every link followed, WALKED one component at a time and
+    never resolved in one step, so no link on the way is hidden (r2 Codex 2). Each component reached — in the
+    declared path and in every link target — is refused when it is under a PRIVATE path (compared folded: r2 Codex
+    1), when it leaves the repository, or when it is a link git does not track; the file reached at the end must be
+    tracked too (r1 Claude M3). Absent, dangling and looping paths are refused. Returns the link-free path."""
+    pending, cur, hops = list(path.relative_to(top).parts), [], 0
+    while pending:
+        name = pending.pop(0)
+        if name == os.pardir:
+            if not cur:
+                raise CannotRun(f"{rel} resolves to {top.parent}, outside the repository {top}: staging it would "
+                                f"ship a file the repository does not hold")
+            cur.pop()
+            continue
+        cur.append(name)
+        inner = "/".join(cur)
         for x in PRIVATE:
-            if inner == x or inner.startswith(x + "/"):
+            if _under(inner, x):
                 raise CannotRun(f"{rel} is under {x} ({inner}): the author's private files are never shipped")
-    for at in (lex, real):
-        inner = at.relative_to(top).as_posix() if _below(at, top) else ""
-        if (at.is_symlink() or at.is_file()) and inner not in tracked:
+        at = top / inner
+        if not os.path.lexists(at):
+            raise CannotRun(f"{rel} is a dangling or looping link" if hops else f"{rel} does not exist in {top}")
+        if not at.is_symlink():
+            continue
+        if inner not in tracked:
             raise CannotRun(f"{rel} is not tracked by git ({inner}): staging ships tracked files only, never an "
                             f"untracked or ignored one")
+        hops += 1
+        if hops > MAX_LINKS:
+            raise CannotRun(f"{rel} is a dangling or looping link")
+        target = os.readlink(at)
+        if os.path.isabs(target):       # an absolute target is in the repository only if it is spelled below `top`
+            if not _below(Path(target), top):
+                raise CannotRun(f"{rel} resolves to {target}, outside the repository {top}: staging it would ship "
+                                f"a file the repository does not hold")
+            cur, target = [], Path(target).relative_to(top).as_posix()
+        else:
+            cur.pop()
+        pending = list(Path(target).parts) + pending
+    real = top.joinpath(*cur)
+    inner = "/".join(cur)
+    if real.is_file() and inner not in tracked:
+        raise CannotRun(f"{rel} is not tracked by git ({inner}): staging ships tracked files only, never an "
+                        f"untracked or ignored one")
     return real
 
 
@@ -200,8 +243,9 @@ def stage(packages: list[PackageSpec], out: Path, marketplace: str = MARKETPLACE
         if spec.name in seen:
             raise CannotRun(f"two packages are named {spec.name}")
         seen.add(spec.name)
-    if _below(out.resolve(), top):
-        raise CannotRun(f"{out} is inside the repository {top}: a marketplace is staged outside it")
+    if _under(out.resolve(), top):
+        raise CannotRun(f"{out} is inside the repository {top} (compared ignoring case): a marketplace is staged "
+                        f"outside it")
     if out.exists() and (not out.is_dir() or any(out.iterdir())):
         raise CannotRun(f"{out} is not an empty directory: a marketplace is staged fresh, never onto another")
     plans = [(spec, plan(spec, top)) for spec in packages]     # every refusal happens before the first write
@@ -350,8 +394,16 @@ def _self_test_body() -> int:
         git(r, "add", "-A")
         return r
 
-    def git(r, *args):
-        subprocess.run(["git", "-C", str(r), *args], check=True, capture_output=True)
+    def git(r, *args, stdin=None):
+        return subprocess.run(["git", "-C", str(r), *args], check=True, capture_output=True, input=stdin).stdout
+
+    def track_as(r, path, data=b"spelled\n", write=True):
+        """Track `path` under EXACTLY that spelling, and (when `write`) put `data` there. `git add` on a
+        case-insensitive filesystem may record another spelling of a name that already exists; this cannot."""
+        if write:
+            put(r / path, data)
+        blob = git(r, "hash-object", "-w", "--stdin", stdin=data).decode().strip()
+        git(r, "update-index", "--index-info", stdin=f"100644 {blob}\t".encode() + os.fsencode(path) + b"\n")
 
     def spec(skills=(), files=(), name="pkg", version="0.0.1"):
         return PackageSpec(name, version, list(skills), list(files))
@@ -445,6 +497,17 @@ def _self_test_body() -> int:
     case("a declared skill dir linking OUTSIDE the repository is CANNOT RUN", lambda: outside("skill"), True)
     case("a link INSIDE a skill pointing outside the repository is CANNOT RUN", lambda: outside("nested"), True)
 
+    def absolute(where):
+        r = repo()
+        if where == "outside":
+            (r / "scripts/abs.md").symlink_to(r.parent / "outside/secret.md")
+            return refused(lambda: staged(r, files=["scripts/abs.md"]), "scripts/abs.md resolves to ")
+        (r / "scripts/abs.py").symlink_to(r / "scripts/lib/y.py")
+        return (staged(r, files=["scripts/abs.py"]) / "scripts/abs.py").read_bytes()
+    case("a link with an ABSOLUTE target outside the repository is CANNOT RUN", lambda: absolute("outside"), True)
+    case("adjacent: a link with an absolute target spelled below the repository root stages what it reaches",
+         lambda: absolute("inside"), Y_BYTES)
+
     def dangling():
         r = repo()
         (r / ".agents/skills/brief/gone.md").symlink_to("nowhere.md")
@@ -519,6 +582,114 @@ def _self_test_body() -> int:
     case("a TRACKED file under .claude/plans declared in files is CANNOT RUN", lambda: private("file"), True)
     case("...declared as a skill directory", lambda: private("skill"), True)
     case("...reached through a link inside a skill", lambda: private("link"), True)
+
+    # r2 Codex 1: a CASE ALIAS of a private path. On a case-insensitive filesystem `.CLAUDE/PLANS` IS `.claude/plans`;
+    # on a case-sensitive one it is another directory, refused all the same (an exclusion compares folded).
+    def private_alias(kind):
+        r = repo()
+        git(r, "add", "-A")
+        track_as(r, ".CLAUDE/PLANS/secret.md", b"PRIVATE FIXTURE\n")
+        if kind == "file":
+            return refused(lambda: staged(r, files=[".CLAUDE/PLANS/secret.md"], track=False),
+                           ".CLAUDE/PLANS/secret.md is under .claude/plans")
+        if kind == "skill":
+            return refused(lambda: staged(r, skills=[".CLAUDE/PLANS"], track=False),
+                           ".CLAUDE/PLANS is under .claude/plans")
+        (r / ".agents/skills/brief/plan.md").symlink_to("../../../.Claude/Plans/secret.md")
+        git(r, "add", ".agents/skills/brief/plan.md")
+        if not (r / ".Claude/Plans/secret.md").exists():      # a case-sensitive filesystem: the alias is its own file
+            track_as(r, ".Claude/Plans/secret.md", b"PRIVATE FIXTURE\n")
+        return refused(lambda: staged(r, skills=[".agents/skills/brief"], track=False),
+                       ".agents/skills/brief/plan.md is under .claude/plans")
+    case("a tracked file under a CASE ALIAS of .claude/plans (.CLAUDE/PLANS) declared in files is CANNOT RUN",
+         lambda: private_alias("file"), True)
+    case("...the case alias declared as a skill directory", lambda: private_alias("skill"), True)
+    case("...the case alias reached through a link inside a skill", lambda: private_alias("link"), True)
+    case("adjacent: a tracked file under .claude/plans-kept (the private name is a whole component) stages",
+         lambda: (lambda r: (put(r / ".claude/plans-kept/ok.md", b"kept\n"),
+                             (staged(r, files=[".claude/plans-kept/ok.md"]) / ".claude/plans-kept/ok.md").read_bytes()
+                             )[1])(repo()), b"kept\n")
+
+    # r2 Codex 2: a link in a declared path's PARENTS. Every link walked must be tracked, wherever it sits.
+    def parent_link(how):
+        r = repo()
+        put(r / "target/data.md", b"data\n")
+        git(r, "add", "-A")
+        (r / "alias").symlink_to("target")
+        if how == "ignored":
+            put(r / ".gitignore", b"alias\n")
+            git(r, "add", "-A")
+        if how == "tracked":
+            git(r, "add", "-A")
+            return (staged(r, files=["alias/data.md"], track=False) / "alias/data.md").read_bytes()
+        return refused(lambda: staged(r, files=["alias/data.md"], track=False),
+                       "alias/data.md is not tracked by git (alias)")
+    case("an UNTRACKED directory link in a declared file's parents is CANNOT RUN, naming the link",
+         lambda: parent_link("untracked"), True)
+    case("...and so is a GITIGNORED one", lambda: parent_link("ignored"), True)
+    case("adjacent: a TRACKED directory link in a declared file's parents stages the file it reaches",
+         lambda: parent_link("tracked"), b"data\n")
+
+    def link_chain():
+        # tracked link -> UNTRACKED link -> tracked file: the middle link is one a fresh checkout does not have.
+        r = repo()
+        (r / "scripts/first.py").symlink_to("second.py")
+        git(r, "add", "-A")
+        (r / "scripts/second.py").symlink_to("x.py")
+        return refused(lambda: staged(r, files=["scripts/first.py"], track=False),
+                       "scripts/first.py is not tracked by git (scripts/second.py)")
+    case("a tracked link that reaches its file through an UNTRACKED link is CANNOT RUN, naming the middle link",
+         link_chain, True)
+
+    def link_through_private():
+        # A link whose target only PASSES THROUGH the private directory and comes back out.
+        r = repo()
+        put(r / ".claude/plans/p.md", b"the author's plan\n")
+        (r / "scripts/round.py").symlink_to("../.claude/plans/../../scripts/x.py")
+        return refused(lambda: staged(r, files=["scripts/round.py"]), "scripts/round.py is under .claude/plans")
+    case("a link whose target passes THROUGH .claude/plans and back out is CANNOT RUN", link_through_private, True)
+
+    def link_loop():
+        r = repo()
+        (r / "scripts/a.py").symlink_to("b.py")
+        (r / "scripts/b.py").symlink_to("a.py")
+        return refused(lambda: staged(r, files=["scripts/a.py"]), "scripts/a.py is a dangling or looping link")
+    case("two links naming each other are CANNOT RUN (a loop), never an endless walk", link_loop, True)
+
+    # r2 Codex 3: a tracked name that is not UTF-8 belongs to git's index, not to this package.
+    def odd_index_name():
+        r = repo()
+        git(r, "add", "-A")
+        track_as(r, os.fsdecode(b"scripts/bad-\xff.py"), write=False)
+        return (staged(r, files=["scripts/x.py"], track=False) / "scripts/x.py").read_bytes()
+    case("an unrelated tracked name that is not UTF-8 does not stop staging a declared file",
+         odd_index_name, X_BYTES)
+
+    # The same class in the other exclusions (r2 fold): each compares folded, so a case alias is not a way round.
+    def skills_home_alias():
+        r = repo()
+        git(r, "add", "-A")
+        track_as(r, ".AGENTS/SKILLS/extra/note.md")
+        return refused(lambda: staged(r, files=[".AGENTS/SKILLS/extra/note.md"], track=False),
+                       ".AGENTS/SKILLS/extra/note.md is under .agents/skills")
+    case("a file under a case alias of .agents/skills declared in files is CANNOT RUN", skills_home_alias, True)
+
+    def meta_alias():
+        r = repo()
+        git(r, "add", "-A")
+        track_as(r, ".CLAUDE-PLUGIN/plugin.json", b"{}\n")
+        return refused(lambda: staged(r, files=[".CLAUDE-PLUGIN/plugin.json"], track=False),
+                       ".CLAUDE-PLUGIN/plugin.json would land in the plugin's own .claude-plugin")
+    case("a declared file landing in a case alias of the plugin's .claude-plugin is CANNOT RUN", meta_alias, True)
+
+    def dest_alias():
+        r = repo()
+        git(r, "add", "-A")
+        track_as(r, "scripts/X.py", X_BYTES)
+        return refused(lambda: staged(r, files=["scripts/x.py", "scripts/X.py"], track=False),
+                       "two declarations land on scripts/X.py")
+    case("two declarations whose destinations differ only in case are CANNOT RUN (one would overwrite the other)",
+         dest_alias, True)
 
     def foreign_git_env():
         # A caller's GIT_DIR naming another repository, which tracks the file this one does not, changes nothing.
@@ -613,6 +784,13 @@ def _self_test_body() -> int:
          lambda: (lambda r: (refused(lambda: stage([spec(files=["scripts/x.py"])], r / "build/mkt", repo=r),
                                      f"{r / 'build/mkt'} is inside the repository"),
                              (r / "build").exists()))(repo()), (True, False))
+
+    def out_alias():
+        r = repo()
+        out = r.parent / r.name.upper() / "build/mkt"
+        return (refused(lambda: stage([spec(files=["scripts/x.py"])], out, repo=r), f"{out} is inside the repository"),
+                (r / "build").exists(), out.exists())
+    case("an out directory under a CASE ALIAS of the repository is CANNOT RUN too", out_alias, (True, False, False))
 
     def refusal_writes_nothing():
         r, out = repo(), tmp() / "out"

@@ -2331,11 +2331,17 @@ EXPECTED_MUTATIONS = {
     # creates it. One entry per build_world refusal and env rule, per preflight reason, per read_audit rule (parse,
     # dedupe, posix_spawn echo, unobservable entries), per run_isolated rule (path, PATH lookup, log reset, env, cwd,
     # timeout), the hook itself and the CLI's three exits: 34.
-    "scripts/mkt_isolate.py": 50,
+    # ⟳ PR #594 round 2 fold: 50 + 7 = 57 — `run_isolated` measures the world, the three "inside the repository"
+    # sites compare folded (one entry per site), `_reaches` folds, `fold` folds case and Unicode form. 4 re-bound.
+    "scripts/mkt_isolate.py": 57,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out
     # directory, plan-before-write, bytes, mode, the two manifests), per `read_marketplace` handler, per `install`
     # rule (listed plugin, cwd, timeout, exit codes, the installed path) and the CLI's exits: 47.
-    "scripts/mkt_stage.py": 54,
+    # ⟳ PR #594 round 2 fold: 54 + 13 = 67 — the component walk (a parent link, a link chain, a pass through the
+    # private directory, a loop, an absolute target ×2), the folded exclusions (`_under`, and one entry per site:
+    # .agents/skills, .claude-plugin, the out directory, two destinations; the whole-component rule) and the index
+    # name decoding. 12 re-bound onto the walk.
+    "scripts/mkt_stage.py": 67,
 }

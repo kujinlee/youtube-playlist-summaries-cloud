@@ -2,16 +2,18 @@
 """Build a stranger's world — fresh HOME, allow-listed PATH, an audit-hook capture — and run one command in it
 (marketplace-inventory plan, Task 2; spec §6 and §7 item 0b).
 
-    python3 scripts/mkt_isolate.py --self-test  # 67 cases
+    python3 scripts/mkt_isolate.py --self-test  # 73 cases
     python3 scripts/mkt_isolate.py --root DIR --allow CMD,... [--cwd DIR] [--timeout S] [--port N] -- ARGV...
 
 build_world(root, allow) makes the world under an EMPTY root: home/, tmp/, bin/ (one symlink per allow-listed
 command, nothing else), hook/sitecustomize.py. Its env is built from nothing (ENV_KEYS). preflight(world, port)
 returns every reason the author's environment would leak in (root or a HOME entry inside the repository, an env key
 or PATH beyond the world's, a bindir entry off the allow-list or resolving into the repo, the explainer port already
-listening); empty means clear. run_isolated(world, argv, cwd, timeout) runs one command and returns a RunRecord:
+listening; what `measured` reads from the world's own Python and git); empty means clear. "Inside the repository"
+is compared FOLDED (`fold`), so a case alias of the checkout is inside it. run_isolated(world, argv, cwd, timeout) runs one command and returns a RunRecord:
 rc, stdout, stderr, the files Python processes OPENED (audit hook), the programs EXECUTED, and what is UNOBSERVABLE —
-every non-Python program, every Python process that never loaded the hook, and the three ALWAYS entries.
+every non-Python program, every Python process that never loaded the hook, and the ALWAYS entries. It refuses a
+world that fails `boundary` or `measured`, whoever called `preflight`.
 Anything this cannot do is CANNOT RUN (rc 2), never an empty record.
 """
 from __future__ import annotations
@@ -31,6 +33,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -138,6 +141,20 @@ class RunRecord:
     unobservable: list[str]
 
 
+def fold(text: str) -> str:
+    """`text` as a case-insensitive, normalisation-insensitive filesystem (macOS's default) compares names. An
+    EXCLUSION compares folded, so a case alias of a refused place is refused (r2 Codex 1); an inclusion compares
+    exact."""
+    return unicodedata.normalize("NFKC", text).casefold()
+
+
+def _reaches(path: Path, top: Path) -> bool:
+    """`path`, every link followed, is `top` or below it under ANY case alias: `resolve()` keeps the spelling it is
+    given, so `/Repo/x` does not compare below `/repo` although it is the same directory there. For exclusions."""
+    a, b = fold(str(Path(path).resolve())), fold(str(Path(top).resolve()))
+    return a == b or a.startswith(b.rstrip("/") + "/")
+
+
 def _inside(path: Path, top: Path) -> bool:
     """`path`, every link followed, is `top` or below it (also resolved)."""
     try:
@@ -201,7 +218,7 @@ def boundary(world: World) -> list[str]:
     `preflight` AND by `run_isolated` (r1 Codex 4: a check only a caller runs is a check a caller can skip)."""
     reasons = []
     for top in _checkouts():
-        if _inside(world.root, top):
+        if _reaches(world.root, top):
             reasons.append(f"world root {world.root} lies inside the repository {top}")
     for field, name in LAYOUT:
         if Path(getattr(world, field)) != Path(world.root) / name:
@@ -243,7 +260,7 @@ def preflight(world: World, port: int | None = None) -> list[str]:
     reasons = boundary(world)       # the env, key by key and value by value, PATH included
     if world.home.is_dir():
         for entry in sorted(world.home.iterdir()):
-            if any(_inside(entry, top) for top in _checkouts()):
+            if any(_reaches(entry, top) for top in _checkouts()):
                 reasons.append(f"HOME/{entry.name} resolves inside the repository ({entry.resolve()})")
     else:
         reasons.append(f"world HOME {world.home} is not a directory")
@@ -251,23 +268,32 @@ def preflight(world: World, port: int | None = None) -> list[str]:
         for entry in sorted(world.bindir.iterdir()):
             if entry.name not in world.allow:
                 reasons.append(f"bindir entry {entry.name} is not on the allow-list {list(world.allow)}")
-            if any(_inside(entry, top) for top in _checkouts()):
+            if any(_reaches(entry, top) for top in _checkouts()):
                 reasons.append(f"allow-listed command {entry.name} resolves inside the repository "
                                f"({entry.resolve()})")
     else:
         reasons.append(f"world bindir {world.bindir} is not a directory")
-    for name in world.allow:        # MEASURED in the world, by its own commands (r1 Codex 2 and 3)
+    reasons += measured(world)
+    port = explainer_port(world.env) if port is None else port
+    with socket.socket() as s:
+        s.settimeout(1.0)
+        if s.connect_ex(("127.0.0.1", port)) == 0:
+            reasons.append(f"port {port} is already listening: a server the stranger did not start would answer")
+    return reasons
+
+
+def measured(world: World) -> list[str]:
+    """What only the world's OWN commands can tell (r1 Codex 2 and 3): each allow-listed Python's `sys.path` and
+    installed distributions, and git's credential and URL-rewrite config. Run by `preflight` AND by `run_isolated`
+    (r2 Codex 4), so the package set is verified at every run, whoever calls. Costs one process per such command."""
+    reasons = []
+    for name in world.allow:
         if not (world.bindir / name).exists():
             continue
         if _is_python(name):
             reasons += _python_leaks(world, name)
         elif name == "git":
             reasons += _git_leaks(world)
-    port = explainer_port(world.env) if port is None else port
-    with socket.socket() as s:
-        s.settimeout(1.0)
-        if s.connect_ex(("127.0.0.1", port)) == 0:
-            reasons.append(f"port {port} is already listening: a server the stranger did not start would answer")
     return reasons
 
 
@@ -397,14 +423,17 @@ def _alive(pid: int) -> bool:
 def run_isolated(world: World, argv: list[str], cwd: Path, timeout: int) -> RunRecord:
     """Run `argv` in the world: its env only, `argv[0]` looked up on the world's PATH (or an executable path inside
     the world root), in `cwd`, which must lie inside the world root (r1 Claude M2). The world must pass `boundary`
-    here, whoever called `preflight` (r1 Codex 4). The audit log is APPENDED to and never emptied (r1 Claude M1): a
-    record reads the bytes written from its start to its top process's exit, so events a surviving process writes
+    and `measured` here, whoever called `preflight` (r1 Codex 4, r2 Codex 4). NOT checked here: the HOME and bindir
+    entries and the explainer port, which are `preflight`'s alone.
+    The audit log is APPENDED to and never emptied (r1 Claude M1): a record reads the bytes written from its start to its top process's exit, so events a surviving process writes
     later stay in the log, a later record does not claim them, and each record names a survivor by pid. A command the
     world cannot reach, an OS error starting it, or a timeout is CANNOT RUN. Bound: a grandchild that outlives a
     timeout is not killed."""
     if not argv:
         raise CannotRun("nothing to run: argv is empty")
     bad = boundary(world)
+    if not bad:                     # the measured checks start the world's commands: only in a world that holds
+        bad = measured(world)
     if bad:
         raise CannotRun("the world's boundary does not hold: " + "; ".join(bad))
     if not _inside(Path(cwd), world.root):
@@ -567,6 +596,12 @@ def _self_test_body() -> int:
     case("explainer_port follows EXPLAINER_SERVE_PORT in the world's env, as the server does",
          lambda: explainer_port({"EXPLAINER_SERVE_PORT": "7419"}), 7419)
 
+    case("fold: two spellings one case-insensitive filesystem holds as ONE name fold to one string — by case "
+         "and by Unicode form — and a different name does not",
+         lambda: [fold(".CLAUDE/Plans") == fold(".claude/plans"), fold("caf\u00e9") == fold("CAFE\u0301"),
+                  fold("\uff41b") == fold("AB"), fold(".claude/plans") == fold(".claude/plan")],
+         [True, True, True, False])
+
     # --- preflight ---------------------------------------------------------------------------------
     case("a fresh world on a free port is clear",
          lambda: preflight(fresh(), port=free_port()), [])
@@ -622,6 +657,25 @@ def _self_test_body() -> int:
     case("preflight refuses a world root inside the repository",
          lambda: any("world root" in r and "inside the repository" in r
                      for r in tampered(root=REPO / "mkt-never-created")), True)
+
+    # r2 fold: `resolve()` keeps the spelling it is given, so a CASE ALIAS of the checkout compared exact is "outside".
+    # The WHOLE path's case is swapped: a linked worktree's alias would otherwise still sit, exactly spelled, inside
+    # its main checkout. Nothing is created there (on a case-sensitive filesystem the path does not exist).
+    ALIAS = Path(str(REPO).swapcase())
+    case("preflight refuses a world root inside a CASE ALIAS of the repository",
+         lambda: any("world root" in r and "inside the repository" in r
+                     for r in tampered(root=ALIAS / "mkt-never-created")), True)
+    case("preflight refuses a HOME entry that resolves into a case alias of the repo",
+         lambda: [("explainers" in r and "inside the repository" in r) for r in
+                  explainers_into(ALIAS / "docs" / "explainers")], [True])
+
+    def alias_command():
+        w = fresh(("cat",))
+        (w.bindir / "cat").unlink()
+        (w.bindir / "cat").symlink_to(ALIAS / "scripts" / "mkt_isolate.py")
+        return [("cat" in r and "inside the repository" in r) for r in preflight(w, port=free_port())]
+    case("preflight refuses an allow-listed command that resolves into a case alias of the repository",
+         alias_command, [True])
 
     case("preflight refuses a world whose PATH is not exactly its bindir",
          lambda: (lambda w: [("PATH" in r) for r in preflight(
@@ -714,6 +768,21 @@ def _self_test_body() -> int:
          [["main"], ["wt", "main"]])
 
     # --- run_isolated ------------------------------------------------------------------------------
+    # r2 Codex 4: what preflight MEASURES in the world, run_isolated measures too — a caller cannot skip it.
+    def run_unmeasured(kind):
+        if kind == "python":
+            w = fresh()
+            (w.root / VENV_CFG).unlink()
+            return raises(lambda: run(w, ["python3", "-c", "print(1)"]))
+        w = fresh(("git", "cat"))
+        (w.home / ".gitconfig").write_text("[credential]\n\thelper = store\n")
+        return raises(lambda: run(w, ["cat", fixture()]))
+    case("run_isolated refuses a world whose Python sees site-packages, with no preflight call before it",
+         lambda: (lambda got: got.startswith("CANNOT RUN: the world's boundary does not hold: ")
+                  and "site-packages" in got or got)(run_unmeasured("python")), True)
+    case("run_isolated refuses a world whose git has a credential helper, whatever command is run",
+         lambda: (lambda got: got.startswith("CANNOT RUN: the world's boundary does not hold: ")
+                  and "credential.helper" in got or got)(run_unmeasured("git")), True)
     def opens(text):
         w, f = fresh(), fixture(text)
         rec = run(w, ["python3", "-c", "import sys; open(sys.argv[1]).read()", f])
