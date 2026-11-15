@@ -121,8 +121,8 @@
     "file": "scripts/check-canonical-source.py",
     "edits": [
       [
-        "                      \".claude/hooks/\", \".github/workflows/\", \".agents/skills/\",\n                      \".githooks/\")",
-        "                      \".claude/hooks/\", \".github/workflows/\",\n                      \".githooks/\")"
+        "                      \".claude/hooks/\", \".github/workflows/\", \".agents/skills/\",\n                      \".githooks/\",\n",
+        "                      \".claude/hooks/\", \".github/workflows/\",\n                      \".githooks/\",\n"
       ]
     ],
     "expect": [
@@ -141,5 +141,18 @@
       "⭐ a marker QUOTED in frozen testimony is NOT a second canon site"
     ],
     "file": "scripts/check-canonical-source.py"
+  },
+  {
+    "name": "backlog #651: the identity case appends a slash to a FILE entry of HARNESS_TREE, so the one staged file can never match its exact copy",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "e.value if (ROOT / e.value).is_file() else e.value.rstrip(\"/\") + \"/\"",
+        "e.value.rstrip(\"/\") + \"/\""
+      ]
+    ],
+    "expect": [
+      "STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift"
+    ]
   }
 ]

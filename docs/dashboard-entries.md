@@ -20738,6 +20738,43 @@ Predicted, model against model at N=38: slowest shard 1,218 s round-robin -> 753
 clocks, 1,438-1,611 s, add runner setup, install and upload.
 
 ## 2026-11-15
+The full mutation sweep, about 780 compute-minutes, no longer runs on every merge. It runs once a
+night, at 00:30 Pacific, and a red night still opens a `sweep-red` issue. A pull request that
+changes the sweep's own harness — which used to force that full run — now checks a fixed fifth of
+the scripts, chosen from its commit, plus every script it touches. The cost: a defect only the full
+run would show waits for the next night instead of failing the pull request. The nightly run now
+uses at most 12 of the 20 runners, so pull requests are not stuck behind it, and its start time is
+not guaranteed: GitHub has started these runs 7 to 10 hours late. Backlog #231 (shards near their
+time limit) is closed: the slowest shard now takes 1,043 s against a 1,500 s line.
+Every session start says how long ago the last GREEN full sweep finished, and says STALE after 36
+hours. Until the first green night after this merges, it says NO GREEN SWEEP — that is expected,
+not a fault. Session start no longer waits on several GitHub calls for this line: it makes one.
+<!--tech-->
+Backlog #651, the owner's option A (11-15 06:24). `scripts/check-plan-code.py`: `sample_manifests`
+(the ceil(20%) targets with the smallest sha256(key, target)) and `select_manifests(sample_key=)`,
+`--sample-key`. `.github/workflows/ci.yml`: cron `30 8 * * *` (was `23 7 * * *`), the two sweep jobs skip
+a master push, the concurrency key carries `github.event_name`, `SAMPLE_KEY` is the PR head SHA, and
+`max-parallel` is 12 on the schedule (256, i.e. uncapped, otherwise). Backlog #231 closed on master run
+43721952922 (`65e6f562`): 38/38 green, slowest 1,043 s. Self-test 489 -> 505 cases; mutations 5,181 -> 5,190, the 9 new ones each killed on a temp copy. Not yet
+seen on CI: a scheduled run and its 12-shard cap, a master push skipping both sweep jobs, and the sampled
+PR shards.
+Review round 1 fold (8 findings, all fixed): `scripts/session-state.py` prints `FULL SWEEP: last completed
+N h ago` at session start, STALE past 36 h, CANNOT VERIFY when `gh` does not answer (148 cases, 127
+mutations); `scripts/sweep-costs.py` reads a scheduled run at one seed's cost, the divisor being the seeds
+the run's own verdict line lists (35 cases, 33 mutations); `sample_manifests` has a case that ranks
+hand-written digests (506 cases, 370 mutations). Backlog #231's line is restated for scheduled runs: any
+shard over 3,000 s reopens it. A defect the sample misses is found up to ~38 h after its merge.
+Phase 6 redesign (round 3 THRASHED in `sweep-liveness`; `docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md`):
+the run/job/shard reader is deleted. `mutation-sweep-complete` uploads a `full-sweep-green` artifact
+(retention 7 days) only on a green scheduled sweep of master, first attempt; `session-state.py` reads it
+with one name-filtered GET (`fetch_green_markers`, `green_sweep_status`: same repository, `master`, a
+zoned `created_at`, newest wins; CANNOT VERIFY on any gh or page fault). A case sums the hook's bounded
+calls (`COLLECT_BOUNDS`, each + DRAIN) against the SessionStart `timeout` read from `.claude/settings.json`;
+`TIMEOUT` 30 -> 21 to keep 5 s of margin. `check-plan-code.py` stages `.claude/settings.json` for that
+case. session-state: 161 -> 150 cases, 145 -> 140 mutations. The marker step's `if:` is seen only by
+the first scheduled run after merge.
+
+## 2026-11-15
 The goal tree now says why each waiting item is waiting, as you asked on 11-14. When work is recorded, the tool now
 asks one question: does it wait on a pull request or a backlog row to finish? The answer is a reference such as
 "PR #442", or "none". The page looks that reference up every time it is drawn. If the work is still open the line

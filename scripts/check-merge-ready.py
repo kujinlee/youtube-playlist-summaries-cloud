@@ -295,6 +295,26 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
         (1, "the sweep shard's timeout, longer on the two-seed scheduled sweep — gates no step"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),
+    # ⟳ 2026-11-15, backlog #651 (owner 11-15, option A): the full sweep moved from every master push to the
+    # nightly schedule, and a harness change on a pull request runs a SAMPLE keyed by the head SHA.
+    ("ci.yml", "group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}"):
+        (1, "a concurrency KEY, not a condition — the schedule and a master push queue apart; it gates nothing"),
+    ("ci.yml", "if: github.event_name != 'push' || github.ref != 'refs/heads/master'"):
+        (1, "the sweep matrix skips a MASTER push only — true on a pull request, the schedule and a batch push, so "
+            "it is not pull-request-only and this script has no step to invoke for it"),
+    ("ci.yml", "if: always() && (github.event_name != 'push' || github.ref != 'refs/heads/master')"):
+        (1, "the sweep's aggregate job, skipped with the matrix on a master push — not pull-request-only"),
+    ("ci.yml", "max-parallel: ${{ github.event_name == 'schedule' && 12 || 256 }}"):
+        (1, "the schedule's sweep runs 12 shards at a time to leave runners for PR CI — every other event is "
+            "uncapped (256 is the matrix maximum); it gates nothing"),
+    ("ci.yml", "SAMPLE_KEY: ${{ github.event.pull_request.head.sha }}"):
+        (1, "the head SHA handed to the sweep's sampler (empty off a pull request) — gates no step"),
+    # ⟳ 2026-11-15, backlog #651 Phase 6 redesign: the full-sweep-green marker is written and uploaded ONLY by
+    # a first-attempt scheduled run on master. Never true on a pull request, so it gates no merge.
+    ("ci.yml", "if: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/master' && "
+               "github.run_attempt == 1 }}"):
+        (2, "the two steps that publish the full-sweep-green marker — schedule on master only, never a pull "
+            "request"),
     # backlog #586 slice 1: the strace measurement runs on a pull request only when its own workflow or driver
     # changes. It is not a required check, and nothing it does gates a merge.
     ("strace-measure.yml", "pull_request:"):
@@ -1681,8 +1701,8 @@ def pin_pair(run, base: str) -> "tuple[dict, dict]":
     # differently when IMPORTED than when RUN is not seen here. (R8) a write to `EXPECTED_MUTATIONS` inside
     # a function called at run time, such as one line in `load_manifests`; (R9) a rebinding under
     # `if __name__ == "__main__":`, or a branch on `sys.argv`; (R9b) the same through `globals()`. Each
-    # edits `check-plan-code.py`, the sweep harness, so the PR sweeps FULL and the edit is in the reviewed
-    # diff. ⛔ Do not add a static shape check for them: that is the treadmill this comparison replaced.
+    # edits `check-plan-code.py`, the sweep harness, so the PR runs the harness SAMPLE (backlog #651; no
+    # longer FULL), `pin_drift` reads every manifest in every shard, and the edit is in the reviewed diff. ⛔ Do not add a static shape check for them: that is the treadmill this comparison replaced.
     rev = mb.stdout.strip()
     base_home, base_text = pins_text(run, rev)
     head_home, head_text = pins_text(run, "HEAD")
