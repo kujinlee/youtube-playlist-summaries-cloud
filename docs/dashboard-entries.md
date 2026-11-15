@@ -20736,3 +20736,17 @@ on 5 of the last 6 master pushes, max 1,647 s). `scripts/check-plan-code.py`: `s
 stdout and stderr, and as a workflow annotation (r1: also when the table no longer covers the manifest).
 Predicted, model against model at N=38: slowest shard 1,218 s round-robin -> 753 s; the measured job wall
 clocks, 1,438-1,611 s, add runner setup, install and upload.
+
+## 2026-11-15
+Three wrong statements in the index of reusable practices are corrected. It said an old size figure for the
+comprehensibility suite was "roughly 3x" too low; against the same nine files it was 1.82x too low. It gave the
+suite's size as about 11,000 lines while leaving out three shared files it names; with them it is 11,624. And it
+said the ties to this repository sit in one file; a second file, the shared delivery contract, has them too.
+This is the first step of the marketplace work, placed first so it can merge on its own, as you decided.
+
+<!--tech-->
+Marketplace-inventory plan Task 1 (spec §7 item 8, D8), first commit on branch `harness-ships-elsewhere` (the
+plan's slice table still calls it `mkt-spike`; the owner ruled one name on 11-14). `docs/portable-practices.md`
+only. Re-measured with `git show a4f6d4b5:<file> | wc -l`: nine files 6,542 (6,542 / 3,599 = 1.82); six Python
+files 10,373 + four `SKILL.md` 604 + three shared contracts 647 = 11,624; `explainer-delivery.md` lines 118, 158,
+235 at `a4f6d4b5` are the three `python3 scripts/...` invocations.

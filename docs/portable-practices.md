@@ -10,7 +10,7 @@ the documents that make it reproducible somewhere else. This file is the second 
 > me. One of the main deliverables of this project is the comprehensibility suite."* And: *"I had
 > plan to publish the comprehensibility suite to marketplace. So that it should be general."*
 >
-> **The suite is ~11,000 lines** (⟳ 2026-10-15: this said *9 files / 3,599 lines* for five weeks and undercounted its own subject by roughly 3x — the Python machinery alone is **10,373 lines across six files** (`brief-compose` 1,780, `explainer-serve` 2,907, `page_chrome` 450, `page_markup` 438, `gen-dashboard` 3,546, `gen-goals-page` 1,252), before 604 lines of skills. Re-derived by enumeration during the marketplace inventory; the old figure is the first evidence that an inventory was needed rather than a recollection.) — the four page-producing skills (`explain-diff`, `brief`,
+> **The suite is 11,624 lines across 17 components, measured at `a4f6d4b5` (2026-10-16)** (⟳ 2026-10-15: this said *9 files / 3,599 lines* for five weeks. Those same nine files were **6,542** lines at `a4f6d4b5`, so the old figure was **1.82x** low against its own subject; the 11,624 is a different and larger set, and the two are not compared as a ratio. The 11,624 is **10,373** lines of Python in six files (`brief-compose` 1,780, `explainer-serve` 2,907, `page_chrome` 450, `page_markup` 438, `gen-dashboard` 3,546, `gen-goals-page` 1,252), **604** in the four `SKILL.md` files and **647** in the three shared contracts (`explainer-delivery.md` 363, `corpus-search.md` 73, `handoff-path.md` 211); the four regen hooks complete the 17 and their lines are not counted. Re-derived by enumeration during the marketplace inventory; the old figure is the first evidence that an inventory was needed rather than a recollection. ⟳ 2026-11-15, D8: the ratio, the file set and the total corrected per the [`marketplace-inventory` spec](superpowers/specs/2026-10-15-marketplace-inventory-design.md) §7 item 8, derivation in its §3.) — the four page-producing skills (`explain-diff`, `brief`,
 > `explain-findings`, `explain-topic`), the shared delivery contract, `brief-compose.py`,
 > `explainer-serve.py`, `page_chrome.py`, `page_markup.py` — plus the four hook-regenerated pages
 > (`regen-backlog-page.sh`, `regen-dashboard.sh`, `regen-goals-page.sh`, `regen-features-page.sh`).
@@ -21,8 +21,11 @@ the documents that make it reproducible somewhere else. This file is the second 
 > marketplace plugin that only works in this repo is not shippable, so coupling is a defect, not a
 > tidiness note. The good news is measured — `shared/explainer-delivery.md` has **0**
 > project-specific references, `explain-topic` and `explain-findings` **1** each, and
-> `brief/SKILL.md` **9**, all in step 1's ground-truth command list. The problem is concentrated in
-> one file, which `brief`'s own *Known gaps* section already confesses.
+> `brief/SKILL.md` **9**, all in step 1's ground-truth command list. ⟳ 2026-11-15, D8: that
+> count measures vocabulary only, and the coupling is NOT confined to `brief`. `shared/explainer-delivery.md`
+> scores 0 on it and still carried **three** CWD-relative `python3 scripts/...` invocations at `a4f6d4b5`
+> (its lines 118, 158, 235), in the contract all four page-producing skills route through (spec §4,
+> criterion C3). `brief`'s own *Known gaps* section confesses only `brief`'s share.
 >
 > ⛔ **WHAT IS STILL NOT DECLARED, stated so the gap is not read as closed.** `docs/anchors.md`
 > registered 10 anchors when this was written and registers **13** today (⟳ 2026-10-15; a **14th**, `harness-ships-elsewhere`, is allocated on the unmerged marketplace-inventory branch and is deliberately not counted here — r1 M4 caught this file claiming it already); at the time exactly one touched comprehension — `status-visibility`, scoped to *"a
