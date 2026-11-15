@@ -424,7 +424,13 @@ EXPECTED_MUTATIONS = {
     # alarm style lost, a placed and a loose entry underived, a `blockers` key on every thread, the session-start
     # block unbounded or listing an item with a reason, the OLDEST snapshot read, an unreadable log as "none".
     # Five rebound (the Owed line and the agenda's NOW entries moved): no behaviour of theirs changed.
-    "scripts/goal-tree.py": 417,  # 395 -> 417 (backlog #650): derived waits, idle days, the session-start block
+    # ⟳ 2026-11-15, PR #592 r1 fold: 417 -> 435. Nineteen new, one or more per r1 rule: a closed-unmerged
+    # PR or a fated row read as done; a recorded wait's refs not read (three sites); idle despite a live wait or an open
+    # prerequisite; an incomplete snapshot saying none; the year as latest-not-future, a gap under a day ahead not 0;
+    # on_done read (two sites); a negated and an until-after form read; idle days to the snapshot, the given clock
+    # ignored; an unbounded line; the own-CANNOT exit code; the whole log read. Eight rebound; ONE retired: 'a closed
+    # prerequisite PR is not read as done' now has the merged entry's anchor (closed is ABANDONED, r1 Codex 1 guards it).
+    "scripts/goal-tree.py": 435,  # 395 -> 417 (backlog #650) -> 435 (PR #592 r1): the derived waits and the session block
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

@@ -4909,8 +4909,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"what\": _one_line(u.get(\"what\")),\n                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"))\n                for u in g.get(\"placed\") or []",
-        "\"what\": _one_line(u.get(\"what\")),\n                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"))\n                for u in []"
+        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"), u.get(\"wait_blockers\"))\n                for u in g.get(\"placed\") or []",
+        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"), u.get(\"wait_blockers\"))\n                for u in []"
       ]
     ],
     "expect": [
@@ -4948,8 +4948,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"))\n                for u in g.get(\"placed\")",
-        "                 \"waits\": None} | _owed_keys([u], u.get(\"blockers\"))\n                for u in g.get(\"placed\")"
+        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"), u.get(\"wait_blockers\"))\n                for u in g.get(\"placed\")",
+        "                 \"waits\": None} | _owed_keys([u], u.get(\"blockers\"), u.get(\"wait_blockers\"))\n                for u in g.get(\"placed\")"
       ]
     ],
     "expect": [
@@ -5166,19 +5166,6 @@
     ]
   },
   {
-    "name": "backlog #650: a closed prerequisite PR is not read as done",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "if state == \"closed\":\n            return {\"ref\": ref, \"state\": \"done\"",
-        "if state == \"never\":\n            return {\"ref\": ref, \"state\": \"done\""
-      ]
-    ],
-    "expect": [
-      "⭐ backlog #650: the prerequisite's LIVE state decides the line — a merged PR, an open one and a closed one, three PR numbers in ONE case"
-    ]
-  },
-  {
     "name": "backlog #650: an open prerequisite PR reads as not read",
     "file": "scripts/goal-tree.py",
     "edits": [
@@ -5196,8 +5183,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"state\": \"open\" if state == \"open\" else \"unread\"}",
-        "\"state\": \"open\"}"
+        "return {\"ref\": ref, \"state\": \"open\" if state == \"open\" else \"unread\"}",
+        "return {\"ref\": ref, \"state\": \"open\"}"
       ]
     ],
     "expect": [
@@ -5209,12 +5196,14 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if not (fates[n] or n in closed):",
-        "if not fates[n]:"
+        "if n not in closed:",
+        "if True:"
       ]
     ],
     "expect": [
-      "⭐ backlog #650: a BACKLOG prerequisite is read from the backlog — a closed row (with the day its PR merged), an open row, a fated row, and an unread backlog, in ONE case"
+      "⭐ backlog #650: a BACKLOG prerequisite is read from the backlog — a closed row (with the day its PR merged), an open row, a fated row (r1 Claude F2: re-plan, never done), and an unread backlog, in ONE case",
+      "⭐ r1 Codex 1 / Claude F2: a prerequisite PR CLOSED unmerged, a WITHDRAWN row and a SUPERSEDED row each say re-plan in the alarm style — never 'blocker done' — while a MERGED PR and a CLOSED row still read done",
+      "⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case"
     ]
   },
   {
@@ -5222,12 +5211,13 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if not (fates[n] or n in closed):",
-        "if not (n in closed):"
+        "if fates[n]:",
+        "if False:"
       ]
     ],
     "expect": [
-      "⭐ backlog #650: a BACKLOG prerequisite is read from the backlog — a closed row (with the day its PR merged), an open row, a fated row, and an unread backlog, in ONE case"
+      "⭐ backlog #650: a BACKLOG prerequisite is read from the backlog — a closed row (with the day its PR merged), an open row, a fated row (r1 Claude F2: re-plan, never done), and an unread backlog, in ONE case",
+      "⭐ r1 Codex 1 / Claude F2: a prerequisite PR CLOSED unmerged, a WITHDRAWN row and a SUPERSEDED row each say re-plan in the alarm style — never 'blocker done' — while a MERGED PR and a CLOSED row still read done"
     ]
   },
   {
@@ -5330,8 +5320,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "then = then.replace(year=now.year - 1)",
-        "then = then.replace(year=now.year)"
+        "[when.year - 1, when.year, when.year + 1]",
+        "[when.year, when.year + 1]"
       ]
     ],
     "expect": [
@@ -5410,13 +5400,12 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "alarm = None if x[\"running\"] else owed_reason(x, snap.get(\"at\"))[1]",
-        "alarm = None if x[\"running\"] else (owed_reason(x, snap.get(\"at\"))[1] or \"held\")"
+        "if alarm and idle:",
+        "if alarm:"
       ]
     ],
     "expect": [
-      "⭐ backlog #650: the session-start block lists an Owed item with a finished blocker or no reason — never one with an open prerequisite or a recorded wait — and is bounded, with the rest counted",
-      "backlog #650: with nothing idle the block is ONE line that says so, never silence"
+      "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
     ]
   },
   {
@@ -5424,8 +5413,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "tail = log_path.read_bytes().rstrip().rsplit(b\"\\n\", 1)[-1]",
-        "tail = log_path.read_bytes().rstrip().split(b\"\\n\", 1)[0]"
+        "return data[cut + 1:]",
+        "return data.split(b\"\\n\", 1)[0] if start == 0 else data[cut + 1:]"
       ]
     ],
     "expect": [
@@ -5437,12 +5426,269 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        return [f\"=== OWED AND IDLE: CANNOT READ {LOG_REL}",
-        "        return [f\"=== OWED AND IDLE: none {LOG_REL}"
+        "return [_bounded(f\"{OWED_IDLE_CANNOT} READ {LOG_REL} (\"",
+        "return [_bounded(f\"=== OWED AND IDLE: none {LOG_REL} (\""
       ]
     ],
     "expect": [
       "⭐ backlog #650: the session-start report reads the NEWEST logged snapshot only; a missing or unreadable log is CANNOT READ — treat as NOT RUN — never 'none'"
+    ]
+  },
+  {
+    "name": "r1 Codex 1: a PR closed unmerged is read as done",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return {\"ref\": ref, \"state\": \"abandoned\", \"why\": \"closed unmerged\"}",
+        "return {\"ref\": ref, \"state\": \"done\", \"when\": None}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #650: the prerequisite's LIVE state decides the line — a merged PR, an open one and one CLOSED unmerged (r1 Codex 1: re-plan, never done), three PR numbers in ONE case",
+      "⭐ r1 Codex 1 / Claude F2: a prerequisite PR CLOSED unmerged, a WITHDRAWN row and a SUPERSEDED row each say re-plan in the alarm style — never 'blocker done' — while a MERGED PR and a CLOSED row still read done",
+      "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
+    ]
+  },
+  {
+    "name": "r1 Claude F2: a fated backlog row is read as done",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return {\"ref\": ref, \"state\": \"abandoned\", \"why\": _SS.clean(fates[n][0], 20)}",
+        "return {\"ref\": ref, \"state\": \"done\", \"when\": None}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #650: a BACKLOG prerequisite is read from the backlog — a closed row (with the day its PR merged), an open row, a fated row (r1 Claude F2: re-plan, never done), and an unread backlog, in ONE case",
+      "⭐ r1 Codex 1 / Claude F2: a prerequisite PR CLOSED unmerged, a WITHDRAWN row and a SUPERSEDED row each say re-plan in the alarm style — never 'blocker done' — while a MERGED PR and a CLOSED row still read done"
+    ]
+  },
+  {
+    "name": "r1 Claude F1: the refs a recorded wait names are never read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "by_wait = x.get(\"wait_blockers\") or {}",
+        "by_wait = {}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case",
+      "⭐ r1 Claude F1: the session block counts an item whose recorded wait has FINISHED as idle — the thread-line and the ledger spellings (on a thread, a placed and a loose entry), a merged and an open PR, in ONE case",
+      "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
+    ]
+  },
+  {
+    "name": "r1 Claude F1: a ledger entry's recorded wait is not resolved",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "recorded = wait_blockers([_ledger_waits(entry).get(\"waits\")], src)",
+        "recorded = {}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude F1: the session block counts an item whose recorded wait has FINISHED as idle — the thread-line and the ledger spellings (on a thread, a placed and a loose entry), a merged and an open PR, in ONE case"
+    ]
+  },
+  {
+    "name": "r1 Claude F1: a thread's recorded waits are not resolved",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "recorded = wait_blockers([t.get(\"waits\")] + [x.get(\"waits\") for x in entries], src, own=_thread_refs(t))",
+        "recorded = {}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case",
+      "⭐ r1 Claude F1: the session block counts an item whose recorded wait has FINISHED as idle — the thread-line and the ledger spellings (on a thread, a placed and a loose entry), a merged and an open PR, in ONE case",
+      "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
+    ]
+  },
+  {
+    "name": "r1 Codex 5: an item with a live recorded wait counts as idle",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "idle = not pending and len(stale) == len(recorded)",
+        "idle = not pending"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
+    ]
+  },
+  {
+    "name": "r1 Codex 5: an item with an open prerequisite counts as idle",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "idle = not pending and len(stale)",
+        "idle = len(stale)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
+    ]
+  },
+  {
+    "name": "r1 Codex 2: a snapshot with a source not read still says none",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "unread = [(k, v) for k in OWED_IDLE_UNREAD for v in snap.get(k) or []]",
+        "unread = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 2 / Claude F5: a snapshot that records ANY source not read never says 'none' — it says CANNOT VERIFY, names the source, and is bounded; a complete one still says none",
+      "r1 Codex 2: an incomplete snapshot still lists the idle items it DID read, after its CANNOT VERIFY line"
+    ]
+  },
+  {
+    "name": "r1 Codex 3: the year is the latest not in the future, not the nearest",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "then = min(cands, key=lambda c: abs(when - c))",
+        "then = max([c for c in cands if c <= when] or cands)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 3 / Claude F3: the year of a month-day time is the one with the SMALLEST gap, and a gap under a day either way is 0 — the DST fallback, a minute after the snapshot, a full stamp ahead, the year boundary"
+    ]
+  },
+  {
+    "name": "r1 Claude F3: a gap under a day AHEAD of now is not 0",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if abs(gap) < _dt.timedelta(days=1):",
+        "if _dt.timedelta(0) <= gap < _dt.timedelta(days=1):"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 3 / Claude F3: the year of a month-day time is the one with the SMALLEST gap, and a gap under a day either way is 0 — the DST fallback, a minute after the snapshot, a full stamp ahead, the year boundary"
+    ]
+  },
+  {
+    "name": "r1 Codex 4: on_done is read for a ledger entry's prerequisite",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "named_prerequisites(entry.get(\"what\"))",
+        "named_prerequisites(entry.get(\"what\"), entry.get(\"on_done\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 4: `on_done` describes the FINISH and is never read for a prerequisite — a thread entry and a placed entry, beside the same words in `what`"
+    ]
+  },
+  {
+    "name": "r1 Codex 4: on_done is read for a thread's prerequisite",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "t.get(\"what\"), *(e.get(\"what\") for e in naming), own=_thread_refs(t))]",
+        "t.get(\"what\"), *(e.get(\"what\") for e in naming), *(e.get(\"on_done\") for e in naming), own=_thread_refs(t))]"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 4: `on_done` describes the FINISH and is never read for a prerequisite — a thread entry and a placed entry, beside the same words in `what`"
+    ]
+  },
+  {
+    "name": "r1 Codex 4: a negated after-form is a prerequisite",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if _NEGATED_RE.search(_CLAUSE_RE.search(text[:m.start()]).group()):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 4: a NEGATED or `until after` form is not a prerequisite; a clause of its own still is"
+    ]
+  },
+  {
+    "name": "r1 Codex 4: an until-after form is a prerequisite",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "|\\buntil\\s*$",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 4: a NEGATED or `until after` form is not a prerequisite; a clause of its own still is"
+    ]
+  },
+  {
+    "name": "r1 Claude F4: the session block counts idle days to the snapshot's time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "waits, alarm, idle = owed_reason(x, now)",
+        "waits, alarm, idle = owed_reason(x, snap.get(\"at\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude F4: idle days are counted to the time the report RUNS, not to the snapshot's first-logged time — two clocks over ONE snapshot",
+      "⭐ r1 Claude F4: `--owed-idle` counts to the clock it is RUN at — two clocks, one logged snapshot"
+    ]
+  },
+  {
+    "name": "r1 Claude F4: --owed-idle ignores the clock it is given",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "now or _dt.datetime.now().strftime(MINUTE_FMT)",
+        "_dt.datetime.now().strftime(MINUTE_FMT)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude F4: `--owed-idle` counts to the clock it is RUN at — two clocks, one logged snapshot"
+    ]
+  },
+  {
+    "name": "r1 Codex 6: a printed line is not bounded",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return head + _one_line(middle, max(OWED_IDLE_WIDTH - len(head) - len(tail), 1)) + tail",
+        "return head + str(middle) + tail"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 2 / Claude F5: a snapshot that records ANY source not read never says 'none' — it says CANNOT VERIFY, names the source, and is bounded; a complete one still says none",
+      "⭐ r1 Codex 6 / Claude F6: every line the block prints is bounded, error lines included, and CANNOT RUN prints exactly ONCE through the hook — a failing main, a missing and a broken log, three hook outcomes"
+    ]
+  },
+  {
+    "name": "r1 Claude F6: --owed-idle's own CANNOT line exits 1, so the hook says CANNOT RUN twice",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return 2 if lines[0].startswith(OWED_IDLE_CANNOT) else 0",
+        "return 1 if lines[0].startswith(OWED_IDLE_CANNOT) else 0"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 6 / Claude F6: every line the block prints is bounded, error lines included, and CANNOT RUN prints exactly ONCE through the hook — a failing main, a missing and a broken log, three hook outcomes"
+    ]
+  },
+  {
+    "name": "r1 Claude F7: the log is read whole for its last line",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "start = max(0, size - take)",
+        "start = 0"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude F7: the newest snapshot is read from the END of the log — a 1 MB and a 2 MB history cost the same few chunks, and a last line longer than a chunk is still read whole"
     ]
   }
 ]
