@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/sweep-sample-nightly-r3-claude.md": "100644 2fa85c5758350b3e2a3bc2f89c09d84eaa5a3881"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "a8a2760d86c2651a4a6a65ed3610e987e4e8a74e",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "Claude half r3 of PR #593 (backlog #651)",
+  "reason": "claude half filed: 9351 chars, names a8a2760d86c2",
+  "refused": false,
+  "review": "sweep-sample-nightly-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/sweepsample",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
