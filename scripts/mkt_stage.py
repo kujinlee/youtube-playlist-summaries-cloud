@@ -2,7 +2,7 @@
 """Package declared files into a throwaway local marketplace, and install one of its plugins in a stranger's world
 (marketplace-inventory plan, Task 3; spec §6 and §7 item 0).
 
-    python3 scripts/mkt_stage.py --self-test  # 63 cases
+    python3 scripts/mkt_stage.py --self-test  # 72 cases
     python3 scripts/mkt_stage.py --out DIR --package NAME --version V [--skill PATH]... [--file PATH]...
                                  [--marketplace NAME]
 
@@ -23,7 +23,10 @@ real `claude`, in a world built by `mkt_isolate`. Where `claude` is absent (CI h
 `NOT RUN: claude missing` and is counted as not run. It is tallied apart from the N/N line in both places, so the
 declared count is the same with and without `claude`; a live failure still prints `[FAIL]` and exits 1.
 
-Bounds: staging ships what is on DISK under a declared skill directory, not what git tracks; `install` is exercised
+What ships is what git TRACKS (r1 Claude M3): an untracked or gitignored file — a link or the file it ends at — is
+CANNOT RUN, named, never shipped and never skipped. Paths under PRIVATE (`.claude/plans`) are refused even when
+tracked (r1 Codex 1).
+Bounds: a tracked file ships its working-tree bytes, not its committed ones; `install` is exercised
 here only against a stand-in for `run_isolated` (the first live install is the plan's Task 4).
 """
 from __future__ import annotations
@@ -38,6 +41,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -55,6 +59,10 @@ VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+-]*$")
 SKILLS_HOME = ".agents/skills"
 # The plugin's own metadata directory. A declared file may not land in it.
 META = ".claude-plugin"
+# r1 Codex 1: repository paths never shipped, however declared or reached (a file, a skill dir, a link) and even
+# when tracked: the author's private plans. `.git` needs no entry — git tracks nothing under it, and only a tracked
+# file ships (r1 Claude M3).
+PRIVATE = (".claude/plans",)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -68,6 +76,7 @@ class PackageSpec:
 def plan(spec: PackageSpec, repo: Path) -> list[tuple[Path, str]]:
     """Every (source file, path under the plugin root) `spec` ships, links resolved. Writes nothing."""
     top = Path(repo).resolve()
+    tracked = _tracked(top)
     dests: dict[str, Path] = {}
 
     def add(src: Path, dest: str) -> None:
@@ -77,17 +86,17 @@ def plan(spec: PackageSpec, repo: Path) -> list[tuple[Path, str]]:
 
     for s in spec.skills:
         rel = _declared(s)
-        real = _real(top / rel, top, rel)
+        real = _real(top / rel, top, rel, tracked)
         if not real.is_dir():
             raise CannotRun(f"{rel} is not a directory: a skill is declared by its directory")
-        found = _tree(real, rel, top, frozenset())
+        found = _tree(real, rel, top, frozenset(), tracked)
         if not found:
             raise CannotRun(f"{rel} holds no files: an empty skill directory is not a skill")
         for src, sub in found:
             add(src, f"skills/{Path(rel).name}/{sub}")
     for f in spec.files:
         rel = _declared(f)
-        real = _real(top / rel, top, rel)
+        real = _real(top / rel, top, rel, tracked)
         if not real.is_file():
             raise CannotRun(f"{rel} is not a regular file: `files` takes files (a skill directory goes in `skills`)")
         if _below(real, top / SKILLS_HOME):
@@ -113,8 +122,27 @@ def _below(path: Path, top: Path) -> bool:
     return path == top or top in path.parents
 
 
-def _real(path: Path, top: Path, rel: str) -> Path:
-    """`path` with every link followed. Refused when absent, dangling, looping, or outside the repository `top`."""
+def _tracked(top: Path) -> frozenset[str]:
+    """Every path git tracks in `top` (repo-relative, posix). Asked of a git started with no config but the
+    repository's own and no inherited GIT_* variable, so a caller's env cannot point it at another index. A
+    repository git cannot list is CANNOT RUN: what is tracked cannot then be told."""
+    env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": os.environ.get("HOME", "/"), "LANG": "C",
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+    try:
+        p = subprocess.run(["git", "-C", str(top), "ls-files", "-z", "--cached"], env=env, capture_output=True,
+                           stdin=subprocess.DEVNULL, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise CannotRun(f"{top}: git cannot list what is tracked ({type(e).__name__}: {e})") from None
+    if p.returncode != 0:
+        raise CannotRun(f"{top} is not a git checkout git can list (rc {p.returncode}: "
+                        f"{p.stderr.decode(errors='replace').strip()}): staging ships tracked files only")
+    return frozenset(x.decode() for x in p.stdout.split(b"\0") if x)
+
+
+def _real(path: Path, top: Path, rel: str, tracked: frozenset[str] = frozenset()) -> Path:
+    """`path` with every link followed. Refused when absent, dangling, looping, outside the repository `top`, under
+    a PRIVATE path, or not tracked: the link itself (where `path` is one) and the file it ends at must both be
+    tracked, so an untracked or gitignored file never ships (r1 Claude M3)."""
     if not os.path.lexists(path):
         raise CannotRun(f"{rel} does not exist in {top}")
     try:
@@ -124,19 +152,31 @@ def _real(path: Path, top: Path, rel: str) -> Path:
     if not _below(real, top):
         raise CannotRun(f"{rel} resolves to {real}, outside the repository {top}: staging it would ship a file "
                         f"the repository does not hold")
+    lex = path.parent.resolve() / path.name         # where the entry itself sits, its parents' links followed
+    for at in (lex, real):
+        inner = at.relative_to(top).as_posix() if _below(at, top) else ""
+        for x in PRIVATE:
+            if inner == x or inner.startswith(x + "/"):
+                raise CannotRun(f"{rel} is under {x} ({inner}): the author's private files are never shipped")
+    for at in (lex, real):
+        inner = at.relative_to(top).as_posix() if _below(at, top) else ""
+        if (at.is_symlink() or at.is_file()) and inner not in tracked:
+            raise CannotRun(f"{rel} is not tracked by git ({inner}): staging ships tracked files only, never an "
+                            f"untracked or ignored one")
     return real
 
 
-def _tree(real: Path, rel: str, top: Path, above: frozenset) -> list[tuple[Path, str]]:
+def _tree(real: Path, rel: str, top: Path, above: frozenset, tracked: frozenset[str] = frozenset()
+          ) -> list[tuple[Path, str]]:
     """Every file below directory `real` as (resolved source, path relative to it), links followed. `above` holds
     the resolved directories on the way down: meeting one again is a link cycle."""
     out, here = [], above | {real}
     for name in sorted(os.listdir(real)):
-        child = _real(real / name, top, f"{rel}/{name}")
+        child = _real(real / name, top, f"{rel}/{name}", tracked)
         if child.is_dir():
             if child in here:
                 raise CannotRun(f"{rel}/{name} links back to a directory above it: a link cycle")
-            out += [(src, f"{name}/{sub}") for src, sub in _tree(child, f"{rel}/{name}", top, here)]
+            out += [(src, f"{name}/{sub}") for src, sub in _tree(child, f"{rel}/{name}", top, here, tracked)]
         elif child.is_file():
             out.append((child, name))
         else:
@@ -227,7 +267,7 @@ USAGE = ("usage: mkt_stage.py --out DIR --package NAME --version V [--skill PATH
          "[--marketplace NAME]\n       mkt_stage.py --self-test")
 
 
-def main(argv=None) -> int:
+def main(argv=None, repo: Path = REPO) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv == ["--self-test"]:
         return _self_test()
@@ -241,7 +281,7 @@ def main(argv=None) -> int:
     opts = ap.parse_args(argv)
     try:
         root = stage([PackageSpec(opts.package, opts.version, opts.skill, opts.file)], Path(opts.out),
-                     opts.marketplace)
+                     opts.marketplace, repo)
     except CannotRun as e:
         print(f"CANNOT RUN: {e}", file=sys.stderr)
         return 2
@@ -306,13 +346,21 @@ def _self_test_body() -> int:
         put(r / "scripts/lib/y.py", Y_BYTES)
         put(top / "outside/secret.md", b"the author's own\n")
         put(top / "outside/skill/SKILL.md", b"outside skill\n")
+        git(r, "init", "-q", "--template=")      # no sample hooks: an init is most of a case's time
+        git(r, "add", "-A")
         return r
+
+    def git(r, *args):
+        subprocess.run(["git", "-C", str(r), *args], check=True, capture_output=True)
 
     def spec(skills=(), files=(), name="pkg", version="0.0.1"):
         return PackageSpec(name, version, list(skills), list(files))
 
-    def staged(r, skills=(), files=(), name="pkg", version="0.0.1"):
-        """Stage one package from fixture repo `r`; return its plugin root."""
+    def staged(r, skills=(), files=(), name="pkg", version="0.0.1", track=True):
+        """Stage one package from fixture repo `r`; return its plugin root. `track` first adds everything git
+        does not ignore, as a case that built files on top of `repo()` means them to be part of it."""
+        if track:
+            git(r, "add", "-A")
         return stage([spec(skills, files, name, version)], tmp() / "out", repo=r) / name
 
     def tree(top):
@@ -422,6 +470,71 @@ def _self_test_body() -> int:
         return refused(lambda: staged(r, skills=[".agents/skills/brief"]),
                        ".agents/skills/brief/pipe is neither a file nor a directory")
     case("something in a skill that is neither file nor directory is CANNOT RUN, never skipped", fifo, True)
+
+    # --- what ships: tracked files only, never the author's private ones (r1 Claude M3, Codex 1) -------------
+    def untracked_in_skill():
+        r = repo()
+        put(r / ".agents/skills/brief/.DS_Store", b"finder\n")
+        return refused(lambda: staged(r, skills=[".agents/skills/brief"], track=False),
+                       ".agents/skills/brief/.DS_Store is not tracked by git")
+    case("an untracked file inside a declared skill is CANNOT RUN, naming it — never shipped, never skipped",
+         untracked_in_skill, True)
+
+    def ignored_file():
+        r = repo()
+        put(r / ".gitignore", b".env.local\n")
+        put(r / ".env.local", b"SECRET=1\n")
+        return refused(lambda: staged(r, files=[".env.local"]), ".env.local is not tracked by git")
+    case("a gitignored file declared in files is CANNOT RUN, naming it", ignored_file, True)
+
+    def untracked_link():
+        r = repo()
+        (r / "scripts/alias.py").symlink_to("x.py")
+        return refused(lambda: staged(r, files=["scripts/alias.py"], track=False),
+                       "scripts/alias.py is not tracked by git")
+    case("an untracked LINK to a tracked file is CANNOT RUN: the link itself is what is declared",
+         untracked_link, True)
+    case("adjacent: a tracked link to a tracked file stages",
+         lambda: (lambda r: ((r / "scripts/alias.py").symlink_to("x.py"),
+                             (staged(r, files=["scripts/alias.py"]) / "scripts/alias.py").read_bytes())[1])(repo()),
+         X_BYTES)
+
+    def not_git():
+        r = repo()
+        shutil.rmtree(r / ".git")
+        return refused(lambda: staged(r, files=["scripts/x.py"], track=False), f"{r} is not a git checkout")
+    case("a repository git cannot list is CANNOT RUN (what is tracked cannot be told)", not_git, True)
+
+    def private(kind):
+        r = repo()
+        put(r / ".claude/plans/p.md", b"the author's plan\n")
+        git(r, "add", "-f", ".claude/plans/p.md")          # tracked, so only the private-path guard can refuse it
+        if kind == "file":
+            return refused(lambda: staged(r, files=[".claude/plans/p.md"]), ".claude/plans/p.md is under .claude/plans")
+        if kind == "skill":
+            return refused(lambda: staged(r, skills=[".claude/plans"]), ".claude/plans is under .claude/plans")
+        (r / ".agents/skills/brief/plan.md").symlink_to("../../../.claude/plans/p.md")
+        return refused(lambda: staged(r, skills=[".agents/skills/brief"]),
+                       ".agents/skills/brief/plan.md is under .claude/plans")
+    case("a TRACKED file under .claude/plans declared in files is CANNOT RUN", lambda: private("file"), True)
+    case("...declared as a skill directory", lambda: private("skill"), True)
+    case("...reached through a link inside a skill", lambda: private("link"), True)
+
+    def foreign_git_env():
+        # A caller's GIT_DIR naming another repository, which tracks the file this one does not, changes nothing.
+        r, other = repo(), repo()
+        for top in (r, other):
+            put(top / "scripts/new.py", b"new\n")
+        git(other, "add", "-A")
+        old = os.environ.get("GIT_DIR")
+        os.environ["GIT_DIR"] = str(other / ".git")
+        try:
+            return refused(lambda: staged(r, files=["scripts/new.py"], track=False),
+                           "scripts/new.py is not tracked by git")
+        finally:
+            os.environ.pop("GIT_DIR") if old is None else os.environ.__setitem__("GIT_DIR", old)
+    case("what is tracked is asked of the repository's own git, never one a caller's GIT_DIR names",
+         foreign_git_env, True)
 
     # --- declarations that cannot be staged ----------------------------------------------------------
     case("a declared path that does not exist is CANNOT RUN",
@@ -625,31 +738,29 @@ def _self_test_body() -> int:
                              t[3]))(installed("nope")), (True, []))
 
     # --- CLI -----------------------------------------------------------------------------------------
-    def cli(args):
+    def cli(args, r=None):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                rc = main(args)
+                rc = main(args, repo=repo() if r is None else r)
             except SystemExit as e:
                 rc = e.code
         return rc, out.getvalue(), err.getvalue()
 
     def cli_stages():
-        # The CLI stages from REPO, so it declares this very file: the one real path a self-test may rely on.
+        # A fixture repository: the copy the mutation harness runs in is not a git checkout (r1 Claude M3).
         out = tmp() / "out"
-        rc, o, _ = cli(["--out", str(out), "--package", "cli-pkg", "--version", "0.1.0",
-                        "--file", "scripts/mkt_stage.py"])
-        return (rc, o == f"{out}\n", read_marketplace(out), sha(out / "cli-pkg/scripts/mkt_stage.py") == sha(__file__))
+        rc, o, _ = cli(["--out", str(out), "--package", "cli-pkg", "--version", "0.1.0", "--file", "scripts/x.py"])
+        return (rc, o == f"{out}\n", read_marketplace(out), (out / "cli-pkg/scripts/x.py").read_bytes() == X_BYTES)
     case("CLI: stages one package and prints the marketplace root (rc 0)",
          cli_stages, (0, True, ("mkt-local", {"cli-pkg": "0.1.0"}), True))
 
     def cli_options():
         out = tmp() / "out"
         rc, _, _ = cli(["--out", str(out), "--package", "p2", "--version", "2.0.0", "--marketplace", "named-mkt",
-                        "--skill", "scripts/mutations", "--file", "scripts/mkt_stage.py",
-                        "--file", "scripts/mkt_isolate.py"])
-        return (rc, read_marketplace(out), (out / "p2/skills/mutations/mkt_isolate.json").is_file(),
-                (out / "p2/scripts/mkt_isolate.py").is_file())
+                        "--skill", ".agents/skills/brief", "--file", "scripts/x.py", "--file", "scripts/lib/y.py"])
+        return (rc, read_marketplace(out), (out / "p2/skills/brief/refs/deep.md").is_file(),
+                (out / "p2/scripts/lib/y.py").is_file())
     case("CLI: --marketplace, --skill and a repeated --file all reach stage",
          cli_options, (0, ("named-mkt", {"p2": "2.0.0"}), True, True))
 
@@ -663,7 +774,7 @@ def _self_test_body() -> int:
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             try:
-                rc = main(["--package", "p", "--version", "1", "--file", "scripts/mkt_stage.py"])
+                rc = main(["--package", "p", "--version", "1", "--file", "scripts/x.py"], repo=repo())
             except SystemExit as e:
                 rc = e.code
         return (rc, err.getvalue().startswith("usage:"))

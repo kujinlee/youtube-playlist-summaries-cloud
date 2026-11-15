@@ -499,8 +499,8 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "                     opts.marketplace)\n",
-    "                     MARKETPLACE)\n"
+    "                     opts.marketplace, repo)\n",
+    "                     MARKETPLACE, repo)\n"
    ]
   ],
   "expect": "CLI: --marketplace, --skill and a repeated --file all reach stage"
@@ -512,6 +512,83 @@
    [
     "    print(root)\n    return 0\n",
     "    return 0\n"
+   ]
+  ],
+  "expect": "CLI: stages one package and prints the marketplace root (rc 0)"
+ },
+ {
+  "name": "a tracked private file ships",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "            if inner == x or inner.startswith(x + \"/\"):",
+    "            if False:"
+   ]
+  ],
+  "expect": "a TRACKED file under .claude/plans declared in files is CANNOT RUN"
+ },
+ {
+  "name": "the private check reads only where the entry sits, not where it ends",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    for at in (lex, real):\n        inner = at.relative_to(top).as_posix() if _below(at, top) else \"\"\n        for x in PRIVATE:",
+    "    for at in (lex,):\n        inner = at.relative_to(top).as_posix() if _below(at, top) else \"\"\n        for x in PRIVATE:"
+   ]
+  ],
+  "expect": "...reached through a link inside a skill"
+ },
+ {
+  "name": "an untracked file ships",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if (at.is_symlink() or at.is_file()) and inner not in tracked:",
+    "        if False:"
+   ]
+  ],
+  "expect": "an untracked file inside a declared skill is CANNOT RUN, naming it — never shipped, never skipped"
+ },
+ {
+  "name": "the tracked check reads only where a link ends, not the link",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    for at in (lex, real):\n        inner = at.relative_to(top).as_posix() if _below(at, top) else \"\"\n        if (at.is_symlink()",
+    "    for at in (real,):\n        inner = at.relative_to(top).as_posix() if _below(at, top) else \"\"\n        if (at.is_symlink()"
+   ]
+  ],
+  "expect": "an untracked LINK to a tracked file is CANNOT RUN: the link itself is what is declared"
+ },
+ {
+  "name": "a repository git cannot list counts as tracking nothing",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if p.returncode != 0:\n        raise CannotRun(f\"{top} is not a git checkout",
+    "    if False:\n        raise CannotRun(f\"{top} is not a git checkout"
+   ]
+  ],
+  "expect": "a repository git cannot list is CANNOT RUN (what is tracked cannot be told)"
+ },
+ {
+  "name": "git lists what is tracked in the caller's environment",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "], env=env, capture_output=True,",
+    "], env=None, capture_output=True,"
+   ]
+  ],
+  "expect": "what is tracked is asked of the repository's own git, never one a caller's GIT_DIR names"
+ },
+ {
+  "name": "main stages from REPO whatever repository it is given",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "Path(opts.out),\n                     opts.marketplace, repo)",
+    "Path(opts.out),\n                     opts.marketplace, REPO)"
    ]
   ],
   "expect": "CLI: stages one package and prints the marketplace root (rc 0)"

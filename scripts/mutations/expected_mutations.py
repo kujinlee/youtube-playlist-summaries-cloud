@@ -2337,5 +2337,5 @@ EXPECTED_MUTATIONS = {
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out
     # directory, plan-before-write, bytes, mode, the two manifests), per `read_marketplace` handler, per `install`
     # rule (listed plugin, cwd, timeout, exit codes, the installed path) and the CLI's exits: 47.
-    "scripts/mkt_stage.py": 47,
+    "scripts/mkt_stage.py": 54,
 }
