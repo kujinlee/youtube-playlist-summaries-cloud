@@ -20718,3 +20718,24 @@ files never committed). 122 of 195 files rewritten, none merged or deleted, no s
 1,056 KB; two files gained missing frontmatter. Checks: `check-memory-index-budget`, `check-docs`,
 `check-canonical-source`, `check-reference-namespace` OK. A coordinator spot check of long quotations found the
 owner quotes kept, re-wrapped. Not done here: the CI shape check and the weekly routine (option B).
+
+## 2026-11-15
+The goal tree now says why each waiting item is waiting, worked out by the script, as you asked on 11-14. When an
+item's text names what it comes after ("start only after PR #442"), the page looks that up. If the named work is
+still open the line reads "waits for: PR #442 (open)". If it has already finished, the line turns into an alarm:
+"blocker done 10-30, not started". That is the case that hid: the split of the tooling section was still
+shown as waiting on a pull request that merged on 10-30. A reason someone typed by hand is still shown, first.
+
+An item with no reason at all no longer reads "not recorded". It reads "no reason recorded — idle 4 days", so an
+item that has simply been forgotten looks different from one that is properly waiting.
+
+Each new session now opens with a short list of these: the waiting items whose blocker is done or that have no
+reason, at most six and then a count. It is read from the last goal tree that was drawn, so it is as fresh as that.
+
+<!--tech-->
+Backlog #650, branch `goal-wait-derive`. `scripts/goal-tree.py`: `named_prerequisites` (the word `after` directly
+before `PR #N` or `backlog #N`), `_blocker` (state from the PR and backlog data the tree already reads; no new
+network path), `owed_reason`, `idle_days`, `owed_idle_lines`, and the mode `--owed-idle`, called from
+`.claude/hooks/session-state.sh` as its own block after IN FLIGHT. 17 new cases (523 total); mutation pins
+395 → 417, 22 new and 5 rebound, each run on a copy outside the repository. The logged snapshot gains `since` and
+`blockers` only where present, so an unchanged tree fingerprints as before.

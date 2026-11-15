@@ -417,7 +417,14 @@ EXPECTED_MUTATIONS = {
     # matched by id now) and 8 new: a thread's agenda reads only its line's wait, the entries not kept on the thread,
     # the leaf not saying an entry's wait, a join keeping the first wait only, a joined wait said twice, a handoff
     # matched to any entry, a parked handoff read as in flight, the story not counting parking. Three rebound.
-    "scripts/goal-tree.py": 395,  # 388 -> 395 (backlog #514 r2): thread-hung waits, handoff by id, parked handoff
+    # ⟳ 2026-11-15, backlog #650: 395 -> 417, none retired. 22 new, one per rule of the derived wait: a merged, a
+    # closed and an open prerequisite PR each read wrongly, an unread one called open, a closed or fated backlog row
+    # still open, the merge day lost, the matcher widened, an item's own ref as its prerequisite, a recorded wait
+    # hidden, no-reason silent, an unreadable time as 0 days, the OLDEST entry's time, the year not moved back, the
+    # alarm style lost, a placed and a loose entry underived, a `blockers` key on every thread, the session-start
+    # block unbounded or listing an item with a reason, the OLDEST snapshot read, an unreadable log as "none".
+    # Five rebound (the Owed line and the agenda's NOW entries moved): no behaviour of theirs changed.
+    "scripts/goal-tree.py": 417,  # 395 -> 417 (backlog #650): derived waits, idle days, the session-start block
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

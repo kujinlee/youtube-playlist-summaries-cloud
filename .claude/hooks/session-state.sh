@@ -12,6 +12,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # ⛔ stdin is NOT read: the payload is not needed, and draining it blocked the hook when the pipe was held
 # open (PR #410 r2: 60 s, empty output). The python child gets /dev/null for every subprocess it starts.
 python3 "$REPO_ROOT/scripts/session-state.py" </dev/null 2>&1 || echo "=== IN FLIGHT: CANNOT RUN — session-state.py exited $? ==="
+# backlog #650: the Owed items that are IDLE — no reason recorded, or a blocker that is already done — one line each,
+# at most 6 then a count. It reads the goal tree's newest LOGGED snapshot (one local file, no network, no `gh`), so
+# it costs milliseconds and can be as old as the last `/goal-tree`; the header says which snapshot. A log it cannot
+# read is CANNOT READ — treat as NOT RUN — never "none". Its own block, not a part of the in-flight one: that block
+# has only open PRs and the ledger, and its 8,000-character cap is a tested contract.
+python3 "$REPO_ROOT/scripts/goal-tree.py" --owed-idle </dev/null 2>&1 || echo "=== OWED AND IDLE: CANNOT RUN — goal-tree.py exited $? (treat as NOT RUN) ==="
 # backlog #589: ARCHIVE the worktrees under .claude/worktrees/ whose PR merged (67 of them, 11 GB, froze the Mac on
 # 2026-11-09). It never deletes: `git worktree move` to ~/.worktree-archive/<repo>/ keeps every file and the reflog;
 # a placeholder FILE is left at the old path (a late write fails, ENOTDIR); undo, absolute paths as printed:
