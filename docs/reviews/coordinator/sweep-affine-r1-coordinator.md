@@ -58,6 +58,11 @@ pins behaviour the review called under-pinned, not a defect).
 - **CM6** an exact hand-worked partition case (3 targets, N=3, estimates [13000, 12000, 5000]).
 - **CN1** the nested 9/9 `main()` call's stdout is captured.
 
+**Also folded — CI, not a review half.** PR #590's CI at `4565f2b2` was red on `check-fixture-git-isolation.py`:
+`sweep-costs.py`'s `--self-test` did not run inside `fixture_git.isolated()` (backlog #382), and that one refusal
+also failed the mutation-sweep control runs of shards 4 and 6. `_self_test` now wraps `_self_test_body` the way
+`check-plan-code.py` does; the guard is clean (rc 0) and its own `--self-test` passes.
+
 **Same-class search.** Identity-vs-count, prefix compares, uncaught parse errors, `* 1000` overflow, and readers of
 the table that skip the coverage rule, over both scripts. One candidate traced and ruled out: `VERDICT.match(verdict)`
 cannot be `None`, since `verdict` is assigned only where that regex matched. `--shard I/N` already refuses
