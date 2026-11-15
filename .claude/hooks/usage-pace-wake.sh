@@ -3,7 +3,8 @@
 #
 # It denies a message the MAIN SESSION sends at REFUSE-SPAWN (weekly at the stop: see the docstring of scripts/check-usage-pace.py, which is the one statement of the rule) unless overridden; a message
 # a SUBAGENT sends (its hook input carries `agent_id`) is a report and always allowed. The recipient's name is
-# never consulted (PR #446 r2 X1). Otherwise allows, silently. Waking an idle agent is the measured expensive
+# never consulted (PR #446 r2 X1). Otherwise allows — silently, unless the 5h block is not FREE, when the allow
+# carries its sentence to the model (backlog #645). Waking an idle agent is the measured expensive
 # case (docs/process-checklists.md -> *Agent lifetime*).
 # It runs origin/master's guard through usage-pace-run.sh (backlog #522), never the checkout's copy.
 # The rules, the cache format, the override and the bounds are described ONCE, in scripts/check-usage-pace.py.

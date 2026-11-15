@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/pace-5h-clock-r1-claude.md": "100644 0a0057118b7f626415c8cf9aa5657c97e2239c44",
+    "docs/reviews/codex/pace-5h-clock-r1-codex.md": "100644 dd39840b520ce1a6105153d27be95ced013d0ef2",
+    "docs/reviews/verdicts/pace-5h-clock-r1-codex.verdict.json": "100644 75ec24e1a13c18ee84213211b7dfd7f5dbc1a254"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "ed5870260f41fa604559dae89cffb486dd90eedb",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/pace5h-review.md",
+  "reason": "claude half filed: 8655 chars, names ed5870260f41",
+  "refused": false,
+  "review": "pace-5h-clock-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/pace5h",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
