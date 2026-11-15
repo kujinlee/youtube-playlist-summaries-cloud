@@ -23,6 +23,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
   row of the backlog's Items table is CANNOT RUN.
 - An optional last field `· waits on <what>` declares something a thread waits on that no tool can see
   (the owner's walkthrough, say). It is shown as DECLARED, never as a derived state.
+  It is prose and is never read for a ref, so a prose wait is a live reason forever — even after a PR it names has
+  merged; a prerequisite that should expire is declared on the ledger entry (`session-state.py --add --after`).
 - Inside a goal, every non-blank line is one of those. Prose belongs above the first goal.
 
 ## GOAL guard-harness-audit
@@ -47,7 +49,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · PR #419 · backlog #379 filed
 - bookkeeping · PR #421 · backlog #383 filed
 - side · PR #418 · the skills explainer gets the text-style switcher; backlog #376 filed
-- fix · backlog #511 · the harness section of the features page splits into six sub-sections, so its open rows read by area
+- fix · backlog #511 · the harness section of the features page splits into six sub-sections, so its open rows read by area · waits on its turn — first in the 11-15 budget (11-14 evening is usage wind-down; prerequisite PR #442 merged 10-30)
 - fix · backlog #545, PR #539 · the stalled-work hook names a DIRTY PR that has no CI run
 - bookkeeping · backlog #544 · measured twice more on 11-08: a merge of master that changes no flagged file still voids every sibling PR's loosening answers
 - bookkeeping · backlog #578 · filed from the held-pins-head Phase 6 review: every `python3 scripts/X.py`, the merge gate included, runs a stdlib-named file committed in `scripts/`

@@ -37,8 +37,10 @@ It prints the NEEDS YOU block first: decisions only the owner can make, open now
 
    ⤳ **Work still in flight is declared in the LEDGER, not the file** (backlog #505): the page reads the file from
    master, so a line added on a PR branch is invisible until the merge. Declare it when the work starts —
-   `python3 scripts/session-state.py --add <id> "<what>" "<on done>" --goal <slug> --thread "<relation> · <refs> · <what>"`
-   — and the page hangs it under the goal at once, marked *declared in the ledger*. Put the same line in the file in
+   `python3 scripts/session-state.py --add <id> "<what>" "<on done>" --goal <slug> --thread "<relation> · <refs> · <what>" --after 'PR #N'`
+   (`--after none` when it waits on no PR or backlog row; `--set-after <id> 'PR #N'` adds one later) — and the page
+   hangs it under the goal at once, marked *declared in the ledger*. `--after` is what the Owed row's `waits for:` and
+   its `blocker done` alarm are derived from; prose is never read for it (backlog #650). Put the same line in the file in
    the PR; once master has it, the file's line wins and the ledger's is not drawn twice.
 3. **Name each thread by its backlog row or PR, never `T1`/`T2`**: those numbers were reused across maps and
    confused the reader. The file's grammar refuses a thread that names neither.

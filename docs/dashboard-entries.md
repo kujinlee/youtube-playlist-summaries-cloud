@@ -20822,3 +20822,27 @@ three "inside a checkout" checks, and `run_isolated` runs the `sys.path` and git
 72→89 and 67→73. Mutations: 67/67 and 57/57. The round-1 bet on `staging` lost (Codex 3). Filed backlog #656 and
 #657. Commits `f065e2ea`, `1196ae9d`. Coordinator doc:
 `docs/reviews/coordinator/harness-ships-elsewhere-b-r2-coordinator.md`.
+The goal tree now says why each waiting item is waiting, as you asked on 11-14. When work is recorded, the tool now
+asks one question: does it wait on a pull request or a backlog row to finish? The answer is a reference such as
+"PR #442", or "none". The page looks that reference up every time it is drawn. If the work is still open the line
+reads "waits for: PR #442 (open)". If it has finished, the line turns into an alarm: "blocker done 10-30, not
+started". That is the case that hid: the split of the tooling section was shown as waiting on a pull request that
+merged on 10-30. A reason someone typed in words is still shown, first, and is never second-guessed.
+
+The first version tried to work the reference out from the sentence describing the work. Three review rounds each
+found a sentence it misread, so that guessing is gone: the reference is typed once, when the tool asks, and
+everything else (its state, its date, how long the item has sat idle) is worked out.
+
+An item with no reason at all no longer reads "not recorded". It reads "no reason recorded — idle 4 days". Each new
+session opens with a short list of these, and of items whose blocker is done: at most six, then a count.
+
+<!--tech-->
+Backlog #650, branch `goal-wait-derive`, redesigned in Phase 6
+(`docs/reviews/coordinator/architecture-review-2026-11-15-goal-wait-derive.md`). `scripts/session-state.py`: the
+ledger entry stores `after` (`kind #n` strings); `--add` refuses without `--after 'PR #N'` / `--after none` (exit 2);
+`--set-after ID REFS` rewrites it and keeps `at`; a repeated ref or the entry's own thread ref is refused.
+`scripts/goal-tree.py`: `declared_prerequisites` is the one reader (absent key = none; a damaged element is a
+`state not read` blocker); the prose matcher and the recorded-wait resolver are deleted, so a prose wait never
+expires. `owed_reason`, `idle_days`, `owed_idle_lines` and `--owed-idle` (a block after IN FLIGHT in
+`.claude/hooks/session-state.sh`) are kept. A prose-invariance case places 14 adversarial sentences in every prose
+field. Filed: backlog #652 (a dated `--until` wait), backlog #653 (a thread-line ref wait with no ledger entry).

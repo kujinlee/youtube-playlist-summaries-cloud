@@ -50,10 +50,11 @@ oversized ledger with only the new entry and `--done` reported a recorded id as 
 list prints `NO CHECKS`.
 
     python3 scripts/session-state.py                 # print the block (what the hook runs)
-    python3 scripts/session-state.py --add ID WHAT ON_DONE --goal SLUG --thread LINE [--waits TEXT] [--kind owner-wait|owner-instruction|routine]
+    python3 scripts/session-state.py --add ID WHAT ON_DONE --goal SLUG --thread LINE --after 'PR #N, backlog #M'|none [--waits TEXT] [--kind owner-wait|owner-instruction|routine]
+    python3 scripts/session-state.py --set-after ID 'PR #N'|none   # change a declared prerequisite, keeping `at`
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 137 cases
+    python3 scripts/session-state.py --self-test  # 144 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -347,8 +348,44 @@ ADD_NEEDS_GOAL = ("--add needs --goal <slug> and --thread <line>: name the `## G
                   "and add it under that slug")
 
 
+# backlog #650 (Phase 6, architecture-review-2026-11-15-goal-wait-derive): a PREREQUISITE is DECLARED, once, at --add,
+# by the agent that can read the owner's English — never parsed out of `what`, `on_done` or a `waits` sentence at read
+# time. Three rounds of a prose matcher each misread the sentence the previous fold had decided; the field removes the
+# question. The grammar is goal-tree's own refs grammar (`REFS_RE`): `PR #N` / `backlog #N`, joined by `, `.
+ADD_NEEDS_AFTER = ("--add needs --after: does this work wait on a PR or a backlog row to finish? "
+                   "`--after 'PR #N'` (several: `--after 'PR #N, backlog #M'`), or `--after none`")
+AFTER_NONE = "none"
+
+
+def parse_after(text: str, gt=None) -> list:
+    """`none` -> []; a string that FULLY matches goal-tree's `REFS_RE` -> its (kind, n) pairs in order. Anything else
+    — a sentence, a bare `#N`, a `,` without its space — is a ValueError naming both legal forms."""
+    if text == AFTER_NONE:
+        return []
+    gt = gt or _goal_tree()
+    if not isinstance(text, str) or not gt.REFS_RE.fullmatch(text):
+        raise ValueError(f"--after {text!r} is not a list of refs. {ADD_NEEDS_AFTER}")
+    return [(k, int(n)) for k, n in gt.REF_RE.findall(text)]
+
+
+def _after_list(after, thread, gt=None) -> list:
+    """The stored form of a declared `after`: `kind #n` strings, in order. Refused (ValueError): a ref given twice, and
+    one of the entry's OWN thread refs — work never waits on itself (it replaces the matcher's `own=` filter)."""
+    pairs = [(k, int(n)) for k, n in (after or [])]
+    if len(set(pairs)) != len(pairs):
+        raise ValueError(f"--after names a ref twice: {', '.join(f'{k} #{n}' for k, n in pairs)}")
+    if pairs and isinstance(thread, str) and thread.strip():
+        t, _ = (gt or _goal_tree()).parse_thread_line("- " + thread.removeprefix("- "))
+        own = {(k, n) for k, n in t["refs"]} if t else set()
+        mine = [f"{k} #{n}" for k, n in pairs if (k, n) in own]
+        if mine:
+            raise ValueError(f"--after names the entry's own thread ref {', '.join(mine)}: work never waits on itself")
+    return [f"{k} #{n}" for k, n in pairs]
+
+
 def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None,
-               goal: str | None = None, thread: str | None = None, waits: str | None = None) -> None:
+               goal: str | None = None, thread: str | None = None, waits: str | None = None,
+               after: list | None = None) -> None:
     """`kind` is DECLARED by the caller. Left out, it is `guess_kind` of the entry — the WIDE reading, so an owner entry
     written without `--kind` is stored as the owner entry it looks like and never as `routine` (r3 R3-1: storing the
     strict-prefix answer made every R2-1 phrasing routine again, and the declared field then bypassed the fallback).
@@ -366,14 +403,34 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
     what = normalise_what(what)
     if kind is None:
         kind = guess_kind({"what": what, "on_done": on_done})
+    declared = _after_list(after, thread)   # backlog #650: refused BEFORE the lock, so a refusal writes nothing
     with _locked(path):
         entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
         # backlog #514 r1: what the work WAITS FOR, declared — the goal tree's agenda says it instead of "not recorded"
-        entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind}
+        entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind, "after": declared}
                        | ({"waits": waits.strip()} if waits and waits.strip() else {})
                        | ({"goal": goal, "thread": thread} if goal else {}))
         _write(path, entries, raw)
+
+
+def ledger_set_after(path: Path, id_: str, after: list) -> bool:
+    """backlog #650: rewrite ONE key, `after`, of the entry `id_`, under the lock, keeping every other key — `at`
+    above all: re-adding would stamp it with now and reset the idle clock. False (nothing written) for an unknown id;
+    a repeated or self ref is a ValueError, also with nothing written. Used for the migration and for a prerequisite
+    discovered after the entry was recorded."""
+    if not id_.strip():
+        raise ValueError("an empty id names no job")
+    with _locked(path):
+        entries, raw = _for_update(path)
+        hit = [e for e in entries if e.get("id") == id_]
+        if not hit:
+            return False
+        declared = _after_list(after, hit[-1].get("thread"))
+        for e in hit:
+            e["after"] = declared
+        _write(path, entries, raw)
+        return True
 
 
 def ledger_take(path: Path, id_: str) -> dict | None:
@@ -922,10 +979,10 @@ def _self_test_body() -> int:
                "new-lower": "waits-on-owner (card when back): pick A or B"}
         with redirect_stdout(io.StringIO()), _rs(io.StringIO()):
             for id_, what_ in phr.items():
-                main(["--add", id_, what_, "d", "--goal", "g", "--thread", "fix · PR #1 · x"], root=w3, run=_nogit)
-            main(["--add", "plain", "run the nightly job", "d", "--goal", "g", "--thread", "fix · PR #1 · x"], root=w3, run=_nogit)
-            main(["--add", "declared", "WAITS-ON-OWNER: pick", "d", "--kind", "routine", "--goal", "g", "--thread", "fix · PR #1 · x"], root=w3, run=_nogit)
-            main(["--add", "new-instr", "OWNER 23:41: do the next thing now (owner: 'when convenient')", "d", "--goal", "g", "--thread", "fix · PR #1 · x"], root=w3, run=_nogit)   # a re-add
+                main(["--add", id_, what_, "d", "--goal", "g", "--thread", "fix · PR #1 · x", "--after", "none"], root=w3, run=_nogit)
+            main(["--add", "plain", "run the nightly job", "d", "--goal", "g", "--thread", "fix · PR #1 · x", "--after", "none"], root=w3, run=_nogit)
+            main(["--add", "declared", "WAITS-ON-OWNER: pick", "d", "--kind", "routine", "--goal", "g", "--thread", "fix · PR #1 · x", "--after", "none"], root=w3, run=_nogit)
+            main(["--add", "new-instr", "OWNER 23:41: do the next thing now (owner: 'when convenient')", "d", "--goal", "g", "--thread", "fix · PR #1 · x", "--after", "none"], root=w3, run=_nogit)   # a re-add
         led3 = {e["id"]: e for e in read_ledger(w3 / LEDGER_REL)[0]}
         blk = render(None, "x", [*led3.values(), *newer], [], "now", compact=True)
         case("⭐ r3 R3-1: `--add` with NO --kind stores the kind the text looks like — the reviewer's three phrasings are owner kinds, "
@@ -1177,12 +1234,12 @@ def _self_test_body() -> int:
         try:
             _e514, _enone = io.StringIO(), io.StringIO()
             with redirect_stdout(io.StringIO()), _rs514(_enone):
-                _rc_none = main(["--add", "nog", "w", "d"], root=_r514, run=NO_GIT)
+                _rc_none = main(["--add", "nog", "w", "d", "--after", "none"], root=_r514, run=NO_GIT)
             with redirect_stdout(io.StringIO()), _rs514(_e514):
                 _rcs = [_rc_none,
-                        main(["--add", "g-only", "w", "d", "--goal", "g"], root=_r514, run=NO_GIT),
-                        main(["--add", "t-only", "w", "d", "--thread", "fix · PR #3 · x"], root=_r514, run=NO_GIT),
-                        main(["--add", "g-thr", "w", "d", "--goal", "h", "--thread", "fix · PR #3 · x",
+                        main(["--add", "g-only", "w", "d", "--goal", "g", "--after", "none"], root=_r514, run=NO_GIT),
+                        main(["--add", "t-only", "w", "d", "--thread", "fix · PR #3 · x", "--after", "none"], root=_r514, run=NO_GIT),
+                        main(["--add", "g-thr", "w", "d", "--goal", "h", "--thread", "fix · PR #3 · x", "--after", "none",
                               "--waits", "the owner"], root=_r514, run=NO_GIT)]
             _msg = _enone.getvalue()
             case("⭐ backlog #514 (c): `--add` with neither --goal nor --thread is REFUSED (exit 2); one without the other "
@@ -1197,6 +1254,69 @@ def _self_test_body() -> int:
         case("backlog #514 r1: --waits outside --add is a stray flag, CANNOT RUN",
              main(["--waits", "x"], root=root, run=NO_GIT), 2)
         case("backlog #505: --goal outside --add is a stray flag, CANNOT RUN", main(["--goal", "g"], root=root, run=NO_GIT), 2)
+        # ── backlog #650 (Phase 6 redesign): a prerequisite is DECLARED once, at --add, and never read from prose ──
+        _led650 = root / "led650" / "inflight.jsonl"
+        ledger_add(_led650, "a2", "w", "d", "T", goal="g", thread="fix · backlog #11 · x",
+                   after=[("PR", 442), ("backlog", 394)])
+        ledger_add(_led650, "a0", "w", "d", "T", goal="g", thread="fix · backlog #11 · x", after=[])
+        ledger_add(_led650, "anone", "w", "d", "T")
+        case("⭐ backlog #650: `after` is STORED on every entry as `kind #n` strings in the order given, `[]` for none "
+             "— three inputs in ONE case",
+             [(e["id"], e.get("after")) for e in read_ledger(_led650)[0]],
+             [("a2", ["PR #442", "backlog #394"]), ("a0", []), ("anone", [])])
+        case("⭐ backlog #650: a REPEATED ref and one of the entry's OWN thread refs are refused; the same number of the "
+             "other kind is a different ref and is accepted",
+             [attempt(lambda: ledger_add(_led650, "r", "w", "d", "T", goal="g", thread="fix · PR #1 · x", after=a))
+              for a in ([("PR", 5), ("PR", 5)], [("PR", 1)], [("backlog", 1)])],
+             ["raised ValueError", "raised ValueError", "accepted"])
+        _r650 = Path(tempfile.mkdtemp(prefix="ss-650-"))
+        try:
+            _l650 = _r650 / LEDGER_REL
+            _base = ["--goal", "g", "--thread", "fix · backlog #11 · x"]
+            _errs = []
+            _rcs650 = []
+            for _argv in (["--add", "noafter", "w", "d", *_base],
+                          ["--add", "prose", "w", "d", *_base, "--after", "waiting for PR #442"],
+                          ["--add", "badsep", "w", "d", *_base, "--after", "PR #442,backlog #1"],
+                          ["--add", "two", "w", "d", *_base, "--after", "PR #442, backlog #394"],
+                          ["--add", "none", "w", "d", *_base, "--after", "none"]):
+                _buf = io.StringIO()
+                with redirect_stdout(io.StringIO()), _rs514(_buf):
+                    _rcs650.append(main(_argv, root=_r650, run=NO_GIT))
+                _errs.append(_buf.getvalue())
+            case("⭐ backlog #650: `--add` REQUIRES --after — missing, prose or a wrong separator is CANNOT RUN (exit 2, "
+                 "nothing written); `PR #N, backlog #M` and `none` are written — five inputs, ONE case",
+                 (_rcs650, [(e["id"], e["after"]) for e in read_ledger(_l650)[0]]),
+                 ([2, 2, 2, 0, 0], [("two", ["PR #442", "backlog #394"]), ("none", [])]))
+            case("backlog #650: the refusals ASK the question and name both legal forms",
+                 [("does this work wait on a PR or a backlog row" in e, "--after 'PR #N'" in e, "--after none" in e)
+                  for e in _errs[:3]], [(True, True, True)] * 3)
+            # --set-after rewrites ONE key and keeps every other, `at` included (re-adding would reset the idle clock)
+            _l650.write_text(json.dumps({"id": "old", "what": "w", "on_done": "d", "at": "11-05 13:42", "kind": "routine",
+                                         "goal": "g", "thread": "fix · backlog #11 · x"}) + "\n")
+            _seen = []
+            for _v in ("PR #442", "none"):
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _rc = main(["--set-after", "old", _v], root=_r650, run=NO_GIT)
+                _seen.append((_rc, read_ledger(_l650)[0]))
+            case("⭐ backlog #650: --set-after rewrites `after` and keeps every other key, `at` included — two values over "
+                 "ONE entry",
+                 [(rc, [(e["at"], e["after"], e["kind"], e["thread"]) for e in es]) for rc, es in _seen],
+                 [(0, [("11-05 13:42", ["PR #442"], "routine", "fix · backlog #11 · x")]),
+                  (0, [("11-05 13:42", [], "routine", "fix · backlog #11 · x")])])
+            _before = _l650.read_bytes()
+            _set_rcs = []
+            for _argv in (["--set-after", "nope", "PR #1"], ["--set-after", "old", "backlog #11"],
+                          ["--set-after", "old", "after PR #1"]):
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _set_rcs.append(main(_argv, root=_r650, run=NO_GIT))
+            case("backlog #650: --set-after on an unknown id is exit 1, a self-reference or prose is exit 2 — and the "
+                 "ledger is byte-identical after all three",
+                 (_set_rcs, _l650.read_bytes() == _before), ([1, 2, 2], True))
+        finally:
+            shutil.rmtree(_r650, ignore_errors=True)
+        case("backlog #650: --after outside --add is a stray flag, CANNOT RUN",
+             main(["--after", "none"], root=root, run=NO_GIT), 2)
         ledger_done(led, "job5")   # the cases below count this ledger's entries
         refused = []
         for fn, args in ((ledger_add, (led, " ", "w", "d", "T")), (ledger_done, (led, ""))):
@@ -1252,7 +1372,7 @@ def _self_test_body() -> int:
              attempt(ledger_add, fifo, "n", "w", "d", "T"), "refused")
         from contextlib import redirect_stderr
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            big_rc = main(["--add", "n", "w", "d", "--goal", "g", "--thread", "fix · PR #1 · x"], root=big.parent.parent, run=NO_GIT)
+            big_rc = main(["--add", "n", "w", "d", "--goal", "g", "--thread", "fix · PR #1 · x", "--after", "none"], root=big.parent.parent, run=NO_GIT)
         case("main --add on an oversized ledger exits 2 (CANNOT RUN), file untouched",
              (big_rc, big.read_bytes() == before), (2, True))
         at = root / "at-cap" / LEDGER_REL
@@ -1386,7 +1506,7 @@ def _self_test_body() -> int:
         r2.mkdir()
         from contextlib import redirect_stderr
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            added = main(["--add", "k", "Codex r1 on PR #1", "record it", "--goal", "g", "--thread", "fix · PR #1 · x"], root=r2, run=NO_GIT)
+            added = main(["--add", "k", "Codex r1 on PR #1", "record it", "--goal", "g", "--thread", "fix · PR #1 · x", "--after", "none"], root=r2, run=NO_GIT)
             seen_ids = [e["id"] for e in read_ledger(r2 / LEDGER_REL)[0]]
             removed = main(["--done", "k"], root=r2, run=NO_GIT)
             empty_done = main(["--done", ""], root=r2, run=NO_GIT)
@@ -1436,13 +1556,13 @@ def _self_test_body() -> int:
              [thread_handoff({"id": "j"}, root, _show(_tracked)), thread_handoff(_e("  "), root, _show(_tracked))], [None, None])
         _err = io.StringIO()
         with redirect_stdout(io.StringIO()), redirect_stderr(_err):
-            main(["--add", "t7", "build", "merge", "--goal", "g", "--thread", "fix · PR #30 · x"], root=r2, run=_show(_tracked))
+            main(["--add", "t7", "build", "merge", "--goal", "g", "--thread", "fix · PR #30 · x", "--after", "none"], root=r2, run=_show(_tracked))
             _rc7 = main(["--done", "t7"], root=r2, run=_show(_tracked))
         case("⭐ backlog #507: main --done on an untracked thread removes the entry AND warns on stderr",
              (_rc7, read_ledger(r2 / LEDGER_REL)[0], "- fix · PR #30 · x" in _err.getvalue()), (0, [], True))
         # r3 Codex MAJOR: a re-add landing between a pre-lock read and the lock — simulated by re-adding as the lock is taken
         with redirect_stdout(io.StringIO()):
-            main(["--add", "t8", "build", "merge", "--goal", "g", "--thread", "fix · backlog #11 · y"], root=r2, run=_show(_tracked))
+            main(["--add", "t8", "build", "merge", "--goal", "g", "--thread", "fix · backlog #11 · y", "--after", "none"], root=r2, run=_show(_tracked))
         _real_locked, _err8 = _locked, io.StringIO()
 
         @contextmanager
@@ -1531,7 +1651,7 @@ def _self_test_body() -> int:
         case("collect() where git cannot name the main checkout SAYS the real ledger may not have been read",
              "in a linked worktree the real one was NOT READ" in collect(bare, run=NO_GIT, now="T"), True)
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            wt_add = main(["--add", "wt-job", "CI watch PR #8", "read gh", "--goal", "g", "--thread", "fix · PR #8 · x"], root=wt, run=gh_only)
+            wt_add = main(["--add", "wt-job", "CI watch PR #8", "read gh", "--goal", "g", "--thread", "fix · PR #8 · x", "--after", "none"], root=wt, run=gh_only)
             in_main = [e["id"] for e in read_ledger(repo / LEDGER_REL)[0]]
             wt_done = main(["--done", "main-job"], root=wt, run=gh_only)
         case("⭐ --add and --done run from a LINKED WORKTREE write the MAIN checkout's ledger, never the worktree's",
@@ -1564,6 +1684,13 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
     ap.add_argument("--waits", metavar="TEXT",
                     help="with --add: what the work waits for (backlog #514 r1) — stored on the entry; the goal tree's "
                          "agenda shows it in place of 'not recorded'")
+    ap.add_argument("--after", metavar="REFS",
+                    help="REQUIRED with --add (backlog #650): the PRs and backlog rows this work waits on to FINISH, "
+                         "`PR #N` / `backlog #N` joined by `, ` — or `none`. Declared once, never read from prose; the "
+                         "goal tree derives each one's live state")
+    ap.add_argument("--set-after", nargs=2, metavar=("ID", "REFS"),
+                    help="rewrite the declared `after` of entry ID (REFS as for --after), keeping every other key and "
+                         "its `at` — a re-add would reset the idle clock")
     ap.add_argument("--done", metavar="ID")
     ap.add_argument("--migrate-kinds", action="store_true",
                     help="print the kind each entry has or would get; with --apply, back the ledger up to "
@@ -1579,14 +1706,15 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                                    ("--kind", args.kind is not None and not args.add),
                                    ("--goal", args.goal is not None and not args.add),
                                    ("--thread", args.thread is not None and not args.add),
-                                   ("--waits", args.waits is not None and not args.add)) if on]
+                                   ("--waits", args.waits is not None and not args.add),
+                                   ("--after", args.after is not None and not args.add)) if on]
     if stray:   # r3 R3-5: a flag given outside the mode that reads it did nothing and said nothing
         print(f"CANNOT RUN — {', '.join(stray)} only means something with "
               f"{'--migrate-kinds' if stray[0] in ('--apply', '--override') else '--add'}; nothing was done", file=sys.stderr)
         return 2
     main, main_err = main_checkout(root, run)
     led = main / LEDGER_REL   # a worktree session's --add goes where every reader looks
-    if main_err and (args.add or args.done is not None):
+    if main_err and (args.add or args.done is not None or args.set_after):
         print(f"note: {main_err}; using {led}", file=sys.stderr)
     try:
         if args.migrate_kinds:
@@ -1605,9 +1733,18 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
             if not (args.goal or args.thread):
                 print(f"CANNOT RUN — {ADD_NEEDS_GOAL}; nothing was added", file=sys.stderr)
                 return 2
+            if args.after is None:
+                print(f"CANNOT RUN — {ADD_NEEDS_AFTER}; nothing was added", file=sys.stderr)
+                return 2
             ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"), args.kind,
-                       args.goal, args.thread, args.waits)
+                       args.goal, args.thread, args.waits, parse_after(args.after))
             print(f"ledger: added {args.add[0]}")
+            return 0
+        if args.set_after:
+            if not ledger_set_after(led, args.set_after[0], parse_after(args.set_after[1])):
+                print(f"ledger: no such id {args.set_after[0]}; nothing was written", file=sys.stderr)
+                return 1
+            print(f"ledger: {args.set_after[0]} now waits on {args.set_after[1]}")
             return 0
         if args.done is not None:
             closing = ledger_take(led, args.done)

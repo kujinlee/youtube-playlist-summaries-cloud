@@ -417,7 +417,34 @@ EXPECTED_MUTATIONS = {
     # matched by id now) and 8 new: a thread's agenda reads only its line's wait, the entries not kept on the thread,
     # the leaf not saying an entry's wait, a join keeping the first wait only, a joined wait said twice, a handoff
     # matched to any entry, a parked handoff read as in flight, the story not counting parking. Three rebound.
-    "scripts/goal-tree.py": 395,  # 388 -> 395 (backlog #514 r2): thread-hung waits, handoff by id, parked handoff
+    # ⟳ 2026-11-15, backlog #650: 395 -> 417, none retired. 22 new, one per rule of the derived wait: a merged, a
+    # closed and an open prerequisite PR each read wrongly, an unread one called open, a closed or fated backlog row
+    # still open, the merge day lost, the matcher widened, an item's own ref as its prerequisite, a recorded wait
+    # hidden, no-reason silent, an unreadable time as 0 days, the OLDEST entry's time, the year not moved back, the
+    # alarm style lost, a placed and a loose entry underived, a `blockers` key on every thread, the session-start
+    # block unbounded or listing an item with a reason, the OLDEST snapshot read, an unreadable log as "none".
+    # Five rebound (the Owed line and the agenda's NOW entries moved): no behaviour of theirs changed.
+    # ⟳ 2026-11-15, PR #592 r1 fold: 417 -> 435. Nineteen new, one or more per r1 rule: a closed-unmerged
+    # PR or a fated row read as done; a recorded wait's refs not read (three sites); idle despite a live wait or an open
+    # prerequisite; an incomplete snapshot saying none; the year as latest-not-future, a gap under a day ahead not 0;
+    # on_done read (two sites); a negated and an until-after form read; idle days to the snapshot, the given clock
+    # ignored; an unbounded line; the own-CANNOT exit code; the whole log read. Eight rebound; ONE retired: 'a closed
+    # prerequisite PR is not read as done' now has the merged entry's anchor (closed is ABANDONED, r1 Codex 1 guards it).
+    # ⟳ 2026-11-15, PR #592 r2 fold: 435 -> 446. Eleven new: a ledger placement note read as CANNOT VERIFY, `cannot` or
+    # `needs_not_read` dropped from the unread set; a cited ref read as a recorded wait's prerequisite, a bare-ref wait
+    # or an explicit after-form not read, the joining words refused; a time under a day ahead read as last year's,
+    # 02-29 looked for in three years; the `no` of `no-op` negating, a colon not ending a clause. Eight rebound — three
+    # of them REPLACED in place, because r2 made their mutant the rule or removed their anchor: 'the year is the latest
+    # not in the future' is now 'the year is the NEAREST' (N3), 'an until-after form is a prerequisite' is now 'an
+    # until-after form is rejected again' (N4), and the own-CANNOT exit code mutates 3 -> 2, not 2 -> 1 (N5).
+    # ⟳ 2026-11-15, PR #592 Phase 6 redesign (architecture-review-2026-11-15-goal-wait-derive): 446 -> 438. The prose
+    # matcher is DELETED (a prerequisite is the ledger's declared `after`), so the fifteen entries anchored in it retire:
+    # the matcher's word boundary and own-ref filter, the recorded wait's refs read (three sites), on_done read (two),
+    # the negated and until-after forms, the `no-op` and colon clauses, and r2 N2's four resolver entries. Two rebound
+    # (r1 Codex 5's idle rule is now `not pending and not recorded`). Seven new, one or more per new rule: an absent
+    # `after` read as a prerequisite, a damaged element dropped, a non-list read as none, an element that merely
+    # contains a ref accepted, prose re-read, a thread not reading its entries' declarations, a prose wait expiring.
+    "scripts/goal-tree.py": 438,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1655,7 +1682,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-14, backlog #514 r1 fold: 117 -> 119. #505's pairing RESTORED (Codex: goal-only was a loosening), so
     # the two re-bound #505 entries are master's again and "a goal-only entry is refused" is retired (it is #505's own
     # mutation now); three new: a declared wait never stored, a blank or padded goal accepted, --waits never passed.
-    "scripts/session-state.py": 119,
+    # ⟳ 2026-11-15, PR #592 Phase 6 redesign: 119 -> 127. Eight new for the declared `after` (steps 1-3): never stored,
+    # a repeated ref or an own thread ref accepted, a missing --after read as none, prose that merely contains a ref
+    # accepted, --set-after re-stamping `at` or reporting an unknown id as success, --after outside --add not stray.
+    # Three rebound to the moved text (the stored entry, the --add call, the write before ledger_set_after).
+    "scripts/session-state.py": 127,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
