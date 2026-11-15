@@ -160,8 +160,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "_write(path, entries, raw)\n\n\ndef ledger_take",
-        "_write(path, entries, [])\n\n\ndef ledger_take"
+        "_write(path, entries, raw)\n\n\ndef ledger_set_after",
+        "_write(path, entries, [])\n\n\ndef ledger_set_after"
       ]
     ],
     "expect": [
@@ -836,8 +836,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "\"at\": now, \"kind\": kind}\n",
-        "\"at\": now, \"kind\": KIND_ROUTINE}\n"
+        "\"at\": now, \"kind\": kind, \"after\": declared}",
+        "\"at\": now, \"kind\": KIND_ROUTINE, \"after\": declared}"
       ]
     ],
     "expect": [
@@ -1534,8 +1534,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "                       args.goal, args.thread, args.waits)",
-        "                       args.goal, args.thread)"
+        "args.goal, args.thread, args.waits, parse_after(args.after))",
+        "args.goal, args.thread, None, parse_after(args.after))"
       ]
     ],
     "expect": [
@@ -1812,6 +1812,114 @@
     ],
     "expect": [
       "⭐ #651 r3 C3-2: COLLECT_BOUNDS are exactly the timeouts collect() passes, and their worst case (each timeout plus DRAIN) leaves HOOK_MARGIN s under the SessionStart hook's timeout in .claude/settings.json"
+    ]
+  },
+  {
+    "name": "backlog #650: --add never stores `after`",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "\"kind\": kind, \"after\": declared}",
+        "\"kind\": kind}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #650: `after` is STORED on every entry as `kind #n` strings in the order given, `[]` for none — three inputs in ONE case"
+    ]
+  },
+  {
+    "name": "backlog #650: a repeated --after ref is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if len(set(pairs)) != len(pairs):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #650: a REPEATED ref and one of the entry's OWN thread refs are refused; the same number of the other kind is a different ref and is accepted"
+    ]
+  },
+  {
+    "name": "backlog #650: an --after ref of the entry's own thread is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if mine:\n            raise ValueError",
+        "        if False:\n            raise ValueError"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #650: a REPEATED ref and one of the entry's OWN thread refs are refused; the same number of the other kind is a different ref and is accepted"
+    ]
+  },
+  {
+    "name": "backlog #650: a missing --after is read as none",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            if args.after is None:\n                print(f\"CANNOT RUN — {ADD_NEEDS_AFTER}",
+        "            if False:\n                print(f\"CANNOT RUN — {ADD_NEEDS_AFTER}"
+      ],
+      [
+        "parse_after(args.after))",
+        "parse_after(args.after or AFTER_NONE))"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #650: `--add` REQUIRES --after — missing, prose or a wrong separator is CANNOT RUN (exit 2, nothing written); `PR #N, backlog #M` and `none` are written — five inputs, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #650: --after accepts prose that merely CONTAINS a ref",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "not gt.REFS_RE.fullmatch(text):",
+        "not gt.REFS_RE.search(text):"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #650: `--add` REQUIRES --after — missing, prose or a wrong separator is CANNOT RUN (exit 2, nothing written); `PR #N, backlog #M` and `none` are written — five inputs, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #650: --set-after re-stamps `at`",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        for e in hit:\n            e[\"after\"] = declared\n",
+        "        for e in hit:\n            e[\"after\"] = declared\n            e[\"at\"] = time.strftime(\"%m-%d %H:%M\")\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #650: --set-after rewrites `after` and keeps every other key, `at` included — two values over ONE entry"
+    ]
+  },
+  {
+    "name": "backlog #650: --set-after on an unknown id reports success",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if not hit:\n            return False\n        declared = _after_list",
+        "        if not hit:\n            return True\n        declared = _after_list"
+      ]
+    ],
+    "expect": [
+      "backlog #650: --set-after on an unknown id is exit 1, a self-reference or prose is exit 2 — and the ledger is byte-identical after all three"
+    ]
+  },
+  {
+    "name": "backlog #650: --after outside --add is not a stray flag",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                                   (\"--after\", args.after is not None and not args.add)) if on]",
+        "                                   (\"--after\", False)) if on]"
+      ]
+    ],
+    "expect": [
+      "backlog #650: --after outside --add is a stray flag, CANNOT RUN"
     ]
   }
 ]
