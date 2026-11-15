@@ -1476,5 +1476,70 @@
     "expect": [
       "⭐ backlog #408: a generator run from its private `clone --shared` names the MAIN checkout the runner put in REGEN_MAIN_CHECKOUT"
     ]
+  },
+  {
+    "name": "backlog #514 (c): --add with no goal is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            if not (args.goal or args.thread):\n                print(f\"CANNOT RUN — {ADD_NEEDS_GOAL}",
+        "            if False:\n                print(f\"CANNOT RUN — {ADD_NEEDS_GOAL}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (c): `--add` with neither --goal nor --thread is REFUSED (exit 2); one without the other is refused too (backlog #505); only --goal WITH --thread is written — four inputs, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #514 (c): the refusal never says to propose a goal",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "propose a new goal named for its objective (the owner picks the name or counter-proposes) ",
+        ""
+      ]
+    ],
+    "expect": [
+      "backlog #514 (c): ...and the refusal says to NAME the goal, and when none fits to PROPOSE one named for its objective (the owner picks)"
+    ]
+  },
+  {
+    "name": "backlog #514 r1: a declared wait is never stored",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                       | ({\"waits\": waits.strip()} if waits and waits.strip() else {})\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 r1: `waits` is STORED on the entry, trimmed — two inputs in ONE case: a declared wait, and a blank one stored as no field at all"
+    ]
+  },
+  {
+    "name": "backlog #514 r1 (Claude F6): a blank or padded goal is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if goal is not None and (not goal.strip() or goal != goal.strip()):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "backlog #514 r1 (Claude F6): a blank goal, or one carrying surrounding whitespace, is REFUSED with its thread; a clean slug is accepted"
+    ]
+  },
+  {
+    "name": "backlog #514 r1: --waits is never passed from the command line",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                       args.goal, args.thread, args.waits)",
+        "                       args.goal, args.thread)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (c): `--add` with neither --goal nor --thread is REFUSED (exit 2); one without the other is refused too (backlog #505); only --goal WITH --thread is written — four inputs, ONE case"
+    ]
   }
 ]

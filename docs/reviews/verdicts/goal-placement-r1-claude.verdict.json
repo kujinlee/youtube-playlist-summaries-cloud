@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/goal-placement-r1-claude.md": "100644 48c960c1e871eede8e4b4de182d48d937af3ab53",
+    "docs/reviews/codex/goal-placement-r1-codex.md": "100644 8d9b3db640487f78a13a723eec42aba4d0116d4f",
+    "docs/reviews/verdicts/goal-placement-r1-codex.verdict.json": "100644 9b09c72894291c588ac42c71575c89d60c23c4fe"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "074ff677b020f9ce34408fe3f71767fa6bfa8207",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 7661 chars, names 074ff677b020",
+  "refused": false,
+  "review": "goal-placement-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/goalplace",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

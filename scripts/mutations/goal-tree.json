@@ -1638,7 +1638,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if g[\"threads\"] and not shown:",
+        "    if g[\"threads\"] and not shown and not placed:",
         "    if False:"
       ]
     ],
@@ -3351,8 +3351,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        " and not t.get(\"waits\"),",
-        ","
+        "\"running\": bool(ops or t[\"state\"] == \"open\") and not waits,",
+        "\"running\": bool(ops or t[\"state\"] == \"open\"),"
       ]
     ],
     "expect": [
@@ -3429,7 +3429,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "it[\"waits\"] = it[\"waits\"] or x.get(\"waits\")",
+        "it[\"waits\"] = _join_waits(it[\"waits\"], x.get(\"waits\"))",
         "it[\"waits\"] = it[\"waits\"]"
       ]
     ],
@@ -4798,6 +4798,357 @@
     ],
     "expect": [
       "⛔ backlog #610 r1 (X1/F2): the served page spelled another way (served.html) is refused too"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): the entry's own goal field is never read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if isinstance(e.get(\"goal\"), str) and e[\"goal\"] in slugs:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (d): an entry matching no thread's ref is placed under the DECLARED goal its `goal` names — two entries, two goals, in ONE case — never under no goal, and a goal-only entry is no ledger problem"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): the goal field outranks a ref match (and an owner-wait)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for e in unnamed:\n        if isinstance",
+        "    for e in src[\"ledger\"]:\n        if isinstance"
+      ]
+    ],
+    "expect": [
+      "backlog #514 (d): a REF match wins over the `goal` field — the entry hangs on the thread naming PR #21 (goal h), and is not placed under g"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): a goal-only entry is parsed as a thread and reported unreadable",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not e.get(\"thread\"):\n            # backlog #514",
+        "        if False:\n            # backlog #514"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (d): an entry matching no thread's ref is placed under the DECLARED goal its `goal` names — two entries, two goals, in ONE case — never under no goal, and a goal-only entry is no ledger problem"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): a goal-only entry's undeclared goal is no problem",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                problems.append(f\"entry {id_}: goal \" + repr(str(e.get(\"goal\")))",
+        "                (f\"entry {id_}: goal \" + repr(str(e.get(\"goal\")))"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #514 (d): a `goal` naming NO declared goal is never guessed — the entry stays IN FLIGHT, UNDER NO GOAL, flagged on its line and named as a ledger problem"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): an undeclared goal is not flagged on the entry's line",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if u.get(\"goal_undeclared\") else \"\"",
+        "if False else \"\""
+      ]
+    ],
+    "expect": [
+      "backlog #514 (d): ...and the printed tree says so on the entry's own line"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): a placed entry is not drawn under its goal",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if placed:\n        # backlog #514 (d): ledger entries placed",
+        "    if False:\n        # backlog #514 (d): ledger entries placed"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (d): the printed tree draws a placed entry INSIDE its goal's block, says it was placed by its goal field, and prints no IN FLIGHT, UNDER NO GOAL section"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): a parked placed entry is drawn as in flight",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if u.get(\"parked\")\n                            else",
+        "if False\n                            else"
+      ]
+    ],
+    "expect": [
+      "backlog #514 (d): a PARKED placed entry is drawn as parked under its goal"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): a goal with only a placed entry folds away",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and not shown and not placed:",
+        "and not shown:"
+      ]
+    ],
+    "expect": [
+      "backlog #514 (d): a goal whose threads are all OLDER does not fold away a placed entry — it is current work"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): the agenda leaves placed entries out",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"what\": _one_line(u.get(\"what\")),\n                 \"waits\": u.get(\"waits\")}\n                for u in g.get(\"placed\") or []",
+        "\"what\": _one_line(u.get(\"what\")),\n                 \"waits\": u.get(\"waits\")}\n                for u in []"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (d) + r1: the agenda's NOW lists a placed entry under its goal's head, never 'no goal', with the wait its ledger entry DECLARES (or none recorded) — and a loose entry's declared wait too; a parked one is not listed"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): the agenda lists a parked placed entry as in flight",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and \"id\" in u and not u.get(\"parked\")]",
+        " and \"id\" in u]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (d) + r1: the agenda's NOW lists a placed entry under its goal's head, never 'no goal', with the wait its ledger entry DECLARES (or none recorded) — and a loose entry's declared wait too; a parked one is not listed"
+    ]
+  },
+  {
+    "name": "backlog #514 (d): a move to its goal reads as no longer in flight",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for i in sorted((pl | set(pp_)) - cl - set(cp_)):",
+        "for i in sorted((pl | set(pp_)) - cl):"
+      ]
+    ],
+    "expect": [
+      "backlog #514 (d): an entry moving from no goal to its goal is ONE timeline line, never 'no longer in flight'"
+    ]
+  },
+  {
+    "name": "backlog #514 r1: a placed entry's declared wait is dropped",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                 \"waits\": u.get(\"waits\")}\n                for u in g.get(\"placed\")",
+        "                 \"waits\": None}\n                for u in g.get(\"placed\")"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (d) + r1: the agenda's NOW lists a placed entry under its goal's head, never 'no goal', with the wait its ledger entry DECLARES (or none recorded) — and a loose entry's declared wait too; a parked one is not listed"
+    ]
+  },
+  {
+    "name": "backlog #514 r1: a loose entry's declared wait is dropped",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "             \"waits\": u.get(\"waits\")}   # backlog #514 r1",
+        "             \"waits\": None}   # backlog #514 r1"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (d) + r1: the agenda's NOW lists a placed entry under its goal's head, never 'no goal', with the wait its ledger entry DECLARES (or none recorded) — and a loose entry's declared wait too; a parked one is not listed"
+    ]
+  },
+  {
+    "name": "backlog #514 r1: a ledger entry's waits field is never read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return {\"waits\": _SS.clean(w, 160)} if isinstance(w, str) and w.strip() else {}",
+        "    return {}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 (d) + r1: the agenda's NOW lists a placed entry under its goal's head, never 'no goal', with the wait its ledger entry DECLARES (or none recorded) — and a loose entry's declared wait too; a parked one is not listed"
+    ]
+  },
+  {
+    "name": "backlog #514 r1 (F4): a ref placing a goal-only entry under another goal is silent",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            ref_problems.append(f\"entry",
+        "            (f\"entry"
+      ]
+    ],
+    "expect": [
+      "backlog #514 r1 (Claude F4): a goal-only entry whose refs place it under ANOTHER goal is a ledger problem; one whose refs agree with its goal is not — two entries, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #514 r1 (F4): an agreeing ref is reported as a disagreement",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if under and e[\"goal\"] not in under:",
+        "        if under:"
+      ]
+    ],
+    "expect": [
+      "backlog #514 r1 (Claude F4): a goal-only entry whose refs place it under ANOTHER goal is a ledger problem; one whose refs agree with its goal is not — two entries, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #514 r1 (F6): the undeclared goal is cleaned before it is quoted",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "             | ({\"goal_undeclared\": str(e[\"goal\"])[:60]} if e.get(\"goal\") else {}) | _ledger_waits(e)",
+        "             | ({\"goal_undeclared\": _SS.clean(str(e[\"goal\"]), 60)} if e.get(\"goal\") else {}) | _ledger_waits(e)"
+      ]
+    ],
+    "expect": [
+      "backlog #514 r1 (Claude F6): the entry's own line quotes an undeclared goal verbatim (' g', never g)"
+    ]
+  },
+  {
+    "name": "backlog #514 r1 (F5a): a placed entry now on a thread reads as no longer in flight",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        hung = on_thread(i)\n",
+        "        hung = None\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 r1 (Claude F5a): a placed entry that a newly declared thread now names is 'now on thread', never 'no longer in flight'; an entry that really left the ledger is — two inputs, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #514 r1 (F5b): parking a placed entry is no change",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            for i in sorted(cp_) if i in pp_ and pp_[i][0] == cp_[i][0] and pp_[i][1] != cp_[i][1]]",
+        "            for i in []]"
+      ]
+    ],
+    "expect": [
+      "backlog #514 r1 (Claude F5b): parking a placed entry, and unparking it, is a timeline line each way — never 'no change a reader would see'"
+    ]
+  },
+  {
+    "name": "backlog #514 r2 (Codex MAJOR): a thread's agenda item reads only the thread line's wait",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "waits = _join_waits(t.get(\"waits\"), *(x.get(\"waits\") for x in t.get(\"entries\") or []))",
+        "waits = t.get(\"waits\")"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 r2 (Codex MAJOR): a thread-hung entry's declared wait holds its thread as OWED — on a ledger thread, on a tracked thread its refs name, and beside the thread line's own wait (both shown, line first)"
+    ]
+  },
+  {
+    "name": "backlog #514 r2 (Codex MAJOR): the entries naming a thread are not kept on it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if entries:\n        out[\"entries\"] = entries\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 r2 (Codex MAJOR): a thread-hung entry's declared wait holds its thread as OWED — on a ledger thread, on a tracked thread its refs name, and beside the thread line's own wait (both shown, line first)"
+    ]
+  },
+  {
+    "name": "backlog #514 r2: the leaf does not say an entry's wait",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            detail += f\" · waits on {x['waits']} (ledger entry {x['id']})\"\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "backlog #514 r2: …and the tree's leaf names the entry's wait and whose it is"
+    ]
+  },
+  {
+    "name": "backlog #514 r2: joining two items keeps only the first wait",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it[\"waits\"] = _join_waits(it[\"waits\"], x.get(\"waits\"))   # backlog #514 r2: every distinct wait, never the first only\n    it[\"running\"] = (it[\"running\"] or x.get(\"running\", False)) and not it[\"waits\"]",
+        "it[\"waits\"] = it[\"waits\"] or x.get(\"waits\")\n    it[\"running\"] = (it[\"running\"] or x.get(\"running\", False)) and not it[\"waits\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 r2: two items joined into one keep BOTH distinct waits, never only the first"
+    ]
+  },
+  {
+    "name": "backlog #514 r2: a joined wait is said twice",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if p and p not in parts:\n",
+        "            if p:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 r2: two items joined into one keep BOTH distinct waits, never only the first"
+    ]
+  },
+  {
+    "name": "backlog #514 r2 (Codex MINOR 1): a handoff is matched to ANY entry on a thread, not this id",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for x in t.get(\"entries\") or [] if x[\"id\"] == i), None)",
+        "for x in t.get(\"entries\") or [] if x[\"id\"]), None)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 r2 (Codex MINOR 1): an entry removed beside another whose text CONTAINS its text is 'no longer in flight', never handed to that one's thread; a real handoff still is — two inputs, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #514 r2 (Codex MINOR 2): a parked handoff reads as in flight",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{'parked' if hung[1] else 'in flight'}, now on thread",
+        "{'in flight'}, now on thread"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #514 r2 (Codex MINOR 2): a placed entry handed to a thread while PARKED is 'parked, now on thread', an unparked one 'in flight' — two inputs, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #514 r2: the story does not count parking as in-flight work",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(n(\"in flight, \", \"no longer in flight\", \"parked\", \"unparked, \", \"ledger problem\",",
+        "(n(\"in flight, \", \"no longer in flight\", \"ledger problem\","
+      ]
+    ],
+    "expect": [
+      "backlog #514 r2: the timeline's one-sentence story counts parking, unparking and a parked handoff as in-flight work, never '1 change(s)'"
     ]
   }
 ]
