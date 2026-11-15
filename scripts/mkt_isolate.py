@@ -2,7 +2,7 @@
 """Build a stranger's world — fresh HOME, allow-listed PATH, an audit-hook capture — and run one command in it
 (marketplace-inventory plan, Task 2; spec §6 and §7 item 0b).
 
-    python3 scripts/mkt_isolate.py --self-test  # 66 cases
+    python3 scripts/mkt_isolate.py --self-test  # 67 cases
     python3 scripts/mkt_isolate.py --root DIR --allow CMD,... [--cwd DIR] [--timeout S] [--port N] -- ARGV...
 
 build_world(root, allow) makes the world under an EMPTY root: home/, tmp/, bin/ (one symlink per allow-listed
@@ -672,6 +672,10 @@ def _self_test_body() -> int:
              ["", "/pfx/lib/python3.12", "/pfx/lib/python3.12/site-packages", "/pfx/lib/python3/dist-packages",
               "/w/hook", "/elsewhere"], "/pfx", Path("/w")),
          ["/pfx/lib/python3.12/site-packages", "/pfx/lib/python3/dist-packages", "/elsewhere"])
+    case("adjacent: the same entries judged against ANOTHER world and prefix — what is foreign follows root and base",
+         lambda: foreign_paths(["", "/pfx/lib/python3.12", "/w/hook", "/q/lib/python3.13", "/q/lib/site-packages"],
+                               "/q", Path("/pfx")),
+         ["/w/hook", "/q/lib/site-packages"])
 
     # r1 Codex 3: git config the author's machine supplies (system file, credential helpers, URL rewrites).
     def git_system():
