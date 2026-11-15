@@ -2331,7 +2331,7 @@ EXPECTED_MUTATIONS = {
     # creates it. One entry per build_world refusal and env rule, per preflight reason, per read_audit rule (parse,
     # dedupe, posix_spawn echo, unobservable entries), per run_isolated rule (path, PATH lookup, log reset, env, cwd,
     # timeout), the hook itself and the CLI's three exits: 34.
-    "scripts/mkt_isolate.py": 34,
+    "scripts/mkt_isolate.py": 50,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out
