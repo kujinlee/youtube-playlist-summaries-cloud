@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/sweep-affine-r1-claude.md": "100644 65ec7a98504e34117418521898e86edd31f920dc",
+    "docs/reviews/codex/sweep-affine-r1-codex.md": "100644 2e7a72ad756ea8124375ef27414dae1324553d12",
+    "docs/reviews/verdicts/sweep-affine-r1-codex.verdict.json": "100644 c8535272a69e6cc253526a2f90c27470fc71486d"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "4565f2b2e6af1912d914c30fb3db8720809f06ee",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 11809 chars, names 4565f2b2e6af",
+  "refused": false,
+  "review": "sweep-affine-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/affine",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
