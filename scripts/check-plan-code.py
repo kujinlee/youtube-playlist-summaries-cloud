@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 486 cases
+    python3 scripts/check-plan-code.py --self-test          # 489 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -6167,6 +6167,19 @@ def _self_test_body() -> int:
     case("⭐ r1: sweep_costs_for is the table when it covers the manifest, else (None, the coverage reason) — "
          "60 uncosted entries over a share of 36",
          (_sf[0], _sf[1][0], "scripts/new.py holds 60 entries" in (_sf[1][1] or "")), (True, None, True))
+    # check-fixture-variation: every call above passed ONE root and N=7, so neither was told from a constant.
+    # 10 unpriced entries beside the 192 priced (95.05%): a share of ceil(202/3) = 68 holds them, a share of
+    # ceil(202/38) = 6 does not — the SAME list, decided by N alone; and a root with no table is its own reason.
+    _sn = _cm + [{"file": "scripts/new.py", "name": f"n{k}"} for k in range(10)]
+    with tempfile.TemporaryDirectory() as _td:
+        (pathlib.Path(_td) / "scripts").mkdir()
+        (pathlib.Path(_td) / SWEEP_COSTS).write_text(_ctab, encoding="utf-8")
+        _sv = (sweep_costs_for(pathlib.Path(_td), _sn, 3), sweep_costs_for(pathlib.Path(_td), _sn, 38),
+               sweep_costs_for(pathlib.Path(_td) / "absent", _sn, 3))
+    case("⭐ sweep_costs_for reads ITS root and ITS shard count: one list is approved at N=3 (share 68), refused "
+         "at N=38 (share 6), and a root with no table says so",
+         (_sv[0] == (_cc, None), _sv[1][0], "holds 10 entries the table does not price, over one shard's share "
+          "of 6" in (_sv[1][1] or ""), _sv[2]), (True, None, True, (None, f"no cost table at {SWEEP_COSTS}")))
     # r1 (Claude M6): ONE EXACT PARTITION, worked by hand. x: 3 entries of 1 s + 10 s fixed (13 s); y: 2 of
     # 5 s + 2 s (12 s); z: 4 of 1 s + 1 s (5 s). At cap 13 s the greedy cut is [x][y][z] (y would take x's
     # run to 20 s; z0 would take y's to 14 s); at 12.999 s, x2 alone opens a run and it needs four. So the
@@ -6180,6 +6193,10 @@ def _self_test_body() -> int:
          ([[m["name"] for m in p] for p in sweep_partition(_xm, 3, _xc)],
           [shard_estimate(p, _xc) for p in sweep_partition(_xm, 3, _xc)]),
          ([["x0", "x1", "x2"], ["y0", "y1"], ["z0", "z1", "z2", "z3"]], [13000, 12000, 5000]))
+    # check-fixture-variation: every sweep_shard call takes its index from a loop. Two by NAME, and their order.
+    case("...and sweep_shard's index is 1-BASED: shard 2 of that cut is [y0 y1], shard 3 is [z0 z1 z2 z3]",
+         ([m["name"] for m in sweep_shard(_xm, 2, 3, _xc)], [m["name"] for m in sweep_shard(_xm, 3, 3, _xc)]),
+         (["y0", "y1"], ["z0", "z1", "z2", "z3"]))
     # ── r2 (Codex 1): THE UNPRICED ENTRIES ARE DEALT ROUND-ROBIN, NEVER CUT BY A GUESS ───────────────
     # `cost_coverage` bounds each unpriced target on its own, and the cut priced them all at the defaults — so
     # two unpriced targets, each inside its bound, could sit TOGETHER in one contiguous shard. Codex's input,
@@ -6230,6 +6247,22 @@ def _self_test_body() -> int:
          (_pl[0] == (_qt, None), _pl[1][0], bool(_pl[1][1]), _pl[2] == (_qt, None),
           [m["name"] for m in sweep_pool(_wm, frozenset({"scripts/z.py"}))], sweep_pool(_wm, None) is _wm),
          (True, None, True, True, ["z0", "z1"], True))
+    # check-fixture-variation: those three calls passed ONE manifest, ONE root and N=38. Each varied alone, on
+    # the whole pool: N=76 halves the share to 50, under b's 95; the manifest less its first 95 priced entries
+    # is priced 3,515 of 3,705, under 95%; a root with no table is that reason.
+    with tempfile.TemporaryDirectory() as _td:
+        (pathlib.Path(_td) / "scripts").mkdir()
+        (pathlib.Path(_td) / SWEEP_COSTS).write_text(json.dumps(
+            {"schema": 1, "sources": ["x"], "defaults": {"mutation": 1, "fixed": 0},
+             "targets": {"scripts/a.py": {"control": 0, "recontrol": 0, "mutation": 1}}}), encoding="utf-8")
+        _pv = (sweep_plan(pathlib.Path(_td), _qm, None, 76), sweep_plan(pathlib.Path(_td), _qm[95:], None, 38),
+               sweep_plan(pathlib.Path(_td) / "absent", _qm, None, 38))
+    case("⭐ sweep_plan reads ITS shard count, ITS manifest and ITS root — the approved input is refused at N=76 "
+         "(share 50 under b's 95), less 95 priced entries (3,515 of 3,705), and under a root with no table",
+         ("scripts/b.py holds 95 entries the table does not price, over one shard's share of 50" in (_pv[0][1] or ""),
+          "prices 3515 of 3705 manifest entries" in (_pv[1][1] or ""), _pv[2],
+          [m["name"] for m in sweep_pool(_xm, frozenset({"scripts/y.py"}))]),
+         (True, True, (None, f"no cost table at {SWEEP_COSTS}"), ["y0", "y1"]))
     # r1 (Claude M1): THE COMMITTED TABLE, over THIS repository's manifests: every target it mutates has a row,
     # so a target added without regenerating the table goes red HERE, before CI meets a partition priced by
     # guesses. (A new target has no CI cost before it merges: see `scripts/sweep-costs.py` for the hand row.)

@@ -571,6 +571,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     "sweep-red-alert.py": ("check_records.records", "flaky_body.event", "flaky_body.names", "flaky_body.run_url",
                            "flaky_body.sha", "read_records.record_dir", "red_body.event", "red_body.run_url",
                            "red_body.sha", "red_body.sweep", "step_run_block.workflow_text"),
+    # backlog #588 (2026-11-14): the sweep cost-table builder, pinned in the PR that creates it. DERIVED by running
+    # `analyse()` on the delivered source: 7 keys, each varied by a case that names what the second value decides.
+    "sweep-costs.py": ("attribute.mine", "attribute.parsed", "attribute.render", "build_table.records",
+                       "build_table.sources", "main.argv", "parse_log.text"),
     # backlog #362 (2026-10-26; re-pinned at the r2 REDESIGN and again at the r3 SPLIT, which removed the branch reads).
     "session-state.py": (
         "check_summary.rollup",

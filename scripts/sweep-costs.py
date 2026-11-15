@@ -13,7 +13,7 @@ manifest (`cost_coverage`), so the defaults only ever price a small remainder.
 usage:
   python3 scripts/sweep-costs.py --run LABEL TREE LOGDIR [--run ...] [--out scripts/sweep-costs.json]
                                  [--predict N]
-  python3 scripts/sweep-costs.py --self-test  # 28 cases
+  python3 scripts/sweep-costs.py --self-test  # 32 cases
 
   LABEL   names the run in the table's `sources` (e.g. `43662666915@033fe20c`: run id @ commit).
   TREE    a checkout of the repository AT THE RUN'S COMMIT (`git worktree add --detach <dir> <sha>`).
@@ -406,6 +406,19 @@ def _self_test_body() -> int:
           "is not mutation line" in (refusal(attr, _relabel(2, render(1, 5, _long)[:-2] + "…"),
                                              [dict(mine[0], name=_long)] + mine[1:]) or "")),
          (None, True))
+    # check-fixture-variation: `attribute` had ONE call site (the `attr` helper above), so its three parameters
+    # read as constants. Called here with another log, another shard and another RENDER: the cut is the
+    # render's, never attribute's own — an UNCUT line matches under a render that does not cut, and is refused
+    # under progress_line (the control).
+    _raw = lambda d, t, n: f"[{d}/{t}] {n}"   # noqa: E731
+    _held = [dict(mine[0], name=_long)] + mine[1:]
+    try:
+        _un = len(attribute(_relabel(2, _raw(1, 5, _long)), _held, _raw))
+    except Exception as exc:
+        _un = f"RAISED {exc!r}"
+    case("⭐ a line is matched by the RENDER attribute is given: an uncut 120-character line matches under an "
+         "uncut render (all 9 rows), and is refused under progress_line",
+         (_un, "is not mutation line" in (refusal(attr, _relabel(2, _raw(1, 5, _long)), _held) or "")), (9, True))
     case("⛔ a wrong COUNT (the shard held one more mutation than the log ran) is refused",
          "expected 10" in (refusal(attr, p, mine + [dict(mine[4], name="x")]) or ""), True)
     case("⛔ a wrong TARGET order (the shard's targets are not the controls the log ran) is refused",
@@ -462,6 +475,16 @@ def _self_test_body() -> int:
     case("⛔ r1: a SCHEDULE run (two hash seeds) is refused, and so is a log that does not say its event",
          ("two hash seeds" in (refusal(parse_log, text.replace("EVENT: push", "EVENT: schedule")) or ""),
           "no EVENT" in (refusal(parse_log, text.replace("EVENT: push", "X: push")) or "")), (True, True))
+    # check-fixture-variation: `parse_log` had one direct call (the fixture); every other input reached it
+    # through `refusal`, which only shows it refusing. A second log that PARSES, differing in what is read.
+    try:
+        _disp = parse_log(text.replace("EVENT: push", "EVENT: workflow_dispatch").replace(
+            "SHARD_INDEX: 4", "SHARD_INDEX: 6").replace("shard 5 of 38", "shard 7 of 38"))
+        _disp = (_disp["event"], _disp["index"], _disp["total"], len(_disp["prog"]))
+    except Exception as exc:
+        _disp = f"RAISED {exc!r}"
+    case("...and a manually dispatched run (one seed) PARSES: its event and its own shard are what is read — "
+         "shard 7 of 38 from SHARD_INDEX 6", _disp, ("workflow_dispatch", 7, 38, 9))
 
     # r1 (Codex 1, Claude M4): a run is its shards' IDENTITIES, not their count — every one of 1..total exactly
     # once, one total, one event. Checked before any log's rows are accumulated.
@@ -498,6 +521,16 @@ def _self_test_body() -> int:
          _p90(list(range(20, 0, -1))), 18)
     case("⛔ nothing to tabulate is refused, not written as an empty table",
          "nothing to tabulate" in (refusal(build_table, [("mutation", "scripts/c.py", 1.0)], ["x"]) or ""), True)
+    # check-fixture-variation: `build_table` had one direct call. Other rows and other sources: target a alone
+    # (its first 9 rows) is the only row AND both defaults, and the sources are carried in the order given.
+    try:
+        _t2 = build_table(recs[:9], ["second@b", "first@a"])
+        _t2 = (sorted(_t2["targets"]), _t2["defaults"], _t2["sources"], tab["sources"])
+    except Exception as exc:
+        _t2 = f"RAISED {exc!r}"
+    case("...and the table is of the rows and sources GIVEN: target a alone is the one row and both defaults "
+         "(3.0, 2.0 + 4.0), the sources kept in order",
+         _t2, (["scripts/a.py"], {"mutation": 3.0, "fixed": 6.0}, ["second@b", "first@a"], ["run@sha"]))
     # The table this writes is the one check-plan-code reads: round-trip through ITS parser.
     case("⭐ the table it builds is one check-plan-code's parse_sweep_costs ACCEPTS",
          cpc.parse_sweep_costs(json.dumps(tab))[1], None)
@@ -518,6 +551,11 @@ def _self_test_body() -> int:
         rc = main(["--run", "x", "/nonexistent-tree", "/nonexistent-logs"])
     case("a missing run tree is CANNOT RUN (rc 2), saying so, not a crash",
          (rc, _err.getvalue().startswith("CANNOT RUN")), (2, True))
+    # check-fixture-variation: `main` was driven with one argv. With no --run at all it must say what to give.
+    with contextlib.redirect_stderr(io.StringIO()) as _err:
+        rc = main([])
+    case("...and no --run at all is CANNOT RUN (rc 2), naming the argument to give",
+         (rc, "give at least one --run LABEL TREE LOGDIR" in _err.getvalue()), (2, True))
     print(f"{passed}/{passed + failed} passed")
     return 1 if failed else 0
 
