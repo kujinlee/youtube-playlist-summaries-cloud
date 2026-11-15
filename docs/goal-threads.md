@@ -47,7 +47,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · PR #419 · backlog #379 filed
 - bookkeeping · PR #421 · backlog #383 filed
 - side · PR #418 · the skills explainer gets the text-style switcher; backlog #376 filed
-- fix · backlog #511 · the harness section of the features page splits into six sub-sections, so its open rows read by area
+- fix · backlog #511 · the harness section of the features page splits into six sub-sections, so its open rows read by area · waits on its turn — first in the 11-15 budget (11-14 evening is usage wind-down; prerequisite PR #442 merged 10-30)
 - fix · backlog #545, PR #539 · the stalled-work hook names a DIRTY PR that has no CI run
 - bookkeeping · backlog #544 · measured twice more on 11-08: a merge of master that changes no flagged file still voids every sibling PR's loosening answers
 - bookkeeping · backlog #578 · filed from the held-pins-head Phase 6 review: every `python3 scripts/X.py`, the merge gate included, runs a stdlib-named file committed in `scripts/`
