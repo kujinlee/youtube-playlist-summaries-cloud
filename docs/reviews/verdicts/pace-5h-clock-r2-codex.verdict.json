@@ -1,0 +1,25 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 1344 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "c4427dcbbefa13e54cacd9922400e6ae5abf4a62",
+  "intrusions": [],
+  "loosening_answers": {
+    "2ffb3fd24d5e": "not a loosening",
+    "425f785563a3": "not a loosening",
+    "7747176cd3bf": "not a loosening",
+    "90077096110d": "not a loosening",
+    "c1073a04b4e7": "not a loosening"
+  },
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/pace5h-review-r2.md",
+  "reason": "1344 chars",
+  "refused": false,
+  "review": "pace-5h-clock-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/pace5h"
+}
