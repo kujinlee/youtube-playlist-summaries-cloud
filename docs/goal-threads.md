@@ -23,6 +23,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
   row of the backlog's Items table is CANNOT RUN.
 - An optional last field `· waits on <what>` declares something a thread waits on that no tool can see
   (the owner's walkthrough, say). It is shown as DECLARED, never as a derived state.
+  It is prose and is never read for a ref, so a prose wait is a live reason forever — even after a PR it names has
+  merged; a prerequisite that should expire is declared on the ledger entry (`session-state.py --add --after`).
 - Inside a goal, every non-blank line is one of those. Prose belongs above the first goal.
 
 ## GOAL guard-harness-audit

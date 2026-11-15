@@ -20738,22 +20738,27 @@ Predicted, model against model at N=38: slowest shard 1,218 s round-robin -> 753
 clocks, 1,438-1,611 s, add runner setup, install and upload.
 
 ## 2026-11-15
-The goal tree now says why each waiting item is waiting, worked out by the script, as you asked on 11-14. When an
-item's text names what it comes after ("start only after PR #442"), the page looks that up. If the named work is
-still open the line reads "waits for: PR #442 (open)". If it has already finished, the line turns into an alarm:
-"blocker done 10-30, not started". That is the case that hid: the split of the tooling section was still
-shown as waiting on a pull request that merged on 10-30. A reason someone typed by hand is still shown, first.
+The goal tree now says why each waiting item is waiting, as you asked on 11-14. When work is recorded, the tool now
+asks one question: does it wait on a pull request or a backlog row to finish? The answer is a reference such as
+"PR #442", or "none". The page looks that reference up every time it is drawn. If the work is still open the line
+reads "waits for: PR #442 (open)". If it has finished, the line turns into an alarm: "blocker done 10-30, not
+started". That is the case that hid: the split of the tooling section was shown as waiting on a pull request that
+merged on 10-30. A reason someone typed in words is still shown, first, and is never second-guessed.
 
-An item with no reason at all no longer reads "not recorded". It reads "no reason recorded — idle 4 days", so an
-item that has simply been forgotten looks different from one that is properly waiting.
+The first version tried to work the reference out from the sentence describing the work. Three review rounds each
+found a sentence it misread, so that guessing is gone: the reference is typed once, when the tool asks, and
+everything else (its state, its date, how long the item has sat idle) is worked out.
 
-Each new session now opens with a short list of these: the waiting items whose blocker is done or that have no
-reason, at most six and then a count. It is read from the last goal tree that was drawn, so it is as fresh as that.
+An item with no reason at all no longer reads "not recorded". It reads "no reason recorded — idle 4 days". Each new
+session opens with a short list of these, and of items whose blocker is done: at most six, then a count.
 
 <!--tech-->
-Backlog #650, branch `goal-wait-derive`. `scripts/goal-tree.py`: `named_prerequisites` (the word `after` directly
-before `PR #N` or `backlog #N`), `_blocker` (state from the PR and backlog data the tree already reads; no new
-network path), `owed_reason`, `idle_days`, `owed_idle_lines`, and the mode `--owed-idle`, called from
-`.claude/hooks/session-state.sh` as its own block after IN FLIGHT. 17 new cases (523 total); mutation pins
-395 → 417, 22 new and 5 rebound, each run on a copy outside the repository. The logged snapshot gains `since` and
-`blockers` only where present, so an unchanged tree fingerprints as before.
+Backlog #650, branch `goal-wait-derive`, redesigned in Phase 6
+(`docs/reviews/coordinator/architecture-review-2026-11-15-goal-wait-derive.md`). `scripts/session-state.py`: the
+ledger entry stores `after` (`kind #n` strings); `--add` refuses without `--after 'PR #N'` / `--after none` (exit 2);
+`--set-after ID REFS` rewrites it and keeps `at`; a repeated ref or the entry's own thread ref is refused.
+`scripts/goal-tree.py`: `declared_prerequisites` is the one reader (absent key = none; a damaged element is a
+`state not read` blocker); the prose matcher and the recorded-wait resolver are deleted, so a prose wait never
+expires. `owed_reason`, `idle_days`, `owed_idle_lines` and `--owed-idle` (a block after IN FLIGHT in
+`.claude/hooks/session-state.sh`) are kept. A prose-invariance case places 14 adversarial sentences in every prose
+field. Filed: backlog #652 (a dated `--until` wait), backlog #653 (a thread-line ref wait with no ledger entry).

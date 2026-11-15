@@ -437,7 +437,14 @@ EXPECTED_MUTATIONS = {
     # of them REPLACED in place, because r2 made their mutant the rule or removed their anchor: 'the year is the latest
     # not in the future' is now 'the year is the NEAREST' (N3), 'an until-after form is a prerequisite' is now 'an
     # until-after form is rejected again' (N4), and the own-CANNOT exit code mutates 3 -> 2, not 2 -> 1 (N5).
-    "scripts/goal-tree.py": 446,  # 395 -> 417 (backlog #650) -> 435 (PR #592 r1) -> 446 (r2): derived waits, session block
+    # ⟳ 2026-11-15, PR #592 Phase 6 redesign (architecture-review-2026-11-15-goal-wait-derive): 446 -> 438. The prose
+    # matcher is DELETED (a prerequisite is the ledger's declared `after`), so the fifteen entries anchored in it retire:
+    # the matcher's word boundary and own-ref filter, the recorded wait's refs read (three sites), on_done read (two),
+    # the negated and until-after forms, the `no-op` and colon clauses, and r2 N2's four resolver entries. Two rebound
+    # (r1 Codex 5's idle rule is now `not pending and not recorded`). Seven new, one or more per new rule: an absent
+    # `after` read as a prerequisite, a damaged element dropped, a non-list read as none, an element that merely
+    # contains a ref accepted, prose re-read, a thread not reading its entries' declarations, a prose wait expiring.
+    "scripts/goal-tree.py": 438,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1675,7 +1682,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-14, backlog #514 r1 fold: 117 -> 119. #505's pairing RESTORED (Codex: goal-only was a loosening), so
     # the two re-bound #505 entries are master's again and "a goal-only entry is refused" is retired (it is #505's own
     # mutation now); three new: a declared wait never stored, a blank or padded goal accepted, --waits never passed.
-    "scripts/session-state.py": 119,
+    # ⟳ 2026-11-15, PR #592 Phase 6 redesign: 119 -> 127. Eight new for the declared `after` (steps 1-3): never stored,
+    # a repeated ref or an own thread ref accepted, a missing --after read as none, prose that merely contains a ref
+    # accepted, --set-after re-stamping `at` or reporting an unknown id as success, --after outside --add not stray.
+    # Three rebound to the moved text (the stored entry, the --add call, the write before ledger_set_after).
+    "scripts/session-state.py": 127,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on

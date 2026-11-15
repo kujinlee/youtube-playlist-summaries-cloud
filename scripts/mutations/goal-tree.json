@@ -4909,8 +4909,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"), u.get(\"wait_blockers\"))\n                for u in g.get(\"placed\") or []",
-        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"), u.get(\"wait_blockers\"))\n                for u in []"
+        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"))\n                for u in g.get(\"placed\") or []",
+        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"))\n                for u in []"
       ]
     ],
     "expect": [
@@ -4948,8 +4948,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"), u.get(\"wait_blockers\"))\n                for u in g.get(\"placed\")",
-        "                 \"waits\": None} | _owed_keys([u], u.get(\"blockers\"), u.get(\"wait_blockers\"))\n                for u in g.get(\"placed\")"
+        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"))\n                for u in g.get(\"placed\")",
+        "                 \"waits\": None} | _owed_keys([u], u.get(\"blockers\"))\n                for u in g.get(\"placed\")"
       ]
     ],
     "expect": [
@@ -5162,7 +5162,7 @@
     ],
     "expect": [
       "⭐ backlog #650: an Owed item whose named prerequisite PR has MERGED reads 'blocker done <mm-dd>, not started', in the alarm style — never 'not recorded'",
-      "⭐ backlog #650: the prerequisite's LIVE state decides the line — a merged PR, an open one and a closed one, three PR numbers in ONE case"
+      "⭐ backlog #650: the prerequisite's LIVE state decides the line — a merged PR, an open one and one CLOSED unmerged (r1 Codex 1: re-plan, never done), three PR numbers in ONE case"
     ]
   },
   {
@@ -5175,7 +5175,7 @@
       ]
     ],
     "expect": [
-      "⭐ backlog #650: the prerequisite's LIVE state decides the line — a merged PR, an open one and a closed one, three PR numbers in ONE case"
+      "⭐ backlog #650: the prerequisite's LIVE state decides the line — a merged PR, an open one and one CLOSED unmerged (r1 Codex 1: re-plan, never done), three PR numbers in ONE case"
     ]
   },
   {
@@ -5202,8 +5202,7 @@
     ],
     "expect": [
       "⭐ backlog #650: a BACKLOG prerequisite is read from the backlog — a closed row (with the day its PR merged), an open row, a fated row (r1 Claude F2: re-plan, never done), and an unread backlog, in ONE case",
-      "⭐ r1 Codex 1 / Claude F2: a prerequisite PR CLOSED unmerged, a WITHDRAWN row and a SUPERSEDED row each say re-plan in the alarm style — never 'blocker done' — while a MERGED PR and a CLOSED row still read done",
-      "⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case"
+      "⭐ r1 Codex 1 / Claude F2: a prerequisite PR CLOSED unmerged, a WITHDRAWN row and a SUPERSEDED row each say re-plan in the alarm style — never 'blocker done' — while a MERGED PR and a CLOSED row still read done"
     ]
   },
   {
@@ -5230,33 +5229,7 @@
       ]
     ],
     "expect": [
-      "⭐ backlog #650: a BACKLOG prerequisite is read from the backlog — a closed row (with the day its PR merged), an open row, a fated row, and an unread backlog, in ONE case"
-    ]
-  },
-  {
-    "name": "backlog #650: the matcher accepts a word that merely starts with after",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "AFTER_RE = re.compile(r\"\\bafter\\s+",
-        "AFTER_RE = re.compile(r\"\\bafter\\w*\\s+"
-      ]
-    ],
-    "expect": [
-      "backlog #650: the matcher is NARROW — the word `after` directly before ONE ref, in any case; the item's own refs are never its prerequisite"
-    ]
-  },
-  {
-    "name": "backlog #650: an item's own ref is read as its prerequisite",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "if ref not in out and ref not in own:",
-        "if ref not in out:"
-      ]
-    ],
-    "expect": [
-      "backlog #650: the matcher is NARROW — the word `after` directly before ONE ref, in any case; the item's own refs are never its prerequisite"
+      "⭐ backlog #650: a BACKLOG prerequisite is read from the backlog — a closed row (with the day its PR merged), an open row, a fated row (r1 Claude F2: re-plan, never done), and an unread backlog, in ONE case"
     ]
   },
   {
@@ -5464,54 +5437,11 @@
     ]
   },
   {
-    "name": "r1 Claude F1: the refs a recorded wait names are never read",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "by_wait = x.get(\"wait_blockers\") or {}",
-        "by_wait = {}"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case",
-      "⭐ r1 Claude F1: the session block counts an item whose recorded wait has FINISHED as idle — the thread-line and the ledger spellings (on a thread, a placed and a loose entry), a merged and an open PR, in ONE case",
-      "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
-    ]
-  },
-  {
-    "name": "r1 Claude F1: a ledger entry's recorded wait is not resolved",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "recorded = wait_blockers([_ledger_waits(entry).get(\"waits\")], src)",
-        "recorded = {}"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Claude F1: the session block counts an item whose recorded wait has FINISHED as idle — the thread-line and the ledger spellings (on a thread, a placed and a loose entry), a merged and an open PR, in ONE case"
-    ]
-  },
-  {
-    "name": "r1 Claude F1: a thread's recorded waits are not resolved",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "recorded = wait_blockers([t.get(\"waits\")] + [x.get(\"waits\") for x in entries], src, own=_thread_refs(t))",
-        "recorded = {}"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case",
-      "⭐ r1 Claude F1: the session block counts an item whose recorded wait has FINISHED as idle — the thread-line and the ledger spellings (on a thread, a placed and a loose entry), a merged and an open PR, in ONE case",
-      "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
-    ]
-  },
-  {
     "name": "r1 Codex 5: an item with a live recorded wait counts as idle",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "idle = not pending and len(stale) == len(recorded)",
+        "idle = not pending and not recorded",
         "idle = not pending"
       ]
     ],
@@ -5524,8 +5454,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "idle = not pending and len(stale)",
-        "idle = len(stale)"
+        "idle = not pending and not recorded\n",
+        "idle = not recorded\n"
       ]
     ],
     "expect": [
@@ -5571,60 +5501,6 @@
     ],
     "expect": [
       "⭐ r1 Codex 3 / Claude F3: a gap under a day EITHER way is 0 — the DST fallback, a minute after the snapshot, a full stamp ahead, the year boundary — and (r2 N3) a month-day time a day or more ahead is LAST year's"
-    ]
-  },
-  {
-    "name": "r1 Codex 4: on_done is read for a ledger entry's prerequisite",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "named_prerequisites(entry.get(\"what\"))",
-        "named_prerequisites(entry.get(\"what\"), entry.get(\"on_done\"))"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Codex 4: `on_done` describes the FINISH and is never read for a prerequisite — a thread entry and a placed entry, beside the same words in `what`"
-    ]
-  },
-  {
-    "name": "r1 Codex 4: on_done is read for a thread's prerequisite",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "t.get(\"what\"), *(e.get(\"what\") for e in naming), own=_thread_refs(t))]",
-        "t.get(\"what\"), *(e.get(\"what\") for e in naming), *(e.get(\"on_done\") for e in naming), own=_thread_refs(t))]"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Codex 4: `on_done` describes the FINISH and is never read for a prerequisite — a thread entry and a placed entry, beside the same words in `what`"
-    ]
-  },
-  {
-    "name": "r1 Codex 4: a negated after-form is a prerequisite",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "if _NEGATED_RE.search(_CLAUSE_RE.search(text[:m.start()]).group()):",
-        "if False:"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Codex 4: a NEGATED form is not a prerequisite; a clause of its own still is — and so is a plain `wait until after` (r2 N4)",
-      "⭐ r2 N4: `until after`, a clause that follows a colon, and the `no` of `no-op` do not negate — four real prerequisites read; `not until after`, `don't wait until after` and a bare `no` stay rejected"
-    ]
-  },
-  {
-    "name": "r2 N4: an until-after form is rejected again",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "|without)\\b\", re.IGNORECASE)",
-        "|without)\\b|\\buntil\\s*$\", re.IGNORECASE)"
-      ]
-    ],
-    "expect": [
-      "⭐ r2 N4: `until after`, a clause that follows a colon, and the `no` of `no-op` do not negate — four real prerequisites read; `not until after`, `don't wait until after` and a bare `no` stay rejected",
-      "⭐ r1 Codex 4: a NEGATED form is not a prerequisite; a clause of its own still is — and so is a plain `wait until after` (r2 N4)"
     ]
   },
   {
@@ -5736,60 +5612,6 @@
     ]
   },
   {
-    "name": "r2 N2: every ref a recorded wait cites is its prerequisite",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "bare = all(word.lower() in _WAIT_JOINERS for word in rest)",
-        "bare = True"
-      ]
-    ],
-    "expect": [
-      "⭐ r2 N2: a ref merely CITED in a recorded wait is NOT its prerequisite — the wait is resolved only when it IS its refs or says `after <ref>`; the reviewer's `asked on PR #590`, the real fable-compare-week wait and a negated form stay reasons, three explicit forms go stale — eight waits in ONE case"
-    ]
-  },
-  {
-    "name": "r2 N2: a recorded wait that IS its refs is not read",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "all(word.lower() in _WAIT_JOINERS for word in rest)",
-        "False"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case",
-      "⭐ r1 Claude F1: the session block counts an item whose recorded wait has FINISHED as idle — the thread-line and the ledger spellings (on a thread, a placed and a loose entry), a merged and an open PR, in ONE case",
-      "⭐ r2 N2: a ref merely CITED in a recorded wait is NOT its prerequisite — the wait is resolved only when it IS its refs or says `after <ref>`; the reviewer's `asked on PR #590`, the real fable-compare-week wait and a negated form stay reasons, three explicit forms go stale — eight waits in ONE case"
-    ]
-  },
-  {
-    "name": "r2 N2: an explicit after-form in a recorded wait is not read",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "else named_prerequisites(part)) if r not in own]",
-        "else []) if r not in own]"
-      ]
-    ],
-    "expect": [
-      "⭐ r2 N2: a ref merely CITED in a recorded wait is NOT its prerequisite — the wait is resolved only when it IS its refs or says `after <ref>`; the reviewer's `asked on PR #590`, the real fable-compare-week wait and a negated form stay reasons, three explicit forms go stale — eight waits in ONE case"
-    ]
-  },
-  {
-    "name": "r2 N2: no joining word is allowed beside a recorded wait's refs",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "_WAIT_JOINERS = frozenset((\"and\", \"or\", \"both\", \"then\", \"plus\", \"on\", \"for\"))",
-        "_WAIT_JOINERS = frozenset()"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case"
-    ]
-  },
-  {
     "name": "r2 N3: a time under a day ahead is read as last year's",
     "file": "scripts/goal-tree.py",
     "edits": [
@@ -5816,29 +5638,94 @@
     ]
   },
   {
-    "name": "r2 N4: the `no` of a hyphenated word negates",
+    "name": "backlog #650 (Phase 6): an absent `after` is read as a prerequisite",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "no(?!-)",
-        "no"
+        "    if \"after\" not in entry:\n        return []\n",
+        "    if \"after\" not in entry:\n        return [{\"ref\": \"(none declared)\", \"state\": \"unread\"}]\n"
       ]
     ],
     "expect": [
-      "⭐ r2 N4: `until after`, a clause that follows a colon, and the `no` of `no-op` do not negate — four real prerequisites read; `not until after`, `don't wait until after` and a bare `no` stay rejected"
+      "⭐ backlog #650 (Phase 6): the DECLARED prerequisites — an absent key and `[]` are none; one ref; two refs in the order declared, a repeat once; a damaged value or element is a `state not read` blocker, never dropped"
     ]
   },
   {
-    "name": "r2 N4: a colon does not end a clause",
+    "name": "backlog #650 (Phase 6): a damaged `after` element is dropped",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "[^.;:,!?\\n—]*$\")",
-        "[^.;,!?\\n—]*$\")"
+        "        got = (m.group(1), int(m.group(2))) if m else {\"ref\": _SS.clean(str(el), 60), \"state\": \"unread\"}\n        if got not in out:",
+        "        got = (m.group(1), int(m.group(2))) if m else None\n        if got is not None and got not in out:"
       ]
     ],
     "expect": [
-      "⭐ r2 N4: `until after`, a clause that follows a colon, and the `no` of `no-op` do not negate — four real prerequisites read; `not until after`, `don't wait until after` and a bare `no` stay rejected"
+      "⭐ backlog #650 (Phase 6): the DECLARED prerequisites — an absent key and `[]` are none; one ref; two refs in the order declared, a repeat once; a damaged value or element is a `state not read` blocker, never dropped"
+    ]
+  },
+  {
+    "name": "backlog #650 (Phase 6): a non-list `after` is read as none",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not isinstance(value, list):\n        return [{\"ref\": _SS.clean(str(value), 60), \"state\": \"unread\"}]",
+        "    if not isinstance(value, list):\n        return []"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #650 (Phase 6): the DECLARED prerequisites — an absent key and `[]` are none; one ref; two refs in the order declared, a repeat once; a damaged value or element is a `state not read` blocker, never dropped"
+    ]
+  },
+  {
+    "name": "backlog #650 (Phase 6): an `after` element that merely CONTAINS a ref is read as that ref",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        m = REF_RE.fullmatch(el) if isinstance(el, str) else None",
+        "        m = REF_RE.search(el) if isinstance(el, str) else None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #650 (Phase 6): the DECLARED prerequisites — an absent key and `[]` are none; one ref; two refs in the order declared, a repeat once; a damaged value or element is a `state not read` blocker, never dropped"
+    ]
+  },
+  {
+    "name": "backlog #650 (Phase 6): a ledger entry's prose is re-read for a prerequisite",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for e in entries:\n        for p in declared_prerequisites(e):",
+        "    for e in entries:\n        for p in declared_prerequisites(e) + [tuple(x) for x in REF_RE.findall(\" \".join(str(e.get(k) or \"\") for k in (\"what\", \"on_done\", \"waits\"))) if \"after\" in str(e.get(\"what\") or \"\").lower()]:"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ backlog #650 (Phase 6, §5.3) PROSE-INVARIANCE: 14 adversarial sentences, each in `what`, `on_done`, `waits` and the thread line of three entries — with `after: []` no blocker is derived for any and none is idle (a prose wait is a live reason forever); with `after: [PR #442]` exactly that one blocker on every carrier"
+    ]
+  },
+  {
+    "name": "backlog #650 (Phase 6): a thread does not read its entries' declarations",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    blockers = _declared_blockers(sorted(naming, key=lambda e: str(e.get(\"id\", \"\"))), src)\n",
+        "    blockers = []\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ backlog #650 (Phase 6, §5.3) PROSE-INVARIANCE: 14 adversarial sentences, each in `what`, `on_done`, `waits` and the thread line of three entries — with `after: []` no blocker is derived for any and none is idle (a prose wait is a live reason forever); with `after: [PR #442]` exactly that one blocker on every carrier"
+    ]
+  },
+  {
+    "name": "backlog #650 (Phase 6): a recorded prose wait expires when no prerequisite is open",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and not recorded\n    alarms",
+        " and not (recorded and not blockers)\n    alarms"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ backlog #650 (Phase 6, §5.3) PROSE-INVARIANCE: 14 adversarial sentences, each in `what`, `on_done`, `waits` and the thread line of three entries — with `after: []` no blocker is derived for any and none is idle (a prose wait is a live reason forever); with `after: [PR #442]` exactly that one blocker on every carrier"
     ]
   }
 ]

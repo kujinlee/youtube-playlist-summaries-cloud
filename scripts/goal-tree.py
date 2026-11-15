@@ -5,7 +5,9 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 541 cases
+    python3 scripts/goal-tree.py --self-test                 # 536 cases
+    (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
+    or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -399,44 +401,45 @@ def _join_waits(*waits) -> "str | None":
     return "; ".join(parts) or None
 
 
-# backlog #650: the prerequisite an item NAMES in its own words. NARROW on purpose: the word `after` (any case)
-# directly before ONE ref — `after PR #N`, `after backlog #N` — which is also what `START ONLY AFTER PR #N`,
-# `starts after backlog #N` and `only after PR #N` end in. Nothing else is read: not `before`, not `after the PR #N`,
-# not a bare mention. A wait this misses is still said by a recorded `waits`, or shows as idle days.
-# r1 Codex 4: read only from the thread text and the ledger `what` — never `on_done`, which describes the FINISH —
-# and a match is REJECTED when its clause (the text since the last `.`, `;`, `:`, `,`, `!`, `?`, `—` or newline)
-# negates it (`not`, `no`, `never`, `don't`, `without`): `Do not wait until after PR #451` names none.
-# r2 N4: `until after` alone does NOT negate (`Wait until after PR #5` is the plainest prerequisite there is — the
-# `not` of `not until after` already rejects that form), a colon ends a clause (`No rush: start after PR #5`), and
-# the `no` of a hyphenated word (`no-op`) is not the word `no`.
-AFTER_RE = re.compile(r"\bafter\s+(PR|backlog)\s+#(\d+)\b", re.IGNORECASE)
-_CLAUSE_RE = re.compile(r"[^.;:,!?\n—]*$")
-_NEGATED_RE = re.compile(r"\b(?:not|no(?!-)|never|don't|dont|without)\b", re.IGNORECASE)
-# r2 N2: the words a recorded wait may hold BESIDE its refs and still BE those refs (`PR #442 and backlog #70`).
-_WAIT_JOINERS = frozenset(("and", "or", "both", "then", "plus", "on", "for"))
 OWED_IDLE_SHOWN = 6      # session-start lines for idle Owed items; the rest is a count (the block is injected every session)
 OWED_IDLE_WIDTH = 170    # ...and no line of that block is longer than this
 _SINCE_RE = re.compile(r"(?:(\d{4})-)?(\d\d)-(\d\d) (\d\d):(\d\d)")
 
 
-def named_prerequisites(*texts, own=()) -> list:
-    """PURE (backlog #650). The (kind, number) refs the texts say the work starts AFTER (`AFTER_RE`), in first-seen
-    order, each once. A ref in `own` — the item's own thread refs — is never its own prerequisite.
-    REJECTED (r1 Codex 4), so never a prerequisite: `before PR #N`, `after the PR #N`, `after PR#N`, `after: PR #N`,
-    a bare mention, and any `after PR #N` whose clause holds `not`/`no`/`never`/`don't`/`without` before it
-    (`Do not wait until after PR #451`, `don't start after PR #5`). READ (r2 N4): `wait until after PR #N`, and an
-    `after PR #N` in a clause of its own after a colon. The caller never passes `on_done`: it says what to do when
-    the work FINISHES, not what it waits on to start."""
+def declared_prerequisites(entry: dict) -> list:
+    """PURE (backlog #650, Phase 6 redesign — architecture-review-2026-11-15-goal-wait-derive). THE ONE READER of a
+    prerequisite: the ledger entry's DECLARED `after` (`session-state.py --add --after`, `--set-after`), as (kind, n)
+    pairs in the order declared, each once. An absent key is `[]` — none declared, so with no recorded wait the item
+    shows as idle (the fail-toward-showing rule `kind` has). A value that is not a list, or an element that is not
+    exactly ONE `PR #N` / `backlog #N`, is a blocker `{"ref": <cleaned text>, "state": "unread"}` — shown as
+    `state not read`, never dropped.
+    ⛔ THE CONTRACT: prose is NEVER read for prerequisites — not `what`, not `on_done`, not a recorded `waits`, not a
+    thread line's `· waits on`. A prose wait never expires: it is a live reason whatever ref it mentions. A
+    counterexample that depends on what a sentence MEANS is outside this contract — three rounds of a matcher each
+    misread the sentence the previous fold had decided, and the field removed the question."""
+    if "after" not in entry:
+        return []
+    value = entry["after"]
+    if not isinstance(value, list):
+        return [{"ref": _SS.clean(str(value), 60), "state": "unread"}]
     out: list = []
-    for text in texts:
-        text = text if isinstance(text, str) else ""
-        for m in AFTER_RE.finditer(text):
-            if _NEGATED_RE.search(_CLAUSE_RE.search(text[:m.start()]).group()):
-                continue
-            kind, n = m.groups()
-            ref = ("PR" if kind.lower() == "pr" else "backlog", int(n))
-            if ref not in out and ref not in own:
-                out.append(ref)
+    for el in value:
+        m = REF_RE.fullmatch(el) if isinstance(el, str) else None
+        got = (m.group(1), int(m.group(2))) if m else {"ref": _SS.clean(str(el), 60), "state": "unread"}
+        if got not in out:
+            out.append(got)
+    return out
+
+
+def _declared_blockers(entries, src: dict) -> list:
+    """The blockers the entries DECLARE, read live through `_blocker`; a damaged element stays its `unread` blocker.
+    Each ref once, in first-declared order across the entries."""
+    out: list = []
+    for e in entries:
+        for p in declared_prerequisites(e):
+            b = p if isinstance(p, dict) else _blocker(p[0], p[1], src)
+            if b not in out:
+                out.append(b)
     return out
 
 
@@ -469,41 +472,17 @@ def _blocker(kind: str, n: int, src: dict) -> dict:
             if hit else None}
 
 
-def wait_blockers(waits, src: dict, own=()) -> dict:
-    """backlog #650 r1 (Claude F1). The refs each RECORDED wait WAITS ON, read live: {wait part: [blocker, …]} for
-    every `; `-part (the unit `_join_waits` keeps) that names a prerequisite not in `own`. r2 N2 — a ref merely CITED
-    is not one (`asked on PR #590`, `(PR #590: r1 Opus, r2 Fable)`); a part names its prerequisites in two ways only:
-      it IS its refs — nothing but `PR #N` / `backlog #N` and joining words (`PR #442`, `PR #442 and backlog #70`);
-      or it says `after <ref>` — `named_prerequisites`, the ONE rule the `what` matcher uses, negation included.
-    Any other part — `the owner`, `see PR #590`, `not after PR #590` — is absent: it stays a reason whatever the
-    tree reads."""
-    out: dict = {}
-    for w in waits:
-        for part in (w or "").split("; "):
-            rest = re.findall(r"[^\W\d_]+|\d+", REF_RE.sub(" ", part))
-            bare = all(word.lower() in _WAIT_JOINERS for word in rest)
-            refs = [r for r in ([(k, int(n)) for k, n in REF_RE.findall(part)] if bare
-                                else named_prerequisites(part)) if r not in own]
-            if refs and part not in out:
-                out[part] = [_blocker(k, n, src) for k, n in dict.fromkeys(refs)]
-    return out
-
-
 def _ledger_owed(entry: dict, src: "dict | None" = None) -> dict:
     """backlog #650: what an in-flight entry adds so the page can say why it is OWED — `since` (its `at`, when it was
-    recorded) and, given the sources, the `blockers` its own `what` names (never `on_done`, r1 Codex 4) and the
-    `wait_blockers` its recorded wait names (r1 Claude F1). Each key is set only when there is something to say, so a
-    tree with none fingerprints as before."""
+    recorded) and, given the sources, the `blockers` it DECLARES (`after`, read by `declared_prerequisites` — never its
+    prose). Each key is set only when there is something to say, so a tree with none fingerprints as before."""
     out: dict = {}
     if isinstance(entry.get("at"), str) and entry["at"].strip():
         out["since"] = _SS.clean(entry["at"], 20)
     if src is not None:
-        found = [_blocker(k, n, src) for k, n in named_prerequisites(entry.get("what"))]
+        found = _declared_blockers([entry], src)
         if found:
             out["blockers"] = found
-        recorded = wait_blockers([_ledger_waits(entry).get("waits")], src)
-        if recorded:
-            out["wait_blockers"] = recorded
     return out
 
 
@@ -554,24 +533,21 @@ def _finished(b: dict) -> str:
 
 def owed_reason(x: dict, now) -> tuple:
     """PURE (backlog #650). Why an Owed item is not being worked, as (waits, alarm, idle) — waits and alarm may be None:
-      waits — every RECORDED wait first (never hidden), then each named prerequisite still open or not read;
-      alarm — every FINISHED reason, each once, in order: a named prerequisite done or abandoned, then each ref of a
-              recorded wait whose refs are ALL done or abandoned (r1 Claude F1); or, when the item has no recorded
-              wait and names no prerequisite at all, `no reason recorded — idle N days` (N from its newest `since` to
-              `now`; `?` when no time reads). Never the neutral "not recorded";
-      idle  — no LIVE reason is left (r1 Codex 5): no recorded wait still standing (one naming no ref, or one with a
-              ref still open or unread) and no named prerequisite open or unread. Only an idle item with an alarm is
-              listed at session start."""
+      waits — every RECORDED wait first (never hidden), then each declared prerequisite still open or not read;
+      alarm — every FINISHED reason, each once, in order: a declared prerequisite done or abandoned; or, when the
+              item has no recorded wait and declares no prerequisite at all, `no reason recorded — idle N days` (N
+              from its newest `since` to `now`; `?` when no time reads). Never the neutral "not recorded";
+      idle  — no LIVE reason is left (r1 Codex 5): no declared prerequisite open or unread, and no recorded wait. A
+              recorded wait is prose and never expires (Phase 6: prose is never read for refs). Only an idle item
+              with an alarm is listed at session start."""
     blockers = x.get("blockers") or []
     recorded = [p for p in (x.get("waits") or "").split("; ") if p]
-    by_wait = x.get("wait_blockers") or {}
-    stale = [p for p in recorded if by_wait.get(p) and all(b["state"] in ("done", "abandoned") for b in by_wait[p])]
     pending = [b for b in blockers if b["state"] not in ("done", "abandoned")]
     waits = _join_waits(x.get("waits"), *(f"{b['ref']} ({'open' if b['state'] == 'open' else 'state not read'})"
                                            for b in pending))
-    idle = not pending and len(stale) == len(recorded)
+    idle = not pending and not recorded
     alarms: list = []
-    for b in [b for b in blockers if b not in pending] + [b for p in stale for b in by_wait[p]]:
+    for b in [b for b in blockers if b not in pending]:
         if _finished(b) not in alarms:
             alarms.append(_finished(b))
     if alarms:
@@ -755,11 +731,9 @@ def derive_thread(t: dict, src: dict) -> dict:
     # reads the waits. Set only when an entry names the thread, so a tree with none fingerprints as before.
     entries = [{"id": _SS.clean(e.get("id", ""), 60), "parked": is_parked(e)} | _ledger_waits(e) | _ledger_owed(e)
                for e in sorted(naming, key=lambda e: str(e.get("id", "")))]
-    # backlog #650: the prerequisites this thread's own words name (its line, and each entry naming it — `what` only,
-    # never `on_done`, r1 Codex 4), and the refs its RECORDED waits name (r1 Claude F1), read live
-    blockers = [_blocker(k, n, src) for k, n in named_prerequisites(
-        t.get("what"), *(e.get("what") for e in naming), own=_thread_refs(t))]
-    recorded = wait_blockers([t.get("waits")] + [x.get("waits") for x in entries], src, own=_thread_refs(t))
+    # backlog #650 (Phase 6): the prerequisites the entries naming this thread DECLARE (`after`), read live. The
+    # thread line's own words contribute nothing: prose is never read for refs. A self-reference is refused at write.
+    blockers = _declared_blockers(sorted(naming, key=lambda e: str(e.get("id", ""))), src)
     # backlog #497: a PARKED entry is not work in flight — it is shown as parked, and never turns ⬜ into ⏳.
     parked = [_SS.clean(e.get("what", ""), 160) for e in naming if is_parked(e)]
     flying = [_SS.clean(e.get("what", ""), 160) for e in naming if not is_parked(e)]
@@ -790,8 +764,6 @@ def derive_thread(t: dict, src: dict) -> dict:
         out["entries"] = entries
     if blockers:
         out["blockers"] = blockers
-    if recorded:
-        out["wait_blockers"] = recorded
     if state == "closed":
         out["closed_at"] = max(closes) if closes and all(closes) else None
     if whens or closes:
@@ -1748,7 +1720,7 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
         # declares (`--add --waits`, r1) or none recorded. `running` stays False: the ledger cannot see whether a
         # background job or agent is running — it is listed as OWED (with its wait), never claimed as running.
         now += [{"label": u["id"], "goal": goal_head(i, g["slug"]), "running": False, "what": _one_line(u.get("what")),
-                 "waits": u.get("waits")} | _owed_keys([u], u.get("blockers"), u.get("wait_blockers"))
+                 "waits": u.get("waits")} | _owed_keys([u], u.get("blockers"))
                 for u in g.get("placed") or [] if isinstance(u, dict) and "id" in u and not u.get("parked")]
         for t in g["threads"]:
             label = t["key"].split(" · ", 1)[-1]
@@ -1769,8 +1741,7 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
                             "running": bool(ops or t["state"] == "open") and not waits,
                             "waits": waits,
                             # one PR reached by two declarations is ONE item (r1 Codex M1): merged by EVERY PR (r2 M1)
-                            "prs": list(ops)} | _owed_keys(t.get("entries") or [], t.get("blockers"),
-                                                           t.get("wait_blockers")))
+                            "prs": list(ops)} | _owed_keys(t.get("entries") or [], t.get("blockers")))
             ended = t.get("merged_at")
             if (t["state"] == "merged" and isinstance(ended, str) and _STAMP.fullmatch(ended)
                     and _STAMP.fullmatch(ag["at"]) and ended > ag["at"]
@@ -1781,7 +1752,7 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
     # r1 Codex M2 (agenda-digest): its purpose too — the ledger's `what`, cut to one line
     now += [{"label": u["id"], "goal": "no goal", "what": _one_line(u.get("what")), "running": False,
              "waits": u.get("waits")}   # backlog #514 r1: the wait the entry declares, else none recorded
-            | _owed_keys([u], u.get("blockers"), u.get("wait_blockers"))
+            | _owed_keys([u], u.get("blockers"))
             for u in snap.get("inflight_loose") or [] if isinstance(u, dict) and "id" in u]
     # owner 11-05 15:45: an open PR no goal declares is RUNNING work too — listed by its title, not only counted
     # kept OUT of `now`, so the text lines are unchanged; the page lists them under Running now
@@ -1810,13 +1781,11 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
             "late": late, "done": bool(ag["steps"]) and all(st["state"] in ("merged", "closed") for st in ag["steps"])}
 
 
-def _owed_keys(entries: list, blockers, by_wait=None) -> dict:
-    """backlog #650: what a NOW entry carries for `owed_reason` — the `since` of every entry behind it, the `blockers`
-    derived for it and the refs its recorded waits name (`wait_blockers`, r1 Claude F1). Each key only when present,
-    so an item with none is the dict it was before."""
+def _owed_keys(entries: list, blockers) -> dict:
+    """backlog #650: what a NOW entry carries for `owed_reason` — the `since` of every entry behind it and the
+    `blockers` its entries declare. Each key only when present, so an item with none is the dict it was before."""
     since = [e["since"] for e in entries if isinstance(e, dict) and isinstance(e.get("since"), str)]
-    return (({"since": since} if since else {}) | ({"blockers": list(blockers)} if blockers else {})
-            | ({"wait_blockers": dict(by_wait)} if by_wait else {}))
+    return ({"since": since} if since else {}) | ({"blockers": list(blockers)} if blockers else {})
 
 
 def agenda_recap(d: dict) -> str:
@@ -1881,8 +1850,6 @@ def _fold_item(it: dict, goals: list, x: dict) -> None:
     for b in x.get("blockers") or []:
         if b not in it.setdefault("blockers", []):
             it["blockers"].append(b)
-    for w, bs in (x.get("wait_blockers") or {}).items():
-        it.setdefault("wait_blockers", {}).setdefault(w, bs)
 
 
 def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
@@ -2990,7 +2957,8 @@ BACKLOG_BAD = BACKLOG_FIXTURE + "| x9 | broken row | x |\n"
 # ── self-test ─────────────────────────────────────────────────────────────────────────────────
 def _cases_650(case) -> None:
     """backlog #650 (owner 2026-11-14 21:37: "X is waiting for Y"): what an Owed item waits for is DERIVED from the
-    prerequisite it names, and one with no reason says how long it has been idle. Its own small world, so no case
+    prerequisite its ledger entry DECLARES (`after`, Phase 6 redesign — never read from prose), and one with no reason
+    says how long it has been idle. Its own small world, so no case
     here passes for a reason another block's fixture supplies."""
     import contextlib, io, shlex, subprocess, tempfile
 
@@ -3020,19 +2988,19 @@ def _cases_650(case) -> None:
 
     ent = lambda what, **kw: {"id": "sub", "what": f"work on backlog #11; {what}", "on_done": "d",
                               "at": "11-05 13:42"} | kw
-    text, raw = owed([ent("START ONLY AFTER PR #442 merges")])
+    text, raw = owed([ent("start later", after=["PR #442"])])
     case("⭐ backlog #650: an Owed item whose named prerequisite PR has MERGED reads 'blocker done <mm-dd>, not "
          "started', in the alarm style — never 'not recorded'",
          ("blocker done 10-30 (PR #442), not started" in text, 'class="waits warn">blocker done' in raw,
           "not recorded" in text), (True, True, False))
     case("⭐ backlog #650: the prerequisite's LIVE state decides the line — a merged PR, an open one and one CLOSED "
          "unmerged (r1 Codex 1: re-plan, never done), three PR numbers in ONE case",
-         [owed([ent(w)])[0].split("split the section", 1)[1].strip() for w in
-          ("START ONLY AFTER PR #442", "start only after PR #451", "after PR #460")],
+         [owed([ent("x", after=[r])])[0].split("split the section", 1)[1].strip() for r in
+          ("PR #442", "PR #451", "PR #460")],
          ["blocker done 10-30 (PR #442), not started", "waits for: PR #451 (open)",
           "prerequisite PR #460 closed unmerged — re-plan"])
     case("backlog #650: a prerequisite the tree could not read says so, and is never called open or done",
-         [owed([ent("after PR #442")], merged_by_pr=None, errors={"merged": "git fetch failed"})[0].count(x)
+         [owed([ent("x", after=["PR #442"])], merged_by_pr=None, errors={"merged": "git fetch failed"})[0].count(x)
           for x in ("PR #442 (state not read)", "blocker done", "(open)")], [1, 0, 0])
     case("⭐ backlog #650: an Owed item with NO reason says how long it has been idle, from its ledger entry's time — "
          "two entry times in ONE case — and never the neutral 'not recorded'",
@@ -3045,8 +3013,8 @@ def _cases_650(case) -> None:
          (owed([_e])[0].count("no reason recorded — idle ? days"), owed([ent("x", at="soon")])[0].count("idle ? days"),
           'class="waits warn">no reason recorded' in owed([_e])[1], "not recorded" in owed([_e])[0]),
          (1, 1, True, False))
-    text = owed([ent("START ONLY AFTER PR #451", waits="the weekly reset")])[0]
-    text2 = owed([ent("START ONLY AFTER PR #442", waits="the weekly reset")])[0]
+    text = owed([ent("x", after=["PR #451"], waits="the weekly reset")])[0]
+    text2 = owed([ent("x", after=["PR #442"], waits="the weekly reset")])[0]
     case("⭐ backlog #650: a RECORDED wait is shown first and never hidden by a derived one — beside an open "
          "prerequisite and beside a finished one",
          ("waits for: the weekly reset; PR #451 (open)" in text,
@@ -3054,24 +3022,30 @@ def _cases_650(case) -> None:
           "no reason recorded" in text + text2), (True, True, False))
     case("⭐ backlog #650: a BACKLOG prerequisite is read from the backlog — a closed row (with the day its PR merged), "
          "an open row, a fated row (r1 Claude F2: re-plan, never done), and an unread backlog, in ONE case",
-         [owed([ent("after backlog #70")])[0].split("split the section", 1)[1].strip(),
-          owed([ent("after backlog #71")])[0].split("split the section", 1)[1].strip(),
-          owed([ent("after backlog #72")], fates={n: ("withdrawn", "withdrawn") if n == 72 else None
+         [owed([ent("x", after=["backlog #70"])])[0].split("split the section", 1)[1].strip(),
+          owed([ent("x", after=["backlog #71"])])[0].split("split the section", 1)[1].strip(),
+          owed([ent("x", after=["backlog #72"])], fates={n: ("withdrawn", "withdrawn") if n == 72 else None
                                                   for n in range(1, 100)})[0].split("split the section", 1)[1].strip(),
-          owed([ent("after backlog #70")], closed_rows=None)[0].split("split the section", 1)[1].strip()],
+          owed([ent("x", after=["backlog #70"])], closed_rows=None)[0].split("split the section", 1)[1].strip()],
          ["blocker done 10-30 (backlog #70), not started", "waits for: backlog #71 (open)",
           "prerequisite backlog #72 withdrawn — re-plan", "waits for: backlog #70 (state not read)"])
-    case("backlog #650: the matcher is NARROW — the word `after` directly before ONE ref, in any case; the item's own "
-         "refs are never its prerequisite",
-         [named_prerequisites(t, own={("backlog", 11)}) for t in
-          ("START ONLY AFTER PR #5 merges", "starts after backlog #6; only after PR #7", "after backlog #11",
-           "afterwards PR #5", "before PR #5", "after the PR #5", "after PR 5", "see PR #5", None)],
-         [[("PR", 5)], [("backlog", 6), ("PR", 7)], [], [], [], [], [], [], []])
-    case("backlog #650: every text given is read, in order, a ref named twice is listed once, and with no refs of its "
-         "own an item's prerequisite is whatever it names",
-         [named_prerequisites("after backlog #11", "then after PR #5", "again After  backlog #11"),
-          named_prerequisites("after PR #5", own={("PR", 5)}), named_prerequisites()],
-         [[("backlog", 11), ("PR", 5)], [], []])
+    case("⭐ backlog #650 (Phase 6): the DECLARED prerequisites — an absent key and `[]` are none; one ref; two refs "
+         "in the order declared, a repeat once; a damaged value or element is a `state not read` blocker, never dropped",
+         [declared_prerequisites({}), declared_prerequisites({"after": []}),
+          declared_prerequisites({"after": ["PR #442"]}),
+          declared_prerequisites({"after": ["backlog #394", "PR #442", "backlog #394"]}),
+          declared_prerequisites({"after": "PR #442"}),
+          declared_prerequisites({"after": ["PR #442", "after PR #5", "PR#6", 7]}),
+          declared_prerequisites({"after": None})],
+         [[], [], [("PR", 442)], [("backlog", 394), ("PR", 442)],
+          [{"ref": "PR #442", "state": "unread"}],
+          [("PR", 442), {"ref": "after PR #5", "state": "unread"}, {"ref": "PR#6", "state": "unread"},
+           {"ref": "7", "state": "unread"}],
+          [{"ref": "None", "state": "unread"}]])
+    case("backlog #650 (Phase 6): a damaged declaration shows on the page as `state not read`, and is never called "
+         "open or done",
+         owed([ent("x", after=["after PR #442"])])[0].split("split the section", 1)[1].strip(),
+         "waits for: after PR #442 (state not read)")
     case("backlog #650: idle days are whole days up to `now`; a month-day time takes the LATEST year that does not "
          "put it after `now` (r2 N3); an unreadable time is None, never 0",
          [idle_days(a, b) for a, b in (("11-05 13:42", "2026-11-15 09:00"), ("12-30 10:00", "2026-01-02 10:00"),
@@ -3083,20 +3057,20 @@ def _cases_650(case) -> None:
          [idle_days("11-14 09:00", "2026-11-15 09:00"), idle_days("11-15 08:59", "2026-11-15 09:00")], [1, 0])
     case("backlog #650: a thread two entries name is idle since the NEWEST of them",
          owed([ent("x", at="11-05 13:42"), ent("y", id="sub2", at="11-13 08:00")])[0].count("idle 2 days"), 1)
-    _pl = lambda **kw: {"id": "p1", "what": "pacing; start after PR #451", "on_done": "d", "at": "11-10 09:00"} | kw
+    _pl = lambda **kw: {"id": "p1", "what": "pacing", "on_done": "d", "at": "11-10 09:00", "after": ["PR #451"]} | kw
     case("backlog #650: an entry placed by its goal field, and one under no goal, derive their wait the same way — an "
          "open prerequisite, then (the entry reworded) none and its idle days",
          [owed([_pl(**kw)])[0].split("pacing", 1)[1].split("split the section")[0].count(x)
-          for kw in ({"goal": "g"}, {}, {"goal": "g", "what": "pacing only"}, {"what": "pacing only"})
+          for kw in ({"goal": "g"}, {}, {"goal": "g", "after": []}, {"after": []})
           for x in ("waits for: PR #451 (open)", "no reason recorded — idle 5 days")],
          [1, 0, 1, 0, 0, 1, 0, 1])
     case("backlog #650: a tree whose items name no prerequisite carries no `blockers` key, so it fingerprints as before",
-         ["blockers" in derive(goals(), s([ent(w)]), "T")["goals"][0]["threads"][0]
-          for w in ("nothing named", "after PR #442")], [False, True])
+         ["blockers" in derive(goals(), s([ent("x", after=w)]), "T")["goals"][0]["threads"][0]
+          for w in ([], ["PR #442"])], [False, True])
     # ── the session-start lines: one per Owed item with no reason or a finished blocker, bounded ──
     NOW = "2026-11-15 09:00"
     many = [{"id": f"job{i}", "what": f"loose job {i}", "on_done": "d", "at": "11-10 09:00"} for i in range(8)]
-    lines = owed_idle_lines(snap(many + [_pl(), ent("after PR #442"),
+    lines = owed_idle_lines(snap(many + [_pl(), ent("x", after=["PR #442"]),
                                          {"id": "w1", "what": "held", "on_done": "d", "waits": "the reset"}]),
                             NOW)
     case("⭐ backlog #650: the session-start block lists an Owed item with a finished blocker or no reason — never one "
@@ -3114,7 +3088,7 @@ def _cases_650(case) -> None:
     with tempfile.TemporaryDirectory() as td:
         lg = pathlib.Path(td) / "log.jsonl"
         missing = owed_idle_report(lg, NOW)
-        lg.write_text(json.dumps(snap([ent("after PR #442")])) + "\n" + json.dumps(snap([ent("x")])) + "\n\n")
+        lg.write_text(json.dumps(snap([ent("x", after=["PR #442"])])) + "\n" + json.dumps(snap([ent("x")])) + "\n\n")
         newest = owed_idle_report(lg, NOW)
         later = owed_idle_report(lg, "2026-11-20 09:00")      # the same log, read five days on (r1 Claude F4)
         lg.write_text(json.dumps(snap([ent("x")])) + "\n{not json\n")
@@ -3142,60 +3116,68 @@ def _cases_650(case) -> None:
     _fate = lambda **kv: {n: kv.get(f"n{n}") for n in range(1, 100)}
     case("⭐ r1 Codex 1 / Claude F2: a prerequisite PR CLOSED unmerged, a WITHDRAWN row and a SUPERSEDED row each say "
          "re-plan in the alarm style — never 'blocker done' — while a MERGED PR and a CLOSED row still read done",
-         ([tail([ent(w)], **kw) for w, kw in (
-             ("after PR #460", {}), ("after PR #442", {}), ("after backlog #70", {}),
-             ("after backlog #72", {"fates": _fate(n72=("withdrawn", "withdrawn"))}),
-             ("after backlog #73", {"fates": _fate(n73=("superseded", "superseded by backlog #41"))}))],
-          'class="waits warn">prerequisite ' in owed([ent("after PR #460")])[1],
-          [ln.split(" — ", 1)[1] for ln in idle_of([ent("after PR #460")])]),
+         ([tail([ent("x", after=[w])], **kw) for w, kw in (
+             ("PR #460", {}), ("PR #442", {}), ("backlog #70", {}),
+             ("backlog #72", {"fates": _fate(n72=("withdrawn", "withdrawn"))}),
+             ("backlog #73", {"fates": _fate(n73=("superseded", "superseded by backlog #41"))}))],
+          'class="waits warn">prerequisite ' in owed([ent("x", after=["PR #460"])])[1],
+          [ln.split(" — ", 1)[1] for ln in idle_of([ent("x", after=["PR #460"])])]),
          (["prerequisite PR #460 closed unmerged — re-plan", "blocker done 10-30 (PR #442), not started",
            "blocker done 10-30 (backlog #70), not started", "prerequisite backlog #72 withdrawn — re-plan",
            "prerequisite backlog #73 superseded — re-plan"],
           True, ["prerequisite PR #460 closed unmerged — re-plan · split the section"]))
-    case("⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded "
-         "text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case",
-         [tail([ent("nothing named", waits=w)]) for w in
-          ("PR #442", "PR #451", "the owner", "PR #442 and backlog #70", "PR #442 and PR #451")],
-         ["waits for: PR #442 blocker done 10-30 (PR #442), not started", "waits for: PR #451", "waits for: the owner",
-          "waits for: PR #442 and backlog #70 blocker done 10-30 (PR #442), not started; "
-          "blocker done 10-30 (backlog #70), not started", "waits for: PR #442 and PR #451"])
-    case("⭐ r1 Claude F1: the session block counts an item whose recorded wait has FINISHED as idle — the thread-line "
-         "and the ledger spellings (on a thread, a placed and a loose entry), a merged and an open PR, in ONE case",
-         [len(idle_of(led, line=ln)) for ln, led in (
-             ("- fix · backlog #11 · split the section · waits on PR #442", [ent("x")]),
-             ("- fix · backlog #11 · split the section · waits on PR #451", [ent("x")]),
-             (None, [ent("x", waits="PR #442")]), (None, [ent("x", waits="PR #451")]),
-             (None, [ent("x", waits="the owner")]),
-             (None, [_pl(what="pacing only", goal="g", waits="PR #442")]),
-             (None, [_pl(what="pacing only", goal="g", waits="PR #451")]),
-             (None, [_pl(what="pacing only", waits="PR #442")]), (None, [_pl(what="pacing only", waits="PR #451")]))],
-         [1, 0, 1, 0, 0, 1, 0, 1, 0])
-    _both = idle_of([ent("after PR #442; after PR #460", waits="PR #442")])
+    _both = idle_of([ent("x", after=["PR #442", "PR #460"])])
     case("⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; "
          "a listed item shows EVERY reason it has, not the first",
-         (len(idle_of([ent("after PR #442; after PR #451", waits="owner approval")])),
-          len(idle_of([ent("after PR #442; after PR #451")])), len(idle_of([ent("after PR #442", waits="the owner")])),
-          len(idle_of([ent("after PR #442")])), len(_both),
-          [x in (_both or [""])[0] for x in ("waits for: PR #442", "blocker done 10-30 (PR #442), not started",
+         (len(idle_of([ent("x", after=["PR #442", "PR #451"], waits="owner approval")])),
+          len(idle_of([ent("x", after=["PR #442", "PR #451"])])),
+          len(idle_of([ent("x", after=["PR #442"], waits="the owner")])),
+          len(idle_of([ent("x", after=["PR #442"])])), len(_both),
+          [x in (_both or [""])[0] for x in ("blocker done 10-30 (PR #442), not started",
                                              "prerequisite PR #460 closed unmerged — re-plan")]),
-         (0, 0, 0, 1, 1, [True, True, True]))
-    # r2 N2: PR #590 is MERGED in this world, so a wait that merely cites it would go stale if citing were naming.
+         (0, 0, 0, 1, 1, [True, True]))
+    # ── Phase 6 (architecture-review-2026-11-15-goal-wait-derive §5.3): PROSE-INVARIANCE replaces the phrasing cases.
+    # An INDEPENDENT literal list — the inputs that broke the matcher and the resolver in rounds 1-3 (§1's table) and
+    # the motivating spelling — never built from the code. Each is placed in `what`, `on_done`, `waits` and the thread
+    # line of three entries (on a thread, placed by goal, under no goal). The derived blockers move with `after` and
+    # with NOTHING else; a prose wait stays a live reason, whatever ref it names and whatever state that ref is in.
+    _PROSE = ("After PR #451 merges, remove the flag", "Do not wait until after PR #451",
+              "(PR #590: r1 Opus, r2 Fable)", "asked on PR #590", "Wait until after PR #5", "No rush: start after PR #5",
+              "no-op flag after PR #5", "after PR #442 and PR #451", "waiting for PR #442", "blocked on PR #442",
+              "Do not do this: start after PR #451", "PR #442 or PR #451", "PR #442", "START ONLY AFTER PR #442")
     _m590 = {"merged_by_pr": {442: "cccc333", 590: "dddd444"},
              "merged_at": {"cccc333": "2026-10-30 09:00", "dddd444": "2026-11-14 09:00"}}
-    _FABLE = ("the 11-20 weekly reset — the per-model table is built then; until then each fold/build alternates "
-              "Fable and Opus (PR #590: r1 Opus, r2 Fable)")       # the real ledger's `fable-compare-week` wait
-    _cited = ("the owner's answer, asked on PR #590", _FABLE, "see PR #590", "PR #590 and the owner",
-              "not after PR #590", "PR #590", "after PR #590", "queued after backlog #70 in the 11-15 budget")
-    _done590 = "blocker done 11-14 (PR #590), not started"
-    case("⭐ r2 N2: a ref merely CITED in a recorded wait is NOT its prerequisite — the wait is resolved only when it "
-         "IS its refs or says `after <ref>`; the reviewer's `asked on PR #590`, the real fable-compare-week wait and a "
-         "negated form stay reasons, three explicit forms go stale — eight waits in ONE case",
-         ([tail([ent("nothing named", waits=w)], **_m590) for w in _cited],
-          [len(idle_of([ent("x", waits=w)], **_m590)) for w in _cited]),
-         ([f"waits for: {html.escape(w)}" for w in _cited[:5]]
-          + [f"waits for: PR #590 {_done590}", f"waits for: after PR #590 {_done590}",
-             "waits for: queued after backlog #70 in the 11-15 budget blocker done 10-30 (backlog #70), not started"],
-          [0, 0, 0, 0, 0, 1, 1, 1]))
+
+    def _carriers(p, after):
+        led = [{"id": i, "what": f"{w}{p}", "on_done": p, "waits": p, "at": "11-10 09:00", "after": list(after)} | kw
+               for i, w, kw in (("t1", "work on backlog #11; ", {}), ("p1", "", {"goal": "g"}), ("l1", "", {}))]
+        sn = safe(snap, led, line=f"- fix · backlog #11 · {p} · waits on {p}", **_m590)
+        found: dict = {}
+
+        def walk(o, where):
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    if k in ("blockers", "wait_blockers"):   # any shape counts: a dict of waits is found too
+                        found.setdefault(f"{where}.{k}", []).extend(
+                            b.get("ref") if isinstance(b, dict) else repr(b) for b in (v if isinstance(v, list) else [v]))
+                    else:
+                        walk(v, f"{where}.{k}" if k in ("threads", "placed", "inflight_loose") else where)
+            elif isinstance(o, list):
+                for x in o:
+                    walk(x, where)
+        walk(sn if isinstance(sn, dict) else {}, "")
+        return found, (len(idle_of(led, line=f"- fix · backlog #11 · {p} · waits on {p}", **_m590))
+                       if isinstance(sn, dict) else sn)
+
+    _none = [_carriers(p, []) for p in _PROSE]
+    _one = [_carriers(p, ["PR #442"]) for p in _PROSE]
+    case("⭐⭐ backlog #650 (Phase 6, §5.3) PROSE-INVARIANCE: 14 adversarial sentences, each in `what`, `on_done`, "
+         "`waits` and the thread line of three entries — with `after: []` no blocker is derived for any and none is idle "
+         "(a prose wait is a live reason forever); with `after: [PR #442]` exactly that one blocker on every carrier",
+         ([f for f, _ in _none], [n for _, n in _none],
+          [sorted({tuple(v) for v in f.values()}) for f, _ in _one], [sorted(f) for f, _ in _one]),
+         ([{}] * len(_PROSE), [0] * len(_PROSE), [[("PR #442",)]] * len(_PROSE),
+          [[".inflight_loose.blockers", ".placed.blockers", ".threads.blockers"]] * len(_PROSE)))
     _inc = lambda led, **extra: safe(owed_idle_lines, dict(snap(led), **extra), NOW)
     # r2 N1: an unread ledger is a parse failure, and that ALWAYS sets `cannot` beside `ledger_problems` — so the
     # first world below carries both, and names `cannot` alone.
@@ -3227,7 +3209,7 @@ def _cases_650(case) -> None:
           [[ln.split(" — ")[0] for ln in safe(owed_idle_lines, sn, NOW)] for sn in _noted]),
          ([(1, True, [], [])] * 2,
           [["=== OWED AND IDLE: none"], ["=== OWED AND IDLE (1)", "  fc", "=== END OWED AND IDLE ==="]]))
-    _inc_rows = _inc([ent("after PR #442")], cannot=["ledger: 1 line(s) not parsed"])
+    _inc_rows = _inc([ent("x", after=["PR #442"])], cannot=["ledger: 1 line(s) not parsed"])
     case("r1 Codex 2: an incomplete snapshot still lists the idle items it DID read, after its CANNOT VERIFY line",
          ([ln.split(" — ")[0] for ln in _inc_rows[:2]], len(_inc_rows), _inc_rows[-1]),
          (["=== OWED AND IDLE: CANNOT VERIFY", "=== OWED AND IDLE (1)"], 4, "=== END OWED AND IDLE ==="))
@@ -3245,29 +3227,6 @@ def _cases_650(case) -> None:
                                        ("02-29 10:00", "2026-11-15 10:00"), ("2026-11-16 09:00", "2026-11-15 09:00"),
                                        ("2027-05-01 09:00", "2026-11-15 09:00"), ("02-30 10:00", "2026-11-15 10:00"))],
          [198, 219, 990, None, None, None])
-    case("⭐ r1 Codex 4: a NEGATED form is not a prerequisite; a clause of its own still is — and so is a plain "
-         "`wait until after` (r2 N4)",
-         [named_prerequisites(t) for t in ("Do not wait until after PR #451; start now", "wait until after PR #451",
-                                           "don't start after PR #5", "never after PR #5", "no need to go after PR #5",
-                                           "Do not wait; start only after PR #5", "start after PR #5, not before PR #6",
-                                           "without the flag, after PR #5")],
-         [[], [("PR", 451)], [], [], [], [("PR", 5)], [("PR", 5)], [("PR", 5)]])
-    case("⭐ r2 N4: `until after`, a clause that follows a colon, and the `no` of `no-op` do not negate — four real "
-         "prerequisites read; `not until after`, `don't wait until after` and a bare `no` stay rejected",
-         [named_prerequisites(t) for t in ("Wait until after PR #5 merges", "Hold until after PR #5",
-                                           "No rush: start after PR #5", "Ship the no-op flag after PR #5",
-                                           "not until after PR #5", "don't wait until after PR #5",
-                                           "Do not wait until after PR #5; start now", "no start after PR #5")],
-         [[("PR", 5)]] * 4 + [[]] * 4)
-    _od = lambda what, on_done, **kw: tail([{"id": "sub", "what": f"work on backlog #11; {what}", "on_done": on_done,
-                                             "at": "11-10 09:00"} | kw])
-    case("⭐ r1 Codex 4: `on_done` describes the FINISH and is never read for a prerequisite — a thread entry and a "
-         "placed entry, beside the same words in `what`",
-         ([_od("Build the UI now", "After PR #451 merges, remove the flag"), _od("build after PR #451", "remove it")],
-          [owed([_pl(**kw)])[0].count("waits for: PR #451 (open)") for kw in (
-              {"goal": "g", "what": "pacing only", "on_done": "after PR #451"}, {"goal": "g"},
-              {"what": "pacing only", "on_done": "after PR #451"}, {})]),
-         (["no reason recorded — idle 5 days", "waits for: PR #451 (open)"], [0, 1, 0, 1]))
     _old = snap([ent("x", at="11-05 13:42")], at="2026-11-10 09:00")
     case("⭐ r1 Claude F4: idle days are counted to the time the report RUNS, not to the snapshot's first-logged time "
          "— two clocks over ONE snapshot",
