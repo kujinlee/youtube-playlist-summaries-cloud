@@ -5320,12 +5320,12 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "[when.year - 1, when.year, when.year + 1]",
-        "[when.year, when.year + 1]"
+        "range(when.year + 1, when.year - 9, -1)",
+        "range(when.year + 1, when.year - 1, -1)"
       ]
     ],
     "expect": [
-      "backlog #650: idle days are whole days up to the snapshot; a month-day time takes the snapshot's year, or the year before when that would be in the future; an unreadable time is None, never 0"
+      "backlog #650: idle days are whole days up to `now`; a month-day time takes the LATEST year that does not put it after `now` (r2 N3); an unreadable time is None, never 0"
     ]
   },
   {
@@ -5542,21 +5542,22 @@
       ]
     ],
     "expect": [
-      "⭐ r1 Codex 2 / Claude F5: a snapshot that records ANY source not read never says 'none' — it says CANNOT VERIFY, names the source, and is bounded; a complete one still says none",
+      "⭐ r1 Codex 2 / Claude F5: a snapshot that records a source NOT READ (`cannot`, `needs_not_read`) never says 'none' — it says CANNOT VERIFY, names the source, and is bounded; a complete one still says none",
       "r1 Codex 2: an incomplete snapshot still lists the idle items it DID read, after its CANNOT VERIFY line"
     ]
   },
   {
-    "name": "r1 Codex 3: the year is the latest not in the future, not the nearest",
+    "name": "r2 N3: the year is the NEAREST, not the latest that is not after now",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "then = min(cands, key=lambda c: abs(when - c))",
-        "then = max([c for c in cands if c <= when] or cands)"
+        "then = (near or past or cands)[0]",
+        "then = min(cands, key=lambda c: abs(when - c))"
       ]
     ],
     "expect": [
-      "⭐ r1 Codex 3 / Claude F3: the year of a month-day time is the one with the SMALLEST gap, and a gap under a day either way is 0 — the DST fallback, a minute after the snapshot, a full stamp ahead, the year boundary"
+      "⭐ r2 N3: a month-day time older than six months still counts BACK — the latest year that does not put it after `now` — a 198-day and a 219-day gap, 02-29 read in its last leap year; only a FULL stamp a day or more ahead, or a day no year has, is None",
+      "⭐ r1 Codex 3 / Claude F3: a gap under a day EITHER way is 0 — the DST fallback, a minute after the snapshot, a full stamp ahead, the year boundary — and (r2 N3) a month-day time a day or more ahead is LAST year's"
     ]
   },
   {
@@ -5569,7 +5570,7 @@
       ]
     ],
     "expect": [
-      "⭐ r1 Codex 3 / Claude F3: the year of a month-day time is the one with the SMALLEST gap, and a gap under a day either way is 0 — the DST fallback, a minute after the snapshot, a full stamp ahead, the year boundary"
+      "⭐ r1 Codex 3 / Claude F3: a gap under a day EITHER way is 0 — the DST fallback, a minute after the snapshot, a full stamp ahead, the year boundary — and (r2 N3) a month-day time a day or more ahead is LAST year's"
     ]
   },
   {
@@ -5608,20 +5609,22 @@
       ]
     ],
     "expect": [
-      "⭐ r1 Codex 4: a NEGATED or `until after` form is not a prerequisite; a clause of its own still is"
+      "⭐ r1 Codex 4: a NEGATED form is not a prerequisite; a clause of its own still is — and so is a plain `wait until after` (r2 N4)",
+      "⭐ r2 N4: `until after`, a clause that follows a colon, and the `no` of `no-op` do not negate — four real prerequisites read; `not until after`, `don't wait until after` and a bare `no` stay rejected"
     ]
   },
   {
-    "name": "r1 Codex 4: an until-after form is a prerequisite",
+    "name": "r2 N4: an until-after form is rejected again",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "|\\buntil\\s*$",
-        ""
+        "|without)\\b\", re.IGNORECASE)",
+        "|without)\\b|\\buntil\\s*$\", re.IGNORECASE)"
       ]
     ],
     "expect": [
-      "⭐ r1 Codex 4: a NEGATED or `until after` form is not a prerequisite; a clause of its own still is"
+      "⭐ r2 N4: `until after`, a clause that follows a colon, and the `no` of `no-op` do not negate — four real prerequisites read; `not until after`, `don't wait until after` and a bare `no` stay rejected",
+      "⭐ r1 Codex 4: a NEGATED form is not a prerequisite; a clause of its own still is — and so is a plain `wait until after` (r2 N4)"
     ]
   },
   {
@@ -5661,21 +5664,21 @@
       ]
     ],
     "expect": [
-      "⭐ r1 Codex 2 / Claude F5: a snapshot that records ANY source not read never says 'none' — it says CANNOT VERIFY, names the source, and is bounded; a complete one still says none",
-      "⭐ r1 Codex 6 / Claude F6: every line the block prints is bounded, error lines included, and CANNOT RUN prints exactly ONCE through the hook — a failing main, a missing and a broken log, three hook outcomes"
+      "⭐ r1 Codex 2 / Claude F5: a snapshot that records a source NOT READ (`cannot`, `needs_not_read`) never says 'none' — it says CANNOT VERIFY, names the source, and is bounded; a complete one still says none",
+      "⭐ r1 Codex 6 / Claude F6: every line the block prints is bounded, error lines included, and CANNOT RUN prints exactly ONCE through the hook — a failing main, a missing and a broken log, five hook outcomes (r2 N5: a silent exit 2 and a script python cannot open still get the hook's header)"
     ]
   },
   {
-    "name": "r1 Claude F6: --owed-idle's own CANNOT line exits 1, so the hook says CANNOT RUN twice",
+    "name": "r1 Claude F6 / r2 N5: --owed-idle's own CANNOT line exits 2, the code python itself uses",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "return 2 if lines[0].startswith(OWED_IDLE_CANNOT) else 0",
-        "return 1 if lines[0].startswith(OWED_IDLE_CANNOT) else 0"
+        "OWED_IDLE_RC = 3",
+        "OWED_IDLE_RC = 2"
       ]
     ],
     "expect": [
-      "⭐ r1 Codex 6 / Claude F6: every line the block prints is bounded, error lines included, and CANNOT RUN prints exactly ONCE through the hook — a failing main, a missing and a broken log, three hook outcomes"
+      "⭐ r1 Codex 6 / Claude F6: every line the block prints is bounded, error lines included, and CANNOT RUN prints exactly ONCE through the hook — a failing main, a missing and a broken log, five hook outcomes (r2 N5: a silent exit 2 and a script python cannot open still get the hook's header)"
     ]
   },
   {
@@ -5689,6 +5692,153 @@
     ],
     "expect": [
       "⭐ r1 Claude F7: the newest snapshot is read from the END of the log — a 1 MB and a 2 MB history cost the same few chunks, and a last line longer than a chunk is still read whole"
+    ]
+  },
+  {
+    "name": "r2 N1: a ledger placement note is CANNOT VERIFY again",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "OWED_IDLE_UNREAD = (\"cannot\", \"needs_not_read\")",
+        "OWED_IDLE_UNREAD = (\"cannot\", \"needs_not_read\", \"ledger_problems\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 N1: a snapshot the logger CAN write — a ledger placement NOTE beside every source read — is VERIFIED: 'none' when its entry has a wait, the idle row when it has none; never CANNOT VERIFY",
+      "⭐ r1 Codex 2 / Claude F5: a snapshot that records a source NOT READ (`cannot`, `needs_not_read`) never says 'none' — it says CANNOT VERIFY, names the source, and is bounded; a complete one still says none"
+    ]
+  },
+  {
+    "name": "r2 N1: `cannot` is no longer a source not read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(\"cannot\", \"needs_not_read\")",
+        "(\"needs_not_read\",)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 2 / Claude F5: a snapshot that records a source NOT READ (`cannot`, `needs_not_read`) never says 'none' — it says CANNOT VERIFY, names the source, and is bounded; a complete one still says none",
+      "r1 Codex 2: an incomplete snapshot still lists the idle items it DID read, after its CANNOT VERIFY line"
+    ]
+  },
+  {
+    "name": "r2 N1: `needs_not_read` is no longer a source not read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "= (\"cannot\", \"needs_not_read\"",
+        "= (\"cannot\","
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 2 / Claude F5: a snapshot that records a source NOT READ (`cannot`, `needs_not_read`) never says 'none' — it says CANNOT VERIFY, names the source, and is bounded; a complete one still says none"
+    ]
+  },
+  {
+    "name": "r2 N2: every ref a recorded wait cites is its prerequisite",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "bare = all(word.lower() in _WAIT_JOINERS for word in rest)",
+        "bare = True"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 N2: a ref merely CITED in a recorded wait is NOT its prerequisite — the wait is resolved only when it IS its refs or says `after <ref>`; the reviewer's `asked on PR #590`, the real fable-compare-week wait and a negated form stay reasons, three explicit forms go stale — eight waits in ONE case"
+    ]
+  },
+  {
+    "name": "r2 N2: a recorded wait that IS its refs is not read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "all(word.lower() in _WAIT_JOINERS for word in rest)",
+        "False"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case",
+      "⭐ r1 Claude F1: the session block counts an item whose recorded wait has FINISHED as idle — the thread-line and the ledger spellings (on a thread, a placed and a loose entry), a merged and an open PR, in ONE case",
+      "⭐ r2 N2: a ref merely CITED in a recorded wait is NOT its prerequisite — the wait is resolved only when it IS its refs or says `after <ref>`; the reviewer's `asked on PR #590`, the real fable-compare-week wait and a negated form stay reasons, three explicit forms go stale — eight waits in ONE case"
+    ]
+  },
+  {
+    "name": "r2 N2: an explicit after-form in a recorded wait is not read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "else named_prerequisites(part)) if r not in own]",
+        "else []) if r not in own]"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 N2: a ref merely CITED in a recorded wait is NOT its prerequisite — the wait is resolved only when it IS its refs or says `after <ref>`; the reviewer's `asked on PR #590`, the real fable-compare-week wait and a negated form stay reasons, three explicit forms go stale — eight waits in ONE case"
+    ]
+  },
+  {
+    "name": "r2 N2: no joining word is allowed beside a recorded wait's refs",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_WAIT_JOINERS = frozenset((\"and\", \"or\", \"both\", \"then\", \"plus\", \"on\", \"for\"))",
+        "_WAIT_JOINERS = frozenset()"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude F1: the refs a RECORDED wait names are read — every one done is the alarm AFTER the recorded text; one still open, or a wait naming no ref, stays a reason — five waits in ONE case"
+    ]
+  },
+  {
+    "name": "r2 N3: a time under a day ahead is read as last year's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(near or past or cands)[0]",
+        "(past or cands)[0]"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex 3 / Claude F3: a gap under a day EITHER way is 0 — the DST fallback, a minute after the snapshot, a full stamp ahead, the year boundary — and (r2 N3) a month-day time a day or more ahead is LAST year's"
+    ]
+  },
+  {
+    "name": "r2 N3: 02-29 is looked for in three years only",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "when.year - 9, -1)",
+        "when.year - 2, -1)"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 N3: a month-day time older than six months still counts BACK — the latest year that does not put it after `now` — a 198-day and a 219-day gap, 02-29 read in its last leap year; only a FULL stamp a day or more ahead, or a day no year has, is None"
+    ]
+  },
+  {
+    "name": "r2 N4: the `no` of a hyphenated word negates",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "no(?!-)",
+        "no"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 N4: `until after`, a clause that follows a colon, and the `no` of `no-op` do not negate — four real prerequisites read; `not until after`, `don't wait until after` and a bare `no` stay rejected"
+    ]
+  },
+  {
+    "name": "r2 N4: a colon does not end a clause",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "[^.;:,!?\\n—]*$\")",
+        "[^.;,!?\\n—]*$\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 N4: `until after`, a clause that follows a colon, and the `no` of `no-op` do not negate — four real prerequisites read; `not until after`, `don't wait until after` and a bare `no` stay rejected"
     ]
   }
 ]

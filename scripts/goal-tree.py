@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 537 cases
+    python3 scripts/goal-tree.py --self-test                 # 541 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -404,11 +404,16 @@ def _join_waits(*waits) -> "str | None":
 # `starts after backlog #N` and `only after PR #N` end in. Nothing else is read: not `before`, not `after the PR #N`,
 # not a bare mention. A wait this misses is still said by a recorded `waits`, or shows as idle days.
 # r1 Codex 4: read only from the thread text and the ledger `what` — never `on_done`, which describes the FINISH —
-# and a match is REJECTED when its clause (the text since the last `.`, `;`, `,`, `!`, `?`, `—` or newline) negates
-# it (`not`, `no`, `never`, `don't`, `without`) or says `until after`: `Do not wait until after PR #451` names none.
+# and a match is REJECTED when its clause (the text since the last `.`, `;`, `:`, `,`, `!`, `?`, `—` or newline)
+# negates it (`not`, `no`, `never`, `don't`, `without`): `Do not wait until after PR #451` names none.
+# r2 N4: `until after` alone does NOT negate (`Wait until after PR #5` is the plainest prerequisite there is — the
+# `not` of `not until after` already rejects that form), a colon ends a clause (`No rush: start after PR #5`), and
+# the `no` of a hyphenated word (`no-op`) is not the word `no`.
 AFTER_RE = re.compile(r"\bafter\s+(PR|backlog)\s+#(\d+)\b", re.IGNORECASE)
-_CLAUSE_RE = re.compile(r"[^.;,!?\n—]*$")
-_NEGATED_RE = re.compile(r"\b(?:not|no|never|don't|dont|without)\b|\buntil\s*$", re.IGNORECASE)
+_CLAUSE_RE = re.compile(r"[^.;:,!?\n—]*$")
+_NEGATED_RE = re.compile(r"\b(?:not|no(?!-)|never|don't|dont|without)\b", re.IGNORECASE)
+# r2 N2: the words a recorded wait may hold BESIDE its refs and still BE those refs (`PR #442 and backlog #70`).
+_WAIT_JOINERS = frozenset(("and", "or", "both", "then", "plus", "on", "for"))
 OWED_IDLE_SHOWN = 6      # session-start lines for idle Owed items; the rest is a count (the block is injected every session)
 OWED_IDLE_WIDTH = 170    # ...and no line of that block is longer than this
 _SINCE_RE = re.compile(r"(?:(\d{4})-)?(\d\d)-(\d\d) (\d\d):(\d\d)")
@@ -418,9 +423,10 @@ def named_prerequisites(*texts, own=()) -> list:
     """PURE (backlog #650). The (kind, number) refs the texts say the work starts AFTER (`AFTER_RE`), in first-seen
     order, each once. A ref in `own` — the item's own thread refs — is never its own prerequisite.
     REJECTED (r1 Codex 4), so never a prerequisite: `before PR #N`, `after the PR #N`, `after PR#N`, `after: PR #N`,
-    a bare mention, `until after PR #N`, and any `after PR #N` whose clause holds `not`/`no`/`never`/`don't`/
-    `without` before it (`Do not wait until after PR #451`, `don't start after PR #5`). The caller never passes
-    `on_done`: it says what to do when the work FINISHES, not what it waits on to start."""
+    a bare mention, and any `after PR #N` whose clause holds `not`/`no`/`never`/`don't`/`without` before it
+    (`Do not wait until after PR #451`, `don't start after PR #5`). READ (r2 N4): `wait until after PR #N`, and an
+    `after PR #N` in a clause of its own after a colon. The caller never passes `on_done`: it says what to do when
+    the work FINISHES, not what it waits on to start."""
     out: list = []
     for text in texts:
         text = text if isinstance(text, str) else ""
@@ -464,13 +470,20 @@ def _blocker(kind: str, n: int, src: dict) -> dict:
 
 
 def wait_blockers(waits, src: dict, own=()) -> dict:
-    """backlog #650 r1 (Claude F1). The refs each RECORDED wait names, read live: {wait part: [blocker, …]} for every
-    `; `-part (the unit `_join_waits` keeps) naming at least one `PR #N` / `backlog #N` not in `own`. A part naming
-    none — `the owner` — is absent: it stays a reason whatever the tree reads."""
+    """backlog #650 r1 (Claude F1). The refs each RECORDED wait WAITS ON, read live: {wait part: [blocker, …]} for
+    every `; `-part (the unit `_join_waits` keeps) that names a prerequisite not in `own`. r2 N2 — a ref merely CITED
+    is not one (`asked on PR #590`, `(PR #590: r1 Opus, r2 Fable)`); a part names its prerequisites in two ways only:
+      it IS its refs — nothing but `PR #N` / `backlog #N` and joining words (`PR #442`, `PR #442 and backlog #70`);
+      or it says `after <ref>` — `named_prerequisites`, the ONE rule the `what` matcher uses, negation included.
+    Any other part — `the owner`, `see PR #590`, `not after PR #590` — is absent: it stays a reason whatever the
+    tree reads."""
     out: dict = {}
     for w in waits:
         for part in (w or "").split("; "):
-            refs = [(k, int(n)) for k, n in REF_RE.findall(part) if (k, int(n)) not in own]
+            rest = re.findall(r"[^\W\d_]+|\d+", REF_RE.sub(" ", part))
+            bare = all(word.lower() in _WAIT_JOINERS for word in rest)
+            refs = [r for r in ([(k, int(n)) for k, n in REF_RE.findall(part)] if bare
+                                else named_prerequisites(part)) if r not in own]
             if refs and part not in out:
                 out[part] = [_blocker(k, n, src) for k, n in dict.fromkeys(refs)]
     return out
@@ -496,25 +509,31 @@ def _ledger_owed(entry: dict, src: "dict | None" = None) -> dict:
 
 def idle_days(since, now) -> "int | None":
     """PURE (backlog #650). Whole days from `since` to `now` (`YYYY-MM-DD HH:MM`, the time the report RUNS — r1 Claude
-    F4). `since` is a full stamp, or the ledger's `mm-dd HH:MM` (the ledger stores no year): of the year before, the
-    year of `now` and the year after, the one with the SMALLEST gap to `now` (r1 Codex 3, Claude F3 — a wall clock
-    repeats an hour at the DST fallback, and a ledger write can land a minute after the snapshot's clock, so "later
-    than now" is no evidence of last year). A gap under a day EITHER way is 0. None when either does not read, or
-    `since` is a day or more AHEAD of `now`: the page then says `idle ? days`, never 0."""
+    F4). `since` is a full stamp, or the ledger's `mm-dd HH:MM` (the ledger stores no year). Its year (r2 N3) is the
+    LATEST one that does not put it after `now` — so an entry seven months old counts back 7 months, never forward
+    5 — except that a time UNDER A DAY ahead is this moment's (r1 Codex 3, Claude F3 — a wall clock repeats an hour
+    at the DST fallback, and a ledger write can land a minute after the snapshot's clock, so "a little later than
+    now" is no evidence of last year). 02-29 is read in the years that have one. A gap under a day EITHER way is 0.
+    None when either does not read, or a FULL stamp is a day or more AHEAD of `now`: the page then says
+    `idle ? days`, never 0."""
     m = _SINCE_RE.fullmatch(since.strip()) if isinstance(since, str) else None
     try:
         when = _dt.datetime.strptime(now, MINUTE_FMT)
         if not m:
             return None
         rest = [int(g) for g in m.groups()[1:]]
-        years = [int(m.group(1))] if m.group(1) else [when.year - 1, when.year, when.year + 1]
+        years = [int(m.group(1))] if m.group(1) else range(when.year + 1, when.year - 9, -1)   # newest first
         cands = []
         for y in years:
             try:
                 cands.append(_dt.datetime(y, *rest))
             except ValueError:                    # 02-29 in a year without one
                 pass
-        then = min(cands, key=lambda c: abs(when - c)) if cands else _dt.datetime(years[0], *rest)
+        if not cands:
+            return None
+        near = [c for c in cands if _dt.timedelta(0) < c - when < _dt.timedelta(days=1)]
+        past = [c for c in cands if c <= when]
+        then = (near or past or cands)[0]
     except (ValueError, TypeError):
         return None
     gap = when - then
@@ -2288,8 +2307,15 @@ def _owed_html(x: dict, at, repo) -> str:
             + (f' <span class="waits warn">{_html_line(alarm, repo)}</span>' if alarm else ""))
 
 
-OWED_IDLE_UNREAD = ("cannot", "needs_not_read", "ledger_problems")   # a snapshot's records of a source NOT read
+# A snapshot's records of a source NOT read. r2 N1: NOT `ledger_problems` — in a logged snapshot that key holds only
+# placement NOTES (`ledger_threads`, `ref_problems`), and a note drops no entry from the Owed list: the entry is still
+# placed by its goal, or shown loose. A ledger that really did not read sets `cannot` too (`collect`'s
+# `errors["ledger"]`), and `append_if_changed` never logs such a snapshot; both keys stay here as the defence.
+OWED_IDLE_UNREAD = ("cannot", "needs_not_read")
 OWED_IDLE_CANNOT = "=== OWED AND IDLE: CANNOT"   # the head of every line that says the block could not be trusted
+# The exit code that says "I printed my OWN CANNOT line". r2 N5: never 2 — python exits 2 when it cannot open the
+# script and argparse exits 2 on a usage error, and neither prints that line; the hook stays silent on THIS code only.
+OWED_IDLE_RC = 3
 OWED_IDLE_CHUNK = 262_144                         # the first read from the END of the log (doubles until a line fits)
 
 
@@ -2306,7 +2332,7 @@ def owed_idle_lines(snap: dict, now: str) -> list:
     time the report RUNS (r1 Claude F4). Bounded — OWED_IDLE_SHOWN lines of at most OWED_IDLE_WIDTH, the rest a
     count — because the block is injected into every session. Nothing idle is ONE line saying so — but only when the
     snapshot read every source: one recording a source NOT read (`OWED_IDLE_UNREAD`) says CANNOT VERIFY first, never
-    'none' (r1 Codex 2, Claude F5)."""
+    'none' (r1 Codex 2, Claude F5). A ledger placement note is not that (r2 N1): it hides no Owed item."""
     at = _SS.clean(snap.get("at"), 20)
     rows = []
     for x in agenda_now_items(agenda_digest(snap, {"steps": [], "at": ""})):
@@ -2850,8 +2876,8 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
     if a.self_test:
         return _self_test()
     if a.owed_idle:      # reads the log only; alone, so a SessionStart never fetches, derives or writes
-        # r1 Claude F6 / Codex 6: every line bounded, and exit 2 means "I printed my own CANNOT line" — the hook echoes
-        # its CANNOT RUN only for any OTHER code, so it is said exactly once. Idle days count to NOW (r1 Claude F4).
+        # r1 Claude F6 / Codex 6: every line bounded, and exit OWED_IDLE_RC means "I printed my own CANNOT line" — the
+        # hook echoes its CANNOT RUN for any OTHER non-zero code, so it is said exactly once. Days count to NOW (F4).
         try:
             main_root, why = _SS.main_checkout(root, run or _SS._run)
             lines = ([_bounded(f"{OWED_IDLE_CANNOT} RUN — the log lives in the MAIN checkout, and ", str(why),
@@ -2860,7 +2886,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
         except Exception as exc:                  # noqa: BLE001 - CANNOT RUN, named and bounded
             lines = [_bounded(f"{OWED_IDLE_CANNOT} RUN — ", f"{type(exc).__name__}: {exc}", " (treat as NOT RUN) ===")]
         print("\n".join(lines))
-        return 2 if lines[0].startswith(OWED_IDLE_CANNOT) else 0
+        return OWED_IDLE_RC if lines[0].startswith(OWED_IDLE_CANNOT) else 0
     if not (a.snapshot or a.page or a.print_ or a.record_agenda or a.tick_agenda is not None):
         a.snapshot = a.page = True
     now = now or _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -3046,8 +3072,8 @@ def _cases_650(case) -> None:
          [named_prerequisites("after backlog #11", "then after PR #5", "again After  backlog #11"),
           named_prerequisites("after PR #5", own={("PR", 5)}), named_prerequisites()],
          [[("backlog", 11), ("PR", 5)], [], []])
-    case("backlog #650: idle days are whole days up to the snapshot; a month-day time takes the snapshot's year, or "
-         "the year before when that would be in the future; an unreadable time is None, never 0",
+    case("backlog #650: idle days are whole days up to `now`; a month-day time takes the LATEST year that does not "
+         "put it after `now` (r2 N3); an unreadable time is None, never 0",
          [idle_days(a, b) for a, b in (("11-05 13:42", "2026-11-15 09:00"), ("12-30 10:00", "2026-01-02 10:00"),
                                        ("2026-11-01 00:00", "2026-11-15 00:00"), ("soon", "2026-11-15 09:00"),
                                        ("11-05 13:42", "T"), (None, "2026-11-15 09:00"))],
@@ -3153,40 +3179,86 @@ def _cases_650(case) -> None:
           [x in (_both or [""])[0] for x in ("waits for: PR #442", "blocker done 10-30 (PR #442), not started",
                                              "prerequisite PR #460 closed unmerged — re-plan")]),
          (0, 0, 0, 1, 1, [True, True, True]))
+    # r2 N2: PR #590 is MERGED in this world, so a wait that merely cites it would go stale if citing were naming.
+    _m590 = {"merged_by_pr": {442: "cccc333", 590: "dddd444"},
+             "merged_at": {"cccc333": "2026-10-30 09:00", "dddd444": "2026-11-14 09:00"}}
+    _FABLE = ("the 11-20 weekly reset — the per-model table is built then; until then each fold/build alternates "
+              "Fable and Opus (PR #590: r1 Opus, r2 Fable)")       # the real ledger's `fable-compare-week` wait
+    _cited = ("the owner's answer, asked on PR #590", _FABLE, "see PR #590", "PR #590 and the owner",
+              "not after PR #590", "PR #590", "after PR #590", "queued after backlog #70 in the 11-15 budget")
+    _done590 = "blocker done 11-14 (PR #590), not started"
+    case("⭐ r2 N2: a ref merely CITED in a recorded wait is NOT its prerequisite — the wait is resolved only when it "
+         "IS its refs or says `after <ref>`; the reviewer's `asked on PR #590`, the real fable-compare-week wait and a "
+         "negated form stay reasons, three explicit forms go stale — eight waits in ONE case",
+         ([tail([ent("nothing named", waits=w)], **_m590) for w in _cited],
+          [len(idle_of([ent("x", waits=w)], **_m590)) for w in _cited]),
+         ([f"waits for: {html.escape(w)}" for w in _cited[:5]]
+          + [f"waits for: PR #590 {_done590}", f"waits for: after PR #590 {_done590}",
+             "waits for: queued after backlog #70 in the 11-15 budget blocker done 10-30 (backlog #70), not started"],
+          [0, 0, 0, 0, 0, 1, 1, 1]))
     _inc = lambda led, **extra: safe(owed_idle_lines, dict(snap(led), **extra), NOW)
-    _vs = [_inc([_pl()], **x) for x in ({"ledger_problems": ["3 line(s) not parsed"]},
-                                       {"cannot": ["ledger: .claude/inflight.jsonl NOT READ (PermissionError)"]},
+    # r2 N1: an unread ledger is a parse failure, and that ALWAYS sets `cannot` beside `ledger_problems` — so the
+    # first world below carries both, and names `cannot` alone.
+    _vs = [_inc([_pl()], **x) for x in ({"cannot": ["ledger: .claude/inflight.jsonl NOT READ (PermissionError)"],
+                                        "ledger_problems": ["3 line(s) not parsed"]},
                                        {"needs_not_read": ["dashboard: NOT READ"]},
-                                       {"ledger_problems": ["x" * 400]}, {})]
-    case("⭐ r1 Codex 2 / Claude F5: a snapshot that records ANY source not read never says 'none' — it says CANNOT "
-         "VERIFY, names the source, and is bounded; a complete one still says none",
+                                       {"cannot": ["x" * 400]}, {})]
+    case("⭐ r1 Codex 2 / Claude F5: a snapshot that records a source NOT READ (`cannot`, `needs_not_read`) never says "
+         "'none' — it says CANNOT VERIFY, names the source, and is bounded; a complete one still says none",
          ([v[0].split(" — ", 2)[:2] for v in _vs], [len(v) for v in _vs],
           all(len(ln) <= OWED_IDLE_WIDTH and ln.endswith("===") for v in _vs for ln in v),
           ["treat as NOT RUN" in v[0] for v in _vs]),
-         ([["=== OWED AND IDLE: CANNOT VERIFY", "ledger_problems not read: 3 line(s) not parsed; treat as NOT RUN ==="],
-           ["=== OWED AND IDLE: CANNOT VERIFY", "cannot not read: ledger: .claude/inflight.jsonl NOT READ "
+         ([["=== OWED AND IDLE: CANNOT VERIFY", "cannot not read: ledger: .claude/inflight.jsonl NOT READ "
             "(PermissionError); treat as NOT RUN ==="],
            ["=== OWED AND IDLE: CANNOT VERIFY", "needs_not_read not read: dashboard: NOT READ; treat as NOT RUN ==="],
-           ["=== OWED AND IDLE: CANNOT VERIFY", "ledger_problems not read: " + "x" * 86 + "…; treat as NOT RUN ==="],
+           ["=== OWED AND IDLE: CANNOT VERIFY", "cannot not read: " + "x" * 95 + "…; treat as NOT RUN ==="],
            ["=== OWED AND IDLE: none", "every Owed item has a reason (goal tree snapshot of 2026-11-15 09:00) ==="]],
-          [1, 1, 1, 1, 1], True, [True, True, True, True, False]))
-    _inc_rows = _inc([ent("after PR #442")], ledger_problems=["1 line(s) not parsed"])
+          [1, 1, 1, 1], True, [True, True, True, False]))
+    # r2 N1: the ONLY `ledger_problems` a LOGGED snapshot carries is a placement NOTE — `derive` writes it for an
+    # entry whose thread line does not parse (the real ledger's `fable-compare-week` shape), and still places the
+    # entry by its goal. Built by `derive`, never typed in: every source read, nothing dropped.
+    _note = {"id": "fc", "what": "comparison week", "on_done": "d", "at": "11-13 05:40", "goal": "g",
+             "thread": "side · backlog #630 Fable pilot · comparison week"}
+    _noted = [safe(snap, [_note | kw]) for kw in ({"waits": "the 11-20 weekly reset"}, {})]
+    case("⭐ r2 N1: a snapshot the logger CAN write — a ledger placement NOTE beside every source read — is VERIFIED: "
+         "'none' when its entry has a wait, the idle row when it has none; never CANNOT VERIFY",
+         ([(len(sn["ledger_problems"]), "its thread is not read" in sn["ledger_problems"][0], sn["cannot"],
+            sn["needs_not_read"]) for sn in _noted],
+          [[ln.split(" — ")[0] for ln in safe(owed_idle_lines, sn, NOW)] for sn in _noted]),
+         ([(1, True, [], [])] * 2,
+          [["=== OWED AND IDLE: none"], ["=== OWED AND IDLE (1)", "  fc", "=== END OWED AND IDLE ==="]]))
+    _inc_rows = _inc([ent("after PR #442")], cannot=["ledger: 1 line(s) not parsed"])
     case("r1 Codex 2: an incomplete snapshot still lists the idle items it DID read, after its CANNOT VERIFY line",
          ([ln.split(" — ")[0] for ln in _inc_rows[:2]], len(_inc_rows), _inc_rows[-1]),
          (["=== OWED AND IDLE: CANNOT VERIFY", "=== OWED AND IDLE (1)"], 4, "=== END OWED AND IDLE ==="))
-    case("⭐ r1 Codex 3 / Claude F3: the year of a month-day time is the one with the SMALLEST gap, and a gap under a "
-         "day either way is 0 — the DST fallback, a minute after the snapshot, a full stamp ahead, the year boundary",
+    case("⭐ r1 Codex 3 / Claude F3: a gap under a day EITHER way is 0 — the DST fallback, a minute after the snapshot, "
+         "a full stamp ahead, the year boundary — and (r2 N3) a month-day time a day or more ahead is LAST year's",
          [idle_days(a, b) for a, b in (("11-01 01:50", "2026-11-01 01:10"), ("11-15 09:01", "2026-11-15 09:00"),
                                        ("2026-11-15 09:30", "2026-11-15 09:00"), ("12-30 10:00", "2026-01-02 10:00"),
                                        ("11-15 20:00", "2026-11-15 09:00"), ("11-16 09:00", "2026-11-15 09:00"),
                                        ("01-02 10:00", "2026-12-30 10:00"), ("11-14 09:00", "2026-11-15 09:00"))],
-         [0, 0, 0, 3, 0, None, None, 1])
-    case("⭐ r1 Codex 4: a NEGATED or `until after` form is not a prerequisite; a clause of its own still is",
+         [0, 0, 0, 3, 0, 364, 362, 1])
+    case("⭐ r2 N3: a month-day time older than six months still counts BACK — the latest year that does not put it "
+         "after `now` — a 198-day and a 219-day gap, 02-29 read in its last leap year; only a FULL stamp a day or more "
+         "ahead, or a day no year has, is None",
+         [idle_days(a, b) for a, b in (("05-01 09:00", "2026-11-15 09:00"), ("04-10 09:00", "2026-11-15 09:00"),
+                                       ("02-29 10:00", "2026-11-15 10:00"), ("2026-11-16 09:00", "2026-11-15 09:00"),
+                                       ("2027-05-01 09:00", "2026-11-15 09:00"), ("02-30 10:00", "2026-11-15 10:00"))],
+         [198, 219, 990, None, None, None])
+    case("⭐ r1 Codex 4: a NEGATED form is not a prerequisite; a clause of its own still is — and so is a plain "
+         "`wait until after` (r2 N4)",
          [named_prerequisites(t) for t in ("Do not wait until after PR #451; start now", "wait until after PR #451",
                                            "don't start after PR #5", "never after PR #5", "no need to go after PR #5",
                                            "Do not wait; start only after PR #5", "start after PR #5, not before PR #6",
                                            "without the flag, after PR #5")],
-         [[], [], [], [], [], [("PR", 5)], [("PR", 5)], [("PR", 5)]])
+         [[], [("PR", 451)], [], [], [], [("PR", 5)], [("PR", 5)], [("PR", 5)]])
+    case("⭐ r2 N4: `until after`, a clause that follows a colon, and the `no` of `no-op` do not negate — four real "
+         "prerequisites read; `not until after`, `don't wait until after` and a bare `no` stay rejected",
+         [named_prerequisites(t) for t in ("Wait until after PR #5 merges", "Hold until after PR #5",
+                                           "No rush: start after PR #5", "Ship the no-op flag after PR #5",
+                                           "not until after PR #5", "don't wait until after PR #5",
+                                           "Do not wait until after PR #5; start now", "no start after PR #5")],
+         [[("PR", 5)]] * 4 + [[]] * 4)
     _od = lambda what, on_done, **kw: tail([{"id": "sub", "what": f"work on backlog #11; {what}", "on_done": on_done,
                                              "at": "11-10 09:00"} | kw])
     case("⭐ r1 Codex 4: `on_done` describes the FINISH and is never read for a prerequisite — a thread entry and a "
@@ -3226,10 +3298,15 @@ def _cases_650(case) -> None:
         hook = [ln for ln in (ROOT / ".claude" / "hooks" / "session-state.sh").read_text().splitlines()
                 if "goal-tree.py" in ln and not ln.lstrip().startswith("#")]
         hook_out = []
-        for body in ('print("=== OWED AND IDLE: CANNOT RUN — x (treat as NOT RUN) ==="); raise SystemExit(2)',
-                     "raise SystemExit(1)", 'print("=== OWED AND IDLE: none ===")'):
+        # r2 N5: exit 2 is ALSO python's own "cannot open the script" and argparse's usage error — neither prints the
+        # block's CANNOT line — so the fourth stand-in exits 2 in silence and the fifth is NO script at all.
+        for body in ('print("=== OWED AND IDLE: CANNOT RUN — x (treat as NOT RUN) ==="); raise SystemExit(3)',
+                     "raise SystemExit(1)", 'print("=== OWED AND IDLE: none ===")', "raise SystemExit(2)", None):
             (tdp / "scripts").mkdir(exist_ok=True)
-            (tdp / "scripts" / "goal-tree.py").write_text(body + "\n")
+            if body is None:
+                (tdp / "scripts" / "goal-tree.py").unlink()
+            else:
+                (tdp / "scripts" / "goal-tree.py").write_text(body + "\n")
             r = subprocess.run(["bash", "-c", f"REPO_ROOT={shlex.quote(str(tdp))}\n" + "\n".join(hook)],
                                capture_output=True, text=True, timeout=30)
             hook_out.append((r.stdout.count("CANNOT RUN"), r.returncode))
@@ -3237,10 +3314,11 @@ def _cases_650(case) -> None:
          [[("idle 9 days" in ln, "idle 14 days" in ln) for ln in out[1:-1]] for _, out in runs[:2]],
          [[(True, False)], [(False, True)]])
     case("⭐ r1 Codex 6 / Claude F6: every line the block prints is bounded, error lines included, and CANNOT RUN "
-         "prints exactly ONCE through the hook — a failing main, a missing and a broken log, three hook outcomes",
+         "prints exactly ONCE through the hook — a failing main, a missing and a broken log, five hook outcomes "
+         "(r2 N5: a silent exit 2 and a script python cannot open still get the hook's header)",
          (runs[2][0], len(runs[2][1]), [len(ln) <= OWED_IDLE_WIDTH for ln in runs[2][1] + long_missing + long_broken],
           [ln.endswith("===") for ln in runs[2][1] + long_missing + long_broken], hook_out),
-         (2, 1, [True, True, True], [True, True, True], [(1, 0), (1, 0), (0, 0)]))
+         (3, 1, [True, True, True], [True, True, True], [(1, 0), (1, 0), (0, 0), (1, 0), (1, 0)]))
 
     class _Counting(io.BytesIO):
         got = 0

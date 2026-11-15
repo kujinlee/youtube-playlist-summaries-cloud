@@ -17,9 +17,10 @@ python3 "$REPO_ROOT/scripts/session-state.py" </dev/null 2>&1 || echo "=== IN FL
 # it costs milliseconds and can be as old as the last `/goal-tree`; the header says which snapshot. A log it cannot
 # read is CANNOT READ — treat as NOT RUN — never "none". Its own block, not a part of the in-flight one: that block
 # has only open PRs and the ledger, and its 8,000-character cap is a tested contract.
-# Exit 2 = it printed its OWN bounded CANNOT line, so the echo is only for any other code: said once (PR #592 r1).
+# Exit 3 = it printed its OWN bounded CANNOT line, so the echo is for every other non-zero code: said once (PR #592
+# r1). NOT 2 (r2 N5): python exits 2 when it cannot open the script, argparse on a usage error — neither prints it.
 python3 "$REPO_ROOT/scripts/goal-tree.py" --owed-idle </dev/null 2>&1; rc=$?
-[ "$rc" -eq 0 ] || [ "$rc" -eq 2 ] || echo "=== OWED AND IDLE: CANNOT RUN — goal-tree.py exited $rc (treat as NOT RUN) ==="
+[ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || echo "=== OWED AND IDLE: CANNOT RUN — goal-tree.py exited $rc (treat as NOT RUN) ==="
 # backlog #589: ARCHIVE the worktrees under .claude/worktrees/ whose PR merged (67 of them, 11 GB, froze the Mac on
 # 2026-11-09). It never deletes: `git worktree move` to ~/.worktree-archive/<repo>/ keeps every file and the reflog;
 # a placeholder FILE is left at the old path (a late write fails, ENOTDIR); undo, absolute paths as printed:

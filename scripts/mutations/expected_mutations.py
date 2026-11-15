@@ -430,7 +430,14 @@ EXPECTED_MUTATIONS = {
     # on_done read (two sites); a negated and an until-after form read; idle days to the snapshot, the given clock
     # ignored; an unbounded line; the own-CANNOT exit code; the whole log read. Eight rebound; ONE retired: 'a closed
     # prerequisite PR is not read as done' now has the merged entry's anchor (closed is ABANDONED, r1 Codex 1 guards it).
-    "scripts/goal-tree.py": 435,  # 395 -> 417 (backlog #650) -> 435 (PR #592 r1): the derived waits and the session block
+    # ⟳ 2026-11-15, PR #592 r2 fold: 435 -> 446. Eleven new: a ledger placement note read as CANNOT VERIFY, `cannot` or
+    # `needs_not_read` dropped from the unread set; a cited ref read as a recorded wait's prerequisite, a bare-ref wait
+    # or an explicit after-form not read, the joining words refused; a time under a day ahead read as last year's,
+    # 02-29 looked for in three years; the `no` of `no-op` negating, a colon not ending a clause. Eight rebound — three
+    # of them REPLACED in place, because r2 made their mutant the rule or removed their anchor: 'the year is the latest
+    # not in the future' is now 'the year is the NEAREST' (N3), 'an until-after form is a prerequisite' is now 'an
+    # until-after form is rejected again' (N4), and the own-CANNOT exit code mutates 3 -> 2, not 2 -> 1 (N5).
+    "scripts/goal-tree.py": 446,  # 395 -> 417 (backlog #650) -> 435 (PR #592 r1) -> 446 (r2): derived waits, session block
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
