@@ -120,6 +120,9 @@ SCRIPTS = ROOT / "scripts"
 # separately verified against the real suites and were all ACCURATE — including the two that print
 # no total at all, whose case lines were counted by hand (10 and 11).
 POPULATION: frozenset[str] = frozenset({
+    # ⟳ 2026-11-14, backlog #588 r1: its suite went 16 → 26 in the fold that added the identity and
+    # exact-label rules, so its declared count gets a reader in that same commit.
+    "sweep-costs.py",
     # ⟳ 2026-11-13, backlog #625: pinned in the commit that creates it (the Ask answerer).
     "ask_answerer.py",
     # ⟳ 2026-11-12, backlog #586 slice 2: pinned in the commit that creates it (a library, no caller yet).
