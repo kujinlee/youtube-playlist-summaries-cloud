@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/goal-wait-derive-r2-claude.md": "100644 c6c439db4c3715109ab262031405e44e61668356"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "be4d48c6e4dd8430957d625649adc4dc9f041d04",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 8096 chars, names be4d48c6e4dd",
+  "refused": false,
+  "review": "goal-wait-derive-r2-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/waitderive",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
