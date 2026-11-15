@@ -530,6 +530,11 @@ HARNESS_TREE = (
     # entry its control raises FileNotFoundError on that copy — measured on the first sweep — and every
     # mutation is NOT MEASURED. One file.
     ".githooks",
+    # ⟳ 2026-11-15, backlog #651 r3 C3-2: `session-state.py`'s suite sums the calls its SessionStart entry makes
+    # against that hook's `timeout`, READ from this file, never copied into the script. Without it the control
+    # raises FileNotFoundError — measured on the first run of the redesign's manifest. ONE FILE, the first entry
+    # that is not a directory: `stage_tree` copies a file entry as a file, and `_staged_root` places the path itself.
+    ".claude/settings.json",
 )
 
 # ── WHICH MANIFESTS A PULL REQUEST RUNS (backlog #330, approved by the owner 2026-11-02) ───────
@@ -620,6 +625,7 @@ def harness_files(own_src: str, script_stems) -> frozenset:
 def _staged_root(path: str, roots) -> "str | None":
     """The `HARNESS_TREE` root `path` is under — by PREFIX, never substring — or None."""
     under = [r for r in roots if path.startswith(r + "/")]
+    under += [r for r in roots if path == r]   # a FILE entry is its own root
     return max(under, key=len) if under else None
 
 
@@ -990,6 +996,9 @@ def stage_tree(root: pathlib.Path, dest: pathlib.Path) -> list[str]:
         # match the untouched source — the `"a"` -> `"w"` swap is LENGTH-PRESERVING, so this is
         # not contrived — reproduced H1 exactly: `check-banner-armed.py` rc=1, 155/160, the same
         # five case names CI had reported. The env line alone was half a fix.
+        if src.is_file():   # a FILE entry (`.claude/settings.json`): no cache can sit beside it in the copy
+            shutil.copy2(src, dst)
+            continue
         shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
     return problems
 

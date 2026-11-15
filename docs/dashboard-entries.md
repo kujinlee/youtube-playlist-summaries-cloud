@@ -20746,6 +20746,9 @@ run would show waits for the next night instead of failing the pull request. The
 uses at most 12 of the 20 runners, so pull requests are not stuck behind it, and its start time is
 not guaranteed: GitHub has started these runs 7 to 10 hours late. Backlog #231 (shards near their
 time limit) is closed: the slowest shard now takes 1,043 s against a 1,500 s line.
+Every session start says how long ago the last GREEN full sweep finished, and says STALE after 36
+hours. Until the first green night after this merges, it says NO GREEN SWEEP — that is expected,
+not a fault. Session start no longer waits on several GitHub calls for this line: it makes one.
 <!--tech-->
 Backlog #651, the owner's option A (11-15 06:24). `scripts/check-plan-code.py`: `sample_manifests`
 (the ceil(20%) targets with the smallest sha256(key, target)) and `select_manifests(sample_key=)`,
@@ -20761,3 +20764,12 @@ mutations); `scripts/sweep-costs.py` reads a scheduled run at one seed's cost, t
 the run's own verdict line lists (35 cases, 33 mutations); `sample_manifests` has a case that ranks
 hand-written digests (506 cases, 370 mutations). Backlog #231's line is restated for scheduled runs: any
 shard over 3,000 s reopens it. A defect the sample misses is found up to ~38 h after its merge.
+Phase 6 redesign (round 3 THRASHED in `sweep-liveness`; `docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md`):
+the run/job/shard reader is deleted. `mutation-sweep-complete` uploads a `full-sweep-green` artifact
+(retention 7 days) only on a green scheduled sweep of master, first attempt; `session-state.py` reads it
+with one name-filtered GET (`fetch_green_markers`, `green_sweep_status`: same repository, `master`, a
+zoned `created_at`, newest wins; CANNOT VERIFY on any gh or page fault). A case sums the hook's bounded
+calls (`COLLECT_BOUNDS`, each + DRAIN) against the SessionStart `timeout` read from `.claude/settings.json`;
+`TIMEOUT` 30 -> 21 to keep 5 s of margin. `check-plan-code.py` stages `.claude/settings.json` for that
+case. session-state: 161 -> 150 cases, 145 -> 140 mutations. The marker step's `if:` is seen only by
+the first scheduled run after merge.

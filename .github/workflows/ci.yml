@@ -29,8 +29,9 @@ on:
   # ⟳ backlog #651 (owner 11-15, option A): this is now the only REGULAR full sweep — master pushes no longer
   # run one, and a pull request that changes the harness runs a ~20% SAMPLE (`check-plan-code.sample_manifests`).
   # ⚠ Not the only one there is (r1, Codex): a `batch/**` push still sweeps in full, when someone assembles one.
-  # ⚠ LIVENESS (r1, Claude M1): nothing in CI notices this run NOT happening. `scripts/session-state.py` prints
-  # the age of the last scheduled run that completed at every session start, and flags it past 36 h.
+  # ⚠ LIVENESS (r1, Claude M1; ⟳ Phase 6 redesign): nothing in CI notices this run NOT happening. A GREEN one
+  # uploads the `full-sweep-green` artifact (the last step of `mutation-sweep-complete`), and
+  # `scripts/session-state.py` prints its age at every session start, flagging it past 36 h.
   # 08:30 UTC = 00:30 PST (01:30 PDT). ⚠ Not 09:00: `schema-gates.yml`'s `prod-drift` cron is 09:00 UTC. That
   # workflow keys its concurrency group on the event, and so does this one now (below), so neither cancels the
   # other; the half hour keeps the 38 shards' first wave from also competing with `prod-drift` for runners.
@@ -1573,3 +1574,22 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RECORD_DIR: ${{ runner.temp }}/sweep-records
         run: python3 scripts/sweep-red-alert.py
+
+      # ⟳ backlog #651 (Phase 6 redesign, docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md):
+      # ⛔ this artifact is the ONLY thing that says a full sweep was green; nothing may upload this name anywhere else.
+      # `scripts/session-state.py` (`fetch_green_markers`) reads it at every session start and prints its age. The
+      # default `success()` holds: every step above passed, and the first one fails unless every shard was green. A
+      # re-run (`run_attempt` > 1) writes none, so an old sweep never gets a new date.
+      - name: Publish the full-sweep-green marker (a green scheduled sweep of master, first attempt)
+        if: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/master' && github.run_attempt == 1 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/full-sweep-green"
+          : > "$RUNNER_TEMP/full-sweep-green/green"
+      - name: Upload the full-sweep-green marker
+        if: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/master' && github.run_attempt == 1 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-sweep-green
+          path: ${{ runner.temp }}/full-sweep-green/green
+          retention-days: 7
+          if-no-files-found: error

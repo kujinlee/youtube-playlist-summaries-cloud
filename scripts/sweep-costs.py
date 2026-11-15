@@ -13,7 +13,7 @@ manifest (`cost_coverage`), so the defaults only ever price a small remainder.
 usage:
   python3 scripts/sweep-costs.py --run LABEL TREE LOGDIR [--run ...] [--out scripts/sweep-costs.json]
                                  [--predict N]
-  python3 scripts/sweep-costs.py --self-test  # 35 cases
+  python3 scripts/sweep-costs.py --self-test  # 36 cases
 
   LABEL   names the run in the table's `sources` (e.g. `43662666915@033fe20c`: run id @ commit).
   TREE    a checkout of the repository AT THE RUN'S COMMIT (`git worktree add --detach <dir> <sha>`).

@@ -1671,7 +1671,14 @@ EXPECTED_MUTATIONS = {
     # judging a run by its SHARD jobs: all skipped, a cancelled or a failed shard, RED unsaid, the summary job counted,
     # an unread or unreadable run passed over, a short page, no pagination, the wrong directory, the walk not stopping
     # (at a sweep, at an unreadable run, at the cap), the shared deadline ignored twice, the jobs never read, a 10 s budget, the walk in the wrong directory.
-    "scripts/session-state.py": 145,
+    # ⟳ 2026-11-15, backlog #651 Phase 6 redesign (docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md):
+    # 145 -> 140. The run/job/shard reader is DELETED with 25 of its 26 mutations; the unmarked-line one (render) is
+    # kept. Twenty new on the `full-sweep-green` marker reader: stale read as fresh, a 48 h limit, the newest not
+    # chosen, a branch's / a fork's / a truthy-not-True repository's marker counted, a zoneless time, a missing field
+    # skipped, gh's failure swallowed twice (as why, as an empty list), none called fresh, a short page, the GET not
+    # name-filtered, the wrong directory, the wrong timeout, collect() not reading it or using the wall clock, and
+    # three on the bounds case (a 10 s marker call, a call left out of COLLECT_BOUNDS, the git call's timeout).
+    "scripts/session-state.py": 140,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on

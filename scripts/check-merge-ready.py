@@ -309,6 +309,12 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
             "uncapped (256 is the matrix maximum); it gates nothing"),
     ("ci.yml", "SAMPLE_KEY: ${{ github.event.pull_request.head.sha }}"):
         (1, "the head SHA handed to the sweep's sampler (empty off a pull request) — gates no step"),
+    # ⟳ 2026-11-15, backlog #651 Phase 6 redesign: the full-sweep-green marker is written and uploaded ONLY by
+    # a first-attempt scheduled run on master. Never true on a pull request, so it gates no merge.
+    ("ci.yml", "if: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/master' && "
+               "github.run_attempt == 1 }}"):
+        (2, "the two steps that publish the full-sweep-green marker — schedule on master only, never a pull "
+            "request"),
     # backlog #586 slice 1: the strace measurement runs on a pull request only when its own workflow or driver
     # changes. It is not a required check, and nothing it does gates a merge.
     ("strace-measure.yml", "pull_request:"):
