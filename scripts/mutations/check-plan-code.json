@@ -1850,8 +1850,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        if path in harness:\n            return None",
-        "        if path in ():\n            return None"
+        "        if path in harness:\n            if not sample_key:",
+        "        if path in ():\n            if not sample_key:"
       ]
     ],
     "expect": [
@@ -4531,5 +4531,104 @@
       ]
     ],
     "expect": "⭐ r2: main() judges the table against the SELECTED pool — it fits the pool and not the manifest, so the PARTITION line says cost-balanced, 1 of 1 target costed, rc=0"
+  },
+  {
+    "name": "backlog #651: the sample size is FLOORED, so a small set samples nothing",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    n = math.ceil(len(pool) * fraction)",
+        "    n = int(len(pool) * fraction)"
+      ]
+    ],
+    "expect": "⭐ #651: the sample is ceil(20%) of the targets, never 0 of a non-empty set"
+  },
+  {
+    "name": "backlog #651: the sample fraction is 50%, not 20%",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "SAMPLE_FRACTION = 0.2\n",
+        "SAMPLE_FRACTION = 0.5\n"
+      ]
+    ],
+    "expect": "⭐ #651: the sample is ceil(20%) of the targets, never 0 of a non-empty set"
+  },
+  {
+    "name": "backlog #651: the sample ignores the KEY, so every SHA samples the same slice",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "hashlib.sha256(f\"{key}\\0{t}\".encode())",
+        "hashlib.sha256(f\"{t}\".encode())"
+      ]
+    ],
+    "expect": "⭐ #651: two different SHAs give different samples"
+  },
+  {
+    "name": "backlog #651: an EMPTY sample key narrows a harness diff instead of sweeping the whole",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if not sample_key:\n",
+        "            if sample_key is None:\n"
+      ]
+    ],
+    "expect": "⭐ #651: a harness diff with NO sample key is still the WHOLE manifest — an absent key never narrows"
+  },
+  {
+    "name": "backlog #651: the harness file's OWN manifest is left to the sample's luck",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if path in sources:\n                picked.setdefault(path, []).append(path)\n            continue\n",
+        "            continue\n"
+      ]
+    ],
+    "expect": "⭐ #651: the harness's own manifest is named directly by a diff that changes it, so it is ALWAYS in"
+  },
+  {
+    "name": "backlog #651: a sampled harness path falls through to rules 4-8",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            harness_hit.append(path)\n            if path in sources:\n                picked.setdefault(path, []).append(path)\n            continue\n",
+        "            harness_hit.append(path)\n            if path in sources:\n                picked.setdefault(path, []).append(path)\n"
+      ]
+    ],
+    "expect": "...and a harness-only diff of the workflow selects the sample alone: 9 of 41"
+  },
+  {
+    "name": "backlog #651: the sample is computed and never added to the selection",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        for t in sample:\n            picked.setdefault(t, []).append(f\"the sample keyed {sample_key[:12]}\")",
+        "        for t in ():\n            picked.setdefault(t, []).append(f\"the sample keyed {sample_key[:12]}\")"
+      ]
+    ],
+    "expect": "...and a harness-only diff of the workflow selects the sample alone: 9 of 41"
+  },
+  {
+    "name": "backlog #651: main() never hands --sample-key to the selector",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "modules=module_sources(mroot), sample_key=a.sample_key)",
+        "modules=module_sources(mroot), sample_key=None)"
+      ]
+    ],
+    "expect": "⭐ #651: main() wires --sample-key to the selector — a harness diff is SAMPLED, rc=0"
+  },
+  {
+    "name": "backlog #651: --sample-key without --event is accepted and does nothing",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if a.sample_key is not None and a.event is None:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "...and --sample-key without --event is refused before measuring, rc=2"
   }
 ]

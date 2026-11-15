@@ -20736,3 +20736,22 @@ on 5 of the last 6 master pushes, max 1,647 s). `scripts/check-plan-code.py`: `s
 stdout and stderr, and as a workflow annotation (r1: also when the table no longer covers the manifest).
 Predicted, model against model at N=38: slowest shard 1,218 s round-robin -> 753 s; the measured job wall
 clocks, 1,438-1,611 s, add runner setup, install and upload.
+
+## 2026-11-15
+The full mutation sweep, about 780 compute-minutes, no longer runs on every merge. It runs once a
+night, at 00:30 Pacific, and a red night still opens a `sweep-red` issue. A pull request that
+changes the sweep's own harness — which used to force that full run — now checks a fixed fifth of
+the scripts, chosen from its commit, plus every script it touches. The cost: a defect only the full
+run would show waits for the next night instead of failing the pull request. The nightly run now
+uses at most 12 of the 20 runners, so pull requests are not stuck behind it, and its start time is
+not guaranteed: GitHub has started these runs 7 to 10 hours late. Backlog #231 (shards near their
+time limit) is closed: the slowest shard now takes 1,043 s against a 1,500 s line.
+<!--tech-->
+Backlog #651, the owner's option A (11-15 06:24). `scripts/check-plan-code.py`: `sample_manifests`
+(the ceil(20%) targets with the smallest sha256(key, target)) and `select_manifests(sample_key=)`,
+`--sample-key`. `.github/workflows/ci.yml`: cron `30 8 * * *` (was `23 7 * * *`), the two sweep jobs skip
+a master push, the concurrency key carries `github.event_name`, `SAMPLE_KEY` is the PR head SHA, and
+`max-parallel` is 12 on the schedule (256, i.e. uncapped, otherwise). Backlog #231 closed on master run
+43721952922 (`65e6f562`): 38/38 green, slowest 1,043 s. Self-test 489 -> 505 cases; mutations 5,181 -> 5,190, the 9 new ones each killed on a temp copy. Not yet
+seen on CI: a scheduled run and its 12-shard cap, a master push skipping both sweep jobs, and the sampled
+PR shards.

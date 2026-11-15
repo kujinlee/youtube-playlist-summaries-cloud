@@ -965,7 +965,11 @@ EXPECTED_MUTATIONS = {
     # sweep_plan over the selected pool, its two call sites (the run, main) and main's pool target count.
     # Five re-bound (the #330 selection, the run's table read twice, main's PARTITION print, the no-table
     # fallback now substituting `_cost_cut`). Each red on a staged copy outside the repository.
-    "scripts/check-plan-code.py": 360,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-15, backlog #651: 360 -> 369. Nine for the harness SAMPLE (owner 11-15, option A): the ceil and
+    # the fraction, the key in the hash, an EMPTY key, the harness file's own manifest, the `continue` that keeps a
+    # sampled harness path out of rules 4-8, the union into the selection, main()'s --sample-key wiring and its
+    # refusal without --event. Each red on a staged copy outside the repository.
+    "scripts/check-plan-code.py": 369,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.

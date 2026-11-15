@@ -295,6 +295,20 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
         (1, "the sweep shard's timeout, longer on the two-seed scheduled sweep — gates no step"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),
+    # ⟳ 2026-11-15, backlog #651 (owner 11-15, option A): the full sweep moved from every master push to the
+    # nightly schedule, and a harness change on a pull request runs a SAMPLE keyed by the head SHA.
+    ("ci.yml", "group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}"):
+        (1, "a concurrency KEY, not a condition — the schedule and a master push queue apart; it gates nothing"),
+    ("ci.yml", "if: github.event_name != 'push' || github.ref != 'refs/heads/master'"):
+        (1, "the sweep matrix skips a MASTER push only — true on a pull request, the schedule and a batch push, so "
+            "it is not pull-request-only and this script has no step to invoke for it"),
+    ("ci.yml", "if: always() && (github.event_name != 'push' || github.ref != 'refs/heads/master')"):
+        (1, "the sweep's aggregate job, skipped with the matrix on a master push — not pull-request-only"),
+    ("ci.yml", "max-parallel: ${{ github.event_name == 'schedule' && 12 || 256 }}"):
+        (1, "the schedule's sweep runs 12 shards at a time to leave runners for PR CI — every other event is "
+            "uncapped (256 is the matrix maximum); it gates nothing"),
+    ("ci.yml", "SAMPLE_KEY: ${{ github.event.pull_request.head.sha }}"):
+        (1, "the head SHA handed to the sweep's sampler (empty off a pull request) — gates no step"),
     # backlog #586 slice 1: the strace measurement runs on a pull request only when its own workflow or driver
     # changes. It is not a required check, and nothing it does gates a merge.
     ("strace-measure.yml", "pull_request:"):

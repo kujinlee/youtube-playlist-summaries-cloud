@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 489 cases
+    python3 scripts/check-plan-code.py --self-test          # 505 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -86,8 +86,10 @@ import ast
 import dataclasses
 import contextlib
 import functools
+import hashlib
 import io
 import json
+import math
 import os
 import pathlib
 import re
@@ -540,10 +542,14 @@ HARNESS_TREE = (
 # mode: whatever it cannot place selects MORE — up to the whole manifest — never fewer.
 #
 # THE RULES, in order, for each changed path (`select_manifests` is the only implementation):
-#   1. not a pull request (a master push, the schedule) ............ the WHOLE manifest
+#   1. not a pull request (the schedule, a `batch/**` push) ......... the WHOLE manifest
 #   2. the changed-file list is undetermined ......................... the WHOLE manifest
 #   3. a harness file (`harness_files`: this script, the modules it
 #      imports, the workflow that runs it) ........................... the WHOLE manifest
+#      ⟳ backlog #651 (owner 11-15, option A): WITH a `sample_key` (CI passes the head SHA) it is
+#      instead a SAMPLE — `sample_manifests`, ceil(`SAMPLE_FRACTION`) of the targets ranked by
+#      sha256(key, target) — plus the harness file's own manifest and whatever the diff's OTHER paths
+#      select by rules 4-8 (a FULL from one of those stays FULL). No key -> the WHOLE manifest.
 #      ⟳ backlog #533: the PINS FILE (`PINS_FILE`) is not a harness file. It is data the harness
 #      reads, so a pin bump goes through rules 5-8 like any other path under `scripts/`
 #   4. `package.json` / `package-lock.json` (`DEPENDENCY_MANIFESTS`) — they change the staged
@@ -563,9 +569,10 @@ HARNESS_TREE = (
 # reads a file without naming it or any directory above it (a bare walk of the repo root), or
 # that walks `scripts/` through a directory only its CALLER names (a lister applied to a bare
 # parameter, which `_walks_dir` cannot follow), is not selected by it — and backlog #109's orphaned anchor binds by text in ANOTHER manifest, which
-# only executing that manifest sees. So the full sweep still runs on every master push and on a
-# schedule, and a red one opens an issue (`ci.yml`, `mutation-sweep-complete`). The owner accepted
-# that such a defect is found after merge. What a scoped run does NOT give up: every whole-
+# only executing that manifest sees. So the full sweep still runs on a schedule — ⟳ backlog #651:
+# NIGHTLY ONLY, a master push no longer sweeps (owner 11-15) — and a red one opens an issue (`ci.yml`,
+# `mutation-sweep-complete`). The owner accepted that such a defect is found after merge, up to a day
+# later; a harness change's sample (rule 3) leaves ~80% of the manifest to that same nightly. What a scoped run does NOT give up: every whole-
 # manifest check (`pin_drift`, `anchor_problems`, the home-escape scan) still runs in every shard
 # over EVERY manifest, because they are file reads, not suites.
 # ⚠ The harness's own source is never a NAMER: it names many targets, so counting it would select
@@ -577,6 +584,9 @@ HARNESS_TREE = (
 SWEEP_WORKFLOW = ".github/workflows/ci.yml"
 SWEEP_HARNESS = "scripts/check-plan-code.py"
 SHARED_FULL_FRACTION = 0.5
+# backlog #651 (owner 11-15, option A): a pull request whose diff touches the HARNESS runs this fraction of
+# the manifests, chosen by `sample_manifests` from the head SHA, plus every manifest the diff selects.
+SAMPLE_FRACTION = 0.2
 # r1 C3: `node_modules/typescript` is staged but untracked, so no diff ever names a path under it;
 # it changes when one of these does. Exact repository paths, never a file name anywhere.
 DEPENDENCY_MANIFESTS = frozenset({"package.json", "package-lock.json"})
@@ -765,25 +775,35 @@ def _importers(start: set, modules: dict) -> set:
 
 def select_manifests(event: str, changed: "list[str] | None", why: str, sources: dict,
                      harness: frozenset, roots=HARNESS_TREE,
-                     modules: "dict | None" = None) -> "tuple[frozenset | None, list[str]]":
+                     modules: "dict | None" = None,
+                     sample_key: "str | None" = None) -> "tuple[frozenset | None, list[str]]":
     """PURE. The targets whose manifests a run executes — None means the WHOLE manifest — and the
     log lines saying why. `sources` maps every manifest target to its text; `modules` adds the
     importable modules no manifest targets, for the import closure. Rules: the block above.
+    `sample_key` (the pull request's head SHA) turns rule 3 into a SAMPLE (backlog #651); without
+    one, rule 3 is the WHOLE manifest, as before.
     """
     if event != "pull_request":
-        return None, [f"full: the event is {event!r}, not a pull request — a master push and "
-                      f"the schedule run the WHOLE manifest"]
+        return None, [f"full: the event is {event!r}, not a pull request — the schedule and a "
+                      f"`batch/**` push run the WHOLE manifest (a master push runs no sweep: backlog #651)"]
     if changed is None:
         return None, [f"full: {why}"]
     readers = {t: s for t, s in sources.items() if t not in harness}
     mods = {**{m: s for m, s in (modules or {}).items() if m not in harness}, **readers}
     picked: dict = {}
     outside = 0
+    harness_hit: list = []
     for path in (p.strip() for p in changed):
         if not path:
             continue
         if path in harness:
-            return None, [f"full: {path} is the sweep harness itself"]
+            if not sample_key:
+                return None, [f"full: {path} is the sweep harness itself"]
+            # backlog #651: SAMPLED below; the harness file is named directly, so its own manifest is in.
+            harness_hit.append(path)
+            if path in sources:
+                picked.setdefault(path, []).append(path)
+            continue
         if path in DEPENDENCY_MANIFESTS:
             return None, [f"full: {path} changes what is installed under a staged root "
                           f"(`node_modules/typescript`) without changing any staged path"]
@@ -825,11 +845,29 @@ def select_manifests(event: str, changed: "list[str] | None", why: str, sources:
                           f"above it — an unrecognised path selects MORE, never fewer"]
         for t in hit:
             picked.setdefault(t, []).append(path)
-    head = (f"diff-scoped: {len(picked)} of {len(sources)} manifest(s) selected from the changed "
-            f"path(s), {outside} outside the staged tree")
+    if harness_hit:
+        sample = sample_manifests(sample_key, sources)
+        for t in sample:
+            picked.setdefault(t, []).append(f"the sample keyed {sample_key[:12]}")
+        head = (f"sampled: {harness_hit[0]} is the sweep harness — {len(sample)} of {len(sources)} manifest(s) "
+                f"sampled ({SAMPLE_FRACTION:.0%}) by the key {sample_key[:12]}, {len(picked)} selected with the "
+                f"ones the diff names; the FULL sweep runs nightly on the schedule")
+    else:
+        head = (f"diff-scoped: {len(picked)} of {len(sources)} manifest(s) selected from the changed "
+                f"path(s), {outside} outside the staged tree")
     return frozenset(picked), [head] + [f"  {t} <- {', '.join(picked[t][:5])}"
                                         + (" …" if len(picked[t]) > 5 else "")
                                         for t in sorted(picked)]
+
+
+def sample_manifests(key: str, targets, fraction: float = SAMPLE_FRACTION) -> frozenset:
+    """PURE. backlog #651: a deterministic SAMPLE of `targets` — the ceil(`fraction` x n) whose
+    sha256(key, NUL, target) rank lowest. The same key gives the same set (a re-run of one commit sweeps
+    what its first run swept); a different key gives a different set (each pull request's harness change
+    covers a different slice). Never 0 of a non-empty set. The nightly FULL sweep covers the rest."""
+    pool = sorted(set(targets))
+    n = math.ceil(len(pool) * fraction)
+    return frozenset(sorted(pool, key=lambda t: hashlib.sha256(f"{key}\0{t}".encode()).hexdigest())[:n])
 
 
 def changed_or_why(raw: "str | None", label: str) -> "tuple[list[str] | None, str]":
@@ -1999,8 +2037,9 @@ def shard_label(shard: "tuple[int, int] | None", only: "frozenset | None" = None
     # backlog #330: a pull request's selection is a slice too, and must never read as the whole.
     if scope is None:
         return "the WHOLE manifest" if shard is None else f"shard {shard[0]} of {shard[1]}"
+    # backlog #651: master pushes no longer sweep; the FULL sweep is the nightly schedule.
     picked = (f"the DIFF-SCOPED selection, {scope[0]} of {scope[1]} manifest(s) — the full sweep "
-              f"runs on master")
+              f"runs nightly")
     return picked if shard is None else f"shard {shard[0]} of {shard[1]} of {picked}"
 
 
@@ -3101,6 +3140,7 @@ def _budget_wiring(root: pathlib.Path) -> dict:
             hold.callback(lambda: torn.__setitem__(_k, _b.getvalue()))
         return r
     (root / "changed.txt").write_text("scripts/thing.py\0")
+    (root / "harness.txt").write_text("scripts/check-plan-code.py\0")   # backlog #651: a harness diff
     # r1 F1: a CI run's budget is the job's limit the runner put in LIMIT_VAR (30 minutes on every row but
     # "spent", whose 2 minutes leave NO budget after the headroom, so it stops before any suite). No ci.yml.
     scoped = ["--event", "pull_request", "--changed", str(root / "changed.txt")]
@@ -3111,6 +3151,12 @@ def _budget_wiring(root: pathlib.Path) -> dict:
                                     ("scoped1", "true", scoped + ["--shard0", "0/2"], 0),
                                     ("scoped2", "true", scoped + ["--shard0", "1/2"], 0),
                                     ("push", "true", ["--event", "push"], 0),
+                                    # backlog #651: a harness diff WITH a key is a sample, WITHOUT one FULL
+                                    ("sampled", "true", ["--event", "pull_request", "--changed",
+                                                         str(root / "harness.txt"), "--sample-key", "f" * 40], 0),
+                                    ("unkeyed", "true", ["--event", "pull_request", "--changed",
+                                                         str(root / "harness.txt")], 0),
+                                    ("keynoevent", "true", ["--sample-key", "f" * 40], 0),
                                     ("seeds", "true", ["--seeds", "3,5"], 0),
                                     ("spent", "true", ["--event", "push"], 0),
                                     # r2 F1: a job that started 1,700 s ago has none of a push's 1,680 left
@@ -4754,6 +4800,15 @@ def _self_test_body() -> int:
             case("⭐ ...and a master push logs FULL and measures the WHOLE manifest, rc=0",
                  (_push[0], "SELECTION — full: the event is 'push'" in _push[1],
                   "measured over the WHOLE manifest" in _push[1]), (0, True, True))
+            case("⭐ #651: main() wires --sample-key to the selector — a harness diff is SAMPLED, rc=0",
+                 (_wired["sampled"][0], "SELECTION — sampled: scripts/check-plan-code.py is the sweep harness"
+                  in _wired["sampled"][1], "the DIFF-SCOPED selection, 1 of 1" in _wired["sampled"][1]),
+                 (0, True, True))
+            case("...and the same diff with no key is FULL, rc=0",
+                 (_wired["unkeyed"][0], "SELECTION — full: scripts/check-plan-code.py is the sweep harness itself"
+                  in _wired["unkeyed"][1]), (0, True))
+            case("...and --sample-key without --event is refused before measuring, rc=2",
+                 (_wired["keynoevent"][0], "SELECTION" in _wired["keynoevent"][1]), (2, False))
             case("⭐ main() off CI REFUSES a run past the local budget, rc=2", _rc_local, 2)
             case("...--allow-long-local lets THAT run through, rc=0", _rc_flag, 0)
             case("...and on CI the budget never applies, rc=0", _rc_ci, 0)
@@ -7652,15 +7707,65 @@ def _self_test_body() -> int:
     case("the selection names itself in every label it reaches",
          (shard_label((2, 3), None, (4, 87)), shard_label(None, None, (0, 9))),
          ("shard 2 of 3 of the DIFF-SCOPED selection, 4 of 87 manifest(s) — the full "
-          "sweep runs on master",
-          "the DIFF-SCOPED selection, 0 of 9 manifest(s) — the full sweep runs on master"))
+          "sweep runs nightly",
+          "the DIFF-SCOPED selection, 0 of 9 manifest(s) — the full sweep runs nightly"))
     case("...the tally line and the NOT-MEASURED line included",
          (tally_line(True, Measured(files={}, declared=0, mutations=[], survivors=[],
                                     controls_green=True), None, None, (1, 2)).endswith(
-             "measured over the DIFF-SCOPED selection, 1 of 2 manifest(s) — the full sweep runs on master"),
+             "measured over the DIFF-SCOPED selection, 1 of 2 manifest(s) — the full sweep runs nightly"),
           "DIFF-SCOPED selection, 3 of 4" in not_measured_line(
               NotMeasured.from_counts([], None, {}), (1, 2), None, (3, 4))), (True, True))
     case("a reason names the list it is about", "/y" in changed_or_why(None, "/y")[1], True)
+    # ── backlog #651 (owner 11-15, option A): a HARNESS diff SAMPLES, keyed by the head SHA ────────
+    # 41 targets with no names between them, so the only thing selecting one is the sample or the diff.
+    _SMP = {f"scripts/check-s{i:02d}.py": "x = 1\n" for i in range(40)}
+    _SMP["scripts/check-plan-code.py"] = ""
+    _SK1, _SK2 = "a" * 40, "0123456789abcdef0123456789abcdef01234567"
+
+    def _smp(changed, key, src=_SMP):
+        return select_manifests("pull_request", changed, "w", src, _H, sample_key=key)
+    _s1 = _smp(["scripts/check-plan-code.py"], _SK1)[0]
+    case("⭐ #651: the same SHA gives the same sample, every time",
+         (_s1 is not None, _s1 == _smp(["scripts/check-plan-code.py"], _SK1)[0]), (True, True))
+    case("⭐ #651: two different SHAs give different samples",
+         _s1 != _smp(["scripts/check-plan-code.py"], _SK2)[0], True)
+    case("⭐ #651: a harness diff with NO sample key is still the WHOLE manifest — an absent key never narrows",
+         [_smp(["scripts/check-plan-code.py"], k)[0] for k in (None, "")], [None, None])
+    case("⭐ #651: the sample is ceil(20%) of the targets, never 0 of a non-empty set",
+         [len(sample_manifests(_SK1, [f"t{i}" for i in range(n)])) for n in (0, 1, 4, 5, 41, 100)],
+         [0, 1, 1, 1, 9, 20])
+    case("...and it is a SUBSET of the targets it is given",
+         sample_manifests(_SK2, sorted(_SMP)) <= frozenset(_SMP), True)
+    case("...and `fraction` is honoured: half of 41 is 21, 0.05 of 41 is 3, and the smaller sample is INSIDE the larger",
+         (len(sample_manifests(_SK1, sorted(_SMP), fraction=0.5)),
+          len(sample_manifests(_SK1, sorted(_SMP), fraction=0.05)),
+          sample_manifests(_SK1, sorted(_SMP), fraction=0.05) <= sample_manifests(_SK1, sorted(_SMP), fraction=0.5)),
+         (21, 3, True) if len(_SMP) == 41 else ("_SMP is no longer 41 targets", len(_SMP)))
+    case("⭐ #651: the harness's own manifest is named directly by a diff that changes it, so it is ALWAYS in",
+         [("scripts/check-plan-code.py" in (_smp(["scripts/check-plan-code.py"], f"{k:040x}")[0] or ()))
+          for k in range(12)], [True] * 12)
+    case("⭐ #651: every manifest the diff names directly is in, beside the sample, under every key",
+         [{"scripts/check-s07.py", "scripts/check-s31.py"} <= (_smp(
+             [".github/workflows/ci.yml", "scripts/mutations/check-s07.json", "scripts/check-s31.py"],
+             f"{k:040x}")[0] or set()) for k in range(12)], [True] * 12)
+    case("...and a harness-only diff of the workflow selects the sample alone: 9 of 41",
+         len(_smp([".github/workflows/ci.yml"], _SK1)[0] or ()), 9)
+    case("⭐ #651: a NON-harness pull request is unchanged by a sample key",
+         [_smp(p, _SK1)[0] == select_manifests("pull_request", p, "w", _SMP, _H)[0]
+          for p in (["scripts/check-s03.py"], ["app/page.tsx"], [])]
+         + [select_manifests("pull_request", p, "w", _SRC, _H, sample_key=_SK1)[0] == _sel(p)
+            for p in (["scripts/check-a.py"], ["docs/reviews/r1.md"], ["supabase/migrations/0099_x.sql"])],
+         [True] * 6)
+    case("⛔ #651: a harness diff that is FULL for ANOTHER reason stays FULL — only the harness is sampled",
+         [_smp(["scripts/check-plan-code.py", p], _SK1)[0] for p in ("package.json", "supabase/x.sql")],
+         [None, None])
+    case("⛔ #651: a master push and the schedule ignore the key — the WHOLE manifest",
+         [select_manifests(e, ["scripts/check-plan-code.py"], "w", _SMP, _H, sample_key=_SK1)[0]
+          for e in ("push", "schedule")], [None, None])
+    _slog = _smp(["scripts/check-plan-code.py"], _SK1)[1]
+    case("#651: the log says SAMPLED, the key it used, and that the full sweep is nightly",
+         (_slog[0].startswith("sampled: scripts/check-plan-code.py is the sweep harness"), _SK1[:12] in _slog[0],
+          "9 of 41" in _slog[0], "nightly" in _slog[0]), (True, True, True, True))
     with tempfile.TemporaryDirectory() as _tds:
         _ts = pathlib.Path(_tds)
         (_ts / "scripts" / "mutations").mkdir(parents=True)
@@ -8221,6 +8326,10 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
     ap.add_argument("--changed", metavar="FILE",
                     help="With --event: the pull request's `git diff --name-only -z` output. "
                          "Unreadable or untrusted -> the WHOLE manifest, never fewer.")
+    ap.add_argument("--sample-key", metavar="SHA",
+                    help="With --event pull_request: the head SHA (backlog #651). A diff touching the sweep "
+                         "harness then runs a deterministic sample keyed by it, plus what the diff names; "
+                         "absent or empty, such a diff runs the WHOLE manifest.")
     ap.add_argument("--record", metavar="PATH",
                     help="with --mutate: write this run's shard record (its shard, total, whether it completed, "
                          "and its FLAKY names) as JSON to PATH — what sweep-red-alert.py reads (backlog #619 R1)")
@@ -8347,6 +8456,10 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         print("CANNOT RUN — --event and --changed only mean something with --mutate ROOT. "
               "NOTHING WAS MEASURED.", file=sys.stderr)
         return 2
+    if a.sample_key is not None and a.event is None:
+        print("CANNOT RUN — --sample-key without --event: a sample narrows only a pull request's "
+              "selection. NOTHING WAS MEASURED.", file=sys.stderr)
+        return 2
     if a.changed is not None and a.event is None:
         print("CANNOT RUN — --changed without --event: whether a diff may narrow the run depends "
               "on the event. NOTHING WAS MEASURED.", file=sys.stderr)
@@ -8416,7 +8529,7 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
                             else (None, "no --changed list was given"))
             sources, harness = sweep_sources(mroot)
             select, lines = select_manifests(a.event, changed, why, sources, harness,
-                                             modules=module_sources(mroot))
+                                             modules=module_sources(mroot), sample_key=a.sample_key)
             print("SELECTION — " + "\n".join(lines))
             if select is not None:
                 scope = (len(select), len(sources))
