@@ -74,7 +74,7 @@
   {
     "name": "backlog #588 r1: a timestamp that is no date raises ValueError out of the tool instead of a refusal",
     "file": "scripts/sweep-costs.py",
-    "edits": [["    except ValueError as exc:   # r1 (Codex 4)", "    except KeyError as exc:"]],
+    "edits": [["    except ValueError as exc:   # r1 (Codex 4)", "    except KeyError as exc:   # r1 (Codex 4)"]],
     "expect": "⛔ r1: a malformed SHARD_INDEX / SHARD_TOTAL or timestamp is a REFUSAL with a reason, never a crash"
   },
   {
