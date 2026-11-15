@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/goal-wait-derive-r1-claude.md": "100644 ab9900c5b6dce9b5178d6550382284400e5f66ae",
+    "docs/reviews/codex/goal-wait-derive-r1-codex.md": "100644 400a58be8b6c64eecf10c8ea13fd43c60fad4369",
+    "docs/reviews/verdicts/goal-wait-derive-r1-codex.verdict.json": "100644 a43c0f296cdb0680c6ace53afb3574314779353c"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "526d148ad9b701ea1edafdd3a19ec4fa70c4121e",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "Claude review r1 of PR #592, adversarial, 7 claims",
+  "reason": "claude half filed: 7048 chars, names 526d148ad9b7",
+  "refused": false,
+  "review": "goal-wait-derive-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/waitderive",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

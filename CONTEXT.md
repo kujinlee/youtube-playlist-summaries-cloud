@@ -120,6 +120,14 @@ the product.
   * ⚠ **NEITHER IS A SEMANTIC COLOUR.** `--verified`/`--cool` mean *measured* and `--hot` means *defect* on these pages; `text_style_css`'s own docstring records that spending either on emphasis would make every styled phrase assert something it does not mean.
   * ⚠ **The DEFAULT is not the convention, which is why this entry exists.** `brief-compose`'s shim supplies `--accent: var(--structure, …)` — the *border* colour — and supplies no link rule at all, so a page that declares neither gets a heading at **1.29:1** and links at the user agent's **1.92:1**. Both measured on one page, 2026-10-19, after passing every guard.
 - **Agenda** — the coordinator's stated plan: the window it covers, the conditions that would change it, and ordered steps grouped by when. A step that names a backlog row or PR takes its state from that row, exactly as a goal-tree leaf does; a **free step** names neither and is done only when ticked by hand. A new agenda **replaces** the current one whole, and the replaced one is kept with each step's state at that moment. Distinguished from a **plan**, which in this tooling means an implementation-plan file; the page still calls the agenda *the current plan*, the owner's word.
+- **Owed** — the goal tree's "Owed — not being worked" section: work recorded in the in-flight ledger that is not in
+  progress now. Each Owed item says what it waits for, or that it has no reason and for how many days it has been idle.
+- **Prerequisite** — a PR or backlog row that an Owed item cannot start before, DECLARED on its ledger entry as `after`
+  (`session-state.py --add --after 'PR #N'`, or `--after none`; `--set-after` later). Its state is read live: open, done
+  (merged, ✅) or abandoned (closed unmerged, withdrawn, superseded). A prerequisite is never read from prose — decided
+  2026-11-15 after three review rounds of a sentence matcher (architecture-review-2026-11-15-goal-wait-derive).
+- **Wait** — a recorded reason in prose: the ledger's `waits` field or a thread line's `· waits on`. Shown as written,
+  never parsed, and it never expires. Distinguished from a prerequisite, which is a ref with a state.
 
 ## Verification Stack (Repo Tooling)
 
