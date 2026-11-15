@@ -1,0 +1,686 @@
+{
+ "schema": 1,
+ "sources": [
+  "43662666915@033fe20c",
+  "43625371110@26a04323",
+  "hand-timed:scripts/sweep-costs.py@03e87843 (0.15-0.26 s locally; priced 1.0 s, no CI sample yet)"
+ ],
+ "defaults": {
+  "mutation": 10.162,
+  "fixed": 20.181
+ },
+ "targets": {
+  "scripts/ask_answerer.py": {
+   "control": 9.33,
+   "recontrol": 9.032,
+   "mutation": 9.477,
+   "samples": 76,
+   "mutations": 104
+  },
+  "scripts/backfill-work-lines.py": {
+   "control": 0.452,
+   "recontrol": 0.438,
+   "mutation": 0.457,
+   "samples": 76,
+   "mutations": 216
+  },
+  "scripts/batch-ci.py": {
+   "control": 4.711,
+   "recontrol": 4.312,
+   "mutation": 4.269,
+   "samples": 76,
+   "mutations": 192
+  },
+  "scripts/begin-plan.py": {
+   "control": 1.665,
+   "recontrol": 1.675,
+   "mutation": 1.561,
+   "samples": 76,
+   "mutations": 136
+  },
+  "scripts/bounded_read.py": {
+   "control": 3.415,
+   "recontrol": 3.412,
+   "mutation": 7.742,
+   "samples": 58,
+   "mutations": 58
+  },
+  "scripts/brief-compose.py": {
+   "control": 3.873,
+   "recontrol": 3.88,
+   "mutation": 3.979,
+   "samples": 76,
+   "mutations": 188
+  },
+  "scripts/check-agent-large-read.py": {
+   "control": 0.113,
+   "recontrol": 0.114,
+   "mutation": 0.076,
+   "samples": 76,
+   "mutations": 214
+  },
+  "scripts/check-agent-long-call.py": {
+   "control": 0.08,
+   "recontrol": 0.08,
+   "mutation": 0.044,
+   "samples": 72,
+   "mutations": 72
+  },
+  "scripts/check-anchors.py": {
+   "control": 0.045,
+   "recontrol": 0.045,
+   "mutation": 0.044,
+   "samples": 10,
+   "mutations": 10
+  },
+  "scripts/check-anon-exposure.py": {
+   "control": 0.051,
+   "recontrol": 0.05,
+   "mutation": 0.05,
+   "samples": 26,
+   "mutations": 26
+  },
+  "scripts/check-arch-findings.py": {
+   "control": 0.045,
+   "recontrol": 0.046,
+   "mutation": 0.046,
+   "samples": 10,
+   "mutations": 10
+  },
+  "scripts/check-backlog-closure.py": {
+   "control": 0.034,
+   "recontrol": 0.034,
+   "mutation": 0.037,
+   "samples": 12,
+   "mutations": 12
+  },
+  "scripts/check-banner-armed.py": {
+   "control": 2.085,
+   "recontrol": 2.031,
+   "mutation": 1.99,
+   "samples": 76,
+   "mutations": 196
+  },
+  "scripts/check-canonical-source.py": {
+   "control": 1.19,
+   "recontrol": 1.178,
+   "mutation": 1.161,
+   "samples": 22,
+   "mutations": 22
+  },
+  "scripts/check-catalog-coverage.py": {
+   "control": 0.048,
+   "recontrol": 0.047,
+   "mutation": 0.046,
+   "samples": 14,
+   "mutations": 14
+  },
+  "scripts/check-ci-watched.py": {
+   "control": 0.316,
+   "recontrol": 0.314,
+   "mutation": 0.311,
+   "samples": 76,
+   "mutations": 104
+  },
+  "scripts/check-claim-propagation.py": {
+   "control": 0.056,
+   "recontrol": 0.056,
+   "mutation": 0.056,
+   "samples": 36,
+   "mutations": 36
+  },
+  "scripts/check-closing-table.py": {
+   "control": 1.835,
+   "recontrol": 1.842,
+   "mutation": 1.79,
+   "samples": 76,
+   "mutations": 104
+  },
+  "scripts/check-compaction-boundary.py": {
+   "control": 0.254,
+   "recontrol": 0.251,
+   "mutation": 0.31,
+   "samples": 76,
+   "mutations": 134
+  },
+  "scripts/check-dashboard-entry.py": {
+   "control": 0.159,
+   "recontrol": 0.159,
+   "mutation": 0.162,
+   "samples": 76,
+   "mutations": 88
+  },
+  "scripts/check-decision-scheme.py": {
+   "control": 0.328,
+   "recontrol": 0.273,
+   "mutation": 0.274,
+   "samples": 76,
+   "mutations": 258
+  },
+  "scripts/check-diff-coverage.py": {
+   "control": 1.895,
+   "recontrol": 1.828,
+   "mutation": 1.781,
+   "samples": 74,
+   "mutations": 74
+  },
+  "scripts/check-doc-citations.py": {
+   "control": 0.608,
+   "recontrol": 0.566,
+   "mutation": 0.595,
+   "samples": 74,
+   "mutations": 74
+  },
+  "scripts/check-docs.py": {
+   "control": 0.041,
+   "recontrol": 0.039,
+   "mutation": 0.04,
+   "samples": 10,
+   "mutations": 10
+  },
+  "scripts/check-explainer-delivery.py": {
+   "control": 0.04,
+   "recontrol": 0.039,
+   "mutation": 0.04,
+   "samples": 10,
+   "mutations": 10
+  },
+  "scripts/check-features.py": {
+   "control": 0.18,
+   "recontrol": 0.179,
+   "mutation": 0.18,
+   "samples": 64,
+   "mutations": 64
+  },
+  "scripts/check-fixture-git-isolation.py": {
+   "control": 14.072,
+   "recontrol": 14.354,
+   "mutation": 13.831,
+   "samples": 76,
+   "mutations": 110
+  },
+  "scripts/check-fixture-variation.py": {
+   "control": 17.079,
+   "recontrol": 17.407,
+   "mutation": 19.649,
+   "samples": 76,
+   "mutations": 84
+  },
+  "scripts/check-function-revokes.py": {
+   "control": 0.038,
+   "recontrol": 0.038,
+   "mutation": 0.038,
+   "samples": 12,
+   "mutations": 12
+  },
+  "scripts/check-gate-falsifiability.py": {
+   "control": 0.045,
+   "recontrol": 0.045,
+   "mutation": 0.045,
+   "samples": 10,
+   "mutations": 10
+  },
+  "scripts/check-goal-status.py": {
+   "control": 0.043,
+   "recontrol": 0.043,
+   "mutation": 0.042,
+   "samples": 14,
+   "mutations": 14
+  },
+  "scripts/check-group-claims.py": {
+   "control": 0.039,
+   "recontrol": 0.039,
+   "mutation": 0.039,
+   "samples": 22,
+   "mutations": 22
+  },
+  "scripts/check-guard-coverage.py": {
+   "control": 0.046,
+   "recontrol": 0.046,
+   "mutation": 0.047,
+   "samples": 20,
+   "mutations": 20
+  },
+  "scripts/check-handoff-path.py": {
+   "control": 0.675,
+   "recontrol": 0.682,
+   "mutation": 5.096,
+   "samples": 18,
+   "mutations": 18
+  },
+  "scripts/check-hook-commands.py": {
+   "control": 0.049,
+   "recontrol": 0.05,
+   "mutation": 0.053,
+   "samples": 68,
+   "mutations": 68
+  },
+  "scripts/check-live-schema.py": {
+   "control": 0.053,
+   "recontrol": 0.052,
+   "mutation": 0.052,
+   "samples": 24,
+   "mutations": 24
+  },
+  "scripts/check-main-drivable.py": {
+   "control": 8.062,
+   "recontrol": 8.108,
+   "mutation": 7.866,
+   "samples": 76,
+   "mutations": 416
+  },
+  "scripts/check-memory-index-budget.py": {
+   "control": 0.039,
+   "recontrol": 0.039,
+   "mutation": 0.042,
+   "samples": 56,
+   "mutations": 56
+  },
+  "scripts/check-memory-link.py": {
+   "control": 0.066,
+   "recontrol": 0.065,
+   "mutation": 0.064,
+   "samples": 16,
+   "mutations": 16
+  },
+  "scripts/check-merge-ready.py": {
+   "control": 20.129,
+   "recontrol": 20.147,
+   "mutation": 19.981,
+   "samples": 76,
+   "mutations": 376
+  },
+  "scripts/check-page-links.py": {
+   "control": 9.56,
+   "recontrol": 9.662,
+   "mutation": 10.162,
+   "samples": 76,
+   "mutations": 88
+  },
+  "scripts/check-paid-caller-arrival.py": {
+   "control": 6.34,
+   "recontrol": 6.355,
+   "mutation": 6.432,
+   "samples": 12,
+   "mutations": 12
+  },
+  "scripts/check-plan-code.py": {
+   "control": 12.131,
+   "recontrol": 12.241,
+   "mutation": 12.142,
+   "samples": 76,
+   "mutations": 658
+  },
+  "scripts/check-plan-file-tags.py": {
+   "control": 0.056,
+   "recontrol": 0.055,
+   "mutation": 0.056,
+   "samples": 36,
+   "mutations": 36
+  },
+  "scripts/check-plan-leak.py": {
+   "control": 4.972,
+   "recontrol": 4.928,
+   "mutation": 4.842,
+   "samples": 76,
+   "mutations": 152
+  },
+  "scripts/check-plan-progress.py": {
+   "control": 0.078,
+   "recontrol": 0.078,
+   "mutation": 0.081,
+   "samples": 64,
+   "mutations": 64
+  },
+  "scripts/check-plan-task-order.py": {
+   "control": 0.039,
+   "recontrol": 0.038,
+   "mutation": 0.038,
+   "samples": 18,
+   "mutations": 18
+  },
+  "scripts/check-producer-enumeration.py": {
+   "control": 0.035,
+   "recontrol": 0.035,
+   "mutation": 0.035,
+   "samples": 10,
+   "mutations": 10
+  },
+  "scripts/check-python-pin.py": {
+   "control": 0.051,
+   "recontrol": 0.05,
+   "mutation": 0.05,
+   "samples": 76,
+   "mutations": 104
+  },
+  "scripts/check-ratchet-contract.py": {
+   "control": 0.068,
+   "recontrol": 0.068,
+   "mutation": 0.068,
+   "samples": 32,
+   "mutations": 32
+  },
+  "scripts/check-rc-contract.py": {
+   "control": 9.955,
+   "recontrol": 10.063,
+   "mutation": 9.528,
+   "samples": 34,
+   "mutations": 34
+  },
+  "scripts/check-reference-namespace.py": {
+   "control": 0.295,
+   "recontrol": 0.296,
+   "mutation": 0.278,
+   "samples": 44,
+   "mutations": 44
+  },
+  "scripts/check-review-decision.py": {
+   "control": 0.073,
+   "recontrol": 0.074,
+   "mutation": 0.075,
+   "samples": 60,
+   "mutations": 60
+  },
+  "scripts/check-review-recorded.py": {
+   "control": 1.245,
+   "recontrol": 1.24,
+   "mutation": 1.243,
+   "samples": 76,
+   "mutations": 218
+  },
+  "scripts/check-review-rounds.py": {
+   "control": 0.055,
+   "recontrol": 0.054,
+   "mutation": 0.057,
+   "samples": 72,
+   "mutations": 72
+  },
+  "scripts/check-roadmap-consistency.py": {
+   "control": 0.05,
+   "recontrol": 0.048,
+   "mutation": 0.05,
+   "samples": 24,
+   "mutations": 24
+  },
+  "scripts/check-run-hook.py": {
+   "control": 1.975,
+   "recontrol": 1.942,
+   "mutation": 1.921,
+   "samples": 36,
+   "mutations": 36
+  },
+  "scripts/check-selection-card.py": {
+   "control": 0.883,
+   "recontrol": 0.892,
+   "mutation": 0.868,
+   "samples": 26,
+   "mutations": 26
+  },
+  "scripts/check-selftest-counts.py": {
+   "control": 3.888,
+   "recontrol": 3.884,
+   "mutation": 4.354,
+   "samples": 68,
+   "mutations": 68
+  },
+  "scripts/check-sentinel-meanings.py": {
+   "control": 0.04,
+   "recontrol": 0.04,
+   "mutation": 0.047,
+   "samples": 10,
+   "mutations": 10
+  },
+  "scripts/check-stalled-work.py": {
+   "control": 10.097,
+   "recontrol": 10.084,
+   "mutation": 10.872,
+   "samples": 76,
+   "mutations": 266
+  },
+  "scripts/check-storage-grant-pin.py": {
+   "control": 0.034,
+   "recontrol": 0.033,
+   "mutation": 0.035,
+   "samples": 12,
+   "mutations": 12
+  },
+  "scripts/check-storage-independence.py": {
+   "control": 0.665,
+   "recontrol": 0.663,
+   "mutation": 0.659,
+   "samples": 32,
+   "mutations": 32
+  },
+  "scripts/check-surface-recall.py": {
+   "control": 5.36,
+   "recontrol": 5.364,
+   "mutation": 4.981,
+   "samples": 42,
+   "mutations": 42
+  },
+  "scripts/check-test-counts.py": {
+   "control": 0.047,
+   "recontrol": 0.045,
+   "mutation": 0.047,
+   "samples": 22,
+   "mutations": 22
+  },
+  "scripts/check-theme-token-coverage.py": {
+   "control": 0.034,
+   "recontrol": 0.033,
+   "mutation": 0.033,
+   "samples": 8,
+   "mutations": 8
+  },
+  "scripts/check-transcript-references.py": {
+   "control": 1.835,
+   "recontrol": 1.888,
+   "mutation": 1.777,
+   "samples": 16,
+   "mutations": 16
+  },
+  "scripts/check-usage-pace.py": {
+   "control": 10.066,
+   "recontrol": 10.361,
+   "mutation": 10.556,
+   "samples": 76,
+   "mutations": 425
+  },
+  "scripts/check-vocabulary-collisions.py": {
+   "control": 0.042,
+   "recontrol": 0.042,
+   "mutation": 0.041,
+   "samples": 10,
+   "mutations": 10
+  },
+  "scripts/ci-durations.py": {
+   "control": 0.579,
+   "recontrol": 0.581,
+   "mutation": 0.585,
+   "samples": 76,
+   "mutations": 122
+  },
+  "scripts/codex-frontier-model.py": {
+   "control": 0.037,
+   "recontrol": 0.037,
+   "mutation": 0.038,
+   "samples": 14,
+   "mutations": 14
+  },
+  "scripts/codex-review.py": {
+   "control": 1.935,
+   "recontrol": 1.929,
+   "mutation": 1.871,
+   "samples": 76,
+   "mutations": 182
+  },
+  "scripts/compaction-state.py": {
+   "control": 5.712,
+   "recontrol": 5.533,
+   "mutation": 6.428,
+   "samples": 76,
+   "mutations": 178
+  },
+  "scripts/coverage_verdict.py": {
+   "control": 0.04,
+   "recontrol": 0.04,
+   "mutation": 0.039,
+   "samples": 12,
+   "mutations": 12
+  },
+  "scripts/explainer-serve.py": {
+   "control": 8.051,
+   "recontrol": 7.992,
+   "mutation": 8.634,
+   "samples": 76,
+   "mutations": 246
+  },
+  "scripts/fixture_git.py": {
+   "control": 0.128,
+   "recontrol": 0.127,
+   "mutation": 0.128,
+   "samples": 46,
+   "mutations": 46
+  },
+  "scripts/gates-for-pr.py": {
+   "control": 10.81,
+   "recontrol": 10.807,
+   "mutation": 9.811,
+   "samples": 24,
+   "mutations": 24
+  },
+  "scripts/gen-backlog-page.py": {
+   "control": 18.471,
+   "recontrol": 18.484,
+   "mutation": 19.166,
+   "samples": 76,
+   "mutations": 154
+  },
+  "scripts/gen-dashboard.py": {
+   "control": 2.381,
+   "recontrol": 2.381,
+   "mutation": 2.434,
+   "samples": 76,
+   "mutations": 140
+  },
+  "scripts/gen-features-page.py": {
+   "control": 0.524,
+   "recontrol": 0.52,
+   "mutation": 0.544,
+   "samples": 32,
+   "mutations": 32
+  },
+  "scripts/gen-goals-page.py": {
+   "control": 0.083,
+   "recontrol": 0.083,
+   "mutation": 0.083,
+   "samples": 58,
+   "mutations": 58
+  },
+  "scripts/gen-work-lines.py": {
+   "control": 0.118,
+   "recontrol": 0.12,
+   "mutation": 0.12,
+   "samples": 50,
+   "mutations": 50
+  },
+  "scripts/goal-tree.py": {
+   "control": 1.826,
+   "recontrol": 1.813,
+   "mutation": 1.834,
+   "samples": 76,
+   "mutations": 736
+  },
+  "scripts/observer_log.py": {
+   "control": 0.067,
+   "recontrol": 0.067,
+   "mutation": 0.062,
+   "samples": 38,
+   "mutations": 38
+  },
+  "scripts/page_chrome.py": {
+   "control": 0.316,
+   "recontrol": 0.315,
+   "mutation": 0.324,
+   "samples": 76,
+   "mutations": 228
+  },
+  "scripts/page_markup.py": {
+   "control": 0.052,
+   "recontrol": 0.051,
+   "mutation": 0.054,
+   "samples": 76,
+   "mutations": 158
+  },
+  "scripts/peer-sites.py": {
+   "control": 0.068,
+   "recontrol": 0.068,
+   "mutation": 0.072,
+   "samples": 50,
+   "mutations": 50
+  },
+  "scripts/prune-merged-worktrees.py": {
+   "control": 2.178,
+   "recontrol": 2.148,
+   "mutation": 2.147,
+   "samples": 76,
+   "mutations": 104
+  },
+  "scripts/push-command.py": {
+   "control": 18.272,
+   "recontrol": 17.046,
+   "mutation": 16.964,
+   "samples": 76,
+   "mutations": 216
+  },
+  "scripts/recall-llm.py": {
+   "control": 0.09,
+   "recontrol": 0.089,
+   "mutation": 0.093,
+   "samples": 76,
+   "mutations": 192
+  },
+  "scripts/record-review-verdict.py": {
+   "control": 0.42,
+   "recontrol": 0.418,
+   "mutation": 0.457,
+   "samples": 46,
+   "mutations": 46
+  },
+  "scripts/regen-pages.py": {
+   "control": 10.193,
+   "recontrol": 10.195,
+   "mutation": 11.608,
+   "samples": 76,
+   "mutations": 144
+  },
+  "scripts/session-state.py": {
+   "control": 6.799,
+   "recontrol": 6.765,
+   "mutation": 7.089,
+   "samples": 76,
+   "mutations": 228
+  },
+  "scripts/strace_reads.py": {
+   "control": 0.537,
+   "recontrol": 0.536,
+   "mutation": 0.532,
+   "samples": 76,
+   "mutations": 414
+  },
+  "scripts/sweep-costs.py": {
+   "control": 1.0,
+   "recontrol": 1.0,
+   "mutation": 1.0,
+   "samples": 0,
+   "mutations": 0
+  },
+  "scripts/sweep-red-alert.py": {
+   "control": 2.023,
+   "recontrol": 1.717,
+   "mutation": 2.19,
+   "samples": 74,
+   "mutations": 74
+  }
+ }
+}

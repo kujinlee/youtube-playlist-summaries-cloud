@@ -20718,3 +20718,21 @@ files never committed). 122 of 195 files rewritten, none merged or deleted, no s
 1,056 KB; two files gained missing frontmatter. Checks: `check-memory-index-budget`, `check-docs`,
 `check-canonical-source`, `check-reference-namespace` OK. A coordinator spot check of long quotations found the
 owner quotes kept, re-wrapped. Not done here: the CI shape check and the weekly routine (option B).
+
+## 2026-11-14
+The mutation sweep's 38 CI shards are being re-cut so each one tests a few scripts end to end
+instead of a slice of almost all of them. Today every shard re-runs the baseline tests of about 63
+scripts before and after its own work, and that fixed cost is 38-41% of each shard's work.
+Grouping a script's mutations onto one or two shards, balanced by how long each one took on CI, is
+predicted by the same model to bring the slowest shard's work from about 20 minutes to about 12.5
+(1,218 s to 753 s, about 1.6x). It is built on a branch and
+not merged; the prediction is not a measurement until a real sweep runs on it.
+<!--tech-->
+Backlog #588 (and the lever for backlog #231, whose 1,500 s trigger fired again: 1-2 shards over it
+on 5 of the last 6 master pushes, max 1,647 s). `scripts/check-plan-code.py`: `sweep_partition` /
+`sweep_shard` / `load_sweep_costs` / `partition_line`; `shard_refusal` takes the cost table. New
+`scripts/sweep-costs.py` builds `scripts/sweep-costs.json` from CI shard logs (seeded from runs
+43662666915 and 43625371110). A missing or corrupt table falls back to round-robin, announced on
+stdout and stderr, and as a workflow annotation (r1: also when the table no longer covers the manifest).
+Predicted, model against model at N=38: slowest shard 1,218 s round-robin -> 753 s; the measured job wall
+clocks, 1,438-1,611 s, add runner setup, install and upload.

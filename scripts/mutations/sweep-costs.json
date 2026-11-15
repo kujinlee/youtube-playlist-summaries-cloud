@@ -1,0 +1,176 @@
+[
+  {
+    "name": "backlog #588: the 0-based SHARD_INDEX is read as 1-based, so every log is attributed to the shard after its own",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["            idx = _env_count(env, \"SHARD_INDEX\") + 1", "            idx = _env_count(env, \"SHARD_INDEX\")"]],
+    "expect": "the real excerpt parses: shard 5 of 38 (SHARD_INDEX 4 is 0-based), 9 progress lines, an OK verdict"
+  },
+  {
+    "name": "backlog #588: the runner's fractional seconds are dropped, so a sub-second suite costs 0 or 1 s",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    return t + (float(\"0.\" + frac) if frac else 0.0)", "    return t"]],
+    "expect": "...with the runner's 7-digit fractional seconds kept (control 1 -> control 2 is 9.887793 s)"
+  },
+  {
+    "name": "backlog #588 r1: a mutation line's text is not compared, so a log is averaged in under the wrong attribution",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["            want = render(j - n + 1, k, mine[j - n][\"name\"])", "            want = body"]],
+    "expect": "⛔ a wrong NAME at a mutation line is refused"
+  },
+  {
+    "name": "backlog #588 r1: a mutation line is matched as a PREFIX of its name, so a first character or a bare `…` passes",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["want = render(j - n + 1, k, mine[j - n][\"name\"])", "want = body if mine[j - n][\"name\"].startswith(PROG.match(body).group(3).rstrip(\"\\u2026\")) else \"\""]],
+    "expect": "⛔ r1: a mutation label that is only a PREFIX of its name (first character, empty, a bare `…`) is refused"
+  },
+  {
+    "name": "backlog #588: the progress-line COUNT is not checked, so a shard that held more than it ran is read",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if len(prog) != 2 * n + k:", "    if len(prog) > 2 * n + k:"]],
+    "expect": "⛔ a wrong COUNT (the shard held one more mutation than the log ran) is refused"
+  },
+  {
+    "name": "backlog #588: a control line's TARGET is not checked",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["            want = render(j + 1, n, f\"control {target}\")", "            want = body"]],
+    "expect": "⛔ a wrong TARGET order (the shard's targets are not the controls the log ran) is refused"
+  },
+  {
+    "name": "backlog #588: a re-control line's TARGET is not checked",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["            want = render(j - n - k + 1, n, f\"re-control {target}\")", "            want = body"]],
+    "expect": "⛔ ...and a re-control naming another target is refused"
+  },
+  {
+    "name": "backlog #588 r1: a negative gap is costed, so a log whose clock runs backwards subtracts from its target",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["        if cost < 0:   # r1 (Codex 3)", "        if False:"]],
+    "expect": "⛔ r1: a log whose clock runs BACKWARDS (a negative cost) is refused"
+  },
+  {
+    "name": "backlog #588: a PR's DIFF-SCOPED shard is read as the full partition",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if \"DIFF-SCOPED\" in verdict or \"ONLY\" in verdict:", "    if \"ONLY\" in verdict:"]],
+    "expect": "⛔ a DIFF-SCOPED (PR) run is refused: its shards are not the full partition"
+  },
+  {
+    "name": "backlog #588: an unfinished shard (NOT MEASURED) is read, so a budget stop's truncated tail is costed",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if not verdict.startswith((\"OK\", \"FAIL\")):", "    if False:"]],
+    "expect": "⛔ an unfinished shard (NOT MEASURED) is refused"
+  },
+  {
+    "name": "backlog #588: a verdict naming another shard than the env block is accepted",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if (v_idx, v_tot) != (idx, tot):", "    if False:"]],
+    "expect": "⛔ a verdict naming another shard than the env block is refused"
+  },
+  {
+    "name": "backlog #588 r1: a malformed SHARD_INDEX raises ValueError out of the tool instead of a refusal",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if not re.fullmatch(r\"[0-9]+\", v):", "    if False:"]],
+    "expect": "⛔ r1: a malformed SHARD_INDEX / SHARD_TOTAL or timestamp is a REFUSAL with a reason, never a crash"
+  },
+  {
+    "name": "backlog #588 r1: a timestamp that is no date raises ValueError out of the tool instead of a refusal",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    except ValueError as exc:   # r1 (Codex 4)", "    except KeyError as exc:   # r1 (Codex 4)"]],
+    "expect": "⛔ r1: a malformed SHARD_INDEX / SHARD_TOTAL or timestamp is a REFUSAL with a reason, never a crash"
+  },
+  {
+    "name": "backlog #588 r1: an index outside the total is read, so SHARD_INDEX -1 is attributed as the LAST shard",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if not 1 <= idx <= tot:", "    if False:"]],
+    "expect": "...and an index outside 1..total says so"
+  },
+  {
+    "name": "backlog #588 r1: a SCHEDULE run's two-seed times are read as one seed's",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if event == MULTI_SEED_EVENT:", "    if False:"]],
+    "expect": "⛔ r1: a SCHEDULE run (two hash seeds) is refused, and so is a log that does not say its event"
+  },
+  {
+    "name": "backlog #588 r1: a log that does not say its event is read, so its number of seeds is a guess",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if event is None:\n", "    if False:\n"]],
+    "expect": "⛔ r1: a SCHEDULE run (two hash seeds) is refused, and so is a log that does not say its event"
+  },
+  {
+    "name": "backlog #588 r1: a DUPLICATE shard log is pooled twice",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["        if pa[\"index\"] in seen:", "        if False:"]],
+    "expect": "⭐ r1: a run must hold shards 1..total exactly once — a duplicate, a gap, two totals or two events are refused"
+  },
+  {
+    "name": "backlog #588 r1: a run MISSING a shard is read as complete",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if missing:", "    if False:"]],
+    "expect": "⭐ r1: a run must hold shards 1..total exactly once — a duplicate, a gap, two totals or two events are refused"
+  },
+  {
+    "name": "backlog #588 r1: two shard totals in one run are pooled as one partition",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if len(totals) != 1:", "    if False:"]],
+    "expect": "⭐ r1: a run must hold shards 1..total exactly once — a duplicate, a gap, two totals or two events are refused"
+  },
+  {
+    "name": "backlog #588 r1: two events in one run are pooled as one",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if len(events) != 1:", "    if False:"]],
+    "expect": "⭐ r1: a run must hold shards 1..total exactly once — a duplicate, a gap, two totals or two events are refused"
+  },
+  {
+    "name": "backlog #588: control is the MEAN, so one cold runner's first suite skews the target",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["        targets[t] = {\"control\": r3(statistics.median(b[\"control\"])),", "        targets[t] = {\"control\": r3(statistics.fmean(b[\"control\"])),"]],
+    "expect": "⭐ control and re-control are MEDIANS, per-mutation the MEAN; a partial target is left to the defaults"
+  },
+  {
+    "name": "backlog #588: per-mutation is the MEDIAN, which a partition summing the costs underestimates",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["                      \"mutation\": r3(statistics.fmean(b[\"mutation\"])),", "                      \"mutation\": r3(statistics.median(b[\"mutation\"])),"]],
+    "expect": "⭐ control and re-control are MEDIANS, per-mutation the MEAN; a partial target is left to the defaults"
+  },
+  {
+    "name": "backlog #588 r1: the default per-mutation cost is the MEDIAN over targets, optimistic for a big new suite",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["            \"defaults\": {\"mutation\": _p90([v[\"mutation\"] for v in targets.values()]),", "            \"defaults\": {\"mutation\": statistics.median([v[\"mutation\"] for v in targets.values()]),"]],
+    "expect": "⭐ r1: the defaults are the p90 over targets of the per-mutation mean and of control + re-control"
+  },
+  {
+    "name": "backlog #588: the default fixed cost counts the control only",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["_p90([v[\"control\"] + v[\"recontrol\"] for v in targets.values()])", "_p90([v[\"control\"] for v in targets.values()])"]],
+    "expect": "⭐ r1: the defaults are the p90 over targets of the per-mutation mean and of control + re-control"
+  },
+  {
+    "name": "backlog #588 r1: p90 is the MEDIAN rank",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    return s[max(0, math.ceil(0.9 * len(s)) - 1)]", "    return s[len(s) // 2]"]],
+    "expect": "...p90 is NEAREST-RANK: over 1..20 it is 18 (the median is 10.5, the max 20)"
+  },
+  {
+    "name": "backlog #588: nothing to tabulate is written as an empty table",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if not targets:\n        raise Refused(\"no target had", "    if False:\n        raise Refused(\"no target had"]],
+    "expect": "⛔ nothing to tabulate is refused, not written as an empty table"
+  },
+  {
+    "name": "backlog #588 r1: a table check-plan-code refuses is written anyway, over the usable one",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if costs is None:\n        raise Refused(f\"the table just built does not parse as check-plan-code reads it", "    if False:\n        raise Refused(f\"the table just built does not parse as check-plan-code reads it"]],
+    "expect": "⛔ r1: a table check-plan-code would REFUSE is never written — the usable one on disk is kept"
+  },
+  {
+    "name": "backlog #588 r2: a count of any length reaches int(), so 4,301 digits crash instead of refusing",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if len(v) > COUNT_DIGITS:", "    if False:"]],
+    "expect": "⛔ r2: a 4,301-digit count — env block or verdict line — is a REFUSAL naming the count, never a crash"
+  },
+  {
+    "name": "backlog #588 r2: the verdict line's counts are read by a bare int(), outside the bounded reader",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["_count(vm.group(2), \"the verdict's shard\"), _count(vm.group(3), \"the verdict's total\")", "int(vm.group(2)), int(vm.group(3))"]],
+    "expect": "⛔ r2: a 4,301-digit count — env block or verdict line — is a REFUSAL naming the count, never a crash"
+  }
+]
