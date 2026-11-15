@@ -5725,7 +5725,7 @@
       ]
     ],
     "expect": [
-      "⭐⭐ backlog #650 (Phase 6, §5.3) PROSE-INVARIANCE: 14 adversarial sentences, each in `what`, `on_done`, `waits` and the thread line of three entries — with `after: []` no blocker is derived for any and none is idle (a prose wait is a live reason forever); with `after: [PR #442]` exactly that one blocker on every carrier"
+      "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
     ]
   }
 ]

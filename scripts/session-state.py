@@ -1234,11 +1234,11 @@ def _self_test_body() -> int:
         try:
             _e514, _enone = io.StringIO(), io.StringIO()
             with redirect_stdout(io.StringIO()), _rs514(_enone):
-                _rc_none = main(["--add", "nog", "w", "d"], root=_r514, run=NO_GIT)
+                _rc_none = main(["--add", "nog", "w", "d", "--after", "none"], root=_r514, run=NO_GIT)
             with redirect_stdout(io.StringIO()), _rs514(_e514):
                 _rcs = [_rc_none,
-                        main(["--add", "g-only", "w", "d", "--goal", "g"], root=_r514, run=NO_GIT),
-                        main(["--add", "t-only", "w", "d", "--thread", "fix · PR #3 · x"], root=_r514, run=NO_GIT),
+                        main(["--add", "g-only", "w", "d", "--goal", "g", "--after", "none"], root=_r514, run=NO_GIT),
+                        main(["--add", "t-only", "w", "d", "--thread", "fix · PR #3 · x", "--after", "none"], root=_r514, run=NO_GIT),
                         main(["--add", "g-thr", "w", "d", "--goal", "h", "--thread", "fix · PR #3 · x", "--after", "none",
                               "--waits", "the owner"], root=_r514, run=NO_GIT)]
             _msg = _enone.getvalue()
