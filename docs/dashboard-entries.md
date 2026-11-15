@@ -20777,3 +20777,18 @@ outside the repository, a dangling or looping link, an empty package, two declar
 CANNOT RUN when it is not there. 63 self-test cases plus one live case (`claude plugin validate`, NOT RUN where
 `claude` is absent, outside the count); 47 mutations; wired per W1-W8. `install` is exercised only against a
 stand-in here; the first live install is Task 4.
+
+## 2026-11-15
+The marketplace work passed its first real test: one skill and its server script, packed into a local plugin
+store and installed on a fresh, empty account, ran from an unrelated folder and served a page from the new
+account's own server. The answer is GO, so the next stage (mapping every component) can start.
+<!--tech-->
+Marketplace-inventory plan Task 4: `docs/marketplace/spike-record.md`, GO at `e83bd3be`. Package `spike` 0.0.1
+(`explain-topic` plus `explainer-serve.py` and its closure) installed via `claude plugin install` in a
+`mkt_isolate` world; `--help` by the installed path rc 0; on a freed 7391 `--status` rc 1, start printed
+`serving <world HOME>/explainers`, world pidfile pid = listener pid, `GET /` 200 with the sentinel token. Run 1
+failed at `GET /` because the plan's payload lacked `regen-pages.py` (loaded by `importlib` since backlog #627)
+and `ask_answerer.py`; a plan staging defect, fixed and re-run. Findings: the "hard-coded port" note is stale
+(`EXPLAINER_SERVE_PORT` exists), the serve closure is not visible to a top-level import scan, and the skill's
+CWD-relative `scripts/` paths do not resolve from an unrelated directory. Owner's 7391 server stopped ~3 s twice
+under the 11-13 standing permission and restarted.
