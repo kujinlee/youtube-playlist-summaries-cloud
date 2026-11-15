@@ -39,6 +39,12 @@ raised from `_regen()`. That is a payload missing a member of the script's closu
 *FAILS IF*) a PLAN defect, never the D3 falsifier — so the payload was fixed and the spike re-run from a fresh world.
 The plan's stated staging falsifier (`--help` exiting with `ModuleNotFoundError`) is narrower than this case: the
 missing member here is reached only by a route, so `--help` passed and the failure showed only at `GET /`.
+**Two plan clauses point opposite ways here, and this record chose one (r1 Claude m1).** Task 4 Step 3 routes
+literally this observation — start serving, pidfile pid = listener pid, then `GET /` erroring — to a recorded
+component FAILURE (the NO-GO route, H3). The FAILS IF exception routes a payload missing a member of the script's
+closure to a PLAN defect. The exception was taken to govern because the missing file exists in `scripts/` and the
+failure says nothing about whether a plugin can install and run; that reading counts an `importlib` load reached
+from a route as closure. The owner can overrule it: the overruled result is NO-GO at run 1.
 
 **Run 2** (five files, world `run-103130`, 10:31) is the result below.
 
@@ -57,10 +63,22 @@ missing member here is reached only by a route, so `--help` passed and the failu
 | world pidfile vs listener | pidfile `50780`; `lsof -nP -t -iTCP:7391 -sTCP:LISTEN` → `50780` — condition **(ii) holds** |
 | `GET /` | **200**, 6230-byte body containing the sentinel token — condition **(iii) holds**; the world's `.serve.log` reads `"GET / HTTP/1.1" 200 -` |
 | `--stop` | rc 0, `stopped pid 50780`; nothing listened on 7391 afterwards |
-| Python opens outside the world + stdlib | none for `--help`, `--status`, `--stop`; `/dev/null` only for start (`detach_streams`) |
+| Python opens outside the world + stdlib | none for `--help`, `--status`, `--stop`; `/dev/null` only for start (`detach_streams`) — **bounded below: the detached server's own events are NOT in these counts** |
 
-Bound on the open counts: the audit hook sees Python only (`isolation-baseline.md`); `git`, which the world allows,
-was never launched by these operations (each run's `executed` list is the world's `python3` alone).
+**Correction (PR #594 round 1, Claude M1).** This section first said that `git` "was never launched by these
+operations (each run's `executed` list is the world's `python3` alone)". That does not follow from the capture, and
+is withdrawn. At `e83bd3be`, `run_isolated` truncated the audit log at the start of every run, so the detached
+server's events — everything it did while serving `GET /`, after the start run returned — were erased by the next
+run (`--stop`) and appear in no record. The server's code reaches `git` on that path — `source_setup()` asks
+`git rev-parse --show-toplevel` through `_git_line`, and `_regen()` loads `regen-pages.py`, whose `_git` runs it —
+so `git` may well have run inside the world, and the run-2 records cannot say either way. The same bound applies to the start row's open count: it covers the start process only. **Not re-run**:
+the GO verdict rests on (i)–(iii), which the server's own output, the pidfile, `lsof` and the `GET /` body show
+without the audit log. Since the fold, the log is appended to and each event carries its run's token, so a later run
+reports a survivor as "outlived the record" instead of losing it. Separately, the world then still put the author's
+site-packages on `sys.path` and read the system git config (Codex 2, 3); both are closed in `mkt_isolate.py` now, and
+`isolation-baseline.md` states what remains (the keychain, bound (e)).
+
+Bound on the open counts: the audit hook sees Python only (`isolation-baseline.md`).
 
 ## Port 7391 (plan Step 2, Human step H7)
 

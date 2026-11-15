@@ -6,4 +6,6 @@ after the slice.
 | Slice | Date | Agent runs | Review rounds | Weekly usage % before | after |
 |---|---|---|---|---|---|
 | Task 2 (`scripts/mkt_isolate.py`) | 2026-11-15 | 1 build agent | 0 so far | not available to the building agent | not available to the building agent |
+| Task 3 (`scripts/mkt_stage.py`) | 2026-11-15 | not recorded — row added late by the r1 fold (Claude m3) | 0 so far | not available to the building agent | not available to the building agent |
 | Task 4 (packaging spike, GO) | 2026-11-15 | 1 build agent; headless runs: 2 stranger worlds × (`claude plugin marketplace add` + `claude plugin install`), no model call, stranger token unused | 0 so far | not available to the building agent | not available to the building agent |
+| PR #594 round-1 fold (Tasks 2–4) | 2026-11-15 | 1 fold agent; no headless `claude` model call, stranger token unused | round 1 folded | not available to the fold agent | not available to the fold agent |
