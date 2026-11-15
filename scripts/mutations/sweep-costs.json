@@ -111,7 +111,7 @@
     "name": "backlog #651 r1: a seed list is read from anywhere in the verdict line, not only its tail",
     "file": "scripts/sweep-costs.py",
     "edits": [["([0-9]+(?:, [0-9]+)*)$\")", "([0-9]+(?:, [0-9]+)*)\")"]],
-    "expect": "...and the seeds are read from ANY event's verdict (a seeded push divides too), only as the line's own tail: the same words mid-line are no seed list"
+    "expect": "⛔ #651 r2: a seed list that is DECLARED but malformed is REFUSED on a push and on a schedule run alike — never read as no seeds (divisor 1); the per-mutation `PYTHONHASHSEED=3` form is no declaration"
   },
   {
     "name": "backlog #651 r1: two seed counts in one run are pooled, each shard divided by its own",
@@ -196,5 +196,23 @@
     "file": "scripts/sweep-costs.py",
     "edits": [["_count(vm.group(2), \"the verdict's shard\"), _count(vm.group(3), \"the verdict's total\")", "int(vm.group(2)), int(vm.group(3))"]],
     "expect": "⛔ r2: a 4,301-digit count — env block or verdict line — is a REFUSAL naming the count, never a crash"
+  },
+  {
+    "name": "backlog #651 r2: a DECLARED but malformed seed list is read as no seeds, so a two-seed run is divided by 1",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if declared:\n", "    if False:\n"]],
+    "expect": "⛔ #651 r2: a seed list that is DECLARED but malformed is REFUSED on a push and on a schedule run alike — never read as no seeds (divisor 1); the per-mutation `PYTHONHASHSEED=3` form is no declaration"
+  },
+  {
+    "name": "backlog #651 r2: two seed declarations in one verdict are read as the tail's, the other ignored",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["        if declared != 1 or not m:", "        if not m:"]],
+    "expect": "⛔ #651 r2: a seed list that is DECLARED but malformed is REFUSED on a push and on a schedule run alike — never read as no seeds (divisor 1); the per-mutation `PYTHONHASHSEED=3` form is no declaration"
+  },
+  {
+    "name": "backlog #651 r2: the per-mutation `PYTHONHASHSEED=3` form counts as a seed declaration, so an unseeded push is refused",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["SEEDS_DECLARED = \" under PYTHONHASHSEED \"", "SEEDS_DECLARED = \" under PYTHONHASHSEED\""]],
+    "expect": "⛔ #651 r2: a seed list that is DECLARED but malformed is REFUSED on a push and on a schedule run alike — never read as no seeds (divisor 1); the per-mutation `PYTHONHASHSEED=3` form is no declaration"
   }
 ]

@@ -1666,7 +1666,12 @@ EXPECTED_MUTATIONS = {
     # limit raised to 48 h, a cancelled run counted as a sweep, a gh failure read as an empty list, collect() not
     # reading the runs, the age taken from the wall clock, an unverified line unmarked, the reader not scoped to
     # the schedule.
-    "scripts/session-state.py": 127,
+    # ⟳ 2026-11-15, backlog #651 r2 fold (Codex M1): 127 -> 145, three re-bound (a cancelled run counted as a sweep, now
+    # a run with no shard; collect()'s run-list wiring and its clock, both through `full_sweep_line`), eighteen new on
+    # judging a run by its SHARD jobs: all skipped, a cancelled or a failed shard, RED unsaid, the summary job counted,
+    # an unread or unreadable run passed over, a short page, no pagination, the wrong directory, the walk not stopping
+    # (at a sweep, at an unreadable run, at the cap), the shared deadline ignored twice, the jobs never read, a 10 s budget, the walk in the wrong directory.
+    "scripts/session-state.py": 145,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
@@ -1702,7 +1707,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 29 -> 33, backlog #651 r1 fold (Claude M2): a nightly (seed-varied) run is READ, at one seed's cost — the
     # gap not divided, the divisor a constant 2, a seed list read mid-line, two seed counts in one run. Two
     # re-bound to the renamed refusal case (a schedule verdict that lists no seeds; an unnamed event).
-    "scripts/sweep-costs.py": 33,
+    # ⟳ 33 -> 36, backlog #651 r2 fold (Codex M2): a seed list DECLARED but malformed is refused, not read as none —
+    # the declaration ignored, two declarations read as one, the per-mutation `=` form counted as one. One re-bound
+    # (a seed list read mid-line) to the r2 case, which replaced the r1 case that accepted it.
+    "scripts/sweep-costs.py": 36,
     # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
     # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which

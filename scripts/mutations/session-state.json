@@ -1553,7 +1553,7 @@
     ],
     "expect": "⭐ #651 r1: ...and the SAME run 37 h on is STALE — over the 36 h limit, named"
   },
-{
+  {
     "name": "backlog #651 r1: the stale limit is 48 h, so one lost night is not flagged",
     "file": "scripts/session-state.py",
     "edits": [
@@ -1564,18 +1564,18 @@
     ],
     "expect": "...the limit is FULL_SWEEP_STALE_HOURS itself: exactly 36 h is fresh, a minute more is stale"
   },
-{
+  {
     "name": "backlog #651 r1: a CANCELLED scheduled run counts as a completed sweep",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    swept = [r for r in runs if r.get(\"status\") == \"completed\" and r.get(\"conclusion\") in SWEPT_CONCLUSIONS]",
-        "    swept = [r for r in runs if r.get(\"status\") == \"completed\"]"
+        "    if not shards:\n",
+        "    if False:\n"
       ]
     ],
     "expect": "⭐ #651 r1: a CANCELLED run (zero jobs) is no sweep, however new: the age is the last run that COMPLETED, and the cancelled one is named"
   },
-{
+  {
     "name": "backlog #651 r1: a gh failure on the run list is an empty list",
     "file": "scripts/session-state.py",
     "edits": [
@@ -1586,29 +1586,29 @@
     ],
     "expect": "...a gh failure is (None, why), and a run missing a field is unparseable, never a crash or an empty list"
   },
-{
+  {
     "name": "backlog #651 r1: collect() does not read the scheduled runs, so the hook prints no FULL SWEEP line",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "sweep_red=fetch_sweep_red(root, run),\n                  full_sweep=full_sweep_status(*fetch_schedule_runs(root, run), clock()))",
+        "sweep_red=fetch_sweep_red(root, run),\n                  full_sweep=full_sweep_line(root, run, clock(), tick))",
         "sweep_red=fetch_sweep_red(root, run))"
       ]
     ],
-    "expect": "⭐ #651 r1: collect() — the hook's entry — prints the full sweep's AGE at the clock it is given (10 h, then 50 h and STALE), and CANNOT VERIFY when only the run list fails"
+    "expect": "⭐ #651 r1: collect() — the hook's entry — prints the full sweep's AGE at the clock it is given (10 h, then 50 h and STALE), and CANNOT VERIFY when only the run list fails, or (r2) only the jobs"
   },
-{
+  {
     "name": "backlog #651 r1: the age is measured from the wall clock, not the clock collect() is given",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "full_sweep_status(*fetch_schedule_runs(root, run), clock()))",
-        "full_sweep_status(*fetch_schedule_runs(root, run), time.time()))"
+        "full_sweep=full_sweep_line(root, run, clock(), tick))",
+        "full_sweep=full_sweep_line(root, run, time.time(), tick))"
       ]
     ],
-    "expect": "⭐ #651 r1: collect() — the hook's entry — prints the full sweep's AGE at the clock it is given (10 h, then 50 h and STALE), and CANNOT VERIFY when only the run list fails"
+    "expect": "⭐ #651 r1: collect() — the hook's entry — prints the full sweep's AGE at the clock it is given (10 h, then 50 h and STALE), and CANNOT VERIFY when only the run list fails, or (r2) only the jobs"
   },
-{
+  {
     "name": "backlog #651 r1: a FULL SWEEP line that could not be verified is not marked",
     "file": "scripts/session-state.py",
     "edits": [
@@ -1619,7 +1619,7 @@
     ],
     "expect": "⭐ #651 r1: the block prints the FULL SWEEP line, MARKED when it could not be verified and only then; a caller that did not read the runs prints none"
   },
-{
+  {
     "name": "backlog #651 r1: the run reader lists every event's runs, so a master push's run reads as the nightly sweep",
     "file": "scripts/session-state.py",
     "edits": [
@@ -1629,5 +1629,203 @@
       ]
     ],
     "expect": "⭐ #651 r1: the run reader asks gh for the SCHEDULED runs of ci.yml on master, in the root given, within SWEEP_RUN_TIMEOUT"
+  },
+  {
+    "name": "backlog #651 r2: a run whose shards were all SKIPPED is a sweep, so a success that swept nothing reads fresh",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if len(done) != len(shards):",
+        "    if False:"
+      ]
+    ],
+    "expect": "⭐ #651 r2: a SUCCESS run whose 38 shards were all SKIPPED is no sweep — never 'last completed 1 h ago'"
+  },
+  {
+    "name": "backlog #651 r2: a CANCELLED shard counts as swept",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "SHARD_SWEPT = (\"success\", \"failure\")",
+        "SHARD_SWEPT = (\"success\", \"failure\", \"cancelled\")"
+      ]
+    ],
+    "expect": "⭐ #651 r2: ...nor one with some shards CANCELLED, and the line counts them by conclusion"
+  },
+  {
+    "name": "backlog #651 r2: a FAILED shard is no sweep, so a completed red sweep reads as none",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "SHARD_SWEPT = (\"success\", \"failure\")\n",
+        "SHARD_SWEPT = (\"success\",)\n"
+      ]
+    ],
+    "expect": "⭐ #651 r2: a RED sweep — every shard completed, two failed — RAN: it is FRESH, and the line says RED"
+  },
+  {
+    "name": "backlog #651 r2: a red sweep is not called RED",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if failed:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "⭐ #651 r2: a RED sweep — every shard completed, two failed — RAN: it is FRESH, and the line says RED"
+  },
+  {
+    "name": "backlog #651 r2: the summary job `mutation-sweep-complete` is counted as a shard",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "SHARD_JOB = re.compile(r\"mutation-sweep \\(([0-9]+)\\)\")",
+        "SHARD_JOB = re.compile(r\"mutation-sweep.*\")"
+      ]
+    ],
+    "expect": "⭐ #651 r1: a full sweep that completed 35 h ago is fresh, and the line says the age, the run and its shards"
+  },
+  {
+    "name": "backlog #651 r2: a completed run whose jobs were NOT read is passed over, as if it had not swept",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if r.get(\"databaseId\") not in evidence:\n            return",
+        "        if r.get(\"databaseId\") not in evidence:\n            continue\n            return"
+      ]
+    ],
+    "expect": "⭐ #651 r2: jobs that could NOT be read, or a completed run whose jobs were NOT read, are CANNOT VERIFY — never fresh, never 'no sweep'"
+  },
+  {
+    "name": "backlog #651 r2: a run whose jobs could NOT be read is passed over, as if it had not swept",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if jobs is None:\n            return",
+        "        if jobs is None:\n            continue\n            return"
+      ]
+    ],
+    "expect": "⭐ #651 r2: jobs that could NOT be read, or a completed run whose jobs were NOT read, are CANNOT VERIFY — never fresh, never 'no sweep'"
+  },
+  {
+    "name": "backlog #651 r2: a page short of the run's total_count is read as the whole job list",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if len(jobs) != total:",
+        "        if False:"
+      ]
+    ],
+    "expect": "...a page short of total_count, a job missing a field, a gh failure and a run id that is no id are each (None, why), never a partial list"
+  },
+  {
+    "name": "backlog #651 r2: the jobs GET is not paginated, so a run past one page reads a partial list",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "[\"gh\", \"api\", \"--paginate\", f\"repos/",
+        "[\"gh\", \"api\", f\"repos/"
+      ]
+    ],
+    "expect": "⭐ #651 r2: the jobs reader GETs one run's jobs, PAGINATED, in the root given, within the timeout given, and joins the pages"
+  },
+  {
+    "name": "backlog #651 r2: the jobs reader asks gh in the wrong directory",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "conclusion}]}\"], root, timeout)",
+        "conclusion}]}\"], Path(\".\"), timeout)"
+      ]
+    ],
+    "expect": "⭐ #651 r2: the jobs reader GETs one run's jobs, PAGINATED, in the root given, within the timeout given, and joins the pages"
+  },
+  {
+    "name": "backlog #651 r2: the walk does not stop at the first run that swept, so it spends calls on older runs",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if jobs is None or shards_verdict(jobs)[0] != \"unswept\":",
+        "        if jobs is None:"
+      ]
+    ],
+    "expect": "⭐ #651 r2: the walk reads the newest completed run first and STOPS at the first that swept, green or red; a queued run is not read"
+  },
+  {
+    "name": "backlog #651 r2: the walk goes past a run whose jobs could not be read",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if jobs is None or shards_verdict",
+        "        if jobs is not None and shards_verdict"
+      ]
+    ],
+    "expect": "...it stops at a run whose jobs could not be read, and after SWEEP_JOBS_CHECKED runs"
+  },
+  {
+    "name": "backlog #651 r2: the walk reads every completed run, not SWEEP_JOBS_CHECKED",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "sweep_candidates(runs or [])[:SWEEP_JOBS_CHECKED]",
+        "sweep_candidates(runs or [])"
+      ]
+    ],
+    "expect": "...it stops at a run whose jobs could not be read, and after SWEEP_JOBS_CHECKED runs"
+  },
+  {
+    "name": "backlog #651 r2: a jobs call starts after the shared deadline",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if left <= 0:\n            break",
+        "        if False:\n            break"
+      ]
+    ],
+    "expect": "⭐ #651 r2: the calls share ONE SWEEP_JOBS_BUDGET deadline — each gets what is left, none starts after it"
+  },
+  {
+    "name": "backlog #651 r2: each jobs call gets the whole budget, not what is left of it",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "fetch_sweep_jobs(root, r.get(\"databaseId\"), run, left)",
+        "fetch_sweep_jobs(root, r.get(\"databaseId\"), run, SWEEP_JOBS_BUDGET)"
+      ]
+    ],
+    "expect": "⭐ #651 r2: the calls share ONE SWEEP_JOBS_BUDGET deadline — each gets what is left, none starts after it"
+  },
+  {
+    "name": "backlog #651 r2: collect() never reads the jobs, so every FULL SWEEP line is CANNOT VERIFY",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "fetch_sweep_evidence(root, runs, run, tick), now)",
+        "{}, now)"
+      ]
+    ],
+    "expect": "⭐ #651 r1: collect() — the hook's entry — prints the full sweep's AGE at the clock it is given (10 h, then 50 h and STALE), and CANNOT VERIFY when only the run list fails, or (r2) only the jobs"
+  },
+  {
+    "name": "backlog #651 r2: the jobs budget is 10 s, so the hook's calls add to 60 s, its whole timeout",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "SWEEP_JOBS_BUDGET = 5\n",
+        "SWEEP_JOBS_BUDGET = 10\n"
+      ]
+    ],
+    "expect": "collect() asks gh for the PRs, the sweep-red issues, the scheduled runs and the swept run's jobs ONCE each, within the timeouts (55 s in all, under the hook's 60), and wires the PR, the issue and the ledger into one block"
+  },
+  {
+    "name": "backlog #651 r2: the walk asks gh for the jobs in the wrong directory",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "jobs, why = fetch_sweep_jobs(root, r.get(\"databaseId\"), run, left)",
+        "jobs, why = fetch_sweep_jobs(Path(\".\"), r.get(\"databaseId\"), run, left)"
+      ]
+    ],
+    "expect": "⭐ #651 r2: the walk reads the newest completed run first and STOPS at the first that swept, green or red; a queued run is not read"
   }
 ]

@@ -78,6 +78,10 @@ VERDICT = re.compile(r"^(OK|FAIL|NOT MEASURED|CANNOT RUN)\b.*\bmeasured over sha
 MULTI_SEED_EVENT = "schedule"
 # The verdict line's own tail when the run was seed-varied (`check-plan-code.verdict_line`): the seeds it ran.
 SEEDS = re.compile(r" under PYTHONHASHSEED ([0-9]+(?:, [0-9]+)*)$")
+# backlog #651 r2 (Codex M2): the words that DECLARE a seed list, well-formed or not. Present means the run said it
+# was seed-varied, so a tail SEEDS does not read is a damaged declaration, never "no seeds" (that read divided a
+# two-seed run's gaps by 1). `PYTHONHASHSEED=3`, the per-mutation form, is no declaration.
+SEEDS_DECLARED = " under PYTHONHASHSEED "
 
 
 class Refused(ValueError):
@@ -118,9 +122,15 @@ def seed_count(verdict: str, event: str) -> int:
     lists, 1 when it lists none. ⛔ Never a constant: the workflow decides the seeds (`SEEDS=` in ci.yml's
     sweep step) and may decide otherwise tomorrow; the verdict line is what the harness actually ran. A
     `schedule` verdict that lists none is `Refused` — that event is seed-varied, so 1 would be a guess that
-    doubles every cost in the table."""
+    doubles every cost in the table. ⛔ r2 (Codex M2): ABSENT and MALFORMED are different. A verdict that
+    DECLARES seeds (SEEDS_DECLARED) but whose tail is not exactly one well-formed list — `0, bad`, a list
+    mid-line, two declarations — is `Refused` for EVERY event: it is a seed-varied run whose count is unknown."""
+    declared = verdict.count(SEEDS_DECLARED)
     m = SEEDS.search(verdict)
-    if m:
+    if declared:
+        if declared != 1 or not m:
+            raise Refused(f"the verdict line declares hash seeds ({SEEDS_DECLARED.strip()!r}) but not as one "
+                          f"well-formed list at its end: the number to divide its times by is unknown")
         return len(m.group(1).split(", "))
     if event == MULTI_SEED_EVENT:
         raise Refused(f"a {event!r} run sweeps every suite under several hash seeds (`--seeds`), and this "
@@ -528,10 +538,19 @@ def _self_test_body() -> int:
          (_seeded(" under PYTHONHASHSEED 0, 654415945"), _seeded(" under PYTHONHASHSEED 0, 7, 11"),
           _seeded("", text)),
          ((2, 4.9439, 139.5617), (3, 3.2959, 93.0412), (1, 9.8878, 279.1235)))
-    case("...and the seeds are read from ANY event's verdict (a seeded push divides too), only as the line's "
-         "own tail: the same words mid-line are no seed list",
-         (_seeded(" under PYTHONHASHSEED 3, 5", text)[:1],
-          _seeded(" under PYTHONHASHSEED 3, 5 (not the tail)", text)[:1]), ((2,), (1,)))
+    case("...and the seeds are read from ANY event's verdict (a seeded push divides too)",
+         _seeded(" under PYTHONHASHSEED 3, 5", text)[:1], (2,))
+    # backlog #651 r2 (Codex M2): r1's case here ACCEPTED a declaration mid-line as "no seeds", divisor 1. A
+    # DECLARED but malformed list is refused on BOTH events — a push too, where absence would have read as 1.
+    _malformed = {"a damaged list": " under PYTHONHASHSEED 0, bad", "a list mid-line": " under PYTHONHASHSEED 3, 5 (x)",
+                  "an empty list": " under PYTHONHASHSEED ",
+                  "two declarations": " under PYTHONHASHSEED 1 under PYTHONHASHSEED 2, 3"}
+    case("⛔ #651 r2: a seed list that is DECLARED but malformed is REFUSED on a push and on a schedule run alike — "
+         "never read as no seeds (divisor 1); the per-mutation `PYTHONHASHSEED=3` form is no declaration",
+         ({k: ("RAISED Refused" in str(_seeded(v, text)) and "declares hash seeds" in str(_seeded(v, text)),
+               "RAISED Refused" in str(_seeded(v)) and "declares hash seeds" in str(_seeded(v)))
+           for k, v in _malformed.items()}, _seeded(" (killed under PYTHONHASHSEED=3)", text)[:1]),
+         ({k: (True, True) for k in _malformed}, (1,)))
     # check-fixture-variation: `parse_log` had one direct call (the fixture); every other input reached it
     # through `refusal`, which only shows it refusing. A second log that PARSES, differing in what is read.
     try:
