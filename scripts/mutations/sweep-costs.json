@@ -62,13 +62,13 @@
   {
     "name": "backlog #588: a verdict naming another shard than the env block is accepted",
     "file": "scripts/sweep-costs.py",
-    "edits": [["    if (int(vm.group(2)), int(vm.group(3))) != (idx, tot):", "    if False:"]],
+    "edits": [["    if (v_idx, v_tot) != (idx, tot):", "    if False:"]],
     "expect": "⛔ a verdict naming another shard than the env block is refused"
   },
   {
     "name": "backlog #588 r1: a malformed SHARD_INDEX raises ValueError out of the tool instead of a refusal",
     "file": "scripts/sweep-costs.py",
-    "edits": [["    if not re.fullmatch(r\"\\d+\", v):", "    if False:"]],
+    "edits": [["    if not re.fullmatch(r\"[0-9]+\", v):", "    if False:"]],
     "expect": "⛔ r1: a malformed SHARD_INDEX / SHARD_TOTAL or timestamp is a REFUSAL with a reason, never a crash"
   },
   {
@@ -160,5 +160,17 @@
     "file": "scripts/sweep-costs.py",
     "edits": [["    if costs is None:\n        raise Refused(f\"the table just built does not parse as check-plan-code reads it", "    if False:\n        raise Refused(f\"the table just built does not parse as check-plan-code reads it"]],
     "expect": "⛔ r1: a table check-plan-code would REFUSE is never written — the usable one on disk is kept"
+  },
+  {
+    "name": "backlog #588 r2: a count of any length reaches int(), so 4,301 digits crash instead of refusing",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if len(v) > COUNT_DIGITS:", "    if False:"]],
+    "expect": "⛔ r2: a 4,301-digit count — env block or verdict line — is a REFUSAL naming the count, never a crash"
+  },
+  {
+    "name": "backlog #588 r2: the verdict line's counts are read by a bare int(), outside the bounded reader",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["_count(vm.group(2), \"the verdict's shard\"), _count(vm.group(3), \"the verdict's total\")", "int(vm.group(2)), int(vm.group(3))"]],
+    "expect": "⛔ r2: a 4,301-digit count — env block or verdict line — is a REFUSAL naming the count, never a crash"
   }
 ]

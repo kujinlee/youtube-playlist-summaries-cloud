@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 480 cases
+    python3 scripts/check-plan-code.py --self-test          # 486 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1602,7 +1602,8 @@ def shard_slice(muts: list, index: int, total: int) -> list:
 
 # ── backlog #588: the COST-BALANCED partition ─────────────────────────────────────────────────
 # ⭐ THE SWEEP'S SHARDS ARE A CONTIGUOUS CUT OF THE MANIFEST-ORDERED MUTATION LIST INTO N RUNS OF
-# EQUAL *ESTIMATED COST*, from a committed per-target cost table. Contiguous keeps each target's
+# EQUAL *ESTIMATED COST*, from a committed per-target cost table (⟳ r2: of its PRICED entries — the few
+# a table may leave unpriced are dealt round-robin instead, `sweep_partition`). Contiguous keeps each target's
 # entries on one or two shards, so a shard pays control + re-control for ~4 targets instead of ~63
 # (MODELLED at N=38 from CI runs 43662666915 and 43625371110, model against model: slowest shard
 # 1,218 s round-robin -> 753 s cut, ~1.6x; target-shard control pairs 2,386 -> ~132. Job wall clocks on
@@ -1681,7 +1682,12 @@ def cost_coverage(costs: dict, muts: list, total: int) -> "str | None":
     table is used only while it prices at least `SWEEP_COVERAGE` (95%) of the manifest's ENTRIES — the
     sweep's weight is one mutation run per entry — and no target it does not price holds more entries
     than one shard's share, ceil(len / total), the size at which a guess can unbalance a whole shard.
-    Otherwise the sweep falls back to round-robin, LOUDLY (`partition_line`), as for an unusable table."""
+    Otherwise the sweep falls back to round-robin, LOUDLY (`partition_line`), as for an unusable table.
+
+    ⟳ r2 (Codex 1): THE PER-TARGET CLAUSE IS NOT THE AGGREGATE BOUND, and no longer stands in for one — several
+    unpriced targets, each within a share, passed it together. The bound on what a shard can hold of them is
+    structural now: `sweep_partition` DEALS unpriced entries round-robin. This rule stays as the conservative
+    floor on when a table is worth cutting by at all. `muts` is the POOL the run partitions (`sweep_plan`)."""
     if not muts:
         return None
     share = -(-len(muts) // max(1, total))
@@ -1703,14 +1709,31 @@ def cost_coverage(costs: dict, muts: list, total: int) -> "str | None":
 
 def sweep_costs_for(root: pathlib.Path, muts: list, total: int) -> "tuple[dict | None, str | None]":
     """IO. The table the sweep's partition uses for `muts` in `total` shards: `load_sweep_costs`, then
-    `cost_coverage` — `(None, why)` when either refuses. ⛔ THE ONE PLACE THAT DECISION IS MADE: the run,
-    `main`'s PARTITION line and the log parser (`sweep-costs.py`'s `shard_holding`) all call it, so they
-    cannot disagree about whether a shard was cut by the table or round-robin."""
+    `cost_coverage` — `(None, why)` when either refuses. ⛔ THE ONE PLACE THAT DECISION IS MADE: the run and
+    `main`'s PARTITION line (both through `sweep_plan`, over the pool they partition) and the log parser
+    (`sweep-costs.py`'s `shard_holding`, over a full run's whole manifest) all call it, so they cannot
+    disagree about whether a shard was cut by the table or round-robin."""
     costs, why = load_sweep_costs(root)
     if costs is None:
         return None, why
     why = cost_coverage(costs, muts, total)
     return (None, why) if why else (costs, None)
+
+
+def sweep_pool(muts: list, select: "set | frozenset | None") -> list:
+    """PURE. The entries a run EXECUTES: the whole manifest, or a pull request's selected targets'
+    (backlog #330). This list — never the manifest — is what the shards partition."""
+    return muts if select is None else [m for m in muts if m["file"] in select]
+
+
+def sweep_plan(root: pathlib.Path, muts: list, select: "set | frozenset | None",
+               total: int) -> "tuple[dict | None, str | None]":
+    """IO. `sweep_costs_for` over the POOL the run partitions (`sweep_pool`), not the manifest.
+
+    ⛔ r2 (Codex 2): COVERAGE IS A STATEMENT ABOUT THE LIST THAT IS CUT. Judged on the whole manifest, a
+    table was approved for a selection it priced none of (and refused for one it priced all of). The run
+    (`mutate_delivered`) and `main`'s PARTITION line both make THIS call, so they judge one population."""
+    return sweep_costs_for(root, sweep_pool(muts, select), total)
 
 
 def _item_cost(costs: dict, target: str) -> "tuple[int, int]":
@@ -1769,19 +1792,19 @@ def _best_split(part: list, costs: dict) -> int:
     return min(range(1, n), key=lambda k: (max(pre[k], suf[k]), k))
 
 
-def sweep_partition(muts: list, total: int, costs: dict) -> list:
+def _cost_cut(muts: list, total: int, costs: dict) -> list:
     """PURE. `muts` cut into exactly `total` CONTIGUOUS runs of balanced ESTIMATED cost.
 
     The smallest integer cap for which the greedy cut needs at most `total` runs is found by
     bisection (the greedy count is monotone in the cap); if that leaves fewer than `total` runs, the
     costliest run with two or more items is split at its best point until there are `total`. So:
-      * no run is empty while there are at least `total` mutations (`shard_refusal` depends on it);
-      * every mutation is in exactly one run, in its original order;
+      * no run is empty while there are at least `total` items;
+      * every item is in exactly one run, in its original order;
       * BOUND (each target's entries contiguous, as `load_manifests` builds them): no run's estimate
         exceeds  T/total + max(c + f) + max(f),  where T is the estimate of the whole list as one run,
         c an item's mutation cost and f its target's control + re-control — the greedy cut at that cap
         closes each run above T/total, and each cut re-pays at most one target's f.
-    Fewer mutations than shards: one per run, the rest empty (only a SELECTION can reach that).
+    Fewer items than runs: one per run, the rest empty.
     """
     if len(muts) <= total:
         return [[m] for m in muts] + [[] for _ in range(total - len(muts))]
@@ -1800,6 +1823,41 @@ def sweep_partition(muts: list, total: int, costs: dict) -> list:
         k = _best_split(parts[i], costs)
         parts[i:i + 1] = [parts[i][:k], parts[i][k:]]
     return parts
+
+
+def sweep_partition(muts: list, total: int, costs: dict) -> list:
+    """PURE. `muts` in exactly `total` shards: the PRICED entries cut by cost (`_cost_cut`), the UNPRICED
+    ones — a target the table has no row for — DEALT round-robin across all `total`.
+
+    ⛔ r2 (Codex 1): AN UNPRICED ENTRY IS NEVER PLACED BY ITS ESTIMATE. Its cost is a guess, and a
+    contiguous cut packs whatever it under-prices into one shard: two unpriced targets of 95 entries, each
+    inside `cost_coverage`'s per-target bound, sat together in a shard estimated at 100 s that really took
+    2,000 s. Dealt, NO SHARD HOLDS MORE THAN ceil(unpriced / total) OF THEM WHATEVER THEY COST — the
+    aggregate bound, and exactly round-robin's own exposure to them. So:
+      * every mutation is in exactly one shard, and no shard is empty while there are at least `total`
+        mutations (`shard_refusal` depends on it): the deal STARTS at the first shard the priced cut left
+        empty, and wraps;
+      * ⟳ ORDER: a shard lists its entries in MANIFEST order (a target's entries stay adjacent inside
+        it), but with unpriced entries present the shards are no longer one contiguous cut — joined end
+        to end they are a permutation of `muts`, not `muts`. With none (the committed table prices
+        every target) the partition is `_cost_cut`'s, unchanged;
+      * `_cost_cut`'s BOUND holds for the priced part; each shard adds at most ceil(unpriced / total)
+        unpriced entries and, with them, at most that many extra targets' control + re-control.
+    Fewer mutations than shards: one per shard, the rest empty (only a SELECTION can reach that) — decided
+    BEFORE any entry is read, as `_cost_cut` does.
+    """
+    if len(muts) <= total:
+        return _cost_cut(muts, total, costs)
+    priced = [i for i, m in enumerate(muts) if m["file"] in costs["targets"]]
+    runs = _cost_cut([muts[i] for i in priced], total, costs)
+    shards, at = [], iter(priced)
+    for run in runs:
+        shards.append([next(at) for _ in run])
+    first = sum(1 for run in runs if run) % total
+    held = set(priced)
+    for j, i in enumerate(i for i in range(len(muts)) if i not in held):
+        shards[(first + j) % total].append(i)
+    return [[muts[i] for i in sorted(shard)] for shard in shards]
 
 
 def sweep_shard(muts: list, index: int, total: int, costs: "dict | None") -> list:
@@ -1825,8 +1883,8 @@ def partition_line(costs: "dict | None", why: "str | None", targets: "set | froz
                 f"only the cost balance is lost, so a shard may run long. Regenerate the table with "
                 f"scripts/sweep-costs.py")
     known = sum(1 for t in targets if t in costs["targets"])
-    return (f"PARTITION — cost-balanced contiguous cut, from {SWEEP_COSTS} ({known} of {len(targets)} "
-            f"target(s) costed by the table, the rest at its defaults; measured from "
+    return (f"PARTITION — cost-balanced cut, from {SWEEP_COSTS} ({known} of {len(targets)} "
+            f"target(s) costed by the table, the rest dealt round-robin; measured from "
             f"{', '.join(costs['sources'])})")
 
 
@@ -2317,11 +2375,11 @@ def mutate_delivered(root: pathlib.Path,
     # slice, one global invariant would quietly become N local ones and coverage could shrink
     # with every shard still green, which is this repository's definition of a false green.
     # ONLY THE EXECUTION BELOW IS SHARDED.
-    pool = muts if select is None else [m for m in muts if m["file"] in select]
-    # backlog #588: the partition is the COST-BALANCED cut when the table reads AND fits the whole manifest
-    # (r1: `sweep_costs_for`), else round-robin — `main` prints which (`partition_line`); either way every
+    pool = sweep_pool(muts, select)
+    # backlog #588: the partition is the COST-BALANCED cut when the table reads AND fits the POOL being cut
+    # (r2: `sweep_plan` — the selected entries on a pull request, never the whole manifest), else round-robin — `main` prints which (`partition_line`); either way every
     # entry lands in exactly one shard.
-    costs = sweep_costs_for(root, muts, shard[1])[0] if shard is not None else None
+    costs = sweep_plan(root, muts, select, shard[1])[0] if shard is not None else None
     if shard is not None and select is None:
         why = shard_refusal(shard[0], shard[1], muts, costs)
         if why:
@@ -3092,6 +3150,51 @@ def _budget_wiring(root: pathlib.Path) -> dict:
                 os.environ[_k] = saved[_k]
     out["torn"] = torn
     return out
+
+
+def _pool_wiring(td: pathlib.Path) -> "tuple[int, str]":
+    """r2 (Codex 2): `main()` over a PR's SELECTION with a cost table that fits the selected pool and NOT the
+    whole manifest: `(rc, stdout + stderr)`. `scripts/zqa.py` holds three mutations and is the one changed path;
+    `scripts/zqb.py` holds one. The table prices `zqa` alone — 3 of the manifest's 4 entries (75%, refused), all 3 of
+    the pool's. (Stems no other fixture file's text contains: a path another target NAMES is a shared module,
+    and the selection widens to FULL.) Cut by cost, shard 1 of 2 of the pool is [a, b]; round-robin, it is [a, c].
+
+    ⛔ A SMALL FUNCTION WITH ONE `main()` CALL SITE — see `_budget_wiring` (PR #400 r1 H1)."""
+    root = td / "root"
+    for _rel in HARNESS_TREE:
+        (root / _rel).mkdir(parents=True, exist_ok=True)
+    (root / "scripts" / "mutations").mkdir(parents=True, exist_ok=True)
+    for stem, names in (("zqa", "abc"), ("zqb", "d")):
+        (root / "scripts" / f"{stem}.py").write_text(
+            "import sys\n" + "".join(f"{n.upper()} = 1\n" for n in names)
+            + "def _self_test():\n    bad = 0\n"
+            + "".join(f'    if {n.upper()} != 1:\n        print("  [FAIL] {n} is one"); bad += 1\n' for n in names)
+            + f'    print("%d/{len(names)} passed" % ({len(names)} - bad))\n    return 1 if bad else 0\n'
+            + 'if __name__ == "__main__":\n    sys.exit(_self_test())\n')
+        (root / "scripts" / "mutations" / f"{stem}.json").write_text(json.dumps(
+            [{"name": f"{n} is five", "file": f"scripts/{stem}.py", "edits": [[f"{n.upper()} = 1\n", f"{n.upper()} = 5\n"]],
+              "expect": f"{n} is one"} for n in names]))
+    (root / SWEEP_COSTS).write_text(json.dumps(
+        {"schema": 1, "sources": ["fixture"], "defaults": {"mutation": 1, "fixed": 2},
+         "targets": {"scripts/zqa.py": {"control": 1, "recontrol": 1, "mutation": 1}}}), encoding="utf-8")
+    (td / "changed.txt").write_text("scripts/zqa.py\0")
+    _gh = ("CI", "GITHUB_EVENT_NAME", JOB_START_VAR, LIMIT_VAR, "GITHUB_ACTIONS")
+    saved = {k: os.environ.pop(k, None) for k in _gh}
+    saved_pins = dict(EXPECTED_MUTATIONS)
+    buf = io.StringIO()
+    try:
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS.update({"scripts/zqa.py": 3, "scripts/zqb.py": 1})
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf), _suite_owns_the_pins():
+            rc = main(["--mutate", str(root), "--allow-long-local", "--event", "pull_request",
+                       "--changed", str(td / "changed.txt"), "--shard0", "0/2"])
+    finally:
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS.update(saved_pins)
+        for _k in _gh:
+            if saved[_k] is not None:
+                os.environ[_k] = saved[_k]
+    return rc, buf.getvalue()
 
 
 def _record_wiring(td: pathlib.Path) -> dict:
@@ -4633,6 +4736,19 @@ def _self_test_body() -> int:
                   "PARTITION —" in _push[1]), (True, False))
             case("⭐ r1: ...and under GitHub Actions the fallback is a WORKFLOW ANNOTATION on stdout, off it none",
                  ("::warning title=sweep partition::" in _sc1[1], "::warning" in _sc2[1]), (True, False))
+            # r2 (Codex 2): COVERAGE IS JUDGED ON THE POOL THE RUN PARTITIONS. One `main()` run over a selection
+            # whose table fits the pool (3 of 3) and not the manifest (3 of 4): the LINE is main's call site, the
+            # mutations that ran are `mutate_delivered`'s, and each is asserted on its own.
+            with tempfile.TemporaryDirectory() as _tdp:
+                _pw = _pool_wiring(pathlib.Path(_tdp))
+            case("⭐ r2: main() judges the table against the SELECTED pool — it fits the pool and not the manifest, "
+                 "so the PARTITION line says cost-balanced, 1 of 1 target costed, rc=0",
+                 (_pw[0], [ln for ln in _pw[1].splitlines() if ln.startswith("PARTITION —")]),
+                 (0, [f"PARTITION — cost-balanced cut, from {SWEEP_COSTS} (1 of 1 target(s) costed by the table, "
+                      f"the rest dealt round-robin; measured from fixture)"]))
+            case("⭐ r2: ...and the RUN partitions that pool by the same table — shard 1 of 2 ran [a, b], the cost "
+                 "cut, not round-robin's [a, c]",
+                 [n for n in ("a is five", "b is five", "c is five") if n in _pw[1]], ["a is five", "b is five"])
             case("⭐ ...a shard holding none of the selection says so and PASSES, rc=0",
                  (_sc2[0], "nothing to do" in _sc2[1], "0 mutation(s)" in _sc2[1]), (0, True, True))
             case("⭐ ...and a master push logs FULL and measures the WHOLE manifest, rc=0",
@@ -5331,9 +5447,9 @@ def _self_test_body() -> int:
             _toldU: list = []
             _okU = mutate_delivered(_r, progress=lambda *a: _toldU.append(a), shard=(1, 2))[0]
             case("⭐ r1: ...and with a table that parses but does not FIT the manifest, the shard is round-robin too",
-                 ([t for t in _toldU if "control" in t[2]], _okU),
+                 ([t for t in _toldU if "control" in t[2]], [t[2] for t in _toldU if t[2] in ("a is five", "b is seven")], _okU),
                  ([(1, 2, "control scripts/other.py"), (2, 2, "control scripts/thing.py"),
-                   (1, 2, "re-control scripts/other.py"), (2, 2, "re-control scripts/thing.py")], True))
+                   (1, 2, "re-control scripts/other.py"), (2, 2, "re-control scripts/thing.py")], ["a is five"], True))
     finally:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
@@ -6064,6 +6180,56 @@ def _self_test_body() -> int:
          ([[m["name"] for m in p] for p in sweep_partition(_xm, 3, _xc)],
           [shard_estimate(p, _xc) for p in sweep_partition(_xm, 3, _xc)]),
          ([["x0", "x1", "x2"], ["y0", "y1"], ["z0", "z1", "z2", "z3"]], [13000, 12000, 5000]))
+    # ── r2 (Codex 1): THE UNPRICED ENTRIES ARE DEALT ROUND-ROBIN, NEVER CUT BY A GUESS ───────────────
+    # `cost_coverage` bounds each unpriced target on its own, and the cut priced them all at the defaults — so
+    # two unpriced targets, each inside its bound, could sit TOGETHER in one contiguous shard. Codex's input,
+    # verbatim: 3,610 entries of a priced target (1 s a mutation, no fixed cost, defaults the same), then 95
+    # each of two unpriced targets that REALLY cost 20 s a mutation, N=38. Coverage is exactly 95% and each
+    # unpriced target (95) is within a share (100), so the table is used. Dealt, every shard holds exactly
+    # 190/38 = 5 of them whatever they cost: 95 x 1 s + 5 x 20 s = 195 s, which is round-robin's own slowest.
+    _qm = ([{"file": "scripts/a.py", "name": f"a{k}"} for k in range(3610)]
+           + [{"file": "scripts/b.py", "name": f"b{k}"} for k in range(95)]
+           + [{"file": "scripts/c.py", "name": f"c{k}"} for k in range(95)])
+    _qt = {"targets": {"scripts/a.py": (0, 0, 1000)}, "mutation": 1000, "fixed": 0, "sources": ["x"]}
+    _qp = sweep_partition(_qm, 38, _qt)
+    _q_real = lambda p: sum(1000 if m["file"] == "scripts/a.py" else 20000 for m in p)  # noqa: E731
+    _q_loose = lambda p: sum(1 for m in p if m["file"] != "scripts/a.py")  # noqa: E731
+    case("⭐ r2: several UNPRICED targets cannot sit together in one shard — coverage approves Codex's input, no "
+         "shard holds over ceil(190/38) = 5 unpriced entries, and the slowest REAL shard is round-robin's 195 s",
+         (cost_coverage(_qt, _qm, 38), max(_q_loose(p) for p in _qp), max(_q_real(p) for p in _qp),
+          max(_q_real(shard_slice(_qm, i, 38)) for i in range(1, 39))),
+         (None, 5, 195000, 195000))
+    _q_pos = {id(m): i for i, m in enumerate(_qm)}
+    case("...and it is still ONE partition: every entry exactly once, 38 non-empty shards, each in MANIFEST order, "
+         "and each shard's own call returns its part",
+         (sorted(_q_pos[id(m)] for p in _qp for m in p) == list(range(3800)), len(_qp), all(_qp),
+          all([_q_pos[id(m)] for m in p] == sorted(_q_pos[id(m)] for m in p) for p in _qp),
+          [sweep_shard(_qm, i, 38, _qt) for i in (1, 19, 38)] == [_qp[0], _qp[18], _qp[37]]),
+         (True, 38, True, True, True))
+    # The DEAL, exactly: three unpriced entries AHEAD of two priced ones, N=4. The priced cut fills shards 1-2
+    # and leaves 3-4 empty, so the deal STARTS at shard 3 (n0, n1) and wraps to shard 1 (n2) — no shard empty —
+    # and shard 1 lists n2 BEFORE z0, the manifest's order, not the order it was dealt in.
+    _wm = ([{"file": "scripts/new.py", "name": f"n{k}"} for k in range(3)]
+           + [{"file": "scripts/z.py", "name": f"z{k}"} for k in range(2)])
+    case("⭐ r2: the deal starts at the first shard the priced cut left EMPTY, and a shard keeps manifest order — "
+         "[n2 z0] [z1] [n0] [n1]",
+         [[m["name"] for m in p] for p in sweep_partition(_wm, 4, _fc)], [["n2", "z0"], ["z1"], ["n0"], ["n1"]])
+    # r2 (Codex 2): THE POOL, NOT THE MANIFEST. A pull request partitions its SELECTED entries, so the table must
+    # fit THOSE. Codex's selection of the two unpriced targets: the whole manifest is approved (above), the pool
+    # of 190 is priced 0% — refused. `sweep_plan` is the one call both the run and `main` make.
+    with tempfile.TemporaryDirectory() as _td:
+        (pathlib.Path(_td) / "scripts").mkdir()
+        (pathlib.Path(_td) / SWEEP_COSTS).write_text(json.dumps(
+            {"schema": 1, "sources": ["x"], "defaults": {"mutation": 1, "fixed": 0},
+             "targets": {"scripts/a.py": {"control": 0, "recontrol": 0, "mutation": 1}}}), encoding="utf-8")
+        _pl = (sweep_plan(pathlib.Path(_td), _qm, None, 38),
+               sweep_plan(pathlib.Path(_td), _qm, frozenset({"scripts/b.py", "scripts/c.py"}), 38),
+               sweep_plan(pathlib.Path(_td), _qm, frozenset({"scripts/a.py"}), 38))
+    case("⭐ r2: sweep_plan judges coverage on the SELECTED pool — the manifest approved, a selection of its two "
+         "unpriced targets refused, a selection of its priced one approved",
+         (_pl[0] == (_qt, None), _pl[1][0], bool(_pl[1][1]), _pl[2] == (_qt, None),
+          [m["name"] for m in sweep_pool(_wm, frozenset({"scripts/z.py"}))], sweep_pool(_wm, None) is _wm),
+         (True, None, True, True, ["z0", "z1"], True))
     # r1 (Claude M1): THE COMMITTED TABLE, over THIS repository's manifests: every target it mutates has a row,
     # so a target added without regenerating the table goes red HERE, before CI meets a partition priced by
     # guesses. (A new target has no CI cost before it merges: see `scripts/sweep-costs.py` for the hand row.)
@@ -6079,8 +6245,8 @@ def _self_test_body() -> int:
               "PARTITION — ROUND-ROBIN FALLBACK: no cost table at x.")), (True, True))
     case("...and with one, the line counts how many of the run's targets the table costs",
          partition_line(_cc, None, {"scripts/a.py", "scripts/b.py", "scripts/new.py"}),
-         f"PARTITION — cost-balanced contiguous cut, from {SWEEP_COSTS} (2 of 3 target(s) costed by the "
-         f"table, the rest at its defaults; measured from fixture)")
+         f"PARTITION — cost-balanced cut, from {SWEEP_COSTS} (2 of 3 target(s) costed by the "
+         f"table, the rest dealt round-robin; measured from fixture)")
     # ⟳ backlog #588: this was "THE CRUX — round-robin, not contiguous": a contiguous split by COUNT hands
     # one file's 183-entry block to one shard. The cost cut answers that by COST (the cases above); what
     # stays true, and is the FALLBACK's whole job when the table is unusable, is that round-robin spreads
@@ -8224,8 +8390,8 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         if shard is not None:
             # backlog #588: say WHICH partition, on stdout beside the verdict; a fallback on stderr too.
             _muts, _problems = load_manifests(mroot)
-            _costs, _cwhy = sweep_costs_for(mroot, _muts, shard[1])
-            print(partition_line(_costs, _cwhy, {m["file"] for m in _muts}))
+            _costs, _cwhy = sweep_plan(mroot, _muts, select, shard[1])
+            print(partition_line(_costs, _cwhy, {m["file"] for m in sweep_pool(_muts, select)}))
             if _costs is None:
                 print(f"WARNING — the sweep's cost table is unusable ({_cwhy}); this shard is ROUND-ROBIN",
                       file=sys.stderr)

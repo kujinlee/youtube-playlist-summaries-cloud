@@ -13,7 +13,7 @@ manifest (`cost_coverage`), so the defaults only ever price a small remainder.
 usage:
   python3 scripts/sweep-costs.py --run LABEL TREE LOGDIR [--run ...] [--out scripts/sweep-costs.json]
                                  [--predict N]
-  python3 scripts/sweep-costs.py --self-test  # 26 cases
+  python3 scripts/sweep-costs.py --self-test  # 28 cases
 
   LABEL   names the run in the table's `sources` (e.g. `43662666915@033fe20c`: run id @ commit).
   TREE    a checkout of the repository AT THE RUN'S COMMIT (`git worktree add --detach <dir> <sha>`).
@@ -78,12 +78,25 @@ def _secs(stamp: str, frac: "str | None") -> float:
     return t + (float("0." + frac) if frac else 0.0)
 
 
+# r2 (Codex 3): a count is at most this many ASCII digits. `\d+` bounded the ALPHABET and not the LENGTH, and
+# past 4,300 digits `int()` raises a plain ValueError (Python's digit limit) — a crash where a reason was owed.
+COUNT_DIGITS = 9
+
+
+def _count(v: str, what: str) -> int:
+    """PURE. A shard count read from a log -> int, else `Refused`. ⛔ THE ONE PLACE A LOG'S DIGITS BECOME AN
+    INT: the env block's two counts AND the verdict line's two go through it (r2: the verdict's did not, and
+    4,301 digits there crashed the same way). The refusal never echoes an over-long value."""
+    if not re.fullmatch(r"[0-9]+", v):
+        raise Refused(f"{what} is {v[:40]!r}, not a non-negative integer")
+    if len(v) > COUNT_DIGITS:
+        raise Refused(f"{what} is {len(v)} digits long, over {COUNT_DIGITS}: not a shard count")
+    return int(v)
+
+
 def _env_count(env: str, key: str) -> int:
     """`KEY: 12` -> 12. r1 (Codex 4): anything but a non-negative integer is a refusal, not a ValueError."""
-    v = env.split(":", 1)[1].strip()
-    if not re.fullmatch(r"\d+", v):
-        raise Refused(f"{key} is {v!r}, not a non-negative integer")
-    return int(v)
+    return _count(env.split(":", 1)[1].strip(), key)
 
 
 def parse_log(text: str) -> dict:
@@ -130,7 +143,8 @@ def parse_log(text: str) -> dict:
     if "DIFF-SCOPED" in verdict or "ONLY" in verdict:
         raise Refused("a SELECTED run (a PR's diff-scoped sweep) is not the full partition")
     vm = VERDICT.match(verdict)
-    if (int(vm.group(2)), int(vm.group(3))) != (idx, tot):
+    v_idx, v_tot = _count(vm.group(2), "the verdict's shard"), _count(vm.group(3), "the verdict's total")
+    if (v_idx, v_tot) != (idx, tot):
         raise Refused(f"the verdict names shard {vm.group(2)} of {vm.group(3)}, the env {idx} of {tot}")
     return {"index": idx, "total": tot, "event": event, "prog": prog, "end": end, "verdict": verdict}
 
@@ -428,6 +442,20 @@ def _self_test_body() -> int:
     case("⛔ r1: a malformed SHARD_INDEX / SHARD_TOTAL or timestamp is a REFUSAL with a reason, never a crash",
          {k: (lambda r: bool(r) and not r.startswith("RAISED"))(refusal(parse_log, v)) for k, v in _bad_env.items()},
          {k: True for k in _bad_env})
+    # r2 (Codex 3): `\d+` admits any LENGTH, and past 4,300 digits `int()` raises Python's digit-limit ValueError —
+    # a crash where a reason was owed. Codex's input (4,301 digits in SHARD_INDEX), and the same class in the
+    # VERDICT line's own two counts, which the env block's bound does not reach.
+    _long = {"SHARD_INDEX": text.replace("SHARD_INDEX: 4", "SHARD_INDEX: " + "1" * 4301),
+             "SHARD_TOTAL": text.replace("SHARD_TOTAL: 38", "SHARD_TOTAL: " + "1" * 4301),
+             "the verdict's shard": text.replace("shard 5 of 38", "shard " + "5" * 4301 + " of 38"),
+             "the verdict's total": text.replace("shard 5 of 38", "shard 5 of " + "3" * 4301)}
+    case("⛔ r2: a 4,301-digit count — env block or verdict line — is a REFUSAL naming the count, never a crash",
+         {k: (lambda r: "RAISED" if (r or "").startswith("RAISED") else f"{k} is" in (r or "") and "digits" in r)(
+             refusal(parse_log, v)) for k, v in _long.items()}, {k: True for k in _long})
+    case("...and the longest count allowed, 9 digits, is READ as a number — refused only for disagreeing with the "
+         "verdict, which names it",
+         refusal(parse_log, text.replace("SHARD_TOTAL: 38", "SHARD_TOTAL: 123456789")),
+         "the verdict names shard 5 of 38, the env 5 of 123456789")
     case("...and an index outside 1..total says so", "outside 0.." in (refusal(parse_log, _bad_env["past the total"]) or ""),
          True)
     # r1 (Claude M4): a SCHEDULE run sweeps every suite under two hash seeds, so its shard does ~twice a push's work.

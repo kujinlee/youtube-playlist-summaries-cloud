@@ -961,7 +961,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 346 -> 353, #588 r1 fold: a cost over a day (1e308 overflowing), a table not UTF-8, the coverage rule's
     # share and 95% clauses, sweep_costs_for skipping it, the run reading the table without it, and the
     # GITHUB_ACTIONS annotation. Two re-bound (the NEGATIVE bound, the run's table read). Each red on a temp copy.
-    "scripts/check-plan-code.py": 353,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 353 -> 360, #588 r2 fold: unpriced entries dealt not cut, the deal's start and a shard's manifest order,
+    # sweep_plan over the selected pool, its two call sites (the run, main) and main's pool target count.
+    # Five re-bound (the #330 selection, the run's table read twice, main's PARTITION print, the no-table
+    # fallback now substituting `_cost_cut`). Each red on a staged copy outside the repository.
+    "scripts/check-plan-code.py": 360,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -1682,7 +1686,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 13 -> 27, #588 r1 fold: a prefix label, a negative gap, a malformed index or timestamp, an index outside
     # the total, a schedule run and an unnamed event, a run's duplicate / missing shard / two totals / two events,
     # the p90 defaults and their rank, the refused table never written. Four re-bound to the exact compare.
-    "scripts/sweep-costs.py": 27,
+    # ⟳ 27 -> 29, #588 r2 fold: a count's length bound, and the verdict line's counts through the bounded reader.
+    # Two re-bound (the verdict/env compare, whose line moved; the digits pattern).
+    "scripts/sweep-costs.py": 29,
     # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
     # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which

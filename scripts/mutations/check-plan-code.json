@@ -2058,7 +2058,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    pool = muts if select is None else [m for m in muts if m[\"file\"] in select]",
+        "    pool = sweep_pool(muts, select)",
         "    pool = muts"
       ]
     ],
@@ -4318,7 +4318,7 @@
     "edits": [
       [
         "        return shard_slice(muts, index, total)",
-        "        return sweep_partition(muts, total, {\"targets\": {}, \"mutation\": 1, \"fixed\": 0, \"sources\": [\"x\"]})[index - 1]"
+        "        return _cost_cut(muts, total, {\"targets\": {}, \"mutation\": 1, \"fixed\": 0, \"sources\": [\"x\"]})[index - 1]"
       ]
     ],
     "expect": "⭐ #588: with no table the sweep's shard IS round-robin, and the PARTITION line says FALLBACK"
@@ -4328,7 +4328,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    costs = sweep_costs_for(root, muts, shard[1])[0] if shard is not None else None",
+        "    costs = sweep_plan(root, muts, select, shard[1])[0] if shard is not None else None",
         "    costs = None"
       ]
     ],
@@ -4361,7 +4361,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            print(partition_line(_costs, _cwhy, {m[\"file\"] for m in _muts}))\n",
+        "            print(partition_line(_costs, _cwhy, {m[\"file\"] for m in sweep_pool(_muts, select)}))\n",
         ""
       ]
     ],
@@ -4438,7 +4438,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "sweep_costs_for(root, muts, shard[1])[0] if shard is not None",
+        "sweep_plan(root, muts, select, shard[1])[0] if shard is not None",
         "load_sweep_costs(root)[0] if shard is not None"
       ]
     ],
@@ -4454,5 +4454,82 @@
       ]
     ],
     "expect": "⭐ r1: ...and under GitHub Actions the fallback is a WORKFLOW ANNOTATION on stdout, off it none"
+  },
+  {
+    "name": "backlog #588 r2: unpriced entries are cut by their estimate with the priced ones, so several unpriced targets share one shard",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    priced = [i for i, m in enumerate(muts) if m[\"file\"] in costs[\"targets\"]]",
+        "    priced = list(range(len(muts)))"
+      ]
+    ],
+    "expect": "⭐ r2: several UNPRICED targets cannot sit together in one shard — coverage approves Codex's input, no shard holds over ceil(190/38) = 5 unpriced entries, and the slowest REAL shard is round-robin's 195 s"
+  },
+  {
+    "name": "backlog #588 r2: the deal starts at shard 1 whatever the priced cut left empty, so a shard can be empty",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    first = sum(1 for run in runs if run) % total",
+        "    first = 0"
+      ]
+    ],
+    "expect": "⭐ r2: the deal starts at the first shard the priced cut left EMPTY, and a shard keeps manifest order — [n2 z0] [z1] [n0] [n1]"
+  },
+  {
+    "name": "backlog #588 r2: a shard lists its dealt entries after its priced ones, not in manifest order",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return [[muts[i] for i in sorted(shard)] for shard in shards]",
+        "    return [[muts[i] for i in shard] for shard in shards]"
+      ]
+    ],
+    "expect": "⭐ r2: the deal starts at the first shard the priced cut left EMPTY, and a shard keeps manifest order — [n2 z0] [z1] [n0] [n1]"
+  },
+  {
+    "name": "backlog #588 r2: sweep_plan judges coverage on the whole manifest, not the selected pool",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return sweep_costs_for(root, sweep_pool(muts, select), total)",
+        "    return sweep_costs_for(root, muts, total)"
+      ]
+    ],
+    "expect": "⭐ r2: sweep_plan judges coverage on the SELECTED pool — the manifest approved, a selection of its two unpriced targets refused, a selection of its priced one approved"
+  },
+  {
+    "name": "backlog #588 r2: the run asks for the whole manifest's plan and cuts the selected pool with it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "costs = sweep_plan(root, muts, select, shard[1])",
+        "costs = sweep_plan(root, muts, None, shard[1])"
+      ]
+    ],
+    "expect": "⭐ r2: ...and the RUN partitions that pool by the same table — shard 1 of 2 ran [a, b], the cost cut, not round-robin's [a, c]"
+  },
+  {
+    "name": "backlog #588 r2: main judges the table against the whole manifest, so its PARTITION line is not the run's",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "sweep_plan(mroot, _muts, select, shard[1])",
+        "sweep_plan(mroot, _muts, None, shard[1])"
+      ]
+    ],
+    "expect": "⭐ r2: main() judges the table against the SELECTED pool — it fits the pool and not the manifest, so the PARTITION line says cost-balanced, 1 of 1 target costed, rc=0"
+  },
+  {
+    "name": "backlog #588 r2: main's PARTITION line counts the manifest's targets, not the pool's",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "{m[\"file\"] for m in sweep_pool(_muts, select)}",
+        "{m[\"file\"] for m in _muts}"
+      ]
+    ],
+    "expect": "⭐ r2: main() judges the table against the SELECTED pool — it fits the pool and not the manifest, so the PARTITION line says cost-balanced, 1 of 1 target costed, rc=0"
   }
 ]
