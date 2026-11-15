@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 505 cases
+    python3 scripts/check-plan-code.py --self-test          # 506 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -571,8 +571,10 @@ HARNESS_TREE = (
 # parameter, which `_walks_dir` cannot follow), is not selected by it — and backlog #109's orphaned anchor binds by text in ANOTHER manifest, which
 # only executing that manifest sees. So the full sweep still runs on a schedule — ⟳ backlog #651:
 # NIGHTLY ONLY, a master push no longer sweeps (owner 11-15) — and a red one opens an issue (`ci.yml`,
-# `mutation-sweep-complete`). The owner accepted that such a defect is found after merge, up to a day
-# later; a harness change's sample (rule 3) leaves ~80% of the manifest to that same nightly. What a scoped run does NOT give up: every whole-
+# `mutation-sweep-complete`). The owner accepted that such a defect is found after merge — ⟳ #651 r1: up
+# to ~38 h later, not "a day" (24 h to the next cron + the 7-10 h GitHub was measured to delay a scheduled run
+# + up to 3.75 h of sweep), and the issue then names the NIGHT's merges, not one: the culprit is bisected by
+# hand (`--only <script>` at each merge); a harness change's sample (rule 3) leaves ~80% of the manifest to that same nightly. What a scoped run does NOT give up: every whole-
 # manifest check (`pin_drift`, `anchor_problems`, the home-escape scan) still runs in every shard
 # over EVERY manifest, because they are file reads, not suites.
 # ⚠ The harness's own source is never a NAMER: it names many targets, so counting it would select
@@ -863,8 +865,11 @@ def select_manifests(event: str, changed: "list[str] | None", why: str, sources:
 def sample_manifests(key: str, targets, fraction: float = SAMPLE_FRACTION) -> frozenset:
     """PURE. backlog #651: a deterministic SAMPLE of `targets` — the ceil(`fraction` x n) whose
     sha256(key, NUL, target) rank lowest. The same key gives the same set (a re-run of one commit sweeps
-    what its first run swept); a different key gives a different set (each pull request's harness change
-    covers a different slice). Never 0 of a non-empty set. The nightly FULL sweep covers the rest."""
+    what its first run swept); a different key CAN give a different set, and usually does (each pull
+    request's harness change tends to cover a different slice) — ⚠ not MUST: two keys may rank the same
+    targets lowest, and with one target every key gives that one. LOWEST is the rule, and it is pinned by a
+    case whose digests are written out by hand. Never 0 of a non-empty set. The nightly FULL sweep covers
+    the rest."""
     pool = sorted(set(targets))
     n = math.ceil(len(pool) * fraction)
     return frozenset(sorted(pool, key=lambda t: hashlib.sha256(f"{key}\0{t}".encode()).hexdigest())[:n])
@@ -7736,6 +7741,17 @@ def _self_test_body() -> int:
          [0, 1, 1, 1, 9, 20])
     case("...and it is a SUBSET of the targets it is given",
          sample_manifests(_SK2, sorted(_SMP)) <= frozenset(_SMP), True)
+    # #651 r1 (Codex): every case above holds under ANY ranking — size, subset, determinism and "differs by key"
+    # are all true of the HIGHEST hashes too. This one states the expected set INDEPENDENTLY: the digests of
+    # sha256("k" NUL target) were computed OUTSIDE this script (`printf 'k\0a' | shasum -a 256`) and are
+    # written here as literals; the case ranks the LITERALS itself, so it never asks the code which is lowest.
+    _hand = {"a": "44c338b54824", "b": "dbaf55f41595", "c": "467ac7d5a237", "d": "62302c509457", "e": "4a7c7c95e9fe"}
+    case("⭐ #651 r1: the sample is the LOWEST-ranked targets — against digests written out by hand, ceil(40% of 5) "
+         "is {a, c} and all five is every one; the highest two, {b, d}, would be a different rule",
+         (sorted(sample_manifests("k", list(_hand), fraction=0.4)), sorted(sorted(_hand, key=_hand.get)[:2]),
+          sorted(sample_manifests("k", list(_hand), fraction=1.0)),
+          all(hashlib.sha256(f"k\0{t}".encode()).hexdigest().startswith(h) for t, h in _hand.items())),
+         (["a", "c"], ["a", "c"], ["a", "b", "c", "d", "e"], True))
     case("...and `fraction` is honoured: half of 41 is 21, 0.05 of 41 is 3, and the smaller sample is INSIDE the larger",
          (len(sample_manifests(_SK1, sorted(_SMP), fraction=0.5)),
           len(sample_manifests(_SK1, sorted(_SMP), fraction=0.05)),

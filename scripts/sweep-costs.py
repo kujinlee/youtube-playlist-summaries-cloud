@@ -13,12 +13,16 @@ manifest (`cost_coverage`), so the defaults only ever price a small remainder.
 usage:
   python3 scripts/sweep-costs.py --run LABEL TREE LOGDIR [--run ...] [--out scripts/sweep-costs.json]
                                  [--predict N]
-  python3 scripts/sweep-costs.py --self-test  # 32 cases
+  python3 scripts/sweep-costs.py --self-test  # 35 cases
 
   LABEL   names the run in the table's `sources` (e.g. `43662666915@033fe20c`: run id @ commit).
   TREE    a checkout of the repository AT THE RUN'S COMMIT (`git worktree add --detach <dir> <sha>`).
   LOGDIR  that run's shard job logs, one `shard*.log` per job (`gh run view <id> --log` split per job,
           or `gh api repos/<o>/<r>/actions/jobs/<job>/logs`).
+  WHICH RUN (⟳ backlog #651): a completed NIGHTLY (`schedule`) run of ci.yml — since #651 the only full sweep
+          CI produces regularly (a master push no longer sweeps; a pull request sweeps a selection, refused
+          below). `gh run list --workflow CI --event schedule --branch master --status success`. A `batch/**`
+          push sweeps in full at one seed and is read too.
   --predict N   print each shard's estimate under the NEW table for the CURRENT tree's manifest.
 
 ⛔ ATTRIBUTION IS THE RUN'S OWN. Which mutations a shard held is decided by the partition function of
@@ -30,14 +34,22 @@ or a bare `…`). A log that does not match that attribution exactly (counts, or
 never averaged: a cost assigned to the wrong target would skew every later partition in silence.
 ⛔ A RUN IS ITS SHARDS' IDENTITIES (⟳ r1, Codex 1): every index 1..total exactly once, one total, one
 event, checked before any row is accumulated — a count let a duplicate stand in for a missing shard.
-⛔ ONE SEED: a `schedule` run sweeps every suite under two hash seeds, so its times are not a shard's.
+⛔ PER SEED (⟳ backlog #651 r1, Claude M2; was "a `schedule` run is refused"): the table is ONE seed's
+seconds. A run that swept under N hash seeds (ci.yml's `--seeds`, backlog #506) ran every control, mutant
+and re-control once per seed, so each line's gap is divided by N — and N is the RUN'S OWN: the seeds its
+verdict line lists (`… under PYTHONHASHSEED 0, 654415945`, written by `check-plan-code.verdict_line` from
+the seeds it actually ran), never a number written here. A `schedule` log whose verdict lists none is
+REFUSED: its divisor would be a guess. ⚠ BOUND: gap / N is the MEAN over the seeds, an estimate of one
+seed's cost — the file writes and reverts around a mutant are counted N-fold too (small), and the one-off
+copy of the tree per extra seed happens before the first progress line, so it is in no gap.
 ⛔ NEVER WRITES A TABLE check-plan-code WOULD REFUSE (⟳ r1, Codex 3): the output is parsed by that
 reader first, so a bad run can never replace a usable table on disk.
 
 Exit: 0 written; 1 a log REFUSED (its reason printed); 2 CANNOT RUN (bad arguments, unreadable input).
 
-NO-CALLER: run by hand when the sweep's shard times drift — it reads downloaded CI logs, which no hook or
-workflow step has; `check-plan-code` reads the table it writes, and falls back to round-robin, LOUDLY,
+NO-CALLER: run by hand, from a completed nightly run's logs (above), when the sweep's shard times drift or
+`check-plan-code` says the table no longer covers the manifest — it reads downloaded CI logs, which no hook
+or workflow step has; `check-plan-code` reads the table it writes, and falls back to round-robin, LOUDLY,
 when that table is missing, unusable, or no longer covers the manifest.
 """
 from __future__ import annotations
@@ -64,6 +76,8 @@ PROG = re.compile(r"^\[(\d+)/(\d+)\] (.*)$")
 VERDICT = re.compile(r"^(OK|FAIL|NOT MEASURED|CANNOT RUN)\b.*\bmeasured over shard (\d+) of (\d+)")
 # The event whose sweep runs more than one hash seed (ci.yml's `--seeds`, backlog #506).
 MULTI_SEED_EVENT = "schedule"
+# The verdict line's own tail when the run was seed-varied (`check-plan-code.verdict_line`): the seeds it ran.
+SEEDS = re.compile(r" under PYTHONHASHSEED ([0-9]+(?:, [0-9]+)*)$")
 
 
 class Refused(ValueError):
@@ -99,12 +113,28 @@ def _env_count(env: str, key: str) -> int:
     return _count(env.split(":", 1)[1].strip(), key)
 
 
+def seed_count(verdict: str, event: str) -> int:
+    """PURE. How many hash seeds the shard ran every suite under: the number of seeds its OWN verdict line
+    lists, 1 when it lists none. ⛔ Never a constant: the workflow decides the seeds (`SEEDS=` in ci.yml's
+    sweep step) and may decide otherwise tomorrow; the verdict line is what the harness actually ran. A
+    `schedule` verdict that lists none is `Refused` — that event is seed-varied, so 1 would be a guess that
+    doubles every cost in the table."""
+    m = SEEDS.search(verdict)
+    if m:
+        return len(m.group(1).split(", "))
+    if event == MULTI_SEED_EVENT:
+        raise Refused(f"a {event!r} run sweeps every suite under several hash seeds (`--seeds`), and this "
+                      f"verdict line does not list them: the number to divide its times by is unknown")
+    return 1
+
+
 def parse_log(text: str) -> dict:
-    """PURE. One shard job's log -> `{index, total, event, prog: [(t, line)], end, verdict}`.
+    """PURE. One shard job's log -> `{index, total, event, seeds, prog: [(t, line)], end, verdict}`.
 
     `index` is 1-based (the env block's `SHARD_INDEX` is the 0-based `--shard0`). `end` is the verdict
     line's time, so the last re-control has a cost. Raises `Refused` when any of them is missing or
-    malformed, when the index is outside the total, when the run swept more than one seed, when the
+    malformed, when the index is outside the total, when a seed-varied run's verdict does not list its
+    seeds (`seed_count`), when the
     verdict is a selection (a PR run sweeps a DIFF-SCOPED subset, so its shards are not the table's
     partition), or when the run did not finish (NOT MEASURED / CANNOT RUN)."""
     idx = tot = end = verdict = event = None
@@ -133,9 +163,6 @@ def parse_log(text: str) -> dict:
         raise Refused(f"SHARD_INDEX {idx - 1} is outside 0..{tot - 1} (SHARD_TOTAL {tot})")
     if event is None:
         raise Refused("no EVENT in the job's env block, so the number of hash seeds the run swept is unknown")
-    if event == MULTI_SEED_EVENT:   # r1 (Claude M4)
-        raise Refused(f"a {event!r} run sweeps every suite under two hash seeds (`--seeds`): its times are "
-                      f"not one seed's shard")
     if end is None:
         raise Refused("no verdict line (`OK|FAIL ... measured over shard I of N`) after the progress lines")
     if not verdict.startswith(("OK", "FAIL")):
@@ -146,7 +173,8 @@ def parse_log(text: str) -> dict:
     v_idx, v_tot = _count(vm.group(2), "the verdict's shard"), _count(vm.group(3), "the verdict's total")
     if (v_idx, v_tot) != (idx, tot):
         raise Refused(f"the verdict names shard {vm.group(2)} of {vm.group(3)}, the env {idx} of {tot}")
-    return {"index": idx, "total": tot, "event": event, "prog": prog, "end": end, "verdict": verdict}
+    return {"index": idx, "total": tot, "event": event, "seeds": seed_count(verdict, event),
+            "prog": prog, "end": end, "verdict": verdict}
 
 
 def attribute(parsed: dict, mine: list, render) -> list:
@@ -156,7 +184,8 @@ def attribute(parsed: dict, mine: list, render) -> list:
     The layout is exact: one `control <t>` per touched target in sorted order, then one line per
     mutation `[k/len(mine)]` naming it, then one `re-control <t>` per target — each line EQUAL to what
     `render` writes for it (a long name cut with `…` exactly where `progress_line` cuts it, nowhere
-    else). A line's cost is the gap to the next line; the last one's is the gap to the verdict; a
+    else). A line's cost is the gap to the next line (the last one's: to the verdict) DIVIDED BY THE RUN'S
+    SEED COUNT (`parsed["seeds"]`, backlog #651 r1: one seed's seconds, whatever the run swept under); a
     negative gap is a clock running backwards. Anything else is `Refused` — never skipped, never
     re-ordered to fit."""
     targets = sorted({m["file"] for m in mine})
@@ -181,7 +210,7 @@ def attribute(parsed: dict, mine: list, render) -> list:
             want = render(j - n - k + 1, n, f"re-control {target}")
         if body != want:
             raise Refused(f"line {j + 1}: {body[:80]!r} is not {kind} line {want[:80]!r}")
-        out.append((kind, target, cost))
+        out.append((kind, target, cost / parsed["seeds"]))
     return out
 
 
@@ -240,7 +269,8 @@ def shard_holding(cpc, tree: pathlib.Path, muts: list, index: int, total: int) -
 
 def run_identity(logs: list) -> int:
     """PURE. `[(file name, parsed)]` of ONE run -> its shard total, or `Refused`. ⟳ r1 (Codex 1, Claude M4):
-    a run is every shard 1..total EXACTLY ONCE, under one total and one event — checked by IDENTITY, before
+    a run is every shard 1..total EXACTLY ONCE, under one total, one event and (backlog #651 r1) one SEED
+    COUNT (two divisors in one run is two runs, or a shard misread) — checked by IDENTITY, before
     any row is accumulated. Counting distinct shards let a duplicate log (a re-run attempt downloaded beside
     the first) be pooled twice, and let index 0 (read as the last shard) stand in for a missing one."""
     totals = sorted({pa["total"] for _, pa in logs})
@@ -249,6 +279,9 @@ def run_identity(logs: list) -> int:
     events = sorted({pa["event"] for _, pa in logs})
     if len(events) != 1:
         raise Refused(f"two events or more in one run ({events}): one run is one event")
+    seeds = sorted({pa["seeds"] for _, pa in logs})
+    if len(seeds) != 1:
+        raise Refused(f"two seed counts or more in one run ({seeds}): one run sweeps under ONE set of seeds")
     total, seen = totals[0], {}
     for name, pa in logs:
         if pa["index"] in seen:
@@ -471,10 +504,34 @@ def _self_test_body() -> int:
          "the verdict names shard 5 of 38, the env 5 of 123456789")
     case("...and an index outside 1..total says so", "outside 0.." in (refusal(parse_log, _bad_env["past the total"]) or ""),
          True)
-    # r1 (Claude M4): a SCHEDULE run sweeps every suite under two hash seeds, so its shard does ~twice a push's work.
-    case("⛔ r1: a SCHEDULE run (two hash seeds) is refused, and so is a log that does not say its event",
-         ("two hash seeds" in (refusal(parse_log, text.replace("EVENT: push", "EVENT: schedule")) or ""),
+    # r1 (Claude M4): a SCHEDULE run sweeps every suite under several hash seeds, so its shard does that many
+    # times a push's work. ⟳ backlog #651 r1: it is READ now (below), unless its verdict does not list them.
+    case("⛔ r1: a SCHEDULE run whose verdict does NOT list its seeds is refused, and so is a log that does not "
+         "say its event",
+         ("does not list them" in (refusal(parse_log, text.replace("EVENT: push", "EVENT: schedule")) or ""),
           "no EVENT" in (refusal(parse_log, text.replace("EVENT: push", "X: push")) or "")), (True, True))
+    # backlog #651 r1 (Claude M2): the nightly run is the only regular full sweep left, so it must be readable —
+    # at ONE seed's cost. The divisor is the run's own: the seeds its verdict lists. TWO DISTINCT COUNTS IN ONE
+    # CASE, so a divisor written as a constant (2, the count today) is red on the other. Row 0 is the fixture's
+    # 9.887793 s control gap; the last row's gap runs to the VERDICT (279.1234887 s), the other path to a cost.
+    _sched = text.replace("EVENT: push", "EVENT: schedule")
+
+    def _seeded(tail, src=None):
+        try:
+            _p = parse_log((src or _sched).replace("(round-robin)", "(round-robin)" + tail))
+            _r = attr(_p, mine)
+            return (_p["seeds"], round(_r[0][2], 4), round(_r[-1][2], 4))
+        except Exception as exc:
+            return f"RAISED {exc!r}"
+    case("⭐ #651 r1: a SCHEDULE run is read at ONE seed's cost — every gap divided by the number of seeds its own "
+         "verdict lists: by 2 under two seeds, by 3 under three, by 1 on a push that lists none",
+         (_seeded(" under PYTHONHASHSEED 0, 654415945"), _seeded(" under PYTHONHASHSEED 0, 7, 11"),
+          _seeded("", text)),
+         ((2, 4.9439, 139.5617), (3, 3.2959, 93.0412), (1, 9.8878, 279.1235)))
+    case("...and the seeds are read from ANY event's verdict (a seeded push divides too), only as the line's "
+         "own tail: the same words mid-line are no seed list",
+         (_seeded(" under PYTHONHASHSEED 3, 5", text)[:1],
+          _seeded(" under PYTHONHASHSEED 3, 5 (not the tail)", text)[:1]), ((2,), (1,)))
     # check-fixture-variation: `parse_log` had one direct call (the fixture); every other input reached it
     # through `refusal`, which only shows it refusing. A second log that PARSES, differing in what is read.
     try:
@@ -488,8 +545,9 @@ def _self_test_body() -> int:
 
     # r1 (Codex 1, Claude M4): a run is its shards' IDENTITIES, not their count — every one of 1..total exactly
     # once, one total, one event. Checked before any log's rows are accumulated.
-    def _ids(*xs):
-        return [(f"shard{i}.log", {"index": i, "total": t, "event": e}) for i, t, e in xs]
+    def _ids(*xs, seeds=(1, 1)):
+        return [(f"shard{i}.log", {"index": i, "total": t, "event": e, "seeds": seeds[j % 2]})
+                for j, (i, t, e) in enumerate(xs)]
     _runs = {"complete": _ids((1, 2, "push"), (2, 2, "push")),
              "duplicate": _ids((1, 2, "push"), (1, 2, "push")),
              "missing": _ids((2, 2, "push")),
@@ -499,6 +557,11 @@ def _self_test_body() -> int:
          {k: (lambda r: r if r is None else r.split(":")[0][:9])(refusal(run_identity, v)) for k, v in _runs.items()},
          {"complete": None, "duplicate": "a duplica", "missing": "missing s", "two totals": "two total",
           "two events": "two event"})
+    case("⛔ #651 r1: two SEED COUNTS in one run are refused (a shard read without its seeds beside one read with "
+         "them); the same count in every shard, 2 and 2, is a run",
+         ((refusal(run_identity, _ids((1, 2, "schedule"), (2, 2, "schedule"), seeds=(2, 1))) or "")[:15],
+          refusal(run_identity, _ids((1, 2, "schedule"), (2, 2, "schedule"), seeds=(2, 2)))),
+         ("two seed counts", None))
 
     # build_table: medians for the fixed costs, MEAN for the per-mutation cost — values chosen so a
     # median and a mean of each list DIFFER, so swapping them goes red.

@@ -20755,3 +20755,9 @@ a master push, the concurrency key carries `github.event_name`, `SAMPLE_KEY` is 
 43721952922 (`65e6f562`): 38/38 green, slowest 1,043 s. Self-test 489 -> 505 cases; mutations 5,181 -> 5,190, the 9 new ones each killed on a temp copy. Not yet
 seen on CI: a scheduled run and its 12-shard cap, a master push skipping both sweep jobs, and the sampled
 PR shards.
+Review round 1 fold (8 findings, all fixed): `scripts/session-state.py` prints `FULL SWEEP: last completed
+N h ago` at session start, STALE past 36 h, CANNOT VERIFY when `gh` does not answer (148 cases, 127
+mutations); `scripts/sweep-costs.py` reads a scheduled run at one seed's cost, the divisor being the seeds
+the run's own verdict line lists (35 cases, 33 mutations); `sample_manifests` has a case that ranks
+hand-written digests (506 cases, 370 mutations). Backlog #231's line is restated for scheduled runs: any
+shard over 3,000 s reopens it. A defect the sample misses is found up to ~38 h after its merge.

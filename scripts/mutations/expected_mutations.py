@@ -969,7 +969,9 @@ EXPECTED_MUTATIONS = {
     # the fraction, the key in the hash, an EMPTY key, the harness file's own manifest, the `continue` that keeps a
     # sampled harness path out of rules 4-8, the union into the selection, main()'s --sample-key wiring and its
     # refusal without --event. Each red on a staged copy outside the repository.
-    "scripts/check-plan-code.py": 369,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-15, backlog #651 r1 fold (Codex): 369 -> 370. The sample taking the HIGHEST-ranked targets — every
+    # earlier sample case held under either direction; the new one ranks hand-written digests itself.
+    "scripts/check-plan-code.py": 370,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -1659,7 +1661,12 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-14, backlog #514 r1 fold: 117 -> 119. #505's pairing RESTORED (Codex: goal-only was a loosening), so
     # the two re-bound #505 entries are master's again and "a goal-only entry is refused" is retired (it is #505's own
     # mutation now); three new: a declared wait never stored, a blank or padded goal accepted, --waits never passed.
-    "scripts/session-state.py": 119,
+    # ⟳ 2026-11-15, backlog #651 r1 fold (Claude M1): 119 -> 127, one re-bound (collect()'s sweep-red wiring, whose
+    # line gained an argument), eight new on the nightly full sweep's liveness line: a stale sweep read as fresh, the
+    # limit raised to 48 h, a cancelled run counted as a sweep, a gh failure read as an empty list, collect() not
+    # reading the runs, the age taken from the wall clock, an unverified line unmarked, the reader not scoped to
+    # the schedule.
+    "scripts/session-state.py": 127,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
@@ -1692,7 +1699,10 @@ EXPECTED_MUTATIONS = {
     # the p90 defaults and their rank, the refused table never written. Four re-bound to the exact compare.
     # ⟳ 27 -> 29, #588 r2 fold: a count's length bound, and the verdict line's counts through the bounded reader.
     # Two re-bound (the verdict/env compare, whose line moved; the digits pattern).
-    "scripts/sweep-costs.py": 29,
+    # ⟳ 29 -> 33, backlog #651 r1 fold (Claude M2): a nightly (seed-varied) run is READ, at one seed's cost — the
+    # gap not divided, the divisor a constant 2, a seed list read mid-line, two seed counts in one run. Two
+    # re-bound to the renamed refusal case (a schedule verdict that lists no seeds; an unnamed event).
+    "scripts/sweep-costs.py": 33,
     # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
     # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which

@@ -4599,6 +4599,17 @@
     "expect": "...and a harness-only diff of the workflow selects the sample alone: 9 of 41"
   },
   {
+    "name": "backlog #651 r1: the sample takes the HIGHEST-ranked targets, not the lowest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "f\"{key}\\0{t}\".encode()).hexdigest())[:n])",
+        "f\"{key}\\0{t}\".encode()).hexdigest(), reverse=True)[:n])"
+      ]
+    ],
+    "expect": "⭐ #651 r1: the sample is the LOWEST-ranked targets — against digests written out by hand, ceil(40% of 5) is {a, c} and all five is every one; the highest two, {b, d}, would be a different rule"
+  },
+  {
     "name": "backlog #651: the sample is computed and never added to the selection",
     "file": "scripts/check-plan-code.py",
     "edits": [

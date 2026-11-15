@@ -1695,8 +1695,8 @@ def pin_pair(run, base: str) -> "tuple[dict, dict]":
     # differently when IMPORTED than when RUN is not seen here. (R8) a write to `EXPECTED_MUTATIONS` inside
     # a function called at run time, such as one line in `load_manifests`; (R9) a rebinding under
     # `if __name__ == "__main__":`, or a branch on `sys.argv`; (R9b) the same through `globals()`. Each
-    # edits `check-plan-code.py`, the sweep harness, so the PR sweeps FULL and the edit is in the reviewed
-    # diff. ⛔ Do not add a static shape check for them: that is the treadmill this comparison replaced.
+    # edits `check-plan-code.py`, the sweep harness, so the PR runs the harness SAMPLE (backlog #651; no
+    # longer FULL), `pin_drift` reads every manifest in every shard, and the edit is in the reviewed diff. ⛔ Do not add a static shape check for them: that is the treadmill this comparison replaced.
     rev = mb.stdout.strip()
     base_home, base_text = pins_text(run, rev)
     head_home, head_text = pins_text(run, "HEAD")

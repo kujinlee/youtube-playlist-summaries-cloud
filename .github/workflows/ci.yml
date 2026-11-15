@@ -26,8 +26,11 @@ on:
   # and a text-bound defect in an UNSELECTED manifest (backlog #109's orphaned anchor) is seen only by
   # running the whole manifest. A red one opens (or comments on) a `sweep-red` issue: see
   # `mutation-sweep-complete`.
-  # ⟳ backlog #651 (owner 11-15, option A): this is now the ONLY full sweep — master pushes no longer run
-  # one, and a pull request that changes the harness runs a ~20% SAMPLE (`check-plan-code.sample_manifests`).
+  # ⟳ backlog #651 (owner 11-15, option A): this is now the only REGULAR full sweep — master pushes no longer
+  # run one, and a pull request that changes the harness runs a ~20% SAMPLE (`check-plan-code.sample_manifests`).
+  # ⚠ Not the only one there is (r1, Codex): a `batch/**` push still sweeps in full, when someone assembles one.
+  # ⚠ LIVENESS (r1, Claude M1): nothing in CI notices this run NOT happening. `scripts/session-state.py` prints
+  # the age of the last scheduled run that completed at every session start, and flags it past 36 h.
   # 08:30 UTC = 00:30 PST (01:30 PDT). ⚠ Not 09:00: `schema-gates.yml`'s `prod-drift` cron is 09:00 UTC. That
   # workflow keys its concurrency group on the event, and so does this one now (below), so neither cancels the
   # other; the half hour keeps the 38 shards' first wave from also competing with `prod-drift` for runners.
@@ -44,7 +47,7 @@ on:
 # backlog #534: a `batch/**` push is a push too, so it is never cancelled either — and each batch has its own
 # branch name, so its group holds only its own run.
 # ⟳ backlog #651: `github.event_name` IS IN THE KEY, as in `schema-gates.yml` — the schedule and a master push
-# share `github.ref`, and in one group the up-to-60-minute nightly sweep would hold every master push PENDING
+# share `github.ref`, and in one group the multi-hour nightly sweep would hold every master push PENDING
 # behind it, where a second push replaces (cancels) the first's pending run. Its own group, its own queue.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
