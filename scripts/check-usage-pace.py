@@ -176,7 +176,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 445 cases
+    python3 scripts/check-usage-pace.py --self-test  # 446 cases
 """
 from __future__ import annotations
 
@@ -1577,6 +1577,15 @@ def _self_test_body() -> int:
               "the meter log is unreadable: /m was not read within 1 s" in evaluate(cache(91), NOW, meter=None,
                                                                                 meter_why="/m was not read within 1 s")[1],
               True)
+        # backlog #645 r3: `parts` passed DIRECTLY, at three distinct readings in ONE case (CI's parameter-variation check:
+        # every other call site leaves it at its default). FREE -> no sentence, not alone; a 5h-only WARN -> the sentence,
+        # alone; the same 5h reading under a weekly WARN -> the sentence, NOT alone (the weekly text is the WARN's reason).
+        _pp = [{}, {}, {}]
+        for _p, _c in zip(_pp, (cache(10, five=0, five_reset=NOW + 9000), cache(10, five=75, five_reset=NOW + 9000),
+                                cache(85, five=75, five_reset=NOW + 9000))):
+            evaluate(_c, NOW, parts=_p)
+        check("⭐ #645 r3: evaluate(parts=…) receives the 5h sentence and `alone` — FREE / 5h-only WARN / weekly WARN",
+              [(bool(_p.get("five")), _p.get("alone")) for _p in _pp], [(False, False), (True, True), (True, False)])
         check("#500: last week's rows and future rows never set start%, and garbage lines are skipped",
               (day_start(meter((NOW - 60, 85, WEEK_RESET - 7 * 86400)), NOW, WEEK_RESET),
                day_start(meter((NOW + 600, 85, WEEK_RESET)), NOW, WEEK_RESET)[0],
