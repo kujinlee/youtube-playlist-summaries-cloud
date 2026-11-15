@@ -1159,6 +1159,11 @@ jobs:
         # a 1.15x spread; CONTIGUOUS 27-491s, a 17.9x spread, with the long shard carrying the
         # expensive block alone. At N=16 contiguous reaches 63x. A per-shard mutation COUNT is
         # even either way, which is exactly why counting them proves nothing.
+        # ⟳ 2026-11-14 backlog #588: that CONTIGUOUS was a cut by COUNT. The partition is now a contiguous
+        # cut by estimated COST (`sweep_partition`, from the committed table scripts/sweep-costs.json), which
+        # keeps a target's block together AND balances the work; round-robin is its loud FALLBACK when the
+        # table is missing or corrupt. Why: round-robin makes every shard pay control + re-control for
+        # ~63 targets, the floor measured below.
         #
         # ⟳ 2026-10-24: 8 -> 12, backlog #231, WHOSE TRIGGER FIRED. Its FAILS IF is "any shard
         # exceeds 1,500s on master". Measured on master run 40031532664 (92c78bff), per shard
@@ -1262,6 +1267,10 @@ jobs:
         # IN-SAMPLE: the costs were fitted on that run, so it shows the partition arithmetic is consistent, not that the
         # model predicts. The floor barely moves with N, because a shard still touches 53-64 of the 91 targets at N=38
         # (65-70 at N=24): floor mean 491s at 24, 470s at 38.
+        # ⟳ 2026-11-14 backlog #588 attacks THAT floor: the cost cut keeps each target's entries on 1-2 shards, so
+        # a shard controls a handful of targets. PREDICTED by `scripts/sweep-costs.py --predict 38` over the table
+        # built from runs 43662666915 (033fe20c) and 43625371110 (26a04323): slowest shard 746s of work, against
+        # 1,438-1,611s measured on those runs under round-robin. A prediction, not a measurement, until a run lands.
         # COST OF MORE SHARDS, MEASURED by `shard_slice` over the 4,505 entries: control-suite runs rise ~1.37x (1,620
         # target-shard pairs at N=24, 2,218 at N=38): in aggregate ~37% more control runs that a flaky suite could turn
         # into CANNOT RUN at the after-control check (per target the rise ranges from 0 to ~58%) — the failure this
@@ -1370,7 +1379,8 @@ jobs:
       # `changed_from_nul` refuses such a list (-> the whole manifest). `--no-renames` lists a
       # rename's SOURCE too (backlog #480), so renaming a guard away still selects its readers.
       # ⚠ The shard flag needs no arithmetic here: `--shard0` takes the matrix's 0-based index, and
-      # the shards split the SELECTED entries round-robin (`shard_slice`, unchanged).
+      # the shards split the SELECTED entries by the cost cut (`sweep_shard`, backlog #588; round-robin
+      # `shard_slice` only as the announced FALLBACK). The step prints a PARTITION line naming which.
       - name: Mutation manifest against the delivered scripts (one shard)
         env:
           SHARD_INDEX: ${{ strategy.job-index }}

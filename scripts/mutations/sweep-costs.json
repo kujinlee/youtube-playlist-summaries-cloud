@@ -1,0 +1,80 @@
+[
+  {
+    "name": "backlog #588: the 0-based SHARD_INDEX is read as 1-based, so every log is attributed to the shard after its own",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["            idx = int(env.split(\":\", 1)[1]) + 1", "            idx = int(env.split(\":\", 1)[1])"]],
+    "expect": "the real excerpt parses: shard 5 of 38 (SHARD_INDEX 4 is 0-based), 9 progress lines, an OK verdict"
+  },
+  {
+    "name": "backlog #588: the runner's fractional seconds are dropped, so a sub-second suite costs 0 or 1 s",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    return t + (float(\"0.\" + frac) if frac else 0.0)", "    return t"]],
+    "expect": "...with the runner's 7-digit fractional seconds kept (control 1 -> control 2 is 9.887793 s)"
+  },
+  {
+    "name": "backlog #588: a mutation line's NAME is not checked, so a log is averaged in under the wrong attribution",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["            if (done, tot) != (j - n + 1, k) or not mu[\"name\"].startswith(label.rstrip(\"…\")):", "            if (done, tot) != (j - n + 1, k):"]],
+    "expect": "⛔ a wrong NAME at a mutation line is refused (the `…`-cut label is a prefix of the right one only)"
+  },
+  {
+    "name": "backlog #588: the progress-line COUNT is not checked, so a shard that held more than it ran is read",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if len(prog) != 2 * n + k:", "    if len(prog) > 2 * n + k:"]],
+    "expect": "⛔ a wrong COUNT (the shard held one more mutation than the log ran) is refused"
+  },
+  {
+    "name": "backlog #588: a control line's TARGET is not checked",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["            if (done, tot, label) != want:", "            if (done, tot) != want[:2]:"]],
+    "expect": "⛔ a wrong TARGET order (the shard's targets are not the controls the log ran) is refused"
+  },
+  {
+    "name": "backlog #588: a re-control line's TARGET is not checked",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["            if (done, tot, label) != (i + 1, n, f\"re-control {targets[i]}\"):", "            if (done, tot) != (i + 1, n):"]],
+    "expect": "⛔ ...and a re-control naming another target is refused"
+  },
+  {
+    "name": "backlog #588: a PR's DIFF-SCOPED shard is read as the full partition",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if \"DIFF-SCOPED\" in verdict or \"ONLY\" in verdict:", "    if \"ONLY\" in verdict:"]],
+    "expect": "⛔ a DIFF-SCOPED (PR) run is refused: its shards are not the full partition"
+  },
+  {
+    "name": "backlog #588: an unfinished shard (NOT MEASURED) is read, so a budget stop's truncated tail is costed",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if not verdict.startswith((\"OK\", \"FAIL\")):", "    if False:"]],
+    "expect": "⛔ an unfinished shard (NOT MEASURED) is refused"
+  },
+  {
+    "name": "backlog #588: a verdict naming another shard than the env block is accepted",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if (int(vm.group(2)), int(vm.group(3))) != (idx, tot):", "    if False:"]],
+    "expect": "⛔ a verdict naming another shard than the env block is refused"
+  },
+  {
+    "name": "backlog #588: control is the MEAN, so one cold runner's first suite skews the target",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["        targets[t] = {\"control\": r3(statistics.median(b[\"control\"])),", "        targets[t] = {\"control\": r3(statistics.fmean(b[\"control\"])),"]],
+    "expect": "⭐ control and re-control are MEDIANS, per-mutation the MEAN; a partial target is left to the defaults"
+  },
+  {
+    "name": "backlog #588: per-mutation is the MEDIAN, which a partition summing the costs underestimates",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["                      \"mutation\": r3(statistics.fmean(b[\"mutation\"])),", "                      \"mutation\": r3(statistics.median(b[\"mutation\"])),"]],
+    "expect": "⭐ control and re-control are MEDIANS, per-mutation the MEAN; a partial target is left to the defaults"
+  },
+  {
+    "name": "backlog #588: the default fixed cost counts the control only",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["                         \"fixed\": r3(statistics.median(v[\"control\"] + v[\"recontrol\"]", "                         \"fixed\": r3(statistics.median(v[\"control\"]"]],
+    "expect": "...the defaults are the median mutation cost and the median control + re-control"
+  },
+  {
+    "name": "backlog #588: nothing to tabulate is written as an empty table",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if not targets or not allmut:", "    if not allmut:"]],
+    "expect": "⛔ nothing to tabulate is refused, not written as an empty table"
+  }
+]

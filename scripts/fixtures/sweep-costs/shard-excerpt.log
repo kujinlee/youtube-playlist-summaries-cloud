@@ -1,0 +1,17 @@
+# backlog #588 fixture: shard 5 of 38 of CI run 43662666915 (commit 033fe20c), job log TRIMMED by hand.
+# Kept verbatim (timestamps, names, verdict): the env block's shard lines, the controls and re-controls of its
+# first TWO targets, its first FIVE mutations (those two targets'), and the verdict. Dropped: every other line.
+# The [k/M] counters are RENUMBERED to the trimmed shard (2 targets, 5 mutations), so a gap that crosses a
+# dropped line is longer than the real one. Lines starting '#' match no log line and are ignored.
+2026-11-15T01:21:29.8536788Z   SHARD_INDEX: 4
+2026-11-15T01:21:29.8536995Z   SHARD_TOTAL: 38
+2026-11-15T01:21:33.2365152Z [1/2] control scripts/ask_answerer.py
+2026-11-15T01:21:43.1243079Z [2/2] control scripts/backfill-work-lines.py
+2026-11-15T01:26:26.2385119Z [1/5] a claim counts as a run, so a question refused by the cap spends the c…
+2026-11-15T01:26:35.5918566Z [2/5] a run that reported no usage counts as zero tokens
+2026-11-15T01:26:44.9440468Z [3/5] the banner need not name the cleared plan
+2026-11-15T01:26:45.5841025Z [4/5] a clean heredoc on stdin is still opaque
+2026-11-15T01:26:46.1837274Z [5/5] --backup copies nothing
+2026-11-15T01:40:39.1828338Z [1/2] re-control scripts/ask_answerer.py
+2026-11-15T01:40:48.5533038Z [2/2] re-control scripts/backfill-work-lines.py
+2026-11-15T01:45:27.6767925Z OK — delivered scripts mutated: 64 file(s), 134 mutation(s), 134 killed, 134 attributed to the case each names, 0 survivor(s) — measured over shard 5 of 38 (round-robin)
