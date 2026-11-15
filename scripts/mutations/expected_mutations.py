@@ -2332,4 +2332,10 @@ EXPECTED_MUTATIONS = {
     # dedupe, posix_spawn echo, unobservable entries), per run_isolated rule (path, PATH lookup, log reset, env, cwd,
     # timeout), the hook itself and the CLI's three exits: 34.
     "scripts/mkt_isolate.py": 34,
+    # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
+    # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
+    # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out
+    # directory, plan-before-write, bytes, mode, the two manifests), per `read_marketplace` handler, per `install`
+    # rule (listed plugin, cwd, timeout, exit codes, the installed path) and the CLI's exits: 47.
+    "scripts/mkt_stage.py": 47,
 }

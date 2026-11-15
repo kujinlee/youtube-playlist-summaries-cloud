@@ -1,0 +1,519 @@
+[
+ {
+  "name": "staging rewrites a file's bytes (a repair)",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "            shutil.copyfile(src, dst)\n",
+    "            dst.write_bytes(src.read_bytes().rstrip() + b\"\\n\")\n"
+   ]
+  ],
+  "expect": "staging copies bytes unchanged"
+ },
+ {
+  "name": "staging drops the permission bits",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "            os.chmod(dst, stat.S_IMODE(src.stat().st_mode))\n",
+    ""
+   ]
+  ],
+  "expect": "staging keeps permission bits: an executable stays one, a plain file stays plain"
+ },
+ {
+  "name": "a skill lands at its whole repo path, not skills/<name>",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "            add(src, f\"skills/{Path(rel).name}/{sub}\")",
+    "            add(src, f\"{rel}/{sub}\")"
+   ]
+  ],
+  "expect": ".agents/skills/shared lands at <plugin>/skills/shared, so ../shared/x.md resolves from an installed skill"
+ },
+ {
+  "name": "a declared file is flattened to its base name",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        add(real, rel)\n",
+    "        add(real, Path(rel).name)\n"
+   ]
+  ],
+  "expect": "a declared file lands at its repo-relative path under the plugin"
+ },
+ {
+  "name": "a skill entry that is a file is walked anyway",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if not real.is_dir():\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a skill entry that is a file is CANNOT RUN"
+ },
+ {
+  "name": "an empty skill directory is staged as nothing",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if not found:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a skill directory holding no files is CANNOT RUN, even beside a real file"
+ },
+ {
+  "name": "a directory in files is accepted",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if not real.is_file():\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a file entry that is a directory is CANNOT RUN"
+ },
+ {
+  "name": "a file from under .agents/skills is accepted in files",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if _below(real, top / SKILLS_HOME):\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a FILE from under .agents/skills declared in files is CANNOT RUN (it would land outside skills/)"
+ },
+ {
+  "name": "the .agents/skills test reads the declared path, not the resolved one",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "_below(real, top / SKILLS_HOME)",
+    "_below(top / rel, top / SKILLS_HOME)"
+   ]
+  ],
+  "expect": "...and so is the same file reached through a link (.claude/skills/a/SKILL.md)"
+ },
+ {
+  "name": "a declared file may land in .claude-plugin",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if rel.split(\"/\")[0] == META:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a declared file landing in the plugin's .claude-plugin is CANNOT RUN"
+ },
+ {
+  "name": "an empty package is staged",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if not dests:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a package declaring nothing is CANNOT RUN"
+ },
+ {
+  "name": "two declarations on one path: the second silently wins",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if dest in dests:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "two skills landing on one name is CANNOT RUN (.agents/skills/b and its link named b)"
+ },
+ {
+  "name": "a declared path is not normalised, so `./x` and `x` are two paths",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    return \"/\".join(parts)\n",
+    "    return path\n"
+   ]
+  ],
+  "expect": "a file declared twice is CANNOT RUN"
+ },
+ {
+  "name": "an absolute declared path is accepted",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "Path(path).is_absolute() or ",
+    ""
+   ]
+  ],
+  "expect": "an absolute declared path is CANNOT RUN (a declaration is repo-relative)"
+ },
+ {
+  "name": "a declared path with `..` is accepted",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    " or \"..\" in parts:",
+    ":"
+   ]
+  ],
+  "expect": "a declared path with `..` is CANNOT RUN"
+ },
+ {
+  "name": "an empty declared path is accepted",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "if not parts or ",
+    "if "
+   ]
+  ],
+  "expect": "an empty declared path is CANNOT RUN"
+ },
+ {
+  "name": "an absent path is not told apart from a bad link",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if not os.path.lexists(path):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a declared path that does not exist is CANNOT RUN"
+ },
+ {
+  "name": "a link out of the repository is followed",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if not _below(real, top):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a declared file linking OUTSIDE the repository is CANNOT RUN"
+ },
+ {
+  "name": "a dangling link resolves without complaint",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        real = path.resolve(strict=True)\n",
+    "        real = path.resolve(strict=False)\n"
+   ]
+  ],
+  "expect": "a dangling link inside a skill is CANNOT RUN, never a skipped file"
+ },
+ {
+  "name": "the walk forgets the directories above it",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    out, here = [], above | {real}\n",
+    "    out, here = [], above\n"
+   ]
+  ],
+  "expect": "a link to its own directory is a cycle too"
+ },
+ {
+  "name": "a link cycle is not refused",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "            if child in here:\n",
+    "            if False:\n"
+   ]
+  ],
+  "expect": "a link cycle inside a skill is CANNOT RUN, never an endless walk"
+ },
+ {
+  "name": "a non-file, non-directory entry is skipped in silence",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "            raise CannotRun(f\"{rel}/{name} is neither a file nor a directory\")\n",
+    "            continue\n"
+   ]
+  ],
+  "expect": "something in a skill that is neither file nor directory is CANNOT RUN, never skipped"
+ },
+ {
+  "name": "no packages stages an empty marketplace",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if not packages:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "no packages at all is CANNOT RUN"
+ },
+ {
+  "name": "any marketplace name is accepted",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if not NAME_RE.match(marketplace):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a marketplace name that is not a name is CANNOT RUN"
+ },
+ {
+  "name": "any package name is accepted",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if not NAME_RE.match(spec.name):\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a package name `claude plugin install` cannot address is CANNOT RUN, for two bad names"
+ },
+ {
+  "name": "any version is accepted",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if not VERSION_RE.match(spec.version):\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a version that is empty or a path is CANNOT RUN"
+ },
+ {
+  "name": "two packages with one name are staged onto each other",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if spec.name in seen:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "two packages with one name is CANNOT RUN"
+ },
+ {
+  "name": "an out directory inside the repository is used",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if _below(out.resolve(), top):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "an out directory inside the repository is CANNOT RUN (experiments run outside it)"
+ },
+ {
+  "name": "a non-empty out directory is staged onto",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if out.exists() and (not out.is_dir() or any(out.iterdir())):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a non-empty out directory is CANNOT RUN (a marketplace is staged fresh)"
+ },
+ {
+  "name": "packages are planned lazily, so a late refusal leaves files behind",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    plans = [(spec, plan(spec, top)) for spec in packages]",
+    "    plans = ((spec, plan(spec, top)) for spec in packages)"
+   ]
+  ],
+  "expect": "a refusal in the SECOND package writes nothing at all"
+ },
+ {
+  "name": "the marketplace name is always the default",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "                {\"name\": marketplace, \"owner\"",
+    "                {\"name\": MARKETPLACE, \"owner\""
+   ]
+  ],
+  "expect": "the marketplace name is the caller's when given"
+ },
+ {
+  "name": "every plugin's source is the marketplace root",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "\"source\": f\"./{spec.name}\"",
+    "\"source\": \"./\""
+   ]
+  ],
+  "expect": "marketplace.json names the marketplace and lists each package with its own source and version"
+ },
+ {
+  "name": "plugin.json carries no version",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "                    {\"name\": spec.name, \"version\": spec.version, \"description\"",
+    "                    {\"name\": spec.name, \"version\": \"0.0.1\", \"description\""
+   ]
+  ],
+  "expect": "each package gets its own plugin.json, with its own name and version"
+ },
+ {
+  "name": "a manifest that is not JSON crashes instead of CANNOT RUN",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    ", ValueError, KeyError, TypeError) as e:",
+    ") as e:"
+   ]
+  ],
+  "expect": "read_marketplace on a manifest that is not JSON, or lacks a field, is CANNOT RUN"
+ },
+ {
+  "name": "a missing manifest crashes instead of CANNOT RUN",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "except (OSError, ValueError",
+    "except (ValueError"
+   ]
+  ],
+  "expect": "read_marketplace on a directory with no marketplace.json is CANNOT RUN"
+ },
+ {
+  "name": "an unlisted plugin is installed anyway",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if plugin not in versions:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a plugin the marketplace does not list is CANNOT RUN, and nothing is run"
+ },
+ {
+  "name": "install runs from the caller's directory",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    cwd = world.root / \"work\"\n",
+    "    cwd = Path.cwd()\n"
+   ]
+  ],
+  "expect": "install runs from a directory inside the world, never the caller's"
+ },
+ {
+  "name": "install ignores its timeout",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        rec = run(world, argv, cwd, timeout)\n",
+    "        rec = run(world, argv, cwd, 120)\n"
+   ]
+  ],
+  "expect": "install passes its timeout to each call, for two timeouts"
+ },
+ {
+  "name": "a failed claude call is read as success",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if rec.rc != 0:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a failed `marketplace add` is CANNOT RUN, carries claude's stderr, and install is never run"
+ },
+ {
+  "name": "only the last claude call's exit is checked",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "if rec.rc != 0:",
+    "if rec.rc != 0 and argv[2] == \"install\":"
+   ]
+  ],
+  "expect": "a failed `marketplace add` is CANNOT RUN, carries claude's stderr, and install is never run"
+ },
+ {
+  "name": "install returns a path that does not exist",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if not installed.is_dir():\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "an installed directory that is NOT there after a zero exit is CANNOT RUN"
+ },
+ {
+  "name": "the installed path ignores the version",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "/ mkt / plugin / versions[plugin]\n",
+    "/ mkt / plugin\n"
+   ]
+  ],
+  "expect": "an installed directory for ANOTHER version does not count"
+ },
+ {
+  "name": "the installed path is read outside the world's home",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    installed = world.home / \".claude\"",
+    "    installed = world.root / \".claude\""
+   ]
+  ],
+  "expect": "install returns the installed directory under the WORLD's home, for two plugins and versions"
+ },
+ {
+  "name": "install addresses the plugin without its marketplace",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "[\"claude\", \"plugin\", \"install\", f\"{plugin}@{mkt}\"]",
+    "[\"claude\", \"plugin\", \"install\", plugin]"
+   ]
+  ],
+  "expect": "install runs `marketplace add <root>` then `install <plugin>@<marketplace>`, in that order"
+ },
+ {
+  "name": "CLI: a refusal exits 0",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        print(f\"CANNOT RUN: {e}\", file=sys.stderr)\n        return 2\n    print(root)",
+    "        print(f\"CANNOT RUN: {e}\", file=sys.stderr)\n        return 0\n    print(root)"
+   ]
+  ],
+  "expect": "CLI: a refusal is CANNOT RUN on stderr (rc 2), prints no root and writes nothing"
+ },
+ {
+  "name": "CLI: --marketplace never reaches stage",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "                     opts.marketplace)\n",
+    "                     MARKETPLACE)\n"
+   ]
+  ],
+  "expect": "CLI: --marketplace, --skill and a repeated --file all reach stage"
+ },
+ {
+  "name": "CLI: the root is not printed",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    print(root)\n    return 0\n",
+    "    return 0\n"
+   ]
+  ],
+  "expect": "CLI: stages one package and prints the marketplace root (rc 0)"
+ }
+]

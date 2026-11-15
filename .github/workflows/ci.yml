@@ -875,6 +875,12 @@ jobs:
       - name: mkt_isolate self-test
         run: python3 scripts/mkt_isolate.py --self-test
 
+      # The staging tool (marketplace-inventory plan, Task 3). A library like the one above. Its one
+      # live case needs `claude`, which this runner does not have: it prints `NOT RUN: claude missing`
+      # and is not in the declared count, here or locally.
+      - name: mkt_stage self-test
+        run: python3 scripts/mkt_stage.py --self-test
+
       # One link function for every key (backlog #470). `--sources` is rule 2: no href to a key's
       # home page is built in scripts/ outside page_markup.key_link. The page rules (1, 1b, 3, 4, 5)
       # read BUILT pages: `--build --ci` builds the four a checkout can build (dashboard, goals and

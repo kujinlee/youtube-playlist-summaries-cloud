@@ -20762,3 +20762,18 @@ and captures Python file opens and launches with a `sitecustomize` audit hook. E
 author's environment would reach (root or HOME entry inside the repo, extra env keys, the explainer port listening).
 49 self-test cases, 34 mutations, wired per W1-W8. `docs/marketplace/isolation-baseline.md`, `README.md` and
 `spend-log.md` added.
+
+## 2026-11-15
+The marketplace work has its second tool: it packs a chosen set of this project's files into a small local
+"store" of the kind Claude Code installs plugins from, so the next step can install them on a fresh account
+and see whether they work. It copies files exactly as they are and refuses anything it cannot pack honestly.
+<!--tech-->
+Marketplace-inventory plan Task 3: `scripts/mkt_stage.py` (`PackageSpec`, `plan`, `stage`, `read_marketplace`,
+`install`, CLI). `stage` writes `marketplace.json` and one plugin directory per package; a skill directory lands at
+`skills/<name>` (so `.agents/skills/shared` becomes `skills/shared`), a file at its repo-relative path, a link as
+the contents it points to, bytes and permission bits unchanged. CANNOT RUN for a path that is absent, absolute,
+outside the repository, a dangling or looping link, an empty package, two declarations on one path. `install` runs
+`claude plugin marketplace add` and `install` in a `mkt_isolate` world and returns the installed directory, or
+CANNOT RUN when it is not there. 63 self-test cases plus one live case (`claude plugin validate`, NOT RUN where
+`claude` is absent, outside the count); 47 mutations; wired per W1-W8. `install` is exercised only against a
+stand-in here; the first live install is Task 4.
