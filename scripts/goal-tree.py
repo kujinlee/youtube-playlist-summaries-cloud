@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 523 cases
+    python3 scripts/goal-tree.py --self-test                 # 524 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -2622,13 +2622,13 @@ section.agenda .ag-when{display:inline-block;margin-top:.55rem;font-family:var(-
 section.agenda .ag-when::first-letter{text-transform:uppercase}
 section.agenda h2{margin:.5rem 0}
 section.agenda h3{font-size:.9rem;margin:.8rem 0 .3rem;color:var(--ink-soft)}
-.waits{color:var(--warn,#d29922);font-size:.85rem;white-space:nowrap}
+.waits{color:var(--warn,#d29922);font-size:.85rem;overflow-wrap:anywhere}
 h2.agenda-h{margin:.4rem 0 .1rem;color:var(--accent);font-size:1.4rem;font-weight:700}
 section.agenda .meta{margin:.1rem 0}
 section.agenda .recap{margin:.6rem 0 .2rem;font-size:1rem;max-width:none}
 section.agenda .digest{display:grid;grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));gap:.2rem 2rem}
-section.agenda .digest ul{list-style:none;margin:.2rem 0 .5rem;padding:0;font-size:.88rem}
-section.agenda .digest li{margin:.25rem 0}
+section.agenda .digest ul{min-width:0;list-style:none;margin:.2rem 0 .5rem;padding:0;font-size:.88rem}
+section.agenda .digest li{margin:.25rem 0;min-width:0}
 section.agenda .chip{display:inline-block;font-family:var(--mono);font-size:.7rem;color:var(--accent);
                border:1px solid var(--accent);border-radius:.8rem;padding:0 .5rem;margin-right:.3rem}
 section.agenda .what{color:var(--ink-soft)}
@@ -3070,6 +3070,12 @@ def _self_test_cases(*, outside: dict) -> int:
             '> 2026-10-28 03:41 "the second goal"\n'
             "- bookkeeping · PR #20 · filed rows\n")
     # ── backlog #406: a sibling is imported ONCE PER PATH inside a sweep, and afresh outside one ──────────
+    # ── owner 11-15 05:45: a long "waits for" line ran out of its Owed column into Focus ─────────────────
+    _wr = CSS.split(".waits{", 1)[1].split("}", 1)[0]
+    case("a waits-for line WRAPS inside its column (never nowrap; long words break; grid cells may shrink)",
+         ("nowrap" not in _wr, "overflow-wrap:anywhere" in _wr,
+          "min-width:0" in CSS.split("section.agenda .digest ul{", 1)[1].split("}", 1)[0]),
+         (True, True, True))
     case("backlog #406: the same sibling twice is ONE import", _sibling("gen-work-lines") is _sibling("gen-work-lines"),
          True)
     case("backlog #406: OUTSIDE a sweep, the same sibling twice is TWO imports", outside["fresh"], True)
