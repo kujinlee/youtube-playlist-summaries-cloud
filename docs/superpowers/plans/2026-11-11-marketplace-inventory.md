@@ -116,6 +116,11 @@ splits Task 1's commit into its own PR (Task 4 Step 5; ⟳ r2 CLAUDE m4).
 | E | `mkt-experiment` | 13-16 | seeded repo builder, tier-A and tier-B records, scan fixes | no (read-only clone) |
 | F | `mkt-inventory` | 17-22 | effort (1)/(2) readings, inventory guard, cost record, checkpoint, inventory | no; Task 21 may STOP for the owner |
 
+> ⟳ **2026-11-15, branch name.** The owner ruled on 2026-11-14 that the work has ONE branch name,
+> `harness-ships-elsewhere`. Slice B is built there, so wherever this plan says `mkt-spike` (this table, Task 1
+> Step 4 and Task 1's FAILS IF, whose command becomes `git log --reverse origin/master..harness-ships-elsewhere`),
+> read `harness-ships-elsewhere`. The table's rows are left as written.
+
 **Ordering.** Task 1 is slice B's first commit (spec §7 item 8: "its first commit and mergeable alone"). B before C
 (C derives the declaration from B's installed tree). C before D (the scan reads C's data). D before E (the
 experiment checks the scan's predictions). F needs D for effort (1)/(2) and E for effort (3). Task 4 is a
