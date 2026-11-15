@@ -20792,3 +20792,18 @@ and `ask_answerer.py`; a plan staging defect, fixed and re-run. Findings: the "h
 (`EXPLAINER_SERVE_PORT` exists), the serve closure is not visible to a top-level import scan, and the skill's
 CWD-relative `scripts/` paths do not resolve from an unrelated directory. Owner's 7391 server stopped ~3 s twice
 under the 11-13 standing permission and restarted.
+
+## 2026-11-15
+The first review of the marketplace tools found ten ways the "fresh account" test could still see this machine or
+ship files it should not. All ten are fixed. One limit cannot be fixed from here and is now stated on every test
+result: the test runs as your own computer user, so your login keychain still answers if a program asks it
+directly. An earlier claim in the spike record, that git never ran during the test, is withdrawn: the test could
+not have seen it either way. The GO result does not depend on that claim and still stands.
+<!--tech-->
+PR #594 round-1 fold (Codex 1–4, Claude M1–M3, m1–m3): `mkt_isolate.py` adds a `pyvenv.cfg` without system
+site-packages, `GIT_CONFIG_NOSYSTEM=1`, `boundary()` (env compared key by key and value by value, plus the layout),
+per-Python `sys.path` probes and a git credential/`insteadOf` probe, a cwd check against the world root, and an
+append-only audit log with per-run tokens. Records now carry a 4th `ALWAYS:` entry for the keychain. `mkt_stage.py`
+ships only git-tracked files and refuses `.claude/plans` however it is reached. Cases: 49→67 and 63→72. Mutations:
+50/50 and 54/54. `spike-record.md`, `isolation-baseline.md` and `spend-log.md` are corrected. Coordinator doc:
+`docs/reviews/coordinator/harness-ships-elsewhere-b-r1-coordinator.md`.
