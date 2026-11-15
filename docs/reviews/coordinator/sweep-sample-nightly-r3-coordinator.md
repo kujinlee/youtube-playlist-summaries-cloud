@@ -8,10 +8,10 @@ halves:
   codex: skipped
   claude: ran
 findings:
-  - {id: C3-1, severity: Major, aim: deliverable, fix_induced: true, component: sweep-liveness, disposition: filed}
-  - {id: C3-2, severity: Minor, aim: deliverable, fix_induced: false, component: sweep-liveness, disposition: filed}
-  - {id: C3-3, severity: Minor, aim: deliverable, fix_induced: false, component: sweep-liveness, disposition: filed}
-  - {id: C3-4, severity: Minor, aim: deliverable, fix_induced: false, component: sweep-liveness, disposition: filed}
+  - {id: C3-1, severity: Major, aim: deliverable, fix_induced: true, component: sweep-liveness, disposition: redesigned}
+  - {id: C3-2, severity: Minor, aim: deliverable, fix_induced: false, component: sweep-liveness, disposition: fixed}
+  - {id: C3-3, severity: Minor, aim: deliverable, fix_induced: false, component: sweep-liveness, disposition: redesigned}
+  - {id: C3-4, severity: Minor, aim: deliverable, fix_induced: false, component: sweep-liveness, disposition: redesigned}
 ```
 
 REVIEW GAP: codex — alternation
@@ -30,15 +30,15 @@ redesign remove it?* is yes: delete the component; the `mutation-sweep-complete`
 `full-sweep-green` artifact when the scheduled sweep on master is green, and SessionStart reads that one fact with
 one GET.
 
-⚠ `disposition: filed` here means OPEN: nothing was patched in this round, and the redesign is ordered, not built.
-Each finding is answered by the redesign's build, and the redesign round's coordinator document records that.
+⟳ Built at `8721e5e8`: every finding is now answered by that commit — C3-2 `fixed`, the other three `redesigned`
+(the code they were about is deleted). Nothing was patched in round 3 itself.
 
 | Finding | Severity | Disposition | What the redesign does with it |
 |---|---|---|---|
-| C3-1 an abandoned matrix (9 of 24 shards listed, summary job `failure`) reads as "fresh, all 9 shards green" | MAJOR | removed by the redesign | the reader never looks at a run, a job or a shard; a failed summary job uploads no marker |
-| C3-2 the hook's bounded calls sum to 65 s against its 60 s limit | MINOR | folded into the redesign | one marker call of 5 s, `TIMEOUT` 30 → 25, sum 55 s; a case sums every bound against the limit in `.claude/settings.json` (review §6 step 4) |
-| C3-3 a session start went from 1.8 s to 4.7–5.5 s | MINOR | removed by the redesign | 2 to 4 `gh` calls become one name-filtered GET, measured at about 0.4 s |
-| C3-4 a re-run resets the run's `updatedAt`, so an old sweep reads as fresh | MINOR | removed by the redesign | the age is the artifact's `created_at`, and the marker is written on the first attempt only |
+| C3-1 an abandoned matrix (9 of 24 shards listed, summary job `failure`) reads as "fresh, all 9 shards green" | MAJOR | redesigned — `8721e5e8` | the reader never looks at a run, a job or a shard; a failed summary job uploads no marker |
+| C3-2 the hook's bounded calls sum to 65 s against its 60 s limit | MINOR | fixed — `8721e5e8` | one marker call of 5 s, `TIMEOUT` 30 → 21 (the review's 25 left 1 s once the 4 × 1 s `DRAIN` is counted): 51 s of calls + 4 s drain + 5 s margin = 60 s, the hook's limit; a case sums `COLLECT_BOUNDS` against the limit read from `.claude/settings.json` (review §6 step 4) |
+| C3-3 a session start went from 1.8 s to 4.7–5.5 s | MINOR | redesigned — `8721e5e8` | 2 to 4 `gh` calls become one name-filtered GET, measured at about 0.4 s |
+| C3-4 a re-run resets the run's `updatedAt`, so an old sweep reads as fresh | MINOR | redesigned — `8721e5e8` | the age is the artifact's `created_at`, and the marker is written on the first attempt only |
 
 - **C3-1 is not patched as the reviewer suggested** (read the summary job and check the shard numbers for holes).
   That is the fourth step in one direction: run conclusion, then shard jobs, then the summary job. The review's §1
@@ -53,9 +53,9 @@ Each finding is answered by the redesign's build, and the redesign round's coord
 
 ## Counts
 
-Unchanged by this round: no tracked code was edited. `scripts/session-state.py` stays at 161 cases and 145
-mutations until the redesign's build, which deletes the 24 cases and 26 mutations this branch added for the
-component and adds the marker reader's own.
+Unchanged by this round: no tracked code was edited. The redesign's build (`8721e5e8`) took
+`scripts/session-state.py` from 161 to 150 cases and from 145 to 140 mutations: the run/job/shard reader's cases and
+mutations deleted, the marker reader's added (22 new mutations, each killed by its named case).
 
 ## `fix_induced`
 
