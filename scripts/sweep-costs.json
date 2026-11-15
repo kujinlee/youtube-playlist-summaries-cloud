@@ -2,11 +2,12 @@
  "schema": 1,
  "sources": [
   "43662666915@033fe20c",
-  "43625371110@26a04323"
+  "43625371110@26a04323",
+  "hand-timed:scripts/sweep-costs.py@03e87843 (0.15-0.26 s locally; priced 1.0 s, no CI sample yet)"
  ],
  "defaults": {
-  "mutation": 1.992,
-  "fixed": 0.63
+  "mutation": 10.162,
+  "fixed": 20.181
  },
  "targets": {
   "scripts/ask_answerer.py": {
@@ -666,6 +667,13 @@
    "mutation": 0.532,
    "samples": 76,
    "mutations": 414
+  },
+  "scripts/sweep-costs.py": {
+   "control": 1.0,
+   "recontrol": 1.0,
+   "mutation": 1.0,
+   "samples": 0,
+   "mutations": 0
   },
   "scripts/sweep-red-alert.py": {
    "control": 2.023,

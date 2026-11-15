@@ -4207,8 +4207,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            and 0 <= x < float(\"inf\"))",
-        "            and x < float(\"inf\"))"
+        "            and 0 <= x <= SWEEP_COST_MAX_S)",
+        "            and x <= SWEEP_COST_MAX_S)"
       ]
     ],
     "expect": "⭐ #588: every unusable cost table is REFUSED with a reason, never half-read"
@@ -4328,7 +4328,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    costs = load_sweep_costs(root)[0] if shard is not None else None",
+        "    costs = sweep_costs_for(root, muts, shard[1])[0] if shard is not None else None",
         "    costs = None"
       ]
     ],
@@ -4377,5 +4377,82 @@
       ]
     ],
     "expect": "...and with one, the line counts how many of the run's targets the table costs"
+  },
+  {
+    "name": "backlog #588 r1: a cost has no upper bound, so 1e308 overflows to inf and RAISES out of every shard",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "0 <= x <= SWEEP_COST_MAX_S)   # NaN fails",
+        "0 <= x < float(\"inf\"))   # NaN fails"
+      ]
+    ],
+    "expect": "⭐ #588: every unusable cost table is REFUSED with a reason, never half-read"
+  },
+  {
+    "name": "backlog #588 r1: a table that is not UTF-8 RAISES out of every shard",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    except UnicodeDecodeError as exc:   # r1 (Codex 5)",
+        "    except KeyError as exc:   # r1 (Codex 5)"
+      ]
+    ],
+    "expect": "⛔ r1: a table that is not UTF-8 is (None, a reason), never a crash of every shard"
+  },
+  {
+    "name": "backlog #588 r1: an uncosted target bigger than a shard's share is priced at the defaults",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if uncosted[t] > share:",
+        "        if False:"
+      ]
+    ],
+    "expect": "...and an uncosted target bigger than one shard's share is refused even at 95% — 5 entries, share 4"
+  },
+  {
+    "name": "backlog #588 r1: a table pricing under 95% of the manifest is used",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if priced * den < num * len(muts):",
+        "    if False:"
+      ]
+    ],
+    "expect": "...ONE MORE uncosted entry is under 95%, and the table is not used"
+  },
+  {
+    "name": "backlog #588 r1: sweep_costs_for skips the coverage rule, so a stale table is used silently",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    why = cost_coverage(costs, muts, total)",
+        "    why = None"
+      ]
+    ],
+    "expect": "⭐ r1: sweep_costs_for is the table when it covers the manifest, else (None, the coverage reason) — 60 uncosted entries over a share of 36"
+  },
+  {
+    "name": "backlog #588 r1: the run reads the table without the coverage rule, so the run and main disagree",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "sweep_costs_for(root, muts, shard[1])[0] if shard is not None",
+        "load_sweep_costs(root)[0] if shard is not None"
+      ]
+    ],
+    "expect": "⭐ r1: ...and with a table that parses but does not FIT the manifest, the shard is round-robin too"
+  },
+  {
+    "name": "backlog #588 r1: the round-robin fallback is a stderr line only, which a green job's reader never sees",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                if os.environ.get(\"GITHUB_ACTIONS\") == \"true\":",
+        "                if False:"
+      ]
+    ],
+    "expect": "⭐ r1: ...and under GitHub Actions the fallback is a WORKFLOW ANNOTATION on stdout, off it none"
   }
 ]

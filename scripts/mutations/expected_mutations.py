@@ -958,7 +958,10 @@ EXPECTED_MUTATIONS = {
     # fixed cost paid once per target, the bisected cap, the forced split and its best point, a new run paying
     # its target's control, fewer-than-N, the round-robin fallback, the run reading the table and using the
     # cut, main's PARTITION line and its known-target count. Each verified red via its case on a temp copy.
-    "scripts/check-plan-code.py": 346,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 346 -> 353, #588 r1 fold: a cost over a day (1e308 overflowing), a table not UTF-8, the coverage rule's
+    # share and 95% clauses, sweep_costs_for skipping it, the run reading the table without it, and the
+    # GITHUB_ACTIONS annotation. Two re-bound (the NEGATIVE bound, the run's table read). Each red on a temp copy.
+    "scripts/check-plan-code.py": 353,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -1676,7 +1679,10 @@ EXPECTED_MUTATIONS = {
     # log parse (the 0-based index, fractional seconds, an unfinished, selected or mismatched shard), the exact
     # attribution (a name, the count, a control's and a re-control's target), and the table (median fixed costs,
     # the mean per-mutation cost, the default fixed cost, nothing to tabulate). Each verified red on a temp copy.
-    "scripts/sweep-costs.py": 13,
+    # ⟳ 13 -> 27, #588 r1 fold: a prefix label, a negative gap, a malformed index or timestamp, an index outside
+    # the total, a schedule run and an unnamed event, a run's duplicate / missing shard / two totals / two events,
+    # the p90 defaults and their rank, the refused table never written. Four re-bound to the exact compare.
+    "scripts/sweep-costs.py": 27,
     # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
     # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which

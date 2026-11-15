@@ -1161,8 +1161,9 @@ jobs:
         # even either way, which is exactly why counting them proves nothing.
         # ⟳ 2026-11-14 backlog #588: that CONTIGUOUS was a cut by COUNT. The partition is now a contiguous
         # cut by estimated COST (`sweep_partition`, from the committed table scripts/sweep-costs.json), which
-        # keeps a target's block together AND balances the work; round-robin is its loud FALLBACK when the
-        # table is missing or corrupt. Why: round-robin makes every shard pay control + re-control for
+        # keeps a target's block together AND balances the work; round-robin is its loud FALLBACK (a workflow
+        # annotation) when the table is missing, corrupt, or no longer covers the manifest (r1: under 95% of its
+        # entries priced, or one uncosted target holding over a shard's share). Why: round-robin makes every shard pay control + re-control for
         # ~63 targets, the floor measured below.
         #
         # ⟳ 2026-10-24: 8 -> 12, backlog #231, WHOSE TRIGGER FIRED. Its FAILS IF is "any shard
@@ -1269,8 +1270,9 @@ jobs:
         # (65-70 at N=24): floor mean 491s at 24, 470s at 38.
         # ⟳ 2026-11-14 backlog #588 attacks THAT floor: the cost cut keeps each target's entries on 1-2 shards, so
         # a shard controls a handful of targets. PREDICTED by `scripts/sweep-costs.py --predict 38` over the table
-        # built from runs 43662666915 (033fe20c) and 43625371110 (26a04323): slowest shard 746s of work, against
-        # 1,438-1,611s measured on those runs under round-robin. A prediction, not a measurement, until a run lands.
+        # built from runs 43662666915 (033fe20c) and 43625371110 (26a04323), model against model: slowest shard
+        # 1,218s of work round-robin -> 753s cut, ~1.6x (job wall clocks on those runs, 1,438-1,611s, add runner
+        # setup, install and upload). A prediction, not a measurement, until a run lands.
         # COST OF MORE SHARDS, MEASURED by `shard_slice` over the 4,505 entries: control-suite runs rise ~1.37x (1,620
         # target-shard pairs at N=24, 2,218 at N=38): in aggregate ~37% more control runs that a flaky suite could turn
         # into CANNOT RUN at the after-control check (per target the rise ranges from 0 to ~58%) — the failure this
