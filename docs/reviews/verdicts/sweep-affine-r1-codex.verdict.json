@@ -1,0 +1,25 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 3365 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "4565f2b2e6af1912d914c30fb3db8720809f06ee",
+  "intrusions": [],
+  "loosening_answers": {
+    "3043a5f1af1c": "not a loosening",
+    "3a55e9924617": "not a loosening",
+    "c592d2f5e006": "not a loosening",
+    "f4792c19b6b7": "not a loosening",
+    "fb3c83c10b6b": "not a loosening"
+  },
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/affine-r1-codex.md",
+  "reason": "3365 chars",
+  "refused": false,
+  "review": "sweep-affine-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/affine"
+}

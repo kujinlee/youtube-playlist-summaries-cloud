@@ -971,7 +971,21 @@ EXPECTED_MUTATIONS = {
     # run recorded complete, a truthy non-True flaky counted, a failed write left green, its directory not made, no
     # record built for --record, and --record accepted without --mutate or with --only.
     # ⟳ 328 -> 329, #619 r1 fold (Claude m2): a not-measured run's record dropping the FLAKY names it reached.
-    "scripts/check-plan-code.py": 329,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-14 backlog #588: 329 -> 346, none retired; six re-bound to the cost cut (`sweep_shard` at the
+    # refusal, the call site, main's refusal and the select-then-shard site; the label without "(round-robin)";
+    # the round-robin case renamed the FALLBACK's). Seventeen added, one per new rule: the table's refusals (a
+    # bool, a negative, no sources, a JSON error raising), an unknown target's defaults, the 1 ms floor, the
+    # fixed cost paid once per target, the bisected cap, the forced split and its best point, a new run paying
+    # its target's control, fewer-than-N, the round-robin fallback, the run reading the table and using the
+    # cut, main's PARTITION line and its known-target count. Each verified red via its case on a temp copy.
+    # ⟳ 346 -> 353, #588 r1 fold: a cost over a day (1e308 overflowing), a table not UTF-8, the coverage rule's
+    # share and 95% clauses, sweep_costs_for skipping it, the run reading the table without it, and the
+    # GITHUB_ACTIONS annotation. Two re-bound (the NEGATIVE bound, the run's table read). Each red on a temp copy.
+    # ⟳ 353 -> 360, #588 r2 fold: unpriced entries dealt not cut, the deal's start and a shard's manifest order,
+    # sweep_plan over the selected pool, its two call sites (the run, main) and main's pool target count.
+    # Five re-bound (the #330 selection, the run's table read twice, main's PARTITION print, the no-table
+    # fallback now substituting `_cost_cut`). Each red on a staged copy outside the repository.
+    "scripts/check-plan-code.py": 360,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -1685,6 +1699,16 @@ EXPECTED_MUTATIONS = {
     # ⟳ 33 -> 37, #619 r1 fold: a duplicate JSON key kept at its last value and an unreadable record's reason lost
     # (Codex); a shard above the total and a non-list `flaky` accepted (Claude m1).
     "scripts/sweep-red-alert.py": 37,
+    # backlog #588 (2026-11-14): the sweep's cost-table generator, pinned in the commit that creates it — the
+    # log parse (the 0-based index, fractional seconds, an unfinished, selected or mismatched shard), the exact
+    # attribution (a name, the count, a control's and a re-control's target), and the table (median fixed costs,
+    # the mean per-mutation cost, the default fixed cost, nothing to tabulate). Each verified red on a temp copy.
+    # ⟳ 13 -> 27, #588 r1 fold: a prefix label, a negative gap, a malformed index or timestamp, an index outside
+    # the total, a schedule run and an unnamed event, a run's duplicate / missing shard / two totals / two events,
+    # the p90 defaults and their rank, the refused table never written. Four re-bound to the exact compare.
+    # ⟳ 27 -> 29, #588 r2 fold: a count's length bound, and the verdict line's counts through the bounded reader.
+    # Two re-bound (the verdict/env compare, whose line moved; the digits pattern).
+    "scripts/sweep-costs.py": 29,
     # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
     # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which

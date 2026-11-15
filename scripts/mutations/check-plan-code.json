@@ -1041,7 +1041,7 @@
     "expect": "SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently"
   },
   {
-    "name": "#217: the shard partition is CONTIGUOUS, so one shard takes the expensive block and its siblings idle",
+    "name": "#217 / backlog #588: the round-robin FALLBACK turns contiguous, so with no cost table one shard takes a file's whole block and its siblings idle",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1050,7 +1050,7 @@
       ]
     ],
     "expect": [
-      "⛔ round-robin spreads ONE file's contiguous block evenly; a contiguous split cannot",
+      "⛔ the round-robin FALLBACK spreads ONE file's contiguous block evenly",
       "⭐ every mutation runs in EXACTLY ONE shard and the union is the whole manifest"
     ]
   },
@@ -1102,7 +1102,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    if not shard_slice(list(range(count)), index, total):",
+        "    if not sweep_shard(muts, index, total, costs):",
         "    if False:"
       ]
     ],
@@ -1117,7 +1117,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    shard_muts = shard_slice(pool, shard[0], shard[1]) if shard is not None else pool",
+        "    shard_muts = sweep_shard(pool, shard[0], shard[1], costs) if shard is not None else pool",
         "    shard_muts = pool"
       ]
     ],
@@ -1170,8 +1170,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return \"the WHOLE manifest\" if shard is None else f\"shard {shard[0]} of {shard[1]} (round-robin)\"",
-        "    return \"the WHOLE manifest\" if shard is None else f\"shard {shard[1]} of {shard[0]} (round-robin)\""
+        "        return \"the WHOLE manifest\" if shard is None else f\"shard {shard[0]} of {shard[1]}\"",
+        "        return \"the WHOLE manifest\" if shard is None else f\"shard {shard[1]} of {shard[0]}\""
       ]
     ],
     "expect": [
@@ -1232,7 +1232,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            why = None if _problems else shard_refusal(shard[0], shard[1], len(_muts))",
+        "            why = None if _problems else shard_refusal(shard[0], shard[1], _muts, _costs)",
         "            why = None"
       ]
     ],
@@ -2058,7 +2058,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    pool = muts if select is None else [m for m in muts if m[\"file\"] in select]",
+        "    pool = sweep_pool(muts, select)",
         "    pool = muts"
       ]
     ],
@@ -2071,12 +2071,12 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "shard_slice(pool, shard[0], shard[1])",
-        "[m for m in shard_slice(muts, shard[0], shard[1]) if m in pool]"
+        "sweep_shard(pool, shard[0], shard[1], costs)",
+        "[m for m in sweep_shard(muts, shard[0], shard[1], costs) if m in pool]"
       ]
     ],
     "expect": [
-      "⭐ SELECT, THEN SHARD: the shards split the selected entries round-robin"
+      "⭐ SELECT, THEN SHARD: the shards split the SELECTED entries"
     ]
   },
   {
@@ -4190,5 +4190,346 @@
     "expect": [
       "...a NotMeasured verdict is INCOMPLETE, and still records the FLAKY names it reached"
     ]
+  },
+  {
+    "name": "backlog #588: a BOOL passes as a cost, so `\"control\": true` reads as one second",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return (isinstance(x, (int, float)) and not isinstance(x, bool)\n",
+        "    return (isinstance(x, (int, float))\n"
+      ]
+    ],
+    "expect": "⭐ #588: every unusable cost table is REFUSED with a reason, never half-read"
+  },
+  {
+    "name": "backlog #588: a NEGATIVE cost is accepted, so a corrupt row pulls its target into every shard",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            and 0 <= x <= SWEEP_COST_MAX_S)",
+        "            and x <= SWEEP_COST_MAX_S)"
+      ]
+    ],
+    "expect": "⭐ #588: every unusable cost table is REFUSED with a reason, never half-read"
+  },
+  {
+    "name": "backlog #588: a table naming no SOURCE runs is accepted, so nothing says what it was measured from",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if not (isinstance(src, list) and src and all(isinstance(x, str) for x in src)):",
+        "    if not (isinstance(src, list) and all(isinstance(x, str) for x in src)):"
+      ]
+    ],
+    "expect": "⭐ #588: every unusable cost table is REFUSED with a reason, never half-read"
+  },
+  {
+    "name": "backlog #588: an UNKNOWN target costs no control, so a new script piles into one shard",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return max(1, costs[\"mutation\"]), costs[\"fixed\"]",
+        "        return max(1, costs[\"mutation\"]), 0"
+      ]
+    ],
+    "expect": "⭐ #588: an UNKNOWN target is costed at the table's defaults, a known one at its own row"
+  },
+  {
+    "name": "backlog #588: a mutation may weigh 0 ms, so a zero-cost table collapses the cut",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return max(1, row[2]), row[0] + row[1]",
+        "    return row[2], row[0] + row[1]"
+      ]
+    ],
+    "expect": "...and a zero-cost table still weighs every mutation 1 ms, so the cut does not collapse"
+  },
+  {
+    "name": "backlog #588: the estimate pays control + re-control PER MUTATION, not once per touched target",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        total += c + (0 if m[\"file\"] in seen else f)",
+        "        total += c + f"
+      ]
+    ],
+    "expect": "...and the estimate the cut balances is the one built from the table, term for term"
+  },
+  {
+    "name": "backlog #588: the cut takes the FAILING cap, so it makes more runs than there are shards",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    parts = _greedy_cut(muts, weights, hi)",
+        "    parts = _greedy_cut(muts, weights, lo)"
+      ]
+    ],
+    "expect": "⭐ #588: the cost cut keeps EVERY mutation exactly once, IN ORDER, in exactly N non-empty shards"
+  },
+  {
+    "name": "backlog #588: fewer greedy runs than shards are not split, so the last shards are EMPTY",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    while len(parts) < total:",
+        "    while False:"
+      ]
+    ],
+    "expect": "⭐ #588: fewer greedy runs than N are FORCE-SPLIT, so no shard is empty"
+  },
+  {
+    "name": "backlog #588: a forced split cuts after the FIRST item, not at the best point",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return min(range(1, n), key=lambda k: (max(pre[k], suf[k]), k))",
+        "    return 1"
+      ]
+    ],
+    "expect": "...and the forced split cuts at its BEST point, not after the first item"
+  },
+  {
+    "name": "backlog #588: a new run opened by the cut does not pay its first target's control",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            add = c + f",
+        "            add = c"
+      ]
+    ],
+    "expect": "...and the cost cut's slowest shard beats a COUNT cut's by over 1.5x"
+  },
+  {
+    "name": "backlog #588: fewer mutations than shards all land in shard 1",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return [[m] for m in muts] + [[] for _ in range(total - len(muts))]",
+        "        return [list(muts)] + [[] for _ in range(total - 1)]"
+      ]
+    ],
+    "expect": "...and fewer mutations than shards gives one each and EMPTY rest (only a selection gets there)"
+  },
+  {
+    "name": "backlog #588: with no table the shard is NOT round-robin, so the fallback silently changes shape",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return shard_slice(muts, index, total)",
+        "        return _cost_cut(muts, total, {\"targets\": {}, \"mutation\": 1, \"fixed\": 0, \"sources\": [\"x\"]})[index - 1]"
+      ]
+    ],
+    "expect": "⭐ #588: with no table the sweep's shard IS round-robin, and the PARTITION line says FALLBACK"
+  },
+  {
+    "name": "backlog #588: a table that reads is IGNORED by the run, which stays round-robin",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    costs = sweep_plan(root, muts, select, shard[1])[0] if shard is not None else None",
+        "    costs = None"
+      ]
+    ],
+    "expect": "⭐ #588: under the cost table, shard 1 of 2 runs BOTH of one file's mutations and controls ONE file"
+  },
+  {
+    "name": "backlog #588: the run slices round-robin although the table read, so the partition and the run disagree",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "shard[1], costs) if shard is not None else pool",
+        "shard[1], None) if shard is not None else pool"
+      ]
+    ],
+    "expect": "⭐ #588: under the cost table, shard 1 of 2 runs BOTH of one file's mutations and controls ONE file"
+  },
+  {
+    "name": "backlog #588: a corrupt table RAISES out of the run instead of falling back",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    except (json.JSONDecodeError, TypeError, ValueError) as exc:\n        return None, f\"{SWEEP_COSTS} is not valid JSON ({exc})\"",
+        "    except TypeError as exc:\n        return None, f\"{SWEEP_COSTS} is not valid JSON ({exc})\""
+      ]
+    ],
+    "expect": "⭐ #588: every unusable cost table is REFUSED with a reason, never half-read"
+  },
+  {
+    "name": "backlog #588: main() never says which partition a sharded run used",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            print(partition_line(_costs, _cwhy, {m[\"file\"] for m in sweep_pool(_muts, select)}))\n",
+        ""
+      ]
+    ],
+    "expect": "⭐ #588: main() names the PARTITION a sharded run used — the fixture has no table, so FALLBACK"
+  },
+  {
+    "name": "backlog #588: the PARTITION line counts every target as costed, so a stale table looks complete",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    known = sum(1 for t in targets if t in costs[\"targets\"])",
+        "    known = len(targets)"
+      ]
+    ],
+    "expect": "...and with one, the line counts how many of the run's targets the table costs"
+  },
+  {
+    "name": "backlog #588 r1: a cost has no upper bound, so 1e308 overflows to inf and RAISES out of every shard",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "0 <= x <= SWEEP_COST_MAX_S)   # NaN fails",
+        "0 <= x < float(\"inf\"))   # NaN fails"
+      ]
+    ],
+    "expect": "⭐ #588: every unusable cost table is REFUSED with a reason, never half-read"
+  },
+  {
+    "name": "backlog #588 r1: a table that is not UTF-8 RAISES out of every shard",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    except UnicodeDecodeError as exc:   # r1 (Codex 5)",
+        "    except KeyError as exc:   # r1 (Codex 5)"
+      ]
+    ],
+    "expect": "⛔ r1: a table that is not UTF-8 is (None, a reason), never a crash of every shard"
+  },
+  {
+    "name": "backlog #588 r1: an uncosted target bigger than a shard's share is priced at the defaults",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if uncosted[t] > share:",
+        "        if False:"
+      ]
+    ],
+    "expect": "...and an uncosted target bigger than one shard's share is refused even at 95% — 5 entries, share 4"
+  },
+  {
+    "name": "backlog #588 r1: a table pricing under 95% of the manifest is used",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if priced * den < num * len(muts):",
+        "    if False:"
+      ]
+    ],
+    "expect": "...ONE MORE uncosted entry is under 95%, and the table is not used"
+  },
+  {
+    "name": "backlog #588 r1: sweep_costs_for skips the coverage rule, so a stale table is used silently",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    why = cost_coverage(costs, muts, total)",
+        "    why = None"
+      ]
+    ],
+    "expect": "⭐ r1: sweep_costs_for is the table when it covers the manifest, else (None, the coverage reason) — 60 uncosted entries over a share of 36"
+  },
+  {
+    "name": "backlog #588 r1: the run reads the table without the coverage rule, so the run and main disagree",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "sweep_plan(root, muts, select, shard[1])[0] if shard is not None",
+        "load_sweep_costs(root)[0] if shard is not None"
+      ]
+    ],
+    "expect": "⭐ r1: ...and with a table that parses but does not FIT the manifest, the shard is round-robin too"
+  },
+  {
+    "name": "backlog #588 r1: the round-robin fallback is a stderr line only, which a green job's reader never sees",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                if os.environ.get(\"GITHUB_ACTIONS\") == \"true\":",
+        "                if False:"
+      ]
+    ],
+    "expect": "⭐ r1: ...and under GitHub Actions the fallback is a WORKFLOW ANNOTATION on stdout, off it none"
+  },
+  {
+    "name": "backlog #588 r2: unpriced entries are cut by their estimate with the priced ones, so several unpriced targets share one shard",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    priced = [i for i, m in enumerate(muts) if m[\"file\"] in costs[\"targets\"]]",
+        "    priced = list(range(len(muts)))"
+      ]
+    ],
+    "expect": "⭐ r2: several UNPRICED targets cannot sit together in one shard — coverage approves Codex's input, no shard holds over ceil(190/38) = 5 unpriced entries, and the slowest REAL shard is round-robin's 195 s"
+  },
+  {
+    "name": "backlog #588 r2: the deal starts at shard 1 whatever the priced cut left empty, so a shard can be empty",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    first = sum(1 for run in runs if run) % total",
+        "    first = 0"
+      ]
+    ],
+    "expect": "⭐ r2: the deal starts at the first shard the priced cut left EMPTY, and a shard keeps manifest order — [n2 z0] [z1] [n0] [n1]"
+  },
+  {
+    "name": "backlog #588 r2: a shard lists its dealt entries after its priced ones, not in manifest order",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return [[muts[i] for i in sorted(shard)] for shard in shards]",
+        "    return [[muts[i] for i in shard] for shard in shards]"
+      ]
+    ],
+    "expect": "⭐ r2: the deal starts at the first shard the priced cut left EMPTY, and a shard keeps manifest order — [n2 z0] [z1] [n0] [n1]"
+  },
+  {
+    "name": "backlog #588 r2: sweep_plan judges coverage on the whole manifest, not the selected pool",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return sweep_costs_for(root, sweep_pool(muts, select), total)",
+        "    return sweep_costs_for(root, muts, total)"
+      ]
+    ],
+    "expect": "⭐ r2: sweep_plan judges coverage on the SELECTED pool — the manifest approved, a selection of its two unpriced targets refused, a selection of its priced one approved"
+  },
+  {
+    "name": "backlog #588 r2: the run asks for the whole manifest's plan and cuts the selected pool with it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "costs = sweep_plan(root, muts, select, shard[1])",
+        "costs = sweep_plan(root, muts, None, shard[1])"
+      ]
+    ],
+    "expect": "⭐ r2: ...and the RUN partitions that pool by the same table — shard 1 of 2 ran [a, b], the cost cut, not round-robin's [a, c]"
+  },
+  {
+    "name": "backlog #588 r2: main judges the table against the whole manifest, so its PARTITION line is not the run's",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "sweep_plan(mroot, _muts, select, shard[1])",
+        "sweep_plan(mroot, _muts, None, shard[1])"
+      ]
+    ],
+    "expect": "⭐ r2: main() judges the table against the SELECTED pool — it fits the pool and not the manifest, so the PARTITION line says cost-balanced, 1 of 1 target costed, rc=0"
+  },
+  {
+    "name": "backlog #588 r2: main's PARTITION line counts the manifest's targets, not the pool's",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "{m[\"file\"] for m in sweep_pool(_muts, select)}",
+        "{m[\"file\"] for m in _muts}"
+      ]
+    ],
+    "expect": "⭐ r2: main() judges the table against the SELECTED pool — it fits the pool and not the manifest, so the PARTITION line says cost-balanced, 1 of 1 target costed, rc=0"
   }
 ]
