@@ -175,6 +175,8 @@ replaces was invisible for four rounds for exactly that reason.
 
 **A "fresh" subagent means a NEW one: never send a finished implementer the next slice, fold or review round, and never park an agent waiting for a "go".** Brief a new agent with the files and the decision instead.
 
+**When spawning a builder, start `scripts/agent-watchdog.py` as a background job** (`python3 scripts/agent-watchdog.py 30 <name>=<worktree>[:<transcript>]`, backlog #657): it wakes the orchestrator when the builder goes quiet. The transcript (`~/.claude/projects/<slug>/<session>/subagents/agent-<name>-<hash>.jsonl`, known after the spawn) makes a builder that only reads count as active. What counts as activity, the exit codes and the bounds are in its docstring.
+
 **Why, measured.** For several weeks the weekly usage limit has stopped all work for about a day. Over the 24 hours before the 2026-10-29 halt, weighted by token type (cache read 0.1×, 1-hour cache write 2×, output 5×; API list prices as a proxy, because the plan's own weighting is not documented):
 
 | Where | Share of weighted usage | What it was made of |

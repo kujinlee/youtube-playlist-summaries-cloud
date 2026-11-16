@@ -5522,7 +5522,9 @@ def _self_test_body() -> int:
     finally:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
-         sorted(EXPECTED_MUTATIONS), [# backlog #625: the Ask answerer, with its manifest.
+         sorted(EXPECTED_MUTATIONS), [# backlog #657: the agent watchdog, with its manifest.
+                                      "scripts/agent-watchdog.py",
+                                      # backlog #625: the Ask answerer, with its manifest.
                                       "scripts/ask_answerer.py",
                                       "scripts/backfill-work-lines.py",
                                       # backlog #534: the batch full sweep, with its manifest.
