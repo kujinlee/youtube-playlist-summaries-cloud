@@ -772,5 +772,280 @@
    ]
   ],
   "expect": "_real refuses the root it STARTS on when that identity is forbidden: secret, alias/secret (alias -> .), scripts/../secret and .claude/plans/secret (-> ..); with nothing forbidden each resolves to secret"
+ },
+ {
+  "name": "a skill component is looked for at its repository path, not at skills/<name>",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "return \"skills/\" + f[len(home):] if f.startswith(home) else f",
+    "return f"
+   ]
+  ],
+  "expect": "declare: each component's files are the installed files under its installed path (a skill at skills/<name>), with a count; installed_files is the whole tree"
+ },
+ {
+  "name": "a shared_with library is not carried by the package it is shared with",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "return [c for c in m.components if c[\"package\"] == package or package in c.get(\"shared_with\", [])]",
+    "return [c for c in m.components if c[\"package\"] == package]"
+   ]
+  ],
+  "expect": "declare: a library shared_with a package is declared under that package too, and nothing else is"
+ },
+ {
+  "name": "declare lists the directory above the installed tree",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "for d, dirs, files in os.walk(top):",
+    "for d, dirs, files in os.walk(os.path.dirname(top)):"
+   ]
+  ],
+  "expect": "declare reads no file outside the installed dir (an audit hook over open/listdir/scandir; the control read outside is recorded)"
+ },
+ {
+  "name": "an installed link is recorded by its own path",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "out[rel] = os.path.relpath(real, top).replace(os.sep, \"/\")",
+    "out[rel] = rel"
+   ]
+  ],
+  "expect": "a symlink in the installed tree is recorded by its resolved path"
+ },
+ {
+  "name": "installed_files lists link paths, not what they resolve to",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "\"installed_files\": sorted(set(files.values()))",
+    "\"installed_files\": sorted(files)"
+   ]
+  ],
+  "expect": "a symlink in the installed tree is recorded by its resolved path"
+ },
+ {
+  "name": "a link leaving the tree is accepted",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "if os.path.islink(p) and (not _inside_path(real, top) or not os.path.isfile(real)):",
+    "if os.path.islink(p) and not os.path.isfile(real):"
+   ]
+  ],
+  "expect": "a link leaving the installed tree is CANNOT RUN"
+ },
+ {
+  "name": "inside is a string prefix, so a sibling extending the name is inside",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "return path == top_s or path.startswith(top_s.rstrip(os.sep) + os.sep)",
+    "return path.startswith(top_s)"
+   ]
+  ],
+  "expect": "a link into a sibling whose name extends the installed dir's is outside it (CANNOT RUN)"
+ },
+ {
+  "name": "a link to a directory is not looked at",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "for name in sorted(files) + sorted(x for x in dirs if os.path.islink(os.path.join(d, x))):",
+    "for name in sorted(files):"
+   ]
+  ],
+  "expect": "a link to a directory in the installed tree is CANNOT RUN (a declaration names files)"
+ },
+ {
+  "name": "a dangling link is accepted",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "or not os.path.isfile(real)):",
+    "):"
+   ]
+  ],
+  "expect": "a dangling link in the installed tree is CANNOT RUN"
+ },
+ {
+  "name": "a component with no installed file is an empty entry",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if not got:\n            raise CannotRun(f\"component {c['id']!r}: none of",
+    "        if False:\n            raise CannotRun(f\"component {c['id']!r}: none of"
+   ]
+  ],
+  "expect": "a component with no file in the installed tree is CANNOT RUN, never an empty entry"
+ },
+ {
+  "name": "a component path is matched as a prefix even when it names a file",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "if any(path.startswith(w) if w.endswith(\"/\") else path == w for w in wanted)}",
+    "if any(path.startswith(w) for w in wanted)}"
+   ]
+  ],
+  "expect": "declare: each component's files are the installed files under its installed path (a skill at skills/<name>), with a count; installed_files is the whole tree"
+ },
+ {
+  "name": "declare accepts a reusable-workflow package",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if channel != \"plugin\":\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a reusable-workflow package is never declared from an install (CANNOT RUN)"
+ },
+ {
+  "name": "declare accepts a package the map does not name",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if package not in m.packages:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a package the map does not name is CANNOT RUN"
+ },
+ {
+  "name": "spec_from_map ships a skill file as a file",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "skills.add(f\"{SKILLS_HOME}/{f[len(SKILLS_HOME) + 1:].split('/')[0]}\")",
+    "files.add(f)"
+   ]
+  ],
+  "expect": "spec_from_map: a file under the skills home names its skill directory, once; a directory entry expands to its tracked files; a file is itself"
+ },
+ {
+  "name": "a directory entry is not expanded",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "out |= {n for n in names if n.startswith(f)} if f.endswith(\"/\") else {f}",
+    "out |= {f}"
+   ]
+  ],
+  "expect": "spec_from_map: a file under the skills home names its skill directory, once; a directory entry expands to its tracked files; a file is itself"
+ },
+ {
+  "name": "workflow_entry accepts a plugin package",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if channel != \"reusable-workflow\":\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "workflow_entry: a plugin package is refused (it is declared from its install)"
+ },
+ {
+  "name": "workflow_entry records a link by its own path",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "got = {os.path.relpath(os.path.realpath(top / f), top).replace(os.sep, \"/\") for f in _expand(c, names)}",
+    "got = set(_expand(c, names))"
+   ]
+  ],
+  "expect": "workflow_entry: a tracked link is recorded by its resolved path"
+ },
+ {
+  "name": "workflow_entry drops declared_from",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "\"declared_from\": WORKFLOW_FROM",
+    "\"declared_from\": \"\""
+   ]
+  ],
+  "expect": "workflow_entry: a reusable-workflow package is declared from the map (links resolved, counts), with no installed_files"
+ },
+ {
+  "name": "declare_all leaves the reusable-workflow packages out",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    out.update({p: workflow_entry(m, p, repo)",
+    "    0 and out.update({p: workflow_entry(m, p, repo)"
+   ]
+  ],
+  "expect": "CLI: --declare stages and installs each plugin package once, declares it from the install, adds the reusable-workflow entry from the map, and stamps HEAD (a stand-in install)"
+ },
+ {
+  "name": "measured_at is not HEAD",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "return {\"measured_at\": head.stdout.strip(),",
+    "return {\"measured_at\": \"\","
+   ]
+  ],
+  "expect": "CLI: --declare stages and installs each plugin package once, declares it from the install, adds the reusable-workflow entry from the map, and stamps HEAD (a stand-in install)"
+ },
+ {
+  "name": "a refused map escapes as a crash",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "raise CannotRun(f\"the map is refused: {e}\") from None",
+    "raise"
+   ]
+  ],
+  "expect": "CLI: --declare with a map that breaks a rule is CANNOT RUN (rc 2), never a declaration"
+ },
+ {
+  "name": "main does not route --declare",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if argv[:1] == [\"--declare\"]:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "CLI: --declare with no map or out path is a usage error (rc 2), routed by main"
+ },
+ {
+  "name": "--declare with a wrong argument count is not a usage error",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if len(argv) != 2:\n        print(DECLARE_USAGE",
+    "    if False:\n        print(DECLARE_USAGE"
+   ]
+  ],
+  "expect": "CLI: --declare with no map or out path is a usage error (rc 2), routed by main"
+ },
+ {
+  "name": "an unreadable map escapes as a crash",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    except mod.CannotRun as e:\n        raise CannotRun(str(e)) from None\n",
+    ""
+   ]
+  ],
+  "expect": "CLI: --declare with an unreadable map is CANNOT RUN (rc 2)"
+ },
+ {
+  "name": "--declare runs without claude",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if which(\"claude\") is None:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "CLI: --declare without `claude` on PATH is CANNOT RUN, installs nothing and writes nothing"
  }
 ]

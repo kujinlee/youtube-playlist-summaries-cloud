@@ -462,7 +462,7 @@ reusable workflow would reference, listed from the map, with symlinks resolved a
 `installed_files`. Task 7's `--closure` skips it and says so (`ci-layer: SKIPPED — reusable-workflow channel, no
 installed tree`), never a silent pass. Task 17 reads its routes against this entry.
 
-- [ ] **Steps:** cases red → implement → stage and install the two plugin packages from `components.json` → write
+- [x] **Steps:** cases red → implement → stage and install the two plugin packages from `components.json` → write
   the JSON (plus the declared `ci-layer` entry) → green → WM pins → commit.
 
 **FAILS IF:** `shipping-sets.json` lists a file under a `plugin` package that is not in its installed tree;

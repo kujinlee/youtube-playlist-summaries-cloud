@@ -2415,7 +2415,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ PR #594 round 4 fold (Codex r4 #1): 67 + 3 = 70 — a private root that IS the repository, one that HOLDS it,
     # and the walk asking about the root it starts from. None retired; the three anchors on the walk's forbidden
     # check still bind (the line moved to the top of the loop, its text unchanged).
-    "scripts/mkt_stage.py": 70,
+    # 2026-11-16 slice C (plan Task 6): 70 + 25 = 95 — declare (installed tree only), spec_from_map, workflow_entry
+    # and the --declare CLI. None retired.
+    "scripts/mkt_stage.py": 95,
     # ⟳ 2026-11-16, marketplace-inventory plan Task 5: the component-map completeness check, pinned in the commit that
     # creates it (58): the candidate derivation (git listing, each seed source, transitivity), the executable edges
     # (each import form, each command word, the prefix strips, the tree bounds), every load_map rule, the exclusion

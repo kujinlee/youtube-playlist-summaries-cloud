@@ -344,9 +344,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
                        "run_isolated.cwd", "run_isolated.timeout", "run_isolated.world"),
     # marketplace-inventory plan Task 3 (2026-11-15): the staging tool, pinned in the commit that creates it. DERIVED
     # by running `analyse()` on the delivered source: 13 keys, every one varied by a case (none exempt).
-    "mkt_stage.py": ("install.mkt_root", "install.plugin", "install.run", "install.timeout", "install.world",
-                     "main.argv", "plan.repo", "plan.spec", "read_marketplace.mkt_root", "stage.marketplace",
-                     "stage.out", "stage.packages", "stage.repo"),
+    # ⟳ 2026-11-16 slice C (plan Task 6: declare, spec_from_map, workflow_entry, --declare): re-DERIVED by
+    # `analyse()`, 13 + 14 = 27 (main.repo is examined now that two cases pass it).
+    "mkt_stage.py": ("declare.installed", "declare.m", "declare.package", "declare_main.argv", "declare_main.kw",
+                     "declare_main.repo", "install.mkt_root", "install.plugin", "install.run", "install.timeout",
+                     "install.world", "main.argv", "main.repo", "plan.repo", "plan.spec", "read_marketplace.mkt_root",
+                     "spec_from_map.m", "spec_from_map.package", "spec_from_map.repo", "spec_from_map.version",
+                     "stage.marketplace", "stage.out", "stage.packages", "stage.repo", "workflow_entry.m",
+                     "workflow_entry.package", "workflow_entry.repo"),
     # marketplace-inventory plan Task 5 (2026-11-16): the component-map completeness check, pinned in the commit that
     # creates it. DERIVED by running `analyse()` on the delivered source: 14 keys, every one varied by a case.
     "check-shipping-sets.py": ("candidates.root", "exec_edges.rel", "exec_edges.root", "load_map.path", "load_map.root",

@@ -1,0 +1,780 @@
+{
+ "measured_at": "b1532f27",
+ "packages": {
+  "ci-layer": {
+   "channel": "reusable-workflow",
+   "declared_from": "components.json (no installed tree: spec \u00a72c, C4 argued)",
+   "components": {
+    "check-plan-code": {
+     "files": [
+      "scripts/check-plan-code.py"
+     ],
+     "expected_count": 1
+    },
+    "coverage-verdict": {
+     "files": [
+      "scripts/coverage_verdict.py"
+     ],
+     "expected_count": 1
+    },
+    "fixture-git": {
+     "files": [
+      "scripts/fixture_git.py"
+     ],
+     "expected_count": 1
+    },
+    "mutation-manifests": {
+     "files": [
+      "scripts/mutations/agent-watchdog.json",
+      "scripts/mutations/ask_answerer.json",
+      "scripts/mutations/backfill-work-lines.json",
+      "scripts/mutations/batch-ci.json",
+      "scripts/mutations/begin-plan.json",
+      "scripts/mutations/bounded_read.json",
+      "scripts/mutations/brief-compose.json",
+      "scripts/mutations/check-agent-large-read.json",
+      "scripts/mutations/check-agent-long-call.json",
+      "scripts/mutations/check-anchors.json",
+      "scripts/mutations/check-anon-exposure.json",
+      "scripts/mutations/check-arch-findings.json",
+      "scripts/mutations/check-backlog-closure.json",
+      "scripts/mutations/check-banner-armed.json",
+      "scripts/mutations/check-canonical-source.json",
+      "scripts/mutations/check-catalog-coverage.json",
+      "scripts/mutations/check-ci-watched.json",
+      "scripts/mutations/check-claim-propagation.json",
+      "scripts/mutations/check-closing-table.json",
+      "scripts/mutations/check-compaction-boundary.json",
+      "scripts/mutations/check-dashboard-entry.json",
+      "scripts/mutations/check-decision-scheme.json",
+      "scripts/mutations/check-diff-coverage.json",
+      "scripts/mutations/check-doc-citations.json",
+      "scripts/mutations/check-docs.json",
+      "scripts/mutations/check-explainer-delivery.json",
+      "scripts/mutations/check-features.json",
+      "scripts/mutations/check-fixture-git-isolation.json",
+      "scripts/mutations/check-fixture-variation.json",
+      "scripts/mutations/check-function-revokes.json",
+      "scripts/mutations/check-gate-falsifiability.json",
+      "scripts/mutations/check-goal-status.json",
+      "scripts/mutations/check-group-claims.json",
+      "scripts/mutations/check-guard-coverage.json",
+      "scripts/mutations/check-handoff-path.json",
+      "scripts/mutations/check-hook-commands.json",
+      "scripts/mutations/check-idle-stop.json",
+      "scripts/mutations/check-live-schema.json",
+      "scripts/mutations/check-main-drivable.json",
+      "scripts/mutations/check-memory-index-budget.json",
+      "scripts/mutations/check-memory-link.json",
+      "scripts/mutations/check-merge-ready.json",
+      "scripts/mutations/check-page-links.json",
+      "scripts/mutations/check-paid-caller-arrival.json",
+      "scripts/mutations/check-plan-code.json",
+      "scripts/mutations/check-plan-file-tags.json",
+      "scripts/mutations/check-plan-leak.json",
+      "scripts/mutations/check-plan-progress.json",
+      "scripts/mutations/check-plan-task-order.json",
+      "scripts/mutations/check-producer-enumeration.json",
+      "scripts/mutations/check-python-pin.json",
+      "scripts/mutations/check-ratchet-contract.json",
+      "scripts/mutations/check-rc-contract.json",
+      "scripts/mutations/check-reference-namespace.json",
+      "scripts/mutations/check-review-decision.json",
+      "scripts/mutations/check-review-recorded.json",
+      "scripts/mutations/check-review-rounds.json",
+      "scripts/mutations/check-roadmap-consistency.json",
+      "scripts/mutations/check-run-hook.json",
+      "scripts/mutations/check-selection-card.json",
+      "scripts/mutations/check-selftest-counts.json",
+      "scripts/mutations/check-sentinel-meanings.json",
+      "scripts/mutations/check-shipping-sets.json",
+      "scripts/mutations/check-stalled-work.json",
+      "scripts/mutations/check-storage-grant-pin.json",
+      "scripts/mutations/check-storage-independence.json",
+      "scripts/mutations/check-surface-recall.json",
+      "scripts/mutations/check-test-counts.json",
+      "scripts/mutations/check-theme-token-coverage.json",
+      "scripts/mutations/check-transcript-references.json",
+      "scripts/mutations/check-usage-pace.json",
+      "scripts/mutations/check-vocabulary-collisions.json",
+      "scripts/mutations/ci-durations.json",
+      "scripts/mutations/codex-frontier-model.json",
+      "scripts/mutations/codex-review.json",
+      "scripts/mutations/compaction-state.json",
+      "scripts/mutations/coverage_verdict.json",
+      "scripts/mutations/expected_mutations.py",
+      "scripts/mutations/explainer-serve.json",
+      "scripts/mutations/fixture_git.json",
+      "scripts/mutations/gates-for-pr.json",
+      "scripts/mutations/gen-backlog-page.json",
+      "scripts/mutations/gen-dashboard.json",
+      "scripts/mutations/gen-features-page.json",
+      "scripts/mutations/gen-goals-page.json",
+      "scripts/mutations/gen-work-lines.json",
+      "scripts/mutations/goal-tree.json",
+      "scripts/mutations/mkt_isolate.json",
+      "scripts/mutations/mkt_stage.json",
+      "scripts/mutations/observer_log.json",
+      "scripts/mutations/page_chrome.json",
+      "scripts/mutations/page_markup.json",
+      "scripts/mutations/peer-sites.json",
+      "scripts/mutations/prune-merged-worktrees.json",
+      "scripts/mutations/push-command.json",
+      "scripts/mutations/recall-llm.json",
+      "scripts/mutations/record-review-verdict.json",
+      "scripts/mutations/regen-pages.json",
+      "scripts/mutations/session-state.json",
+      "scripts/mutations/strace_reads.json",
+      "scripts/mutations/sweep-costs.json",
+      "scripts/mutations/sweep-red-alert.json"
+     ],
+     "expected_count": 102
+    },
+    "mutation-sweep-job": {
+     "files": [
+      ".github/workflows/ci.yml"
+     ],
+     "expected_count": 1
+    },
+    "velocity-docs": {
+     "files": [
+      "docs/superpowers/plans/2026-09-25-development-velocity-RECONSTRUCTED-plan.md",
+      "docs/superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md",
+      "docs/velocity-evidence-2026-09-24.md"
+     ],
+     "expected_count": 3
+    }
+   }
+  },
+  "comprehensibility": {
+   "channel": "plugin",
+   "installed_files": [
+    ".claude-plugin/plugin.json",
+    ".claude/hooks/regen-backlog-page.sh",
+    ".claude/hooks/regen-dashboard.sh",
+    ".claude/hooks/regen-features-page.sh",
+    ".claude/hooks/regen-goals-page.sh",
+    ".claude/hooks/regen-pages.sh",
+    ".claude/hooks/run-hook.sh",
+    "scripts/ask_answerer.py",
+    "scripts/brief-compose.py",
+    "scripts/explainer-serve.py",
+    "scripts/fixture_git.py",
+    "scripts/gen-backlog-page.py",
+    "scripts/gen-dashboard.py",
+    "scripts/gen-features-page.py",
+    "scripts/gen-goals-page.py",
+    "scripts/goal-tree.py",
+    "scripts/page_chrome.py",
+    "scripts/page_markup.py",
+    "scripts/regen-pages.py",
+    "skills/brief/SKILL.md",
+    "skills/dashboard/SKILL.md",
+    "skills/explain-diff/SKILL.md",
+    "skills/explain-findings/SKILL.md",
+    "skills/explain-topic/SKILL.md",
+    "skills/shared/corpus-search.md",
+    "skills/shared/explainer-delivery.md",
+    "skills/shared/handoff-path.md"
+   ],
+   "components": {
+    "ask-answerer": {
+     "files": [
+      "scripts/ask_answerer.py"
+     ],
+     "expected_count": 1
+    },
+    "brief-compose": {
+     "files": [
+      "scripts/brief-compose.py"
+     ],
+     "expected_count": 1
+    },
+    "contract-corpus-search": {
+     "files": [
+      "skills/shared/corpus-search.md"
+     ],
+     "expected_count": 1
+    },
+    "contract-explainer-delivery": {
+     "files": [
+      "skills/shared/explainer-delivery.md"
+     ],
+     "expected_count": 1
+    },
+    "contract-handoff-path": {
+     "files": [
+      "skills/shared/handoff-path.md"
+     ],
+     "expected_count": 1
+    },
+    "explainer-serve": {
+     "files": [
+      "scripts/explainer-serve.py"
+     ],
+     "expected_count": 1
+    },
+    "fixture-git": {
+     "files": [
+      "scripts/fixture_git.py"
+     ],
+     "expected_count": 1
+    },
+    "gen-backlog-page": {
+     "files": [
+      "scripts/gen-backlog-page.py"
+     ],
+     "expected_count": 1
+    },
+    "gen-dashboard": {
+     "files": [
+      "scripts/gen-dashboard.py"
+     ],
+     "expected_count": 1
+    },
+    "gen-features-page": {
+     "files": [
+      "scripts/gen-features-page.py"
+     ],
+     "expected_count": 1
+    },
+    "gen-goals-page": {
+     "files": [
+      "scripts/gen-goals-page.py"
+     ],
+     "expected_count": 1
+    },
+    "goal-tree": {
+     "files": [
+      "scripts/goal-tree.py"
+     ],
+     "expected_count": 1
+    },
+    "hook-dispatcher": {
+     "files": [
+      ".claude/hooks/run-hook.sh"
+     ],
+     "expected_count": 1
+    },
+    "hook-regen-backlog-page": {
+     "files": [
+      ".claude/hooks/regen-backlog-page.sh"
+     ],
+     "expected_count": 1
+    },
+    "hook-regen-dashboard": {
+     "files": [
+      ".claude/hooks/regen-dashboard.sh"
+     ],
+     "expected_count": 1
+    },
+    "hook-regen-features-page": {
+     "files": [
+      ".claude/hooks/regen-features-page.sh"
+     ],
+     "expected_count": 1
+    },
+    "hook-regen-goals-page": {
+     "files": [
+      ".claude/hooks/regen-goals-page.sh"
+     ],
+     "expected_count": 1
+    },
+    "hook-regen-pages": {
+     "files": [
+      ".claude/hooks/regen-pages.sh"
+     ],
+     "expected_count": 1
+    },
+    "page-chrome": {
+     "files": [
+      "scripts/page_chrome.py"
+     ],
+     "expected_count": 1
+    },
+    "page-markup": {
+     "files": [
+      "scripts/page_markup.py"
+     ],
+     "expected_count": 1
+    },
+    "regen-pages": {
+     "files": [
+      "scripts/regen-pages.py"
+     ],
+     "expected_count": 1
+    },
+    "skill-brief": {
+     "files": [
+      "skills/brief/SKILL.md"
+     ],
+     "expected_count": 1
+    },
+    "skill-dashboard": {
+     "files": [
+      "skills/dashboard/SKILL.md"
+     ],
+     "expected_count": 1
+    },
+    "skill-explain-diff": {
+     "files": [
+      "skills/explain-diff/SKILL.md"
+     ],
+     "expected_count": 1
+    },
+    "skill-explain-findings": {
+     "files": [
+      "skills/explain-findings/SKILL.md"
+     ],
+     "expected_count": 1
+    },
+    "skill-explain-topic": {
+     "files": [
+      "skills/explain-topic/SKILL.md"
+     ],
+     "expected_count": 1
+    }
+   }
+  },
+  "recall": {
+   "channel": "plugin",
+   "installed_files": [
+    ".claude-plugin/plugin.json",
+    ".claude/hooks/run-hook.sh",
+    ".claude/hooks/surface-recall.sh",
+    "docs/memory/MEMORY.md",
+    "docs/memory/a-blocking-question-while-afk-costs-the-whole-night.md",
+    "docs/memory/a-bound-enumerates-what-is-witnessed.md",
+    "docs/memory/a-budget-stop-is-soft-with-a-reserve.md",
+    "docs/memory/a-case-can-pass-for-an-ambient-reason.md",
+    "docs/memory/a-check-result-is-not-the-claim.md",
+    "docs/memory/a-class-fix-needs-an-independent-copy-and-an-identity-case.md",
+    "docs/memory/a-convention-catches-what-you-read.md",
+    "docs/memory/a-costbenefit-finding-expires-when-the-denominator-moves.md",
+    "docs/memory/a-declaration-is-not-the-act.md",
+    "docs/memory/a-document-inside-the-corpus-it-measures.md",
+    "docs/memory/a-fence-wrong-both-ways-asks-the-wrong-credential.md",
+    "docs/memory/a-filed-finding-s-proposed-fix-is-a-hypothesis.md",
+    "docs/memory/a-forced-choice-test-cannot-fail.md",
+    "docs/memory/a-framing-widened-to-fit-is-no-longer-a-claim.md",
+    "docs/memory/a-gate-can-be-blocked-on-a-decision-not-work.md",
+    "docs/memory/a-gates-channel-can-be-weaker-than-the-gate.md",
+    "docs/memory/a-guard-can-mandate-the-duplication-it-audits.md",
+    "docs/memory/a-guards-evidence-path-is-a-namespace-with-no-allocator.md",
+    "docs/memory/a-hang-is-not-a-diagnosis.md",
+    "docs/memory/a-harness-cannot-read-a-cause-from-a-childs-text.md",
+    "docs/memory/a-measurement-is-only-as-good-as-its-corpus.md",
+    "docs/memory/a-mechanical-edit-damages-what-it-preserves.md",
+    "docs/memory/a-mechanism-can-be-silently-overridden.md",
+    "docs/memory/a-mocked-boundary-tests-the-contract-you-imagined.md",
+    "docs/memory/a-mutation-anchor-is-unbound-by-any-edit-nearby.md",
+    "docs/memory/a-mutation-loses-its-binding.md",
+    "docs/memory/a-positional-read-needs-a-verified-shape.md",
+    "docs/memory/a-privilege-is-not-a-capability.md",
+    "docs/memory/a-rebase-is-one-command-that-completes-or-aborts.md",
+    "docs/memory/a-report-format-is-a-contract.md",
+    "docs/memory/a-retreat-you-author-for-yourself-is-not-a-gate.md",
+    "docs/memory/a-retrospective-number-needs-provenance.md",
+    "docs/memory/a-reviewer-told-findings-are-filed-files-them.md",
+    "docs/memory/a-second-implementation-of-one-rule-drifts.md",
+    "docs/memory/a-sever-substitutes-todays-value.md",
+    "docs/memory/a-shim-can-fail-in-both-directions.md",
+    "docs/memory/a-side-job-gets-a-name-first.md",
+    "docs/memory/a-signal-needs-its-base-rate.md",
+    "docs/memory/a-stacked-pr-dies-with-its-base-branch.md",
+    "docs/memory/a-stated-bound-outlives-its-hole.md",
+    "docs/memory/a-sweeping-conclusion-that-ends-the-work-early.md",
+    "docs/memory/a-test-that-cannot-fail.md",
+    "docs/memory/a-title-is-scanned-not-read.md",
+    "docs/memory/a-tool-whose-mode-replays-must-be-called-with-the-mode-that-reads.md",
+    "docs/memory/a-usage-limit-stop-needs-a-wake-at-reset.md",
+    "docs/memory/a-vendored-line-number-has-no-owner.md",
+    "docs/memory/a-waiting-line-must-measure-age.md",
+    "docs/memory/a-waiver-hold-is-paid-for-with-a-review.md",
+    "docs/memory/access-tiers-vision.md",
+    "docs/memory/after-fixing-search-for-the-class.md",
+    "docs/memory/agent-blocking-call-over-5-min-rewrites-its-cache.md",
+    "docs/memory/agent-tool-restriction-has-no-owner.md",
+    "docs/memory/always-choose-subagent-driven-execution.md",
+    "docs/memory/an-escalation-has-no-closer.md",
+    "docs/memory/an-inference-stated-as-measured.md",
+    "docs/memory/an-instrument-that-edits-the-repo-corrupts-its-peers.md",
+    "docs/memory/anchor-name-and-stable-id-handoff.md",
+    "docs/memory/anon-execute-is-the-default-not-a-decision.md",
+    "docs/memory/arch-review-153-workflow-readers.md",
+    "docs/memory/ask-an-agent-to-refute-not-confirm.md",
+    "docs/memory/assert-the-emitted-artifact-parses.md",
+    "docs/memory/assert-the-property-not-the-mechanism.md",
+    "docs/memory/backlog-110-parser-completeness-merged.md",
+    "docs/memory/backlog-154-dash-scalar-ready-331.md",
+    "docs/memory/backlog-191-semantic-recall-replicated.md",
+    "docs/memory/backlog-edit-needs-gen-backlog-page-selftest.md",
+    "docs/memory/backlog-md-stays-markdown.md",
+    "docs/memory/behavior-follows-the-budget-situation.md",
+    "docs/memory/blob-addressing-spec-state.md",
+    "docs/memory/cannot-die-may-mean-a-second-clause.md",
+    "docs/memory/check-the-assumption-not-just-the-code.md",
+    "docs/memory/chrome-bar-reachable-378-merged.md",
+    "docs/memory/closing-table-r7-r8-merged-327.md",
+    "docs/memory/cloud-dig-deeper-frontend-state.md",
+    "docs/memory/cloud-dig-serving-branch-state.md",
+    "docs/memory/cloud-summary-pdf-slice-state.md",
+    "docs/memory/concurrent-agents-go-wrong.md",
+    "docs/memory/cost-is-not-the-objective-improvement-is.md",
+    "docs/memory/cost-per-video-analysis.md",
+    "docs/memory/coverage-verdict-union-91-merged.md",
+    "docs/memory/dashboard-ask-choices-merged.md",
+    "docs/memory/defaults-i-decide-myself.md",
+    "docs/memory/defined-not-derived-constants.md",
+    "docs/memory/detached-dig-retention-decision.md",
+    "docs/memory/discover-the-target-and-read-it-back-uncached.md",
+    "docs/memory/document-approval-is-interactive.md",
+    "docs/memory/dual-review-is-the-process-not-a-request.md",
+    "docs/memory/dual-review-what-it-catches.md",
+    "docs/memory/exercise-the-producer-at-two-distinct-inputs.md",
+    "docs/memory/explainer-pages-lead-with-diagrams.md",
+    "docs/memory/extract-and-run-a-plans-code.md",
+    "docs/memory/fable-limit-resets-are-manual.md",
+    "docs/memory/feedback-agree-before-filing.md",
+    "docs/memory/feedback-flag-transitional-choices.md",
+    "docs/memory/first-can-mean-first-before-shipping.md",
+    "docs/memory/fixing-a-premise-is-not-covering-the-branch.md",
+    "docs/memory/frontend-subproject-design-state.md",
+    "docs/memory/gates-detect-defects-not-design.md",
+    "docs/memory/gh-two-remotes-footgun.md",
+    "docs/memory/guard-classification-shape-vs-sequence.md",
+    "docs/memory/guard-coverage-scope-merged.md",
+    "docs/memory/guard-operands-from-one-closure.md",
+    "docs/memory/hardcode-only-what-fails-loudly.md",
+    "docs/memory/how-to-shape-a-message-to-me.md",
+    "docs/memory/i-propose-goal-names-the-owner-picks.md",
+    "docs/memory/inline-renderer-seam-merged.md",
+    "docs/memory/instruction-is-not-isolation.md",
+    "docs/memory/integration-suite-does-not-apply-migrations.md",
+    "docs/memory/it-already-exists-under-a-name-i-didnt-search.md",
+    "docs/memory/launch-roadmap-state.md",
+    "docs/memory/lease-sweep-merged-318.md",
+    "docs/memory/link-contrast-slice-merged.md",
+    "docs/memory/local-cloud-validation-run.md",
+    "docs/memory/local-manual-test-env.md",
+    "docs/memory/m4-superseded-trail.md",
+    "docs/memory/main-drivable-cost-is-per-call-site.md",
+    "docs/memory/may-free-port-7391.md",
+    "docs/memory/measure-the-population-the-code-actually-sees.md",
+    "docs/memory/memory-files-are-audited-weekly.md",
+    "docs/memory/memwatch-watchdog-fseventsd.md",
+    "docs/memory/merge-ready-slice-merged-324.md",
+    "docs/memory/mutation-harness-home-redirect-state.md",
+    "docs/memory/mutation-manifest-retarget-merged.md",
+    "docs/memory/name-and-define-every-reference.md",
+    "docs/memory/never-close-with-a-promise.md",
+    "docs/memory/no-command-approval-ceremony.md",
+    "docs/memory/no-question-watch-while-owner-afk.md",
+    "docs/memory/nothing-needs-you-must-read-the-dashboard.md",
+    "docs/memory/one-rule-one-place.md",
+    "docs/memory/owner-decisions-1113-marketplace-ff-392.md",
+    "docs/memory/owner-priority-order-1102.md",
+    "docs/memory/page-chrome-seam-merged.md",
+    "docs/memory/parallel-branches-append-to-one-log.md",
+    "docs/memory/parallel-threads-need-a-thread-map.md",
+    "docs/memory/peer-sites-merged-pr-313.md",
+    "docs/memory/pin-python-317-merged.md",
+    "docs/memory/playlist-sidebar-ux-branch-state.md",
+    "docs/memory/position-column-is-not-vestigial.md",
+    "docs/memory/postgrest-abort-returns-not-throws.md",
+    "docs/memory/print-selection-cards-in-chat.md",
+    "docs/memory/process-conventions.md",
+    "docs/memory/project-has-two-deliverables.md",
+    "docs/memory/proving-a-negative-by-interception-cannot-terminate.md",
+    "docs/memory/push-from-a-worktree-needs-an-explicit-refspec.md",
+    "docs/memory/push-is-mine-merging-is-theirs.md",
+    "docs/memory/push-to-ci-as-soon-as-ready.md",
+    "docs/memory/putting-a-choice-to-the-user.md",
+    "docs/memory/quote-the-code-dont-characterise-it.md",
+    "docs/memory/recall-fold-360-merged.md",
+    "docs/memory/reservation-guards-spending-not-recording.md",
+    "docs/memory/reservation-release-slice-state.md",
+    "docs/memory/restart-docker-dont-record-cannot-run.md",
+    "docs/memory/retire-plan-mode-merged.md",
+    "docs/memory/review-convergence-is-not-the-final-tree-gate.md",
+    "docs/memory/review-rounds-capped-at-r3.md",
+    "docs/memory/rls-denial-is-indistinguishable-from-absence.md",
+    "docs/memory/route-agents-by-task-model.md",
+    "docs/memory/run-pr-only-gates-before-push.md",
+    "docs/memory/running-codex.md",
+    "docs/memory/schema-gates-in-ci-merged.md",
+    "docs/memory/schema-gates-required-137-merged.md",
+    "docs/memory/scoped-mutation-run-in-four-seconds.md",
+    "docs/memory/seed-manifest-122-merged.md",
+    "docs/memory/selection-card-guard-built.md",
+    "docs/memory/separate-the-rule-from-the-fetch.md",
+    "docs/memory/serial-coherence-slice-state.md",
+    "docs/memory/serve-path-bounding-merged.md",
+    "docs/memory/show-a-waiting-signal-not-prose.md",
+    "docs/memory/slice-history.md",
+    "docs/memory/split-295-src-root-merged.md",
+    "docs/memory/stage-1d-merged-followups.md",
+    "docs/memory/stage-1f-a-design-state.md",
+    "docs/memory/stage-1f-b-design-state.md",
+    "docs/memory/stage-1f-c-design-state.md",
+    "docs/memory/stage-1g-design-state.md",
+    "docs/memory/stage-2-batch-autonomy-plan.md",
+    "docs/memory/stage3-cloud-sync-branch-state.md",
+    "docs/memory/staging-supabase-project.md",
+    "docs/memory/stopping-rule-defect-class-shift.md",
+    "docs/memory/stranger-token-h2-done.md",
+    "docs/memory/summary-section-timestamp-guarantee-state.md",
+    "docs/memory/terminal-selection-dead-under-fullscreen-tui.md",
+    "docs/memory/test-harness-can-launder-failures.md",
+    "docs/memory/the-answer-may-only-exist-in-the-transcript.md",
+    "docs/memory/the-apparatus-outgrew-its-subject.md",
+    "docs/memory/the-control-refuted-the-premise.md",
+    "docs/memory/the-user-does-not-follow-in-real-time.md",
+    "docs/memory/true-about-the-name-silent-about-the-layer.md",
+    "docs/memory/unit-coverage-does-not-compose.md",
+    "docs/memory/unsatisfiable-ordering-is-the-tell.md",
+    "docs/memory/usage-is-cache-rewrites-of-parked-agents.md",
+    "docs/memory/waiting-lines-carry-a-timestamp.md",
+    "docs/memory/wake-on-visit-merged-322.md",
+    "docs/memory/what-mutation-testing-proves.md",
+    "docs/memory/worker-vs-sync-fencing-gap.md",
+    "scripts/check-surface-recall.py",
+    "scripts/fixture_git.py",
+    "scripts/recall-llm.py"
+   ],
+   "components": {
+    "check-surface-recall": {
+     "files": [
+      "scripts/check-surface-recall.py"
+     ],
+     "expected_count": 1
+    },
+    "fixture-git": {
+     "files": [
+      "scripts/fixture_git.py"
+     ],
+     "expected_count": 1
+    },
+    "hook-dispatcher": {
+     "files": [
+      ".claude/hooks/run-hook.sh"
+     ],
+     "expected_count": 1
+    },
+    "hook-surface-recall": {
+     "files": [
+      ".claude/hooks/surface-recall.sh"
+     ],
+     "expected_count": 1
+    },
+    "memory-corpus": {
+     "files": [
+      "docs/memory/MEMORY.md",
+      "docs/memory/a-blocking-question-while-afk-costs-the-whole-night.md",
+      "docs/memory/a-bound-enumerates-what-is-witnessed.md",
+      "docs/memory/a-budget-stop-is-soft-with-a-reserve.md",
+      "docs/memory/a-case-can-pass-for-an-ambient-reason.md",
+      "docs/memory/a-check-result-is-not-the-claim.md",
+      "docs/memory/a-class-fix-needs-an-independent-copy-and-an-identity-case.md",
+      "docs/memory/a-convention-catches-what-you-read.md",
+      "docs/memory/a-costbenefit-finding-expires-when-the-denominator-moves.md",
+      "docs/memory/a-declaration-is-not-the-act.md",
+      "docs/memory/a-document-inside-the-corpus-it-measures.md",
+      "docs/memory/a-fence-wrong-both-ways-asks-the-wrong-credential.md",
+      "docs/memory/a-filed-finding-s-proposed-fix-is-a-hypothesis.md",
+      "docs/memory/a-forced-choice-test-cannot-fail.md",
+      "docs/memory/a-framing-widened-to-fit-is-no-longer-a-claim.md",
+      "docs/memory/a-gate-can-be-blocked-on-a-decision-not-work.md",
+      "docs/memory/a-gates-channel-can-be-weaker-than-the-gate.md",
+      "docs/memory/a-guard-can-mandate-the-duplication-it-audits.md",
+      "docs/memory/a-guards-evidence-path-is-a-namespace-with-no-allocator.md",
+      "docs/memory/a-hang-is-not-a-diagnosis.md",
+      "docs/memory/a-harness-cannot-read-a-cause-from-a-childs-text.md",
+      "docs/memory/a-measurement-is-only-as-good-as-its-corpus.md",
+      "docs/memory/a-mechanical-edit-damages-what-it-preserves.md",
+      "docs/memory/a-mechanism-can-be-silently-overridden.md",
+      "docs/memory/a-mocked-boundary-tests-the-contract-you-imagined.md",
+      "docs/memory/a-mutation-anchor-is-unbound-by-any-edit-nearby.md",
+      "docs/memory/a-mutation-loses-its-binding.md",
+      "docs/memory/a-positional-read-needs-a-verified-shape.md",
+      "docs/memory/a-privilege-is-not-a-capability.md",
+      "docs/memory/a-rebase-is-one-command-that-completes-or-aborts.md",
+      "docs/memory/a-report-format-is-a-contract.md",
+      "docs/memory/a-retreat-you-author-for-yourself-is-not-a-gate.md",
+      "docs/memory/a-retrospective-number-needs-provenance.md",
+      "docs/memory/a-reviewer-told-findings-are-filed-files-them.md",
+      "docs/memory/a-second-implementation-of-one-rule-drifts.md",
+      "docs/memory/a-sever-substitutes-todays-value.md",
+      "docs/memory/a-shim-can-fail-in-both-directions.md",
+      "docs/memory/a-side-job-gets-a-name-first.md",
+      "docs/memory/a-signal-needs-its-base-rate.md",
+      "docs/memory/a-stacked-pr-dies-with-its-base-branch.md",
+      "docs/memory/a-stated-bound-outlives-its-hole.md",
+      "docs/memory/a-sweeping-conclusion-that-ends-the-work-early.md",
+      "docs/memory/a-test-that-cannot-fail.md",
+      "docs/memory/a-title-is-scanned-not-read.md",
+      "docs/memory/a-tool-whose-mode-replays-must-be-called-with-the-mode-that-reads.md",
+      "docs/memory/a-usage-limit-stop-needs-a-wake-at-reset.md",
+      "docs/memory/a-vendored-line-number-has-no-owner.md",
+      "docs/memory/a-waiting-line-must-measure-age.md",
+      "docs/memory/a-waiver-hold-is-paid-for-with-a-review.md",
+      "docs/memory/access-tiers-vision.md",
+      "docs/memory/after-fixing-search-for-the-class.md",
+      "docs/memory/agent-blocking-call-over-5-min-rewrites-its-cache.md",
+      "docs/memory/agent-tool-restriction-has-no-owner.md",
+      "docs/memory/always-choose-subagent-driven-execution.md",
+      "docs/memory/an-escalation-has-no-closer.md",
+      "docs/memory/an-inference-stated-as-measured.md",
+      "docs/memory/an-instrument-that-edits-the-repo-corrupts-its-peers.md",
+      "docs/memory/anchor-name-and-stable-id-handoff.md",
+      "docs/memory/anon-execute-is-the-default-not-a-decision.md",
+      "docs/memory/arch-review-153-workflow-readers.md",
+      "docs/memory/ask-an-agent-to-refute-not-confirm.md",
+      "docs/memory/assert-the-emitted-artifact-parses.md",
+      "docs/memory/assert-the-property-not-the-mechanism.md",
+      "docs/memory/backlog-110-parser-completeness-merged.md",
+      "docs/memory/backlog-154-dash-scalar-ready-331.md",
+      "docs/memory/backlog-191-semantic-recall-replicated.md",
+      "docs/memory/backlog-edit-needs-gen-backlog-page-selftest.md",
+      "docs/memory/backlog-md-stays-markdown.md",
+      "docs/memory/behavior-follows-the-budget-situation.md",
+      "docs/memory/blob-addressing-spec-state.md",
+      "docs/memory/cannot-die-may-mean-a-second-clause.md",
+      "docs/memory/check-the-assumption-not-just-the-code.md",
+      "docs/memory/chrome-bar-reachable-378-merged.md",
+      "docs/memory/closing-table-r7-r8-merged-327.md",
+      "docs/memory/cloud-dig-deeper-frontend-state.md",
+      "docs/memory/cloud-dig-serving-branch-state.md",
+      "docs/memory/cloud-summary-pdf-slice-state.md",
+      "docs/memory/concurrent-agents-go-wrong.md",
+      "docs/memory/cost-is-not-the-objective-improvement-is.md",
+      "docs/memory/cost-per-video-analysis.md",
+      "docs/memory/coverage-verdict-union-91-merged.md",
+      "docs/memory/dashboard-ask-choices-merged.md",
+      "docs/memory/defaults-i-decide-myself.md",
+      "docs/memory/defined-not-derived-constants.md",
+      "docs/memory/detached-dig-retention-decision.md",
+      "docs/memory/discover-the-target-and-read-it-back-uncached.md",
+      "docs/memory/document-approval-is-interactive.md",
+      "docs/memory/dual-review-is-the-process-not-a-request.md",
+      "docs/memory/dual-review-what-it-catches.md",
+      "docs/memory/exercise-the-producer-at-two-distinct-inputs.md",
+      "docs/memory/explainer-pages-lead-with-diagrams.md",
+      "docs/memory/extract-and-run-a-plans-code.md",
+      "docs/memory/fable-limit-resets-are-manual.md",
+      "docs/memory/feedback-agree-before-filing.md",
+      "docs/memory/feedback-flag-transitional-choices.md",
+      "docs/memory/first-can-mean-first-before-shipping.md",
+      "docs/memory/fixing-a-premise-is-not-covering-the-branch.md",
+      "docs/memory/frontend-subproject-design-state.md",
+      "docs/memory/gates-detect-defects-not-design.md",
+      "docs/memory/gh-two-remotes-footgun.md",
+      "docs/memory/guard-classification-shape-vs-sequence.md",
+      "docs/memory/guard-coverage-scope-merged.md",
+      "docs/memory/guard-operands-from-one-closure.md",
+      "docs/memory/hardcode-only-what-fails-loudly.md",
+      "docs/memory/how-to-shape-a-message-to-me.md",
+      "docs/memory/i-propose-goal-names-the-owner-picks.md",
+      "docs/memory/inline-renderer-seam-merged.md",
+      "docs/memory/instruction-is-not-isolation.md",
+      "docs/memory/integration-suite-does-not-apply-migrations.md",
+      "docs/memory/it-already-exists-under-a-name-i-didnt-search.md",
+      "docs/memory/launch-roadmap-state.md",
+      "docs/memory/lease-sweep-merged-318.md",
+      "docs/memory/link-contrast-slice-merged.md",
+      "docs/memory/local-cloud-validation-run.md",
+      "docs/memory/local-manual-test-env.md",
+      "docs/memory/m4-superseded-trail.md",
+      "docs/memory/main-drivable-cost-is-per-call-site.md",
+      "docs/memory/may-free-port-7391.md",
+      "docs/memory/measure-the-population-the-code-actually-sees.md",
+      "docs/memory/memory-files-are-audited-weekly.md",
+      "docs/memory/memwatch-watchdog-fseventsd.md",
+      "docs/memory/merge-ready-slice-merged-324.md",
+      "docs/memory/mutation-harness-home-redirect-state.md",
+      "docs/memory/mutation-manifest-retarget-merged.md",
+      "docs/memory/name-and-define-every-reference.md",
+      "docs/memory/never-close-with-a-promise.md",
+      "docs/memory/no-command-approval-ceremony.md",
+      "docs/memory/no-question-watch-while-owner-afk.md",
+      "docs/memory/nothing-needs-you-must-read-the-dashboard.md",
+      "docs/memory/one-rule-one-place.md",
+      "docs/memory/owner-decisions-1113-marketplace-ff-392.md",
+      "docs/memory/owner-priority-order-1102.md",
+      "docs/memory/page-chrome-seam-merged.md",
+      "docs/memory/parallel-branches-append-to-one-log.md",
+      "docs/memory/parallel-threads-need-a-thread-map.md",
+      "docs/memory/peer-sites-merged-pr-313.md",
+      "docs/memory/pin-python-317-merged.md",
+      "docs/memory/playlist-sidebar-ux-branch-state.md",
+      "docs/memory/position-column-is-not-vestigial.md",
+      "docs/memory/postgrest-abort-returns-not-throws.md",
+      "docs/memory/print-selection-cards-in-chat.md",
+      "docs/memory/process-conventions.md",
+      "docs/memory/project-has-two-deliverables.md",
+      "docs/memory/proving-a-negative-by-interception-cannot-terminate.md",
+      "docs/memory/push-from-a-worktree-needs-an-explicit-refspec.md",
+      "docs/memory/push-is-mine-merging-is-theirs.md",
+      "docs/memory/push-to-ci-as-soon-as-ready.md",
+      "docs/memory/putting-a-choice-to-the-user.md",
+      "docs/memory/quote-the-code-dont-characterise-it.md",
+      "docs/memory/recall-fold-360-merged.md",
+      "docs/memory/reservation-guards-spending-not-recording.md",
+      "docs/memory/reservation-release-slice-state.md",
+      "docs/memory/restart-docker-dont-record-cannot-run.md",
+      "docs/memory/retire-plan-mode-merged.md",
+      "docs/memory/review-convergence-is-not-the-final-tree-gate.md",
+      "docs/memory/review-rounds-capped-at-r3.md",
+      "docs/memory/rls-denial-is-indistinguishable-from-absence.md",
+      "docs/memory/route-agents-by-task-model.md",
+      "docs/memory/run-pr-only-gates-before-push.md",
+      "docs/memory/running-codex.md",
+      "docs/memory/schema-gates-in-ci-merged.md",
+      "docs/memory/schema-gates-required-137-merged.md",
+      "docs/memory/scoped-mutation-run-in-four-seconds.md",
+      "docs/memory/seed-manifest-122-merged.md",
+      "docs/memory/selection-card-guard-built.md",
+      "docs/memory/separate-the-rule-from-the-fetch.md",
+      "docs/memory/serial-coherence-slice-state.md",
+      "docs/memory/serve-path-bounding-merged.md",
+      "docs/memory/show-a-waiting-signal-not-prose.md",
+      "docs/memory/slice-history.md",
+      "docs/memory/split-295-src-root-merged.md",
+      "docs/memory/stage-1d-merged-followups.md",
+      "docs/memory/stage-1f-a-design-state.md",
+      "docs/memory/stage-1f-b-design-state.md",
+      "docs/memory/stage-1f-c-design-state.md",
+      "docs/memory/stage-1g-design-state.md",
+      "docs/memory/stage-2-batch-autonomy-plan.md",
+      "docs/memory/stage3-cloud-sync-branch-state.md",
+      "docs/memory/staging-supabase-project.md",
+      "docs/memory/stopping-rule-defect-class-shift.md",
+      "docs/memory/stranger-token-h2-done.md",
+      "docs/memory/summary-section-timestamp-guarantee-state.md",
+      "docs/memory/terminal-selection-dead-under-fullscreen-tui.md",
+      "docs/memory/test-harness-can-launder-failures.md",
+      "docs/memory/the-answer-may-only-exist-in-the-transcript.md",
+      "docs/memory/the-apparatus-outgrew-its-subject.md",
+      "docs/memory/the-control-refuted-the-premise.md",
+      "docs/memory/the-user-does-not-follow-in-real-time.md",
+      "docs/memory/true-about-the-name-silent-about-the-layer.md",
+      "docs/memory/unit-coverage-does-not-compose.md",
+      "docs/memory/unsatisfiable-ordering-is-the-tell.md",
+      "docs/memory/usage-is-cache-rewrites-of-parked-agents.md",
+      "docs/memory/waiting-lines-carry-a-timestamp.md",
+      "docs/memory/wake-on-visit-merged-322.md",
+      "docs/memory/what-mutation-testing-proves.md",
+      "docs/memory/worker-vs-sync-fencing-gap.md"
+     ],
+     "expected_count": 196
+    },
+    "recall-llm": {
+     "files": [
+      "scripts/recall-llm.py"
+     ],
+     "expected_count": 1
+    }
+   }
+  }
+ }
+}
