@@ -2,7 +2,7 @@
 """Package declared files into a throwaway local marketplace, and install one of its plugins in a stranger's world
 (marketplace-inventory plan, Task 3; spec §6 and §7 item 0).
 
-    python3 scripts/mkt_stage.py --self-test  # 92 cases
+    python3 scripts/mkt_stage.py --self-test  # 97 cases
     python3 scripts/mkt_stage.py --out DIR --package NAME --version V [--skill PATH]... [--file PATH]...
                                  [--marketplace NAME]
 
@@ -32,9 +32,10 @@ spelling. `plan` resolves once, each as (st_dev, st_ino): the PRIVATE roots (`.c
 (`.agents/skills`), links followed; and every object git TRACKS, by `lstat` of each `git ls-files` name (a name with
 a parent that is a link on disk is skipped). `_real` walks a declaration a component at a time from the root (r2
 Codex 2). A link must be tracked and have a RELATIVE target, which replaces it; `..` past the root and more than
-MAX_LINKS links are refused. Every object stepped on is refused when it IS a private root (or, in `files`, the
-skills home), however it was spelled or reached (r3 F1, F4: a tracked link `.claude -> dot`, a private root that is
-itself a link). The regular file at the end must be tracked and have exactly one name (no hard link). "Tracked"
+MAX_LINKS links are refused. Every object the walk STANDS on, the root it starts from included, is refused when it
+IS a private root (or, in `files`, the skills home), however it was spelled or reached (r3 F1, F4: a tracked link
+`.claude -> dot`, a private root that is itself a link). A private root or skills home that IS the repository or a
+directory holding it is refused at `plan`, whatever is declared (r4 Codex 1: `.claude/plans -> ..`). The regular file at the end must be tracked and have exactly one name (no hard link). "Tracked"
 also checks the SPELLING: the walked path must equal a name git tracks for that object after NFC on both sides
 (r3 F3), case EXACT (coordinator override: one manifest, one answer on macOS and on Linux), and a mis-cased
 declaration is refused naming the tracked spelling. "Inside the repository" for the out directory is
@@ -229,8 +230,12 @@ def _tracked_objects(top: Path, names) -> dict:
 
 def _roots(top: Path, paths, why: str) -> dict:
     """{identity: (declared name, why)} of each path, links FOLLOWED (`os.stat`): the place itself, whatever it is
-    reached through. An absent root protects nothing because nothing is there; any other error is CANNOT RUN."""
+    reached through. An absent root protects nothing because nothing is there; any other error is CANNOT RUN.
+    A root that IS the repository, or a directory HOLDING it (`.claude/plans -> ..`, `-> ../..`), is CANNOT RUN
+    (r4 Codex 1): every file here would be under it, and no declaration's walk ever steps on a directory above
+    the one it starts from, so the rule is refused whole rather than left to the walk."""
     roots = {}
+    holding = {_ident(os.stat(d)): d for d in (top, *top.parents)}
     for p in paths:
         try:
             st = os.stat(top / p)
@@ -238,6 +243,9 @@ def _roots(top: Path, paths, why: str) -> dict:
             continue
         except OSError as e:
             raise CannotRun(f"cannot tell what {p} is in {top} ({type(e).__name__}: {e})") from None
+        if _ident(st) in holding:
+            raise CannotRun(f"{p} is the repository {top} itself, or a directory holding it ({holding[_ident(st)]}): "
+                            f"every file in the repository would then be under {p}, so nothing here can be staged")
         roots[_ident(st)] = (p, why)
     return roots
 
@@ -257,11 +265,20 @@ def _tracked_as(rel: str, inner: str, st: os.stat_result, tracked: _Tracked) -> 
 def _real(top: Path, rel: str, tracked: _Tracked, forbidden: dict) -> tuple[Path, os.stat_result]:
     """(link-free path, `lstat`) of declared `rel`, WALKED from the root one component at a time, never resolved in
     one step (r2 Codex 2), each component `lstat`ed. A link must be tracked, with a RELATIVE target, and is replaced
-    by its target's components; `..` pops, past the root is refused; more than MAX_LINKS links is a loop. Any other
-    object is refused when its IDENTITY is in `forbidden` (a private root, or the skills home for `files`), however
-    it was spelled or reached (Phase 6). A regular file at the end must be tracked and have exactly one name."""
+    by its target's components; `..` pops, past the root is refused; more than MAX_LINKS links is a loop. The
+    object the walk STANDS on is refused when its IDENTITY is in `forbidden` (a private root, or the skills home
+    for `files`), however it was spelled or reached (Phase 6), and that is asked every time the walk stands
+    anywhere: on the root it STARTS from, on each object stepped onto, on the directory a `..` or a link's target
+    returns it to, and on the object it ends on (r4 Codex 1: the starting root was never asked). A forbidden
+    identity makes everything below it forbidden, because nothing below is reached except by standing on it.
+    A regular file at the end must be tracked and have exactly one name."""
     pending, cur, hops, st = list(Path(rel).parts), [], 0, os.lstat(top)
-    while pending:
+    while True:
+        if _ident(st) in forbidden:
+            root, why = forbidden[_ident(st)]
+            raise CannotRun(f"{rel} is under {root} ({'/'.join(cur) or os.curdir}): {why}")
+        if not pending:
+            break
         name = pending.pop(0)
         if name == os.curdir:
             continue
@@ -294,10 +311,6 @@ def _real(top: Path, rel: str, tracked: _Tracked, forbidden: dict) -> tuple[Path
             cur.pop()
             st = os.lstat(top.joinpath(*cur))      # a target of `.` or `` names the directory holding the link
             pending = list(Path(target).parts) + pending
-            continue
-        if _ident(st) in forbidden:
-            root, why = forbidden[_ident(st)]
-            raise CannotRun(f"{rel} is under {root} ({inner}): {why}")
     if stat.S_ISREG(st.st_mode):
         inner = "/".join(cur)
         _tracked_as(rel, inner, st, tracked)
@@ -850,6 +863,51 @@ def _self_test_body() -> int:
                 refused_stage(r, "dot is under .claude/plans", skills=["dot"])]
     case("a TRACKED link .claude/plans -> ../dot: dot/secret and skill dot are CANNOT RUN, nothing written",
          plans_is_a_link, [(True, False)] * 2)
+
+    # --- r4 Codex 1 (BLOCKER): a private root that IS the repository, or a directory holding it. Every file here is
+    # then under it, and the walk never stepped on the root it starts from. --------------------------------------
+    def root_repo(link, target):
+        """`repo()` plus a tracked `secret`, a tracked `alias -> .`, and a tracked link `link -> target`."""
+        r = repo()
+        put(r / "secret", b"PRIVATE FIXTURE\n")
+        (r / "alias").symlink_to(".")
+        if (r / link).is_dir():
+            shutil.rmtree(r / link)
+        (r / link).symlink_to(target)
+        git(r, "add", "-A")
+        return r
+
+    def plans_is_the_repo():
+        r = root_repo(".claude/plans", "..")
+        return [refused_stage(r, ".claude/plans is the repository", files=[f]) for f in
+                (".claude/plans/secret", "secret", "alias/secret")]
+    case("a TRACKED link .claude/plans -> .. (the repository itself): .claude/plans/secret, secret and alias/secret "
+         "are each CANNOT RUN naming the root, nothing written", plans_is_the_repo, [(True, False)] * 3)
+    case("...and .claude/plans -> ../.. (a directory HOLDING the repository): secret is CANNOT RUN, nothing written",
+         lambda: refused_stage(root_repo(".claude/plans", "../.."), ".claude/plans is the repository",
+                               files=["secret"]), (True, False))
+    case("...and the skills home .agents/skills -> .. (the repository itself): a declared file is CANNOT RUN",
+         lambda: refused_stage(root_repo(".agents/skills", ".."), ".agents/skills is the repository",
+                               files=["scripts/x.py"]), (True, False))
+
+    def walk_starts_forbidden():
+        # `_real` on its own, the root's identity forbidden by hand (independent of `_roots`): the object the walk
+        # STARTS on, returns to by `..`, or stands on after a link to `.`, is checked like any object stepped on.
+        r = root_repo(".claude/plans", "..")
+        names = _tracked(r)
+        tracked = _Tracked(_tracked_objects(r, names), names)
+        root = {_ident(os.stat(r)): ("ROOT", "why")}
+        rels = ("secret", "alias/secret", "scripts/../secret", ".claude/plans/secret")
+        return ([refused(lambda rel=rel: _real(r, rel, tracked, root), f"{rel} is under ROOT (.)") for rel in rels],
+                [_real(r, rel, tracked, {})[0] == r / "secret" for rel in rels])   # the control: nothing forbidden
+    case("_real refuses the root it STARTS on when that identity is forbidden: secret, alias/secret (alias -> .), "
+         "scripts/../secret and .claude/plans/secret (-> ..); with nothing forbidden each resolves to secret",
+         walk_starts_forbidden, ([True] * 4, [True] * 4))
+    case("adjacent: a private root that is an ordinary directory below the repository refuses nothing outside it "
+         "(scripts/x.py stages with .claude/plans present)",
+         lambda: (lambda r: (put(r / ".claude/plans/p.md", b"plan\n"),
+                             (staged(r, files=["scripts/x.py"]) / "scripts/x.py").read_bytes() == X_BYTES)[1])(repo()),
+         True)
 
     def compatibility_twins():
         # Red case 3 (F2): names a filesystem keeps DISTINCT (compatibility forms, not canonical) are two files.

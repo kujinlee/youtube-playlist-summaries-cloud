@@ -2407,5 +2407,8 @@ EXPECTED_MUTATIONS = {
     # private directory, a loop, an absolute target ×2), the folded exclusions (`_under`, and one entry per site:
     # .agents/skills, .claude-plugin, the out directory, two destinations; the whole-component rule) and the index
     # name decoding. 12 re-bound onto the walk.
-    "scripts/mkt_stage.py": 67,
+    # ⟳ PR #594 round 4 fold (Codex r4 #1): 67 + 3 = 70 — a private root that IS the repository, one that HOLDS it,
+    # and the walk asking about the root it starts from. None retired; the three anchors on the walk's forbidden
+    # check still bind (the line moved to the top of the loop, its text unchanged).
+    "scripts/mkt_stage.py": 70,
 }

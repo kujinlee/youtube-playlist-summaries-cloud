@@ -739,5 +739,38 @@
    ]
   ],
   "expect": "DOCS/a.md declared where git tracks docs/a.md is CANNOT RUN, naming the tracked spelling (case is exact)"
+ },
+ {
+  "name": "a private root that IS the repository is accepted (left to the walk)",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if _ident(st) in holding:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a TRACKED link .claude/plans -> .. (the repository itself): .claude/plans/secret, secret and alias/secret are each CANNOT RUN naming the root, nothing written"
+ },
+ {
+  "name": "a private root is compared with the repository only, not the directories holding it",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "for d in (top, *top.parents)}",
+    "for d in (top,)}"
+   ]
+  ],
+  "expect": "...and .claude/plans -> ../.. (a directory HOLDING the repository): secret is CANNOT RUN, nothing written"
+ },
+ {
+  "name": "the walk never asks about the root it starts from or returns to",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if _ident(st) in forbidden:\n            root, why = forbidden",
+    "        if cur and _ident(st) in forbidden:\n            root, why = forbidden"
+   ]
+  ],
+  "expect": "_real refuses the root it STARTS on when that identity is forbidden: secret, alias/secret (alias -> .), scripts/../secret and .claude/plans/secret (-> ..); with nothing forbidden each resolves to secret"
  }
 ]
