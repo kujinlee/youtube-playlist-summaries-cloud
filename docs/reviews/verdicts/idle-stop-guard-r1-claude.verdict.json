@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/idle-stop-guard-r1-claude.md": "100644 2489f316bbd90b592dceb462259db195053ba896",
+    "docs/reviews/codex/idle-stop-guard-r1-codex.md": "100644 ced7408a6593b23665e83863d7cb923236d77395",
+    "docs/reviews/verdicts/idle-stop-guard-r1-codex.verdict.json": "100644 152ae08a2e44806ec7bd3e0a4f9a8eee1afcccf1"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "175d82c6ec66f81fb2d3e663bfe11530d83ce091",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "Round-1 Claude half: refute the idle-stop Stop hook (scripts/check-idle-stop.py)",
+  "reason": "claude half filed: 9176 chars, names 175d82c6ec66",
+  "refused": false,
+  "review": "idle-stop-guard-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/isg",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
