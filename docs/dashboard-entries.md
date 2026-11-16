@@ -20917,3 +20917,21 @@ under a file); the identity case compares prefixes and files SEPARATELY against 
 union let `supabase/` move into the file set unseen); `_spellings`
 gains `.claude/settings.json.bak` and `.claude/settings.json/foo` (refused, red on the old code) and
 `.claude/settings.json` (accepted). Self-test 33/33. Mutations 12 -> 16, two anchors re-bound.
+
+## 2026-11-16
+When a helper agent is started to build something, a small watcher can now be started beside it. The watcher
+costs nothing while the helper is working. If the helper stops changing anything for a set number of minutes,
+the watcher ends, and that wakes the coordinating session with a short report naming the helper that went
+quiet. One watcher can cover several helpers at once. If it cannot see a helper's folder at all, it says so at
+once and never stays silent about it. Starting the watcher is a written convention for now, not something a
+machine enforces.
+<!--tech-->
+Backlog #657, branch `agent-watchdog`. `scripts/agent-watchdog.py QUIET_MIN name=worktree[:transcript] ...`, run
+as a background Bash job: every 60 s it reads the newest mtime of the worktree's files and directories (not
+`.git`, `node_modules`, `.next`), of `HEAD`, `index` and `logs/HEAD` in its git directory, and of the transcript
+when given; the window counts from the later of that and arming. Exit 1 names every quiet builder and prints the
+re-arm command for the active ones; exit 2 is CANNOT RUN (missing worktree, unreadable git directory or
+transcript, bad arguments). A window of 270 s or less is refused: backlog #455's hook bounds one silent
+foreground call at 270 s, and a case compares the two constants. Self-test 51/51 on a fake clock, 43 mutations,
+0 survivors. Pinned in `expected_mutations.py` and `check-selftest-counts.py`; the convention is one line in
+`docs/process-checklists.md` (*Agent lifetime*). No hook and no CI step were added.

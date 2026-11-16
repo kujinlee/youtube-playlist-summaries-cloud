@@ -2416,4 +2416,11 @@ EXPECTED_MUTATIONS = {
     # and the walk asking about the root it starts from. None retired; the three anchors on the walk's forbidden
     # check still bind (the line moved to the top of the loop, its text unchanged).
     "scripts/mkt_stage.py": 70,
+    # backlog #657 (2026-11-16): the agent watchdog, pinned in the commit that creates it. 43: the argument rules
+    # (10, the 270 s floor and its identity with `check-agent-long-call.LIMIT_S` among them), the git directory (4),
+    # what counts as activity (12: files, directories, the three git files, the three excluded directories, the
+    # transcript, the walk's error rule), the loop (8: the boundary, arming, the poll, both exit codes, the silent
+    # skip, each builder judged) and the report (6, the re-arm command among them). Not mutated: the two
+    # `except FileNotFoundError: continue` races (a file that vanishes mid-walk), which no case can stage.
+    "scripts/agent-watchdog.py": 43,
 }

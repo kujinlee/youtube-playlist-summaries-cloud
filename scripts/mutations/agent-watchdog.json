@@ -1,0 +1,580 @@
+[
+  {
+    "name": "the quiet boundary becomes exclusive: a builder quiet for exactly the window is not reported",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "if idle >= quiet_s:",
+        "if idle > quiet_s:"
+      ]
+    ],
+    "expect": [
+      "a builder quiet for 10 minutes wakes the orchestrator at minute 10, exit 1, named QUIET"
+    ]
+  },
+  {
+    "name": "the window is no longer counted from arming",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "idle = now - max(last, armed)",
+        "idle = now - last"
+      ]
+    ],
+    "expect": [
+      "a worktree already quiet for a day gets a full window from arming"
+    ]
+  },
+  {
+    "name": "the poll interval doubles",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        sleep(POLL_S)\n",
+        "        sleep(POLL_S * 2)\n"
+      ]
+    ],
+    "expect": [
+      "every wait between polls is 60 s"
+    ]
+  },
+  {
+    "name": "a quiet builder exits 0",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "broken else 1",
+        "broken else 0"
+      ]
+    ],
+    "expect": [
+      "a builder quiet for 10 minutes wakes the orchestrator at minute 10, exit 1, named QUIET"
+    ]
+  },
+  {
+    "name": "CANNOT RUN exits 1, like a quiet builder",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "return 2 if broken",
+        "return 1 if broken"
+      ]
+    ],
+    "expect": [
+      "a worktree missing at arming is CANNOT RUN at once: exit 2, no poll, the builder named",
+      "a worktree removed at minute 3 is CANNOT RUN at that poll, and the other is listed active",
+      "a quiet builder and an unreadable one in the same poll are BOTH reported, exit 2"
+    ]
+  },
+  {
+    "name": "an unwatchable builder is skipped in silence",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "if quiet or broken:",
+        "if quiet:"
+      ]
+    ],
+    "expect": [
+      "a worktree missing at arming is CANNOT RUN at once: exit 2, no poll, the builder named",
+      "a worktree removed at minute 3 is CANNOT RUN at that poll, and the other is listed active"
+    ]
+  },
+  {
+    "name": "only the first quiet builder is recorded",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "                quiet[w.name] = idle\n",
+        "                quiet[w.name] = idle\n                break\n"
+      ]
+    ],
+    "expect": [
+      "two builders quiet in the same poll are BOTH reported, and there is nothing to re-arm"
+    ]
+  },
+  {
+    "name": "only the first builder is examined",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        for w in watches:\n            try:\n                last = newest(w)",
+        "        for w in watches[:1]:\n            try:\n                last = newest(w)"
+      ]
+    ],
+    "expect": [
+      "two builders, the SECOND quiet: it is reported, the first is listed active with its re-arm command"
+    ]
+  },
+  {
+    "name": "the worktree's files are not read",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        " + [os.path.join(root, f) for f in files]:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "activity: a file deep in the worktree counts",
+      "a file written at minute 4 restarts the window: woken at minute 14"
+    ]
+  },
+  {
+    "name": "a directory's own time is not read",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "for path in [root] + ",
+        "for path in "
+      ]
+    ],
+    "expect": [
+      "activity: a directory's own time counts (a delete shows only there)",
+      "activity: the worktree root's own time counts"
+    ]
+  },
+  {
+    "name": "node_modules is walked",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "EXCLUDED_DIRS = (\".git\", \"node_modules\", \".next\")",
+        "EXCLUDED_DIRS = (\".git\", \".next\")"
+      ]
+    ],
+    "expect": [
+      "activity: node_modules and .next, at any depth, do not count"
+    ]
+  },
+  {
+    "name": ".next is walked",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "\"node_modules\", \".next\")",
+        "\"node_modules\")"
+      ]
+    ],
+    "expect": [
+      "activity: node_modules and .next, at any depth, do not count"
+    ]
+  },
+  {
+    "name": "a .git directory is walked",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "EXCLUDED_DIRS = (\".git\", ",
+        "EXCLUDED_DIRS = ("
+      ]
+    ],
+    "expect": [
+      "activity: a .git directory's objects do not count, only its HEAD, index and logs/HEAD"
+    ]
+  },
+  {
+    "name": "the git index is not read",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "GIT_OPTIONAL = (\"index\", \"logs/HEAD\")",
+        "GIT_OPTIONAL = (\"logs/HEAD\",)"
+      ]
+    ],
+    "expect": [
+      "activity: the git HEAD, index and logs/HEAD each count",
+      "git activity alone (the index, minute 4) restarts the window"
+    ]
+  },
+  {
+    "name": "the git logs/HEAD is not read",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "GIT_OPTIONAL = (\"index\", ",
+        "GIT_OPTIONAL = (\"index\",)  # "
+      ]
+    ],
+    "expect": [
+      "activity: the git HEAD, index and logs/HEAD each count",
+      "a main-checkout-shaped worktree (.git directory) is watched the same way"
+    ]
+  },
+  {
+    "name": "HEAD's own time is not counted",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        best = os.stat(os.path.join(gd, GIT_REQUIRED)).st_mtime\n",
+        "        os.stat(os.path.join(gd, GIT_REQUIRED))\n        best = 0.0\n"
+      ]
+    ],
+    "expect": [
+      "activity: the git HEAD, index and logs/HEAD each count"
+    ]
+  },
+  {
+    "name": "a git directory with no HEAD is read as silent",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        raise CannotRun(f\"the git directory {gd} is unreadable ({exc})\") from None\n",
+        "        best = 0.0\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a git directory with no HEAD",
+      "a quiet builder and an unreadable one in the same poll are BOTH reported, exit 2"
+    ]
+  },
+  {
+    "name": "the transcript is never read",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "    if w.transcript is not None:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "activity: the transcript counts when given, and is not read when it is not",
+      "a builder that only READS: transcript activity at minute 4 restarts the window when it is given, and is invisible when it is not",
+      "CANNOT RUN: a transcript that does not exist"
+    ]
+  },
+  {
+    "name": "a missing transcript is tolerated",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "            raise CannotRun(f\"the transcript {w.transcript} is unreadable ({exc})\") from None\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a transcript that does not exist"
+    ]
+  },
+  {
+    "name": "a missing worktree is read as silent",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        raise CannotRun(f\"the worktree {w.worktree} is missing\")\n",
+        "        return 0.0\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a worktree that does not exist",
+      "a worktree missing at arming is CANNOT RUN at once: exit 2, no poll, the builder named",
+      "a worktree removed at minute 3 is CANNOT RUN at that poll, and the other is listed active"
+    ]
+  },
+  {
+    "name": "the silent-call floor is dropped",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "    if quiet_s <= LONGEST_SILENT_CALL_S:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "arguments: a window of exactly 270 s is refused, one silent legal call would trip it",
+      "main: a window under the silent-call bound never starts watching"
+    ]
+  },
+  {
+    "name": "the silent-call floor becomes exclusive: exactly 270 s is accepted",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "quiet_s <= LONGEST",
+        "quiet_s < LONGEST"
+      ]
+    ],
+    "expect": [
+      "arguments: a window of exactly 270 s is refused, one silent legal call would trip it"
+    ]
+  },
+  {
+    "name": "the silent-call bound drifts from the long-call guard's",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "LONGEST_SILENT_CALL_S = 270\n",
+        "LONGEST_SILENT_CALL_S = 300\n"
+      ]
+    ],
+    "expect": [
+      "the silent-call bound equals check-agent-long-call's LIMIT_S"
+    ]
+  },
+  {
+    "name": "the same name twice is accepted",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        if any(w.name == name for w in watches):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "arguments: the same name twice is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "an empty name is accepted",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        if not name or not worktree:\n",
+        "        if not worktree:\n"
+      ]
+    ],
+    "expect": [
+      "arguments: an empty name is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "an empty worktree path is accepted",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        " or not worktree:\n",
+        ":\n"
+      ]
+    ],
+    "expect": [
+      "arguments: a pair with no = is CANNOT RUN",
+      "arguments: an empty worktree path is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "an empty transcript is read as no transcript",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        if colon and not transcript:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "arguments: an empty transcript after the colon is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the transcript is dropped from the watch",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "Watch(name, worktree, transcript if colon else None)",
+        "Watch(name, worktree, None)"
+      ]
+    ],
+    "expect": [
+      "arguments: name=worktree:transcript carries the transcript",
+      "a builder that only READS: transcript activity at minute 4 restarts the window when it is given, and is invisible when it is not"
+    ]
+  },
+  {
+    "name": "a window that is not finite is accepted",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "    if not math.isfinite(quiet_s):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "arguments: a QUIET_MIN that is not finite is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "QUIET_MIN is read as seconds",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        quiet_s = float(argv[0]) * 60\n",
+        "        quiet_s = float(argv[0])\n"
+      ]
+    ],
+    "expect": [
+      "arguments: QUIET_MIN is minutes, and name=worktree is one watch with no transcript"
+    ]
+  },
+  {
+    "name": "a QUIET_MIN with no pair watches nothing, forever",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "    if len(argv) < 2:\n",
+        "    if len(argv) < 1:\n"
+      ]
+    ],
+    "expect": [
+      "arguments: a QUIET_MIN with no pair is CANNOT RUN",
+      "main: bad arguments are CANNOT RUN on stderr with the usage, exit 2, nothing polled"
+    ]
+  },
+  {
+    "name": "a .git directory is not accepted as the git directory",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "    if os.path.isdir(dot):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "git directory: a .git DIRECTORY is the git directory",
+      "a main-checkout-shaped worktree (.git directory) is watched the same way"
+    ]
+  },
+  {
+    "name": "a relative gitdir is not resolved against the worktree",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "return os.path.normpath(os.path.join(worktree, text[len(\"gitdir:\"):].strip()))",
+        "return text[len(\"gitdir:\"):].strip()"
+      ]
+    ],
+    "expect": [
+      "git directory: a relative gitdir is resolved against the worktree"
+    ]
+  },
+  {
+    "name": "a .git file that names no gitdir is accepted",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "    if not text.startswith(\"gitdir:\"):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "git directory: a .git file that names no gitdir is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a directory with no .git is its own git directory",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        raise CannotRun(f\"{worktree} has no readable .git ({exc}): it is not a git worktree\") from None\n",
+        "        return worktree\n"
+      ]
+    ],
+    "expect": [
+      "git directory: a directory with no .git is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a directory the walk cannot list is skipped in silence",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "    raise CannotRun(f\"cannot list {exc.filename}: {exc.strerror}\")\n",
+        "    return None\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a directory the walk cannot list, but one that vanished mid-walk is skipped"
+    ]
+  },
+  {
+    "name": "a directory that vanished mid-walk is CANNOT RUN",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "    if isinstance(exc, FileNotFoundError):\n        return None\n",
+        "    if False:\n        return None\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a directory the walk cannot list, but one that vanished mid-walk is skipped"
+    ]
+  },
+  {
+    "name": "the report claims the transcript was read when none was given",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "signals = \"file, git or transcript\" if w.transcript else \"file or git\"",
+        "signals = \"file, git or transcript\""
+      ]
+    ],
+    "expect": [
+      "the report says how long and which signals it read"
+    ]
+  },
+  {
+    "name": "the report gives the quiet time in seconds",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "{quiet[w.name] / 60:.0f} min",
+        "{quiet[w.name]:.0f} min"
+      ]
+    ],
+    "expect": [
+      "the report says how long and which signals it read"
+    ]
+  },
+  {
+    "name": "the re-arm command lists the quiet builders too",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "rest = [w.spec() for w in watches if w.name in active]",
+        "rest = [w.spec() for w in watches]"
+      ]
+    ],
+    "expect": [
+      "two builders, the first quiet: it is reported, the second is listed active with its re-arm command",
+      "two builders, the SECOND quiet: it is reported, the first is listed active with its re-arm command",
+      "two builders quiet in the same poll are BOTH reported, and there is nothing to re-arm"
+    ]
+  },
+  {
+    "name": "the re-arm command gives the window in seconds",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "{quiet_s / 60:g} {' '.join(rest)}",
+        "{quiet_s:g} {' '.join(rest)}"
+      ]
+    ],
+    "expect": [
+      "the re-arm command keeps the quiet window and the transcript, and the active builder's age is in minutes"
+    ]
+  },
+  {
+    "name": "the re-arm command drops the transcript",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "return f\"{self.name}={self.worktree}\" + (f\":{self.transcript}\" if self.transcript else \"\")",
+        "return f\"{self.name}={self.worktree}\""
+      ]
+    ],
+    "expect": [
+      "the re-arm command keeps the quiet window and the transcript, and the active builder's age is in minutes"
+    ]
+  },
+  {
+    "name": "an active builder's age is counted from arming",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "active[w.name] = max(0.0, now - last)",
+        "active[w.name] = now - armed"
+      ]
+    ],
+    "expect": [
+      "the re-arm command keeps the quiet window and the transcript, and the active builder's age is in minutes"
+    ]
+  }
+]
