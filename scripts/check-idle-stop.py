@@ -465,7 +465,9 @@ def _self_test_body() -> int:
     repo = os.path.join(tmp, "repo")
     os.makedirs(repo)
     subprocess.run(["git", "init", "-q", repo], check=True)
-    subprocess.run(["git", "-C", repo, "commit", "-q", "--allow-empty", "-m", "base"], check=True)
+    # The commit names its own identity: a CI runner has no git user, and `git commit` exits 128 there.
+    subprocess.run(["git", "-C", repo, "-c", "user.name=selftest", "-c", "user.email=selftest@example.com",
+                    "commit", "-q", "--allow-empty", "-m", "base"], check=True)
 
     def drive(doc, gh=None, argv=("--hook",), now=NOW, h=home, root=repo):
         err = io.StringIO()
