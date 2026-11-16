@@ -1,0 +1,19 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 5494 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "87e190d3eb177d0aad87823ca8962fc6677f457b",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/hse-b-r1-codex-prompt.md",
+  "reason": "5494 chars",
+  "refused": false,
+  "review": "harness-ships-elsewhere-b-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/hse"
+}

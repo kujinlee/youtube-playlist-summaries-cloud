@@ -2391,4 +2391,24 @@ EXPECTED_MUTATIONS = {
     # branches (SHADOW argument, the cross-run view, `_meets` both directions, `_cross_forms`, bare descriptors).
     # ARITHMETIC: 184 + 19 = 203. ⟳ round 2 fold: 3 added (a SHADOW `..`, a SHADOW /proc link, the `cross` flag) = 206; 1 re-bound (the resolver refusal, now `cross=True`), 1 re-targeted (a socket SHADOW now names the link check). ⟳ round 3 fold: 2 re-bound (the SHADOW `..` and /proc lines moved into the shared branch), 1 added (a SHADOW argument skips the link checks), 1 re-targeted (a socket taken for a SHADOW no longer reddens a link case; it drops the socket from the READ view, now a case) = 207.
     "scripts/strace_reads.py": 207,
+    # ⟳ 2026-11-15, marketplace-inventory plan Task 2: the stranger-world isolation tool, pinned in the commit that
+    # creates it. One entry per build_world refusal and env rule, per preflight reason, per read_audit rule (parse,
+    # dedupe, posix_spawn echo, unobservable entries), per run_isolated rule (path, PATH lookup, log reset, env, cwd,
+    # timeout), the hook itself and the CLI's three exits: 34.
+    # ⟳ PR #594 round 2 fold: 50 + 7 = 57 — `run_isolated` measures the world, the three "inside the repository"
+    # sites compare folded (one entry per site), `_reaches` folds, `fold` folds case and Unicode form. 4 re-bound.
+    "scripts/mkt_isolate.py": 53,
+    # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
+    # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
+    # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out
+    # directory, plan-before-write, bytes, mode, the two manifests), per `read_marketplace` handler, per `install`
+    # rule (listed plugin, cwd, timeout, exit codes, the installed path) and the CLI's exits: 47.
+    # ⟳ PR #594 round 2 fold: 54 + 13 = 67 — the component walk (a parent link, a link chain, a pass through the
+    # private directory, a loop, an absolute target ×2), the folded exclusions (`_under`, and one entry per site:
+    # .agents/skills, .claude-plugin, the out directory, two destinations; the whole-component rule) and the index
+    # name decoding. 12 re-bound onto the walk.
+    # ⟳ PR #594 round 4 fold (Codex r4 #1): 67 + 3 = 70 — a private root that IS the repository, one that HOLDS it,
+    # and the walk asking about the root it starts from. None retired; the three anchors on the walk's forbidden
+    # check still bind (the line moved to the top of the loop, its text unchanged).
+    "scripts/mkt_stage.py": 70,
 }

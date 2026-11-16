@@ -20775,6 +20775,93 @@ case. session-state: 161 -> 150 cases, 145 -> 140 mutations. The marker step's `
 the first scheduled run after merge.
 
 ## 2026-11-15
+
+Three wrong statements in the index of reusable practices are corrected. It said an old size figure for the
+comprehensibility suite was "roughly 3x" too low; against the same nine files it was 1.82x too low. It gave the
+suite's size as about 11,000 lines while leaving out three shared files it names; with them it is 11,624. And it
+said the ties to this repository sit in one file; a second file, the shared delivery contract, has them too.
+This is the first step of the marketplace work, placed first so it can merge on its own, as you decided.
+
+<!--tech-->
+Marketplace-inventory plan Task 1 (spec §7 item 8, D8), first commit on branch `harness-ships-elsewhere` (the
+plan's slice table still calls it `mkt-spike`; the owner ruled one name on 11-14). `docs/portable-practices.md`
+only. Re-measured with `git show a4f6d4b5:<file> | wc -l`: nine files 6,542 (6,542 / 3,599 = 1.82); six Python
+files 10,373 + four `SKILL.md` 604 + three shared contracts 647 = 11,624; `explainer-delivery.md` lines 118, 158,
+235 at `a4f6d4b5` are the three `python3 scripts/...` invocations.
+
+## 2026-11-15
+The marketplace work has its first tool: a way to try the harness the way a stranger would, on a fresh account
+with nothing of this project on it, and to say exactly what that test could and could not see.
+<!--tech-->
+Marketplace-inventory plan Task 2: `scripts/mkt_isolate.py` (`build_world`, `preflight`, `run_isolated`, CLI) builds
+a world under an empty root — fresh HOME and TMPDIR, a PATH of allow-listed symlinks only, an env built from nothing —
+and captures Python file opens and launches with a `sitecustomize` audit hook. Every record lists what it cannot see
+(non-Python programs, Python run without the hook, network, pre-hook startup). Preflight refuses a world that the
+author's environment would reach (root or HOME entry inside the repo, extra env keys, the explainer port listening).
+49 self-test cases, 34 mutations, wired per W1-W8. `docs/marketplace/isolation-baseline.md`, `README.md` and
+`spend-log.md` added.
+
+## 2026-11-15
+The marketplace work has its second tool: it packs a chosen set of this project's files into a small local
+"store" of the kind Claude Code installs plugins from, so the next step can install them on a fresh account
+and see whether they work. It copies files exactly as they are and refuses anything it cannot pack honestly.
+<!--tech-->
+Marketplace-inventory plan Task 3: `scripts/mkt_stage.py` (`PackageSpec`, `plan`, `stage`, `read_marketplace`,
+`install`, CLI). `stage` writes `marketplace.json` and one plugin directory per package; a skill directory lands at
+`skills/<name>` (so `.agents/skills/shared` becomes `skills/shared`), a file at its repo-relative path, a link as
+the contents it points to, bytes and permission bits unchanged. CANNOT RUN for a path that is absent, absolute,
+outside the repository, a dangling or looping link, an empty package, two declarations on one path. `install` runs
+`claude plugin marketplace add` and `install` in a `mkt_isolate` world and returns the installed directory, or
+CANNOT RUN when it is not there. 63 self-test cases plus one live case (`claude plugin validate`, NOT RUN where
+`claude` is absent, outside the count); 47 mutations; wired per W1-W8. `install` is exercised only against a
+stand-in here; the first live install is Task 4.
+
+## 2026-11-15
+The marketplace work passed its first real test: one skill and its server script, packed into a local plugin
+store and installed on a fresh, empty account, ran from an unrelated folder and served a page from the new
+account's own server. The answer is GO, so the next stage (mapping every component) can start.
+<!--tech-->
+Marketplace-inventory plan Task 4: `docs/marketplace/spike-record.md`, GO at `e83bd3be`. Package `spike` 0.0.1
+(`explain-topic` plus `explainer-serve.py` and its closure) installed via `claude plugin install` in a
+`mkt_isolate` world; `--help` by the installed path rc 0; on a freed 7391 `--status` rc 1, start printed
+`serving <world HOME>/explainers`, world pidfile pid = listener pid, `GET /` 200 with the sentinel token. Run 1
+failed at `GET /` because the plan's payload lacked `regen-pages.py` (loaded by `importlib` since backlog #627)
+and `ask_answerer.py`; a plan staging defect, fixed and re-run. Findings: the "hard-coded port" note is stale
+(`EXPLAINER_SERVE_PORT` exists), the serve closure is not visible to a top-level import scan, and the skill's
+CWD-relative `scripts/` paths do not resolve from an unrelated directory. Owner's 7391 server stopped ~3 s twice
+under the 11-13 standing permission and restarted.
+
+## 2026-11-15
+The first review of the marketplace tools found ten ways the "fresh account" test could still see this machine or
+ship files it should not. All ten are fixed. One limit cannot be fixed from here and is now stated on every test
+result: the test runs as your own computer user, so your login keychain still answers if a program asks it
+directly. An earlier claim in the spike record, that git never ran during the test, is withdrawn: the test could
+not have seen it either way. The GO result does not depend on that claim and still stands.
+<!--tech-->
+PR #594 round-1 fold (Codex 1–4, Claude M1–M3, m1–m3): `mkt_isolate.py` adds a `pyvenv.cfg` without system
+site-packages, `GIT_CONFIG_NOSYSTEM=1`, `boundary()` (env compared key by key and value by value, plus the layout),
+per-Python `sys.path` probes and a git credential/`insteadOf` probe, a cwd check against the world root, and an
+append-only audit log with per-run tokens. Records now carry a 4th `ALWAYS:` entry for the keychain. `mkt_stage.py`
+ships only git-tracked files and refuses `.claude/plans` however it is reached. Cases: 49→67 and 63→72. Mutations:
+50/50 and 54/54. `spike-record.md`, `isolation-baseline.md` and `spend-log.md` are corrected. Coordinator doc:
+`docs/reviews/coordinator/harness-ships-elsewhere-b-r1-coordinator.md`.
+
+## 2026-11-15
+The second review of the marketplace tools found two more ways your private plans folder could end up in a
+package: by spelling its name in different capitals, which a Mac treats as the same folder, and through a
+shortcut folder that git does not track. Both are closed, along with the same capitals mistake in seven other
+places. The test world now checks itself every time it runs a command, not only when asked. One sentence claimed
+more than was measured about your login keychain: it now says only that neither tool reported being logged in.
+<!--tech-->
+PR #594 round-2 fold (Codex 1–5; Claude half a gap by alternation): `mkt_stage.py` compares every exclusion
+folded (NFKC + casefold) and walks a declared path one component at a time, so each link must be tracked and no
+component may sit under `.claude/plans`; index names are decoded with `os.fsdecode`. `mkt_isolate.py` folds its
+three "inside a checkout" checks, and `run_isolated` runs the `sys.path` and git-config probes itself. Cases:
+72→89 and 67→73. Mutations: 67/67 and 57/57. The round-1 bet on `staging` lost (Codex 3). Filed backlog #656 and
+#657. Commits `f065e2ea`, `1196ae9d`. Coordinator doc:
+`docs/reviews/coordinator/harness-ships-elsewhere-b-r2-coordinator.md`.
+
+## 2026-11-15
 The goal tree now says why each waiting item is waiting, as you asked on 11-14. When work is recorded, the tool now
 asks one question: does it wait on a pull request or a backlog row to finish? The answer is a reference such as
 "PR #442", or "none". The page looks that reference up every time it is drawn. If the work is still open the line
@@ -20799,3 +20886,20 @@ ledger entry stores `after` (`kind #n` strings); `--add` refuses without `--afte
 expires. `owed_reason`, `idle_days`, `owed_idle_lines` and `--owed-idle` (a block after IN FLIGHT in
 `.claude/hooks/session-state.sh`) are kept. A prose-invariance case places 14 adversarial sentences in every prose
 field. Filed: backlog #652 (a dated `--until` wait), backlog #653 (a thread-line ref wait with no ledger entry).
+
+## 2026-11-15
+The fourth review of the marketplace tools found one more way your private plans folder could leak into a package,
+and it is closed. If the plans folder were a shortcut pointing back at the whole project, the tool treated nothing
+as private and would have packed any file. It now refuses to pack anything in that situation and says why. The same
+gap existed for the skills folder and is closed too. This was caused by the previous round's rewrite, which bet
+that no such case existed; the bet was lost. One smaller finding is filed, not fixed: the test world's start-up
+checks can together take three times the time limit they were given.
+<!--tech-->
+PR #594 round-4 fold (Codex r4 #1 BLOCKER, #2 MINOR; Claude half a gap by alternation). `scripts/mkt_stage.py`:
+`_roots` is CANNOT RUN when a private root or the skills home has the identity of the repository or of a directory
+holding it (`.claude/plans -> ..`, `-> ../..`); `_real` asks the forbidden-identity question about the object the
+walk stands on at the top of every loop turn, so the root it starts from and a directory a `..` returns to are
+asked too. Cases 92→97 (4 red on `dfaf53a4`), mutations 67→70. `mkt_isolate._reaches` was probed for the same gap
+and does compare its starting object. Filed backlog #659 (one monotonic deadline for `measured`'s probes; three
+dropped call-site mutations). The Phase 6 bet for round 4 lost; decision-log row appended, `outcome: continued`.
+Commit `8c14fd8e`. Coordinator doc: `docs/reviews/coordinator/harness-ships-elsewhere-b-r4-coordinator.md`.

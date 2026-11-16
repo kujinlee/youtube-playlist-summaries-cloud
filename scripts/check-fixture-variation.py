@@ -337,6 +337,16 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
                         "status_text.caps", "status_text.root", "watch.caps", "watch.deps", "watch.once",
                         "watch.passes", "watch.root", "watch.sleep", "watch.tick", "watcher_died.root",
                         "watcher_pid.root", "watcher_running.root",),
+    # marketplace-inventory plan Task 2 (2026-11-15): the stranger-world isolation tool, pinned in the commit that
+    # creates it. DERIVED by running `analyse()` on the delivered source: 12 keys.
+    "mkt_isolate.py": ("build_world.allow", "build_world.root", "explainer_port.env", "main.argv", "preflight.port",
+                       "preflight.world", "read_audit.text", "read_audit.top", "run_isolated.argv",
+                       "run_isolated.cwd", "run_isolated.timeout", "run_isolated.world"),
+    # marketplace-inventory plan Task 3 (2026-11-15): the staging tool, pinned in the commit that creates it. DERIVED
+    # by running `analyse()` on the delivered source: 13 keys, every one varied by a case (none exempt).
+    "mkt_stage.py": ("install.mkt_root", "install.plugin", "install.run", "install.timeout", "install.world",
+                     "main.argv", "plan.repo", "plan.spec", "read_marketplace.mkt_root", "stage.marketplace",
+                     "stage.out", "stage.packages", "stage.repo"),
     # backlog #586 slice 2 (2026-11-12): the strace-log path resolver, pinned in the commit that creates it. DERIVED by
     # running `analyse()` on the delivered source: 9 keys, every one varied by a case (none exempt).
     # ⟳ 2026-11-12 slice 3 (the default-deny classifier and record assembly): re-DERIVED by `analyse()`, 9 + 11 = 20.
