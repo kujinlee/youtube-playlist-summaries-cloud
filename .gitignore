@@ -95,9 +95,6 @@ playwright/.auth/
 # Which session was last told the usage cache is absent, so it is said once per session (same script).
 .claude/usage-pace-notice
 .claude/usage-pace-notice.*.tmp
-# The owner's PAUSE of the idle-stop guard (scripts/check-idle-stop.py): while this file in the MAIN checkout is
-# younger than 24 h, a stop with nothing running is allowed. `touch .claude/paused` to pause; `rm` it to resume.
-.claude/paused
 
 # Session plans written by scripts/begin-plan.py. Deliberately NOT in docs/superpowers/plans/:
 # that directory is the anchor registry's population (check-anchors.py globs it and requires a

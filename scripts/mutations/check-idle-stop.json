@@ -39,51 +39,12 @@
     ]
   },
   {
-    "name": "the pause marker is ignored",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "    if pause:\n        return ALLOW, \"\"",
-        "    if False:\n        return ALLOW, \"\""
-      ]
-    ],
-    "expect": [
-      "⭐ the owner's pause marker → ALLOW"
-    ]
-  },
-  {
-    "name": "a stale pause marker still pauses",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "return True if age <= PAUSE_MAX_S else None",
-        "return True"
-      ]
-    ],
-    "expect": [
-      "a pause marker older than PAUSE_MAX_S is ignored, and said"
-    ]
-  },
-  {
-    "name": "a stale pause marker is not said",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "if pause is None else \"\"",
-        "if False else \"\""
-      ]
-    ],
-    "expect": [
-      "a pause marker older than PAUSE_MAX_S is ignored, and said"
-    ]
-  },
-  {
     "name": "a `?` in the prose is a question again",
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "    asked = last_tool_asked(tail)\n    if asked:\n        return ALLOW, \"\"",
-        "    asked = last_tool_asked(tail)\n    if asked or \"?\" in str(doc.get(\"last_assistant_message\")):\n        return ALLOW, \"\""
+        "    if usage_stop(cache_text, now):\n        return ALLOW, \"\"",
+        "    if usage_stop(cache_text, now) or \"?\" in str(doc.get(\"last_assistant_message\")):\n        return ALLOW, \"\""
       ]
     ],
     "expect": [
@@ -95,8 +56,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "    if asked:\n        return ALLOW, \"\"\n    if usage_stop(",
-        "    if asked or str(doc.get(\"last_assistant_message\")).rstrip().endswith(\"?\"):\n        return ALLOW, \"\"\n    if usage_stop("
+        "    if usage_stop(cache_text, now):\n        return ALLOW, \"\"\n    unseen = []",
+        "    if usage_stop(cache_text, now) or str(doc.get(\"last_assistant_message\")).rstrip().endswith(\"?\"):\n        return ALLOW, \"\"\n    unseen = []"
       ]
     ],
     "expect": [
@@ -104,68 +65,16 @@
     ]
   },
   {
-    "name": "the AskUserQuestion exception is dropped",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "    if asked:\n",
-        "    if False:\n"
-      ]
-    ],
-    "expect": [
-      "⭐ the last tool call was AskUserQuestion and the owner REJECTED the card ('clarify') → ALLOW"
-    ]
-  },
-  {
     "name": "the block teaches ending on a question",
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "f\"the main checkout.{stale}\")",
-        "f\"the main checkout, or ask the owner a question.{stale}\")"
+        "\"and end the turn.\")",
+        "\"and end the turn, or ask the owner a question.\")"
       ]
     ],
     "expect": [
       "the block does not teach ending on a question"
-    ]
-  },
-  {
-    "name": "a human prompt does not reset the last tool",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "            last = card = None\n",
-        "            pass\n"
-      ]
-    ],
-    "expect": [
-      "an AskUserQuestion BEFORE the latest human prompt does not count"
-    ]
-  },
-  {
-    "name": "the FIRST tool call is kept, not the last",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "last, card, answered = b.get(\"name\"), b.get(\"id\"), False",
-        "last, card, answered = last or b.get(\"name\"), b.get(\"id\"), False"
-      ]
-    ],
-    "expect": [
-      "a later tool call after AskUserQuestion is the last one"
-    ]
-  },
-  {
-    "name": "a transcript record that is not an object is read as one",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "        if not isinstance(rec, dict):\n            continue\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "a transcript record that is not an object (`[]`, `1`, `null`, a string) is skipped, not a crash: the AskUserQuestion after it still counts"
     ]
   },
   {
@@ -884,19 +793,6 @@
     ]
   },
   {
-    "name": "main: the transcript is not read",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "tail = read_tail(doc.get(\"transcript_path\")) if",
-        "tail = None if"
-      ]
-    ],
-    "expect": [
-      "main reads the transcript tail named by the payload"
-    ]
-  },
-  {
     "name": "main does not pass the session's own checkout",
     "file": "scripts/check-idle-stop.py",
     "edits": [
@@ -920,46 +816,6 @@
     ],
     "expect": [
       "END TO END: the real `run_gh` over a `gh` that lists a pending check → exit 0"
-    ]
-  },
-  {
-    "name": "read_tail reads from the start",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "f.seek(max(st.st_size - cap, 0))",
-        "f.seek(0)"
-      ]
-    ],
-    "expect": [
-      "read_tail keeps only the last `cap` bytes"
-    ]
-  },
-  {
-    "name": "read_tail opens blocking: a FIFO holds the hook",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "os.O_RDONLY | os.O_NONBLOCK)",
-        "os.O_RDONLY)"
-      ]
-    ],
-    "expect": [
-      "⭐ read_tail of a FIFO with no writer returns None at once, never blocks (bounded by a thread)",
-      "⭐ main: a FIFO `transcript_path` does not hang the hook: the idle stop still exits 2"
-    ]
-  },
-  {
-    "name": "read_tail reads a file that is not regular",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "            if not stat.S_ISREG(st.st_mode):\n                return None\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "read_tail refuses a file that is not regular: /dev/zero is None, not 16 NULs"
     ]
   },
   {
@@ -1025,162 +881,6 @@
     ],
     "expect": [
       "⭐ run_gh is bounded by its timeout: a `gh` that sleeps 5 s is (-1, TimeoutExpired) at two timeouts"
-    ]
-  },
-  {
-    "name": "an ANSWERED card keeps the exception (r2 XM1)",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "                    answered = True\n",
-        "                    pass\n"
-      ]
-    ],
-    "expect": [
-      "⭐ an ANSWERED AskUserQuestion is work to act on: ask → 'Yes' → 'Starting now.' → BLOCK"
-    ]
-  },
-  {
-    "name": "a result for ANY id answers the card",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "and b.get(\"tool_use_id\") == card and not _rejected(b)",
-        "and not _rejected(b)"
-      ]
-    ],
-    "expect": [
-      "only a result for THIS card's id answers it: an answer to 'q' ends the exception, one to 'other' does not"
-    ]
-  },
-  {
-    "name": "a hook's refusal reads as the owner's rejection",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "return block.get(\"is_error\") is True and REJECTED_MARK in text",
-        "return block.get(\"is_error\") is True"
-      ]
-    ],
-    "expect": [
-      "a card a HOOK refused (is_error, not the owner's rejection) was never shown: no exception"
-    ]
-  },
-  {
-    "name": "a rejection needs no is_error",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "return block.get(\"is_error\") is True and ",
-        "return "
-      ]
-    ],
-    "expect": [
-      "a rejection text WITHOUT is_error is an answer, not a rejection"
-    ]
-  },
-  {
-    "name": "a list-form rejection is not read",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "    ) if isinstance(content, list) else \"\"",
-        "    ) if False else \"\""
-      ]
-    ],
-    "expect": [
-      "a rejection whose content is a list of text blocks is still a rejection"
-    ]
-  },
-  {
-    "name": "a card with no id keeps the exception",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "return last == \"AskUserQuestion\" and isinstance(card, str) and not answered",
-        "return last == \"AskUserQuestion\" and not answered"
-      ]
-    ],
-    "expect": [
-      "an AskUserQuestion with no id cannot be matched to its result: no exception"
-    ]
-  },
-  {
-    "name": "the transcript is split by splitlines again (r2 XM2)",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "pieces = (tail or \"\").split(\"\\n\")",
-        "pieces = (tail or \"\").splitlines()"
-      ]
-    ],
-    "expect": [
-      "⭐ a human prompt holding a literal U+2028 is ONE record: it is READ (False, not None — unreadable) and ends the exception → BLOCK"
-    ]
-  },
-  {
-    "name": "a torn MIDDLE line is skipped",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "            if i in ends:\n                continue\n            return None\n",
-        "            continue\n"
-      ]
-    ],
-    "expect": [
-      "⭐ a torn line in the MIDDLE makes the transcript unreadable (None), never a skipped record"
-    ]
-  },
-  {
-    "name": "a torn FIRST or LAST line is unreadable",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "            if i in ends:\n                continue\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "a torn FIRST line (the tail's cut) and a torn LAST line (a write in progress) are skipped"
-    ]
-  },
-  {
-    "name": "a RecursionError in the transcript is not caught (r2 XM3)",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "        except Exception:  # noqa: BLE001 - RecursionError, MemoryError",
-        "        except ZeroDivisionError:  # noqa: BLE001 - RecursionError, MemoryError"
-      ]
-    ],
-    "expect": [
-      "⭐ a record nested past the parser's limit makes the transcript unreadable (None), not a crash"
-    ]
-  },
-  {
-    "name": "an unreadable transcript grants the exception",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "asked = last_tool_asked(tail)\n    if asked:",
-        "asked = last_tool_asked(tail)\n    if asked is not False:"
-      ]
-    ],
-    "expect": [
-      "⭐ main: a transcript record nested 200,000 deep (r2 XM3) → exit 2, naming the unreadable transcript — never a crash, which the launcher maps to an ALLOWED exit 1"
-    ]
-  },
-  {
-    "name": "the unreadable transcript is not said",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "    if asked is None:\n        stale +=",
-        "    if False:\n        stale +="
-      ]
-    ],
-    "expect": [
-      "⭐ main: a transcript record nested 200,000 deep (r2 XM3) → exit 2, naming the unreadable transcript — never a crash, which the launcher maps to an ALLOWED exit 1"
     ]
   },
   {
@@ -1285,6 +985,136 @@
     ],
     "expect": [
       "⭐ (b) the walk deadline is checked per FILE (r2 XM5): 300 old files in ONE directory at 10 ms an lstat, a 0.2 s budget → None (unread) inside 1.5 s; inside its budget the same walk reads all 300 (302 lstats with the `.git`, read as birth and as a file) → []"
+    ]
+  },
+  {
+    "name": "a pause marker in the main checkout excuses the stop again (Phase 6 D, r3 CB1)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    aid = doc.get(\"agent_id\")\n",
+        "    if main and os.path.exists(os.path.join(main, \".claude\", \"paused\")):\n        return ALLOW, \"\"\n    aid = doc.get(\"agent_id\")\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D1 marker identity: a `.claude/paused` file in the main checkout, fresh / 5 min / 20 h 53 min / 25 h old, changes NOTHING: the 02:24 replay through main() exits 2 with the same words as with no marker"
+    ]
+  },
+  {
+    "name": "main opens the transcript again, blocking: a FIFO holds the hook (Phase 6 D)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    verdict, message = decide(doc, now, main_root, cache_text,\n",
+        "    try:\n        with open(doc.get(\"transcript_path\"), \"rb\") as _f:\n            _f.read(1)\n    except Exception:\n        pass\n    verdict, message = decide(doc, now, main_root, cache_text,\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D4 the transcript is NEVER opened: for a `transcript_path` that is missing, a directory, a FIFO (the row that fails by HANGING), unreadable, a record nested 200,000 deep, a torn last line — the verdict and its words equal those with no `transcript_path` at all (exit 2), and no open() or os.open() names the path"
+    ]
+  },
+  {
+    "name": "main opens the transcript again, non-blocking and unread (Phase 6 D)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    now = time.time() if now is None else now\n",
+        "    now = time.time() if now is None else now\n    try:\n        os.close(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK))\n    except Exception:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D4 the transcript is NEVER opened: for a `transcript_path` that is missing, a directory, a FIFO (the row that fails by HANGING), unreadable, a record nested 200,000 deep, a torn last line — the verdict and its words equal those with no `transcript_path` at all (exit 2), and no open() or os.open() names the path"
+    ]
+  },
+  {
+    "name": "a rejected card in the transcript excuses the stop again (Phase 6 D)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    root = str(ROOT) if root is None else root\n",
+        "    root = str(ROOT) if root is None else root\n    try:\n        with os.fdopen(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK), \"rb\") as _f:\n            if b\"doesn't want to proceed\" in _f.read(1 << 20) and not doc.get(\"stop_hook_active\"):\n                return 0\n    except Exception:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D2 a REJECTED card and a closing reply is an idle stop → exit 2; its continuation (the same payload with `stop_hook_active`) → exit 0"
+    ]
+  },
+  {
+    "name": "a rejected card followed by an announcement excuses the stop (Phase 6 D, I5)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    main_root, _ = _pace.main_checkout(root)\n",
+        "    main_root, _ = _pace.main_checkout(root)\n    try:\n        with os.fdopen(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK), \"rb\") as _f:\n            if b\"doesn't want to proceed\" in _f.read(1 << 20) and \"starting\" in str(doc.get(\"last_assistant_message\")):\n                return 0\n    except Exception:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D3 a REJECTED card, then an announcement ('Never mind - starting #657 now.') → exit 2"
+    ]
+  },
+  {
+    "name": "any AskUserQuestion in the transcript excuses the stop again (Phase 6 D)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    cache_text, _ = _pace.read_regular(cache_path, _pace.CACHE_MAX_BYTES)\n",
+        "    cache_text, _ = _pace.read_regular(cache_path, _pace.CACHE_MAX_BYTES)\n    try:\n        with os.fdopen(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK), \"rb\") as _f:\n            if b\"AskUserQuestion\" in _f.read(1 << 20) and not doc.get(\"stop_hook_active\"):\n                return 0\n    except Exception:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D6 the self-report class, by identity: a pause marker, a rejected card, an unanswered card, a hook-refused card whose label holds the rejection phrase — each stop exits 2 with the words of the stop with none of them"
+    ]
+  },
+  {
+    "name": "the old block message is restored: it names the marker file and the command (Phase 6 D)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    todo = (\"A turn that says work is starting must START it before it ends. DO ONE: (1) start the next job in this \"\n            \"turn; or (2) if the owner told you to stop, or only the owner can act, say so in one line quoting them, \"\n            \"and end the turn.\")",
+        "    todo = (\"A turn that says work is starting must START it before it ends. DO ONE: start the work now (spawn \"\n            \"the agent, run the job in the background), or — if the owner paused the work — touch .claude/paused in \"\n            \"the main checkout.\")"
+      ]
+    ],
+    "expect": [
+      "⭐ D5 the block message names no file to write and no tool to call (`.claude/paused`, `touch`, `AskUserQuestion`, `paused`), in both its forms (all signals read; one unread)"
+    ]
+  },
+  {
+    "name": "the block message drops the second out (say so, quoting the owner)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "\"turn; or (2) if the owner told you to stop, or only the owner can act, say so in one line quoting them, \"\n            \"and end the turn.\")",
+        "\"turn.\")"
+      ]
+    ],
+    "expect": [
+      "⭐ D5 the block message names BOTH outs, in both its forms: start the next job in this turn; or say in one line, quoting the owner, that they told you to stop or that only they can act"
+    ]
+  },
+  {
+    "name": "a malformed `__typename` is read past (r3 Cm1)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "for k in (\"__typename\", \"status\", \"state\")",
+        "for k in (\"status\", \"state\")"
+      ]
+    ],
+    "expect": [
+      "⭐ D7 (r3 Cm1) a check whose `__typename` is not a string is no answer: pending_ci is None (never [1]), and decide BLOCKS naming (c); the same check with a well-formed `__typename` is pending ([1])"
+    ]
+  },
+  {
+    "name": "a signal is asked before the order's allows: gh is called first",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if doc.get(\"stop_hook_active\") is True:\n        return ALLOW, \"\"",
+        "    gh()\n    if doc.get(\"stop_hook_active\") is True:\n        return ALLOW, \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ D8 the order: `stop_hook_active`, an `agent_id` and a usage stop each ALLOW a stop with nothing running, through main() (exit 0, silent) — and none of them asks a signal (gh is never called)"
     ]
   }
 ]

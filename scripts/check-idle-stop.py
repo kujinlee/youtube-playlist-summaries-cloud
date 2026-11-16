@@ -12,10 +12,6 @@ THE DECISION, for a Stop payload (the first that applies wins):
                  stop is ALLOWED and said (exit 1). The ONLY way an unread input allows.
     allow        `stop_hook_active` is true — this stop follows a block already (no loops)
     allow        the payload has a non-empty top-level `agent_id`: a subagent's stop, not the orchestrator's
-    allow        the owner's pause marker `.claude/paused` (in the MAIN checkout) is younger than PAUSE_MAX_S
-    allow        the turn's last tool call, after the last human prompt, was an AskUserQuestion the owner has NOT
-                 answered (no result yet, or a card they rejected) — the ONE question exception, and a structured
-                 one: no punctuation in the prose is read. An ANSWERED card is work to act on (r2 XM1)
     allow        a usage stop: the weekly pace is REFUSE (`check-usage-pace.evaluate`, the one owner of that
                  line) or the five-hour block is at its 100% limit
     allow        (a) the harness lists a background task whose status is LIVE (`background_tasks`)
@@ -24,13 +20,24 @@ THE DECISION, for a Stop payload (the first that applies wins):
     allow        (c) an open PR of this repo has a check that has STARTED and not finished (`gh pr list`)
     BLOCK        otherwise — and a signal that could NOT be read is "otherwise": the reason names it
 
+⛔ AN ALLOW READS ONLY STATE THE STOPPING AGENT DID NOT AUTHOR (Phase 6, 2026-11-16, option D:
+`docs/reviews/architecture-review-2026-11-16-idle-stop-guard.md`). Two exceptions that read the agent's own account
+were REMOVED: a pause marker `.claude/paused` (one `touch` the agent may run excused every stop for 24 h, and the
+refusal named the command) and "the last tool call was an AskUserQuestion" (a parser of agent-influenced
+transcript text, which thrashed for two rounds). `main()` does not open `transcript_path` at all, and no file in
+the checkout pauses this guard. This is the repository's existing practice — a harness cannot read a cause from
+a child's text — applied here. Each removed exception saved ONE refusal on its honest path and nothing else:
+  THE CONTINUATION IS THE OUT. If the owner told the agent to stop, or only the owner can act (a card they
+rejected, a decision that is theirs), the stop is refused once, the agent says so in one line quoting them, and
+that continuation arrives with `stop_hook_active` and passes. That is the intended pause mechanism — never silent,
+never durable. A silent multi-turn pause, if one is ever wanted, belongs with `begin-plan.py --pause` (backlog #99).
+
 NO EVIDENCE IS NOT WORK (r1 XM4 — reversed from the first build, which allowed). When `gh` cannot answer, the
 payload has no `background_tasks`, or the worktrees cannot be read, the stop is BLOCKED once and the reason names
 what could not be read. This cannot wedge: the continuation arrives with `stop_hook_active` and passes. Only a
 payload that is not an object, or a crash of this checker (the launcher maps any exit but 2 to 1), still allows —
 so every parse of outside input catches EVERY exception (r2 XM3/XM4: a 200,000-deep record raises RecursionError,
-not ValueError). A transcript record that cannot be parsed makes the transcript UNREADABLE: the question exception
-is not applied, and the block says so.
+not ValueError).
 
 HOW (a) IS OBSERVED — MEASURED, not assumed. Claude Code 2.1.322's Stop schema (read from the binary) carries
 `background_tasks`: "In-flight background work (running/pending + backgrounded) registered in this session ...
@@ -55,8 +62,8 @@ and the checkout the session itself runs in is not a builder.
 
 THE THREE SIGNALS COST: (a) nothing (the payload); (b) one walk, ~0.2 s over 41 worktrees / 21k files (measured
 2026-11-16), stopping at a worktree's first recent file and bounded by WALK_BUDGET_S; (c) one `gh` call, ~0.6 s,
-bounded by GH_TIMEOUT_S, and only made when (a) and (b) found nothing. The transcript is opened non-blocking and
-only when it is a regular file, so a FIFO cannot hold the hook.
+bounded by GH_TIMEOUT_S, and only made when (a) and (b) found nothing. The transcript is never opened, so a FIFO
+named as `transcript_path` cannot hold the hook.
 
 ⚠ BOUNDS, stated.
   * AN HONEST "NOTHING IS LEFT" IS BLOCKED ONCE — by design (r1 XM5, declined). A reply to the owner's "what is
@@ -75,30 +82,27 @@ only when it is a regular file, so a FIFO cannot hold the hook.
   * (c) counts a started check on ANY open PR of this repo, including one this session did not push; a commit
     status stuck in `PENDING` keeps (c) on for as long as its PR is open.
   * A background job that only WAITS (a poller, a `sleep` loop) counts as running: it will wake the session.
-  * A REJECTED card is recognised by the harness's own words, REJECTED_MARK (measured 2026-11-16 over 207
-    AskUserQuestion calls in this project's transcripts: 9 owner rejections, `is_error: true`, "The user doesn't
-    want to proceed ..."; 47 hook refusals, `is_error: true`, "PreToolUse:AskUserQuestion hook error"; every
-    answered one `is_error` false). If the harness rewords it, a rejected card reads as ANSWERED and the stop is
-    blocked once — the failure is a block, never an allow. A card a hook refused was never shown: no exception.
+  * THE SIGNALS CAN STILL BE FORGED, and that is a different kind of thing from the removed exceptions: a file
+    touched in a builder worktree allows a stop for IDLE_WINDOW_S (backlog #664), and the usage cache is a file
+    the agent can write (backlog #665). Each requires faking WORK, not declaring a wait.
   * (b)'s deadline is checked per directory AND per file; one huge directory LISTING (`os.walk`'s scandir of a
     single directory) is still not interrupted.
 
     python3 scripts/check-idle-stop.py --hook < payload.json
-    python3 scripts/check-idle-stop.py --self-test  # 93 cases
+    python3 scripts/check-idle-stop.py --self-test  # 78 cases
 
 EXIT CODES: `--hook` 0 = allowed (silent) · 2 = BLOCKED (the reason on stderr, which Claude reads) · 1 = allowed,
 NOT CHECKED (the warning on stderr, which the human reads).
 
 FAILS IF: a stop with no LIVE background task, no builder worktree file changed in IDLE_WINDOW_S, no started CI
-check, no AskUserQuestion call, no pause marker and no usage stop is ALLOWED — including when one of the three
-signals could not be read; or a stop with any one of those is BLOCKED.
+check and no usage stop is ALLOWED on its first attempt — including when one of the three signals could not be
+read, and whatever a marker file or the transcript says; or a stop with any one of those is BLOCKED.
 """
 from __future__ import annotations
 
 import importlib.util
 import json
 import os
-import stat
 import subprocess
 import sys
 import time
@@ -106,10 +110,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 IDLE_WINDOW_S = 10 * 60
-PAUSE_MAX_S = 24 * 3600
 GH_TIMEOUT_S = 3.0
-TAIL_BYTES = 2 * 1024 * 1024
-PAUSE_FILE = os.path.join(".claude", "paused")
 WORKTREES = os.path.join(".claude", "worktrees")
 SETTLE_S = 60.0          # a checkout writes its files within ~1.6 s of the worktree's `.git` (measured, see (b))
 WALK_BUDGET_S = 1.0      # the wall budget of (b)'s walk, which measures ~0.2 s
@@ -118,78 +119,10 @@ LIVE = frozenset({"running", "pending"})
 STARTED_RUN = frozenset({"QUEUED", "IN_PROGRESS", "PENDING"})
 STARTED_STATE = frozenset({"PENDING"})
 ALLOW, BLOCK, NOT_CHECKED = "allow", "block", "not checked"
-REJECTED_MARK = "doesn't want to proceed"   # the harness's text for a card the owner rejected (measured, see XM1)
 
 _spec = importlib.util.spec_from_file_location("check_usage_pace", ROOT / "scripts" / "check-usage-pace.py")
 _pace = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_pace)
-
-
-def _rejected(block: dict) -> bool:
-    """A tool_result the OWNER rejected: `is_error` and the harness's rejection text. A hook's refusal is also an
-    error, but its card was never shown, so it is not a rejection."""
-    content = block.get("content")
-    text = content if isinstance(content, str) else " ".join(
-        b.get("text", "") for b in content if isinstance(b, dict) and isinstance(b.get("text"), str)
-    ) if isinstance(content, list) else ""
-    return block.get("is_error") is True and REJECTED_MARK in text
-
-
-def last_tool_asked(tail: str | None) -> bool | None:
-    """True when the turn's last tool call, after the last human prompt, is an AskUserQuestion the owner has NOT
-    answered: no result for its id yet, or a result the owner REJECTED (`_rejected`). An ANSWERED card is work to
-    act on, not a reason to stop (r2 XM1). False otherwise. None when the transcript is UNREADABLE: a record that
-    cannot be parsed, except a torn FIRST line (where the tail was cut) or a torn LAST one (a write in progress).
-    Records are split on the newline only — `splitlines()` also splits on U+2028 inside a JSON string (r2 XM2)."""
-    pieces = (tail or "").split("\n")
-    idx = [i for i, p in enumerate(pieces) if p.strip()]
-    ends = {idx[0], idx[-1]} if idx else set()
-    last = card = None
-    answered = False
-    for i in idx:
-        try:
-            rec = json.loads(pieces[i])
-        except ValueError:
-            if i in ends:
-                continue
-            return None
-        except Exception:  # noqa: BLE001 - RecursionError, MemoryError: unreadable, never a crash (r2 XM3)
-            return None
-        if not isinstance(rec, dict):
-            continue
-        msg = rec.get("message")
-        content = msg.get("content") if isinstance(msg, dict) else None
-        if rec.get("type") == "user" and (isinstance(content, str) or (isinstance(content, list) and any(
-                isinstance(b, dict) and b.get("type") == "text" for b in content))):
-            last = card = None
-        elif rec.get("type") == "user" and isinstance(content, list):
-            for b in content:
-                if (isinstance(b, dict) and b.get("type") == "tool_result" and isinstance(card, str)
-                        and b.get("tool_use_id") == card and not _rejected(b)):
-                    answered = True
-        elif rec.get("type") == "assistant" and isinstance(content, list):
-            for b in content:
-                if isinstance(b, dict) and b.get("type") == "tool_use":
-                    last, card, answered = b.get("name"), b.get("id"), False
-    return last == "AskUserQuestion" and isinstance(card, str) and not answered
-
-
-def read_tail(path: object, cap: int = TAIL_BYTES) -> str | None:
-    """The last `cap` bytes of a REGULAR file as text, or None. Opened non-blocking, so a FIFO with no writer
-    returns at once instead of holding the hook until its timeout; anything that is not a regular file is refused."""
-    try:
-        fd = os.open(str(path), os.O_RDONLY | os.O_NONBLOCK)
-    except (OSError, ValueError):
-        return None
-    try:
-        with os.fdopen(fd, "rb") as f:
-            st = os.fstat(f.fileno())
-            if not stat.S_ISREG(st.st_mode):
-                return None
-            f.seek(max(st.st_size - cap, 0))
-            return f.read(cap).decode("utf-8", "replace")
-    except (OSError, ValueError):
-        return None
 
 
 def usage_stop(cache_text: str | None, now: float) -> str | None:
@@ -205,17 +138,6 @@ def usage_stop(cache_text: str | None, now: float) -> str | None:
     if five is not None and five[1] > now and five[0] >= _pace.HARD_LIMIT:
         return "the five-hour block is at its 100% limit"
     return None
-
-
-def paused(main: str | None, now: float) -> bool | None:
-    """True for a pause marker younger than PAUSE_MAX_S; None for a stale one (said, ignored); False for none."""
-    if not main:
-        return False
-    try:
-        age = now - os.stat(os.path.join(main, PAUSE_FILE)).st_mtime
-    except OSError:
-        return False
-    return True if age <= PAUSE_MAX_S else None
 
 
 def running_tasks(doc: dict) -> list[str] | None:
@@ -320,22 +242,18 @@ def pending_ci(rc: int, out: str) -> list[int] | None:
     return pending
 
 
-def decide(doc: object, now: float, main: str | None, cache_text: str | None, tail: str | None,
-           gh, own: str | None = None) -> tuple[str, str]:
+def decide(doc: object, now: float, main: str | None, cache_text: str | None, gh,
+           own: str | None = None) -> tuple[str, str]:
     """(verdict, message). `gh` is a zero-argument callable returning `run_gh`'s (rc, text), called only when
-    (a) and (b) found nothing. `own` is the checkout the session runs in, which (b) never counts."""
+    (a) and (b) found nothing. `own` is the checkout the session runs in, which (b) never counts. EVERY ALLOW
+    here reads state the stopping agent did not author: the payload's harness fields, the usage cache, the
+    filesystem, `gh`. Nothing the agent wrote or caused — its prose, a transcript, a marker file — is read."""
     if not isinstance(doc, dict):
         return NOT_CHECKED, "the Stop payload is not a JSON object"
     if doc.get("stop_hook_active") is True:
         return ALLOW, ""
     aid = doc.get("agent_id")
     if isinstance(aid, str) and aid.strip():
-        return ALLOW, ""
-    pause = paused(main, now)
-    if pause:
-        return ALLOW, ""
-    asked = last_tool_asked(tail)
-    if asked:
         return ALLOW, ""
     if usage_stop(cache_text, now):
         return ALLOW, ""
@@ -357,13 +275,9 @@ def decide(doc: object, now: float, main: str | None, cache_text: str | None, ta
         return ALLOW, ""
     if ci is None:
         unseen.append(f"(c) gh could not answer ({out.strip()[:120] if rc != 0 else 'unreadable JSON'})")
-    stale = (f" The pause marker {PAUSE_FILE} is older than {PAUSE_MAX_S // 3600} h and was ignored."
-             if pause is None else "")
-    if asked is None:
-        stale += " The transcript could not be read, so the AskUserQuestion exception was not applied."
-    todo = (f"A turn that says work is starting must START it before it ends. DO ONE: start the work now (spawn "
-            f"the agent, run the job in the background), or — if the owner paused the work — touch {PAUSE_FILE} in "
-            f"the main checkout.{stale}")
+    todo = ("A turn that says work is starting must START it before it ends. DO ONE: (1) start the next job in this "
+            "turn; or (2) if the owner told you to stop, or only the owner can act, say so in one line quoting them, "
+            "and end the turn.")
     if unseen:
         return BLOCK, ("⛔ IDLE STOP REFUSED: nothing was SEEN running, and this could NOT be read: "
                        + "; ".join(unseen) + ". An unread signal is no evidence of work — treat it as NOT RUN. "
@@ -391,8 +305,7 @@ def main(argv: list[str] | None = None, stdin_bytes: bytes | None = None, now: f
     main_root, _ = _pace.main_checkout(root)
     cache_path = os.path.join(os.path.expanduser("~") if home is None else home, ".claude", ".rate-limits.json")
     cache_text, _ = _pace.read_regular(cache_path, _pace.CACHE_MAX_BYTES)
-    tail = read_tail(doc.get("transcript_path")) if isinstance(doc, dict) else None
-    verdict, message = decide(doc, now, main_root, cache_text, tail,
+    verdict, message = decide(doc, now, main_root, cache_text,
                               (lambda: run_gh(main_root or root)) if gh is None else gh, own=root)
     if verdict == BLOCK:
         print(message, file=sys.stderr)
@@ -506,10 +419,9 @@ def _self_test_body() -> int:
             return rc, out
         return f
 
-    def vm(doc, main, gh=None, cache_text=None, tail=None, now=NOW, **kw):
+    def vm(doc, main, gh=None, cache_text=None, now=NOW, **kw):
         try:
-            return decide(doc, now, main, cache(60) if cache_text is None else cache_text, tail,
-                          gh or gh_says(), **kw)
+            return decide(doc, now, main, cache(60) if cache_text is None else cache_text, gh or gh_says(), **kw)
         except Exception as exc:  # noqa: BLE001 - the raise IS the observation
             return f"raised {type(exc).__name__}: {exc}", ""
 
@@ -569,7 +481,7 @@ def _self_test_body() -> int:
              os.path.join(wt, "b1"), os.path.join(wt, "b0"), os.path.join(tmp, "link-to-b1"))]),
          [[], ["b1"], []])
     case("(b) decide passes `own` on: the only moving worktree is the session's own → BLOCK; another's → ALLOW",
-         [decide(payload(T0229), NOW, moving, cache(60), None, gh_says(), own=os.path.join(wt, o))[0]
+         [decide(payload(T0229), NOW, moving, cache(60), gh_says(), own=os.path.join(wt, o))[0]
           for o in ("b1", "b0")], [BLOCK, ALLOW])
     ticks = []
 
@@ -656,7 +568,7 @@ def _self_test_body() -> int:
     v(payload(T0224), moving)
     case("(c) gh is not called when (a) or (b) already found work", len(calls), 0)
     # ── NO EVIDENCE IS NOT WORK: an unread signal BLOCKS once, naming what could not be read ─────────────────────────
-    verdict, msg = decide(payload(T0224), NOW, idle, cache(), None, gh_says(1, "gh: not logged in"))
+    verdict, msg = decide(payload(T0224), NOW, idle, cache(), gh_says(1, "gh: not logged in"))
     case("⭐ gh cannot answer (rc 1) → BLOCK, naming (c), gh's own words and NOT RUN",
          (verdict, "(c)" in msg, "not logged in" in msg, "NOT RUN" in msg), (BLOCK, True, True, True))
     case("gh answers with something that is not a PR list → BLOCK, naming (c)",
@@ -685,11 +597,11 @@ def _self_test_body() -> int:
              T0224 + "\n\nShall I start backlog #657 now?", "Starting #657 now — OK?",
              "Now starting backlog #657. Why now? The wake is too far.",
              "Now starting backlog #657 (see `check?` mode).", "Now starting #657.\n\n<!-- ? -->")], [BLOCK] * 5)
-    # The three result shapes, as real transcripts record them (measured 2026-11-16 over 207 AskUserQuestion calls).
+    # Transcript shapes as real sessions record them (measured 2026-11-16 over 207 AskUserQuestion calls). They are
+    # INPUTS to the identity cases D2-D6 below: nothing reads them, and the cases prove that.
     REJECTED = ("The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file "
                 "edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\nThe "
                 "user wants to clarify these questions.")
-    ANSWERED = 'Your questions have been answered: "Start #657 now?"="Yes". You can now continue.'
     HOOK_REFUSED = "PreToolUse:AskUserQuestion hook error: [bash .claude/hooks/enforce-selection-card.sh]: BLOCKED"
 
     def ask(qid="q"):
@@ -708,43 +620,6 @@ def _self_test_body() -> int:
 
     go = {"type": "user", "message": {"role": "user", "content": "go"}}
     ask_tail = jl(go, ask(), result("q", REJECTED, err=True))
-    case("⭐ the last tool call was AskUserQuestion and the owner REJECTED the card ('clarify') → ALLOW",
-         v(payload(T0224), idle, tail=ask_tail), ALLOW)
-    case("⭐ an ANSWERED AskUserQuestion is work to act on: ask → 'Yes' → 'Starting now.' → BLOCK",
-         v(payload(T0224), idle, tail=jl(go, ask(), result("q", ANSWERED), say("Starting now."))), BLOCK)
-    case("an AskUserQuestion with no result yet keeps the exception", last_tool_asked(jl(go, ask())), True)
-    case("a card a HOOK refused (is_error, not the owner's rejection) was never shown: no exception",
-         last_tool_asked(jl(go, ask(), result("q", HOOK_REFUSED, err=True))), False)
-    case("only a result for THIS card's id answers it: an answer to 'q' ends the exception, one to 'other' does not",
-         [last_tool_asked(jl(go, ask(), result(i, ANSWERED))) for i in ("q", "other")], [False, True])
-    case("a rejection text WITHOUT is_error is an answer, not a rejection",
-         last_tool_asked(jl(go, ask(), result("q", REJECTED))), False)
-    case("a rejection whose content is a list of text blocks is still a rejection",
-         last_tool_asked(jl(go, ask(), result("q", [{"type": "text", "text": REJECTED}], err=True))), True)
-    case("an AskUserQuestion with no id cannot be matched to its result: no exception",
-         last_tool_asked(jl(go, ask(None))), False)
-    case("⭐ a human prompt as a LIST of text blocks ends the exception: ask, 'Continue', a closing reply → BLOCK",
-         v(payload(T0224), idle, tail=jl(go, ask(), {"type": "user", "message": {"content": [
-             {"type": "text", "text": "Continue"}]}}, say("Starting now."))), BLOCK)
-    u2028 = jl(go, ask(), {"type": "user", "message": {"content": "Continue\u2028now"}}, say("Starting now."),
-               ascii_only=False)
-    case("⭐ a human prompt holding a literal U+2028 is ONE record: it is READ (False, not None — unreadable) and "
-         "ends the exception → BLOCK",
-         ("\u2028" in u2028, last_tool_asked(u2028), v(payload(T0224), idle, tail=u2028)), (True, False, BLOCK))
-    case("a torn FIRST line (the tail's cut) and a torn LAST line (a write in progress) are skipped",
-         last_tool_asked('ord": 1}\n' + jl(go, ask()) + '\n{"type": "assi'), True)
-    case("⭐ a torn line in the MIDDLE makes the transcript unreadable (None), never a skipped record",
-         last_tool_asked(jl(go, ask()) + '\n{"type": "user", "mess\n' + jl(say("x"))), None)
-    case("⭐ a record nested past the parser's limit makes the transcript unreadable (None), not a crash",
-         tr(lambda: last_tool_asked(jl(go, ask()) + '\n{"x":' + "[" * 200000 + "0" + "]" * 200000 + "}\n" +
-                    jl(say("x")))), None)
-    later = ask_tail + "\n" + json.dumps({"type": "user", "message": {"role": "user", "content": "next"}})
-    case("an AskUserQuestion BEFORE the latest human prompt does not count", last_tool_asked(later), False)
-    case("a later tool call after AskUserQuestion is the last one", last_tool_asked(ask_tail + "\n" + json.dumps(
-        {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "id": "b1", "name": "Bash", "input": {}}]}})), False)
-    case("a transcript record that is not an object (`[]`, `1`, `null`, a string) is skipped, not a crash: the "
-         "AskUserQuestion after it still counts", v(payload(T0224), idle, tail='[]\n1\nnull\n"x"\n' + ask_tail), ALLOW)
     case("⭐ a weekly usage stop → ALLOW; below it → BLOCK",
          [v(payload(T0224), idle, cache_text=cache(w)) for w in (98, 60)], [ALLOW, BLOCK])
     case("a five-hour block at 100% → ALLOW; at 99% → BLOCK",
@@ -753,17 +628,10 @@ def _self_test_body() -> int:
          [v(payload(T0224), idle, cache_text=c) for c in ("{nope", "")], [BLOCK, BLOCK])
     case("a usage cache nested past the parser's limit is not a stop, and not a crash → BLOCK",
          v(payload(T0224), idle, cache_text='{"rate_limits":' + "[" * 200000 + "]" * 200000 + "}"), BLOCK)
-    paused_main = world("paused")
-    Path(paused_main, PAUSE_FILE).write_text("owner: stop until 06:00")
-    case("⭐ the owner's pause marker → ALLOW", v(payload(T0224), paused_main), ALLOW)
-    os.utime(os.path.join(paused_main, PAUSE_FILE), (NOW - PAUSE_MAX_S - 60,) * 2)
-    verdict, msg = decide(payload(T0224), NOW, paused_main, cache(), None, gh_says())
-    case("a pause marker older than PAUSE_MAX_S is ignored, and said", (verdict, "older than 24 h" in msg),
-         (BLOCK, True))
     # ── the block message ──────────────────────────────────────────────────────────────────────────────────────────
     _, msg = vm(payload(T0224), idle)
     case("the block says what it saw and what to do", all(x in msg for x in (
-        "no background job", "10 min", "no pending CI", "start the work", PAUSE_FILE)), True)
+        "no background job", "10 min", "no pending CI", "start the next job")), True)
     case("the block does not teach ending on a question", [w in msg.lower() for w in ("ask the owner", "question")],
          [False, False])
     case("window_text at two inputs", [window_text(600), window_text(90)], ["10 min", "1.5 min"])
@@ -804,25 +672,110 @@ def _self_test_body() -> int:
     case("main reads the usage cache under HOME at the given clock: two clocks, two verdicts",
          [drive(payload(T0224), now=NOW + 3600, h=weekly_home)[0], drive(payload(T0224), now=NOW, h=weekly_home)[0]],
          [0, 2])
-    tpath = os.path.join(tmp, "t.jsonl")
-    Path(tpath).write_text(ask_tail + "\n")
-    case("main reads the transcript tail named by the payload", drive(payload(T0224, transcript_path=tpath))[0], 0)
-    deep = os.path.join(tmp, "deep.jsonl")
-    Path(deep).write_text(ask_tail + "\n" + '{"x":' + "[" * 200000 + "0" + "]" * 200000 + "}\n" + jl(say("x")) + "\n")
-    got = tr(lambda: drive(payload(T0224, transcript_path=deep)))
-    rc, err = got if isinstance(got, tuple) else (got, "")
-    case("⭐ main: a transcript record nested 200,000 deep (r2 XM3) → exit 2, naming the unreadable transcript — "
-         "never a crash, which the launcher maps to an ALLOWED exit 1", (rc, "transcript" in err), (2, True))
-    case("read_tail keeps only the last `cap` bytes", read_tail(tpath, 5), (ask_tail + "\n")[-5:])
-    case("read_tail of a missing path is None", read_tail(os.path.join(tmp, "missing")), None)
     fifo = os.path.join(tmp, "transcript.fifo")
     os.mkfifo(fifo)
-    case("⭐ read_tail of a FIFO with no writer returns None at once, never blocks (bounded by a thread)",
-         bounded(lambda: read_tail(fifo), fifo), None)
-    case("read_tail refuses a file that is not regular: /dev/zero is None, not 16 NULs",
-         bounded(lambda: read_tail("/dev/zero", 16)), None)
     case("⭐ main: a FIFO `transcript_path` does not hang the hook: the idle stop still exits 2",
          bounded(lambda: drive(payload(T0229, transcript_path=fifo))[0], fifo), 2)
+    # ── Phase 6, option D: NO ALLOW READS WHAT THE STOPPING AGENT AUTHORED ───────────────────────────────────────────
+    # (docs/reviews/architecture-review-2026-11-16-idle-stop-guard.md). The pause marker and the AskUserQuestion
+    # exception are GONE, and `main()` never opens the transcript. Every list below is a LITERAL of this suite,
+    # never derived from the code, and each row is compared with the verdict of the same stop with no such state.
+    marker = os.path.join(repo, ".claude", "paused")
+    base = drive(payload(T0224))
+    marked = []
+    for age in (0.0, 300.0, 20 * 3600 + 53 * 60.0, 25 * 3600.0):      # fresh, 5 min, CB1's 20 h 53 min, 25 h
+        put(marker, age, "owner: stop until 02:30")
+        marked.append(drive(payload(T0224)))
+    os.remove(marker)
+    case("⭐ D1 marker identity: a `.claude/paused` file in the main checkout, fresh / 5 min / 20 h 53 min / 25 h old, "
+         "changes NOTHING: the 02:24 replay through main() exits 2 with the same words as with no marker",
+         (base[0], marked), (2, [base] * 4))
+
+    def tfile(name, text):
+        p = os.path.join(tmp, name)
+        Path(p).write_text(text)
+        return p
+
+    closing = tfile("rejected-closing.jsonl", jl(go, ask(), result("q", REJECTED, err=True),
+                                                 say("What would you like to clarify?")) + "\n")
+    case("⭐ D2 a REJECTED card and a closing reply is an idle stop → exit 2; its continuation (the same payload with "
+         "`stop_hook_active`) → exit 0",
+         [drive(payload("What would you like to clarify?", transcript_path=closing, stop_hook_active=a))[0]
+          for a in (False, True)], [2, 0])
+    announce = tfile("rejected-announce.jsonl", jl(go, ask(), result("q", REJECTED, err=True),
+                                                   say("Never mind - starting #657 now.")) + "\n")
+    case("⭐ D3 a REJECTED card, then an announcement ('Never mind - starting #657 now.') → exit 2",
+         drive(payload("Never mind - starting #657 now.", transcript_path=announce))[0], 2)
+    import builtins
+    tdir = os.path.join(tmp, "transcript.d")
+    os.makedirs(tdir)
+    locked = tfile("locked.jsonl", ask_tail + "\n")
+    os.chmod(locked, 0)
+    opened = []
+    real_open, real_os_open = builtins.open, os.open
+
+    def spy_open(path, *a, **kw):
+        opened.append(str(path))
+        return real_open(path, *a, **kw)
+
+    def spy_os_open(path, *a, **kw):
+        opened.append(str(path))
+        return real_os_open(path, *a, **kw)
+
+    T_WORLDS = (
+        ("missing", os.path.join(tmp, "no-such-transcript.jsonl")),
+        ("a directory", tdir),
+        ("a FIFO", fifo),
+        ("unreadable", locked),
+        ("a record nested 200,000 deep", tfile("deep.jsonl", ask_tail + "\n" + '{"x":' + "[" * 200000 + "0" +
+                                               "]" * 200000 + "}\n" + jl(say("x")) + "\n")),
+        ("a torn last line", tfile("torn.jsonl", jl(go, ask()) + '\n{"type": "user", "message": {"content": [{"ty')),
+    )
+    no_path = {k: x for k, x in payload(T0229).items() if k != "transcript_path"}
+    base = drive(no_path)
+    builtins.open, os.open = spy_open, spy_os_open
+    try:
+        got = [bounded(lambda p=p: drive(payload(T0229, transcript_path=p)), fifo) for _, p in T_WORLDS]
+    finally:
+        builtins.open, os.open = real_open, real_os_open
+    case("⭐ D4 the transcript is NEVER opened: for a `transcript_path` that is missing, a directory, a FIFO (the row "
+         "that fails by HANGING), unreadable, a record nested 200,000 deep, a torn last line — the verdict and its "
+         "words equal those with no `transcript_path` at all (exit 2), and no open() or os.open() names the path",
+         (base[0], got, [n for n, p in T_WORLDS if p in opened]), (2, [base] * len(T_WORLDS), []))
+    msgs = [vm(payload(T0224), idle)[1], vm(payload(T0224), idle, gh_says(1, "HTTP 502"))[1]]
+    case("⭐ D5 the block message names no file to write and no tool to call (`.claude/paused`, `touch`, "
+         "`AskUserQuestion`, `paused`), in both its forms (all signals read; one unread)",
+         [[w for w in (".claude/paused", "touch", "AskUserQuestion", "paused") if w in m] for m in msgs], [[], []])
+    case("⭐ D5 the block message names BOTH outs, in both its forms: start the next job in this turn; or say in one "
+         "line, quoting the owner, that they told you to stop or that only they can act",
+         [[w in m for w in ("start the next job in this turn", "the owner told you to stop",
+                            "only the owner can act", "quoting them")] for m in msgs], [[True] * 4] * 2)
+    base = drive(payload(T0224))
+    put(marker, 0.0)
+    selfrep = [("a pause marker", drive(payload(T0224)))]
+    os.remove(marker)
+    for name, recs in (
+            ("a rejected card", (go, ask(), result("q", REJECTED, err=True))),
+            ("an unanswered card", (go, ask())),
+            ("a hook-refused card whose label holds the rejection phrase",
+             (go, ask(), result("q", HOOK_REFUSED + ' — option "The user doesn\'t want to proceed" has no letter',
+                                err=True)))):
+        selfrep.append((name, drive(payload(T0224, transcript_path=tfile("selfrep.jsonl", jl(*recs) + "\n")))))
+    case("⭐ D6 the self-report class, by identity: a pause marker, a rejected card, an unanswered card, a hook-refused "
+         "card whose label holds the rejection phrase — each stop exits 2 with the words of the stop with none of them",
+         (base[0], [n for n, got in selfrep if got != base], len(selfrep)), (2, [], 4))
+    bad_type = json.dumps([{"number": 1, "statusCheckRollup": [
+        {"__typename": ["StatusContext"], "status": "IN_PROGRESS"}]}])
+    verdict, msg = vm(payload(T0224), idle, gh_says(0, bad_type))
+    case("⭐ D7 (r3 Cm1) a check whose `__typename` is not a string is no answer: pending_ci is None (never [1]), and "
+         "decide BLOCKS naming (c); the same check with a well-formed `__typename` is pending ([1])",
+         (tr(lambda: pending_ci(0, bad_type)), verdict, "(c)" in msg,
+          pending_ci(0, bad_type.replace('["StatusContext"]', '"CheckRun"'))), (None, BLOCK, True, [1]))
+    calls.clear()
+    case("⭐ D8 the order: `stop_hook_active`, an `agent_id` and a usage stop each ALLOW a stop with nothing running, "
+         "through main() (exit 0, silent) — and none of them asks a signal (gh is never called)",
+         ([drive(payload(T0224, stop_hook_active=True)), drive(payload(T0224, agent_id="a12c")),
+           drive(payload(T0224), now=NOW + 3600, h=weekly_home)], len(calls)), ([(0, "")] * 3, 0))
     subprocess.run(["git", "-C", repo, "worktree", "add", "-q", "--detach", self_wt], check=True)
     put(os.path.join(self_wt, "scripts", "x.py"), 120.0)
     os.utime(os.path.join(self_wt, ".git"), (NOW - 86400,) * 2)

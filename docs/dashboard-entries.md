@@ -20940,13 +20940,15 @@ foreground call at 270 s, and a case compares the two constants. Self-test 73/73
 The coordinating session can no longer end a turn by saying it is starting work while nothing is actually
 running. Before a turn ends, a check now looks at what is really happening: a background job of the session, a
 helper's folder that changed recently, or a test run still going on GitHub. If none is there, the turn is sent
-back once with a note saying what was missing. Asking the owner a question through the question card, a usage
-limit, or a pause file the owner can create all let the turn end normally. Earlier attempts read the session's
-own words, which rewording could get around; this one reads only what is running.
+back once with a note saying what was missing. A usage limit lets the turn end normally. If the owner told the
+session to stop, or only the owner can act, the session says so in one line and the turn then ends. Earlier
+attempts read the session's own words, which rewording could get around; this one reads only what is running.
 <!--tech-->
 Backlog #663, branch `idle-stop-guard` (owner 2026-11-16 02:50/02:51). `scripts/check-idle-stop.py`, called from
 `.claude/hooks/check-idle-stop.sh` as a second Stop hook beside `block-idle-stop.sh`. Signals: (a) the Stop
 payload's `background_tasks` with a live status; (b) a builder worktree file newer than its `.git` and inside the
 window (own checkout and `__pycache__` excluded; walk budget 1 s); (c) a started CI check on an open PR (`gh`,
-3 s cap). Exceptions: `stop_hook_active`, an `AskUserQuestion` call, a usage stop, `.claude/paused`. Unreadable
-signal → block (fail closed); a checker crash → allow. Self-test 73/73, 79 mutations, 0 survivors after round 1.
+3 s cap). Exceptions: `stop_hook_active`, a subagent's stop, a usage stop. Unreadable signal → block (fail
+closed); a checker crash → allow. The Phase 6 review (`docs/reviews/architecture-review-2026-11-16-idle-stop-guard.md`)
+removed two earlier exceptions and the transcript reader, so every allow reads state the stopping session did not
+write. Self-test 78/78, 86 mutations, 0 survivors after the Phase 6 fold. Filed, not fixed: backlog #664 to #667.
