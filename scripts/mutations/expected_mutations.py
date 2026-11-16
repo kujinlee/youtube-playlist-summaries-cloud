@@ -2434,5 +2434,13 @@ EXPECTED_MUTATIONS = {
     # verdict on a non-regular `.git` dropped. Re-anchored, same intent: the `.git` open made blocking again, a
     # `.git` that cannot be opened taken as the git directory. Not mutated: `GITFILE_MAX` (a read bound no case
     # can observe short of a 64 KiB pointer file) and the walk's vanished-file `continue`, as before.
-    "scripts/agent-watchdog.py": 63,
+    # r3 fold (Phase 6, `docs/reviews/architecture-review-2026-11-16-agent-watchdog.md`) -> 70: the entry is a
+    # three-field `Entry` with no `kind`, witnessed by ONE class case over an independent literal of its fields.
+    # Seven added: the name left out (R3m1), a tree name its basename only, its directory only, a clock mixed into
+    # the fingerprint (the identity row), a fourth field with no witness, the walk following symlinks (R3m2) and
+    # the re-arm command unquoted (R3m3). Re-anchored, same intent: HEAD left out, size and time left out, only the
+    # newest time compared (`e.mtime_ns`, was `e[2]`), the re-arm listing the quiet. Not mutated: a GIT entry's
+    # name made a constant -- unseen only when `index` and `logs/HEAD` exchange their exact time and size between
+    # two polls, which no git operation does, so the class case cannot witness it.
+    "scripts/agent-watchdog.py": 70,
 }

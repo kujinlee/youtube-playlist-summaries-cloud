@@ -2,7 +2,7 @@
 """Wake the orchestrator when a builder it spawned goes quiet (backlog #657).
 
     python3 scripts/agent-watchdog.py QUIET_MIN name=worktree[:transcript] [name=worktree[:transcript] ...]
-    python3 scripts/agent-watchdog.py --self-test  # 73 cases
+    python3 scripts/agent-watchdog.py --self-test  # 76 cases
 
 WHY THIS EXISTS. The owner, 2026-11-15: "It seems that orchestrator need to actively check progress of
 subagents periodically." An orchestrator that only waits for a builder's report learns nothing from a builder
@@ -13,7 +13,8 @@ that started it, and what this prints is what the orchestrator reads on waking.
 
 WHAT COUNTS AS ACTIVITY, for one builder: ANY CHANGE, between two polls, in the FINGERPRINT of what it observes.
 The fingerprint is a hash over the name, modification time (ns) and size of
-  * every file and directory in its worktree, not descending into `.git`, `node_modules` or `.next`;
+  * every file and directory in its worktree, not descending into `.git`, `node_modules` or `.next`; a symlink
+    is read by `lstat`, never followed, so a looping or dangling one is an entry and not an error;
   * `HEAD`, `index` and `logs/HEAD` in the worktree's git directory (a linked worktree's `.git` is a FILE that
     names it; a main checkout's `.git` is the directory itself), so a commit or a `git add` counts;
   * the transcript, when one is given after a colon (a regular file; a builder subagent's lives at
@@ -64,7 +65,9 @@ is not seen either. ANYTHING writing in the worktree counts, not only the builde
 `.claude/` on every turn, a self-test writes `__pycache__`, and a review round run in a builder's worktree keeps
 it active. They are not excluded, since a hook firing on the builder's own turns IS its activity. It does not
 know that a builder FINISHED; a finished builder goes quiet and is reported, unless something else (a review)
-then works in its worktree. A worktree nested inside a watched directory counts as that directory's
+then works in its worktree. An orchestrator's own `git status` there can rewrite `index` and so
+restart the window once. A symlink to a DIRECTORY is not an entry (the walk lists it among directories and
+does not descend): its creation or retargeting is seen only through its parent directory's time. A worktree nested inside a watched directory counts as that directory's
 activity, so watch builder worktrees, not the main checkout that holds them. The wake depends on the caller
 starting this as a background job; started in the foreground it blocks the caller.
 
@@ -75,10 +78,12 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+import shlex
 import stat
 import sys
 import time
 from dataclasses import dataclass
+from typing import NamedTuple
 
 POLL_S = 60
 # One silent foreground call of a subagent cannot outlast this (`check-agent-long-call.LIMIT_S`). DEFINED here,
@@ -166,12 +171,20 @@ def _walk_error(exc: OSError) -> None:
     raise CannotRun(f"cannot list {exc.filename}: {exc.strerror}")
 
 
-def _entry(kind: str, name: str, st: os.stat_result) -> tuple:
-    return (kind, name, st.st_mtime_ns, st.st_size)
+class Entry(NamedTuple):
+    """One observed thing. Every field has a self-test witness that changes it ALONE (r3, Phase 6): a field no
+    input can change is not evidence, so the r2 `kind` field, which no two entries could differ in alone, is gone."""
+    name: str
+    mtime_ns: int
+    size: int
 
 
-def observe(w: Watch) -> "list[tuple]":
-    """One (kind, name, mtime_ns, size) for everything that counts as this builder's activity."""
+def _entry(name: str, st: os.stat_result) -> Entry:
+    return Entry(name, st.st_mtime_ns, st.st_size)
+
+
+def observe(w: Watch) -> "list[Entry]":
+    """One Entry for everything that counts as this builder's activity."""
     if not os.path.isdir(w.worktree):
         raise CannotRun(f"the worktree {w.worktree} is missing")
     gd = gitdir_of(w.worktree)
@@ -179,10 +192,10 @@ def observe(w: Watch) -> "list[tuple]":
         head = os.stat(os.path.join(gd, GIT_REQUIRED))
     except OSError as exc:
         raise CannotRun(f"the git directory {gd} is unreadable ({exc})") from None
-    entries = [_entry("git", GIT_REQUIRED, head)]
+    entries = [_entry(GIT_REQUIRED, head)]
     for f in GIT_OPTIONAL:
         try:
-            entries.append(_entry("git", f, os.stat(os.path.join(gd, f))))
+            entries.append(_entry(f, os.stat(os.path.join(gd, f))))
         except FileNotFoundError:
             continue
         except OSError as exc:
@@ -191,7 +204,7 @@ def observe(w: Watch) -> "list[tuple]":
         dirs[:] = [d for d in dirs if d not in EXCLUDED_DIRS]
         for path in [root] + [os.path.join(root, f) for f in files]:
             try:
-                entries.append(_entry("tree", path, os.lstat(path)))
+                entries.append(_entry(path, os.lstat(path)))
             except FileNotFoundError:
                 continue
             except OSError as exc:
@@ -203,11 +216,11 @@ def observe(w: Watch) -> "list[tuple]":
             raise CannotRun(f"the transcript {w.transcript} is unreadable ({exc})") from None
         if not stat.S_ISREG(tst.st_mode):
             raise CannotRun(f"the transcript {w.transcript} is not a regular file")
-        entries.append(_entry("transcript", "", tst))
+        entries.append(_entry("", tst))
     return entries
 
 
-def fingerprint(entries: "list[tuple]") -> str:
+def fingerprint(entries: "list[Entry]") -> str:
     """One value for an observation, the same whatever order the walk listed it in. ANY difference between two
     polls' fingerprints is activity; nothing in it is ever compared with a clock."""
     return hashlib.sha256(repr(sorted(entries)).encode("utf-8", "backslashreplace")).hexdigest()
@@ -226,7 +239,7 @@ def report(wall_now: float, quiet_s: float, quiet: dict, active: dict, broken: d
             lines.append(f"  CANNOT RUN {w.name}: {broken[w.name]}. Treat it as NOT WATCHED.")
         else:
             lines.append(f"  active {w.name}: last activity {active[w.name] / 60:.0f} min ago")
-    rest = [w.spec() for w in watches if w.name in active]
+    rest = [shlex.quote(w.spec()) for w in watches if w.name in active]
     if rest:
         lines.append(f"  This watchdog has EXITED. To keep watching the active ones: "
                      f"python3 scripts/agent-watchdog.py {quiet_s / 60:g} {' '.join(rest)}")
@@ -471,10 +484,106 @@ def _self_test_body() -> int:
     case("activity: an index or logs/HEAD that goes missing is not an error, and is itself a change",
          changed(lambda w, wt, gd, tr: (os.remove(os.path.join(gd, "index")),
                                         shutil.rmtree(os.path.join(gd, "logs")))), True)
-    _e1, _e2 = ("tree", "/w/a", 1, 2), ("tree", "/w/b", 3, 4)
+    _e1, _e2 = Entry("/w/a", 1, 2), Entry("/w/b", 3, 4)
     case("fingerprint: the same entries in another order are the same observation, and one fewer is not",
          (fingerprint([_e1, _e2]) == fingerprint([_e2, _e1]), fingerprint([_e1, _e2]) == fingerprint([_e1])),
          (True, False))
+
+    # --- r3 (Phase 6): EVERY field of an entry has a witness that changes that field ALONE -------------------
+    # The class case, not one case per field written as it occurs to someone (R3m1: the name had none). FIELDS is
+    # an INDEPENDENT literal, never read from the code: a field added to `Entry` with no witness here is red.
+    FIELDS = ("name", "mtime_ns", "size")
+
+    def field_world():
+        """A worktree holding, in EACH of `src` and `lib`, two files `p` and `q` of different (time, size)."""
+        w = World()
+        wt, _ = w.wt("a")
+        for d, (n1, n2) in (("src", (1, 2)), ("lib", (2, 1))):
+            for f, n in (("p", n1), ("q", n2)):
+                p = os.path.join(wt, d, f)
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                with open(p, "w") as fh:
+                    fh.write("x" * n)
+                os.utime(p, ns=(n, n))
+        return wt
+
+    def times_put_back(paths, fn):
+        sts = {p: os.lstat(p) for p in paths}
+        fn()
+        for p, st in sts.items():
+            os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+    def only_name(wt):
+        """In both directories `p` and `q` exchange names, directory times put back: the basenames, the
+        directories and the (time, size) pairs are each the same set before and after; only which FULL path
+        carries which (time, size) changes."""
+        def swap():
+            for d in ("src", "lib"):
+                base = os.path.join(wt, d)
+                os.rename(os.path.join(base, "p"), os.path.join(base, "t"))
+                os.rename(os.path.join(base, "q"), os.path.join(base, "p"))
+                os.rename(os.path.join(base, "t"), os.path.join(base, "q"))
+        times_put_back([os.path.join(wt, "src"), os.path.join(wt, "lib")], swap)
+
+    def only_time(wt):
+        os.utime(os.path.join(wt, "src", "a.py"), ns=(1, 1))
+
+    def only_size(wt):
+        f = os.path.join(wt, "src", "a.py")
+
+        def grow():
+            with open(f, "a") as fh:
+                fh.write("more")
+        times_put_back([f], grow)
+
+    def field_witnesses():
+        declared = getattr(globals().get("Entry"), "_fields", None)
+        got: dict = {"declared fields": declared}
+        for field, act in (("name", only_name), ("mtime_ns", only_time), ("size", only_size),
+                           ("identity", lambda wt: None)):
+            if declared != FIELDS:
+                got[field] = "no Entry whose fields are exactly the literal"
+                continue
+            watch = Watch("a", field_world())
+            before = refused(observe, watch)
+            act(watch.worktree)
+            after = refused(observe, watch)
+            if isinstance(before, str) or isinstance(after, str):
+                got[field] = (before, after)
+                continue
+            i = FIELDS.index(field) if field in FIELDS else None
+
+            def without(es):
+                return sorted(tuple(v for j, v in enumerate(e) if j != i) for e in es)
+            # CONTROL: the fixture changed this field and nothing else (equal with it projected out, different
+            # with it in). PROPERTY: the fingerprint saw it. The identity row: nothing changed, nothing seen.
+            control = without(before) == without(after) and (i is None or sorted(before) != sorted(after))
+            got[field] = (control, fingerprint(before) != fingerprint(after))
+        return got
+
+    case("activity: every field of an entry, changed ALONE, changes the fingerprint, and nothing changed does not",
+         field_witnesses(), {"declared fields": FIELDS, "name": (True, True), "mtime_ns": (True, True),
+                             "size": (True, True), "identity": (True, False)})
+
+    def links_observed():
+        """R3m2: a looping and a dangling symlink inside the worktree are each observed (by `lstat`, never followed)
+        and each an entry. A symlink to a DIRECTORY is not an entry: the walk lists it among directories and does
+        not descend, so it is seen only through its parent's time (BOUNDS)."""
+        w = World()
+        wt, _ = w.wt("a")
+        os.makedirs(os.path.join(w.root, "elsewhere"))
+        src = os.path.join(wt, "src")
+        os.symlink("loop", os.path.join(src, "loop"))
+        os.symlink("nowhere", os.path.join(src, "dangling"))
+        os.symlink(os.path.join(w.root, "elsewhere"), os.path.join(src, "dirlink"))
+        got = refused(observe, Watch("a", wt))
+        if isinstance(got, str):
+            return got
+        names = {getattr(e, "name", None) for e in got}
+        return tuple(os.path.join(src, n) in names for n in ("loop", "dangling", "dirlink"))
+
+    case("activity: a looping and a dangling symlink in the worktree are observed without CANNOT RUN and are each "
+         "an entry; a symlink to a directory is not", links_observed(), (True, True, False))
 
     def newest_refusal(make):
         w = World()
@@ -638,6 +747,28 @@ def _self_test_body() -> int:
     rc, minutes, out, _ = w.run("10", f"a={wa}", f"b={wb}:{tr}")
     case("the re-arm command keeps the quiet window and the transcript, and the active builder's age is in minutes",
          (f"agent-watchdog.py 10 b={wb}:{tr}" in out, "active b: last activity 0 min ago" in out), (True, True))
+
+    def rearm_round_trip(out):
+        """R3m3: the printed re-arm command, split as a shell splits it, gives back the same watches, even for a
+        path holding a space and a quote."""
+        import shlex
+        line = [l for l in out.split("\n") if "agent-watchdog.py" in l]
+        if len(line) != 1:
+            return f"{len(line)} re-arm lines"
+        try:
+            argv = shlex.split(line[0].split(": ", 1)[1])
+        except ValueError as exc:
+            return f"the shell cannot split it: {exc}"
+        return argv[:2], refused(parse_args, argv[2:])
+
+    _spaced = Watch("b", "/w/My Worktrees/b'657", "/t/t one.jsonl")
+    _dollar = Watch("c", "/w/$HOME and `x`")
+    case("the re-arm command is shell-quoted: split as a shell splits it, a path with a space gives the same watch",
+         (rearm_round_trip(report(0, 1800, {"a": 1800}, {"b": 60}, {}, [Watch("a", "/tmp/x"), _spaced])),
+          rearm_round_trip(report(86400, 600, {"a": 600}, {"b": 60, "c": 120}, {"d": "gone"},
+                                  [_dollar, Watch("a", "/tmp/y"), _spaced, Watch("d", "/tmp/d")]))),
+         ((["python3", "scripts/agent-watchdog.py"], (1800.0, [_spaced])),
+          (["python3", "scripts/agent-watchdog.py"], (600.0, [_dollar, _spaced]))))
 
     w = World()
     wa, _ = w.wt("a")

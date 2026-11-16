@@ -30,3 +30,23 @@ findings:
 - **R3m3.** The printed re-arm command does not quote paths; a path with a space splits. Loud, not silent.
 
 All three are cheap and are fixed in the round 3 fold (cases first, then `shlex.quote`), after the Phase 6 review.
+
+## Fold
+
+The Phase 6 review (`docs/reviews/architecture-review-2026-11-16-agent-watchdog.md`) found the fingerprint right in
+kind and recommended (b), a small restructure inside this fold. **Adopted.** The entry is a three-field
+`Entry(NamedTuple)` of `name, mtime_ns, size`; the r2 `kind` field is gone, since no input can change it alone.
+Because this fold changes code, `fixes_nontrivial: false` above describes the round as reviewed, not the fold; round
+4 is under the round cap, so its findings are FILED unless a BLOCKER, and a third fix-induced `quiet-window` finding
+would mean the Phase 6 review misjudged the cause.
+
+| id | disposition | what the fold did |
+|---|---|---|
+| R3m1 | fixed (as its class) | one class case over an independent literal `FIELDS`: asserts `Entry._fields == FIELDS`, then one world change per field (name, time, size) plus an identity row, each with a control that only that field changed. Mutations: the name left out, a tree name its basename only, its directory only, a clock mixed into the fingerprint, a fourth field with no witness. The git-name-constant mutant is NOT mutated, its reason in the pin comment |
+| R3m2 | fixed | a case: a looping and a dangling symlink are observed without CANNOT RUN and are each an entry; a symlink to a directory is not, and BOUNDS now says so. Mutation: `os.stat` for the walk's `os.lstat` |
+| R3m3 | fixed | `shlex.quote` on each re-arm spec; a case splits the printed command as a shell does and gets back the same watch for a path with a space and a quote. Mutation: the quote removed |
+
+Re-anchored, same intent: HEAD left out, size and time left out, only the newest time compared (`e.mtime_ns`, was
+`e[2]`), the re-arm listing the quiet. Pin 63 -> 70. Filed from the Phase 6 review: backlog #660 (a directory that
+becomes a file mid-walk is a false CANNOT RUN) and backlog #661 (`check-review-decision.py` refuses Major/Minor
+severities, so it decided nothing for this subject; not covered by backlog #117).

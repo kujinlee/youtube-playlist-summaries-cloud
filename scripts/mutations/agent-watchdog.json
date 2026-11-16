@@ -193,7 +193,7 @@
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "    entries = [_entry(\"git\", GIT_REQUIRED, head)]\n",
+        "    entries = [_entry(GIT_REQUIRED, head)]\n",
         "    entries = []\n"
       ]
     ],
@@ -515,8 +515,8 @@
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "rest = [w.spec() for w in watches if w.name in active]",
-        "rest = [w.spec() for w in watches]"
+        "rest = [shlex.quote(w.spec()) for w in watches if w.name in active]",
+        "rest = [shlex.quote(w.spec()) for w in watches]"
       ]
     ],
     "expect": [
@@ -702,7 +702,7 @@
     "edits": [
       [
         "mark = fingerprint(observe(w))",
-        "mark = max(e[2] for e in observe(w))"
+        "mark = max(e.mtime_ns for e in observe(w))"
       ]
     ],
     "expect": [
@@ -717,8 +717,8 @@
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "return (kind, name, st.st_mtime_ns, st.st_size)",
-        "return (kind, name, st.st_mtime_ns, 0)"
+        "return Entry(name, st.st_mtime_ns, st.st_size)",
+        "return Entry(name, st.st_mtime_ns, 0)"
       ]
     ],
     "expect": [
@@ -730,8 +730,8 @@
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "(kind, name, st.st_mtime_ns,",
-        "(kind, name, 0,"
+        "Entry(name, st.st_mtime_ns,",
+        "Entry(name, 0,"
       ]
     ],
     "expect": [
@@ -841,6 +841,98 @@
     ],
     "expect": [
       "CANNOT RUN: a FIFO .git that delivers a valid gitdir line is still refused"
+    ]
+  },
+  {
+    "name": "an entry's NAME is left out of the observation (R3m1)",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "return Entry(name,",
+        "return Entry(\"\","
+      ]
+    ],
+    "expect": [
+      "activity: every field of an entry, changed ALONE, changes the fingerprint, and nothing changed does not"
+    ]
+  },
+  {
+    "name": "a tree entry's name is its basename only",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "_entry(path, os.lstat",
+        "_entry(os.path.basename(path), os.lstat"
+      ]
+    ],
+    "expect": [
+      "activity: every field of an entry, changed ALONE, changes the fingerprint, and nothing changed does not"
+    ]
+  },
+  {
+    "name": "a tree entry's name is its directory only",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "entries.append(_entry(path,",
+        "entries.append(_entry(os.path.dirname(path),"
+      ]
+    ],
+    "expect": [
+      "activity: every field of an entry, changed ALONE, changes the fingerprint, and nothing changed does not"
+    ]
+  },
+  {
+    "name": "every poll is a change: a clock is mixed into the fingerprint",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "return hashlib.sha256(repr(sorted(entries)).encode(",
+        "return hashlib.sha256((repr(sorted(entries)) + str(time.perf_counter_ns())).encode("
+      ]
+    ],
+    "expect": [
+      "activity: every field of an entry, changed ALONE, changes the fingerprint, and nothing changed does not",
+      "activity: with nothing touched two observations have the same fingerprint"
+    ]
+  },
+  {
+    "name": "a fourth field is added to the entry with no witness",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "    mtime_ns: int\n    size: int\n",
+        "    mtime_ns: int\n    size: int\n    mode: int = 0\n"
+      ]
+    ],
+    "expect": [
+      "activity: every field of an entry, changed ALONE, changes the fingerprint, and nothing changed does not"
+    ]
+  },
+  {
+    "name": "the walk follows symlinks (stat for lstat): a loop is CANNOT RUN, a dangling link is skipped (R3m2)",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "os.lstat(path)))",
+        "os.stat(path)))"
+      ]
+    ],
+    "expect": [
+      "activity: a looping and a dangling symlink in the worktree are observed without CANNOT RUN and are each an entry; a symlink to a directory is not"
+    ]
+  },
+  {
+    "name": "the re-arm command is not shell-quoted (R3m3)",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "shlex.quote(w.spec())",
+        "w.spec()"
+      ]
+    ],
+    "expect": [
+      "the re-arm command is shell-quoted: split as a shell splits it, a path with a space gives the same watch"
     ]
   }
 ]
