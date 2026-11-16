@@ -13,8 +13,9 @@ THE DECISION, for a Stop payload (the first that applies wins):
     allow        `stop_hook_active` is true — this stop follows a block already (no loops)
     allow        the payload has a non-empty top-level `agent_id`: a subagent's stop, not the orchestrator's
     allow        the owner's pause marker `.claude/paused` (in the MAIN checkout) is younger than PAUSE_MAX_S
-    allow        the turn's last tool call, after the last human prompt, was AskUserQuestion — the ONE question
-                 exception, and a structured one: no punctuation in the prose is read
+    allow        the turn's last tool call, after the last human prompt, was an AskUserQuestion the owner has NOT
+                 answered (no result yet, or a card they rejected) — the ONE question exception, and a structured
+                 one: no punctuation in the prose is read. An ANSWERED card is work to act on (r2 XM1)
     allow        a usage stop: the weekly pace is REFUSE (`check-usage-pace.evaluate`, the one owner of that
                  line) or the five-hour block is at its 100% limit
     allow        (a) the harness lists a background task whose status is LIVE (`background_tasks`)
@@ -26,7 +27,10 @@ THE DECISION, for a Stop payload (the first that applies wins):
 NO EVIDENCE IS NOT WORK (r1 XM4 — reversed from the first build, which allowed). When `gh` cannot answer, the
 payload has no `background_tasks`, or the worktrees cannot be read, the stop is BLOCKED once and the reason names
 what could not be read. This cannot wedge: the continuation arrives with `stop_hook_active` and passes. Only a
-payload that is not an object, or a crash of this checker (the launcher maps any exit but 2 to 1), still allows.
+payload that is not an object, or a crash of this checker (the launcher maps any exit but 2 to 1), still allows —
+so every parse of outside input catches EVERY exception (r2 XM3/XM4: a 200,000-deep record raises RecursionError,
+not ValueError). A transcript record that cannot be parsed makes the transcript UNREADABLE: the question exception
+is not applied, and the block says so.
 
 HOW (a) IS OBSERVED — MEASURED, not assumed. Claude Code 2.1.322's Stop schema (read from the binary) carries
 `background_tasks`: "In-flight background work (running/pending + backgrounded) registered in this session ...
@@ -71,9 +75,16 @@ only when it is a regular file, so a FIFO cannot hold the hook.
   * (c) counts a started check on ANY open PR of this repo, including one this session did not push; a commit
     status stuck in `PENDING` keeps (c) on for as long as its PR is open.
   * A background job that only WAITS (a poller, a `sleep` loop) counts as running: it will wake the session.
+  * A REJECTED card is recognised by the harness's own words, REJECTED_MARK (measured 2026-11-16 over 207
+    AskUserQuestion calls in this project's transcripts: 9 owner rejections, `is_error: true`, "The user doesn't
+    want to proceed ..."; 47 hook refusals, `is_error: true`, "PreToolUse:AskUserQuestion hook error"; every
+    answered one `is_error` false). If the harness rewords it, a rejected card reads as ANSWERED and the stop is
+    blocked once — the failure is a block, never an allow. A card a hook refused was never shown: no exception.
+  * (b)'s deadline is checked per directory AND per file; one huge directory LISTING (`os.walk`'s scandir of a
+    single directory) is still not interrupted.
 
     python3 scripts/check-idle-stop.py --hook < payload.json
-    python3 scripts/check-idle-stop.py --self-test  # 73 cases
+    python3 scripts/check-idle-stop.py --self-test  # 93 cases
 
 EXIT CODES: `--hook` 0 = allowed (silent) · 2 = BLOCKED (the reason on stderr, which Claude reads) · 1 = allowed,
 NOT CHECKED (the warning on stderr, which the human reads).
@@ -107,32 +118,60 @@ LIVE = frozenset({"running", "pending"})
 STARTED_RUN = frozenset({"QUEUED", "IN_PROGRESS", "PENDING"})
 STARTED_STATE = frozenset({"PENDING"})
 ALLOW, BLOCK, NOT_CHECKED = "allow", "block", "not checked"
+REJECTED_MARK = "doesn't want to proceed"   # the harness's text for a card the owner rejected (measured, see XM1)
 
 _spec = importlib.util.spec_from_file_location("check_usage_pace", ROOT / "scripts" / "check-usage-pace.py")
 _pace = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_pace)
 
 
-def last_tool_asked(tail: str | None) -> bool:
-    """True when the last tool call in the transcript tail, after the last human prompt, is AskUserQuestion."""
-    last = None
-    for line in (tail or "").splitlines():
+def _rejected(block: dict) -> bool:
+    """A tool_result the OWNER rejected: `is_error` and the harness's rejection text. A hook's refusal is also an
+    error, but its card was never shown, so it is not a rejection."""
+    content = block.get("content")
+    text = content if isinstance(content, str) else " ".join(
+        b.get("text", "") for b in content if isinstance(b, dict) and isinstance(b.get("text"), str)
+    ) if isinstance(content, list) else ""
+    return block.get("is_error") is True and REJECTED_MARK in text
+
+
+def last_tool_asked(tail: str | None) -> bool | None:
+    """True when the turn's last tool call, after the last human prompt, is an AskUserQuestion the owner has NOT
+    answered: no result for its id yet, or a result the owner REJECTED (`_rejected`). An ANSWERED card is work to
+    act on, not a reason to stop (r2 XM1). False otherwise. None when the transcript is UNREADABLE: a record that
+    cannot be parsed, except a torn FIRST line (where the tail was cut) or a torn LAST one (a write in progress).
+    Records are split on the newline only — `splitlines()` also splits on U+2028 inside a JSON string (r2 XM2)."""
+    pieces = (tail or "").split("\n")
+    idx = [i for i, p in enumerate(pieces) if p.strip()]
+    ends = {idx[0], idx[-1]} if idx else set()
+    last = card = None
+    answered = False
+    for i in idx:
         try:
-            rec = json.loads(line)
+            rec = json.loads(pieces[i])
         except ValueError:
-            continue
+            if i in ends:
+                continue
+            return None
+        except Exception:  # noqa: BLE001 - RecursionError, MemoryError: unreadable, never a crash (r2 XM3)
+            return None
         if not isinstance(rec, dict):
             continue
         msg = rec.get("message")
         content = msg.get("content") if isinstance(msg, dict) else None
         if rec.get("type") == "user" and (isinstance(content, str) or (isinstance(content, list) and any(
                 isinstance(b, dict) and b.get("type") == "text" for b in content))):
-            last = None
+            last = card = None
+        elif rec.get("type") == "user" and isinstance(content, list):
+            for b in content:
+                if (isinstance(b, dict) and b.get("type") == "tool_result" and isinstance(card, str)
+                        and b.get("tool_use_id") == card and not _rejected(b)):
+                    answered = True
         elif rec.get("type") == "assistant" and isinstance(content, list):
             for b in content:
                 if isinstance(b, dict) and b.get("type") == "tool_use":
-                    last = b.get("name")
-    return last == "AskUserQuestion"
+                    last, card, answered = b.get("name"), b.get("id"), False
+    return last == "AskUserQuestion" and isinstance(card, str) and not answered
 
 
 def read_tail(path: object, cap: int = TAIL_BYTES) -> str | None:
@@ -161,7 +200,7 @@ def usage_stop(cache_text: str | None, now: float) -> str | None:
     try:
         rl = json.loads(cache_text or "{}").get("rate_limits") or {}
         five = _pace.window(rl, "five_hour", now, _pace.FIVE_HOUR_S)
-    except (ValueError, AttributeError, _pace.Malformed):
+    except Exception:  # noqa: BLE001 - ValueError, RecursionError, Malformed: no usage stop, never a crash
         return None
     if five is not None and five[1] > now and five[0] >= _pace.HARD_LIMIT:
         return "the five-hour block is at its 100% limit"
@@ -190,7 +229,7 @@ def running_tasks(doc: dict) -> list[str] | None:
 
 
 def moved_worktrees(wt_root: str, now: float, window_s: float = IDLE_WINDOW_S, own: str | None = None,
-                    budget_s: float = WALK_BUDGET_S, clock=time.monotonic) -> list[str] | None:
+                    budget_s: float = WALK_BUDGET_S, clock=time.monotonic, lstat=os.lstat) -> list[str] | None:
     """(b): the builder worktrees under `wt_root` with a file changed in the last `window_s` AND more than
     SETTLE_S after the worktree's own `.git` was written (its creation — a checkout is not building). `own`, the
     checkout the session itself runs in, never counts; a directory with no `.git` is not a worktree. None when
@@ -209,10 +248,10 @@ def moved_worktrees(wt_root: str, now: float, window_s: float = IDLE_WINDOW_S, o
         if not os.path.isdir(top) or os.path.islink(top) or os.path.realpath(top) == own:
             continue
         try:
-            born = os.lstat(os.path.join(top, ".git")).st_mtime
+            born = lstat(os.path.join(top, ".git")).st_mtime
         except OSError:
             continue
-        hit = _recent(top, max(now - window_s, born + SETTLE_S), deadline, clock)
+        hit = _recent(top, max(now - window_s, born + SETTLE_S), deadline, clock, lstat)
         if hit is None:
             return None
         if hit:
@@ -220,15 +259,17 @@ def moved_worktrees(wt_root: str, now: float, window_s: float = IDLE_WINDOW_S, o
     return moved
 
 
-def _recent(top: str, since: float, deadline: float, clock) -> bool | None:
+def _recent(top: str, since: float, deadline: float, clock, lstat=os.lstat) -> bool | None:
     """True at the first file under `top` changed at or after `since`; None once `clock` passes `deadline`."""
     for d, dirs, files in os.walk(top):
         if clock() > deadline:
             return None
         dirs[:] = [x for x in dirs if x not in SKIP_DIRS]
         for f in files:
+            if clock() > deadline:       # per FILE too: one directory of slow entries cannot outrun it (r2 XM5)
+                return None
             try:
-                if os.lstat(os.path.join(d, f)).st_mtime >= since:
+                if lstat(os.path.join(d, f)).st_mtime >= since:
                     return True
             except OSError:
                 continue
@@ -249,12 +290,14 @@ def run_gh(root: str, timeout_s: float = GH_TIMEOUT_S) -> tuple[int, str]:
 
 def pending_ci(rc: int, out: str) -> list[int] | None:
     """(c): the open PRs with a check that has STARTED and not finished, from `run_gh`'s answer; None when it is
-    not an answer. A check that never started (EXPECTED, WAITING, REQUESTED) is not running work."""
+    not an answer. A check that never started (EXPECTED, WAITING, REQUESTED) is not running work. ANY malformed
+    shape — a rollup that is not a list or null, a check that is not an object, a status, state or type that is
+    not a string or absent — is not an answer either (r2 XM4): it is never read past, and never a crash."""
     if rc != 0:
         return None
     try:
         prs = json.loads(out)
-    except ValueError:
+    except Exception:  # noqa: BLE001 - ValueError, and RecursionError on a deep answer: no answer, never a crash
         return None
     if not isinstance(prs, list):
         return None
@@ -262,9 +305,14 @@ def pending_ci(rc: int, out: str) -> list[int] | None:
     for pr in prs:
         if not isinstance(pr, dict):
             return None
-        for c in pr.get("statusCheckRollup") or []:
-            if not isinstance(c, dict):
-                continue
+        rollup = pr.get("statusCheckRollup")
+        if rollup is not None and not isinstance(rollup, list):
+            return None
+        for c in rollup or []:
+            if not isinstance(c, dict) or any(not isinstance(c.get(k), (str, type(None)))
+                                              for k in ("__typename", "status", "state")):
+                return None
+        for c in rollup or []:
             if (c.get("__typename") == "StatusContext" and c.get("state") in STARTED_STATE) or (
                     c.get("__typename") != "StatusContext" and c.get("status") in STARTED_RUN):
                 pending.append(pr.get("number"))
@@ -286,7 +334,8 @@ def decide(doc: object, now: float, main: str | None, cache_text: str | None, ta
     pause = paused(main, now)
     if pause:
         return ALLOW, ""
-    if last_tool_asked(tail):
+    asked = last_tool_asked(tail)
+    if asked:
         return ALLOW, ""
     if usage_stop(cache_text, now):
         return ALLOW, ""
@@ -310,6 +359,8 @@ def decide(doc: object, now: float, main: str | None, cache_text: str | None, ta
         unseen.append(f"(c) gh could not answer ({out.strip()[:120] if rc != 0 else 'unreadable JSON'})")
     stale = (f" The pause marker {PAUSE_FILE} is older than {PAUSE_MAX_S // 3600} h and was ignored."
              if pause is None else "")
+    if asked is None:
+        stale += " The transcript could not be read, so the AskUserQuestion exception was not applied."
     todo = (f"A turn that says work is starting must START it before it ends. DO ONE: start the work now (spawn "
             f"the agent, run the job in the background), or — if the owner paused the work — touch {PAUSE_FILE} in "
             f"the main checkout.{stale}")
@@ -530,6 +581,43 @@ def _self_test_body() -> int:
          "budget on the same slow clock, the builder is seen",
          tr(lambda: [moved_worktrees(wt, NOW, clock=slow_clock), moved_worktrees(wt, NOW, clock=lambda: 0.0),
                      moved_worktrees(wt, NOW, budget_s=1000.0, clock=slow_clock)]), [None, ["b1"], ["b1"]])
+    slowwt = os.path.join(tmp, "slowwt", WORKTREES, "b0")
+    for i in range(300):
+        put(os.path.join(slowwt, "d", f"f{i}.txt"), 7200.0)
+    put(os.path.join(slowwt, ".git"), 86400.0, "gitdir: /elsewhere\n")
+
+    def slow_lstat(path):
+        time.sleep(0.01)
+        return os.lstat(path)
+
+    dirsonly = os.path.join(tmp, "dirsonly", WORKTREES, "b0")
+    os.makedirs(os.path.join(dirsonly, "d1", "d2", "d3", "d4"))
+    put(os.path.join(dirsonly, ".git"), 86400.0, "gitdir: /elsewhere\n")
+
+    def ticking():
+        n = [0]
+
+        def clock():
+            n[0] += 1
+            return float(n[0])
+        return clock
+
+    case("(b) the deadline is checked per DIRECTORY too: a tree of empty directories (no file to check at) on a "
+         "clock that ticks per call is None at a 2.5 budget, and read whole ([]) at a 1000 budget",
+         [moved_worktrees(os.path.dirname(dirsonly), NOW, budget_s=b, clock=ticking()) for b in (2.5, 1000.0)],
+         [None, []])
+    seen_paths = []
+
+    def counting_lstat(path):
+        seen_paths.append(path)
+        return os.lstat(path)
+
+    case("⭐ (b) the walk deadline is checked per FILE (r2 XM5): 300 old files in ONE directory at 10 ms an lstat, a "
+         "0.2 s budget → None (unread) inside 1.5 s; inside its budget the same walk reads all 300 (302 lstats with "
+         "the `.git`, read as birth and as a file) → []",
+         [bounded(lambda: moved_worktrees(os.path.dirname(slowwt), NOW, budget_s=0.2, lstat=slow_lstat), secs=1.5),
+          bounded(lambda: moved_worktrees(os.path.dirname(slowwt), NOW, lstat=counting_lstat)), len(seen_paths)],
+         [None, [], 302])
     notdir = world("notdir", ())
     Path(notdir, WORKTREES).write_text("a file where the directory should be")
     case("(b) a worktrees path that cannot be listed is None (unread), not 'no builders'",
@@ -551,6 +639,18 @@ def _self_test_body() -> int:
              {"number": 1, "statusCheckRollup": [{"__typename": "StatusContext", "state": "EXPECTED"}]},
              {"number": 2, "statusCheckRollup": [{"__typename": "CheckRun", "status": "WAITING"}]},
              {"number": 3, "statusCheckRollup": [{"__typename": "CheckRun", "status": "REQUESTED"}]}])), [])
+    case("⭐ (c) a malformed rollup is no answer (None), never a crash: a rollup of 42, a status of [], a state of "
+         "{}, a check that is not an object",
+         [tr(lambda o=o: pending_ci(0, json.dumps([{"number": 1, "statusCheckRollup": o}]))) for o in (
+             42, [{"__typename": "CheckRun", "status": []}], [{"__typename": "StatusContext", "state": {}}], ["x"])],
+         [None] * 4)
+    case("(c) a gh answer nested past the parser's limit is no answer (None), not a crash",
+         tr(lambda: pending_ci(0, "[" * 200000 + "]" * 200000)), None)
+    case("(c) a check with NO status is well formed and not pending, and a null rollup is no checks",
+         pending_ci(0, json.dumps([{"number": 1, "statusCheckRollup": [{"__typename": "CheckRun"}]},
+                                   {"number": 2, "statusCheckRollup": None}])), [])
+    verdict, msg = vm(payload(T0224), idle, gh_says(0, json.dumps([{"number": 1, "statusCheckRollup": 42}])))
+    case("⭐ decide over a malformed gh answer (r2 XM4) → BLOCK, naming (c)", (verdict, "(c)" in msg), (BLOCK, True))
     calls.clear()
     v(payload(T0224, shell), idle)
     v(payload(T0224), moving)
@@ -585,15 +685,64 @@ def _self_test_body() -> int:
              T0224 + "\n\nShall I start backlog #657 now?", "Starting #657 now — OK?",
              "Now starting backlog #657. Why now? The wake is too far.",
              "Now starting backlog #657 (see `check?` mode).", "Now starting #657.\n\n<!-- ? -->")], [BLOCK] * 5)
-    ask_tail = "\n".join(json.dumps(r) for r in [
-        {"type": "user", "message": {"role": "user", "content": "go"}},
-        {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "AskUserQuestion", "input": {}}]}},
-        {"type": "user", "message": {"content": [{"type": "tool_result", "content": "dismissed"}]}}])
-    case("⭐ the last tool call was AskUserQuestion → ALLOW", v(payload(T0224), idle, tail=ask_tail), ALLOW)
+    # The three result shapes, as real transcripts record them (measured 2026-11-16 over 207 AskUserQuestion calls).
+    REJECTED = ("The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file "
+                "edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\nThe "
+                "user wants to clarify these questions.")
+    ANSWERED = 'Your questions have been answered: "Start #657 now?"="Yes". You can now continue.'
+    HOOK_REFUSED = "PreToolUse:AskUserQuestion hook error: [bash .claude/hooks/enforce-selection-card.sh]: BLOCKED"
+
+    def ask(qid="q"):
+        tu = {"type": "tool_use", "name": "AskUserQuestion", "input": {}}
+        return {"type": "assistant", "message": {"content": [tu if qid is None else {**tu, "id": qid}]}}
+
+    def result(qid, text, err=False):
+        return {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": qid, "content": text, **({"is_error": True} if err else {})}]}}
+
+    def say(text):
+        return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+
+    def jl(*recs, ascii_only=True):
+        return "\n".join(json.dumps(r, ensure_ascii=ascii_only) for r in recs)
+
+    go = {"type": "user", "message": {"role": "user", "content": "go"}}
+    ask_tail = jl(go, ask(), result("q", REJECTED, err=True))
+    case("⭐ the last tool call was AskUserQuestion and the owner REJECTED the card ('clarify') → ALLOW",
+         v(payload(T0224), idle, tail=ask_tail), ALLOW)
+    case("⭐ an ANSWERED AskUserQuestion is work to act on: ask → 'Yes' → 'Starting now.' → BLOCK",
+         v(payload(T0224), idle, tail=jl(go, ask(), result("q", ANSWERED), say("Starting now."))), BLOCK)
+    case("an AskUserQuestion with no result yet keeps the exception", last_tool_asked(jl(go, ask())), True)
+    case("a card a HOOK refused (is_error, not the owner's rejection) was never shown: no exception",
+         last_tool_asked(jl(go, ask(), result("q", HOOK_REFUSED, err=True))), False)
+    case("only a result for THIS card's id answers it: an answer to 'q' ends the exception, one to 'other' does not",
+         [last_tool_asked(jl(go, ask(), result(i, ANSWERED))) for i in ("q", "other")], [False, True])
+    case("a rejection text WITHOUT is_error is an answer, not a rejection",
+         last_tool_asked(jl(go, ask(), result("q", REJECTED))), False)
+    case("a rejection whose content is a list of text blocks is still a rejection",
+         last_tool_asked(jl(go, ask(), result("q", [{"type": "text", "text": REJECTED}], err=True))), True)
+    case("an AskUserQuestion with no id cannot be matched to its result: no exception",
+         last_tool_asked(jl(go, ask(None))), False)
+    case("⭐ a human prompt as a LIST of text blocks ends the exception: ask, 'Continue', a closing reply → BLOCK",
+         v(payload(T0224), idle, tail=jl(go, ask(), {"type": "user", "message": {"content": [
+             {"type": "text", "text": "Continue"}]}}, say("Starting now."))), BLOCK)
+    u2028 = jl(go, ask(), {"type": "user", "message": {"content": "Continue\u2028now"}}, say("Starting now."),
+               ascii_only=False)
+    case("⭐ a human prompt holding a literal U+2028 is ONE record: it is READ (False, not None — unreadable) and "
+         "ends the exception → BLOCK",
+         ("\u2028" in u2028, last_tool_asked(u2028), v(payload(T0224), idle, tail=u2028)), (True, False, BLOCK))
+    case("a torn FIRST line (the tail's cut) and a torn LAST line (a write in progress) are skipped",
+         last_tool_asked('ord": 1}\n' + jl(go, ask()) + '\n{"type": "assi'), True)
+    case("⭐ a torn line in the MIDDLE makes the transcript unreadable (None), never a skipped record",
+         last_tool_asked(jl(go, ask()) + '\n{"type": "user", "mess\n' + jl(say("x"))), None)
+    case("⭐ a record nested past the parser's limit makes the transcript unreadable (None), not a crash",
+         tr(lambda: last_tool_asked(jl(go, ask()) + '\n{"x":' + "[" * 200000 + "0" + "]" * 200000 + "}\n" +
+                    jl(say("x")))), None)
     later = ask_tail + "\n" + json.dumps({"type": "user", "message": {"role": "user", "content": "next"}})
     case("an AskUserQuestion BEFORE the latest human prompt does not count", last_tool_asked(later), False)
     case("a later tool call after AskUserQuestion is the last one", last_tool_asked(ask_tail + "\n" + json.dumps(
-        {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {}}]}})), False)
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "b1", "name": "Bash", "input": {}}]}})), False)
     case("a transcript record that is not an object (`[]`, `1`, `null`, a string) is skipped, not a crash: the "
          "AskUserQuestion after it still counts", v(payload(T0224), idle, tail='[]\n1\nnull\n"x"\n' + ask_tail), ALLOW)
     case("⭐ a weekly usage stop → ALLOW; below it → BLOCK",
@@ -602,6 +751,8 @@ def _self_test_body() -> int:
          [v(payload(T0224), idle, cache_text=cache(60, f)) for f in (100, 99)], [ALLOW, BLOCK])
     case("an unreadable or missing usage cache is not a stop",
          [v(payload(T0224), idle, cache_text=c) for c in ("{nope", "")], [BLOCK, BLOCK])
+    case("a usage cache nested past the parser's limit is not a stop, and not a crash → BLOCK",
+         v(payload(T0224), idle, cache_text='{"rate_limits":' + "[" * 200000 + "]" * 200000 + "}"), BLOCK)
     paused_main = world("paused")
     Path(paused_main, PAUSE_FILE).write_text("owner: stop until 06:00")
     case("⭐ the owner's pause marker → ALLOW", v(payload(T0224), paused_main), ALLOW)
@@ -656,6 +807,12 @@ def _self_test_body() -> int:
     tpath = os.path.join(tmp, "t.jsonl")
     Path(tpath).write_text(ask_tail + "\n")
     case("main reads the transcript tail named by the payload", drive(payload(T0224, transcript_path=tpath))[0], 0)
+    deep = os.path.join(tmp, "deep.jsonl")
+    Path(deep).write_text(ask_tail + "\n" + '{"x":' + "[" * 200000 + "0" + "]" * 200000 + "}\n" + jl(say("x")) + "\n")
+    got = tr(lambda: drive(payload(T0224, transcript_path=deep)))
+    rc, err = got if isinstance(got, tuple) else (got, "")
+    case("⭐ main: a transcript record nested 200,000 deep (r2 XM3) → exit 2, naming the unreadable transcript — "
+         "never a crash, which the launcher maps to an ALLOWED exit 1", (rc, "transcript" in err), (2, True))
     case("read_tail keeps only the last `cap` bytes", read_tail(tpath, 5), (ask_tail + "\n")[-5:])
     case("read_tail of a missing path is None", read_tail(os.path.join(tmp, "missing")), None)
     fifo = os.path.join(tmp, "transcript.fifo")

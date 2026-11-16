@@ -82,8 +82,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "    if last_tool_asked(tail):\n        return ALLOW, \"\"",
-        "    if last_tool_asked(tail) or \"?\" in str(doc.get(\"last_assistant_message\")):\n        return ALLOW, \"\""
+        "    asked = last_tool_asked(tail)\n    if asked:\n        return ALLOW, \"\"",
+        "    asked = last_tool_asked(tail)\n    if asked or \"?\" in str(doc.get(\"last_assistant_message\")):\n        return ALLOW, \"\""
       ]
     ],
     "expect": [
@@ -95,8 +95,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "if last_tool_asked(tail):\n        return ALLOW, \"\"",
-        "if last_tool_asked(tail) or str(doc.get(\"last_assistant_message\")).rstrip().endswith(\"?\"):\n        return ALLOW, \"\""
+        "    if asked:\n        return ALLOW, \"\"\n    if usage_stop(",
+        "    if asked or str(doc.get(\"last_assistant_message\")).rstrip().endswith(\"?\"):\n        return ALLOW, \"\"\n    if usage_stop("
       ]
     ],
     "expect": [
@@ -108,12 +108,12 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "    if last_tool_asked(tail):",
-        "    if False:"
+        "    if asked:\n",
+        "    if False:\n"
       ]
     ],
     "expect": [
-      "⭐ the last tool call was AskUserQuestion → ALLOW"
+      "⭐ the last tool call was AskUserQuestion and the owner REJECTED the card ('clarify') → ALLOW"
     ]
   },
   {
@@ -134,8 +134,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "                isinstance(b, dict) and b.get(\"type\") == \"text\" for b in content))):\n            last = None",
-        "                isinstance(b, dict) and b.get(\"type\") == \"text\" for b in content))):\n            pass"
+        "            last = card = None\n",
+        "            pass\n"
       ]
     ],
     "expect": [
@@ -147,8 +147,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "                    last = b.get(\"name\")",
-        "                    last = last or b.get(\"name\")"
+        "last, card, answered = b.get(\"name\"), b.get(\"id\"), False",
+        "last, card, answered = last or b.get(\"name\"), b.get(\"id\"), False"
       ]
     ],
     "expect": [
@@ -542,7 +542,7 @@
       ]
     ],
     "expect": [
-      "⭐ (b) the walk has a wall budget: past it the signal is None (unread); inside it, or with a larger budget on the same slow clock, the builder is seen"
+      "(b) the deadline is checked per DIRECTORY too: a tree of empty directories (no file to check at) on a clock that ticks per call is None at a 2.5 budget, and read whole ([]) at a 1000 budget"
     ]
   },
   {
@@ -1025,6 +1025,266 @@
     ],
     "expect": [
       "⭐ run_gh is bounded by its timeout: a `gh` that sleeps 5 s is (-1, TimeoutExpired) at two timeouts"
+    ]
+  },
+  {
+    "name": "an ANSWERED card keeps the exception (r2 XM1)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "                    answered = True\n",
+        "                    pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ an ANSWERED AskUserQuestion is work to act on: ask → 'Yes' → 'Starting now.' → BLOCK"
+    ]
+  },
+  {
+    "name": "a result for ANY id answers the card",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "and b.get(\"tool_use_id\") == card and not _rejected(b)",
+        "and not _rejected(b)"
+      ]
+    ],
+    "expect": [
+      "only a result for THIS card's id answers it: an answer to 'q' ends the exception, one to 'other' does not"
+    ]
+  },
+  {
+    "name": "a hook's refusal reads as the owner's rejection",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "return block.get(\"is_error\") is True and REJECTED_MARK in text",
+        "return block.get(\"is_error\") is True"
+      ]
+    ],
+    "expect": [
+      "a card a HOOK refused (is_error, not the owner's rejection) was never shown: no exception"
+    ]
+  },
+  {
+    "name": "a rejection needs no is_error",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "return block.get(\"is_error\") is True and ",
+        "return "
+      ]
+    ],
+    "expect": [
+      "a rejection text WITHOUT is_error is an answer, not a rejection"
+    ]
+  },
+  {
+    "name": "a list-form rejection is not read",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    ) if isinstance(content, list) else \"\"",
+        "    ) if False else \"\""
+      ]
+    ],
+    "expect": [
+      "a rejection whose content is a list of text blocks is still a rejection"
+    ]
+  },
+  {
+    "name": "a card with no id keeps the exception",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "return last == \"AskUserQuestion\" and isinstance(card, str) and not answered",
+        "return last == \"AskUserQuestion\" and not answered"
+      ]
+    ],
+    "expect": [
+      "an AskUserQuestion with no id cannot be matched to its result: no exception"
+    ]
+  },
+  {
+    "name": "the transcript is split by splitlines again (r2 XM2)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "pieces = (tail or \"\").split(\"\\n\")",
+        "pieces = (tail or \"\").splitlines()"
+      ]
+    ],
+    "expect": [
+      "⭐ a human prompt holding a literal U+2028 is ONE record: it is READ (False, not None — unreadable) and ends the exception → BLOCK"
+    ]
+  },
+  {
+    "name": "a torn MIDDLE line is skipped",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            if i in ends:\n                continue\n            return None\n",
+        "            continue\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a torn line in the MIDDLE makes the transcript unreadable (None), never a skipped record"
+    ]
+  },
+  {
+    "name": "a torn FIRST or LAST line is unreadable",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            if i in ends:\n                continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a torn FIRST line (the tail's cut) and a torn LAST line (a write in progress) are skipped"
+    ]
+  },
+  {
+    "name": "a RecursionError in the transcript is not caught (r2 XM3)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        except Exception:  # noqa: BLE001 - RecursionError, MemoryError",
+        "        except ZeroDivisionError:  # noqa: BLE001 - RecursionError, MemoryError"
+      ]
+    ],
+    "expect": [
+      "⭐ a record nested past the parser's limit makes the transcript unreadable (None), not a crash"
+    ]
+  },
+  {
+    "name": "an unreadable transcript grants the exception",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "asked = last_tool_asked(tail)\n    if asked:",
+        "asked = last_tool_asked(tail)\n    if asked is not False:"
+      ]
+    ],
+    "expect": [
+      "⭐ main: a transcript record nested 200,000 deep (r2 XM3) → exit 2, naming the unreadable transcript — never a crash, which the launcher maps to an ALLOWED exit 1"
+    ]
+  },
+  {
+    "name": "the unreadable transcript is not said",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if asked is None:\n        stale +=",
+        "    if False:\n        stale +="
+      ]
+    ],
+    "expect": [
+      "⭐ main: a transcript record nested 200,000 deep (r2 XM3) → exit 2, naming the unreadable transcript — never a crash, which the launcher maps to an ALLOWED exit 1"
+    ]
+  },
+  {
+    "name": "a rollup that is not a list is read past (r2 XM4)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        if rollup is not None and not isinstance(rollup, list):\n            return None\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ (c) a malformed rollup is no answer (None), never a crash: a rollup of 42, a status of [], a state of {}, a check that is not an object"
+    ]
+  },
+  {
+    "name": "a check's field types are not validated",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "any(not isinstance(c.get(k), (str, type(None)))",
+        "any(False"
+      ]
+    ],
+    "expect": [
+      "⭐ (c) a malformed rollup is no answer (None), never a crash: a rollup of 42, a status of [], a state of {}, a check that is not an object"
+    ]
+  },
+  {
+    "name": "a check that is not an object is skipped",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            if not isinstance(c, dict) or any(",
+        "            if isinstance(c, dict) and any("
+      ]
+    ],
+    "expect": [
+      "⭐ (c) a malformed rollup is no answer (None), never a crash: a rollup of 42, a status of [], a state of {}, a check that is not an object"
+    ]
+  },
+  {
+    "name": "an absent check field is malformed",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "(str, type(None))",
+        "(str,)"
+      ]
+    ],
+    "expect": [
+      "(c) a check with NO status is well formed and not pending, and a null rollup is no checks"
+    ]
+  },
+  {
+    "name": "a deep gh answer crashes pending_ci",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    except Exception:  # noqa: BLE001 - ValueError, and RecursionError on a deep answer",
+        "    except ValueError:  # noqa: BLE001 - ValueError, and RecursionError on a deep answer"
+      ]
+    ],
+    "expect": [
+      "(c) a gh answer nested past the parser's limit is no answer (None), not a crash"
+    ]
+  },
+  {
+    "name": "a deep usage cache crashes usage_stop",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    except Exception:  # noqa: BLE001 - ValueError, RecursionError, Malformed",
+        "    except (ValueError, AttributeError, _pace.Malformed):  # noqa: BLE001 - ValueError, RecursionError, Malformed"
+      ]
+    ],
+    "expect": [
+      "a usage cache nested past the parser's limit is not a stop, and not a crash → BLOCK"
+    ]
+  },
+  {
+    "name": "the per-FILE walk deadline is dropped (r2 XM5)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            if clock() > deadline:       # per FILE too: one directory of slow entries cannot outrun it (r2 XM5)\n                return None\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ (b) the walk deadline is checked per FILE (r2 XM5): 300 old files in ONE directory at 10 ms an lstat, a 0.2 s budget → None (unread) inside 1.5 s; inside its budget the same walk reads all 300 (302 lstats with the `.git`, read as birth and as a file) → []"
+    ]
+  },
+  {
+    "name": "the file loop ignores the injected lstat",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "if lstat(os.path.join(d, f)).st_mtime",
+        "if os.lstat(os.path.join(d, f)).st_mtime"
+      ]
+    ],
+    "expect": [
+      "⭐ (b) the walk deadline is checked per FILE (r2 XM5): 300 old files in ONE directory at 10 ms an lstat, a 0.2 s budget → None (unread) inside 1.5 s; inside its budget the same walk reads all 300 (302 lstats with the `.git`, read as birth and as a file) → []"
     ]
   }
 ]

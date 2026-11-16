@@ -2418,8 +2418,14 @@ EXPECTED_MUTATIONS = {
     "scripts/mkt_stage.py": 70,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
-    # NOT CHECKED, and the hook's exit codes.
-    "scripts/check-idle-stop.py": 79,
+    # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.
+    # r2 fold -> 99 (79 + 20, none retired): the answered-card rule (6: an answered card, any id, a hook refusal read
+    # as a rejection, a rejection without is_error, a list-form rejection, a card with no id), the transcript split
+    # and its unreadable cases (6: splitlines, a torn middle line skipped, torn edges unreadable, RecursionError not
+    # caught, an unreadable transcript granting the exception, the unread transcript not said), malformed and deep
+    # gh / cache answers (6), and the per-file walk deadline and its lstat seam (2). Five anchors on the rewritten
+    # question exception re-bound to the same intent.
+    "scripts/check-idle-stop.py": 99,
     # backlog #657 (2026-11-16): the agent watchdog, pinned in the commit that creates it. 43: the argument rules
     # (10, the 270 s floor and its identity with `check-agent-long-call.LIMIT_S` among them), the git directory (4),
     # what counts as activity (12: files, directories, the three git files, the three excluded directories, the
