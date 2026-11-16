@@ -2426,7 +2426,8 @@ EXPECTED_MUTATIONS = {
     # the tree or the repository, exec in Markdown and in non-comment shell, read lines, link targets, coordinates),
     # the seeds, the gap and dangling lines, the declaration's arithmetic, materialize, and the --closure CLI's exits.
     # The import parsing is ONE helper (`import_paths`) shared with Task 5's edges, mutated by Task 5's entries.
-    "scripts/check-shipping-sets.py": 105,
+    # ⟳ 2026-11-16 PR #598 CI (check-main-drivable D2): 105 + 1 = 106 — --closure reads the root main() is given.
+    "scripts/check-shipping-sets.py": 106,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.

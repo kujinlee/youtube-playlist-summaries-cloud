@@ -1153,5 +1153,16 @@
       ]
     ],
     "expect": "CLI: the real declaration is `0 gaps`, rc 0"
+  },
+  {
+    "name": "--closure reads REPO, not the root main() was given",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        return closure_main(Path(argv[1]), root)",
+        "        return closure_main(Path(argv[1]), REPO)"
+      ]
+    ],
+    "expect": "CLI: --closure reads the repository main() is GIVEN — a file only that built tree holds closes, rc 0"
   }
 ]

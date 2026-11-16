@@ -2,7 +2,7 @@
 """The component map, checked for completeness against what is on disk (marketplace-inventory plan, Task 5;
 spec §3: "every supporting artifact maps to a component, to a package, or to a written exclusion").
 
-    python3 scripts/check-shipping-sets.py --self-test  # 78 cases
+    python3 scripts/check-shipping-sets.py --self-test  # 79 cases
     python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
     python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json
 
@@ -828,6 +828,18 @@ def _self_test_body() -> int:
     case("CLI: an unreadable declaration is CANNOT RUN, rc 2",
          lambda: (lambda r: (r[0], r[2][:11]))(clo("--closure", str(omit / "nope.json"), root=omit)), (2, "CANNOT RUN:"))
     case("CLI: --closure with no path is a usage error, rc 2", lambda: quiet(lambda: main(["--closure"])), 2)
+
+    def closure_over_built_world():
+        """ADR-0014: main() is driven over a world THIS case built. `scripts/only-here.py` exists in that tree and
+        nowhere in the repository, so a main() that read REPO instead of `root` would be CANNOT RUN, not 0 gaps."""
+        r = tree({".agents/skills/z/SKILL.md": "Run `python3 scripts/only-here.py`.\n", "scripts/only-here.py": ""})
+        sets = sets_file(r, {"pkg": decl_of(["skills/z/SKILL.md", "scripts/only-here.py"])})
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = main(["--closure", sets], root=r)
+        return rc, out.getvalue().splitlines()[-1:], err.getvalue()
+    case("CLI: --closure reads the repository main() is GIVEN — a file only that built tree holds closes, rc 0",
+         lambda: closure_over_built_world(), (0, ["0 gaps"], ""))  # called BY NAME: check-main-drivable reaches it
 
     real = json.loads((REPO / "docs/marketplace/shipping-sets.json").read_text())["packages"]
 
