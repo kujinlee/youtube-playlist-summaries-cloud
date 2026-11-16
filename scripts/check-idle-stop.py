@@ -15,8 +15,6 @@ THE DECISION, for a Stop payload (the first that applies wins):
     allow        a usage stop: the weekly pace is REFUSE (`check-usage-pace.evaluate`, the one owner of that
                  line) or the five-hour block is at its 100% limit
     allow        (a) the harness lists a background task whose status is LIVE (`background_tasks`)
-    allow        (b) a builder worktree under `.claude/worktrees/*` — never the session's own checkout — has a
-                 file changed in the last IDLE_WINDOW_S and more than SETTLE_S after the worktree was created
     allow        (c) an open PR of this repo has a check that has STARTED and not finished (`gh pr list`)
     BLOCK        otherwise — and a signal that could NOT be read is "otherwise": the reason names it
 
@@ -33,7 +31,7 @@ that continuation arrives with `stop_hook_active` and passes. That is the intend
 never durable. A silent multi-turn pause, if one is ever wanted, belongs with `begin-plan.py --pause` (backlog #99).
 
 NO EVIDENCE IS NOT WORK (r1 XM4 — reversed from the first build, which allowed). When `gh` cannot answer, the
-payload has no `background_tasks`, or the worktrees cannot be read, the stop is BLOCKED once and the reason names
+payload has no `background_tasks`, the stop is BLOCKED once and the reason names
 what could not be read. This cannot wedge: the continuation arrives with `stop_hook_active` and passes. Only a
 payload that is not an object, or a crash of this checker (the launcher maps any exit but 2 to 1), still allows —
 so every parse of outside input catches EVERY exception (r2 XM3/XM4: a 200,000-deep record raises RecursionError,
@@ -54,15 +52,17 @@ payload, and the session's Stop payload 49 s later carried `background_tasks: []
 interactive session's `in_process_teammate` entry was NOT captured, and one that stayed `running` while idle
 would count here as running work.
 
-HOW (b) IS OBSERVED. A file write is evidence that work HAPPENED, so (b) narrows it toward work that IS happening:
-a worktree's own `.git` file marks its creation, and `git worktree add` writes every checked-out file within
-~1.6 s of it (measured 2026-11-16 over 4 worktrees of ~5,300 files); a file counts only when it is more than
-SETTLE_S newer. `__pycache__` and the other SKIP_DIRS never count, a directory with no `.git` is not a worktree,
-and the checkout the session itself runs in is not a builder.
+THERE IS NO (b) — THE BUILDER-WORKTREE RECENCY SIGNAL WAS REMOVED (r4 XB1, 2026-11-16:
+`docs/reviews/coordinator/idle-stop-guard-r4-coordinator.md`). It allowed a stop when a file under
+`.claude/worktrees/*` had changed in the last ten minutes. A write is evidence that work HAPPENED, never that it IS
+happening: Codex's fixture — a builder that FINISHED 120 s ago, nothing in `background_tasks`, CI idle, "Now starting
+backlog #657." — exited 0, which is the incident itself. No window separates "last write" from "finished", so it
+was removed rather than narrowed. Nothing is lost: (a) already lists a builder while it runs (measured above, r1
+CM3), and a builder (a) does not list is one that finished or one another session owns. The labels (a) and (c)
+are kept so the review history still reads; it also dissolved backlog #664 (one `touch` allowed a stop).
 
-THE THREE SIGNALS COST: (a) nothing (the payload); (b) one walk, ~0.2 s over 41 worktrees / 21k files (measured
-2026-11-16), stopping at a worktree's first recent file and bounded by WALK_BUDGET_S; (c) one `gh` call, ~0.6 s,
-bounded by GH_TIMEOUT_S, and only made when (a) and (b) found nothing. The transcript is never opened, so a FIFO
+THE SIGNALS COST: (a) nothing (the payload); (c) one `gh` call, ~0.6 s, bounded by GH_TIMEOUT_S, and only made
+when (a) found nothing. The transcript is never opened, so a FIFO
 named as `transcript_path` cannot hold the hook.
 
 ⚠ BOUNDS, stated.
@@ -74,29 +74,23 @@ named as `transcript_path` cannot hold the hook.
   * ONE NUDGE, NOT A LOCK. The stop after ANY Stop hook's block arrives with `stop_hook_active` and is not judged:
     a turn that repeats the idle stop on its continuation gets through, and a block by a SIBLING Stop hook
     (`block-idle-stop.sh`) spends this guard's one judgment of that turn too.
-  * (b) is mtime RECENCY, not the watchdog's fingerprint: a builder that finished less than IDLE_WINDOW_S ago
-    still reads as moving, and so does any NON-builder write made more than SETTLE_S after a worktree's creation —
-    a merge of master into a builder worktree, a reviewer filing a review there. TODO(backlog #657): use
-    `agent-watchdog.observe` once it is on master.
-  * (b) does not see a builder's first SETTLE_S; (a) lists its agent then.
   * (c) counts a started check on ANY open PR of this repo, including one this session did not push; a commit
     status stuck in `PENDING` keeps (c) on for as long as its PR is open.
   * A background job that only WAITS (a poller, a `sleep` loop) counts as running: it will wake the session.
-  * THE SIGNALS CAN STILL BE FORGED, and that is a different kind of thing from the removed exceptions: a file
-    touched in a builder worktree allows a stop for IDLE_WINDOW_S (backlog #664), and the usage cache is a file
-    the agent can write (backlog #665). Each requires faking WORK, not declaring a wait.
-  * (b)'s deadline is checked per directory AND per file; one huge directory LISTING (`os.walk`'s scandir of a
-    single directory) is still not interrupted.
+  * THE USAGE CACHE CAN STILL BE FORGED: it is a file the agent can write (backlog #665). That requires faking a
+    usage stop, not declaring a wait.
+  * (a) ⚠ the interactive `in_process_teammate` entry is not captured (above): one that stayed `running` while
+    idle would over-ALLOW. It can never block a real builder.
 
     python3 scripts/check-idle-stop.py --hook < payload.json
-    python3 scripts/check-idle-stop.py --self-test  # 78 cases
+    python3 scripts/check-idle-stop.py --self-test  # 61 cases
 
 EXIT CODES: `--hook` 0 = allowed (silent) · 2 = BLOCKED (the reason on stderr, which Claude reads) · 1 = allowed,
 NOT CHECKED (the warning on stderr, which the human reads).
 
-FAILS IF: a stop with no LIVE background task, no builder worktree file changed in IDLE_WINDOW_S, no started CI
-check and no usage stop is ALLOWED on its first attempt — including when one of the three signals could not be
-read, and whatever a marker file or the transcript says; or a stop with any one of those is BLOCKED.
+FAILS IF: a stop with no LIVE background task, no started CI check and no usage stop is ALLOWED on its first
+attempt — including when a signal could not be read, and whatever a marker file, the transcript or a file in a
+builder worktree says; or a stop with any one of those is BLOCKED.
 """
 from __future__ import annotations
 
@@ -109,12 +103,8 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-IDLE_WINDOW_S = 10 * 60
 GH_TIMEOUT_S = 3.0
-WORKTREES = os.path.join(".claude", "worktrees")
-SETTLE_S = 60.0          # a checkout writes its files within ~1.6 s of the worktree's `.git` (measured, see (b))
-WALK_BUDGET_S = 1.0      # the wall budget of (b)'s walk, which measures ~0.2 s
-SKIP_DIRS = frozenset({"node_modules", ".next", ".git", "coverage", ".turbo", "__pycache__"})
+WORKTREES = os.path.join(".claude", "worktrees")   # self-test only: the builder worktrees (b) USED to read
 LIVE = frozenset({"running", "pending"})
 STARTED_RUN = frozenset({"QUEUED", "IN_PROGRESS", "PENDING"})
 STARTED_STATE = frozenset({"PENDING"})
@@ -148,54 +138,6 @@ def running_tasks(doc: dict) -> list[str] | None:
         return None
     return [f"{t.get('type', '?')} {t.get('id', '?')}" for t in tasks
             if isinstance(t, dict) and str(t.get("status", "")).lower() in LIVE]
-
-
-def moved_worktrees(wt_root: str, now: float, window_s: float = IDLE_WINDOW_S, own: str | None = None,
-                    budget_s: float = WALK_BUDGET_S, clock=time.monotonic, lstat=os.lstat) -> list[str] | None:
-    """(b): the builder worktrees under `wt_root` with a file changed in the last `window_s` AND more than
-    SETTLE_S after the worktree's own `.git` was written (its creation — a checkout is not building). `own`, the
-    checkout the session itself runs in, never counts; a directory with no `.git` is not a worktree. None when
-    the directory cannot be listed or the walk passes `budget_s` on `clock`: unread, never "nothing moved"."""
-    try:
-        names = sorted(os.listdir(wt_root))
-    except FileNotFoundError:
-        return []
-    except OSError:
-        return None
-    deadline = clock() + budget_s
-    own = os.path.realpath(own) if own else None
-    moved = []
-    for name in names:
-        top = os.path.join(wt_root, name)
-        if not os.path.isdir(top) or os.path.islink(top) or os.path.realpath(top) == own:
-            continue
-        try:
-            born = lstat(os.path.join(top, ".git")).st_mtime
-        except OSError:
-            continue
-        hit = _recent(top, max(now - window_s, born + SETTLE_S), deadline, clock, lstat)
-        if hit is None:
-            return None
-        if hit:
-            moved.append(name)
-    return moved
-
-
-def _recent(top: str, since: float, deadline: float, clock, lstat=os.lstat) -> bool | None:
-    """True at the first file under `top` changed at or after `since`; None once `clock` passes `deadline`."""
-    for d, dirs, files in os.walk(top):
-        if clock() > deadline:
-            return None
-        dirs[:] = [x for x in dirs if x not in SKIP_DIRS]
-        for f in files:
-            if clock() > deadline:       # per FILE too: one directory of slow entries cannot outrun it (r2 XM5)
-                return None
-            try:
-                if lstat(os.path.join(d, f)).st_mtime >= since:
-                    return True
-            except OSError:
-                continue
-    return False
 
 
 def run_gh(root: str, timeout_s: float = GH_TIMEOUT_S) -> tuple[int, str]:
@@ -242,12 +184,11 @@ def pending_ci(rc: int, out: str) -> list[int] | None:
     return pending
 
 
-def decide(doc: object, now: float, main: str | None, cache_text: str | None, gh,
-           own: str | None = None) -> tuple[str, str]:
+def decide(doc: object, now: float, cache_text: str | None, gh) -> tuple[str, str]:
     """(verdict, message). `gh` is a zero-argument callable returning `run_gh`'s (rc, text), called only when
-    (a) and (b) found nothing. `own` is the checkout the session runs in, which (b) never counts. EVERY ALLOW
-    here reads state the stopping agent did not author: the payload's harness fields, the usage cache, the
-    filesystem, `gh`. Nothing the agent wrote or caused — its prose, a transcript, a marker file — is read."""
+    (a) found nothing. EVERY ALLOW here reads state the stopping agent did not author: the payload's harness
+    fields, the usage cache, `gh`. Nothing the agent wrote or caused — its prose, a transcript, a marker file, a
+    file in a worktree — is read."""
     if not isinstance(doc, dict):
         return NOT_CHECKED, "the Stop payload is not a JSON object"
     if doc.get("stop_hook_active") is True:
@@ -263,12 +204,6 @@ def decide(doc: object, now: float, main: str | None, cache_text: str | None, gh
         return ALLOW, ""
     if tasks is None:
         unseen.append("(a) the payload has no `background_tasks` list")
-    moved = moved_worktrees(os.path.join(main, WORKTREES), now, own=own) if main else None
-    if moved:
-        return ALLOW, ""
-    if moved is None:
-        unseen.append(f"(b) the builder worktrees could not be read (no main checkout, an unlistable directory, "
-                      f"or a walk past its {WALK_BUDGET_S:g} s budget)")
     rc, out = gh()
     ci = pending_ci(rc, out)
     if ci:
@@ -282,13 +217,8 @@ def decide(doc: object, now: float, main: str | None, cache_text: str | None, gh
         return BLOCK, ("⛔ IDLE STOP REFUSED: nothing was SEEN running, and this could NOT be read: "
                        + "; ".join(unseen) + ". An unread signal is no evidence of work — treat it as NOT RUN. "
                        + todo)
-    return BLOCK, (f"⛔ IDLE STOP REFUSED: nothing is running — no background job of this session, no builder "
-                   f"worktree changed in the last {window_text(IDLE_WINDOW_S)}, no pending CI check on an open PR. "
-                   + todo)
-
-
-def window_text(s: float) -> str:
-    return f"{s / 60:g} min"
+    return BLOCK, ("⛔ IDLE STOP REFUSED: nothing is running — no background job of this session, no pending CI "
+                   "check on an open PR. " + todo)
 
 
 def main(argv: list[str] | None = None, stdin_bytes: bytes | None = None, now: float | None = None,
@@ -302,11 +232,9 @@ def main(argv: list[str] | None = None, stdin_bytes: bytes | None = None, now: f
     doc, why = bounded_read.parse_json(data) if data is not None else (None, why)
     now = time.time() if now is None else now
     root = str(ROOT) if root is None else root
-    main_root, _ = _pace.main_checkout(root)
     cache_path = os.path.join(os.path.expanduser("~") if home is None else home, ".claude", ".rate-limits.json")
     cache_text, _ = _pace.read_regular(cache_path, _pace.CACHE_MAX_BYTES)
-    verdict, message = decide(doc, now, main_root, cache_text,
-                              (lambda: run_gh(main_root or root)) if gh is None else gh, own=root)
+    verdict, message = decide(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)
     if verdict == BLOCK:
         print(message, file=sys.stderr)
         return 2
@@ -371,21 +299,6 @@ def _self_test_body() -> int:
         Path(path).write_text(text)
         os.utime(path, (NOW - age, NOW - age))
 
-    def world(name, wt_ages=(7200.0,), born=86400.0, gitfile=True, extra=()):
-        """A main checkout with one builder worktree per age (seconds since its newest file changed), each born
-        (its `.git` file written) `born` seconds ago. `extra` is (relative path, age) files added to every one."""
-        main = os.path.join(tmp, name)
-        for i, age in enumerate(wt_ages):
-            top = os.path.join(main, WORKTREES, f"b{i}")
-            put(os.path.join(top, "scripts", "x.py"), age)
-            put(os.path.join(top, "node_modules", "fresh"), 0.0)   # a fresh file under a skipped dir never counts
-            for rel, a in extra:
-                put(os.path.join(top, rel), a)
-            if gitfile:
-                put(os.path.join(top, ".git"), born, "gitdir: /elsewhere\n")
-        os.makedirs(os.path.join(main, ".claude"), exist_ok=True)
-        return main
-
     def tr(fn):
         try:
             return fn()
@@ -419,125 +332,38 @@ def _self_test_body() -> int:
             return rc, out
         return f
 
-    def vm(doc, main, gh=None, cache_text=None, now=NOW, **kw):
+    def vm(doc, gh=None, cache_text=None, now=NOW):
         try:
-            return decide(doc, now, main, cache(60) if cache_text is None else cache_text, gh or gh_says(), **kw)
+            return decide(doc, now, cache(60) if cache_text is None else cache_text, gh or gh_says())
         except Exception as exc:  # noqa: BLE001 - the raise IS the observation
             return f"raised {type(exc).__name__}: {exc}", ""
 
     def v(*a, **kw):
         return vm(*a, **kw)[0]
 
-    idle = world("idle")
     # ── THE OWNER'S FALSIFIER: the 11-16 02:24 and 02:29 turns replayed ─────────────────────────────────────────────
-    case("⭐ replay 02:24: 'I'll start now', no job, worktrees quiet 2 h, CI done, a daily cron → BLOCK",
-         v(payload(T0224), idle), BLOCK)
-    case("⭐ replay 02:29: 'Now starting backlog #657.', the same world → BLOCK", v(payload(T0229), idle), BLOCK)
+    case("⭐ replay 02:24: 'I'll start now', no job, CI done, a daily cron → BLOCK",
+         v(payload(T0224)), BLOCK)
+    case("⭐ replay 02:29: 'Now starting backlog #657.', the same world → BLOCK", v(payload(T0229)), BLOCK)
     case("⭐ replay 02:26: a question that is NOT the closing paragraph does not excuse the stop → BLOCK",
-         v(payload(T0226), idle), BLOCK)
+         v(payload(T0226)), BLOCK)
     shell = [{"id": "bwgmext70", "type": "shell", "status": "running", "description": "x", "command": "sleep 40"}]
     agent = [{"id": "a1", "type": "subagent", "status": "pending", "description": "build", "agent_type": "fable"}]
-    case("⭐ replay 02:24 + (a) a running background shell → ALLOW", v(payload(T0224, shell), idle), ALLOW)
-    case("⭐ replay 02:29 + (a) a pending subagent → ALLOW", v(payload(T0229, agent), idle), ALLOW)
+    case("⭐ replay 02:24 + (a) a running background shell → ALLOW", v(payload(T0224, shell)), ALLOW)
+    case("⭐ replay 02:29 + (a) a pending subagent → ALLOW", v(payload(T0229, agent)), ALLOW)
     case("(a) a finished task is not running ('completed', 'killed')",
-         [v(payload(T0224, [{**shell[0], "status": s}]), idle) for s in ("completed", "Killed")], [BLOCK, BLOCK])
+         [v(payload(T0224, [{**shell[0], "status": s}])) for s in ("completed", "Killed")], [BLOCK, BLOCK])
     case("⭐ (a) a task with NO status is not running work → BLOCK",
-         v(payload(T0224, [{"id": "finished-job", "type": "shell"}]), idle), BLOCK)
+         v(payload(T0224, [{"id": "finished-job", "type": "shell"}])), BLOCK)
     case("(a) only an explicit live status counts: failed, stopped, an unknown word and null → BLOCK",
-         [v(payload(T0224, [{**shell[0], "status": s}]), idle) for s in ("failed", "stopped", "weird", None)],
+         [v(payload(T0224, [{**shell[0], "status": s}])) for s in ("failed", "stopped", "weird", None)],
          [BLOCK] * 4)
     case("(a) a live status is read whatever its case: 'Running' → ALLOW",
-         v(payload(T0224, [{**shell[0], "status": "Running"}]), idle), ALLOW)
-    moving = world("moving", (7200.0, 120.0))
-    wt = os.path.join(moving, WORKTREES)
-    case("⭐ replay 02:24 + (b) a builder worktree changed 2 min ago → ALLOW", v(payload(T0224), moving), ALLOW)
-    case("(b) the window is IDLE_WINDOW_S: a file changed 9 min ago counts, 11 min ago does not",
-         [v(payload(T0224), world(n, (a,))) for n, a in (("w9", 540.0), ("w11", 660.0))], [ALLOW, BLOCK])
-    case("(b) moved_worktrees at two windows over one world: 5 min sees none, 15 min sees b0",
-         [moved_worktrees(os.path.join(world("w10", (600.0,)), WORKTREES), NOW, w) for w in (300, 900)],
-         [[], ["b0"]])
-    case("(b) moved_worktrees names only the moving builder", moved_worktrees(wt, NOW), ["b1"])
-    case("(b) moved_worktrees is relative to its clock: two hours later the same builder is quiet",
-         moved_worktrees(wt, NOW + 7200), [])
-    case("(b) no `.claude/worktrees` at all is no builder, and the block names no unread signal",
-         (moved_worktrees(os.path.join(tmp, "nowt", WORKTREES), NOW),
-          "could NOT be read" in vm(payload(T0224), os.path.join(tmp, "nowt"))[1]), ([], False))
-    case("⭐ (b) a fresh `git worktree add` is not running work: files as new as the worktree's `.git` → BLOCK",
-         v(payload(T0229), world("fresh", (30.0,), born=31.0)), BLOCK)
-    case("(b) a file counts only SETTLE_S after the worktree's `.git`: 59 s after does not, 61 s after does",
-         [v(payload(T0224), world(n, (a,), born=300.0)) for n, a in (("s59", 241.0), ("s61", 239.0))],
-         [BLOCK, ALLOW])
-    pyc = world("pyc", extra=((os.path.join("scripts", "__pycache__", "x.cpython-312.pyc"), 5.0),))
-    gitdir = world("gitdir", gitfile=False, extra=((os.path.join(".git", "index"), 5.0),))
-    os.utime(os.path.join(gitdir, WORKTREES, "b0", ".git"), (NOW - 86400,) * 2)
-    case("(b) a fresh file under `__pycache__` or inside a `.git` directory never counts",
-         [moved_worktrees(os.path.join(w, WORKTREES), NOW) for w in (pyc, gitdir)], [[], []])
-    case("(b) a directory with no `.git` is not a builder worktree, however fresh its files",
-         moved_worktrees(os.path.join(world("nogit", (30.0,), gitfile=False), WORKTREES), NOW), [])
-    os.symlink(os.path.join(wt, "b1"), os.path.join(tmp, "link-to-b1"))
-    case("⭐ (b) the orchestrator's own checkout never counts: own=b1 leaves none, own=b0 leaves b1, and b1 named "
-         "through a symlink leaves none",
-         tr(lambda: [moved_worktrees(wt, NOW, own=o) for o in (
-             os.path.join(wt, "b1"), os.path.join(wt, "b0"), os.path.join(tmp, "link-to-b1"))]),
-         [[], ["b1"], []])
-    case("(b) decide passes `own` on: the only moving worktree is the session's own → BLOCK; another's → ALLOW",
-         [decide(payload(T0229), NOW, moving, cache(60), gh_says(), own=os.path.join(wt, o))[0]
-          for o in ("b1", "b0")], [BLOCK, ALLOW])
-    ticks = []
-
-    def slow_clock():
-        ticks.append(1)
-        return float(len(ticks))
-
-    case("⭐ (b) the walk has a wall budget: past it the signal is None (unread); inside it, or with a larger "
-         "budget on the same slow clock, the builder is seen",
-         tr(lambda: [moved_worktrees(wt, NOW, clock=slow_clock), moved_worktrees(wt, NOW, clock=lambda: 0.0),
-                     moved_worktrees(wt, NOW, budget_s=1000.0, clock=slow_clock)]), [None, ["b1"], ["b1"]])
-    slowwt = os.path.join(tmp, "slowwt", WORKTREES, "b0")
-    for i in range(300):
-        put(os.path.join(slowwt, "d", f"f{i}.txt"), 7200.0)
-    put(os.path.join(slowwt, ".git"), 86400.0, "gitdir: /elsewhere\n")
-
-    def slow_lstat(path):
-        time.sleep(0.01)
-        return os.lstat(path)
-
-    dirsonly = os.path.join(tmp, "dirsonly", WORKTREES, "b0")
-    os.makedirs(os.path.join(dirsonly, "d1", "d2", "d3", "d4"))
-    put(os.path.join(dirsonly, ".git"), 86400.0, "gitdir: /elsewhere\n")
-
-    def ticking():
-        n = [0]
-
-        def clock():
-            n[0] += 1
-            return float(n[0])
-        return clock
-
-    case("(b) the deadline is checked per DIRECTORY too: a tree of empty directories (no file to check at) on a "
-         "clock that ticks per call is None at a 2.5 budget, and read whole ([]) at a 1000 budget",
-         [moved_worktrees(os.path.dirname(dirsonly), NOW, budget_s=b, clock=ticking()) for b in (2.5, 1000.0)],
-         [None, []])
-    seen_paths = []
-
-    def counting_lstat(path):
-        seen_paths.append(path)
-        return os.lstat(path)
-
-    case("⭐ (b) the walk deadline is checked per FILE (r2 XM5): 300 old files in ONE directory at 10 ms an lstat, a "
-         "0.2 s budget → None (unread) inside 1.5 s; inside its budget the same walk reads all 300 (302 lstats with "
-         "the `.git`, read as birth and as a file) → []",
-         [bounded(lambda: moved_worktrees(os.path.dirname(slowwt), NOW, budget_s=0.2, lstat=slow_lstat), secs=1.5),
-          bounded(lambda: moved_worktrees(os.path.dirname(slowwt), NOW, lstat=counting_lstat)), len(seen_paths)],
-         [None, [], 302])
-    notdir = world("notdir", ())
-    Path(notdir, WORKTREES).write_text("a file where the directory should be")
-    case("(b) a worktrees path that cannot be listed is None (unread), not 'no builders'",
-         moved_worktrees(os.path.join(notdir, WORKTREES), NOW), None)
+         v(payload(T0224, [{**shell[0], "status": "Running"}])), ALLOW)
     pend = json.dumps([{"number": 12, "statusCheckRollup": [{"__typename": "CheckRun", "status": "IN_PROGRESS"}]},
                        {"number": 34, "statusCheckRollup": [{"__typename": "StatusContext", "state": "PENDING"}]},
                        {"number": 56, "statusCheckRollup": None}])
-    case("⭐ replay 02:24 + (c) a pending CI check → ALLOW", v(payload(T0224), idle, gh_says(0, pend)), ALLOW)
+    case("⭐ replay 02:24 + (c) a pending CI check → ALLOW", v(payload(T0224), gh_says(0, pend)), ALLOW)
     case("(c) pending_ci reads both check kinds: a CheckRun's status and a StatusContext's state",
          [pending_ci(0, pend), pending_ci(0, DONE_CI)], [[12, 34], []])
     case("(c) a non-zero gh exit is no answer, even over a pending list", pending_ci(1, pend), None)
@@ -561,39 +387,34 @@ def _self_test_body() -> int:
     case("(c) a check with NO status is well formed and not pending, and a null rollup is no checks",
          pending_ci(0, json.dumps([{"number": 1, "statusCheckRollup": [{"__typename": "CheckRun"}]},
                                    {"number": 2, "statusCheckRollup": None}])), [])
-    verdict, msg = vm(payload(T0224), idle, gh_says(0, json.dumps([{"number": 1, "statusCheckRollup": 42}])))
+    verdict, msg = vm(payload(T0224), gh_says(0, json.dumps([{"number": 1, "statusCheckRollup": 42}])))
     case("⭐ decide over a malformed gh answer (r2 XM4) → BLOCK, naming (c)", (verdict, "(c)" in msg), (BLOCK, True))
     calls.clear()
-    v(payload(T0224, shell), idle)
-    v(payload(T0224), moving)
-    case("(c) gh is not called when (a) or (b) already found work", len(calls), 0)
+    v(payload(T0224, shell))
+    case("(c) gh is not called when (a) already found work", len(calls), 0)
     # ── NO EVIDENCE IS NOT WORK: an unread signal BLOCKS once, naming what could not be read ─────────────────────────
-    verdict, msg = decide(payload(T0224), NOW, idle, cache(), gh_says(1, "gh: not logged in"))
+    verdict, msg = decide(payload(T0224), NOW, cache(), gh_says(1, "gh: not logged in"))
     case("⭐ gh cannot answer (rc 1) → BLOCK, naming (c), gh's own words and NOT RUN",
          (verdict, "(c)" in msg, "not logged in" in msg, "NOT RUN" in msg), (BLOCK, True, True, True))
     case("gh answers with something that is not a PR list → BLOCK, naming (c)",
-         [(r[0], "(c)" in r[1]) for r in (vm(payload(T0224), idle, gh_says(0, o))
+         [(r[0], "(c)" in r[1]) for r in (vm(payload(T0224), gh_says(0, o))
                                           for o in ("{not json", '{"a": 1}', "[1]"))], [(BLOCK, True)] * 3)
-    verdict, msg = vm({k: x for k, x in payload(T0224).items() if k != "background_tasks"}, idle)
+    verdict, msg = vm({k: x for k, x in payload(T0224).items() if k != "background_tasks"})
     case("⭐ a payload with no background_tasks (an older harness) → BLOCK, naming (a)",
          (verdict, "(a)" in msg), (BLOCK, True))
-    verdict, msg = vm(payload(T0224), None)
-    case("no main checkout → BLOCK, naming (b)", (verdict, "(b)" in msg), (BLOCK, True))
-    verdict, msg = vm(payload(T0224), notdir)
-    case("an unlistable worktrees directory → BLOCK, naming (b)", (verdict, "(b)" in msg), (BLOCK, True))
     case("the block names an unread signal only when one was unread: all read, then gh down",
-         ["could NOT be read" in vm(payload(T0224), idle, g)[1] for g in (gh_says(), gh_says(1, "HTTP 502"))],
+         ["could NOT be read" in vm(payload(T0224), g)[1] for g in (gh_says(), gh_says(1, "HTTP 502"))],
          [False, True])
     case("a payload that is not an object → NOT CHECKED: `stop_hook_active` cannot be read, so a block could loop",
-         v([1], idle), NOT_CHECKED)
+         v([1]), NOT_CHECKED)
     # ── the exceptions ──────────────────────────────────────────────────────────────────────────────────────────────
-    case("stop_hook_active: the second stop is let through", v(payload(T0224, stop_hook_active=True), idle), ALLOW)
-    case("a subagent's stop (agent_id) is not judged", v(payload(T0224, agent_id="a12c"), idle), ALLOW)
-    case("an empty agent_id is the main session", v(payload(T0224, agent_id="  "), idle), BLOCK)
+    case("stop_hook_active: the second stop is let through", v(payload(T0224, stop_hook_active=True)), ALLOW)
+    case("a subagent's stop (agent_id) is not judged", v(payload(T0224, agent_id="a12c")), ALLOW)
+    case("an empty agent_id is the main session", v(payload(T0224, agent_id="  ")), BLOCK)
     case("⭐ a closing CHECK/RESULT table whose cell reads as a question does not excuse the stop → BLOCK",
-         v(payload("Merged #595.\n\n| CHECK | RESULT |\n|---|---|\n| #657 started? | ✅ yes |"), idle), BLOCK)
+         v(payload("Merged #595.\n\n| CHECK | RESULT |\n|---|---|\n| #657 started? | ✅ yes |")), BLOCK)
     case("a `?` in prose is no exception: a real closing question, 'OK?', a rhetorical one, a code span, a comment",
-         [v(payload(t), idle) for t in (
+         [v(payload(t)) for t in (
              T0224 + "\n\nShall I start backlog #657 now?", "Starting #657 now — OK?",
              "Now starting backlog #657. Why now? The wake is too far.",
              "Now starting backlog #657 (see `check?` mode).", "Now starting #657.\n\n<!-- ? -->")], [BLOCK] * 5)
@@ -621,20 +442,21 @@ def _self_test_body() -> int:
     go = {"type": "user", "message": {"role": "user", "content": "go"}}
     ask_tail = jl(go, ask(), result("q", REJECTED, err=True))
     case("⭐ a weekly usage stop → ALLOW; below it → BLOCK",
-         [v(payload(T0224), idle, cache_text=cache(w)) for w in (98, 60)], [ALLOW, BLOCK])
+         [v(payload(T0224), cache_text=cache(w)) for w in (98, 60)], [ALLOW, BLOCK])
     case("a five-hour block at 100% → ALLOW; at 99% → BLOCK",
-         [v(payload(T0224), idle, cache_text=cache(60, f)) for f in (100, 99)], [ALLOW, BLOCK])
+         [v(payload(T0224), cache_text=cache(60, f)) for f in (100, 99)], [ALLOW, BLOCK])
     case("an unreadable or missing usage cache is not a stop",
-         [v(payload(T0224), idle, cache_text=c) for c in ("{nope", "")], [BLOCK, BLOCK])
+         [v(payload(T0224), cache_text=c) for c in ("{nope", "")], [BLOCK, BLOCK])
     case("a usage cache nested past the parser's limit is not a stop, and not a crash → BLOCK",
-         v(payload(T0224), idle, cache_text='{"rate_limits":' + "[" * 200000 + "]" * 200000 + "}"), BLOCK)
+         v(payload(T0224), cache_text='{"rate_limits":' + "[" * 200000 + "]" * 200000 + "}"), BLOCK)
     # ── the block message ──────────────────────────────────────────────────────────────────────────────────────────
-    _, msg = vm(payload(T0224), idle)
+    _, msg = vm(payload(T0224))
     case("the block says what it saw and what to do", all(x in msg for x in (
-        "no background job", "10 min", "no pending CI", "start the next job")), True)
+        "no background job", "no pending CI", "start the next job")), True)
+    case("the block names no worktree signal (r4 XB1: removed)", [w in msg for w in ("worktree", "min")],
+         [False, False])
     case("the block does not teach ending on a question", [w in msg.lower() for w in ("ask the owner", "question")],
          [False, False])
-    case("window_text at two inputs", [window_text(600), window_text(90)], ["10 min", "1.5 min"])
 
     # ── main(): the hook's exit codes, over real files and a real git checkout ───────────────────────────────────────
     home = os.path.join(tmp, "home")
@@ -644,7 +466,6 @@ def _self_test_body() -> int:
     os.makedirs(repo)
     subprocess.run(["git", "init", "-q", repo], check=True)
     subprocess.run(["git", "-C", repo, "commit", "-q", "--allow-empty", "-m", "base"], check=True)
-    self_wt = os.path.join(repo, WORKTREES, "self")
 
     def drive(doc, gh=None, argv=("--hook",), now=NOW, h=home, root=repo):
         err = io.StringIO()
@@ -742,7 +563,7 @@ def _self_test_body() -> int:
          "that fails by HANGING), unreadable, a record nested 200,000 deep, a torn last line — the verdict and its "
          "words equal those with no `transcript_path` at all (exit 2), and no open() or os.open() names the path",
          (base[0], got, [n for n, p in T_WORLDS if p in opened]), (2, [base] * len(T_WORLDS), []))
-    msgs = [vm(payload(T0224), idle)[1], vm(payload(T0224), idle, gh_says(1, "HTTP 502"))[1]]
+    msgs = [vm(payload(T0224))[1], vm(payload(T0224), gh_says(1, "HTTP 502"))[1]]
     case("⭐ D5 the block message names no file to write and no tool to call (`.claude/paused`, `touch`, "
          "`AskUserQuestion`, `paused`), in both its forms (all signals read; one unread)",
          [[w for w in (".claude/paused", "touch", "AskUserQuestion", "paused") if w in m] for m in msgs], [[], []])
@@ -766,7 +587,7 @@ def _self_test_body() -> int:
          (base[0], [n for n, got in selfrep if got != base], len(selfrep)), (2, [], 4))
     bad_type = json.dumps([{"number": 1, "statusCheckRollup": [
         {"__typename": ["StatusContext"], "status": "IN_PROGRESS"}]}])
-    verdict, msg = vm(payload(T0224), idle, gh_says(0, bad_type))
+    verdict, msg = vm(payload(T0224), gh_says(0, bad_type))
     case("⭐ D7 (r3 Cm1) a check whose `__typename` is not a string is no answer: pending_ci is None (never [1]), and "
          "decide BLOCKS naming (c); the same check with a well-formed `__typename` is pending ([1])",
          (tr(lambda: pending_ci(0, bad_type)), verdict, "(c)" in msg,
@@ -776,12 +597,55 @@ def _self_test_body() -> int:
          "through main() (exit 0, silent) — and none of them asks a signal (gh is never called)",
          ([drive(payload(T0224, stop_hook_active=True)), drive(payload(T0224, agent_id="a12c")),
            drive(payload(T0224), now=NOW + 3600, h=weekly_home)], len(calls)), ([(0, "")] * 3, 0))
-    subprocess.run(["git", "-C", repo, "worktree", "add", "-q", "--detach", self_wt], check=True)
-    put(os.path.join(self_wt, "scripts", "x.py"), 120.0)
-    os.utime(os.path.join(self_wt, ".git"), (NOW - 86400,) * 2)
-    case("⭐ main: the session's OWN worktree never counts as a builder: run from the main checkout its fresh file "
-         "allows (0); run from inside it, the same file does not (2)",
-         [drive(payload(T0229))[0], drive(payload(T0229), root=self_wt)[0]], [0, 2])
+    # ── r4 XB1: NO BUILDER-WORKTREE RECENCY SIGNAL. A write in a builder worktree is evidence that work HAPPENED,
+    # never that it IS happening, so the old signal (b) was REMOVED (the r4
+    # coordinator review, `docs/reviews/coordinator/idle-stop-guard-r4-coordinator.md`).
+    # The worlds are a LITERAL list of this suite, each compared with the same stop with no worktrees dir at all.
+    xb_repo = os.path.join(tmp, "xb1-repo")
+    os.makedirs(xb_repo)
+    subprocess.run(["git", "init", "-q", xb_repo], check=True)
+    xb_home = os.path.join(tmp, "xb1-home")          # NO usage cache under it
+    os.makedirs(os.path.join(xb_home, ".claude"))
+    xb_wts = os.path.join(xb_repo, WORKTREES)
+    xb_b0 = os.path.join(xb_wts, "b0")
+    xb_stop = payload("Now starting backlog #657.", [])
+
+    def xb_drive():
+        return drive(xb_stop, gh_says(0, "[]"), h=xb_home, root=xb_repo)
+
+    def builder(age):
+        shutil.rmtree(xb_wts, ignore_errors=True)
+        put(os.path.join(xb_b0, "scripts", "x.py"), age)
+        put(os.path.join(xb_b0, ".git"), 86400.0, "gitdir: /elsewhere\n")
+
+    builder(120.0)
+    case("⭐ r4 XB1 (Codex): a builder that FINISHED 120 s ago (its `.git` aged 86,400 s), `background_tasks: []`, CI "
+         "`[]`, no usage cache, 'Now starting backlog #657.' → main() exits 2", xb_drive()[0], 2)
+    shutil.rmtree(xb_wts, ignore_errors=True)
+    os.makedirs(os.path.join(xb_repo, ".claude"), exist_ok=True)
+    xb_base = xb_drive()
+
+    def xb_touched():
+        builder(7200.0)
+        Path(xb_b0, "scripts", "x.py").touch()
+
+    def xb_unlistable():
+        builder(7200.0)
+        os.chmod(xb_wts, 0)
+
+    xb_rows = []
+    for name, make in (("a file written 5 s ago", lambda: builder(5.0)),
+                       ("a file written 120 s ago", lambda: builder(120.0)),
+                       ("a `touch`ed file", xb_touched),
+                       ("an unlistable worktrees dir", xb_unlistable)):
+        make()
+        xb_rows.append((name, xb_drive()))
+        with contextlib.suppress(OSError):
+            os.chmod(xb_wts, 0o755)
+        shutil.rmtree(xb_wts, ignore_errors=True)
+    case("⭐ r4 XB1 identity: a builder worktree with a file written 5 s ago / 120 s ago / a `touch`ed file / an "
+         "unlistable worktrees dir changes NOTHING: each stop exits 2 with the words of the stop with no worktrees "
+         "dir at all", (xb_base[0], [n for n, got in xb_rows if got != xb_base], len(xb_rows)), (2, [], 4))
 
     # ── END TO END: the launcher, the real `run_gh`, a stub `gh` on PATH ─────────────────────────────────────────────
     e2e = os.path.join(tmp, "e2e")

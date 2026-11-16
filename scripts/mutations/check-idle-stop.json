@@ -217,280 +217,7 @@
       ]
     ],
     "expect": [
-      "⭐ replay 02:24: 'I'll start now', no job, worktrees quiet 2 h, CI done, a daily cron → BLOCK"
-    ]
-  },
-  {
-    "name": "(b) a moving builder does not allow",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "    if moved:\n        return ALLOW, \"\"",
-        "    if False:\n        return ALLOW, \"\""
-      ]
-    ],
-    "expect": [
-      "⭐ replay 02:24 + (b) a builder worktree changed 2 min ago → ALLOW"
-    ]
-  },
-  {
-    "name": "(b) skipped directories are walked",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "        dirs[:] = [x for x in dirs if x not in SKIP_DIRS]\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "⭐ replay 02:24: 'I'll start now', no job, worktrees quiet 2 h, CI done, a daily cron → BLOCK"
-    ]
-  },
-  {
-    "name": "(b) the window doubles",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "max(now - window_s, born + SETTLE_S)",
-        "max(now - 2 * window_s, born + SETTLE_S)"
-      ]
-    ],
-    "expect": [
-      "(b) the window is IDLE_WINDOW_S: a file changed 9 min ago counts, 11 min ago does not"
-    ]
-  },
-  {
-    "name": "(b) the window parameter is ignored",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "    moved = []\n",
-        "    moved = []\n    window_s = IDLE_WINDOW_S\n"
-      ]
-    ],
-    "expect": [
-      "(b) moved_worktrees at two windows over one world: 5 min sees none, 15 min sees b0"
-    ]
-  },
-  {
-    "name": "(b) one recent worktree marks every worktree",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "            moved.append(name)",
-        "            moved.extend(names)\n            break"
-      ]
-    ],
-    "expect": [
-      "(b) moved_worktrees names only the moving builder"
-    ]
-  },
-  {
-    "name": "(b) no worktrees dir is read as unread",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "    except FileNotFoundError:\n        return []",
-        "    except FileNotFoundError:\n        return None"
-      ]
-    ],
-    "expect": [
-      "(b) no `.claude/worktrees` at all is no builder, and the block names no unread signal"
-    ]
-  },
-  {
-    "name": "(b) no main checkout is read as no builders",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "if main else None",
-        "if main else []"
-      ]
-    ],
-    "expect": [
-      "no main checkout → BLOCK, naming (b)"
-    ]
-  },
-  {
-    "name": "(b) an unlistable worktrees dir is read as no builders",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "    except OSError:\n        return None\n    deadline",
-        "    except OSError:\n        return []\n    deadline"
-      ]
-    ],
-    "expect": [
-      "(b) a worktrees path that cannot be listed is None (unread), not 'no builders'"
-    ]
-  },
-  {
-    "name": "(b) a checkout counts as building: the settle margin is dropped",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "top, max(now - window_s, born + SETTLE_S)",
-        "top, now - window_s"
-      ]
-    ],
-    "expect": [
-      "⭐ (b) a fresh `git worktree add` is not running work: files as new as the worktree's `.git` → BLOCK"
-    ]
-  },
-  {
-    "name": "(b) the settle margin halves",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "SETTLE_S = 60.0 ",
-        "SETTLE_S = 30.0 "
-      ]
-    ],
-    "expect": [
-      "(b) a file counts only SETTLE_S after the worktree's `.git`: 59 s after does not, 61 s after does"
-    ]
-  },
-  {
-    "name": "(b) the settle margin doubles",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "SETTLE_S = 60.0",
-        "SETTLE_S = 120.0"
-      ]
-    ],
-    "expect": [
-      "(b) a file counts only SETTLE_S after the worktree's `.git`: 59 s after does not, 61 s after does"
-    ]
-  },
-  {
-    "name": "(b) `__pycache__` is walked",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        ", \"__pycache__\"})",
-        "})"
-      ]
-    ],
-    "expect": [
-      "(b) a fresh file under `__pycache__` or inside a `.git` directory never counts"
-    ]
-  },
-  {
-    "name": "(b) a `.git` directory is walked",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "\".git\", \"coverage\"",
-        "\"coverage\""
-      ]
-    ],
-    "expect": [
-      "(b) a fresh file under `__pycache__` or inside a `.git` directory never counts"
-    ]
-  },
-  {
-    "name": "(b) a directory with no `.git` is a worktree",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "        except OSError:\n            continue\n        hit =",
-        "        except OSError:\n            born = 0.0\n        hit ="
-      ]
-    ],
-    "expect": [
-      "(b) a directory with no `.git` is not a builder worktree, however fresh its files"
-    ]
-  },
-  {
-    "name": "(b) the session's own checkout counts",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        " or os.path.realpath(top) == own:",
-        ":"
-      ]
-    ],
-    "expect": [
-      "⭐ (b) the orchestrator's own checkout never counts: own=b1 leaves none, own=b0 leaves b1, and b1 named through a symlink leaves none"
-    ]
-  },
-  {
-    "name": "(b) `own` is compared unresolved",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "own = os.path.realpath(own) if own else None",
-        "own = own or None"
-      ]
-    ],
-    "expect": [
-      "⭐ (b) the orchestrator's own checkout never counts: own=b1 leaves none, own=b0 leaves b1, and b1 named through a symlink leaves none"
-    ]
-  },
-  {
-    "name": "(b) decide does not pass `own`",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "now, own=own) if main",
-        "now) if main"
-      ]
-    ],
-    "expect": [
-      "(b) decide passes `own` on: the only moving worktree is the session's own → BLOCK; another's → ALLOW"
-    ]
-  },
-  {
-    "name": "(b) the walk budget is ignored",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "        if clock() > deadline:\n            return None\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "(b) the deadline is checked per DIRECTORY too: a tree of empty directories (no file to check at) on a clock that ticks per call is None at a 2.5 budget, and read whole ([]) at a 1000 budget"
-    ]
-  },
-  {
-    "name": "(b) a walk out of budget reads as nothing moved",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "        if hit is None:\n            return None\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "⭐ (b) the walk has a wall budget: past it the signal is None (unread); inside it, or with a larger budget on the same slow clock, the builder is seen"
-    ]
-  },
-  {
-    "name": "(b) the budget parameter is ignored",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "deadline = clock() + budget_s",
-        "deadline = clock() + WALK_BUDGET_S"
-      ]
-    ],
-    "expect": [
-      "⭐ (b) the walk has a wall budget: past it the signal is None (unread); inside it, or with a larger budget on the same slow clock, the builder is seen"
-    ]
-  },
-  {
-    "name": "(b) an unread worktree signal is not named",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "    if moved is None:\n        unseen.append",
-        "    if False:\n        unseen.append"
-      ]
-    ],
-    "expect": [
-      "an unlistable worktrees directory → BLOCK, naming (b)"
+      "⭐ replay 02:24: 'I'll start now', no job, CI done, a daily cron → BLOCK"
     ]
   },
   {
@@ -611,7 +338,7 @@
     ]
   },
   {
-    "name": "(c) gh is called even when (a) or (b) found work",
+    "name": "(c) gh is called even when (a) found work",
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
@@ -620,7 +347,7 @@
       ]
     ],
     "expect": [
-      "(c) gh is not called when (a) or (b) already found work"
+      "(c) gh is not called when (a) already found work"
     ]
   },
   {
@@ -686,32 +413,6 @@
     ],
     "expect": [
       "a payload that is not an object → NOT CHECKED: `stop_hook_active` cannot be read, so a block could loop"
-    ]
-  },
-  {
-    "name": "the block message hard-codes 1 min",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "window_text(IDLE_WINDOW_S)",
-        "window_text(60)"
-      ]
-    ],
-    "expect": [
-      "the block says what it saw and what to do"
-    ]
-  },
-  {
-    "name": "window_text rounds to whole minutes",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "return f\"{s / 60:g} min\"",
-        "return f\"{s / 60:.0f} min\""
-      ]
-    ],
-    "expect": [
-      "window_text at two inputs"
     ]
   },
   {
@@ -793,24 +494,11 @@
     ]
   },
   {
-    "name": "main does not pass the session's own checkout",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "gh, own=root)",
-        "gh)"
-      ]
-    ],
-    "expect": [
-      "⭐ main: the session's OWN worktree never counts as a builder: run from the main checkout its fresh file allows (0); run from inside it, the same file does not (2)"
-    ]
-  },
-  {
     "name": "main: the real gh is never called",
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "(lambda: run_gh(main_root or root)) if gh is None else gh",
+        "(lambda: run_gh(root)) if gh is None else gh",
         "(lambda: (0, \"[]\")) if gh is None else gh"
       ]
     ],
@@ -962,38 +650,12 @@
     ]
   },
   {
-    "name": "the per-FILE walk deadline is dropped (r2 XM5)",
+    "name": "a pause marker in the checkout excuses the stop again (Phase 6 D, r3 CB1)",
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "            if clock() > deadline:       # per FILE too: one directory of slow entries cannot outrun it (r2 XM5)\n                return None\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "⭐ (b) the walk deadline is checked per FILE (r2 XM5): 300 old files in ONE directory at 10 ms an lstat, a 0.2 s budget → None (unread) inside 1.5 s; inside its budget the same walk reads all 300 (302 lstats with the `.git`, read as birth and as a file) → []"
-    ]
-  },
-  {
-    "name": "the file loop ignores the injected lstat",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "if lstat(os.path.join(d, f)).st_mtime",
-        "if os.lstat(os.path.join(d, f)).st_mtime"
-      ]
-    ],
-    "expect": [
-      "⭐ (b) the walk deadline is checked per FILE (r2 XM5): 300 old files in ONE directory at 10 ms an lstat, a 0.2 s budget → None (unread) inside 1.5 s; inside its budget the same walk reads all 300 (302 lstats with the `.git`, read as birth and as a file) → []"
-    ]
-  },
-  {
-    "name": "a pause marker in the main checkout excuses the stop again (Phase 6 D, r3 CB1)",
-    "file": "scripts/check-idle-stop.py",
-    "edits": [
-      [
-        "    aid = doc.get(\"agent_id\")\n",
-        "    if main and os.path.exists(os.path.join(main, \".claude\", \"paused\")):\n        return ALLOW, \"\"\n    aid = doc.get(\"agent_id\")\n"
+        "        print(message, file=sys.stderr)\n        return 2\n",
+        "        if os.path.exists(os.path.join(root, \".claude\", \"paused\")):\n            return 0\n        print(message, file=sys.stderr)\n        return 2\n"
       ]
     ],
     "expect": [
@@ -1005,8 +667,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "    verdict, message = decide(doc, now, main_root, cache_text,\n",
-        "    try:\n        with open(doc.get(\"transcript_path\"), \"rb\") as _f:\n            _f.read(1)\n    except Exception:\n        pass\n    verdict, message = decide(doc, now, main_root, cache_text,\n"
+        "    verdict, message = decide(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)\n",
+        "    try:\n        with open(doc.get(\"transcript_path\"), \"rb\") as _f:\n            _f.read(1)\n    except Exception:\n        pass\n    verdict, message = decide(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)\n"
       ]
     ],
     "expect": [
@@ -1044,8 +706,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "    main_root, _ = _pace.main_checkout(root)\n",
-        "    main_root, _ = _pace.main_checkout(root)\n    try:\n        with os.fdopen(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK), \"rb\") as _f:\n            if b\"doesn't want to proceed\" in _f.read(1 << 20) and \"starting\" in str(doc.get(\"last_assistant_message\")):\n                return 0\n    except Exception:\n        pass\n"
+        "    cache_path = os.path.join(os.path.expanduser(\"~\") if home is None else home, \".claude\", \".rate-limits.json\")\n",
+        "    cache_path = os.path.join(os.path.expanduser(\"~\") if home is None else home, \".claude\", \".rate-limits.json\")\n    try:\n        with os.fdopen(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK), \"rb\") as _f:\n            if b\"doesn't want to proceed\" in _f.read(1 << 20) and \"starting\" in str(doc.get(\"last_assistant_message\")):\n                return 0\n    except Exception:\n        pass\n"
       ]
     ],
     "expect": [
@@ -1115,6 +777,19 @@
     ],
     "expect": [
       "⭐ D8 the order: `stop_hook_active`, an `agent_id` and a usage stop each ALLOW a stop with nothing running, through main() (exit 0, silent) — and none of them asks a signal (gh is never called)"
+    ]
+  },
+  {
+    "name": "a builder-worktree recency ALLOW is re-added (r4 XB1)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if verdict == BLOCK:\n",
+        "    if verdict == BLOCK and not any(os.lstat(os.path.join(d, f)).st_mtime >= now - 600 for d, _, fs in os.walk(os.path.join(root, WORKTREES)) for f in fs if f != \".git\"):\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 XB1 identity: a builder worktree with a file written 5 s ago / 120 s ago / a `touch`ed file / an unlistable worktrees dir changes NOTHING: each stop exits 2 with the words of the stop with no worktrees dir at all"
     ]
   }
 ]
