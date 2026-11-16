@@ -14,10 +14,10 @@ halves:
   codex: skipped
   claude: ran
 findings:
-  - {id: CB1, severity: Blocking, aim: deliverable, fix_induced: false, component: pause-exception, disposition: deferred-to-phase-6}
-  - {id: Cm1, severity: Minor, aim: deliverable, fix_induced: true, component: ci-signal, disposition: deferred-to-phase-6}
-  - {id: Cm2, severity: Minor, aim: deliverable, fix_induced: true, component: question-exception, disposition: deferred-to-phase-6}
-  - {id: Cm3, severity: Minor, aim: deliverable, fix_induced: false, component: question-exception, disposition: deferred-to-phase-6}
+  - {id: CB1, severity: Blocking, aim: deliverable, fix_induced: false, component: pause-exception, disposition: fixed}
+  - {id: Cm1, severity: Minor, aim: deliverable, fix_induced: true, component: ci-signal, disposition: fixed}
+  - {id: Cm2, severity: Minor, aim: deliverable, fix_induced: true, component: question-exception, disposition: fixed}
+  - {id: Cm3, severity: Minor, aim: deliverable, fix_induced: false, component: question-exception, disposition: fixed}
 ```
 
 ## Arming condition — read by hand
@@ -37,3 +37,21 @@ Phase 6 review takes BOTH exceptions in scope. Dispositions for all four finding
 
 **Round cap:** the next round is round 4; from round 4 a non-BLOCKER is FILED (`docs/review-method.md` §0 Q4c).
 CB1 is a BLOCKER and must be fixed before merge whatever Phase 6 says.
+
+## Phase 6 verdict and dispositions
+
+Phase 6 (Fable, `docs/reviews/architecture-review-2026-11-16-idle-stop-guard.md`, `6ce1e99a`) recommends **option D:
+remove both ALLOW exceptions and the transcript reader**, so every ALLOW reads state the stopping agent did not
+author. Each exception saved one refusal on its honest path (the continuation passes on `stop_hook_active` anyway),
+fired on 4 of 3,147 replayed stops, and owned 26 of 99 mutations. The coordinator ADOPTS D.
+
+| Finding | Disposition |
+|---|---|
+| CB1 (pause marker) | dissolved by removal — the marker is no longer read; a case pins it across a literal list of ages |
+| Cm2 (last-card reset unwitnessed) | dissolved by removal — no card logic remains |
+| Cm3 (unreadable transcript unexplained) | dissolved by removal — the transcript is never opened |
+| Cm1 (`__typename` shape unwitnessed) | FIX — a case for a malformed `__typename` |
+
+**Stop condition for round 4:** "an honest stop costs one refusal" and "a work signal can be forged" are FILED, not
+folded. A BLOCKER in round 4 is only an announcement-only stop that exits 0 on its first attempt without forging a
+work signal.
