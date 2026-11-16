@@ -8,12 +8,12 @@ halves:
   claude: ran
   codex: gap
 findings:
-  - {id: F1, severity: Blocking, aim: deliverable, fix_induced: false, component: staging, disposition: filed}
-  - {id: F2, severity: Low, aim: deliverable, fix_induced: true, component: staging, disposition: filed}
-  - {id: F3, severity: Low, aim: deliverable, fix_induced: false, component: staging, disposition: filed}
-  - {id: F4, severity: Low, aim: deliverable, fix_induced: false, component: staging, disposition: filed}
-  - {id: F5, severity: Low, aim: deliverable, fix_induced: true, component: isolation, disposition: filed}
-  - {id: F6, severity: Low, aim: deliverable, fix_induced: true, component: prose, disposition: filed}
+  - {id: F1, severity: Blocking, aim: deliverable, fix_induced: false, component: staging, disposition: fixed}
+  - {id: F2, severity: Low, aim: deliverable, fix_induced: true, component: staging, disposition: fixed}
+  - {id: F3, severity: Low, aim: deliverable, fix_induced: false, component: staging, disposition: fixed}
+  - {id: F4, severity: Low, aim: deliverable, fix_induced: false, component: staging, disposition: fixed}
+  - {id: F5, severity: Low, aim: deliverable, fix_induced: true, component: isolation, disposition: fixed}
+  - {id: F6, severity: Low, aim: deliverable, fix_induced: true, component: prose, disposition: fixed}
 ```
 
 REVIEW GAP: codex — alternation
@@ -39,14 +39,16 @@ fold of this round is to be written.
 
 | Finding | Severity | Disposition |
 |---|---|---|
-| F1 — a tracked link `.claude -> dot` lets `.claude/plans/secret` stage | BLOCKER, not fold-induced | OPEN. Answered by the Phase 6 redesign: the private root is an object identity, tested on every object the walk steps on. Red cases 1 and 2 of the build brief |
-| F2 — `fold` (NFKC) refuses distinct files `x².md` + `x2.md` | MINOR, fold-induced | OPEN. Answered by the redesign: `fold` is deleted; the source side compares no text; the destination uses one canonical key. Red cases 3 and 9 |
-| F3 — an NFD name on disk, NFC in git's index, is refused as untracked | MINOR | OPEN. Answered by the redesign: "tracked" is membership of the object's identity, not of its name. Red case 4 |
-| F4 — a tracked link `.agents -> ag` bypasses the `.agents/skills` exclusion | MINOR | OPEN. Answered by the redesign: the skills home is an identity too. Red case 5 |
-| F5 — the probes' fixed 60 s timeouts outrun the caller's `timeout` | MINOR, fold-induced | OPEN. Small and outside the redesign: fixed in the same build |
-| F6 — `isolation-baseline.md:27` states a stricter check than the code runs | MINOR, fold-induced | OPEN. One sentence: fixed in the same build |
+| F1 — a tracked link `.claude -> dot` lets `.claude/plans/secret` stage | BLOCKER, not fold-induced | **fixed** in `3e0fc963`: the private root is an object identity, tested on every object the walk steps on (red cases 1 and 2) |
+| F2 — `fold` (NFKC) refuses distinct files `x².md` + `x2.md` | MINOR, fold-induced | **fixed** in `3e0fc963`: `fold` is deleted; the source side compares identities; the destination uses one canonical key NFC(casefold(NFD)) (red cases 3 and 9) |
+| F3 — an NFD name on disk, NFC in git's index, is refused as untracked | MINOR | **fixed** in `3e0fc963`, by the coordinator's override rather than the review's open decision: a declared path must equal a tracked name after NFC of BOTH sides, case exact (red case 4, plus `DOCS/a.md` vs tracked `docs/a.md` → refused, naming the tracked spelling) |
+| F4 — a tracked link `.agents -> ag` bypasses the `.agents/skills` exclusion | MINOR | **fixed** in `3e0fc963`: the skills home is an identity too (red case 5) |
+| F5 — the probes' fixed 60 s timeouts outrun the caller's `timeout` | MINOR, fold-induced | **fixed** in `3e0fc963`: `run_isolated` passes `min(timeout, 60)` to the probes |
+| F6 — `isolation-baseline.md:27` states a stricter check than the code runs | MINOR, fold-induced | **fixed** in `3e0fc963`: `isolation-baseline.md:27` states the check the code runs |
 
-The build's fold rewrites each row above to `fixed` with its commit, or files what it does not fix as a backlog row.
+The build's fold rewrote each row above to `fixed` with its commit (`3e0fc963`); nothing was left to file. The two
+Phase 6 findings below were fixed in the same commit: P6-N1 is refused at `plan()`, and the private root as a tracked
+link is refused by identity.
 
 ## Numbers (Phase 6, measured at `4a957e0d` on the default APFS volume)
 
