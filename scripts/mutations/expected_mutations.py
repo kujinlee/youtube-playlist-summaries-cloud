@@ -2434,7 +2434,7 @@ EXPECTED_MUTATIONS = {
     # map-rooted closure (roots from the component map, the declaration/map agreement in both directions: XM1, CM2),
     # every CANNOT RUN input (channel, empty, non-object, unreadable, missing, unwalkable: XM4-XM7, CM1) and the
     # optional edges. 12 anchors re-bound; none retired.
-    "scripts/check-shipping-sets.py": 159,
+    "scripts/check-shipping-sets.py": 184,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.

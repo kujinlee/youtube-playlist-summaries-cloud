@@ -20969,7 +20969,10 @@ imports, sibling files loaded by path (`spec_from_file_location`, `runpy`, an in
 (`gap:` / `gap: dangling:`); cwd-relative hand-offs and `docs/` reads are counted, not followed. Review round 1 fold
 (PR #598): the closure's roots and file lists come from the component map, so a declaration that disagrees with the
 map in either direction is red, and that agreement runs in CI without `claude`; an unreadable, empty, mis-channelled
-or unwalkable input is CANNOT RUN (rc 2). One edge is waived in the map (`optional_edges`: `regen-pages.py` →
-`check-plan-code.py`, self-test only, behind an existence check). The forms the reader does not see (computed paths,
-`python3 -m`, shell strings inside Python, other interpreters, YAML) are listed in the script's docstring.
-117/117 cases, 159 mutations; a CI step runs it, since it needs no `claude`.
+or unwalkable input is CANNOT RUN (rc 2). Review round 2 fold: the map's `optional_edges` waiver is retired (a map
+that has it is refused); a load is optional only when the file's own `if P.is_file()` / `os.path.exists(P)` guards
+the same path (`regen-pages.py` → `check-plan-code.py`), read from the AST. Loader arguments are read by keyword too,
+any malformed declaration element is CANNOT RUN, and every channel's counts are checked. A load whose path the reader
+cannot read is listed as `unresolved:` (28 on the real declaration), never dropped. The forms the reader does not see
+(computed paths, `python3 -m`, shell strings inside Python, other interpreters, YAML) are listed in the script's
+docstring. 126/126 cases, 184 mutations; a CI step runs it, since it needs no `claude`.

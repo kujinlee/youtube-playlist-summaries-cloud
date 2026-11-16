@@ -757,12 +757,5 @@
       "path": "scripts/install-git-hooks.sh",
       "reason": "governance: loaded by path or run from an excluded governance script (review r1 CB1: the reader now counts a sibling loaded by path), never reached from a package entry-point"
     }
-  ],
-  "optional_edges": [
-    {
-      "from": "scripts/regen-pages.py",
-      "to": "scripts/check-plan-code.py",
-      "reason": "only regen-pages.py's --self-test loads it (the crash-guard case), behind an existence check that prints NOT RUN when the file is absent; the ci-layer package ships it, comprehensibility does not"
-    }
   ]
 }

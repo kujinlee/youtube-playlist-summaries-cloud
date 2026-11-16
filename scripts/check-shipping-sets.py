@@ -2,7 +2,7 @@
 """The component map, checked for completeness against what is on disk (marketplace-inventory plan, Task 5;
 spec §3: "every supporting artifact maps to a component, to a package, or to a written exclusion").
 
-    python3 scripts/check-shipping-sets.py --self-test  # 117 cases
+    python3 scripts/check-shipping-sets.py --self-test  # 126 cases
     python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
     python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json [MAP]
 
@@ -24,16 +24,25 @@ AN EXECUTABLE EDGE (`exec_edges`) is, in a Markdown or shell file, `python3 <pat
 run `python3 "$REPO/scripts/regen-pages.py"`), resolved against the repository root. In a Python file it is:
   - an `import` of a sibling module (`import x` / `from x import y` where `<dir>/x.py` exists);
   - a sibling loaded BY PATH (`_Loads`, review r1 CB1): the path handed to `spec_from_file_location`,
-    `SourceFileLoader` or `runpy.run_path`, and the module named to `import_module` / `__import__`;
+    `SourceFileLoader` or `runpy.run_path`, and the module named to `import_module` / `__import__` — by
+    position or by keyword (`location=`, `path=`, `path_name=`, `name=`; review r2 XM1);
   - the script in an interpreter's argv list (`[sys.executable, "-u", str(HERE / "x.py"), ...]`, or one that
     starts `"python3"` / `"bash"` / `"sh"`), options skipped, stopping at `-c` / `-m`;
   - each name in a TABLE of bare sibling script names (`name_tables`: `explainer-serve.py`'s `REGENERABLE`).
 A path is followed through what a reader of the file would follow: names assigned in the same scope or at module
 level, `/` and `os.path.join` onto a base, `with_name`, `str()` / `Path()` / `.resolve()`, an f-string or `+` of
-such parts, and a local function whose parameter reaches a loader (the path is then each caller's argument,
+such parts (`!s` is read as the part itself; review r2 XM2), and a local function whose parameter reaches a loader (the path is then each caller's argument,
 through as many such functions as it takes). The base is dropped, so `HERE / "x.py"` is read as `x.py` beside the file and as `x.py` from the root;
 only a path that exists is an edge.
-⚠ BOUND — what is still NOT an edge, each a way a file can run another that this reader does not see: a path
+AN UNRESOLVED LOAD (review r2 XM2): a call to one of those loaders, or an interpreter argv, whose path holds any part
+the reader above cannot read — `!r`/`!a` or a format spec, a subscript, an attribute, a call it does not know, a
+name bound nowhere in the file, a parameter no caller binds, `**kwargs` in place of the argument, one assignment
+of several it cannot read — is never dropped: `python_loads` returns it as `rel:line`, and `--closure` prints
+each one in a shipped file as `<pkg>: unresolved: rel:line` (listed, not checked, not a gap). Measured on the
+real declaration, 2026-11-16: 28 such lines (self re-execs through `Path(__file__).resolve()`, a hook path held
+in a variable, a wrapper whose path is a parameter's default).
+⚠ BOUND — what is still NOT an edge, each a way a file can run another that this reader does not see (one handed
+to a loader or an interpreter argv above is not silent: it is an UNRESOLVED LOAD, below): a path
 COMPUTED at run time (a glob, a directory listing, a name built from input, a value read from a file or the
 environment); a script run with NO interpreter word (`./x.sh`, `"$DIR/x.sh"`) or through an interpreter held in a
 variable (`$PY x.py`) in Markdown or shell; `python3 -m module`; a shell COMMAND STRING inside Python
@@ -89,16 +98,21 @@ THE CLOSURE (`--closure SETS [MAP]`, plan Task 7; MAP defaults to `components.js
    `gap:`, or `gap: dangling:` when it exists nowhere.
 
 A declaration whose `expected_count` disagrees with its files, or that names a file it does not install, is
-REFUSED. CANNOT RUN (rc 2, review r1 XM4/XM5/CM1/XM7), never `0 gaps` and never SKIPPED: a declaration or map it
-cannot read; no packages; an entry that is not an object; a `channel` that is not exactly one of CHANNELS; a
-plugin entry with no `installed_files`; an entry with no components, or a component with no files; a declared
-file the repository does not have; a directory of the rebuilt tree that cannot be listed.
+REFUSED — the count in EVERY channel, the installed files in a plugin (review r2 Xm6). CANNOT RUN (rc 2, review
+r1 XM4/XM5/CM1/XM7, r2 Xm5), never `0 gaps` and never SKIPPED: a declaration or map it cannot read; no packages;
+an entry that is not an object; a `channel` that is not exactly one of CHANNELS; a plugin entry with no
+`installed_files`; an entry with no components, or a component with no files; a file (installed or a
+component's) that is not a non-empty string; an `expected_count` that is not an integer; a declared file the
+repository does not have; a directory of the rebuilt tree that cannot be listed.
 
-AN OPTIONAL EDGE (the map's `optional_edges`: `from`, `to`, a non-empty `reason`) is a load the script itself
-guards — it runs when the file is present and says so when it is not (`regen-pages.py`'s self-test loads
-`check-plan-code.py` behind an existence check). The closure prints it (`optional: <to>`) and does not follow
-it; it is written in the MAP, which the declaration cannot edit, and a waiver for an edge the file does not have
-is itself a gap. ⚠ BOUND: the guard is ASSERTED by the reason, not proven — nothing here reads the `if`.
+AN OPTIONAL LOAD is PROVEN from the file, never written down (review r2 XM3/XM4 retired the map's
+`optional_edges`, and a map that still has the key is REFUSED): a load is optional when it sits in the BODY of
+an `if` whose test — or a conjunct of its `and` — is `P.is_file()` / `P.exists()` / `os.path.isfile(P)` /
+`os.path.exists(P)`, and `P` reads to the SAME single path as the load's argument (`_Loads._tested`,
+`_guarded`). The `else` branch, a guard on another path, a name bound twice, and the body of a function or
+lambda defined under the `if` (it runs later) are not guarded. The closure FOLLOWS an optional load whose file
+the tree carries, and when the tree does not, prints `optional: <to>` — `regen-pages.py`'s self-test loads
+`check-plan-code.py` that way — and that line is not a gap.
 
 A STALE DECLARATION IS RED (review r1 CM2): a file added under a directory a component lists (`docs/memory/`
 gains a memory file) is in the map's component the moment git tracks it, so the declaration omits it until
@@ -143,7 +157,14 @@ EXEC_RE = re.compile(r"""(?<![\w./-])(?:python(?:3(?:\.\d+)?)?|bash|sh|source|\.
 # A sibling a Python file loads BY PATH (review r1 CB1): the call, and where its path argument sits.
 PATH_LOADERS = {"spec_from_file_location": (1, "location"), "SourceFileLoader": (1, "path"),
                 "run_path": (0, "path_name")}
-MODULE_LOADERS = ("import_module", "__import__")
+# ...and the module named to these, by position OR keyword (review r2 XM1: `import_module(name='x')`).
+MODULE_LOADERS = {"import_module": (0, "name"), "__import__": (0, "name")}
+# A path part this reader cannot read (review r2 XM2): it travels in the form, so a load whose path holds one is
+# LISTED as unresolved, never dropped.
+UNK = ("?",)          # a PART of a form (a form is a tuple of parts): `{(UNK,)}` is "unreadable"
+# A test that proves a path exists when it is true (review r2 XM3): `p.is_file()`, `p.exists()`, and
+# `os.path.isfile(p)` / `os.path.exists(p)`.
+EXISTS = ("is_file", "exists", "isfile")
 INTERPRETERS = ("python", "python3", "bash", "sh")
 PATH_WRAPS = ("str", "Path", "PurePath", "PosixPath", "fspath", "abspath", "realpath", "normpath")
 PATH_SELF_METHODS = ("resolve", "absolute", "as_posix", "expanduser")
@@ -166,7 +187,6 @@ class ComponentMap:
     packages: dict
     components: list
     exclusions: list
-    optional_edges: tuple = ()
 
 
 def tracked(root: Path) -> list[str]:
@@ -209,12 +229,13 @@ class _Loads:
         self.rel = rel
         self.parent: dict = {}          # function node -> the function node enclosing it (None at module level)
         self.funcs: dict = {}           # name -> [function nodes]
-        self.calls: list = []           # (Call, scope)
-        self.argvs: list = []           # (List | Tuple, scope)
+        self.calls: list = []           # (Call, scope, guards)
+        self.argvs: list = []           # (List | Tuple, scope, guards)
         self.env = {None: self._assigned(self._shallow(tree))}
-        self._visit(tree, None)
+        self._visit(tree, None, ())
         self.wrappers: dict = {}        # function name -> {(kind, form)} that still hold one of its parameters
         self.found: set = set()         # (kind, concrete string)
+        self.unresolved: set = set()    # "rel:line" of each load whose path holds a part this reader cannot read
 
     @staticmethod
     def _shallow(node):
@@ -240,19 +261,53 @@ class _Loads:
                 env.setdefault(n.target.id, []).extend(n.iter.elts)
         return env
 
-    def _visit(self, node, scope) -> None:
+    def _visit(self, node, scope, guards: tuple) -> None:
         for child in ast.iter_child_nodes(node):
-            inner = scope
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                self.parent[child] = scope
-                self.funcs.setdefault(child.name, []).append(child)
-                self.env[child] = self._assigned(self._shallow(child))
-                inner = child
-            elif isinstance(child, ast.Call):
-                self.calls.append((child, scope))
-            elif isinstance(child, (ast.List, ast.Tuple)):
-                self.argvs.append((child, scope))
-            self._visit(child, inner)
+            self._node(child, scope, guards)
+
+    def _node(self, child, scope, guards: tuple) -> None:
+        """`guards`: the expressions an enclosing `if` has proven to exist (`_tested`). Only the `if` BODY holds
+        them; a function or a lambda runs later, so its body starts with none."""
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            self.parent[child] = scope
+            self.funcs.setdefault(child.name, []).append(child)
+            self.env[child] = self._assigned(self._shallow(child))
+            return self._visit(child, child, ())
+        if isinstance(child, ast.Lambda):
+            return self._visit(child, scope, ())
+        if isinstance(child, ast.Call):
+            self.calls.append((child, scope, guards))
+        elif isinstance(child, (ast.List, ast.Tuple)):
+            self.argvs.append((child, scope, guards))
+        if isinstance(child, ast.If):
+            self._node(child.test, scope, guards)
+            for stmt in child.body:
+                self._node(stmt, scope, guards + self._tested(child.test))
+            for stmt in child.orelse:
+                self._node(stmt, scope, guards)
+            return None
+        return self._visit(child, scope, guards)
+
+    @staticmethod
+    def _tested(test) -> tuple:
+        """The expressions `test` proves exist when it is true: `p.is_file()` / `p.exists()` (no argument),
+        `os.path.isfile(p)` / `os.path.exists(p)` (one), or any conjunct of an `and`."""
+        if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And):
+            return tuple(e for v in test.values for e in _Loads._tested(v))
+        if not (isinstance(test, ast.Call) and isinstance(test.func, ast.Attribute) and test.func.attr in EXISTS):
+            return ()
+        if not test.args and not test.keywords:
+            return (test.func.value,)
+        if len(test.args) == 1 and not test.keywords and _name_of(test.func.value) == "path":
+            return (test.args[0],)
+        return ()
+
+    def _guarded(self, arg, scope, guards: tuple) -> bool:
+        """True when `arg` is ONE path, read whole, that an enclosing guard tests: the guard's forms and the
+        argument's are the same single form. A name bound twice has two forms and is never guarded."""
+        mine = self.forms(arg, scope)
+        return len(mine) == 1 and not any(UNK in f for f in mine) \
+            and any(self.forms(g, scope) == mine for g in guards)
 
     @staticmethod
     def _params(fn) -> list:
@@ -270,14 +325,14 @@ class _Loads:
     def forms(self, expr, scope, seen=frozenset()) -> set:
         """Every path form `expr` can hold; empty when it cannot be read (a computed value, an attribute, ...)."""
         if isinstance(expr, ast.Constant):
-            return {(expr.value,)} if isinstance(expr.value, str) else set()
+            return {(expr.value,)} if isinstance(expr.value, str) else {(UNK,)}
         if isinstance(expr, ast.JoinedStr):
             out = {()}
             for v in expr.values:
                 if isinstance(v, ast.FormattedValue):
-                    if v.format_spec is not None or v.conversion != -1:
-                        return set()
-                    out = _cat(out, self.forms(v.value, scope, seen))
+                    # `!s` of a str is the str (review r2 XM2); `!r`, `!a` and a format spec are not read.
+                    readable = v.format_spec is None and v.conversion in (-1, ord("s"))
+                    out = _cat(out, self.forms(v.value, scope, seen) if readable else {(UNK,)})
                 else:
                     out = _cat(out, self.forms(v, scope, seen))
             return out
@@ -301,22 +356,22 @@ class _Loads:
                     for a in expr.args:
                         nxt = self._base(a, scope, seen) if not held else self.forms(a, scope, seen)
                         if held and not nxt:
-                            return set()
+                            return {(UNK,)}
                         held = _cat(held, nxt, "/") if held and nxt else nxt
-                    return held
+                    return held or {(UNK,)}
             if name in PATH_WRAPS and expr.args:
                 return self.forms(expr.args[0], scope, seen)
-            return set()
+            return {(UNK,)}
         if isinstance(expr, ast.Name):
             return self._name(expr.id, scope, seen)
-        return set()
+        return {(UNK,)}
 
     def _base(self, expr, scope, seen) -> set:
         """The LEFT of a `/`: a parameter there is a directory the caller passes, so it is an unknown base and is
         dropped, never a hole the file name is read through."""
         if isinstance(expr, ast.Name) and self._is_param(expr.id, scope):
             return set()
-        return self.forms(expr, scope, seen)
+        return {f for f in self.forms(expr, scope, seen) if UNK not in f}
 
     def _name(self, name: str, scope, seen) -> set:
         while True:
@@ -328,19 +383,26 @@ class _Loads:
                 out.add((("P", scope.name, name),))
             for value in self.env[scope].get(name, []):
                 out |= self.forms(value, scope, seen | {key})
-            if out or scope is None or name in self.env[scope] or name in self._params(scope):
+            if out or name in self.env[scope] or (scope is not None and name in self._params(scope)):
                 return out
+            if scope is None:           # bound nowhere this file can see: an import, a builtin, a global
+                return {(UNK,)}
             scope = self.parent[scope]
 
-    def _add(self, kind: str, forms: set) -> bool:
-        """Record each form: concrete → found; holding ONE function's parameters → that function is a wrapper.
-        True when a wrapper learned a form it did not have."""
+    def _add(self, kind: str, forms: set, where) -> bool:
+        """Record each form: concrete → found; holding ONE function's parameters → that function is a wrapper;
+        holding a part this reader cannot read, or two functions' parameters, or no form at all → `unresolved`
+        at `where` (the load's line). True when a wrapper learned a form it did not have."""
         grew = False
+        if not forms:
+            self.unresolved.add(f"{self.rel}:{where.lineno}")
         for form in forms:
-            owners = {part[1] for part in form if not isinstance(part, str)}
-            if not owners:
+            owners = {part[1] for part in form if not isinstance(part, str) and part != UNK}
+            if UNK in form or len(owners) > 1:
+                self.unresolved.add(f"{self.rel}:{where.lineno}")
+            elif not owners:
                 self.found.add((kind, "".join(form)))
-            elif len(owners) == 1:
+            else:
                 known = self.wrappers.setdefault(owners.pop(), set())
                 if (kind, form) not in known:
                     known.add((kind, form))
@@ -362,18 +424,23 @@ class _Loads:
         bound.update({k.arg: k.value for k in call.keywords if k.arg})
         return bound
 
-    def paths(self) -> set:
-        for call, scope in self.calls:
+    def paths(self) -> tuple[set, set]:
+        """`(edges, optional)`: the paths loaded, and those loaded ONLY under an existence guard on themselves."""
+        for call, scope, guards in self.calls:
             name = _name_of(call.func)
-            if name in PATH_LOADERS:
-                at, keyword = PATH_LOADERS[name]
+            if name in PATH_LOADERS or name in MODULE_LOADERS:
+                at, keyword = PATH_LOADERS.get(name) or MODULE_LOADERS[name]
                 arg = next((k.value for k in call.keywords if k.arg == keyword), None)
                 arg = call.args[at] if arg is None and len(call.args) > at else arg
-                if arg is not None:
-                    self._add("path", self.forms(arg, scope))
-            elif name in MODULE_LOADERS and call.args:
-                self._add("module", self.forms(call.args[0], scope))
-        for argv, scope in self.argvs:
+                if arg is None:                 # `**kwargs`, or an argument this reader cannot place
+                    if any(k.arg is None for k in call.keywords) or any(
+                            isinstance(a, ast.Starred) for a in call.args):
+                        self.unresolved.add(f"{self.rel}:{call.lineno}")
+                    continue
+                kind = "module" if name in MODULE_LOADERS else \
+                    "optional" if self._guarded(arg, scope, guards) else "path"
+                self._add(kind, self.forms(arg, scope), call)
+        for argv, scope, guards in self.argvs:
             head = argv.elts[0] if argv.elts else None
             if not ((isinstance(head, ast.Attribute) and head.attr == "executable")
                     or (isinstance(head, ast.Constant) and head.value in INTERPRETERS)):
@@ -386,12 +453,12 @@ class _Loads:
                         break
                     at += 2 if e.value in ("-X", "-W") else 1
                     continue
-                self._add("path", self.forms(e, scope))
+                self._add("optional" if self._guarded(e, scope, guards) else "path", self.forms(e, scope), argv)
                 break
         grew = True
         while grew:                 # a wrapper's parameter, filled from each call of it, to a fixpoint
             grew = False
-            for call, scope in self.calls:
+            for call, scope, _guards in self.calls:
                 name = _name_of(call.func)
                 for kind, form in sorted(self.wrappers.get(name, ()), key=repr):
                     for fn in self.funcs.get(name, []):
@@ -404,16 +471,17 @@ class _Loads:
                                 site = None if bound[part[2]] in fn.args.defaults + fn.args.kw_defaults else scope
                                 out = _cat(out, self.forms(bound[part[2]], site))
                             else:
-                                out = set()
-                        grew = self._add(kind, out) or grew
+                                out = {(UNK,)}
+                        grew = self._add(kind, out, call) or grew
         here = os.path.dirname(self.rel)
-        out: set = set()
+        out: dict = {"path": set(), "optional": set()}
         for kind, s in self.found:
             if kind == "module":
-                out.add(os.path.normpath(os.path.join(here, s.split(".")[0] + ".py")))
+                out["path"].add(os.path.normpath(os.path.join(here, s.split(".")[0] + ".py")))
             elif s and not s.startswith("/"):
-                out |= {os.path.normpath(os.path.join(here, s)), os.path.normpath(s)}
-        return {o for o in out if not o.startswith(("..", "/"))}
+                out[kind] |= {os.path.normpath(os.path.join(here, s)), os.path.normpath(s)}
+        edges, optional = ({o for o in v if not o.startswith(("..", "/"))} for v in (out["path"], out["optional"]))
+        return edges, optional - edges
 
 
 BARE_SCRIPT_RE = re.compile(r"[\w-]+\.(?:py|sh)\Z")
@@ -435,10 +503,17 @@ def name_tables(rel: str, tree: ast.AST) -> set[str]:
 
 
 def import_paths(rel: str, text: str) -> set[str]:
-    """Every path the Python file `rel` may load: `<dir>/<module>.py` for each absolute import, and each path it
-    hands a loader or an interpreter (`_Loads`), as written from the file's directory AND from the root — whether
-    one exists is each caller's rule (`exec_edges`: under the root; `closure_edges`: in the installed tree or the
-    repository)."""
+    """Every path the Python file `rel` may load, guarded or not (`python_loads`)."""
+    edges, optional, _unresolved = python_loads(rel, text)
+    return edges | optional
+
+
+def python_loads(rel: str, text: str) -> tuple[set[str], set[str], list[str]]:
+    """`(edges, optional, unresolved)` of the Python file `rel`. `edges`: `<dir>/<module>.py` for each absolute
+    import, and each path it hands a loader or an interpreter (`_Loads`), as written from the file's directory AND
+    from the root — whether one exists is each caller's rule (`exec_edges`: under the root; `closure_edges`: in the
+    installed tree or the repository). `optional`: a path loaded ONLY inside an existence guard on itself.
+    `unresolved`: `rel:line` of each load whose path this reader cannot read."""
     try:
         tree = ast.parse(text)
     except SyntaxError as e:
@@ -452,7 +527,11 @@ def import_paths(rel: str, text: str) -> set[str]:
             mods = [node.module]
         for mod in mods:
             outs.add(os.path.normpath(os.path.join(os.path.dirname(rel), mod.split(".")[0] + ".py")))
-    return outs | _Loads(rel, tree).paths() | name_tables(rel, tree)
+    loads = _Loads(rel, tree)
+    edges, optional = loads.paths()
+    edges |= outs | name_tables(rel, tree)
+    return edges, optional - edges, sorted(loads.unresolved, key=lambda u: (u.rsplit(":", 1)[0],
+                                                                            int(u.rsplit(":", 1)[1])))
 
 
 def exec_edges(root: Path, rel: str) -> set[str]:
@@ -589,17 +668,10 @@ def load_map(path: Path, root: Path = REPO) -> ComponentMap:
             raise Refused(f"an exclusion has no path: {e!r}")
         if not isinstance(e.get("reason"), str) or not e["reason"].strip():
             raise Refused(f"exclusion {e['path']!r} has no reason")
-    optional = data.get("optional_edges", [])
-    if not isinstance(optional, list):
-        raise Refused("`optional_edges` is not a list")
-    for o in optional:
-        if not isinstance(o, dict) or not all(isinstance(o.get(k), str) and o[k].strip()
-                                              for k in ("from", "to", "reason")):
-            raise Refused(f"an optional edge needs a `from`, a `to` and a `reason`: {o!r}")
-        if o["from"] not in owner:
-            raise Refused(f"optional edge from {o['from']!r}: no component lists that file")
-    return ComponentMap(str(data.get("measured_at", "")), packages, comps, excl,
-                        tuple((o["from"], o["to"]) for o in optional))
+    if "optional_edges" in data:
+        raise Refused("`optional_edges` is retired (review r2 XM3/XM4): a load is optional only when its own "
+                      "existence guard is read from the file")
+    return ComponentMap(str(data.get("measured_at", "")), packages, comps, excl)
 
 
 def component_files(m: ComponentMap, c: dict, root: Path) -> set[str]:
@@ -644,7 +716,7 @@ def map_gaps(m: ComponentMap, cands: set[str], root: Path = REPO) -> list[str]:
 SOURCE_SKILLS = ".agents/skills/"
 INSTALLED_SKILLS = "skills/"
 PLUGIN_META = ".claude-plugin/plugin.json"
-NOTES = ("cwd-relative: ", "external: ", "optional: ")
+NOTES = ("cwd-relative: ", "external: ", "optional: ", "unresolved: ")
 READ_LINE_RE = re.compile(r"\b(?:follow|read)\b", re.I)
 READ_PATH_RE = re.compile(r"(?:`|\]\()((?:\.\.?/|\.agents/skills/|docs/)[\w./-]+\.\w+)[`)]")
 
@@ -691,9 +763,11 @@ def closure_edges(installed: Path, rel: str, repo: Path) -> set[str]:
         raise CannotRun(f"cannot read the installed {rel}: {e}") from e
     out: set[str] = set()
     if rel.endswith(".py"):
-        for p in import_paths(rel, text):
+        edges, optional, unresolved = python_loads(rel, text)
+        for p in edges | optional:
             if (installed / p).is_file() or (repo / source_path(p)).is_file():
-                out.add(p)
+                out.add(f"optional: {p}" if p in optional else p)
+        out |= {f"unresolved: {u}" for u in unresolved}
     elif rel.endswith(".sh") or rel.endswith(".md"):
         code = text if rel.endswith(".md") else "\n".join(
             ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
@@ -712,14 +786,18 @@ def closure_edges(installed: Path, rel: str, repo: Path) -> set[str]:
     return out
 
 
+def _line_order(note: str) -> tuple:
+    rel, _, line = note.rpartition(":")
+    return rel, int(line) if line.isdigit() else 0
+
+
 def _walk_failed(e: OSError):
     raise CannotRun(f"cannot list {e.filename}: {e.strerror}")
 
 
-def closure(installed: Path, repo: Path = REPO, optional=frozenset()) -> set[str]:
-    """Every installed-relative path reached from the package's skills and entry points, plus its hand-offs. An
-    edge in `optional` (`(from, to)`, installed coordinates — the map's `optional_edges`) is the hand-off
-    `optional: to` and is not followed."""
+def closure(installed: Path, repo: Path = REPO) -> set[str]:
+    """Every installed-relative path reached from the package's skills and entry points, plus its hand-offs. A
+    guarded load (`optional: p`, review r2 XM3) is followed when the tree holds `p`, and is a hand-off when not."""
     installed = Path(installed)
     present: set[str] = set()
     for d, _dirs, names in os.walk(installed, onerror=_walk_failed):
@@ -733,8 +811,8 @@ def closure(installed: Path, repo: Path = REPO, optional=frozenset()) -> set[str
             continue
         out.add(rel)
         for e in closure_edges(installed, rel, repo):
-            if (rel, e) in optional:
-                out.add(f"optional: {e}")
+            if e.startswith(NOTES[2]) and e[len(NOTES[2]):] in present:
+                todo.append(e[len(NOTES[2]):])
             elif e.startswith(NOTES) or e not in present:
                 out.add(e)
             else:
@@ -757,13 +835,14 @@ def closure_gaps(decl: dict, reached: set[str], repo: Path = REPO) -> list[str]:
 
 
 def check_declaration(name: str, decl: dict) -> None:
-    """A plugin entry of `shipping-sets.json` keeps its own arithmetic, or it is refused."""
+    """An entry of `shipping-sets.json` keeps its own arithmetic, whatever its channel (review r2 Xm6), and a
+    plugin's components name only files it installs — or it is refused."""
     files = set(decl.get("installed_files") or [])
     for cid, c in sorted((decl.get("components") or {}).items()):
         if c.get("expected_count") != len(c.get("files") or []):
             raise Refused(f"{name}: component {cid!r} declares expected_count {c.get('expected_count')} for "
                           f"{len(c.get('files') or [])} file(s)")
-        for f in c["files"]:
+        for f in c["files"] if decl.get("channel", "plugin") == "plugin" else ():
             if f not in files:
                 raise Refused(f"{name}: component {cid!r} names {f}, which is not in installed_files")
 
@@ -785,7 +864,9 @@ def materialize(name: str, decl: dict, repo: Path, out: Path) -> Path:
 def load_declaration(sets: Path) -> dict:
     """The `packages` of `shipping-sets.json`. One that cannot be read, names no package, or holds an entry the
     closure could only pass by skipping it (an unknown channel, a plugin with no installed files, no components,
-    a component with no files) is CANNOT RUN — review r1 XM4, XM5, CM1."""
+    a component with no files) is CANNOT RUN — review r1 XM4, XM5, CM1. So is any element of the wrong SHAPE
+    (review r2 Xm5): a file that is not a non-empty string, an `installed_files` that is not a list of them, an
+    `expected_count` that is not an integer."""
     try:
         data = json.loads(Path(sets).read_text())
     except (OSError, ValueError) as e:
@@ -801,13 +882,24 @@ def load_declaration(sets: Path) -> dict:
         files = decl.get("installed_files")
         if decl["channel"] == "plugin" and (not isinstance(files, list) or not files):
             raise CannotRun(f"{name}: a plugin package that declares no installed_files")
+        if files is not None and not _paths(files):
+            raise CannotRun(f"{name}: installed_files holds something that is not a path: {files!r}")
         comps = decl.get("components")
         if not isinstance(comps, dict) or not comps:
             raise CannotRun(f"{name}: declares no components")
         for cid, c in sorted(comps.items()):
             if not isinstance(c, dict) or not isinstance(c.get("files"), list) or not c["files"]:
                 raise CannotRun(f"{name}: component {cid!r} declares no files")
+            if not _paths(c["files"]):
+                raise CannotRun(f"{name}: component {cid!r} holds a file that is not a path: {c['files']!r}")
+            if type(c.get("expected_count")) is not int:
+                raise CannotRun(f"{name}: component {cid!r} has no integer expected_count: "
+                                f"{c.get('expected_count')!r}")
     return packages
+
+
+def _paths(files) -> bool:
+    return isinstance(files, list) and all(isinstance(f, str) and f for f in files)
 
 
 def carried(m: ComponentMap, package: str, root: Path) -> dict:
@@ -868,27 +960,23 @@ def closure_main(sets: Path, map_path: Path, root: Path) -> int:
                              f"{m.packages[name]['channel']!r}")
                 continue
             plugin = decl["channel"] == "plugin"
-            if plugin:
-                check_declaration(name, decl)
+            check_declaration(name, decl)
             mine = carried(m, name, root)
             found, omitted = agreement(decl, mine)
             if plugin:
                 # The tree the closure walks is everything the MAP carries plus everything declared: its roots
                 # are the map's, so an entry point deleted from the declaration is still walked — and is a gap.
                 files = {installed_path(f) for fs in mine.values() for f in fs} | set(decl["installed_files"])
-                optional = frozenset((installed_path(a), installed_path(b)) for a, b in m.optional_edges
-                                     if installed_path(a) in files)
                 with tempfile.TemporaryDirectory() as t:
-                    reached = closure(materialize(name, {"installed_files": sorted(files)}, root, Path(t)), root,
-                                      optional)
+                    reached = closure(materialize(name, {"installed_files": sorted(files)}, root, Path(t)), root)
                 found += closure_gaps(decl, reached - omitted, root)
-                found += [f"gap: optional edge {a} → {b} — the map waives it, and {a} has no such edge"
-                          for a, b in sorted(optional) if f"optional: {b}" not in reached]
             gaps += len(found)
             lines += [f"{name}: {g}" for g in found]
             if plugin:
-                lines += [f"{name}: {r} — the map's optional_edges: loaded only when present, not shipped"
-                          for r in sorted(reached) if r.startswith(NOTES[2])]
+                lines += [f"{name}: {r} — loaded only inside an existence guard on itself: run when present, "
+                          "not shipped" for r in sorted(reached) if r.startswith(NOTES[2])]
+                lines += [f"{name}: {r} — a load whose path this reader cannot read: listed, not checked"
+                          for r in sorted(reached, key=_line_order) if r.startswith(NOTES[3])]
                 lines.append(f"{name}: {sum(r.startswith(NOTES[0]) for r in reached)} cwd-relative hand-off(s), "
                              f"{sum(r.startswith(NOTES[1]) for r in reached)} external read(s)")
             else:
@@ -1529,34 +1617,149 @@ def _self_test_body() -> int:
     case("CM2: a declared file the repository has since REMOVED is CANNOT RUN, rc 2",
          data_file_removed, (2, [], "CANNOT RUN: pkg declares data/two.md, and the repository has no data/two.md"))
 
-    # The map's `optional_edges`: a load the script itself guards (present → loaded, absent → said), waived in the
-    # MAP with a reason, never by the declaration. `scripts/a.py` loads `opt.py` beside it; the package omits it.
-    opt = tree({".agents/skills/b/SKILL.md": "Run `python3 scripts/a.py`.\n", "scripts/opt.py": "", "scripts/b.py": "",
-                "scripts/a.py": "import importlib.util\nfrom pathlib import Path\nHERE = Path(__file__).parent\n"
-                                "importlib.util.spec_from_file_location('o', HERE / 'opt.py')\n"})
-    two_c = [comp("skill-b", [".agents/skills/b/SKILL.md"]), comp("a", ["scripts/a.py"])]
-    opt_decl = {"pkg": named({"skill-b": ["skills/b/SKILL.md"], "a": ["scripts/a.py"]})}
-    edge = {"from": "scripts/a.py", "to": "scripts/opt.py", "reason": "guarded by an existence check"}
-    case("optional edge: unwaived, the guarded load is a gap; waived in the map, it is SAID and is not a gap; and a "
-         "waiver of some OTHER target waives nothing",
-         lambda: [clo("--closure", pair(opt, opt_decl, comps=two_c, optional=o), root=opt)[:2] for o in (
-             None, [edge], [{**edge, "to": "scripts/b.py"}])],
-         [(1, ["pkg: gap: scripts/opt.py — the package's own text reaches it, and its declaration omits it",
-               "pkg: 1 cwd-relative hand-off(s), 0 external read(s)", "1 gaps"]),
-          (0, ["pkg: optional: scripts/opt.py — the map's optional_edges: loaded only when present, not shipped",
-               "pkg: 1 cwd-relative hand-off(s), 0 external read(s)", "0 gaps"]),
-          (1, ["pkg: gap: scripts/opt.py — the package's own text reaches it, and its declaration omits it",
-               "pkg: gap: optional edge scripts/a.py → scripts/b.py — the map waives it, and scripts/a.py has no "
-               "such edge",
-               "pkg: 1 cwd-relative hand-off(s), 0 external read(s)", "2 gaps"])])
-    case("optional edge: one that is not a list, one with no reason, and one from a file no component lists are "
-         "REFUSED with the map",
-         lambda: [clo("--closure", pair(opt, opt_decl, comps=two_c, optional=o), root=opt)[1] for o in (
-             {}, [{"from": "scripts/a.py", "to": "scripts/opt.py", "reason": " "}], [{**edge, "from": "scripts/b.py"}])],
-         [["REFUSED: `optional_edges` is not a list"],
-          ["REFUSED: an optional edge needs a `from`, a `to` and a `reason`: "
-           "{'from': 'scripts/a.py', 'to': 'scripts/opt.py', 'reason': ' '}"],
-          ["REFUSED: optional edge from 'scripts/b.py': no component lists that file"]])
+    # ---- review round 2 (docs/reviews/coordinator/hse-slice-c-r2-coordinator.md) -------------------------------
+    # XM3/XM4: the map's `optional_edges` waiver is RETIRED. A load is optional only when the AST shows it inside
+    # `if <the same path>.is_file()` / `.exists()` / `os.path.isfile(<it>)` / `os.path.exists(<it>)`; anything
+    # else is an edge. Each fixture is a package whose `scripts/a.py` loads `scripts/secret.py`, which the package
+    # omits.
+    def guarded(body: str) -> dict:
+        return {"skills/d/SKILL.md": "Run `python3 scripts/a.py`.\n",
+                "scripts/a.py": "import os, runpy\nfrom pathlib import Path\n"
+                                "P = Path(__file__).with_name('secret.py')\nQ = Path(__file__).with_name('b.py')\n"
+                                + body}
+    g_src = tree({".agents/skills/d/SKILL.md": "", "scripts/a.py": "", "scripts/secret.py": "", "scripts/b.py": ""})
+    g_forms = {"unconditional": "runpy.run_path('scripts/secret.py')\n",
+               "if is_file": "if P.is_file():\n    runpy.run_path(str(P))\n",
+               "if os.path.exists, in an and": "if True and os.path.exists(P):\n    runpy.run_path(P)\n",
+               "guard on ANOTHER path": "if Q.is_file():\n    runpy.run_path(str(P))\n",
+               "load in the ELSE branch": "if P.is_file():\n    pass\nelse:\n    runpy.run_path(str(P))\n",
+               "the name REBOUND": "if P.is_file():\n    P = Path('scripts/secret.py')\n    runpy.run_path(P)\n",
+               "a lambda defined under the guard": "if P.is_file():\n    f = lambda: runpy.run_path(str(P))\n",
+               "a function defined under the guard": "if P.is_file():\n    def f():\n        runpy.run_path(str(P))\n",
+               "is_file called on nothing": "if is_file():\n    runpy.run_path(str(P))\n"}
+
+    def g_reach(body: str) -> tuple:
+        files = guarded(body)
+        reached = closure(tree({**files, "scripts/b.py": ""}), g_src)
+        return (sorted(r for r in reached if r.startswith("optional: ")),
+                closure_gaps(decl_of({**files, "scripts/b.py": ""}), reached, g_src))
+    gap_secret = ["gap: scripts/secret.py — the package's own text reaches it, and its declaration omits it"]
+    case("XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard "
+         "on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a "
+         "gap",
+         lambda: {k: g_reach(v) for k, v in g_forms.items()},
+         {"unconditional": ([], gap_secret), "if is_file": (["optional: scripts/secret.py"], []),
+          "if os.path.exists, in an and": (["optional: scripts/secret.py"], []),
+          "guard on ANOTHER path": ([], gap_secret), "load in the ELSE branch": ([], gap_secret),
+          "the name REBOUND": ([], gap_secret), "a lambda defined under the guard": ([], gap_secret),
+          "a function defined under the guard": ([], gap_secret),
+          "is_file called on nothing": ([], gap_secret)})
+
+    def g_run(body: str):
+        """The guard read is the guard that RUNS: the materialised script, without secret.py, exits 0 when guarded."""
+        root = tree(guarded(body))
+        return subprocess.run([sys.executable, str(root / "scripts/a.py")], capture_output=True, cwd=root).returncode
+    case("XM3 r2: ...and run in the materialised tree without secret.py, the guarded script exits 0 and the "
+         "unconditional one does not",
+         lambda: (g_run(g_forms["if is_file"]), g_run(g_forms["unconditional"]) != 0), (0, True))
+    case("XM3 r2: a guarded load the package DOES carry is followed, its own edges with it",
+         lambda: sorted(closure(tree({**guarded(g_forms["if is_file"]), "scripts/b.py": "",
+                                      "scripts/secret.py": "import b\n"}), g_src)),
+         ["cwd-relative: scripts/a.py", "scripts/a.py", "scripts/b.py", "scripts/secret.py", "skills/d/SKILL.md"])
+    g_cli = tree({".agents/skills/d/SKILL.md": "Run `python3 scripts/a.py`.\n",
+                  "scripts/a.py": guarded(g_forms["if is_file"])["scripts/a.py"], "scripts/secret.py": ""})
+    case("XM3 r2: the closure SAYS a guarded load the package omits, and it is not a gap",
+         lambda: clo("--closure", sets_file(g_cli, {"pkg": decl_of(["skills/d/SKILL.md", "scripts/a.py"])}),
+                     root=g_cli)[:2],
+         (0, ["pkg: optional: scripts/secret.py — loaded only inside an existence guard on itself: run when present, "
+              "not shipped", "pkg: 1 cwd-relative hand-off(s), 0 external read(s)", "0 gaps"]))
+    g_waive = tree({".agents/skills/d/SKILL.md": "Run `python3 scripts/a.py`.\n",
+                    "scripts/a.py": "", "scripts/b.py": "import runpy\nrunpy.run_path('scripts/secret.py')\n",
+                    "scripts/secret.py": ""})
+    waiver = [{"from": f, "to": "scripts/secret.py", "reason": "guarded by existence"}
+              for f in ("scripts/a.py", "scripts/b.py")]
+    case("XM3/XM4 r2: a map that still carries optional_edges — the reviewer's waiver of an unconditional load, and "
+         "a waiver from a file with no such edge — is REFUSED: there is no waiver to key",
+         lambda: [clo("--closure", pair(g_waive, {"pkg": named({"skill-b": ["skills/d/SKILL.md"]})},
+                                        comps=[comp("skill-b", [".agents/skills/d/SKILL.md"])],
+                                        optional=o), root=g_waive)[:2] for o in (waiver[1:], waiver, [])],
+         [(1, ["REFUSED: `optional_edges` is retired (review r2 XM3/XM4): a load is optional only when its own "
+               "existence guard is read from the file"])] * 3)
+
+    # XM1: a loader's argument by KEYWORD. XM2: an f-string conversion. The class: every loader argument is read by
+    # position OR keyword, and a load whose path cannot be read is LISTED (`unresolved:`), never silently dropped.
+    kw = world({"scripts/a.py": "import importlib\nimportlib.import_module(name='secret')\n__import__(name='other')\n"
+                                "import runpy\nrunpy.run_path(path_name='scripts/kw-path.py')\n"
+                                "importlib.import_module(package='x', name='pkgd')\n",
+                "scripts/secret.py": "", "scripts/other.py": "", "scripts/kw-path.py": "", "scripts/pkgd.py": ""})
+    case("XM1 r2: import_module(name=...), __import__(name=...), run_path(path_name=...) — an argument by keyword is "
+         "an edge, in any keyword order",
+         lambda: sorted(exec_edges(kw, "scripts/a.py")),
+         ["scripts/kw-path.py", "scripts/other.py", "scripts/pkgd.py", "scripts/secret.py"])
+    fs = world({"scripts/a.py": "import runpy\nNAME = 'secret'\nrunpy.run_path(f'{NAME!s}.py')\n",
+                "scripts/secret.py": ""})
+    case("XM2 r2: `f'{NAME!s}.py'` — a str conversion of a str is the str: an edge",
+         lambda: sorted(exec_edges(fs, "scripts/a.py")), ["scripts/secret.py"])
+    dyn = ("import importlib, os, runpy, subprocess, sys\nfrom elsewhere import FAR\nNAME = 'secret'\n"
+           "runpy.run_path(f'{NAME!r}.py')\n"                      # 4: a repr conversion
+           "runpy.run_path(f'{NAME:>9}.py')\n"                     # 5: a format spec
+           "runpy.run_path(sys.argv[1])\n"                         # 6: a subscript
+           "runpy.run_path(FAR)\n"                                 # 7: a name from another module
+           "importlib.import_module(NAME if FAR else FAR)\n"       # 8: one branch unreadable
+           "subprocess.run([sys.executable, FAR])\n"               # 9: an interpreter argv
+           "runpy.run_path(**{'path_name': NAME})\n"               # 10: no argument this reader can see
+           "def w(p):\n    return runpy.run_path(p)\n"
+           "w(FAR)\n"                                              # 13: a wrapper's caller
+           "runpy.run_path(f'{NAME}.py')\n"                        # 14: read — not listed
+           "w('scripts/' + NAME + '.py')\n"                        # 15: read through the wrapper — not listed
+           "runpy.run_path(os.getenv('X') if FAR else 'k.py')\n"    # 16: an unknown call beside a read branch
+           "runpy.run_path(sys.argv[1] if FAR else 'k.py')\n"       # 17: a subscript beside a read branch
+           "w()\n")                                                 # 18: a wrapper's parameter no call binds
+    case("XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a "
+         "subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown "
+         "call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the "
+         "line is the given file's: a second file, a second text)",
+         lambda: (python_loads("scripts/a.py", dyn)[2],
+                  python_loads("hooks/b.py", "import runpy\n\n\nrunpy.run_path(X)\n")[2]),
+         ([f"scripts/a.py:{n}" for n in (4, 5, 6, 7, 8, 9, 10, 13, 16, 17, 18)], ["hooks/b.py:4"]))
+    dyn_w = tree({".agents/skills/d/SKILL.md": "Run `python3 scripts/a.py`.\n",
+                  "scripts/a.py": "import runpy, sys\nrunpy.run_path(sys.argv[1])\n"})
+    case("XM2 r2: the closure SAYS each unresolved load of a shipped file, and it is not a gap",
+         lambda: clo("--closure", sets_file(dyn_w, {"pkg": decl_of(["skills/d/SKILL.md", "scripts/a.py"])}),
+                     root=dyn_w)[:2],
+         (0, ["pkg: unresolved: scripts/a.py:2 — a load whose path this reader cannot read: listed, not checked",
+              "pkg: 1 cwd-relative hand-off(s), 0 external read(s)", "0 gaps"]))
+
+    # Xm5: a malformed element anywhere in the declaration is CANNOT RUN, rc 2, before anything is compared.
+    shape = tree({".agents/skills/d/SKILL.md": "", "wf.yml": ""})
+    good_p = decl_of(["skills/d/SKILL.md"])
+    good_w = {"channel": "reusable-workflow", "components": {"job": {"files": ["wf.yml"], "expected_count": 1}}}
+    bad = {"a dict in installed_files": {**good_p, "installed_files": ["skills/d/SKILL.md", {}]},
+           "a dict in a component's files": {**good_p, "components": {"d": {"files": [{}], "expected_count": 1}}},
+           "an empty string in a component's files": {**good_p, "components": {"d": {"files": [""],
+                                                                                    "expected_count": 1}}},
+           "a string expected_count": {**good_p, "components": {"d": {"files": ["skills/d/SKILL.md"],
+                                                                     "expected_count": "1"}}},
+           "no expected_count": {**good_p, "components": {"d": {"files": ["skills/d/SKILL.md"]}}},
+           "a list in a workflow's files": {**good_w, "components": {"job": {"files": [["wf.yml"]],
+                                                                             "expected_count": 1}}}}
+    case("Xm5 r2: a dict, an empty string or a list where a file belongs, and a missing or non-integer "
+         "expected_count, are CANNOT RUN, rc 2 — never an uncaught TypeError",
+         lambda: {k: (lambda r: (r[0], r[2]))(clo("--closure", sets_file(shape, {"pkg": d}, False), root=shape))
+                  for k, d in bad.items()},
+         {"a dict in installed_files":
+              (2, "CANNOT RUN: pkg: installed_files holds something that is not a path: ['skills/d/SKILL.md', {}]"),
+          "a dict in a component's files": (2, "CANNOT RUN: pkg: component 'd' holds a file that is not a path: [{}]"),
+          "an empty string in a component's files":
+              (2, "CANNOT RUN: pkg: component 'd' holds a file that is not a path: ['']"),
+          "a string expected_count": (2, "CANNOT RUN: pkg: component 'd' has no integer expected_count: '1'"),
+          "no expected_count": (2, "CANNOT RUN: pkg: component 'd' has no integer expected_count: None"),
+          "a list in a workflow's files":
+              (2, "CANNOT RUN: pkg: component 'job' holds a file that is not a path: [['wf.yml']]")})
+    case("Xm6 r2: a reusable-workflow component whose expected_count disagrees with its files is REFUSED, rc 1",
+         lambda: clo("--closure", sets_file(shape, {"wf": {**good_w, "components": {"job": {
+             "files": ["wf.yml"], "expected_count": 999}}}}), root=shape)[:2],
+         (1, ["REFUSED: wf: component 'job' declares expected_count 999 for 1 file(s)"]))
 
     def unlistable_installed():
         """XM7's class in this script: the closure's own walk of the installed tree. The control walks it."""
@@ -1637,15 +1840,12 @@ def _self_test_body() -> int:
 
     real = json.loads((REPO / "docs/marketplace/shipping-sets.json").read_text())["packages"]
 
-    waived = frozenset((installed_path(e["from"]), installed_path(e["to"])) for e in json.loads(
-        (REPO / "docs/marketplace/components.json").read_text())["optional_edges"])
-
     def real_gaps(pkg: str, drop: str) -> list:
         d = json.loads(json.dumps(real[pkg]))
         d["installed_files"].remove(drop)
         d["components"] = {k: v for k, v in d["components"].items() if drop not in v["files"]}
         with tempfile.TemporaryDirectory() as t:
-            return closure_gaps(d, closure(materialize(pkg, d, REPO, Path(t)), REPO, waived), REPO)
+            return closure_gaps(d, closure(materialize(pkg, d, REPO, Path(t)), REPO), REPO)
     case("the real declaration: brief-compose.py dropped with its count lowered → red",
          lambda: real_gaps("comprehensibility", "scripts/brief-compose.py"),
          ["gap: scripts/brief-compose.py — the package's own text reaches it, and its declaration omits it"])

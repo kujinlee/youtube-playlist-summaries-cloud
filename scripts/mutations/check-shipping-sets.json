@@ -664,8 +664,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "(installed / p).is_file() or (repo / source_path(p)).is_file():\n                out.add(p)",
-        "True:\n                out.add(p)"
+        "(installed / p).is_file() or (repo / source_path(p)).is_file():\n                out.add(f\"optional",
+        "True:\n                out.add(f\"optional"
       ]
     ],
     "expect": "an import of a module that exists nowhere (the standard library) is not an edge"
@@ -1203,8 +1203,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "            elif name in MODULE_LOADERS and call.args:",
-        "            elif False:"
+        "            if name in PATH_LOADERS or name in MODULE_LOADERS:\n",
+        "            if name in PATH_LOADERS:\n"
       ]
     ],
     "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
@@ -1214,7 +1214,7 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "                self._add(\"path\", self.forms(e, scope))\n                break\n",
+        "                self._add(\"optional\" if self._guarded(e, scope, guards) else \"path\", self.forms(e, scope), argv)\n                break\n",
         "                break\n"
       ]
     ],
@@ -1258,8 +1258,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "                return out\n            scope = self.parent[scope]",
-        "                return out\n            return out"
+        "                return {(UNK,)}\n            scope = self.parent[scope]",
+        "                return {(UNK,)}\n            return out"
       ]
     ],
     "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
@@ -1280,8 +1280,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "out |= {os.path.normpath(os.path.join(here, s)), os.path.normpath(s)}",
-        "out |= {os.path.normpath(os.path.join(here, s))}"
+        "out[kind] |= {os.path.normpath(os.path.join(here, s)), os.path.normpath(s)}",
+        "out[kind] |= {os.path.normpath(os.path.join(here, s))}"
       ]
     ],
     "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
@@ -1302,8 +1302,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "    return outs | _Loads(rel, tree).paths() | name_tables(rel, tree)",
-        "    return outs | name_tables(rel, tree)"
+        "    edges, optional = loads.paths()\n",
+        "    edges, optional = set(), set()\n"
       ]
     ],
     "expect": "CB1: a generator that loads its gate at import time, and a declaration without the gate → closure red"
@@ -1313,8 +1313,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        ".paths() | name_tables(rel, tree)",
-        ".paths()"
+        "    edges |= outs | name_tables(rel, tree)\n",
+        "    edges |= outs\n"
       ]
     ],
     "expect": "class search: a table of bare sibling script names is an edge to each; a name among other words, or only compared against, is not"
@@ -1617,72 +1617,6 @@
     "expect": "XM1: the map may be named as a second argument instead of sitting beside the declaration"
   },
   {
-    "name": "a waived edge is followed like any other",
-    "file": "scripts/check-shipping-sets.py",
-    "edits": [
-      [
-        "            if (rel, e) in optional:",
-        "            if False:"
-      ]
-    ],
-    "expect": "optional edge: unwaived, the guarded load is a gap; waived in the map, it is SAID and is not a gap; and a waiver of some OTHER target waives nothing"
-  },
-  {
-    "name": "a waiver for an edge the file does not have is accepted",
-    "file": "scripts/check-shipping-sets.py",
-    "edits": [
-      [
-        "for a, b in sorted(optional) if f\"optional: {b}\" not in reached]",
-        "for a, b in sorted(optional) if False]"
-      ]
-    ],
-    "expect": "optional edge: unwaived, the guarded load is a gap; waived in the map, it is SAID and is not a gap; and a waiver of some OTHER target waives nothing"
-  },
-  {
-    "name": "a waived edge is not said",
-    "file": "scripts/check-shipping-sets.py",
-    "edits": [
-      [
-        "for r in sorted(reached) if r.startswith(NOTES[2])]",
-        "for r in sorted(reached) if False]"
-      ]
-    ],
-    "expect": "optional edge: unwaived, the guarded load is a gap; waived in the map, it is SAID and is not a gap; and a waiver of some OTHER target waives nothing"
-  },
-  {
-    "name": "an optional edge needs no reason",
-    "file": "scripts/check-shipping-sets.py",
-    "edits": [
-      [
-        "for k in (\"from\", \"to\", \"reason\")):",
-        "for k in (\"from\", \"to\")):"
-      ]
-    ],
-    "expect": "optional edge: one that is not a list, one with no reason, and one from a file no component lists are REFUSED with the map"
-  },
-  {
-    "name": "an optional edge may leave from a file no component lists",
-    "file": "scripts/check-shipping-sets.py",
-    "edits": [
-      [
-        "        if o[\"from\"] not in owner:\n",
-        "        if False:\n"
-      ]
-    ],
-    "expect": "optional edge: one that is not a list, one with no reason, and one from a file no component lists are REFUSED with the map"
-  },
-  {
-    "name": "optional_edges may be any value",
-    "file": "scripts/check-shipping-sets.py",
-    "edits": [
-      [
-        "    if not isinstance(optional, list):\n",
-        "    if False:\n"
-      ]
-    ],
-    "expect": "optional edge: one that is not a list, one with no reason, and one from a file no component lists are REFUSED with the map"
-  },
-  {
     "name": "a directory the closure cannot list is skipped",
     "file": "scripts/check-shipping-sets.py",
     "edits": [
@@ -1747,5 +1681,346 @@
       ]
     ],
     "expect": "CM1: a package entry that is not an object (a list) is CANNOT RUN, rc 2"
+  },
+  {
+    "name": "a guarded load is not said",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "for r in sorted(reached) if r.startswith(NOTES[2])]",
+        "for r in sorted(reached) if False]"
+      ]
+    ],
+    "expect": "XM3 r2: the closure SAYS a guarded load the package omits, and it is not a gap"
+  },
+  {
+    "name": "a loader's keyword argument is not read",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                arg = next((k.value for k in call.keywords if k.arg == keyword), None)\n",
+        "                arg = None\n"
+      ]
+    ],
+    "expect": "XM1 r2: import_module(name=...), __import__(name=...), run_path(path_name=...) — an argument by keyword is an edge, in any keyword order"
+  },
+  {
+    "name": "`!s` is not read",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "v.conversion in (-1, ord(\"s\"))",
+        "v.conversion == -1"
+      ]
+    ],
+    "expect": "XM2 r2: `f'{NAME!s}.py'` — a str conversion of a str is the str: an edge"
+  },
+  {
+    "name": "a repr conversion is read as the str",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "readable = v.format_spec is None and v.conversion in (-1, ord(\"s\"))",
+        "readable = v.format_spec is None"
+      ]
+    ],
+    "expect": "XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the line is the given file's: a second file, a second text)"
+  },
+  {
+    "name": "a format spec is read as the str",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "readable = v.format_spec is None and v.conversion in (-1, ord(\"s\"))",
+        "readable = v.conversion in (-1, ord(\"s\"))"
+      ]
+    ],
+    "expect": "XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the line is the given file's: a second file, a second text)"
+  },
+  {
+    "name": "an unreadable form is dropped, not listed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                self.unresolved.add(f\"{self.rel}:{where.lineno}\")\n            elif not owners:",
+        "                pass\n            elif not owners:"
+      ]
+    ],
+    "expect": "XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the line is the given file's: a second file, a second text)"
+  },
+  {
+    "name": "**kwargs in place of the argument is not listed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                        self.unresolved.add(f\"{self.rel}:{call.lineno}\")\n                    continue",
+        "                        pass\n                    continue"
+      ]
+    ],
+    "expect": "XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the line is the given file's: a second file, a second text)"
+  },
+  {
+    "name": "a name bound nowhere is read as nothing",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            if scope is None:           # bound nowhere this file can see: an import, a builtin, a global\n                return {(UNK,)}",
+        "            if scope is None:           # bound nowhere this file can see: an import, a builtin, a global\n                return set()"
+      ]
+    ],
+    "expect": "XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the line is the given file's: a second file, a second text)"
+  },
+  {
+    "name": "an unknown call is read as nothing",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                return self.forms(expr.args[0], scope, seen)\n            return {(UNK,)}",
+        "                return self.forms(expr.args[0], scope, seen)\n            return set()"
+      ]
+    ],
+    "expect": "XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the line is the given file's: a second file, a second text)"
+  },
+  {
+    "name": "a subscript is read as nothing",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            return self._name(expr.id, scope, seen)\n        return {(UNK,)}",
+        "            return self._name(expr.id, scope, seen)\n        return set()"
+      ]
+    ],
+    "expect": "XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the line is the given file's: a second file, a second text)"
+  },
+  {
+    "name": "a wrapper's unbound parameter is skipped",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                            else:\n                                out = {(UNK,)}",
+        "                            else:\n                                break"
+      ]
+    ],
+    "expect": "XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the line is the given file's: a second file, a second text)"
+  },
+  {
+    "name": "an unresolved load is not handed to the closure",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        out |= {f\"unresolved: {u}\" for u in unresolved}\n",
+        ""
+      ]
+    ],
+    "expect": "XM2 r2: the closure SAYS each unresolved load of a shipped file, and it is not a gap"
+  },
+  {
+    "name": "an unresolved load is not said",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "for r in sorted(reached, key=_line_order) if r.startswith(NOTES[3])]",
+        "for r in sorted(reached, key=_line_order) if False]"
+      ]
+    ],
+    "expect": "XM2 r2: the closure SAYS each unresolved load of a shipped file, and it is not a gap"
+  },
+  {
+    "name": "an unresolved load is a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "NOTES = (\"cwd-relative: \", \"external: \", \"optional: \", \"unresolved: \")",
+        "NOTES = (\"cwd-relative: \", \"external: \", \"optional: \")"
+      ]
+    ],
+    "expect": "XM2 r2: the closure SAYS each unresolved load of a shipped file, and it is not a gap"
+  },
+  {
+    "name": "the else branch is guarded too",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            for stmt in child.orelse:\n                self._node(stmt, scope, guards)\n",
+        "            for stmt in child.orelse:\n                self._node(stmt, scope, guards + self._tested(child.test))\n"
+      ]
+    ],
+    "expect": "XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a gap"
+  },
+  {
+    "name": "the if body is not guarded",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                self._node(stmt, scope, guards + self._tested(child.test))\n",
+        "                self._node(stmt, scope, guards)\n"
+      ]
+    ],
+    "expect": "XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a gap"
+  },
+  {
+    "name": "a function under a guard inherits it",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            return self._visit(child, child, ())\n",
+        "            return self._visit(child, child, guards)\n"
+      ]
+    ],
+    "expect": "XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a gap"
+  },
+  {
+    "name": "a lambda under a guard inherits it",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            return self._visit(child, scope, ())\n",
+        "            return self._visit(child, scope, guards)\n"
+      ]
+    ],
+    "expect": "XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a gap"
+  },
+  {
+    "name": "a conjunct of an and guards nothing",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            return tuple(e for v in test.values for e in _Loads._tested(v))\n",
+        "            return ()\n"
+      ]
+    ],
+    "expect": "XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a gap"
+  },
+  {
+    "name": "os.path.exists guards nothing",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            return (test.args[0],)\n",
+        "            return ()\n"
+      ]
+    ],
+    "expect": "XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a gap"
+  },
+  {
+    "name": "any guard guards every load",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            and any(self.forms(g, scope) == mine for g in guards)",
+        "            and bool(guards)"
+      ]
+    ],
+    "expect": "XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a gap"
+  },
+  {
+    "name": "a name bound twice is guarded",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        return len(mine) == 1 and not any(UNK in f for f in mine)",
+        "        return len(mine) >= 1 and not any(UNK in f for f in mine)"
+      ]
+    ],
+    "expect": "XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a gap"
+  },
+  {
+    "name": "a guarded load is a plain edge",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                out.add(f\"optional: {p}\" if p in optional else p)\n",
+        "                out.add(p)\n"
+      ]
+    ],
+    "expect": "XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a gap"
+  },
+  {
+    "name": "a guarded load the tree carries is not followed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            if e.startswith(NOTES[2]) and e[len(NOTES[2]):] in present:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": "XM3 r2: a guarded load the package DOES carry is followed, its own edges with it"
+  },
+  {
+    "name": "optional_edges is still accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if \"optional_edges\" in data:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "XM3/XM4 r2: a map that still carries optional_edges — the reviewer's waiver of an unconditional load, and a waiver from a file with no such edge — is REFUSED: there is no waiver to key"
+  },
+  {
+    "name": "installed_files may hold anything",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if files is not None and not _paths(files):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "Xm5 r2: a dict, an empty string or a list where a file belongs, and a missing or non-integer expected_count, are CANNOT RUN, rc 2 — never an uncaught TypeError"
+  },
+  {
+    "name": "a component's files may hold anything",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            if not _paths(c[\"files\"]):\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": "Xm5 r2: a dict, an empty string or a list where a file belongs, and a missing or non-integer expected_count, are CANNOT RUN, rc 2 — never an uncaught TypeError"
+  },
+  {
+    "name": "expected_count may be anything",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            if type(c.get(\"expected_count\")) is not int:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": "Xm5 r2: a dict, an empty string or a list where a file belongs, and a missing or non-integer expected_count, are CANNOT RUN, rc 2 — never an uncaught TypeError"
+  },
+  {
+    "name": "an empty string is a path",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "all(isinstance(f, str) and f for f in files)",
+        "all(isinstance(f, str) for f in files)"
+      ]
+    ],
+    "expect": "Xm5 r2: a dict, an empty string or a list where a file belongs, and a missing or non-integer expected_count, are CANNOT RUN, rc 2 — never an uncaught TypeError"
+  },
+  {
+    "name": "only a plugin's count is checked",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            check_declaration(name, decl)\n            mine = carried",
+        "            if plugin:\n                check_declaration(name, decl)\n            mine = carried"
+      ]
+    ],
+    "expect": "Xm6 r2: a reusable-workflow component whose expected_count disagrees with its files is REFUSED, rc 1"
+  },
+  {
+    "name": "a workflow's files must be installed files",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        for f in c[\"files\"] if decl.get(\"channel\", \"plugin\") == \"plugin\" else ():\n",
+        "        for f in c[\"files\"]:\n"
+      ]
+    ],
+    "expect": "CM2: a reusable-workflow entry that agrees with the map is SKIPPED by the closure and said to be"
   }
 ]
