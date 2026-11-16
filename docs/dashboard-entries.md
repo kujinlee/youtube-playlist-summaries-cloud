@@ -20954,13 +20954,22 @@ write. Self-test 61/61, 61 mutations, 0 survivors after the r4 fold. Filed, not 
 ## 2026-11-16
 The marketplace packages now have a written list of exactly which files each one ships, and a check runs on
 every change. It rebuilds each package from that list and follows every file the package's own instructions run or
-tell the reader to open. If anything it reaches is missing from the list, the check fails and names the file. Today it
-finds nothing missing. Nothing has been published; publishing is still the owner's decision, at the plan's final step.
+tell the reader to open. If anything it reaches is missing from the list, the check fails and names the file. The
+first review showed that the check could not see files that shipped scripts load by path, so six page generators
+would have failed for a stranger; the check now sees that kind of load, ten such files are on the list, and it
+reports nothing missing. It cannot see every way one file can reach another, and the script says which it cannot. Nothing has been
+published; publishing is still the owner's decision, at the plan's final step.
 <!--tech-->
 Marketplace plan Tasks 5-7 (slice C, branch `hse-c`, to land as `harness-ships-elsewhere`). Task 5:
 `docs/marketplace/components.json` + `check-shipping-sets.py --map` (0 gaps). Task 6: `mkt_stage.py --declare` derives
-`docs/marketplace/shipping-sets.json` from a real `claude` install of each plugin package (118/118 cases, 95 mutations).
+`docs/marketplace/shipping-sets.json` from a real `claude` install of each plugin package (119/119 cases, 96 mutations).
 Task 7: `check-shipping-sets.py --closure docs/marketplace/shipping-sets.json` materialises each declared tree, walks
-imports, `python3`/`bash`/`source` invocations (shell comment lines skipped) and follow/read lines, and prints each gap
-(`gap:` / `gap: dangling:`); cwd-relative hand-offs and `docs/` reads are counted, not followed. A count that does not
-match a component's files is REFUSED. 78/78 cases, 105 mutations; a CI step runs it, since it needs no `claude`.
+imports, sibling files loaded by path (`spec_from_file_location`, `runpy`, an interpreter's argv), `python3`/`bash`/
+`source` invocations with their options (shell comment lines skipped) and follow/read lines, and prints each gap
+(`gap:` / `gap: dangling:`); cwd-relative hand-offs and `docs/` reads are counted, not followed. Review round 1 fold
+(PR #598): the closure's roots and file lists come from the component map, so a declaration that disagrees with the
+map in either direction is red, and that agreement runs in CI without `claude`; an unreadable, empty, mis-channelled
+or unwalkable input is CANNOT RUN (rc 2). One edge is waived in the map (`optional_edges`: `regen-pages.py` →
+`check-plan-code.py`, self-test only, behind an existence check). The forms the reader does not see (computed paths,
+`python3 -m`, shell strings inside Python, other interpreters, YAML) are listed in the script's docstring.
+117/117 cases, 159 mutations; a CI step runs it, since it needs no `claude`.
