@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/harness-ships-elsewhere-b-r1-claude.md": "100644 5ac075b57fbd9d2fc781476aa25f885d27d9485b",
+    "docs/reviews/codex/harness-ships-elsewhere-b-r1-codex.md": "100644 8084d39ccb1ffa7aa362f0f40b60a99f89cc08e7",
+    "docs/reviews/verdicts/harness-ships-elsewhere-b-r1-codex.verdict.json": "100644 7e2a9f0d314f04042b43b4efb4d3ef48bcd0aac5"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "87e190d3eb177d0aad87823ca8962fc6677f457b",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 10673 chars, names 87e190d3eb17",
+  "refused": false,
+  "review": "harness-ships-elsewhere-b-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/hse",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

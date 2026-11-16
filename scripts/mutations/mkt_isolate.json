@@ -1,0 +1,585 @@
+[
+ {
+  "name": "drop audit hook",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "_sys.addaudithook(_hook)\n\"\"\"",
+    "pass  # hook dropped\n\"\"\""
+   ]
+  ],
+  "expect": "audit hook records an open of a fixture file"
+ },
+ {
+  "name": "the hook stops recording Popen launches",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    elif event == \"subprocess.Popen\":",
+    "    elif False:"
+   ]
+  ],
+  "expect": "a non-Python grandchild launched from Python is executed and unobservable"
+ },
+ {
+  "name": "the world env inherits the caller's",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    return {\"HOME\": str(root / \"home\"),",
+    "    return {**os.environ, \"HOME\": str(root / \"home\"),"
+   ]
+  ],
+  "expect": "world env has no key outside the declared set"
+ },
+ {
+  "name": "the world PATH reaches the caller's PATH",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "\"PATH\": str(root / \"bin\"), \"LANG\"",
+    "\"PATH\": str(root / \"bin\") + os.pathsep + os.environ[\"PATH\"], \"LANG\""
+   ]
+  ],
+  "expect": "PATH holds only allow-listed commands (command -v ls fails, git is found)"
+ },
+ {
+  "name": "an allow entry that is a path is accepted",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if not c or \"/\" in c or c in (\".\", \"..\"):",
+    "        if not c:"
+   ]
+  ],
+  "expect": "an allow entry that is a path, not a name, is CANNOT RUN"
+ },
+ {
+  "name": "a non-empty root is reused",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    if root.exists() and (not root.is_dir() or any(root.iterdir())):",
+    "    if False:"
+   ]
+  ],
+  "expect": "a non-empty root is CANNOT RUN (a world is never reused)"
+ },
+ {
+  "name": "an unfound allow-listed command is not refused",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if p is None:\n            raise CannotRun(f\"allow-listed command",
+    "        if False:\n            raise CannotRun(f\"allow-listed command"
+   ]
+  ],
+  "expect": "an allow-listed command that cannot be found is CANNOT RUN"
+ },
+ {
+  "name": "explainer_port ignores the world's EXPLAINER_SERVE_PORT",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "port_from(env.get(\"EXPLAINER_SERVE_PORT\", \"\"))",
+    "port_from(\"\")"
+   ]
+  ],
+  "expect": "explainer_port follows EXPLAINER_SERVE_PORT in the world's env, as the server does"
+ },
+ {
+  "name": "preflight accepts a world root inside the repository",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if _reaches(world.root, top):",
+    "        if False:"
+   ]
+  ],
+  "expect": "preflight refuses a world root inside the repository"
+ },
+ {
+  "name": "preflight accepts an env key outside the declared set",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    if extra:\n        reasons.append(f\"world env holds",
+    "    if False:\n        reasons.append(f\"world env holds"
+   ]
+  ],
+  "expect": "preflight refuses an env key outside the declared set"
+ },
+ {
+  "name": "preflight accepts a PATH beyond the bindir",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    for key in sorted(ENV_KEYS):",
+    "    for key in sorted(ENV_KEYS - {\"PATH\"}):"
+   ]
+  ],
+  "expect": "preflight refuses a world whose PATH is not exactly its bindir"
+ },
+ {
+  "name": "preflight accepts a HOME entry resolving into the repository",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            if any(_reaches(entry, top) for top in _checkouts()):\n                reasons.append(f\"HOME/",
+    "            if False:\n                reasons.append(f\"HOME/"
+   ]
+  ],
+  "expect": "preflight refuses a HOME whose explainers dir resolves into the repo"
+ },
+ {
+  "name": "preflight accepts a missing HOME or bindir",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        reasons.append(f\"world HOME {world.home} is not a directory\")",
+    "        pass"
+   ]
+  ],
+  "expect": "preflight refuses a world whose HOME or bindir is not a directory"
+ },
+ {
+  "name": "preflight accepts a bindir entry off the allow-list",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            if entry.name not in world.allow:",
+    "            if False:"
+   ]
+  ],
+  "expect": "preflight refuses a bindir entry that is not on the allow-list"
+ },
+ {
+  "name": "preflight accepts a command resolving into the repository",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            if any(_reaches(entry, top) for top in _checkouts()):\n                reasons.append(f\"allow-listed command",
+    "            if False:\n                reasons.append(f\"allow-listed command"
+   ]
+  ],
+  "expect": "preflight refuses an allow-listed command that resolves inside the repository"
+ },
+ {
+  "name": "preflight ignores a listener on the port",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if s.connect_ex((\"127.0.0.1\", port)) == 0:",
+    "        if False:"
+   ]
+  ],
+  "expect": "preflight refuses when the explainer port is already listening"
+ },
+ {
+  "name": "read_audit skips a line that does not parse",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            raise CannotRun(f\"audit log line {n} does not parse: {raw[:80]!r}\") from None",
+    "            continue"
+   ]
+  ],
+  "expect": "read_audit: a line that does not parse is CANNOT RUN, never skipped"
+ },
+ {
+  "name": "read_audit accepts a line that is not an event",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if not isinstance(ev, dict) or ev.get(\"ev\") not in (\"start\", \"open\", \"exec\"):",
+    "        if not isinstance(ev, dict):"
+   ]
+  ],
+  "expect": "read_audit: a JSON line that is not an event is CANNOT RUN, never skipped"
+ },
+ {
+  "name": "read_audit stops counting start events",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            starts += 1",
+    "            starts += 0"
+   ]
+  ],
+  "expect": "adjacent: a plain Python child loads the hook and has no missing-hook entry"
+ },
+ {
+  "name": "read_audit keeps duplicate opens",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            if ev[\"path\"] not in seen:",
+    "            if True:"
+   ]
+  ],
+  "expect": "read_audit: opens are deduplicated in first-seen order"
+ },
+ {
+  "name": "read_audit counts a posix_spawn echo twice",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            if (ev[\"via\"] == \"os.posix_spawn\" and prev is not None",
+    "            if (False and prev is not None"
+   ]
+  ],
+  "expect": "read_audit: a posix_spawn echoing the Popen before it is ONE execution"
+ },
+ {
+  "name": "read_audit merges a posix_spawn of a different argv",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "                    and prev[\"argv\"] == ev[\"argv\"]):",
+    "                    ):"
+   ]
+  ],
+  "expect": "adjacent: a posix_spawn of a DIFFERENT argv is a second execution"
+ },
+ {
+  "name": "read_audit drops the static unobservables",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    unobservable = list(ALWAYS)",
+    "    unobservable = []"
+   ]
+  ],
+  "expect": "every record carries the four static unobservables, for two commands"
+ },
+ {
+  "name": "read_audit forgets a non-Python program",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if not _is_python(prog):\n            unobservable.append",
+    "        if False:\n            unobservable.append"
+   ]
+  ],
+  "expect": "a non-Python child is listed as unobservable, never as zero opens"
+ },
+ {
+  "name": "read_audit forgets a Python process without the hook",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    if missing > 0:",
+    "    if False:"
+   ]
+  ],
+  "expect": "a Python child started with -I is unobservable (the hook never loaded)"
+ },
+ {
+  "name": "run_isolated accepts an explicit path outside the world",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if not (Path(prog).is_absolute() and _inside(Path(prog), world.root) and os.access(prog, os.X_OK)):",
+    "        if False:"
+   ]
+  ],
+  "expect": "an explicit path outside the world root is CANNOT RUN (the allow-list is not bypassed by a path)"
+ },
+ {
+  "name": "run_isolated looks argv[0] up on the caller's PATH",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        top = shutil.which(prog, path=world.env[\"PATH\"])",
+    "        top = shutil.which(prog)"
+   ]
+  ],
+  "expect": "an argv[0] not on the world's PATH is CANNOT RUN"
+ },
+ {
+  "name": "run_isolated reads the whole audit log, not from its own start",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        fh.seek(start)\n",
+    "        fh.seek(0)\n"
+   ]
+  ],
+  "expect": "a second run does not inherit the first run's opens, nor name them as a survivor's"
+ },
+ {
+  "name": "run_isolated passes the caller's environment",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    " env={**world.env, RUN_KEY: token}, stdin",
+    " env=None, stdin"
+   ]
+  ],
+  "expect": "the child's environment is the world's, key for key, plus a fresh run token (bar macOS's __CF_ keys)"
+ },
+ {
+  "name": "run_isolated ignores the cwd it is given",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "executable=top, cwd=cwd,",
+    "executable=top, cwd=world.home,"
+   ]
+  ],
+  "expect": "the child runs in the cwd it is given, not HOME"
+ },
+ {
+  "name": "a timeout escapes as an exception, not CANNOT RUN",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        raise CannotRun(f\"timed out after {timeout} s: {argv!r}\") from None",
+    "        raise"
+   ]
+  ],
+  "expect": "a run past its timeout is CANNOT RUN"
+ },
+ {
+  "name": "the CLI runs past a preflight refusal",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if reasons:\n            print(\"CANNOT RUN: preflight refused",
+    "        if False:\n            print(\"CANNOT RUN: preflight refused"
+   ]
+  ],
+  "expect": "CLI: a preflight refusal starts nothing (rc 2, no record)"
+ },
+ {
+  "name": "the CLI exits 0 on CANNOT RUN",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        print(f\"CANNOT RUN: {e}\", file=sys.stderr)\n        return 2",
+    "        print(f\"CANNOT RUN: {e}\", file=sys.stderr)\n        return 0"
+   ]
+  ],
+  "expect": "CLI: an unreachable command is CANNOT RUN (rc 2)"
+ },
+ {
+  "name": "the CLI runs with no separator",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    if \"--\" not in argv:",
+    "    if False:"
+   ]
+  ],
+  "expect": "CLI: no `--` before the command is a usage error (rc 2), and builds nothing"
+ },
+ {
+  "name": "pyvenv.cfg is not written",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    (root / VENV_CFG).write_text(VENV_TEXT)\n",
+    "    pass\n"
+   ]
+  ],
+  "expect": "the world's Python has no site-packages on sys.path and no installed distribution"
+ },
+ {
+  "name": "preflight does not probe the world's Python",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            reasons += _python_leaks(world, name, timeout)\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": "preflight refuses a world whose Python sees site-packages (pyvenv.cfg removed)"
+ },
+ {
+  "name": "the site-packages exclusion is dropped from the stdlib allowance",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            and not (_inside(Path(x), Path(base)) and not {\"site-packages\", \"dist-packages\"} & set(Path(x).parts))]",
+    "            and not _inside(Path(x), Path(base))]"
+   ]
+  ],
+  "expect": "foreign_paths: site-packages and dist-packages INSIDE the prefix are foreign; the stdlib, the world and the cwd are not"
+ },
+ {
+  "name": "GIT_CONFIG_NOSYSTEM is not in the world env",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    ", \"GIT_CONFIG_NOSYSTEM\": \"1\"}",
+    "}"
+   ]
+  ],
+  "expect": "a git in the world reads no system config (a planted GIT_CONFIG_SYSTEM is ignored)"
+ },
+ {
+  "name": "preflight does not probe the world's git",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            reasons += _git_leaks(world, timeout)\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": "preflight refuses a world whose git has a credential helper or a URL rewrite, naming the key"
+ },
+ {
+  "name": "boundary checks env key names only, not values",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if world.env.get(key) != want[key]:",
+    "        if key not in world.env:"
+   ]
+  ],
+  "expect": "preflight refuses a foreign VALUE for each isolation key (HOME, TMPDIR, PYTHONPATH, LANG, GIT_CONFIG_NOSYSTEM)"
+ },
+ {
+  "name": "boundary does not check the layout",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if Path(getattr(world, field)) != Path(world.root) / name:",
+    "        if False:"
+   ]
+  ],
+  "expect": "preflight refuses a world whose home, tmpdir or hookdir lies outside its root"
+ },
+ {
+  "name": "_checkouts does not follow commondir to the main checkout",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "            if common.parent not in tops:",
+    "            if False:"
+   ]
+  ],
+  "expect": "_checkouts: a main checkout is itself; a linked worktree is itself AND its main checkout"
+ },
+ {
+  "name": "run_isolated does not check the boundary",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    bad = boundary(world)\n    if not bad:",
+    "    bad = []\n    if not bad:"
+   ]
+  ],
+  "expect": "run_isolated refuses a world whose HOME value is not its own, and starts nothing"
+ },
+ {
+  "name": "run_isolated does not check the cwd",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    if not _inside(Path(cwd), world.root):",
+    "    if False:"
+   ]
+  ],
+  "expect": "run_isolated refuses a cwd outside the world root, for the repository and a foreign directory"
+ },
+ {
+  "name": "run_isolated checks the cwd lexically, not resolved",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    if not _inside(Path(cwd), world.root):\n        raise CannotRun(f\"cwd {cwd}",
+    "    if not str(Path(cwd)).startswith(str(world.root)):\n        raise CannotRun(f\"cwd {cwd}"
+   ]
+  ],
+  "expect": "...and a cwd inside the world that LINKS outside it"
+ },
+ {
+  "name": "read_audit attributes another run's events to this one",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    foreign = [ev for ev in events if ev.get(\"run\") != run]\n    events = [ev for ev in events if ev.get(\"run\") == run]",
+    "    foreign = []"
+   ]
+  ],
+  "expect": "read_audit: events from a process ANOTHER record started are not attributed to this one, and are named"
+ },
+ {
+  "name": "read_audit never asks whether a started pid is alive",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        if alive is not None and alive(pid):",
+    "        if False:"
+   ]
+  ],
+  "expect": "read_audit: a started pid still alive at the end is named as outliving the record, by pid"
+ },
+ {
+  "name": "the hook stamps no run token",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    rec[\"run\"] = _RUN\n",
+    "    rec[\"run\"] = None\n"
+   ]
+  ],
+  "expect": "audit hook records an open of a fixture file"
+ },
+ {
+  "name": "the audit log is truncated per run",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    with open(log, \"ab\") as fh:\n        start = fh.tell()",
+    "    log.write_text(\"\")\n    start = 0"
+   ]
+  ],
+  "expect": "a detached process that outlives its record is named, its late open is in the world's log, and no later record claims it"
+ },
+ {
+  "name": "every run gets the same token",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    token = secrets.token_hex(8)\n",
+    "    token = \"0\" * 16\n"
+   ]
+  ],
+  "expect": "the child's environment is the world's, key for key, plus a fresh run token (bar macOS's __CF_ keys)"
+ },
+ {
+  "name": "run_isolated does not measure the world's Python and git",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "        bad = measured(world, min(timeout, 60))\n",
+    "        bad = []\n"
+   ]
+  ],
+  "expect": "run_isolated refuses a world whose Python sees site-packages, with no preflight call before it"
+ },
+ {
+  "name": "_reaches compares the spellings as given, links unresolved",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "    want = os.stat(top)\n",
+    "    return str(path) == str(top) or str(path).startswith(str(top).rstrip(\"/\") + \"/\")\n    want = os.stat(top)\n"
+   ]
+  ],
+  "expect": "_reaches: a fullwidth sibling Repo２/w is NOT inside Repo2, nor is Repo3/w; a link into the checkout and a not-yet-existing path below it ARE"
+ },
+ {
+  "name": "run_isolated's probes ignore its timeout (a fixed 60 s each)",
+  "file": "scripts/mkt_isolate.py",
+  "edits": [
+   [
+    "measured(world, min(timeout, 60))",
+    "measured(world)"
+   ]
+  ],
+  "expect": "run_isolated bounds the measured probes by its own timeout (a probe that sleeps 30 s, timeout 2)"
+ }
+]
