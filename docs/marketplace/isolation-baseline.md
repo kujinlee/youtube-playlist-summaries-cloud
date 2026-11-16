@@ -16,15 +16,16 @@ a world root inside a checkout, a Python whose `sys.path` holds anything outside
 reports a `credential.*` or URL-rewrite key — and `run_isolated` refuses a cwd outside the world (the script's
 docstring lists every reason). `run_isolated` repeats the env/layout checks and the two measured ones (Python's
 `sys.path`, git's config) on every run (r2 Codex 4); the HOME and bindir entry checks and the explainer port are
-preflight's alone. A path is compared against a checkout FOLDED (case and Unicode form), so a case alias of the
-checkout on a case-insensitive volume is refused too.
+preflight's alone. Whether a path is inside a checkout is the filesystem's answer (`_reaches`: object identity up
+the ancestors, never a compare of spellings), so a case alias of the checkout on a case-insensitive volume is refused
+too. Each measured probe is bounded by the caller's `timeout` (at most 60 s; r3 F5).
 
 ## Interpreter and packages
 
 | What | Value | Measured by |
 |---|---|---|
 | Interpreter | Python 3.14.4 | `python3 -V` |
-| Package set | none: `importlib.metadata.distributions()` in the world is `[]` | measured 2026-11-15 11:27 by `run_isolated` in a fresh world. It is VERIFIED per run, not assumed: `run_isolated` itself asks the world's `python3` for its `sys.path` before starting the command and refuses one that holds a site-packages entry or anything outside the world, whether or not `preflight` was called (r1 Codex 2, Claude m2; r2 Codex 4). Bound: only the allow-listed Pythons in `bin/` are asked; an interpreter the command reaches by a path of its own is not |
+| Package set | none: `importlib.metadata.distributions()` in the world is `[]` | measured 2026-11-15 11:27 by `run_isolated` in a fresh world. It is VERIFIED per run, not assumed: `run_isolated` itself asks the world's `python3` for its `sys.path` before starting the command and refuses one that holds anything outside the world and its stdlib, or any installed distribution, whether or not `preflight` was called (r1 Codex 2, Claude m2; r2 Codex 4). Bound: only the allow-listed Pythons in `bin/` are asked; an interpreter the command reaches by a path of its own is not |
 | Rejected interpreter | macOS's `/usr/bin/python3` shim | it re-execs the Command Line Tools Python, which does not see the world's `pyvenv.cfg`; if it is the allowed `python3`, preflight's probe sees the foreign `sys.path` and refuses |
 
 ## Allow-listed commands, with versions

@@ -2364,7 +2364,7 @@ EXPECTED_MUTATIONS = {
     # timeout), the hook itself and the CLI's three exits: 34.
     # ⟳ PR #594 round 2 fold: 50 + 7 = 57 — `run_isolated` measures the world, the three "inside the repository"
     # sites compare folded (one entry per site), `_reaches` folds, `fold` folds case and Unicode form. 4 re-bound.
-    "scripts/mkt_isolate.py": 57,
+    "scripts/mkt_isolate.py": 53,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out

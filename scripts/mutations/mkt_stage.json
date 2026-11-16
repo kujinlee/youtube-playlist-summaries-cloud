@@ -48,7 +48,7 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "        if not real.is_dir():\n",
+    "        if not stat.S_ISDIR(st.st_mode):\n",
     "        if False:\n"
    ]
   ],
@@ -70,41 +70,41 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "        if not real.is_file():\n",
+    "        if not stat.S_ISREG(st.st_mode):\n",
     "        if False:\n"
    ]
   ],
   "expect": "a file entry that is a directory is CANNOT RUN"
  },
  {
-  "name": "a file from under .agents/skills is accepted in files",
+  "name": "the skills home is not a forbidden identity for files",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "        if _under(real.relative_to(top), SKILLS_HOME):\n",
-    "        if False:\n"
+    "real, st = _real(top, rel, tracked, {**private, **home})",
+    "real, st = _real(top, rel, tracked, private)"
    ]
   ],
   "expect": "a FILE from under .agents/skills declared in files is CANNOT RUN (it would land outside skills/)"
  },
  {
-  "name": "the .agents/skills test reads the declared path, not the resolved one",
+  "name": "a forbidden identity is tested only before the first link",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "_under(real.relative_to(top), SKILLS_HOME)",
-    "_under(rel, SKILLS_HOME)"
+    "        if _ident(st) in forbidden:\n",
+    "        if not hops and _ident(st) in forbidden:\n"
    ]
   ],
   "expect": "...and so is the same file reached through a link (.claude/skills/a/SKILL.md)"
  },
  {
-  "name": "a declared file may land in .claude-plugin",
+  "name": "the plugin's .claude-plugin is not pre-claimed",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "        if _under(rel, META):\n",
-    "        if False:\n"
+    "= {_dest_key(META): None}",
+    "= {}"
    ]
   ],
   "expect": "a declared file landing in the plugin's .claude-plugin is CANNOT RUN"
@@ -114,7 +114,7 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "    if not dests:\n",
+    "    if not out:\n",
     "    if False:\n"
    ]
   ],
@@ -125,8 +125,8 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "        if fold(dest) in dests:\n",
-    "        if False:\n"
+    "        if held[0] != here or held[1] or leaf:\n",
+    "        if held[0] != here:\n"
    ]
   ],
   "expect": "two skills landing on one name is CANNOT RUN (.agents/skills/b and its link named b)"
@@ -180,8 +180,8 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "raise CannotRun(f\"{rel} is a dangling or looping link\" if hops else f\"{rel} does not exist in {top}\")",
-    "raise CannotRun(f\"{rel} is a dangling or looping link\")"
+    "            if hops:\n                raise CannotRun(f\"{rel} is a dangling or looping link\") from None",
+    "            if True:\n                raise CannotRun(f\"{rel} is a dangling or looping link\") from None"
    ]
   ],
   "expect": "a declared path that does not exist is CANNOT RUN"
@@ -202,8 +202,8 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "        if not os.path.lexists(at):\n",
-    "        if False:\n"
+    "if hops:\n                raise CannotRun(f\"{rel} is a dangling or looping link\") from None",
+    "if False:\n                raise CannotRun(f\"{rel} is a dangling or looping link\") from None"
    ]
   ],
   "expect": "a dangling link inside a skill is CANNOT RUN, never a skipped file"
@@ -213,7 +213,7 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "    out, here = [], above | {real}\n",
+    "    out, here = [], above | {_ident(os.stat(real))}\n",
     "    out, here = [], above\n"
    ]
   ],
@@ -224,7 +224,7 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "            if child in here:\n",
+    "            if _ident(st) in here:\n",
     "            if False:\n"
    ]
   ],
@@ -301,7 +301,7 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "    if _under(out.resolve(), top):\n",
+    "    if _reaches(out, top):\n",
     "    if False:\n"
    ]
   ],
@@ -378,8 +378,8 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "except (OSError, ValueError",
-    "except (ValueError"
+    "except (OSError, ValueError, KeyError, TypeError) as e:",
+    "except (ValueError, KeyError, TypeError) as e:"
    ]
   ],
   "expect": "read_marketplace on a directory with no marketplace.json is CANNOT RUN"
@@ -517,45 +517,45 @@
   "expect": "CLI: stages one package and prints the marketplace root (rc 0)"
  },
  {
-  "name": "a tracked private file ships",
+  "name": "a forbidden identity is never tested",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "            if _under(inner, x):\n",
-    "            if False:\n"
+    "if _ident(st) in forbidden:\n            root",
+    "if False:\n            root"
    ]
   ],
   "expect": "a TRACKED file under .claude/plans declared in files is CANNOT RUN"
  },
  {
-  "name": "the private check reads only where the entry sits, not where it ends",
+  "name": "a private root that is a link is taken as the link, not the place",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "if _under(inner, x):",
-    "if not hops and _under(inner, x):"
+    "            st = os.stat(top / p)\n",
+    "            st = os.lstat(top / p)\n"
    ]
   ],
-  "expect": "...reached through a link inside a skill"
+  "expect": "a TRACKED link .claude/plans -> ../dot: dot/secret and skill dot are CANNOT RUN, nothing written"
  },
  {
-  "name": "an untracked file ships",
+  "name": "the final regular file is not tested as tracked",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "    if real.is_file() and inner not in tracked:\n",
-    "    if False:\n"
+    "        inner = \"/\".join(cur)\n        _tracked_as(rel, inner, st, tracked)\n",
+    "        inner = \"/\".join(cur)\n"
    ]
   ],
   "expect": "an untracked file inside a declared skill is CANNOT RUN, naming it — never shipped, never skipped"
  },
  {
-  "name": "the tracked check reads only where a link ends, not the link",
+  "name": "a link walked is not tested as tracked",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "        if inner not in tracked:\n",
-    "        if False:\n"
+    "            _tracked_as(rel, inner, st, tracked)\n            hops += 1\n",
+    "            hops += 1\n"
    ]
   ],
   "expect": "an untracked LINK to a tracked file is CANNOT RUN: the link itself is what is declared"
@@ -594,78 +594,34 @@
   "expect": "CLI: stages one package and prints the marketplace root (rc 0)"
  },
  {
-  "name": "an exclusion compares the spellings as given",
+  "name": "the destination key drops casefold",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "    a, b = fold(Path(path).as_posix()), fold(Path(top).as_posix())",
-    "    a, b = Path(path).as_posix(), Path(top).as_posix()"
-   ]
-  ],
-  "expect": "a tracked file under a CASE ALIAS of .claude/plans (.CLAUDE/PLANS) declared in files is CANNOT RUN"
- },
- {
-  "name": "the .agents/skills test compares exact",
-  "file": "scripts/mkt_stage.py",
-  "edits": [
-   [
-    "if _under(real.relative_to(top), SKILLS_HOME):",
-    "if _below(real, top / SKILLS_HOME):"
-   ]
-  ],
-  "expect": "a file under a case alias of .agents/skills declared in files is CANNOT RUN"
- },
- {
-  "name": "the .claude-plugin test compares exact",
-  "file": "scripts/mkt_stage.py",
-  "edits": [
-   [
-    "_under(rel, META)",
-    "rel.split(\"/\")[0] == META"
+    "return unicodedata.normalize(\"NFC\", unicodedata.normalize(\"NFD\", text).casefold())",
+    "return unicodedata.normalize(\"NFC\", text)"
    ]
   ],
   "expect": "a declared file landing in a case alias of the plugin's .claude-plugin is CANNOT RUN"
  },
  {
-  "name": "the out directory test compares exact",
+  "name": "a destination is claimed by its exact spelling",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "_under(out.resolve(), top)",
-    "_below(out.resolve(), top)"
-   ]
-  ],
-  "expect": "an out directory under a CASE ALIAS of the repository is CANNOT RUN too"
- },
- {
-  "name": "two destinations are compared exact",
-  "file": "scripts/mkt_stage.py",
-  "edits": [
-   [
-    "if fold(dest) in dests:",
-    "if dest in dests:"
+    "        key = _dest_key(here)\n",
+    "        key = here\n"
    ]
   ],
   "expect": "two declarations whose destinations differ only in case are CANNOT RUN (one would overwrite the other)"
- },
- {
-  "name": "an excluded name matches as a prefix, not a whole component",
-  "file": "scripts/mkt_stage.py",
-  "edits": [
-   [
-    "a.startswith(b.rstrip(\"/\") + \"/\")",
-    "a.startswith(b)"
-   ]
-  ],
-  "expect": "adjacent: a tracked file under .claude/plans-kept (the private name is a whole component) stages"
  },
  {
   "name": "only a declared path's LAST component must be a tracked link",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "if inner not in tracked:",
-    "if not pending and inner not in tracked:"
+    "_tracked_as(rel, inner, st, tracked)\n            hops += 1",
+    "pending or _tracked_as(rel, inner, st, tracked)\n            hops += 1"
    ]
   ],
   "expect": "an UNTRACKED directory link in a declared file's parents is CANNOT RUN, naming the link"
@@ -675,19 +631,19 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "        if inner not in tracked:",
-    "        if not hops and inner not in tracked:"
+    "            _tracked_as(rel, inner, st, tracked)\n            hops",
+    "            hops or _tracked_as(rel, inner, st, tracked)\n            hops"
    ]
   ],
   "expect": "a tracked link that reaches its file through an UNTRACKED link is CANNOT RUN, naming the middle link"
  },
  {
-  "name": "the private check reads only where a walk ends, not what it passes through",
+  "name": "a forbidden identity is tested only where the walk ends",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "_under(inner, x)",
-    "(not pending and _under(inner, x))"
+    "_ident(st) in forbidden:\n            root, why",
+    "not pending and _ident(st) in forbidden:\n            root, why"
    ]
   ],
   "expect": "a link whose target passes THROUGH .claude/plans and back out is CANNOT RUN"
@@ -697,33 +653,22 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "        if hops > MAX_LINKS:\n            raise CannotRun(f\"{rel} is a dangling or looping link\")",
-    "        if hops > MAX_LINKS:\n            raise CannotRun(f\"{rel} walks too many links\")"
+    "            if hops > MAX_LINKS:\n                raise CannotRun(f\"{rel} is a dangling or looping link\")",
+    "            if hops > MAX_LINKS:\n                raise CannotRun(f\"{rel} walks too many links\")"
    ]
   ],
   "expect": "two links naming each other are CANNOT RUN (a loop), never an endless walk"
  },
  {
-  "name": "an absolute link target outside the repository is followed",
+  "name": "an absolute link target is followed",
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "            if not _below(Path(target), top):\n",
+    "            if os.path.isabs(target):\n",
     "            if False:\n"
    ]
   ],
   "expect": "a link with an ABSOLUTE target outside the repository is CANNOT RUN"
- },
- {
-  "name": "an absolute link target is walked from the link's own directory",
-  "file": "scripts/mkt_stage.py",
-  "edits": [
-   [
-    "            cur, target = [], Path(target)",
-    "            cur, target = cur[:-1], Path(target)"
-   ]
-  ],
-  "expect": "adjacent: a link with an absolute target spelled below the repository root stages what it reaches"
  },
  {
   "name": "a tracked name is decoded as strict UTF-8",
@@ -735,5 +680,64 @@
    ]
   ],
   "expect": "an unrelated tracked name that is not UTF-8 does not stop staging a declared file"
+ },
+ {
+  "name": "a name whose parent is a link on disk still counts as tracked",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "            if linked[d]:\n",
+    "            if False:\n"
+   ]
+  ],
+  "expect": "a tracked name whose parent became an UNTRACKED link: hidden/x and a/x are CANNOT RUN (not tracked)"
+ },
+ {
+  "name": "a file with two names (a hard link) ships",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "        if st.st_nlink > 1:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a tracked hard link p/h to a private file is CANNOT RUN, and the refusal says it has 2 names"
+ },
+ {
+  "name": "the destination key is NFKC (compatibility), wider than the filesystem",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "unicodedata.normalize(\"NFC\", unicodedata.normalize(\"NFD\", text).casefold())",
+    "unicodedata.normalize(\"NFKC\", text).casefold()"
+   ]
+  ],
+  "expect": "x².md + x2.md, and Ａ.md + A.md, stage as two files with their own bytes"
+ },
+ {
+  "name": "only a destination's full path is claimed, never its prefixes",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    for i in range(1, len(parts) + 1):\n",
+    "    for i in range(len(parts), len(parts) + 1):\n"
+   ]
+  ],
+  "expect": "destinations: Dir/x + dir/y, a file `skills` + a skill (P6-N1) and a file skills/brief + skill brief are CANNOT RUN writing nothing; A.md + d/a.md stage"
+ },
+ {
+  "name": "a mis-cased declaration is neither refused by spelling nor told the tracked spelling",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "    if _nfc(inner) not in spelled:\n",
+    "    if False:\n"
+   ],
+   [
+    "if hint else \"\")",
+    "if False else \"\")"
+   ]
+  ],
+  "expect": "DOCS/a.md declared where git tracks docs/a.md is CANNOT RUN, naming the tracked spelling (case is exact)"
  }
 ]

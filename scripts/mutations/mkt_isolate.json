@@ -389,7 +389,7 @@
   "file": "scripts/mkt_isolate.py",
   "edits": [
    [
-    "            reasons += _python_leaks(world, name)\n",
+    "            reasons += _python_leaks(world, name, timeout)\n",
     "            pass\n"
    ]
   ],
@@ -422,7 +422,7 @@
   "file": "scripts/mkt_isolate.py",
   "edits": [
    [
-    "            reasons += _git_leaks(world)\n",
+    "            reasons += _git_leaks(world, timeout)\n",
     "            pass\n"
    ]
   ],
@@ -554,76 +554,32 @@
   "file": "scripts/mkt_isolate.py",
   "edits": [
    [
-    "        bad = measured(world)\n",
+    "        bad = measured(world, min(timeout, 60))\n",
     "        bad = []\n"
    ]
   ],
   "expect": "run_isolated refuses a world whose Python sees site-packages, with no preflight call before it"
  },
  {
-  "name": "the world root is compared exact, so a case alias of the checkout is outside it",
+  "name": "_reaches compares the spellings as given, links unresolved",
   "file": "scripts/mkt_isolate.py",
   "edits": [
    [
-    "_reaches(world.root, top)",
-    "_inside(world.root, top)"
+    "    want = os.stat(top)\n",
+    "    return str(path) == str(top) or str(path).startswith(str(top).rstrip(\"/\") + \"/\")\n    want = os.stat(top)\n"
    ]
   ],
-  "expect": "preflight refuses a world root inside a CASE ALIAS of the repository"
+  "expect": "_reaches: a fullwidth sibling Repo２/w is NOT inside Repo2, nor is Repo3/w; a link into the checkout and a not-yet-existing path below it ARE"
  },
  {
-  "name": "a HOME entry is compared exact, so a case alias of the checkout is outside it",
+  "name": "run_isolated's probes ignore its timeout (a fixed 60 s each)",
   "file": "scripts/mkt_isolate.py",
   "edits": [
    [
-    "any(_reaches(entry, top) for top in _checkouts()):\n                reasons.append(f\"HOME/",
-    "any(_inside(entry, top) for top in _checkouts()):\n                reasons.append(f\"HOME/"
+    "measured(world, min(timeout, 60))",
+    "measured(world)"
    ]
   ],
-  "expect": "preflight refuses a HOME entry that resolves into a case alias of the repo"
- },
- {
-  "name": "a command is compared exact, so a case alias of the checkout is outside it",
-  "file": "scripts/mkt_isolate.py",
-  "edits": [
-   [
-    "any(_reaches(entry, top) for top in _checkouts()):\n                reasons.append(f\"allow-listed command",
-    "any(_inside(entry, top) for top in _checkouts()):\n                reasons.append(f\"allow-listed command"
-   ]
-  ],
-  "expect": "preflight refuses an allow-listed command that resolves into a case alias of the repository"
- },
- {
-  "name": "_reaches compares the spellings as given",
-  "file": "scripts/mkt_isolate.py",
-  "edits": [
-   [
-    "    a, b = fold(str(Path(path).resolve())), fold(str(Path(top).resolve()))",
-    "    a, b = str(Path(path).resolve()), str(Path(top).resolve())"
-   ]
-  ],
-  "expect": "preflight refuses a world root inside a CASE ALIAS of the repository"
- },
- {
-  "name": "fold does not fold case",
-  "file": "scripts/mkt_isolate.py",
-  "edits": [
-   [
-    "    return unicodedata.normalize(\"NFKC\", text).casefold()",
-    "    return unicodedata.normalize(\"NFKC\", text)"
-   ]
-  ],
-  "expect": "fold: two spellings one case-insensitive filesystem holds as ONE name fold to one string — by case and by Unicode form — and a different name does not"
- },
- {
-  "name": "fold does not normalise the Unicode form",
-  "file": "scripts/mkt_isolate.py",
-  "edits": [
-   [
-    "unicodedata.normalize(\"NFKC\", text).casefold()",
-    "text.casefold()"
-   ]
-  ],
-  "expect": "fold: two spellings one case-insensitive filesystem holds as ONE name fold to one string — by case and by Unicode form — and a different name does not"
+  "expect": "run_isolated bounds the measured probes by its own timeout (a probe that sleeps 30 s, timeout 2)"
  }
 ]
