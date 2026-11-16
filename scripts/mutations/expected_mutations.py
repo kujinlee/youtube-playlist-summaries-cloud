@@ -1622,8 +1622,10 @@ EXPECTED_MUTATIONS = {
     # identity case keeps a file entry exact, and a new mutation drops that branch. One re-bound (the prefix leaving).
     # ⟳ 2026-11-15, backlog #658: 12 -> 15. The FILE entry left STAGEABLE_PREFIXES for an exact-match
     # STAGEABLE_FILES; three new mutations (equality -> startswith, the exact-file arm dropped, the identity
-    # union dropping STAGEABLE_FILES). One re-bound (the staged-prefix arm now reads `not staged`).
-    "scripts/check-canonical-source.py": 15,   # r6 redesign: the inverted-restatement mutation
+    # union dropping STAGEABLE_FILES). Two re-bound (#8 and #9).
+    # ⟳ 2026-11-15, PR #595 r1 (CODEX 2): 15 -> 16. The identity case compares prefixes and files SEPARATELY;
+    # the union mutation lost its anchor and became "the file entry dropped", plus `supabase/` moved between sets.
+    "scripts/check-canonical-source.py": 16,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area

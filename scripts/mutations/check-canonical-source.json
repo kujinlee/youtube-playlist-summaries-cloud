@@ -126,7 +126,7 @@
       ]
     ],
     "expect": [
-      "STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift"
+      "STAGEABLE_PREFIXES and STAGEABLE_FILES are exactly HARNESS_TREE's directories and files"
     ]
   },
   {
@@ -143,16 +143,16 @@
     "file": "scripts/check-canonical-source.py"
   },
   {
-    "name": "backlog #651: the identity case appends a slash to a FILE entry of HARNESS_TREE, so the one staged file can never match its exact copy",
+    "name": "backlog #651: the identity case appends a slash to a FILE entry of HARNESS_TREE, so the one staged file can never match its exact copy ⟳ RE-BOUND PR #595 r1: the files are classified into their own list",
     "file": "scripts/check-canonical-source.py",
     "edits": [
       [
-        "e.value if (ROOT / e.value).is_file() else e.value.rstrip(\"/\") + \"/\"",
-        "e.value.rstrip(\"/\") + \"/\""
+        "_ht_files = sorted(e.value for e in",
+        "_ht_files = sorted(e.value.rstrip(\"/\") + \"/\" for e in"
       ]
     ],
     "expect": [
-      "STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift"
+      "STAGEABLE_PREFIXES and STAGEABLE_FILES are exactly HARNESS_TREE's directories and files"
     ]
   },
   {
@@ -182,16 +182,33 @@
     ]
   },
   {
-    "name": "backlog #658: the identity case compares only the prefixes, dropping STAGEABLE_FILES from the union, so the copy can no longer match HARNESS_TREE's file entry",
+    "name": "backlog #658: the file entry is dropped from STAGEABLE_FILES, so the copy no longer matches HARNESS_TREE's file (⟳ PR #595 r1: replaces 'the union drops STAGEABLE_FILES', whose anchor the separate comparison deleted)",
     "file": "scripts/check-canonical-source.py",
     "edits": [
       [
-        "             sorted(STAGEABLE_PREFIXES + tuple(STAGEABLE_FILES)),\n",
-        "             sorted(STAGEABLE_PREFIXES),\n"
+        "STAGEABLE_FILES = frozenset({\".claude/settings.json\"})",
+        "STAGEABLE_FILES = frozenset()"
       ]
     ],
     "expect": [
-      "STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift"
+      "STAGEABLE_PREFIXES and STAGEABLE_FILES are exactly HARNESS_TREE's directories and files"
+    ]
+  },
+  {
+    "name": "PR #595 r1 CODEX 2: `supabase/` moves from STAGEABLE_PREFIXES into STAGEABLE_FILES; a union comparison stayed equal, the separate one must not",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "STAGEABLE_PREFIXES = (\"scripts/\", \"supabase/\", \"docs/\",",
+        "STAGEABLE_PREFIXES = (\"scripts/\", \"docs/\","
+      ],
+      [
+        "STAGEABLE_FILES = frozenset({\".claude/settings.json\"})",
+        "STAGEABLE_FILES = frozenset({\".claude/settings.json\", \"supabase/\"})"
+      ]
+    ],
+    "expect": [
+      "STAGEABLE_PREFIXES and STAGEABLE_FILES are exactly HARNESS_TREE's directories and files"
     ]
   }
 ]

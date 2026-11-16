@@ -20807,7 +20807,9 @@ matches that file by its exact name, and new test cases prove both the right and
 
 <!--tech-->
 Backlog #658, branch `canonical-file-entry`. `scripts/check-canonical-source.py`: `.claude/settings.json` moved
-from `STAGEABLE_PREFIXES` (tested with `startswith`) to `STAGEABLE_FILES` (equality), matching
-`check-plan-code.py`'s `_staged_root`; the identity case compares the union against `HARNESS_TREE`; `_spellings`
+from `STAGEABLE_PREFIXES` (tested with `startswith`) to `STAGEABLE_FILES` (equality) — stricter than
+`check-plan-code.py`'s `_staged_root`, which still calls `.claude/settings.json/foo` staged (harmless: nothing exists
+under a file); the identity case compares prefixes and files SEPARATELY against `HARNESS_TREE` (PR #595 r1 Codex 2: a
+union let `supabase/` move into the file set unseen); `_spellings`
 gains `.claude/settings.json.bak` and `.claude/settings.json/foo` (refused, red on the old code) and
-`.claude/settings.json` (accepted). Self-test 33/33. Mutations 12 -> 15, two anchors re-bound.
+`.claude/settings.json` (accepted). Self-test 33/33. Mutations 12 -> 16, two anchors re-bound.
