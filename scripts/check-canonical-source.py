@@ -284,10 +284,11 @@ ROOT_GLOBS = ("*.md",)
 # defect (`a-class-fix-needs-an-independent-copy-and-an-identity-case`).
 STAGEABLE_PREFIXES = ("scripts/", "supabase/", "docs/", "node_modules/typescript/",
                       ".claude/hooks/", ".github/workflows/", ".agents/skills/",
-                      ".githooks/",
-                      # ONE FILE (backlog #651): `HARNESS_TREE` stages `.claude/settings.json` as a file, so it is
-                      # listed exactly, with no trailing slash — a cite must name it whole to count as staged.
-                      ".claude/settings.json")
+                      ".githooks/")
+# ⛔ THE FILES `HARNESS_TREE` STAGES — matched by EQUALITY, never `startswith` (backlog #658). As a
+# prefix, `.claude/settings.json` let `.claude/settings.json.bak` and `.claude/settings.json/foo` count
+# as staged. `check-plan-code.py`'s `_staged_root` matches a file entry exactly; this is that rule's copy.
+STAGEABLE_FILES = frozenset({".claude/settings.json"})
 
 
 def unstageable_cites(canons: list[dict]) -> list[str]:
@@ -336,7 +337,8 @@ def unstageable_cites(canons: list[dict]) -> list[str]:
     for canon in canons:
         for c in canon["cites"]:
             parts = PurePosixPath(c).parts
-            if ".." in parts or not c.startswith(STAGEABLE_PREFIXES):
+            staged = c.startswith(STAGEABLE_PREFIXES) or c in STAGEABLE_FILES
+            if ".." in parts or not staged:
                 out.append(c)
     return sorted(set(out))
 
@@ -654,8 +656,11 @@ def _self_test_body() -> int:
         _ht = next(n for n in _ast.parse(_ht_src).body
                    if isinstance(n, _ast.Assign)
                    and getattr(n.targets[0], "id", "") == "HARNESS_TREE")
+        # backlog #658: the UNION of the prefixes and the exact files, so a file entry dropped from the
+        # copy fails here as drift. ⚠ Moving it INTO the prefix tuple keeps the union equal — that
+        # regression is the `.claude/settings.json.bak` refusal case below, not this one.
         case("STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift",
-             sorted(STAGEABLE_PREFIXES),
+             sorted(STAGEABLE_PREFIXES + tuple(STAGEABLE_FILES)),
              sorted(e.value if (ROOT / e.value).is_file() else e.value.rstrip("/") + "/"
                     for e in _ht.value.elts))
 
@@ -675,9 +680,12 @@ def _self_test_body() -> int:
             str((ROOT / "CONTEXT.md").resolve()),                   # absolute, root-level
             str((ROOT / "docs" / "plugins.md").resolve()),          # absolute, NESTED
             "CONTEXT.md", "./CONTEXT.md", "docs/../CONTEXT.md", ".//CONTEXT.md",
+            # backlog #658: a FILE entry matches WHOLE — a longer name or a path beneath it is not staged
+            ".claude/settings.json.bak", ".claude/settings.json/foo",
             # --- must NOT be refused: one per staged prefix, so a blanket refusal fails ---
             "docs/adr/x.md", ".agents/skills/handoff/SKILL.md", "scripts/x.py",
             "node_modules/typescript/package.json",                 # ⭐ M3: a symlink here
+            ".claude/settings.json",                                # backlog #658: the FILE entry itself
         ]}]
         case("unstageable_cites refuses every nonportable registration and no stageable one",
              unstageable_cites(_spellings),
@@ -686,7 +694,8 @@ def _self_test_body() -> int:
                      "../elsewhere/outside.md",
                      str((ROOT / "CONTEXT.md").resolve()),
                      str((ROOT / "docs" / "plugins.md").resolve()),
-                     "CONTEXT.md", "./CONTEXT.md", "docs/../CONTEXT.md", ".//CONTEXT.md"}))
+                     "CONTEXT.md", "./CONTEXT.md", "docs/../CONTEXT.md", ".//CONTEXT.md",
+                     ".claude/settings.json.bak", ".claude/settings.json/foo"}))
         # CONTROL — the walk must not reach deeper than the root's own files, or it would start
         # auditing node_modules and every untracked tree.
         r = _tree(t / "deep", CANON, {"docs/site.md": CITE, "tests/deep.md": "MECHTOKEN again\n"})

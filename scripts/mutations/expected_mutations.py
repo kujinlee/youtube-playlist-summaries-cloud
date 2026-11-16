@@ -1620,7 +1620,10 @@ EXPECTED_MUTATIONS = {
     # because master added it to HARNESS_TREE, and the identity case went red until it did.
     # ⟳ 2026-11-15, backlog #651 (PR #593): 11 -> 12. `.claude/settings.json` joined HARNESS_TREE as a FILE; the
     # identity case keeps a file entry exact, and a new mutation drops that branch. One re-bound (the prefix leaving).
-    "scripts/check-canonical-source.py": 12,   # r6 redesign: the inverted-restatement mutation
+    # ⟳ 2026-11-15, backlog #658: 12 -> 15. The FILE entry left STAGEABLE_PREFIXES for an exact-match
+    # STAGEABLE_FILES; three new mutations (equality -> startswith, the exact-file arm dropped, the identity
+    # union dropping STAGEABLE_FILES). One re-bound (the staged-prefix arm now reads `not staged`).
+    "scripts/check-canonical-source.py": 15,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area

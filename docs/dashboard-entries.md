@@ -20799,3 +20799,15 @@ ledger entry stores `after` (`kind #n` strings); `--add` refuses without `--afte
 expires. `owed_reason`, `idle_days`, `owed_idle_lines` and `--owed-idle` (a block after IN FLIGHT in
 `.claude/hooks/session-state.sh`) are kept. A prose-invariance case places 14 adversarial sentences in every prose
 field. Filed: backlog #652 (a dated `--until` wait), backlog #653 (a thread-line ref wait with no ledger entry).
+
+## 2026-11-15
+A check that keeps the mutation tests runnable treated one settings file as a folder name, so a
+backup copy of that file, or a path beneath it, would have been wrongly counted as available. It now
+matches that file by its exact name, and new test cases prove both the right and the wrong spellings.
+
+<!--tech-->
+Backlog #658, branch `canonical-file-entry`. `scripts/check-canonical-source.py`: `.claude/settings.json` moved
+from `STAGEABLE_PREFIXES` (tested with `startswith`) to `STAGEABLE_FILES` (equality), matching
+`check-plan-code.py`'s `_staged_root`; the identity case compares the union against `HARNESS_TREE`; `_spellings`
+gains `.claude/settings.json.bak` and `.claude/settings.json/foo` (refused, red on the old code) and
+`.claude/settings.json` (accepted). Self-test 33/33. Mutations 12 -> 15, two anchors re-bound.
