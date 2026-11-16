@@ -2,8 +2,9 @@
 """The component map, checked for completeness against what is on disk (marketplace-inventory plan, Task 5;
 spec §3: "every supporting artifact maps to a component, to a package, or to a written exclusion").
 
-    python3 scripts/check-shipping-sets.py --self-test  # 49 cases
+    python3 scripts/check-shipping-sets.py --self-test  # 78 cases
     python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
+    python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json
 
 `--map` prints one line per gap and a last line `N gaps`; rc 0 at zero gaps, rc 1 otherwise. A map that breaks a
 rule (an exclusion with no reason, a component with no files, a package no `packages` entry names, ...) is REFUSED
@@ -43,6 +44,21 @@ is `hidden: <path>` — the plan's "a glob exclusion that swallows a file some p
 a glob is written for files nobody listed, so it must never be what keeps a package's own dependency out of it. An
 exact exclusion of such a file is a written decision and stands (the closure validator, Task 7, then reports the
 package as omitting what it runs).
+
+THE CLOSURE (`--closure`, plan Task 7): for every `plugin` entry of `shipping-sets.json`, the installed tree is
+REBUILT from the declaration (`materialize`: each declared file copied from the repository to its installed path,
+`skills/X` from `.agents/skills/X`; `plugin.json` is staging's) — the declaration was measured from a real install
+(Task 6), so this is that layout, and it needs no `claude`, which is why CI can run it. A declaration whose
+`expected_count` disagrees with its files, or that names a file it does not install, is REFUSED. `closure` walks it
+from the package's SKILLS and ENTRY POINTS (every `skills/<name>/SKILL.md`, every `.py` and `.sh`; any other `.md` is
+data, reached only through an edge). Its edges (`closure_edges`): a Python import of a sibling that exists in the
+tree or the repository; `python3`/`bash`/`source` of a path in Markdown or in a shell file's non-comment lines,
+resolved against the package root and ALSO handed off as `cwd-relative: p` (the scan's detector 2 resolves it from
+the plugin root); and, on a Markdown line that says read or follow, a backticked path or link target that is
+relative to the citing file (in repository coordinates) or under `.agents/skills/` (a member, its edges followed)
+or under `docs/` (`external: p`, the stranger's own project file, never a gap). `closure_gaps`: a reached path the
+declaration does not install is `gap:`, or `gap: dangling:` when it exists nowhere. ⚠ BOUND: a path a skill
+mentions on a line that neither reads nor follows it is not an edge, and neither is a string literal (as above).
 """
 from __future__ import annotations
 
@@ -106,6 +122,25 @@ def tracked(root: Path) -> list[str]:
     return [p for p in r.stdout.decode().split("\0") if p]
 
 
+def import_paths(rel: str, text: str) -> set[str]:
+    """`<dir>/<module>.py` for every absolute import in the Python file `rel` — whether it exists is each caller's
+    rule (`exec_edges`: under the root; `closure_edges`: in the installed tree or the repository)."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as e:
+        raise CannotRun(f"cannot parse {rel}: {e}") from e
+    outs: set[str] = set()
+    for node in ast.walk(tree):
+        mods = []
+        if isinstance(node, ast.Import):
+            mods = [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            mods = [node.module]
+        for mod in mods:
+            outs.add(os.path.normpath(os.path.join(os.path.dirname(rel), mod.split(".")[0] + ".py")))
+    return outs
+
+
 def exec_edges(root: Path, rel: str) -> set[str]:
     """The repo-relative files `rel` EXECUTES that exist under `root` (see the module docstring)."""
     path = root / rel
@@ -115,18 +150,7 @@ def exec_edges(root: Path, rel: str) -> set[str]:
         raise CannotRun(f"cannot read {rel}: {e}") from e
     outs: set[str] = set()
     if rel.endswith(".py"):
-        try:
-            tree = ast.parse(text)
-        except SyntaxError as e:
-            raise CannotRun(f"cannot parse {rel}: {e}") from e
-        for node in ast.walk(tree):
-            mods = []
-            if isinstance(node, ast.Import):
-                mods = [a.name for a in node.names]
-            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-                mods = [node.module]
-            for mod in mods:
-                outs.add(os.path.normpath(os.path.join(os.path.dirname(rel), mod.split(".")[0] + ".py")))
+        outs |= import_paths(rel, text)
     elif rel.endswith((".md", ".sh")):
         for m in EXEC_RE.finditer(text):
             outs.add(os.path.normpath(m.group(1)))
@@ -283,6 +307,150 @@ def map_gaps(m: ComponentMap, cands: set[str], root: Path = REPO) -> list[str]:
     return out
 
 
+SOURCE_SKILLS = ".agents/skills/"
+INSTALLED_SKILLS = "skills/"
+PLUGIN_META = ".claude-plugin/plugin.json"
+NOTES = ("cwd-relative: ", "external: ")
+READ_LINE_RE = re.compile(r"\b(?:follow|read)\b", re.I)
+READ_PATH_RE = re.compile(r"(?:`|\]\()((?:\.\.?/|\.agents/skills/|docs/)[\w./-]+\.\w+)[`)]")
+
+
+def source_path(rel: str) -> str:
+    """The repository path an installed path came from (`skills/X` was `.agents/skills/X`)."""
+    return SOURCE_SKILLS + rel[len(INSTALLED_SKILLS):] if rel.startswith(INSTALLED_SKILLS) else rel
+
+
+def installed_path(src: str) -> str:
+    return INSTALLED_SKILLS + src[len(SOURCE_SKILLS):] if src.startswith(SOURCE_SKILLS) else src
+
+
+def closure_edges(installed: Path, rel: str, repo: Path) -> set[str]:
+    """One installed file's edges (module docstring, THE CLOSURE): a plain path is reached; `cwd-relative: p` and
+    `external: p` are hand-offs, never gaps."""
+    try:
+        text = (installed / rel).read_text(errors="replace")
+    except OSError as e:
+        raise CannotRun(f"cannot read the installed {rel}: {e}") from e
+    out: set[str] = set()
+    if rel.endswith(".py"):
+        for p in import_paths(rel, text):
+            if (installed / p).is_file() or (repo / source_path(p)).is_file():
+                out.add(p)
+    elif rel.endswith(".sh") or rel.endswith(".md"):
+        code = text if rel.endswith(".md") else "\n".join(
+            ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+        for m in EXEC_RE.finditer(code):
+            p = installed_path(os.path.normpath(m.group(1)))
+            if not p.startswith(("..", "/")):
+                out |= {p, f"cwd-relative: {p}"}
+    if rel.endswith(".md"):
+        here = os.path.dirname(source_path(rel))
+        for line in text.splitlines():
+            if not READ_LINE_RE.search(line):
+                continue
+            for m in READ_PATH_RE.finditer(line):
+                tok = m.group(1)
+                p = os.path.normpath(os.path.join(here, tok) if tok.startswith(("./", "../")) else tok)
+                if p.startswith(SOURCE_SKILLS):
+                    out.add(installed_path(p))
+                elif p.startswith("docs/"):
+                    out.add(f"external: {p}")
+    return out
+
+
+def closure(installed: Path, repo: Path = REPO) -> set[str]:
+    """Every installed-relative path reached from the package's skills and entry points, plus its hand-offs."""
+    installed = Path(installed)
+    present: set[str] = set()
+    for d, _dirs, names in os.walk(installed):
+        present |= {os.path.relpath(os.path.join(d, n), installed) for n in names}
+    todo = [f for f in present if f.endswith((".py", ".sh"))
+            or (f.startswith(INSTALLED_SKILLS) and f.endswith("/SKILL.md"))]
+    out: set[str] = set()
+    while todo:
+        rel = todo.pop()
+        if rel in out:
+            continue
+        out.add(rel)
+        for e in closure_edges(installed, rel, repo):
+            if e.startswith(NOTES) or e not in present:
+                out.add(e)
+            else:
+                todo.append(e)
+    return out
+
+
+def closure_gaps(decl: dict, reached: set[str], repo: Path = REPO) -> list[str]:
+    """A reached path the declaration does not install is a gap; one that exists nowhere is `dangling`."""
+    declared = set(decl["installed_files"])
+    out = []
+    for p in sorted(reached):
+        if p.startswith(NOTES) or p in declared:
+            continue
+        if (repo / source_path(p)).is_file():
+            out.append(f"gap: {p} — the package's own text reaches it, and its declaration omits it")
+        else:
+            out.append(f"gap: dangling: {p} — reached, and it exists nowhere")
+    return out
+
+
+def check_declaration(name: str, decl: dict) -> None:
+    """A plugin entry of `shipping-sets.json` keeps its own arithmetic, or it is refused."""
+    files = set(decl.get("installed_files") or [])
+    for cid, c in sorted((decl.get("components") or {}).items()):
+        if c.get("expected_count") != len(c.get("files") or []):
+            raise Refused(f"{name}: component {cid!r} declares expected_count {c.get('expected_count')} for "
+                          f"{len(c.get('files') or [])} file(s)")
+        for f in c["files"]:
+            if f not in files:
+                raise Refused(f"{name}: component {cid!r} names {f}, which is not in installed_files")
+
+
+def materialize(name: str, decl: dict, repo: Path, out: Path) -> Path:
+    """The installed tree a plugin entry describes, built from the repository at each file's installed path
+    (`.claude-plugin/plugin.json` is written by staging, never sourced)."""
+    for f in decl["installed_files"]:
+        if f == PLUGIN_META:
+            continue
+        src = repo / source_path(f)
+        if not src.is_file():
+            raise CannotRun(f"{name} declares {f}, and the repository has no {source_path(f)}")
+        (out / f).parent.mkdir(parents=True, exist_ok=True)
+        (out / f).write_bytes(src.read_bytes())
+    return out
+
+
+def closure_main(sets: Path, root: Path) -> int:
+    try:
+        packages = json.loads(Path(sets).read_text())["packages"]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f"CANNOT RUN: cannot read the declaration {sets}: {e}", file=sys.stderr)
+        return 2
+    lines, gaps = [], 0
+    try:
+        for name in sorted(packages):
+            decl = packages[name]
+            if decl.get("channel") != "plugin":
+                lines.append(f"{name}: SKIPPED — reusable-workflow channel, no installed tree")
+                continue
+            check_declaration(name, decl)
+            with tempfile.TemporaryDirectory() as t:
+                reached = closure(materialize(name, decl, root, Path(t)), root)
+            found = closure_gaps(decl, reached, root)
+            gaps += len(found)
+            lines += [f"{name}: {g}" for g in found]
+            lines.append(f"{name}: {sum(r.startswith(NOTES[0]) for r in reached)} cwd-relative hand-off(s), "
+                         f"{sum(r.startswith(NOTES[1]) for r in reached)} external read(s)")
+    except CannotRun as e:
+        print(f"CANNOT RUN: {e}", file=sys.stderr)
+        return 2
+    except Refused as e:
+        print(f"REFUSED: {e}")
+        return 1
+    print("\n".join(lines + [f"{gaps} gaps"]))
+    return 1 if gaps else 0
+
+
 def main(argv=None, root: Path = REPO) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv == ["--self-test"]:
@@ -301,6 +469,8 @@ def main(argv=None, root: Path = REPO) -> int:
             print(g)
         print(f"{len(gaps)} gaps")
         return 1 if gaps else 0
+    if len(argv) == 2 and argv[0] == "--closure":
+        return closure_main(Path(argv[1]), root)
     print(__doc__.split("\n\n")[1], file=sys.stderr)
     return 2
 
@@ -526,6 +696,157 @@ def _self_test_body() -> int:
     case("CLI: no mode is a usage error, rc 2", lambda: cli()[0], 2)
     case("CLI: --map with no path is a usage error, rc 2, and reads nothing",
          lambda: quiet(lambda: main(["--map"])), 2)
+
+    # ---- the closure (plan Task 7) -------------------------------------------------------------------------------
+    def tree(files: dict) -> Path:
+        root = Path(tempfile.mkdtemp(prefix="closure-")).resolve()
+        for rel, text in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text)
+        return root
+
+    def decl_of(files, comps=None) -> dict:
+        return {"channel": "plugin", "installed_files": sorted(files),
+                "components": comps or {f: {"files": [f], "expected_count": 1} for f in files}}
+
+    page = {".agents/skills/brief/SKILL.md": "**Follow [`../shared/explainer-delivery.md`](../shared/explainer-delivery.md)"
+                                            ".**\nRead `docs/backlog.md` first.\n",
+            ".agents/skills/shared/explainer-delivery.md": "Compose: `python3 scripts/brief-compose.py --x`.\n",
+            "scripts/brief-compose.py": "import page_chrome\nimport os\n", "scripts/page_chrome.py": "x = 1\n"}
+    src = tree(page)
+    inst_of = {".agents/skills/brief/SKILL.md": "skills/brief/SKILL.md",
+               ".agents/skills/shared/explainer-delivery.md": "skills/shared/explainer-delivery.md"}
+    inst = {inst_of.get(k, k): v for k, v in page.items()}
+    full = tree(inst)
+    case("closure: a read edge from a skill, a CWD-relative exec edge in a contract, an import and a docs/ read",
+         lambda: sorted(closure(full, src)),
+         ["cwd-relative: scripts/brief-compose.py", "external: docs/backlog.md", "scripts/brief-compose.py",
+          "scripts/page_chrome.py", "skills/brief/SKILL.md", "skills/shared/explainer-delivery.md"])
+    case("a CWD-relative invocation of a member is a member plus a cwd-relative hand-off, not a gap; "
+         "a docs/ read is external, not a gap",
+         lambda: closure_gaps(decl_of(inst), closure(full, src), src), [])
+    no_bc = {k: v for k, v in inst.items() if k != "scripts/brief-compose.py"}
+    case("brief-compose.py dropped from the declaration with its count lowered → closure red",
+         lambda: closure_gaps(decl_of(no_bc), closure(tree(no_bc), src), src),
+         ["gap: scripts/brief-compose.py — the package's own text reaches it, and its declaration omits it"])
+    no_ed = {k: v for k, v in inst.items() if k != "skills/shared/explainer-delivery.md"}
+    case("explainer-delivery.md dropped from the declaration with its count lowered → closure red",
+         lambda: closure_gaps(decl_of(no_ed), closure(tree(no_ed), src), src),
+         ["gap: skills/shared/explainer-delivery.md — the package's own text reaches it, and its declaration "
+          "omits it"])
+    case("the same read with explainer-delivery.md present is a member",
+         lambda: "skills/shared/explainer-delivery.md" in closure(full, src), True)
+    case("an executable edge that exists nowhere is a dangling gap",
+         lambda: closure_gaps(decl_of(["skills/x/SKILL.md"]),
+                              closure(tree({"skills/x/SKILL.md": "Run `bash scripts/nowhere.sh`.\n"}), src), src),
+         ["gap: dangling: scripts/nowhere.sh — reached, and it exists nowhere"])
+    case("an import cycle terminates",
+         lambda: sorted(closure(tree({"scripts/a.py": "import b\n", "scripts/b.py": "import a\n"}), src)),
+         ["scripts/a.py", "scripts/b.py"])
+    lib = tree({"scripts/b.py": "", "scripts/c.py": ""})
+    case("a from-import and a dotted import of a sibling the package omits (the repository has it) are gaps",
+         lambda: closure_gaps(decl_of(["scripts/a.py"]),
+                              closure(tree({"scripts/a.py": "from b import x\nimport c.d\n"}), lib), lib),
+         ["gap: scripts/b.py — the package's own text reaches it, and its declaration omits it",
+          "gap: scripts/c.py — the package's own text reaches it, and its declaration omits it"])
+    case("an executable edge outside the package root is not reached",
+         lambda: sorted(closure(tree({"skills/x/SKILL.md": "Run `python3 /opt/x.py` or `bash ../y.sh`.\n"}), src)),
+         ["skills/x/SKILL.md"])
+    case("an executable edge into .agents/skills/ is its installed skills/ path",
+         lambda: sorted(closure(tree({"skills/x/SKILL.md": "Run `python3 .agents/skills/x/run.py`.\n",
+                                      "skills/x/run.py": ""}), src)),
+         ["cwd-relative: skills/x/run.py", "skills/x/SKILL.md", "skills/x/run.py"])
+    case("an import of a module that exists nowhere (the standard library) is not an edge",
+         lambda: sorted(closure(tree({"scripts/a.py": "import json\nfrom os import path\n"}), src)),
+         ["scripts/a.py"])
+    case("a path a skill MENTIONS on a line that neither reads nor follows it is not an edge",
+         lambda: sorted(closure(tree({"skills/x/SKILL.md": "rg missed `.agents/skills/handoff/SKILL.md` there.\n"}),
+                                src)), ["skills/x/SKILL.md"])
+    case("a read naming .agents/skills/ is the installed skills/ path",
+         lambda: sorted(closure(tree({"skills/x/SKILL.md": "Follow `.agents/skills/shared/c.md`.\n"}), src)),
+         ["skills/shared/c.md", "skills/x/SKILL.md"])
+    case("a relative read that leaves the skills tree into docs/ is external",
+         lambda: sorted(closure(tree({"skills/x/SKILL.md": "Read [the doc](../../../docs/plugins.md).\n"}), src)),
+         ["external: docs/plugins.md", "skills/x/SKILL.md"])
+    case("a Markdown file that is not a SKILL.md is not a seed (data is reached only through an edge)",
+         lambda: sorted(closure(tree({"docs/memory/m.md": "Run `python3 scripts/x.py`.\n", "scripts/r.py": ""}),
+                                src)), ["scripts/r.py"])
+    case("a hook script is a seed, and what it runs through $VAR/ is reached",
+         lambda: sorted(closure(tree({".claude/hooks/h.sh": 'python3 "$REPO/scripts/r.py"\n', "scripts/r.py": ""}),
+                                src)),
+         [".claude/hooks/h.sh", "cwd-relative: scripts/r.py", "scripts/r.py"])
+    case("a shell COMMENT naming a script is not an edge; the command after it is",
+         lambda: sorted(closure(tree({".claude/hooks/h.sh": "# checked by python3 scripts/t.py --self-test\n"
+                                                             "bash scripts/r.sh\n", "scripts/r.sh": ""}), src)),
+         [".claude/hooks/h.sh", "cwd-relative: scripts/r.sh", "scripts/r.sh"])
+    case("a declaration whose count does not match its files is refused",
+         lambda: refused(lambda: check_declaration("p", decl_of(["a.py"], {"a": {"files": ["a.py"],
+                                                                              "expected_count": 2}}))),
+         "REFUSED: p: component 'a' declares expected_count 2 for 1 file(s)")
+    case("a component file the package does not install is refused",
+         lambda: refused(lambda: check_declaration("q", decl_of(["a.py"], {"a": {"files": ["b.py"],
+                                                                              "expected_count": 1}}))),
+         "REFUSED: q: component 'a' names b.py, which is not in installed_files")
+
+    def clo(*argv, root):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = main(list(argv), root)
+        return rc, out.getvalue().splitlines(), err.getvalue().strip()
+
+    def sets_file(root: Path, packages: dict) -> str:
+        (root / "sets.json").write_text(json.dumps({"measured_at": "x", "packages": packages}))
+        return str(root / "sets.json")
+    omit = tree({".agents/skills/b/SKILL.md": "Run `python3 scripts/a.py`.\n", "scripts/a.py": "import b\n",
+                 "scripts/b.py": ""})
+    om = sets_file(omit, {"pkg": decl_of(["skills/b/SKILL.md", "scripts/a.py"]),
+                          "wf": {"channel": "reusable-workflow", "components": {}}})
+    case("CLI: omitted dependency with a count written to match is refused (the tree is built from the declaration)",
+         lambda: clo("--closure", om, root=omit),
+         (1, ["pkg: gap: scripts/b.py — the package's own text reaches it, and its declaration omits it",
+              "pkg: 1 cwd-relative hand-off(s), 0 external read(s)",
+              "wf: SKIPPED — reusable-workflow channel, no installed tree", "1 gaps"], ""))
+    ok_sets = sets_file(omit, {"pkg": decl_of(["skills/b/SKILL.md", "scripts/a.py", "scripts/b.py",
+                                               ".claude-plugin/plugin.json"])})
+    case("CLI: the same package declaring its dependency is `0 gaps`, rc 0 (plugin.json is staging's, not sourced)",
+         lambda: clo("--closure", ok_sets, root=omit),
+         (0, ["pkg: 1 cwd-relative hand-off(s), 0 external read(s)", "0 gaps"], ""))
+    def built(root: Path) -> list:
+        return sorted(str(f.relative_to(root)) + "=" + f.read_text() for f in root.rglob("*") if f.is_file())
+    case("materialize: each declared file lands at its installed path, read from its repository path; plugin.json "
+         "is not sourced",
+         lambda: built(materialize("q", decl_of(["skills/b/SKILL.md", "scripts/b.py", ".claude-plugin/plugin.json"]),
+                                   omit, tree({}))),
+         ["scripts/b.py=", "skills/b/SKILL.md=Run `python3 scripts/a.py`.\n"])
+    case("CLI: a declaration whose count does not match is REFUSED, rc 1",
+         lambda: clo("--closure", sets_file(omit, {"pkg": decl_of(["scripts/b.py"], {"b": {
+             "files": ["scripts/b.py"], "expected_count": 0}})}), root=omit),
+         (1, ["REFUSED: pkg: component 'b' declares expected_count 0 for 1 file(s)"], ""))
+    case("CLI: a declared file with no source in the repository is CANNOT RUN, rc 2",
+         lambda: clo("--closure", sets_file(omit, {"pkg": decl_of(["scripts/gone.py"])}), root=omit),
+         (2, [], "CANNOT RUN: pkg declares scripts/gone.py, and the repository has no scripts/gone.py"))
+    case("CLI: an unreadable declaration is CANNOT RUN, rc 2",
+         lambda: (lambda r: (r[0], r[2][:11]))(clo("--closure", str(omit / "nope.json"), root=omit)), (2, "CANNOT RUN:"))
+    case("CLI: --closure with no path is a usage error, rc 2", lambda: quiet(lambda: main(["--closure"])), 2)
+
+    real = json.loads((REPO / "docs/marketplace/shipping-sets.json").read_text())["packages"]
+
+    def real_gaps(pkg: str, drop: str) -> list:
+        d = json.loads(json.dumps(real[pkg]))
+        d["installed_files"].remove(drop)
+        d["components"] = {k: v for k, v in d["components"].items() if drop not in v["files"]}
+        with tempfile.TemporaryDirectory() as t:
+            return closure_gaps(d, closure(materialize(pkg, d, REPO, Path(t)), REPO), REPO)
+    case("the real declaration: brief-compose.py dropped with its count lowered → red",
+         lambda: real_gaps("comprehensibility", "scripts/brief-compose.py"),
+         ["gap: scripts/brief-compose.py — the package's own text reaches it, and its declaration omits it"])
+    case("the real declaration: explainer-delivery.md dropped with its count lowered → red",
+         lambda: real_gaps("comprehensibility", "skills/shared/explainer-delivery.md"),
+         ["gap: skills/shared/explainer-delivery.md — the package's own text reaches it, and its declaration "
+          "omits it"])
+    case("CLI: the real declaration is `0 gaps`, rc 0",
+         lambda: (lambda r: (r[0], r[1][-1]))(clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
+                                                   root=REPO)), (0, "0 gaps"))
 
     # ---- the identity cases: the live tree ----------------------------------------------------------------------
     # The mutation harness stages a COPY of the tree that is not a git checkout, so `git ls-files` cannot list it

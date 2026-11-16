@@ -2422,7 +2422,11 @@ EXPECTED_MUTATIONS = {
     # creates it (58): the candidate derivation (git listing, each seed source, transitivity), the executable edges
     # (each import form, each command word, the prefix strips, the tree bounds), every load_map rule, the exclusion
     # cover (directory, glob, exact), the gap and `hidden:` lines, and the CLI's exits and the root it checks: 59.
-    "scripts/check-shipping-sets.py": 59,
+    # ⟳ 2026-11-16 plan Task 7 (the closure validator): 59 + 46 = 105 — each closure edge form (an import found in
+    # the tree or the repository, exec in Markdown and in non-comment shell, read lines, link targets, coordinates),
+    # the seeds, the gap and dangling lines, the declaration's arithmetic, materialize, and the --closure CLI's exits.
+    # The import parsing is ONE helper (`import_paths`) shared with Task 5's edges, mutated by Task 5's entries.
+    "scripts/check-shipping-sets.py": 105,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.

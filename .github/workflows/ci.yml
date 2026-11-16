@@ -906,6 +906,10 @@ jobs:
         run: python3 scripts/check-shipping-sets.py --self-test
       - name: component map has zero gaps
         run: python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
+      # The closure validator (plan Task 7): every file a plugin package's skills and entry points reach is in
+      # its declaration. The installed tree is rebuilt from shipping-sets.json, so no `claude` is needed here.
+      - name: shipping-set declaration is closed
+        run: python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json
 
       # One link function for every key (backlog #470). `--sources` is rule 2: no href to a key's
       # home page is built in scripts/ outside page_markup.key_link. The page rules (1, 1b, 3, 4, 5)

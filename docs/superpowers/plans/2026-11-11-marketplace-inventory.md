@@ -498,7 +498,7 @@ that matters most. The rule, per reached path `p`:
 | a read edge inside the package's source tree | not in the installed tree | **gap**, exactly like an executable edge (⟳ r2 CLAUDE M5: the r1 row filed every Read edge as `external`, so dropping `explainer-delivery.md` stayed green) |
 | a READ of a project document (`docs/...`) | not in the installed tree | `external: p` — the stranger's own project file; handed to detector 4 (doc path), never a gap |
 
-- [ ] **Steps:** cases (`omitted dependency with a count written to match is refused` — spec §5's third file-set
+- [x] **Steps:** cases (`omitted dependency with a count written to match is refused` — spec §5's third file-set
   mutation; **`brief-compose.py dropped from the declaration with its count lowered → closure red`** (the edge is
   CWD-relative in `explainer-delivery.md`; the r0 rule kept this green); `a CWD-relative invocation of a member is
   a member plus a cwd-relative hand-off, not a gap` (adjacent negative); `a docs/ read is external, not a gap`; **`explainer-delivery.md dropped from the declaration with its count

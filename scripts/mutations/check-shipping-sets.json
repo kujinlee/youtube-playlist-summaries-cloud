@@ -15,8 +15,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "            raise CannotRun(f\"cannot parse {rel}: {e}\") from e",
-        "            return set()"
+        "        raise CannotRun(f\"cannot parse {rel}: {e}\") from e",
+        "        return set()"
       ]
     ],
     "expect": "a Python file that does not parse is CANNOT RUN, never an empty edge set"
@@ -26,8 +26,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "                mods = [a.name for a in node.names]",
-        "                mods = []"
+        "            mods = [a.name for a in node.names]",
+        "            mods = []"
       ]
     ],
     "expect": "a transitively invoked script is a candidate (skill → python3 scripts/a.py → import b)"
@@ -37,8 +37,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "                mods = [node.module]",
-        "                mods = []"
+        "            mods = [node.module]",
+        "            mods = []"
       ]
     ],
     "expect": "executable edges in Python: a sibling `import`, `from x.y import`, a dotted import; never a relative one; a .txt is not scanned"
@@ -647,5 +647,511 @@
       ]
     ],
     "expect": "CLI: a map that leaves candidates unmapped prints each and the count, rc 1"
+  },
+  {
+    "name": "an import found only in the repository is not an edge",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if (installed / p).is_file() or (repo / source_path(p)).is_file():",
+        "if (installed / p).is_file():"
+      ]
+    ],
+    "expect": "a from-import and a dotted import of a sibling the package omits (the repository has it) are gaps"
+  },
+  {
+    "name": "every import is an edge, the standard library included",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(installed / p).is_file() or (repo / source_path(p)).is_file():\n                out.add(p)",
+        "True:\n                out.add(p)"
+      ]
+    ],
+    "expect": "an import of a module that exists nowhere (the standard library) is not an edge"
+  },
+  {
+    "name": "a shell file is not scanned for exec edges in the closure",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    elif rel.endswith(\".sh\") or rel.endswith(\".md\"):",
+        "    elif rel.endswith(\".md\"):"
+      ]
+    ],
+    "expect": "a hook script is a seed, and what it runs through $VAR/ is reached"
+  },
+  {
+    "name": "shell comments are scanned",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if not ln.lstrip().startswith(\"#\"))",
+        "if True)"
+      ]
+    ],
+    "expect": "a shell COMMENT naming a script is not an edge; the command after it is"
+  },
+  {
+    "name": "an exec edge is not handed off as cwd-relative",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "out |= {p, f\"cwd-relative: {p}\"}",
+        "out |= {p}"
+      ]
+    ],
+    "expect": "closure: a read edge from a skill, a CWD-relative exec edge in a contract, an import and a docs/ read"
+  },
+  {
+    "name": "an exec edge is only a hand-off, never reached",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "{p, f\"cwd-relative: {p}\"}",
+        "{f\"cwd-relative: {p}\"}"
+      ]
+    ],
+    "expect": "brief-compose.py dropped from the declaration with its count lowered → closure red"
+  },
+  {
+    "name": "an exec edge outside the package root is reached",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if not p.startswith((\"..\", \"/\")):\n                out |=",
+        "if True:\n                out |="
+      ]
+    ],
+    "expect": "an executable edge outside the package root is not reached"
+  },
+  {
+    "name": "an exec edge keeps its repository path",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "p = installed_path(os.path.normpath(m.group(1)))",
+        "p = os.path.normpath(m.group(1))"
+      ]
+    ],
+    "expect": "an executable edge into .agents/skills/ is its installed skills/ path"
+  },
+  {
+    "name": "every line is a read line",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if not READ_LINE_RE.search(line):\n                continue",
+        "if False:\n                continue"
+      ]
+    ],
+    "expect": "a path a skill MENTIONS on a line that neither reads nor follows it is not an edge"
+  },
+  {
+    "name": "only follow is a read word",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "r\"\\b(?:follow|read)\\b\", re.I",
+        "r\"\\b(?:follow)\\b\", re.I"
+      ]
+    ],
+    "expect": "a relative read that leaves the skills tree into docs/ is external"
+  },
+  {
+    "name": "only read is a read word",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "follow|read)\\b\", re.I",
+        "read)\\b\", re.I"
+      ]
+    ],
+    "expect": "a read naming .agents/skills/ is the installed skills/ path"
+  },
+  {
+    "name": "the read word is case-sensitive",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "r\"\\b(?:follow|read)\\b\", re.I)",
+        "r\"\\b(?:follow|read)\\b\")"
+      ]
+    ],
+    "expect": "a read naming .agents/skills/ is the installed skills/ path"
+  },
+  {
+    "name": "a relative read path is not matched",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(?:\\.\\.?/|\\.agents/skills/|docs/)",
+        "(?:\\.agents/skills/|docs/)"
+      ]
+    ],
+    "expect": "the same read with explainer-delivery.md present is a member"
+  },
+  {
+    "name": "a docs/ read path is not matched",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "|\\.agents/skills/|docs/)[",
+        "|\\.agents/skills/)["
+      ]
+    ],
+    "expect": "closure: a read edge from a skill, a CWD-relative exec edge in a contract, an import and a docs/ read"
+  },
+  {
+    "name": "an .agents/skills/ read path is not matched",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "?/|\\.agents/skills/|docs",
+        "?/|docs"
+      ]
+    ],
+    "expect": "a read naming .agents/skills/ is the installed skills/ path"
+  },
+  {
+    "name": "a link target is not a read path",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(?:`|\\]\\()((?:",
+        "(?:`)((?:"
+      ]
+    ],
+    "expect": "a relative read that leaves the skills tree into docs/ is external"
+  },
+  {
+    "name": "a relative read is taken from the package root",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "p = os.path.normpath(os.path.join(here, tok) if tok.startswith((\"./\", \"../\")) else tok)",
+        "p = os.path.normpath(tok)"
+      ]
+    ],
+    "expect": "the same read with explainer-delivery.md present is a member"
+  },
+  {
+    "name": "a relative read resolves in installed coordinates",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "here = os.path.dirname(source_path(rel))",
+        "here = os.path.dirname(rel)"
+      ]
+    ],
+    "expect": "a relative read that leaves the skills tree into docs/ is external"
+  },
+  {
+    "name": "a read into the skills tree keeps its repository path",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                    out.add(installed_path(p))\n",
+        "                    out.add(p)\n"
+      ]
+    ],
+    "expect": "the same read with explainer-delivery.md present is a member"
+  },
+  {
+    "name": "a docs/ read is dropped",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                elif p.startswith(\"docs/\"):\n                    out.add(f\"external: {p}\")",
+        "                elif False:\n                    out.add(f\"external: {p}\")"
+      ]
+    ],
+    "expect": "a relative read that leaves the skills tree into docs/ is external"
+  },
+  {
+    "name": "Markdown read lines are not scanned",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if rel.endswith(\".md\"):\n        here",
+        "    if False:\n        here"
+      ]
+    ],
+    "expect": "the same read with explainer-delivery.md present is a member"
+  },
+  {
+    "name": "a shell file is not a seed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if f.endswith((\".py\", \".sh\"))\n",
+        "if f.endswith((\".py\",))\n"
+      ]
+    ],
+    "expect": "a hook script is a seed, and what it runs through $VAR/ is reached"
+  },
+  {
+    "name": "a Python file is not a seed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "f.endswith((\".py\", \".sh\"))",
+        "f.endswith((\".sh\",))"
+      ]
+    ],
+    "expect": "an import of a module that exists nowhere (the standard library) is not an edge"
+  },
+  {
+    "name": "a SKILL.md is not a seed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            or (f.startswith(INSTALLED_SKILLS) and f.endswith(\"/SKILL.md\"))]",
+        "]"
+      ]
+    ],
+    "expect": "the same read with explainer-delivery.md present is a member"
+  },
+  {
+    "name": "every Markdown file is a seed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(f.startswith(INSTALLED_SKILLS) and f.endswith(\"/SKILL.md\"))",
+        "f.endswith(\".md\")"
+      ]
+    ],
+    "expect": "a Markdown file that is not a SKILL.md is not a seed (data is reached only through an edge)"
+  },
+  {
+    "name": "a reached file's own edges are not followed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            else:\n                todo.append(e)",
+        "            else:\n                out.add(e)"
+      ]
+    ],
+    "expect": "closure: a read edge from a skill, a CWD-relative exec edge in a contract, an import and a docs/ read"
+  },
+  {
+    "name": "a missing reached path is walked",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if e.startswith(NOTES) or e not in present:",
+        "if e.startswith(NOTES):"
+      ]
+    ],
+    "expect": "brief-compose.py dropped from the declaration with its count lowered → closure red"
+  },
+  {
+    "name": "a hand-off counts as a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if p.startswith(NOTES) or p in declared:",
+        "if p in declared:"
+      ]
+    ],
+    "expect": "a CWD-relative invocation of a member is a member plus a cwd-relative hand-off, not a gap; a docs/ read is external, not a gap"
+  },
+  {
+    "name": "a declared member counts as a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "or p in declared:",
+        ":"
+      ]
+    ],
+    "expect": "a CWD-relative invocation of a member is a member plus a cwd-relative hand-off, not a gap; a docs/ read is external, not a gap"
+  },
+  {
+    "name": "nothing is dangling",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if (repo / source_path(p)).is_file():",
+        "if True:"
+      ]
+    ],
+    "expect": "an executable edge that exists nowhere is a dangling gap"
+  },
+  {
+    "name": "the repository is looked up at the installed path",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(repo / source_path(p)).is_file():\n            out.append",
+        "(repo / p).is_file():\n            out.append"
+      ]
+    ],
+    "expect": "explainer-delivery.md dropped from the declaration with its count lowered → closure red"
+  },
+  {
+    "name": "the source of an installed skill is the installed path",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    return SOURCE_SKILLS + rel[len(INSTALLED_SKILLS):] if rel.startswith(INSTALLED_SKILLS) else rel",
+        "    return rel"
+      ]
+    ],
+    "expect": "materialize: each declared file lands at its installed path, read from its repository path; plugin.json is not sourced"
+  },
+  {
+    "name": "an .agents/skills/ path is not mapped to skills/",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    return INSTALLED_SKILLS + src[len(SOURCE_SKILLS):] if src.startswith(SOURCE_SKILLS) else src",
+        "    return src"
+      ]
+    ],
+    "expect": "a read naming .agents/skills/ is the installed skills/ path"
+  },
+  {
+    "name": "a count mismatch is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if c.get(\"expected_count\") != len(c.get(\"files\") or []):",
+        "if False:"
+      ]
+    ],
+    "expect": "a declaration whose count does not match its files is refused"
+  },
+  {
+    "name": "a component file outside installed_files is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            if f not in files:\n                raise Refused",
+        "            if False:\n                raise Refused"
+      ]
+    ],
+    "expect": "a component file the package does not install is refused"
+  },
+  {
+    "name": "plugin.json is sourced from the repository",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if f == PLUGIN_META:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": "materialize: each declared file lands at its installed path, read from its repository path; plugin.json is not sourced"
+  },
+  {
+    "name": "a declared file with no source is read anyway",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if not src.is_file():\n            raise CannotRun(f\"{name} declares",
+        "        if False:\n            raise CannotRun(f\"{name} declares"
+      ]
+    ],
+    "expect": "CLI: a declared file with no source in the repository is CANNOT RUN, rc 2"
+  },
+  {
+    "name": "a reusable-workflow entry is closed like a plugin",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if decl.get(\"channel\") != \"plugin\":",
+        "if False:"
+      ]
+    ],
+    "expect": "CLI: omitted dependency with a count written to match is refused (the tree is built from the declaration)"
+  },
+  {
+    "name": "the declaration's arithmetic is not checked by the CLI",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            check_declaration(name, decl)\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": "CLI: a declaration whose count does not match is REFUSED, rc 1"
+  },
+  {
+    "name": "gaps are not counted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            gaps += len(found)",
+        "            gaps += 0"
+      ]
+    ],
+    "expect": "CLI: omitted dependency with a count written to match is refused (the tree is built from the declaration)"
+  },
+  {
+    "name": "gap lines are not printed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            lines += [f\"{name}: {g}\" for g in found]",
+        "            lines += []"
+      ]
+    ],
+    "expect": "CLI: omitted dependency with a count written to match is refused (the tree is built from the declaration)"
+  },
+  {
+    "name": "the hand-off count counts external reads",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "{sum(r.startswith(NOTES[0]) for r in reached)} cwd-relative",
+        "{sum(r.startswith(NOTES[1]) for r in reached)} cwd-relative"
+      ]
+    ],
+    "expect": "CLI: omitted dependency with a count written to match is refused (the tree is built from the declaration)"
+  },
+  {
+    "name": "--closure is rc 0 with gaps",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    print(\"\\n\".join(lines + [f\"{gaps} gaps\"]))\n    return 1 if gaps else 0",
+        "    print(\"\\n\".join(lines + [f\"{gaps} gaps\"]))\n    return 0"
+      ]
+    ],
+    "expect": "CLI: omitted dependency with a count written to match is refused (the tree is built from the declaration)"
+  },
+  {
+    "name": "a CANNOT RUN closure is rc 0",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    except CannotRun as e:\n        print(f\"CANNOT RUN: {e}\", file=sys.stderr)\n        return 2\n",
+        "    except CannotRun as e:\n        print(f\"CANNOT RUN: {e}\", file=sys.stderr)\n        return 0\n"
+      ]
+    ],
+    "expect": "CLI: a declared file with no source in the repository is CANNOT RUN, rc 2"
+  },
+  {
+    "name": "an unreadable declaration escapes as a crash",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "except (OSError, ValueError, KeyError, TypeError) as e:\n        print(f\"CANNOT RUN: cannot read the declaration",
+        "except (KeyError,) as e:\n        print(f\"CANNOT RUN: cannot read the declaration"
+      ]
+    ],
+    "expect": "CLI: an unreadable declaration is CANNOT RUN, rc 2"
+  },
+  {
+    "name": "--closure is not routed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if len(argv) == 2 and argv[0] == \"--closure\":",
+        "if False:"
+      ]
+    ],
+    "expect": "CLI: the real declaration is `0 gaps`, rc 0"
   }
 ]
