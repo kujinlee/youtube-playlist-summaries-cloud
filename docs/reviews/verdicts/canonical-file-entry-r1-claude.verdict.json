@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/canonical-file-entry-r1-claude.md": "100644 1bdf1ff03804c31eefe4b508718f77566692d48e",
+    "docs/reviews/codex/canonical-file-entry-r1-codex.md": "100644 d9c801471a91025802c363afe55aebd7ee562c4a",
+    "docs/reviews/verdicts/canonical-file-entry-r1-codex.verdict.json": "100644 acfd4ac016e71552d0d8671ca73ba476f8a725fb"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "d3430eb1ef6e705e5431006ba68796ae89d667b1",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "Round-1 Claude adversarial review of PR #595 (backlog #658), refute mandate",
+  "reason": "claude half filed: 6188 chars, names d3430eb1ef6e",
+  "refused": false,
+  "review": "canonical-file-entry-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/b658",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
