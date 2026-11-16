@@ -457,7 +457,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ same day, review round 2 (the allow-list): 48 -> 53 — three entries retired with the read
     # checkpoints and the heredoc detector they guarded; three more retired as EQUIVALENT under
     # the allow-list (an unstripped `do` is itself opaque; `/dev/null` and sed's script operand
-    # reach no sentinel either way — measured: each survived with the suite green); eleven added.
+    # reach no sentinel either way — measured: each survived with the suite green); twelve added.
     # ⟳ same day, round 3 (the reviewed-code line): 53 -> 62 — four allow-list entries rebound
     # onto SAFE / tracked-script code; nine added for the tracked-script rule, a tracked NAME
     # outside scripts/, heredoc-fed interpreters, git clean/stash, sort -o, uniq's output,
@@ -476,7 +476,7 @@ EXPECTED_MUTATIONS = {
     # shell `&` to the session's end, the foreground stream exemption, pipeline-scoped `&`),
     # hookless sessions clear nothing, hook-attachment evidence, comments, `export`, `nohup`.
     # ⟳ 2026-10-23, round-4 (Codex) fold: 90 -> 101 — five entries rebound onto the session-
-    # keyed END and Stop-evidence code; eleven added: Stop-hook-only evidence grouped by session,
+    # keyed END and Stop-evidence code; twelve added: Stop-hook-only evidence grouped by session,
     # terminal statuses, quoted notices, the queue-operation and queued_command forms, the
     # tool-use-id match, END after START, a failed TaskStop, auto-backgrounded results, and a
     # foreground command with no result.
@@ -2416,4 +2416,31 @@ EXPECTED_MUTATIONS = {
     # and the walk asking about the root it starts from. None retired; the three anchors on the walk's forbidden
     # check still bind (the line moved to the top of the loop, its text unchanged).
     "scripts/mkt_stage.py": 70,
+    # backlog #657 (2026-11-16): the agent watchdog, pinned in the commit that creates it. 43: the argument rules
+    # (10, the 270 s floor and its identity with `check-agent-long-call.LIMIT_S` among them), the git directory (4),
+    # what counts as activity (12: files, directories, the three git files, the three excluded directories, the
+    # transcript, the walk's error rule), the loop (8: the boundary, arming, the poll, both exit codes, the silent
+    # skip, each builder judged) and the report (6, the re-arm command among them). r1 fold -> 53: two retired with
+    # the code they mutated (the absolute-mtime window and the active age from arming), twelve added: the window
+    # judged by CHANGE (3) and the active age (1), a missing or non-regular `.git` (2), a non-UTF-8 `.git`, any
+    # OSError on an optional git file or a worktree entry (2), the git-file loop's `continue` (staged: no index, fresh
+    # logs/HEAD), a directory transcript, and the walk's `onerror` call site. Not mutated: the WALK's
+    # `except FileNotFoundError: continue` (a file that vanishes between listing and lstat), which no case can stage.
+    # r2 fold -> 63: the activity signal is a FINGERPRINT of the observation, not its newest time. One retired with
+    # the code it mutated (an mtime compared with now); eleven added: only the newest time compared again, an
+    # entry's size and its time each left out, the fingerprint's order-independence, the default clock (wall
+    # again; never advancing), elapsed time read from the wall clock in the loop, the report dated by the elapsed
+    # clock, a ValueError and an unanticipated OSError each ending the poll for every builder, and the fstat's
+    # verdict on a non-regular `.git` dropped. Re-anchored, same intent: the `.git` open made blocking again, a
+    # `.git` that cannot be opened taken as the git directory. Not mutated: `GITFILE_MAX` (a read bound no case
+    # can observe short of a 64 KiB pointer file) and the walk's vanished-file `continue`, as before.
+    # r3 fold (Phase 6, `docs/reviews/architecture-review-2026-11-16-agent-watchdog.md`) -> 70: the entry is a
+    # three-field `Entry` with no `kind`, witnessed by ONE class case over an independent literal of its fields.
+    # Seven added: the name left out (R3m1), a tree name its basename only, its directory only, a clock mixed into
+    # the fingerprint (the identity row), a fourth field with no witness, the walk following symlinks (R3m2) and
+    # the re-arm command unquoted (R3m3). Re-anchored, same intent: HEAD left out, size and time left out, only the
+    # newest time compared (`e.mtime_ns`, was `e[2]`), the re-arm listing the quiet. Not mutated: a GIT entry's
+    # name made a constant -- unseen only when `index` and `logs/HEAD` exchange their exact time and size between
+    # two polls, which no git operation does, so the class case cannot witness it.
+    "scripts/agent-watchdog.py": 70,
 }

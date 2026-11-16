@@ -429,6 +429,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     "check-agent-long-call.py": (
         "decide.doc", "decide.env", "main.argv", "main.env", "main.stdin_text",
     ),
+    # backlog #657 (2026-11-16): the agent watchdog, pinned in the commit that creates it. DERIVED by running this
+    # check on the delivered source; `main`'s clock and sleep are varied by the case that refuses bad arguments
+    # before either is used.
+    "agent-watchdog.py": (
+        "main.argv", "main.clock", "main.sleep",
+    ),
     "check-compaction-boundary.py": (
         "ceiling.w", "decide.ctx", "decide.last_at", "decide.now", "decide.sigs", "decide.trigger", "decide.w", "hook.env", "hook.home", "hook.now", "hook.payload_text", "hook.snapshot", "iso_epoch.stamp", "log_path.env", "log_path.payload_text", "main.argv", "main.env", "main.now", "main.snapshot", "main.stdin_fd", "read_tail.cap", "read_tail.path", "scan.lines", "sentinel_armed.fields", "sentinel_armed.session", "signals.now", "signals.plan_armed", "signals.scanned", "summary.log_text", "window.env_value", "window.files", "window.model",),
     # review-round cap (2026-10-31): a Claude half's verdict, pinned in the commit that creates it. DERIVED
