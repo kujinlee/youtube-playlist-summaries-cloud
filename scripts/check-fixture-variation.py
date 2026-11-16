@@ -347,6 +347,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     "mkt_stage.py": ("install.mkt_root", "install.plugin", "install.run", "install.timeout", "install.world",
                      "main.argv", "plan.repo", "plan.spec", "read_marketplace.mkt_root", "stage.marketplace",
                      "stage.out", "stage.packages", "stage.repo"),
+    # marketplace-inventory plan Task 5 (2026-11-16): the component-map completeness check, pinned in the commit that
+    # creates it. DERIVED by running `analyse()` on the delivered source: 14 keys, every one varied by a case.
+    "check-shipping-sets.py": ("candidates.root", "exec_edges.rel", "exec_edges.root", "load_map.path", "load_map.root",
+                               "main.argv", "main.root", "map_gaps.cands", "map_gaps.m", "map_gaps.root", "reach.root",
+                               "reach.seeds", "registered_hooks.root", "tracked.root"),
     # backlog #586 slice 2 (2026-11-12): the strace-log path resolver, pinned in the commit that creates it. DERIVED by
     # running `analyse()` on the delivered source: 9 keys, every one varied by a case (none exempt).
     # ⟳ 2026-11-12 slice 3 (the default-deny classifier and record assembly): re-DERIVED by `analyse()`, 9 + 11 = 20.

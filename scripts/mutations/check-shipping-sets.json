@@ -1,0 +1,651 @@
+[
+  {
+    "name": "a tree git cannot list is read as empty",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if r.returncode != 0:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a tree git cannot list is CANNOT RUN"
+  },
+  {
+    "name": "a Python file that does not parse has no edges",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            raise CannotRun(f\"cannot parse {rel}: {e}\") from e",
+        "            return set()"
+      ]
+    ],
+    "expect": "a Python file that does not parse is CANNOT RUN, never an empty edge set"
+  },
+  {
+    "name": "`import x` is not an edge",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                mods = [a.name for a in node.names]",
+        "                mods = []"
+      ]
+    ],
+    "expect": "a transitively invoked script is a candidate (skill → python3 scripts/a.py → import b)"
+  },
+  {
+    "name": "`from x import y` is not an edge",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                mods = [node.module]",
+        "                mods = []"
+      ]
+    ],
+    "expect": "executable edges in Python: a sibling `import`, `from x.y import`, a dotted import; never a relative one; a .txt is not scanned"
+  },
+  {
+    "name": "a relative import is an edge",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " and node.level == 0:",
+        ":"
+      ]
+    ],
+    "expect": "executable edges in Python: a sibling `import`, `from x.y import`, a dotted import; never a relative one; a .txt is not scanned"
+  },
+  {
+    "name": "a dotted import resolves to the whole dotted name",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "mod.split(\".\")[0] + \".py\"",
+        "mod + \".py\""
+      ]
+    ],
+    "expect": "executable edges in Python: a sibling `import`, `from x.y import`, a dotted import; never a relative one; a .txt is not scanned"
+  },
+  {
+    "name": "Markdown is not scanned",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(\".md\", \".sh\")",
+        "(\".sh\", \".sh\")"
+      ]
+    ],
+    "expect": "a transitively invoked script is a candidate (skill → python3 scripts/a.py → import b)"
+  },
+  {
+    "name": "every file is scanned as Markdown or shell",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    elif rel.endswith((\".md\", \".sh\")):",
+        "    else:"
+      ]
+    ],
+    "expect": "executable edges in Python: a sibling `import`, `from x.y import`, a dotted import; never a relative one; a .txt is not scanned"
+  },
+  {
+    "name": "an edge outside the tree is kept",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "not o.startswith((\"..\", \"/\")) and ",
+        ""
+      ]
+    ],
+    "expect": "executable edges in Markdown: python3/python/bash/source/. with a ${VAR:-.}/ prefix; not a word ending in python3, not outside the tree, not a missing file"
+  },
+  {
+    "name": "an edge to a missing file is kept",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " and (root / o).is_file()}",
+        "}"
+      ]
+    ],
+    "expect": "executable edges in Markdown: python3/python/bash/source/. with a ${VAR:-.}/ prefix; not a word ending in python3, not outside the tree, not a missing file"
+  },
+  {
+    "name": "a word ending in python3 is a command",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(?<![\\w./-])(?:python3?",
+        "(?:python3?"
+      ]
+    ],
+    "expect": "executable edges in Markdown: python3/python/bash/source/. with a ${VAR:-.}/ prefix; not a word ending in python3, not outside the tree, not a missing file"
+  },
+  {
+    "name": "only python3 and bash are commands",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(?:python3?|bash|source|\\.)",
+        "(?:python3|bash)"
+      ]
+    ],
+    "expect": "executable edges in Markdown: python3/python/bash/source/. with a ${VAR:-.}/ prefix; not a word ending in python3, not outside the tree, not a missing file"
+  },
+  {
+    "name": "a ${VAR:-default}/ prefix is not stripped",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "|\\$\\{\\w+:-[^}]*\\}[\"']?/",
+        ""
+      ]
+    ],
+    "expect": "executable edges in Markdown: python3/python/bash/source/. with a ${VAR:-.}/ prefix; not a word ending in python3, not outside the tree, not a missing file"
+  },
+  {
+    "name": "a $VAR/ prefix is not stripped",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(?:\\$\\{?\\w+\\}?[\"']?/|",
+        "(?:"
+      ]
+    ],
+    "expect": "a hook reached through run-hook.sh is a candidate, and so is run-hook.sh and what the hook runs"
+  },
+  {
+    "name": "a settings.json that does not parse registers nothing",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        raise CannotRun(f\"cannot read .claude/settings.json: {e}\") from e",
+        "        return set()"
+      ]
+    ],
+    "expect": "a settings.json that does not parse is CANNOT RUN"
+  },
+  {
+    "name": "a hook named through run-hook.sh is not registered",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                out.update(f\".claude/hooks/{name}\" for name in VIA_RE.findall(command))\n",
+        ""
+      ]
+    ],
+    "expect": "a hook reached through run-hook.sh is a candidate, and so is run-hook.sh and what the hook runs"
+  },
+  {
+    "name": "a hook named by path is not registered",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                out.update(HOOK_RE.findall(command))\n",
+        ""
+      ]
+    ],
+    "expect": "a hook named directly (no run-hook.sh) is registered; an unregistered or absent one is not"
+  },
+  {
+    "name": "an absent hook is registered",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    return {h for h in out if (root / h).is_file()}",
+        "    return out"
+      ]
+    ],
+    "expect": "a hook named directly (no run-hook.sh) is registered; an unregistered or absent one is not"
+  },
+  {
+    "name": "reach is not transitive",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        todo.extend(exec_edges(root, rel) - seen)",
+        "        pass"
+      ]
+    ],
+    "expect": "a transitively invoked script is a candidate (skill → python3 scripts/a.py → import b)"
+  },
+  {
+    "name": "a seed that is not a file is walked",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    todo = [s for s in seeds if (root / s).is_file()]",
+        "    todo = list(seeds)"
+      ]
+    ],
+    "expect": "reach from a file that executes nothing is that file alone; a seed that is not a file is dropped"
+  },
+  {
+    "name": "the candidate directories seed nothing",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    seeds = {f for f in files if f.startswith(CANDIDATE_DIRS)}",
+        "    seeds = set()"
+      ]
+    ],
+    "expect": "a transitively invoked script is a candidate (skill → python3 scripts/a.py → import b)"
+  },
+  {
+    "name": "registered hooks are not candidates",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    seeds |= registered_hooks(root)\n",
+        ""
+      ]
+    ],
+    "expect": "a hook reached through run-hook.sh is a candidate, and so is run-hook.sh and what the hook runs"
+  },
+  {
+    "name": "the recall trio and effort (2) files are not candidates",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    seeds |= {f for f in RECALL_TRIO + EFFORT2_FILES if (root / f).is_file()}\n",
+        ""
+      ]
+    ],
+    "expect": "the recall trio, the effort (2) files, docs/memory/ and scripts/mutations/ are candidates unreferenced; an untracked file is not"
+  },
+  {
+    "name": "candidates are read from disk, not from git",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    files = tracked(root)\n",
+        "    files = [str(p.relative_to(root)) for p in root.rglob(\"*\") if p.is_file()]\n"
+      ]
+    ],
+    "expect": "the recall trio, the effort (2) files, docs/memory/ and scripts/mutations/ are candidates unreferenced; an untracked file is not"
+  },
+  {
+    "name": "a directory entry covers its neighbours",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        return rel.startswith(entry)",
+        "        return rel.startswith(entry.rstrip(\"/\"))"
+      ]
+    ],
+    "expect": "a directory exclusion covers every file under it, and nothing beside it"
+  },
+  {
+    "name": "a glob is matched exactly",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        return fnmatch.fnmatchcase(rel, entry)",
+        "        return rel == entry"
+      ]
+    ],
+    "expect": "a glob exclusion never hides a file a package invokes"
+  },
+  {
+    "name": "nothing is a glob",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    return any(c in pattern for c in \"*?[\")",
+        "    return False"
+      ]
+    ],
+    "expect": "a glob exclusion never hides a file a package invokes"
+  },
+  {
+    "name": "an unreadable map is an empty map",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        raise CannotRun(f\"cannot read the map {path}: {e}\") from e",
+        "        data = {}"
+      ]
+    ],
+    "expect": "a map that is not JSON is CANNOT RUN, never zero gaps"
+  },
+  {
+    "name": "a non-object map is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if not isinstance(data, dict):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a map that is not an object is refused"
+  },
+  {
+    "name": "a map with no packages is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if not isinstance(packages, dict) or not packages:",
+        "    if not isinstance(packages, dict):"
+      ]
+    ],
+    "expect": "CLI: a refused map is rc 1, REFUSED on stdout"
+  },
+  {
+    "name": "any channel is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " or pkg.get(\"channel\") not in CHANNELS:",
+        ":"
+      ]
+    ],
+    "expect": "a package with an unknown channel is refused"
+  },
+  {
+    "name": "a map with no components is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if not isinstance(comps, list) or not comps:",
+        "    if not isinstance(comps, list):"
+      ]
+    ],
+    "expect": "a map with no components is refused"
+  },
+  {
+    "name": "a component with no id is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if not cid or not isinstance(cid, str):",
+        "        if cid is None:"
+      ]
+    ],
+    "expect": "a component with no id is refused"
+  },
+  {
+    "name": "a component id twice is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        ids.add(cid)\n",
+        ""
+      ]
+    ],
+    "expect": "a component id twice is refused"
+  },
+  {
+    "name": "any effort is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if c.get(\"effort\") not in EFFORTS:",
+        "        if False:"
+      ]
+    ],
+    "expect": "an effort outside 1-3 is refused"
+  },
+  {
+    "name": "empty roles are accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " or not roles or any(",
+        " or any("
+      ]
+    ],
+    "expect": "empty roles are refused"
+  },
+  {
+    "name": "an unknown role is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " or any(r not in ROLES for r in roles):",
+        ":"
+      ]
+    ],
+    "expect": "an unknown role is refused"
+  },
+  {
+    "name": "any phase is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if c.get(\"phase\") not in PHASES:",
+        "        if False:"
+      ]
+    ],
+    "expect": "an unknown phase is refused"
+  },
+  {
+    "name": "a package not in packages is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if c.get(\"package\") not in packages:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a component whose package is not a key in packages is refused"
+  },
+  {
+    "name": "shared_with may name its own package",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " or p == c[\"package\"] for p in shared):",
+        " for p in shared):"
+      ]
+    ],
+    "expect": "a shared_with naming its own package is refused"
+  },
+  {
+    "name": "shared_with may name no package",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "any(p not in packages or p == c[\"package\"]",
+        "any(p == c[\"package\"]"
+      ]
+    ],
+    "expect": "a shared_with naming no package is refused"
+  },
+  {
+    "name": "a non-library may be shared",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if shared and c[\"roles\"] != [\"library\"]:",
+        "        if False:"
+      ]
+    ],
+    "expect": "only a library is shared"
+  },
+  {
+    "name": "a component with no files is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if not isinstance(files, list) or not files:",
+        "        if not isinstance(files, list):"
+      ]
+    ],
+    "expect": "a component with no files is refused"
+  },
+  {
+    "name": "a component file that does not exist is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " or not (root / f).exists():",
+        ":"
+      ]
+    ],
+    "expect": "a component file that does not exist is refused"
+  },
+  {
+    "name": "a component file outside the tree is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " or f.startswith((\"/\", \"..\")) or",
+        " or"
+      ]
+    ],
+    "expect": "a component file outside the tree is refused, even one that exists"
+  },
+  {
+    "name": "a file in two components is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            owner[f] = cid\n",
+        ""
+      ]
+    ],
+    "expect": "a file in two components is refused"
+  },
+  {
+    "name": "an exclusion with no path is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if not isinstance(e, dict) or not isinstance(e.get(\"path\"), str) or not e[\"path\"]:",
+        "        if not isinstance(e, dict):"
+      ]
+    ],
+    "expect": "an exclusion with no path is refused"
+  },
+  {
+    "name": "a blank reason is a reason",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " or not e[\"reason\"].strip():",
+        " or not e[\"reason\"]:"
+      ]
+    ],
+    "expect": "an exclusion without a reason is refused"
+  },
+  {
+    "name": "a directory component is the directory name only",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            out |= {t for t in listed if t.startswith(f)}",
+        "            out.add(f)"
+      ]
+    ],
+    "expect": "a directory component covers every tracked file under it"
+  },
+  {
+    "name": "a member is checked against the exclusions too",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if f in member:\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "...and with every candidate in a component there is none"
+  },
+  {
+    "name": "a file a component reaches is not checked",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    for f in sorted(cands | set(reached_by)):",
+        "    for f in sorted(cands):"
+      ]
+    ],
+    "expect": "a package reaches what its component's files execute even when the candidates omit it"
+  },
+  {
+    "name": "an excluded candidate no package executes is hidden",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        elif f in reached_by and all(",
+        "        elif all("
+      ]
+    ],
+    "expect": "...and a glob covering a candidate no package executes is no gap"
+  },
+  {
+    "name": "an exact exclusion beside a glob does not stand",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "all(_is_glob(p) for p in cover)",
+        "any(_is_glob(p) for p in cover)"
+      ]
+    ],
+    "expect": "...while an EXACT exclusion of it is a written decision and stands"
+  },
+  {
+    "name": "a gap is not reported",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            out.append(f\"gap: {f} — in no component and no exclusion\")",
+        "            pass"
+      ]
+    ],
+    "expect": "a candidate in no component and no exclusion is a gap"
+  },
+  {
+    "name": "CLI: gaps exit 0",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        return 1 if gaps else 0",
+        "        return 0"
+      ]
+    ],
+    "expect": "CLI: a map that leaves candidates unmapped prints each and the count, rc 1"
+  },
+  {
+    "name": "CLI: a refused map exits 0",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            print(f\"REFUSED: {e}\")\n            return 1",
+        "            print(f\"REFUSED: {e}\")\n            return 0"
+      ]
+    ],
+    "expect": "CLI: a refused map is rc 1, REFUSED on stdout"
+  },
+  {
+    "name": "CLI: CANNOT RUN exits 0",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            print(f\"CANNOT RUN: {e}\", file=sys.stderr)\n            return 2",
+        "            print(f\"CANNOT RUN: {e}\", file=sys.stderr)\n            return 0"
+      ]
+    ],
+    "expect": "CLI: an unreadable map is CANNOT RUN, rc 2"
+  },
+  {
+    "name": "CLI: --map with no path runs",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if len(argv) == 2 and argv[0] == \"--map\":",
+        "    if argv[:1] == [\"--map\"]:"
+      ]
+    ],
+    "expect": "CLI: --map with no path is a usage error, rc 2, and reads nothing"
+  },
+  {
+    "name": "CLI: the map is checked against the repository, not the root it was given",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "gaps = map_gaps(m, candidates(root), root)",
+        "gaps = map_gaps(m, candidates(REPO), root)"
+      ]
+    ],
+    "expect": "CLI: a map that leaves candidates unmapped prints each and the count, rc 1"
+  }
+]

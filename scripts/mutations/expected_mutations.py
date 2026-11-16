@@ -2416,6 +2416,11 @@ EXPECTED_MUTATIONS = {
     # and the walk asking about the root it starts from. None retired; the three anchors on the walk's forbidden
     # check still bind (the line moved to the top of the loop, its text unchanged).
     "scripts/mkt_stage.py": 70,
+    # ⟳ 2026-11-16, marketplace-inventory plan Task 5: the component-map completeness check, pinned in the commit that
+    # creates it (58): the candidate derivation (git listing, each seed source, transitivity), the executable edges
+    # (each import form, each command word, the prefix strips, the tree bounds), every load_map rule, the exclusion
+    # cover (directory, glob, exact), the gap and `hidden:` lines, and the CLI's exits and the root it checks: 59.
+    "scripts/check-shipping-sets.py": 59,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.

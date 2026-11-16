@@ -413,11 +413,11 @@ of `ci.yml`, the velocity documents). Third-party vendored skills (the `mattpoco
 visible. Measured 2026-11-11: the set has grown since spec §3 (a `dashboard` skill and a `regen-pages.sh` hook
 exist; hooks are registered through `run-hook.sh`), which is why the map is derived and checked, not copied.
 
-- [ ] **Step 1: self-test cases**: `a candidate in no component and no exclusion is a gap`; `an exclusion without a
+- [x] **Step 1: self-test cases**: `a candidate in no component and no exclusion is a gap`; `an exclusion without a
   reason is refused`; `a component with no files is refused`; `a transitively invoked script is a candidate`
   (fixture: skill → `python3 scripts/a.py` → `import b`); `a hook reached through run-hook.sh is a candidate`;
   `the real repo map has zero gaps` (the identity case, run on the live tree).
-- [ ] **Step 2: red. Step 3: implement `candidates`, `map_gaps`. Step 4: write `components.json` by hand from the
+- [x] **Step 2: red. Step 3: implement `candidates`, `map_gaps`. Step 4: write `components.json` by hand from the
   candidates, assigning effort, role(s), phase and package per spec §3/§4 and D11; one package for phase 1
   (`comprehensibility`), one for recall (`recall`), one for the CI layer (`ci-layer`). Each package carries
   `"channel": "plugin"` or `"channel": "reusable-workflow"`; `ci-layer` is `reusable-workflow` (spec §2c, *Install
@@ -430,10 +430,10 @@ exist; hooks are registered through `run-hook.sh`), which is why the map is deri
   (`.claude/hooks/*` reached from no package entry point → `"governance: not part of any shipped package"`), and a
   new governance hook then matches it with no edit. A glob exclusion that swallows a file some package component
   invokes is refused (case: `a glob exclusion never hides a file a package invokes`).
-- [ ] **Step 5: green** `python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json` → `0 gaps`;
+- [x] **Step 5: green** `python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json` → `0 gaps`;
   record the component count per effort with the commit in the map's `measured_at` and in the commit message
   (this count replaces spec §3's lower bound of 24).
-- [ ] **Step 6: W1-W8, commit.**
+- [x] **Step 6: W1-W8, commit.**
 
 **FAILS IF:** any file a page skill invokes, transitively, is neither in a component nor in a written exclusion
 (the identity case on the live tree goes red).

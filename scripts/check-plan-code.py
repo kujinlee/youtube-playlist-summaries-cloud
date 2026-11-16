@@ -5602,6 +5602,8 @@ def _self_test_body() -> int:
                                       "scripts/check-run-hook.py",
                                       "scripts/check-selection-card.py",
                                       "scripts/check-selftest-counts.py",
+                                      # ⟳ 2026-11-16, marketplace-inventory Task 5: the component map check.
+                                      "scripts/check-shipping-sets.py",
                                       "scripts/check-sentinel-meanings.py",
                                       "scripts/check-stalled-work.py",
                                       "scripts/check-storage-grant-pin.py",

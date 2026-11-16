@@ -1,0 +1,621 @@
+{
+  "measured_at": "80a08164 (2026-11-16): 35 components — effort 3: 26, effort 2: 5, effort 1: 4; replaces spec §3's lower bound of 24",
+  "packages": {
+    "comprehensibility": {
+      "channel": "plugin"
+    },
+    "recall": {
+      "channel": "plugin"
+    },
+    "ci-layer": {
+      "channel": "reusable-workflow"
+    }
+  },
+  "components": [
+    {
+      "id": "skill-brief",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".agents/skills/brief/"
+      ]
+    },
+    {
+      "id": "skill-explain-diff",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".agents/skills/explain-diff/"
+      ]
+    },
+    {
+      "id": "skill-explain-findings",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".agents/skills/explain-findings/"
+      ]
+    },
+    {
+      "id": "skill-explain-topic",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".agents/skills/explain-topic/"
+      ]
+    },
+    {
+      "id": "skill-dashboard",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".agents/skills/dashboard/"
+      ]
+    },
+    {
+      "id": "contract-explainer-delivery",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".agents/skills/shared/explainer-delivery.md"
+      ]
+    },
+    {
+      "id": "contract-handoff-path",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".agents/skills/shared/handoff-path.md"
+      ]
+    },
+    {
+      "id": "contract-corpus-search",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".agents/skills/shared/corpus-search.md"
+      ]
+    },
+    {
+      "id": "brief-compose",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/brief-compose.py"
+      ]
+    },
+    {
+      "id": "explainer-serve",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/explainer-serve.py"
+      ]
+    },
+    {
+      "id": "ask-answerer",
+      "effort": 3,
+      "roles": [
+        "entry-point",
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/ask_answerer.py"
+      ]
+    },
+    {
+      "id": "page-chrome",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/page_chrome.py"
+      ]
+    },
+    {
+      "id": "page-markup",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/page_markup.py"
+      ]
+    },
+    {
+      "id": "regen-pages",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/regen-pages.py"
+      ]
+    },
+    {
+      "id": "gen-dashboard",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/gen-dashboard.py"
+      ]
+    },
+    {
+      "id": "gen-goals-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/gen-goals-page.py"
+      ]
+    },
+    {
+      "id": "gen-features-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/gen-features-page.py"
+      ]
+    },
+    {
+      "id": "gen-backlog-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/gen-backlog-page.py"
+      ]
+    },
+    {
+      "id": "goal-tree",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/goal-tree.py"
+      ]
+    },
+    {
+      "id": "fixture-git",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/fixture_git.py"
+      ],
+      "shared_with": [
+        "recall",
+        "ci-layer"
+      ]
+    },
+    {
+      "id": "hook-regen-backlog-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".claude/hooks/regen-backlog-page.sh"
+      ]
+    },
+    {
+      "id": "hook-regen-dashboard",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".claude/hooks/regen-dashboard.sh"
+      ]
+    },
+    {
+      "id": "hook-regen-features-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".claude/hooks/regen-features-page.sh"
+      ]
+    },
+    {
+      "id": "hook-regen-goals-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".claude/hooks/regen-goals-page.sh"
+      ]
+    },
+    {
+      "id": "hook-regen-pages",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".claude/hooks/regen-pages.sh"
+      ]
+    },
+    {
+      "id": "hook-dispatcher",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        ".claude/hooks/run-hook.sh"
+      ],
+      "shared_with": [
+        "recall"
+      ]
+    },
+    {
+      "id": "recall-llm",
+      "effort": 1,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1-if-feasible",
+      "package": "recall",
+      "files": [
+        "scripts/recall-llm.py"
+      ]
+    },
+    {
+      "id": "check-surface-recall",
+      "effort": 1,
+      "roles": [
+        "entry-point",
+        "library"
+      ],
+      "phase": "1-if-feasible",
+      "package": "recall",
+      "files": [
+        "scripts/check-surface-recall.py"
+      ]
+    },
+    {
+      "id": "hook-surface-recall",
+      "effort": 1,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1-if-feasible",
+      "package": "recall",
+      "files": [
+        ".claude/hooks/surface-recall.sh"
+      ]
+    },
+    {
+      "id": "memory-corpus",
+      "effort": 1,
+      "roles": [
+        "data"
+      ],
+      "phase": "1-if-feasible",
+      "package": "recall",
+      "files": [
+        "docs/memory/"
+      ]
+    },
+    {
+      "id": "mutation-sweep-job",
+      "effort": 2,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "later",
+      "package": "ci-layer",
+      "files": [
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "check-plan-code",
+      "effort": 2,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "later",
+      "package": "ci-layer",
+      "files": [
+        "scripts/check-plan-code.py"
+      ]
+    },
+    {
+      "id": "coverage-verdict",
+      "effort": 2,
+      "roles": [
+        "library"
+      ],
+      "phase": "later",
+      "package": "ci-layer",
+      "files": [
+        "scripts/coverage_verdict.py"
+      ]
+    },
+    {
+      "id": "mutation-manifests",
+      "effort": 2,
+      "roles": [
+        "data"
+      ],
+      "phase": "later",
+      "package": "ci-layer",
+      "files": [
+        "scripts/mutations/"
+      ]
+    },
+    {
+      "id": "velocity-docs",
+      "effort": 2,
+      "roles": [
+        "data"
+      ],
+      "phase": "later",
+      "package": "ci-layer",
+      "files": [
+        "docs/superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md",
+        "docs/superpowers/plans/2026-09-25-development-velocity-RECONSTRUCTED-plan.md",
+        "docs/velocity-evidence-2026-09-24.md"
+      ]
+    }
+  ],
+  "exclusions": [
+    {
+      "path": ".claude/hooks/*",
+      "reason": "governance: not part of any shipped package (a hook a package needs is a component, which takes precedence; a glob never hides a file a package executes — that is a `hidden:` line)"
+    },
+    {
+      "path": ".agents/skills/caveman/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/diagnose/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/grill-me/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/grill-with-docs/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/handoff/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/improve-codebase-architecture/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/prototype/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/tdd/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/to-issues/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/to-prd/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/triage/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/write-a-skill/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/zoom-out/",
+      "reason": "vendored from mattpocock/skills (skills-lock.json): third-party, not ours to ship"
+    },
+    {
+      "path": ".agents/skills/sync-docs/",
+      "reason": "project-maintenance skill: regenerates this repository's docs/available-skills.md from its own plugin set; not a page skill"
+    },
+    {
+      "path": "scripts/regen-skills-doc.py",
+      "reason": "reached only from the sync-docs skill (excluded above)"
+    },
+    {
+      "path": "scripts/bounded_read.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-agent-large-read.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-agent-long-call.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-banner-armed.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-ci-watched.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-closing-table.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-compaction-boundary.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-fixture-variation.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-handoff-path.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-idle-stop.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-main-drivable.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-merge-ready.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-plan-leak.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-plan-progress.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-reference-namespace.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-review-recorded.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-run-hook.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-selection-card.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-stalled-work.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-test-counts.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/check-transcript-references.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/compaction-state.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/observer_log.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/peer-sites.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/prune-merged-worktrees.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
+      "path": "scripts/session-state.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    }
+  ]
+}
