@@ -284,7 +284,10 @@ ROOT_GLOBS = ("*.md",)
 # defect (`a-class-fix-needs-an-independent-copy-and-an-identity-case`).
 STAGEABLE_PREFIXES = ("scripts/", "supabase/", "docs/", "node_modules/typescript/",
                       ".claude/hooks/", ".github/workflows/", ".agents/skills/",
-                      ".githooks/")
+                      ".githooks/",
+                      # ONE FILE (backlog #651): `HARNESS_TREE` stages `.claude/settings.json` as a file, so it is
+                      # listed exactly, with no trailing slash — a cite must name it whole to count as staged.
+                      ".claude/settings.json")
 
 
 def unstageable_cites(canons: list[dict]) -> list[str]:
@@ -653,7 +656,8 @@ def _self_test_body() -> int:
                    and getattr(n.targets[0], "id", "") == "HARNESS_TREE")
         case("STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift",
              sorted(STAGEABLE_PREFIXES),
-             sorted(e.value.rstrip("/") + "/" for e in _ht.value.elts))
+             sorted(e.value if (ROOT / e.value).is_file() else e.value.rstrip("/") + "/"
+                    for e in _ht.value.elts))
 
         # ⭐ AND THE PREDICATE ITSELF, AGAINST INPUT IT MUST REFUSE — plus input it must NOT.
         # The live case above is right and is not enough: no declared entry uses an exotic spelling,

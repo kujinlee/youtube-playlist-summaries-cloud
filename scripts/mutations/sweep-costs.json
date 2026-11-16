@@ -84,16 +84,40 @@
     "expect": "...and an index outside 1..total says so"
   },
   {
-    "name": "backlog #588 r1: a SCHEDULE run's two-seed times are read as one seed's",
+    "name": "backlog #588 r1: a SCHEDULE run whose verdict lists no seeds is read as one seed's",
     "file": "scripts/sweep-costs.py",
     "edits": [["    if event == MULTI_SEED_EVENT:", "    if False:"]],
-    "expect": "⛔ r1: a SCHEDULE run (two hash seeds) is refused, and so is a log that does not say its event"
+    "expect": "⛔ r1: a SCHEDULE run whose verdict does NOT list its seeds is refused, and so is a log that does not say its event"
   },
   {
     "name": "backlog #588 r1: a log that does not say its event is read, so its number of seeds is a guess",
     "file": "scripts/sweep-costs.py",
     "edits": [["    if event is None:\n", "    if False:\n"]],
-    "expect": "⛔ r1: a SCHEDULE run (two hash seeds) is refused, and so is a log that does not say its event"
+    "expect": "⛔ r1: a SCHEDULE run whose verdict does NOT list its seeds is refused, and so is a log that does not say its event"
+  },
+  {
+    "name": "backlog #651 r1: a seed-varied run's gaps are not divided, so a nightly run doubles every cost in the table",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["        out.append((kind, target, cost / parsed[\"seeds\"]))", "        out.append((kind, target, cost))"]],
+    "expect": "⭐ #651 r1: a SCHEDULE run is read at ONE seed's cost — every gap divided by the number of seeds its own verdict lists: by 2 under two seeds, by 3 under three, by 1 on a push that lists none"
+  },
+  {
+    "name": "backlog #651 r1: the seed count is the constant 2, not the number of seeds the verdict lists",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["        return len(m.group(1).split(\", \"))", "        return 2"]],
+    "expect": "⭐ #651 r1: a SCHEDULE run is read at ONE seed's cost — every gap divided by the number of seeds its own verdict lists: by 2 under two seeds, by 3 under three, by 1 on a push that lists none"
+  },
+  {
+    "name": "backlog #651 r1: a seed list is read from anywhere in the verdict line, not only its tail",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["([0-9]+(?:, [0-9]+)*)$\")", "([0-9]+(?:, [0-9]+)*)\")"]],
+    "expect": "⛔ #651 r2: a seed list that is DECLARED but malformed is REFUSED on a push and on a schedule run alike — never read as no seeds (divisor 1); the per-mutation `PYTHONHASHSEED=3` form is no declaration"
+  },
+  {
+    "name": "backlog #651 r1: two seed counts in one run are pooled, each shard divided by its own",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if len(seeds) != 1:", "    if False:"]],
+    "expect": "⛔ #651 r1: two SEED COUNTS in one run are refused (a shard read without its seeds beside one read with them); the same count in every shard, 2 and 2, is a run"
   },
   {
     "name": "backlog #588 r1: a DUPLICATE shard log is pooled twice",
@@ -172,5 +196,23 @@
     "file": "scripts/sweep-costs.py",
     "edits": [["_count(vm.group(2), \"the verdict's shard\"), _count(vm.group(3), \"the verdict's total\")", "int(vm.group(2)), int(vm.group(3))"]],
     "expect": "⛔ r2: a 4,301-digit count — env block or verdict line — is a REFUSAL naming the count, never a crash"
+  },
+  {
+    "name": "backlog #651 r2: a DECLARED but malformed seed list is read as no seeds, so a two-seed run is divided by 1",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["    if declared:\n", "    if False:\n"]],
+    "expect": "⛔ #651 r2: a seed list that is DECLARED but malformed is REFUSED on a push and on a schedule run alike — never read as no seeds (divisor 1); the per-mutation `PYTHONHASHSEED=3` form is no declaration"
+  },
+  {
+    "name": "backlog #651 r2: two seed declarations in one verdict are read as the tail's, the other ignored",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["        if declared != 1 or not m:", "        if not m:"]],
+    "expect": "⛔ #651 r2: a seed list that is DECLARED but malformed is REFUSED on a push and on a schedule run alike — never read as no seeds (divisor 1); the per-mutation `PYTHONHASHSEED=3` form is no declaration"
+  },
+  {
+    "name": "backlog #651 r2: the per-mutation `PYTHONHASHSEED=3` form counts as a seed declaration, so an unseeded push is refused",
+    "file": "scripts/sweep-costs.py",
+    "edits": [["SEEDS_DECLARED = \" under PYTHONHASHSEED \"", "SEEDS_DECLARED = \" under PYTHONHASHSEED\""]],
+    "expect": "⛔ #651 r2: a seed list that is DECLARED but malformed is REFUSED on a push and on a schedule run alike — never read as no seeds (divisor 1); the per-mutation `PYTHONHASHSEED=3` form is no declaration"
   }
 ]

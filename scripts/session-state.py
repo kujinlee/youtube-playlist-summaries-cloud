@@ -29,7 +29,14 @@ WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from
   - `gh` failing, timing out, unparseable output or a malformed element is CANNOT RUN, never an empty
     list, and a timeout SAYS it timed out;
   - a list as long as LIMIT says MAY BE TRUNCATED;
-  - the two calls are bounded (TIMEOUT + ISSUE_TIMEOUT s, under the hook's 60 s cap) and get no stdin;
+  - the calls collect() makes are COLLECT_BOUNDS, each worst case its timeout + DRAIN; a self-test case sums them
+    against the SessionStart hook's limit READ from .claude/settings.json, leaving HOOK_MARGIN s; they get no stdin;
+  - ⟳ backlog #651: "no sweep-red issue" is not "the full sweep ran". The nightly scheduled run is the only regular
+    FULL mutation sweep, and a run that is dropped or cancelled files nothing — so the block also prints the AGE of
+    the last GREEN full sweep (`green_sweep_status`), STALE past FULL_SWEEP_STALE_HOURS, NO GREEN SWEEP when there
+    is none, and CANNOT VERIFY when gh does not answer. ⟳ Phase 6 redesign: the age is read from ONE fact, the
+    `full-sweep-green` artifact the summary job uploads on a green scheduled sweep of master (`fetch_green_markers`,
+    one GET) — never from a run, a job or a shard;
   - the ledger is read by ONE rule for the block and for every update — one `open(O_NOFOLLOW)`, one `fstat`, one
     read: a symlink, a non-regular file (a FIFO would block the read) or a file over MAX_LEDGER is NOT READ, and an
     update REFUSES it rather than rewrite what it could not read (backlog #369); it is split on b"\\n" only and written
@@ -54,7 +61,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --set-after ID 'PR #N'|none   # change a declared prerequisite, keeping `at`
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 144 cases
+    python3 scripts/session-state.py --self-test  # 157 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -63,6 +70,7 @@ text), 0/1 for --self-test, 2 for a ledger command that cannot write.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import fcntl
 import json
 import os
@@ -83,8 +91,29 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LEDGER_REL = ".claude/inflight.jsonl"
 # backlog #408: the main checkout a page generator's private clone came from, set by `regen-pages.py` (`main_checkout`)
 MAIN_CHECKOUT_ENV = "REGEN_MAIN_CHECKOUT"
-TIMEOUT = 30      # the `gh pr list` call; with ISSUE_TIMEOUT, 45 s under the hook's 60 s harness timeout
+# ⟳ backlog #651 r3 C3-2: the hook's bounded calls, each worst case its timeout + DRAIN (`_run`), must leave
+# HOOK_MARGIN s under the SessionStart hook's `timeout` in .claude/settings.json (60). A self-test case reads that
+# limit and sums COLLECT_BOUNDS against it: 10 + 21 + 15 + 5 = 51, + 4 x DRAIN = 55, + 5 = 60. TIMEOUT was 30, and
+# the redesign's spec said 25; 25 leaves 1 s once DRAIN is counted, so it is 21.
+TIMEOUT = 21      # the `gh pr list` call
+GIT_TIMEOUT = 10  # the `git rev-parse` in `_common_dir` (a second one only under MAIN_CHECKOUT_ENV, never at SessionStart)
 ISSUE_TIMEOUT = 15   # the `gh issue list` call for open `sweep-red` issues (PR #496 r1 C4)
+SWEEP_MARKER_TIMEOUT = 5   # the ONE `gh api` GET for the `full-sweep-green` markers (backlog #651 redesign)
+HOOK_MARGIN = 5
+# ⟳ backlog #651 (Phase 6 redesign, docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md): the
+# summary job `mutation-sweep-complete` uploads an artifact of THIS name only on a GREEN scheduled sweep on master,
+# first attempt (.github/workflows/ci.yml). The block reads that one fact; it never reads a run, a job or a shard.
+MARKER_NAME = "full-sweep-green"
+MARKER_KEPT_DAYS = 7     # the upload's retention-days: no marker at all after 7 days without a green sweep
+MARKER_FIELDS = frozenset({"created_at", "head_branch", "head_sha", "run_id", "same_repo"})
+# gh projects each artifact to MARKER_FIELDS; `same_repo` is False for a fork's run (a fork's branch can be `master`).
+MARKER_JQ = ("{t: .total_count, a: [.artifacts[] | {created_at, head_branch: .workflow_run.head_branch, "
+             "head_sha: .workflow_run.head_sha, run_id: .workflow_run.id, same_repo: (.workflow_run.repository_id "
+             "!= null and .workflow_run.head_repository_id == .workflow_run.repository_id)}]}")
+# A GREEN marker older than this is STALE. 36 h = the 24 h between crons, plus the spread MEASURED on the runs of
+# 11-08 to 11-14: created 7-10 h after their cron time and 85-225 min long, about 30 h between two healthy
+# completions at worst, plus margin.
+FULL_SWEEP_STALE_HOURS = 36
 SWEEP_RED_SHOWN = 3  # open sweep-red issues named in the block; the rest is a count
 LIMIT = 100
 MAX_LEDGER = 64 * 1024
@@ -99,6 +128,10 @@ IDS_LIMIT = 1000     # characters of owner ids the cap notice may print
 HIDDEN_IDS_LIMIT = 400   # characters of routine ids the footer may print
 TITLES_SHOWN = 5     # non-owner ledger titles the compact block names, newest first; the rest is behind the path
 DRAIN = 1.0       # seconds a killed call's pipes are drained before they are closed (PR #425 r3 XR3)
+# Every bounded call collect() makes at SessionStart, by name. A self-test case holds collect() to exactly these and
+# sums them, each + DRAIN, against the hook's limit read from .claude/settings.json (backlog #651 r3 C3-2).
+COLLECT_BOUNDS = (("git rev-parse", GIT_TIMEOUT), ("gh pr list", TIMEOUT), ("gh issue list", ISSUE_TIMEOUT),
+                  ("gh api full-sweep-green", SWEEP_MARKER_TIMEOUT))
 # A ledger entry WAITS ON THE OWNER only when its `what` starts with this — an explicit marker, never a word match:
 # matching "owner" anywhere counted 4 of 6 real entries ("PAUSED by owner", "TEST … on the first compaction"),
 # of which 2 waited on a decision (measured 2026-10-28). `compaction-state.py` reads it through `waits_on_owner`.
@@ -608,7 +641,8 @@ def _compact_ledger(head: list[str], ledger: list[dict], problems: list[str], ma
 
 def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], ledger_problems: list[str],
            now: str, truncated: bool = False, mark: str = "", compact: bool = False, ledger_path: str = "",
-           owner_elsewhere: int = 0, sweep_red: tuple[list[dict] | None, str | None] | None = None) -> str:
+           owner_elsewhere: int = 0, sweep_red: tuple[list[dict] | None, str | None] | None = None,
+           full_sweep: tuple[str, str] | None = None) -> str:
     """The block, pure: everything is passed in, every value goes through clean(). `mark` is appended to each line that
     reports a state NOT READ — chosen where the failure is decided, never by searching the text, so a branch or a
     ledger entry that merely CONTAINS a failure word is not marked (PR #425 r4 C4-F3). Empty by default.
@@ -660,6 +694,8 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
                 L.append(f"  #{clean(i.get('number'), 10)} {clean(i.get('title'), 120)} {clean(i.get('url'), 120)}")
             if len(issues) > SWEEP_RED_SHOWN:
                 L.append(f"  … {len(issues) - SWEEP_RED_SHOWN} more open sweep-red issue(s) (`gh issue list --label sweep-red`)")
+    if full_sweep is not None:   # None: this caller did not read the markers. `green_sweep_status`' answer, text already clean()
+        L.append(f"FULL SWEEP: {full_sweep[1]}" + (mark if full_sweep[0] == "cannot" else ""))
     if owner_elsewhere:   # the caller prints the owner entries whole in a section of its own (the compaction snapshot)
         L.append(f"IN-FLIGHT LEDGER ({LEDGER_REL}): {owner_elsewhere} owner entr{'y' if owner_elsewhere == 1 else 'ies'} "
                  "listed whole under 'Pending OWNER decisions'; the rest:" if ledger or ledger_problems else
@@ -715,7 +751,7 @@ def main_checkout(root: Path, run=_run) -> tuple[Path, str | None]:
 
 def _common_dir(where: Path, run=_run) -> tuple[str, str | None]:
     """(the absolute, existing common git dir asked from `where`, None), or ('', why)."""
-    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], where, 10)
+    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], where, GIT_TIMEOUT)
     common = out.strip() if rc == 0 else ""
     if not common or "\n" in common or not os.path.isabs(common) or not os.path.isdir(common):
         return "", f"git rev-parse --git-common-dir gave no usable path (exit {rc}: {clean(out, 100)})"
@@ -817,12 +853,80 @@ def fetch_sweep_red(root: Path, run=_run) -> tuple[list[dict] | None, str | None
     return issues, None
 
 
-def collect(root: Path, run=_run, now: str | None = None) -> str:
+def fetch_green_markers(root: Path, run=_run) -> tuple[list[dict] | None, str | None]:
+    """(the `full-sweep-green` markers, as {created_at, head_branch, head_sha, run_id, same_repo}, None), or (None, why).
+    backlog #651 (Phase 6 redesign). ONE read-only, name-filtered GET. A gh failure, output that is not one {t, a}
+    page, or a page SHORT of its own total_count is a reason — `green_sweep_status` prints CANNOT VERIFY, never a
+    partial list read as whole. The elements are judged there, not here."""
+    rc, out = run(["gh", "api", f"repos/{{owner}}/{{repo}}/actions/artifacts?name={MARKER_NAME}&per_page=100",
+                   "--jq", MARKER_JQ], root, SWEEP_MARKER_TIMEOUT)
+    if rc != 0:
+        return None, f"gh exited {rc}: {clean(out, 160)}"
+    try:
+        page = json.loads(out)
+        if not isinstance(page, dict) or not isinstance(page.get("t"), int) or not isinstance(page.get("a"), list):
+            raise ValueError("not one {t, a} page of markers")
+        if len(page["a"]) != page["t"]:
+            raise ValueError(f"listed {len(page['a'])} of {page['t']} markers")
+    except ValueError as exc:
+        return None, f"gh output unparseable ({clean(exc, 80)})"
+    return page["a"], None
+
+
+def green_sweep_status(markers, why: str | None, now: float) -> tuple[str, str]:
+    """PURE. (state, text) for the block's FULL SWEEP line, from `fetch_green_markers`' answer; `now` is epoch seconds.
+    ⛔ THE CONTRACT (backlog #651, docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md §5.2): a
+    full sweep counts when the summary job `mutation-sweep-complete` PUBLISHED the `full-sweep-green` marker. This
+    function never reads a run, a job or a shard. A counterexample about what a run's listing shows is outside this
+    contract and belongs to `mutation-sweep-complete`. Only a GREEN sweep counts: a red one is its `sweep-red` issue,
+    the line above this one. A marker counts when ALL of: it is from this repository (`same_repo` is True), from
+    `master`, and its `created_at` parses with a zone; the newest such is the age. States:
+      "cannot"  gh did not answer, or a marker is malformed — NOT CHECKED, never fresh;
+      "never"   gh answered and no marker counts (they are kept MARKER_KEPT_DAYS days);
+      "stale"   the newest counted marker is over FULL_SWEEP_STALE_HOURS old;
+      "fresh"   it is within them."""
+    if why is not None:
+        return "cannot", f"CANNOT VERIFY — {clean(why)}. Treat the nightly full sweep as NOT CHECKED, never as run."
+    if not isinstance(markers, list):
+        return "cannot", "CANNOT VERIFY — the marker list is not a list. Treat the nightly full sweep as NOT CHECKED, never as run."
+    best, best_t = None, None
+    for m in markers:
+        if not isinstance(m, dict) or not MARKER_FIELDS <= m.keys():
+            return "cannot", ("CANNOT VERIFY — a marker lacks a field of " + ", ".join(sorted(MARKER_FIELDS))
+                              + ". Treat the nightly full sweep as NOT CHECKED, never as run.")
+        if m["same_repo"] is not True or m["head_branch"] != "master":
+            continue
+        try:
+            made = dt.datetime.fromisoformat(str(m["created_at"]).replace("Z", "+00:00"))
+            if made.tzinfo is None:
+                raise ValueError("no time zone")
+        except ValueError as exc:
+            return "cannot", (f"CANNOT VERIFY — marker of run {clean(m['run_id'], 20)} has no readable time "
+                              f"({clean(exc, 60)}). Treat the nightly full sweep as NOT CHECKED, never as run.")
+        if best_t is None or made.timestamp() > best_t:
+            best, best_t = m, made.timestamp()
+    if best is None:
+        return "never", (f"⚠ NO GREEN SWEEP — no `{MARKER_NAME}` marker from master (markers are kept "
+                         f"{MARKER_KEPT_DAYS} days). Master has NOT been swept in full and green: "
+                         "`gh run list --workflow ci.yml --event schedule`.")
+    age_h = (now - best_t) / 3600
+    what = (f"last GREEN full sweep {age_h:.0f} h ago (run {clean(best['run_id'], 20)}, "
+            f"commit {clean(best['head_sha'], 40)[:8]})")
+    if age_h > FULL_SWEEP_STALE_HOURS:
+        return "stale", (f"⚠ STALE — {what}, over {FULL_SWEEP_STALE_HOURS} h. The nightly run is the only regular full "
+                         "sweep (backlog #651), and a red one is its sweep-red issue: "
+                         "`gh run list --workflow ci.yml --event schedule`.")
+    return "fresh", f"{what}."
+
+
+def collect(root: Path, run=_run, now: str | None = None, clock=time.time) -> str:
+    """The hook's entry. Its bounded calls are COLLECT_BOUNDS, and a self-test case holds them to that list."""
     now = now or time.strftime("%Y-%m-%d %H:%M %Z")
     main = main_checkout(root, run)
     prs, pr_error, ledger, problems, truncated = fetch(root, run, main)
     return render(prs, pr_error, ledger, problems, now, truncated=truncated, compact=True,
-                  ledger_path=str(main[0] / LEDGER_REL), sweep_red=fetch_sweep_red(root, run))
+                  ledger_path=str(main[0] / LEDGER_REL), sweep_red=fetch_sweep_red(root, run),
+                  full_sweep=green_sweep_status(*fetch_green_markers(root, run), clock()))
 
 
 def self_test() -> int:
@@ -1162,6 +1266,88 @@ def _self_test_body() -> int:
          (fetch_sweep_red(Path("."), lambda c, w, timeout=TIMEOUT: (1, "HTTP 502\n")),
           (fetch_sweep_red(Path("."), lambda c, w, timeout=TIMEOUT: (0, '[{"number": 1}]'))[1] or "").startswith("gh output unparseable")),
          ((None, "gh exited 1: HTTP 502"), True))
+    # ⟳ backlog #651, Phase 6 redesign (docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md): the
+    # line reads ONE fact the summary job publishes, a `full-sweep-green` artifact, never a run, a job or a shard. FIXED
+    # times: `now` is passed in. `_m15` copies an element of the REAL artifact list of 11-15 (run 43726583726 on master,
+    # created 15:21:00Z), projected as `fetch_green_markers` asks gh to project it.
+    def _at(stamp):
+        return dt.datetime.fromisoformat(stamp + "+00:00").timestamp()
+
+    def _mk(created, branch="master", sha="65e6f56261b994e2204e6045c4c624c7767240fc", run_id=43726583726, same=True):
+        return {"created_at": created, "head_branch": branch, "head_sha": sha, "run_id": run_id, "same_repo": same}
+    _m15 = _mk("2026-11-15T15:21:00Z")
+    _m14 = _mk("2026-11-14T15:00:00Z", sha="1111111122222222333333334444444455555555", run_id=43500000000)
+
+    def _gs(markers, stamp):
+        return green_sweep_status(markers, None, _at(stamp))
+    case("⭐ #651 redesign: a green marker 23 h old is FRESH, naming its age, run and commit; the SAME marker 37 h old "
+         "is STALE",
+         (_gs([_m15], "2026-11-16T14:21:00"), _gs([_m15], "2026-11-17T04:21:00")[0],
+          _gs([_m15], "2026-11-17T04:21:00")[1].split(". ")[0]),
+         (("fresh", "last GREEN full sweep 23 h ago (run 43726583726, commit 65e6f562)."), "stale",
+          "⚠ STALE — last GREEN full sweep 37 h ago (run 43726583726, commit 65e6f562), over 36 h"))
+    case("...the limit is FULL_SWEEP_STALE_HOURS itself: exactly 36 h is fresh, a minute more is stale",
+         (_gs([_m15], "2026-11-17T03:21:00")[0], _gs([_m15], "2026-11-17T03:22:00")[0], FULL_SWEEP_STALE_HOURS),
+         ("fresh", "stale", 36))
+    case("⭐ #651 redesign: NO marker is NO GREEN SWEEP — never fresh — and the line says markers are kept 7 days",
+         (lambda r: (r[0], r[1].startswith("⚠ NO GREEN SWEEP"), "kept 7 days" in r[1], MARKER_KEPT_DAYS))(
+             _gs([], "2026-11-15T20:21:00")),
+         ("never", True, True, 7))
+    case("⭐ #651 redesign: of two markers the NEWER created_at wins, in either list order",
+         (_gs([_m14, _m15], "2026-11-15T20:21:00"), _gs([_m15, _m14], "2026-11-15T20:21:00")),
+         (("fresh", "last GREEN full sweep 5 h ago (run 43726583726, commit 65e6f562)."),) * 2)
+    # A pull request's run, or a fork's branch named `master`, can upload an artifact of ANY name (review §5.3).
+    _br = _mk("2026-11-15T19:00:00Z", branch="goal-wait-derive", run_id=43731083295)
+    _fork = _mk("2026-11-15T19:00:00Z", same=False, run_id=43731083296)
+    case("⭐ #651 redesign: a marker from a branch other than master is IGNORED — alone it is NO GREEN SWEEP, and beside "
+         "an older master marker the older one's age is used",
+         (_gs([_br], "2026-11-15T20:21:00")[0], _gs([_br, _m15], "2026-11-15T20:21:00")),
+         ("never", ("fresh", "last GREEN full sweep 5 h ago (run 43726583726, commit 65e6f562).")))
+    case("⭐ #651 redesign: a marker from ANOTHER repository (a fork's `master`) is IGNORED — alone NO GREEN SWEEP, "
+         "beside an older one of ours the older one's age is used",
+         (_gs([_fork], "2026-11-15T20:21:00")[0], _gs([_fork, _m15], "2026-11-15T20:21:00"),
+          _gs([_mk("2026-11-15T19:00:00Z", same=1)], "2026-11-15T20:21:00")[0]),
+         ("never", ("fresh", "last GREEN full sweep 5 h ago (run 43726583726, commit 65e6f562)."), "never"))
+    case("⭐ #651 redesign: a created_at that is no date or has no zone, a marker missing a key, and markers that are "
+         "not a list are each CANNOT VERIFY, never fresh",
+         tuple(green_sweep_status(m, None, _at("2026-11-15T20:21:00"))[0]
+               for m in ([_mk("yesterday")], [_mk("2026-11-15T15:21:00")],
+                         [{k: v for k, v in _m15.items() if k != "head_sha"}], {"a": [_m15]}, None)),
+         ("cannot",) * 5)
+    case("⭐ #651 redesign: gh not answering is CANNOT VERIFY with its reason — even beside a marker that would be fresh",
+         (green_sweep_status(None, "gh exited 4: auth", 0.0),
+          green_sweep_status([_m15], "gh exited 4: auth", _at("2026-11-15T20:21:00"))[0]),
+         (("cannot", "CANNOT VERIFY — gh exited 4: auth. Treat the nightly full sweep as NOT CHECKED, never as run."),
+          "cannot"))
+    # The MARKER READER: one name-filtered GET, its page counted against total_count.
+    _pgm = lambda arts, t=None: json.dumps({"t": len(arts) if t is None else t, "a": arts})  # noqa: E731
+    _seen_m: list = []
+    case("⭐ #651 redesign: the marker reader asks gh ONE name-filtered GET, in the root given, within "
+         "SWEEP_MARKER_TIMEOUT, and returns the markers",
+         (fetch_green_markers(Path("/r4"), lambda c, w, timeout=TIMEOUT: (
+             _seen_m.append((c, w, timeout)), (0, _pgm([_m15, _br]) + "\n"))[1]), _seen_m),
+         (([_m15, _br], None),
+          [(["gh", "api", "repos/{owner}/{repo}/actions/artifacts?name=full-sweep-green&per_page=100", "--jq",
+             "{t: .total_count, a: [.artifacts[] | {created_at, head_branch: .workflow_run.head_branch, "
+             "head_sha: .workflow_run.head_sha, run_id: .workflow_run.id, same_repo: (.workflow_run.repository_id "
+             "!= null and .workflow_run.head_repository_id == .workflow_run.repository_id)}]}"],
+            Path("/r4"), SWEEP_MARKER_TIMEOUT)]))
+    case("⭐ #651 redesign: a page SHORT of total_count, a gh failure, output that is no JSON and a page that is not "
+         "{t, a} are each (None, why), never a partial list",
+         ((fetch_green_markers(Path("."), lambda c, w, timeout=TIMEOUT: (0, _pgm([_m15], 3)))[1] or "")
+          .endswith("listed 1 of 3 markers)"),
+          fetch_green_markers(Path("."), lambda c, w, timeout=TIMEOUT: (1, "HTTP 502\n")),
+          fetch_green_markers(Path("."), lambda c, w, timeout=TIMEOUT: (0, "not json"))[0],
+          fetch_green_markers(Path("."), lambda c, w, timeout=TIMEOUT: (0, '{"t": 1, "a": {}}'))[0],
+          fetch_green_markers(Path("."), lambda c, w, timeout=TIMEOUT: (0, '[]'))[0]),
+         (True, (None, "gh exited 1: HTTP 502"), None, None, None))
+    out = render([], None, [], [], "T", mark=" <M>", full_sweep=("cannot", "CANNOT VERIFY — x."))
+    case("⭐ #651 r1: the block prints the FULL SWEEP line, MARKED when it could not be verified and only then; a "
+         "caller that did not read the runs prints none",
+         (any(l == "FULL SWEEP: CANNOT VERIFY — x. <M>" for l in out.splitlines()),
+          [l for l in render([], None, [], [], "T", mark=" <M>", full_sweep=("stale", "⚠ STALE — y.")).splitlines()
+           if l.startswith("FULL SWEEP")], "FULL SWEEP" in render([], None, [], [], "T")),
+         (True, ["FULL SWEEP: ⚠ STALE — y."], False))
     out = render([pr, dict(pr, number=8, statusCheckRollup=[])], None, [], [], "T")
     case("a PR line carries number, branch, head, draft, mergeability and checks",
          "PR #7 `b` head abcdef12 DRAFT · DIRTY · checks: 1 fail" in out, True)
@@ -1412,8 +1598,11 @@ def _self_test_body() -> int:
 
         def fake(cmd, cwd, timeout=TIMEOUT):
             seen.append((cmd[:3], timeout))
+            if cmd[:2] == ["gh", "api"]:   # backlog #651 redesign: the green markers, one page
+                return 0, _pgm([_m15])
             return 0, json.dumps(red if cmd[:3] == ["gh", "issue", "list"] else [pr])
-        out = collect(root, run=fake, now="T")
+        out = collect(root, run=fake, now="T", clock=lambda: _at("2026-11-16T01:21:00"))
+        first_calls = list(seen)
         git_calls = []
         fetch(root, run=lambda c, w, timeout=TIMEOUT: (git_calls.append(c[0]), (0, "[]"))[1], main=(root, None))
         case("⭐ r4 C4-F5: fetch given the caller's main-checkout answer asks git NOTHING — one answer for heading and ledger",
@@ -1422,11 +1611,30 @@ def _self_test_body() -> int:
         got = fetch(root / "fetch-nogit", lambda c, w, timeout=TIMEOUT: (asked_git.append(c[0]), (128, "not a repo"))[1])
         case("...and without one it asks git itself, and says the main checkout could not be found",
              (asked_git, any("main checkout could not be found" in p for p in got[3])), (["gh", "git"], True))
-        case("collect() asks gh for the PRs and the sweep-red issues ONCE each, within the timeouts, and wires the PR, "
-             "the issue and the ledger into one block",
-             ([c for c, _ in seen if c[0] == "gh"], all(t <= TIMEOUT for _, t in seen),
-              "PR #7 " in out, "[job1]" in out, "#501 Full mutation sweep red" in out),
-             ([["gh", "pr", "list"], ["gh", "issue", "list"]], True, True, True, True))
+        case("collect() asks gh for the PRs, the sweep-red issues and the green markers ONCE each, and wires the PR, the "
+             "issue and the ledger into one block",
+             ([c for c, _ in first_calls if c[0] == "gh"], "PR #7 " in out, "[job1]" in out,
+              "#501 Full mutation sweep red" in out),
+             ([["gh", "pr", "list"], ["gh", "issue", "list"], ["gh", "api", "repos/{owner}/{repo}/actions/artifacts?name=full-sweep-green&per_page=100"]],
+              True, True, True))
+        # ⟳ backlog #651 r3 C3-2: the bounded calls summed to 65 s against the hook's 60 s, and nothing added them up.
+        # The limit is READ from .claude/settings.json (the SessionStart hook that runs session-state.sh), never copied.
+        _hooks = [h for g in json.loads((REPO_ROOT / ".claude" / "settings.json").read_text())["hooks"]["SessionStart"]
+                  for h in g["hooks"] if "session-state.sh" in h.get("command", "")]
+        case("⭐ #651 r3 C3-2: COLLECT_BOUNDS are exactly the timeouts collect() passes, and their worst case (each "
+             "timeout plus DRAIN) leaves HOOK_MARGIN s under the SessionStart hook's timeout in .claude/settings.json",
+             (sorted(t for _, t in first_calls) == sorted(t for _, t in COLLECT_BOUNDS), len(_hooks),
+              sum(t + DRAIN for _, t in COLLECT_BOUNDS) + HOOK_MARGIN <= (_hooks or [{}])[0].get("timeout", 0), HOOK_MARGIN),
+             (True, 1, True, 5))
+        case("⭐ #651 redesign: collect() — the hook's entry — prints the last GREEN sweep's AGE at the clock it is given "
+             "(10 h, then 50 h and STALE), and CANNOT VERIFY when only the marker list fails",
+             ("FULL SWEEP: last GREEN full sweep 10 h ago (run 43726583726, commit 65e6f562)." in out,
+              "FULL SWEEP: ⚠ STALE — last GREEN full sweep 50 h ago" in collect(root, run=fake, now="T",
+                                                                                clock=lambda: _at("2026-11-17T17:21:00")),
+              "FULL SWEEP: CANNOT VERIFY — gh exited 1: HTTP 502" in collect(
+                  root, run=lambda c, w, timeout=TIMEOUT: (1, "HTTP 502") if c[:2] == ["gh", "api"]
+                  else fake(c, w, timeout), now="T")),
+             (True, True, True))
         out = collect(root, run=lambda c, w, timeout=TIMEOUT: (1, "HTTP 502") if c[:3] == ["gh", "issue", "list"]
                       else fake(c, w, timeout), now="T")
         case("⭐ r1 C4: collect() — the hook's entry — prints CANNOT READ when only the issue list fails, beside the PRs",
