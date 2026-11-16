@@ -20950,3 +20950,17 @@ payload's `background_tasks` with a live status; (c) a started CI check on an op
 closed); a checker crash → allow. The Phase 6 review (`docs/reviews/architecture-review-2026-11-16-idle-stop-guard.md`)
 removed two earlier exceptions and the transcript reader, so every allow reads state the stopping session did not
 write. Self-test 61/61, 61 mutations, 0 survivors after the r4 fold. Filed, not fixed: backlog #665 to #667.
+
+## 2026-11-16
+The marketplace packages now have a written list of exactly which files each one ships, and a check runs on
+every change. It rebuilds each package from that list and follows every file the package's own instructions run or
+tell the reader to open. If anything it reaches is missing from the list, the check fails and names the file. Today it
+finds nothing missing. Nothing has been published; publishing is still the owner's decision, at the plan's final step.
+<!--tech-->
+Marketplace plan Tasks 5-7 (slice C, branch `hse-c`, to land as `harness-ships-elsewhere`). Task 5:
+`docs/marketplace/components.json` + `check-shipping-sets.py --map` (0 gaps). Task 6: `mkt_stage.py --declare` derives
+`docs/marketplace/shipping-sets.json` from a real `claude` install of each plugin package (118/118 cases, 95 mutations).
+Task 7: `check-shipping-sets.py --closure docs/marketplace/shipping-sets.json` materialises each declared tree, walks
+imports, `python3`/`bash`/`source` invocations (shell comment lines skipped) and follow/read lines, and prints each gap
+(`gap:` / `gap: dangling:`); cwd-relative hand-offs and `docs/` reads are counted, not followed. A count that does not
+match a component's files is REFUSED. 78/78 cases, 105 mutations; a CI step runs it, since it needs no `claude`.
