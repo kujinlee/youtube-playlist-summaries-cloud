@@ -13,12 +13,12 @@ halves:
   codex: ran
   claude: alternation
 findings:
-  - {id: XM1, severity: Major, aim: deliverable, fix_induced: true, component: edge-reader, disposition: fixed}
-  - {id: XM2, severity: Major, aim: deliverable, fix_induced: true, component: edge-reader, disposition: fixed}
-  - {id: XM3, severity: Major, aim: deliverable, fix_induced: true, component: optional-edges, disposition: fixed}
-  - {id: XM4, severity: Major, aim: deliverable, fix_induced: true, component: optional-edges, disposition: fixed}
-  - {id: Xm5, severity: Minor, aim: deliverable, fix_induced: true, component: closure-input, disposition: fixed}
-  - {id: Xm6, severity: Minor, aim: deliverable, fix_induced: false, component: closure-arithmetic, disposition: fixed}
+  - {id: XM1, severity: High, aim: deliverable, fix_induced: true, component: edge-reader, disposition: fixed}
+  - {id: XM2, severity: High, aim: deliverable, fix_induced: true, component: edge-reader, disposition: fixed}
+  - {id: XM3, severity: High, aim: deliverable, fix_induced: true, component: optional-edges, disposition: fixed}
+  - {id: XM4, severity: High, aim: deliverable, fix_induced: true, component: optional-edges, disposition: fixed}
+  - {id: Xm5, severity: Medium, aim: deliverable, fix_induced: true, component: closure-input, disposition: fixed}
+  - {id: Xm6, severity: Medium, aim: deliverable, fix_induced: false, component: closure-arithmetic, disposition: fixed}
 ```
 
 | Id | Finding |

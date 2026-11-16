@@ -14,16 +14,16 @@ halves:
   claude: ran
 findings:
   - {id: CB1, severity: Blocking, aim: deliverable, fix_induced: false, component: edge-reader, disposition: fixed}
-  - {id: XM1, severity: Major, aim: deliverable, fix_induced: false, component: closure-roots, disposition: fixed}
-  - {id: XM2, severity: Major, aim: deliverable, fix_induced: false, component: edge-reader, disposition: fixed}
-  - {id: XM3, severity: Major, aim: deliverable, fix_induced: false, component: edge-reader, disposition: fixed}
-  - {id: XM4, severity: Major, aim: deliverable, fix_induced: false, component: closure-input, disposition: fixed}
-  - {id: XM5, severity: Major, aim: deliverable, fix_induced: false, component: closure-input, disposition: fixed}
-  - {id: XM6, severity: Major, aim: deliverable, fix_induced: false, component: map-candidates, disposition: fixed}
-  - {id: XM7, severity: Major, aim: deliverable, fix_induced: false, component: declare-walk, disposition: fixed}
-  - {id: CM1, severity: Major, aim: deliverable, fix_induced: false, component: closure-input, disposition: fixed}
-  - {id: CM2, severity: Major, aim: deliverable, fix_induced: false, component: map-declaration-tie, disposition: fixed}
-  - {id: Cm1, severity: Minor, aim: deliverable, fix_induced: false, component: dashboard-entry, disposition: fixed}
+  - {id: XM1, severity: High, aim: deliverable, fix_induced: false, component: closure-roots, disposition: fixed}
+  - {id: XM2, severity: High, aim: deliverable, fix_induced: false, component: edge-reader, disposition: fixed}
+  - {id: XM3, severity: High, aim: deliverable, fix_induced: false, component: edge-reader, disposition: fixed}
+  - {id: XM4, severity: High, aim: deliverable, fix_induced: false, component: closure-input, disposition: fixed}
+  - {id: XM5, severity: High, aim: deliverable, fix_induced: false, component: closure-input, disposition: fixed}
+  - {id: XM6, severity: High, aim: deliverable, fix_induced: false, component: map-candidates, disposition: fixed}
+  - {id: XM7, severity: High, aim: deliverable, fix_induced: false, component: declare-walk, disposition: fixed}
+  - {id: CM1, severity: High, aim: deliverable, fix_induced: false, component: closure-input, disposition: fixed}
+  - {id: CM2, severity: High, aim: deliverable, fix_induced: false, component: map-declaration-tie, disposition: fixed}
+  - {id: Cm1, severity: Medium, aim: deliverable, fix_induced: false, component: dashboard-entry, disposition: fixed}
 ```
 
 ## Findings, merged
