@@ -1694,7 +1694,10 @@ def _self_test_body() -> int:
                           {"id": "y", "package": "wf", "files": ["scripts/lib/y.py"]}],
                       {"pkg": {"channel": "plugin"}, "wf": {"channel": "reusable-workflow"}})
         out, calls = tmp() / "decl.json", []
-        rc, o, e = declare_cli(str(mp), str(out), r=r, run=stand_in(calls), allow=["python3"])
+        # `which` is a stand-in too: the install is, so the case must not depend on a real `claude` (CI has none —
+        # PR #598, mutation shard 35's control was 117/118 there)
+        rc, o, e = declare_cli(str(mp), str(out), r=r, run=stand_in(calls), allow=["python3"],
+                               which=lambda name: f"/stand-in/{name}")
         d = json.loads(out.read_text())
         head = git(r, "rev-parse", "--short", "HEAD").decode().strip()
         return (rc, o == f"{out}\n", e, d["measured_at"] == head, calls, sorted(d["packages"]),
