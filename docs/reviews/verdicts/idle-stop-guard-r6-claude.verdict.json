@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/idle-stop-guard-r6-claude.md": "100644 c0e740b5388bdef2121d581d7fa4cf9ea4c21faa"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "e30f8c98e41bc9b8681d9df47fceac82230436c1",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 3621 chars, names e30f8c98e41b",
+  "refused": false,
+  "review": "idle-stop-guard-r6-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/isg",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

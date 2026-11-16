@@ -20935,3 +20935,18 @@ transcript, bad arguments). A window of 270 s or less is refused: backlog #455's
 foreground call at 270 s, and a case compares the two constants. Self-test 73/73 on a fake clock, 63 mutations,
 0 survivors (after review round 2). Pinned in `expected_mutations.py` and `check-selftest-counts.py`; the convention is one line in
 `docs/process-checklists.md` (*Agent lifetime*). No hook and no CI step were added.
+
+## 2026-11-16
+The coordinating session can no longer end a turn by saying it is starting work while nothing is actually
+running. Before a turn ends, a check now looks at what is really happening: a background job of the session
+(a helper agent counts while it runs), or a test run still going on GitHub. If none is there, the turn is sent
+back once with a note saying what was missing. A usage limit lets the turn end normally. If the owner told the
+session to stop, or only the owner can act, the session says so in one line and the turn then ends. Earlier
+attempts read the session's own words, which rewording could get around; this one reads only what is running.
+<!--tech-->
+Backlog #663, branch `idle-stop-guard` (owner 2026-11-16 02:50/02:51). `scripts/check-idle-stop.py`, called from
+`.claude/hooks/check-idle-stop.sh` as a second Stop hook beside `block-idle-stop.sh`. Signals: (a) the Stop
+payload's `background_tasks` with a live status; (c) a started CI check on an open PR (`gh`, 3 s cap). Exceptions: `stop_hook_active`, a subagent's stop, a usage stop. Unreadable signal → block (fail
+closed); a checker crash → allow. The Phase 6 review (`docs/reviews/architecture-review-2026-11-16-idle-stop-guard.md`)
+removed two earlier exceptions and the transcript reader, so every allow reads state the stopping session did not
+write. Self-test 61/61, 61 mutations, 0 survivors after the r4 fold. Filed, not fixed: backlog #665 to #667.

@@ -5570,6 +5570,8 @@ def _self_test_body() -> int:
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
                                       "scripts/check-hook-commands.py",
+                                      # the idle-stop guard (owner 2026-11-16), with its manifest.
+                                      "scripts/check-idle-stop.py",
                                       "scripts/check-live-schema.py",
                                       # ⟳ 2026-10-02: ADR-0014's rule D2 arrives with its
                                       # manifest in the same commit.

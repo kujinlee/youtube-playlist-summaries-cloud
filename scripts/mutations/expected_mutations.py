@@ -2416,6 +2416,23 @@ EXPECTED_MUTATIONS = {
     # and the walk asking about the root it starts from. None retired; the three anchors on the walk's forbidden
     # check still bind (the line moved to the top of the loop, its text unchanged).
     "scripts/mkt_stage.py": 70,
+    # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
+    # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
+    # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.
+    # r2 fold -> 99 (79 + 20, none retired): the answered-card rule (6: an answered card, any id, a hook refusal read
+    # as a rejection, a rejection without is_error, a list-form rejection, a card with no id), the transcript split
+    # and its unreadable cases (6: splitlines, a torn middle line skipped, torn edges unreadable, RecursionError not
+    # caught, an unreadable transcript granting the exception, the unread transcript not said), malformed and deep
+    # gh / cache answers (6), and the per-file walk deadline and its lstat seam (2). Five anchors on the rewritten
+    # question exception re-bound to the same intent.
+    # Phase 6 fold (option D, 2026-11-16) -> 86 = 99 - 23 + 10, DELIBERATE. RETIRED 23, every one anchored in code
+    # that no longer exists: the pause marker (3), the AskUserQuestion exception and its transcript parser (16),
+    # `read_tail` and the line of main() that called it (4). ADDED 10: a marker read re-added to decide() (D1), a
+    # transcript open re-added to main() blocking and non-blocking (D4), a rejected card / a rejected card then an
+    # announcement / any card excusing the stop (D2, D3, D6), the old block message and a dropped second out (D5),
+    # a malformed `__typename` read past (r3 Cm1, D7), a signal asked before the order's allows (D8). Three
+    # surviving anchors re-bound to the same intent (the two prose-question mutants, the question-teaching one).
+    "scripts/check-idle-stop.py": 61,
     # backlog #657 (2026-11-16): the agent watchdog, pinned in the commit that creates it. 43: the argument rules
     # (10, the 270 s floor and its identity with `check-agent-long-call.LIMIT_S` among them), the git directory (4),
     # what counts as activity (12: files, directories, the three git files, the three excluded directories, the

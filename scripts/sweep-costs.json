@@ -6,6 +6,7 @@
   "hand-timed:scripts/sweep-costs.py@03e87843 (0.15-0.26 s locally; priced 1.0 s, no CI sample yet)",
   "hand-timed:scripts/mkt_isolate.py@marketplace-inventory Task 2 (self-test 2.2 s locally; priced 2.5 s, no CI sample yet)",
   "hand-timed:scripts/mkt_stage.py@marketplace-inventory Task 3 (self-test 1.7 s locally with its live case; priced 2.0 s, no CI sample yet)",
+  "hand-timed:scripts/check-idle-stop.py@idle-stop-guard r1 fold (self-test 1.8 s locally over 73 cases, 79 mutations in 210 s = 2.7 s each; priced 2.0 s and 3.0 s, no CI sample yet)",
   "hand-timed:scripts/agent-watchdog.py@backlog #657 (self-test 0.26 s locally on a fake clock; priced 1.0 s, no CI sample yet)"
  ],
  "defaults": {
@@ -612,6 +613,13 @@
    "control": 2.0,
    "recontrol": 2.0,
    "mutation": 2.0,
+   "samples": 0,
+   "mutations": 0
+  },
+  "scripts/check-idle-stop.py": {
+   "control": 2.0,
+   "recontrol": 2.0,
+   "mutation": 3.0,
    "samples": 0,
    "mutations": 0
   },

@@ -1,0 +1,795 @@
+[
+  {
+    "name": "stop_hook_active is ignored",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "if doc.get(\"stop_hook_active\") is True:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "stop_hook_active: the second stop is let through"
+    ]
+  },
+  {
+    "name": "a subagent's stop is judged",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if isinstance(aid, str) and aid.strip():\n        return ALLOW, \"\"",
+        "    if False:\n        return ALLOW, \"\""
+      ]
+    ],
+    "expect": [
+      "a subagent's stop (agent_id) is not judged"
+    ]
+  },
+  {
+    "name": "a blank agent_id counts as a subagent",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "isinstance(aid, str) and aid.strip()",
+        "isinstance(aid, str)"
+      ]
+    ],
+    "expect": [
+      "an empty agent_id is the main session"
+    ]
+  },
+  {
+    "name": "a `?` in the prose is a question again",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if usage_stop(cache_text, now):\n        return ALLOW, \"\"",
+        "    if usage_stop(cache_text, now) or \"?\" in str(doc.get(\"last_assistant_message\")):\n        return ALLOW, \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ a closing CHECK/RESULT table whose cell reads as a question does not excuse the stop → BLOCK"
+    ]
+  },
+  {
+    "name": "a closing question in the prose is a question again",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if usage_stop(cache_text, now):\n        return ALLOW, \"\"\n    unseen = []",
+        "    if usage_stop(cache_text, now) or str(doc.get(\"last_assistant_message\")).rstrip().endswith(\"?\"):\n        return ALLOW, \"\"\n    unseen = []"
+      ]
+    ],
+    "expect": [
+      "a `?` in prose is no exception: a real closing question, 'OK?', a rhetorical one, a code span, a comment"
+    ]
+  },
+  {
+    "name": "the block teaches ending on a question",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "\"and end the turn.\")",
+        "\"and end the turn, or ask the owner a question.\")"
+      ]
+    ],
+    "expect": [
+      "the block does not teach ending on a question"
+    ]
+  },
+  {
+    "name": "the weekly usage stop is dropped",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if verdict == _pace.REFUSE:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a weekly usage stop → ALLOW; below it → BLOCK"
+    ]
+  },
+  {
+    "name": "the five-hour stop fires below 100%",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "five[0] >= _pace.HARD_LIMIT",
+        "five[0] >= _pace.HARD_LIMIT - 1"
+      ]
+    ],
+    "expect": [
+      "a five-hour block at 100% → ALLOW; at 99% → BLOCK"
+    ]
+  },
+  {
+    "name": "the five-hour stop is dropped",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "if five is not None and five[1] > now and",
+        "if five is not None and False and"
+      ]
+    ],
+    "expect": [
+      "a five-hour block at 100% → ALLOW; at 99% → BLOCK"
+    ]
+  },
+  {
+    "name": "the usage exception is dropped",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if usage_stop(cache_text, now):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a weekly usage stop → ALLOW; below it → BLOCK"
+    ]
+  },
+  {
+    "name": "(a) a running task does not allow",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if tasks:\n        return ALLOW, \"\"",
+        "    if False:\n        return ALLOW, \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ replay 02:24 + (a) a running background shell → ALLOW"
+    ]
+  },
+  {
+    "name": "(a) a task with no status counts as running",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "str(t.get(\"status\", \"\")).lower() in LIVE",
+        "str(t.get(\"status\", \"running\")).lower() in LIVE"
+      ]
+    ],
+    "expect": [
+      "⭐ (a) a task with NO status is not running work → BLOCK"
+    ]
+  },
+  {
+    "name": "(a) any status but a finished one counts as running",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        ".lower() in LIVE]",
+        ".lower() not in (\"completed\", \"killed\")]"
+      ]
+    ],
+    "expect": [
+      "(a) only an explicit live status counts: failed, stopped, an unknown word and null → BLOCK"
+    ]
+  },
+  {
+    "name": "(a) a pending task is not live",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "LIVE = frozenset({\"running\", \"pending\"})",
+        "LIVE = frozenset({\"running\"})"
+      ]
+    ],
+    "expect": [
+      "⭐ replay 02:29 + (a) a pending subagent → ALLOW"
+    ]
+  },
+  {
+    "name": "(a) the status is read case-sensitively",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "str(t.get(\"status\", \"\")).lower()",
+        "str(t.get(\"status\", \"\"))"
+      ]
+    ],
+    "expect": [
+      "(a) a live status is read whatever its case: 'Running' → ALLOW"
+    ]
+  },
+  {
+    "name": "(a) a missing list is read as empty",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if tasks is None:\n        unseen.append",
+        "    if False:\n        unseen.append"
+      ]
+    ],
+    "expect": [
+      "⭐ a payload with no background_tasks (an older harness) → BLOCK, naming (a)"
+    ]
+  },
+  {
+    "name": "(a) cron jobs count as running work",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    tasks = running_tasks(doc)\n",
+        "    tasks = running_tasks(doc)\n    tasks = (tasks or []) + list(doc.get(\"session_crons\") or []) if tasks is not None else None\n"
+      ]
+    ],
+    "expect": [
+      "⭐ replay 02:24: 'I'll start now', no job, CI done, a daily cron → BLOCK"
+    ]
+  },
+  {
+    "name": "(c) a pending check does not allow",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if ci:\n        return ALLOW, \"\"",
+        "    if False:\n        return ALLOW, \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ replay 02:24 + (c) a pending CI check → ALLOW"
+    ]
+  },
+  {
+    "name": "(c) a StatusContext is read by status",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "c.get(\"__typename\") == \"StatusContext\" and c.get(\"state\")",
+        "c.get(\"__typename\") == \"StatusContext\" and c.get(\"status\")"
+      ]
+    ],
+    "expect": [
+      "(c) pending_ci reads both check kinds: a CheckRun's status and a StatusContext's state"
+    ]
+  },
+  {
+    "name": "(c) a CheckRun is read by state",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "c.get(\"__typename\") != \"StatusContext\" and c.get(\"status\") in STARTED_RUN",
+        "c.get(\"__typename\") != \"StatusContext\" and c.get(\"state\") in STARTED_STATE"
+      ]
+    ],
+    "expect": [
+      "(c) QUEUED and a PENDING run are pending; a COMPLETED run is not"
+    ]
+  },
+  {
+    "name": "(c) EXPECTED counts as started",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "STARTED_STATE = frozenset({\"PENDING\"})",
+        "STARTED_STATE = frozenset({\"PENDING\", \"EXPECTED\"})"
+      ]
+    ],
+    "expect": [
+      "⭐ (c) a check that never STARTED is not running work: EXPECTED, WAITING and REQUESTED → none"
+    ]
+  },
+  {
+    "name": "(c) WAITING counts as started",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "\"IN_PROGRESS\", \"PENDING\"})",
+        "\"IN_PROGRESS\", \"PENDING\", \"WAITING\"})"
+      ]
+    ],
+    "expect": [
+      "⭐ (c) a check that never STARTED is not running work: EXPECTED, WAITING and REQUESTED → none"
+    ]
+  },
+  {
+    "name": "(c) REQUESTED counts as started",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "\"QUEUED\", \"IN_PROGRESS\", \"PENDING\"})",
+        "\"QUEUED\", \"IN_PROGRESS\", \"PENDING\", \"REQUESTED\"})"
+      ]
+    ],
+    "expect": [
+      "⭐ (c) a check that never STARTED is not running work: EXPECTED, WAITING and REQUESTED → none"
+    ]
+  },
+  {
+    "name": "(c) QUEUED is not pending",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "STARTED_RUN = frozenset({\"QUEUED\", ",
+        "STARTED_RUN = frozenset({"
+      ]
+    ],
+    "expect": [
+      "(c) QUEUED and a PENDING run are pending; a COMPLETED run is not"
+    ]
+  },
+  {
+    "name": "(c) a PENDING run is not pending",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "IN_PROGRESS\", \"PENDING\"})",
+        "IN_PROGRESS\"})"
+      ]
+    ],
+    "expect": [
+      "(c) QUEUED and a PENDING run are pending; a COMPLETED run is not"
+    ]
+  },
+  {
+    "name": "(c) a non-object PR is skipped",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        if not isinstance(pr, dict):\n            return None",
+        "        if not isinstance(pr, dict):\n            continue"
+      ]
+    ],
+    "expect": [
+      "gh answers with something that is not a PR list → BLOCK, naming (c)"
+    ]
+  },
+  {
+    "name": "(c) gh is called even when (a) found work",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    unseen = []\n",
+        "    unseen = []\n    gh()\n"
+      ]
+    ],
+    "expect": [
+      "(c) gh is not called when (a) already found work"
+    ]
+  },
+  {
+    "name": "(c) an unanswered gh is not named",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if ci is None:\n        unseen.append",
+        "    if False:\n        unseen.append"
+      ]
+    ],
+    "expect": [
+      "⭐ gh cannot answer (rc 1) → BLOCK, naming (c), gh's own words and NOT RUN"
+    ]
+  },
+  {
+    "name": "an unread signal ALLOWS (fails open)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if unseen:\n        return BLOCK, (",
+        "    if unseen:\n        return NOT_CHECKED, ("
+      ]
+    ],
+    "expect": [
+      "⭐ gh cannot answer (rc 1) → BLOCK, naming (c), gh's own words and NOT RUN"
+    ]
+  },
+  {
+    "name": "an unread signal is not named in the block",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "if unseen:\n        return BLOCK, (",
+        "if False:\n        return BLOCK, ("
+      ]
+    ],
+    "expect": [
+      "the block names an unread signal only when one was unread: all read, then gh down"
+    ]
+  },
+  {
+    "name": "the block drops gh's cause",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "out.strip()[:120] if rc != 0 else",
+        "'?' if rc != 0 else"
+      ]
+    ],
+    "expect": [
+      "⭐ gh cannot answer (rc 1) → BLOCK, naming (c), gh's own words and NOT RUN"
+    ]
+  },
+  {
+    "name": "a non-object payload blocks",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        return NOT_CHECKED, \"the Stop payload is not a JSON object\"",
+        "        return BLOCK, \"the Stop payload is not a JSON object\""
+      ]
+    ],
+    "expect": [
+      "a payload that is not an object → NOT CHECKED: `stop_hook_active` cannot be read, so a block could loop"
+    ]
+  },
+  {
+    "name": "main: a block exits 0",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        print(message, file=sys.stderr)\n        return 2",
+        "        print(message, file=sys.stderr)\n        return 0"
+      ]
+    ],
+    "expect": [
+      "⭐ main: the replayed 02:24 idle stop exits 2 with the reason on stderr"
+    ]
+  },
+  {
+    "name": "main: a block exits 1 (shown, not blocking)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "print(message, file=sys.stderr)\n        return 2",
+        "print(message, file=sys.stderr)\n        return 1"
+      ]
+    ],
+    "expect": [
+      "⭐ main: gh cannot answer exits 2 (BLOCK), naming (c)"
+    ]
+  },
+  {
+    "name": "main: NOT CHECKED exits 2",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "\"check as NOT RUN.\", file=sys.stderr)\n        return 1",
+        "\"check as NOT RUN.\", file=sys.stderr)\n        return 2"
+      ]
+    ],
+    "expect": [
+      "main: an unreadable payload exits 1 with NOT CHECKED"
+    ]
+  },
+  {
+    "name": "main: a bad argv is accepted",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "if argv != [\"--hook\"]:",
+        "if not argv:"
+      ]
+    ],
+    "expect": [
+      "main: a bad argv exits 1"
+    ]
+  },
+  {
+    "name": "main: the injected HOME is ignored",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "os.path.expanduser(\"~\") if home is None else home",
+        "os.path.expanduser(\"~\")"
+      ]
+    ],
+    "expect": [
+      "main reads the usage cache under HOME at the given clock: two clocks, two verdicts"
+    ]
+  },
+  {
+    "name": "main: the injected clock is ignored",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "now = time.time() if now is None else now",
+        "now = time.time()"
+      ]
+    ],
+    "expect": [
+      "main reads the usage cache under HOME at the given clock: two clocks, two verdicts"
+    ]
+  },
+  {
+    "name": "main: the real gh is never called",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "(lambda: run_gh(root)) if gh is None else gh",
+        "(lambda: (0, \"[]\")) if gh is None else gh"
+      ]
+    ],
+    "expect": [
+      "END TO END: the real `run_gh` over a `gh` that lists a pending check → exit 0"
+    ]
+  },
+  {
+    "name": "run_gh drops gh's stderr",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "(p.stderr.strip()[:200] or \"no output\")",
+        "\"no output\""
+      ]
+    ],
+    "expect": [
+      "⭐ END TO END: the real `run_gh` over a `gh` that exits 1 → exit 2, naming (c) and gh's own stderr"
+    ]
+  },
+  {
+    "name": "run_gh reads a failed gh as an answer",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "return p.returncode, p.stdout if",
+        "return 0, p.stdout if"
+      ]
+    ],
+    "expect": [
+      "⭐ END TO END: the real `run_gh` over a `gh` that exits 1 → exit 2, naming (c) and gh's own stderr"
+    ]
+  },
+  {
+    "name": "run_gh that cannot start gh reads as an answer",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "return -1, f\"gh could not run",
+        "return 0, f\"gh could not run"
+      ]
+    ],
+    "expect": [
+      "run_gh in a directory that does not exist is (-1, why), not a crash"
+    ]
+  },
+  {
+    "name": "run_gh has no timeout",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "text=True, timeout=timeout_s)",
+        "text=True, timeout=None)"
+      ]
+    ],
+    "expect": [
+      "⭐ run_gh is bounded by its timeout: a `gh` that sleeps 5 s is (-1, TimeoutExpired) at two timeouts"
+    ]
+  },
+  {
+    "name": "run_gh ignores its timeout parameter",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "timeout=timeout_s)",
+        "timeout=GH_TIMEOUT_S)"
+      ]
+    ],
+    "expect": [
+      "⭐ run_gh is bounded by its timeout: a `gh` that sleeps 5 s is (-1, TimeoutExpired) at two timeouts"
+    ]
+  },
+  {
+    "name": "a rollup that is not a list is read past (r2 XM4)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        if rollup is not None and not isinstance(rollup, list):\n            return None\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ (c) a malformed rollup is no answer (None), never a crash: a rollup of 42, a status of [], a state of {}, a check that is not an object"
+    ]
+  },
+  {
+    "name": "a check's field types are not validated",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "any(not isinstance(c.get(k), (str, type(None)))",
+        "any(False"
+      ]
+    ],
+    "expect": [
+      "⭐ (c) a malformed rollup is no answer (None), never a crash: a rollup of 42, a status of [], a state of {}, a check that is not an object"
+    ]
+  },
+  {
+    "name": "a check that is not an object is skipped",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            if not isinstance(c, dict) or any(",
+        "            if isinstance(c, dict) and any("
+      ]
+    ],
+    "expect": [
+      "⭐ (c) a malformed rollup is no answer (None), never a crash: a rollup of 42, a status of [], a state of {}, a check that is not an object"
+    ]
+  },
+  {
+    "name": "an absent check field is malformed",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "(str, type(None))",
+        "(str,)"
+      ]
+    ],
+    "expect": [
+      "(c) a check with NO status is well formed and not pending, and a null rollup is no checks"
+    ]
+  },
+  {
+    "name": "a deep gh answer crashes pending_ci",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    except Exception:  # noqa: BLE001 - ValueError, and RecursionError on a deep answer",
+        "    except ValueError:  # noqa: BLE001 - ValueError, and RecursionError on a deep answer"
+      ]
+    ],
+    "expect": [
+      "(c) a gh answer nested past the parser's limit is no answer (None), not a crash"
+    ]
+  },
+  {
+    "name": "a deep usage cache crashes usage_stop",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    except Exception:  # noqa: BLE001 - ValueError, RecursionError, Malformed",
+        "    except (ValueError, AttributeError, _pace.Malformed):  # noqa: BLE001 - ValueError, RecursionError, Malformed"
+      ]
+    ],
+    "expect": [
+      "a usage cache nested past the parser's limit is not a stop, and not a crash → BLOCK"
+    ]
+  },
+  {
+    "name": "a pause marker in the checkout excuses the stop again (Phase 6 D, r3 CB1)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        print(message, file=sys.stderr)\n        return 2\n",
+        "        if os.path.exists(os.path.join(root, \".claude\", \"paused\")):\n            return 0\n        print(message, file=sys.stderr)\n        return 2\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D1 marker identity: a `.claude/paused` file in the main checkout, fresh / 5 min / 20 h 53 min / 25 h old, changes NOTHING: the 02:24 replay through main() exits 2 with the same words as with no marker"
+    ]
+  },
+  {
+    "name": "main opens the transcript again, blocking: a FIFO holds the hook (Phase 6 D)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    verdict, message = decide(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)\n",
+        "    try:\n        with open(doc.get(\"transcript_path\"), \"rb\") as _f:\n            _f.read(1)\n    except Exception:\n        pass\n    verdict, message = decide(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D4 the transcript is NEVER opened: for a `transcript_path` that is missing, a directory, a FIFO (the row that fails by HANGING), unreadable, a record nested 200,000 deep, a torn last line — the verdict and its words equal those with no `transcript_path` at all (exit 2), and no open() or os.open() names the path"
+    ]
+  },
+  {
+    "name": "main opens the transcript again, non-blocking and unread (Phase 6 D)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    now = time.time() if now is None else now\n",
+        "    now = time.time() if now is None else now\n    try:\n        os.close(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK))\n    except Exception:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D4 the transcript is NEVER opened: for a `transcript_path` that is missing, a directory, a FIFO (the row that fails by HANGING), unreadable, a record nested 200,000 deep, a torn last line — the verdict and its words equal those with no `transcript_path` at all (exit 2), and no open() or os.open() names the path"
+    ]
+  },
+  {
+    "name": "a rejected card in the transcript excuses the stop again (Phase 6 D)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    root = str(ROOT) if root is None else root\n",
+        "    root = str(ROOT) if root is None else root\n    try:\n        with os.fdopen(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK), \"rb\") as _f:\n            if b\"doesn't want to proceed\" in _f.read(1 << 20) and not doc.get(\"stop_hook_active\"):\n                return 0\n    except Exception:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D2 a REJECTED card and a closing reply is an idle stop → exit 2; its continuation (the same payload with `stop_hook_active`) → exit 0"
+    ]
+  },
+  {
+    "name": "a rejected card followed by an announcement excuses the stop (Phase 6 D, I5)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    cache_path = os.path.join(os.path.expanduser(\"~\") if home is None else home, \".claude\", \".rate-limits.json\")\n",
+        "    cache_path = os.path.join(os.path.expanduser(\"~\") if home is None else home, \".claude\", \".rate-limits.json\")\n    try:\n        with os.fdopen(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK), \"rb\") as _f:\n            if b\"doesn't want to proceed\" in _f.read(1 << 20) and \"starting\" in str(doc.get(\"last_assistant_message\")):\n                return 0\n    except Exception:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D3 a REJECTED card, then an announcement ('Never mind - starting #657 now.') → exit 2"
+    ]
+  },
+  {
+    "name": "any AskUserQuestion in the transcript excuses the stop again (Phase 6 D)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    cache_text, _ = _pace.read_regular(cache_path, _pace.CACHE_MAX_BYTES)\n",
+        "    cache_text, _ = _pace.read_regular(cache_path, _pace.CACHE_MAX_BYTES)\n    try:\n        with os.fdopen(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK), \"rb\") as _f:\n            if b\"AskUserQuestion\" in _f.read(1 << 20) and not doc.get(\"stop_hook_active\"):\n                return 0\n    except Exception:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ D6 the self-report class, by identity: a pause marker, a rejected card, an unanswered card, a hook-refused card whose label holds the rejection phrase — each stop exits 2 with the words of the stop with none of them"
+    ]
+  },
+  {
+    "name": "the old block message is restored: it names the marker file and the command (Phase 6 D)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    todo = (\"A turn that says work is starting must START it before it ends. DO ONE: (1) start the next job in this \"\n            \"turn; or (2) if the owner told you to stop, or only the owner can act, say so in one line quoting them, \"\n            \"and end the turn.\")",
+        "    todo = (\"A turn that says work is starting must START it before it ends. DO ONE: start the work now (spawn \"\n            \"the agent, run the job in the background), or — if the owner paused the work — touch .claude/paused in \"\n            \"the main checkout.\")"
+      ]
+    ],
+    "expect": [
+      "⭐ D5 the block message names no file to write and no tool to call (`.claude/paused`, `touch`, `AskUserQuestion`, `paused`), in both its forms (all signals read; one unread)"
+    ]
+  },
+  {
+    "name": "the block message drops the second out (say so, quoting the owner)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "\"turn; or (2) if the owner told you to stop, or only the owner can act, say so in one line quoting them, \"\n            \"and end the turn.\")",
+        "\"turn.\")"
+      ]
+    ],
+    "expect": [
+      "⭐ D5 the block message names BOTH outs, in both its forms: start the next job in this turn; or say in one line, quoting the owner, that they told you to stop or that only they can act"
+    ]
+  },
+  {
+    "name": "a malformed `__typename` is read past (r3 Cm1)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "for k in (\"__typename\", \"status\", \"state\")",
+        "for k in (\"status\", \"state\")"
+      ]
+    ],
+    "expect": [
+      "⭐ D7 (r3 Cm1) a check whose `__typename` is not a string is no answer: pending_ci is None (never [1]), and decide BLOCKS naming (c); the same check with a well-formed `__typename` is pending ([1])"
+    ]
+  },
+  {
+    "name": "a signal is asked before the order's allows: gh is called first",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if doc.get(\"stop_hook_active\") is True:\n        return ALLOW, \"\"",
+        "    gh()\n    if doc.get(\"stop_hook_active\") is True:\n        return ALLOW, \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ D8 the order: `stop_hook_active`, an `agent_id` and a usage stop each ALLOW a stop with nothing running, through main() (exit 0, silent) — and none of them asks a signal (gh is never called)"
+    ]
+  },
+  {
+    "name": "a builder-worktree recency ALLOW is re-added (r4 XB1)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if verdict == BLOCK:\n",
+        "    if verdict == BLOCK and not any(os.lstat(os.path.join(d, f)).st_mtime >= now - 600 for d, _, fs in os.walk(os.path.join(root, WORKTREES)) for f in fs if f != \".git\"):\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 XB1 identity: a builder worktree with a file written 5 s ago / 120 s ago / a `touch`ed file / an unlistable worktrees dir changes NOTHING: each stop exits 2 with the words of the stop with no worktrees dir at all"
+    ]
+  }
+]

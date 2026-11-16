@@ -194,6 +194,12 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh block-idle-stop.sh",
             "statusMessage": "Checking whether a plan is still mid-execution..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh check-idle-stop.sh",
+            "statusMessage": "Checking that something is running before the turn ends...",
+            "timeout": 10
           }
         ]
       }
