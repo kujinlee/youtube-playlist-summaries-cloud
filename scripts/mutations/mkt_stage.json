@@ -800,8 +800,8 @@
   "file": "scripts/mkt_stage.py",
   "edits": [
    [
-    "for d, dirs, files in os.walk(top):",
-    "for d, dirs, files in os.walk(os.path.dirname(top)):"
+    "for d, dirs, files in os.walk(top, onerror=unlisted):",
+    "for d, dirs, files in os.walk(os.path.dirname(top), onerror=unlisted):"
    ]
   ],
   "expect": "declare reads no file outside the installed dir (an audit hook over open/listdir/scandir; the control read outside is recorded)"
@@ -1047,5 +1047,16 @@
    ]
   ],
   "expect": "CLI: --declare without `claude` on PATH is CANNOT RUN, installs nothing and writes nothing"
+ },
+ {
+  "name": "a directory declare cannot list is skipped",
+  "file": "scripts/mkt_stage.py",
+  "edits": [
+   [
+    "os.walk(top, onerror=unlisted)",
+    "os.walk(top)"
+   ]
+  ],
+  "expect": "declare: a directory of the installed tree that cannot be listed is CANNOT RUN — never a declaration silently missing what is under it (review r1 XM7; the control declares the hidden file)"
  }
 ]

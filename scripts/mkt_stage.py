@@ -2,7 +2,7 @@
 """Package declared files into a throwaway local marketplace, and install one of its plugins in a stranger's world
 (marketplace-inventory plan, Task 3; spec §6 and §7 item 0).
 
-    python3 scripts/mkt_stage.py --self-test  # 118 cases
+    python3 scripts/mkt_stage.py --self-test  # 119 cases
     python3 scripts/mkt_stage.py --out DIR --package NAME --version V [--skill PATH]... [--file PATH]...
                                  [--marketplace NAME]
     python3 scripts/mkt_stage.py --declare docs/marketplace/components.json docs/marketplace/shipping-sets.json
@@ -474,7 +474,12 @@ def installed_files(installed: Path) -> dict[str, str]:
     if not os.path.isdir(top):
         raise CannotRun(f"{installed} is not a directory: nothing is installed there")
     out: dict[str, str] = {}
-    for d, dirs, files in os.walk(top):
+
+    def unlisted(e: OSError):
+        # os.walk skips a directory it cannot list unless told otherwise: the declaration would then be whole in
+        # form and missing everything under it (review r1 XM7).
+        raise CannotRun(f"cannot list {e.filename}: {e.strerror}")
+    for d, dirs, files in os.walk(top, onerror=unlisted):
         for name in sorted(files) + sorted(x for x in dirs if os.path.islink(os.path.join(d, x))):
             p = os.path.join(d, name)
             rel = os.path.relpath(p, top).replace(os.sep, "/")
@@ -1538,6 +1543,28 @@ def _self_test_body() -> int:
     case("declare: a library shared_with a package is declared under that package too, and nothing else is",
          lambda: declare(installed_tree(), a_map(), "other")["components"],
          {"lib": {"files": ["scripts/lib/y.py"], "expected_count": 1}})
+
+    def unlistable():
+        """Review r1 XM7 (the reviewer's input): skills/a/ holds a readable SKILL.md and hidden/secret.md, and
+        hidden/ cannot be listed. The control is the same tree with the directory readable."""
+        top = tmp("mkt-unlistable-") / "pkg" / "0.1.0"
+        for rel in ("skills/brief/SKILL.md", "skills/brief/hidden/secret.md", "scripts/x.py", "scripts/lib/y.py",
+                    "skills/shared/contract.md"):
+            put(top / rel, b"bytes\n")
+        if os.geteuid() == 0:
+            return "root lists every directory"
+        control = "skills/brief/hidden/secret.md" in declare(top, a_map(), "pkg")["installed_files"]
+        hidden = top / "skills/brief/hidden"
+        hidden.chmod(0)
+        try:
+            return control, raises(lambda: declare(top, a_map(), "pkg")).replace(str(top), "TOP")
+        finally:
+            hidden.chmod(0o755)
+    case("declare: a directory of the installed tree that cannot be listed is CANNOT RUN — never a declaration "
+         "silently missing what is under it (review r1 XM7; the control declares the hidden file)",
+         unlistable,
+         "root lists every directory" if os.geteuid() == 0 else
+         (True, "CANNOT RUN: cannot list TOP/skills/brief/hidden: Permission denied"))
 
     def audited_declare():
         """Every path declare OPENS or LISTS, against a control: the same hook does see a read outside."""

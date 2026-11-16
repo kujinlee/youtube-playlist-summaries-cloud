@@ -1,5 +1,5 @@
 {
-  "measured_at": "80a08164 (2026-11-16): 35 components — effort 3: 26, effort 2: 5, effort 1: 4; replaces spec §3's lower bound of 24",
+  "measured_at": "f0527646 + review r1 fold (2026-11-16): 45 components — effort 3: 33, effort 2: 6, effort 1: 6; replaces spec §3's lower bound of 24",
   "packages": {
     "comprehensibility": {
       "channel": "plugin"
@@ -242,6 +242,90 @@
       ]
     },
     {
+      "id": "session-state",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/session-state.py"
+      ]
+    },
+    {
+      "id": "gen-work-lines",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/gen-work-lines.py"
+      ]
+    },
+    {
+      "id": "check-dashboard-entry",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/check-dashboard-entry.py"
+      ]
+    },
+    {
+      "id": "check-goal-status",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/check-goal-status.py"
+      ]
+    },
+    {
+      "id": "check-features",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/check-features.py"
+      ]
+    },
+    {
+      "id": "check-docs",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/check-docs.py"
+      ]
+    },
+    {
+      "id": "check-anchors",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/check-anchors.py"
+      ]
+    },
+    {
       "id": "fixture-git",
       "effort": 3,
       "roles": [
@@ -358,6 +442,30 @@
       ]
     },
     {
+      "id": "check-rc-contract",
+      "effort": 1,
+      "roles": [
+        "library"
+      ],
+      "phase": "1-if-feasible",
+      "package": "recall",
+      "files": [
+        "scripts/check-rc-contract.py"
+      ]
+    },
+    {
+      "id": "check-ratchet-contract",
+      "effort": 1,
+      "roles": [
+        "library"
+      ],
+      "phase": "1-if-feasible",
+      "package": "recall",
+      "files": [
+        "scripts/check-ratchet-contract.py"
+      ]
+    },
+    {
       "id": "hook-surface-recall",
       "effort": 1,
       "roles": [
@@ -415,6 +523,18 @@
       "package": "ci-layer",
       "files": [
         "scripts/coverage_verdict.py"
+      ]
+    },
+    {
+      "id": "sweep-red-alert",
+      "effort": 2,
+      "roles": [
+        "library"
+      ],
+      "phase": "later",
+      "package": "ci-layer",
+      "files": [
+        "scripts/sweep-red-alert.py"
       ]
     },
     {
@@ -614,8 +734,35 @@
       "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
     },
     {
-      "path": "scripts/session-state.py",
-      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+      "path": "scripts/begin-plan.py",
+      "reason": "governance: loaded by path or run from an excluded governance script (review r1 CB1: the reader now counts a sibling loaded by path), never reached from a package entry-point"
+    },
+    {
+      "path": "scripts/check-review-rounds.py",
+      "reason": "governance: loaded by path or run from an excluded governance script (review r1 CB1: the reader now counts a sibling loaded by path), never reached from a package entry-point"
+    },
+    {
+      "path": "scripts/check-usage-pace.py",
+      "reason": "governance: loaded by path or run from an excluded governance script (review r1 CB1: the reader now counts a sibling loaded by path), never reached from a package entry-point"
+    },
+    {
+      "path": "scripts/codex-frontier-model.py",
+      "reason": "governance: loaded by path or run from an excluded governance script (review r1 CB1: the reader now counts a sibling loaded by path), never reached from a package entry-point"
+    },
+    {
+      "path": "scripts/codex-review.py",
+      "reason": "governance: loaded by path or run from an excluded governance script (review r1 CB1: the reader now counts a sibling loaded by path), never reached from a package entry-point"
+    },
+    {
+      "path": "scripts/install-git-hooks.sh",
+      "reason": "governance: loaded by path or run from an excluded governance script (review r1 CB1: the reader now counts a sibling loaded by path), never reached from a package entry-point"
+    }
+  ],
+  "optional_edges": [
+    {
+      "from": "scripts/regen-pages.py",
+      "to": "scripts/check-plan-code.py",
+      "reason": "only regen-pages.py's --self-test loads it (the crash-guard case), behind an existence check that prints NOT RUN when the file is absent; the ci-layer package ships it, comprehensibility does not"
     }
   ]
 }

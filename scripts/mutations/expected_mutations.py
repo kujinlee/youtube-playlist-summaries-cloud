@@ -2417,7 +2417,9 @@ EXPECTED_MUTATIONS = {
     # check still bind (the line moved to the top of the loop, its text unchanged).
     # 2026-11-16 slice C (plan Task 6): 70 + 25 = 95 — declare (installed tree only), spec_from_map, workflow_entry
     # and the --declare CLI. None retired.
-    "scripts/mkt_stage.py": 95,
+    # ⟳ 2026-11-16 review r1 fold (XM7): 95 + 1 = 96 — a directory declare cannot list is CANNOT RUN (the walk's
+    # onerror). One anchor re-bound (declare's walk root); none retired.
+    "scripts/mkt_stage.py": 96,
     # ⟳ 2026-11-16, marketplace-inventory plan Task 5: the component-map completeness check, pinned in the commit that
     # creates it (58): the candidate derivation (git listing, each seed source, transitivity), the executable edges
     # (each import form, each command word, the prefix strips, the tree bounds), every load_map rule, the exclusion
@@ -2427,7 +2429,12 @@ EXPECTED_MUTATIONS = {
     # the seeds, the gap and dangling lines, the declaration's arithmetic, materialize, and the --closure CLI's exits.
     # The import parsing is ONE helper (`import_paths`) shared with Task 5's edges, mutated by Task 5's entries.
     # ⟳ 2026-11-16 PR #598 CI (check-main-drivable D2): 105 + 1 = 106 — --closure reads the root main() is given.
-    "scripts/check-shipping-sets.py": 106,
+    # ⟳ 2026-11-16 review r1 fold: 106 + 53 = 159 — the Python load reader (path loaders, module loaders, interpreter
+    # argv, wrappers, name tables: CB1), interpreter options (XM2), a read instruction carried over lines (XM3), the
+    # map-rooted closure (roots from the component map, the declaration/map agreement in both directions: XM1, CM2),
+    # every CANNOT RUN input (channel, empty, non-object, unreadable, missing, unwalkable: XM4-XM7, CM1) and the
+    # optional edges. 12 anchors re-bound; none retired.
+    "scripts/check-shipping-sets.py": 159,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.

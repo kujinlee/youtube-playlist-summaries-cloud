@@ -1,5 +1,5 @@
 {
- "measured_at": "b1532f27",
+ "measured_at": "f0527646",
  "packages": {
   "ci-layer": {
    "channel": "reusable-workflow",
@@ -136,6 +136,12 @@
      ],
      "expected_count": 1
     },
+    "sweep-red-alert": {
+     "files": [
+      "scripts/sweep-red-alert.py"
+     ],
+     "expected_count": 1
+    },
     "velocity-docs": {
      "files": [
       "docs/superpowers/plans/2026-09-25-development-velocity-RECONSTRUCTED-plan.md",
@@ -158,16 +164,23 @@
     ".claude/hooks/run-hook.sh",
     "scripts/ask_answerer.py",
     "scripts/brief-compose.py",
+    "scripts/check-anchors.py",
+    "scripts/check-dashboard-entry.py",
+    "scripts/check-docs.py",
+    "scripts/check-features.py",
+    "scripts/check-goal-status.py",
     "scripts/explainer-serve.py",
     "scripts/fixture_git.py",
     "scripts/gen-backlog-page.py",
     "scripts/gen-dashboard.py",
     "scripts/gen-features-page.py",
     "scripts/gen-goals-page.py",
+    "scripts/gen-work-lines.py",
     "scripts/goal-tree.py",
     "scripts/page_chrome.py",
     "scripts/page_markup.py",
     "scripts/regen-pages.py",
+    "scripts/session-state.py",
     "skills/brief/SKILL.md",
     "skills/dashboard/SKILL.md",
     "skills/explain-diff/SKILL.md",
@@ -187,6 +200,36 @@
     "brief-compose": {
      "files": [
       "scripts/brief-compose.py"
+     ],
+     "expected_count": 1
+    },
+    "check-anchors": {
+     "files": [
+      "scripts/check-anchors.py"
+     ],
+     "expected_count": 1
+    },
+    "check-dashboard-entry": {
+     "files": [
+      "scripts/check-dashboard-entry.py"
+     ],
+     "expected_count": 1
+    },
+    "check-docs": {
+     "files": [
+      "scripts/check-docs.py"
+     ],
+     "expected_count": 1
+    },
+    "check-features": {
+     "files": [
+      "scripts/check-features.py"
+     ],
+     "expected_count": 1
+    },
+    "check-goal-status": {
+     "files": [
+      "scripts/check-goal-status.py"
      ],
      "expected_count": 1
     },
@@ -241,6 +284,12 @@
     "gen-goals-page": {
      "files": [
       "scripts/gen-goals-page.py"
+     ],
+     "expected_count": 1
+    },
+    "gen-work-lines": {
+     "files": [
+      "scripts/gen-work-lines.py"
      ],
      "expected_count": 1
     },
@@ -301,6 +350,12 @@
     "regen-pages": {
      "files": [
       "scripts/regen-pages.py"
+     ],
+     "expected_count": 1
+    },
+    "session-state": {
+     "files": [
+      "scripts/session-state.py"
      ],
      "expected_count": 1
     },
@@ -538,11 +593,25 @@
     "docs/memory/wake-on-visit-merged-322.md",
     "docs/memory/what-mutation-testing-proves.md",
     "docs/memory/worker-vs-sync-fencing-gap.md",
+    "scripts/check-ratchet-contract.py",
+    "scripts/check-rc-contract.py",
     "scripts/check-surface-recall.py",
     "scripts/fixture_git.py",
     "scripts/recall-llm.py"
    ],
    "components": {
+    "check-ratchet-contract": {
+     "files": [
+      "scripts/check-ratchet-contract.py"
+     ],
+     "expected_count": 1
+    },
+    "check-rc-contract": {
+     "files": [
+      "scripts/check-rc-contract.py"
+     ],
+     "expected_count": 1
+    },
     "check-surface-recall": {
      "files": [
       "scripts/check-surface-recall.py"

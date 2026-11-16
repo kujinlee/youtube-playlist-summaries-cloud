@@ -114,8 +114,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "(?<![\\w./-])(?:python3?",
-        "(?:python3?"
+        "r\"\"\"(?<![\\w./-])(?:python",
+        "r\"\"\"(?:python"
       ]
     ],
     "expect": "executable edges in Markdown: python3/python/bash/source/. with a ${VAR:-.}/ prefix; not a word ending in python3, not outside the tree, not a missing file"
@@ -125,8 +125,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "(?:python3?|bash|source|\\.)",
-        "(?:python3|bash)"
+        "(?:python(?:3(?:\\.\\d+)?)?|bash|sh|source|\\.)\"\"\"",
+        "(?:python3|bash)\"\"\""
       ]
     ],
     "expect": "executable edges in Markdown: python3/python/bash/source/. with a ${VAR:-.}/ prefix; not a word ending in python3, not outside the tree, not a missing file"
@@ -246,7 +246,7 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "    seeds |= {f for f in RECALL_TRIO + EFFORT2_FILES if (root / f).is_file()}\n",
+        "    seeds |= {f for f in RECALL_TRIO + EFFORT2_FILES if f in files}\n",
         ""
       ]
     ],
@@ -257,8 +257,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "    files = tracked(root)\n",
-        "    files = [str(p.relative_to(root)) for p in root.rglob(\"*\") if p.is_file()]\n"
+        "    files = set(tracked(root))\n",
+        "    files = {str(p.relative_to(root)) for p in root.rglob(\"*\") if p.is_file()}\n"
       ]
     ],
     "expect": "the recall trio, the effort (2) files, docs/memory/ and scripts/mutations/ are candidates unreferenced; an untracked file is not"
@@ -323,8 +323,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "    if not isinstance(packages, dict) or not packages:",
-        "    if not isinstance(packages, dict):"
+        "    if not isinstance(packages, dict) or not packages:\n        raise Refused(",
+        "    if not isinstance(packages, dict):\n        raise Refused("
       ]
     ],
     "expect": "CLI: a refused map is rc 1, REFUSED on stdout"
@@ -741,8 +741,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "if not READ_LINE_RE.search(line):\n                continue",
-        "if False:\n                continue"
+        "            if READ_LINE_RE.search(line):\n                out += found\n",
+        "            if True:\n                out += found\n"
       ]
     ],
     "expect": "a path a skill MENTIONS on a line that neither reads nor follows it is not an edge"
@@ -851,8 +851,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "                    out.add(installed_path(p))\n",
-        "                    out.add(p)\n"
+        "            if p.startswith(SOURCE_SKILLS):\n                out.add(installed_path(p))\n",
+        "            if p.startswith(SOURCE_SKILLS):\n                out.add(p)\n"
       ]
     ],
     "expect": "the same read with explainer-delivery.md present is a member"
@@ -862,8 +862,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "                elif p.startswith(\"docs/\"):\n                    out.add(f\"external: {p}\")",
-        "                elif False:\n                    out.add(f\"external: {p}\")"
+        "            elif p.startswith(\"docs/\"):\n                out.add(f\"external: {p}\")",
+        "            elif False:\n                out.add(f\"external: {p}\")"
       ]
     ],
     "expect": "a relative read that leaves the skills tree into docs/ is external"
@@ -1049,8 +1049,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "        if not src.is_file():\n            raise CannotRun(f\"{name} declares",
-        "        if False:\n            raise CannotRun(f\"{name} declares"
+        "        if f.startswith((\"/\", \"..\")) or not src.is_file():\n",
+        "        if False:\n"
       ]
     ],
     "expect": "CLI: a declared file with no source in the repository is CANNOT RUN, rc 2"
@@ -1060,8 +1060,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "if decl.get(\"channel\") != \"plugin\":",
-        "if False:"
+        "            plugin = decl[\"channel\"] == \"plugin\"\n",
+        "            plugin = True\n"
       ]
     ],
     "expect": "CLI: omitted dependency with a count written to match is refused (the tree is built from the declaration)"
@@ -1137,8 +1137,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "except (OSError, ValueError, KeyError, TypeError) as e:\n        print(f\"CANNOT RUN: cannot read the declaration",
-        "except (KeyError,) as e:\n        print(f\"CANNOT RUN: cannot read the declaration"
+        "    except (OSError, ValueError) as e:\n        raise CannotRun(f\"cannot read the declaration",
+        "    except (KeyError,) as e:\n        raise CannotRun(f\"cannot read the declaration"
       ]
     ],
     "expect": "CLI: an unreadable declaration is CANNOT RUN, rc 2"
@@ -1148,21 +1148,604 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "if len(argv) == 2 and argv[0] == \"--closure\":",
-        "if False:"
+        "    if len(argv) in (2, 3) and argv[0] == \"--closure\":",
+        "    if False:"
       ]
     ],
-    "expect": "CLI: the real declaration is `0 gaps`, rc 0"
+    "expect": "CLI: an unreadable declaration is CANNOT RUN, rc 2"
   },
   {
     "name": "--closure reads REPO, not the root main() was given",
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "        return closure_main(Path(argv[1]), root)",
-        "        return closure_main(Path(argv[1]), REPO)"
+        ".parent / \"components.json\", root)",
+        ".parent / \"components.json\", REPO)"
       ]
     ],
     "expect": "CLI: --closure reads the repository main() is GIVEN — a file only that built tree holds closes, rc 0"
+  },
+  {
+    "name": "spec_from_file_location is not a loader",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "\"spec_from_file_location\": (1, \"location\"), ",
+        ""
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "the loader's module NAME is read as its path",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "\"spec_from_file_location\": (1, \"location\")",
+        "\"spec_from_file_location\": (0, \"name\")"
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "run_path is not a loader",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        ",\n                \"run_path\": (0, \"path_name\")}",
+        "}"
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "import_module's argument is not an edge",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            elif name in MODULE_LOADERS and call.args:",
+        "            elif False:"
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "an interpreter argv's script is not an edge",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                self._add(\"path\", self.forms(e, scope))\n                break\n",
+        "                break\n"
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "the string after -c is read as a script",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                    if e.value in (\"-c\", \"-m\"):\n                        break\n",
+        ""
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "a wrapper's parameter is never filled from its calls",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        grew = True\n        while grew:",
+        "        grew = False\n        while grew:"
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "with_name's argument is not followed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                if name == \"with_name\" and expr.args:",
+        "                if False:"
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "a name is not followed to an enclosing scope",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                return out\n            scope = self.parent[scope]",
+        "                return out\n            return out"
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "a loop variable over a literal is not followed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            elif isinstance(n, (ast.For, ast.comprehension)) and",
+        "            elif False and"
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "a loaded path is read only beside the file",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "out |= {os.path.normpath(os.path.join(here, s)), os.path.normpath(s)}",
+        "out |= {os.path.normpath(os.path.join(here, s))}"
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "a loaded path is read only from the root",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "{os.path.normpath(os.path.join(here, s)), os.path.normpath(s)}",
+        "{os.path.normpath(s)}"
+      ]
+    ],
+    "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
+  },
+  {
+    "name": "a Python file's loads are not edges",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    return outs | _Loads(rel, tree).paths() | name_tables(rel, tree)",
+        "    return outs | name_tables(rel, tree)"
+      ]
+    ],
+    "expect": "CB1: a generator that loads its gate at import time, and a declaration without the gate → closure red"
+  },
+  {
+    "name": "a table of sibling names is not an edge",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        ".paths() | name_tables(rel, tree)",
+        ".paths()"
+      ]
+    ],
+    "expect": "class search: a table of bare sibling script names is an edge to each; a name among other words, or only compared against, is not"
+  },
+  {
+    "name": "a literal with one script name in it is a table",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if vals and all(isinstance(v, ast.Constant) and isinstance(v.value, str) and BARE_SCRIPT_RE.match(v.value)\n                        for v in vals):\n            out |= {os.path.normpath(os.path.join(os.path.dirname(rel), v.value)) for v in vals}",
+        "        if vals and any(isinstance(v, ast.Constant) and isinstance(v.value, str) and BARE_SCRIPT_RE.match(v.value)\n                        for v in vals):\n            out |= {os.path.normpath(os.path.join(os.path.dirname(rel), str(getattr(v, 'value', '')))) for v in vals}"
+      ]
+    ],
+    "expect": "class search: a table of bare sibling script names is an edge to each; a name among other words, or only compared against, is not"
+  },
+  {
+    "name": "interpreter options are not skipped",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "r\"\"\"(?:\\s+-(?:[XW]\\s+\\S+|[A-Za-z-]+(?:=\\S+)?)(?=\\s))*\\s+[\"']?\"\"\"",
+        "r\"\"\"\\s+[\"']?\"\"\""
+      ]
+    ],
+    "expect": "XM2: `python3 -u scripts/secret.py` in a mapped skill, secret.py unmapped → a map gap"
+  },
+  {
+    "name": "an option's value is read as the script",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(?:[XW]\\s+\\S+|[A-Za-z-]+",
+        "(?:[A-Za-z-]+"
+      ]
+    ],
+    "expect": "XM2: options with and without a value, a versioned interpreter and `sh` are edges; a file after another command (`python3 --version; ls f.py`), a name ending in sh, and a file after `-c '…'` are not"
+  },
+  {
+    "name": "a versioned interpreter is not a command",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(?:python(?:3(?:\\.\\d+)?)?|",
+        "(?:python3?|"
+      ]
+    ],
+    "expect": "XM2: options with and without a value, a versioned interpreter and `sh` are edges; a file after another command (`python3 --version; ls f.py`), a name ending in sh, and a file after `-c '…'` are not"
+  },
+  {
+    "name": "sh is not a command",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "?|bash|sh|source|",
+        "?|bash|source|"
+      ]
+    ],
+    "expect": "XM2: options with and without a value, a versioned interpreter and `sh` are edges; a file after another command (`python3 --version; ls f.py`), a name ending in sh, and a file after `-c '…'` are not"
+  },
+  {
+    "name": "a read instruction is not lent to the next paragraph",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        lent = pending and not taking\n",
+        "        lent = False\n"
+      ]
+    ],
+    "expect": "XM3: `Read the following file:` with the path in the next paragraph reaches it"
+  },
+  {
+    "name": "a read instruction is not carried to the next line",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            elif pending and found:\n                taking = True",
+        "            elif False:\n                taking = True"
+      ]
+    ],
+    "expect": "XM3: a sentence that says Follow on one line and names the path on the next reaches it"
+  },
+  {
+    "name": "every paragraph lends its read to the next",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "lent = pending and not taking",
+        "lent = True"
+      ]
+    ],
+    "expect": "XM3: a read paragraph that names its own path does not lend the word to the next paragraph, and an instruction with no path lends it to ONE paragraph (adjacent negatives)"
+  },
+  {
+    "name": "the closure walks only what the declaration lists",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "files = {installed_path(f) for fs in mine.values() for f in fs} | set(decl[\"installed_files\"])",
+        "files = set(decl[\"installed_files\"])"
+      ]
+    ],
+    "expect": "XM1: an entry point deleted from the declaration, its component dropped and the counts kept honest → red: the roots are the map's, never the declaration's own"
+  },
+  {
+    "name": "a file the map carries and the declaration omits is not a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        gaps += [f\"gap: {f} — the map's component {cid!r} carries it, and the declaration omits it\"\n                 for f in sorted(want - have)]\n",
+        ""
+      ]
+    ],
+    "expect": "CM2: a file a directory component gained since the declaration (a new memory file) is a gap — a stale declaration is red, whatever the component's role"
+  },
+  {
+    "name": "an omitted file is reported twice",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "closure_gaps(decl, reached - omitted, root)",
+        "closure_gaps(decl, reached, root)"
+      ]
+    ],
+    "expect": "XM1: an entry point deleted from the declaration, its component dropped and the counts kept honest → red: the roots are the map's, never the declaration's own"
+  },
+  {
+    "name": "a component only the declaration names is not a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        gaps.append(f\"gap: component {cid!r} — the declaration names it, and the map's package does not carry it\")\n",
+        ""
+      ]
+    ],
+    "expect": "CM2: the map gains a component and loses one, the declaration is unchanged → both are gaps"
+  },
+  {
+    "name": "a file only the declaration's component names is not a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        gaps += [f\"gap: {f} — the declaration names it under {cid!r}, and the map's component does not carry it\"\n                 for f in sorted(have - want)]\n",
+        ""
+      ]
+    ],
+    "expect": "CM2: a file a component's declaration names that the map's component does not carry is a gap, and so is an installed file in no component"
+  },
+  {
+    "name": "an installed file in no component is not a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "sorted(set(decl[\"installed_files\"]) - in_some - {PLUGIN_META})]",
+        "sorted(set())]"
+      ]
+    ],
+    "expect": "CM2: a file a component's declaration names that the map's component does not carry is a gap, and so is an installed file in no component"
+  },
+  {
+    "name": "plugin.json is counted as an installed file in no component",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "- in_some - {PLUGIN_META})]",
+        "- in_some)]"
+      ]
+    ],
+    "expect": "CLI: the same package declaring its dependency is `0 gaps`, rc 0 (plugin.json is staging's, not sourced)"
+  },
+  {
+    "name": "a workflow entry with installed_files is not a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    elif \"installed_files\" in decl:\n",
+        "    elif False:\n"
+      ]
+    ],
+    "expect": "CM2: a reusable-workflow entry that carries installed_files was installed (plan Task 6) → a gap; and one whose files differ from the map's is a gap"
+  },
+  {
+    "name": "a package only the map names is not a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "for name in sorted(set(packages) | set(m.packages)):",
+        "for name in sorted(set(packages)):"
+      ]
+    ],
+    "expect": "CM2: a package the map names and the declaration does not, and one only the declaration names, are gaps"
+  },
+  {
+    "name": "a package only the declaration names is not a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "sorted(set(packages) | set(m.packages))",
+        "sorted(set(m.packages))"
+      ]
+    ],
+    "expect": "CM2: a package the map names and the declaration does not, and one only the declaration names, are gaps"
+  },
+  {
+    "name": "a channel that differs from the map's is not a gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            if decl[\"channel\"] != m.packages[name][\"channel\"]:",
+        "            if False:"
+      ]
+    ],
+    "expect": "CM2: a package whose channel differs from the map's is a gap"
+  },
+  {
+    "name": "a declaration with no packages is read",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if not isinstance(packages, dict) or not packages:\n        raise CannotRun(",
+        "    if not isinstance(packages, dict):\n        raise CannotRun("
+      ]
+    ],
+    "expect": "CM1: a declaration with no packages (`{}`), with a list for them, or that is itself a list is CANNOT RUN"
+  },
+  {
+    "name": "an unknown channel is read as a workflow",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if decl.get(\"channel\") not in CHANNELS:\n            raise CannotRun(",
+        "        if False:\n            raise CannotRun("
+      ]
+    ],
+    "expect": "XM4: a misspelled channel (`plguin`) is CANNOT RUN, rc 2 — never SKIPPED as a reusable workflow"
+  },
+  {
+    "name": "a channel is matched in any case",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "decl.get(\"channel\") not in CHANNELS",
+        "str(decl.get(\"channel\")).lower() not in CHANNELS"
+      ]
+    ],
+    "expect": "CM1: a channel in another case (`Plugin`) and a missing channel are CANNOT RUN"
+  },
+  {
+    "name": "a plugin with no installed files is read",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if decl[\"channel\"] == \"plugin\" and (not isinstance(files, list) or not files):",
+        "        if False:"
+      ]
+    ],
+    "expect": "XM5: a plugin package with no installed files is CANNOT RUN, rc 2"
+  },
+  {
+    "name": "a package with no components is read",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if not isinstance(comps, dict) or not comps:\n",
+        "        if not isinstance(comps, dict):\n"
+      ]
+    ],
+    "expect": "CM1: a plugin package with no components, and a component with no files, are CANNOT RUN"
+  },
+  {
+    "name": "a component with no files is read",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "isinstance(c.get(\"files\"), list) or not c[\"files\"]:",
+        "isinstance(c.get(\"files\"), list):"
+      ]
+    ],
+    "expect": "CM1: a plugin package with no components, and a component with no files, are CANNOT RUN"
+  },
+  {
+    "name": "the map is looked for under another name",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "\"components.json\", root)",
+        "\"map.json\", root)"
+      ]
+    ],
+    "expect": "XM1: the declaration that names everything the map carries is `0 gaps`, rc 0 (the green beside the reds)"
+  },
+  {
+    "name": "a map named as a second argument is refused",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "len(argv) in (2, 3) and argv[0] == \"--closure\"",
+        "len(argv) == 2 and argv[0] == \"--closure\""
+      ]
+    ],
+    "expect": "XM1: the map may be named as a second argument instead of sitting beside the declaration"
+  },
+  {
+    "name": "a waived edge is followed like any other",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            if (rel, e) in optional:",
+        "            if False:"
+      ]
+    ],
+    "expect": "optional edge: unwaived, the guarded load is a gap; waived in the map, it is SAID and is not a gap; and a waiver of some OTHER target waives nothing"
+  },
+  {
+    "name": "a waiver for an edge the file does not have is accepted",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "for a, b in sorted(optional) if f\"optional: {b}\" not in reached]",
+        "for a, b in sorted(optional) if False]"
+      ]
+    ],
+    "expect": "optional edge: unwaived, the guarded load is a gap; waived in the map, it is SAID and is not a gap; and a waiver of some OTHER target waives nothing"
+  },
+  {
+    "name": "a waived edge is not said",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "for r in sorted(reached) if r.startswith(NOTES[2])]",
+        "for r in sorted(reached) if False]"
+      ]
+    ],
+    "expect": "optional edge: unwaived, the guarded load is a gap; waived in the map, it is SAID and is not a gap; and a waiver of some OTHER target waives nothing"
+  },
+  {
+    "name": "an optional edge needs no reason",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "for k in (\"from\", \"to\", \"reason\")):",
+        "for k in (\"from\", \"to\")):"
+      ]
+    ],
+    "expect": "optional edge: one that is not a list, one with no reason, and one from a file no component lists are REFUSED with the map"
+  },
+  {
+    "name": "an optional edge may leave from a file no component lists",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if o[\"from\"] not in owner:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "optional edge: one that is not a list, one with no reason, and one from a file no component lists are REFUSED with the map"
+  },
+  {
+    "name": "optional_edges may be any value",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if not isinstance(optional, list):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "optional edge: one that is not a list, one with no reason, and one from a file no component lists are REFUSED with the map"
+  },
+  {
+    "name": "a directory the closure cannot list is skipped",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "os.walk(installed, onerror=_walk_failed)",
+        "os.walk(installed)"
+      ]
+    ],
+    "expect": "XM7: an installed directory the closure cannot list is CANNOT RUN, never a tree missing what is under it"
+  },
+  {
+    "name": "a tracked candidate missing from disk is dropped",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    on_disk(root, seeds)\n",
+        ""
+      ]
+    ],
+    "expect": "XM6: ...and candidates() names it"
+  },
+  {
+    "name": "a missing tracked file is on disk",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if not (root / f).is_file():\n            raise CannotRun(f\"{f} is tracked",
+        "        if False:\n            raise CannotRun(f\"{f} is tracked"
+      ]
+    ],
+    "expect": "XM6: a tracked candidate missing from disk is CANNOT RUN, rc 2 — never dropped from the candidates"
+  },
+  {
+    "name": "a declared path that climbs out of the tree is copied",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "if f.startswith((\"/\", \"..\")) or not src.is_file():",
+        "if not src.is_file():"
+      ]
+    ],
+    "expect": "materialize: a declared path that climbs out of the repository is CANNOT RUN, and nothing is copied outside the rebuilt tree"
+  },
+  {
+    "name": "a library shared_with a package is not carried by it",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            if c[\"package\"] == package or package in c.get(\"shared_with\", [])}",
+        "            if c[\"package\"] == package}"
+      ]
+    ],
+    "expect": "a library the map shares with a second package is carried by BOTH: each declares it, `0 gaps`"
+  },
+  {
+    "name": "an entry that is not an object is read",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if not isinstance(decl, dict):\n            raise CannotRun(f\"{name}: the entry is not an object\")\n",
+        ""
+      ]
+    ],
+    "expect": "CM1: a package entry that is not an object (a list) is CANNOT RUN, rc 2"
   }
 ]

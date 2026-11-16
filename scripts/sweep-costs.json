@@ -9,7 +9,8 @@
   "hand-timed:scripts/check-idle-stop.py@idle-stop-guard r1 fold (self-test 1.8 s locally over 73 cases, 79 mutations in 210 s = 2.7 s each; priced 2.0 s and 3.0 s, no CI sample yet)",
   "hand-timed:scripts/agent-watchdog.py@backlog #657 (self-test 0.26 s locally on a fake clock; priced 1.0 s, no CI sample yet)",
   "hand-timed:scripts/check-shipping-sets.py@marketplace-inventory Task 7 (self-test 10.8 s locally; priced 11.0 s, no CI sample yet)",
-  "hand-timed:scripts/mkt_stage.py@marketplace-inventory Task 6 (self-test 13.3 s locally after the --declare cases; re-priced 2.0 -> 13.5 s, no CI sample yet)"
+  "hand-timed:scripts/mkt_stage.py@marketplace-inventory Task 6 (self-test 13.3 s locally after the --declare cases; re-priced 2.0 -> 13.5 s, no CI sample yet)",
+  "hand-timed:scripts/check-shipping-sets.py@PR #598 review r1 fold (117 cases; the self-test is 6.8 s locally under the mutation harness, which skips its 3 live-tree cases, and 29.3 s outside it; re-priced 11.0 -> 7.0 s, no CI sample yet)"
  ],
  "defaults": {
   "mutation": 10.162,
@@ -717,9 +718,9 @@
    "mutations": 74
   },
   "scripts/check-shipping-sets.py": {
-   "control": 11.0,
-   "recontrol": 11.0,
-   "mutation": 11.0,
+   "control": 7.0,
+   "recontrol": 7.0,
+   "mutation": 7.0,
    "samples": 0,
    "mutations": 0
   }
