@@ -20860,6 +20860,8 @@ three "inside a checkout" checks, and `run_isolated` runs the `sys.path` and git
 72→89 and 67→73. Mutations: 67/67 and 57/57. The round-1 bet on `staging` lost (Codex 3). Filed backlog #656 and
 #657. Commits `f065e2ea`, `1196ae9d`. Coordinator doc:
 `docs/reviews/coordinator/harness-ships-elsewhere-b-r2-coordinator.md`.
+
+## 2026-11-15
 The goal tree now says why each waiting item is waiting, as you asked on 11-14. When work is recorded, the tool now
 asks one question: does it wait on a pull request or a backlog row to finish? The answer is a reference such as
 "PR #442", or "none". The page looks that reference up every time it is drawn. If the work is still open the line
@@ -20884,3 +20886,20 @@ ledger entry stores `after` (`kind #n` strings); `--add` refuses without `--afte
 expires. `owed_reason`, `idle_days`, `owed_idle_lines` and `--owed-idle` (a block after IN FLIGHT in
 `.claude/hooks/session-state.sh`) are kept. A prose-invariance case places 14 adversarial sentences in every prose
 field. Filed: backlog #652 (a dated `--until` wait), backlog #653 (a thread-line ref wait with no ledger entry).
+
+## 2026-11-15
+The fourth review of the marketplace tools found one more way your private plans folder could leak into a package,
+and it is closed. If the plans folder were a shortcut pointing back at the whole project, the tool treated nothing
+as private and would have packed any file. It now refuses to pack anything in that situation and says why. The same
+gap existed for the skills folder and is closed too. This was caused by the previous round's rewrite, which bet
+that no such case existed; the bet was lost. One smaller finding is filed, not fixed: the test world's start-up
+checks can together take three times the time limit they were given.
+<!--tech-->
+PR #594 round-4 fold (Codex r4 #1 BLOCKER, #2 MINOR; Claude half a gap by alternation). `scripts/mkt_stage.py`:
+`_roots` is CANNOT RUN when a private root or the skills home has the identity of the repository or of a directory
+holding it (`.claude/plans -> ..`, `-> ../..`); `_real` asks the forbidden-identity question about the object the
+walk stands on at the top of every loop turn, so the root it starts from and a directory a `..` returns to are
+asked too. Cases 92→97 (4 red on `dfaf53a4`), mutations 67→70. `mkt_isolate._reaches` was probed for the same gap
+and does compare its starting object. Filed backlog #659 (one monotonic deadline for `measured`'s probes; three
+dropped call-site mutations). The Phase 6 bet for round 4 lost; decision-log row appended, `outcome: continued`.
+Commit `8c14fd8e`. Coordinator doc: `docs/reviews/coordinator/harness-ships-elsewhere-b-r4-coordinator.md`.
