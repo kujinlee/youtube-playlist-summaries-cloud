@@ -20903,3 +20903,17 @@ asked too. Cases 92→97 (4 red on `dfaf53a4`), mutations 67→70. `mkt_isolate.
 and does compare its starting object. Filed backlog #659 (one monotonic deadline for `measured`'s probes; three
 dropped call-site mutations). The Phase 6 bet for round 4 lost; decision-log row appended, `outcome: continued`.
 Commit `8c14fd8e`. Coordinator doc: `docs/reviews/coordinator/harness-ships-elsewhere-b-r4-coordinator.md`.
+
+## 2026-11-15
+A check that keeps the mutation tests runnable treated one settings file as a folder name, so a
+backup copy of that file, or a path beneath it, would have been wrongly counted as available. It now
+matches that file by its exact name, and new test cases prove both the right and the wrong spellings.
+
+<!--tech-->
+Backlog #658, branch `canonical-file-entry`. `scripts/check-canonical-source.py`: `.claude/settings.json` moved
+from `STAGEABLE_PREFIXES` (tested with `startswith`) to `STAGEABLE_FILES` (equality) — stricter than
+`check-plan-code.py`'s `_staged_root`, which still calls `.claude/settings.json/foo` staged (harmless: nothing exists
+under a file); the identity case compares prefixes and files SEPARATELY against `HARNESS_TREE` (PR #595 r1 Codex 2: a
+union let `supabase/` move into the file set unseen); `_spellings`
+gains `.claude/settings.json.bak` and `.claude/settings.json/foo` (refused, red on the old code) and
+`.claude/settings.json` (accepted). Self-test 33/33. Mutations 12 -> 16, two anchors re-bound.

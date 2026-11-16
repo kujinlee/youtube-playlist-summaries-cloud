@@ -225,7 +225,8 @@ CANONS: list[dict] = [
             # ⛔⛔ `CONTEXT.md` ALSO CARRIES THESE TOKENS AND IS DELIBERATELY *NOT* DECLARED HERE.
             # A declared citing site must EXIST, and `check-plan-code.py`'s `HARNESS_TREE` stages
             # `scripts`, `supabase`, `docs`, `node_modules/typescript`, `.claude/hooks`,
-            # `.github/workflows` and `.agents/skills` — **no repo-root files**. So declaring a
+            # `.github/workflows`, `.agents/skills`, `.githooks` and the one file
+            # `.claude/settings.json` — **no repo-root files**. So declaring a
             # root file here makes `audit()` report *"declared a citing site but does not exist"*
             # inside the staged tree, which reddens this guard's CONTROL and turns every mutation
             # shard into NOT MEASURED. MEASURED 2026-10-17 in CI: 6 of 8 shards failed that way,
@@ -284,10 +285,13 @@ ROOT_GLOBS = ("*.md",)
 # defect (`a-class-fix-needs-an-independent-copy-and-an-identity-case`).
 STAGEABLE_PREFIXES = ("scripts/", "supabase/", "docs/", "node_modules/typescript/",
                       ".claude/hooks/", ".github/workflows/", ".agents/skills/",
-                      ".githooks/",
-                      # ONE FILE (backlog #651): `HARNESS_TREE` stages `.claude/settings.json` as a file, so it is
-                      # listed exactly, with no trailing slash — a cite must name it whole to count as staged.
-                      ".claude/settings.json")
+                      ".githooks/")
+# ⛔ THE FILES `HARNESS_TREE` STAGES — matched by EQUALITY, never `startswith` (backlog #658). As a
+# prefix, `.claude/settings.json` let `.claude/settings.json.bak` count as staged. ⚠ This copy is the
+# STRICTER one: `check-plan-code.py`'s `_staged_root` tests every root, a file root too, with
+# `startswith(r + "/")`, so it calls `.claude/settings.json/foo` staged — harmless there, since nothing
+# can exist under a file (PR #595 r1, both halves).
+STAGEABLE_FILES = frozenset({".claude/settings.json"})
 
 
 def unstageable_cites(canons: list[dict]) -> list[str]:
@@ -336,7 +340,8 @@ def unstageable_cites(canons: list[dict]) -> list[str]:
     for canon in canons:
         for c in canon["cites"]:
             parts = PurePosixPath(c).parts
-            if ".." in parts or not c.startswith(STAGEABLE_PREFIXES):
+            staged = c.startswith(STAGEABLE_PREFIXES) or c in STAGEABLE_FILES
+            if ".." in parts or not staged:
                 out.append(c)
     return sorted(set(out))
 
@@ -647,17 +652,23 @@ def _self_test_body() -> int:
         case("CANONS: every declared citing site is one HARNESS_TREE can stage",
              unstageable_cites(CANONS), [])
 
-        # ⭐ THE IDENTITY CASE FOR THE SECOND COPY. `STAGEABLE_PREFIXES` duplicates `HARNESS_TREE`,
+        # ⭐ THE IDENTITY CASE FOR THE SECOND COPY. `STAGEABLE_PREFIXES` + `STAGEABLE_FILES` duplicate `HARNESS_TREE`,
         # and that is safe ONLY because this case fails when the two drift. Derived by `ast` so the
         # assertion does not import `check-plan-code` (which raises outside its package context).
         _ht_src = (ROOT / "scripts" / "check-plan-code.py").read_text(encoding="utf-8")
         _ht = next(n for n in _ast.parse(_ht_src).body
                    if isinstance(n, _ast.Assign)
                    and getattr(n.targets[0], "id", "") == "HARNESS_TREE")
-        case("STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift",
-             sorted(STAGEABLE_PREFIXES),
-             sorted(e.value if (ROOT / e.value).is_file() else e.value.rstrip("/") + "/"
-                    for e in _ht.value.elts))
+        # backlog #658, ⟳ PR #595 r1 CODEX 2: the prefixes and the files are compared SEPARATELY, each
+        # with HARNESS_TREE's entries classified by what is on disk. A UNION erased which set owns an
+        # entry: `supabase/` moved into STAGEABLE_FILES kept it equal while every migration became
+        # unstageable, and the suite stayed 33/33.
+        _ht_files = sorted(e.value for e in _ht.value.elts if (ROOT / e.value).is_file())
+        _ht_dirs = sorted(e.value.rstrip("/") + "/" for e in _ht.value.elts
+                          if not (ROOT / e.value).is_file())
+        case("STAGEABLE_PREFIXES and STAGEABLE_FILES are exactly HARNESS_TREE's directories and files",
+             (sorted(STAGEABLE_PREFIXES), sorted(STAGEABLE_FILES)),
+             (_ht_dirs, _ht_files))
 
         # ⭐ AND THE PREDICATE ITSELF, AGAINST INPUT IT MUST REFUSE — plus input it must NOT.
         # The live case above is right and is not enough: no declared entry uses an exotic spelling,
@@ -675,9 +686,12 @@ def _self_test_body() -> int:
             str((ROOT / "CONTEXT.md").resolve()),                   # absolute, root-level
             str((ROOT / "docs" / "plugins.md").resolve()),          # absolute, NESTED
             "CONTEXT.md", "./CONTEXT.md", "docs/../CONTEXT.md", ".//CONTEXT.md",
+            # backlog #658: a FILE entry matches WHOLE — a longer name or a path beneath it is not staged
+            ".claude/settings.json.bak", ".claude/settings.json/foo",
             # --- must NOT be refused: one per staged prefix, so a blanket refusal fails ---
             "docs/adr/x.md", ".agents/skills/handoff/SKILL.md", "scripts/x.py",
             "node_modules/typescript/package.json",                 # ⭐ M3: a symlink here
+            ".claude/settings.json",                                # backlog #658: the FILE entry itself
         ]}]
         case("unstageable_cites refuses every nonportable registration and no stageable one",
              unstageable_cites(_spellings),
@@ -686,7 +700,8 @@ def _self_test_body() -> int:
                      "../elsewhere/outside.md",
                      str((ROOT / "CONTEXT.md").resolve()),
                      str((ROOT / "docs" / "plugins.md").resolve()),
-                     "CONTEXT.md", "./CONTEXT.md", "docs/../CONTEXT.md", ".//CONTEXT.md"}))
+                     "CONTEXT.md", "./CONTEXT.md", "docs/../CONTEXT.md", ".//CONTEXT.md",
+                     ".claude/settings.json.bak", ".claude/settings.json/foo"}))
         # CONTROL — the walk must not reach deeper than the root's own files, or it would start
         # auditing node_modules and every untracked tree.
         r = _tree(t / "deep", CANON, {"docs/site.md": CITE, "tests/deep.md": "MECHTOKEN again\n"})

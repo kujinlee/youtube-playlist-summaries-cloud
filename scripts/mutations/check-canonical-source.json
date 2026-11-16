@@ -104,12 +104,12 @@
     ]
   },
   {
-    "name": "the STAGED-PREFIX arm leaves the predicate, so a repo-root file passes — the original rule, now a consequence of stageability rather than a special case (r6 CLAUDE M2/M3)",
+    "name": "the STAGED-PREFIX arm leaves the predicate, so a repo-root file passes — the original rule, now a consequence of stageability rather than a special case (r6 CLAUDE M2/M3) ⟳ RE-BOUND backlog #658: the arm now reads `not staged`, the union of the prefix and exact-file tests",
     "file": "scripts/check-canonical-source.py",
     "edits": [
       [
-        "not c.startswith(STAGEABLE_PREFIXES)",
-        "False"
+        "            if \"..\" in parts or not staged:\n",
+        "            if \"..\" in parts or False:\n"
       ]
     ],
     "expect": [
@@ -117,16 +117,16 @@
     ]
   },
   {
-    "name": "one prefix leaves STAGEABLE_PREFIXES, which the IDENTITY case catches — the duplicate of HARNESS_TREE is a ratchet only while something fails when the two drift (r6 CLAUDE M3)",
+    "name": "one prefix leaves STAGEABLE_PREFIXES, which the IDENTITY case catches — the duplicate of HARNESS_TREE is a ratchet only while something fails when the two drift (r6 CLAUDE M3) ⟳ RE-BOUND backlog #658: the tuple now closes after `.githooks/`, the file entry having moved to STAGEABLE_FILES",
     "file": "scripts/check-canonical-source.py",
     "edits": [
       [
-        "                      \".claude/hooks/\", \".github/workflows/\", \".agents/skills/\",\n                      \".githooks/\",\n",
-        "                      \".claude/hooks/\", \".github/workflows/\",\n                      \".githooks/\",\n"
+        "                      \".claude/hooks/\", \".github/workflows/\", \".agents/skills/\",\n                      \".githooks/\")\n",
+        "                      \".claude/hooks/\", \".github/workflows/\",\n                      \".githooks/\")\n"
       ]
     ],
     "expect": [
-      "STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift"
+      "STAGEABLE_PREFIXES and STAGEABLE_FILES are exactly HARNESS_TREE's directories and files"
     ]
   },
   {
@@ -143,16 +143,72 @@
     "file": "scripts/check-canonical-source.py"
   },
   {
-    "name": "backlog #651: the identity case appends a slash to a FILE entry of HARNESS_TREE, so the one staged file can never match its exact copy",
+    "name": "backlog #651: the identity case appends a slash to a FILE entry of HARNESS_TREE, so the one staged file can never match its exact copy ⟳ RE-BOUND PR #595 r1: the files are classified into their own list",
     "file": "scripts/check-canonical-source.py",
     "edits": [
       [
-        "e.value if (ROOT / e.value).is_file() else e.value.rstrip(\"/\") + \"/\"",
-        "e.value.rstrip(\"/\") + \"/\""
+        "_ht_files = sorted(e.value for e in",
+        "_ht_files = sorted(e.value.rstrip(\"/\") + \"/\" for e in"
       ]
     ],
     "expect": [
-      "STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift"
+      "STAGEABLE_PREFIXES and STAGEABLE_FILES are exactly HARNESS_TREE's directories and files"
+    ]
+  },
+  {
+    "name": "backlog #658: the FILE entry is matched by `startswith` instead of equality, so `.claude/settings.json.bak` and `.claude/settings.json/foo` count as staged",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "c in STAGEABLE_FILES",
+        "c.startswith(tuple(STAGEABLE_FILES))"
+      ]
+    ],
+    "expect": [
+      "unstageable_cites refuses every nonportable registration and no stageable one"
+    ]
+  },
+  {
+    "name": "backlog #658: the exact-file arm leaves the predicate, so the one staged FILE, `.claude/settings.json`, is refused as unstageable",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "            staged = c.startswith(STAGEABLE_PREFIXES) or c in STAGEABLE_FILES\n",
+        "            staged = c.startswith(STAGEABLE_PREFIXES)\n"
+      ]
+    ],
+    "expect": [
+      "unstageable_cites refuses every nonportable registration and no stageable one"
+    ]
+  },
+  {
+    "name": "backlog #658: the file entry is dropped from STAGEABLE_FILES, so the copy no longer matches HARNESS_TREE's file (⟳ PR #595 r1: replaces 'the union drops STAGEABLE_FILES', whose anchor the separate comparison deleted)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "STAGEABLE_FILES = frozenset({\".claude/settings.json\"})",
+        "STAGEABLE_FILES = frozenset()"
+      ]
+    ],
+    "expect": [
+      "STAGEABLE_PREFIXES and STAGEABLE_FILES are exactly HARNESS_TREE's directories and files"
+    ]
+  },
+  {
+    "name": "PR #595 r1 CODEX 2: `supabase/` moves from STAGEABLE_PREFIXES into STAGEABLE_FILES; a union comparison stayed equal, the separate one must not",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "STAGEABLE_PREFIXES = (\"scripts/\", \"supabase/\", \"docs/\",",
+        "STAGEABLE_PREFIXES = (\"scripts/\", \"docs/\","
+      ],
+      [
+        "STAGEABLE_FILES = frozenset({\".claude/settings.json\"})",
+        "STAGEABLE_FILES = frozenset({\".claude/settings.json\", \"supabase/\"})"
+      ]
+    ],
+    "expect": [
+      "STAGEABLE_PREFIXES and STAGEABLE_FILES are exactly HARNESS_TREE's directories and files"
     ]
   }
 ]
