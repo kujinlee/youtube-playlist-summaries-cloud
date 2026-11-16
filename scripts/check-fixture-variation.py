@@ -429,6 +429,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     "check-agent-long-call.py": (
         "decide.doc", "decide.env", "main.argv", "main.env", "main.stdin_text",
     ),
+    # The idle-stop guard (owner 2026-11-16 02:51), pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; `decide` is varied by every rule case, main.* EXEMPT with its reason.
+    "check-idle-stop.py": (
+        "asks_owner.text", "decide.cache_text", "decide.doc", "decide.gh", "decide.main", "decide.now", "decide.tail",
+        "last_tool_asked.tail", "main.argv", "main.gh", "main.home", "main.now", "main.root", "main.stdin_bytes",
+        "moved_worktrees.now", "moved_worktrees.window_s", "moved_worktrees.wt_root", "pending_ci.out", "pending_ci.rc",
+        "read_tail.cap", "read_tail.path", "window_text.s",
+    ),
     "check-compaction-boundary.py": (
         "ceiling.w", "decide.ctx", "decide.last_at", "decide.now", "decide.sigs", "decide.trigger", "decide.w", "hook.env", "hook.home", "hook.now", "hook.payload_text", "hook.snapshot", "iso_epoch.stamp", "log_path.env", "log_path.payload_text", "main.argv", "main.env", "main.now", "main.snapshot", "main.stdin_fd", "read_tail.cap", "read_tail.path", "scan.lines", "sentinel_armed.fields", "sentinel_armed.session", "signals.now", "signals.plan_armed", "signals.scanned", "summary.log_text", "window.env_value", "window.files", "window.model",),
     # review-round cap (2026-10-31): a Claude half's verdict, pinned in the commit that creates it. DERIVED
@@ -1448,6 +1456,13 @@ EXEMPT: dict[str, str] = {
     "check-agent-long-call.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",
     "check-agent-long-call.py:main.env": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",
     "check-agent-long-call.py:main.stdin_text": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",
+    # The idle-stop guard (owner 2026-11-16): main() is driven from one helper.
+    "check-idle-stop.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads, worlds and clocks it decides on are varied at `decide`, which main only forwards to, and `drive` passes six distinct payloads, two HOMEs, two clocks, two argvs and two gh answers",
+    "check-idle-stop.py:main.gh": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads, worlds and clocks it decides on are varied at `decide`, which main only forwards to, and `drive` passes six distinct payloads, two HOMEs, two clocks, two argvs and two gh answers",
+    "check-idle-stop.py:main.home": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads, worlds and clocks it decides on are varied at `decide`, which main only forwards to, and `drive` passes six distinct payloads, two HOMEs, two clocks, two argvs and two gh answers",
+    "check-idle-stop.py:main.now": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads, worlds and clocks it decides on are varied at `decide`, which main only forwards to, and `drive` passes six distinct payloads, two HOMEs, two clocks, two argvs and two gh answers",
+    "check-idle-stop.py:main.root": "main() has ONE call site, `drive`; `root` only locates the main checkout, whose worktrees and pause marker are varied at `decide.main` over eight worlds",
+    "check-idle-stop.py:main.stdin_bytes": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads, worlds and clocks it decides on are varied at `decide`, which main only forwards to, and `drive` passes six distinct payloads, two HOMEs, two clocks, two argvs and two gh answers",
     "check-compaction-boundary.py:main.argv": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
     "check-compaction-boundary.py:main.env": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
     "check-compaction-boundary.py:main.now": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",

@@ -2416,4 +2416,8 @@ EXPECTED_MUTATIONS = {
     # and the walk asking about the root it starts from. None retired; the three anchors on the walk's forbidden
     # check still bind (the line moved to the top of the loop, its text unchanged).
     "scripts/mkt_stage.py": 70,
+    # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
+    # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
+    # NOT CHECKED, and the hook's exit codes.
+    "scripts/check-idle-stop.py": 48,
 }
