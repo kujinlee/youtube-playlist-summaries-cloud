@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/harness-ships-elsewhere-b-r5-claude.md": "100644 f814df11128d3bb96416ca7deaff39dea3a321e6"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "eca9ada3e81ac7e2d6eb6cd615287a30b2e7cf96",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/hse-b-r5-claude-brief.md",
+  "reason": "claude half filed: 4913 chars, names eca9ada3e81a",
+  "refused": false,
+  "review": "harness-ships-elsewhere-b-r5-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/hse",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
