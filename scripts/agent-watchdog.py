@@ -2,7 +2,7 @@
 """Wake the orchestrator when a builder it spawned goes quiet (backlog #657).
 
     python3 scripts/agent-watchdog.py QUIET_MIN name=worktree[:transcript] [name=worktree[:transcript] ...]
-    python3 scripts/agent-watchdog.py --self-test  # 51 cases
+    python3 scripts/agent-watchdog.py --self-test  # 60 cases
 
 WHY THIS EXISTS. The owner, 2026-11-15: "It seems that orchestrator need to actively check progress of
 subagents periodically." An orchestrator that only waits for a builder's report learns nothing from a builder
@@ -16,17 +16,25 @@ WHAT COUNTS AS ACTIVITY, for one builder: the NEWEST modification time among
     not descending into `.git`, `node_modules` or `.next`;
   * `HEAD`, `index` and `logs/HEAD` in the worktree's git directory (a linked worktree's `.git` is a FILE that
     names it; a main checkout's `.git` is the directory itself), so a commit or a `git add` counts;
-  * the transcript, when one is given after a colon.
-The quiet window is counted from the later of that time and the moment the watchdog was ARMED, so a worktree
-that was already quiet when the watchdog started gets a full window.
+  * the transcript, when one is given after a colon (a regular file; a builder subagent's lives at
+    `~/.claude/projects/<project-slug>/<session-id>/subagents/agent-<name>-<hash>.jsonl`, known only after the
+    spawn returns, so find it with `ls -t` there).
+The window restarts when that newest time CHANGES between two polls, and is counted on the watchdog's own clock
+from the poll that saw the change (the first poll, at arming, starts it). An mtime is never compared with now,
+so a file stamped in the future or a clock step cannot hold a builder active, and a worktree that was already
+quiet when the watchdog started gets a full window.
 
 OPEN QUESTION (a) OF THE ROW — a long foreground call that writes nothing. Two answers, both in the code:
   1. Such a call is BOUNDED. `scripts/check-agent-long-call.py` denies a subagent's foreground Bash call whose
      effective timeout is over 270 s, so one silent call cannot last longer than that. QUIET_MIN must therefore
      be MORE than 270 s (`LONGEST_SILENT_CALL_S`, checked against that script's own constant by a case); a
      shorter window is refused as CANNOT RUN, because it would report a builder that is inside one legal call.
-  2. A builder that READS for a long stretch (many short calls, no write) changes nothing in its worktree. Its
-     transcript does change on every turn. Give it as `name=worktree:transcript` and reading counts as progress.
+     The floor is NECESSARY, not sufficient: silence also includes the model's own generation between calls (a
+     long thinking turn, one large write) and waits that are not foreground Bash (a Monitor, a background job
+     the builder waits on). A window just over 270 s can report a working builder; use 30, as the checklist does.
+  2. A builder that READS for a long stretch (many short calls, no write) may change nothing it meant to change
+     in its worktree (hooks may still write under `.claude/`, see BOUNDS). Its transcript does change on every
+     turn. Give it as `name=worktree:transcript` and reading counts as progress.
      Without a transcript the watchdog sees files and git only, and its report says which signals it read.
   Bound: a path that contains a colon cannot be given (the first colon after `=` ends the worktree path).
 
@@ -36,16 +44,19 @@ the ones still active with their age, and prints the command that re-arms the wa
 
 EXIT CODES. Watching never exits 0.
     1  at least one builder is quiet: look at it
-    2  CANNOT RUN: bad arguments, a worktree that is missing, a git directory or transcript that cannot be
-       read. Treat the builder it names as NOT WATCHED. Never skipped in silence: it is checked at arming and at
+    2  CANNOT RUN: bad arguments, a worktree that is missing, a git directory, `.git` file, worktree entry or
+       transcript that cannot be read (any OSError but a file that vanished mid-walk). Treat the builder it names as NOT WATCHED. Never skipped in silence: it is checked at arming and at
        every poll, and a builder that is quiet in the same poll is still reported.
 
 WHAT WOULD MAKE THIS FAIL (the row's falsifier): a builder worktree shows no activity for QUIET_MIN minutes
 and this process is still running, or it exits without naming that builder.
 
 BOUNDS. It observes modification times, never the agent: a builder that writes one file a minute in a loop
-looks active. It does not know that a builder FINISHED; a finished builder goes quiet and is reported, and the
-orchestrator reads the report. A worktree nested inside a watched directory counts as that directory's
+looks active. ANYTHING writing in the worktree counts, not only the builder: this repo's hooks write under
+`.claude/` on every turn, a self-test writes `__pycache__`, and a review round run in a builder's worktree keeps
+it active. They are not excluded, since a hook firing on the builder's own turns IS its activity. It does not
+know that a builder FINISHED; a finished builder goes quiet and is reported, unless something else (a review)
+then works in its worktree. A worktree nested inside a watched directory counts as that directory's
 activity, so watch builder worktrees, not the main checkout that holds them. The wake depends on the caller
 starting this as a background job; started in the foreground it blocks the caller.
 
@@ -55,6 +66,7 @@ from __future__ import annotations
 
 import math
 import os
+import stat
 import sys
 import time
 from dataclasses import dataclass
@@ -115,6 +127,8 @@ def gitdir_of(worktree: str) -> str:
     dot = os.path.join(worktree, ".git")
     if os.path.isdir(dot):
         return dot
+    if not os.path.isfile(dot):  # checked BEFORE the open: a FIFO would block the open until a writer came (r1)
+        raise CannotRun(f"{dot} is missing or not a regular file: {worktree} is not a git worktree")
     try:
         with open(dot, encoding="utf-8") as fh:
             text = fh.read()
@@ -148,6 +162,8 @@ def newest(w: Watch) -> float:
             best = max(best, os.stat(os.path.join(gd, f)).st_mtime)
         except FileNotFoundError:
             continue
+        except OSError as exc:
+            raise CannotRun(f"the git file {os.path.join(gd, f)} is unreadable ({exc})") from None
     for root, dirs, files in os.walk(w.worktree, onerror=_walk_error):
         dirs[:] = [d for d in dirs if d not in EXCLUDED_DIRS]
         for path in [root] + [os.path.join(root, f) for f in files]:
@@ -155,11 +171,16 @@ def newest(w: Watch) -> float:
                 best = max(best, os.lstat(path).st_mtime)
             except FileNotFoundError:
                 continue
+            except OSError as exc:
+                raise CannotRun(f"cannot read {path} ({exc})") from None
     if w.transcript is not None:
         try:
-            best = max(best, os.stat(w.transcript).st_mtime)
+            st = os.stat(w.transcript)
         except OSError as exc:
             raise CannotRun(f"the transcript {w.transcript} is unreadable ({exc})") from None
+        if not stat.S_ISREG(st.st_mode):
+            raise CannotRun(f"the transcript {w.transcript} is not a regular file")
+        best = max(best, st.st_mtime)
     return best
 
 
@@ -190,7 +211,10 @@ def main(argv: "list[str] | None" = None, clock=time.time, sleep=time.sleep) -> 
     except CannotRun as exc:
         print(f"⛔ agent-watchdog CANNOT RUN: {exc}. Nothing is being watched.\n{USAGE}", file=sys.stderr)
         return 2
-    armed = clock()
+    # name -> (the newest time last observed, the watchdog's OWN clock when that value last changed). The window
+    # restarts only when the observed value CHANGES; an mtime is never compared with now, so a file stamped in
+    # the future, a clock step or a remote filesystem's clock cannot hold a builder active (r1 F1).
+    seen: dict = {}
     while True:
         now = clock()
         quiet: dict = {}
@@ -202,11 +226,13 @@ def main(argv: "list[str] | None" = None, clock=time.time, sleep=time.sleep) -> 
             except CannotRun as exc:
                 broken[w.name] = str(exc)
                 continue
-            idle = now - max(last, armed)
+            if w.name not in seen or seen[w.name][0] != last:
+                seen[w.name] = (last, now)
+            idle = now - seen[w.name][1]
             if idle >= quiet_s:
                 quiet[w.name] = idle
             else:
-                active[w.name] = max(0.0, now - last)
+                active[w.name] = idle
         if quiet or broken:
             print(report(now, quiet_s, quiet, active, broken, watches))
             return 2 if broken else 1
@@ -303,10 +329,13 @@ def _self_test_body() -> int:
             return rc, len(self.sleeps), out.getvalue(), err.getvalue()
 
     def refused(fn, *a):
+        """-> the result, a `CANNOT RUN: ...` string, or `raised ...` for any OTHER exception (never a refusal)."""
         try:
             return fn(*a)
         except CannotRun as exc:
             return f"CANNOT RUN: {exc}"
+        except Exception as exc:  # noqa: BLE001 - an escape IS the observation (r1 F3)
+            return f"raised {type(exc).__name__}: {exc}"
 
     def is_refusal(v):
         return isinstance(v, str) and v.startswith("CANNOT RUN: ")
@@ -395,6 +424,10 @@ def _self_test_body() -> int:
     case("activity: the transcript counts when given, and is not read when it is not",
          (newest_after(lambda w, wt, gd, tr: (w.stamp(tr, w.t0 + 3), Watch("a", wt, tr))[1]),
           newest_after(lambda w, wt, gd, tr: (w.stamp(tr, w.t0 + 3), Watch("a", wt))[1])), (3.0, -86400.0))
+    case("activity: a missing index does not hide a fresh logs/HEAD (the loop goes on past it)",
+         newest_after(lambda w, wt, gd, tr: (os.remove(os.path.join(gd, "index")),
+                                             w.stamp(os.path.join(gd, "logs", "HEAD"), w.t0 + 8),
+                                             Watch("a", wt))[2]), 8.0)
     case("activity: a missing index or logs/HEAD is not an error",
          newest_after(lambda w, wt, gd, tr: (os.remove(os.path.join(gd, "index")),
                                              shutil.rmtree(os.path.join(gd, "logs")), Watch("a", wt))[2]), -86400.0)
@@ -415,6 +448,75 @@ def _self_test_body() -> int:
          (is_refusal(refused(_walk_error, PermissionError(13, "denied", "/w/a/x"))),
           refused(_walk_error, FileNotFoundError(2, "gone", "/w/a/x"))), (True, None))
 
+    def git_file_refusal(break_it):
+        w = World()
+        wt, gd = w.wt("a")
+        break_it(gd)
+        return is_refusal(refused(newest, Watch("a", wt)))
+
+    def loop_index(gd):
+        os.remove(os.path.join(gd, "index"))
+        os.symlink("index", os.path.join(gd, "index"))
+
+    def logs_a_file(gd):
+        shutil.rmtree(os.path.join(gd, "logs"))
+        with open(os.path.join(gd, "logs"), "w") as fh:
+            fh.write("x")
+
+    case("CANNOT RUN: an index that is a symlink loop, and a logs that is a FILE (any OSError, not only a missing "
+         "file)", (git_file_refusal(loop_index), git_file_refusal(logs_a_file)), (True, True))
+
+    def unreadable_dir(mode):
+        """A worktree with a subdirectory of `mode`, read through the REAL walk; the mode is restored after."""
+        if os.geteuid() == 0:
+            return "CANNOT RUN this case: running as root, where chmod does not deny"
+        w = World()
+        wt, _ = w.wt("a")
+        locked = os.path.join(wt, "locked")
+        w.stamp(os.path.join(locked, "f"), w.t0 - 86400)
+        os.chmod(locked, mode)
+        try:
+            return is_refusal(refused(newest, Watch("a", wt)))
+        finally:
+            os.chmod(locked, 0o755)
+
+    case("CANNOT RUN: a directory the walk cannot LIST (mode 000), through newest() and the real walk",
+         unreadable_dir(0o000), True)
+    case("CANNOT RUN: a directory that lists but cannot be SEARCHED (mode r--), its child unreadable",
+         unreadable_dir(0o444), True)
+    w = World()
+    wa, _ = w.wt("a")
+    os.makedirs(os.path.join(w.root, "tdir"))
+    case("CANNOT RUN: a transcript that is a DIRECTORY is not a transcript",
+         is_refusal(refused(newest, Watch("a", wa, os.path.join(w.root, "tdir")))), True)
+
+    def fifo_git():
+        """A FIFO named `.git` with no writer: opening it to read would block forever. Run in a thread with a 5 s
+        bound; on a timeout the case unblocks the reader itself, so a regression fails here and never hangs."""
+        import threading
+        w = World()
+        b = os.path.join(w.root, "fifo")
+        os.makedirs(b)
+        os.mkfifo(os.path.join(b, ".git"))
+        got: list = []
+        t = threading.Thread(target=lambda: got.append(refused(gitdir_of, b)), daemon=True)
+        t.start()
+        t.join(5)
+        if t.is_alive():
+            fd = os.open(os.path.join(b, ".git"), os.O_WRONLY | os.O_NONBLOCK)
+            os.close(fd)
+            t.join(5)
+            return "BLOCKED: gitdir_of opened a FIFO .git and waited for a writer"
+        return is_refusal(got[0])
+
+    case("CANNOT RUN: a .git that is a FIFO is refused without opening it (it would block)", fifo_git(), True)
+    w = World()
+    bad = os.path.join(w.root, "badutf")
+    os.makedirs(bad)
+    with open(os.path.join(bad, ".git"), "wb") as fh:
+        fh.write(b"gitdir: \xff\xfe\n")
+    case("CANNOT RUN: a .git file that is not UTF-8", is_refusal(refused(gitdir_of, bad)), True)
+
     # --- the watch loop, on the fake clock --------------------------------------------------------------------
     w = World()
     wa, ga = w.wt("a")
@@ -429,6 +531,12 @@ def _self_test_body() -> int:
     w = World()
     wa, ga = w.wt("a")
     case("a worktree already quiet for a day gets a full window from arming", w.run("10", f"a={wa}")[:2], (1, 10))
+
+    w = World()
+    wa, ga = w.wt("a")
+    w.stamp(os.path.join(wa, "src", "future.json"), w.t0 + 365 * 86400)
+    case("a file stamped a YEAR in the future does not keep a builder active: woken at minute 10",
+         w.run("10", f"a={wa}")[:2], (1, 10))
 
     w = World()
     wa, ga = w.wt("a")
@@ -509,6 +617,14 @@ def _self_test_body() -> int:
     rc, minutes, out, err = w.run("10", f"a={wa}", f"b={wb}")
     case("a quiet builder and an unreadable one in the same poll are BOTH reported, exit 2",
          (rc, minutes, "QUIET  a:" in out, "CANNOT RUN b:" in out), (2, 10, True, True))
+
+    w = World()
+    wa, _ = w.wt("a")
+    wb, gb = w.wt("b")
+    loop_index(gb)
+    rc, minutes, out, err = w.run("10", f"a={wa}", f"b={wb}")
+    case("a git file that raises a non-missing OSError is CANNOT RUN for THAT builder, and the other is still judged",
+         (rc, minutes, "CANNOT RUN b:" in out, "active a:" in out), (2, 0, True, True))
 
     w = World()
     rc, minutes, out, err = w.run("10")

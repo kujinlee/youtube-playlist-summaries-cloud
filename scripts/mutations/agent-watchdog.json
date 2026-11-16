@@ -13,19 +13,6 @@
     ]
   },
   {
-    "name": "the window is no longer counted from arming",
-    "file": "scripts/agent-watchdog.py",
-    "edits": [
-      [
-        "idle = now - max(last, armed)",
-        "idle = now - last"
-      ]
-    ],
-    "expect": [
-      "a worktree already quiet for a day gets a full window from arming"
-    ]
-  },
-  {
     "name": "the poll interval doubles",
     "file": "scripts/agent-watchdog.py",
     "edits": [
@@ -459,7 +446,7 @@
     ]
   },
   {
-    "name": "a directory with no .git is its own git directory",
+    "name": "a .git that cannot be read or decoded is taken as the git directory",
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
@@ -468,7 +455,7 @@
       ]
     ],
     "expect": [
-      "git directory: a directory with no .git is CANNOT RUN"
+      "CANNOT RUN: a .git file that is not UTF-8"
     ]
   },
   {
@@ -565,16 +552,161 @@
     ]
   },
   {
-    "name": "an active builder's age is counted from arming",
+    "name": "an mtime is compared with now again: a future stamp holds the builder active",
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "active[w.name] = max(0.0, now - last)",
-        "active[w.name] = now - armed"
+        "idle = now - seen[w.name][1]",
+        "idle = now - max(last, seen[w.name][1])"
+      ]
+    ],
+    "expect": [
+      "a file stamped a YEAR in the future does not keep a builder active: woken at minute 10"
+    ]
+  },
+  {
+    "name": "a change does not restart the window",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "seen[w.name] = (last, now)",
+        "seen.setdefault(w.name, (last, now))"
+      ]
+    ],
+    "expect": [
+      "a file written at minute 4 restarts the window: woken at minute 14"
+    ]
+  },
+  {
+    "name": "every poll counts as a change: nothing is ever quiet",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "if w.name not in seen or seen[w.name][0] != last:",
+        "if True:"
+      ]
+    ],
+    "expect": [
+      "a builder quiet for 10 minutes wakes the orchestrator at minute 10, exit 1, named QUIET"
+    ]
+  },
+  {
+    "name": "an active builder's age is the window, not the time since its last change",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "active[w.name] = idle",
+        "active[w.name] = quiet_s"
       ]
     ],
     "expect": [
       "the re-arm command keeps the quiet window and the transcript, and the active builder's age is in minutes"
+    ]
+  },
+  {
+    "name": "a .git that is not a regular file is opened (a FIFO blocks)",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "    if not os.path.isfile(dot):  #",
+        "    if False:  #"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a .git that is a FIFO is refused without opening it (it would block)"
+    ]
+  },
+  {
+    "name": "a .git that is not UTF-8 escapes as a traceback",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "except (OSError, UnicodeDecodeError) as exc:",
+        "except OSError as exc:"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a .git file that is not UTF-8"
+    ]
+  },
+  {
+    "name": "an unreadable optional git file is skipped in silence",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "raise CannotRun(f\"the git file {os.path.join(gd, f)} is unreadable ({exc})\") from None",
+        "continue"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: an index that is a symlink loop, and a logs that is a FILE (any OSError, not only a missing file)",
+      "a git file that raises a non-missing OSError is CANNOT RUN for THAT builder, and the other is still judged"
+    ]
+  },
+  {
+    "name": "a missing index stops the git-file loop before logs/HEAD",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        except FileNotFoundError:\n            continue\n        except OSError as exc:\n            raise CannotRun(f\"the git file",
+        "        except FileNotFoundError:\n            break\n        except OSError as exc:\n            raise CannotRun(f\"the git file"
+      ]
+    ],
+    "expect": [
+      "activity: a missing index does not hide a fresh logs/HEAD (the loop goes on past it)"
+    ]
+  },
+  {
+    "name": "an unreadable worktree entry is skipped in silence",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "raise CannotRun(f\"cannot read {path} ({exc})\") from None",
+        "continue"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a directory that lists but cannot be SEARCHED (mode r--), its child unreadable"
+    ]
+  },
+  {
+    "name": "a transcript that is a directory is accepted",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "if not stat.S_ISREG(st.st_mode):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a transcript that is a DIRECTORY is not a transcript"
+    ]
+  },
+  {
+    "name": "the walk's error handler is dropped at the call site (os.walk skips in silence)",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "os.walk(w.worktree, onerror=_walk_error)",
+        "os.walk(w.worktree)"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a directory the walk cannot LIST (mode 000), through newest() and the real walk"
+    ]
+  },
+  {
+    "name": "a directory with no .git (or a non-regular one) is its own git directory",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        raise CannotRun(f\"{dot} is missing or not a regular file: {worktree} is not a git worktree\")\n",
+        "        return worktree\n"
+      ]
+    ],
+    "expect": [
+      "git directory: a directory with no .git is CANNOT RUN",
+      "CANNOT RUN: a .git that is a FIFO is refused without opening it (it would block)"
     ]
   }
 ]

@@ -457,7 +457,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ same day, review round 2 (the allow-list): 48 -> 53 — three entries retired with the read
     # checkpoints and the heredoc detector they guarded; three more retired as EQUIVALENT under
     # the allow-list (an unstripped `do` is itself opaque; `/dev/null` and sed's script operand
-    # reach no sentinel either way — measured: each survived with the suite green); eleven added.
+    # reach no sentinel either way — measured: each survived with the suite green); twelve added.
     # ⟳ same day, round 3 (the reviewed-code line): 53 -> 62 — four allow-list entries rebound
     # onto SAFE / tracked-script code; nine added for the tracked-script rule, a tracked NAME
     # outside scripts/, heredoc-fed interpreters, git clean/stash, sort -o, uniq's output,
@@ -476,7 +476,7 @@ EXPECTED_MUTATIONS = {
     # shell `&` to the session's end, the foreground stream exemption, pipeline-scoped `&`),
     # hookless sessions clear nothing, hook-attachment evidence, comments, `export`, `nohup`.
     # ⟳ 2026-10-23, round-4 (Codex) fold: 90 -> 101 — five entries rebound onto the session-
-    # keyed END and Stop-evidence code; eleven added: Stop-hook-only evidence grouped by session,
+    # keyed END and Stop-evidence code; twelve added: Stop-hook-only evidence grouped by session,
     # terminal statuses, quoted notices, the queue-operation and queued_command forms, the
     # tool-use-id match, END after START, a failed TaskStop, auto-backgrounded results, and a
     # foreground command with no result.
@@ -2420,7 +2420,11 @@ EXPECTED_MUTATIONS = {
     # (10, the 270 s floor and its identity with `check-agent-long-call.LIMIT_S` among them), the git directory (4),
     # what counts as activity (12: files, directories, the three git files, the three excluded directories, the
     # transcript, the walk's error rule), the loop (8: the boundary, arming, the poll, both exit codes, the silent
-    # skip, each builder judged) and the report (6, the re-arm command among them). Not mutated: the two
-    # `except FileNotFoundError: continue` races (a file that vanishes mid-walk), which no case can stage.
-    "scripts/agent-watchdog.py": 43,
+    # skip, each builder judged) and the report (6, the re-arm command among them). r1 fold -> 53: two retired with
+    # the code they mutated (the absolute-mtime window and the active age from arming), twelve added: the window
+    # judged by CHANGE (3) and the active age (1), a missing or non-regular `.git` (2), a non-UTF-8 `.git`, any
+    # OSError on an optional git file or a worktree entry (2), the git-file loop's `continue` (staged: no index, fresh
+    # logs/HEAD), a directory transcript, and the walk's `onerror` call site. Not mutated: the WALK's
+    # `except FileNotFoundError: continue` (a file that vanishes between listing and lstat), which no case can stage.
+    "scripts/agent-watchdog.py": 53,
 }
