@@ -1731,8 +1731,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "readable = v.format_spec is None and v.conversion in (-1, ord(\"s\"))",
-        "readable = v.conversion in (-1, ord(\"s\"))"
+        "readable = v.format_spec is None and v.conversion",
+        "readable = v.conversion"
       ]
     ],
     "expect": "XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the line is the given file's: a second file, a second text)"
