@@ -2419,5 +2419,5 @@ EXPECTED_MUTATIONS = {
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes.
-    "scripts/check-idle-stop.py": 48,
+    "scripts/check-idle-stop.py": 79,
 }
