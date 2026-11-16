@@ -2,7 +2,7 @@
 """Wake the orchestrator when a builder it spawned goes quiet (backlog #657).
 
     python3 scripts/agent-watchdog.py QUIET_MIN name=worktree[:transcript] [name=worktree[:transcript] ...]
-    python3 scripts/agent-watchdog.py --self-test  # 60 cases
+    python3 scripts/agent-watchdog.py --self-test  # 73 cases
 
 WHY THIS EXISTS. The owner, 2026-11-15: "It seems that orchestrator need to actively check progress of
 subagents periodically." An orchestrator that only waits for a builder's report learns nothing from a builder
@@ -11,17 +11,19 @@ BACKGROUND Bash job when a builder is spawned. It polls every 60 s, spends no mo
 EXITS when a builder has shown no activity for QUIET_MIN minutes. A background job that exits wakes the session
 that started it, and what this prints is what the orchestrator reads on waking.
 
-WHAT COUNTS AS ACTIVITY, for one builder: the NEWEST modification time among
-  * every file and directory in its worktree (a delete or a rename shows only in a directory's time),
-    not descending into `.git`, `node_modules` or `.next`;
+WHAT COUNTS AS ACTIVITY, for one builder: ANY CHANGE, between two polls, in the FINGERPRINT of what it observes.
+The fingerprint is a hash over the name, modification time (ns) and size of
+  * every file and directory in its worktree, not descending into `.git`, `node_modules` or `.next`;
   * `HEAD`, `index` and `logs/HEAD` in the worktree's git directory (a linked worktree's `.git` is a FILE that
     names it; a main checkout's `.git` is the directory itself), so a commit or a `git add` counts;
   * the transcript, when one is given after a colon (a regular file; a builder subagent's lives at
     `~/.claude/projects/<project-slug>/<session-id>/subagents/agent-<name>-<hash>.jsonl`, known only after the
     spawn returns, so find it with `ls -t` there).
-The window restarts when that newest time CHANGES between two polls, and is counted on the watchdog's own clock
-from the poll that saw the change (the first poll, at arming, starts it). An mtime is never compared with now,
-so a file stamped in the future or a clock step cannot hold a builder active, and a worktree that was already
+A write, a delete, a rename, a file appearing, a time moving in EITHER direction and a size change each alter it
+(r2: the r1 design compared only the NEWEST time, so every write below a retained maximum, a file stamped in the
+future for one, and every deletion went unseen). No modification time is ever compared with a clock. The window
+restarts at the poll that saw the fingerprint change (the first poll, at arming, starts it) and is measured on
+`time.monotonic`, so a step of the wall clock neither shortens nor extends it, and a worktree that was already
 quiet when the watchdog started gets a full window.
 
 OPEN QUESTION (a) OF THE ROW — a long foreground call that writes nothing. Two answers, both in the code:
@@ -45,14 +47,20 @@ the ones still active with their age, and prints the command that re-arms the wa
 EXIT CODES. Watching never exits 0.
     1  at least one builder is quiet: look at it
     2  CANNOT RUN: bad arguments, a worktree that is missing, a git directory, `.git` file, worktree entry or
-       transcript that cannot be read (any OSError but a file that vanished mid-walk). Treat the builder it names as NOT WATCHED. Never skipped in silence: it is checked at arming and at
-       every poll, and a builder that is quiet in the same poll is still reported.
+       transcript that cannot be read (any OSError but a file that vanished mid-walk), a `.git` that is neither a
+       directory nor a regular file (decided on the OPENED descriptor, opened non-blocking, so a FIFO swapped in
+       after any check cannot block the poll), and any OSError or ValueError raised while observing one builder
+       (a `gitdir:` pointer holding a NUL). Treat the builder it names as NOT WATCHED; the other builders are
+       still judged in the same poll. Never skipped in silence: it is checked at arming and at every poll, and a
+       builder that is quiet in the same poll is still reported.
 
 WHAT WOULD MAKE THIS FAIL (the row's falsifier): a builder worktree shows no activity for QUIET_MIN minutes
 and this process is still running, or it exits without naming that builder.
 
-BOUNDS. It observes modification times, never the agent: a builder that writes one file a minute in a loop
-looks active. ANYTHING writing in the worktree counts, not only the builder: this repo's hooks write under
+BOUNDS. It observes names, modification times and sizes, never the agent or a file's content: a builder that
+writes one file a minute in a loop looks active, and a rewrite that leaves a file's name, time (to the
+filesystem's resolution) and size all the same is not seen. A change made and exactly undone between two polls
+is not seen either. ANYTHING writing in the worktree counts, not only the builder: this repo's hooks write under
 `.claude/` on every turn, a self-test writes `__pycache__`, and a review round run in a builder's worktree keeps
 it active. They are not excluded, since a hook firing on the builder's own turns IS its activity. It does not
 know that a builder FINISHED; a finished builder goes quiet and is reported, unless something else (a review)
@@ -64,6 +72,7 @@ NO-CALLER: the orchestrator starts this by hand as a background job each time it
 """
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import stat
@@ -78,6 +87,7 @@ LONGEST_SILENT_CALL_S = 270
 EXCLUDED_DIRS = (".git", "node_modules", ".next")
 GIT_REQUIRED = "HEAD"
 GIT_OPTIONAL = ("index", "logs/HEAD")
+GITFILE_MAX = 1 << 16  # a `.git` pointer file is one short line; never read more of whatever sits there
 USAGE = "usage: agent-watchdog.py QUIET_MIN name=worktree[:transcript] [...]  |  --self-test"
 
 
@@ -125,15 +135,23 @@ def parse_args(argv: list[str]) -> "tuple[float, list[Watch]]":
 def gitdir_of(worktree: str) -> str:
     """The directory that holds this worktree's HEAD and index."""
     dot = os.path.join(worktree, ".git")
-    if os.path.isdir(dot):
-        return dot
-    if not os.path.isfile(dot):  # checked BEFORE the open: a FIFO would block the open until a writer came (r1)
-        raise CannotRun(f"{dot} is missing or not a regular file: {worktree} is not a git worktree")
+    # Opened ONCE, non-blocking, and judged by the descriptor's own fstat. A path check before the open (r1) left a
+    # window in which a regular file could become a FIFO, whose blocking open stalls every builder's poll (r2).
     try:
-        with open(dot, encoding="utf-8") as fh:
-            text = fh.read()
+        fd = os.open(dot, os.O_RDONLY | os.O_NONBLOCK)
+    except OSError as exc:
+        raise CannotRun(f"{dot} cannot be opened ({exc}): {worktree} is not a git worktree") from None
+    try:
+        mode = os.fstat(fd).st_mode
+        if stat.S_ISDIR(mode):
+            return dot
+        if not stat.S_ISREG(mode):
+            raise CannotRun(f"{dot} is neither a directory nor a regular file: {worktree} is not a git worktree")
+        text = os.read(fd, GITFILE_MAX).decode("utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise CannotRun(f"{worktree} has no readable .git ({exc}): it is not a git worktree") from None
+    finally:
+        os.close(fd)
     if not text.startswith("gitdir:"):
         raise CannotRun(f"{dot} does not name a git directory (no `gitdir:` line)")
     return os.path.normpath(os.path.join(worktree, text[len("gitdir:"):].strip()))
@@ -148,18 +166,23 @@ def _walk_error(exc: OSError) -> None:
     raise CannotRun(f"cannot list {exc.filename}: {exc.strerror}")
 
 
-def newest(w: Watch) -> float:
-    """The newest modification time among everything that counts as this builder's activity."""
+def _entry(kind: str, name: str, st: os.stat_result) -> tuple:
+    return (kind, name, st.st_mtime_ns, st.st_size)
+
+
+def observe(w: Watch) -> "list[tuple]":
+    """One (kind, name, mtime_ns, size) for everything that counts as this builder's activity."""
     if not os.path.isdir(w.worktree):
         raise CannotRun(f"the worktree {w.worktree} is missing")
     gd = gitdir_of(w.worktree)
     try:
-        best = os.stat(os.path.join(gd, GIT_REQUIRED)).st_mtime
+        head = os.stat(os.path.join(gd, GIT_REQUIRED))
     except OSError as exc:
         raise CannotRun(f"the git directory {gd} is unreadable ({exc})") from None
+    entries = [_entry("git", GIT_REQUIRED, head)]
     for f in GIT_OPTIONAL:
         try:
-            best = max(best, os.stat(os.path.join(gd, f)).st_mtime)
+            entries.append(_entry("git", f, os.stat(os.path.join(gd, f))))
         except FileNotFoundError:
             continue
         except OSError as exc:
@@ -168,25 +191,31 @@ def newest(w: Watch) -> float:
         dirs[:] = [d for d in dirs if d not in EXCLUDED_DIRS]
         for path in [root] + [os.path.join(root, f) for f in files]:
             try:
-                best = max(best, os.lstat(path).st_mtime)
+                entries.append(_entry("tree", path, os.lstat(path)))
             except FileNotFoundError:
                 continue
             except OSError as exc:
                 raise CannotRun(f"cannot read {path} ({exc})") from None
     if w.transcript is not None:
         try:
-            st = os.stat(w.transcript)
+            tst = os.stat(w.transcript)
         except OSError as exc:
             raise CannotRun(f"the transcript {w.transcript} is unreadable ({exc})") from None
-        if not stat.S_ISREG(st.st_mode):
+        if not stat.S_ISREG(tst.st_mode):
             raise CannotRun(f"the transcript {w.transcript} is not a regular file")
-        best = max(best, st.st_mtime)
-    return best
+        entries.append(_entry("transcript", "", tst))
+    return entries
 
 
-def report(now: float, quiet_s: float, quiet: dict, active: dict, broken: dict, watches: "list[Watch]") -> str:
+def fingerprint(entries: "list[tuple]") -> str:
+    """One value for an observation, the same whatever order the walk listed it in. ANY difference between two
+    polls' fingerprints is activity; nothing in it is ever compared with a clock."""
+    return hashlib.sha256(repr(sorted(entries)).encode("utf-8", "backslashreplace")).hexdigest()
+
+
+def report(wall_now: float, quiet_s: float, quiet: dict, active: dict, broken: dict, watches: "list[Watch]") -> str:
     """What the orchestrator reads on waking: every quiet builder, every unwatchable one, the rest, the re-arm."""
-    lines = [f"{time.strftime('%m-%d %H:%M', time.localtime(now))} AGENT WATCHDOG (backlog #657): "
+    lines = [f"{time.strftime('%m-%d %H:%M', time.localtime(wall_now))} AGENT WATCHDOG (backlog #657): "
              f"{len(quiet)} quiet, {len(broken)} CANNOT RUN, {len(active)} active."]
     for w in watches:
         signals = "file, git or transcript" if w.transcript else "file or git"
@@ -204,16 +233,16 @@ def report(now: float, quiet_s: float, quiet: dict, active: dict, broken: dict, 
     return "\n".join(lines)
 
 
-def main(argv: "list[str] | None" = None, clock=time.time, sleep=time.sleep) -> int:
+def main(argv: "list[str] | None" = None, clock=time.monotonic, sleep=time.sleep, wall=time.time) -> int:
+    """`clock` measures ELAPSED time and must be monotonic; `wall` only dates the report."""
     argv = sys.argv[1:] if argv is None else argv
     try:
         quiet_s, watches = parse_args(argv)
     except CannotRun as exc:
         print(f"⛔ agent-watchdog CANNOT RUN: {exc}. Nothing is being watched.\n{USAGE}", file=sys.stderr)
         return 2
-    # name -> (the newest time last observed, the watchdog's OWN clock when that value last changed). The window
-    # restarts only when the observed value CHANGES; an mtime is never compared with now, so a file stamped in
-    # the future, a clock step or a remote filesystem's clock cannot hold a builder active (r1 F1).
+    # name -> (the fingerprint last observed, the MONOTONIC clock when it last changed). The window restarts when
+    # the fingerprint changes at all; no modification time is compared with any clock (r2).
     seen: dict = {}
     while True:
         now = clock()
@@ -222,19 +251,22 @@ def main(argv: "list[str] | None" = None, clock=time.time, sleep=time.sleep) -> 
         broken: dict = {}
         for w in watches:
             try:
-                last = newest(w)
+                mark = fingerprint(observe(w))
             except CannotRun as exc:
                 broken[w.name] = str(exc)
                 continue
-            if w.name not in seen or seen[w.name][0] != last:
-                seen[w.name] = (last, now)
+            except (OSError, ValueError) as exc:  # nothing observing ONE builder may end the poll for the rest (r2)
+                broken[w.name] = f"observing it raised {type(exc).__name__}: {exc}"
+                continue
+            if w.name not in seen or seen[w.name][0] != mark:
+                seen[w.name] = (mark, now)
             idle = now - seen[w.name][1]
             if idle >= quiet_s:
                 quiet[w.name] = idle
             else:
                 active[w.name] = idle
         if quiet or broken:
-            print(report(now, quiet_s, quiet, active, broken, watches))
+            print(report(wall(), quiet_s, quiet, active, broken, watches))
             return 2 if broken else 1
         sleep(POLL_S)
 
@@ -264,13 +296,15 @@ def _self_test_body() -> int:
             print(f"[FAIL] {name}: got {got!r}, want {want!r}")
 
     class World:
-        """A temp directory of worktree-shaped dirs and a FAKE clock. `sleep` advances the clock and runs what
-        the case scheduled for that minute; nothing here waits. The clock starts in 2096, so a file the suite
-        creates (stamped with the real time) is older than the arming moment unless a case stamps it."""
+        """A temp directory of worktree-shaped dirs and two FAKE clocks. `sleep` advances both and runs what the
+        case scheduled for that minute; nothing here waits. `t` is the wall clock (it stamps files and dates the
+        report) and starts in 2096; `mono` is the elapsed-time clock and starts at 1000, so the two can never be
+        mistaken for each other."""
 
         def __init__(self):
             self.root = tempfile.mkdtemp(prefix="watchdog-")
             self.t = self.t0 = 4_000_000_000.0
+            self.mono = 1000.0
             self.sleeps: list = []
             self.at: dict = {}
             self.every: list = []
@@ -305,13 +339,14 @@ def _self_test_body() -> int:
             self.clock_calls += 1
             if self.clock_calls > 2000:
                 raise RuntimeError("the clock was read 2000 times: the loop is not sleeping")
-            return self.t
+            return self.mono
 
         def sleep(self, s):
             self.sleeps.append(s)
             if len(self.sleeps) > 200:
                 raise RuntimeError("slept 200 times and never exited")
             self.t += s
+            self.mono += s
             for fn in self.at.pop(len(self.sleeps), []) + self.every:
                 fn()
 
@@ -323,7 +358,7 @@ def _self_test_body() -> int:
             out, err = io.StringIO(), io.StringIO()
             try:
                 with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                    rc = main(list(argv), clock=self.clock, sleep=self.sleep)
+                    rc = main(list(argv), clock=self.clock, sleep=self.sleep, wall=lambda: self.t)
             except Exception as exc:  # noqa: BLE001 - the raise IS the observation
                 rc = f"raised {type(exc).__name__}: {exc}"
             return rc, len(self.sleeps), out.getvalue(), err.getvalue()
@@ -390,52 +425,61 @@ def _self_test_body() -> int:
         fh.write("not a pointer\n")
     case("git directory: a .git file that names no gitdir is CANNOT RUN", is_refusal(refused(gitdir_of, bare)), True)
 
-    # --- what counts as activity (each case stamps ONE thing newest and reads it back) ------------------------
-    def newest_after(make):
+    # --- what counts as activity (each case changes ONE thing between two observations) -------------------------
+    def changed(act, setup=lambda w, wt, gd, tr: None, transcript=False, linked=True):
+        """-> does the fingerprint differ after `act`? (or the refusal / the raise, as a string)"""
         w = World()
-        wt, gd = w.wt("a")
+        wt, gd = w.wt("a", linked=linked)
         tr = w.stamp(os.path.join(w.root, "a.jsonl"), w.t0 - 86400)
-        got = refused(newest, make(w, wt, gd, tr))
-        return got if isinstance(got, str) else got - w.t0
+        watch = Watch("a", wt, tr if transcript else None)
+        setup(w, wt, gd, tr)
+        before = refused(observe, watch)
+        act(w, wt, gd, tr)
+        after = refused(observe, watch)
+        if isinstance(before, str) or isinstance(after, str):
+            return before, after
+        return fingerprint(after) != fingerprint(before)
 
-    case("activity: with nothing touched the newest time is the day-old fixture",
-         newest_after(lambda w, wt, gd, tr: Watch("a", wt)), -86400.0)
-    case("activity: a file deep in the worktree counts",
-         newest_after(lambda w, wt, gd, tr: (w.stamp(os.path.join(wt, "lib", "x", "y.ts"), w.t0 + 5),
-                                             Watch("a", wt))[1]), 5.0)
-    case("activity: a directory's own time counts (a delete shows only there)",
-         newest_after(lambda w, wt, gd, tr: (os.utime(os.path.join(wt, "src"), (w.t0 + 6, w.t0 + 6)),
-                                             Watch("a", wt))[1]), 6.0)
+    case("activity: with nothing touched two observations have the same fingerprint",
+         changed(lambda w, wt, gd, tr: None), False)
+    case("activity: an existing file deep in the worktree, rewritten, counts (no directory changes with it)",
+         changed(lambda w, wt, gd, tr: w.stamp(os.path.join(wt, "lib", "x", "y.ts"), w.t0 + 5),
+                 setup=lambda w, wt, gd, tr: w.stamp(os.path.join(wt, "lib", "x", "y.ts"), w.t0 - 86400)), True)
+    case("activity: a NEW file deep in the worktree counts",
+         changed(lambda w, wt, gd, tr: w.stamp(os.path.join(wt, "lib", "x", "z.ts"), w.t0 + 5)), True)
+    case("activity: a directory's own time counts",
+         changed(lambda w, wt, gd, tr: os.utime(os.path.join(wt, "src"), (w.t0 + 6, w.t0 + 6))), True)
     case("activity: the worktree root's own time counts",
-         newest_after(lambda w, wt, gd, tr: (os.utime(wt, (w.t0 + 7, w.t0 + 7)), Watch("a", wt))[1]), 7.0)
+         changed(lambda w, wt, gd, tr: os.utime(wt, (w.t0 + 7, w.t0 + 7))), True)
     case("activity: the git HEAD, index and logs/HEAD each count",
-         [newest_after(lambda w, wt, gd, tr, f=f: (w.stamp(os.path.join(gd, f), w.t0 + 8), Watch("a", wt))[1])
-          for f in ("HEAD", "index", "logs/HEAD")], [8.0, 8.0, 8.0])
+         [changed(lambda w, wt, gd, tr, f=f: w.stamp(os.path.join(gd, f), w.t0 + 8))
+          for f in ("HEAD", "index", "logs/HEAD")], [True, True, True])
     case("activity: node_modules and .next, at any depth, do not count",
-         [newest_after(lambda w, wt, gd, tr, d=d: (w.stamp(os.path.join(wt, d, "f"), w.t0 + 9),
-                                                   os.utime(wt, (w.t0 - 86400,) * 2), Watch("a", wt))[2])
-          for d in ("node_modules", ".next", "lib/node_modules")], [-86400.0] * 3)
-    w = World()
-    wm, gm = w.wt("m", linked=False)
-    w.stamp(os.path.join(gm, "objects", "ab", "f"), w.t0 + 9)
-    got = refused(newest, Watch("m", wm))
+         [changed(lambda w, wt, gd, tr, d=d: w.stamp(os.path.join(wt, d, "f"), w.t0 + 9),
+                  setup=lambda w, wt, gd, tr, d=d: w.stamp(os.path.join(wt, d, "f"), w.t0 - 86400))
+          for d in ("node_modules", ".next", "lib/node_modules")], [False] * 3)
     case("activity: a .git directory's objects do not count, only its HEAD, index and logs/HEAD",
-         got if isinstance(got, str) else got - w.t0, -86400.0)
+         changed(lambda w, wt, gd, tr: w.stamp(os.path.join(gd, "objects", "ab", "f"), w.t0 + 9),
+                 setup=lambda w, wt, gd, tr: w.stamp(os.path.join(gd, "objects", "ab", "f"), w.t0 - 86400),
+                 linked=False), False)
     case("activity: the transcript counts when given, and is not read when it is not",
-         (newest_after(lambda w, wt, gd, tr: (w.stamp(tr, w.t0 + 3), Watch("a", wt, tr))[1]),
-          newest_after(lambda w, wt, gd, tr: (w.stamp(tr, w.t0 + 3), Watch("a", wt))[1])), (3.0, -86400.0))
+         (changed(lambda w, wt, gd, tr: w.stamp(tr, w.t0 + 3), transcript=True),
+          changed(lambda w, wt, gd, tr: w.stamp(tr, w.t0 + 3))), (True, False))
     case("activity: a missing index does not hide a fresh logs/HEAD (the loop goes on past it)",
-         newest_after(lambda w, wt, gd, tr: (os.remove(os.path.join(gd, "index")),
-                                             w.stamp(os.path.join(gd, "logs", "HEAD"), w.t0 + 8),
-                                             Watch("a", wt))[2]), 8.0)
-    case("activity: a missing index or logs/HEAD is not an error",
-         newest_after(lambda w, wt, gd, tr: (os.remove(os.path.join(gd, "index")),
-                                             shutil.rmtree(os.path.join(gd, "logs")), Watch("a", wt))[2]), -86400.0)
+         changed(lambda w, wt, gd, tr: w.stamp(os.path.join(gd, "logs", "HEAD"), w.t0 + 8),
+                 setup=lambda w, wt, gd, tr: os.remove(os.path.join(gd, "index"))), True)
+    case("activity: an index or logs/HEAD that goes missing is not an error, and is itself a change",
+         changed(lambda w, wt, gd, tr: (os.remove(os.path.join(gd, "index")),
+                                        shutil.rmtree(os.path.join(gd, "logs")))), True)
+    _e1, _e2 = ("tree", "/w/a", 1, 2), ("tree", "/w/b", 3, 4)
+    case("fingerprint: the same entries in another order are the same observation, and one fewer is not",
+         (fingerprint([_e1, _e2]) == fingerprint([_e2, _e1]), fingerprint([_e1, _e2]) == fingerprint([_e1])),
+         (True, False))
 
     def newest_refusal(make):
         w = World()
         wt, gd = w.wt("a")
-        return refused(newest, make(w, wt, gd))
+        return refused(observe, make(w, wt, gd))
 
     case("CANNOT RUN: a worktree that does not exist",
          is_refusal(newest_refusal(lambda w, wt, gd: Watch("a", wt + "-gone"))), True)
@@ -452,7 +496,7 @@ def _self_test_body() -> int:
         w = World()
         wt, gd = w.wt("a")
         break_it(gd)
-        return is_refusal(refused(newest, Watch("a", wt)))
+        return is_refusal(refused(observe, Watch("a", wt)))
 
     def loop_index(gd):
         os.remove(os.path.join(gd, "index"))
@@ -476,11 +520,11 @@ def _self_test_body() -> int:
         w.stamp(os.path.join(locked, "f"), w.t0 - 86400)
         os.chmod(locked, mode)
         try:
-            return is_refusal(refused(newest, Watch("a", wt)))
+            return is_refusal(refused(observe, Watch("a", wt)))
         finally:
             os.chmod(locked, 0o755)
 
-    case("CANNOT RUN: a directory the walk cannot LIST (mode 000), through newest() and the real walk",
+    case("CANNOT RUN: a directory the walk cannot LIST (mode 000), through observe() and the real walk",
          unreadable_dir(0o000), True)
     case("CANNOT RUN: a directory that lists but cannot be SEARCHED (mode r--), its child unreadable",
          unreadable_dir(0o444), True)
@@ -488,7 +532,7 @@ def _self_test_body() -> int:
     wa, _ = w.wt("a")
     os.makedirs(os.path.join(w.root, "tdir"))
     case("CANNOT RUN: a transcript that is a DIRECTORY is not a transcript",
-         is_refusal(refused(newest, Watch("a", wa, os.path.join(w.root, "tdir")))), True)
+         is_refusal(refused(observe, Watch("a", wa, os.path.join(w.root, "tdir")))), True)
 
     def fifo_git():
         """A FIFO named `.git` with no writer: opening it to read would block forever. Run in a thread with a 5 s
@@ -626,20 +670,183 @@ def _self_test_body() -> int:
     case("a git file that raises a non-missing OSError is CANNOT RUN for THAT builder, and the other is still judged",
          (rc, minutes, "CANNOT RUN b:" in out, "active a:" in out), (2, 0, True, True))
 
+    # --- r2: ANY change is activity, whatever the retained maximum; elapsed time is monotonic ------------------
+    def below_a_future_stamp(change):
+        """A file stamped a year ahead stays put; `change(w, wa)` then runs at the minutes it schedules. The r1
+        design compared only the NEWEST time, so nothing below that stamp was ever seen."""
+        w = World()
+        wa, _ = w.wt("a")
+        w.stamp(os.path.join(wa, "src", "future.json"), w.t0 + 365 * 86400)
+        change(w, wa)
+        return w.run("10", f"a={wa}")[:2]
+
+    def writes_until_7(w, wa):
+        for minute in range(1, 8):
+            w.on(minute, lambda: w.stamp(os.path.join(wa, "src", "b.py")))
+
+    case("ordinary writes BELOW a retained future stamp are activity: written each minute to 7, woken at minute 17",
+         below_a_future_stamp(writes_until_7), (1, 17))
+
+    def older_at_4(w, wa):
+        w.on(4, lambda: w.stamp(os.path.join(wa, "src", "a.py"), w.t0 - 2 * 86400))
+
+    case("a file whose time moves BACKWARDS at minute 4 is activity: woken at minute 14",
+         below_a_future_stamp(older_at_4), (1, 14))
+
+    def put_back(d, fn):
+        """Run `fn`, then give directory `d` its old times back: the change must be seen in the entry itself."""
+        st = os.stat(d)
+        fn()
+        os.utime(d, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+    def delete_at_4(w, wa):
+        src = os.path.join(wa, "src")
+        w.stamp(os.path.join(src, "gone.py"), w.t0 - 86400)
+        os.utime(src, (w.t0 - 86400,) * 2)
+        w.on(4, lambda: put_back(src, lambda: os.remove(os.path.join(src, "gone.py"))))
+
+    case("a DELETION at minute 4 is activity even with its directory's time put back: woken at minute 14",
+         below_a_future_stamp(delete_at_4), (1, 14))
+
+    def grow_at_4(w, wa):
+        f = os.path.join(wa, "src", "a.py")
+
+        def grow():
+            st = os.stat(f)
+            with open(f, "a") as fh:
+                fh.write("more")
+            os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns))
+        w.on(4, grow)
+
+    case("a file that changes SIZE at minute 4 with its time put back is activity: woken at minute 14",
+         below_a_future_stamp(grow_at_4), (1, 14))
+
+    import inspect
+    case("the DEFAULT clock is time.monotonic (a wall-clock step neither shortens nor extends the window), and the "
+         "default sleep is time.sleep",
+         (inspect.signature(main).parameters["clock"].default is time.monotonic,
+          inspect.signature(main).parameters["sleep"].default is time.sleep), (True, True))
+
+    def wall_step(seconds):
+        w = World()
+        wa, _ = w.wt("a")
+        w.on(1, lambda: setattr(w, "t", w.t + seconds))
+        rc, minutes, out, _ = w.run("10", f"a={wa}")
+        return rc, minutes, "for 10 min" in out
+
+    case("a wall clock that steps an HOUR forward or back at minute 1 changes nothing: woken at minute 10, "
+         "10 min quiet", (wall_step(3600), wall_step(-3600)), ((1, 10, True), (1, 10, True)))
+    w = World()
+    wa, _ = w.wt("a")
+    rc, minutes, out, _ = w.run("10", f"a={wa}")
+    case("the report is DATED by the wall clock, not by the elapsed-time clock",
+         out.split(" AGENT WATCHDOG")[0], time.strftime("%m-%d %H:%M", time.localtime(w.t0 + 600)))
+
+    def walk_raises():
+        """`os.walk` itself raises an OSError for builder b: a failure no rule in observe() anticipated."""
+        w = World()
+        wa, _ = w.wt("a")
+        wb, _ = w.wt("b")
+        real = os.walk
+
+        def walk(top, **kw):
+            if top == wb:
+                raise PermissionError(13, "staged", top)
+            return real(top, **kw)
+        os.walk = walk
+        try:
+            rc, minutes, out, _ = w.run("10", f"b={wb}", f"a={wa}")
+        finally:
+            os.walk = real
+        return rc, minutes, "CANNOT RUN b:" in out, "active a:" in out
+
+    case("an OSError that no rule anticipated, raised while observing one builder, is CANNOT RUN for THAT builder "
+         "and the one after it is still judged", walk_raises(), (2, 0, True, True))
+
+    w = World()
+    wa, _ = w.wt("a")
+    wb, _ = w.wt("b")
+    with open(os.path.join(wb, ".git"), "wb") as fh:
+        fh.write(b"gitdir: bad\x00path\n")
+    rc, minutes, out, err = w.run("10", f"b={wb}", f"a={wa}")
+    case("a gitdir pointer with an embedded NUL (a ValueError, not an OSError) is CANNOT RUN for THAT builder, and "
+         "the one after it is still judged", (rc, minutes, "CANNOT RUN b:" in out, "active a:" in out),
+         (2, 0, True, True))
+
+    def fifo_after_check():
+        """The race of r2: `.git` was a regular file when a path check looked, and is a FIFO when it is opened.
+        Staged by making every PATH check answer "regular file, not a directory"; only the opened descriptor's
+        own fstat can then tell. Bounded like the case above."""
+        import threading
+        w = World()
+        b = os.path.join(w.root, "race")
+        os.makedirs(b)
+        os.mkfifo(os.path.join(b, ".git"))
+        real = os.path.isfile, os.path.isdir
+        os.path.isfile, os.path.isdir = (lambda p: True), (lambda p: False)
+        try:
+            got: list = []
+            t = threading.Thread(target=lambda: got.append(refused(gitdir_of, b)), daemon=True)
+            t.start()
+            t.join(5)
+            if t.is_alive():
+                os.close(os.open(os.path.join(b, ".git"), os.O_WRONLY | os.O_NONBLOCK))
+                t.join(5)
+                return "BLOCKED: gitdir_of trusted a path check and opened a FIFO .git"
+            return is_refusal(got[0])
+        finally:
+            os.path.isfile, os.path.isdir = real
+
+    case("CANNOT RUN: a .git that became a FIFO AFTER a path check is refused from the descriptor, not blocked on",
+         fifo_after_check(), True)
+
+    def fifo_with_a_pointer():
+        """A FIFO `.git` that DOES deliver a valid `gitdir:` line (the case holds it open for writing): still
+        refused, since what the descriptor is decides, never what it happens to deliver."""
+        import threading
+        w = World()
+        _, ga = w.wt("a")
+        b = os.path.join(w.root, "fed")
+        os.makedirs(b)
+        os.mkfifo(os.path.join(b, ".git"))
+        fd = os.open(os.path.join(b, ".git"), os.O_RDWR | os.O_NONBLOCK)
+        try:
+            os.write(fd, f"gitdir: {ga}\n".encode())
+            real = os.path.isfile, os.path.isdir
+            os.path.isfile, os.path.isdir = (lambda p: True), (lambda p: False)
+            try:
+                got: list = []
+                t = threading.Thread(target=lambda: got.append(refused(gitdir_of, b)), daemon=True)
+                t.start()
+                t.join(5)
+                if t.is_alive():
+                    os.close(fd)        # the last writer gone: the blocked read sees end-of-file and returns
+                    fd = None
+                    t.join(5)
+                    return "BLOCKED: gitdir_of read a FIFO .git to its end"
+                return got[0] if got[0] == ga else is_refusal(got[0])
+            finally:
+                os.path.isfile, os.path.isdir = real
+        finally:
+            if fd is not None:
+                os.close(fd)
+
+    case("CANNOT RUN: a FIFO .git that delivers a valid gitdir line is still refused", fifo_with_a_pointer(), True)
+
     w = World()
     rc, minutes, out, err = w.run("10")
     case("main: bad arguments are CANNOT RUN on stderr with the usage, exit 2, nothing polled",
          (rc, minutes, out, "CANNOT RUN" in err, "usage:" in err), (2, 0, "", True, True))
 
     def never(*_a):
-        raise RuntimeError("the clock was read or a poll slept")
+        raise RuntimeError("a clock was read or a poll slept")
 
     with contextlib.redirect_stderr(io.StringIO()):
         try:
-            rc = main(["10", "/w/a"], clock=never, sleep=never)
+            rc = main(["10", "/w/a"], clock=never, sleep=never, wall=never)
         except RuntimeError as exc:
             rc = f"raised: {exc}"
-    case("main: bad arguments are refused before the clock is read or anything sleeps", rc, 2)
+    case("main: bad arguments are refused before either clock is read or anything sleeps", rc, 2)
     rc, minutes, out, err = World().run("4", "a=/w/a")
     case("main: a window under the silent-call bound never starts watching",
          (rc, minutes, "270" in err), (2, 0, True))

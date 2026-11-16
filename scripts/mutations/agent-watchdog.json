@@ -85,8 +85,8 @@
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "        for w in watches:\n            try:\n                last = newest(w)",
-        "        for w in watches[:1]:\n            try:\n                last = newest(w)"
+        "        for w in watches:\n            try:\n                mark = fingerprint(observe(w))",
+        "        for w in watches[:1]:\n            try:\n                mark = fingerprint(observe(w))"
       ]
     ],
     "expect": [
@@ -103,8 +103,8 @@
       ]
     ],
     "expect": [
-      "activity: a file deep in the worktree counts",
-      "a file written at minute 4 restarts the window: woken at minute 14"
+      "activity: an existing file deep in the worktree, rewritten, counts (no directory changes with it)",
+      "a file whose time moves BACKWARDS at minute 4 is activity: woken at minute 14"
     ]
   },
   {
@@ -117,7 +117,7 @@
       ]
     ],
     "expect": [
-      "activity: a directory's own time counts (a delete shows only there)",
+      "activity: a directory's own time counts",
       "activity: the worktree root's own time counts"
     ]
   },
@@ -189,12 +189,12 @@
     ]
   },
   {
-    "name": "HEAD's own time is not counted",
+    "name": "HEAD itself is not in the observation",
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "        best = os.stat(os.path.join(gd, GIT_REQUIRED)).st_mtime\n",
-        "        os.stat(os.path.join(gd, GIT_REQUIRED))\n        best = 0.0\n"
+        "    entries = [_entry(\"git\", GIT_REQUIRED, head)]\n",
+        "    entries = []\n"
       ]
     ],
     "expect": [
@@ -207,7 +207,7 @@
     "edits": [
       [
         "        raise CannotRun(f\"the git directory {gd} is unreadable ({exc})\") from None\n",
-        "        best = 0.0\n"
+        "        head = os.stat(os.sep)\n"
       ]
     ],
     "expect": [
@@ -249,7 +249,7 @@
     "edits": [
       [
         "        raise CannotRun(f\"the worktree {w.worktree} is missing\")\n",
-        "        return 0.0\n"
+        "        return []\n"
       ]
     ],
     "expect": [
@@ -410,8 +410,8 @@
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "    if os.path.isdir(dot):\n",
-        "    if False:\n"
+        "        if stat.S_ISDIR(mode):\n",
+        "        if False:\n"
       ]
     ],
     "expect": [
@@ -552,25 +552,12 @@
     ]
   },
   {
-    "name": "an mtime is compared with now again: a future stamp holds the builder active",
-    "file": "scripts/agent-watchdog.py",
-    "edits": [
-      [
-        "idle = now - seen[w.name][1]",
-        "idle = now - max(last, seen[w.name][1])"
-      ]
-    ],
-    "expect": [
-      "a file stamped a YEAR in the future does not keep a builder active: woken at minute 10"
-    ]
-  },
-  {
     "name": "a change does not restart the window",
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "seen[w.name] = (last, now)",
-        "seen.setdefault(w.name, (last, now))"
+        "seen[w.name] = (mark, now)",
+        "seen.setdefault(w.name, (mark, now))"
       ]
     ],
     "expect": [
@@ -582,7 +569,7 @@
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "if w.name not in seen or seen[w.name][0] != last:",
+        "if w.name not in seen or seen[w.name][0] != mark:",
         "if True:"
       ]
     ],
@@ -604,16 +591,17 @@
     ]
   },
   {
-    "name": "a .git that is not a regular file is opened (a FIFO blocks)",
+    "name": "the .git is opened BLOCKING again (a FIFO with no writer stalls the poll)",
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "    if not os.path.isfile(dot):  #",
-        "    if False:  #"
+        "os.open(dot, os.O_RDONLY | os.O_NONBLOCK)",
+        "os.open(dot, os.O_RDONLY)"
       ]
     ],
     "expect": [
-      "CANNOT RUN: a .git that is a FIFO is refused without opening it (it would block)"
+      "CANNOT RUN: a .git that is a FIFO is refused without opening it (it would block)",
+      "CANNOT RUN: a .git that became a FIFO AFTER a path check is refused from the descriptor, not blocked on"
     ]
   },
   {
@@ -674,7 +662,7 @@
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "if not stat.S_ISREG(st.st_mode):",
+        "if not stat.S_ISREG(tst.st_mode):",
         "if False:"
       ]
     ],
@@ -692,21 +680,167 @@
       ]
     ],
     "expect": [
-      "CANNOT RUN: a directory the walk cannot LIST (mode 000), through newest() and the real walk"
+      "CANNOT RUN: a directory the walk cannot LIST (mode 000), through observe() and the real walk"
     ]
   },
   {
-    "name": "a directory with no .git (or a non-regular one) is its own git directory",
+    "name": "a directory whose .git cannot be opened is its own git directory",
     "file": "scripts/agent-watchdog.py",
     "edits": [
       [
-        "        raise CannotRun(f\"{dot} is missing or not a regular file: {worktree} is not a git worktree\")\n",
+        "        raise CannotRun(f\"{dot} cannot be opened ({exc}): {worktree} is not a git worktree\") from None\n",
         "        return worktree\n"
       ]
     ],
     "expect": [
-      "git directory: a directory with no .git is CANNOT RUN",
-      "CANNOT RUN: a .git that is a FIFO is refused without opening it (it would block)"
+      "git directory: a directory with no .git is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "only the NEWEST time is compared again: every change below a retained maximum is unseen",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "mark = fingerprint(observe(w))",
+        "mark = max(e[2] for e in observe(w))"
+      ]
+    ],
+    "expect": [
+      "ordinary writes BELOW a retained future stamp are activity: written each minute to 7, woken at minute 17",
+      "a file whose time moves BACKWARDS at minute 4 is activity: woken at minute 14",
+      "a DELETION at minute 4 is activity even with its directory's time put back: woken at minute 14",
+      "a file that changes SIZE at minute 4 with its time put back is activity: woken at minute 14"
+    ]
+  },
+  {
+    "name": "an entry's size is left out of the observation",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "return (kind, name, st.st_mtime_ns, st.st_size)",
+        "return (kind, name, st.st_mtime_ns, 0)"
+      ]
+    ],
+    "expect": [
+      "a file that changes SIZE at minute 4 with its time put back is activity: woken at minute 14"
+    ]
+  },
+  {
+    "name": "an entry's time is left out of the observation",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "(kind, name, st.st_mtime_ns,",
+        "(kind, name, 0,"
+      ]
+    ],
+    "expect": [
+      "a file whose time moves BACKWARDS at minute 4 is activity: woken at minute 14",
+      "git activity alone (the index, minute 4) restarts the window"
+    ]
+  },
+  {
+    "name": "the fingerprint depends on the order the walk listed the entries in",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "repr(sorted(entries))",
+        "repr(list(entries))"
+      ]
+    ],
+    "expect": [
+      "fingerprint: the same entries in another order are the same observation, and one fewer is not"
+    ]
+  },
+  {
+    "name": "the default clock is the wall clock again",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "clock=time.monotonic, sleep=time.sleep, wall=time.time",
+        "clock=time.time, sleep=time.sleep, wall=time.time"
+      ]
+    ],
+    "expect": [
+      "the DEFAULT clock is time.monotonic (a wall-clock step neither shortens nor extends the window), and the default sleep is time.sleep"
+    ]
+  },
+  {
+    "name": "the default clock never advances",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "clock=time.monotonic,",
+        "clock=lambda: 0,"
+      ]
+    ],
+    "expect": [
+      "the DEFAULT clock is time.monotonic (a wall-clock step neither shortens nor extends the window), and the default sleep is time.sleep"
+    ]
+  },
+  {
+    "name": "elapsed time is read from the wall clock inside the loop",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        now = clock()\n",
+        "        now = wall()\n"
+      ]
+    ],
+    "expect": [
+      "a wall clock that steps an HOUR forward or back at minute 1 changes nothing: woken at minute 10, 10 min quiet"
+    ]
+  },
+  {
+    "name": "the report is dated by the elapsed-time clock",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "print(report(wall(), quiet_s",
+        "print(report(now, quiet_s"
+      ]
+    ],
+    "expect": [
+      "the report is DATED by the wall clock, not by the elapsed-time clock"
+    ]
+  },
+  {
+    "name": "a ValueError while observing one builder ends the whole poll",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "except (OSError, ValueError) as exc:  # nothing",
+        "except OSError as exc:  # nothing"
+      ]
+    ],
+    "expect": [
+      "a gitdir pointer with an embedded NUL (a ValueError, not an OSError) is CANNOT RUN for THAT builder, and the one after it is still judged"
+    ]
+  },
+  {
+    "name": "an unanticipated OSError while observing one builder ends the whole poll",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "except (OSError, ValueError) as exc:",
+        "except ValueError as exc:"
+      ]
+    ],
+    "expect": [
+      "an OSError that no rule anticipated, raised while observing one builder, is CANNOT RUN for THAT builder and the one after it is still judged"
+    ]
+  },
+  {
+    "name": "a .git that is not a regular file is read all the same (the fstat's verdict is dropped)",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "        if not stat.S_ISREG(mode):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a FIFO .git that delivers a valid gitdir line is still refused"
     ]
   }
 ]

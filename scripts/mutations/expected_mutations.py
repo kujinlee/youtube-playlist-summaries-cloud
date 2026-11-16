@@ -2426,5 +2426,13 @@ EXPECTED_MUTATIONS = {
     # OSError on an optional git file or a worktree entry (2), the git-file loop's `continue` (staged: no index, fresh
     # logs/HEAD), a directory transcript, and the walk's `onerror` call site. Not mutated: the WALK's
     # `except FileNotFoundError: continue` (a file that vanishes between listing and lstat), which no case can stage.
-    "scripts/agent-watchdog.py": 53,
+    # r2 fold -> 63: the activity signal is a FINGERPRINT of the observation, not its newest time. One retired with
+    # the code it mutated (an mtime compared with now); eleven added: only the newest time compared again, an
+    # entry's size and its time each left out, the fingerprint's order-independence, the default clock (wall
+    # again; never advancing), elapsed time read from the wall clock in the loop, the report dated by the elapsed
+    # clock, a ValueError and an unanticipated OSError each ending the poll for every builder, and the fstat's
+    # verdict on a non-regular `.git` dropped. Re-anchored, same intent: the `.git` open made blocking again, a
+    # `.git` that cannot be opened taken as the git directory. Not mutated: `GITFILE_MAX` (a read bound no case
+    # can observe short of a 64 KiB pointer file) and the walk's vanished-file `continue`, as before.
+    "scripts/agent-watchdog.py": 63,
 }
