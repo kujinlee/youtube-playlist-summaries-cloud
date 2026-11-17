@@ -358,12 +358,15 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # ⟳ 2026-11-16 review r1 fold (optional edges; the two path mappings called directly): re-DERIVED, 25 + 3 = 28.
     # ⟳ 2026-11-16 review r2 fold (the map's optional_edges retired, so `closure.optional` is gone; `python_loads`
     # returns the unresolved loads and is called directly): re-DERIVED, 28 - 1 + 2 = 29.
+    # ⟳ 2026-11-17 Phase 6 fold (the reader fails closed; `python_loads` is handed the tree it reads as `is_file` /
+    # `is_dir`, each varied by a case): 29 + 2 = 31.
     "check-shipping-sets.py": ("candidates.root", "check_declaration.decl", "check_declaration.name",
                                "closure.installed", "closure.repo", "closure_gaps.decl",
                                "closure_gaps.reached", "closure_gaps.repo", "exec_edges.rel", "exec_edges.root",
                                "installed_path.src", "load_map.path", "load_map.root",
                                "main.argv", "main.root", "map_gaps.cands", "map_gaps.m", "map_gaps.root",
                                "materialize.decl", "materialize.name", "materialize.out", "materialize.repo",
+                               "python_loads.is_dir", "python_loads.is_file",
                                "python_loads.rel", "python_loads.text", "reach.root", "reach.seeds", "registered_hooks.root", "source_path.rel",
                                "tracked.root"),
     # backlog #586 slice 2 (2026-11-12): the strace-log path resolver, pinned in the commit that creates it. DERIVED by

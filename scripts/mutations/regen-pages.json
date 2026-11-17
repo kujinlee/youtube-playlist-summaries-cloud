@@ -772,7 +772,7 @@
       ]
     ],
     "expect": [
-      "⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body is a `[FAIL]` of CRASH_CASE that the harness's parse_fail_names reads, naming the last case; a clean body is untouched"
+      "⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body prints `  [FAIL] <CRASH_CASE>` as its FIRST line, then the last case; CRASH_CASE holds no `: got` separator; a clean body is untouched"
     ]
   },
   {
@@ -785,7 +785,7 @@
       ]
     ],
     "expect": [
-      "⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body is a `[FAIL]` of CRASH_CASE that the harness's parse_fail_names reads, naming the last case; a clean body is untouched"
+      "⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body prints `  [FAIL] <CRASH_CASE>` as its FIRST line, then the last case; CRASH_CASE holds no `: got` separator; a clean body is untouched"
     ]
   },
   {"name": "#627: the serve copy is checked out at its own HEAD, not the master the rebuild built", "file": "scripts/regen-pages.py", "edits": [["    rc, out = git([\"-c\", \"advice.detachedHead=false\", \"checkout\", \"--quiet\", \"--force\", \"--detach\", sha], copy)", "    rc, out = git([\"-c\", \"advice.detachedHead=false\", \"checkout\", \"--quiet\", \"--force\", \"--detach\", \"HEAD\"], copy)"]], "expect": "⭐ #627: a fresh rebuild (the on-merge hook's) MOVES the serve copy to the master it built, and says so"},

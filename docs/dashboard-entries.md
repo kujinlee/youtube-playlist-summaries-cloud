@@ -20957,7 +20957,10 @@ every change. It rebuilds each package from that list and follows every file the
 tell the reader to open. If anything it reaches is missing from the list, the check fails and names the file. The
 first review showed that the check could not see files that shipped scripts load by path, so six page generators
 would have failed for a stranger; the check now sees that kind of load, ten such files are on the list, and it
-reports nothing missing. It cannot see every way one file can reach another, and the script says which it cannot. Nothing has been
+reports nothing missing. It cannot see every way one file can reach another, and the script says which it cannot. After
+three review rounds kept finding loads the check missed, the reading rule was turned around: anything that could be a
+load and that the check cannot follow to a file is now listed by name instead of being passed over, and a file is no
+longer allowed to be left out because the code tests for it first. Nothing has been
 published; publishing is still the owner's decision, at the plan's final step.
 <!--tech-->
 Marketplace plan Tasks 5-7 (slice C, branch `hse-c`, to land as `harness-ships-elsewhere`). Task 5:
@@ -20975,4 +20978,11 @@ the same path (`regen-pages.py` → `check-plan-code.py`), read from the AST. Lo
 any malformed declaration element is CANNOT RUN, and every channel's counts are checked. A load whose path the reader
 cannot read is listed as `unresolved:` (28 on the real declaration), never dropped. The forms the reader does not see
 (computed paths, `python3 -m`, shell strings inside Python, other interpreters, YAML) are listed in the script's
-docstring. 126/126 cases, 184 mutations; a CI step runs it, since it needs no `claude`.
+docstring. Phase 6 fold (`docs/reviews/coordinator/architecture-review-2026-11-17-hse-slice-c.md`): the optional-load
+proof (`_tested`, `_guarded`, the `optional: ` note) is deleted, so a load under an existence guard is a plain edge,
+and the reader fails closed by census: every name binder it does not read, every loader, interpreter or shell
+mention that is not a read call or argv head, every wrapper no call binds, and every read path with no file in the
+tree is an `unresolved:` line (65 on the real declaration: comprehensibility 39, recall 26; 0 gaps). `regen-pages.py`'s
+crash-guard case pins the `[FAIL]` line it prints and no longer loads `check-plan-code.py`. Edges over the 115
+tracked `.py` files are unchanged (344, pinned by a case). 134/134 cases, 186 mutations; a CI step runs it, since
+it needs no `claude`.

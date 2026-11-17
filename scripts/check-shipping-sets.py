@@ -2,7 +2,7 @@
 """The component map, checked for completeness against what is on disk (marketplace-inventory plan, Task 5;
 spec §3: "every supporting artifact maps to a component, to a package, or to a written exclusion").
 
-    python3 scripts/check-shipping-sets.py --self-test  # 126 cases
+    python3 scripts/check-shipping-sets.py --self-test  # 134 cases
     python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
     python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json [MAP]
 
@@ -34,20 +34,45 @@ level, `/` and `os.path.join` onto a base, `with_name`, `str()` / `Path()` / `.r
 such parts (`!s` is read as the part itself; review r2 XM2), and a local function whose parameter reaches a loader (the path is then each caller's argument,
 through as many such functions as it takes). The base is dropped, so `HERE / "x.py"` is read as `x.py` beside the file and as `x.py` from the root;
 only a path that exists is an edge.
-AN UNRESOLVED LOAD (review r2 XM2): a call to one of those loaders, or an interpreter argv, whose path holds any part
-the reader above cannot read — `!r`/`!a` or a format spec, a subscript, an attribute, a call it does not know, a
-name bound nowhere in the file, a parameter no caller binds, `**kwargs` in place of the argument, one assignment
-of several it cannot read — is never dropped: `python_loads` returns it as `rel:line`, and `--closure` prints
-each one in a shipped file as `<pkg>: unresolved: rel:line` (listed, not checked, not a gap). Measured on the
-real declaration, 2026-11-16: 28 such lines (self re-execs through `Path(__file__).resolve()`, a hook path held
-in a variable, a wrapper whose path is a parameter's default).
-⚠ BOUND — what is still NOT an edge, each a way a file can run another that this reader does not see (one handed
-to a loader or an interpreter argv above is not silent: it is an UNRESOLVED LOAD, below): a path
+THE READER FAILS CLOSED (Phase 6, architecture review 2026-11-17): `python_loads(rel, text, is_file, is_dir)`
+returns `(edges, unresolved)`. An edge is a load every part of which a positive rule above read. EVERYTHING ELSE
+that could be a load is an `unresolved` line `rel:line`, by CENSUS and not by a list of known-bad shapes:
+  - BINDERS: every `str` field of a syntax node binds a name except the ten of `NOT_A_BINDER`. A name bound by any
+    form other than the four the reader reads (a plain assignment, an annotated one, a `for` over a literal, a
+    parameter) — `with ... as`, `except ... as`, a walrus, a comprehension, an augmented or tuple assignment, a
+    `match` capture, a `def`/`class`/`import` of that name, `global`/`nonlocal`, a star import — is unknown, so
+    a load through it is unresolved. A name that reads only to itself is unknown, never "no value";
+  - LOADERS: every mention of a `PATH_LOADERS` / `MODULE_LOADERS` name that is not the function of a call the
+    reader read (an alias, `import ... as`, `getattr`, a table, `partial`) — and a read call whose argument is
+    omitted, is `**kwargs`, or sits behind `*args`;
+  - INTERPRETERS AND THE SHELL: every mention of an interpreter word (`sys.executable`, `"python3"`, `"bash"`,
+    ...) that is not the head of an argv the reader read, an argv with no script / `-c` / `-m`, and every
+    mention of `SHELLS` (`os.system`, `popen`, `exec`, `eval`) or a `shell=` that is not literally False;
+  - WRAPPERS: a local function whose parameter reaches a loader and that no call in the file binds (never
+    called, or handed on by name);
+  - OUTCOMES: a read path NONE of whose candidates is a file in the tree being read (missing, absolute, upward);
+    a relative import; a dotted or relative `import_module`; an `import` whose name is a sibling DIRECTORY.
+`--closure` prints each one in a shipped file as `<pkg>: unresolved: rel:line` (listed, not checked, not a gap;
+`--map` asks for edges only and prints none). Measured on the real declaration, 2026-11-17: 65 such lines
+(comprehensibility 39, recall 26), up from 28 before the census; 5 of them are the shell census.
+NO LOAD IS OPTIONAL: a load that sits under `if P.is_file():` is a plain edge, and a gap when the package omits
+its file. A shipped file that loads a file its package does not ship is rewritten or the file is shipped.
+⚠ THE SIX STATED BOUNDS of the census — what can still load a file with NO line here: (1) REFLECTION: a loader or
+shell reached through a string (`getattr(importlib, "import_" + "module")`, `globals()["exec"]`); (2) a loader
+called by a COMPUTED name the file never spells; (3) an argv list MUTATED after it is written, through an alias
+the reader does not follow (`a = argv; a.insert(1, "x.py")`); (4) a callee in ANOTHER module that loads what it
+is handed; (5) the BASE DROP: `HERE / "x.py"` is read as `x.py` beside the file and from the root, whatever
+`HERE` is, so an existing sibling of that name is the edge even when the base points elsewhere; (6) FLOW: every
+assignment a name has in its scope is a value (a union), so the reader never proves WHICH one reaches the load,
+and a name the file binds twice to readable values is two edges. Also outside the census by name:
+`subprocess.getoutput`/`getstatusoutput` and `os.exec*`/`os.spawn*` are not in `SHELLS`.
+⚠ BOUND — what is still NOT an edge, each a way a file can run another that this reader does not see: a path
 COMPUTED at run time (a glob, a directory listing, a name built from input, a value read from a file or the
-environment); a script run with NO interpreter word (`./x.sh`, `"$DIR/x.sh"`) or through an interpreter held in a
-variable (`$PY x.py`) in Markdown or shell; `python3 -m module`; a shell COMMAND STRING inside Python
-(`os.system("python3 x.py")`, `shell=True`); `exec(open(path).read())`; an interpreter other than Python and the
-shells (`node x.js`); a script named in a YAML file (`ci.yml` is a candidate, never scanned); a path passed
+environment) — unresolved when it is handed to a loader or an argv above, silent otherwise; a script run with NO
+interpreter word (`./x.sh`, `"$DIR/x.sh"`) or through an interpreter held in a variable (`$PY x.py`) in Markdown
+or shell; `python3 -m module`; the CONTENT of a shell command string inside Python (`os.system("python3 x.py")`
+is an unresolved line, never an edge to `x.py`); an interpreter other than Python and the shells (`node x.js`);
+a script named in a YAML file (`ci.yml` is a candidate, never scanned); a path passed
 through a function in ANOTHER module, or held in an attribute or class constant; a name table that also holds any non-script string; and any other string literal. Measured 2026-11-16,
 before review r1: with EVERY string literal as an edge the reach from the page skills was 153 files, because one
 self-test fixture names `check-plan-code.py`, which reaches nearly everything — which is why the reader takes
@@ -105,14 +130,9 @@ an entry that is not an object; a `channel` that is not exactly one of CHANNELS;
 component's) that is not a non-empty string; an `expected_count` that is not an integer; a declared file the
 repository does not have; a directory of the rebuilt tree that cannot be listed.
 
-AN OPTIONAL LOAD is PROVEN from the file, never written down (review r2 XM3/XM4 retired the map's
-`optional_edges`, and a map that still has the key is REFUSED): a load is optional when it sits in the BODY of
-an `if` whose test — or a conjunct of its `and` — is `P.is_file()` / `P.exists()` / `os.path.isfile(P)` /
-`os.path.exists(P)`, and `P` reads to the SAME single path as the load's argument (`_Loads._tested`,
-`_guarded`). The `else` branch, a guard on another path, a name bound twice, and the body of a function or
-lambda defined under the `if` (it runs later) are not guarded. The closure FOLLOWS an optional load whose file
-the tree carries, and when the tree does not, prints `optional: <to>` — `regen-pages.py`'s self-test loads
-`check-plan-code.py` that way — and that line is not a gap.
+`optional_edges` IS RETIRED AND REFUSED (review r2 XM3/XM4; Phase 6): the map may not declare a load optional,
+and the reader no longer proves one either — see NO LOAD IS OPTIONAL above. `regen-pages.py`'s self-test, the one
+live user, no longer loads `check-plan-code.py`.
 
 A STALE DECLARATION IS RED (review r1 CM2): a file added under a directory a component lists (`docs/memory/`
 gains a memory file) is in the map's component the moment git tracks it, so the declaration omits it until
@@ -162,9 +182,14 @@ MODULE_LOADERS = {"import_module": (0, "name"), "__import__": (0, "name")}
 # A path part this reader cannot read (review r2 XM2): it travels in the form, so a load whose path holds one is
 # LISTED as unresolved, never dropped.
 UNK = ("?",)          # a PART of a form (a form is a tuple of parts): `{(UNK,)}` is "unreadable"
-# A test that proves a path exists when it is true (review r2 XM3): `p.is_file()`, `p.exists()`, and
-# `os.path.isfile(p)` / `os.path.exists(p)`.
-EXISTS = ("is_file", "exists", "isfile")
+# The census of BINDERS (Phase 6): every `str` field of a syntax node binds a name EXCEPT these ten — a name read
+# or an attribute, a keyword, a constant, and the fields the reader handles by their own rule (an import alias,
+# `global` / `nonlocal`). A node type Python adds later is a binder until it is listed here.
+NOT_A_BINDER = (("Name", "id"), ("Attribute", "attr"), ("keyword", "arg"), ("Constant", "value"),
+                ("Constant", "kind"), ("ImportFrom", "module"), ("alias", "name"), ("alias", "asname"),
+                ("Global", "names"), ("Nonlocal", "names"))
+# What hands a command to something else to run (Phase 6, the shell census): never parsed, always listed.
+SHELLS = ("system", "popen", "exec", "eval")
 INTERPRETERS = ("python", "python3", "bash", "sh")
 PATH_WRAPS = ("str", "Path", "PurePath", "PosixPath", "fspath", "abspath", "realpath", "normpath")
 PATH_SELF_METHODS = ("resolve", "absolute", "as_posix", "expanduser")
@@ -223,95 +248,116 @@ def _cat(left: set, right: set, sep: str = "") -> set:
 class _Loads:
     """The paths one Python file LOADS or RUNS, read from its syntax tree (module docstring, A SIBLING LOADED BY
     PATH). `paths()` is every string a loader or an interpreter argv is handed, after following names to their
-    assignments and a wrapper function's parameter to the arguments of its calls."""
+    assignments and a wrapper function's parameter to the arguments of its calls. It FAILS CLOSED, by census:
+    whatever it does not read ends in `unresolved`, as `rel:line` (module docstring, THE READER FAILS CLOSED)."""
 
-    def __init__(self, rel: str, tree: ast.AST):
+    def __init__(self, rel: str, tree: ast.Module):
         self.rel = rel
-        self.parent: dict = {}          # function node -> the function node enclosing it (None at module level)
+        self.tree = tree
+        self.parent: dict = {}          # scope node -> the scope its free names are looked up in next (None: module)
         self.funcs: dict = {}           # name -> [function nodes]
-        self.calls: list = []           # (Call, scope, guards)
-        self.argvs: list = []           # (List | Tuple, scope, guards)
-        self.env = {None: self._assigned(self._shallow(tree))}
-        self._visit(tree, None, ())
+        self.calls: list = []           # (Call, scope)
+        self.argvs: list = []           # (List | Tuple, scope)
+        # A name ANY `global` / `nonlocal` statement names is rebound from a scope this reader does not join.
+        self.rebound = {name for n in ast.walk(tree) if isinstance(n, (ast.Global, ast.Nonlocal)) for name in n.names}
+        self.star = any(isinstance(n, ast.ImportFrom) and any(a.name == "*" for a in n.names) for n in ast.walk(tree))
+        self.env: dict = {}             # scope -> {name: [the expressions a READ binder gives it]}
+        self.opaque: dict = {}          # scope -> the names some OTHER binder binds there
+        self.env[None], self.opaque[None] = self._bindings(self._shallow(tree.body))
+        for stmt in tree.body:
+            self._node(stmt, None)
         self.wrappers: dict = {}        # function name -> {(kind, form)} that still hold one of its parameters
-        self.found: set = set()         # (kind, concrete string)
-        self.unresolved: set = set()    # "rel:line" of each load whose path holds a part this reader cannot read
+        self.wrapper_lines: dict = {}   # function name -> the `rel:line` of each load that made it a wrapper
+        self.found: set = set()         # (kind, concrete string, line)
+        self.unresolved: set = set()    # "rel:line" of each load, loader or interpreter this reader did not read
+        self.consumed: set = set()      # id() of each loader / interpreter / wrapper mention a read rule consumed
 
     @staticmethod
-    def _shallow(node):
-        """Every node under `node` that is not inside a function or class defined there."""
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                continue
-            yield child
-            yield from _Loads._shallow(child)
+    def _header(node) -> list:
+        """What of a nested function or class RUNS in the scope that defines it: decorators, defaults,
+        annotations, bases. Its body does not."""
+        if isinstance(node, ast.ClassDef):
+            return node.decorator_list + node.bases + [k.value for k in node.keywords]
+        a = node.args
+        every = a.posonlyargs + a.args + a.kwonlyargs + [x for x in (a.vararg, a.kwarg) if x is not None]
+        return (node.decorator_list + a.defaults + [d for d in a.kw_defaults if d is not None]
+                + [x.annotation for x in every if x.annotation is not None]
+                + ([node.returns] if node.returns is not None else []))
 
     @staticmethod
-    def _assigned(nodes) -> dict:
+    def _shallow(nodes):
+        """Every node of one scope, given its statements: a function or class defined there is yielded ITSELF
+        (its name binds here) with its header (`_header`), and nothing of its body."""
+        for node in nodes:
+            yield node
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                yield from _Loads._shallow(_Loads._header(node))
+            else:
+                yield from _Loads._shallow(ast.iter_child_nodes(node))
+
+    @staticmethod
+    def _bindings(nodes) -> tuple[dict, set]:
+        """`(env, opaque)` of one scope. `env`: name -> the expressions the binders this reader READS give it (an
+        assignment to one name, an annotated one, a walrus, a `for` over a literal). `opaque`: every OTHER name
+        the scope binds, by census — each `str` field of each node that is not in NOT_A_BINDER, each name written
+        or deleted that no read binder consumed, each import alias."""
+        nodes = list(nodes)
         env: dict = {}
+        read: set = set()
         for n in nodes:
             if isinstance(n, ast.Assign):
                 for t in n.targets:
                     if isinstance(t, ast.Name):
                         env.setdefault(t.id, []).append(n.value)
+                        read.add(id(t))
             elif isinstance(n, (ast.AnnAssign, ast.NamedExpr)) and isinstance(n.target, ast.Name) and n.value:
                 env.setdefault(n.target.id, []).append(n.value)
+                read.add(id(n.target))
             elif isinstance(n, (ast.For, ast.comprehension)) and isinstance(n.target, ast.Name) \
                     and isinstance(n.iter, (ast.Tuple, ast.List, ast.Set)):
                 env.setdefault(n.target.id, []).extend(n.iter.elts)
-        return env
+                read.add(id(n.target))
+        opaque: set = set()
+        for n in nodes:
+            if isinstance(n, ast.Name):
+                if not isinstance(n.ctx, ast.Load) and id(n) not in read:
+                    opaque.add(n.id)
+            elif isinstance(n, ast.alias):
+                opaque.add(n.asname or n.name.split(".")[0])
+            for field, value in ast.iter_fields(n):
+                if (type(n).__name__, field) not in NOT_A_BINDER:
+                    opaque |= {v for v in (value if isinstance(value, list) else [value]) if isinstance(v, str)}
+        return env, opaque
 
-    def _visit(self, node, scope, guards: tuple) -> None:
+    def _visit(self, node, scope) -> None:
         for child in ast.iter_child_nodes(node):
-            self._node(child, scope, guards)
+            self._node(child, scope)
 
-    def _node(self, child, scope, guards: tuple) -> None:
-        """`guards`: the expressions an enclosing `if` has proven to exist (`_tested`). Only the `if` BODY holds
-        them; a function or a lambda runs later, so its body starts with none."""
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            self.parent[child] = scope
-            self.funcs.setdefault(child.name, []).append(child)
-            self.env[child] = self._assigned(self._shallow(child))
-            return self._visit(child, child, ())
-        if isinstance(child, ast.Lambda):
-            return self._visit(child, scope, ())
-        if isinstance(child, ast.Call):
-            self.calls.append((child, scope, guards))
-        elif isinstance(child, (ast.List, ast.Tuple)):
-            self.argvs.append((child, scope, guards))
-        if isinstance(child, ast.If):
-            self._node(child.test, scope, guards)
+    def _node(self, child, scope) -> None:
+        """A function and a class are each a scope. A class's names are seen by its own body only: a function
+        defined in it looks its free names up in the scope AROUND the class."""
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            self.parent[child] = self.parent[scope] if isinstance(scope, ast.ClassDef) else scope
+            if not isinstance(child, ast.ClassDef):
+                self.funcs.setdefault(child.name, []).append(child)
+            self.env[child], self.opaque[child] = self._bindings(self._shallow(child.body))
+            for part in self._header(child):
+                self._node(part, scope)
             for stmt in child.body:
-                self._node(stmt, scope, guards + self._tested(child.test))
-            for stmt in child.orelse:
-                self._node(stmt, scope, guards)
+                self._node(stmt, child)
             return None
-        return self._visit(child, scope, guards)
-
-    @staticmethod
-    def _tested(test) -> tuple:
-        """The expressions `test` proves exist when it is true: `p.is_file()` / `p.exists()` (no argument),
-        `os.path.isfile(p)` / `os.path.exists(p)` (one), or any conjunct of an `and`."""
-        if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And):
-            return tuple(e for v in test.values for e in _Loads._tested(v))
-        if not (isinstance(test, ast.Call) and isinstance(test.func, ast.Attribute) and test.func.attr in EXISTS):
-            return ()
-        if not test.args and not test.keywords:
-            return (test.func.value,)
-        if len(test.args) == 1 and not test.keywords and _name_of(test.func.value) == "path":
-            return (test.args[0],)
-        return ()
-
-    def _guarded(self, arg, scope, guards: tuple) -> bool:
-        """True when `arg` is ONE path, read whole, that an enclosing guard tests: the guard's forms and the
-        argument's are the same single form. A name bound twice has two forms and is never guarded."""
-        mine = self.forms(arg, scope)
-        return len(mine) == 1 and not any(UNK in f for f in mine) \
-            and any(self.forms(g, scope) == mine for g in guards)
+        if isinstance(child, ast.Call):
+            self.calls.append((child, scope))
+        elif isinstance(child, (ast.List, ast.Tuple)):
+            self.argvs.append((child, scope))
+        return self._visit(child, scope)
 
     @staticmethod
     def _params(fn) -> list:
-        return [a.arg for a in fn.args.posonlyargs + fn.args.args + fn.args.kwonlyargs]
+        if isinstance(fn, ast.ClassDef):
+            return []
+        a = fn.args
+        return [x.arg for x in a.posonlyargs + a.args + a.kwonlyargs + [y for y in (a.vararg, a.kwarg) if y is not None]]
 
     def _is_param(self, name: str, scope) -> bool:
         while scope is not None:
@@ -323,7 +369,7 @@ class _Loads:
         return False
 
     def forms(self, expr, scope, seen=frozenset()) -> set:
-        """Every path form `expr` can hold; empty when it cannot be read (a computed value, an attribute, ...)."""
+        """Every path form `expr` can hold; `{(UNK,)}` when it cannot be read (a computed value, an attribute, ...)."""
         if isinstance(expr, ast.Constant):
             return {(expr.value,)} if isinstance(expr.value, str) else {(UNK,)}
         if isinstance(expr, ast.JoinedStr):
@@ -374,15 +420,21 @@ class _Loads:
         return {f for f in self.forms(expr, scope, seen) if UNK not in f}
 
     def _name(self, name: str, scope, seen) -> set:
+        """The forms a name holds where it is read: the union of what its READ binders give it, plus unknown when
+        any other binder binds it there (`opaque`), when a star import could, or when it refers to itself."""
+        if name in self.rebound:
+            return {(UNK,)}
         while True:
             key = (scope, name)
-            if key in seen:
-                return set()
+            if key in seen:             # `p = p + '.py'`: what it held before is not read
+                return {(UNK,)}
             out: set = set()
             if scope is not None and name in self._params(scope):
                 out.add((("P", scope.name, name),))
             for value in self.env[scope].get(name, []):
                 out |= self.forms(value, scope, seen | {key})
+            if name in self.opaque[scope] or (scope is None and self.star):
+                out.add((UNK,))
             if out or name in self.env[scope] or (scope is not None and name in self._params(scope)):
                 return out
             if scope is None:           # bound nowhere this file can see: an import, a builtin, a global
@@ -401,9 +453,11 @@ class _Loads:
             if UNK in form or len(owners) > 1:
                 self.unresolved.add(f"{self.rel}:{where.lineno}")
             elif not owners:
-                self.found.add((kind, "".join(form)))
+                self.found.add((kind, "".join(form), where.lineno))
             else:
-                known = self.wrappers.setdefault(owners.pop(), set())
+                owner = owners.pop()
+                self.wrapper_lines.setdefault(owner, set()).add(f"{self.rel}:{where.lineno}")
+                known = self.wrappers.setdefault(owner, set())
                 if (kind, form) not in known:
                     known.add((kind, form))
                     grew = True
@@ -424,43 +478,55 @@ class _Loads:
         bound.update({k.arg: k.value for k in call.keywords if k.arg})
         return bound
 
-    def paths(self) -> tuple[set, set]:
-        """`(edges, optional)`: the paths loaded, and those loaded ONLY under an existence guard on themselves."""
-        for call, scope, guards in self.calls:
+    def _mentions(self):
+        """Every node no read rule consumed, for the censuses."""
+        return [n for n in ast.walk(self.tree) if id(n) not in self.consumed]
+
+    def paths(self) -> tuple[set, dict]:
+        """`(edges, groups)`. `edges`: every path loaded, as written from the file's directory and from the root.
+        `groups`: `(line, the string read)` -> the candidates of that ONE path load, so a caller that knows the
+        tree can say which load names no file in it. Everything not read is in `self.unresolved` by the end."""
+        for call, scope in self.calls:
             name = _name_of(call.func)
             if name in PATH_LOADERS or name in MODULE_LOADERS:
+                self.consumed.add(id(call.func))
                 at, keyword = PATH_LOADERS.get(name) or MODULE_LOADERS[name]
                 arg = next((k.value for k in call.keywords if k.arg == keyword), None)
-                arg = call.args[at] if arg is None and len(call.args) > at else arg
-                if arg is None:                 # `**kwargs`, or an argument this reader cannot place
-                    if any(k.arg is None for k in call.keywords) or any(
-                            isinstance(a, ast.Starred) for a in call.args):
-                        self.unresolved.add(f"{self.rel}:{call.lineno}")
-                    continue
-                kind = "module" if name in MODULE_LOADERS else \
-                    "optional" if self._guarded(arg, scope, guards) else "path"
-                self._add(kind, self.forms(arg, scope), call)
-        for argv, scope, guards in self.argvs:
+                if arg is None and len(call.args) > at and not any(
+                        isinstance(a, ast.Starred) for a in call.args[:at + 1]):
+                    arg = call.args[at]
+                # No argument this reader can place (omitted, `**kwargs`, behind a `*args`): no form at all.
+                self._add("module" if name in MODULE_LOADERS else "path",
+                          self.forms(arg, scope) if arg is not None else set(), call)
+        for argv, scope in self.argvs:
             head = argv.elts[0] if argv.elts else None
             if not ((isinstance(head, ast.Attribute) and head.attr == "executable")
                     or (isinstance(head, ast.Constant) and head.value in INTERPRETERS)):
                 continue
-            at = 1
+            self.consumed.add(id(head))
+            at, read = 1, False
             while at < len(argv.elts):
                 e = argv.elts[at]
                 if isinstance(e, ast.Constant) and isinstance(e.value, str) and e.value.startswith("-"):
                     if e.value in ("-c", "-m"):
+                        read = True
                         break
                     at += 2 if e.value in ("-X", "-W") else 1
                     continue
-                self._add("optional" if self._guarded(e, scope, guards) else "path", self.forms(e, scope), argv)
+                read = True
+                self._add("path", self.forms(e, scope), argv)
                 break
+            if not read:                # an interpreter and no script, `-c` or `-m` after it: finished elsewhere
+                self.unresolved.add(f"{self.rel}:{argv.lineno}")
+        called: set = set()
         grew = True
         while grew:                 # a wrapper's parameter, filled from each call of it, to a fixpoint
             grew = False
-            for call, scope, _guards in self.calls:
+            for call, scope in self.calls:
                 name = _name_of(call.func)
                 for kind, form in sorted(self.wrappers.get(name, ()), key=repr):
+                    called.add(name)
+                    self.consumed.add(id(call.func))
                     for fn in self.funcs.get(name, []):
                         bound = self._bind(fn, call)
                         out = {()}
@@ -473,15 +539,61 @@ class _Loads:
                             else:
                                 out = {(UNK,)}
                         grew = self._add(kind, out, call) or grew
+        # THE CENSUSES. Each asks of the whole tree: is there a mention no read rule above consumed?
+        self.unresolved |= self._wrapper_census(called)
+        self.unresolved |= self._loader_census()
+        self.unresolved |= self._interpreter_census()
+        self.unresolved |= self._shell_census()
         here = os.path.dirname(self.rel)
-        out: dict = {"path": set(), "optional": set()}
-        for kind, s in self.found:
+        edges: set = set()
+        groups: dict = {}
+        for kind, s, line in self.found:
             if kind == "module":
-                out["path"].add(os.path.normpath(os.path.join(here, s.split(".")[0] + ".py")))
-            elif s and not s.startswith("/"):
-                out[kind] |= {os.path.normpath(os.path.join(here, s)), os.path.normpath(s)}
-        edges, optional = ({o for o in v if not o.startswith(("..", "/"))} for v in (out["path"], out["optional"]))
-        return edges, optional - edges
+                if "." in s or not s:   # dotted or relative: a package, not a sibling file
+                    self.unresolved.add(f"{self.rel}:{line}")
+                if s.split(".")[0]:
+                    edges.add(os.path.normpath(os.path.join(here, s.split(".")[0] + ".py")))
+                continue
+            cands = {os.path.normpath(os.path.join(here, s)), os.path.normpath(s)} if s and not s.startswith("/") \
+                else set()
+            groups.setdefault((line, s), set()).update(c for c in cands if not c.startswith(("..", "/")))
+        for cands in groups.values():
+            edges |= cands
+        return edges, groups
+
+    def _at(self, nodes) -> set:
+        return {f"{self.rel}:{n.lineno}" for n in nodes}
+
+    def _wrapper_census(self, called: set) -> set:
+        """A wrapper NO call in this file binds: each load in it. A wrapper mentioned without being called
+        (`g = f`, `map(f, xs)`): the line that hands it on."""
+        out = {line for name, lines in self.wrapper_lines.items() if name not in called for line in lines}
+        return out | self._at(n for n in self._mentions() if isinstance(n, (ast.Name, ast.Attribute))
+                              and isinstance(n.ctx, ast.Load) and _name_of(n) in self.wrappers)
+
+    def _loader_census(self) -> set:
+        """A loader's name anywhere but the head of a read call: a name, an attribute, a string, an import of it
+        under another name."""
+        loaders = set(PATH_LOADERS) | set(MODULE_LOADERS)
+        return self._at(n for n in self._mentions() if (
+            isinstance(n, (ast.Name, ast.Attribute)) and _name_of(n) in loaders)
+            or (isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value in loaders)
+            or (isinstance(n, ast.ImportFrom) and any(a.name in loaders and a.asname for a in n.names)))
+
+    def _interpreter_census(self) -> set:
+        """An interpreter anywhere but the head of a read argv: `<x>.executable`, or the bare word as a string."""
+        return self._at(n for n in self._mentions() if (isinstance(n, ast.Attribute) and n.attr == "executable")
+                        or (isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value in INTERPRETERS))
+
+    def _shell_census(self) -> set:
+        """A command handed to something else to run, which this reader does not parse: `os.system`, `os.popen`,
+        `exec`, `eval` (by name, however reached), and a call with `shell=` anything but the literal False."""
+        return self._at(n for n in ast.walk(self.tree) if (
+            isinstance(n, (ast.Name, ast.Attribute)) and _name_of(n) in SHELLS)
+            or (isinstance(n, ast.ImportFrom) and any(a.name in SHELLS for a in n.names))
+            or (isinstance(n, ast.Call) and any(
+                k.arg == "shell" and not (isinstance(k.value, ast.Constant) and k.value.value is False)
+                for k in n.keywords)))
 
 
 BARE_SCRIPT_RE = re.compile(r"[\w-]+\.(?:py|sh)\Z")
@@ -502,36 +614,39 @@ def name_tables(rel: str, tree: ast.AST) -> set[str]:
     return out
 
 
-def import_paths(rel: str, text: str) -> set[str]:
-    """Every path the Python file `rel` may load, guarded or not (`python_loads`)."""
-    edges, optional, _unresolved = python_loads(rel, text)
-    return edges | optional
-
-
-def python_loads(rel: str, text: str) -> tuple[set[str], set[str], list[str]]:
-    """`(edges, optional, unresolved)` of the Python file `rel`. `edges`: `<dir>/<module>.py` for each absolute
-    import, and each path it hands a loader or an interpreter (`_Loads`), as written from the file's directory AND
-    from the root — whether one exists is each caller's rule (`exec_edges`: under the root; `closure_edges`: in the
-    installed tree or the repository). `optional`: a path loaded ONLY inside an existence guard on itself.
-    `unresolved`: `rel:line` of each load whose path this reader cannot read."""
+def python_loads(rel: str, text: str, is_file=None, is_dir=None) -> tuple[set[str], list[str]]:
+    """`(edges, unresolved)` of the Python file `rel`. `edges`: `<dir>/<module>.py` for each absolute import, and
+    each path it hands a loader or an interpreter (`_Loads`), as written from the file's directory AND from the
+    root — whether one exists is each caller's rule (`exec_edges`: under the root; `closure_edges`: in the
+    installed tree or the repository). `unresolved`: `rel:line` of everything the reader did not turn into an
+    edge (module docstring, THE READER FAILS CLOSED). `is_file(path)` / `is_dir(path)` are the caller's tree:
+    given, a READ path none of whose candidates is a file is unresolved, and so is an import whose name is a
+    sibling DIRECTORY (a package, which this reader does not walk)."""
     try:
         tree = ast.parse(text)
     except SyntaxError as e:
         raise CannotRun(f"cannot parse {rel}: {e}") from e
     outs: set[str] = set()
+    lost: set[str] = set()
     for node in ast.walk(tree):
         mods = []
         if isinstance(node, ast.Import):
             mods = [a.name for a in node.names]
         elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
             mods = [node.module]
+        elif isinstance(node, ast.ImportFrom):          # relative: a package this reader does not walk
+            lost.add(f"{rel}:{node.lineno}")
         for mod in mods:
             outs.add(os.path.normpath(os.path.join(os.path.dirname(rel), mod.split(".")[0] + ".py")))
+            if is_dir is not None and is_dir(os.path.normpath(os.path.join(os.path.dirname(rel), mod.split(".")[0]))):
+                lost.add(f"{rel}:{node.lineno}")
     loads = _Loads(rel, tree)
-    edges, optional = loads.paths()
+    edges, groups = loads.paths()
+    for (line, _read), cands in groups.items():
+        if not cands or (is_file is not None and not any(is_file(c) for c in cands)):
+            lost.add(f"{rel}:{line}")
     edges |= outs | name_tables(rel, tree)
-    return edges, optional - edges, sorted(loads.unresolved, key=lambda u: (u.rsplit(":", 1)[0],
-                                                                            int(u.rsplit(":", 1)[1])))
+    return edges, sorted(loads.unresolved | lost, key=lambda u: (u.rsplit(":", 1)[0], int(u.rsplit(":", 1)[1])))
 
 
 def exec_edges(root: Path, rel: str) -> set[str]:
@@ -543,7 +658,7 @@ def exec_edges(root: Path, rel: str) -> set[str]:
         raise CannotRun(f"cannot read {rel}: {e}") from e
     outs: set[str] = set()
     if rel.endswith(".py"):
-        outs |= import_paths(rel, text)
+        outs |= python_loads(rel, text)[0]
     elif rel.endswith((".md", ".sh")):
         for m in EXEC_RE.finditer(text):
             outs.add(os.path.normpath(m.group(1)))
@@ -669,8 +784,8 @@ def load_map(path: Path, root: Path = REPO) -> ComponentMap:
         if not isinstance(e.get("reason"), str) or not e["reason"].strip():
             raise Refused(f"exclusion {e['path']!r} has no reason")
     if "optional_edges" in data:
-        raise Refused("`optional_edges` is retired (review r2 XM3/XM4): a load is optional only when its own "
-                      "existence guard is read from the file")
+        raise Refused("`optional_edges` is retired (review r2 XM3/XM4; Phase 6): no load is optional — a file a "
+                      "shipped file loads is shipped, or the load is rewritten")
     return ComponentMap(str(data.get("measured_at", "")), packages, comps, excl)
 
 
@@ -716,7 +831,7 @@ def map_gaps(m: ComponentMap, cands: set[str], root: Path = REPO) -> list[str]:
 SOURCE_SKILLS = ".agents/skills/"
 INSTALLED_SKILLS = "skills/"
 PLUGIN_META = ".claude-plugin/plugin.json"
-NOTES = ("cwd-relative: ", "external: ", "optional: ", "unresolved: ")
+NOTES = ("cwd-relative: ", "external: ", "unresolved: ")
 READ_LINE_RE = re.compile(r"\b(?:follow|read)\b", re.I)
 READ_PATH_RE = re.compile(r"(?:`|\]\()((?:\.\.?/|\.agents/skills/|docs/)[\w./-]+\.\w+)[`)]")
 
@@ -763,10 +878,12 @@ def closure_edges(installed: Path, rel: str, repo: Path) -> set[str]:
         raise CannotRun(f"cannot read the installed {rel}: {e}") from e
     out: set[str] = set()
     if rel.endswith(".py"):
-        edges, optional, unresolved = python_loads(rel, text)
-        for p in edges | optional:
+        edges, unresolved = python_loads(
+            rel, text, is_file=lambda p: (installed / p).is_file() or (repo / source_path(p)).is_file(),
+            is_dir=lambda p: (installed / p).is_dir() or (repo / source_path(p)).is_dir())
+        for p in edges:
             if (installed / p).is_file() or (repo / source_path(p)).is_file():
-                out.add(f"optional: {p}" if p in optional else p)
+                out.add(p)
         out |= {f"unresolved: {u}" for u in unresolved}
     elif rel.endswith(".sh") or rel.endswith(".md"):
         code = text if rel.endswith(".md") else "\n".join(
@@ -796,8 +913,8 @@ def _walk_failed(e: OSError):
 
 
 def closure(installed: Path, repo: Path = REPO) -> set[str]:
-    """Every installed-relative path reached from the package's skills and entry points, plus its hand-offs. A
-    guarded load (`optional: p`, review r2 XM3) is followed when the tree holds `p`, and is a hand-off when not."""
+    """Every installed-relative path reached from the package's skills and entry points, plus its hand-offs and
+    its `unresolved: rel:line` notes. No load is optional: a load under an existence guard is an edge like any."""
     installed = Path(installed)
     present: set[str] = set()
     for d, _dirs, names in os.walk(installed, onerror=_walk_failed):
@@ -811,9 +928,7 @@ def closure(installed: Path, repo: Path = REPO) -> set[str]:
             continue
         out.add(rel)
         for e in closure_edges(installed, rel, repo):
-            if e.startswith(NOTES[2]) and e[len(NOTES[2]):] in present:
-                todo.append(e[len(NOTES[2]):])
-            elif e.startswith(NOTES) or e not in present:
+            if e.startswith(NOTES) or e not in present:
                 out.add(e)
             else:
                 todo.append(e)
@@ -973,10 +1088,8 @@ def closure_main(sets: Path, map_path: Path, root: Path) -> int:
             gaps += len(found)
             lines += [f"{name}: {g}" for g in found]
             if plugin:
-                lines += [f"{name}: {r} — loaded only inside an existence guard on itself: run when present, "
-                          "not shipped" for r in sorted(reached) if r.startswith(NOTES[2])]
-                lines += [f"{name}: {r} — a load whose path this reader cannot read: listed, not checked"
-                          for r in sorted(reached, key=_line_order) if r.startswith(NOTES[3])]
+                lines += [f"{name}: {r} — a load this reader did not resolve to a file in the tree: listed, not "
+                          "checked" for r in sorted(reached, key=_line_order) if r.startswith(NOTES[2])]
                 lines.append(f"{name}: {sum(r.startswith(NOTES[0]) for r in reached)} cwd-relative hand-off(s), "
                              f"{sum(r.startswith(NOTES[1]) for r in reached)} external read(s)")
             else:
@@ -1618,61 +1731,8 @@ def _self_test_body() -> int:
          data_file_removed, (2, [], "CANNOT RUN: pkg declares data/two.md, and the repository has no data/two.md"))
 
     # ---- review round 2 (docs/reviews/coordinator/hse-slice-c-r2-coordinator.md) -------------------------------
-    # XM3/XM4: the map's `optional_edges` waiver is RETIRED. A load is optional only when the AST shows it inside
-    # `if <the same path>.is_file()` / `.exists()` / `os.path.isfile(<it>)` / `os.path.exists(<it>)`; anything
-    # else is an edge. Each fixture is a package whose `scripts/a.py` loads `scripts/secret.py`, which the package
-    # omits.
-    def guarded(body: str) -> dict:
-        return {"skills/d/SKILL.md": "Run `python3 scripts/a.py`.\n",
-                "scripts/a.py": "import os, runpy\nfrom pathlib import Path\n"
-                                "P = Path(__file__).with_name('secret.py')\nQ = Path(__file__).with_name('b.py')\n"
-                                + body}
-    g_src = tree({".agents/skills/d/SKILL.md": "", "scripts/a.py": "", "scripts/secret.py": "", "scripts/b.py": ""})
-    g_forms = {"unconditional": "runpy.run_path('scripts/secret.py')\n",
-               "if is_file": "if P.is_file():\n    runpy.run_path(str(P))\n",
-               "if os.path.exists, in an and": "if True and os.path.exists(P):\n    runpy.run_path(P)\n",
-               "guard on ANOTHER path": "if Q.is_file():\n    runpy.run_path(str(P))\n",
-               "load in the ELSE branch": "if P.is_file():\n    pass\nelse:\n    runpy.run_path(str(P))\n",
-               "the name REBOUND": "if P.is_file():\n    P = Path('scripts/secret.py')\n    runpy.run_path(P)\n",
-               "a lambda defined under the guard": "if P.is_file():\n    f = lambda: runpy.run_path(str(P))\n",
-               "a function defined under the guard": "if P.is_file():\n    def f():\n        runpy.run_path(str(P))\n",
-               "is_file called on nothing": "if is_file():\n    runpy.run_path(str(P))\n"}
-
-    def g_reach(body: str) -> tuple:
-        files = guarded(body)
-        reached = closure(tree({**files, "scripts/b.py": ""}), g_src)
-        return (sorted(r for r in reached if r.startswith("optional: ")),
-                closure_gaps(decl_of({**files, "scripts/b.py": ""}), reached, g_src))
-    gap_secret = ["gap: scripts/secret.py — the package's own text reaches it, and its declaration omits it"]
-    case("XM3 r2: a load is optional ONLY inside an existence guard on the same path — an unconditional load, a guard "
-         "on another path, the else branch, a rebound name, a lambda, a function and a guard with no receiver are each a "
-         "gap",
-         lambda: {k: g_reach(v) for k, v in g_forms.items()},
-         {"unconditional": ([], gap_secret), "if is_file": (["optional: scripts/secret.py"], []),
-          "if os.path.exists, in an and": (["optional: scripts/secret.py"], []),
-          "guard on ANOTHER path": ([], gap_secret), "load in the ELSE branch": ([], gap_secret),
-          "the name REBOUND": ([], gap_secret), "a lambda defined under the guard": ([], gap_secret),
-          "a function defined under the guard": ([], gap_secret),
-          "is_file called on nothing": ([], gap_secret)})
-
-    def g_run(body: str):
-        """The guard read is the guard that RUNS: the materialised script, without secret.py, exits 0 when guarded."""
-        root = tree(guarded(body))
-        return subprocess.run([sys.executable, str(root / "scripts/a.py")], capture_output=True, cwd=root).returncode
-    case("XM3 r2: ...and run in the materialised tree without secret.py, the guarded script exits 0 and the "
-         "unconditional one does not",
-         lambda: (g_run(g_forms["if is_file"]), g_run(g_forms["unconditional"]) != 0), (0, True))
-    case("XM3 r2: a guarded load the package DOES carry is followed, its own edges with it",
-         lambda: sorted(closure(tree({**guarded(g_forms["if is_file"]), "scripts/b.py": "",
-                                      "scripts/secret.py": "import b\n"}), g_src)),
-         ["cwd-relative: scripts/a.py", "scripts/a.py", "scripts/b.py", "scripts/secret.py", "skills/d/SKILL.md"])
-    g_cli = tree({".agents/skills/d/SKILL.md": "Run `python3 scripts/a.py`.\n",
-                  "scripts/a.py": guarded(g_forms["if is_file"])["scripts/a.py"], "scripts/secret.py": ""})
-    case("XM3 r2: the closure SAYS a guarded load the package omits, and it is not a gap",
-         lambda: clo("--closure", sets_file(g_cli, {"pkg": decl_of(["skills/d/SKILL.md", "scripts/a.py"])}),
-                     root=g_cli)[:2],
-         (0, ["pkg: optional: scripts/secret.py — loaded only inside an existence guard on itself: run when present, "
-              "not shipped", "pkg: 1 cwd-relative hand-off(s), 0 external read(s)", "0 gaps"]))
+    # XM3/XM4: the map's `optional_edges` waiver is RETIRED, and a map that still carries the key is refused. (Round
+    # 2 replaced it with an existence guard read from the file; Phase 6 deleted that too — the cases are below.)
     g_waive = tree({".agents/skills/d/SKILL.md": "Run `python3 scripts/a.py`.\n",
                     "scripts/a.py": "", "scripts/b.py": "import runpy\nrunpy.run_path('scripts/secret.py')\n",
                     "scripts/secret.py": ""})
@@ -1683,8 +1743,8 @@ def _self_test_body() -> int:
          lambda: [clo("--closure", pair(g_waive, {"pkg": named({"skill-b": ["skills/d/SKILL.md"]})},
                                         comps=[comp("skill-b", [".agents/skills/d/SKILL.md"])],
                                         optional=o), root=g_waive)[:2] for o in (waiver[1:], waiver, [])],
-         [(1, ["REFUSED: `optional_edges` is retired (review r2 XM3/XM4): a load is optional only when its own "
-               "existence guard is read from the file"])] * 3)
+         [(1, ["REFUSED: `optional_edges` is retired (review r2 XM3/XM4; Phase 6): no load is optional — a file a "
+               "shipped file loads is shipped, or the load is rewritten"])] * 3)
 
     # XM1: a loader's argument by KEYWORD. XM2: an f-string conversion. The class: every loader argument is read by
     # position OR keyword, and a load whose path cannot be read is LISTED (`unresolved:`), never silently dropped.
@@ -1714,21 +1774,196 @@ def _self_test_body() -> int:
            "w('scripts/' + NAME + '.py')\n"                        # 15: read through the wrapper — not listed
            "runpy.run_path(os.getenv('X') if FAR else 'k.py')\n"    # 16: an unknown call beside a read branch
            "runpy.run_path(sys.argv[1] if FAR else 'k.py')\n"       # 17: a subscript beside a read branch
-           "w()\n")                                                 # 18: a wrapper's parameter no call binds
+           "w()\n"                                                  # 18: a wrapper's parameter no call binds
+           "runpy.run_path(OTHER if FAR else 'k.py')\n"             # 19: a name bound nowhere beside a read branch
+           "def w2(q):\n    runpy.run_path('k' + q)\n"              # 20-21: a wrapper whose path has a read part too
+           "w2()\n")                                                # 22: ...and no call binds the rest of it
     case("XM2 r2: a load whose path cannot be read is LISTED with its line — a repr conversion, a format spec, a "
          "subscript, another module's name, one unreadable branch, an argv, **kwargs, a wrapper's caller, an unknown "
          "call or a subscript beside a read branch, a parameter no call binds — and a read one is not (and the "
          "line is the given file's: a second file, a second text)",
-         lambda: (python_loads("scripts/a.py", dyn)[2],
-                  python_loads("hooks/b.py", "import runpy\n\n\nrunpy.run_path(X)\n")[2]),
-         ([f"scripts/a.py:{n}" for n in (4, 5, 6, 7, 8, 9, 10, 13, 16, 17, 18)], ["hooks/b.py:4"]))
+         lambda: (python_loads("scripts/a.py", dyn)[1],
+                  python_loads("hooks/b.py", "import runpy\n\n\nrunpy.run_path(X)\n")[1]),
+         ([f"scripts/a.py:{n}" for n in (4, 5, 6, 7, 8, 9, 10, 13, 16, 17, 18, 19, 22)], ["hooks/b.py:4"]))
     dyn_w = tree({".agents/skills/d/SKILL.md": "Run `python3 scripts/a.py`.\n",
                   "scripts/a.py": "import runpy, sys\nrunpy.run_path(sys.argv[1])\n"})
     case("XM2 r2: the closure SAYS each unresolved load of a shipped file, and it is not a gap",
          lambda: clo("--closure", sets_file(dyn_w, {"pkg": decl_of(["skills/d/SKILL.md", "scripts/a.py"])}),
                      root=dyn_w)[:2],
-         (0, ["pkg: unresolved: scripts/a.py:2 — a load whose path this reader cannot read: listed, not checked",
+         (0, ["pkg: unresolved: scripts/a.py:2 — a load this reader did not resolve to a file in the tree: listed, not checked",
               "pkg: 1 cwd-relative hand-off(s), 0 external read(s)", "0 gaps"]))
+
+    # ---- Phase 6 (docs/reviews/coordinator/architecture-review-2026-11-17-hse-slice-c.md) -------------------------
+    # NO LOAD IS OPTIONAL, and the load reader fails CLOSED by census. Each case below loops over a LITERAL list
+    # written here, never over the reader's own tables. `scripts/a.py` is the reading file; `secret.py` is what
+    # the program loads when it RUNS, and `other.py` is the name a reader that misses a binder would report.
+    # `fc` answers, per program: (which of the two the edges name, the line numbers listed as unresolved).
+    def fc(text: str, is_file=None, is_dir=None) -> tuple:
+        r = python_loads("scripts/a.py", text, is_file=is_file, is_dir=is_dir)
+        return (sorted({os.path.basename(e) for e in r[0]} & {"secret.py", "other.py"}),
+                [int(u.rsplit(":", 1)[1]) for u in r[-1]])
+
+    def p6_cli(a_py: str, repo_has=(), ships=()) -> tuple:
+        """`--closure` over a package whose skill runs `scripts/a.py`; the repository also has `repo_has`, and the
+        package also ships `ships`. → (rc, the lines, whether the word `optional` is printed)."""
+        r = tree({".agents/skills/d/SKILL.md": "Run `python3 scripts/a.py`.\n", "scripts/a.py": a_py,
+                  **{f: "" for f in repo_has}})
+        rc, out, _err = clo("--closure", sets_file(r, {"pkg": decl_of(["skills/d/SKILL.md", "scripts/a.py", *ships])}),
+                            root=r)
+        return rc, out, "optional" in "\n".join(out)
+    p6_tail = "pkg: 1 cwd-relative hand-off(s), 0 external read(s)"
+    p6_gap = "pkg: gap: scripts/secret.py — the package's own text reaches it, and its declaration omits it"
+    p6_said = " — a load this reader did not resolve to a file in the tree: listed, not checked"
+    p6_guards = {
+        "the load's own path is tested": "import runpy\nfrom pathlib import Path\n"
+                                         "p = Path(__file__).parent / 'secret.py'\nif p.is_file():\n    runpy.run_path(p)\n",
+        "CM1 r3: the test is on ANOTHER path": "import runpy\nfrom pathlib import Path\nHERE = Path(__file__).parent\n"
+                                               "if (Path.cwd() / 'secret.py').is_file():\n"
+                                               "    runpy.run_path(str(HERE / 'secret.py'))\n",
+        "Cm3 r3: the file is removed between the test and the load": "import runpy, os\np = 'secret.py'\n"
+                                                                     "if os.path.exists(p):\n    os.remove(p)\n"
+                                                                     "    runpy.run_path(p)\n"}
+    case("Phase 6: a load under an existence guard is a plain edge, and a GAP when the package omits it — the "
+         "guard on its own path, CM1's guard on another path, Cm3's remove between test and load — and the word "
+         "`optional` is printed by none",
+         lambda: {k: p6_cli(v, repo_has=["scripts/secret.py"]) for k, v in p6_guards.items()},
+         {k: (1, [p6_gap, p6_tail, "1 gaps"], False) for k in (
+             "the load's own path is tested", "CM1 r3: the test is on ANOTHER path",
+             "Cm3 r3: the file is removed between the test and the load")})
+    case("Phase 6 control: the same guarded load in a package that SHIPS secret.py is `0 gaps`",
+         lambda: p6_cli(p6_guards["the load's own path is tested"], repo_has=["scripts/secret.py"],
+                        ships=["scripts/secret.py"]),
+         (0, [p6_tail, "0 gaps"], False))
+    p6_binders = {
+        "a self-reference": "import runpy\np = 'secret'\np = p + '.py'\nrunpy.run_path(p)\n",
+        "an augmented assignment": "import runpy\np = 'secret'\np += '.py'\nrunpy.run_path(p)\n",
+        "a global rebinding": "import runpy\np = 'other.py'\ndef swap():\n    global p\n    p = 'secret.py'\nswap()\n"
+                              "runpy.run_path(p)\n",
+        "a nonlocal rebinding": "import runpy\ndef f():\n    p = 'other.py'\n    def g():\n        nonlocal p\n"
+                                "        p = 'secret.py'\n    g()\n    runpy.run_path(p)\n",
+        "a tuple target": "import runpy\np = 'other.py'\ndef f():\n    p, q = 'secret.py', 1\n    runpy.run_path(p)\n",
+        "except ... as": "import runpy\np = 'other.py'\ndef f():\n    try:\n        pass\n    except E as p:\n"
+                         "        runpy.run_path(p)\n",
+        "with ... as": "import runpy\np = 'other.py'\ndef f():\n    with open('x') as p:\n        runpy.run_path(p)\n",
+        "import ... as": "import runpy\np = 'other.py'\ndef f():\n    import secret_name as p\n    runpy.run_path(p)\n",
+        "a for over a non-literal": "import runpy\np = 'other.py'\ndef f(xs):\n    for p in xs:\n"
+                                    "        runpy.run_path(p)\n",
+        "a match capture": "import runpy\np = 'other.py'\ndef f(x):\n    match x:\n        case [p]:\n"
+                           "            runpy.run_path(p)\n",
+        "a lambda's parameter": "import runpy\np = 'other.py'\nf = lambda p='secret.py': runpy.run_path(p)\nf()\n",
+        "a star import": "import runpy\np = 'other.py'\nfrom cfg import *\nrunpy.run_path(p)\n",
+        "a del, then a star import": "import runpy\np = 'other.py'\ndel p\nfrom cfg import *\nrunpy.run_path(p)\n",
+        "a *args parameter": "import runpy\na = 'other.py'\ndef f(*a):\n    runpy.run_path(a)\n",
+        "a parameter rebound by +=": "import runpy\ndef f(p):\n    p += '.py'\n    runpy.run_path(p)\nf('secret')\n",
+        "a class body's own name": "import runpy\np = 'other.py'\nclass C:\n    p = 'secret.py'\n"
+                                   "    runpy.run_path(p)\n"}
+    case("Phase 6: every binder form the reader does not read makes the name UNRESOLVED at the load's line — and "
+         "a class body is a scope of its own, whose name is the edge",
+         lambda: {k: fc(v) for k, v in p6_binders.items()},
+         {"a self-reference": ([], [4]), "an augmented assignment": ([], [4]), "a global rebinding": ([], [7]),
+          "a nonlocal rebinding": ([], [8]), "a tuple target": ([], [5]), "except ... as": ([], [7]),
+          "with ... as": ([], [5]), "import ... as": ([], [5]), "a for over a non-literal": ([], [5]),
+          "a match capture": ([], [6]), "a lambda's parameter": (["other.py"], [3]),
+          "a star import": (["other.py"], [4]), "a del, then a star import": (["other.py"], [5]),
+          "a *args parameter": ([], [4]), "a parameter rebound by +=": ([], [4]),
+          "a class body's own name": (["secret.py"], [])})
+    p6_read = {"an assignment": "import runpy\np = 'secret.py'\nrunpy.run_path(p)\n",
+               "an annotated assignment": "import runpy\np: str = 'secret.py'\nrunpy.run_path(p)\n",
+               "a walrus": "import runpy\n(p := 'secret.py')\nrunpy.run_path(p)\n",
+               "a for over a literal": "import runpy\nfor p in ('secret.py',):\n    runpy.run_path(p)\n",
+               "a parameter, through its call": "import runpy\ndef f(p):\n    runpy.run_path(p)\nf('secret.py')\n"}
+    case("Phase 6 control: the READ binder forms — an assignment, an annotated one, a walrus, a for over a literal, "
+         "a parameter through its call — still give the edge, and list nothing",
+         lambda: {k: fc(v) for k, v in p6_read.items()},
+         {k: (["secret.py"], []) for k in ("an assignment", "an annotated assignment", "a walrus",
+                                           "a for over a literal", "a parameter, through its call")})
+    p6_loaders = {
+        "an alias of the loader": "import runpy\nrp = runpy.run_path\nrp('secret.py')\n",
+        "the loader imported under another name": "from runpy import run_path as rp\nrp('secret.py')\n",
+        "getattr by the loader's name": "import runpy\ngetattr(runpy, 'run_path')('secret.py')\n",
+        "the loader kept in a dict": "import runpy\n{'r': runpy.run_path}['r']('secret.py')\n",
+        "functools.partial of the loader": "import runpy, functools\nfunctools.partial(runpy.run_path, 'secret.py')()\n",
+        "the location argument omitted": "import importlib.util\nimportlib.util.spec_from_file_location('secret')\n"}
+    case("Phase 6: every mention of a loader that is not a read call is UNRESOLVED — an alias, an import under "
+         "another name, getattr, a dict, functools.partial — and so is a loader call with its argument omitted",
+         lambda: {k: fc(v) for k, v in p6_loaders.items()},
+         {"an alias of the loader": ([], [2]), "the loader imported under another name": ([], [1]),
+          "getattr by the loader's name": ([], [2]), "the loader kept in a dict": ([], [2]),
+          "functools.partial of the loader": ([], [2]), "the location argument omitted": ([], [2])})
+    p6_interp = {
+        "the interpreter held in a name": "import subprocess, sys\nPY = sys.executable\nsubprocess.run([PY, 'secret.py'])\n",
+        "a shell word held in a name": "import subprocess\nB = 'bash'\nsubprocess.run([B, 'secret.sh'])\n",
+        "shutil.which of the interpreter": "import subprocess, shutil\n"
+                                           "subprocess.run([shutil.which('python3'), 'secret.py'])\n",
+        "an argv finished by .append": "import subprocess, sys\ncmd = [sys.executable]\ncmd.append('secret.py')\n"
+                                       "subprocess.run(cmd)\n",
+        "os.system of a command string": "import os\nos.system('python3 secret.py')\n",
+        "os.popen of a command string": "import os\n\nos.popen('python3 secret.py')\n",
+        "shell=True": "import subprocess\n\n\nsubprocess.run('bash secret.sh', shell=True)\n",
+        "exec of a file's text": "exec(open('secret.py').read())\n",
+        "eval of a string": "\neval('__import__(\"secret\")')\n"}
+    case("Phase 6: every mention of an interpreter or of the shell that is not a read argv head is UNRESOLVED — an "
+         "interpreter or shell word held in a name, shutil.which, an argv finished by .append, os.system, os.popen, "
+         "shell=True, exec, eval",
+         lambda: {k: fc(v) for k, v in p6_interp.items()},
+         {"the interpreter held in a name": ([], [2]), "a shell word held in a name": ([], [2]),
+          "shutil.which of the interpreter": ([], [2]), "an argv finished by .append": ([], [2]),
+          "os.system of a command string": ([], [2]), "os.popen of a command string": ([], [3]),
+          "shell=True": ([], [4]), "exec of a file's text": ([], [1]), "eval of a string": ([], [2])})
+    p6_argv = {"sys.executable": "import subprocess, sys\nsubprocess.run([sys.executable, 'secret.py'])\n",
+               "python3, an option skipped": "import subprocess\nsubprocess.run(['python3', '-u', 'secret.py'])\n",
+               "shell=False": "import subprocess\nsubprocess.run(['python3', 'secret.py'], shell=False)\n"}
+    case("Phase 6 control: `[sys.executable, 'secret.py']`, `['python3', '-u', 'secret.py']` and the same with "
+         "shell=False are the edge, and the consumed head lists nothing",
+         lambda: {k: fc(v) for k, v in p6_argv.items()},
+         {k: (["secret.py"], []) for k in ("sys.executable", "python3, an option skipped", "shell=False")})
+    p6_missing = ("import runpy\nfrom pathlib import Path\n"
+                  "runpy.run_path('nosuch.py')\n"                    # 3: no such file at either place
+                  "runpy.run_path('/opt/x/secret.py')\n"             # 4: absolute
+                  "runpy.run_path('../../secret.py')\n"              # 5: climbs out of the tree
+                  "runpy.run_path(Path.cwd() / 'nosuch.py')\n")      # 6: an unreadable base, and no such file
+    case("Phase 6: a READ path with no existing candidate is UNRESOLVED, and `--closure` says each — a missing "
+         "file, an absolute path, a path that climbs out, an unreadable base with a missing file",
+         lambda: (p6_cli(p6_missing), fc(p6_missing, is_file=lambda p: False)),
+         ((0, [f"pkg: unresolved: scripts/a.py:{n}{p6_said}" for n in (3, 4, 5, 6)] + [p6_tail, "0 gaps"], False),
+          ([], [3, 4, 5, 6])))
+    case("Phase 6 control: the same paths with nosuch.py PRESENT — the two that name it are an edge (a gap here: "
+         "the package omits it) and are not listed; the absolute and the climbing one still are",
+         lambda: (p6_cli(p6_missing, repo_has=["scripts/nosuch.py"]),
+                  fc(p6_missing, is_file=lambda p: p == "scripts/nosuch.py")),
+         ((1, ["pkg: gap: scripts/nosuch.py — the package's own text reaches it, and its declaration omits it"]
+              + [f"pkg: unresolved: scripts/a.py:{n}{p6_said}" for n in (4, 5)] + [p6_tail, "1 gaps"], False),
+          ([], [4, 5])))
+    p6_wrappers = {"never called": "import runpy\ndef f(p):\n    runpy.run_path(p)\n",
+                   "called, and also handed on by name": "import runpy\ndef f(p):\n    runpy.run_path(p)\n"
+                                                         "f('other.py')\ng = f\n",
+                   "only handed on, as a callback": "import runpy\ndef f(p):\n    runpy.run_path(p)\n"
+                                                    "list(map(f, xs))\n",
+                   "control: called, and nothing else": "import runpy\ndef f(p):\n    runpy.run_path(p)\n"
+                                                        "f('secret.py')\n"}
+    case("Phase 6: a wrapper no call in the file binds is UNRESOLVED at its load, and a wrapper handed on by name "
+         "at the line that hands it on; one that is only called is neither",
+         lambda: {k: fc(v) for k, v in p6_wrappers.items()},
+         {"never called": ([], [3]), "called, and also handed on by name": (["other.py"], [5]),
+          "only handed on, as a callback": ([], [3, 4]), "control: called, and nothing else": (["secret.py"], [])})
+    p6_imports = {"a relative import of a name": ("from . import secret\n", None),
+                  "a relative import of a module": ("\nfrom .secret import x\n", None),
+                  "import_module of a dotted name": ("import importlib\n\nimportlib.import_module('pkg.secret')\n", None),
+                  "import_module of a relative name": ("import importlib\nimportlib.import_module('.secret', 'pkg')\n",
+                                                       None),
+                  "an import of a sibling DIRECTORY": ("import os\nimport pkg.secret\n", "scripts/pkg"),
+                  "a from-import of a sibling DIRECTORY": ("from pkg import secret\n", "scripts/pkg"),
+                  "control: the same import, no such directory": ("import os\nimport pkg.secret\n", "scripts/elsewhere"),
+                  "control: a plain sibling import": ("import importlib\nimport secret\n"
+                                                      "importlib.import_module('secret')\n", "scripts/pkg")}
+    case("Phase 6: a relative import, a dotted or relative import_module, and an import whose name is a sibling "
+         "DIRECTORY are UNRESOLVED; a plain sibling import is the edge and is not listed",
+         lambda: {k: fc(text, is_dir=lambda d, want=d_: d == want) for k, (text, d_) in p6_imports.items()},
+         {"a relative import of a name": ([], [1]), "a relative import of a module": ([], [2]),
+          "import_module of a dotted name": ([], [3]), "import_module of a relative name": ([], [2]),
+          "an import of a sibling DIRECTORY": ([], [2]), "a from-import of a sibling DIRECTORY": ([], [1]),
+          "control: the same import, no such directory": ([], []),
+          "control: a plain sibling import": (["secret.py"], [])})
 
     # Xm5: a malformed element anywhere in the declaration is CANNOT RUN, rc 2, before anything is compared.
     shape = tree({".agents/skills/d/SKILL.md": "", "wf.yml": ""})
@@ -1855,12 +2090,12 @@ def _self_test_body() -> int:
           "omits it"])
     # ---- the identity cases: the live tree ----------------------------------------------------------------------
     # The mutation harness stages a COPY of the tree that is not a git checkout, so `git ls-files` cannot list it
-    # there. Under its marker (backlog #407, `fixture_git.PROCESS_PASSED`) these three are left out and SAID to
+    # there. Under its marker (backlog #407, `fixture_git.PROCESS_PASSED`) these four are left out and SAID to
     # be; CI's ordinary step runs them on every PR, and so do the `--map` and `--closure` steps after it. (The
     # real-declaration case joined them in review round 1: `--closure` now reads the map, whose directory
     # components are expanded by `git ls-files`.)
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
-        print("NOT RUN under the mutation harness: 3 live-tree cases (CI's ordinary step runs them)")
+        print("NOT RUN under the mutation harness: 4 live-tree cases (CI's ordinary step runs them)")
     else:
         case("CLI: the real declaration is `0 gaps`, rc 0",
              lambda: (lambda r: (r[0], r[1][-1]))(clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
@@ -1869,6 +2104,17 @@ def _self_test_body() -> int:
              lambda: cli("--map", str(REPO / "docs/marketplace/components.json"), root=REPO), (0, ["0 gaps"], ""))
         case("the real repo map has zero gaps",
              lambda: map_gaps(load_map(REPO / "docs/marketplace/components.json"), candidates(REPO)), [])
+        # Phase 6: the rewrite's acceptance check, kept as a case. The count is PINNED, so an edge the reader loses
+        # or gains over the whole tracked tree is red here and the number is changed by hand, with the diff read.
+        # 344 was measured 2026-11-17 over 115 tracked `.py` files, equal file by file (lost 0, gained 0) to the
+        # reader before the rewrite; a commit that adds a load to any tracked script moves it.
+        tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
+        case("Phase 6: over every tracked `.py` the reader's edges are the PINNED count — the rewrite lost none and "
+             "gained none — and `--closure` on the real declaration prints no `optional: ` line",
+             lambda: (sum(len(exec_edges(REPO, f)) for f in tracked_py),
+                      [ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
+                                        root=REPO)[1] if "optional: " in ln]),
+             (344, []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
