@@ -1,0 +1,40 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 3946 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "244a6c02450ebb490628a7d8b43d2311c78ac4aa",
+  "intrusions": [],
+  "loosening_answers": {
+    "11b86e8a177d": "not a loosening",
+    "190b73aac639": "not a loosening",
+    "19469b8e02fd": "not a loosening",
+    "2b345742f57d": "not a loosening",
+    "33af64a6b800": "not a loosening",
+    "463867463adb": "not a loosening",
+    "629172a8b7e0": "not a loosening",
+    "63c2d7b9967f": "not a loosening",
+    "6b6b1d7f84eb": "not a loosening",
+    "939acd9343c1": "not a loosening",
+    "a34553d561d3": "not a loosening",
+    "ad4c58b480b5": "not a loosening",
+    "b27c359b9752": "not a loosening",
+    "c4530de76b8a": "finding",
+    "c831b4186cd2": "not a loosening",
+    "cc245bcb0786": "not a loosening",
+    "d33473a96a90": "not a loosening",
+    "e7535ba71eed": "finding",
+    "f5afa5051b4a": "not a loosening",
+    "ff1226fbb8bc": "not a loosening"
+  },
+  "model": "gpt-6.1-sol",
+  "prompt": "/var/folders/tg/tmf6bl6s2n95zxh08fqgwv6w0000gn/T/tmp.nJcKSNH2YT/r4.txt",
+  "reason": "3946 chars",
+  "refused": false,
+  "review": "hse-slice-c-redesign-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/hse-c"
+}
