@@ -3320,6 +3320,14 @@
           "line": 343,
           "term": "docs/explainers/",
           "text": "`docs/explainers/`, where **committing it** is what makes it outlive its session. Without the"
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/shared/explainer-delivery.md",
+          "kind": "tool-name",
+          "line": 463,
+          "term": "SendUserFile",
+          "text": "\u26a0 **Measured 2026-08-12: `SendUserFile` with `display: \"render\"` does NOT render these pages** \u2014"
         }
       ],
       "status": "scanned"
@@ -8202,6 +8210,14 @@
           "file": "docs/memory/a-usage-limit-stop-needs-a-wake-at-reset.md",
           "kind": "tool-name",
           "line": 10,
+          "term": "ScheduleWakeup",
+          "text": "- **At 100% / on the first limit-stop notice:** start a background `sleep` until 1 min after the stated reset (or ScheduleWakeup in /loop) BEFORE the turn ends. When it fires, SendMessage each stopped agent to continue. List the agents and what they were doing so the resume needs no reconstruction."
+        },
+        {
+          "detector": 4,
+          "file": "docs/memory/a-usage-limit-stop-needs-a-wake-at-reset.md",
+          "kind": "tool-name",
+          "line": 10,
           "term": "SendMessage",
           "text": "- **At 100% / on the first limit-stop notice:** start a background `sleep` until 1 min after the stated reset (or ScheduleWakeup in /loop) BEFORE the turn ends. When it fires, SendMessage each stopped agent to continue. List the agents and what they were doing so the resume needs no reconstruction."
         },
@@ -9995,14 +10011,6 @@
           "kind": "tool-name",
           "line": 49,
           "term": "TaskCreate",
-          "text": "- **2026-07-22:** two-layer task tracking agreed. At that time TodoWrite/TaskCreate were absent from this user's"
-        },
-        {
-          "detector": 4,
-          "file": "docs/memory/process-conventions.md",
-          "kind": "tool-name",
-          "line": 49,
-          "term": "TodoWrite",
           "text": "- **2026-07-22:** two-layer task tracking agreed. At that time TodoWrite/TaskCreate were absent from this user's"
         },
         {
@@ -14741,6 +14749,14 @@
           "line": 26,
           "term": "lib/",
           "text": "this, so the rule is a script rather than a sentence. A comment-only edit to `lib/` does not qualify \u2014"
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/explain-diff/SKILL.md",
+          "kind": "tool-name",
+          "line": 153,
+          "term": "SendUserFile",
+          "text": "measured `SendUserFile` trap and the rule against publishing an explainer anywhere hosted without"
         }
       ],
       "status": "scanned"
@@ -15082,5 +15098,5 @@
       "status": "scanned"
     }
   },
-  "measured_at": "98a79ab22af0d8ccd8122116744a29e66c58fd0c"
+  "measured_at": "f8390575d87a507766e01a4e76f2bff33ea19a29"
 }

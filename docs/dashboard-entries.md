@@ -21012,15 +21012,16 @@ repository. It looks for seven kinds of tie: words that only mean something here
 package does not carry, tools with no built-in test or no usage text, bare names of checks, documents and harness
 tools, skills that need another skill, programs and settings a tool needs on the machine, and hooks that only run
 because this repository's settings file names them. The first report covers all 45 parts and lists 228 ties; 11
-parts have none. Nothing is published yet, and the list of harness tool names the scan uses is a first draft that
-the coordinator still has to replace.
+parts have none. Nothing is published yet. The list of harness tool names the scan uses is the coordinator
+session's own list, plus three names this repository's instructions use that the session does not have.
 <!--tech-->
 Marketplace slice D (plan Tasks 8-12, branch `hse-d`). `scripts/check-publishability.py`: seven detectors over
 `docs/marketplace/components.json` and the per-package shipping sets, a finding with an id
 (`<component>:<detector>:<n>`) or a mention without one; a component that cannot be scanned is CANNOT RUN (rc 2),
-never clean. First report `docs/marketplace/scan-2026-11-17.json` (measured at `98a79ab2`): 45 scanned, 0 CANNOT
+never clean. First report `docs/marketplace/scan-2026-11-17.json` (measured at `f8390575`): 45 scanned, 0 CANNOT
 RUN, 228 findings (detector 1: 4, 2: 130, 3: 1, 4: 37, 5: 4, 6: 40, 7: 12). CI runs the self-test and the scan.
 97 self-test cases; 145 mutations, all killed by the case each names (local run, this script only).
-`docs/marketplace/harness-tools.txt` is provisional (`COORDINATOR LIST PENDING`). Detector 7 recognises no
+`docs/marketplace/harness-tools.txt` is the coordinator session's list (`claude` 2.1.323), with `TaskList`,
+`TaskCreate` and `TaskUpdate` in a separate block: this repository names them, the session does not expose them. Detector 7 recognises no
 declared registration, since the spec names no form of one: every hook registered in `.claude/settings.json` is a
 finding.
