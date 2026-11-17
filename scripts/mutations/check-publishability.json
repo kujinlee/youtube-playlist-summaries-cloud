@@ -59,8 +59,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "place = SS.source_path if decl[\"channel\"] == \"plugin\" else (lambda f: f)",
-    "place = (lambda f: f)"
+    "place = SS.source_path if decl[\"channel\"] == \"plugin\" else (lambda f: f)\n    want = {_real(base, place(f), cid)[1]",
+    "place = (lambda f: f)\n    want = {_real(base, place(f), cid)[1]"
    ]
   ],
   "expect": "a set walked through a symlinked directory finds the known positive"
@@ -70,8 +70,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "== \"plugin\" else (lambda f: f)\n",
-    "== \"plugin\" else SS.source_path\n"
+    "== \"plugin\" else (lambda f: f)\n    want = {_real(base, place(f), cid)[1]",
+    "== \"plugin\" else SS.source_path\n    want = {_real(base, place(f), cid)[1]"
    ]
   ],
   "expect": "resolve: a reusable-workflow declaration is read in repository paths, a single file resolved"
@@ -625,5 +625,269 @@
    ]
   ],
   "expect": "a finding carries exactly the Finding fields and the term"
+ },
+ {
+  "name": "detector 2: the set is the component's own, not the package's",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings += _invocations(files, base, _shipped(decl), decl[\"channel\"])",
+    "findings += _invocations(files, base, {f.relative_to(base).as_posix() for f in files}, decl[\"channel\"])"
+   ]
+  ],
+  "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
+ },
+ {
+  "name": "detector 2: a plugin's shipped set is left in installed coordinates",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    return {place(f) for c in",
+    "    return {f for c in"
+   ]
+  ],
+  "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
+ },
+ {
+  "name": "detector 2: a shell comment is a command",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if not rel.endswith(\".md\") and text.lstrip().startswith(\"#\"):",
+    "if False:"
+   ]
+  ],
+  "expect": "shell: a command line invoking a shipped file is cwd-relative and one invoking another file outside-set; a comment and a rooted path are no finding"
+ },
+ {
+  "name": "detector 2: a path rooted at a variable is read as bare",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "rooted = \"$\" in text[m.start():m.start(1)]",
+    "rooted = False"
+   ]
+  ],
+  "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
+ },
+ {
+  "name": "detector 2: a rooted path is dropped even when the package does not ship its target",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "or (rooted and target in shipped):",
+    "or rooted:"
+   ]
+  ],
+  "expect": "an invocation of a file outside every package is outside-set"
+ },
+ {
+  "name": "detector 2: a path above the tree is judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if target.startswith((\"..\", \"/\")) or ",
+    "if "
+   ]
+  ],
+  "expect": "a path that climbs above the tree is not judged"
+ },
+ {
+  "name": "detector 2: one target named twice on a line is two findings",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                    seen.add(target)\n",
+    "                    pass\n"
+   ]
+  ],
+  "expect": "an invocation of a file outside every package is outside-set"
+ },
+ {
+  "name": "detector 2: a plugin's cwd-relative finding names no fix",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                    elif channel == \"plugin\":\n",
+    "                    elif False:\n"
+   ]
+  ],
+  "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
+ },
+ {
+  "name": "detector 2: the fix is written in repository coordinates",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "PLUGIN_ROOT + SS.installed_path(target)",
+    "PLUGIN_ROOT + target"
+   ]
+  ],
+  "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
+ },
+ {
+  "name": "detector 2: a workflow is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "COMMANDS = (\".md\", \".sh\", \".yml\", \".yaml\")",
+    "COMMANDS = (\".md\", \".sh\")"
+   ]
+  ],
+  "expect": "a reusable workflow's invocations are judged too, and no plugin-root fix is named for it"
+ },
+ {
+  "name": "detector 2: a Python load is reported whether or not the repository holds the target",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                if (base / target).is_file():\n",
+    "                if True:\n"
+   ]
+  ],
+  "expect": "Python: a load of a repository file the package does not ship is outside-set at the line naming it; a shipped sibling and a standard module are no finding"
+ },
+ {
+  "name": "detector 2: a Python load of a shipped sibling is outside-set",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "[0] - shipped):",
+    "[0]):"
+   ]
+  ],
+  "expect": "Python: a load of a repository file the package does not ship is outside-set at the line naming it; a shipped sibling and a standard module are no finding"
+ },
+ {
+  "name": "detector 2: a Python finding is always put on line 1",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "n = next((i for i, text in enumerate(lines, 1) if named.search(text)), 1)",
+    "n = 1"
+   ]
+  ],
+  "expect": "Python: a load of a repository file the package does not ship is outside-set at the line naming it; a shipped sibling and a standard module are no finding"
+ },
+ {
+  "name": "detector 2: a target the package does not ship is cwd-relative",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                    if target not in shipped:\n",
+    "                    if False:\n"
+   ]
+  ],
+  "expect": "an invocation of a file outside every package is outside-set"
+ },
+ {
+  "name": "detector 2: a finding does not carry its target",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"text\": text.strip(), \"target\": target}",
+    "\"text\": text.strip()}"
+   ]
+  ],
+  "expect": "detector 2: ids count from one within the detector, and a finding carries its target"
+ },
+ {
+  "name": "detector 3: a mention of the flag anywhere in the file is a self-test",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if not any(isinstance(n, ast.Constant) and n.value == SELF_TEST_FLAG for n in ast.walk(tree)):",
+    "if SELF_TEST_FLAG not in f.read_text():"
+   ]
+  ],
+  "expect": "a --self-test named only in a comment is no self-test, and a usage block alone is a user doc"
+ },
+ {
+  "name": "detector 3: a missing self-test is not reported",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            out.append({**row, \"kind\": \"no-self-test\"})\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": "a script with neither is no-self-test and no-user-doc, each a finding on its first line"
+ },
+ {
+  "name": "detector 3: a library owes a usage block",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if \"entry-point\" in roles and not usage:\n",
+    "        if not usage:\n"
+   ]
+  ],
+  "expect": "page_chrome.py with no CLI is not a detector-3 finding when its role is library"
+ },
+ {
+  "name": "detector 3: a missing usage block is not reported",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            out.append({**row, \"kind\": \"no-user-doc\"})\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": "a script with neither is no-self-test and no-user-doc, each a finding on its first line"
+ },
+ {
+  "name": "detector 3: a docstring line naming the file is a usage block wherever it starts",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "ln[:1] in (\" \", \"\\t\") and ",
+    ""
+   ]
+  ],
+  "expect": "a script with neither is no-self-test and no-user-doc, each a finding on its first line"
+ },
+ {
+  "name": "detector 3: any indented docstring line is a usage block",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " and f.name in ln for ln in",
+    " for ln in"
+   ]
+  ],
+  "expect": "...and the same file is no-user-doc when its role is entry-point, with or without library"
+ },
+ {
+  "name": "detector 3: a data component is judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for f in files if {\"entry-point\", \"library\"} & set(roles) else ():",
+    "for f in files:"
+   ]
+  ],
+  "expect": "detector 3 judges the Python of an entry point or a library: a data component and a shell file are not judged"
+ },
+ {
+  "name": "detector 3: a file that is not Python is judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if not rel.endswith(\".py\"):\n            continue\n        tree, lines",
+    "        tree, lines"
+   ]
+  ],
+  "expect": "detector 3 judges the Python of an entry point or a library: a data component and a shell file are not judged"
+ },
+ {
+  "name": "detector 3: every component is judged as an entry point",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings += _self_test_and_docs(files, base, c[\"roles\"])",
+    "findings += _self_test_and_docs(files, base, (\"entry-point\",))"
+   ]
+  ],
+  "expect": "page_chrome.py with no CLI is not a detector-3 finding when its role is library"
  }
 ]

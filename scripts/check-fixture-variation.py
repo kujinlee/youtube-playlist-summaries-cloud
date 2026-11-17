@@ -370,7 +370,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
                                "python_loads.rel", "python_loads.text", "reach.root", "reach.seeds", "registered_hooks.root", "source_path.rel",
                                "tracked.root"),
     # marketplace-inventory plan Task 8 (2026-11-17): the publishability scan, pinned in the commit that creates it.
-    # DERIVED by `analyse`: 8. ⟳ Task 9 (2026-11-17): 12 — `classify_match` and `derive_vocabulary` arrive.
+    # DERIVED by `analyse`: 8. ⟳ Task 9 (2026-11-17): 12 — `classify_match` and `derive_vocabulary` arrive. Task 10: still 12 (re-derived).
     "check-publishability.py": ("classify_match.file", "classify_match.line", "classify_match.token",
                                 "derive_vocabulary.root", "main.argv", "main.root", "resolve.component",
                                 "resolve.decl", "resolve.root", "scan.map_path", "scan.root", "scan.sets_path"),

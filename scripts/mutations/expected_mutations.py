@@ -2488,5 +2488,7 @@ EXPECTED_MUTATIONS = {
     # absent file, outside the repository), the CANNOT RUN entry's shape, measured_at, and the CLI's exits.
     # ⟳ Task 9 (2026-11-17): 17 → 57 — detector 1: +12 the derived vocabulary, +4 term matching, +21 the
     # dependency/mention judgement, +3 the finding/mention rows and their ids.
-    "scripts/check-publishability.py": 57,
+    # ⟳ Task 10 (2026-11-17): 57 → 81 — +15 detector 2 (the package's set, cwd-relative and its fix, outside-set,
+    # shell comments, rooted paths, workflows, Python loads), +9 detector 3 (no-self-test, no-user-doc, the roles).
+    "scripts/check-publishability.py": 81,
 }

@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 41 cases
+    python3 scripts/check-publishability.py --self-test  # 58 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -28,6 +28,14 @@ DETECTOR 1, the project's vocabulary. The terms are DERIVED from the repository 
 typed here, and none at all is CANNOT RUN. A match is a dependency only when it is an import, an invocation, a
 documented prerequisite, or a configuration read with no working default (`_kind`, whose docstring states the
 bounds of that judgement); anything else, a fixture string inside a self-test included, is a mention.
+
+DETECTOR 2, cross-repo invocation (`_invocations`), judged against the INSTALLED layout and against the PACKAGE's
+set: `outside-set` is an invocation of a file the package does not ship; `cwd-relative` is one of a file it does
+ship, written bare, and a plugin's finding names the fix `${CLAUDE_PLUGIN_ROOT}/<installed path>`. A detector-2
+finding also holds its `target`.
+
+DETECTOR 3, self-test and user documentation (`_self_test_and_docs`): `no-self-test` and `no-user-doc`, asked of
+the Python of an entry point or a library; a library owes no usage block.
 """
 from __future__ import annotations
 
@@ -307,11 +315,94 @@ def _vocabulary_matches(files: list, base: Path, vocabulary: set) -> tuple[list,
     return findings, mentions
 
 
+def _shipped(decl: dict) -> set[str]:
+    """Every repository path the PACKAGE ships. Detector 2's set is the publishable unit's, never one
+    component's (spec §5): two components that ship together are not outside each other's set."""
+    place = SS.source_path if decl["channel"] == "plugin" else (lambda f: f)
+    return {place(f) for c in decl.get("components", {}).values() for f in c["files"]}
+
+
+COMMANDS = (".md", ".sh", ".yml", ".yaml")              # text whose lines can invoke a file (`SS.EXEC_RE`)
+PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}/"
+
+
+def _invocations(files: list, base: Path, shipped: set, channel: str) -> list:
+    """Detector 2 over `files`, judged against the INSTALLED layout: findings without ids, one per (file, line,
+    target).
+
+    A line of Markdown, of a workflow or of a shell file (comments apart) that runs `python3`/`bash`/`source` on
+    a path: `outside-set` when the package does not ship the target, whether or not any tree holds it; and
+    `cwd-relative` when it does and the path is written bare, since an installed package is not run from its
+    own root. A plugin's `fix` is the same path under the plugin root, in installed coordinates. A path already
+    rooted at a variable and shipped is no finding; one that climbs above the tree is not judged.
+
+    A Python file: each file it loads (`SS.python_loads`) that the repository holds and the package does not
+    ship is `outside-set`, at the first line naming the target. BOUND: a load of a SHIPPED file is not judged
+    here, whatever directory it is resolved from at run time."""
+    out = []
+    for f in files:
+        rel, lines = f.relative_to(base).as_posix(), _lines(f)
+        if rel.endswith(".py"):
+            for target in sorted(SS.python_loads(rel, f.read_text())[0] - shipped):
+                if (base / target).is_file():
+                    named = re.compile(r"(?<![\w-])" + re.escape(Path(target).stem) + r"(?![\w-])")
+                    n = next((i for i, text in enumerate(lines, 1) if named.search(text)), 1)
+                    out.append({"detector": 2, "file": rel, "line": n, "text": lines[n - 1].strip(),
+                                "kind": "outside-set", "target": target})
+        elif rel.endswith(COMMANDS):
+            for n, text in enumerate(lines, 1):
+                if not rel.endswith(".md") and text.lstrip().startswith("#"):
+                    continue
+                seen = set()
+                for m in SS.EXEC_RE.finditer(text):
+                    target = os.path.normpath(m.group(1))
+                    rooted = "$" in text[m.start():m.start(1)]
+                    if target.startswith(("..", "/")) or target in seen or (rooted and target in shipped):
+                        continue
+                    seen.add(target)
+                    row = {"detector": 2, "file": rel, "line": n, "text": text.strip(), "target": target}
+                    if target not in shipped:
+                        out.append({**row, "kind": "outside-set"})
+                    elif channel == "plugin":
+                        out.append({**row, "kind": "cwd-relative", "fix": PLUGIN_ROOT + SS.installed_path(target)})
+                    else:
+                        out.append({**row, "kind": "cwd-relative"})
+    return out
+
+
+SELF_TEST_FLAG = "--self-test"
+
+
+def _self_test_and_docs(files: list, base: Path, roles) -> list:
+    """Detector 3 over `files`: findings without ids, each on line 1 of its file.
+
+    It judges the PYTHON of a component whose roles hold `entry-point` or `library`. `no-self-test`: no string
+    of the code EQUALS the flag (a docstring or a comment that mentions it is no self-test). `no-user-doc`, asked
+    of an entry point only: the module docstring has no usage block, an indented line naming the file. A
+    library a person never runs owes no usage block. BOUND: a shell file, a workflow and Markdown are not
+    judged, and neither is any file of a `data` component."""
+    out = []
+    for f in files if {"entry-point", "library"} & set(roles) else ():
+        rel = f.relative_to(base).as_posix()
+        if not rel.endswith(".py"):
+            continue
+        tree, lines = _parsed(f)[0], _lines(f)
+        row = {"detector": 3, "file": rel, "line": 1, "text": lines[0].strip() if lines else ""}
+        if not any(isinstance(n, ast.Constant) and n.value == SELF_TEST_FLAG for n in ast.walk(tree)):
+            out.append({**row, "kind": "no-self-test"})
+        usage = any(ln[:1] in (" ", "\t") and f.name in ln for ln in (ast.get_docstring(tree, clean=False) or
+                                                                     "").splitlines())
+        if "entry-point" in roles and not usage:
+            out.append({**row, "kind": "no-user-doc"})
+    return out
+
+
 def _with_ids(cid: str, findings: list) -> list:
     """`findings` in (detector, file, line) order, each given its id `<component>:<detector>:<n>`. A MENTION
     never passes through here: it has no id, so no verdict can cite one."""
     done, count = [], {}
-    for f in sorted(findings, key=lambda f: (f["detector"], f["file"], f["line"], f["kind"], f.get("term", ""))):
+    for f in sorted(findings, key=lambda f: (f["detector"], f["file"], f["line"], f["kind"],
+                                             f.get("term") or f.get("target", ""))):
         count[f["detector"]] = count.get(f["detector"], 0) + 1
         done.append({"id": f"{cid}:{f['detector']}:{count[f['detector']]}", **f})
     return done
@@ -338,8 +429,11 @@ def scan(map_path: Path, sets_path: Path, root: Path = REPO) -> dict:
         try:
             if c["package"] not in packages:
                 raise CannotRun(f"{c['id']}: the declaration names no package {c['package']}")
-            files = resolve(c, packages[c["package"]], root)
+            decl = packages[c["package"]]
+            files = resolve(c, decl, root)
             findings, mentions = _vocabulary_matches(files, base, vocabulary)
+            findings += _invocations(files, base, _shipped(decl), decl["channel"])
+            findings += _self_test_and_docs(files, base, c["roles"])
             report["components"][c["id"]] = {"status": SCANNED, "findings": _with_ids(c["id"], findings),
                                              "mentions": mentions}
         except CannotRun as e:
@@ -455,8 +549,11 @@ def _self_test_body() -> int:
             rc = run()
         return rc, buf.getvalue().splitlines()
 
-    safe = "print('nothing coupled')\n"
-    coupled = "import subprocess\nsubprocess.run(['python3', 'scripts/elsewhere.py'])\n"
+    safe = ('"""Safe.\n\n    python3 scripts/safe.py --self-test\n"""\n'
+            'import sys\nprint("nothing coupled", "--self-test" in sys.argv)\n')
+    coupled = ('"""Coupled.\n\n    python3 scripts/coupled.py --self-test\n"""\n'
+               'import subprocess\nimport sys\nsubprocess.run(["python3", "scripts/elsewhere.py"])\n'
+               'print("--self-test" in sys.argv)\n')
 
     # --- Task 8: the file set -------------------------------------------------------------------------------
     w_ok = world({"scripts/safe.py": safe, "scripts/coupled.py": coupled, "skills/local.md": "a file\n"})
@@ -490,6 +587,11 @@ def _self_test_body() -> int:
              {"channel": "plugin", "components": {"x": {"files": ["skills/x/SKILL.md", "skills/x/notes.md"],
                                                         "expected_count": 2}}}, root=w_link)],
          [".agents/skills/x/SKILL.md", ".agents/skills/x/notes.md"])
+    case("...and the scan reports it: the invocation in the linked skill is a finding at its real path",
+         lambda: [(f["id"], f["file"], f["line"], f["kind"], f["target"]) for f in entry(
+             w_link, [comp("x", [".claude/skills/x/"])], {"x": ["skills/x/SKILL.md", "skills/x/notes.md"]},
+             "x")["findings"]],
+         [("x:2:1", ".agents/skills/x/SKILL.md", 1, "outside-set", "scripts/elsewhere.py")])
     case("resolve: a reusable-workflow declaration is read in repository paths, a single file resolved",
          lambda: [str(p.relative_to(w_ok)) for p in resolve(
              comp("c", ["skills/local.md"]),
@@ -573,7 +675,8 @@ def _self_test_body() -> int:
         return hits[0]
 
     def d1(root: Path, files: list, cid: str = "c") -> dict:
-        return entry(root, [comp(cid, files)], {cid: files}, cid)
+        e = entry(root, [comp(cid, files)], {cid: files}, cid)
+        return {**e, "findings": [f for f in e["findings"] if f["detector"] == 1]}
 
     markup = ('"""A page helper. It knows nothing of supabase."""\n'
               'import os\n'
@@ -720,8 +823,105 @@ def _self_test_body() -> int:
                       for n in ast.walk(ast.parse(inspect.getsource(fn)))) for fn in VOCABULARY_SOURCE],
          [True] * len(VOCABULARY_SOURCE))
 
+    # --- Task 10: detectors 2 (cross-repo invocation) and 3 (self-test and user docs) -----------------------
+    def found(root: Path, sets: dict, cid: str, detector: int, roles=("entry-point",), channel: str = "plugin"):
+        """`detector`'s findings on `cid`, in a package whose components are `sets` (id -> repository files)."""
+        inst = SS.installed_path if channel == "plugin" else (lambda f: f)
+        e = scan(*put(root, [comp(c, fs, roles=roles) for c, fs in sets.items()],
+                      {c: [inst(f) for f in fs] for c, fs in sets.items()}, channel), root=root)["components"][cid]
+        return [f for f in e["findings"] if f["detector"] == detector]
+
+    def rows(findings: list) -> list:
+        return [(f["line"], f["kind"], f["target"], f.get("fix")) for f in findings]
+
+    skill = ("# Go\n"
+             "Run `python3 scripts/tool.py --now`.\n"
+             "Then `bash ${CLAUDE_PLUGIN_ROOT}/hooks/run.sh`.\n"
+             "Then `python3 scripts/elsewhere.py`, and once more `python3 scripts/elsewhere.py`.\n"
+             "Then `python3 scripts/nowhere.py`, which no tree holds.\n"
+             "Never `python3 ../above.py`.\n"
+             "Last `bash .agents/skills/go/helper.sh` and `python3 $HOME/scripts/elsewhere.py`.\n")
+    run_sh = ("#!/bin/bash\n"
+              "# python3 scripts/elsewhere.py is not run here\n"
+              "python3 scripts/tool.py\n"
+              'python3 "$ROOT/scripts/tool.py"\n'
+              "bash scripts/elsewhere.sh\n")
+    tool = ('"""A tool.\n\n    python3 scripts/tool.py --self-test\n"""\n'
+            "import sys\n"
+            "import helper2\n"
+            "import elsewhere\n"
+            'print("--self-test" in sys.argv, helper2, elsewhere)\n')
+    workflow = ("jobs:\n  a:\n    steps:\n"
+                "      - run: python3 scripts/tool.py\n"
+                "      # - run: python3 scripts/elsewhere.py\n"
+                "      - run: bash scripts/elsewhere.sh\n")
+    chrome = '"""Page chrome: the shared head.\n\n    Imported, never run.\n"""\nSELF_TEST = "--self-test"\n'
+    w_x = world({".agents/skills/go/SKILL.md": skill, ".agents/skills/go/helper.sh": "true\n",
+                 "hooks/run.sh": run_sh, "scripts/tool.py": tool, "scripts/helper2.py": "X = 1\n",
+                 "scripts/elsewhere.py": "X = 2\n", "scripts/elsewhere.sh": "true\n",
+                 ".github/workflows/w.yml": workflow, "scripts/page_chrome.py": chrome,
+                 "scripts/bare.py": '"""Bare: it documents no --self-test of scripts/bare.py."""\nprint(1)\n',
+                 "scripts/said.py": '"""Said.\n\n    python3 scripts/said.py\n"""\n# --self-test is planned\n'})
+    go = [".agents/skills/go/SKILL.md", ".agents/skills/go/helper.sh"]
+    pkg = {"go": go, "hook": ["hooks/run.sh"], "tool": ["scripts/tool.py"], "h2": ["scripts/helper2.py"]}
+    case("an invocation of a file outside every package is outside-set",
+         lambda: [r for r in rows(found(w_x, pkg, "go", 2)) if r[1] == "outside-set"],
+         [(4, "outside-set", "scripts/elsewhere.py", None), (5, "outside-set", "scripts/nowhere.py", None),
+          (7, "outside-set", "scripts/elsewhere.py", None)])
+    case("a path that climbs above the tree is not judged",
+         lambda: [r for r in rows(found(w_x, pkg, "go", 2)) if r[0] == 6],
+         [])
+    case("an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed "
+         "coordinates; one already rooted at a variable is no finding",
+         lambda: [r for r in rows(found(w_x, pkg, "go", 2)) if r[1] != "outside-set"],
+         [(2, "cwd-relative", "scripts/tool.py", "${CLAUDE_PLUGIN_ROOT}/scripts/tool.py"),
+          (7, "cwd-relative", ".agents/skills/go/helper.sh", "${CLAUDE_PLUGIN_ROOT}/skills/go/helper.sh")])
+    case("the set is the PACKAGE's: the same invocation is outside-set once no component of the package ships "
+         "its target",
+         lambda: rows(found(w_x, {"go": go}, "go", 2))[0],
+         (2, "outside-set", "scripts/tool.py", None))
+    case("shell: a command line invoking a shipped file is cwd-relative and one invoking another file "
+         "outside-set; a comment and a rooted path are no finding",
+         lambda: rows(found(w_x, pkg, "hook", 2)),
+         [(3, "cwd-relative", "scripts/tool.py", "${CLAUDE_PLUGIN_ROOT}/scripts/tool.py"),
+          (5, "outside-set", "scripts/elsewhere.sh", None)])
+    case("Python: a load of a repository file the package does not ship is outside-set at the line naming it; "
+         "a shipped sibling and a standard module are no finding",
+         lambda: rows(found(w_x, pkg, "tool", 2)),
+         [(7, "outside-set", "scripts/elsewhere.py", None)])
+    case("a reusable workflow's invocations are judged too, and no plugin-root fix is named for it",
+         lambda: rows(found(w_x, {"wf": [".github/workflows/w.yml"], "tool": ["scripts/tool.py"]}, "wf", 2,
+                            channel="reusable-workflow")),
+         [(4, "cwd-relative", "scripts/tool.py", None), (6, "outside-set", "scripts/elsewhere.sh", None)])
+    case("detector 2: ids count from one within the detector, and a finding carries its target",
+         lambda: [(f["id"], sorted(f)) for f in found(w_x, pkg, "hook", 2)],
+         [("hook:2:1", ["detector", "file", "fix", "id", "kind", "line", "target", "text"]),
+          ("hook:2:2", ["detector", "file", "id", "kind", "line", "target", "text"])])
+    case("a script with --self-test and a usage block has no detector-3 finding",
+         lambda: found(w_x, pkg, "tool", 3),
+         [])
+    case("a script with neither is no-self-test and no-user-doc, each a finding on its first line",
+         lambda: [(f["id"], f["file"], f["line"], f["kind"]) for f in found(w_x, {"b": ["scripts/bare.py"]}, "b", 3)],
+         [("b:3:1", "scripts/bare.py", 1, "no-self-test"), ("b:3:2", "scripts/bare.py", 1, "no-user-doc")])
+    case("a --self-test named only in a comment is no self-test, and a usage block alone is a user doc",
+         lambda: [f["kind"] for f in found(w_x, {"s": ["scripts/said.py"]}, "s", 3)],
+         ["no-self-test"])
+    case("page_chrome.py with no CLI is not a detector-3 finding when its role is library",
+         lambda: found(w_x, {"pc": ["scripts/page_chrome.py"]}, "pc", 3, roles=("library",)),
+         [])
+    case("...and the same file is no-user-doc when its role is entry-point, with or without library",
+         lambda: [[f["kind"] for f in found(w_x, {"pc": ["scripts/page_chrome.py"]}, "pc", 3, roles=r)]
+                  for r in (("entry-point",), ("entry-point", "library"))],
+         [["no-user-doc"], ["no-user-doc"]])
+    case("detector 3 judges the Python of an entry point or a library: a data component and a shell file are "
+         "not judged",
+         lambda: (found(w_x, {"b": ["scripts/bare.py"]}, "b", 3, roles=("data",)),
+                  found(w_x, pkg, "hook", 3), [f["kind"] for f in found(w_x, {"b": ["scripts/bare.py"]}, "b", 3,
+                                                                       roles=("library",))]),
+         ([], [], ["no-self-test"]))
+
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
-        print("NOT RUN under the mutation harness: 3 live-tree cases (CI's ordinary step runs them)")
+        print("NOT RUN under the mutation harness: 5 live-tree cases (CI's ordinary step runs them)")
     else:
         live_vocab = derive_vocabulary(REPO)
         case("the derived vocabulary on the live tree contains an element EQUAL to supabase, gemini and fly, and "
@@ -735,9 +935,20 @@ def _self_test_body() -> int:
                  [n for n, ln in enumerate((REPO / "scripts/page_markup.py").read_text().splitlines(), 1)
                   if "supabase" in ln]),
              (["mention", "mention"], 2))
+        live = scan(REPO / MAP, REPO / SETS)["components"]
         case("the live tree: every component of the real map is scanned, none CANNOT RUN",
-             lambda: sorted({e["status"] for e in scan(REPO / MAP, REPO / SETS)["components"].values()}),
+             lambda: sorted({e["status"] for e in live.values()}),
              [SCANNED])
+        delivery = ".agents/skills/shared/explainer-delivery.md"
+        case("explainer-delivery.md's three invocations are three cwd-relative findings with the plugin-root "
+             "fix named",
+             lambda: sorted({(f["kind"], f["target"], f["fix"]) for e in live.values() for f in e["findings"]
+                             if f["detector"] == 2 and f["file"] == delivery}),
+             [("cwd-relative", f"scripts/{n}.py", "${CLAUDE_PLUGIN_ROOT}/scripts/" + n + ".py")
+              for n in ("ask_answerer", "brief-compose", "explainer-serve")])
+        case("the live tree: page_chrome.py, a library, has no detector-3 finding",
+             lambda: [f for f in live["page-chrome"]["findings"] if f["detector"] == 3],
+             [])
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
