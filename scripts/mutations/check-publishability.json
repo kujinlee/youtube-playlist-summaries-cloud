@@ -185,5 +185,445 @@
    ]
   ],
   "expect": "CLI: every component scanned is rc 0, one line per component and a summary"
+ },
+ {
+  "name": "vocabulary: the owner segment of the remote is dropped",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    ")[-2:])",
+    ")[-1:])"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: the package.json name is not taken",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "terms.add(pkg.get(\"name\", \"\"))",
+    "terms.add(\"\")"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: unscoped dependency keys are taken instead of scopes",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if k.startswith(\"@\")}",
+    "if not k.startswith(\"@\")}"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: a directory holding a candidate is not excluded",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for d in product - {c.split(\"/\")[0] for c in _candidates(root)}}",
+    "for d in product}"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: a Mocking boundaries module that is not on disk is taken",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    ", para) if (root / m).is_file()}",
+    ", para)}"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: module stems are read from the whole document, not the paragraph",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "`\", para) if",
+    "`\", doc.read_text()) if"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: an exported .env.example name is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(?:export\\s+)?",
+    ""
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: fly.toml yields nothing",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if (root / \"fly.toml\").is_file():\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: terms keep their case",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "terms = {t.lower() for t in terms if t}",
+    "terms = {t for t in terms if t}"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: an empty vocabulary is not refused",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if not terms:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a repository from which no term can be derived is CANNOT RUN"
+ },
+ {
+  "name": "vocabulary: an unreadable package.json is not CANNOT RUN",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            raise CannotRun(f\"cannot read package.json: {e}\") from e\n",
+    "            raise\n"
+   ]
+  ],
+  "expect": "a package.json that does not parse is CANNOT RUN"
+ },
+ {
+  "name": "vocabulary: the fly term is typed as a literal",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "terms.add(Path(\"fly.toml\").stem)",
+    "terms.add(\"fly\")"
+   ]
+  ],
+  "expect": "the source of derive_vocabulary contains no string literal EQUAL to any of the four spec terms"
+ },
+ {
+  "name": "matching: a term is matched at the start of a longer word",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "re.escape(t) + r\"(?![A-Za-z0-9])\")",
+    "re.escape(t))"
+   ]
+  ],
+  "expect": "the longest term wins where two overlap, and a term inside a longer word is no match"
+ },
+ {
+  "name": "matching: a term is matched at the end of a longer word",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(r\"(?<![A-Za-z0-9])\" + re.escape(t)",
+    "(r\"\" + re.escape(t)"
+   ]
+  ],
+  "expect": "the longest term wins where two overlap, and a term inside a longer word is no match"
+ },
+ {
+  "name": "matching: the shortest term wins",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "key=lambda t: (-len(t), t))]",
+    "key=lambda t: (len(t), t))]"
+   ]
+  ],
+  "expect": "the longest term wins where two overlap, and a term inside a longer word is no match"
+ },
+ {
+  "name": "matching: a directory term is matched after a dot or a hyphen",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(r\"(?<![\\w.-])\"",
+    "(r\"(?<![\\w])\""
+   ]
+  ],
+  "expect": "the longest term wins where two overlap, and a term inside a longer word is no match"
+ },
+ {
+  "name": "classify: a from-import is not a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "isinstance(node, ast.ImportFrom) and hit(node.module or \"\")",
+    "isinstance(node, ast.ImportFrom) and False"
+   ]
+  ],
+  "expect": "import of a project module is a dependency"
+ },
+ {
+  "name": "classify: a plain import is not a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "isinstance(node, ast.Import) and any(hit(a.name) for a in node.names)",
+    "isinstance(node, ast.Import) and False"
+   ]
+  ],
+  "expect": "import of a project module is a dependency"
+ },
+ {
+  "name": "classify: an env read with a positional or keyword default is a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "len(up.args) > 1 or up.keywords or fallback",
+    "fallback"
+   ]
+  ],
+  "expect": "an env read with a default that works is a mention"
+ },
+ {
+  "name": "classify: a keyword default is not seen",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "len(up.args) > 1 or up.keywords or",
+    "len(up.args) > 1 or"
+   ]
+  ],
+  "expect": "an env read with a default that works is a mention"
+ },
+ {
+  "name": "classify: an `or` fallback is not a default",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " and outer.values[-1] is not up\n",
+    " and False\n"
+   ]
+  ],
+  "expect": "an env read with a default that works is a mention"
+ },
+ {
+  "name": "classify: an environ subscript is not a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "in (\"os.environ\", \"environ\"):\n        return \"config\"",
+    "in (\"os.environ\", \"environ\"):\n        return None"
+   ]
+  ],
+  "expect": "an env read whose absence raises is a dependency"
+ },
+ {
+  "name": "classify: a getter with no default is not a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "or fallback else \"config\"",
+    "or fallback else None"
+   ]
+  ],
+  "expect": "an env read whose absence raises is a dependency"
+ },
+ {
+  "name": "classify: a process runner's argument is not an invocation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return \"invocation\" if name in RUNNERS",
+    "return None if name in RUNNERS"
+   ]
+  ],
+  "expect": "an invocation and a path read are dependencies; a comment and a plain string are mentions"
+ },
+ {
+  "name": "classify: a path joined with / is not a read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "isinstance(up.op, ast.Div):\n            return \"config\"",
+    "isinstance(up.op, ast.Div):\n            return None"
+   ]
+  ],
+  "expect": "an invocation and a path read are dependencies; a comment and a plain string are mentions"
+ },
+ {
+  "name": "classify: an opened path is not a read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "else \"config\" if name in PATH_READERS",
+    "else None if name in PATH_READERS"
+   ]
+  ],
+  "expect": "an invocation and a path read are dependencies; a comment and a plain string are mentions"
+ },
+ {
+  "name": "classify: a Python file that does not parse is judged a mention",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        raise CannotRun(f\"{rel} does not parse: {e}\") from e\n",
+    "        return ast.parse(\"\"), {}\n"
+   ]
+  ],
+  "expect": "a Python file that does not parse is CANNOT RUN, never a mention"
+ },
+ {
+  "name": "classify: a term the line does not hold is still judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if not word.search(text):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "shell: a command line is a dependency, a comment a mention, and a term the line does not hold a mention"
+ },
+ {
+  "name": "classify: a shell comment is an invocation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return None if text.lstrip().startswith(\"#\") else \"invocation\"",
+    "return \"invocation\""
+   ]
+  ],
+  "expect": "shell: a command line is a dependency, a comment a mention, and a term the line does not hold a mention"
+ },
+ {
+  "name": "classify: an invoked file's path is not an invocation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for m in SS.EXEC_RE.finditer(text)):\n        return \"invocation\"",
+    "for m in SS.EXEC_RE.finditer(text)):\n        return None"
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: every fenced block is a command",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if fence in SHELL_FENCES and not",
+    "if not"
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: a comment inside a shell fence is a command",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "fence in SHELL_FENCES and not text.lstrip().startswith(\"#\") else None",
+    "fence in SHELL_FENCES else None"
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: a closing fence opens another",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "m.group(1).lower() if fence is None else None",
+    "m.group(1).lower()"
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: a read instruction is not a prerequisite",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "re.search(INSTRUCTS + tok, text, re.I) or ",
+    ""
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: a stated requirement is not a prerequisite",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " or re.search(REQUIRES + r\"(?<![A-Za-z0-9])\" + tok, text, re.I)",
+    ""
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: an instruction verb counts anywhere in a sentence",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(r\"(?:^\\s*(?:[-*>]\\s+|\\d+\\.\\s+)*|[.;:]\\s+)(?:\\*\\*)?",
+    "(r\""
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: a requirement reaches any distance",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "{0,40}",
+    "*"
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "report: a mention is given an id",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(findings if kind else mentions).append(",
+    "(findings).append("
+   ]
+  ],
+  "expect": "a verdict cannot cite a mention"
+ },
+ {
+  "name": "report: ids do not count from one",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "count.get(f[\"detector\"], 0) + 1",
+    "count.get(f[\"detector\"], 0) + 2"
+   ]
+  ],
+  "expect": "detector 1: the dependencies of a file are findings with ids in file-and-line order, the term named"
+ },
+ {
+  "name": "report: a finding does not carry its term",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"text\": text.strip(), \"term\": term}",
+    "\"text\": text.strip()}"
+   ]
+  ],
+  "expect": "a finding carries exactly the Finding fields and the term"
  }
 ]

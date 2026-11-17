@@ -2486,5 +2486,7 @@ EXPECTED_MUTATIONS = {
     # The publishability scan (marketplace-inventory plan Tasks 8-12, spec §5). Pinned in the commit that creates it
     # (Task 8, 2026-11-17): 17 — the file set (emptied, substituted member, count, symlinks, undeclared, coordinates,
     # absent file, outside the repository), the CANNOT RUN entry's shape, measured_at, and the CLI's exits.
-    "scripts/check-publishability.py": 17,
+    # ⟳ Task 9 (2026-11-17): 17 → 57 — detector 1: +12 the derived vocabulary, +4 term matching, +21 the
+    # dependency/mention judgement, +3 the finding/mention rows and their ids.
+    "scripts/check-publishability.py": 57,
 }
