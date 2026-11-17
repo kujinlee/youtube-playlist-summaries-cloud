@@ -232,7 +232,9 @@ def _python_use(node: ast.Constant, parent: dict) -> str | None:
     if isinstance(up, ast.Call) and _dotted(up.func) in ENV_GETTERS and up.args[:1] == [node]:
         outer = parent.get(up)
         fallback = isinstance(outer, ast.BoolOp) and isinstance(outer.op, ast.Or) and outer.values[-1] is not up
-        return None if len(up.args) > 1 or up.keywords or fallback else "config"
+        given = up.args[1:2] + [k.value for k in up.keywords if k.arg == "default"]
+        working = any(not (isinstance(g, ast.Constant) and g.value is None) for g in given)
+        return None if working or fallback else "config"
     child = node
     while isinstance(up, (ast.List, ast.Tuple, ast.BinOp, ast.JoinedStr, ast.FormattedValue)):
         if isinstance(up, ast.BinOp) and isinstance(up.op, ast.Div):
@@ -276,7 +278,7 @@ SHELL_FENCES = {"bash", "sh", "shell", "zsh", "console"}
 # a line, a list item or a sentence, then a code span holding the term. REQUIRES: a requirement verb, then the
 # term within the same clause. Both are completed by the term itself at the point of use.
 INSTRUCTS = (r"(?:^\s*(?:[-*>]\s+|\d+\.\s+)*|[.;:]\s+)(?:\*\*)?(?:read|load|open|run|edit|update|consult|follow"
-             r"|source)\b[^`.]*`[^`]*")
+             r"|source|use|call|invoke)\b[^`.]*`[^`]*")
 REQUIRES = r"\b(?:requires?|needs?|depends on|must have|prerequisites?)\b[^.`;:,()]{0,40}"
 
 
@@ -366,14 +368,18 @@ def _invocations(files: list, base: Path, shipped: set, channel: str) -> list:
     rooted at a variable and shipped is no finding; one that climbs above the tree is not judged.
 
     A Python file: each file it loads (`SS.python_loads`) that the repository holds and the package does not
-    ship is `outside-set`, at the first line naming the target. BOUND: a load of a SHIPPED file is not judged
+    ship is `outside-set`, at the first line naming the target; so is a file it RUNS (a literal argument of a
+    process runner) that the repository does not hold at all (review r1 XM2). BOUND: a load of a SHIPPED file is not judged
     here, whatever directory it is resolved from at run time."""
     out = []
     for f in files:
         rel, lines = f.relative_to(base).as_posix(), _lines(f)
         if rel.endswith(".py"):
+            tree, parent = _parsed(f)
+            invoked = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                       and _python_use(n, parent) == "invocation"}
             for target in sorted(SS.python_loads(rel, f.read_text())[0] - shipped):
-                if (base / target).is_file():
+                if (base / target).is_file() or target in invoked:
                     named = re.compile(r"(?<![\w-])" + re.escape(Path(target).stem) + r"(?![\w-])")
                     n = next((i for i, text in enumerate(lines, 1) if named.search(text)), 1)
                     out.append({"detector": 2, "file": rel, "line": n, "text": lines[n - 1].strip(),
@@ -919,7 +925,10 @@ def _self_test_body() -> int:
          (2, {"c": {"status": CANNOT_RUN,
                     "why": "c: the resolved set is not the declared one: resolved and not declared "
                            "['scripts/safe.py']; declared and not resolved ['scripts/coupled.py']"},
-              "k": {"status": SCANNED, "findings": [], "mentions": []}}))
+              "k": {"status": SCANNED, "findings": [
+                  {"detector": 2, "file": "scripts/coupled.py", "id": "k:2:1", "kind": "outside-set", "line": 7,
+                   "target": "scripts/elsewhere.py",
+                   "text": 'subprocess.run(["python3", "scripts/elsewhere.py"])'}], "mentions": []}}))
 
 
     # --- Task 9: detector 1, the derived vocabulary ---------------------------------------------------------
@@ -1442,10 +1451,30 @@ def _self_test_body() -> int:
          [("regen:7:1", ["detector", "file", "kind", "line", "target", "text"]),
           ("tested:7:1", ["detector", "file", "kind", "line", "text"])])
     case("a hook registration that cannot be read is CANNOT RUN, never no registration",
-         lambda: raised(lambda: scan(*put(world({".claude/settings.json": "{not json", "scripts/bare.py": "X = 1\n"}),
-                                          [comp("b", ["scripts/bare.py"])], {"b": ["scripts/bare.py"]}),
-                                     root=Path(tempfile.gettempdir())), "RAISED CannotRun")[:17],
-         "RAISED CannotRun")
+         lambda: (lambda w: raised(lambda: scan(*put(w, [comp("b", ["scripts/bare.py"])],
+                                                     {"b": [SS.installed_path("scripts/bare.py")]}), root=w),
+                                   "RAISED CannotRun: cannot read .claude/settings.json"))(
+             world({".claude/settings.json": "{not json", "scripts/bare.py": "X = 1\n"})),
+         "RAISED CannotRun: cannot read .claude/settings.json")
+
+    # --- round 1 fold (Codex XM1-XM3): each input the review constructed ----------------------------------
+    w_r1 = world({"scripts/tok.py": ('import os\nimport subprocess\n'
+                                     'A = os.getenv("REVIEW_TOKEN", None)\n'
+                                     'B = os.environ.get("REVIEW_KEY", default=None)\n'
+                                     'C = os.getenv("REVIEW_SET", "x")\n'
+                                     'subprocess.run(["python3", "scripts/missing-helper.py"], check=True)\n'
+                                     'import json\n'),
+                  ".agents/skills/u/SKILL.md": "# U\nUse `TaskList` to enumerate tasks.\nCall `TaskCreate` next.\n"})
+    case("XM1: a None default, positional or keyword, is no working default; a real one still is",
+         lambda: sorted((f["line"], f["kind"]) for f in found(w_r1, {"t": ["scripts/tok.py"]}, "t", 6)
+                        if f["kind"] == "config"),
+         [(3, "config"), (4, "config")])
+    case("XM2: a Python invocation of a file the repository does not hold is outside-set; an import is not",
+         lambda: [(f["line"], f["target"]) for f in found(w_r1, {"t": ["scripts/tok.py"]}, "t", 2)],
+         [(6, "scripts/missing-helper.py")])
+    case("XM3: an imperative 'use' or 'call' before a tool name makes it a finding, not a mention",
+         lambda: items(w_r1, {"u": [".agents/skills/u/SKILL.md"]}, "u")[0],
+         [(2, "tool-name", "TaskList"), (3, "tool-name", "TaskCreate")])
 
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
         print("NOT RUN under the mutation harness: 10 live-tree cases (CI's ordinary step runs them)")

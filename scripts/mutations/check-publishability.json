@@ -389,7 +389,7 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "len(up.args) > 1 or up.keywords or fallback",
+    "working or fallback",
     "fallback"
    ]
   ],
@@ -400,8 +400,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "len(up.args) > 1 or up.keywords or",
-    "len(up.args) > 1 or"
+    " + [k.value for k in up.keywords if k.arg == \"default\"]",
+    ""
    ]
   ],
   "expect": "an env read with a default that works is a mention"
@@ -741,7 +741,7 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "                if (base / target).is_file():\n",
+    "                if (base / target).is_file() or target in invoked:\n",
     "                if True:\n"
    ]
   ],
@@ -1593,5 +1593,38 @@
    ]
   ],
   "expect": "a test file, and a shell file that is no hook, are not asked"
+ },
+ {
+  "name": "classify: a None default counts as a working one",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "working = any(not (isinstance(g, ast.Constant) and g.value is None) for g in given)",
+    "working = bool(given)"
+   ]
+  ],
+  "expect": "XM1: a None default, positional or keyword, is no working default; a real one still is"
+ },
+ {
+  "name": "detector 2: a missing Python target named in the source is dropped",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if (base / target).is_file() or target in invoked:",
+    "if (base / target).is_file():"
+   ]
+  ],
+  "expect": "XM2: a Python invocation of a file the repository does not hold is outside-set; an import is not"
+ },
+ {
+  "name": "detector 4: 'use', 'call' and 'invoke' do not instruct",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "|source|use|call|invoke)",
+    "|source)"
+   ]
+  ],
+  "expect": "XM3: an imperative 'use' or 'call' before a tool name makes it a finding, not a mention"
  }
 ]

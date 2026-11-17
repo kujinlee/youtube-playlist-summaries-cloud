@@ -2496,5 +2496,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ Task 12 (2026-11-17): 108 → 145 — +21 detector 6 (imports and the package's set, the program a runner or a
     # shell line names, environment reads, the row), +15 detector 7 (the stanza, production callers, the declaration
     # and where it may stand, the roles and files asked), +1 the line splitter (a form feed starts no line).
-    "scripts/check-publishability.py": 145,
+    # ⟳ review r1 fold (2026-11-17): 145 → 148 — +1 a None default is no working default (XM1), +1 a missing file a
+    # runner names is outside-set (XM2), +1 "use"/"call"/"invoke" instruct (XM3); three anchors rebound in place.
+    "scripts/check-publishability.py": 148,
 }
