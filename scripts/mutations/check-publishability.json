@@ -1599,7 +1599,7 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "working = any(not (isinstance(g, ast.Constant) and g.value is None) for g in given)",
+    "working = any(not _always_none(g) for g in given)",
     "working = bool(given)"
    ]
   ],
@@ -1632,7 +1632,7 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "fallback = any(not (isinstance(g, ast.Constant) and g.value is None) for g in rest)",
+    "fallback = any(not _always_none(g) for g in rest)",
     "fallback = bool(rest)"
    ]
   ],
@@ -1687,10 +1687,54 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "return bool(re.search(LEAD_VERBS,",
-    "return True or bool(re.search(LEAD_VERBS,"
+    "    return any(not re.search(NEGATES, para",
+    "    return True or any(not re.search(NEGATES, para"
    ]
   ],
   "expect": "r2: a list item or an untagged block introduced by an imperative ending in a colon is a finding; a list under a label is a mention"
+ },
+ {
+  "name": "classify: an `or` of None operands counts as a working fallback",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "isinstance(g, ast.BoolOp) and all(_always_none(v) for v in g.values))",
+    "False)"
+   ]
+  ],
+  "expect": "r3: an `or` of operands that are all None is no working fallback"
+ },
+ {
+  "name": "detector 4: a blank line between two items ends the list",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            while j > 0 and not lines[j].strip():  # a blank",
+    "            while False:  # a blank"
+   ]
+  ],
+  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
+ },
+ {
+  "name": "detector 4: an earlier list does not end the introducing paragraph",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            and not LIST_ITEM.match(lines[start - 1]):  # an earlier",
+    "            and True:  # an earlier"
+   ]
+  ],
+  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
+ },
+ {
+  "name": "detector 4: a negated verb still introduces a list",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    return any(not re.search(NEGATES, para",
+    "    return any(not re.search(r\"(?!)\", para"
+   ]
+  ],
+  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
  }
 ]

@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 103 cases
+    python3 scripts/check-publishability.py --self-test  # 105 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -233,8 +233,8 @@ def _python_use(node: ast.Constant, parent: dict) -> str | None:
         outer = parent.get(up)
         rest = outer.values[outer.values.index(up) + 1:] if isinstance(outer, ast.BoolOp) and isinstance(outer.op, ast.Or) else []
         given = up.args[1:2] + [k.value for k in up.keywords if k.arg == "default"]
-        fallback = any(not (isinstance(g, ast.Constant) and g.value is None) for g in rest)
-        working = any(not (isinstance(g, ast.Constant) and g.value is None) for g in given)
+        fallback = any(not _always_none(g) for g in rest)
+        working = any(not _always_none(g) for g in given)
         return None if working or fallback else "config"
     child = node
     while isinstance(up, (ast.List, ast.Tuple, ast.BinOp, ast.JoinedStr, ast.FormattedValue)):
@@ -299,10 +299,20 @@ def _markdown_kind(lines, line: int, token: str) -> str | None:
         return "prerequisite"
     if LIST_ITEM.match(text):
         i = line - 1
-        while i > 0 and (LIST_ITEM.match(lines[i - 1]) or lines[i - 1][:1] in (" ", "\t")):
-            i -= 1
+        while i > 0:
+            j = i - 1
+            while j > 0 and not lines[j].strip():  # a blank line between two items keeps the list (review r3)
+                j -= 1
+            if not (LIST_ITEM.match(lines[j]) or (j == i - 1 and lines[j][:1] in (" ", "\t"))):
+                break
+            i = j
         return "prerequisite" if _introduced(lines, i) else None
     return None
+
+
+def _always_none(g) -> bool:  # `None`, or an `or`/`and` of operands that are each always None (review r3)
+    return (isinstance(g, ast.Constant) and g.value is None) or (
+        isinstance(g, ast.BoolOp) and all(_always_none(v) for v in g.values))
 
 
 LIST_ITEM = re.compile(r"\s*(?:\d+[.)]|[-*+])\s+")
@@ -318,13 +328,18 @@ def _introduced(lines, at: int) -> bool:
     if i < 0 or not lines[i].rstrip().rstrip("*_").endswith(":"):
         return False
     start = i
-    while start > 0 and lines[start - 1].strip() and not re.match(r"\s*(?:#|```|~~~)", lines[start - 1]):
+    while start > 0 and lines[start - 1].strip() and not re.match(r"\s*(?:#|```|~~~)", lines[start - 1]) \
+            and not LIST_ITEM.match(lines[start - 1]):  # an earlier list ends the paragraph (review r3)
         start -= 1
-    return bool(re.search(LEAD_VERBS, " ".join(lines[start:i + 1]), re.I))
+    para = " ".join(lines[start:i + 1])
+    return any(not re.search(NEGATES, para[max(0, m.start() - 24):m.start()], re.I)
+               for m in re.finditer(LEAD_VERBS, para, re.I))
 
 
 # The imperatives an introducing paragraph must hold: INSTRUCTS' verbs, and "stop" (a procedure that halts work).
 LEAD_VERBS = r"\b(?:read|load|open|run|edit|update|consult|follow|source|use|call|invoke|stop)\b"
+# A verb a few words after one of these is no imperative ("tools that we never use:", review r3).
+NEGATES = r"\b(?:never|not|no)\b|n't\b"
 
 
 def _kind(file: Path, line: int, token: str) -> str | None:
@@ -1539,6 +1554,21 @@ def _self_test_body() -> int:
          "list under a label is a mention",
          lambda: items(w_r2, {"v": [".agents/skills/v/SKILL.md"]}, "v"),
          ([(4, "tool-name", "TaskList"), (12, "tool-name", "TaskCreate")], [(7, "tool-name", "TaskCreate")]))
+
+    # --- round 3 fold (Codex): each input the review constructed --------------------------------------------
+    w_r3 = world({"scripts/tok3.py": 'import os\nA = os.getenv("REVIEW_N") or (None or None)\n',
+                  ".agents/skills/x/SKILL.md": ("# X\nRead these prerequisites:\n\n1. `TaskList`\n\n2. `TaskCreate`\n\n"
+                                                "A reference list of tools that we never use:\n\n- `TaskCreate` here\n\n"
+                                                "Read the section headings:\n- Overview\nHistorical examples:\n"
+                                                "- `TaskList` is only an example\n")})
+    case("r3: an `or` of operands that are all None is no working fallback",
+         lambda: [(f["line"], f["kind"]) for f in found(w_r3, {"t": ["scripts/tok3.py"]}, "t", 6) if f["kind"] == "config"],
+         [(2, "config")])
+    case("r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, "
+         "introduces nothing",
+         lambda: items(w_r3, {"x": [".agents/skills/x/SKILL.md"]}, "x"),
+         ([(4, "tool-name", "TaskList"), (6, "tool-name", "TaskCreate")],
+          [(10, "tool-name", "TaskCreate"), (15, "tool-name", "TaskList")]))
 
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
         print("NOT RUN under the mutation harness: 10 live-tree cases (CI's ordinary step runs them)")

@@ -2501,5 +2501,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ review r2 fold (2026-11-17): 148 → 154 — +1 a None through `or` is no fallback, +2 detector 2 (a `./` runner
     # target normalised; an unread load is a finding), +3 detector 4 (a colon-introduced list item, an untagged
     # block, the imperative the introduction must hold); five anchors rebound in place.
-    "scripts/check-publishability.py": 154,
+    # ⟳ review r3 fold (2026-11-17): 154 → 158 — +1 an `or` of None operands, +3 detector 4 (blank lines inside a
+    # list, an earlier list ends the introduction, a negated verb); three anchors rebound in place.
+    "scripts/check-publishability.py": 158,
 }
