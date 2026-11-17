@@ -134,6 +134,8 @@ POPULATION: frozenset[str] = frozenset({
     "mkt_stage.py",
     # ⟳ 2026-11-16, marketplace-inventory plan Task 5: pinned in the commit that creates it (the component map check).
     "check-shipping-sets.py",
+    # ⟳ 2026-11-17, marketplace-inventory plan Task 8: pinned in the commit that creates it (the publishability scan).
+    "check-publishability.py",
     # ⟳ 2026-11-12, backlog #586 slice 2: pinned in the commit that creates it (a library, no caller yet).
     "strace_reads.py",
     # ⟳ 2026-10-16, pinned in the commit that creates it. Its suite went 23 → 25 → 27 → 30

@@ -2483,4 +2483,8 @@ EXPECTED_MUTATIONS = {
     # name made a constant -- unseen only when `index` and `logs/HEAD` exchange their exact time and size between
     # two polls, which no git operation does, so the class case cannot witness it.
     "scripts/agent-watchdog.py": 70,
+    # The publishability scan (marketplace-inventory plan Tasks 8-12, spec §5). Pinned in the commit that creates it
+    # (Task 8, 2026-11-17): 17 — the file set (emptied, substituted member, count, symlinks, undeclared, coordinates,
+    # absent file, outside the repository), the CANNOT RUN entry's shape, measured_at, and the CLI's exits.
+    "scripts/check-publishability.py": 17,
 }

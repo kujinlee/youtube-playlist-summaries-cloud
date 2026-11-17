@@ -369,6 +369,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
                                "python_loads.is_dir", "python_loads.is_file",
                                "python_loads.rel", "python_loads.text", "reach.root", "reach.seeds", "registered_hooks.root", "source_path.rel",
                                "tracked.root"),
+    # marketplace-inventory plan Task 8 (2026-11-17): the publishability scan, pinned in the commit that creates it.
+    # DERIVED by `analyse`: 8.
+    "check-publishability.py": ("main.argv", "main.root", "resolve.component", "resolve.decl", "resolve.root",
+                                "scan.map_path", "scan.root", "scan.sets_path"),
     # backlog #586 slice 2 (2026-11-12): the strace-log path resolver, pinned in the commit that creates it. DERIVED by
     # running `analyse()` on the delivered source: 9 keys, every one varied by a case (none exempt).
     # ⟳ 2026-11-12 slice 3 (the default-deny classifier and record assembly): re-DERIVED by `analyse()`, 9 + 11 = 20.

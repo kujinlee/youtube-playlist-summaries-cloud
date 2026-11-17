@@ -1,0 +1,189 @@
+[
+ {
+  "name": "file set: an emptied set is not refused",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if not found:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "an emptied set is CANNOT RUN"
+ },
+ {
+  "name": "file set: identity is not compared, only the count",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if found != want:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a substituted member with equal cardinality is CANNOT RUN"
+ },
+ {
+  "name": "file set: the expected count is not compared",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if len(found) != declared[\"expected_count\"]:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a declared count that is not the resolved count is CANNOT RUN"
+ },
+ {
+  "name": "file set: symlinks are not resolved",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    real = (base / rel).resolve()\n",
+    "    real = (base / rel)\n"
+   ]
+  ],
+  "expect": "a set walked through a symlinked directory finds the known positive"
+ },
+ {
+  "name": "file set: an undeclared component is not refused",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if declared is None:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a component the declaration does not name is CANNOT RUN"
+ },
+ {
+  "name": "file set: a plugin declaration is read in repository paths",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "place = SS.source_path if decl[\"channel\"] == \"plugin\" else (lambda f: f)",
+    "place = (lambda f: f)"
+   ]
+  ],
+  "expect": "a set walked through a symlinked directory finds the known positive"
+ },
+ {
+  "name": "file set: a reusable-workflow declaration is read in installed paths",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "== \"plugin\" else (lambda f: f)\n",
+    "== \"plugin\" else SS.source_path\n"
+   ]
+  ],
+  "expect": "resolve: a reusable-workflow declaration is read in repository paths, a single file resolved"
+ },
+ {
+  "name": "file set: a listed file absent from disk is a member",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        elif real.is_file():\n",
+    "        else:\n"
+   ]
+  ],
+  "expect": "resolve: a listed file that is not on disk is no member, and a set of only that is CANNOT RUN"
+ },
+ {
+  "name": "file set: a path outside the repository is not refused",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return real, real.relative_to(base).as_posix()\n",
+    "        return real, os.path.relpath(real, base)\n"
+   ]
+  ],
+  "expect": "resolve: an entry that resolves outside the repository is CANNOT RUN"
+ },
+ {
+  "name": "report: a CANNOT RUN entry carries an empty findings list",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "{\"status\": CANNOT_RUN, \"why\": str(e)}",
+    "{\"status\": CANNOT_RUN, \"why\": str(e), \"findings\": []}"
+   ]
+  ],
+  "expect": "the report for a CANNOT RUN component carries no findings field that reads as zero"
+ },
+ {
+  "name": "report: measured_at is not the commit",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"measured_at\": _head(root)",
+    "\"measured_at\": \"unmeasured\""
+   ]
+  ],
+  "expect": "the report's measured_at is the commit of the tree scanned"
+ },
+ {
+  "name": "scan: a refused map is not CANNOT RUN",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    except SS.Refused as e:\n",
+    "    except SS.CannotRun as e:\n"
+   ]
+  ],
+  "expect": "CLI: a map the map rules refuse is rc 2, CANNOT RUN"
+ },
+ {
+  "name": "scan: a package the declaration lacks is not refused",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            if c[\"package\"] not in packages:\n",
+    "            if False:\n"
+   ]
+  ],
+  "expect": "a component whose package the declaration does not hold is CANNOT RUN"
+ },
+ {
+  "name": "CLI: a CANNOT RUN component exits 0",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    return 2 if any(e[\"status\"] != SCANNED",
+    "    return 0 if any(e[\"status\"] != SCANNED"
+   ]
+  ],
+  "expect": "CLI: one CANNOT RUN component is rc 2 and the line says why, beside a scanned one"
+ },
+ {
+  "name": "CLI: an unreadable declaration exits 0",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        print(f\"{CANNOT_RUN}: {e}\")\n        return 2\n",
+    "        print(f\"{CANNOT_RUN}: {e}\")\n        return 0\n"
+   ]
+  ],
+  "expect": "CLI: an emptied shipping-sets.json is rc 2, CANNOT RUN, and no component line"
+ },
+ {
+  "name": "CLI: --out writes nothing",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if a.out:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "CLI: --out writes the report, a CANNOT RUN entry as it is"
+ },
+ {
+  "name": "render: the summary counts the wrong status",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    done = sum(e[\"status\"] == SCANNED",
+    "    done = sum(e[\"status\"] != SCANNED"
+   ]
+  ],
+  "expect": "CLI: every component scanned is rc 0, one line per component and a summary"
+ }
+]
