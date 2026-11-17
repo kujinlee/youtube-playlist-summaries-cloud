@@ -2154,7 +2154,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ #627 review round 2 (Codex M2): 65 -> 72 — every WRITER refuses a destination outside the suite's temp dir:
     # the fetch target, the clone, a run's private dir, the tree lock, the serve copy, the shared check itself, and
     # Codex's own mutant (serve_copy_path answering an outside dir), killed by an identity case.
-    "scripts/regen-pages.py": 72,
+    # ⟳ hse slice C redesign r1 (Xm3/Cm3): 72 -> 73 — the crash guard printing a second, unattributable `[FAIL]` name.
+    "scripts/regen-pages.py": 73,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
@@ -2434,7 +2435,10 @@ EXPECTED_MUTATIONS = {
     # map-rooted closure (roots from the component map, the declaration/map agreement in both directions: XM1, CM2),
     # every CANNOT RUN input (channel, empty, non-object, unreadable, missing, unwalkable: XM4-XM7, CM1) and the
     # optional edges. 12 anchors re-bound; none retired.
-    "scripts/check-shipping-sets.py": 186,
+    # ⟳ hse slice C redesign r1 fold: 186 + 9 = 195 — `-c` listed and `-m` read as a module load (XM1), `_unread`
+    # listing its line, the call-form module outcome check (record, directory, no file: XM2), the outcome invariant,
+    # and a default read in its def's own scope, a class body included (Cm1). 2 anchors re-bound; none retired.
+    "scripts/check-shipping-sets.py": 195,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.

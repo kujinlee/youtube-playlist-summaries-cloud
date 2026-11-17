@@ -884,16 +884,19 @@ def _self_test_cases() -> int:
             rc = f"ESCAPED the guard: {type(escaped).__name__}"
         del _LAST_CASE[_mark:]
         out = buf.getvalue()
-        return rc, out.split("\n")[0], "    after case: the case before the crash" in out.split("\n")
+        lines = out.split("\n")
+        # Every `[FAIL] ` line, whole (redesign r1 Xm3/Cm3): exactly one, so a second, unattributable name is red.
+        fails = [ln.lstrip() for ln in lines if ln.lstrip().startswith("[FAIL] ")]
+        return rc, lines[0], fails, "    after case: the case before the crash" in lines
 
     _ok_buf = io.StringIO()
     with contextlib.redirect_stdout(_ok_buf):
         _ok_rc = _crash_guarded(lambda: 0)
     case("⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body prints "
-         "`  [FAIL] <CRASH_CASE>` as its FIRST line, then the last case; CRASH_CASE holds no `: got` separator; a clean "
-         "body is untouched",
+         "`  [FAIL] <CRASH_CASE>` as its FIRST line and its ONLY `[FAIL]` line, then the last case; CRASH_CASE holds "
+         "no `: got` separator; a clean body is untouched",
          [_raises(RuntimeError("boom")), _raises(SystemExit(3)), (_ok_rc, _ok_buf.getvalue()), ": got " in CRASH_CASE],
-         [(1, "  [FAIL] " + CRASH_CASE, True), (1, "  [FAIL] " + CRASH_CASE, True), (0, ""), False])
+         [(1, "  [FAIL] " + CRASH_CASE, ["[FAIL] " + CRASH_CASE], True)] * 2 + [(0, ""), False])
 
     def bash(cmd):
         return {"tool_input": {"command": cmd}}

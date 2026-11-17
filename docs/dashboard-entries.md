@@ -20986,3 +20986,22 @@ tree is an `unresolved:` line (65 on the real declaration: comprehensibility 39,
 crash-guard case pins the `[FAIL]` line it prints and no longer loads `check-plan-code.py`. Edges over the 115
 tracked `.py` files are unchanged (344, pinned by a case). 134/134 cases, 186 mutations; a CI step runs it, since
 it needs no `claude`.
+
+## 2026-11-17
+The check that lists what each marketplace package must ship now says so whenever a shipped script runs code it
+cannot follow, instead of saying nothing. The reviews of the redesign found three ways a script could run another
+file with no warning: a command that passes the code to run on its own line, a module started by name, and a
+folder of code loaded by name. Each of these is now listed for a person to look at. The pinned check over the whole
+repository now compares the exact list of links between files, not only how many there are. A test of the page
+rebuilder that had become weaker is strict again. Some ways of running code are still not seen, and the script
+lists them; they are filed as backlog #671.
+<!--tech-->
+Slice C redesign, review round 1 fold (PR #598, branch `hse-c`; `docs/reviews/coordinator/hse-slice-c-redesign-r1-coordinator.md`).
+`scripts/check-shipping-sets.py`: `-c` in an interpreter argv is `unresolved:`; `-m <name>` is a module load (XM1/CM1);
+a call-form module load (`import_module`, `__import__`, `-m`) of a sibling directory or of a name that is no file is
+`unresolved:` (XM2/CM3); a default parameter is read in the scope of its `def`, a class body included (Cm1); an
+outcome invariant makes `paths()` CANNOT RUN on a recognised load that recorded nothing; the live-tree case pins the
+edge SET (344, digest `2cfb6a85d091b861`), not the count (Cm2). `--closure`: 0 gaps, 89 `unresolved:` (65 before,
+none dropped). `scripts/regen-pages.py`: the crash case again refuses a second `[FAIL]` line (Xm3/Cm3). Self-tests
+140/140 and 121/121; mutations 195 and 73, the 14 new or re-anchored entries all killed by their named case. CM2 and
+Cm4 (the exact-name censuses) are stated as bounds and split to backlog #671.

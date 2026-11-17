@@ -2,7 +2,7 @@
 """The component map, checked for completeness against what is on disk (marketplace-inventory plan, Task 5;
 spec §3: "every supporting artifact maps to a component, to a package, or to a written exclusion").
 
-    python3 scripts/check-shipping-sets.py --self-test  # 134 cases
+    python3 scripts/check-shipping-sets.py --self-test  # 140 cases
     python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
     python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json [MAP]
 
@@ -27,7 +27,8 @@ run `python3 "$REPO/scripts/regen-pages.py"`), resolved against the repository r
     `SourceFileLoader` or `runpy.run_path`, and the module named to `import_module` / `__import__` — by
     position or by keyword (`location=`, `path=`, `path_name=`, `name=`; review r2 XM1);
   - the script in an interpreter's argv list (`[sys.executable, "-u", str(HERE / "x.py"), ...]`, or one that
-    starts `"python3"` / `"bash"` / `"sh"`), options skipped, stopping at `-c` / `-m`;
+    starts `"python3"` / `"bash"` / `"sh"`), options skipped; `-m <name>` is a MODULE load, read as
+    `import_module(<name>)` is, and `-c <code>` is never read (unresolved, below; redesign r1 XM1);
   - each name in a TABLE of bare sibling script names (`name_tables`: `explainer-serve.py`'s `REGENERABLE`).
 A path is followed through what a reader of the file would follow: names assigned in the same scope or at module
 level, `/` and `os.path.join` onto a base, `with_name`, `str()` / `Path()` / `.resolve()`, an f-string or `+` of
@@ -46,15 +47,24 @@ that could be a load is an `unresolved` line `rel:line`, by CENSUS and not by a 
     reader read (an alias, `import ... as`, `getattr`, a table, `partial`) — and a read call whose argument is
     omitted, is `**kwargs`, or sits behind `*args`;
   - INTERPRETERS AND THE SHELL: every mention of an interpreter word (`sys.executable`, `"python3"`, `"bash"`,
-    ...) that is not the head of an argv the reader read, an argv with no script / `-c` / `-m`, and every
+    ...) that is not the head of an argv the reader read, an argv with no script, a `-c` argv, a `-m` with
+    nothing after it, and every
     mention of `SHELLS` (`os.system`, `popen`, `exec`, `eval`) or a `shell=` that is not literally False;
   - WRAPPERS: a local function whose parameter reaches a loader and that no call in the file binds (never
     called, or handed on by name);
   - OUTCOMES: a read path NONE of whose candidates is a file in the tree being read (missing, absolute, upward);
-    a relative import; a dotted or relative `import_module`; an `import` whose name is a sibling DIRECTORY.
+    a relative import; a dotted or relative `import_module`; an `import` whose name is a sibling DIRECTORY; and
+    a CALL-form module load (`import_module`, `__import__`, `-m`) whose name is a sibling DIRECTORY (a package
+    shadows a same-named file) or is no file at all (redesign r1 XM2) — a stdlib name included, fail-closed.
+THE OUTCOME INVARIANT (redesign r1): every loader call and interpreter argv a read rule recognises ends in an
+edge, a wrapper form, or an `unresolved` line — each clause ends in `_add` or `_unread`, and `paths()` is CANNOT
+RUN on one that recorded neither, so a new clause that forgets its outcome is loud, never silent.
 `--closure` prints each one in a shipped file as `<pkg>: unresolved: rel:line` (listed, not checked, not a gap;
 `--map` asks for edges only and prints none). Measured on the real declaration, 2026-11-17: 65 such lines
-(comprehensibility 39, recall 26), up from 28 before the census; 5 of them are the shell census.
+(comprehensibility 39, recall 26), up from 28 before the census; 5 of them are the shell census. After redesign
+r1, the same day: 89 (comprehensibility 55, recall 34), none dropped; the 24 added are 19 `-c` argv lines (8 in
+`session-state.py`; `fixture_git.py`'s 4 in both packages) and 5 `__import__` of a stdlib name (`importlib`,
+`datetime`).
 NO LOAD IS OPTIONAL: a load that sits under `if P.is_file():` is a plain edge, and a gap when the package omits
 its file. A shipped file that loads a file its package does not ship is rewritten or the file is shipped.
 ⚠ THE SIX STATED BOUNDS of the census — what can still load a file with NO line here: (1) REFLECTION: a loader or
@@ -66,6 +76,13 @@ is handed; (5) the BASE DROP: `HERE / "x.py"` is read as `x.py` beside the file 
 assignment a name has in its scope is a value (a union), so the reader never proves WHICH one reaches the load,
 and a name the file binds twice to readable values is two edges. Also outside the census by name:
 `subprocess.getoutput`/`getstatusoutput` and `os.exec*`/`os.spawn*` are not in `SHELLS`.
+⚠ THE EXACT-NAME BOUND (redesign r1 CM2 + Cm4, split to backlog #671, NOT closed here): the interpreter and
+loader censuses match EXACT names, so each of these loads a file with no edge and no line — an interpreter
+spelled another way (`/bin/bash`, `/usr/bin/python3`, `python3.12`, `zsh`); an argv built from a string
+(`"python3 x.py".split()`, `shlex.split(...)`); a loader not on the lists (`runpy.run_module`,
+`imp.load_source`, `SourcelessFileLoader` + `spec_from_loader`); `pty.spawn`; a script run with no interpreter
+word (`subprocess.run(["./x.sh"])`); and an `import` of a name that is no file after `sys.path.insert` (the
+import-statement form has no missing-file check, unlike the call form).
 ⚠ BOUND — what is still NOT an edge, each a way a file can run another that this reader does not see: a path
 COMPUTED at run time (a glob, a directory listing, a name built from input, a value read from a file or the
 environment) — unresolved when it is handed to a loader or an argv above, silent otherwise; a script run with NO
@@ -147,6 +164,7 @@ from __future__ import annotations
 import ast
 import contextlib
 import fnmatch
+import hashlib
 import io
 import json
 import os
@@ -255,6 +273,7 @@ class _Loads:
         self.rel = rel
         self.tree = tree
         self.parent: dict = {}          # scope node -> the scope its free names are looked up in next (None: module)
+        self.defined_in: dict = {}      # function or class -> the scope its `def` sits in (a class body included)
         self.funcs: dict = {}           # name -> [function nodes]
         self.calls: list = []           # (Call, scope)
         self.argvs: list = []           # (List | Tuple, scope)
@@ -271,6 +290,11 @@ class _Loads:
         self.found: set = set()         # (kind, concrete string, line)
         self.unresolved: set = set()    # "rel:line" of each load, loader or interpreter this reader did not read
         self.consumed: set = set()      # id() of each loader / interpreter / wrapper mention a read rule consumed
+        # THE OUTCOME INVARIANT (redesign r1): every loader call or interpreter argv a read rule RECOGNISES ends in
+        # `_add` (an edge, a wrapper, or unresolved) or `_unread` — `paths()` refuses one that ended in nothing.
+        self.recognised: set = set()
+        self.answered: set = set()
+        self.module_loads: dict = {}    # (line, the module named) -> its sibling stem, for the caller's outcome check
 
     @staticmethod
     def _header(node) -> list:
@@ -338,6 +362,7 @@ class _Loads:
         defined in it looks its free names up in the scope AROUND the class."""
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             self.parent[child] = self.parent[scope] if isinstance(scope, ast.ClassDef) else scope
+            self.defined_in[child] = scope      # where its header (defaults included) is evaluated
             if not isinstance(child, ast.ClassDef):
                 self.funcs.setdefault(child.name, []).append(child)
             self.env[child], self.opaque[child] = self._bindings(self._shallow(child.body))
@@ -441,11 +466,17 @@ class _Loads:
                 return {(UNK,)}
             scope = self.parent[scope]
 
+    def _unread(self, where) -> None:
+        """A recognised load this reader does not read (`-c` code, an argv with no script): listed at its line."""
+        self.answered.add(id(where))
+        self.unresolved.add(f"{self.rel}:{where.lineno}")
+
     def _add(self, kind: str, forms: set, where) -> bool:
         """Record each form: concrete → found; holding ONE function's parameters → that function is a wrapper;
         holding a part this reader cannot read, or two functions' parameters, or no form at all → `unresolved`
         at `where` (the load's line). True when a wrapper learned a form it did not have."""
         grew = False
+        self.answered.add(id(where))
         if not forms:
             self.unresolved.add(f"{self.rel}:{where.lineno}")
         for form in forms:
@@ -490,6 +521,7 @@ class _Loads:
             name = _name_of(call.func)
             if name in PATH_LOADERS or name in MODULE_LOADERS:
                 self.consumed.add(id(call.func))
+                self.recognised.add(id(call))
                 at, keyword = PATH_LOADERS.get(name) or MODULE_LOADERS[name]
                 arg = next((k.value for k in call.keywords if k.arg == keyword), None)
                 if arg is None and len(call.args) > at and not any(
@@ -504,20 +536,24 @@ class _Loads:
                     or (isinstance(head, ast.Constant) and head.value in INTERPRETERS)):
                 continue
             self.consumed.add(id(head))
-            at, read = 1, False
+            self.recognised.add(id(argv))
+            at = 1
             while at < len(argv.elts):
                 e = argv.elts[at]
                 if isinstance(e, ast.Constant) and isinstance(e.value, str) and e.value.startswith("-"):
-                    if e.value in ("-c", "-m"):
-                        read = True
+                    if e.value == "-m" and at + 1 < len(argv.elts):    # a module load, read like import_module
+                        self._add("module", self.forms(argv.elts[at + 1], scope), argv)
+                    if e.value in ("-c", "-m"):     # `-c`: code this reader does not read (r1 XM1)
                         break
                     at += 2 if e.value in ("-X", "-W") else 1
                     continue
-                read = True
                 self._add("path", self.forms(e, scope), argv)
                 break
-            if not read:                # an interpreter and no script, `-c` or `-m` after it: finished elsewhere
-                self.unresolved.add(f"{self.rel}:{argv.lineno}")
+            if id(argv) not in self.answered:   # no script, `-c`, or `-m` with no module after it
+                self._unread(argv)
+        if self.recognised - self.answered:
+            raise CannotRun(f"{self.rel}: a recognised load ended in neither an edge nor `unresolved:` — the "
+                            "reader's outcome invariant is broken")
         called: set = set()
         grew = True
         while grew:                 # a wrapper's parameter, filled from each call of it, to a fixpoint
@@ -534,7 +570,8 @@ class _Loads:
                             if isinstance(part, str):
                                 out = _cat(out, {(part,)})
                             elif part[2] in bound:
-                                site = None if bound[part[2]] in fn.args.defaults + fn.args.kw_defaults else scope
+                                site = (self.defined_in.get(fn) if bound[part[2]] in fn.args.defaults
+                                        + fn.args.kw_defaults else scope)   # r1 Cm1: the def's own scope
                                 out = _cat(out, self.forms(bound[part[2]], site))
                             else:
                                 out = {(UNK,)}
@@ -552,7 +589,9 @@ class _Loads:
                 if "." in s or not s:   # dotted or relative: a package, not a sibling file
                     self.unresolved.add(f"{self.rel}:{line}")
                 if s.split(".")[0]:
-                    edges.add(os.path.normpath(os.path.join(here, s.split(".")[0] + ".py")))
+                    stem = os.path.normpath(os.path.join(here, s.split(".")[0]))
+                    edges.add(stem + ".py")
+                    self.module_loads[(line, s)] = stem     # r1 XM2: the caller checks file and directory
                 continue
             cands = {os.path.normpath(os.path.join(here, s)), os.path.normpath(s)} if s and not s.startswith("/") \
                 else set()
@@ -644,6 +683,11 @@ def python_loads(rel: str, text: str, is_file=None, is_dir=None) -> tuple[set[st
     edges, groups = loads.paths()
     for (line, _read), cands in groups.items():
         if not cands or (is_file is not None and not any(is_file(c) for c in cands)):
+            lost.add(f"{rel}:{line}")
+    # A CALL-form module load (`import_module`, `__import__`, `-m`) gets the outcome an `import` gets, and more:
+    # a sibling DIRECTORY is a package this reader does not walk, and a name that is no file is no edge (r1 XM2).
+    for (line, _named), stem in loads.module_loads.items():
+        if (is_dir is not None and is_dir(stem)) or (is_file is not None and not is_file(stem + ".py")):
             lost.add(f"{rel}:{line}")
     edges |= outs | name_tables(rel, tree)
     return edges, sorted(loads.unresolved | lost, key=lambda u: (u.rsplit(":", 1)[0], int(u.rsplit(":", 1)[1])))
@@ -1964,6 +2008,84 @@ def _self_test_body() -> int:
           "an import of a sibling DIRECTORY": ([], [2]), "a from-import of a sibling DIRECTORY": ([], [1]),
           "control: the same import, no such directory": ([], []),
           "control: a plain sibling import": (["secret.py"], [])})
+    # Redesign r1 XM1/CM1: an interpreter argv with `-c` or `-m` ends in an edge or a listed line, never nothing.
+    # `-c` is code this reader does not read; `-m <name>` is a module load, checked like `import_module`.
+    only_secret = lambda p: p == "scripts/secret.py"   # noqa: E731
+    p6_dash = {"sys.executable -c": ("import subprocess, sys\nsubprocess.run([sys.executable, '-c', "
+                                     "\"import runpy; runpy.run_path('secret.py')\"])\n", only_secret),
+               "bash -c": ("import subprocess\n\nsubprocess.run(['bash', '-c', 'bash secret.sh'])\n", only_secret),
+               "sh -c, after an option": ("import subprocess\nsubprocess.run(['sh', '-e', '-c', 'python3 x.py'])\n",
+                                          only_secret),
+               "-m of a module that is no file": ("import subprocess, sys\nsubprocess.run([sys.executable, '-m', "
+                                                  "'nosuch'])\n", only_secret),
+               "-m of a dotted module": ("import subprocess, sys\n\nsubprocess.run([sys.executable, '-m', "
+                                         "'json.tool'])\n", only_secret),
+               "-m and nothing after it": ("import subprocess, sys\nsubprocess.run([sys.executable, '-m'])\n",
+                                           only_secret),
+               "control: -m of a sibling file": ("import subprocess, sys\nsubprocess.run([sys.executable, '-m', "
+                                                 "'secret'])\n", only_secret)}
+    case("Redesign r1 XM1: an interpreter argv with -c is UNRESOLVED, and with -m it is a module load — an edge to "
+         "the sibling file, else UNRESOLVED (no file, dotted, nothing after it)",
+         lambda: {k: fc(text, is_file=f) for k, (text, f) in p6_dash.items()},
+         {"sys.executable -c": ([], [2]), "bash -c": ([], [3]), "sh -c, after an option": ([], [2]),
+          "-m of a module that is no file": ([], [2]), "-m of a dotted module": ([], [3]),
+          "-m and nothing after it": ([], [2]), "control: -m of a sibling file": (["secret.py"], [])})
+    case("Redesign r1 XM1: `--closure` lists a -c argv that runs an unshipped file, never `0 gaps` with no line",
+         lambda: p6_cli("import subprocess\nsubprocess.run(['python3', '-c',\n"
+                        "                \"__import__('runpy').run_path('scripts/secret.py')\"])\n",
+                        repo_has=["scripts/secret.py"]),
+         (0, [f"pkg: unresolved: scripts/a.py:2{p6_said}", p6_tail, "0 gaps"], False))
+    # Redesign r1 XM2/CM3: a CALL-form module load gets the same outcome check an `import` statement does.
+    p6_modcall = {"import_module of a sibling DIRECTORY": ("import importlib\nimportlib.import_module('pkg')\n",
+                                                           "scripts/pkg", lambda p: False),
+                  "__import__ of a sibling DIRECTORY": ("\n__import__('pkg')\n", "scripts/pkg", lambda p: False),
+                  "-m of a sibling DIRECTORY": ("import subprocess, sys\n\n\nsubprocess.run([sys.executable, '-m', "
+                                                "'pkg'])\n", "scripts/pkg", lambda p: False),
+                  "import_module of a module that is no file": ("import importlib\n\nimportlib.import_module("
+                                                                "'missing_sibling')\n", None, lambda p: False),
+                  "a sibling DIRECTORY that shadows a same-named file": ("import importlib\n"
+                                                                          "importlib.import_module('secret')\n",
+                                                                          "scripts/secret", only_secret),
+                  "control: import_module of a sibling file": ("import importlib\nimportlib.import_module('secret')\n",
+                                                               "scripts/pkg", only_secret)}
+    case("Redesign r1 XM2: import_module / __import__ / -m of a sibling DIRECTORY, or of a module that is no file, "
+         "is UNRESOLVED; of a sibling file it is the edge and is not listed",
+         lambda: {k: fc(text, is_file=f, is_dir=lambda d, want=d_: d == want)
+                  for k, (text, d_, f) in p6_modcall.items()},
+         {"import_module of a sibling DIRECTORY": ([], [2]), "__import__ of a sibling DIRECTORY": ([], [2]),
+          "-m of a sibling DIRECTORY": ([], [4]), "import_module of a module that is no file": ([], [3]),
+          "a sibling DIRECTORY that shadows a same-named file": (["secret.py"], [2]),
+          "control: import_module of a sibling file": (["secret.py"], [])})
+
+    def p6_broken_clause():
+        """`_unread` made to record nothing: the `-c` clause then ends in nothing, which the invariant refuses."""
+        keep = _Loads._unread
+        _Loads._unread = lambda self, where: None
+        try:
+            return refused(lambda: python_loads("scripts/a.py", "import subprocess, sys\n"
+                                                "subprocess.run([sys.executable, '-c', 'pass'])\n"))
+        finally:
+            _Loads._unread = keep
+    case("Redesign r1 invariant: a recognised loader call or interpreter argv whose clause records neither an edge "
+         "nor `unresolved:` is CANNOT RUN, never a silent nothing",
+         lambda: p6_broken_clause().startswith("CANNOT RUN: scripts/a.py: a recognised load ended in neither"), True)
+    case("Redesign r1 XM2: `--closure` lists import_module of a sibling PACKAGE the package does not ship",
+         lambda: p6_cli("import importlib\nimportlib.import_module('secret')\n",
+                        repo_has=["scripts/secret/__init__.py"]),
+         (0, [f"pkg: unresolved: scripts/a.py:2{p6_said}", p6_tail, "0 gaps"], False))
+    # Redesign r1 Cm1: a default is evaluated in the scope the `def` sits in — module scope only at the top level.
+    p6_defaults = {"a nested function's default": "import runpy\nbase = 'other.py'\ndef outer():\n"
+                                                  "    base = 'secret.py'\n    def f(p=base):\n"
+                                                  "        runpy.run_path(p)\n    f()\n",
+                   "a method's default reads its class body": "import runpy\nbase = 'other.py'\nclass C:\n"
+                                                              "    base = 'secret.py'\n    def f(self, p=base):\n"
+                                                              "        runpy.run_path(p)\nC().f()\n",
+                   "control: a top-level function's default": "import runpy\nbase = 'secret.py'\ndef f(p=base):\n"
+                                                              "    runpy.run_path(p)\nf()\n"}
+    case("Redesign r1 Cm1: a default parameter is read in the scope that DEFINES the function (an enclosing "
+         "function, a class body), never at module scope",
+         lambda: {k: fc(v) for k, v in p6_defaults.items()},
+         {k: (["secret.py"], []) for k in p6_defaults})
 
     # Xm5: a malformed element anywhere in the declaration is CANNOT RUN, rc 2, before anything is compared.
     shape = tree({".agents/skills/d/SKILL.md": "", "wf.yml": ""})
@@ -2104,17 +2226,20 @@ def _self_test_body() -> int:
              lambda: cli("--map", str(REPO / "docs/marketplace/components.json"), root=REPO), (0, ["0 gaps"], ""))
         case("the real repo map has zero gaps",
              lambda: map_gaps(load_map(REPO / "docs/marketplace/components.json"), candidates(REPO)), [])
-        # Phase 6: the rewrite's acceptance check, kept as a case. The count is PINNED, so an edge the reader loses
-        # or gains over the whole tracked tree is red here and the number is changed by hand, with the diff read.
-        # 344 was measured 2026-11-17 over 115 tracked `.py` files, equal file by file (lost 0, gained 0) to the
-        # reader before the rewrite; a commit that adds a load to any tracked script moves it.
+        # Phase 6: the rewrite's acceptance check, kept as a case. The edge SET is PINNED (redesign r1 Cm2: a count
+        # let one lost plus one gained edge pass), as the count and a digest of every sorted `file -> edge` line, so
+        # an edge the reader loses or gains over the whole tracked tree is red here. 344 / 2cfb6a85d091b861 was
+        # measured 2026-11-17 over the tracked `.py` files, the same set line for line as the reader at b03beb45
+        # (lost 0, gained 0). A commit that adds a load to a tracked script moves it: diff the two readers' line
+        # lists by hand, then re-pin.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
-        case("Phase 6: over every tracked `.py` the reader's edges are the PINNED count — the rewrite lost none and "
-             "gained none — and `--closure` on the real declaration prints no `optional: ` line",
-             lambda: (sum(len(exec_edges(REPO, f)) for f in tracked_py),
-                      [ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
-                                        root=REPO)[1] if "optional: " in ln]),
-             (344, []))
+        live_set = lambda: sorted(f"{f} -> {e}" for f in tracked_py for e in exec_edges(REPO, f))  # noqa: E731
+        case("Phase 6: over every tracked `.py` the reader's edge SET is PINNED — the rewrite lost none and gained "
+             "none — and `--closure` on the real declaration prints no `optional: ` line",
+             lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
+                 live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
+                                                  root=REPO)[1] if "optional: " in ln],),
+             (344, "2cfb6a85d091b861", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

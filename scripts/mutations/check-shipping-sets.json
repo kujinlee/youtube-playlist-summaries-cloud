@@ -1214,8 +1214,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "                read = True\n                self._add(\"path\", self.forms(e, scope), argv)\n                break\n",
-        "                read = True\n                break\n"
+        "                self._add(\"path\", self.forms(e, scope), argv)\n                break\n",
+        "                break\n"
       ]
     ],
     "expect": "CB1: a sibling loaded by path is an executable edge — spec_from_file_location over with_name, a `/` chain, a root-relative literal, a module constant (read at module level and from inside a function), a wrapper called with a stem (once and twice removed, and in a loop), run_path, import_module, an interpreter argv — and never a literal nothing loads, the module-NAME argument, `-c`, or another command's argument"
@@ -1225,7 +1225,7 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "                    if e.value in (\"-c\", \"-m\"):\n                        read = True\n                        break\n",
+        "                    if e.value in (\"-c\", \"-m\"):     # `-c`: code this reader does not read (r1 XM1)\n                        break\n",
         ""
       ]
     ],
@@ -2044,5 +2044,104 @@
       ]
     ],
     "expect": "Phase 6: a load under an existence guard is a plain edge, and a GAP when the package omits it — the guard on its own path, CM1's guard on another path, Cm3's remove between test and load — and the word `optional` is printed by none"
+  },
+  {
+    "name": "redesign r1 XM1: a -c argv is counted as read again, so it is neither an edge nor listed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                    if e.value in (\"-c\", \"-m\"):     # `-c`",
+        "                    if e.value in (\"-c\", \"-m\"):\n                        self.answered.add(id(argv))\n                    if e.value in (\"-c\", \"-m\"):     # `-c`"
+      ]
+    ],
+    "expect": "Redesign r1 XM1: an interpreter argv with -c is UNRESOLVED, and with -m it is a module load — an edge to the sibling file, else UNRESOLVED (no file, dotted, nothing after it)"
+  },
+  {
+    "name": "redesign r1 XM1: `-m <name>` is not read as a module load",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                        self._add(\"module\", self.forms(argv.elts[at + 1], scope), argv)\n",
+        "                        pass\n"
+      ]
+    ],
+    "expect": "Redesign r1 XM1: an interpreter argv with -c is UNRESOLVED, and with -m it is a module load — an edge to the sibling file, else UNRESOLVED (no file, dotted, nothing after it)"
+  },
+  {
+    "name": "redesign r1 XM1: `_unread` records the outcome but lists no line",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        self.answered.add(id(where))\n        self.unresolved.add(f\"{self.rel}:{where.lineno}\")\n",
+        "        self.answered.add(id(where))\n"
+      ]
+    ],
+    "expect": "Redesign r1 XM1: an interpreter argv with -c is UNRESOLVED, and with -m it is a module load — an edge to the sibling file, else UNRESOLVED (no file, dotted, nothing after it)"
+  },
+  {
+    "name": "redesign r1 XM2: a call-form module load is never handed to the caller's outcome check",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                    self.module_loads[(line, s)] = stem     # r1 XM2: the caller checks file and directory\n",
+        ""
+      ]
+    ],
+    "expect": "Redesign r1 XM2: import_module / __import__ / -m of a sibling DIRECTORY, or of a module that is no file, is UNRESOLVED; of a sibling file it is the edge and is not listed"
+  },
+  {
+    "name": "redesign r1 XM2: a call-form module load of a sibling DIRECTORY is not listed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "(is_dir is not None and is_dir(stem)) or ",
+        ""
+      ]
+    ],
+    "expect": "Redesign r1 XM2: import_module / __import__ / -m of a sibling DIRECTORY, or of a module that is no file, is UNRESOLVED; of a sibling file it is the edge and is not listed"
+  },
+  {
+    "name": "redesign r1 XM2: a call-form module load of a name that is no file is not listed",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " or (is_file is not None and not is_file(stem + \".py\"))",
+        ""
+      ]
+    ],
+    "expect": "Redesign r1 XM2: import_module / __import__ / -m of a sibling DIRECTORY, or of a module that is no file, is UNRESOLVED; of a sibling file it is the edge and is not listed"
+  },
+  {
+    "name": "redesign r1 invariant: a recognised load that ended in nothing is not refused",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if self.recognised - self.answered:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "Redesign r1 invariant: a recognised loader call or interpreter argv whose clause records neither an edge nor `unresolved:` is CANNOT RUN, never a silent nothing"
+  },
+  {
+    "name": "redesign r1 Cm1: a default parameter is read at module scope again",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "                                site = (self.defined_in.get(fn) if bound",
+        "                                site = (None if bound"
+      ]
+    ],
+    "expect": "Redesign r1 Cm1: a default parameter is read in the scope that DEFINES the function (an enclosing function, a class body), never at module scope"
+  },
+  {
+    "name": "redesign r1 Cm1: a method's default skips its class body, as a free name in the method's body does",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            self.defined_in[child] = scope      # where",
+        "            self.defined_in[child] = self.parent[child]      # where"
+      ]
+    ],
+    "expect": "Redesign r1 Cm1: a default parameter is read in the scope that DEFINES the function (an enclosing function, a class body), never at module scope"
   }
 ]
