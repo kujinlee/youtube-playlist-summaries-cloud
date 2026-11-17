@@ -21005,3 +21005,22 @@ edge SET (344, digest `2cfb6a85d091b861`), not the count (Cm2). `--closure`: 0 g
 none dropped). `scripts/regen-pages.py`: the crash case again refuses a second `[FAIL]` line (Xm3/Cm3). Self-tests
 140/140 and 121/121; mutations 195 and 73, the 14 new or re-anchored entries all killed by their named case. CM2 and
 Cm4 (the exact-name censuses) are stated as bounds and split to backlog #671.
+
+## 2026-11-17
+There is now a scan that reads every part of the harness we mean to publish and lists what ties it to this
+repository. It looks for seven kinds of tie: words that only mean something here, commands that run files the
+package does not carry, tools with no built-in test or no usage text, bare names of checks, documents and harness
+tools, skills that need another skill, programs and settings a tool needs on the machine, and hooks that only run
+because this repository's settings file names them. The first report covers all 45 parts and lists 228 ties; 11
+parts have none. Nothing is published yet, and the list of harness tool names the scan uses is a first draft that
+the coordinator still has to replace.
+<!--tech-->
+Marketplace slice D (plan Tasks 8-12, branch `hse-d`). `scripts/check-publishability.py`: seven detectors over
+`docs/marketplace/components.json` and the per-package shipping sets, a finding with an id
+(`<component>:<detector>:<n>`) or a mention without one; a component that cannot be scanned is CANNOT RUN (rc 2),
+never clean. First report `docs/marketplace/scan-2026-11-17.json` (measured at `98a79ab2`): 45 scanned, 0 CANNOT
+RUN, 228 findings (detector 1: 4, 2: 130, 3: 1, 4: 37, 5: 4, 6: 40, 7: 12). CI runs the self-test and the scan.
+97 self-test cases; 145 mutations, all killed by the case each names (local run, this script only).
+`docs/marketplace/harness-tools.txt` is provisional (`COORDINATOR LIST PENDING`). Detector 7 recognises no
+declared registration, since the spec names no form of one: every hook registered in `.claude/settings.json` is a
+finding.
