@@ -1731,8 +1731,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "    return any(not re.search(NEGATES, para",
-    "    return any(not re.search(r\"(?!)\", para"
+    "NEGATES = r\"\\b(?:never|not|no)\\b|n't\\b\"",
+    "NEGATES = r\"(?!)\""
    ]
   ],
   "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
