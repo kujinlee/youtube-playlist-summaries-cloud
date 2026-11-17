@@ -2154,7 +2154,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ #627 review round 2 (Codex M2): 65 -> 72 — every WRITER refuses a destination outside the suite's temp dir:
     # the fetch target, the clone, a run's private dir, the tree lock, the serve copy, the shared check itself, and
     # Codex's own mutant (serve_copy_path answering an outside dir), killed by an identity case.
-    "scripts/regen-pages.py": 72,
+    # ⟳ hse slice C redesign r1 (Xm3/Cm3): 72 -> 73 — the crash guard printing a second, unattributable `[FAIL]` name.
+    "scripts/regen-pages.py": 73,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
@@ -2415,7 +2416,29 @@ EXPECTED_MUTATIONS = {
     # ⟳ PR #594 round 4 fold (Codex r4 #1): 67 + 3 = 70 — a private root that IS the repository, one that HOLDS it,
     # and the walk asking about the root it starts from. None retired; the three anchors on the walk's forbidden
     # check still bind (the line moved to the top of the loop, its text unchanged).
-    "scripts/mkt_stage.py": 70,
+    # 2026-11-16 slice C (plan Task 6): 70 + 25 = 95 — declare (installed tree only), spec_from_map, workflow_entry
+    # and the --declare CLI. None retired.
+    # ⟳ 2026-11-16 review r1 fold (XM7): 95 + 1 = 96 — a directory declare cannot list is CANNOT RUN (the walk's
+    # onerror). One anchor re-bound (declare's walk root); none retired.
+    "scripts/mkt_stage.py": 96,
+    # ⟳ 2026-11-16, marketplace-inventory plan Task 5: the component-map completeness check, pinned in the commit that
+    # creates it (58): the candidate derivation (git listing, each seed source, transitivity), the executable edges
+    # (each import form, each command word, the prefix strips, the tree bounds), every load_map rule, the exclusion
+    # cover (directory, glob, exact), the gap and `hidden:` lines, and the CLI's exits and the root it checks: 59.
+    # ⟳ 2026-11-16 plan Task 7 (the closure validator): 59 + 46 = 105 — each closure edge form (an import found in
+    # the tree or the repository, exec in Markdown and in non-comment shell, read lines, link targets, coordinates),
+    # the seeds, the gap and dangling lines, the declaration's arithmetic, materialize, and the --closure CLI's exits.
+    # The import parsing is ONE helper (`import_paths`) shared with Task 5's edges, mutated by Task 5's entries.
+    # ⟳ 2026-11-16 PR #598 CI (check-main-drivable D2): 105 + 1 = 106 — --closure reads the root main() is given.
+    # ⟳ 2026-11-16 review r1 fold: 106 + 53 = 159 — the Python load reader (path loaders, module loaders, interpreter
+    # argv, wrappers, name tables: CB1), interpreter options (XM2), a read instruction carried over lines (XM3), the
+    # map-rooted closure (roots from the component map, the declaration/map agreement in both directions: XM1, CM2),
+    # every CANNOT RUN input (channel, empty, non-object, unreadable, missing, unwalkable: XM4-XM7, CM1) and the
+    # optional edges. 12 anchors re-bound; none retired.
+    # ⟳ hse slice C redesign r1 fold: 186 + 9 = 195 — `-c` listed and `-m` read as a module load (XM1), `_unread`
+    # listing its line, the call-form module outcome check (record, directory, no file: XM2), the outcome invariant,
+    # and a default read in its def's own scope, a class body included (Cm1). 2 anchors re-bound; none retired.
+    "scripts/check-shipping-sets.py": 195,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.

@@ -413,11 +413,11 @@ of `ci.yml`, the velocity documents). Third-party vendored skills (the `mattpoco
 visible. Measured 2026-11-11: the set has grown since spec §3 (a `dashboard` skill and a `regen-pages.sh` hook
 exist; hooks are registered through `run-hook.sh`), which is why the map is derived and checked, not copied.
 
-- [ ] **Step 1: self-test cases**: `a candidate in no component and no exclusion is a gap`; `an exclusion without a
+- [x] **Step 1: self-test cases**: `a candidate in no component and no exclusion is a gap`; `an exclusion without a
   reason is refused`; `a component with no files is refused`; `a transitively invoked script is a candidate`
   (fixture: skill → `python3 scripts/a.py` → `import b`); `a hook reached through run-hook.sh is a candidate`;
   `the real repo map has zero gaps` (the identity case, run on the live tree).
-- [ ] **Step 2: red. Step 3: implement `candidates`, `map_gaps`. Step 4: write `components.json` by hand from the
+- [x] **Step 2: red. Step 3: implement `candidates`, `map_gaps`. Step 4: write `components.json` by hand from the
   candidates, assigning effort, role(s), phase and package per spec §3/§4 and D11; one package for phase 1
   (`comprehensibility`), one for recall (`recall`), one for the CI layer (`ci-layer`). Each package carries
   `"channel": "plugin"` or `"channel": "reusable-workflow"`; `ci-layer` is `reusable-workflow` (spec §2c, *Install
@@ -430,10 +430,10 @@ exist; hooks are registered through `run-hook.sh`), which is why the map is deri
   (`.claude/hooks/*` reached from no package entry point → `"governance: not part of any shipped package"`), and a
   new governance hook then matches it with no edit. A glob exclusion that swallows a file some package component
   invokes is refused (case: `a glob exclusion never hides a file a package invokes`).
-- [ ] **Step 5: green** `python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json` → `0 gaps`;
+- [x] **Step 5: green** `python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json` → `0 gaps`;
   record the component count per effort with the commit in the map's `measured_at` and in the commit message
   (this count replaces spec §3's lower bound of 24).
-- [ ] **Step 6: W1-W8, commit.**
+- [x] **Step 6: W1-W8, commit.**
 
 **FAILS IF:** any file a page skill invokes, transitively, is neither in a component nor in a written exclusion
 (the identity case on the live tree goes red).
@@ -462,7 +462,7 @@ reusable workflow would reference, listed from the map, with symlinks resolved a
 `installed_files`. Task 7's `--closure` skips it and says so (`ci-layer: SKIPPED — reusable-workflow channel, no
 installed tree`), never a silent pass. Task 17 reads its routes against this entry.
 
-- [ ] **Steps:** cases red → implement → stage and install the two plugin packages from `components.json` → write
+- [x] **Steps:** cases red → implement → stage and install the two plugin packages from `components.json` → write
   the JSON (plus the declared `ci-layer` entry) → green → WM pins → commit.
 
 **FAILS IF:** `shipping-sets.json` lists a file under a `plugin` package that is not in its installed tree;
@@ -498,7 +498,7 @@ that matters most. The rule, per reached path `p`:
 | a read edge inside the package's source tree | not in the installed tree | **gap**, exactly like an executable edge (⟳ r2 CLAUDE M5: the r1 row filed every Read edge as `external`, so dropping `explainer-delivery.md` stayed green) |
 | a READ of a project document (`docs/...`) | not in the installed tree | `external: p` — the stranger's own project file; handed to detector 4 (doc path), never a gap |
 
-- [ ] **Steps:** cases (`omitted dependency with a count written to match is refused` — spec §5's third file-set
+- [x] **Steps:** cases (`omitted dependency with a count written to match is refused` — spec §5's third file-set
   mutation; **`brief-compose.py dropped from the declaration with its count lowered → closure red`** (the edge is
   CWD-relative in `explainer-delivery.md`; the r0 rule kept this green); `a CWD-relative invocation of a member is
   a member plus a cwd-relative hand-off, not a gap` (adjacent negative); `a docs/ read is external, not a gap`; **`explainer-delivery.md dropped from the declaration with its count

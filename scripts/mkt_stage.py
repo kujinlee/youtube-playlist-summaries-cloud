@@ -2,9 +2,10 @@
 """Package declared files into a throwaway local marketplace, and install one of its plugins in a stranger's world
 (marketplace-inventory plan, Task 3; spec §6 and §7 item 0).
 
-    python3 scripts/mkt_stage.py --self-test  # 97 cases
+    python3 scripts/mkt_stage.py --self-test  # 119 cases
     python3 scripts/mkt_stage.py --out DIR --package NAME --version V [--skill PATH]... [--file PATH]...
                                  [--marketplace NAME]
+    python3 scripts/mkt_stage.py --declare docs/marketplace/components.json docs/marketplace/shipping-sets.json
 
 stage(packages, out) writes `<out>/.claude-plugin/marketplace.json` and, per PackageSpec, a plugin directory
 `<out>/<name>/` holding `.claude-plugin/plugin.json`, every declared skill directory at `skills/<its last name>`
@@ -17,6 +18,17 @@ inside a `mkt_isolate` world and returns the installed directory.
 Anything this cannot do is CANNOT RUN (rc 2): a declared path that is absent, absolute, outside the repository, a
 dangling or looping link, an empty package, two declarations landing on one path, a failed `claude` call, an
 installed directory that is not there after a zero exit.
+
+THE SHIPPING-SET DECLARATION (plan Task 6). `--declare MAP OUT` stages every `plugin` package of the component
+map (`spec_from_map`: a file below the skills home names its skill directory, a directory entry its tracked files),
+installs each in ONE fresh stranger world, and writes what `declare(installed, m, package)` reads from each INSTALLED
+tree: every installed file, and per component the installed files under its installed path, with a count. `declare`
+lists the installed directory and nothing else (no repository read, never the publishability scan's output: spec §7
+item 2); a link is recorded by its resolved path, and one that dangles, leaves the tree or names a directory is
+CANNOT RUN, as is a component with no installed file. A `reusable-workflow` package (ci-layer) is never installed:
+`workflow_entry` lists its files from the map, links resolved, with counts and no `installed_files` (spec §2c; C4
+argued). `measured_at` is the repository's HEAD. Bound: the map is read through check-shipping-sets.py's
+`load_map`, so a map it refuses is CANNOT RUN here.
 
 THE DECLARED COUNT EXCLUDES ONE LIVE CASE. `the written marketplace.json passes claude plugin validate` calls the
 real `claude`, in a world built by `mkt_isolate`. Where `claude` is absent (CI has none) it prints
@@ -66,6 +78,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import types
 import unicodedata
 from pathlib import Path
 
@@ -420,6 +433,182 @@ def install(world: World, mkt_root: Path, plugin: str, timeout: int = 120, run=r
     return installed
 
 
+# ---- the shipping-set declaration (marketplace-inventory plan, Task 6) ------------------------------------------
+# Where the declaration's ci-layer entry says it came from: a reusable workflow has no installed tree (spec §2c; C4
+# for it stays argued), so its files are listed from the map, never from an install.
+WORKFLOW_FROM = "components.json (no installed tree: spec §2c, C4 argued)"
+DECLARE_VERSION = "0.1.0"
+# The commands the declaring world is built with (the spike's three, docs/marketplace/spike-record.md).
+DECLARE_ALLOW = ("python3", "git", "claude")
+
+
+def _inside_path(path: str, top: Path) -> bool:
+    """`path` (already resolved) is `top` (resolved) or below it, by path components."""
+    top_s = os.path.realpath(top)
+    return path == top_s or path.startswith(top_s.rstrip(os.sep) + os.sep)
+
+
+def _installed_path(f: str) -> str:
+    """Where a component path lands under the plugin root: below the skills home at `skills/<rest>` (`stage` puts a
+    skill directory at skills/<its last name>), anything else at its repository path."""
+    home = SKILLS_HOME + "/"
+    return "skills/" + f[len(home):] if f.startswith(home) else f
+
+
+def _package(m, package: str) -> str:
+    if package not in m.packages:
+        raise CannotRun(f"package {package!r} is not in the map's packages ({', '.join(sorted(m.packages))})")
+    return m.packages[package].get("channel")
+
+
+def _carried(m, package: str) -> list[dict]:
+    """The components `package` carries: its own and every library `shared_with` it."""
+    return [c for c in m.components if c["package"] == package or package in c.get("shared_with", [])]
+
+
+def installed_files(installed: Path) -> dict[str, str]:
+    """{installed-relative path: installed-relative path it resolves to} for every file under `installed`, read by
+    listing `installed` and nothing else. A link is followed to its target, which must be a file inside the tree;
+    one that leaves it, or dangles, is CANNOT RUN (a declaration never names a file the install did not hold)."""
+    top = os.path.realpath(installed)
+    if not os.path.isdir(top):
+        raise CannotRun(f"{installed} is not a directory: nothing is installed there")
+    out: dict[str, str] = {}
+
+    def unlisted(e: OSError):
+        # os.walk skips a directory it cannot list unless told otherwise: the declaration would then be whole in
+        # form and missing everything under it (review r1 XM7).
+        raise CannotRun(f"cannot list {e.filename}: {e.strerror}")
+    for d, dirs, files in os.walk(top, onerror=unlisted):
+        for name in sorted(files) + sorted(x for x in dirs if os.path.islink(os.path.join(d, x))):
+            p = os.path.join(d, name)
+            rel = os.path.relpath(p, top).replace(os.sep, "/")
+            real = os.path.realpath(p)
+            if os.path.islink(p) and (not _inside_path(real, top) or not os.path.isfile(real)):
+                raise CannotRun(f"{rel} is a link to {os.readlink(p)}, which is not a file inside the installed "
+                                f"tree {installed}")
+            out[rel] = os.path.relpath(real, top).replace(os.sep, "/")
+    return out
+
+
+def declare(installed: Path, m, package: str) -> dict:
+    """The declaration of plugin `package` installed at `installed`: every file the install holds (links recorded by
+    their resolved path) and, per component it carries, the installed files under that component's installed path,
+    with a count. Walks `installed` only: never the repository, never the publishability scan's output (spec §7
+    item 2). A component with no installed file is CANNOT RUN, never an empty entry."""
+    channel = _package(m, package)
+    if channel != "plugin":
+        raise CannotRun(f"package {package!r} has channel {channel}: only a plugin package is installed and "
+                        f"declared from its installed tree")
+    files = installed_files(installed)
+    comps: dict[str, dict] = {}
+    for c in sorted(_carried(m, package), key=lambda c: c["id"]):
+        wanted = [_installed_path(f) for f in c["files"]]
+        got = {real for path, real in files.items()
+               if any(path.startswith(w) if w.endswith("/") else path == w for w in wanted)}
+        if not got:
+            raise CannotRun(f"component {c['id']!r}: none of {c['files']} is in the installed tree (looked for "
+                            f"{wanted})")
+        comps[c["id"]] = {"files": sorted(got), "expected_count": len(got)}
+    return {"channel": "plugin", "installed_files": sorted(set(files.values())), "components": comps}
+
+
+def _expand(c: dict, names: frozenset) -> list[str]:
+    """A component's files, a trailing-`/` entry expanded to the tracked files under it."""
+    out: set[str] = set()
+    for f in c["files"]:
+        out |= {n for n in names if n.startswith(f)} if f.endswith("/") else {f}
+    return sorted(out)
+
+
+def spec_from_map(m, package: str, version: str, repo: Path = REPO) -> PackageSpec:
+    """The PackageSpec that stages plugin `package` from the map: a file below the skills home names its skill
+    directory (`.agents/skills/<d>`, once), a directory entry its tracked files, any other file itself."""
+    names = _tracked(Path(repo).resolve())
+    skills: set[str] = set()
+    files: set[str] = set()
+    for c in _carried(m, package):
+        for f in _expand(c, names):
+            if f.startswith(SKILLS_HOME + "/"):
+                skills.add(f"{SKILLS_HOME}/{f[len(SKILLS_HOME) + 1:].split('/')[0]}")
+            else:
+                files.add(f)
+    return PackageSpec(package, version, sorted(skills), sorted(files))
+
+
+def workflow_entry(m, package: str, repo: Path = REPO) -> dict:
+    """The declaration of a reusable-workflow package: its components' files from the map (a directory expanded to
+    its tracked files, a link recorded by its resolved repository path), with counts, and NO installed_files —
+    nothing is installed (spec §2c)."""
+    channel = _package(m, package)
+    if channel != "reusable-workflow":
+        raise CannotRun(f"package {package!r} has channel {channel}: it is declared from its installed tree, not "
+                        f"from the map")
+    top = Path(repo).resolve()
+    names = _tracked(top)
+    comps = {}
+    for c in sorted(_carried(m, package), key=lambda c: c["id"]):
+        got = {os.path.relpath(os.path.realpath(top / f), top).replace(os.sep, "/") for f in _expand(c, names)}
+        comps[c["id"]] = {"files": sorted(got), "expected_count": len(got)}
+    return {"channel": "reusable-workflow", "declared_from": WORKFLOW_FROM, "components": comps}
+
+
+def _load_map(path: Path, repo: Path):
+    """The map, through check-shipping-sets.py's own `load_map` (one rule, one place). Its refusals are CANNOT RUN
+    here: a declaration is never derived from a map that breaks a rule."""
+    import importlib.util
+    name = "mkt_stage_check_shipping_sets"
+    mod = sys.modules.get(name)
+    if mod is None:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "check-shipping-sets.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod             # its dataclass resolves its module by name
+        spec.loader.exec_module(mod)
+    try:
+        return mod.load_map(path, repo)
+    except mod.CannotRun as e:
+        raise CannotRun(str(e)) from None
+    except mod.Refused as e:
+        raise CannotRun(f"the map is refused: {e}") from None
+
+
+def declare_all(map_path: Path, repo: Path = REPO, work: Path | None = None, which=shutil.which, run=run_isolated,
+                allow=DECLARE_ALLOW) -> dict:
+    """The whole declaration: each `plugin` package staged from the map, installed in ONE fresh stranger world and
+    declared from its installed tree; each `reusable-workflow` package declared from the map."""
+    m = _load_map(Path(map_path), repo)
+    if which("claude") is None:
+        raise CannotRun("claude missing: --declare installs each plugin package with it")
+    plugins = sorted(p for p, v in m.packages.items() if v.get("channel") == "plugin")
+    work = Path(tempfile.mkdtemp(prefix="mkt-declare-")) if work is None else Path(work)
+    mkt = stage([spec_from_map(m, p, DECLARE_VERSION, repo) for p in plugins], work / "mkt", repo=repo)
+    world = build_world(work / "world", list(allow))
+    out = {p: declare(install(world, mkt, p, run=run), m, p) for p in plugins}
+    out.update({p: workflow_entry(m, p, repo) for p, v in m.packages.items() if v.get("channel") != "plugin"})
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
+    if head.returncode != 0:
+        raise CannotRun(f"git cannot name HEAD in {repo}: {head.stderr.strip()}")
+    return {"measured_at": head.stdout.strip(), "packages": dict(sorted(out.items()))}
+
+
+DECLARE_USAGE = "usage: mkt_stage.py --declare MAP OUT_JSON"
+
+
+def declare_main(argv: list[str], repo: Path = REPO, **kw) -> int:
+    """`--declare MAP OUT_JSON`: write the declaration; CANNOT RUN (rc 2) writes nothing."""
+    if len(argv) != 2:
+        print(DECLARE_USAGE, file=sys.stderr)
+        return 2
+    try:
+        data = declare_all(Path(argv[0]), repo, **kw)
+    except CannotRun as e:
+        print(f"CANNOT RUN: {e}", file=sys.stderr)
+        return 2
+    _write_json(Path(argv[1]), data)
+    print(argv[1])
+    return 0
+
+
 USAGE = ("usage: mkt_stage.py --out DIR --package NAME --version V [--skill PATH]... [--file PATH]... "
          "[--marketplace NAME]\n       mkt_stage.py --self-test")
 
@@ -428,6 +617,8 @@ def main(argv=None, repo: Path = REPO) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv == ["--self-test"]:
         return _self_test()
+    if argv[:1] == ["--declare"]:
+        return declare_main(argv[1:], repo)
     ap = argparse.ArgumentParser(prog="mkt_stage.py", usage=USAGE)
     ap.add_argument("--out", required=True)
     ap.add_argument("--package", required=True)
@@ -1315,6 +1506,260 @@ def _self_test_body() -> int:
                 rc = e.code
         return (rc, err.getvalue().startswith("usage:"))
     case("CLI: a missing --out is a usage error (rc 2)", no_out, (2, True))
+
+    # --- Task 6: the shipping-set declaration, derived from the INSTALLED tree -----------------------------
+    def a_map(**over):
+        comps = [{"id": "brief", "package": "pkg", "roles": ["entry-point"], "files": [".agents/skills/brief/"]},
+                 {"id": "contract", "package": "pkg", "roles": ["data"],
+                  "files": [".agents/skills/shared/contract.md"]},
+                 {"id": "x", "package": "pkg", "roles": ["entry-point"], "files": ["scripts/x.py"]},
+                 {"id": "lib", "package": "pkg", "roles": ["library"], "files": ["scripts/lib/"],
+                  "shared_with": ["other"]},
+                 {"id": "wf", "package": "wf", "roles": ["entry-point"], "files": ["scripts/x.py"]}]
+        data = {"packages": {"pkg": {"channel": "plugin"}, "other": {"channel": "plugin"},
+                             "wf": {"channel": "reusable-workflow"}}, "components": comps}
+        data.update(over)
+        return types.SimpleNamespace(measured_at="m", exclusions=[], **data)
+
+    def installed_tree(extra=()):
+        """An installed plugin as `install` leaves it: skills at skills/<name>, files at their repo paths."""
+        top = tmp("mkt-installed-") / "pkg" / "0.1.0"
+        for rel in ("skills/brief/SKILL.md", "skills/brief/refs/deep.md", "skills/shared/contract.md",
+                    "scripts/x.py", "scripts/lib/y.py", ".claude-plugin/plugin.json", *extra):
+            put(top / rel, b"bytes\n")
+        return top
+
+    case("declare: each component's files are the installed files under its installed path (a skill at "
+         "skills/<name>), with a count; installed_files is the whole tree",
+         lambda: declare(installed_tree(extra=("scripts/x.py.orig",)), a_map(), "pkg"),
+         {"channel": "plugin",
+          "installed_files": [".claude-plugin/plugin.json", "scripts/lib/y.py", "scripts/x.py", "scripts/x.py.orig",
+                              "skills/brief/SKILL.md", "skills/brief/refs/deep.md", "skills/shared/contract.md"],
+          "components": {"brief": {"files": ["skills/brief/SKILL.md", "skills/brief/refs/deep.md"],
+                                   "expected_count": 2},
+                         "contract": {"files": ["skills/shared/contract.md"], "expected_count": 1},
+                         "lib": {"files": ["scripts/lib/y.py"], "expected_count": 1},
+                         "x": {"files": ["scripts/x.py"], "expected_count": 1}}})
+    case("declare: a library shared_with a package is declared under that package too, and nothing else is",
+         lambda: declare(installed_tree(), a_map(), "other")["components"],
+         {"lib": {"files": ["scripts/lib/y.py"], "expected_count": 1}})
+
+    def unlistable():
+        """Review r1 XM7 (the reviewer's input): skills/a/ holds a readable SKILL.md and hidden/secret.md, and
+        hidden/ cannot be listed. The control is the same tree with the directory readable."""
+        top = tmp("mkt-unlistable-") / "pkg" / "0.1.0"
+        for rel in ("skills/brief/SKILL.md", "skills/brief/hidden/secret.md", "scripts/x.py", "scripts/lib/y.py",
+                    "skills/shared/contract.md"):
+            put(top / rel, b"bytes\n")
+        if os.geteuid() == 0:
+            return "root lists every directory"
+        control = "skills/brief/hidden/secret.md" in declare(top, a_map(), "pkg")["installed_files"]
+        hidden = top / "skills/brief/hidden"
+        hidden.chmod(0)
+        try:
+            return control, raises(lambda: declare(top, a_map(), "pkg")).replace(str(top), "TOP")
+        finally:
+            hidden.chmod(0o755)
+    case("declare: a directory of the installed tree that cannot be listed is CANNOT RUN — never a declaration "
+         "silently missing what is under it (review r1 XM7; the control declares the hidden file)",
+         unlistable,
+         "root lists every directory" if os.geteuid() == 0 else
+         (True, "CANNOT RUN: cannot list TOP/skills/brief/hidden: Permission denied"))
+
+    def audited_declare():
+        """Every path declare OPENS or LISTS, against a control: the same hook does see a read outside."""
+        top = installed_tree()
+        (top / "skills/brief/link.md").symlink_to("../shared/contract.md")
+        outside = top.parent.parent / "outside.md"
+        outside.write_text("the author's\n")
+        seen: list[str] = []
+        recording = [False]
+
+        def hook(event, args):
+            if recording[0] and event in ("open", "os.listdir", "os.scandir") and args and \
+                    isinstance(args[0], (str, bytes, os.PathLike)):
+                seen.append(os.path.realpath(os.fsdecode(args[0])))
+        sys.addaudithook(hook)
+        recording[0] = True
+        try:
+            declare(top, a_map(), "pkg")
+            during = [p for p in seen if not _inside_path(p, top)]
+            del seen[:]
+            outside.read_text()                             # the control: a read outside IS recorded
+            control = [p for p in seen if not _inside_path(p, top)]
+        finally:
+            recording[0] = False
+        return (during, control == [os.path.realpath(outside)])
+    case("declare reads no file outside the installed dir (an audit hook over open/listdir/scandir; the control "
+         "read outside is recorded)", audited_declare, ([], True))
+
+    def linked():
+        top = installed_tree()
+        (top / "skills/brief/link.md").symlink_to("../../scripts/x.py")
+        d = declare(top, a_map(), "pkg")
+        return (d["components"]["brief"], "skills/brief/link.md" in d["installed_files"])
+    case("a symlink in the installed tree is recorded by its resolved path",
+         linked, ({"files": ["scripts/x.py", "skills/brief/SKILL.md", "skills/brief/refs/deep.md"],
+                   "expected_count": 3}, False))
+
+    def leaving():
+        top = installed_tree()
+        (top.parent / "elsewhere.py").write_text("x\n")
+        (top / "scripts/out.py").symlink_to("../../elsewhere.py")
+        return raises(lambda: declare(top, a_map(), "pkg"))
+    case("a link leaving the installed tree is CANNOT RUN",
+         lambda: leaving().startswith("CANNOT RUN: scripts/out.py is a link to "), True)
+
+    def sibling():
+        top = installed_tree()
+        put(top.parent / (top.name + "-other") / "x.py", b"x\n")
+        (top / "scripts/out.py").symlink_to(f"../../{top.name}-other/x.py")
+        return raises(lambda: declare(top, a_map(), "pkg"))
+    case("a link into a sibling whose name extends the installed dir's is outside it (CANNOT RUN)",
+         lambda: sibling().startswith("CANNOT RUN: scripts/out.py is a link to "), True)
+
+    def dir_link():
+        top = installed_tree()
+        (top / "scripts/libs").symlink_to("lib")
+        return raises(lambda: declare(top, a_map(), "pkg"))
+    case("a link to a directory in the installed tree is CANNOT RUN (a declaration names files)",
+         lambda: dir_link().startswith("CANNOT RUN: scripts/libs is a link to lib, which is not a file inside "
+                                       "the installed tree "), True)
+
+    def dangling():
+        top = installed_tree()
+        (top / "scripts/gone.py").symlink_to("nowhere.py")
+        return raises(lambda: declare(top, a_map(), "pkg"))
+    case("a dangling link in the installed tree is CANNOT RUN",
+         lambda: dangling().startswith("CANNOT RUN: scripts/gone.py is a link to "), True)
+
+    def omitted():
+        top = installed_tree()
+        (top / "scripts/x.py").unlink()
+        return raises(lambda: declare(top, a_map(), "pkg"))
+    case("a component with no file in the installed tree is CANNOT RUN, never an empty entry",
+         omitted, "CANNOT RUN: component 'x': none of ['scripts/x.py'] is in the installed tree "
+                  "(looked for ['scripts/x.py'])")
+    case("a reusable-workflow package is never declared from an install (CANNOT RUN)",
+         lambda: raises(lambda: declare(installed_tree(), a_map(), "wf")),
+         "CANNOT RUN: package 'wf' has channel reusable-workflow: only a plugin package is installed and declared "
+         "from its installed tree")
+    case("a package the map does not name is CANNOT RUN",
+         lambda: raises(lambda: declare(installed_tree(), a_map(packages={"zz": {"channel": "plugin"}}), "nope")),
+         "CANNOT RUN: package 'nope' is not in the map's packages (zz)")
+
+    def specced():
+        r = repo()
+        s = spec_from_map(a_map(), "pkg", "0.1.0", r)
+        return (s.name, s.version, s.skills, s.files)
+    case("spec_from_map: a file under the skills home names its skill directory, once; a directory entry expands "
+         "to its tracked files; a file is itself",
+         specced, ("pkg", "0.1.0", [".agents/skills/brief", ".agents/skills/shared"],
+                   ["scripts/lib/y.py", "scripts/x.py"]))
+    case("spec_from_map: a shared_with library is carried by the package it is shared with",
+         lambda: (lambda sp: (sp.version, sp.skills, sp.files))(
+             spec_from_map(a_map(components=a_map().components[3:4]), "other", "2.0.0", repo())),
+         ("2.0.0", [], ["scripts/lib/y.py"]))
+
+    def ci_entry():
+        r = repo()
+        (r / "scripts/lib/z.py").symlink_to("../x.py")
+        git(r, "add", "-A")
+        return workflow_entry(a_map(), "wf", r)
+    case("workflow_entry: a reusable-workflow package is declared from the map (links resolved, counts), with "
+         "no installed_files",
+         ci_entry, {"channel": "reusable-workflow",
+                    "declared_from": "components.json (no installed tree: spec §2c, C4 argued)",
+                    "components": {"wf": {"files": ["scripts/x.py"], "expected_count": 1}}})
+
+    def ci_link():
+        r = repo()
+        m = a_map()
+        m.components[4]["files"] = ["scripts/lib/"]
+        (r / "scripts/lib/z.py").symlink_to("../x.py")
+        git(r, "add", "-A")
+        return workflow_entry(m, "wf", r)["components"]["wf"]
+    case("workflow_entry: a tracked link is recorded by its resolved path",
+         ci_link, {"files": ["scripts/lib/y.py", "scripts/x.py"], "expected_count": 2})
+    case("workflow_entry: a plugin package is refused (it is declared from its install)",
+         lambda: raises(lambda: workflow_entry(a_map(), "pkg", repo())),
+         "CANNOT RUN: package 'pkg' has channel plugin: it is declared from its installed tree, not from the map")
+
+    def declare_cli(*args, r=None, **kw):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = declare_main(list(args), repo=repo() if r is None else r, **kw)
+        return rc, out.getvalue(), err.getvalue()
+
+    def map_file(r, comps, packages=None):
+        mp = tmp() / "map.json"
+        full = [{"roles": ["entry-point"], "effort": 1, "phase": "1", **c} for c in comps]
+        mp.write_text(json.dumps({"packages": packages or {"pkg": {"channel": "plugin"}}, "components": full}))
+        return mp
+
+    def stand_in(calls):
+        """A stand-in for run_isolated: `marketplace add` notes the marketplace, `install` copies the staged plugin
+        to where `install` reads it."""
+        state = {}
+
+        def run(world, argv, cwd, timeout):
+            calls.append(argv[2])
+            if argv[2] == "marketplace":
+                state["mkt"] = Path(argv[4])
+            else:
+                plugin, mkt = argv[3].split("@")
+                shutil.copytree(state["mkt"] / plugin,
+                                world.home / ".claude/plugins/cache" / mkt / plugin / DECLARE_VERSION)
+            return types.SimpleNamespace(rc=0, stdout="", stderr="")
+        return run
+
+    def declared_offline():
+        r = repo()
+        git(r, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "fixture")
+        mp = map_file(r, [{"id": "brief", "package": "pkg", "files": [".agents/skills/brief/"]},
+                          {"id": "x", "package": "pkg", "files": ["scripts/x.py"]},
+                          {"id": "y", "package": "wf", "files": ["scripts/lib/y.py"]}],
+                      {"pkg": {"channel": "plugin"}, "wf": {"channel": "reusable-workflow"}})
+        out, calls = tmp() / "decl.json", []
+        # `which` is a stand-in too: the install is, so the case must not depend on a real `claude` (CI has none —
+        # PR #598, mutation shard 35's control was 117/118 there)
+        rc, o, e = declare_cli(str(mp), str(out), r=r, run=stand_in(calls), allow=["python3"],
+                               which=lambda name: f"/stand-in/{name}")
+        d = json.loads(out.read_text())
+        head = git(r, "rev-parse", "--short", "HEAD").decode().strip()
+        return (rc, o == f"{out}\n", e, d["measured_at"] == head, calls, sorted(d["packages"]),
+                d["packages"]["pkg"]["components"]["brief"]["expected_count"], d["packages"]["wf"]["components"])
+    case("CLI: --declare stages and installs each plugin package once, declares it from the install, adds the "
+         "reusable-workflow entry from the map, and stamps HEAD (a stand-in install)",
+         declared_offline, (0, True, "", True, ["marketplace", "install"], ["pkg", "wf"], 2,
+                            {"y": {"files": ["scripts/lib/y.py"], "expected_count": 1}}))
+    case("CLI: --declare with a map that breaks a rule is CANNOT RUN (rc 2), never a declaration",
+         lambda: (lambda r: declare_cli(str(map_file(r, [{"id": "x", "package": "nope", "files": ["scripts/x.py"]}])),
+                                        str(tmp() / "out.json"), r=r))(repo()),
+         (2, "", "CANNOT RUN: the map is refused: component 'x': package 'nope' is not a key in packages\n"))
+    def declare_usage():
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            try:  # unrouted, argparse exits on `--declare`: a red VALUE, never an aborted suite
+                rc = main(["--declare"], repo=repo())
+            except SystemExit as e:
+                rc = ("argparse exited", e.code)
+            rc3 = declare_main(["m.json", "o.json", "extra"], repo=tmp())
+        return (rc, rc3, err.getvalue())
+    case("CLI: --declare with no map or out path is a usage error (rc 2), routed by main",
+         declare_usage, (2, 2, (DECLARE_USAGE + "\n") * 2))
+    case("CLI: --declare with an unreadable map is CANNOT RUN (rc 2)",
+         lambda: (lambda t: (t[0], t[2].startswith("CANNOT RUN: cannot read the map")))(
+             declare_cli(str(tmp() / "no-map.json"), str(tmp() / "out.json"))), (2, True))
+
+    def no_claude():
+        r = repo()
+        out, calls = tmp() / "out.json", []
+        rc, _, e = declare_cli(str(map_file(r, [{"id": "x", "package": "pkg", "files": ["scripts/x.py"]}])), str(out),
+                               r=r, which=lambda name: None, run=stand_in(calls), allow=["python3"])
+        return (rc, e, out.exists(), calls)
+    case("CLI: --declare without `claude` on PATH is CANNOT RUN, installs nothing and writes nothing",
+         no_claude, (2, "CANNOT RUN: claude missing: --declare installs each plugin package with it\n", False, []))
 
     # --- the live case: tallied apart, so the declared count is the same with and without `claude` ------
     LIVE = "the written marketplace.json passes claude plugin validate"

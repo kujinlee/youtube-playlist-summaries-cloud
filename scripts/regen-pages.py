@@ -865,39 +865,38 @@ def _self_test_cases() -> int:
     table = {"dashboard": "gen-dashboard.py", "goal-tree": "goal-tree.py", "goals": "gen-goals-page.py"}
     _SHA = "ab" * 20
 
-    # ⭐ CRASH_CASE, read the way the HARNESS reads it: through check-plan-code's own `parse_fail_names`, the
-    # consumer half of the `[FAIL] <case>` contract — never a second copy of it here.
-    _cpc_path = SCRIPTS / "check-plan-code.py"
-    if _cpc_path.is_file():
-        _cpc_spec = importlib.util.spec_from_file_location("_check_plan_code_for_regen", _cpc_path)
-        _cpc = importlib.util.module_from_spec(_cpc_spec)
-        sys.modules[_cpc_spec.name] = _cpc            # its dataclasses resolve their module through sys.modules
-        _cpc_spec.loader.exec_module(_cpc)
-        _mark = len(_LAST_CASE)
+    # ⭐ CRASH_CASE, pinned on the PRODUCER side of the `[FAIL] <case>` contract (Phase 6, hse slice C): the guard's
+    # first line is exactly `  [FAIL] <CRASH_CASE>`, and CRASH_CASE holds no `": got "` — the one token the
+    # consumer (check-plan-code's `parse_fail_names`) truncates a name at. ⚠ This suite no longer LOADS that
+    # consumer: a shipped file that loads a file its package omits is a gap, and no load is optional. What still
+    # runs the real consumer over this line is the mutation sweep, on every entry that names CRASH_CASE.
+    _mark = len(_LAST_CASE)
 
-        def _raises(exc):
-            def body():
-                _LAST_CASE.append("the case before the crash")
-                raise exc
-            buf = io.StringIO()
-            try:                                      # an escape through the guard is THIS case's red, by name
-                with contextlib.redirect_stdout(buf):
-                    rc = _crash_guarded(body)
-            except BaseException as escaped:           # noqa: BLE001 — the guard's own leak is what is measured
-                rc = f"ESCAPED the guard: {type(escaped).__name__}"
-            del _LAST_CASE[_mark:]
-            out = buf.getvalue()
-            return rc, _cpc.parse_fail_names(out), "after case: the case before the crash" in out
+    def _raises(exc):
+        def body():
+            _LAST_CASE.append("the case before the crash")
+            raise exc
+        buf = io.StringIO()
+        try:                                          # an escape through the guard is THIS case's red, by name
+            with contextlib.redirect_stdout(buf):
+                rc = _crash_guarded(body)
+        except BaseException as escaped:               # noqa: BLE001 — the guard's own leak is what is measured
+            rc = f"ESCAPED the guard: {type(escaped).__name__}"
+        del _LAST_CASE[_mark:]
+        out = buf.getvalue()
+        lines = out.split("\n")
+        # Every `[FAIL] ` line, whole (redesign r1 Xm3/Cm3): exactly one, so a second, unattributable name is red.
+        fails = [ln.lstrip() for ln in lines if ln.lstrip().startswith("[FAIL] ")]
+        return rc, lines[0], fails, "    after case: the case before the crash" in lines
 
-        _ok_buf = io.StringIO()
-        with contextlib.redirect_stdout(_ok_buf):
-            _ok_rc = _crash_guarded(lambda: 0)
-        case("⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body is a `[FAIL]` of "
-             "CRASH_CASE that the harness's parse_fail_names reads, naming the last case; a clean body is untouched",
-             [_raises(RuntimeError("boom")), _raises(SystemExit(3)), (_ok_rc, _ok_buf.getvalue())],
-             [(1, [CRASH_CASE], True), (1, [CRASH_CASE], True), (0, "")])
-    else:
-        print("  NOT RUN (no scripts/check-plan-code.py in this tree): the crash-guard case")
+    _ok_buf = io.StringIO()
+    with contextlib.redirect_stdout(_ok_buf):
+        _ok_rc = _crash_guarded(lambda: 0)
+    case("⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body prints "
+         "`  [FAIL] <CRASH_CASE>` as its FIRST line and its ONLY `[FAIL]` line, then the last case; CRASH_CASE holds "
+         "no `: got` separator; a clean body is untouched",
+         [_raises(RuntimeError("boom")), _raises(SystemExit(3)), (_ok_rc, _ok_buf.getvalue()), ": got " in CRASH_CASE],
+         [(1, "  [FAIL] " + CRASH_CASE, ["[FAIL] " + CRASH_CASE], True)] * 2 + [(0, ""), False])
 
     def bash(cmd):
         return {"tool_input": {"command": cmd}}

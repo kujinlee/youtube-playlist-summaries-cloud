@@ -20950,3 +20950,58 @@ payload's `background_tasks` with a live status; (c) a started CI check on an op
 closed); a checker crash → allow. The Phase 6 review (`docs/reviews/architecture-review-2026-11-16-idle-stop-guard.md`)
 removed two earlier exceptions and the transcript reader, so every allow reads state the stopping session did not
 write. Self-test 61/61, 61 mutations, 0 survivors after the r4 fold. Filed, not fixed: backlog #665 to #667.
+
+## 2026-11-16
+The marketplace packages now have a written list of exactly which files each one ships, and a check runs on
+every change. It rebuilds each package from that list and follows every file the package's own instructions run or
+tell the reader to open. If anything it reaches is missing from the list, the check fails and names the file. The
+first review showed that the check could not see files that shipped scripts load by path, so six page generators
+would have failed for a stranger; the check now sees that kind of load, ten such files are on the list, and it
+reports nothing missing. It cannot see every way one file can reach another, and the script says which it cannot. After
+three review rounds kept finding loads the check missed, the reading rule was turned around: anything that could be a
+load and that the check cannot follow to a file is now listed by name instead of being passed over, and a file is no
+longer allowed to be left out because the code tests for it first. Nothing has been
+published; publishing is still the owner's decision, at the plan's final step.
+<!--tech-->
+Marketplace plan Tasks 5-7 (slice C, branch `hse-c`, to land as `harness-ships-elsewhere`). Task 5:
+`docs/marketplace/components.json` + `check-shipping-sets.py --map` (0 gaps). Task 6: `mkt_stage.py --declare` derives
+`docs/marketplace/shipping-sets.json` from a real `claude` install of each plugin package (119/119 cases, 96 mutations).
+Task 7: `check-shipping-sets.py --closure docs/marketplace/shipping-sets.json` materialises each declared tree, walks
+imports, sibling files loaded by path (`spec_from_file_location`, `runpy`, an interpreter's argv), `python3`/`bash`/
+`source` invocations with their options (shell comment lines skipped) and follow/read lines, and prints each gap
+(`gap:` / `gap: dangling:`); cwd-relative hand-offs and `docs/` reads are counted, not followed. Review round 1 fold
+(PR #598): the closure's roots and file lists come from the component map, so a declaration that disagrees with the
+map in either direction is red, and that agreement runs in CI without `claude`; an unreadable, empty, mis-channelled
+or unwalkable input is CANNOT RUN (rc 2). Review round 2 fold: the map's `optional_edges` waiver is retired (a map
+that has it is refused); a load is optional only when the file's own `if P.is_file()` / `os.path.exists(P)` guards
+the same path (`regen-pages.py` → `check-plan-code.py`), read from the AST. Loader arguments are read by keyword too,
+any malformed declaration element is CANNOT RUN, and every channel's counts are checked. A load whose path the reader
+cannot read is listed as `unresolved:` (28 on the real declaration), never dropped. The forms the reader does not see
+(computed paths, `python3 -m`, shell strings inside Python, other interpreters, YAML) are listed in the script's
+docstring. Phase 6 fold (`docs/reviews/coordinator/architecture-review-2026-11-17-hse-slice-c.md`): the optional-load
+proof (`_tested`, `_guarded`, the `optional: ` note) is deleted, so a load under an existence guard is a plain edge,
+and the reader fails closed by census: every name binder it does not read, every loader, interpreter or shell
+mention that is not a read call or argv head, every wrapper no call binds, and every read path with no file in the
+tree is an `unresolved:` line (65 on the real declaration: comprehensibility 39, recall 26; 0 gaps). `regen-pages.py`'s
+crash-guard case pins the `[FAIL]` line it prints and no longer loads `check-plan-code.py`. Edges over the 115
+tracked `.py` files are unchanged (344, pinned by a case). 134/134 cases, 186 mutations; a CI step runs it, since
+it needs no `claude`.
+
+## 2026-11-17
+The check that lists what each marketplace package must ship now says so whenever a shipped script runs code it
+cannot follow, instead of saying nothing. The reviews of the redesign found three ways a script could run another
+file with no warning: a command that passes the code to run on its own line, a module started by name, and a
+folder of code loaded by name. Each of these is now listed for a person to look at. The pinned check over the whole
+repository now compares the exact list of links between files, not only how many there are. A test of the page
+rebuilder that had become weaker is strict again. Some ways of running code are still not seen, and the script
+lists them; they are filed as backlog #671.
+<!--tech-->
+Slice C redesign, review round 1 fold (PR #598, branch `hse-c`; `docs/reviews/coordinator/hse-slice-c-redesign-r1-coordinator.md`).
+`scripts/check-shipping-sets.py`: `-c` in an interpreter argv is `unresolved:`; `-m <name>` is a module load (XM1/CM1);
+a call-form module load (`import_module`, `__import__`, `-m`) of a sibling directory or of a name that is no file is
+`unresolved:` (XM2/CM3); a default parameter is read in the scope of its `def`, a class body included (Cm1); an
+outcome invariant makes `paths()` CANNOT RUN on a recognised load that recorded nothing; the live-tree case pins the
+edge SET (344, digest `2cfb6a85d091b861`), not the count (Cm2). `--closure`: 0 gaps, 89 `unresolved:` (65 before,
+none dropped). `scripts/regen-pages.py`: the crash case again refuses a second `[FAIL]` line (Xm3/Cm3). Self-tests
+140/140 and 121/121; mutations 195 and 73, the 14 new or re-anchored entries all killed by their named case. CM2 and
+Cm4 (the exact-name censuses) are stated as bounds and split to backlog #671.

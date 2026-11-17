@@ -344,9 +344,31 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
                        "run_isolated.cwd", "run_isolated.timeout", "run_isolated.world"),
     # marketplace-inventory plan Task 3 (2026-11-15): the staging tool, pinned in the commit that creates it. DERIVED
     # by running `analyse()` on the delivered source: 13 keys, every one varied by a case (none exempt).
-    "mkt_stage.py": ("install.mkt_root", "install.plugin", "install.run", "install.timeout", "install.world",
-                     "main.argv", "plan.repo", "plan.spec", "read_marketplace.mkt_root", "stage.marketplace",
-                     "stage.out", "stage.packages", "stage.repo"),
+    # ⟳ 2026-11-16 slice C (plan Task 6: declare, spec_from_map, workflow_entry, --declare): re-DERIVED by
+    # `analyse()`, 13 + 14 = 27 (main.repo is examined now that two cases pass it).
+    "mkt_stage.py": ("declare.installed", "declare.m", "declare.package", "declare_main.argv", "declare_main.kw",
+                     "declare_main.repo", "install.mkt_root", "install.plugin", "install.run", "install.timeout",
+                     "install.world", "main.argv", "main.repo", "plan.repo", "plan.spec", "read_marketplace.mkt_root",
+                     "spec_from_map.m", "spec_from_map.package", "spec_from_map.repo", "spec_from_map.version",
+                     "stage.marketplace", "stage.out", "stage.packages", "stage.repo", "workflow_entry.m",
+                     "workflow_entry.package", "workflow_entry.repo"),
+    # marketplace-inventory plan Task 5 (2026-11-16): the component-map completeness check, pinned in the commit that
+    # creates it. DERIVED by running `analyse()` on the delivered source: 14 keys, every one varied by a case.
+    # ⟳ 2026-11-16 plan Task 7 (the closure validator): re-DERIVED by `analyse()`, 14 + 11 = 25.
+    # ⟳ 2026-11-16 review r1 fold (optional edges; the two path mappings called directly): re-DERIVED, 25 + 3 = 28.
+    # ⟳ 2026-11-16 review r2 fold (the map's optional_edges retired, so `closure.optional` is gone; `python_loads`
+    # returns the unresolved loads and is called directly): re-DERIVED, 28 - 1 + 2 = 29.
+    # ⟳ 2026-11-17 Phase 6 fold (the reader fails closed; `python_loads` is handed the tree it reads as `is_file` /
+    # `is_dir`, each varied by a case): 29 + 2 = 31.
+    "check-shipping-sets.py": ("candidates.root", "check_declaration.decl", "check_declaration.name",
+                               "closure.installed", "closure.repo", "closure_gaps.decl",
+                               "closure_gaps.reached", "closure_gaps.repo", "exec_edges.rel", "exec_edges.root",
+                               "installed_path.src", "load_map.path", "load_map.root",
+                               "main.argv", "main.root", "map_gaps.cands", "map_gaps.m", "map_gaps.root",
+                               "materialize.decl", "materialize.name", "materialize.out", "materialize.repo",
+                               "python_loads.is_dir", "python_loads.is_file",
+                               "python_loads.rel", "python_loads.text", "reach.root", "reach.seeds", "registered_hooks.root", "source_path.rel",
+                               "tracked.root"),
     # backlog #586 slice 2 (2026-11-12): the strace-log path resolver, pinned in the commit that creates it. DERIVED by
     # running `analyse()` on the delivered source: 9 keys, every one varied by a case (none exempt).
     # ⟳ 2026-11-12 slice 3 (the default-deny classifier and record assembly): re-DERIVED by `analyse()`, 9 + 11 = 20.

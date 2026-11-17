@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/hse-slice-c-r1-claude.md": "100644 d095c4e402d810122ce61e3c4a8b8e293e9128cf",
+    "docs/reviews/codex/hse-slice-c-r1-codex.md": "100644 217209b50fbe116ea37add8662242155c71ea6d5",
+    "docs/reviews/verdicts/hse-slice-c-r1-codex.verdict.json": "100644 edd6629d6dd8819770ea354c7b5a8980024cdfed"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "eb52ecdd5c5d9205f65b3624e0b75831eb251027",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 6309 chars, names eb52ecdd5c5d",
+  "refused": false,
+  "review": "hse-slice-c-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/hse-c",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
