@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 58 cases
+    python3 scripts/check-publishability.py --self-test  # 76 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -36,6 +36,13 @@ finding also holds its `target`.
 
 DETECTOR 3, self-test and user documentation (`_self_test_and_docs`): `no-self-test` and `no-user-doc`, asked of
 the Python of an entry point or a library; a library owes no usage block.
+
+DETECTOR 4, bare names (`_bare_names`): `guard-name` (a `check-*` name whose script exists), `doc-path` (a path under `docs/` the package does not ship) and `tool-name` (a camel-case word on the
+hand-written, dated list `docs/marketplace/harness-tools.txt`; a list with no date or version is CANNOT RUN).
+A match is a finding or a mention by the same judgement as detector 1, and holds its name as `term`.
+
+DETECTOR 5, prose skill dependencies (`_skill_requirements`): `requires-skill`, an instruction in Markdown to
+load or use a skill the package does not ship.
 """
 from __future__ import annotations
 
@@ -54,6 +61,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 MAP = "docs/marketplace/components.json"
 SETS = "docs/marketplace/shipping-sets.json"
+TOOLS = "docs/marketplace/harness-tools.txt"
 SCANNED = "scanned"
 CANNOT_RUN = "CANNOT RUN"
 
@@ -226,11 +234,22 @@ def _python_use(node: ast.Constant, parent: dict) -> str | None:
     return None
 
 
+@functools.lru_cache(maxsize=None)
+def _judged_nodes(file: Path) -> dict:
+    """line -> the imports and string literals that span it, in `ast.walk` order: what `_python_kind` judges,
+    indexed once per file instead of walked once per match."""
+    by_line = {}
+    for node in ast.walk(_parsed(file)[0]):
+        if isinstance(node, (ast.Import, ast.ImportFrom)) or (isinstance(node, ast.Constant)
+                                                              and isinstance(node.value, str)):
+            for n in range(node.lineno, node.end_lineno + 1):
+                by_line.setdefault(n, []).append(node)
+    return by_line
+
+
 def _python_kind(file: Path, line: int, hit) -> str | None:
-    tree, parent = _parsed(file)
-    for node in ast.walk(tree):
-        if not getattr(node, "lineno", line + 1) <= line <= getattr(node, "end_lineno", line - 1):
-            continue
+    parent = _parsed(file)[1]
+    for node in _judged_nodes(file).get(line, ()):
         if isinstance(node, ast.Import) and any(hit(a.name) for a in node.names):
             return "import"
         if isinstance(node, ast.ImportFrom) and hit(node.module or ""):
@@ -397,6 +416,84 @@ def _self_test_and_docs(files: list, base: Path, roles) -> list:
     return out
 
 
+def harness_tools(root: Path = REPO) -> frozenset:
+    """The harness tool names detector 4 reports: the hand-written list at `TOOLS`, one name per line under `#`
+    header lines. A list with no date or no `claude --version` header is of unknown age and is CANNOT RUN, and
+    so is one that cannot be read or names no tool: an empty list would report no tool name anywhere, which
+    reads as clean."""
+    try:
+        lines = (Path(root) / TOOLS).read_text().splitlines()
+    except (OSError, UnicodeDecodeError) as e:
+        raise CannotRun(f"{TOOLS} cannot be read: {e}") from e
+    head = [ln for ln in lines if ln.startswith("#")]
+    if not (any(re.match(r"#\s*date:\s*\d{4}-\d{2}-\d{2}\b", ln) for ln in head)
+            and any(re.match(r"#\s*claude --version:\s*\d+\.\d+", ln) for ln in head)):
+        raise CannotRun(f"{TOOLS} has no date or no `claude --version` header: a tool list of unknown age is "
+                        f"not read")
+    names = frozenset(ln.strip() for ln in lines if ln.strip() and not ln.startswith("#"))
+    if not names:
+        raise CannotRun(f"{TOOLS} names no tool")
+    return names
+
+
+GUARD_RE = re.compile(r"(?<![\w/.-])check-[a-z0-9]+(?:-[a-z0-9]+)*(?![\w-])")     # bare: no directory before it
+DOC_RE = re.compile(r"(?<![\w/.-])docs/[\w./-]*[\w/]")
+CAMEL_RE = re.compile(r"(?<![\w.-])[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+(?![\w-])")
+
+
+def _bare_names(files: list, base: Path, shipped: set, tools: frozenset) -> tuple[list, list]:
+    """Detector 4 over `files`: `(findings without ids, mentions)`, one per (file, line, name); `term` is the name.
+
+    `guard-name`: a bare `check-*` name whose `scripts/<name>.py` exists, shipped by the package or not (a
+    name with no such file is not a guard). `doc-path`: a path under `docs/` that the package does not ship,
+    neither as that file nor as a file beneath that directory; it need not exist. `tool-name`: a camel-case word
+    on the hand-written tool list. Which list a match lands in is `_kind`'s judgement, as for detector 1."""
+    guards = {g.stem for g in (base / "scripts").glob("check-*.py")}
+    held = lambda path: path in shipped or any(f.startswith(path.rstrip("/") + "/") for f in shipped)  # noqa: E731
+    findings, mentions = [], []
+    for f in files:
+        rel = f.relative_to(base).as_posix()
+        for n, text in enumerate(_lines(f), 1):
+            seen = {("guard-name", m.group(0)) for m in GUARD_RE.finditer(text) if m.group(0) in guards}
+            seen |= {("doc-path", m.group(0)) for m in DOC_RE.finditer(text) if not held(m.group(0))}
+            seen |= {("tool-name", m.group(0)) for m in CAMEL_RE.finditer(text) if m.group(0) in tools}
+            for kind, name in sorted(seen):
+                row = {"detector": 4, "file": rel, "line": n, "text": text.strip(), "kind": kind, "term": name}
+                (findings if _kind(f, n, name) else mentions).append(row)
+    return findings, mentions
+
+
+SKILL_NAME = r"([a-z][a-z0-9]*(?:[-:][a-z0-9]+)*)"
+# The sentence shapes that make one skill require another. NAMED and REQUIRED accept a plain word only when it is
+# written as a name (a code span, or a `-`/`:` inside it): `use the same skill` names no skill. PROVENANCE is the
+# shape explain-findings uses ("Visual craft comes from `artifact-design`").
+NAMED = re.compile(r"\b(?:load|use|invoke)\s+(?:the\s+)?(`?)/?" + SKILL_NAME + r"`?\s+skill\b", re.I)
+REQUIRED = re.compile(REQUIRES + r"(`?)/?" + SKILL_NAME + r"`?\s+skill\b", re.I)
+SLASHED = re.compile(r"\buse\s+()`?/" + SKILL_NAME + r"`?(?![\w/.])", re.I)
+PROVENANCE = re.compile(r"\bcomes\s+from\s+(`)" + SKILL_NAME + "`", re.I)
+SKILL_HOMES = (".agents/skills/{}/SKILL.md", ".claude/skills/{}/SKILL.md", ".claude/commands/{}.md")
+
+
+def _skill_requirements(files: list, base: Path, shipped: set) -> list:
+    """Detector 5 over the Markdown of `files`: findings without ids, one per (file, line, skill); `term` is the
+    skill. A skill the package itself ships (as a skill or as a command) is no finding."""
+    out = []
+    for f in files:
+        rel = f.relative_to(base).as_posix()
+        if not rel.endswith(".md"):
+            continue
+        for n, text in enumerate(_lines(f), 1):
+            named = {m.group(2).lower() for m in NAMED.finditer(text) if m.group(1) or re.search("[-:]", m.group(2))}
+            named |= {m.group(2).lower() for m in REQUIRED.finditer(text)
+                      if m.group(1) or re.search("[-:]", m.group(2))}
+            named |= {m.group(2).lower() for shape in (SLASHED, PROVENANCE) for m in shape.finditer(text)}
+            for skill in sorted(named):
+                if not any(home.format(skill.split(":")[-1]) in shipped for home in SKILL_HOMES):
+                    out.append({"detector": 5, "file": rel, "line": n, "text": text.strip(),
+                                "kind": "requires-skill", "term": skill})
+    return out
+
+
 def _with_ids(cid: str, findings: list) -> list:
     """`findings` in (detector, file, line) order, each given its id `<component>:<detector>:<n>`. A MENTION
     never passes through here: it has no id, so no verdict can cite one."""
@@ -423,7 +520,7 @@ def scan(map_path: Path, sets_path: Path, root: Path = REPO) -> dict:
     except SS.Refused as e:
         raise CannotRun(f"the map {map_path} is refused: {e}") from e
     packages = SS.load_declaration(sets_path)
-    base, vocabulary = Path(root).resolve(), derive_vocabulary(root)
+    base, vocabulary, tools = Path(root).resolve(), derive_vocabulary(root), harness_tools(root)
     report = {"measured_at": _head(root), "components": {}}
     for c in sorted(m.components, key=lambda c: c["id"]):
         try:
@@ -434,6 +531,9 @@ def scan(map_path: Path, sets_path: Path, root: Path = REPO) -> dict:
             findings, mentions = _vocabulary_matches(files, base, vocabulary)
             findings += _invocations(files, base, _shipped(decl), decl["channel"])
             findings += _self_test_and_docs(files, base, c["roles"])
+            named, bare = _bare_names(files, base, _shipped(decl), tools)
+            findings, mentions = findings + named, mentions + bare
+            findings += _skill_requirements(files, base, _shipped(decl))
             report["components"][c["id"]] = {"status": SCANNED, "findings": _with_ids(c["id"], findings),
                                              "mentions": mentions}
         except CannotRun as e:
@@ -504,11 +604,15 @@ def _self_test_body() -> int:
         except Exception as e:
             return f"RAISED {type(e).__name__}: {e}"[:len(text)]
 
+    tool_list = "# date: 2026-11-17\n# claude --version: 2.1.323 (Claude Code)\n# source: fixture\nTaskList\nTaskCreate\n"
+
     def world(files: dict, links: dict | None = None, origin: str | None = None) -> Path:
         """A committed git repository holding `files` (path -> text) and `links` (path -> symlink target), with
-        a `package.json` naming it `fixture-app` and an empty hook registration unless `files` says otherwise."""
+        a `package.json` naming it `fixture-app`, an empty hook registration and a dated tool list naming
+        `TaskList` and `TaskCreate`, unless `files` says otherwise."""
         root = Path(tempfile.mkdtemp(prefix="publishability-")).resolve()
-        files = {".claude/settings.json": "{}", "package.json": json.dumps({"name": "fixture-app"}), **files}
+        files = {".claude/settings.json": "{}", "package.json": json.dumps({"name": "fixture-app"}),
+                 TOOLS: tool_list, **files}
         for rel, text in files.items():
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text)
@@ -920,8 +1024,133 @@ def _self_test_body() -> int:
                                                                        roles=("library",))]),
          ([], [], ["no-self-test"]))
 
+    # --- Task 11: detectors 4 (bare names) and 5 (prose skill dependencies) ---------------------------------
+    FIXTURE = REPO / "scripts/fixtures/check-publishability/brief-SKILL-2f5e3f3d.md"
+    brief = FIXTURE.read_text()
+    blines = brief.splitlines()
+    first = next(i for i, ln in enumerate(blines) if ln.startswith("Then read, in this order"))
+    last = next(i for i, ln in enumerate(blines) if "`check-producer-enumeration`." in ln)
+    passage = "\n".join(blines[first:last + 1]) + "\n"
+    guards5 = {f"scripts/{g}.py": "X = 1\n" for g in ("check-docs", "check-producer-enumeration",
+                                                      "check-roadmap-consistency", "check-selftest-counts",
+                                                      "check-test-counts")}
+    B, P, E, N = (f".agents/skills/{n}/SKILL.md" for n in ("brief", "passage", "explain-findings", "names"))
+    w_b = world({B: brief, P: passage, **guards5,
+                 E: "# Explain findings\nVisual craft comes from `artifact-design`. One colour, one meaning.\n",
+                 N: ("# Names\n"
+                     "Written in JavaScript; the `SessionStart` hook fires; then call `TaskList`.\n"
+                     "Run `check-docs` first.\n"
+                     "History: check-docs was added in May; `scripts/check-docs.py` is its file.\n"
+                     "See docs/reviews/claude/check-docs-r1.md, and `docs/kept/` holds `docs/kept/a.md`.\n"
+                     "Its neighbour is the file `scripts/check-test-counts.py`.\n"),
+                 ".agents/skills/artifact-design/SKILL.md": "# Artifact design\n", "docs/kept/a.md": "kept\n"})
+
+    def items(root: Path, sets: dict, cid: str, detector: int = 4) -> tuple[list, list]:
+        """`(findings, mentions)` of `detector` on `cid`, each a `(line, kind, term)`, in a plugin package whose
+        components are `sets`."""
+        e = scan(*put(root, [comp(c, fs) for c, fs in sets.items()],
+                      {c: [SS.installed_path(f) for f in fs] for c, fs in sets.items()}), root=root)["components"][cid]
+        return tuple([(r["line"], r["kind"], r["term"]) for r in e[k] if r["detector"] == detector]
+                     for k in ("findings", "mentions"))
+
+    def names(root: Path, sets: dict, cid: str) -> list:
+        """The distinct `(kind, name)` detector 4 reports on `cid`, in EITHER list."""
+        found4, mentioned = items(root, sets, cid)
+        return sorted({(k, t) for _, k, t in found4 + mentioned})
+
+    NINE = [("doc-path", "docs/backlog.md"), ("doc-path", "docs/reviews/"), ("doc-path", "docs/roadmap-to-launch.md"),
+            ("doc-path", "docs/superpowers/"), ("guard-name", "check-docs"),
+            ("guard-name", "check-producer-enumeration"), ("guard-name", "check-roadmap-consistency"),
+            ("guard-name", "check-test-counts"), ("tool-name", "TaskList")]
+    case("the ground-truth passage of brief/SKILL.md (fixture copy committed with the case, taken at 2f5e3f3d) "
+         "yields exactly the 9 items of spec §4: 4 guard names (check-docs, check-producer-enumeration, "
+         "check-roadmap-consistency, check-test-counts), 4 doc paths (docs/backlog.md, docs/reviews/, "
+         "docs/roadmap-to-launch.md, docs/superpowers/), 1 tool name (TaskList)",
+         lambda: (names(w_b, {"p": [P]}, "p"), sum(len(x) for x in items(w_b, {"p": [P]}, "p")), last - first + 1),
+         (NINE, 9, 11))
+    case("the whole fixture file yields those 9 plus exactly check-selftest-counts and docs/dev-process.md",
+         lambda: names(w_b, {"b": [B]}, "b"),
+         sorted(NINE + [("guard-name", "check-selftest-counts"), ("doc-path", "docs/dev-process.md")]))
+    case("check-deploy-freshness (line 78: a check-* name with no scripts/ file, in a historical sentence) is "
+         "not a guard-name item",
+         lambda: ("check-deploy-freshness" in blines[77],
+                  [n for n in names(w_b, {"b": [B]}, "b") if n[1] == "check-deploy-freshness"]),
+         (True, []))
+    case("check-selftest-counts (file exists) is",
+         lambda: [ln for found4, mentioned in [items(w_b, {"b": [B]}, "b")] for ln, _, t in found4 + mentioned
+                  if t == "check-selftest-counts"],
+         [167])
+    case("a camel-case word absent from harness-tools.txt (JavaScript, SessionStart) is not a tool-name finding",
+         lambda: [n for n in names(w_b, {"n": [N]}, "n") if n[0] == "tool-name"],
+         [("tool-name", "TaskList")])
+    case("a bare name in an instruction is a finding with an id; in a plain sentence it is a mention; and a "
+         "guard written as a path is not a bare name at all",
+         lambda: tuple([r for r in rs if r[1] == "guard-name"] for rs in items(w_b, {"n": [N]}, "n")),
+         ([(3, "guard-name", "check-docs")], [(4, "guard-name", "check-docs")]))
+    case("a detector-4 finding has an id, its kind and its name; a detector-4 mention has no id",
+         lambda: [(r.get("id"), sorted(k for k in r if k != "id"))
+                  for k in ("findings", "mentions")
+                  for r in scan(*put(w_b, [comp("n", [N])], {"n": [SS.installed_path(N)]}),
+                                root=w_b)["components"]["n"][k]
+                  if r["detector"] == 4 and r["term"] == "check-docs"],
+         [("n:4:1", ["detector", "file", "kind", "line", "term", "text"]),
+          (None, ["detector", "file", "kind", "line", "term", "text"])])
+    case("a doc path the package does not ship is an item, to the end of the path; a path or a directory the "
+         "package ships is not",
+         lambda: ([n for n in names(w_b, {"n": [N]}, "n") if n[0] == "doc-path"],
+                  [n for n in names(w_b, {"n": [N], "k": ["docs/kept/a.md"]}, "n") if n[0] == "doc-path"]),
+         ([("doc-path", "docs/kept/"), ("doc-path", "docs/kept/a.md"), ("doc-path", "docs/reviews/claude/check-docs-r1.md")],
+          [("doc-path", "docs/reviews/claude/check-docs-r1.md")]))
+    case("a guard the package ships is a guard-name item all the same: the rule asks only that its script exists",
+         lambda: [n for n in names(w_b, {"n": [N], "g": ["scripts/check-docs.py"]}, "n") if n[0] == "guard-name"],
+         [("guard-name", "check-docs")])
+
+    def tools_world(text):
+        return world({N: "Call `TaskList`.\n", **({TOOLS: text} if text is not None else {})})
+
+    def tools_refused(text, why: str) -> str:
+        root = tools_world(text)
+        if text is None:
+            (root / TOOLS).unlink()
+        return raised(lambda: scan(*put(root, [comp("n", [N])], {"n": [SS.installed_path(N)]}), root=root), why)
+
+    NO_HEAD = f"RAISED CannotRun: {TOOLS} has no date or no `claude --version` header"
+    case("a harness-tools.txt with no date or version header is CANNOT RUN",
+         lambda: [tools_refused(t, NO_HEAD) for t in (
+             "TaskList\n", "# claude --version: 2.1.323\nTaskList\n", "# date: 2026-11-17\nTaskList\n",
+             "# date: soon\n# claude --version: 2.1.323\nTaskList\n")],
+         [NO_HEAD] * 4)
+    case("...and so is one that is absent, or that names no tool",
+         lambda: [tools_refused(None, f"RAISED CannotRun: {TOOLS} cannot be read"),
+                  tools_refused("# date: 2026-11-17\n# claude --version: 2.1.323\n# TaskList\n\n",
+                                f"RAISED CannotRun: {TOOLS} names no tool")],
+         [f"RAISED CannotRun: {TOOLS} cannot be read", f"RAISED CannotRun: {TOOLS} names no tool"])
+    case("the tool list is read from the file: a name it gains is found, and one it loses is not",
+         lambda: [n for n in names(world({N: "Call `TaskList`, then `SessionStart`.\n", TOOLS: tool_list.replace(
+             "TaskList", "SessionStart")}), {"n": [N]}, "n")],
+         [("tool-name", "SessionStart")])
+    case("brief and explain-findings require artifact-design",
+         lambda: (items(w_b, {"b": [B]}, "b", 5), items(w_b, {"e": [E]}, "e", 5)),
+         (([(105, "requires-skill", "artifact-design"), (128, "requires-skill", "artifact-design")], []),
+          ([(2, "requires-skill", "artifact-design")], [])))
+    case("a skill required from inside the same package is not a finding",
+         lambda: (items(w_b, {"b": [B], "ad": [".agents/skills/artifact-design/SKILL.md"]}, "b", 5),
+                  items(w_b, {"e": [E], "ad": [".agents/skills/artifact-design/SKILL.md"]}, "e", 5)),
+         (([], []), ([], [])))
+    w_s = world({N: ("Use /dashboard to record it.\n"
+                     "This requires the `grill-me` skill.\n"
+                     "Invoke the superpowers:brainstorming skill.\n"
+                     "Use the same skill again, or load this skill twice.\n"
+                     "Use /tmp/scratch for files; the `artifact-design` palette is nice.\n"),
+                 "scripts/tool.py": "# Load the `artifact-design` skill first\n"})
+    case("detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before "
+         "`skill`, a path and a bare code span are not; and only Markdown is read",
+         lambda: (items(w_s, {"n": [N]}, "n", 5)[0], items(w_s, {"t": ["scripts/tool.py"]}, "t", 5)[0]),
+         ([(1, "requires-skill", "dashboard"), (2, "requires-skill", "grill-me"),
+           (3, "requires-skill", "superpowers:brainstorming")], []))
+
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
-        print("NOT RUN under the mutation harness: 5 live-tree cases (CI's ordinary step runs them)")
+        print("NOT RUN under the mutation harness: 8 live-tree cases (CI's ordinary step runs them)")
     else:
         live_vocab = derive_vocabulary(REPO)
         case("the derived vocabulary on the live tree contains an element EQUAL to supabase, gemini and fly, and "
@@ -949,6 +1178,17 @@ def _self_test_body() -> int:
         case("the live tree: page_chrome.py, a library, has no detector-3 finding",
              lambda: [f for f in live["page-chrome"]["findings"] if f["detector"] == 3],
              [])
+        case("the live brief/SKILL.md is the fixture copy: a difference is reported here, never absorbed",
+             lambda: (REPO / B).read_text() == brief,
+             True)
+        case("the live tree: skill-brief's detector-4 names are the nine and the two extras",
+             lambda: sorted({(r["kind"], r["term"]) for k in ("findings", "mentions")
+                             for r in live["skill-brief"][k] if r["detector"] == 4}),
+             sorted(NINE + [("guard-name", "check-selftest-counts"), ("doc-path", "docs/dev-process.md")]))
+        case("the live tree: brief and explain-findings require artifact-design",
+             lambda: [sorted({f["term"] for f in live[c]["findings"] if f["detector"] == 5})
+                      for c in ("skill-brief", "skill-explain-findings")],
+             [["artifact-design"], ["artifact-design"]])
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

@@ -11,7 +11,7 @@
   "hand-timed:scripts/check-shipping-sets.py@marketplace-inventory Task 7 (self-test 10.8 s locally; priced 11.0 s, no CI sample yet)",
   "hand-timed:scripts/mkt_stage.py@marketplace-inventory Task 6 (self-test 13.3 s locally after the --declare cases; re-priced 2.0 -> 13.5 s, no CI sample yet)",
   "hand-timed:scripts/check-shipping-sets.py@PR #598 review r1 fold (117 cases; the self-test is 6.8 s locally under the mutation harness, which skips its 3 live-tree cases, and 29.3 s outside it; re-priced 11.0 -> 7.0 s, no CI sample yet)",
-  "hand-timed:scripts/check-publishability.py@marketplace-inventory Tasks 8-10 (81 mutations in 235 s = 2.9 s each locally under the mutation harness; priced 3.0 s, no CI sample yet)"
+  "hand-timed:scripts/check-publishability.py@marketplace-inventory Tasks 8-11 (108 mutations in 518 s = 4.8 s each locally under the mutation harness; re-priced 3.0 -> 5.0 s, no CI sample yet)"
  ],
  "defaults": {
   "mutation": 10.162,
@@ -726,9 +726,9 @@
    "mutations": 0
   },
   "scripts/check-publishability.py": {
-   "control": 3.0,
-   "recontrol": 3.0,
-   "mutation": 3.0,
+   "control": 5.0,
+   "recontrol": 5.0,
+   "mutation": 5.0,
    "samples": 0,
    "mutations": 0
   }

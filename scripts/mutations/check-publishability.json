@@ -889,5 +889,302 @@
    ]
   ],
   "expect": "page_chrome.py with no CLI is not a detector-3 finding when its role is library"
+ },
+ {
+  "name": "detector 4: any text after `# date:` is a date",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "r\"#\\s*date:\\s*\\d{4}-\\d{2}-\\d{2}\\b\"",
+    "r\"#\\s*date:\""
+   ]
+  ],
+  "expect": "a harness-tools.txt with no date or version header is CANNOT RUN"
+ },
+ {
+  "name": "detector 4: a tool list with no version header is read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "and any(re.match(r\"#\\s*claude --version:\\s*\\d+\\.\\d+\", ln) for ln in head)",
+    "and True"
+   ]
+  ],
+  "expect": "a harness-tools.txt with no date or version header is CANNOT RUN"
+ },
+ {
+  "name": "detector 4: a tool list naming no tool is read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if not names:\n        raise CannotRun(f\"{TOOLS} names no tool\")\n",
+    ""
+   ]
+  ],
+  "expect": "...and so is one that is absent, or that names no tool"
+ },
+ {
+  "name": "detector 4: a header line is a tool name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if ln.strip() and not ln.startswith(\"#\"))",
+    "if ln.strip())"
+   ]
+  ],
+  "expect": "...and so is one that is absent, or that names no tool"
+ },
+ {
+  "name": "detector 4: an absent tool list is an empty one",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        raise CannotRun(f\"{TOOLS} cannot be read: {e}\") from e\n",
+    "        lines = []\n"
+   ]
+  ],
+  "expect": "...and so is one that is absent, or that names no tool"
+ },
+ {
+  "name": "detector 4: the tool names are fixed in the code",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if m.group(0) in tools}",
+    "if m.group(0) in {\"TaskList\", \"TaskCreate\"}}"
+   ]
+  ],
+  "expect": "the tool list is read from the file: a name it gains is found, and one it loses is not"
+ },
+ {
+  "name": "detector 4: every camel-case word is a tool name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " for m in CAMEL_RE.finditer(text) if m.group(0) in tools}",
+    " for m in CAMEL_RE.finditer(text)}"
+   ]
+  ],
+  "expect": "a camel-case word absent from harness-tools.txt (JavaScript, SessionStart) is not a tool-name finding"
+ },
+ {
+  "name": "detector 4: a check-* name with no script is a guard",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " for m in GUARD_RE.finditer(text) if m.group(0) in guards}",
+    " for m in GUARD_RE.finditer(text)}"
+   ]
+  ],
+  "expect": "check-deploy-freshness (line 78: a check-* name with no scripts/ file, in a historical sentence) is not a guard-name item"
+ },
+ {
+  "name": "detector 4: a guard written as a path is a bare name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "GUARD_RE = re.compile(r\"(?<![\\w/.-])check-",
+    "GUARD_RE = re.compile(r\"(?<![\\w.-])check-"
+   ]
+  ],
+  "expect": "a bare name in an instruction is a finding with an id; in a plain sentence it is a mention; and a guard written as a path is not a bare name at all"
+ },
+ {
+  "name": "detector 4: a doc path the package ships is an item",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " for m in DOC_RE.finditer(text) if not held(m.group(0))}",
+    " for m in DOC_RE.finditer(text)}"
+   ]
+  ],
+  "expect": "a doc path the package does not ship is an item, to the end of the path; a path or a directory the package ships is not"
+ },
+ {
+  "name": "detector 4: a directory holding a shipped file is not held",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "held = lambda path: path in shipped or any(f.startswith(path.rstrip(\"/\") + \"/\") for f in shipped)",
+    "held = lambda path: path in shipped"
+   ]
+  ],
+  "expect": "a doc path the package does not ship is an item, to the end of the path; a path or a directory the package ships is not"
+ },
+ {
+  "name": "detector 4: a shipped file is held only through its directory",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "held = lambda path: path in shipped or any(",
+    "held = lambda path: any("
+   ]
+  ],
+  "expect": "a doc path the package does not ship is an item, to the end of the path; a path or a directory the package ships is not"
+ },
+ {
+  "name": "detector 4: a doc path stops at its first dot",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "DOC_RE = re.compile(r\"(?<![\\w/.-])docs/[\\w./-]*[\\w/]\")",
+    "DOC_RE = re.compile(r\"(?<![\\w/.-])docs/[\\w/-]*[\\w/]\")"
+   ]
+  ],
+  "expect": "a doc path the package does not ship is an item, to the end of the path; a path or a directory the package ships is not"
+ },
+ {
+  "name": "detector 4: every match is a finding",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(findings if _kind(f, n, name) else mentions).append(row)",
+    "findings.append(row)"
+   ]
+  ],
+  "expect": "a bare name in an instruction is a finding with an id; in a plain sentence it is a mention; and a guard written as a path is not a bare name at all"
+ },
+ {
+  "name": "detector 4: every match is a mention",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(findings if _kind(f, n, name) else mentions)",
+    "mentions"
+   ]
+  ],
+  "expect": "a bare name in an instruction is a finding with an id; in a plain sentence it is a mention; and a guard written as a path is not a bare name at all"
+ },
+ {
+  "name": "detector 4: a row does not hold its kind",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"text\": text.strip(), \"kind\": kind, \"term\": name}",
+    "\"text\": text.strip(), \"term\": name}"
+   ]
+  ],
+  "expect": "a detector-4 finding has an id, its kind and its name; a detector-4 mention has no id"
+ },
+ {
+  "name": "detector 4: the set is the component's own, not the package's",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "named, bare = _bare_names(files, base, _shipped(decl), tools)",
+    "named, bare = _bare_names(files, base, {f.relative_to(base).as_posix() for f in files}, tools)"
+   ]
+  ],
+  "expect": "a doc path the package does not ship is an item, to the end of the path; a path or a directory the package ships is not"
+ },
+ {
+  "name": "detector 4: the mentions are dropped",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings, mentions = findings + named, mentions + bare",
+    "findings = findings + named"
+   ]
+  ],
+  "expect": "a bare name in an instruction is a finding with an id; in a plain sentence it is a mention; and a guard written as a path is not a bare name at all"
+ },
+ {
+  "name": "detector 5: a file that is not Markdown is read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if not rel.endswith(\".md\"):\n            continue\n",
+    ""
+   ]
+  ],
+  "expect": "detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before `skill`, a path and a bare code span are not; and only Markdown is read"
+ },
+ {
+  "name": "detector 5: a skill the package ships is a finding",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if not any(home.format(skill.split(\":\")[-1]) in shipped for home in SKILL_HOMES):",
+    "if True:"
+   ]
+  ],
+  "expect": "a skill required from inside the same package is not a finding"
+ },
+ {
+  "name": "detector 5: any word before `skill` is a skill name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for m in NAMED.finditer(text) if m.group(1) or re.search(\"[-:]\", m.group(2))}",
+    "for m in NAMED.finditer(text)}"
+   ]
+  ],
+  "expect": "detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before `skill`, a path and a bare code span are not; and only Markdown is read"
+ },
+ {
+  "name": "detector 5: `comes from` is not a requirement",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for shape in (SLASHED, PROVENANCE)",
+    "for shape in (SLASHED,)"
+   ]
+  ],
+  "expect": "brief and explain-findings require artifact-design"
+ },
+ {
+  "name": "detector 5: `use /X` is not a requirement",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for shape in (SLASHED, PROVENANCE) for m in",
+    "for shape in (PROVENANCE,) for m in"
+   ]
+  ],
+  "expect": "detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before `skill`, a path and a bare code span are not; and only Markdown is read"
+ },
+ {
+  "name": "detector 5: `use /a/path` names a skill",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "SKILL_NAME + r\"`?(?![\\w/.])\", re.I)",
+    "SKILL_NAME + r\"`?\", re.I)"
+   ]
+  ],
+  "expect": "detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before `skill`, a path and a bare code span are not; and only Markdown is read"
+ },
+ {
+  "name": "detector 5: a required skill is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            named |= {m.group(2).lower() for m in REQUIRED.finditer(text)\n                      if m.group(1) or re.search(\"[-:]\", m.group(2))}\n",
+    ""
+   ]
+  ],
+  "expect": "detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before `skill`, a path and a bare code span are not; and only Markdown is read"
+ },
+ {
+  "name": "detector 5: the set is the component's own, not the package's",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings += _skill_requirements(files, base, _shipped(decl))",
+    "findings += _skill_requirements(files, base, {f.relative_to(base).as_posix() for f in files})"
+   ]
+  ],
+  "expect": "a skill required from inside the same package is not a finding"
+ },
+ {
+  "name": "detector 5: a finding does not hold the skill",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"kind\": \"requires-skill\", \"term\": skill})",
+    "\"kind\": \"requires-skill\", \"term\": \"\"})"
+   ]
+  ],
+  "expect": "brief and explain-findings require artifact-design"
  }
 ]

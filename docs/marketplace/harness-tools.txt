@@ -1,0 +1,41 @@
+# The harness tool names detector 4 of scripts/check-publishability.py reports as `tool-name`.
+# One name per line. Lines that start with `#` are the header.
+# date: 2026-11-17
+# claude --version: 2.1.323 (Claude Code)
+# source: PROVISIONAL. The plan (marketplace-inventory Task 11) says this list is the COORDINATOR's tool list,
+#   written by the coordinator. The names below are the implementing subagent's best list instead: its own
+#   harness view plus the names the plan and the project instructions cite.
+# TODO: COORDINATOR LIST PENDING - replace every name below with the coordinator session's tool list.
+# Bound: one session's view of one harness version. Nothing in the repository can check it is complete.
+Agent
+Artifact
+AskUserQuestion
+Bash
+CronCreate
+CronDelete
+CronList
+Edit
+EnterPlanMode
+EnterWorktree
+ExitPlanMode
+ExitWorktree
+Glob
+Grep
+ListAgents
+Monitor
+NotebookEdit
+PushNotification
+Read
+SendMessage
+Skill
+TaskCreate
+TaskGet
+TaskList
+TaskOutput
+TaskStop
+TaskUpdate
+TodoWrite
+ToolSearch
+WebFetch
+WebSearch
+Write

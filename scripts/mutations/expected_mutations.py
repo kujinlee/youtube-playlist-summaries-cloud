@@ -2490,5 +2490,8 @@ EXPECTED_MUTATIONS = {
     # dependency/mention judgement, +3 the finding/mention rows and their ids.
     # ⟳ Task 10 (2026-11-17): 57 → 81 — +15 detector 2 (the package's set, cwd-relative and its fix, outside-set,
     # shell comments, rooted paths, workflows, Python loads), +9 detector 3 (no-self-test, no-user-doc, the roles).
-    "scripts/check-publishability.py": 81,
+    # ⟳ Task 11 (2026-11-17): 81 → 108 — +18 detector 4 (the dated tool list and its refusals, guard names, doc paths
+    # and the package's set, the finding/mention split, the row), +9 detector 5 (the four sentence shapes, Markdown
+    # only, a skill of the same package, the row).
+    "scripts/check-publishability.py": 108,
 }
