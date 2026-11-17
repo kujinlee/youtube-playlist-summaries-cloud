@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 76 cases
+    python3 scripts/check-publishability.py --self-test  # 97 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -43,6 +43,14 @@ A match is a finding or a mention by the same judgement as detector 1, and holds
 
 DETECTOR 5, prose skill dependencies (`_skill_requirements`): `requires-skill`, an instruction in Markdown to
 load or use a skill the package does not ship.
+
+DETECTOR 6, runtime prerequisites (`_prerequisites`): `import` (a module that is neither standard nor shipped
+by the package), `executable` (a program a Python runner or a shell line calls) and `config` (an environment
+variable read with no working default); one finding per name per file.
+
+DETECTOR 7, inbound registration (`_registrations`): `needs-registration`, an entry point that is reached
+through a `.claude/settings.json` stanza, or that no shipped file runs and that does not declare the literal
+`invoked-by: user` in its usage block (a skill: its front matter). A test is not a caller.
 """
 from __future__ import annotations
 
@@ -92,7 +100,9 @@ def _candidates(base: Path) -> frozenset:
 
 @functools.lru_cache(maxsize=None)
 def _lines(file: Path) -> tuple:
-    return tuple(file.read_text().splitlines())
+    """The file's lines as an editor and `ast` count them: split at a newline only. `str.splitlines` also splits
+    at a form feed and at other separators, which moved every later line number of such a file."""
+    return tuple(file.read_text().split("\n"))
 
 
 def _real(base: Path, rel: str, cid: str) -> tuple[Path, str]:
@@ -494,6 +504,144 @@ def _skill_requirements(files: list, base: Path, shipped: set) -> list:
     return out
 
 
+PROGRAMS = ("gh", "git", "node", "npx", "npm", "jq", "curl", "docker", "psql", "supabase", "codex", "claude")
+SHELL_BUILTINS = ("cd", "echo", "exit", "export", "set", "source", "test", "true", "false")
+SHELL_COMMAND = re.compile(r"(?:^|[|;&(`]|\b(?:then|do|else|if|while|until|exec|time|command\s+-v)\s)\s*("
+                           + "|".join(PROGRAMS) + r")(?=[\s;)`]|$)")
+
+
+def _argv0(node) -> str | None:
+    """The program a runner's first argument names, when the code writes it out: the first element of a list or
+    a tuple, the left end of a `+`, the first word of a string. Anything else is not written out: None."""
+    while True:
+        if isinstance(node, (ast.List, ast.Tuple)) and node.elts:
+            node = node.elts[0]
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            node = node.left
+        elif isinstance(node, ast.JoinedStr) and node.values:
+            node = node.values[0]
+        else:
+            break
+    if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.split():
+        return node.value.split()[0]
+    return None
+
+
+def _prerequisites(files: list, base: Path, shipped: set) -> list:
+    """Detector 6 over `files`: findings without ids, one per (file, kind, name) at the first line that has it;
+    `term` is the name.
+
+    `import` (Python): an absolute import whose top module is neither in `sys.stdlib_module_names` nor a module
+    the package ships. `executable`: in Python, the program handed to a process runner or to `shutil.which`
+    (`_argv0`), an interpreter (`SS.INTERPRETERS`), a shell builtin and a path apart, a path being detector
+    2's subject; in a
+    shell file, one of `PROGRAMS` in command position, comments apart. `config` (Python): an environment
+    variable read with no working default, by detector 1's own rule (`_python_use`).
+
+    BOUND: an argv that is not written out (a variable, `sys.executable`) is not judged; a shell file is asked
+    only about the programs on the `PROGRAMS` list, and a quoted string that holds a separator before one reads
+    as a command; a shell file's own environment reads, Markdown and workflows are not judged."""
+    modules = ({Path(f).stem for f in shipped if f.endswith(".py")}
+               | {Path(f).parent.name for f in shipped if f.endswith("/__init__.py")})
+    out = []
+    for f in files:
+        rel, lines, seen = f.relative_to(base).as_posix(), _lines(f), set()
+        if rel.endswith(".py"):
+            tree, parent = _parsed(f)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    seen |= {(node.lineno, "import", a.name.split(".")[0]) for a in node.names}
+                elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                    seen.add((node.lineno, "import", node.module.split(".")[0]))
+                elif isinstance(node, ast.Call) and _dotted(node.func) in RUNNERS and node.args:
+                    program = _argv0(node.args[0])
+                    if program and re.fullmatch(r"[\w+-]+", program):      # a `/` or a `.`: a path, a file
+                        seen.add((node.lineno, "executable", program))
+                elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    written = isinstance(getattr(parent.get(node), "ctx", None), (ast.Store, ast.Del))
+                    if _env_read(node, parent) and not written:
+                        seen.add((node.lineno, "config", node.value))
+            seen = {(n, kind, name) for n, kind, name in seen
+                    if not (kind == "import" and (name in sys.stdlib_module_names or name in modules))
+                    and not (kind == "executable" and name in SS.INTERPRETERS + SHELL_BUILTINS)}
+        elif rel.endswith(".sh"):
+            for n, text in enumerate(lines, 1):
+                if not text.lstrip().startswith("#"):
+                    seen |= {(n, "executable", m.group(1)) for m in SHELL_COMMAND.finditer(text)}
+        first = {}
+        for n, kind, name in sorted(seen):
+            first.setdefault((kind, name), n)
+        out += [{"detector": 6, "file": rel, "line": n, "text": lines[n - 1].strip(), "kind": kind, "term": name}
+                for (kind, name), n in first.items()]
+    return out
+
+
+def _env_read(node: ast.Constant, parent: dict) -> bool:
+    """True when the string is the NAME of an environment variable read with no working default."""
+    up = parent.get(node)
+    named = (isinstance(up, ast.Subscript) and up.slice is node) or (isinstance(up, ast.Call) and
+                                                                      _dotted(up.func) in ENV_GETTERS)
+    return named and _python_use(node, parent) == "config"
+
+
+DECLARED_USER = "invoked-by: user"
+HOOK_STANZAS = ".claude/settings.json"
+
+
+def _is_test(rel: str) -> bool:
+    name = Path(rel).name
+    return "tests" in Path(rel).parts[:-1] or ".test." in name or name.startswith("test_")
+
+
+@functools.lru_cache(maxsize=None)
+def _runs(base: Path, rel: str) -> frozenset:
+    return frozenset(SS.exec_edges(base, rel))
+
+
+def _says_user(file: Path, rel: str) -> bool:
+    """True when the file declares `invoked-by: user` where a stranger reads how to call it: the module docstring
+    of a Python file, the front matter of a Markdown file, the comment block that opens a shell file."""
+    lines = _lines(file)
+    if rel.endswith(".py"):
+        block = (ast.get_docstring(_parsed(file)[0], clean=False) or "").splitlines()
+    elif rel.endswith(".md"):
+        end = next((i for i, ln in enumerate(lines[1:], 1) if ln.strip() == "---"), 0)
+        block = lines[1:end] if lines and lines[0].strip() == "---" else ()
+    else:
+        block = lines[:next((i for i, ln in enumerate(lines) if not ln.startswith("#")), len(lines))]
+    return any(ln.strip().lstrip("#").strip() == DECLARED_USER for ln in block)
+
+
+def _registrations(files: list, base: Path, shipped: set, roles, hooks: set) -> list:
+    """Detector 7 over the files of an ENTRY POINT: `needs-registration` findings without ids, on line 1.
+
+    Asked of a hook (`.claude/hooks/*.sh`), a Python file and a `SKILL.md`, test files apart. A hook the
+    repository registers in `.claude/settings.json` is reached in production through a stanza a stranger does
+    not have: a finding whose `target` is that file, whatever the hook says about itself. Any other file is a
+    finding unless another file the package ships runs it (`SS.exec_edges`; a test, and the file itself, are no
+    production caller) or it declares `invoked-by: user` (`_says_user`).
+
+    BOUND: no form of a DECLARED registration is recognised, since the spec names none: every registered hook
+    is a finding. A workflow, a command file and a library are not asked. A shipped document that shows the
+    command counts as a caller."""
+    out = []
+    for f in files if "entry-point" in roles else ():
+        rel = f.relative_to(base).as_posix()
+        hook = rel.startswith(".claude/hooks/") and rel.endswith(".sh")
+        if _is_test(rel) or not (hook or rel.endswith(".py") or f.name == "SKILL.md"):
+            continue
+        lines = _lines(f)
+        row = {"detector": 7, "file": rel, "line": 1, "text": lines[0].strip() if lines else "",
+               "kind": "needs-registration"}
+        if rel in hooks:
+            out.append({**row, "target": HOOK_STANZAS})
+        elif not _says_user(f, rel) and not any(
+                rel in _runs(base, other) for other in sorted(shipped)
+                if other != rel and not _is_test(other) and (base / other).is_file()):
+            out.append(row)
+    return out
+
+
 def _with_ids(cid: str, findings: list) -> list:
     """`findings` in (detector, file, line) order, each given its id `<component>:<detector>:<n>`. A MENTION
     never passes through here: it has no id, so no verdict can cite one."""
@@ -521,6 +669,7 @@ def scan(map_path: Path, sets_path: Path, root: Path = REPO) -> dict:
         raise CannotRun(f"the map {map_path} is refused: {e}") from e
     packages = SS.load_declaration(sets_path)
     base, vocabulary, tools = Path(root).resolve(), derive_vocabulary(root), harness_tools(root)
+    hooks = SS.registered_hooks(base)
     report = {"measured_at": _head(root), "components": {}}
     for c in sorted(m.components, key=lambda c: c["id"]):
         try:
@@ -534,6 +683,8 @@ def scan(map_path: Path, sets_path: Path, root: Path = REPO) -> dict:
             named, bare = _bare_names(files, base, _shipped(decl), tools)
             findings, mentions = findings + named, mentions + bare
             findings += _skill_requirements(files, base, _shipped(decl))
+            findings += _prerequisites(files, base, _shipped(decl))
+            findings += _registrations(files, base, _shipped(decl), c["roles"], hooks)
             report["components"][c["id"]] = {"status": SCANNED, "findings": _with_ids(c["id"], findings),
                                              "mentions": mentions}
         except CannotRun as e:
@@ -694,7 +845,7 @@ def _self_test_body() -> int:
     case("...and the scan reports it: the invocation in the linked skill is a finding at its real path",
          lambda: [(f["id"], f["file"], f["line"], f["kind"], f["target"]) for f in entry(
              w_link, [comp("x", [".claude/skills/x/"])], {"x": ["skills/x/SKILL.md", "skills/x/notes.md"]},
-             "x")["findings"]],
+             "x")["findings"] if f["detector"] == 2],
          [("x:2:1", ".agents/skills/x/SKILL.md", 1, "outside-set", "scripts/elsewhere.py")])
     case("resolve: a reusable-workflow declaration is read in repository paths, a single file resolved",
          lambda: [str(p.relative_to(w_ok)) for p in resolve(
@@ -726,7 +877,7 @@ def _self_test_body() -> int:
                         text=True).stdout.strip())
     case("CLI: every component scanned is rc 0, one line per component and a summary",
          lambda: out(lambda: main(["--map", "map.json", "--sets", "sets.json"], root=put(
-             w_ok, [comp("c", ["scripts/safe.py"])], {"c": ["scripts/safe.py"]})[0].parent)),
+             w_ok, [comp("c", ["scripts/safe.py"], roles=("library",))], {"c": ["scripts/safe.py"]})[0].parent)),
          (0, ["c: scanned, 0 finding(s), 0 mention(s)", "1 component(s): 1 scanned, 0 CANNOT RUN"]))
     case("CLI: one CANNOT RUN component is rc 2 and the line says why, beside a scanned one",
          lambda: out(lambda: main(["--map", "map.json", "--sets", "sets.json"], root=put(
@@ -763,7 +914,7 @@ def _self_test_body() -> int:
          lambda: (lambda d: (out(lambda: main(["--map", "map.json", "--sets", "sets.json", "--out", "report.json"],
                                                  root=d))[0],
                              json.loads((d / "report.json").read_text())["components"]))(
-             put(w_ok, [comp("c", ["scripts/safe.py"]), comp("k", ["scripts/coupled.py"])],
+             put(w_ok, [comp("c", ["scripts/safe.py"]), comp("k", ["scripts/coupled.py"], roles=("library",))],
                  {"c": ["scripts/coupled.py"], "k": ["scripts/coupled.py"]})[0].parent),
          (2, {"c": {"status": CANNOT_RUN,
                     "why": "c: the resolved set is not the declared one: resolved and not declared "
@@ -1149,8 +1300,155 @@ def _self_test_body() -> int:
          ([(1, "requires-skill", "dashboard"), (2, "requires-skill", "grill-me"),
            (3, "requires-skill", "superpowers:brainstorming")], []))
 
+    # --- Task 12: detectors 6 (runtime prerequisites) and 7 (inbound registration) --------------------------
+    needs = ('"""Needs.\n\n    python3 scripts/needs.py\n"""\n'
+             "import json\n"
+             "import os\n"
+             "import shutil\n"
+             "import subprocess\n"
+             "import sys\n"
+             "import requests\n"
+             "import helper\n"
+             "from yaml.parser import Parser\n"
+             'subprocess.run(["gh", "pr", "list"])\n'
+             'subprocess.run(["git"] + sys.argv[1:])\n'
+             'subprocess.run([sys.executable, "-V"])\n'
+             'subprocess.run(["python3", "-V"])\n'
+             'shutil.which("node")\n'
+             'os.system("npx tsc --noEmit")\n'
+             'subprocess.run(["scripts/helper.py"])\n'
+             'TOKEN = os.environ["API_TOKEN"]\n'
+             'HOME = os.environ.get("HOME", "/tmp")\n'
+             'os.environ["SET_HERE"] = "1"\n'
+             'NOTE = "import flask; subprocess.run([\'docker\']); os.environ[\'QUOTED\']"\n'
+             'subprocess.run(["gh", "again"])\n'
+             'os.system("cd /tmp && ls")\n'
+             'Path("data/settings.json")\n'
+             'SELF_TEST = "--self-test"\n')
+    hook6 = ("#!/bin/bash\n"
+             "# a comment; git is named in it\n"
+             "if command -v jq >/dev/null; then\n"
+             "  git status | node x.js\n"
+             "fi\n"
+             "echo docker; cd curl\n")
+    dash = ('"""Dashboard.\n\n    python3 scripts/gen-dashboard.py\n"""\nimport subprocess\n\n\n'
+            "def _gh(args):\n"
+            '    return subprocess.run(["gh"] + args, capture_output=True, text=True)\n'
+            'SELF_TEST = "--self-test"\n')
+    w_r = world({".claude/hooks/ff.sh": "#!/bin/bash\n# a form feed: \x0c in a comment\ngit status\n",
+                 "scripts/needs.py": needs, "scripts/helper.py": "X = 1\n", ".claude/hooks/h6.sh": hook6,
+                 "scripts/gen-dashboard.py": dash,
+                 ".agents/skills/q/SKILL.md": "Run `git status`, then `gh pr list`.\n"})
+
+    def d6(sets: dict, cid: str) -> list:
+        return [(f["line"], f["kind"], f["term"]) for f in found(w_r, sets, cid, 6)]
+
+    both = {"n": ["scripts/needs.py"], "h": ["scripts/helper.py"]}
+    case("a fixture importing an absent package is a detector-6 finding",
+         lambda: [r for r in d6(both, "n") if r[1] == "import"],
+         [(10, "import", "requests"), (12, "import", "yaml")])
+    case("a module the package ships is no import finding, and the same module is one when the package does not "
+         "ship it; a standard module never is",
+         lambda: [r for r in d6({"n": ["scripts/needs.py"]}, "n") if r[1] == "import"],
+         [(10, "import", "requests"), (11, "import", "helper"), (12, "import", "yaml")])
+    case("Python: the program a runner is handed is an executable finding, once per file at its first line; an "
+         "interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions "
+         "one are not",
+         lambda: [r for r in d6(both, "n") if r[1] == "executable"],
+         [(13, "executable", "gh"), (14, "executable", "git"), (17, "executable", "node"),
+          (18, "executable", "npx")])
+    case("an environment read with no default is a config finding; a read with a default, a write and a path that "
+         "is opened are not",
+         lambda: [r for r in d6(both, "n") if r[1] == "config"],
+         [(20, "config", "API_TOKEN")])
+    case("gen-dashboard.py's gh call is an executable finding",
+         lambda: d6({"g": ["scripts/gen-dashboard.py"]}, "g"),
+         [(9, "executable", "gh")])
+    case("shell: a known program in command position is an executable finding; a comment, an argument and a "
+         "directory name are not, and Markdown is not read for programs",
+         lambda: (d6({"k": [".claude/hooks/h6.sh"]}, "k"), d6({"q": [".agents/skills/q/SKILL.md"]}, "q")),
+         ([(3, "executable", "jq"), (4, "executable", "git"), (4, "executable", "node")], []))
+    case("a line number is the file's own: a form feed inside a line starts no new line",
+         lambda: [(f["line"], f["term"], f["text"]) for f in found(w_r, {"f": [".claude/hooks/ff.sh"]}, "f", 6)],
+         [(3, "git", "git status")])
+    case("a detector-6 finding has an id, its kind and its term",
+         lambda: [(f["id"], sorted(k for k in f if k != "id")) for f in found(w_r, both, "n", 6)][:1],
+         [("n:6:1", ["detector", "file", "kind", "line", "term", "text"])])
+
+    stanza = {"hooks": {"PostToolUse": [{"matcher": "Edit", "hooks": [
+        {"type": "command", "command": "bash .claude/hooks/regen.sh"},
+        {"type": "command", "command": "bash .claude/hooks/regen-said.sh"}]}]}}
+    cli = '"""A tool.\n\n    python3 scripts/{}.py\n{}"""\nSELF_TEST = "--self-test"\n{}'
+    w_h = world({".claude/settings.json": json.dumps(stanza),
+                 ".claude/hooks/regen.sh": "#!/bin/bash\n# Regenerates a page.\ntrue\n",
+                 ".claude/hooks/regen-said.sh": "#!/bin/bash\n# invoked-by: user\ntrue\n",
+                 ".claude/hooks/tested.sh": "#!/bin/bash\n# bash .claude/hooks/tested.sh --self-test\ntrue\n",
+                 "tests/tested.test.sh": "bash .claude/hooks/tested.sh --self-test\n",
+                 ".claude/hooks/called.sh": "#!/bin/bash\ntrue\n",
+                 "scripts/runner.sh": "bash .claude/hooks/called.sh\n",
+                 "scripts/cli.py": cli.format("cli", "\ninvoked-by: user\n", ""),
+                 "scripts/bare.py": cli.format("bare", "", ""),
+                 "scripts/aside.py": cli.format("aside", "", "# invoked-by: user\nNOTE = 'invoked-by: user'\n"),
+                 "scripts/lib.py": cli.format("lib", "", ""),
+                 ".agents/skills/s/SKILL.md": "---\nname: s\ninvoked-by: user\n---\n# S\n",
+                 ".agents/skills/t/SKILL.md": "---\nname: t\n---\n# T\ninvoked-by: user\n",
+                 ".claude/hooks/top.sh": "#!/bin/bash\n# invoked-by: user\ntrue\n",
+                 ".claude/hooks/low.sh": "#!/bin/bash\ntrue\n# invoked-by: user\n",
+                 "scripts/test_bare.py": cli.format("test_bare", "", "")})
+    HOOKS = {"regen": [".claude/hooks/regen.sh"], "said": [".claude/hooks/regen-said.sh"],
+             "tested": [".claude/hooks/tested.sh", "tests/tested.test.sh"],
+             "called": [".claude/hooks/called.sh"], "runner": ["scripts/runner.sh"]}
+    TOOLS7 = {"cli": ["scripts/cli.py"], "bare": ["scripts/bare.py"], "aside": ["scripts/aside.py"],
+              "s": [".agents/skills/s/SKILL.md"], "t": [".agents/skills/t/SKILL.md"],
+              "top": [".claude/hooks/top.sh"], "low": [".claude/hooks/low.sh"], "tb": ["scripts/test_bare.py"]}
+
+    def d7(sets: dict, cid: str, roles=("entry-point",)) -> list:
+        return [(f["file"], f["line"], f["kind"], f.get("target")) for f in found(w_h, sets, cid, 7, roles=roles)]
+
+    case("a regen hook with a settings.json stanza and no declaration is needs-registration",
+         lambda: d7(HOOKS, "regen"),
+         [(".claude/hooks/regen.sh", 1, "needs-registration", ".claude/settings.json")])
+    case("...and a registered hook that says invoked-by: user is needs-registration all the same: the stanza is "
+         "how it is reached",
+         lambda: d7(HOOKS, "said"),
+         [(".claude/hooks/regen-said.sh", 1, "needs-registration", ".claude/settings.json")])
+    case("a hook invoked only by its self-test is needs-registration",
+         lambda: d7(HOOKS, "tested"),
+         [(".claude/hooks/tested.sh", 1, "needs-registration", None)])
+    case("a hook another shipped file runs in production is not a detector-7 finding",
+         lambda: d7(HOOKS, "called"),
+         [])
+    case("...and it is one when the file that runs it is not in the package",
+         lambda: d7({k: v for k, v in HOOKS.items() if k != "runner"}, "called"),
+         [(".claude/hooks/called.sh", 1, "needs-registration", None)])
+    case("a CLI declaring invoked-by: user is exempt",
+         lambda: (d7(TOOLS7, "cli"), d7(TOOLS7, "s"), d7(TOOLS7, "top")),
+         ([], [], []))
+    case("...and the same CLI without the declaration is needs-registration; so is one that says it outside its "
+         "usage block, a skill that says it outside its front matter and a hook that says it below its opening "
+         "comment",
+         lambda: [d7(TOOLS7, c) for c in ("bare", "aside", "t", "low")],
+         [[(f, 1, "needs-registration", None)] for f in ("scripts/bare.py", "scripts/aside.py",
+                                                         ".agents/skills/t/SKILL.md", ".claude/hooks/low.sh")])
+    case("a test file, and a shell file that is no hook, are not asked",
+         lambda: (d7(TOOLS7, "tb"), d7(HOOKS, "runner")),
+         ([], []))
+    case("a library is not asked what registers it",
+         lambda: d7({"lib": ["scripts/lib.py"]}, "lib", roles=("library",)),
+         [])
+    case("a detector-7 finding has an id; one reached through a stanza names it as its target",
+         lambda: [(f["id"], sorted(k for k in f if k != "id")) for c in ("regen", "tested")
+                  for f in found(w_h, HOOKS, c, 7)],
+         [("regen:7:1", ["detector", "file", "kind", "line", "target", "text"]),
+          ("tested:7:1", ["detector", "file", "kind", "line", "text"])])
+    case("a hook registration that cannot be read is CANNOT RUN, never no registration",
+         lambda: raised(lambda: scan(*put(world({".claude/settings.json": "{not json", "scripts/bare.py": "X = 1\n"}),
+                                          [comp("b", ["scripts/bare.py"])], {"b": ["scripts/bare.py"]}),
+                                     root=Path(tempfile.gettempdir())), "RAISED CannotRun")[:17],
+         "RAISED CannotRun")
+
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
-        print("NOT RUN under the mutation harness: 8 live-tree cases (CI's ordinary step runs them)")
+        print("NOT RUN under the mutation harness: 10 live-tree cases (CI's ordinary step runs them)")
     else:
         live_vocab = derive_vocabulary(REPO)
         case("the derived vocabulary on the live tree contains an element EQUAL to supabase, gemini and fly, and "
@@ -1189,6 +1487,19 @@ def _self_test_body() -> int:
              lambda: [sorted({f["term"] for f in live[c]["findings"] if f["detector"] == 5})
                       for c in ("skill-brief", "skill-explain-findings")],
              [["artifact-design"], ["artifact-design"]])
+        case("the live tree: gen-dashboard.py's gh call is an executable finding",
+             lambda: [(f["kind"], f["term"]) for f in live["gen-dashboard"]["findings"]
+                      if f["detector"] == 6 and f["term"] == "gh"],
+             [("executable", "gh")])
+        case("the live tree: each of the four regen hooks and the recall hook is needs-registration, reached "
+             "through .claude/settings.json",
+             lambda: sorted(f["file"] for e in live.values() for f in e["findings"]
+                            if f["detector"] == 7 and f.get("target") == ".claude/settings.json"
+                            and Path(f["file"]).stem in ("regen-backlog-page", "regen-dashboard",
+                                                         "regen-features-page", "regen-goals-page",
+                                                         "surface-recall")),
+             [f".claude/hooks/{h}.sh" for h in ("regen-backlog-page", "regen-dashboard", "regen-features-page",
+                                                "regen-goals-page", "surface-recall")])
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

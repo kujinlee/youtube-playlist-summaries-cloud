@@ -1186,5 +1186,412 @@
    ]
   ],
   "expect": "brief and explain-findings require artifact-design"
+ },
+ {
+  "name": "detector 6: a standard module is a prerequisite",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(name in sys.stdlib_module_names or name in modules)",
+    "(name in modules)"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: a module the package ships is a prerequisite",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(name in sys.stdlib_module_names or name in modules))",
+    "(name in sys.stdlib_module_names))"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: the set is the component's own, not the package's",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings += _prerequisites(files, base, _shipped(decl))",
+    "findings += _prerequisites(files, base, {f.relative_to(base).as_posix() for f in files})"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: an `import x` is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                    seen |= {(node.lineno, \"import\", a.name.split(\".\")[0]) for a in node.names}\n",
+    "                    pass\n"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: a `from x import` is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                    seen.add((node.lineno, \"import\", node.module.split(\".\")[0]))\n",
+    "                    pass\n"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: a dotted import is named whole",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"import\", node.module.split(\".\")[0]))",
+    "\"import\", node.module))"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: an interpreter is an executable",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "name in SS.INTERPRETERS + SHELL_BUILTINS)}",
+    "name in SHELL_BUILTINS)}"
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: a shell builtin is an executable",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "SS.INTERPRETERS + SHELL_BUILTINS)}",
+    "SS.INTERPRETERS)}"
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: a path is an executable",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if program and re.fullmatch(r\"[\\w+-]+\", program):",
+    "if program:"
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: the last line that has a name is reported",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "first.setdefault((kind, name), n)",
+    "first[(kind, name)] = n"
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: the left end of a `+` is not followed",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):\n            node = node.left\n",
+    ""
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: a command string is named whole",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return node.value.split()[0]\n",
+    "        return node.value\n"
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: a list's first element is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if isinstance(node, (ast.List, ast.Tuple)) and node.elts:",
+    "if isinstance(node, ast.Tuple) and node.elts:"
+   ]
+  ],
+  "expect": "gen-dashboard.py's gh call is an executable finding"
+ },
+ {
+  "name": "detector 6: an environment write is a read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if _env_read(node, parent) and not written:",
+    "if _env_read(node, parent):"
+   ]
+  ],
+  "expect": "an environment read with no default is a config finding; a read with a default, a write and a path that is opened are not"
+ },
+ {
+  "name": "detector 6: a read with a default is a prerequisite",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return named and _python_use(node, parent) == \"config\"",
+    "return named"
+   ]
+  ],
+  "expect": "an environment read with no default is a config finding; a read with a default, a write and a path that is opened are not"
+ },
+ {
+  "name": "detector 6: an opened path is an environment read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "named and _python_use(node, parent)",
+    "_python_use(node, parent)"
+   ]
+  ],
+  "expect": "an environment read with no default is a config finding; a read with a default, a write and a path that is opened are not"
+ },
+ {
+  "name": "detector 6: a shell comment is read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                if not text.lstrip().startswith(\"#\"):\n                    seen |= {(n, \"executable\"",
+    "                if True:\n                    seen |= {(n, \"executable\""
+   ]
+  ],
+  "expect": "shell: a known program in command position is an executable finding; a comment, an argument and a directory name are not, and Markdown is not read for programs"
+ },
+ {
+  "name": "detector 6: a program anywhere on a shell line is a command",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "SHELL_COMMAND = re.compile(r\"(?:^|[|;&(`]|\\b(?:then|do|else|if|while|until|exec|time|command\\s+-v)\\s)\\s*(\"",
+    "SHELL_COMMAND = re.compile(r\"\\b(\""
+   ]
+  ],
+  "expect": "shell: a known program in command position is an executable finding; a comment, an argument and a directory name are not, and Markdown is not read for programs"
+ },
+ {
+  "name": "detector 6: `command -v` is not command position",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "exec|time|command\\s+-v)\\s)",
+    "exec|time)\\s)"
+   ]
+  ],
+  "expect": "shell: a known program in command position is an executable finding; a comment, an argument and a directory name are not, and Markdown is not read for programs"
+ },
+ {
+  "name": "detector 6: Markdown is read for programs",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        elif rel.endswith(\".sh\"):\n            for n, text in enumerate(lines, 1):\n                if not text.lstrip()",
+    "        else:\n            for n, text in enumerate(lines, 1):\n                if not text.lstrip()"
+   ]
+  ],
+  "expect": "shell: a known program in command position is an executable finding; a comment, an argument and a directory name are not, and Markdown is not read for programs"
+ },
+ {
+  "name": "detector 6: a finding does not hold its name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"text\": lines[n - 1].strip(), \"kind\": kind, \"term\": name}\n                for (kind, name), n in first.items()]",
+    "\"text\": lines[n - 1].strip(), \"kind\": kind}\n                for (kind, name), n in first.items()]"
+   ]
+  ],
+  "expect": "a detector-6 finding has an id, its kind and its term"
+ },
+ {
+  "name": "lines: a form feed starts a new line",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return tuple(file.read_text().split(\"\\n\"))",
+    "return tuple(file.read_text().splitlines())"
+   ]
+  ],
+  "expect": "a line number is the file's own: a form feed inside a line starts no new line"
+ },
+ {
+  "name": "detector 7: a registered hook is asked like any file",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if rel in hooks:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a regen hook with a settings.json stanza and no declaration is needs-registration"
+ },
+ {
+  "name": "detector 7: a registered hook that says user is exempt",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if rel in hooks:",
+    "if rel in hooks and not _says_user(f, rel):"
+   ]
+  ],
+  "expect": "...and a registered hook that says invoked-by: user is needs-registration all the same: the stanza is how it is reached"
+ },
+ {
+  "name": "detector 7: a stanza finding does not name the stanza",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "out.append({**row, \"target\": HOOK_STANZAS})",
+    "out.append(row)"
+   ]
+  ],
+  "expect": "a regen hook with a settings.json stanza and no declaration is needs-registration"
+ },
+ {
+  "name": "detector 7: the registration is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    hooks = SS.registered_hooks(base)\n",
+    "    hooks = set()\n"
+   ]
+  ],
+  "expect": "a regen hook with a settings.json stanza and no declaration is needs-registration"
+ },
+ {
+  "name": "detector 7: a test is a production caller",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if other != rel and not _is_test(other) and",
+    "if other != rel and"
+   ]
+  ],
+  "expect": "a hook invoked only by its self-test is needs-registration"
+ },
+ {
+  "name": "detector 7: a file is its own caller",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "other != rel and not _is_test(other)",
+    "not _is_test(other)"
+   ]
+  ],
+  "expect": "a hook invoked only by its self-test is needs-registration"
+ },
+ {
+  "name": "detector 7: a caller is not looked for",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "rel in _runs(base, other) for other in sorted(shipped)",
+    "False for other in sorted(shipped)"
+   ]
+  ],
+  "expect": "a hook another shipped file runs in production is not a detector-7 finding"
+ },
+ {
+  "name": "detector 7: a caller outside the package counts",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings += _registrations(files, base, _shipped(decl), c[\"roles\"], hooks)",
+    "findings += _registrations(files, base, set(_tracked(base)), c[\"roles\"], hooks)"
+   ]
+  ],
+  "expect": "...and it is one when the file that runs it is not in the package"
+ },
+ {
+  "name": "detector 7: the declaration is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        elif not _says_user(f, rel) and not any(\n",
+    "        elif not any(\n"
+   ]
+  ],
+  "expect": "a CLI declaring invoked-by: user is exempt"
+ },
+ {
+  "name": "detector 7: a Python file may declare anywhere",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        block = (ast.get_docstring(_parsed(file)[0], clean=False) or \"\").splitlines()\n    elif rel.endswith(\".md\"):",
+    "        block = lines\n    elif rel.endswith(\".md\"):"
+   ]
+  ],
+  "expect": "...and the same CLI without the declaration is needs-registration; so is one that says it outside its usage block, a skill that says it outside its front matter and a hook that says it below its opening comment"
+ },
+ {
+  "name": "detector 7: a skill may declare below its front matter",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "block = lines[1:end] if lines and lines[0].strip() == \"---\" else ()",
+    "block = lines"
+   ]
+  ],
+  "expect": "...and the same CLI without the declaration is needs-registration; so is one that says it outside its usage block, a skill that says it outside its front matter and a hook that says it below its opening comment"
+ },
+ {
+  "name": "detector 7: a hook may declare anywhere",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "block = lines[:next((i for i, ln in enumerate(lines) if not ln.startswith(\"#\")), len(lines))]",
+    "block = lines"
+   ]
+  ],
+  "expect": "...and the same CLI without the declaration is needs-registration; so is one that says it outside its usage block, a skill that says it outside its front matter and a hook that says it below its opening comment"
+ },
+ {
+  "name": "detector 7: a library is asked",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    for f in files if \"entry-point\" in roles else ():\n        rel = f.relative_to(base).as_posix()\n        hook =",
+    "    for f in files:\n        rel = f.relative_to(base).as_posix()\n        hook ="
+   ]
+  ],
+  "expect": "a library is not asked what registers it"
+ },
+ {
+  "name": "detector 7: a test file is asked",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if _is_test(rel) or not (hook or",
+    "if not (hook or"
+   ]
+  ],
+  "expect": "a test file, and a shell file that is no hook, are not asked"
+ },
+ {
+  "name": "detector 7: every shell file is a hook",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "hook = rel.startswith(\".claude/hooks/\") and rel.endswith(\".sh\")",
+    "hook = rel.endswith(\".sh\")"
+   ]
+  ],
+  "expect": "a test file, and a shell file that is no hook, are not asked"
  }
 ]

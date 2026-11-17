@@ -2493,5 +2493,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ Task 11 (2026-11-17): 81 → 108 — +18 detector 4 (the dated tool list and its refusals, guard names, doc paths
     # and the package's set, the finding/mention split, the row), +9 detector 5 (the four sentence shapes, Markdown
     # only, a skill of the same package, the row).
-    "scripts/check-publishability.py": 108,
+    # ⟳ Task 12 (2026-11-17): 108 → 145 — +21 detector 6 (imports and the package's set, the program a runner or a
+    # shell line names, environment reads, the row), +15 detector 7 (the stanza, production callers, the declaration
+    # and where it may stand, the roles and files asked), +1 the line splitter (a form feed starts no line).
+    "scripts/check-publishability.py": 145,
 }
