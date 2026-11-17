@@ -6,6 +6,8 @@ plus a manifest-only anchor fix (`cca375ab`, entry 157's find-string duplicated 
 
 REVIEW GAP: codex — alternation (rounds 2+ run ONE half; Codex ran round 2).
 
+REDESIGNED → hse-slice-c-redesign. Phase 6 (`docs/reviews/coordinator/architecture-review-2026-11-17-hse-slice-c.md`) deleted `optional-edges` (CM1, Cm3 removed with it) and made the reader fail closed by census (CM2); fold `244a6c02`, reviewed as `hse-slice-c-redesign-r1`.
+
 ```yaml
 round: 3
 fixes_nontrivial: true
@@ -14,9 +16,9 @@ halves:
   claude: ran
   codex: alternation
 findings:
-  - {id: CM1, severity: High, aim: deliverable, fix_induced: true, component: optional-edges, disposition: filed}
-  - {id: CM2, severity: High, aim: deliverable, fix_induced: false, component: edge-reader, disposition: filed}
-  - {id: Cm3, severity: Medium, aim: deliverable, fix_induced: true, component: optional-edges, disposition: filed}
+  - {id: CM1, severity: High, aim: deliverable, fix_induced: true, component: optional-edges, disposition: redesigned}
+  - {id: CM2, severity: High, aim: deliverable, fix_induced: false, component: edge-reader, disposition: redesigned}
+  - {id: Cm3, severity: Medium, aim: deliverable, fix_induced: true, component: optional-edges, disposition: redesigned}
 ```
 
 | Id | Finding |
