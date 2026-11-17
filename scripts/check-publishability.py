@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 97 cases
+    python3 scripts/check-publishability.py --self-test  # 103 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -231,8 +231,9 @@ def _python_use(node: ast.Constant, parent: dict) -> str | None:
         return "config"
     if isinstance(up, ast.Call) and _dotted(up.func) in ENV_GETTERS and up.args[:1] == [node]:
         outer = parent.get(up)
-        fallback = isinstance(outer, ast.BoolOp) and isinstance(outer.op, ast.Or) and outer.values[-1] is not up
+        rest = outer.values[outer.values.index(up) + 1:] if isinstance(outer, ast.BoolOp) and isinstance(outer.op, ast.Or) else []
         given = up.args[1:2] + [k.value for k in up.keywords if k.arg == "default"]
+        fallback = any(not (isinstance(g, ast.Constant) and g.value is None) for g in rest)
         working = any(not (isinstance(g, ast.Constant) and g.value is None) for g in given)
         return None if working or fallback else "config"
     child = node
@@ -290,10 +291,40 @@ def _markdown_kind(lines, line: int, token: str) -> str | None:
             fence = m.group(1).lower() if fence is None else None
     text, tok = lines[line - 1], re.escape(token)
     if fence is not None:
-        return "invocation" if fence in SHELL_FENCES and not text.lstrip().startswith("#") else None
+        if fence in SHELL_FENCES:
+            return None if text.lstrip().startswith("#") else "invocation"
+        opened = max(i for i, ln in enumerate(lines[:line - 1]) if re.match(r"\s*(?:```|~~~)", ln))
+        return "prerequisite" if fence == "" and _introduced(lines, opened) else None
     if re.search(INSTRUCTS + tok, text, re.I) or re.search(REQUIRES + r"(?<![A-Za-z0-9])" + tok, text, re.I):
         return "prerequisite"
+    if LIST_ITEM.match(text):
+        i = line - 1
+        while i > 0 and (LIST_ITEM.match(lines[i - 1]) or lines[i - 1][:1] in (" ", "\t")):
+            i -= 1
+        return "prerequisite" if _introduced(lines, i) else None
     return None
+
+
+LIST_ITEM = re.compile(r"\s*(?:\d+[.)]|[-*+])\s+")
+
+
+def _introduced(lines, at: int) -> bool:
+    """Whether the paragraph right above line index `at` (blank lines between allowed) ENDS WITH A COLON and holds
+    an imperative (`LEAD_VERBS`): the shape that introduces a list or an untagged block as the steps to take (review r2: a numbered list after
+    "Then read, in this order ...:", a tool procedure after "... BEFORE arming ...:")."""
+    i = at - 1
+    while i >= 0 and not lines[i].strip():
+        i -= 1
+    if i < 0 or not lines[i].rstrip().rstrip("*_").endswith(":"):
+        return False
+    start = i
+    while start > 0 and lines[start - 1].strip() and not re.match(r"\s*(?:#|```|~~~)", lines[start - 1]):
+        start -= 1
+    return bool(re.search(LEAD_VERBS, " ".join(lines[start:i + 1]), re.I))
+
+
+# The imperatives an introducing paragraph must hold: INSTRUCTS' verbs, and "stop" (a procedure that halts work).
+LEAD_VERBS = r"\b(?:read|load|open|run|edit|update|consult|follow|source|use|call|invoke|stop)\b"
 
 
 def _kind(file: Path, line: int, token: str) -> str | None:
@@ -303,7 +334,8 @@ def _kind(file: Path, line: int, token: str) -> str | None:
 
     BOUNDS: a `.sh` line that is not a comment is an invocation whatever it does with the term; a fenced block
     is a command only when its fence is tagged as a shell; Markdown prose is a prerequisite only through the
-    two sentence shapes INSTRUCTS and REQUIRES."""
+    two sentence shapes INSTRUCTS and REQUIRES, or as an item of a list (a line of an untagged block) whose
+    introducing paragraph ends with a colon (`_introduced`)."""
     file = Path(file)
     try:
         lines = _lines(file)
@@ -369,16 +401,27 @@ def _invocations(files: list, base: Path, shipped: set, channel: str) -> list:
 
     A Python file: each file it loads (`SS.python_loads`) that the repository holds and the package does not
     ship is `outside-set`, at the first line naming the target; so is a file it RUNS (a literal argument of a
-    process runner) that the repository does not hold at all (review r1 XM2). BOUND: a load of a SHIPPED file is not judged
+    process runner) that the repository does not hold at all (review r1 XM2). BOUND: a missing target reached through
+    a NAME (`HELPER = "x.py"`, `os.path.join(...)`) is not judged: statically it is the same as a file the program
+    writes before running it, and reading the reader's resolved loads instead added 29 such false findings on the
+    live tree (review r2). BOUND: a runner or environment module imported under an alias (`import subprocess as
+    sp`) is not recognised, by this detector or detector 6 (review r2; no shipped file loses a coupling today).
+    A load the reader could NOT read (its `unresolved` census) is `unread`, one per line:
+    an unjudged coupling is shown, never counted as none (review r2). BOUND: a load of a SHIPPED file is not judged
     here, whatever directory it is resolved from at run time."""
     out = []
     for f in files:
         rel, lines = f.relative_to(base).as_posix(), _lines(f)
         if rel.endswith(".py"):
             tree, parent = _parsed(f)
-            invoked = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
-                       and _python_use(n, parent) == "invocation"}
-            for target in sorted(SS.python_loads(rel, f.read_text())[0] - shipped):
+            invoked = {os.path.normpath(n.value) for n in ast.walk(tree) if isinstance(n, ast.Constant)
+                       and isinstance(n.value, str) and _python_use(n, parent) == "invocation"}
+            edges, unread = SS.python_loads(rel, f.read_text())
+            for at in unread:
+                n = int(at.rsplit(":", 1)[1])
+                out.append({"detector": 2, "file": rel, "line": n, "text": lines[n - 1].strip() if n <= len(lines) else "",
+                            "kind": "unread", "target": None})
+            for target in sorted(edges - shipped):
                 if (base / target).is_file() or target in invoked:
                     named = re.compile(r"(?<![\w-])" + re.escape(Path(target).stem) + r"(?![\w-])")
                     n = next((i for i, text in enumerate(lines, 1) if named.search(text)), 1)
@@ -1475,6 +1518,27 @@ def _self_test_body() -> int:
     case("XM3: an imperative 'use' or 'call' before a tool name makes it a finding, not a mention",
          lambda: items(w_r1, {"u": [".agents/skills/u/SKILL.md"]}, "u")[0],
          [(2, "tool-name", "TaskList"), (3, "tool-name", "TaskCreate")])
+
+    # --- round 2 fold (Claude): each input the review constructed ------------------------------------------
+    w_r2 = world({"scripts/tok2.py": ('import os\nimport subprocess\n'
+                                      'A = os.getenv("REVIEW_T1") or None\n'
+                                      'B = os.getenv("REVIEW_T2") or "x"\n'
+                                      'subprocess.run(["python3", "./scripts/missing-helper-b.py"], check=True)\n'
+                                      'subprocess.run("python3 scripts/missing-helper-c.py", shell=True)\n'),
+                  ".agents/skills/v/SKILL.md": ("# V\nThen read, in this order:\n\n1. the list (`TaskList`)\n\n"
+                                                "**Notes:**\n- `TaskCreate` is described here\n\n"
+                                                "So stop the strays first:\n\n```\nTaskCreate a stray\n```\n")})
+    case("r2: a None given through `or` is no working fallback; a real fallback still is",
+         lambda: [(f["line"], f["kind"]) for f in found(w_r2, {"t": ["scripts/tok2.py"]}, "t", 6) if f["kind"] == "config"],
+         [(3, "config")])
+    case("r2: a runner's missing target is matched after `./` is normalised, and a load the reader could not "
+         "read is `unread`, never zero findings",
+         lambda: sorted((f["line"], f["kind"], f["target"] or "") for f in found(w_r2, {"t": ["scripts/tok2.py"]}, "t", 2)),
+         [(5, "outside-set", "scripts/missing-helper-b.py"), (6, "unread", "")])
+    case("r2: a list item or an untagged block introduced by an imperative ending in a colon is a finding; a "
+         "list under a label is a mention",
+         lambda: items(w_r2, {"v": [".agents/skills/v/SKILL.md"]}, "v"),
+         ([(4, "tool-name", "TaskList"), (12, "tool-name", "TaskCreate")], [(7, "tool-name", "TaskCreate")]))
 
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
         print("NOT RUN under the mutation harness: 10 live-tree cases (CI's ordinary step runs them)")

@@ -3,6 +3,60 @@
     "ask-answerer": {
       "findings": [
         {
+          "detector": 2,
+          "file": "scripts/ask_answerer.py",
+          "id": "ask-answerer:2:1",
+          "kind": "unread",
+          "line": 1216,
+          "target": null,
+          "text": "p = subprocess.Popen([sys.executable, str(pathlib.Path(__file__).resolve()), \"--watch\"],"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/ask_answerer.py",
+          "id": "ask-answerer:2:2",
+          "kind": "unread",
+          "line": 1379,
+          "target": null,
+          "text": "fake.write_text(f\"\"\"#!{sys.executable}"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/ask_answerer.py",
+          "id": "ask-answerer:2:3",
+          "kind": "unread",
+          "line": 2369,
+          "target": null,
+          "text": "started = subprocess.run([sys.executable, str(pathlib.Path(__file__).resolve()), \"--start\"], env=env,"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/ask_answerer.py",
+          "id": "ask-answerer:2:4",
+          "kind": "unread",
+          "line": 2373,
+          "target": null,
+          "text": "again = subprocess.run([sys.executable, str(pathlib.Path(__file__).resolve()), \"--start\"], env=env,"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/ask_answerer.py",
+          "id": "ask-answerer:2:5",
+          "kind": "unread",
+          "line": 2391,
+          "target": null,
+          "text": "stopped_run = subprocess.run([sys.executable, str(pathlib.Path(__file__).resolve()), \"--stop\"], env=env,"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/ask_answerer.py",
+          "id": "ask-answerer:2:6",
+          "kind": "unread",
+          "line": 2397,
+          "target": null,
+          "text": "subprocess.run([sys.executable, str(pathlib.Path(__file__).resolve()), \"--start\"], env=env,"
+        },
+        {
           "detector": 6,
           "file": "scripts/ask_answerer.py",
           "id": "ask-answerer:6:1",
@@ -1018,6 +1072,96 @@
     },
     "check-plan-code": {
       "findings": [
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:1",
+          "kind": "unread",
+          "line": 2494,
+          "target": null,
+          "text": "rc, so, se = control_parts(d, name, seeds, trees)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:2",
+          "kind": "unread",
+          "line": 2553,
+          "target": null,
+          "text": "rc, so, se = control_parts(d, name, seeds, trees)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:3",
+          "kind": "unread",
+          "line": 2757,
+          "target": null,
+          "text": "in seed_runs(d, fname, seeds, here, limit=limit)],"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:4",
+          "kind": "unread",
+          "line": 2760,
+          "target": null,
+          "text": "(rc, out), odd = run_suite(d, fname, limit=limit), None"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:5",
+          "kind": "unread",
+          "line": 2856,
+          "target": null,
+          "text": "_by, _why = rerun_kill(rerun_fresh(rerun_from, fname, src, seeds, limit, mut.get(\"expect\")), wants)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:6",
+          "kind": "unread",
+          "line": 3852,
+          "target": null,
+          "text": "_real_parts_d = run_suite_parts"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:7",
+          "kind": "unread",
+          "line": 5273,
+          "target": null,
+          "text": "_real_run_suite, _calls = run_suite_parts, []"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:8",
+          "kind": "unread",
+          "line": 5298,
+          "target": null,
+          "text": "_real_parts, _real_clock = run_suite_parts, time.monotonic"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:9",
+          "kind": "unread",
+          "line": 5327,
+          "target": null,
+          "text": "_real_parts_c = run_suite_parts"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:10",
+          "kind": "unread",
+          "line": 8114,
+          "target": null,
+          "text": "exec(compile(_dsrc + extra, \"<pins>\", \"exec\"), ns)"
+        },
         {
           "detector": 4,
           "file": "scripts/check-plan-code.py",
@@ -2844,6 +2988,15 @@
     "check-rc-contract": {
       "findings": [
         {
+          "detector": 2,
+          "file": "scripts/check-rc-contract.py",
+          "id": "check-rc-contract:2:1",
+          "kind": "unread",
+          "line": 296,
+          "target": null,
+          "text": "proc = subprocess.run([\"bash\", str(hook)], capture_output=True, text=True,"
+        },
+        {
           "detector": 6,
           "file": "scripts/check-rc-contract.py",
           "id": "check-rc-contract:6:1",
@@ -2947,6 +3100,204 @@
     },
     "check-surface-recall": {
       "findings": [
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:1",
+          "kind": "unread",
+          "line": 381,
+          "target": null,
+          "text": "bad = undeclared_render(DECLARED_RENDER)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:2",
+          "kind": "unread",
+          "line": 382,
+          "target": null,
+          "text": "bad += undeclared_detail(DECLARED_WITH_DETAIL)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:3",
+          "kind": "unread",
+          "line": 493,
+          "target": null,
+          "text": "render(5, \"\").rstrip(), DECLARED_RENDER[5])"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:4",
+          "kind": "unread",
+          "line": 495,
+          "target": null,
+          "text": "render(5, \"WIDGET\").rstrip().endswith(\"Detail: WIDGET\"), True)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:5",
+          "kind": "unread",
+          "line": 496,
+          "target": null,
+          "text": "case(\"a code with no arm renders nothing\", render(4, \"anything\"), \"\")"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:6",
+          "kind": "unread",
+          "line": 497,
+          "target": null,
+          "text": "case(\"the code decides which arm answers\", render(6, \"X\").startswith(\"recall-llm: a plan IS\"),"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:7",
+          "kind": "unread",
+          "line": 500,
+          "target": null,
+          "text": "'{\"a\": [1,2]}' in render(5, '{\"a\": [1,2]}'), True)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:8",
+          "kind": "unread",
+          "line": 502,
+          "target": null,
+          "text": "\"LINE\" in render(5, \"LINE\\n\\n\"), True)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:9",
+          "kind": "unread",
+          "line": 503,
+          "target": null,
+          "text": "case(\"silence is EMPTY, not malformed \u2014 the two must stay distinguishable\", render(2, \"x\"), \"\")"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:10",
+          "kind": "unread",
+          "line": 523,
+          "target": null,
+          "text": "undeclared_render(DECLARED_RENDER), [])"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:11",
+          "kind": "unread",
+          "line": 526,
+          "target": null,
+          "text": "[rc for rc, _g, _w in undeclared_render(_wrong)], [5])"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:12",
+          "kind": "unread",
+          "line": 528,
+          "target": null,
+          "text": "[(len(g) > 0, w) for _rc, g, w in undeclared_render(_wrong)],"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:13",
+          "kind": "unread",
+          "line": 531,
+          "target": null,
+          "text": "undeclared_render({0: \"\", 3: \"\"}), [])"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:14",
+          "kind": "unread",
+          "line": 565,
+          "target": null,
+          "text": "[rc for rc, _g, _w in undeclared_render({5: STATIC}, hook=_fx)], [5])"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:15",
+          "kind": "unread",
+          "line": 650,
+          "target": null,
+          "text": "lambda: render(5, \"\", hook=_fx))"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:16",
+          "kind": "unread",
+          "line": 654,
+          "target": null,
+          "text": "undeclared_detail(DECLARED_WITH_DETAIL), [])"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:17",
+          "kind": "unread",
+          "line": 657,
+          "target": null,
+          "text": "[rc for rc, _a, _b in undeclared_detail(_wrongd)], [5])"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:18",
+          "kind": "unread",
+          "line": 667,
+          "target": null,
+          "text": "[rc for rc, _a, _b in undeclared_detail(DECLARED_WITH_DETAIL, hook=_fxt)], [5, 6])"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:19",
+          "kind": "unread",
+          "line": 669,
+          "target": null,
+          "text": "undeclared_render(DECLARED_RENDER, hook=_fxt), [])"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:20",
+          "kind": "unread",
+          "line": 705,
+          "target": null,
+          "text": "return render(5, \"\").rstrip() == DECLARED_RENDER[5]"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:21",
+          "kind": "unread",
+          "line": 799,
+          "target": null,
+          "text": "render.__defaults__, (None,))"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:22",
+          "kind": "unread",
+          "line": 823,
+          "target": null,
+          "text": "return render(5, \"\", hook=fx)"
+        },
         {
           "detector": 4,
           "file": "scripts/check-surface-recall.py",
@@ -3214,6 +3565,24 @@
           "line": 418,
           "target": "scripts/ask_answerer.py",
           "text": "| Start, stop, look | `python3 scripts/ask_answerer.py --start` \u00b7 `--stop` \u00b7 `--status` (running?, today's spend against the caps, questions NOT answered) |"
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/shared/explainer-delivery.md",
+          "id": "contract-explainer-delivery:4:1",
+          "kind": "tool-name",
+          "line": 289,
+          "term": "TaskList",
+          "text": "TaskList  ->  TaskStop every task whose command tails ~/explainers/questions.md"
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/shared/explainer-delivery.md",
+          "id": "contract-explainer-delivery:4:2",
+          "kind": "tool-name",
+          "line": 289,
+          "term": "TaskStop",
+          "text": "TaskList  ->  TaskStop every task whose command tails ~/explainers/questions.md"
         }
       ],
       "mentions": [
@@ -3288,22 +3657,6 @@
           "line": 201,
           "term": "docs/backlog.md",
           "text": "> narrows the gap for one dated document pair (`docs/backlog.md` row 293) and closes it for nobody."
-        },
-        {
-          "detector": 4,
-          "file": ".agents/skills/shared/explainer-delivery.md",
-          "kind": "tool-name",
-          "line": 289,
-          "term": "TaskList",
-          "text": "TaskList  ->  TaskStop every task whose command tails ~/explainers/questions.md"
-        },
-        {
-          "detector": 4,
-          "file": ".agents/skills/shared/explainer-delivery.md",
-          "kind": "tool-name",
-          "line": 289,
-          "term": "TaskStop",
-          "text": "TaskList  ->  TaskStop every task whose command tails ~/explainers/questions.md"
         },
         {
           "detector": 4,
@@ -3386,6 +3739,24 @@
     },
     "explainer-serve": {
       "findings": [
+        {
+          "detector": 2,
+          "file": "scripts/explainer-serve.py",
+          "id": "explainer-serve:2:1",
+          "kind": "unread",
+          "line": 2817,
+          "target": null,
+          "text": "r = subprocess.run([sys.executable, str(pathlib.Path(__file__).resolve()), \"--status\"],"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/explainer-serve.py",
+          "id": "explainer-serve:2:2",
+          "kind": "unread",
+          "line": 4773,
+          "target": null,
+          "text": "[sys.executable, \"-c\", \"import sys; print('o'); print('e', file=sys.stderr); sys.exit(4)\"],"
+        },
         {
           "detector": 4,
           "file": "scripts/explainer-serve.py",
@@ -3774,6 +4145,60 @@
     },
     "fixture-git": {
       "findings": [
+        {
+          "detector": 2,
+          "file": "scripts/fixture_git.py",
+          "id": "fixture-git:2:1",
+          "kind": "unread",
+          "line": 240,
+          "target": null,
+          "text": "kid = subprocess.run([\"sh\", \"-c\", 'mktemp -d \"${TMPDIR:-/tmp}/kid-XXXXXX\"'],"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/fixture_git.py",
+          "id": "fixture-git:2:2",
+          "kind": "unread",
+          "line": 242,
+          "target": null,
+          "text": "py_kid = subprocess.run([sys.executable, \"-c\", \"import tempfile; print(tempfile.mkdtemp())\"],"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/fixture_git.py",
+          "id": "fixture-git:2:3",
+          "kind": "unread",
+          "line": 327,
+          "target": null,
+          "text": "child = subprocess.run([sys.executable, \"-c\", \"import os; print(os.environ.get('GIT_DIR'))\"],"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/fixture_git.py",
+          "id": "fixture-git:2:4",
+          "kind": "unread",
+          "line": 330,
+          "target": null,
+          "text": "rc = os.system(f\"cd {work2} && git init -q && git -c user.name=t -c user.email=t@t \""
+        },
+        {
+          "detector": 2,
+          "file": "scripts/fixture_git.py",
+          "id": "fixture-git:2:5",
+          "kind": "unread",
+          "line": 333,
+          "target": null,
+          "text": "subprocess.run(\"git config fixture.shell yes\", shell=True, cwd=work2)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/fixture_git.py",
+          "id": "fixture-git:2:6",
+          "kind": "unread",
+          "line": 343,
+          "target": null,
+          "text": "child = subprocess.run([sys.executable, \"-c\", \"import os; print(os.environ.get('GIT_DIR'))\"],"
+        },
         {
           "detector": 6,
           "file": "scripts/fixture_git.py",
@@ -4454,6 +4879,15 @@
     },
     "gen-dashboard": {
       "findings": [
+        {
+          "detector": 2,
+          "file": "scripts/gen-dashboard.py",
+          "id": "gen-dashboard:2:1",
+          "kind": "unread",
+          "line": 3352,
+          "target": null,
+          "text": "if argv and argv[0] == sys.executable:            # brief-compose"
+        },
         {
           "detector": 3,
           "file": "scripts/gen-dashboard.py",
@@ -5269,7 +5703,35 @@
       "status": "scanned"
     },
     "goal-tree": {
-      "findings": [],
+      "findings": [
+        {
+          "detector": 2,
+          "file": "scripts/goal-tree.py",
+          "id": "goal-tree:2:1",
+          "kind": "unread",
+          "line": 216,
+          "target": null,
+          "text": "exec(compile(pathlib.Path(path).read_bytes(), path, \"exec\", dont_inherit=True), mod.__dict__)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/goal-tree.py",
+          "id": "goal-tree:2:2",
+          "kind": "unread",
+          "line": 3269,
+          "target": null,
+          "text": "r = subprocess.run([\"bash\", \"-c\", f\"REPO_ROOT={shlex.quote(str(tdp))}\\n\" + \"\\n\".join(hook)],"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/goal-tree.py",
+          "id": "goal-tree:2:3",
+          "kind": "unread",
+          "line": 4304,
+          "target": null,
+          "text": "composer=[sys.executable, \"-c\", \"pass\"]))"
+        }
+      ],
       "mentions": [
         {
           "detector": 4,
@@ -5913,6 +6375,15 @@
           "line": 85,
           "term": "youtube-playlist-summaries",
           "text": "\"https://youtube-playlist-summaries.fly.dev/login\" &"
+        },
+        {
+          "detector": 1,
+          "file": "docs/memory/reservation-release-slice-state.md",
+          "id": "memory-corpus:1:4",
+          "kind": "prerequisite",
+          "line": 17,
+          "term": "gemini",
+          "text": "- live-Gemini verification of the class-A {429,503}-bills-nothing premise before flipping"
         },
         {
           "detector": 2,
@@ -7131,13 +7602,6 @@
           "line": 14,
           "term": "fly",
           "text": "which unblocked the Fly.io deploy. See [[local-cloud-validation-run]]."
-        },
-        {
-          "detector": 1,
-          "file": "docs/memory/reservation-release-slice-state.md",
-          "line": 17,
-          "term": "gemini",
-          "text": "- live-Gemini verification of the class-A {429,503}-bills-nothing premise before flipping"
         },
         {
           "detector": 1,
@@ -14345,6 +14809,24 @@
     "regen-pages": {
       "findings": [
         {
+          "detector": 2,
+          "file": "scripts/regen-pages.py",
+          "id": "regen-pages:2:1",
+          "kind": "unread",
+          "line": 709,
+          "target": null,
+          "text": "def regen(names: list[str], pages: dict[str, str], run=launch, timeout: float = TIMEOUT,"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/regen-pages.py",
+          "id": "regen-pages:2:2",
+          "kind": "unread",
+          "line": 755,
+          "target": null,
+          "text": "def main(argv: list[str] | None = None, *, stdin=None, run=launch, pages=None, tree_for=fresh,"
+        },
+        {
           "detector": 6,
           "file": "scripts/regen-pages.py",
           "id": "regen-pages:6:1",
@@ -14432,6 +14914,78 @@
     },
     "session-state": {
       "findings": [
+        {
+          "detector": 2,
+          "file": "scripts/session-state.py",
+          "id": "session-state:2:1",
+          "kind": "unread",
+          "line": 1653,
+          "target": null,
+          "text": "_run([sys.executable, \"-c\", \"import time; time.sleep(5)\"], root, 0.3), (124, \"timed out after 0.3s\"))"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/session-state.py",
+          "id": "session-state:2:2",
+          "kind": "unread",
+          "line": 1675,
+          "target": null,
+          "text": "rc_bg = _run([\"sh\", \"-c\", f\"sleep 30 >/dev/null 2>&1 & echo $! > {bg}; echo ok\"], root, 5)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/session-state.py",
+          "id": "session-state:2:3",
+          "kind": "unread",
+          "line": 1680,
+          "target": null,
+          "text": "rc_hung = _run([\"sh\", \"-c\", f\"sleep 30 >/dev/null 2>&1 & echo $! > {hung}; wait\"], root, 0.5)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/session-state.py",
+          "id": "session-state:2:4",
+          "kind": "unread",
+          "line": 1686,
+          "target": null,
+          "text": "rc_esc = _run([sys.executable, \"-c\","
+        },
+        {
+          "detector": 2,
+          "file": "scripts/session-state.py",
+          "id": "session-state:2:5",
+          "kind": "unread",
+          "line": 1699,
+          "target": null,
+          "text": "answered = _run([\"sh\", \"-c\", \"sleep 4 & echo ok; exit 0\"], root, 1.0)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/session-state.py",
+          "id": "session-state:2:6",
+          "kind": "unread",
+          "line": 1702,
+          "target": null,
+          "text": "held = _run([\"sh\", \"-c\", \"sleep 2.5 & echo ok; exit 0\"], root, 0.5, own_group=False)"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/session-state.py",
+          "id": "session-state:2:7",
+          "kind": "unread",
+          "line": 1706,
+          "target": null,
+          "text": "(_run([\"sh\", \"-c\", \"ps -o pgid= -p $$\"], root, 5, own_group=False)[1].strip() == str(os.getpgrp()),"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/session-state.py",
+          "id": "session-state:2:8",
+          "kind": "unread",
+          "line": 1707,
+          "target": null,
+          "text": "_run([\"sh\", \"-c\", \"ps -o pgid= -p $$\"], root, 5)[1].strip() == str(os.getpgrp())), (True, False))"
+        },
         {
           "detector": 6,
           "file": "scripts/session-state.py",
@@ -14551,6 +15105,33 @@
           "file": ".agents/skills/brief/SKILL.md",
           "id": "skill-brief:4:1",
           "kind": "doc-path",
+          "line": 54,
+          "term": "docs/roadmap-to-launch.md",
+          "text": "1. `docs/roadmap-to-launch.md` \u2014 the compaction-proof layer"
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/brief/SKILL.md",
+          "id": "skill-brief:4:2",
+          "kind": "tool-name",
+          "line": 55,
+          "term": "TaskList",
+          "text": "2. the task list (`TaskList`) \u2014 the current milestone"
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/brief/SKILL.md",
+          "id": "skill-brief:4:3",
+          "kind": "doc-path",
+          "line": 56,
+          "term": "docs/backlog.md",
+          "text": "3. `docs/backlog.md` \u2014 anything filed"
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/brief/SKILL.md",
+          "id": "skill-brief:4:4",
+          "kind": "doc-path",
           "line": 70,
           "term": "docs/roadmap-to-launch.md",
           "text": "grep -n 'Deployed: release' docs/roadmap-to-launch.md        # what the roadmap says is live"
@@ -14598,30 +15179,6 @@
           "line": 33,
           "term": "docs/backlog.md",
           "text": "cost of a table written from recall (`docs/backlog.md`, and the memory"
-        },
-        {
-          "detector": 4,
-          "file": ".agents/skills/brief/SKILL.md",
-          "kind": "doc-path",
-          "line": 54,
-          "term": "docs/roadmap-to-launch.md",
-          "text": "1. `docs/roadmap-to-launch.md` \u2014 the compaction-proof layer"
-        },
-        {
-          "detector": 4,
-          "file": ".agents/skills/brief/SKILL.md",
-          "kind": "tool-name",
-          "line": 55,
-          "term": "TaskList",
-          "text": "2. the task list (`TaskList`) \u2014 the current milestone"
-        },
-        {
-          "detector": 4,
-          "file": ".agents/skills/brief/SKILL.md",
-          "kind": "doc-path",
-          "line": 56,
-          "term": "docs/backlog.md",
-          "text": "3. `docs/backlog.md` \u2014 anything filed"
         },
         {
           "detector": 4,
@@ -14809,6 +15366,15 @@
     },
     "sweep-red-alert": {
       "findings": [
+        {
+          "detector": 2,
+          "file": "scripts/sweep-red-alert.py",
+          "id": "sweep-red-alert:2:1",
+          "kind": "unread",
+          "line": 496,
+          "target": null,
+          "text": "r = subprocess.run([\"bash\", \"-c\", \"set -eu\\n\" + run_block], cwd=repo, env=e, capture_output=True,"
+        },
         {
           "detector": 4,
           "file": "scripts/sweep-red-alert.py",
@@ -15098,5 +15664,5 @@
       "status": "scanned"
     }
   },
-  "measured_at": "c4861690cf9b5afdb88a23382c7ff5082ded4408"
+  "measured_at": "9984c3c161211cbf801c3bd4280f129ba718b17a"
 }

@@ -2498,5 +2498,8 @@ EXPECTED_MUTATIONS = {
     # and where it may stand, the roles and files asked), +1 the line splitter (a form feed starts no line).
     # ⟳ review r1 fold (2026-11-17): 145 → 148 — +1 a None default is no working default (XM1), +1 a missing file a
     # runner names is outside-set (XM2), +1 "use"/"call"/"invoke" instruct (XM3); three anchors rebound in place.
-    "scripts/check-publishability.py": 148,
+    # ⟳ review r2 fold (2026-11-17): 148 → 154 — +1 a None through `or` is no fallback, +2 detector 2 (a `./` runner
+    # target normalised; an unread load is a finding), +3 detector 4 (a colon-introduced list item, an untagged
+    # block, the imperative the introduction must hold); five anchors rebound in place.
+    "scripts/check-publishability.py": 154,
 }
