@@ -66,6 +66,7 @@
       "scripts/mutations/check-main-drivable.json",
       "scripts/mutations/check-memory-index-budget.json",
       "scripts/mutations/check-memory-link.json",
+      "scripts/mutations/check-memory-shape.json",
       "scripts/mutations/check-merge-ready.json",
       "scripts/mutations/check-page-links.json",
       "scripts/mutations/check-paid-caller-arrival.json",
@@ -128,7 +129,7 @@
       "scripts/mutations/sweep-costs.json",
       "scripts/mutations/sweep-red-alert.json"
      ],
-     "expected_count": 102
+     "expected_count": 103
     },
     "mutation-sweep-job": {
      "files": [
