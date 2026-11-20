@@ -6091,5 +6091,22 @@
     "expect": [
       "⭐ r1 Codex MAJOR 2 / Claude F5: --snapshot reads its clock AFTER collect's network calls and measure, and stamps the snapshot with THAT reading"
     ]
+  },
+  {
+    "name": "PR #606 r2 Codex: --owed-idle reads its clock outside the CANNOT RUN handler",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            now, judge = read_clock()\n            main_root, why",
+        "            main_root, why"
+      ],
+      [
+        "    if a.owed_idle:      #",
+        "    now, judge = read_clock()\n    if a.owed_idle:      #"
+      ]
+    ],
+    "expect": [
+      "PR #606 r2 Codex: a clock that FAILS under `--owed-idle` prints the block's own bounded CANNOT RUN line and exits OWED_IDLE_RC — never a traceback with nothing on stdout"
+    ]
   }
 ]

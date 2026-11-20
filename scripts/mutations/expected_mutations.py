@@ -453,6 +453,8 @@ EXPECTED_MUTATIONS = {
     # `_sibling` sys.modules registration (removing it fails the import of agent-watchdog, loudly, at load).
     # Seven re-bound to the moved text, same intent: the no-goal and placed NOW entries (three), the placed and
     # loose entries' `_ledger_owed`, the lede's removal, and the prose-wait idle rule.
+    # ⟳ 2026-11-20, PR #606 round 2 fold: 466 -> 467, none retired. One new: --owed-idle reading its clock outside
+    # the CANNOT RUN handler (r2 Codex, fix-induced by the round 1 move of the clock read).
     # ⟳ 2026-11-20, PR #606 round 1 fold: 454 -> 466, none retired. Twelve new: the digest, the session-start block and
     # the page each judging builds at the snapshot's time instead of the reader's (XM1/F1); both stamps truncated to the
     # minute and the measure stamped to the minute (Xm1); the ahead tolerance compared with <= or widened (F3); only
@@ -463,7 +465,7 @@ EXPECTED_MUTATIONS = {
     # call (now passing the judge), the placed entries' `_builds`, and --owed-idle's injected clock (now read_clock).
     # Not mutated: --record-agenda's clock re-read after collect (no case drives that path with a moving clock), and
     # write_page forwarding `judge` (dropping it falls back to `built`, the same minute — no case can tell them apart).
-    "scripts/goal-tree.py": 466,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    "scripts/goal-tree.py": 467,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

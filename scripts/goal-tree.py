@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 552 cases
+    python3 scripts/goal-tree.py --self-test                 # 553 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -2986,11 +2986,11 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
             return fixed, fixed
         t = (clock or _dt.datetime.now)()
         return t.strftime(MINUTE_FMT), t.strftime(SECOND_FMT)
-    now, judge = read_clock()
     if a.owed_idle:      # reads the log only; alone, so a SessionStart never fetches, derives or writes
         # r1 Claude F6 / Codex 6: every line bounded, and exit OWED_IDLE_RC means "I printed my own CANNOT line" — the
         # hook echoes its CANNOT RUN for any OTHER non-zero code, so it is said exactly once. Days count to NOW (F4).
-        try:
+        try:             # PR #606 r2 Codex: the clock is read INSIDE the handler, so a failing clock is a CANNOT line
+            now, judge = read_clock()
             main_root, why = _SS.main_checkout(root, run or _SS._run)
             lines = ([_bounded(f"{OWED_IDLE_CANNOT} RUN — the log lives in the MAIN checkout, and ", str(why),
                                " (treat as NOT RUN) ===")] if why else
@@ -2999,6 +2999,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
             lines = [_bounded(f"{OWED_IDLE_CANNOT} RUN — ", f"{type(exc).__name__}: {exc}", " (treat as NOT RUN) ===")]
         print("\n".join(lines))
         return OWED_IDLE_RC if lines[0].startswith(OWED_IDLE_CANNOT) else 0
+    now, judge = read_clock()
     if not (a.snapshot or a.page or a.print_ or a.record_agenda or a.tick_agenda is not None):
         a.snapshot = a.page = True
     main_root, why = _SS.main_checkout(root, run or _SS._run)
@@ -3588,6 +3589,13 @@ def _cases_650(case) -> None:
                 with contextlib.redirect_stdout(buf):
                     rc = safe(main, ["--owed-idle"], root=tdp, run=rn, now=n)
                 runs.append((rc, buf.getvalue().splitlines()))
+
+            def _bad_clock():
+                raise OSError("clock failed")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                bad_clock_rc = safe(main, ["--owed-idle"], root=tdp, run=git_ok, clock=_bad_clock)
+            bad_clock_out = buf.getvalue().splitlines()
         finally:
             if saved is not None:
                 os.environ[_SS.MAIN_CHECKOUT_ENV] = saved
@@ -3619,6 +3627,12 @@ def _cases_650(case) -> None:
          (runs[2][0], len(runs[2][1]), [len(ln) <= OWED_IDLE_WIDTH for ln in runs[2][1] + long_missing + long_broken],
           [ln.endswith("===") for ln in runs[2][1] + long_missing + long_broken], hook_out),
          (3, 1, [True, True, True], [True, True, True], [(1, 0), (1, 0), (0, 0), (1, 0), (1, 0)]))
+
+    case("PR #606 r2 Codex: a clock that FAILS under `--owed-idle` prints the block's own bounded CANNOT RUN line and "
+         "exits OWED_IDLE_RC — never a traceback with nothing on stdout",
+         (bad_clock_rc, [ln.startswith(OWED_IDLE_CANNOT) and "clock failed" in ln and len(ln) <= OWED_IDLE_WIDTH
+                         for ln in bad_clock_out]),
+         (OWED_IDLE_RC, [True]))
 
     class _Counting(io.BytesIO):
         got = 0
