@@ -237,9 +237,9 @@ element that asks it; the composer does the rest:
   remaining · all answered`, no link. An EMPTY or whitespace-only value counts as OPEN. A page with no mark
   gets no counter.
 - **The composer REFUSES (CANNOT RUN) a mark it can tell would not be seen at its spot**, naming the element and
-  the reason — move the mark to a plain visible element. The rules live in ONE place, `brief-compose.py`'s decision
-  scanner (`_DECISION_REFUSE_ON`, `_DECISION_REFUSE_INSIDE`, `_DECISION_HIDING_ATTRS`, the `<details>`/`<summary>`
-  rule, and an `id`/`name` already equal to a generated `ex-decision-n`); read them there, this list is not repeated.
+  the reason — move the mark to a plain visible element. The rules live in ONE place, the refusals raised by
+  `_DecisionScan.handle_starttag` and `render_decisions` in `brief-compose.py`; read them there. They are
+  deliberately not listed here — two lists of them, here, each drifted from the code (decision-tags r2, r3).
   ⚠ **Bound:** it reads MARKUP, not CSS — a mark under `style="display:none"` or a stylesheet rule, or after
   misnested markup the browser re-parents into a hidden parent, IS counted. Look at the composed page.
 - ⚠ **Nothing checks that EVERY question is marked** (backlog #615): an unmarked question is invisible to the
