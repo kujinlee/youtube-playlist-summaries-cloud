@@ -21027,6 +21027,18 @@ declared registration, since the spec names no form of one: every hook registere
 finding.
 
 ## 2026-11-19
+Every memory file is now checked on each pull request. A memory that opens with an old history note
+instead of the rule it currently teaches, or that is malformed, misnamed, or reachable from nowhere in
+the memory index, now turns CI red instead of drifting until the next manual audit.
+<!--tech-->
+Memory hygiene option B, part 1 (branch `memory-shape-check`). New `scripts/check-memory-shape.py`
+(stdlib): FRONTMATTER, TYPE, NAME (slug), EMPTY-BODY, HISTORY-FIRST (markers derived from audit PR #585:
+`⟳`, `History`, `Split out of`, `Was:`, date-then-`Was`), MISSING, UNLISTED (two-hop reachability, as
+slice-history's design documents; the literal one-hop rule would fail 57 of 195). Live: 195 files, 0
+violations; the pre-audit tree (`4d76f76a^`) gives 5. Self-test 50/50; mutations 36/36 killed, each by
+its named case. Wired in `ci.yml` next to the memory-index budget. The weekly content audit is part 2.
+
+## 2026-11-19
 The features page's biggest section — the rules-and-checks harness — is now split into six smaller sections you can
 read one at a time: speed, the review process, mutation and test quality, hooks and session continuity, the backlog
 and page tooling, and whether the checks themselves are sound. Every open item in that section was read and placed in

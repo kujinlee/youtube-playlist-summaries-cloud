@@ -1,0 +1,1337 @@
+[
+  {
+    "name": "`description` is no longer required",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "\"name\", \"description\", \"metadata",
+        "\"name\", \"metadata"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a file missing `description`"
+    ]
+  },
+  {
+    "name": "`name` is no longer required",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "for need in (\"name\", ",
+        "for need in ("
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a file missing `name`"
+    ]
+  },
+  {
+    "name": "`metadata.type` is no longer required",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "\"description\", \"metadata.type\"):",
+        "\"description\"):"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a file missing `metadata.type`"
+    ]
+  },
+  {
+    "name": "a file with no opening fence is parsed as if it had one",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if not lines or lines[0].strip() != \"---\":\n",
+        "    if not lines:\n"
+      ]
+    ],
+    "expect": [
+      "parse_frontmatter: no opening fence is NO frontmatter, even with a `---` rule later"
+    ]
+  },
+  {
+    "name": "an UNCLOSED frontmatter block is read to the end of the file instead of refused",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    else:\n        return None, lines\n    fields",
+        "    else:\n        end = len(lines)\n    fields"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an UNCLOSED frontmatter block"
+    ]
+  },
+  {
+    "name": "a top-level `type:` is accepted as `metadata.type`",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            if not in_metadata:\n                fields[key] = value\n",
+        "            if not in_metadata:\n                fields[key] = value\n                fields[\"metadata.\" + key] = value\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a TOP-LEVEL `type:` is not `metadata.type`"
+    ]
+  },
+  {
+    "name": "quotes around a value are kept, so a quoted name never equals its slug",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        value = value.strip().strip('\"').strip(\"'\")\n",
+        "        value = value.strip()\n"
+      ]
+    ],
+    "expect": [
+      "parse_frontmatter strips quotes and reads metadata.type"
+    ]
+  },
+  {
+    "name": "the body includes the closing fence, so `---` is read as the first line",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return fields, lines[end + 1:]\n",
+        "    return fields, lines[end:]\n"
+      ]
+    ],
+    "expect": [
+      "parse_frontmatter returns the body AFTER the closing fence",
+      "EMPTY-BODY: frontmatter and nothing after it"
+    ]
+  },
+  {
+    "name": "an unknown metadata.type is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if mtype and mtype not in TYPES:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "TYPE: an unknown metadata.type"
+    ]
+  },
+  {
+    "name": "`name` is never compared to the slug",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if name and name != slug:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "NAME: `name` differs from the filename slug"
+    ]
+  },
+  {
+    "name": "the slug keeps its `.md`, so every correct file is reported as misnamed",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    slug = fname[:-3] if fname.endswith(\".md\") else fname\n",
+        "    slug = fname\n"
+      ]
+    ],
+    "expect": [
+      "a clean corpus has no violations"
+    ]
+  },
+  {
+    "name": "a body with no non-blank line reads as an empty-string first line, so EMPTY-BODY never fires",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            return line\n    return None\n",
+        "            return line\n    return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "EMPTY-BODY: frontmatter and nothing after it"
+    ]
+  },
+  {
+    "name": "blank lines are not skipped, so a history heading under a blank line passes",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if line.strip():\n            return line\n",
+        "        if True:\n            return line\n"
+      ]
+    ],
+    "expect": [
+      "blank lines are skipped before the first line is read"
+    ]
+  },
+  {
+    "name": "the \u27f3 correction-layer marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"\u27f3\", re.compile(r\"(?:\" + _DATE + r\"\\W{0,4})?\u27f3\")),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `## \u27f3 <date>` correction heading",
+      "HISTORY-FIRST: a bare `\u27f3` line"
+    ]
+  },
+  {
+    "name": "the History marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"History\", re.compile(r\"History\\**\\s*(?:[:(\u2014\u2013]|$)\", re.IGNORECASE)),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `History:` label"
+    ]
+  },
+  {
+    "name": "the History marker loses its word boundary, so `Historyless` is history",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "r\"History\\b\", re.IGNORECASE",
+        "r\"History\", re.IGNORECASE"
+      ]
+    ],
+    "expect": [
+      "NOT history: a HEADING whose first word merely starts with `History`"
+    ]
+  },
+  {
+    "name": "the Split-out-of marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"Split out of\", re.compile(r\"Split out of\\b\", re.IGNORECASE)),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `> Split out of` provenance"
+    ]
+  },
+  {
+    "name": "the `Was:` marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"Was:\", re.compile(r\"Was\\**\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\", re.IGNORECASE)),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `Was:` with a date",
+      "HISTORY-FIRST: `Was:` undated"
+    ]
+  },
+  {
+    "name": "the `Was:` marker no longer needs its colon, so `Washing` is history",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "re.compile(r\"Was\\**\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\", re.IGNORECASE)",
+        "re.compile(r\"Was\", re.IGNORECASE)"
+      ]
+    ],
+    "expect": [
+      "NOT history: a word that merely starts with `Was`"
+    ]
+  },
+  {
+    "name": "the date-then-Was marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"Was:\", re.compile(_DATE + r\"\\W{0,4}Was\\b\", re.IGNORECASE)),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a date, then `Was`"
+    ]
+  },
+  {
+    "name": "\u26d4 is no longer stripped as decoration",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_DECORATION = \"#>*_`( \\t\u26d4\u2b50\u2705\u26a0\ufe0f\"",
+        "_DECORATION = \"#>*_`( \\t\u2b50\u2705\u26a0\ufe0f\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a decorated `\u26d4 **\u27f3 \u2026**` line"
+    ]
+  },
+  {
+    "name": "`#` is no longer stripped as decoration",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "\"#>*_`",
+        "\">*_`"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `## History` heading"
+    ]
+  },
+  {
+    "name": "a marker anywhere in the line counts, not only at its start",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if pattern.match(stripped):\n",
+        "        if pattern.search(stripped):\n"
+      ]
+    ],
+    "expect": [
+      "NOT history: a rule that MENTIONS history later"
+    ]
+  },
+  {
+    "name": "`[[name]]` links are not read",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    for m in _WIKI_LINK_RE.finditer(text):\n",
+        "    for m in []:\n"
+      ]
+    ],
+    "expect": [
+      "link_reading reads both link forms"
+    ]
+  },
+  {
+    "name": "a link the index makes to a missing file is not reported",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    missing = {target for target in hop1 if target not in texts}\n",
+        "    missing = set()\n"
+      ]
+    ],
+    "expect": [
+      "MISSING: the index links a file that does not exist"
+    ]
+  },
+  {
+    "name": "an unreachable file is not reported",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return missing, {fname for fname in texts if fname not in reached}\n",
+        "    return missing, set()\n"
+      ]
+    ],
+    "expect": [
+      "UNLISTED: a file nothing reaches"
+    ]
+  },
+  {
+    "name": "hop 2 is not followed, so the slice-history shape is reported as unlisted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        reached = reached | {x for x in links(texts[t]) if x in texts}\n",
+        "        reached = reached\n"
+      ]
+    ],
+    "expect": [
+      "a clean corpus has no violations"
+    ]
+  },
+  {
+    "name": "reachability becomes TRANSITIVE, past the stated two-hop bound",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    for t in sorted(reached):\n        reached = reached | {x for x in links(texts[t]) if x in texts}\n",
+        "    frontier = sorted(reached)\n    while frontier:\n        t = frontier.pop()\n        new = {x for x in links(texts[t]) if x in texts} - reached\n        reached = reached | new\n        frontier += sorted(new)\n"
+      ]
+    ],
+    "expect": [
+      "UNLISTED: THREE hops is not reachable (the bound is two)"
+    ]
+  },
+  {
+    "name": "a corpus with violations exits 0",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if found:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "main over a corpus with a history opener is rc 1"
+    ]
+  },
+  {
+    "name": "an absent corpus is checked as if present",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if index_text is None:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "an absent corpus says it could not be READ, not that it holds no files"
+    ]
+  },
+  {
+    "name": "an index with no memory files is a vacuous pass",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if not texts:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "an index with no memory files is CANNOT RUN, not a vacuous pass"
+    ]
+  },
+  {
+    "name": "CANNOT RUN collapses onto OK",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "OK, VIOLATIONS, CANNOT_RUN = 0, 1, 2\n",
+        "OK, VIOLATIONS, CANNOT_RUN = 0, 1, 0\n"
+      ]
+    ],
+    "expect": [
+      "a missing corpus is CANNOT RUN, not a pass"
+    ]
+  },
+  {
+    "name": "an undecodable file escapes as a traceback",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    except (OSError, UnicodeDecodeError) as exc:\n",
+        "    except OSError as exc:\n"
+      ]
+    ],
+    "expect": [
+      "an undecodable file is CANNOT RUN, not a traceback"
+    ]
+  },
+  {
+    "name": "a CANNOT RUN names the module default, not the directory it examined",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "CANNOT RUN \u2014 the memory corpus at {shown} ",
+        "CANNOT RUN \u2014 the memory corpus at docs/memory "
+      ]
+    ],
+    "expect": [
+      "a CANNOT RUN names the directory it examined"
+    ]
+  },
+  {
+    "name": "an unknown argument is ignored",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return [a for a in argv if a != \"--self-test\"]\n",
+        "    return []\n"
+      ]
+    ],
+    "expect": [
+      "the unknown-argument predicate keeps only what is not `--self-test`"
+    ]
+  },
+  {
+    "name": "the OK message stops counting the files it checked",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "memory shape ok \u2014 {len(texts)} files",
+        "memory shape ok \u2014 files"
+      ]
+    ],
+    "expect": [
+      "an OK message counts the files it checked"
+    ]
+  },
+  {
+    "name": "a YAML-malformed frontmatter value is no longer reported",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if fields.get(\"!malformed\"):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an unterminated flow sequence (the Codex input)"
+    ]
+  },
+  {
+    "name": "an unterminated double-quoted string is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            return \"an unterminated double-quoted string\"\n",
+        "            return None\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an unterminated double-quoted string"
+    ]
+  },
+  {
+    "name": "an unterminated single-quoted string is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "                return \"an unterminated single-quoted string\"\n",
+        "                return None\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an unterminated single-quoted string"
+    ]
+  },
+  {
+    "name": "a double-quoted string may not hold an escaped quote",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_DQ_RE = re.compile(r'\"(?:[^\"\\\\]|' + _ESCAPE + r')*\"')",
+        "_DQ_RE = re.compile(r'\"[^\"]*\"')"
+      ]
+    ],
+    "expect": [
+      "NOT malformed: a double-quoted value holding `: ` and an escaped quote"
+    ]
+  },
+  {
+    "name": "an unquoted value holding `: ` is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if \": \" in plain or plain.endswith(\":\"):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an unquoted value holding `: ` (the live defect)"
+    ]
+  },
+  {
+    "name": "any colon in an unquoted value is refused, not only `: `",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "\": \" in plain or plain.endswith(\":\"):",
+        "\":\" in plain:"
+      ]
+    ],
+    "expect": [
+      "NOT malformed: a plain value with a colon not followed by a space"
+    ]
+  },
+  {
+    "name": "a YAML-indicator-led unquoted value is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if value[0] in _YAML_INDICATORS:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an unquoted value led by a YAML indicator"
+    ]
+  },
+  {
+    "name": "a frontmatter line with no `key:` is skipped in silence",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            malformed.append(f\"line {raw.strip()[:40]!r} is not `key: value`\")\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a line with no `key:` at all"
+    ]
+  },
+  {
+    "name": "links after a `<!` are SURE again (the comment/declaration region is gone)",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    regions = [(opener.start(), len(text))] if opener else []\n",
+        "    regions = []\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file linked only inside an HTML comment",
+      "link_reading: every link after the first `<!` is uncertain, closed comment or not"
+    ]
+  },
+  {
+    "name": "the `<!`/`<?` region ends at the opener instead of running to the end of the text",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "[(opener.start(), len(text))]",
+        "[opener.span()]"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through refutation 4, a container ends before the `-->`"
+    ]
+  },
+  {
+    "name": "a markdown link's `#anchor` is kept, so `gone.md#h` is no link",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        ".strip(\"<>\").split(\"#\", 1)[0] if parts",
+        ".strip(\"<>\") if parts"
+      ]
+    ],
+    "expect": [
+      "MISSING: an index link of the form [x](gone.md#h)"
+    ]
+  },
+  {
+    "name": "a markdown link's title is kept, so `gone.md \"t\"` is no link",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        parts = m.group(1).strip().split()\n",
+        "        parts = [m.group(1).strip()]\n"
+      ]
+    ],
+    "expect": [
+      "MISSING: an index link of the form [x](gone.md \"t\")"
+    ]
+  },
+  {
+    "name": "a wiki link's `|alias` is kept",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        name = m.group(1).split(\"|\", 1)[0].split(\"#\", 1)[0].strip()\n",
+        "        name = m.group(1).split(\"#\", 1)[0].strip()\n"
+      ]
+    ],
+    "expect": [
+      "an anchored and an aliased index link REACH their files"
+    ]
+  },
+  {
+    "name": "a wiki link's `#anchor` is kept",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        ".split(\"|\", 1)[0].split(\"#\", 1)[0].strip()",
+        ".split(\"|\", 1)[0].strip()"
+      ]
+    ],
+    "expect": [
+      "link_reading normalises a title, `<\u2026>`, `./`, an alias and a wiki anchor"
+    ]
+  },
+  {
+    "name": "a leading `./` is kept, so `./alpha.md` reaches nothing",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        target = target[2:] if target.startswith(\"./\") else target\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "an anchored and an aliased index link REACH their files"
+    ]
+  },
+  {
+    "name": "\u26a0 is no longer stripped as decoration",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "\u2705\u26a0\ufe0f\"",
+        "\u2705\ufe0f\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a `\u26a0 \u27f3` line"
+    ]
+  },
+  {
+    "name": "`(` is no longer stripped as decoration",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "\"#>*_`(",
+        "\"#>*_`"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a parenthesised `(\u27f3 \u2026)`"
+    ]
+  },
+  {
+    "name": "a list marker is no longer stripped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        stripped = _LIST_MARKER.sub(\"\", stripped, count=1) if _LIST_MARKER.match(stripped) else stripped\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a list item `- \u27f3`",
+      "HISTORY-FIRST: a numbered list item `9. \u27f3`"
+    ]
+  },
+  {
+    "name": "a numbered list marker is no longer stripped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_LIST_MARKER = re.compile(r\"(?:[-+]|\\d+[.)])\\s+\")",
+        "_LIST_MARKER = re.compile(r\"[-+]\\s+\")"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a numbered list item `9. \u27f3`"
+    ]
+  },
+  {
+    "name": "decoration and a list marker are stripped once, not until stable",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if stripped == before:\n            break\n",
+        "        break\n"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a list item, then a glyph `- \u26a0 \u27f3`"
+    ]
+  },
+  {
+    "name": "a date before \u27f3 no longer counts",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "re.compile(r\"(?:\" + _DATE + r\"\\W{0,4})?\u27f3\")",
+        "re.compile(r\"\u27f3\")"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a date-first `**<date> \u27f3**`"
+    ]
+  },
+  {
+    "name": "`History` fires on any word start again, outside a heading",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "re.compile(r\"History\\**\\s*(?:[:(\u2014\u2013]|$)\", re.IGNORECASE)",
+        "re.compile(r\"History\\b\", re.IGNORECASE)"
+      ]
+    ],
+    "expect": [
+      "NOT history: a rule sentence that begins with `History`"
+    ]
+  },
+  {
+    "name": "the heading-only `History` marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"History\", re.compile(r\"History\\b\", re.IGNORECASE)),\n)",
+        ")"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a `## History and detail` heading"
+    ]
+  },
+  {
+    "name": "the heading-only `History` marker applies to every line, not only headings",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_HISTORY_MARKERS + (_HEADING_MARKERS if heading else ())",
+        "_HISTORY_MARKERS + _HEADING_MARKERS"
+      ]
+    ],
+    "expect": [
+      "NOT history: a rule sentence that begins with `History`"
+    ]
+  },
+  {
+    "name": "the `History` label can no longer cross a closing bold",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "r\"History\\**\\s*(?:[:(\u2014\u2013]|$)\"",
+        "r\"History\\s*(?:[:(\u2014\u2013]|$)\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a bold `**History**:` label (the colon outside the bold)"
+    ]
+  },
+  {
+    "name": "the `Was:` marker is case-sensitive again",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "r\"Was\\**\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\", re.IGNORECASE",
+        "r\"Was\\**\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `WAS:` in capitals",
+      "HISTORY-FIRST: `was:` in lower case"
+    ]
+  },
+  {
+    "name": "the `Was:` marker can no longer cross a closing bold before its date",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "r\"Was\\**\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\"",
+        "r\"Was\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `**Was** (<date>):` with the bold closed first"
+    ]
+  },
+  {
+    "name": "the date-then-Was marker is case-sensitive again",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "re.compile(_DATE + r\"\\W{0,4}Was\\b\", re.IGNORECASE)",
+        "re.compile(_DATE + r\"\\W{0,4}Was\\b\")"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a date, then a lower-case `was`"
+    ]
+  },
+  {
+    "name": "scalar_problem reports an empty value as malformed",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if not value:\n        return None\n    if value[0] in \"\\\"'\":",
+        "    if not value:\n        return \"empty\"\n    if value[0] in \"\\\"'\":"
+      ]
+    ],
+    "expect": [
+      "scalar_problem names the defect, and is None for an empty value"
+    ]
+  },
+  {
+    "name": "any backslash escape is accepted in a double-quoted value again",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_ESCAPE = r'\\\\(?:[0abt\\tnvfre \"/\\\\N_LP]|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'",
+        "_ESCAPE = r'\\\\.'"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a double-quoted value with the undefined escape `\\q` (the Codex input)"
+    ]
+  },
+  {
+    "name": "the `\\x`, `\\u` and `\\U` escapes are refused",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'",
+        ")'"
+      ]
+    ],
+    "expect": [
+      "NOT malformed: every escape YAML defines, in a double-quoted value"
+    ]
+  },
+  {
+    "name": "a bad escape is reported as an unterminated string",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            if _DQ_ANY_ESCAPE_RE.match(value):\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "scalar_problem tells a bad escape from an unterminated string"
+    ]
+  },
+  {
+    "name": "a ` # comment` after a closing quote is refused",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_TAIL_RE = re.compile(r\"(?:\\s+#.*)?\")",
+        "_TAIL_RE = re.compile(r\"\")"
+      ]
+    ],
+    "expect": [
+      "NOT malformed: a double-quoted value, then a ` # comment` (the Codex input)",
+      "a trailing comment is not part of the value read: `name: \"beta\" # \u2026` is the slug"
+    ]
+  },
+  {
+    "name": "any text after a closing quote is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        return None if _TAIL_RE.fullmatch(value[quoted.end():]) else (",
+        "        return None if True else ("
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a quoted value followed by text that is not a comment",
+      "FRONTMATTER: a quoted value followed by `#` with no space before it"
+    ]
+  },
+  {
+    "name": "a `#` with no whitespace before it opens a comment after a closing quote",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "r\"(?:\\s+#",
+        "r\"(?:\\s*#"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a quoted value followed by `#` with no space before it"
+    ]
+  },
+  {
+    "name": "a plain value's comment counts toward the `: ` rule",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    plain = _PLAIN_COMMENT_RE.sub(\"\", value)\n",
+        "    plain = value\n"
+      ]
+    ],
+    "expect": [
+      "NOT malformed: a plain value whose ` # comment` holds `: `"
+    ]
+  },
+  {
+    "name": "a trailing comment is read as part of the value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        value = scalar_text(value.strip())\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a trailing comment is not part of the value read: `name: \"beta\" # \u2026` is the slug",
+      "a PLAIN value's trailing comment is not read either: `name: beta # \u2026` is the slug"
+    ]
+  },
+  {
+    "name": "a plain value's trailing comment is read as part of the value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return _PLAIN_COMMENT_RE.sub(\"\", value)\n",
+        "    return value\n"
+      ]
+    ],
+    "expect": [
+      "a PLAIN value's trailing comment is not read either: `name: beta # \u2026` is the slug"
+    ]
+  },
+  {
+    "name": "the `<?` arm is dropped: a processing instruction opens no region",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_OPENER_RE = re.compile(r\"<[!?]\")",
+        "_OPENER_RE = re.compile(r\"<!\")"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a bogus comment `<?\u2026`"
+    ]
+  },
+  {
+    "name": "only a real `<!--` opens a region, not a bogus `<!x`",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "re.compile(r\"<[!?]\")",
+        "re.compile(r\"<!--|<\\?\")"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a bogus comment `<!\u2026`"
+    ]
+  },
+  {
+    "name": "the fence region is dropped: an info string is read as visible",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    regions += [m.span() for m in _FENCE_TAIL_RE.finditer(text)]\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a fence INFO STRING"
+    ]
+  },
+  {
+    "name": "a tilde run opens no fence region",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_FENCE_TAIL_RE = re.compile(r\"(?:`{3}|~{3})[^\\n]*\")",
+        "_FENCE_TAIL_RE = re.compile(r\"`{3}[^\\n]*\")"
+      ]
+    ],
+    "expect": [
+      "a TILDE fence line is a region too"
+    ]
+  },
+  {
+    "name": "the fence region crosses its line's end",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "~{3})[^\\n]*\"",
+        "~{3})[\\s\\S]*\""
+      ]
+    ],
+    "expect": [
+      "the fence region ends at its line: a link on the NEXT line is sure"
+    ]
+  },
+  {
+    "name": "a region's END is ignored, so a link after a fence line is uncertain",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "hidden = any(match.start() < end and ",
+        "hidden = any("
+      ]
+    ],
+    "expect": [
+      "the fence region ends at its line: a link on the NEXT line is sure"
+    ]
+  },
+  {
+    "name": "a link that STRADDLES a region's start is read as sure",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "end and start < match.end()",
+        "end and start <= match.start()"
+      ]
+    ],
+    "expect": [
+      "link_reading: a link that STRADDLES the opener is uncertain"
+    ]
+  },
+  {
+    "name": "a link BEFORE a region on its line is read as uncertain",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        " and start < match.end() for",
+        " for"
+      ]
+    ],
+    "expect": [
+      "a link BEFORE the first `<!` on its line stays sure"
+    ]
+  },
+  {
+    "name": "an uncertain link to a target also linked SURE wins",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return sure, uncertain - sure\n",
+        "    return sure - uncertain, uncertain\n"
+      ]
+    ],
+    "expect": [
+      "link_reading: a target linked once SURE and once uncertain is sure"
+    ]
+  },
+  {
+    "name": "the upper bound drops the uncertain links",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return sure | uncertain\n",
+        "    return sure\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file linked only inside an HTML comment"
+    ]
+  },
+  {
+    "name": "the LOWER bound reads every link, so a verdict that depends on a hidden link passes",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    missing_lo, unreached_lo = reachability(index_text, texts, sure_links)\n",
+        "    missing_lo, unreached_lo = reachability(index_text, texts, every_link)\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a fence INFO STRING"
+    ]
+  },
+  {
+    "name": "the UPPER bound reads only sure links, so a disagreement is reported as UNLISTED",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    missing_hi, unreached_hi = reachability(index_text, texts, every_link)\n",
+        "    missing_hi, unreached_hi = reachability(index_text, texts, sure_links)\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file linked only inside an HTML comment"
+    ]
+  },
+  {
+    "name": "a target missing only at the upper bound is not reported",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            f\"see; {_REMEDY}\" for t in sorted(missing_hi - missing_lo)]\n",
+        "            f\"see; {_REMEDY}\" for t in []]\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a link after a `<!` to a file that does not exist (missing only if seen)"
+    ]
+  },
+  {
+    "name": "a file unreachable only at the lower bound is not reported",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            for f in sorted(unreached_lo - unreached_hi)]\n",
+        "            for f in []]\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through span and block structure"
+    ]
+  },
+  {
+    "name": "the wiki form's `]]` cannot close a markdown link",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_MD_LINK_RE = re.compile(r\"\\]\\(([^)]*)\\)\")",
+        "_MD_LINK_RE = re.compile(r\"(?<!\\])\\]\\(([^)]*)\\)\")"
+      ]
+    ],
+    "expect": [
+      "link_reading: a wiki link's `]]` also closes a markdown link, so both are read"
+    ]
+  },
+  {
+    "name": "the missing-target CANNOT-READ names no remedy",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "f\"see; {_REMEDY}\" for t in sorted(missing_hi",
+        "f\"see\" for t in sorted(missing_hi"
+      ]
+    ],
+    "expect": [
+      "a CANNOT-READ for a missing target names the target and the remedy"
+    ]
+  },
+  {
+    "name": "the unreached-file CANNOT-READ names no remedy",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    out += [f\"CANNOT-READ {f}: reached only through a link a reader may not see; {_REMEDY}\"\n",
+        "    out += [f\"CANNOT-READ {f}: reached only through a link a reader may not see\"\n"
+      ]
+    ],
+    "expect": [
+      "a CANNOT-READ message names the file and the remedy"
+    ]
+  },
+  {
+    "name": "r4: the tag-interior region is not added, so a link in an attribute is sure",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return regions + [(m.start(), tag_end(text, m.start())) for m in _TAG_START_RE.finditer(text)]\n",
+        "    return regions\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: the reported input, the index's only link inside a raw tag's attribute"
+    ]
+  },
+  {
+    "name": "r4: no quote opens a value, so a quoted `>` closes the tag",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "                state = c if c in \"\\\"'\" else \"unquoted\"\n",
+        "                state = \"unquoted\"\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a quoted `>` inside an attribute"
+    ]
+  },
+  {
+    "name": "r4: a single quote opens no value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "c if c in \"\\\"'\" else",
+        "c if c == '\"' else"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a single-quoted attribute"
+    ]
+  },
+  {
+    "name": "r4: a quote in an attribute NAME opens a value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        elif state != \"name\":\n            state = \"attr\"\n",
+        "        elif state != \"name\":\n            state = c if c in \"\\\"'\" else \"attr\"\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a quote in an attribute NAME, which opens no value"
+    ]
+  },
+  {
+    "name": "r4: a quote inside an UNQUOTED value opens a value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            state = \"before-name\" if c in _TAG_SPACE else \"unquoted\"\n",
+        "            state = \"before-name\" if c in _TAG_SPACE else (c if c in \"\\\"'\" else \"unquoted\")\n"
+      ]
+    ],
+    "expect": [
+      "a link is sure beside a raw tag: text after a tag whose UNQUOTED value holds a quote"
+    ]
+  },
+  {
+    "name": "r4: a tag continues across a line end",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if c == \"\\n\":\n            break\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a container that ends the tag's block"
+    ]
+  },
+  {
+    "name": "r4: a tag its line ends inside ends at the line end, not the end of the text",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "\"\\n\":\n            break\n",
+        "\"\\n\":\n            return i\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a container that ends the tag's block"
+    ]
+  },
+  {
+    "name": "r4: `</` does not open a tag region",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_TAG_START_RE = re.compile(r\"<[A-Za-z/]\")",
+        "_TAG_START_RE = re.compile(r\"<[A-Za-z]\")"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a closing tag's attribute"
+    ]
+  },
+  {
+    "name": "r4: every `<tag` opens a region to the end of the text (the design that refused 65 files)",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "[(m.start(), tag_end(text, m.start())) for m in _TAG_START_RE",
+        "[(m.start(), len(text)) for m in _TAG_START_RE"
+      ]
+    ],
+    "expect": [
+      "a link is sure beside a raw tag: a `<path>` placeholder beside it"
+    ]
+  },
+  {
+    "name": "r4: only the FIRST tag is scanned",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "(m.start(), tag_end(text, m.start())) for m in _TAG_START_RE.finditer(text)]",
+        "(m.start(), tag_end(text, m.start())) for m in list(_TAG_START_RE.finditer(text))[:1]]"
+      ]
+    ],
+    "expect": [
+      "uncertain_regions: a tag's interior, each `<` found by its own scan"
+    ]
+  },
+  {
+    "name": "r4: `=` after a space does not start a value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        elif c == \"=\" and state in (\"attr\", \"after-attr\"):\n",
+        "        elif c == \"=\" and state == \"attr\":\n"
+      ]
+    ],
+    "expect": [
+      "tag_end: an unquoted `>` closes; a quoted one, in either quote, does not"
+    ]
+  }
+]

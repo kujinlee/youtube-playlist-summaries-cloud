@@ -187,6 +187,8 @@ POPULATION: frozenset[str] = frozenset({
     # real reason (a surviving mutation, ADR-0014 D2, then five r1 CODEX findings), so an
     # unverified docstring number would have been wrong SIX times in one evening.
     "check-memory-index-budget.py",
+    # ⟳ 2026-11-19 (memory hygiene option B, part 1): pinned in the commit that creates it.
+    "check-memory-shape.py",
     # ⟳ 2026-10-20: pinned in the commit that creates it, for the reason the two entries above
     # record — this guard REFUSED it otherwise ("declares a case count but is not in POPULATION,
     # so nothing checks it"). Earned the same way: its suite went 13 → 17 → 18 while it was being
