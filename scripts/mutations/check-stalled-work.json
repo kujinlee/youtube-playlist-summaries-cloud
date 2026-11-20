@@ -173,8 +173,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if rc != STALLED_RC:\n        return None",
-        "    if False:\n        return None"
+        "    if rc != STALLED_RC:\n        # r1 (Codex",
+        "    if False:\n        # r1 (Codex"
       ]
     ],
     "expect": [
@@ -1845,6 +1845,136 @@
     ],
     "expect": [
       "⭐ #647, END TO END: the hook prints the STALE AGENDA line, and its count, when nothing else is stalled"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: the hook drops a stale-agenda NOT CHECKED note when nothing is stalled",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "unread = [ln for ln in lines if ln.startswith(\"NOTE\") and AGENDA_UNREAD in ln]",
+        "unread = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r1: nothing stalled but the agenda NOT CHECKED — the hook prints the note, framed as data, never silence"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: ANY note (a scratchpad one too) makes the hook print when nothing is stalled",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "ln.startswith(\"NOTE\") and AGENDA_UNREAD in ln]",
+        "ln.startswith(\"NOTE\")]"
+      ]
+    ],
+    "expect": [
+      "r1: nothing stalled and only a scratchpad note — the hook still prints NOTHING"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: the last line is accepted as any dict, not goal-tree's own snapshot test",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if not gt.is_snapshot(snap):",
+        "if not isinstance(snap, dict):"
+      ]
+    ],
+    "expect": [
+      "r1: a last line that is a dict but not a snapshot (`{}`) is a NOTE, never clear"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: loading goal-tree writes bytecode again",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "saved, sys.dont_write_bytecode = sys.dont_write_bytecode, True",
+        "saved = sys.dont_write_bytecode"
+      ]
+    ],
+    "expect": [
+      "r1: loading goal-tree writes NO bytecode, and the caller's own setting is put back"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: the caller's bytecode setting is never put back",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    finally:\n        sys.dont_write_bytecode = saved\n",
+        "    finally:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "r1: loading goal-tree writes NO bytecode, and the caller's own setting is put back"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: the log is read from the LAST worktree listed, not the main checkout",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "agenda_facts(Path(every_tree[0][\"path\"]))",
+        "agenda_facts(Path(every_tree[-1][\"path\"]))"
+      ]
+    ],
+    "expect": [
+      "r1: run from a LINKED worktree, the stale agenda is read from the main checkout's log, with no note"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: agenda_facts ignores the goal-tree loader it is given",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "gt = (gt_loader or _goal_tree)()",
+        "gt = _goal_tree()"
+      ]
+    ],
+    "expect": [
+      "#647: goal-tree failing to LOAD is a NOTE naming why, never clear"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: agenda_late reads its own goal-tree, not the one given",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "for k, text in gt.agenda_context(snap, ag):",
+        "for k, text in _goal_tree().agenda_context(snap, ag):"
+      ]
+    ],
+    "expect": [
+      "#647: the subject is read off the goal-tree GIVEN, between its markers — and the 'every step is done' line is not a late merge"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: agenda_late takes ANY stale line, the 'every step is done' one too",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if k == \"stale\" and text.startswith(gt.AGENDA_STALE_HEAD) and gt.AGENDA_STALE_TAIL in text:",
+        "if k == \"stale\":"
+      ]
+    ],
+    "expect": [
+      "#647: the subject is read off the goal-tree GIVEN, between its markers — and the 'every step is done' line is not a late merge"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: agenda_facts reads a fixed path, not the checkout given",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "path = main / gt.LOG_REL",
+        "path = Path(\"/nonexistent-647\") / gt.LOG_REL"
+      ]
+    ],
+    "expect": [
+      "#647: the log read is the one under the checkout given — two checkouts, two answers"
     ]
   }
 ]

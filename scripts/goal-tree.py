@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 538 cases
+    python3 scripts/goal-tree.py --self-test                 # 539 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -1341,6 +1341,12 @@ def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
 
 
 # ── the log ───────────────────────────────────────────────────────────────────────────────────
+def is_snapshot(rec) -> bool:
+    """A logged line is a snapshot: a dict holding `goals` and `at`. ONE test — `read_log` applies it to every line, and
+    check-stalled-work.py to the last one (backlog #647 r1, Codex: a last line of `{}` read as clear there)."""
+    return isinstance(rec, dict) and "goals" in rec and "at" in rec
+
+
 def read_log(path: pathlib.Path) -> list[dict]:
     """Every logged snapshot, oldest first. Missing is empty; an unreadable line is Malformed."""
     if not path.exists():
@@ -1351,7 +1357,7 @@ def read_log(path: pathlib.Path) -> list[dict]:
             continue
         try:
             rec = json.loads(ln)
-            if not isinstance(rec, dict) or "goals" not in rec or "at" not in rec:
+            if not is_snapshot(rec):
                 raise ValueError("not a snapshot")
         except ValueError as exc:
             raise Malformed(f"{path.name} line {i} is not a snapshot ({exc})") from None
@@ -4510,6 +4516,11 @@ def _self_test_cases(*, outside: dict) -> int:
         except Malformed as exc:
             bad = "line 3" in str(exc)
         case("⛔ an unreadable log line is MALFORMED, naming the line", bad, True)
+        # backlog #647 r1: ONE snapshot test, shared with check-stalled-work.py's read of the last line
+        case("a snapshot is a dict with BOTH `goals` and `at` — `{}`, a list and either key alone are not",
+             [is_snapshot({"goals": [], "at": "a"}), is_snapshot({"goals": []}), is_snapshot({"at": "a"}),
+              is_snapshot({}), is_snapshot([])],
+             [True, False, False, False, False])
 
     ch = changes(snap, flipped)
     case("a state flip is reported as old → new, with the new detail",

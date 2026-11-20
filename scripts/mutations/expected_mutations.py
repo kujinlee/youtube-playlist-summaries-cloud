@@ -446,7 +446,7 @@ EXPECTED_MUTATIONS = {
     # contains a ref accepted, prose re-read, a thread not reading its entries' declarations, a prose wait expiring.
     # ⟳ 2026-11-19, backlog #647 (agenda-stale-wording): 438 -> 440, none retired — the STALE line's who-acts wording,
     # and its `it`/`them`.
-    "scripts/goal-tree.py": 440,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6) -> 440 (#647)
+    "scripts/goal-tree.py": 441,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6) -> 440 (#647) -> 441 (#647 r1)
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -2260,7 +2260,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-19, backlog #647 (agenda-stale-wording): 133 -> 141, none retired. Eight new, the STALE AGENDA line: the
     # subject read off goal-tree's own line, a malformed agenda not clear, a stalled state, its tier, `#` kept, a missing
     # log a NOTE, the NEWEST snapshot read, and collect's wiring.
-    "scripts/check-stalled-work.py": 141,
+    # ⟳ 2026-11-20, #647 r1 fold: 141 -> 151, none retired. Ten new: the hook prints an agenda NOT CHECKED note alone
+    # (and no other note alone), the last line passes goal-tree's `is_snapshot`, no bytecode written and the setting
+    # put back, the MAIN checkout's log read, the loader, goal-tree and checkout given are the ones used, and the
+    # "every step is done" line is not a late merge.
+    "scripts/check-stalled-work.py": 151,
     # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
     # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
     # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the

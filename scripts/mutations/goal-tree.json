@@ -5753,5 +5753,18 @@
     "expect": [
       "owner 11-17: two late threads are `them`, both named, on ONE line"
     ]
+  },
+  {
+    "name": "backlog #647 r1: a snapshot needs only `goals`, not `at`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return isinstance(rec, dict) and \"goals\" in rec and \"at\" in rec",
+        "return isinstance(rec, dict) and \"goals\" in rec"
+      ]
+    ],
+    "expect": [
+      "a snapshot is a dict with BOTH `goals` and `at` — `{}`, a list and either key alone are not"
+    ]
   }
 ]
