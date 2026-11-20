@@ -21054,3 +21054,15 @@ agree on all 33 rows. `mkt_seed_repo.py`: a case re-reads the 5 typed facts from
 mutations, all killed by their named case); docstring states the 12 chosen items (Cm2). Filed backlog #674
 (preflight passes a world under the real `HOME`; I1) and #675 (`exec_edges` drops an argv base naming another tree).
 Tier-B names its 16 `RunRecord` runs (Cm3).
+
+The features page's biggest section — the rules-and-checks harness — is now split into six smaller sections you can
+read one at a time: speed, the review process, mutation and test quality, hooks and session continuity, the backlog
+and page tooling, and whether the checks themselves are sound. Every open item in that section was read and placed in
+exactly one of the six. It was your choice on 2026-10-30 (option A), and it closes backlog #511.
+<!--tech-->
+Branch `backlog-511`. `docs/features.md`: six `####` child nodes under `guard-and-gate-harness`, each claiming one
+sub-area — `(tooling/speed)` 48, `(tooling/review)` 30, `(tooling/mutation)` 42, `(tooling/hooks)` 53,
+`(tooling/pages)` 37, `(tooling/guards)` 69 open rows (279 in all; the row's title said 127, from when it was filed).
+`docs/backlog.md`: only the Bundle cell of those 279 rows changed, `(tooling)` → `(tooling/<sub>)`; a second tag such
+as `(comprehensibility/explainers)` is kept. Closed `(tooling)` rows are unchanged and stay under the parent node by
+`nearest_claim`. Same mechanism as `status-visibility`/`feature-map`; the page is regenerated from these sources.
