@@ -2237,6 +2237,12 @@ def _self_test_body() -> int:
         # two loads), and `check-selftest-counts.py` -> `check-publishability.py` (its POPULATION row). Lost: 0.
         # ⟳ 2026-11-20 merged with memory-shape-check: 347 + 2 = 349 / df1ef55a52b10da7. Its two gained lines, diffed by hand:
         # `check-memory-shape.py` -> `fixture_git.py` and `check-selftest-counts.py` -> `check-memory-shape.py`. Lost: 0.
+        # ⟳ 2026-11-20 merged with marketplace slice E (plan Task 13): 347 + 3 = 350 / db6cc138c66b5bac. Its three gained lines, diffed
+        # by hand: `check-selftest-counts.py` -> `mkt_seed_repo.py`, `mkt_seed_repo.py` -> `fixture_git.py`, and
+        # `mkt_seed_repo.py` -> `check-docs.py` (a string naming the SEEDED repository's own file, read as a host
+        # edge: an over-report, recorded in docs/marketplace/experiment-tier-a.md). Lost: 0.
+        # ⟳ 2026-11-20 merge of master (with PR #605) into hse-e: 354 / 48718a142caacc9a, the UNION of the two parents
+        # (this branch 351, master 351, shared 348; each measured from its own `git archive`). Lost: 0.
         # ⟳ 2026-11-20 merge of backlog #647 (branch agenda-stale-wording): 347 + 1 = 348 / 4bb7d4965ff49f79. The one
         # gained line, diffed by hand against master's 347: `scripts/check-stalled-work.py -> scripts/goal-tree.py` (its
         # importlib load of `agenda_context`). Lost: 0.
@@ -2254,13 +2260,17 @@ def _self_test_body() -> int:
         # UNION of the two parents (this branch 350, master 349, shared 348; each measured from its own `git archive`).
         # Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
+        # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
+        # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
+        # in neither side, 0 lost). A first pin of 353 was measured on the working tree mid-merge, where `git ls-files`
+        # lists a conflicted file once per stage and counts its edges two or three times. Lost: 0.
         live_set = lambda: sorted(f"{f} -> {e}" for f in tracked_py for e in exec_edges(REPO, f))  # noqa: E731
         case("Phase 6: over every tracked `.py` the reader's edge SET is PINNED — the rewrite lost none and gained "
              "none — and `--closure` on the real declaration prints no `optional: ` line",
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (351, "b3fda0c32ee2a692", []))
+             (354, "48718a142caacc9a", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

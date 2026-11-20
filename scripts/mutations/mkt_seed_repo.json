@@ -1,0 +1,123 @@
+[
+ {
+  "name": "the commits take the clock's date",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "        extra.update(GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)",
+    "        extra.update()"
+   ]
+  ],
+  "expect": "two seeds give identical trees"
+ },
+ {
+  "name": "no item is ever correctly empty",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "\"empty_is_correct\": expected == \"\"}",
+    "\"empty_is_correct\": False}"
+   ]
+  ],
+  "expect": "at least one item is correctly empty and one is non-empty"
+ },
+ {
+  "name": "a non-empty out is not refused",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "    if out.exists() and (",
+    "    if False and ("
+   ]
+  ],
+  "expect": "a non-empty out is CANNOT RUN"
+ },
+ {
+  "name": "known-facts.json is written inside the repository",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "    (out / \"known-facts.json\").write_text(",
+    "    (repo / \"known-facts.json\").write_text("
+   ]
+  ],
+  "expect": "known-facts.json is written beside the repository, and matches what seed returned"
+ },
+ {
+  "name": "the git log fact is cut to one commit",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "_git(repo, \"log\", \"--oneline\", \"-15\")",
+    "_git(repo, \"log\", \"--oneline\", \"-1\")"
+   ]
+  ],
+  "expect": "the git log fact names every seeded commit, newest first"
+ },
+ {
+  "name": "the roadmap status fact reads a blank line",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "ROADMAP.splitlines()[2]",
+    "ROADMAP.splitlines()[3]"
+   ]
+  ],
+  "expect": "every typed fact is what the committed file it names says"
+ },
+ {
+  "name": "the open backlog fact is typed wrong",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "\"#2 Import drops rows with a trailing comma; #3 Export has no progress indicator\"",
+    "\"#1 x\""
+   ]
+  ],
+  "expect": "every typed fact is what the committed file it names says"
+ },
+ {
+  "name": "a typed fact names the wrong source file",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "_item(\"roadmap-status\", \"docs/roadmap-to-launch.md\"",
+    "_item(\"roadmap-status\", \"README.md\""
+   ]
+  ],
+  "expect": "every typed fact is what the committed file it names says"
+ },
+ {
+  "name": "a typed fact's source names the right file among other words",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "_item(\"ratchet-check-docs\", \"python3 scripts/check-docs.py\"",
+    "_item(\"ratchet-check-docs\", \"cat scripts/check-docs.py\""
+   ]
+  ],
+  "expect": "every typed fact is what the committed file it names says"
+ },
+ {
+  "name": "a new typed fact has no parse",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "        # Emptiness, seeded on purpose",
+    "        _item(\"roadmap-steps\", \"README.md\", \"Milestone 9 — invented\"),\n        # Emptiness, seeded on purpose"
+   ]
+  ],
+  "expect": "every typed fact is what the committed file it names says"
+ },
+ {
+  "name": "a ratchet called absent is committed",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "({\"scripts/check-docs.py\": CHECK_DOCS}",
+    "({\"scripts/check-docs.py\": CHECK_DOCS, \"scripts/check-test-counts.py\": \"print(1)\\n\"}"
+   ]
+  ],
+  "expect": "every ratchet the seed calls absent is untracked at HEAD"
+ }
+]

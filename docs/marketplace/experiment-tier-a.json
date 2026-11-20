@@ -1,0 +1,401 @@
+{
+  "measured_at": "2026-11-19 23:20–23:31 PST, branch hse-e at 50ac3e65",
+  "components": {
+    "skill-brief": {
+      "exercised": true,
+      "scenario": "A-skill-brief",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "fail",
+        "2": "fail",
+        "3": "fail",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "skill-explain-diff": {
+      "exercised": true,
+      "scenario": "A-skill-explain-diff",
+      "operation_ok": true,
+      "pass_conditions": {
+        "1": "fail",
+        "2": "argued",
+        "3": "argued",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "skill-explain-findings": {
+      "exercised": true,
+      "scenario": "A-skill-explain-findings",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "fail",
+        "2": "argued",
+        "3": "fail",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "skill-explain-topic": {
+      "exercised": true,
+      "scenario": "A-skill-explain-topic",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "fail",
+        "2": "argued",
+        "3": "fail",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "skill-dashboard": {
+      "exercised": true,
+      "scenario": "A-skill-dashboard",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "fail",
+        "2": "argued",
+        "3": "fail",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "brief-compose": {
+      "exercised": true,
+      "scenario": "A-script-brief-compose",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "fail",
+        "2": "argued",
+        "3": "fail",
+        "4": "fail",
+        "5": "pass"
+      }
+    },
+    "explainer-serve": {
+      "exercised": true,
+      "scenario": "A-script-explainer-serve",
+      "operation_ok": true,
+      "pass_conditions": {
+        "1": "fail",
+        "2": "argued",
+        "3": "pass",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "ask-answerer": {
+      "exercised": true,
+      "scenario": "A-script-ask-answerer-status",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "regen-pages": {
+      "exercised": true,
+      "scenario": "A-script-regen-pages-all",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "fail",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "gen-dashboard": {
+      "exercised": true,
+      "scenario": "A-script-gen-dashboard",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "fail",
+        "4": "fail",
+        "5": "pass"
+      }
+    },
+    "gen-goals-page": {
+      "exercised": true,
+      "scenario": "A-script-gen-goals-page",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "fail",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "gen-features-page": {
+      "exercised": true,
+      "scenario": "A-script-gen-features-page",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "fail",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "gen-backlog-page": {
+      "exercised": true,
+      "scenario": "A-script-gen-backlog-page",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "fail",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "goal-tree": {
+      "exercised": true,
+      "scenario": "A-script-goal-tree-print",
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "fail",
+        "4": "pass",
+        "5": "pass"
+      }
+    },
+    "hook-regen-backlog-page": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "hook-regen-dashboard": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "hook-regen-features-page": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "hook-regen-goals-page": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "hook-regen-pages": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "contract-explainer-delivery": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "contract-handoff-path": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "contract-corpus-search": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "page-chrome": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "page-markup": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "session-state": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "gen-work-lines": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "check-dashboard-entry": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "check-goal-status": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "check-features": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "check-docs": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "check-anchors": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "fixture-git": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    },
+    "hook-dispatcher": {
+      "exercised": false,
+      "scenario": null,
+      "operation_ok": false,
+      "pass_conditions": {
+        "1": "argued",
+        "2": "argued",
+        "3": "argued",
+        "4": "argued",
+        "5": "argued"
+      }
+    }
+  }
+}

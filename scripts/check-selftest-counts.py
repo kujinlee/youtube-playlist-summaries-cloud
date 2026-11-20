@@ -129,6 +129,8 @@ POPULATION: frozenset[str] = frozenset({
     "ask_answerer.py",
     # ⟳ 2026-11-15, marketplace-inventory plan Task 2: pinned in the commit that creates it (the isolation tool).
     "mkt_isolate.py",
+    # 2026-11-19, marketplace-inventory plan Task 13: pinned in the commit that creates it (the seeded repository).
+    "mkt_seed_repo.py",
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: pinned in the commit that creates it (the staging tool). Its
     # one live case (`claude plugin validate`) is tallied apart from the N/N line, so the count is CI's count too.
     "mkt_stage.py",

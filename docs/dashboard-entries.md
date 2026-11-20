@@ -21109,3 +21109,60 @@ coefficients (% per M weighted tokens): five_hour opus 1.85, other(Fable) 7.82, 
 1.07, R² 0.37 — Fable ≈ 4.2–4.9× Opus. Ledger `fable-compare-week` closed. Backlog #680: slice D detector 4 armed
 THRASHING (r3 and r4 fix-induced) and PR #600 merged without Phase 6; `check-merge-ready.py` does not read the
 coordinator's thrashing answer.
+Started the install experiment for the marketplace work: a small made-up project with known facts, so a test can
+tell whether the status page a stranger gets says the right things about it, says nothing where nothing is the right
+answer, or says nothing because something is missing. The project is built the same way every time.
+<!--tech-->
+Marketplace slice E, plan `docs/superpowers/plans/2026-11-11-marketplace-inventory.md` Task 13 (branch `hse-e`):
+`scripts/mkt_seed_repo.py` — `seed(out)` builds `out/repo` (5 commits, fixed author and dates, roadmap, backlog, one
+`scripts/check-docs.py`, no `.claude/`) and `out/known-facts.json` beside it: 12 of `brief`'s ground-truth items, 4
+of them correctly empty. 12/12 self-test cases, 5 mutations all killed by their named case; wired W1-W8 (manifest,
+`expected_mutations.py`, the declared-counts case, `POPULATION`, `EXAMINED_KEYS`, a `ci.yml` step).
+
+Ran the first install experiment: the page-building toolkit installed into a clean, made-up stranger's machine. It
+installs, and its local page server works. But no page a stranger can ask a question in was produced: the scripts look
+for the project beside their own install folder instead of where the user is, and the Ask box can only be copied from
+a page that already has one, so a newcomer can never get the first. Record: `docs/marketplace/experiment-tier-a.md`.
+<!--tech-->
+Task 14 (2026-11-19, 33 `comprehensibility` components, 14 exercised): pass condition 1 fails for all 5 page skills;
+7 of 9 exercised scripts fail their operation (suite defects S1 install-relative paths, S2 Ask-tray bootstrap); `brief`
+condition 2 FAILS (no page; its chat answer scored 6 correct, 4 correctly-empty, 2 missing of 12). Isolation defect
+I1: a world under the author's home loads the author's `~/.claude/CLAUDE.md` and `preflight` passes; re-run under
+`DARWIN_USER_TEMP_DIR`. Step 5 (scan prediction) NOT RUN: slice D unmerged. Port 7391 stopped 23:26:11, restarted
+23:31:53. Also re-pinned `check-shipping-sets.py`'s Phase 6 edge set (347, `1c64fcc5c8bd9add`) and declared
+`scripts/mutations/mkt_seed_repo.json` in `shipping-sets.json` (Task 13 follow-up).
+
+Repeated the experiment in a real third-party project (a public plugin repository, cloned read-only with its link
+back removed): the same failures appear there, so they belong to the toolkit, not to the made-up project. No page
+with an Ask box was produced, and the toolkit's scripts never read the user's project at all. Record:
+`docs/marketplace/experiment-tier-b.md`.
+<!--tech-->
+Task 15 (2026-11-19): `Yeachan-Heo/oh-my-claudecode` at `dec7e418`, full clone (`--is-shallow-repository` false,
+6343 commits). Scripted half identical to tier A for all 8 operations; serve passed all 3 conditions; 5 skill runs
+(1.10 USD) produced 0 askable pages and 0 skill-served pages (`explain-diff` wrote but did not serve, unlike tier A).
+`RunRecord.opened` inside the host: 0 real files (one `<unknown>` traceback artefact). Port 7391 stopped 23:37:48,
+restarted 23:43:07.
+
+Folded the first review of the install experiment. Three grades were looser than the rules allow and are now strict:
+the page server no longer counts as producing a page a reader can ask in, the question-answerer is recorded as not
+measured rather than working, and one skill's success no longer counts as "through the installed paths". Two
+problems the experiment found in this project's own tools are now backlog items.
+<!--tech-->
+Marketplace slice E round 1 fold (`docs/reviews/coordinator/hse-slice-e-r1-coordinator.md`): tier-A record and
+sidecar regraded — `explainer-serve` condition 1 pass → fail (CM1), `ask-answerer.operation_ok` true → false, headline
+7 fail / 1 pass / 1 not measured (CM2, XM1), `skill-explain-diff` condition 3 pass → argued (I2; Cm1); S1/S2 no
+longer claimed to explain every failure (Xm1); `brief`'s chat answer no longer called working (Xm2). Matrix and JSON
+agree on all 33 rows. `mkt_seed_repo.py`: a case re-reads the 5 typed facts from the committed files (13/13; 7
+mutations, all killed by their named case); docstring states the 12 chosen items (Cm2). Filed backlog #674
+(preflight passes a world under the real `HOME`; I1) and #675 (`exec_edges` drops an argv base naming another tree).
+Tier-B names its 16 `RunRecord` runs (Cm3).
+
+## 2026-11-20
+The marketplace experiment now has a seed repository its runs are scored against (slice E). Its four review rounds kept
+finding gaps in the seed's own self-test, each one caused by the previous fix, so an architecture review was convened
+before merging. It found one cause behind all of them, and the redesign is filed rather than done here: no shipped fact
+is wrong, and the redesign changes the scored facts file, so it owes its own review.
+<!--tech-->
+PR #604 (harness-ships-elsewhere slice E). Phase 6: `docs/reviews/architecture-review-2026-11-20-mkt-seed-repo.md` —
+13 of 20 one-sided edits of the seed pass the self-test; a declare-once redesign turns all 20 red. Filed as backlog
+#678, superseding #676.
