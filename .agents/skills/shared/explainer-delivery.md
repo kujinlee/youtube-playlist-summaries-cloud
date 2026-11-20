@@ -218,6 +218,29 @@ element ids `modechip`, `tray`, `qbox`, `qt`, `sentnote`, `sendbtn`, `closebtn`;
 `tray.on` for the open state; `#sentnote.err` for failures; CSS variables `--verified`,
 `--verified-br`, `--fg3`, `--rule`. Lift the `<script>` block byte-for-byte from an existing page.
 
+## 3a. Decisions on the page — the ✍ tag, never a selection card
+
+A decision the owner must make on a page under review is marked **at the spot it is asked**, like a
+signature line on a contract (owner, 2026-11-11 06:03; backlog #603). Put `data-decision` on the
+element that asks it; the composer does the rest:
+
+| Fragment markup | Composed page |
+|---|---|
+| `<p data-decision>Keep the stranger audience?</p>` | yellow `🟨 ✍ DECISION n of N` tag after it — OPEN |
+| `<p data-decision="Yes — owner, 11-11">Keep the stranger audience?</p>` | green `🟩 ✍ DECISION n of N — ANSWERED: Yes — owner, 11-11` |
+| `<p data-decision data-decision-label="D7">…</p>` | the tag leads with `D7 — DECISION n of N` |
+
+- **Answering = setting the attribute's value to the answer, then recomposing** (§3's rule — same commit).
+- **Never type a number.** `n`, `N`, and the counter under the title (total · remaining · answered, with a
+  link to the first open one) are all derived by `brief-compose.py` (`render_decisions`) from one parse of
+  the fragment. A page with no mark gets no counter.
+- **A mark the reader could not see is CANNOT RUN**, not a silently-counted tag (hidden, inert, inside
+  `template`/`noscript`/`select`/`svg`/`math`, or in a collapsed `<details>`) — move it to a visible element.
+- ⚠ **Nothing checks that EVERY question is marked** (backlog #615): an unmarked question is invisible to the
+  counter, so read the page for owner questions before delivering it.
+- The tag colours are palette tokens (`--decide*` yellow, `--decided*` green) the composer adds for light,
+  dark and the OS media query; a fragment does not declare them.
+
 ## 4. Serve it — the page must be able to answer back
 
 ```bash

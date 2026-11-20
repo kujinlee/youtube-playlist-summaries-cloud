@@ -21005,3 +21005,14 @@ edge SET (344, digest `2cfb6a85d091b861`), not the count (Cm2). `--closure`: 0 g
 none dropped). `scripts/regen-pages.py`: the crash case again refuses a second `[FAIL]` line (Xm3/Cm3). Self-tests
 140/140 and 121/121; mutations 195 and 73, the 14 new or re-anchored entries all killed by their named case. CM2 and
 Cm4 (the exact-name censuses) are stated as bounds and split to backlog #671.
+
+## 2026-11-19
+The instructions every explainer page is built from now explain how to mark a decision on a page: put a mark on
+the question, and the page shows a yellow "DECISION n of N" tag there, turning green with the answer once one is
+given, plus a counter under the title. The page builder already did this (since 11-11); only the instructions that
+page-building sessions read did not say so, so a session had no way to learn the mark without opening the script.
+<!--tech-->
+`.agents/skills/shared/explainer-delivery.md` §3a documents the `data-decision` markup (`data-decision` = open,
+`data-decision="<answer>"` = answered, `data-decision-label`), that the numbers and counter are derived by
+`scripts/brief-compose.py` `render_decisions` (backlog #603, PR #563), the CANNOT RUN on an invisible mark, and the
+unmarked-question gap (backlog #615). No code change: `brief-compose.py --self-test` 226/226 unchanged.
