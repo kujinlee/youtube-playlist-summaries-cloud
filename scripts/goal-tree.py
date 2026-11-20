@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 544 cases
+    python3 scripts/goal-tree.py --self-test                 # 552 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -172,6 +172,12 @@ PRECEDENCE = ("cannot", "open", "notfound", "closed", "merged")
 # folds `older` and `later` away. ⛔ The bucket is NEVER stored: it depends on the moment the tree is DRAWN, so
 # storing it would log a new snapshot each time a merge crosses the 48 h line with nothing else changed.
 MINUTE_FMT = "%Y-%m-%d %H:%M"
+# PR #606 r1 Codex MINOR: a worktree reading, and the clock a build is judged by, carry SECONDS — truncating both to
+# the minute moved the watchdog's 30-min edge by up to 59 s (10:00:59 read at 10:30:00 said `quiet 30 min`).
+SECOND_FMT = "%Y-%m-%d %H:%M:%S"
+# A change stamped at most this many seconds after the reader's clock is this moment (a minute-stamped clock, or a
+# write landing between the measure and the clock read); later than that is `ahead`, never running.
+AHEAD_TOLERANCE_S = 60
 TIME_UNREAD = "time unread"
 RECENT_HOURS = 48
 VISIBLE = ("now", "parked", "queued", "recent")     # drawn open; `older` and `later` are folded
@@ -501,7 +507,7 @@ def _ledger_owed(entry: dict, src: "dict | None" = None) -> dict:
 def measure_worktrees(ledger: list, measure=None) -> dict:
     """backlog #672. Every worktree a ledger entry DECLARES (`session-state.py --add --worktree`), measured ONCE by
     the watchdog's own function (`agent-watchdog.py:newest_change_ns`, injectable as `measure`) — never a second
-    walk. path -> {"changed": the newest change as a local MINUTE_FMT stamp} | {"gone": True} (no such directory) |
+    walk. path -> {"changed": the newest change as a local SECOND_FMT stamp} | {"gone": True} (no such directory) |
     {"unread": "<Type>: <why>"} (the watchdog could not read it: CANNOT RUN, never a time and never running)."""
     measure = measure or _WD.newest_change_ns
     out: dict = {}
@@ -513,7 +519,7 @@ def measure_worktrees(ledger: list, measure=None) -> dict:
             out[p] = {"gone": True}
             continue
         try:
-            out[p] = {"changed": _dt.datetime.fromtimestamp(measure(p) / 1e9).strftime(MINUTE_FMT)}
+            out[p] = {"changed": _dt.datetime.fromtimestamp(measure(p) / 1e9).strftime(SECOND_FMT)}
         except (_WD.CannotRun, OSError, ValueError, OverflowError) as exc:
             out[p] = {"unread": _SS.clean(f"{type(exc).__name__}: {exc}", 160)}
     return out
@@ -530,33 +536,43 @@ def _ledger_worktree(entry: dict, src: dict) -> dict:
     return {"worktree": {"path": p} | got}
 
 
-def worktree_build(wt: dict, at) -> dict:
-    """PURE (backlog #672). One declared worktree read against the snapshot's time `at`, as {"state", "text"}:
-      building — changed under the watchdog's window (`QUIET_MIN`) before `at`: the item is RUNNING;
+def _instant(stamp) -> _dt.datetime:
+    """A SECOND_FMT or MINUTE_FMT stamp as a time; ValueError/TypeError when it is neither."""
+    try:
+        return _dt.datetime.strptime(str(stamp), SECOND_FMT)
+    except ValueError:
+        return _dt.datetime.strptime(str(stamp), MINUTE_FMT)
+
+
+def worktree_build(wt: dict, now) -> dict:
+    """PURE (backlog #672). One declared worktree read against `now` — the READER's clock (PR #606 r1 Codex MAJOR 1,
+    Claude F1: a snapshot replayed hours later is judged at the time it is read, never at the time it was taken, so a
+    dead builder stops being `building` QUIET_MIN after its last change however old the snapshot is). Both stamps are
+    SECOND_FMT or MINUTE_FMT; the gap is counted in seconds. As {"state", "text"}:
+      building — changed under the watchdog's window (`QUIET_MIN`) before `now`: the item is RUNNING;
       quiet    — changed `QUIET_MIN` or more minutes before: Owed, `quiet N min`;
-      ahead    — stamped more than a minute AFTER `at` (the snapshot's clock is read before the measure, so one
-                 minute ahead is this moment): Owed, never running;
+      ahead    — stamped more than AHEAD_TOLERANCE_S after `now` (the clock is read AFTER the measure, r1 Codex MAJOR 2,
+                 so only a skewed clock or a future mtime lands here): Owed, never running;
       gone     — the directory is missing: Owed, `worktree gone`;
       unread   — the watchdog could not read it, or a time does not read: Owed, NOT READ."""
     if wt.get("gone"):
         return {"state": "gone", "text": "worktree gone"}
     try:
-        mins = int((_dt.datetime.strptime(str(at), MINUTE_FMT)
-                    - _dt.datetime.strptime(str(wt["changed"]), MINUTE_FMT)).total_seconds() // 60)
+        secs = int((_instant(now) - _instant(wt["changed"])).total_seconds())
     except (KeyError, ValueError, TypeError):
-        why = wt.get("unread") or "its change time does not read against the snapshot's"
+        why = wt.get("unread") or "its change time does not read against the reader's clock"
         return {"state": "unread", "text": f"worktree NOT READ ({why})"}
-    if mins < -1:
-        return {"state": "ahead", "text": f"worktree change stamped {-mins} min AFTER this snapshot"}
-    if mins < _WD.QUIET_MIN:
-        return {"state": "building", "text": f"building · last change {max(mins, 0)} min ago"}
-    return {"state": "quiet", "text": f"quiet {mins} min"}
+    if secs < -AHEAD_TOLERANCE_S:
+        return {"state": "ahead", "text": f"worktree change stamped {-secs // 60} min AFTER this snapshot"}
+    if secs < _WD.QUIET_MIN * 60:
+        return {"state": "building", "text": f"building · last change {max(secs, 0) // 60} min ago"}
+    return {"state": "quiet", "text": f"quiet {secs // 60} min"}
 
 
-def _builds(entries: list, at) -> dict:
-    """backlog #672: what a NOW entry carries — the `builds` of every worktree its entries declare. Only when one
-    is declared, so an item with none is the dict it was before."""
-    got = [worktree_build(e["worktree"], at) for e in entries
+def _builds(entries: list, now) -> dict:
+    """backlog #672: what a NOW entry carries — the `builds` of every worktree its entries declare, judged at `now`
+    (the reader's clock). Only when one is declared, so an item with none is the dict it was before."""
+    got = [worktree_build(e["worktree"], now) for e in entries
            if isinstance(e, dict) and isinstance(e.get("worktree"), dict)]
     return {"builds": got} if got else {}
 
@@ -603,7 +619,7 @@ def idle_days(since, now) -> "int | None":
 def _finished(b: dict, started: bool = False) -> str:
     """A done or abandoned blocker as its alarm: `blocker done <mm-dd> (<ref>), not started`, or
     `prerequisite <ref> <why> — re-plan` (r1 Codex 1: an abandoned prerequisite is never `done`). backlog #672: an
-    item whose declared worktree exists has STARTED, so `not started` is dropped there."""
+    item that declares a worktree makes no `not started` claim (PR #606 r1 Claude F2)."""
     if b["state"] == "abandoned":
         return f"prerequisite {b['ref']} {b.get('why') or 'abandoned'} — re-plan"
     when = (f"blocker done {b['when'][5:10]}" if isinstance(b.get("when"), str) and _STAMP.fullmatch(b["when"])
@@ -627,7 +643,10 @@ def owed_reason(x: dict, now) -> tuple:
                                            for b in pending))
     idle = not pending and not recorded
     builds = x.get("builds") or []
-    started = any(w["state"] in ("building", "quiet", "ahead") for w in builds)   # backlog #672: the worktree exists
+    # backlog #672 + PR #606 r1 Claude F2: `not started` is claimed only when NO worktree is declared. A declared one
+    # either shows the work began (building, quiet, ahead) or was not read or was removed — the page cannot say
+    # `not started` of a source it did not read, and a declared directory existed when it was declared.
+    started = bool(builds)
     alarms: list = []
     for b in [b for b in blockers if b not in pending]:
         if _finished(b, started) not in alarms:
@@ -1790,7 +1809,7 @@ def step_goals(snap: dict, ag: dict) -> dict[int, list[str]]:
     return out
 
 
-def agenda_digest(snap: dict, ag: dict) -> dict:
+def agenda_digest(snap: dict, ag: dict, now=None) -> dict:
     """PURE (backlog #509, owner 11-05 14:37). What the agenda block says beyond its steps, as DATA, so the text
     lines (`agenda_context`) and the page's laid-out block read ONE derivation:
       now   — the threads in flight (⏳, not parked), each with its goal and its one-line `what`;
@@ -1798,7 +1817,10 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
       late  — threads MERGED after the plan was set that no step names (owner 08:24: a page generated at 08:15 showed
               the plan set 19:55 the day before, and said nothing). Compared only when both times are
               `YYYY-MM-DD HH:MM`; any other stamp says nothing rather than guess;
-      done  — every step is done."""
+      done  — every step is done.
+    `now` is the READER's clock, which judges every declared worktree (PR #606 r1 Codex MAJOR 1, Claude F1); left out,
+    the snapshot's own time."""
+    judge = snap.get("at") if now is None else now
     goals = snap.get("goals") or []
     now, named = [], frozenset().union(*(_refset(st["refs"]) for st in ag["steps"]))
     late, seen = [], set()
@@ -1809,7 +1831,7 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
         # backlog #672: …unless the worktree it DECLARES changed within the watchdog's window — then it is running
         now += [_run_if_building({"label": u["id"], "goal": goal_head(i, g["slug"]), "running": False,
                                   "what": _one_line(u.get("what")), "waits": u.get("waits")}
-                                 | _owed_keys([u], u.get("blockers")) | _builds([u], snap.get("at")))
+                                 | _owed_keys([u], u.get("blockers")) | _builds([u], judge))
                 for u in g.get("placed") or [] if isinstance(u, dict) and "id" in u and not u.get("parked")]
         for t in g["threads"]:
             label = t["key"].split(" · ", 1)[-1]
@@ -1832,7 +1854,7 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
                      "waits": waits,
                      # one PR reached by two declarations is ONE item (r1 Codex M1): merged by EVERY PR (r2 M1)
                      "prs": list(ops)} | _owed_keys(t.get("entries") or [], t.get("blockers"))
-                    | _builds(t.get("entries") or [], snap.get("at"))))
+                    | _builds(t.get("entries") or [], judge)))
             ended = t.get("merged_at")
             if (t["state"] == "merged" and isinstance(ended, str) and _STAMP.fullmatch(ended)
                     and _STAMP.fullmatch(ag["at"]) and ended > ag["at"]
@@ -1843,7 +1865,7 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
     # r1 Codex M2 (agenda-digest): its purpose too — the ledger's `what`, cut to one line
     now += [_run_if_building({"label": u["id"], "goal": "no goal", "what": _one_line(u.get("what")), "running": False,
                               "waits": u.get("waits")}   # backlog #514 r1: the wait the entry declares, else none
-                             | _owed_keys([u], u.get("blockers")) | _builds([u], snap.get("at")))
+                             | _owed_keys([u], u.get("blockers")) | _builds([u], judge))
             for u in snap.get("inflight_loose") or [] if isinstance(u, dict) and "id" in u]
     # owner 11-05 15:45: an open PR no goal declares is RUNNING work too — listed by its title, not only counted
     # kept OUT of `now`, so the text lines are unchanged; the page lists them under Running now
@@ -2394,17 +2416,19 @@ def _bounded(head: str, middle: str, tail: str = "") -> str:
     return head + _one_line(middle, max(OWED_IDLE_WIDTH - len(head) - len(tail), 1)) + tail
 
 
-def owed_idle_lines(snap: dict, now: str) -> list:
+def owed_idle_lines(snap: dict, now: str, judge=None) -> list:
     """PURE (backlog #650). The session-start lines: ONE per Owed item that is IDLE — no live reason left (r1 Codex 5:
     a recorded wait still standing, or a prerequisite open or unread, keeps it OFF) — and has an alarm: a finished or
     abandoned blocker, or no reason at all. A listed item shows EVERY reason it has. Idle days count to `now`, the
     time the report RUNS (r1 Claude F4). Bounded — OWED_IDLE_SHOWN lines of at most OWED_IDLE_WIDTH, the rest a
     count — because the block is injected into every session. Nothing idle is ONE line saying so — but only when the
     snapshot read every source: one recording a source NOT read (`OWED_IDLE_UNREAD`) says CANNOT VERIFY first, never
-    'none' (r1 Codex 2, Claude F5). A ledger placement note is not that (r2 N1): it hides no Owed item."""
+    'none' (r1 Codex 2, Claude F5). A ledger placement note is not that (r2 N1): it hides no Owed item.
+    Every declared worktree is judged at `judge` (default `now`), the time the report RUNS — never the snapshot's
+    (PR #606 r1 Claude F1: a two-day-old snapshot kept a dead builder `building` and the block said `none`)."""
     at = _SS.clean(snap.get("at"), 20)
     rows = []
-    for x in agenda_now_items(agenda_digest(snap, {"steps": [], "at": ""})):
+    for x in agenda_now_items(agenda_digest(snap, {"steps": [], "at": ""}, now if judge is None else judge)):
         if x["running"]:
             continue
         waits, alarm, idle = owed_reason(x, now)
@@ -2443,7 +2467,7 @@ def _last_line(fh, chunk: int = OWED_IDLE_CHUNK) -> bytes:
         take *= 2
 
 
-def owed_idle_report(log_path: pathlib.Path, now: str) -> list:
+def owed_idle_report(log_path: pathlib.Path, now: str, judge=None) -> list:
     """backlog #650. `owed_idle_lines` of the NEWEST logged snapshot — its last line only, read from the end of the
     file, so no network and no read of the whole log. A log that is missing, empty or unreadable is CANNOT READ, never
     'none', in ONE bounded line."""
@@ -2453,15 +2477,16 @@ def owed_idle_report(log_path: pathlib.Path, now: str) -> list:
         snap = json.loads(tail.decode("utf-8"))
         if not isinstance(snap, dict) or not isinstance(snap.get("goals"), list) or "at" not in snap:
             raise ValueError("its last line is not a snapshot")
-        return owed_idle_lines(snap, now)
+        return owed_idle_lines(snap, now, judge)
     except Exception as exc:                      # noqa: BLE001 - CANNOT READ, named, never "none"
         return [_bounded(f"{OWED_IDLE_CANNOT} READ {LOG_REL} (", f"{type(exc).__name__}: {exc}",
                          ") — treat as NOT RUN, never as 'nothing idle' ===")]
 
 
-def agenda_html(snap: dict) -> str:
+def agenda_html(snap: dict, now=None) -> str:
     """The AGENDA section, under NEEDS YOU: the current plan grouped by when, then every earlier agenda as ONE
-    collapsed line (its `history_line`), newest first, expanding to its steps in their frozen states."""
+    collapsed line (its `history_line`), newest first, expanding to its steps in their frozen states. `now` is the
+    clock the page is BUILT at, which judges every declared worktree (PR #606 r1 Codex MAJOR 1)."""
     (kind, ag), repo = snap_agenda(snap), snap.get("repo")
     if kind == "absent":
         # ⛔ a snapshot taken before agendas were recorded CANNOT say there was none (slice 2, r1 Codex M3), nor
@@ -2476,7 +2501,7 @@ def agenda_html(snap: dict) -> str:
     if kind == "malformed":
         return f'<section class="agenda"><h2 class="warn">{html.escape(lines[0])}</h2></section>'
     # owner 11-05 14:37: the heading in the goals' accent style; the plan's when and window on a meta line beneath
-    d = agenda_digest(snap, ag)
+    d = agenda_digest(snap, ag, now)
     age = f" ({d['mins'] // 60} h {d['mins'] % 60:02d} m before this snapshot)" if d["mins"] is not None else ""
     parts = ['<section class="agenda">', '<h2 class="agenda-h">Agenda</h2>',
              f'<p class="meta">the current plan · set {html.escape(ag["at"])}{age} · {html.escape(ag["window"])}</p>']
@@ -2490,9 +2515,12 @@ def agenda_html(snap: dict) -> str:
                                + tail + "</li>")
     items = agenda_now_items(d)
     run = [x for x in items if x["running"]] + list(d.get("stray") or [])
-    # backlog #672: a running item whose worktree builds says so, and how recently
-    busy = lambda x: "".join(f' <span class="what">· {html.escape(b["text"])}</span>'
-                             for b in x.get("builds") or [] if b["state"] == "building")
+    # backlog #672: a running item whose worktree builds says so, and how recently. PR #606 r1 Codex MAJOR 3: an item
+    # running for its OPEN PR whose declared worktree is quiet, gone or not read says THAT too, as a warning — the PR
+    # keeps it running (owner 11-05 15:45), and the worktree's state is never hidden behind it
+    busy = lambda x: "".join(f' <span class="what">· {html.escape(b["text"])}</span>' if b["state"] == "building"
+                             else f' <span class="waits warn">{html.escape(b["text"])}</span>'
+                             for b in x.get("builds") or [])
     owed = [x for x in items if not x["running"]]
     # owner 11-05 15:45 (card A): RUNNING apart from OWED, and each owed item says what it waits for
     parts.append('<div class="digest"><div><h3>Running now</h3><ul>' + "".join(item(x, busy(x)) for x in run)
@@ -2702,7 +2730,7 @@ TIMELINE_SHOWN = 6   # newest timeline entries shown open; the rest fold (owner 
 
 
 def render_page(log: list[dict], built: str, live: dict | None = None, answers: list[dict] = (),
-                answers_error: str = "") -> str:
+                answers_error: str = "", judge: str | None = None) -> str:
     """PURE. The page body: the newest snapshot as the current tree, then the timeline newest first.
 
     `live` is this run's derivation when it could not be logged (its `cannot` is non-empty), so the
@@ -2735,7 +2763,7 @@ def render_page(log: list[dict], built: str, live: dict | None = None, answers: 
     # complete or not, because a decision that appeared since the newest snapshot is the one to see.
     parts.insert(6, needs_html(live if live is not None else newest))
     # backlog #499: the AGENDA under NEEDS YOU — from the snapshot the tree below is, so step and leaf agree
-    parts.insert(7, agenda_html(newest))
+    parts.insert(7, agenda_html(newest, built if judge is None else judge))   # PR #606 r1 Codex MAJOR 1: the BUILD's clock
     # backlog #497: the current tree is bucketed at the BUILD time, as --print is at its run, so the two agree.
     qa, seen = answers_by_key(list(answers)), set()
     parts += ['<h2>Now</h2>', render_tree_html(newest, ids=True, at=built, qa=qa, seen=seen)]
@@ -2866,7 +2894,7 @@ COMPOSE_TIMEOUT = 30
 
 def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None = None, *,
                tray_source: str | None = None, answers_path: pathlib.Path | None = None,
-               composer: list[str] | None = None) -> str:
+               composer: list[str] | None = None, judge: str | None = None) -> str:
     """Write the page, with the Ask tray LIFTED by `brief-compose.py` — never retyped (owner 2026-11-11:
     "goal-tree page do not have interactive 'ask' feature"). The same mechanism the backlog and dashboard
     pages use; `brief-compose.py`'s docstring records why the tray is never hand-copied.
@@ -2882,7 +2910,7 @@ def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None
     if answers_error:
         print(f"⚠  goal tree: answers NOT shown — {answers_error}", file=sys.stderr)
     # Every key left as TEXT (NEEDS YOU's prose, the lede) becomes a link too (backlog #470).
-    body = page_markup.link_html(render_page(log, built, live, answers, answers_error), log[-1].get("repo"))
+    body = page_markup.link_html(render_page(log, built, live, answers, answers_error, judge), log[-1].get("repo"))
     fragment = (f"<title>{PAGE_TITLE}</title>"
                 f"<style>{CSS}\n{page_chrome.chrome_css()}</style>{body}"
                 f"<script>{page_chrome.chrome_script()}</script>")
@@ -2931,7 +2959,7 @@ def _has_tray(page: str) -> bool:
 
 # ── the command ───────────────────────────────────────────────────────────────────────────────
 def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
-         now: str | None = None) -> int:
+         now: str | None = None, clock=None) -> int:
     ap = argparse.ArgumentParser(description="Log the goal tree and render its page (backlog #363).")
     ap.add_argument("--snapshot", action="store_true", help="derive the states and log them if changed")
     ap.add_argument("--page", action="store_true", help="render the page from the log")
@@ -2948,6 +2976,17 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
     a = ap.parse_args(sys.argv[1:] if argv is None else argv)
     if a.self_test:
         return _self_test()
+    fixed = now
+
+    def read_clock() -> tuple:
+        """(minute stamp, second stamp) of ONE clock reading; an injected `now` is both. PR #606 r1 Codex MAJOR 2 /
+        Claude F5: called again AFTER every collect(), so a snapshot and the builds it judges are stamped after the
+        fetch and the measure, never before them."""
+        if fixed is not None:
+            return fixed, fixed
+        t = (clock or _dt.datetime.now)()
+        return t.strftime(MINUTE_FMT), t.strftime(SECOND_FMT)
+    now, judge = read_clock()
     if a.owed_idle:      # reads the log only; alone, so a SessionStart never fetches, derives or writes
         # r1 Claude F6 / Codex 6: every line bounded, and exit OWED_IDLE_RC means "I printed my own CANNOT line" — the
         # hook echoes its CANNOT RUN for any OTHER non-zero code, so it is said exactly once. Days count to NOW (F4).
@@ -2955,14 +2994,13 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
             main_root, why = _SS.main_checkout(root, run or _SS._run)
             lines = ([_bounded(f"{OWED_IDLE_CANNOT} RUN — the log lives in the MAIN checkout, and ", str(why),
                                " (treat as NOT RUN) ===")] if why else
-                     owed_idle_report(main_root / LOG_REL, now or _dt.datetime.now().strftime(MINUTE_FMT)))
+                     owed_idle_report(main_root / LOG_REL, now, judge))
         except Exception as exc:                  # noqa: BLE001 - CANNOT RUN, named and bounded
             lines = [_bounded(f"{OWED_IDLE_CANNOT} RUN — ", f"{type(exc).__name__}: {exc}", " (treat as NOT RUN) ===")]
         print("\n".join(lines))
         return OWED_IDLE_RC if lines[0].startswith(OWED_IDLE_CANNOT) else 0
     if not (a.snapshot or a.page or a.print_ or a.record_agenda or a.tick_agenda is not None):
         a.snapshot = a.page = True
-    now = now or _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     main_root, why = _SS.main_checkout(root, run or _SS._run)
     if why:
         print(f"CANNOT RUN — the log lives in the MAIN checkout's {LOG_REL}, and {why}.")
@@ -2993,6 +3031,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
                 return 2
             ag = parse_agenda(text)
             src = collect(root, run)
+            now, judge = read_clock()
             # ⛔ the replaced agenda's states are only as good as the sources: an unread one is said
             print(record_agenda(agenda_path, ag, now,
                                 None if src["errors"] and any(src["errors"].values()) else src, declared))
@@ -3003,6 +3042,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
                 print(f"CANNOT RUN — {THREADS_REL} does not exist, so there is no tree to draw.")
                 return 2
             src = collect(root, run)
+            now, judge = read_clock()   # PR #606 r1 Codex MAJOR 2: after the fetch and the measure
             live = derive(parse_threads(threads.read_text()), src, now)
             # ⛔ a malformed agenda log is SAID on the agenda block and in the exit code, and never takes the
             # snapshot down with it — the tree was read whole (r2 Codex M4)
@@ -3034,7 +3074,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
         warn = _sibling("gen-backlog-page").publish_rows(root)
         if warn:
             print(warn)
-        print("\n".join(page_report(a.out, write_page(a.out, log, now, live))))
+        print("\n".join(page_report(a.out, write_page(a.out, log, now, live, judge=judge))))
     if a.print_:
         shown = live if live is not None else (log[-1] if log else None)
         if shown is None:
@@ -3066,7 +3106,7 @@ def _cases_672(case) -> None:
     entry that DECLARES its worktree is listed under Running now while that worktree changed within the watchdog's
     window, and is Owed past it. Its own world; the worktrees are REAL directories measured by the watchdog's own
     function, stamped against a FIXED instant, so every minute count is deterministic."""
-    import shutil, tempfile
+    import contextlib, io, shutil, tempfile
     root = pathlib.Path(tempfile.mkdtemp(prefix="gt-672-")).resolve()
     saved_env = os.environ.pop(_SS.MAIN_CHECKOUT_ENV, None)
     try:
@@ -3150,6 +3190,61 @@ def _cases_672(case) -> None:
              [(i in run, i in owe) for i in ("by-goal", "no-goal")], [(True, False), (True, False)])
         case("backlog #672: Running now says what it can see — open PRs AND ledger work with a building worktree",
              "open PRs, and ledger work whose declared worktree changed in the last 30 min" in run, True)
+        # ── PR #606 round 1 fold ──
+        sec = "%Y-%m-%d %H:%M:%S"                  # an independent copy of the reading's format, never the code's own
+        stamp = lambda epoch: _dt.datetime.fromtimestamp(epoch).strftime(sec)
+        _, _, _, snap5 = page([ent(w5)], minute(t0 + 5 * 60))   # ONE snapshot, building when it was taken
+        _ran = lambda judge: "split the section" in re.sub(r"<[^>]+>", "", agenda_html(snap5, judge).split(
+            "<h3>Running now</h3>", 1)[1].split("<h3>Owed", 1)[0])
+        case("⭐ r1 Codex MAJOR 1 / Claude F1: a build is judged against the READER's clock, never the snapshot's — one "
+             "snapshot taken 5 min after the change is running when read at +5 min, Owed `quiet 31 min` when the page "
+             "is rendered at +31 min (agenda_html, and the whole page replaying it), and LISTED by the session-start "
+             "block a day later",
+             (_ran(stamp(t0 + 5 * 60)), _ran(stamp(t0 + 31 * 60)),
+              "quiet 31 min" in agenda_html(snap5, stamp(t0 + 31 * 60)),
+              [ln for ln in owed_idle_lines(snap5, minute(t0 + 5 * 60)) if "split the section" in ln] == [],
+              any("split the section" in ln and "quiet 1445 min" in ln for ln in owed_idle_lines(snap5, minute(t0 + 1445 * 60))),
+              "quiet 31 min" in render_page([snap5], minute(t0 + 31 * 60)).split("<h3>Owed", 1)[1]),
+             (True, False, True, True, True, True))
+        case("⭐ r1 Codex MINOR: the 30-min edge is measured in SECONDS — a change at :59 read 29 min 1 s later is "
+             "building, one at :00 read 30 min later is quiet: two inputs, ONE case",
+             [worktree_build({"changed": stamp(t0 + 59)}, stamp(t0 + 30 * 60))["state"],
+              worktree_build({"changed": stamp(t0)}, stamp(t0 + 30 * 60))["state"],
+              measure_worktrees([{"worktree": w5}])[w5]],
+             ["building", "quiet", {"changed": stamp(t0)}])
+        case("r1 Claude F3: the tolerance for a change stamped after the reader's clock is ONE minute — 60 s ahead is "
+             "building, 61 s ahead is `ahead`: two inputs, ONE case",
+             [worktree_build({"changed": stamp(t0 + 60)}, stamp(t0))["state"],
+              worktree_build({"changed": stamp(t0 + 61)}, stamp(t0))["state"]], ["building", "ahead"])
+        _done = [{"ref": "PR #442", "state": "done", "when": "2026-10-30 09:00"}]
+        _alarm = lambda builds: owed_reason({"blockers": _done, "builds": builds}, "2026-11-20 10:00")[1]
+        case("⭐ r1 Claude F2 + F3: `not started` is said ONLY when no worktree is declared — an item whose worktree is "
+             "ahead, NOT READ or gone makes no such claim: four inputs, ONE case",
+             ["not started" in _alarm(b) for b in ([], [{"state": "ahead", "text": "a"}],
+                                                    [{"state": "unread", "text": "u"}], [{"state": "gone", "text": "g"}])],
+             [True, False, False, False])
+        _dw = agenda_digest(dict(derive(goals, s([plain("held", goal="g", waits="the owner's call")]),
+                                        minute(t0 + 5 * 60)), agenda=plan), plan, stamp(t0 + 5 * 60))
+        case("r1 Claude F3: a BUILDING item that declares a wait is not running — asked of the digest's own entry, "
+             "before any fold re-gates it",
+             [(x["label"], x["running"]) for x in _dw["now"] if x["label"] == "held"], [("held", False)])
+        _snap_nw = dict(derive(goals, {k: v for k, v in s([ent(w5)]).items() if k != "worktrees"},
+                               minute(t0 + 5 * 60)), agenda=plan)
+        _raw_nw = agenda_html(_snap_nw, stamp(t0 + 5 * 60))
+        case("r1 Claude F3: a source holding NO worktree readings reads the declared path as NOT READ — Owed, never "
+             "running",
+             ("worktree NOT READ (not measured in this snapshot)" in _raw_nw.split("<h3>Owed", 1)[1],
+              "split the section" in re.sub(r"<[^>]+>", "", _raw_nw.split("<h3>Running now</h3>", 1)[1].split(
+                  "<h3>Owed", 1)[0])), (True, False))
+        _gpr = parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · PR #451 · review the open work\n')
+        _spr = dict(derive(_gpr, s([dict(ent(gone), what="build PR #451", after=[])],
+                                    open={451: {"number": 451, "title": "open work", "isDraft": False}},
+                                    all={442: "MERGED", 451: "OPEN"}), minute(t0)), agenda=plan)
+        _rpr = re.sub(r"<[^>]+>", "", agenda_html(_spr, stamp(t0)).split("<h3>Running now</h3>", 1)[1].split(
+            "<h3>Owed", 1)[0])
+        case("⭐ r1 Codex MAJOR 3: an open PR keeps its thread running (owner 11-05 15:45), but a declared worktree that "
+             "is gone is SAID on the Running line, never hidden",
+             ("review the open work" in _rpr, "worktree gone" in _rpr), (True, True))
         # collect() takes the reading: the MAIN checkout's ledger names the worktree, the watchdog measures it
         m = root / "main"
         (m / ".claude").mkdir(parents=True)
@@ -3175,7 +3270,26 @@ def _cases_672(case) -> None:
         case("⭐ backlog #672: collect() reads every DECLARED worktree through the watchdog's measure — one changed at "
              "a known minute, one missing",
              collect(m, run_, read_plans=lambda d: ([], [])).get("worktrees"),
-             {w5: {"changed": minute(t0)}, gone: {"gone": True}})
+             {w5: {"changed": stamp(t0)}, gone: {"gone": True}})
+        # r1 Codex MAJOR 2 / Claude F5: the clock a snapshot is stamped with — and builds are judged by — is read AFTER
+        # collect() has fetched and measured, so a slow fetch never turns a live builder into `ahead`
+        (m / THREADS_REL).write_text('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #11 · split the section\n')
+        events, ticks = [], iter(range(100))
+
+        def run_ev(cmd, cwd, timeout):
+            events.append("run")
+            return run_(cmd, cwd, timeout)
+
+        def clock():
+            events.append("clock")
+            return _dt.datetime.fromtimestamp(t0 + 60 * next(ticks))
+        with contextlib.redirect_stdout(io.StringIO()):
+            _rc = main(["--snapshot"], root=m, run=run_ev, clock=clock)
+        _logged = read_log(m / LOG_REL)
+        case("⭐ r1 Codex MAJOR 2 / Claude F5: --snapshot reads its clock AFTER collect's network calls and measure, and "
+             "stamps the snapshot with THAT reading",
+             (_rc, events[-1], _logged[-1]["at"] if _logged else None),
+             (0, "clock", minute(t0 + 60 * (events.count("clock") - 1))))
     finally:
         shutil.rmtree(root, ignore_errors=True)
         if saved_env is not None:

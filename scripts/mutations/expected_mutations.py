@@ -453,7 +453,17 @@ EXPECTED_MUTATIONS = {
     # `_sibling` sys.modules registration (removing it fails the import of agent-watchdog, loudly, at load).
     # Seven re-bound to the moved text, same intent: the no-goal and placed NOW entries (three), the placed and
     # loose entries' `_ledger_owed`, the lede's removal, and the prose-wait idle rule.
-    "scripts/goal-tree.py": 454,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    # ⟳ 2026-11-20, PR #606 round 1 fold: 454 -> 466, none retired. Twelve new: the digest, the session-start block and
+    # the page each judging builds at the snapshot's time instead of the reader's (XM1/F1); both stamps truncated to the
+    # minute and the measure stamped to the minute (Xm1); the ahead tolerance compared with <= or widened (F3); only
+    # a building worktree counting as started (F2); a building item with a declared wait made running (F3); a declared
+    # path with no reading given a change time (F3); a running item hiding a non-building worktree (XM3); --snapshot
+    # keeping the clock read before collect (XM2/F5). Seven re-bound to the moved text, same intent: the window, the
+    # quiet branch and the ahead branch (now in seconds), the building text (now in the busy lambda), the page's agenda
+    # call (now passing the judge), the placed entries' `_builds`, and --owed-idle's injected clock (now read_clock).
+    # Not mutated: --record-agenda's clock re-read after collect (no case drives that path with a moving clock), and
+    # write_page forwarding `judge` (dropping it falls back to `built`, the same minute — no case can tell them apart).
+    "scripts/goal-tree.py": 466,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1729,11 +1739,14 @@ EXPECTED_MUTATIONS = {
     # name, three-way, so a re-bound entry keeps the side that changed it.
     # ⟳ 2026-11-20, backlog #672: 148 -> 155, none retired. Seven new for the declared `worktree`: --add never storing
     # it, a missing directory accepted, --set-worktree `none` keeping the key, re-stamping `at`, reporting an unknown id
-    # as success, `none` read as a path, --worktree outside --add not stray. Not mutated: `os.path.abspath` (every
-    # caller passes an absolute path, so no case can witness it).
+    # as success, `none` read as a path, --worktree outside --add not stray. (⟳ 2026-11-20, PR #606 r1 Claude F4: this line
+    # said `os.path.abspath` could not be witnessed — wrong: a relative --set-worktree, given from a known cwd, is.)
     # Four re-bound to the moved text, same intent: the goal/thread store, --waits and --after at the --add call,
     # and --after's stray check.
-    "scripts/session-state.py": 155,
+    # ⟳ 2026-11-20, PR #606 round 1 fold: 155 -> 157, none retired. Two new: a relative worktree stored as given, the
+    # abspath dropped (F4, witnessed by a relative --set-worktree from a known cwd); the main checkout accepted as a
+    # worktree (F6).
+    "scripts/session-state.py": 157,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on

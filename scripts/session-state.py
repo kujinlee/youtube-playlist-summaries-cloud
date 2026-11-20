@@ -62,7 +62,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --set-worktree ID PATH|none   # the worktree its agent builds in (backlog #672)
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 161 cases
+    python3 scripts/session-state.py --self-test  # 163 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -417,12 +417,21 @@ def _after_list(after, thread, gt=None) -> list:
     return [f"{k} #{n}" for k, n in pairs]
 
 
-def declared_worktree(worktree: str) -> str:
+def declared_worktree(worktree: str, ledger: "Path | None" = None) -> str:
     """backlog #672: the directory a ledger entry's agent builds in, as an ABSOLUTE path. A path that is not a directory
-    now is refused (ValueError): an entry declared with one would only ever read `worktree gone`."""
+    now is refused (ValueError): an entry declared with one would only ever read `worktree gone`.
+    PR #606 r1 Claude F6: so is the checkout the `ledger` lives in (`<main>/LEDGER_REL`), any directory holding it, and
+    its `.claude/` — hooks write there every turn and every builder worktree nests inside it, so it would read
+    `building` for ever (agent-watchdog: watch builder worktrees, not the main checkout)."""
     path = os.path.abspath(worktree)
     if not os.path.isdir(path):
         raise ValueError(f"--worktree {worktree!r} is not a directory: name the worktree the agent builds in")
+    if ledger is not None:
+        hooks_dir = os.path.realpath(Path(ledger).parent)          # <main>/.claude, the ledger's own directory
+        real = os.path.realpath(path)
+        if os.path.commonpath([real, hooks_dir]) == real:
+            raise ValueError(f"--worktree {worktree!r} is the main checkout or holds it: name the builder's own "
+                             "worktree, never the checkout hooks write to")
     return path
 
 
@@ -447,7 +456,7 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
     if kind is None:
         kind = guess_kind({"what": what, "on_done": on_done})
     declared = _after_list(after, thread)   # backlog #650: refused BEFORE the lock, so a refusal writes nothing
-    wt = declared_worktree(worktree) if worktree is not None else None   # backlog #672: also refused before it
+    wt = declared_worktree(worktree, path) if worktree is not None else None   # backlog #672: also refused before it
     with _locked(path):
         entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
@@ -484,7 +493,7 @@ def ledger_set_worktree(path: Path, id_: str, worktree: str | None) -> bool:
     ValueError, refused before the lock, so nothing is written either."""
     if not id_.strip():
         raise ValueError("an empty id names no job")
-    wt = declared_worktree(worktree) if worktree is not None else None
+    wt = declared_worktree(worktree, path) if worktree is not None else None
     with _locked(path):
         entries, raw = _for_update(path)
         hit = [e for e in entries if e.get("id") == id_]
@@ -1573,6 +1582,32 @@ def _self_test_body() -> int:
             case("backlog #672: --set-worktree on an unknown id is exit 1, a missing directory exit 2 — and the ledger is "
                  "byte-identical after both",
                  (_set672, _l672.read_bytes() == _before672), ([1, 2], True))
+            # PR #606 r1 Claude F4: a RELATIVE path is stored absolute — the served goal tree reads it from a private
+            # clone with another cwd, where `wt-a` would read `worktree gone`
+            _cwd672 = os.getcwd()
+            try:
+                os.chdir(_wa.parent)
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _rc_rel = main(["--set-worktree", "old", "wt-a"], root=_r672, run=NO_GIT)
+                _want_rel = os.path.join(os.getcwd(), "wt-a")
+            finally:
+                os.chdir(_cwd672)
+            case("r1 Claude F4: --set-worktree with a RELATIVE path stores it ABSOLUTE, against the cwd it was given in",
+                 (_rc_rel, [e.get("worktree") for e in read_ledger(_l672)[0]]), (0, [_want_rel]))
+            # PR #606 r1 Claude F6: the MAIN checkout (or any directory holding it) is never a builder's worktree — hooks
+            # write under its `.claude/` every turn and every builder worktree nests inside it, so it would read
+            # `building` for ever (agent-watchdog's docstring: watch builder worktrees, not the main checkout)
+            (_r672 / ".claude").mkdir(exist_ok=True)
+            _before_main = _l672.read_bytes()
+            _main672 = []
+            for _v in (str(_r672), str(_r672.parent), str(_r672 / ".claude")):
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _main672.append(main(["--set-worktree", "old", _v], root=_r672, run=NO_GIT))
+            with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                _main672.append(main(["--add", "m", "w", "d", *_b672, "--worktree", str(_r672)], root=_r672, run=NO_GIT))
+            case("⭐ r1 Claude F6: --worktree / --set-worktree REFUSE the main checkout, a directory holding it, and its "
+                 "`.claude/` — exit 2 each, the ledger byte-identical; a worktree beside them is still accepted (above)",
+                 (_main672, _l672.read_bytes() == _before_main), ([2, 2, 2, 2], True))
         finally:
             shutil.rmtree(_r672, ignore_errors=True)
         with _rs514(io.StringIO()):

@@ -2435,7 +2435,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    parts.insert(7, agenda_html(newest))",
+        "    parts.insert(7, agenda_html(newest, built if judge is None else judge))",
         "    pass"
       ]
     ],
@@ -4909,8 +4909,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "| _builds([u], snap.get(\"at\")))\n                for u in g.get(\"placed\") or []",
-        "| _builds([u], snap.get(\"at\")))\n                for u in []"
+        "| _builds([u], judge))\n                for u in g.get(\"placed\") or []",
+        "| _builds([u], judge))\n                for u in []"
       ]
     ],
     "expect": [
@@ -5522,8 +5522,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "now or _dt.datetime.now().strftime(MINUTE_FMT)",
-        "_dt.datetime.now().strftime(MINUTE_FMT)"
+        "        if fixed is not None:\n            return fixed, fixed",
+        "        if False:\n            return fixed, fixed"
       ]
     ],
     "expect": [
@@ -5746,8 +5746,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if mins < _WD.QUIET_MIN:",
-        "if mins <= _WD.QUIET_MIN:"
+        "if secs < _WD.QUIET_MIN * 60:",
+        "if secs <= _WD.QUIET_MIN * 60:"
       ]
     ],
     "expect": [
@@ -5759,8 +5759,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "return {\"state\": \"quiet\", \"text\": f\"quiet {mins} min\"}",
-        "return {\"state\": \"building\", \"text\": f\"building · last change {mins} min ago\"}"
+        "return {\"state\": \"quiet\", \"text\": f\"quiet {secs // 60} min\"}",
+        "return {\"state\": \"building\", \"text\": f\"building · last change {secs // 60} min ago\"}"
       ]
     ],
     "expect": [
@@ -5811,8 +5811,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if mins < -1:",
-        "if mins < -100:"
+        "return {\"state\": \"ahead\", \"text\": f\"worktree change stamped {-secs // 60} min AFTER this snapshot\"}",
+        "pass"
       ]
     ],
     "expect": [
@@ -5902,8 +5902,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "for b in x.get(\"builds\") or [] if b[\"state\"] == \"building\")",
-        "for b in x.get(\"builds\") or [] if False)"
+        "f' <span class=\"what\">· {html.escape(b[\"text\"])}</span>' if b[\"state\"] == \"building\"",
+        "\"\" if b[\"state\"] == \"building\""
       ]
     ],
     "expect": [
@@ -5934,6 +5934,162 @@
     ],
     "expect": [
       "⭐ backlog #672: collect() reads every DECLARED worktree through the watchdog's measure — one changed at a known minute, one missing"
+    ]
+  },
+  {
+    "name": "PR #606 r1 XM1/F1: the digest judges builds at the snapshot's time, not the reader's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "judge = snap.get(\"at\") if now is None else now",
+        "judge = snap.get(\"at\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex MAJOR 1 / Claude F1: a build is judged against the READER's clock, never the snapshot's — one snapshot taken 5 min after the change is running when read at +5 min, Owed `quiet 31 min` when the page is rendered at +31 min (agenda_html, and the whole page replaying it), and LISTED by the session-start block a day later"
+    ]
+  },
+  {
+    "name": "PR #606 r1 XM1/F1: the session-start block judges builds at the snapshot's time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{\"steps\": [], \"at\": \"\"}, now if judge is None else judge)",
+        "{\"steps\": [], \"at\": \"\"})"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex MAJOR 1 / Claude F1: a build is judged against the READER's clock, never the snapshot's — one snapshot taken 5 min after the change is running when read at +5 min, Owed `quiet 31 min` when the page is rendered at +31 min (agenda_html, and the whole page replaying it), and LISTED by the session-start block a day later"
+    ]
+  },
+  {
+    "name": "PR #606 r1 XM1/F1: the page judges builds at the snapshot's time, not the time it is built",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "agenda_html(newest, built if judge is None else judge)",
+        "agenda_html(newest)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex MAJOR 1 / Claude F1: a build is judged against the READER's clock, never the snapshot's — one snapshot taken 5 min after the change is running when read at +5 min, Owed `quiet 31 min` when the page is rendered at +31 min (agenda_html, and the whole page replaying it), and LISTED by the session-start block a day later"
+    ]
+  },
+  {
+    "name": "PR #606 r1 Xm1: both stamps truncated to the minute before the gap is taken",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return _dt.datetime.strptime(str(stamp), SECOND_FMT)",
+        "        return _dt.datetime.strptime(str(stamp)[:16], MINUTE_FMT)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex MINOR: the 30-min edge is measured in SECONDS — a change at :59 read 29 min 1 s later is building, one at :00 read 30 min later is quiet: two inputs, ONE case"
+    ]
+  },
+  {
+    "name": "PR #606 r1 Xm1: the measure stamps a change to the minute",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "/ 1e9).strftime(SECOND_FMT)}",
+        "/ 1e9).strftime(MINUTE_FMT)}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex MINOR: the 30-min edge is measured in SECONDS — a change at :59 read 29 min 1 s later is building, one at :00 read 30 min later is quiet: two inputs, ONE case"
+    ]
+  },
+  {
+    "name": "PR #606 r1 F3: a change exactly a minute ahead read as ahead (<=)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if secs < -AHEAD_TOLERANCE_S:",
+        "if secs <= -AHEAD_TOLERANCE_S:"
+      ]
+    ],
+    "expect": [
+      "r1 Claude F3: the tolerance for a change stamped after the reader's clock is ONE minute — 60 s ahead is building, 61 s ahead is `ahead`: two inputs, ONE case"
+    ]
+  },
+  {
+    "name": "PR #606 r1 F3: the ahead tolerance widened to two minutes",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "AHEAD_TOLERANCE_S = 60",
+        "AHEAD_TOLERANCE_S = 120"
+      ]
+    ],
+    "expect": [
+      "r1 Claude F3: the tolerance for a change stamped after the reader's clock is ONE minute — 60 s ahead is building, 61 s ahead is `ahead`: two inputs, ONE case"
+    ]
+  },
+  {
+    "name": "PR #606 r1 F2: only a BUILDING worktree counts as started",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "started = bool(builds)",
+        "started = any(b[\"state\"] == \"building\" for b in builds)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude F2 + F3: `not started` is said ONLY when no worktree is declared — an item whose worktree is ahead, NOT READ or gone makes no such claim: four inputs, ONE case"
+    ]
+  },
+  {
+    "name": "PR #606 r1 F3: a building item that declares a wait is made running",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if _building(x) and not x.get(\"waits\"):",
+        "if _building(x):"
+      ]
+    ],
+    "expect": [
+      "r1 Claude F3: a BUILDING item that declares a wait is not running — asked of the digest's own entry, before any fold re-gates it"
+    ]
+  },
+  {
+    "name": "PR #606 r1 F3: a declared worktree with no reading in the source is given a change time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "or {\"unread\": \"not measured in this snapshot\"}",
+        "or {\"changed\": \"9999-12-31 23:59\"}"
+      ]
+    ],
+    "expect": [
+      "r1 Claude F3: a source holding NO worktree readings reads the declared path as NOT READ — Owed, never running"
+    ]
+  },
+  {
+    "name": "PR #606 r1 XM3: a running item hides a quiet, gone or unread worktree",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "else f' <span class=\"waits warn\">{html.escape(b[\"text\"])}</span>'",
+        "else \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex MAJOR 3: an open PR keeps its thread running (owner 11-05 15:45), but a declared worktree that is gone is SAID on the Running line, never hidden"
+    ]
+  },
+  {
+    "name": "PR #606 r1 XM2/F5: --snapshot keeps the clock read before collect",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            now, judge = read_clock()   # PR #606 r1 Codex MAJOR 2: after the fetch and the measure",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex MAJOR 2 / Claude F5: --snapshot reads its clock AFTER collect's network calls and measure, and stamps the snapshot with THAT reading"
     ]
   }
 ]
