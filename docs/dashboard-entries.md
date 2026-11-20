@@ -21029,3 +21029,14 @@ I1: a world under the author's home loads the author's `~/.claude/CLAUDE.md` and
 `DARWIN_USER_TEMP_DIR`. Step 5 (scan prediction) NOT RUN: slice D unmerged. Port 7391 stopped 23:26:11, restarted
 23:31:53. Also re-pinned `check-shipping-sets.py`'s Phase 6 edge set (347, `1c64fcc5c8bd9add`) and declared
 `scripts/mutations/mkt_seed_repo.json` in `shipping-sets.json` (Task 13 follow-up).
+
+Repeated the experiment in a real third-party project (a public plugin repository, cloned read-only with its link
+back removed): the same failures appear there, so they belong to the toolkit, not to the made-up project. No page
+with an Ask box was produced, and the toolkit's scripts never read the user's project at all. Record:
+`docs/marketplace/experiment-tier-b.md`.
+<!--tech-->
+Task 15 (2026-11-19): `Yeachan-Heo/oh-my-claudecode` at `dec7e418`, full clone (`--is-shallow-repository` false,
+6343 commits). Scripted half identical to tier A for all 8 operations; serve passed all 3 conditions; 5 skill runs
+(1.10 USD) produced 0 askable pages and 0 skill-served pages (`explain-diff` wrote but did not serve, unlike tier A).
+`RunRecord.opened` inside the host: 0 real files (one `<unknown>` traceback artefact). Port 7391 stopped 23:37:48,
+restarted 23:43:07.
