@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 553 cases
+    python3 scripts/goal-tree.py --self-test                 # 559 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -3246,6 +3246,44 @@ def _cases_672(case) -> None:
         case("⭐ r1 Codex MAJOR 3: an open PR keeps its thread running (owner 11-05 15:45), but a declared worktree that "
              "is gone is SAID on the Running line, never hidden",
              ("review the open work" in _rpr, "worktree gone" in _rpr), (True, True))
+        # ── PR #606 fixture variation: every parameter this PR added is passed a SECOND value, and the difference is
+        # observable — a constant in its place would produce one of the two answers below for both inputs ──
+        _wk = worktree("two-min", t0)
+        case("PR #606 (fixture variation): measure_worktrees reads EVERY declared worktree of the ledger it is given, "
+             "once each, through the INJECTED measure — two worktrees and a duplicate, and an empty ledger",
+             (measure_worktrees([{"worktree": _wk}, {"worktree": gone}, {"worktree": _wk}, {"id": "none"}],
+                                measure=lambda _p: (t0 + 120) * 1_000_000_000),
+              measure_worktrees([])),
+             ({_wk: {"changed": stamp(t0 + 120)}, gone: {"gone": True}}, {}))
+        _quiet_at = lambda lines: any("split the section" in ln and "quiet 1445 min" in ln for ln in lines)
+        case("PR #606 (fixture variation): owed_idle_lines judges every worktree at `judge` when one is given — the same "
+             "snapshot and `now`, judged at +5 min (building, not listed) and at +1445 min (quiet, listed)",
+             (_quiet_at(owed_idle_lines(snap5, minute(t0 + 5 * 60), judge=minute(t0 + 5 * 60))),
+              _quiet_at(owed_idle_lines(snap5, minute(t0 + 5 * 60), judge=stamp(t0 + 1445 * 60)))),
+             (False, True))
+        _log5 = root / "log5.jsonl"
+        _log5.write_text(json.dumps(snap5) + "\n")
+        case("PR #606 (fixture variation): owed_idle_report passes `judge` through — one log, one `now`, two judges",
+             (_quiet_at(owed_idle_report(_log5, minute(t0 + 5 * 60), judge=minute(t0 + 5 * 60))),
+              _quiet_at(owed_idle_report(_log5, minute(t0 + 5 * 60), judge=stamp(t0 + 1445 * 60)))),
+             (False, True))
+        _rp = lambda judge: "quiet 31 min" in render_page([snap5], minute(t0 + 5 * 60), judge=judge).split("<h3>Owed", 1)[1]
+        case("PR #606 (fixture variation): render_page judges the agenda at `judge` when one is given, never `built` — "
+             "built at +5 min, judged at +5 min (running) and at +31 min (Owed `quiet 31 min`)",
+             (_rp(stamp(t0 + 5 * 60)), _rp(stamp(t0 + 31 * 60))), (False, True))
+
+        def _wp(name, judge):
+            out = root / f"{name}.html"
+            with contextlib.redirect_stderr(io.StringIO()):
+                write_page(out, [snap5], minute(t0 + 5 * 60), composer=[sys.executable, "-c", "pass"], judge=judge)
+            return "quiet 31 min" in out.read_text(encoding="utf-8").split("<h3>Owed", 1)[1]
+        case("PR #606 (fixture variation): write_page hands `judge` to the page it writes — the same build, two judges",
+             (_wp("wp-a", stamp(t0 + 5 * 60)), _wp("wp-b", stamp(t0 + 31 * 60))), (False, True))
+        case("PR #606 (fixture variation): owed_reason counts idle days to `now`, from the item's OWN `since` — one item, "
+             "two clocks, and a second item with no reason at all",
+             [owed_reason({"since": ["2026-11-10 10:00"]}, n)[1] for n in ("2026-11-20 10:00", "2026-11-12 10:00")]
+             + [owed_reason({"waits": "the owner's call"}, "2026-11-20 10:00")[:2]],
+             ["no reason recorded — idle 10 days", "no reason recorded — idle 2 days", ("the owner's call", None)])
         # collect() takes the reading: the MAIN checkout's ledger names the worktree, the watchdog measures it
         m = root / "main"
         (m / ".claude").mkdir(parents=True)

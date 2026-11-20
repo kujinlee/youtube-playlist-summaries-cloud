@@ -62,7 +62,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --set-worktree ID PATH|none   # the worktree its agent builds in (backlog #672)
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 163 cases
+    python3 scripts/session-state.py --self-test  # 164 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -1563,6 +1563,13 @@ def _self_test_body() -> int:
                  "nothing written; none given stores no key — three inputs, ONE case",
                  (_rcs672, [(e["id"], e.get("worktree")) for e in read_ledger(_l672)[0]]),
                  ([0, 2, 0], [("with", str(_wa)), ("without", None)]))
+            # PR #606 fixture variation: ledger_add itself, called with a worktree and without one, read back
+            _l672d = _r672 / "direct.jsonl"
+            ledger_add(_l672d, "dw", "w", "d", "T", worktree=str(_wb))
+            ledger_add(_l672d, "dn", "w", "d", "T")
+            case("PR #606 (fixture variation): ledger_add(worktree=) STORES the directory it is given, and one called "
+                 "without it stores no key — two calls, read back",
+                 [(e["id"], e.get("worktree")) for e in read_ledger(_l672d)[0]], [("dw", str(_wb)), ("dn", None)])
             _l672.write_text(json.dumps({"id": "old", "what": "w", "on_done": "d", "at": "11-05 13:42", "kind": "routine",
                                          "after": ["PR #1"], "goal": "g", "thread": "fix · backlog #11 · x"}) + "\n")
             _seen672 = []
