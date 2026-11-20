@@ -2487,4 +2487,25 @@ EXPECTED_MUTATIONS = {
     # name made a constant -- unseen only when `index` and `logs/HEAD` exchange their exact time and size between
     # two polls, which no git operation does, so the class case cannot witness it.
     "scripts/agent-watchdog.py": 70,
+    # The publishability scan (marketplace-inventory plan Tasks 8-12, spec §5). Pinned in the commit that creates it
+    # (Task 8, 2026-11-17): 17 — the file set (emptied, substituted member, count, symlinks, undeclared, coordinates,
+    # absent file, outside the repository), the CANNOT RUN entry's shape, measured_at, and the CLI's exits.
+    # ⟳ Task 9 (2026-11-17): 17 → 57 — detector 1: +12 the derived vocabulary, +4 term matching, +21 the
+    # dependency/mention judgement, +3 the finding/mention rows and their ids.
+    # ⟳ Task 10 (2026-11-17): 57 → 81 — +15 detector 2 (the package's set, cwd-relative and its fix, outside-set,
+    # shell comments, rooted paths, workflows, Python loads), +9 detector 3 (no-self-test, no-user-doc, the roles).
+    # ⟳ Task 11 (2026-11-17): 81 → 108 — +18 detector 4 (the dated tool list and its refusals, guard names, doc paths
+    # and the package's set, the finding/mention split, the row), +9 detector 5 (the four sentence shapes, Markdown
+    # only, a skill of the same package, the row).
+    # ⟳ Task 12 (2026-11-17): 108 → 145 — +21 detector 6 (imports and the package's set, the program a runner or a
+    # shell line names, environment reads, the row), +15 detector 7 (the stanza, production callers, the declaration
+    # and where it may stand, the roles and files asked), +1 the line splitter (a form feed starts no line).
+    # ⟳ review r1 fold (2026-11-17): 145 → 148 — +1 a None default is no working default (XM1), +1 a missing file a
+    # runner names is outside-set (XM2), +1 "use"/"call"/"invoke" instruct (XM3); three anchors rebound in place.
+    # ⟳ review r2 fold (2026-11-17): 148 → 154 — +1 a None through `or` is no fallback, +2 detector 2 (a `./` runner
+    # target normalised; an unread load is a finding), +3 detector 4 (a colon-introduced list item, an untagged
+    # block, the imperative the introduction must hold); five anchors rebound in place.
+    # ⟳ review r3 fold (2026-11-17): 154 → 158 — +1 an `or` of None operands, +3 detector 4 (blank lines inside a
+    # list, an earlier list ends the introduction, a negated verb); three anchors rebound in place.
+    "scripts/check-publishability.py": 158,
 }

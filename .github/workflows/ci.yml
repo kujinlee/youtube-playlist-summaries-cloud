@@ -916,6 +916,15 @@ jobs:
       - name: shipping-set declaration is closed
         run: python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json
 
+      # The publishability scan (plan Tasks 8-12, spec §5): what couples each component to this repository.
+      - name: check-publishability self-test
+        run: python3 scripts/check-publishability.py --self-test
+
+      # The scan itself, over the real declaration. Findings do not turn it red (the report is the product);
+      # a component that cannot be scanned does, and so does a declaration that cannot be read or is empty.
+      - name: check-publishability scan (red on CANNOT RUN)
+        run: python3 scripts/check-publishability.py --out /dev/null
+
       # One link function for every key (backlog #470). `--sources` is rule 2: no href to a key's
       # home page is built in scripts/ outside page_markup.key_link. The page rules (1, 1b, 3, 4, 5)
       # read BUILT pages: `--build --ci` builds the four a checkout can build (dashboard, goals and

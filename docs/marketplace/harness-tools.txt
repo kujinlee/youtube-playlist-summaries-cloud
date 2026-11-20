@@ -1,0 +1,52 @@
+# The harness tool names detector 4 of scripts/check-publishability.py reports as `tool-name`.
+# One name per line. Lines that start with `#` are the header or a block heading.
+# date: 2026-11-17
+# claude --version: 2.1.323 (Claude Code)
+# source: the coordinator session's tool list, 2026-11-17 (the first block). The plan's 2.1.322 is stale.
+# The coordinator session does NOT expose TaskList, TaskCreate or TaskUpdate, although this repository's own
+#   instructions name them (brief/SKILL.md names TaskList; docs/dev-process.md names TaskCreate and TaskUpdate).
+#   They stand in a second block, apart, so the scan still reports them and their provenance is not the session's.
+# Bound: one session's view of one harness version. Nothing in the repository can check it is complete.
+Agent
+Artifact
+ArtifactComments
+ArtifactData
+AskUserQuestion
+Bash
+CronCreate
+CronDelete
+CronList
+DesignSync
+Edit
+EndConversation
+EnterPlanMode
+EnterWorktree
+ExitPlanMode
+ExitWorktree
+FetchInboxMessage
+ListAgents
+LSP
+Monitor
+NotebookEdit
+PushNotification
+Read
+ReadNotifications
+RemoteTrigger
+ReportFindings
+ScheduleWakeup
+SendFeedback
+SendMessage
+SendToProject
+SendToProjectContext
+SendUserFile
+Skill
+TaskStop
+ToolSearch
+WebFetch
+WebSearch
+Workflow
+Write
+# named by this repository's own instructions, not exposed in the coordinator session on 2026-11-17
+TaskList
+TaskCreate
+TaskUpdate

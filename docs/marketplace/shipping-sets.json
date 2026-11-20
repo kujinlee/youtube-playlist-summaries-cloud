@@ -75,6 +75,7 @@
       "scripts/mutations/check-plan-progress.json",
       "scripts/mutations/check-plan-task-order.json",
       "scripts/mutations/check-producer-enumeration.json",
+      "scripts/mutations/check-publishability.json",
       "scripts/mutations/check-python-pin.json",
       "scripts/mutations/check-ratchet-contract.json",
       "scripts/mutations/check-rc-contract.json",
@@ -129,7 +130,7 @@
       "scripts/mutations/sweep-costs.json",
       "scripts/mutations/sweep-red-alert.json"
      ],
-     "expected_count": 103
+     "expected_count": 104
     },
     "mutation-sweep-job": {
      "files": [
