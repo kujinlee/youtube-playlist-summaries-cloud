@@ -5727,5 +5727,31 @@
     "expect": [
       "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
     ]
+  },
+  {
+    "name": "backlog #647: the STALE line no longer says who acts or that Refresh does not clear it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"(Refresh does not clear this).\"))",
+        "\"Re-record it.\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-17 09:47/09:49: the STALE line says WHO acts and that the page's Refresh does NOT clear it — one line"
+    ]
+  },
+  {
+    "name": "backlog #647: two late threads read `it`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"{'it' if len(d['late']) == 1 else 'them'}; the coordinator",
+        "f\"{'it'}; the coordinator"
+      ]
+    ],
+    "expect": [
+      "owner 11-17: two late threads are `them`, both named, on ONE line"
+    ]
   }
 ]

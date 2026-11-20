@@ -21005,3 +21005,17 @@ edge SET (344, digest `2cfb6a85d091b861`), not the count (Cm2). `--closure`: 0 g
 none dropped). `scripts/regen-pages.py`: the crash case again refuses a second `[FAIL]` line (Xm3/Cm3). Self-tests
 140/140 and 121/121; mutations 195 and 73, the 14 new or re-anchored entries all killed by their named case. CM2 and
 Cm4 (the exact-name censuses) are stated as bounds and split to backlog #671.
+
+## 2026-11-19
+When work merges that today's plan does not mention, the session is now told, on every message, that the plan needs
+redoing. Until now only the goal-tree page showed this, as a warning line that did not say who should act, and you
+saw that pressing Refresh did not make it go away. That line now says the coordinator re-records the plan and that
+Refresh does not clear it. The same warning appears in the note the session reads before each reply, so someone is
+prompted to do the re-planning; it is computed by the page's own code, so the page and the note cannot disagree.
+<!--tech-->
+Owner 11-17 09:47 (option A) and 09:49; backlog #647. `scripts/goal-tree.py`: the STALE line's subject sits between
+`AGENDA_STALE_HEAD` / `AGENDA_STALE_TAIL`; text now ends "the coordinator re-records the agenda (Refresh does not clear
+this)". `scripts/check-stalled-work.py`: a `STALE-AGENDA` status (stalled, rc 1; its own hook tier after
+`DIRTY-NO-CI`), read by loading goal-tree through importlib and calling `agenda_context` on the last line of the main
+checkout's `.claude/goal-tree-log.jsonl`; a missing or unreadable log is a NOTE (NOT CHECKED), never clear. Self-tests
+538/538 and 239/239; 2 + 8 new mutations.

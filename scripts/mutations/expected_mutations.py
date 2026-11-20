@@ -444,7 +444,9 @@ EXPECTED_MUTATIONS = {
     # (r1 Codex 5's idle rule is now `not pending and not recorded`). Seven new, one or more per new rule: an absent
     # `after` read as a prerequisite, a damaged element dropped, a non-list read as none, an element that merely
     # contains a ref accepted, prose re-read, a thread not reading its entries' declarations, a prose wait expiring.
-    "scripts/goal-tree.py": 438,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    # ⟳ 2026-11-19, backlog #647 (agenda-stale-wording): 438 -> 440, none retired — the STALE line's who-acts wording,
+    # and its `it`/`them`.
+    "scripts/goal-tree.py": 440,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6) -> 440 (#647)
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -2255,7 +2257,10 @@ EXPECTED_MUTATIONS = {
     # state, never a hook tier: 7), and r3 Claude R3-F1's well-formed suite node (3). Re-bound to the reshaped lines:
     # 5 (head_has_run inverted, the head-run test, the NOT MEASURED wording, DIRTY-NO-CI's stalled state and tier);
     # 3 expects renamed with their cases, one of them (the missing checkSuites key) stale since r2.
-    "scripts/check-stalled-work.py": 133,
+    # ⟳ 2026-11-19, backlog #647 (agenda-stale-wording): 133 -> 141, none retired. Eight new, the STALE AGENDA line: the
+    # subject read off goal-tree's own line, a malformed agenda not clear, a stalled state, its tier, `#` kept, a missing
+    # log a NOTE, the NEWEST snapshot read, and collect's wiring.
+    "scripts/check-stalled-work.py": 141,
     # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
     # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
     # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the

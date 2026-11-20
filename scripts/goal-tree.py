@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 536 cases
+    python3 scripts/goal-tree.py --self-test                 # 538 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -1852,6 +1852,11 @@ def _fold_item(it: dict, goals: list, x: dict) -> None:
             it["blockers"].append(b)
 
 
+# backlog #647: the STALE line's subject (the late threads) sits between these two; check-stalled-work.py reads it there
+AGENDA_STALE_HEAD = "⚠ STALE — "
+AGENDA_STALE_TAIL = " merged after this plan was set"
+
+
 def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
     """PURE (backlog #509). The digest as (kind, text) lines, for --print: now, focus, age, stale."""
     d, out = agenda_digest(snap, ag), []
@@ -1866,8 +1871,12 @@ def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
     if d["mins"] is not None:
         out.append(("age", f"age: set {d['mins'] // 60} h {d['mins'] % 60:02d} m before this snapshot ({d['at']})"))
     if d["late"]:
-        out.append(("stale", f"⚠ STALE — merged after this plan was set, and named by no step: {', '.join(d['late'])}. "
-                             "Re-record the agenda."))
+        # owner 11-17 09:47 (option A) / 09:49 "someone has to trigger the work": WHO acts, and that Refresh does not
+        # clear it (a Refresh re-derives the same plan). check-stalled-work.py reads this line's subject between the two
+        # markers, so the page and the per-prompt note cannot disagree (backlog #647).
+        out.append(("stale", f"{AGENDA_STALE_HEAD}{', '.join(d['late'])}{AGENDA_STALE_TAIL}, and no step names "
+                             f"{'it' if len(d['late']) == 1 else 'them'}; the coordinator re-records the agenda "
+                             "(Refresh does not clear this)."))
     if d["done"]:
         out.append(("stale", "⚠ every step is done — the plan is finished. Record the next one."))
     return out
@@ -5277,8 +5286,13 @@ def _self_test_cases(*, outside: dict) -> int:
              dict(agenda_context(dict(_sn509, at="2026-03-01 00:05"), dict(_a509, at="2026-01-31 23:55"))).get("age"),
              "age: set 672 h 10 m before this snapshot (2026-03-01 00:05)")
         case("⭐ #509: STALE names a thread merged AFTER the plan was set that no step names — not one merged before, not one a step names",
-             _ctx.get("stale"), "⚠ STALE — merged after this plan was set, and named by no step: backlog #40 (merged 11-04 10:00). "
-                                "Re-record the agenda.")
+             _ctx.get("stale", "").split(" merged after this plan was set")[0], "⚠ STALE — backlog #40 (merged 11-04 10:00)")
+        case("⭐ owner 11-17 09:47/09:49: the STALE line says WHO acts and that the page's Refresh does NOT clear it — one line",
+             _ctx.get("stale"), "⚠ STALE — backlog #40 (merged 11-04 10:00) merged after this plan was set, and no step "
+                                "names it; the coordinator re-records the agenda (Refresh does not clear this).")
+        case("owner 11-17: two late threads are `them`, both named, on ONE line",
+             dict(agenda_context(_sn509, dict(_a509, at="2026-11-04 07:00"))).get("stale", "").count("no step names them;"),
+             1)
         case("#509: the same plan read at an earlier `at` is stale for BOTH merges; at a later one, for none",
              ("backlog #41" in dict(agenda_context(_sn509, dict(_a509, at="2026-11-04 07:00"))).get("stale", ""),
               "stale" in dict(agenda_context(_sn509, dict(_a509, at="2026-11-04 12:00")))), (True, False))
