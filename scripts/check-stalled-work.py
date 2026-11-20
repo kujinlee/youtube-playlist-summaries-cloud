@@ -677,8 +677,9 @@ def agenda_facts(main: Path, gt_loader=None) -> tuple[list[dict], list[str]]:
     the end of the log by goal-tree's own reader, no network -> ([stale-agenda fact] or [], note codes). No log, or
     one that cannot be read, is a NOTE: NOT CHECKED, never clear. The last line passes goal-tree's own `is_snapshot`,
     the test `read_log` applies to every line (r1 Codex: `{}` read as clear). ⚠ BOUND: only the LAST line is read, so a
-    malformed EARLIER line, which makes the page's `read_log` refuse the whole log, is not seen here — the note still
-    reports the newest snapshot, loudly. Reading every line costs ~0.55 s per prompt (measured 11-20: 328 snapshots,
+    malformed EARLIER line, which makes the page's `read_log` refuse the whole log, is not seen here. When the newest
+    snapshot is clear, the note then says NOTHING while the page refuses: a SILENT clear, accepted for its cost (r2
+    Codex, filed as backlog #679, not folded). Reading every line costs ~0.55 s per prompt (measured 11-20: 328 snapshots,
     20.8 MB, three runs 0.54-0.62 s) against ~10 ms for the tail."""
     try:
         gt = (gt_loader or _goal_tree)()
