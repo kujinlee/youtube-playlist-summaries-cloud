@@ -218,6 +218,35 @@ element ids `modechip`, `tray`, `qbox`, `qt`, `sentnote`, `sendbtn`, `closebtn`;
 `tray.on` for the open state; `#sentnote.err` for failures; CSS variables `--verified`,
 `--verified-br`, `--fg3`, `--rule`. Lift the `<script>` block byte-for-byte from an existing page.
 
+## 3a. Decisions on the page — the ✍ tag, never a selection card
+
+A decision the owner must make on a page under review is marked **at the spot it is asked**, like a
+signature line on a contract (owner, 2026-11-11 06:03; backlog #603). Put `data-decision` on the
+element that asks it; the composer does the rest:
+
+| Fragment markup | Composed page |
+|---|---|
+| `<p data-decision>Keep the stranger audience?</p>` | yellow `🟨 ✍ DECISION n of N` tag as the element's FIRST child, before the question text — OPEN |
+| `<p data-decision="Yes — owner, 11-11">Keep the stranger audience?</p>` | green `🟩 ✍ DECISION n of N — ANSWERED: Yes — owner, 11-11` |
+| `<p data-decision data-decision-label="D7">…</p>` | the tag leads with `D7 — DECISION n of N` |
+
+- **Answering = setting the attribute's value to the answer, then recomposing** (§3's rule — same commit).
+- **Never type a number.** `n`, `N`, and the counter under the title are all derived by `brief-compose.py`
+  (`render_decisions`) from one parse of the fragment. While any is open the counter reads total · remaining ·
+  answered with a link to the first open one; once none is open it reads `N decisions on this page · 0
+  remaining · all answered`, no link. An EMPTY or whitespace-only value counts as OPEN. A page with no mark
+  gets no counter.
+- **The composer REFUSES (CANNOT RUN) a mark it can tell would not be seen at its spot**, naming the element and
+  the reason — move the mark to a plain visible element. The rules live in ONE place, the refusals raised by
+  `_DecisionScan.handle_starttag` and `render_decisions` in `brief-compose.py`; read them there. They are
+  deliberately not listed here — two lists of them, here, each drifted from the code (decision-tags r2, r3).
+  ⚠ **Bound:** it reads MARKUP, not CSS — a mark under `style="display:none"` or a stylesheet rule, or after
+  misnested markup the browser re-parents into a hidden parent, IS counted. Look at the composed page.
+- ⚠ **Nothing checks that EVERY question is marked** (backlog #615): an unmarked question is invisible to the
+  counter, so read the page for owner questions before delivering it.
+- The tag colours are palette tokens (`--decide*` yellow, `--decided*` green) the composer adds for light,
+  dark and the OS media query; a fragment does not declare them.
+
 ## 4. Serve it — the page must be able to answer back
 
 ```bash
