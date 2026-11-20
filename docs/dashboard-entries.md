@@ -21055,6 +21055,17 @@ unread-agenda NOTE even when nothing is stalled; goal-tree's `is_snapshot` is th
 539/539 and 252/252; 3 + 18 new mutations.
 
 ## 2026-11-20
+The instructions every explainer page is built from now explain how to mark a decision on a page: put a mark on
+the question, and the page shows a yellow "DECISION n of N" tag there, turning green with the answer once one is
+given, plus a counter under the title. The page builder already did this (since 11-11); only the instructions that
+page-building sessions read did not say so, so a session had no way to learn the mark without opening the script.
+<!--tech-->
+`.agents/skills/shared/explainer-delivery.md` §3a documents the `data-decision` markup (`data-decision` = open,
+`data-decision="<answer>"` = answered, `data-decision-label`), that the numbers and counter are derived by
+`scripts/brief-compose.py` `render_decisions` (backlog #603, PR #563), the CANNOT RUN on an invisible mark, and the
+unmarked-question gap (backlog #615). No code change: `brief-compose.py --self-test` 226/226 unchanged.
+
+## 2026-11-20
 Two things from this morning. First, the Fable/Opus comparison you asked for at the weekly reset: over 18 recorded
 runs, Fable cost about four times as much per unit of usage as Opus and did no better on building or fixing. Its fixes
 caused 9 new review findings over two runs against Opus's 2, and its builds needed more review rounds. Fable has only
