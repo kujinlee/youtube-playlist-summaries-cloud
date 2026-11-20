@@ -57,11 +57,12 @@ oversized ledger with only the new entry and `--done` reported a recorded id as 
 list prints `NO CHECKS`.
 
     python3 scripts/session-state.py                 # print the block (what the hook runs)
-    python3 scripts/session-state.py --add ID WHAT ON_DONE --goal SLUG --thread LINE --after 'PR #N, backlog #M'|none [--waits TEXT] [--kind owner-wait|owner-instruction|routine]
+    python3 scripts/session-state.py --add ID WHAT ON_DONE --goal SLUG --thread LINE --after 'PR #N, backlog #M'|none [--waits TEXT] [--kind owner-wait|owner-instruction|routine] [--worktree PATH]
     python3 scripts/session-state.py --set-after ID 'PR #N'|none   # change a declared prerequisite, keeping `at`
+    python3 scripts/session-state.py --set-worktree ID PATH|none   # the worktree its agent builds in (backlog #672)
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 157 cases
+    python3 scripts/session-state.py --self-test  # 164 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -416,9 +417,27 @@ def _after_list(after, thread, gt=None) -> list:
     return [f"{k} #{n}" for k, n in pairs]
 
 
+def declared_worktree(worktree: str, ledger: "Path | None" = None) -> str:
+    """backlog #672: the directory a ledger entry's agent builds in, as an ABSOLUTE path. A path that is not a directory
+    now is refused (ValueError): an entry declared with one would only ever read `worktree gone`.
+    PR #606 r1 Claude F6: so is the checkout the `ledger` lives in (`<main>/LEDGER_REL`), any directory holding it, and
+    its `.claude/` — hooks write there every turn and every builder worktree nests inside it, so it would read
+    `building` for ever (agent-watchdog: watch builder worktrees, not the main checkout)."""
+    path = os.path.abspath(worktree)
+    if not os.path.isdir(path):
+        raise ValueError(f"--worktree {worktree!r} is not a directory: name the worktree the agent builds in")
+    if ledger is not None:
+        hooks_dir = os.path.realpath(Path(ledger).parent)          # <main>/.claude, the ledger's own directory
+        real = os.path.realpath(path)
+        if os.path.commonpath([real, hooks_dir]) == real:
+            raise ValueError(f"--worktree {worktree!r} is the main checkout or holds it: name the builder's own "
+                             "worktree, never the checkout hooks write to")
+    return path
+
+
 def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None,
                goal: str | None = None, thread: str | None = None, waits: str | None = None,
-               after: list | None = None) -> None:
+               after: list | None = None, worktree: str | None = None) -> None:
     """`kind` is DECLARED by the caller. Left out, it is `guess_kind` of the entry — the WIDE reading, so an owner entry
     written without `--kind` is stored as the owner entry it looks like and never as `routine` (r3 R3-1: storing the
     strict-prefix answer made every R2-1 phrasing routine again, and the declared field then bypassed the fallback).
@@ -437,13 +456,15 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
     if kind is None:
         kind = guess_kind({"what": what, "on_done": on_done})
     declared = _after_list(after, thread)   # backlog #650: refused BEFORE the lock, so a refusal writes nothing
+    wt = declared_worktree(worktree, path) if worktree is not None else None   # backlog #672: also refused before it
     with _locked(path):
         entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
         # backlog #514 r1: what the work WAITS FOR, declared — the goal tree's agenda says it instead of "not recorded"
         entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind, "after": declared}
                        | ({"waits": waits.strip()} if waits and waits.strip() else {})
-                       | ({"goal": goal, "thread": thread} if goal else {}))
+                       | ({"goal": goal, "thread": thread} if goal else {})
+                       | ({"worktree": wt} if wt else {}))
         _write(path, entries, raw)
 
 
@@ -462,6 +483,27 @@ def ledger_set_after(path: Path, id_: str, after: list) -> bool:
         declared = _after_list(after, hit[-1].get("thread"))
         for e in hit:
             e["after"] = declared
+        _write(path, entries, raw)
+        return True
+
+
+def ledger_set_worktree(path: Path, id_: str, worktree: str | None) -> bool:
+    """backlog #672: rewrite ONE key, `worktree`, of the entry `id_` under the lock, keeping every other key and its
+    `at`; None removes the key. False (nothing written) for an unknown id; a path that is not a directory is a
+    ValueError, refused before the lock, so nothing is written either."""
+    if not id_.strip():
+        raise ValueError("an empty id names no job")
+    wt = declared_worktree(worktree, path) if worktree is not None else None
+    with _locked(path):
+        entries, raw = _for_update(path)
+        hit = [e for e in entries if e.get("id") == id_]
+        if not hit:
+            return False
+        for e in hit:
+            if wt is None:
+                e.pop("worktree", None)
+            else:
+                e["worktree"] = wt
         _write(path, entries, raw)
         return True
 
@@ -1503,6 +1545,81 @@ def _self_test_body() -> int:
             shutil.rmtree(_r650, ignore_errors=True)
         case("backlog #650: --after outside --add is a stray flag, CANNOT RUN",
              main(["--after", "none"], root=root, run=NO_GIT), 2)
+        # ── backlog #672: a ledger entry may DECLARE the worktree its agent builds in; the goal tree reads it ──
+        _r672 = Path(tempfile.mkdtemp(prefix="ss-672-"))
+        try:
+            _l672 = _r672 / LEDGER_REL
+            _wa, _wb = _r672 / "wt-a", _r672 / "wt-b"
+            _wa.mkdir()
+            _wb.mkdir()
+            _b672 = ["--goal", "g", "--thread", "fix · backlog #11 · x", "--after", "none"]
+            _rcs672 = []
+            for _argv in (["--add", "with", "w", "d", *_b672, "--worktree", str(_wa)],
+                          ["--add", "gone", "w", "d", *_b672, "--worktree", str(_r672 / "nope")],
+                          ["--add", "without", "w", "d", *_b672]):
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _rcs672.append(main(_argv, root=_r672, run=NO_GIT))
+            case("⭐ backlog #672: --add --worktree STORES the directory, absolute; a missing directory is CANNOT RUN with "
+                 "nothing written; none given stores no key — three inputs, ONE case",
+                 (_rcs672, [(e["id"], e.get("worktree")) for e in read_ledger(_l672)[0]]),
+                 ([0, 2, 0], [("with", str(_wa)), ("without", None)]))
+            # PR #606 fixture variation: ledger_add itself, called with a worktree and without one, read back
+            _l672d = _r672 / "direct.jsonl"
+            ledger_add(_l672d, "dw", "w", "d", "T", worktree=str(_wb))
+            ledger_add(_l672d, "dn", "w", "d", "T")
+            case("PR #606 (fixture variation): ledger_add(worktree=) STORES the directory it is given, and one called "
+                 "without it stores no key — two calls, read back",
+                 [(e["id"], e.get("worktree")) for e in read_ledger(_l672d)[0]], [("dw", str(_wb)), ("dn", None)])
+            _l672.write_text(json.dumps({"id": "old", "what": "w", "on_done": "d", "at": "11-05 13:42", "kind": "routine",
+                                         "after": ["PR #1"], "goal": "g", "thread": "fix · backlog #11 · x"}) + "\n")
+            _seen672 = []
+            for _v in (str(_wb), "none"):
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _rc = main(["--set-worktree", "old", _v], root=_r672, run=NO_GIT)
+                _seen672.append((_rc, [(e["at"], e.get("worktree"), e["kind"], e["after"]) for e in read_ledger(_l672)[0]]))
+            case("⭐ backlog #672: --set-worktree rewrites `worktree` and keeps every other key, `at` included; `none` "
+                 "removes it — two values over ONE entry",
+                 _seen672, [(0, [("11-05 13:42", str(_wb), "routine", ["PR #1"])]),
+                            (0, [("11-05 13:42", None, "routine", ["PR #1"])])])
+            _before672 = _l672.read_bytes()
+            _set672 = []
+            for _argv in (["--set-worktree", "nope", str(_wb)], ["--set-worktree", "old", str(_r672 / "nope")]):
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _set672.append(main(_argv, root=_r672, run=NO_GIT))
+            case("backlog #672: --set-worktree on an unknown id is exit 1, a missing directory exit 2 — and the ledger is "
+                 "byte-identical after both",
+                 (_set672, _l672.read_bytes() == _before672), ([1, 2], True))
+            # PR #606 r1 Claude F4: a RELATIVE path is stored absolute — the served goal tree reads it from a private
+            # clone with another cwd, where `wt-a` would read `worktree gone`
+            _cwd672 = os.getcwd()
+            try:
+                os.chdir(_wa.parent)
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _rc_rel = main(["--set-worktree", "old", "wt-a"], root=_r672, run=NO_GIT)
+                _want_rel = os.path.join(os.getcwd(), "wt-a")
+            finally:
+                os.chdir(_cwd672)
+            case("r1 Claude F4: --set-worktree with a RELATIVE path stores it ABSOLUTE, against the cwd it was given in",
+                 (_rc_rel, [e.get("worktree") for e in read_ledger(_l672)[0]]), (0, [_want_rel]))
+            # PR #606 r1 Claude F6: the MAIN checkout (or any directory holding it) is never a builder's worktree — hooks
+            # write under its `.claude/` every turn and every builder worktree nests inside it, so it would read
+            # `building` for ever (agent-watchdog's docstring: watch builder worktrees, not the main checkout)
+            (_r672 / ".claude").mkdir(exist_ok=True)
+            _before_main = _l672.read_bytes()
+            _main672 = []
+            for _v in (str(_r672), str(_r672.parent), str(_r672 / ".claude")):
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _main672.append(main(["--set-worktree", "old", _v], root=_r672, run=NO_GIT))
+            with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                _main672.append(main(["--add", "m", "w", "d", *_b672, "--worktree", str(_r672)], root=_r672, run=NO_GIT))
+            case("⭐ r1 Claude F6: --worktree / --set-worktree REFUSE the main checkout, a directory holding it, and its "
+                 "`.claude/` — exit 2 each, the ledger byte-identical; a worktree beside them is still accepted (above)",
+                 (_main672, _l672.read_bytes() == _before_main), ([2, 2, 2, 2], True))
+        finally:
+            shutil.rmtree(_r672, ignore_errors=True)
+        with _rs514(io.StringIO()):
+            case("backlog #672: --worktree outside --add is a stray flag, CANNOT RUN",
+                 main(["--worktree", str(root)], root=root, run=NO_GIT), 2)
         ledger_done(led, "job5")   # the cases below count this ledger's entries
         refused = []
         for fn, args in ((ledger_add, (led, " ", "w", "d", "T")), (ledger_done, (led, ""))):
@@ -1899,6 +2016,12 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
     ap.add_argument("--set-after", nargs=2, metavar=("ID", "REFS"),
                     help="rewrite the declared `after` of entry ID (REFS as for --after), keeping every other key and "
                          "its `at` — a re-add would reset the idle clock")
+    ap.add_argument("--worktree", metavar="PATH",
+                    help="with --add (backlog #672): the worktree the work's agent builds in. The goal tree reads its "
+                         "newest commit or file change (agent-watchdog's measure) and lists the entry under Running now "
+                         "while that is under the watchdog's window")
+    ap.add_argument("--set-worktree", nargs=2, metavar=("ID", "PATH"),
+                    help="declare (or, with `none`, remove) the worktree of entry ID, keeping every other key and its `at`")
     ap.add_argument("--done", metavar="ID")
     ap.add_argument("--migrate-kinds", action="store_true",
                     help="print the kind each entry has or would get; with --apply, back the ledger up to "
@@ -1915,14 +2038,15 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                                    ("--goal", args.goal is not None and not args.add),
                                    ("--thread", args.thread is not None and not args.add),
                                    ("--waits", args.waits is not None and not args.add),
-                                   ("--after", args.after is not None and not args.add)) if on]
+                                   ("--after", args.after is not None and not args.add),
+                                   ("--worktree", args.worktree is not None and not args.add)) if on]
     if stray:   # r3 R3-5: a flag given outside the mode that reads it did nothing and said nothing
         print(f"CANNOT RUN — {', '.join(stray)} only means something with "
               f"{'--migrate-kinds' if stray[0] in ('--apply', '--override') else '--add'}; nothing was done", file=sys.stderr)
         return 2
     main, main_err = main_checkout(root, run)
     led = main / LEDGER_REL   # a worktree session's --add goes where every reader looks
-    if main_err and (args.add or args.done is not None or args.set_after):
+    if main_err and (args.add or args.done is not None or args.set_after or args.set_worktree):
         print(f"note: {main_err}; using {led}", file=sys.stderr)
     try:
         if args.migrate_kinds:
@@ -1945,7 +2069,7 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                 print(f"CANNOT RUN — {ADD_NEEDS_AFTER}; nothing was added", file=sys.stderr)
                 return 2
             ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"), args.kind,
-                       args.goal, args.thread, args.waits, parse_after(args.after))
+                       args.goal, args.thread, args.waits, parse_after(args.after), args.worktree)
             print(f"ledger: added {args.add[0]}")
             return 0
         if args.set_after:
@@ -1953,6 +2077,13 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                 print(f"ledger: no such id {args.set_after[0]}; nothing was written", file=sys.stderr)
                 return 1
             print(f"ledger: {args.set_after[0]} now waits on {args.set_after[1]}")
+            return 0
+        if args.set_worktree:
+            id_, value = args.set_worktree
+            if not ledger_set_worktree(led, id_, None if value == "none" else value):
+                print(f"ledger: no such id {id_}; nothing was written", file=sys.stderr)
+                return 1
+            print(f"ledger: {id_} {'declares no worktree' if value == 'none' else 'builds in ' + value}")
             return 0
         if args.done is not None:
             closing = ledger_take(led, args.done)

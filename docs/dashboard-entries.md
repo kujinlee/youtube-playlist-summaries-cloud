@@ -21076,3 +21076,20 @@ page-building sessions read did not say so, so a session had no way to learn the
 `data-decision="<answer>"` = answered, `data-decision-label`), that the numbers and counter are derived by
 `scripts/brief-compose.py` `render_decisions` (backlog #603, PR #563), the CANNOT RUN on an invisible mark, and the
 unmarked-question gap (backlog #615). No code change: `brief-compose.py --self-test` 226/226 unchanged.
+
+## 2026-11-20
+The goal tree's *Running now* can now see work that is being built. An item in the in-flight list can name the
+worktree it is built in, and the page reads how recently that worktree changed: a change in the last 30 minutes puts
+the item under *Running now* as `building · last change N min ago`, instead of `nothing running` or `not started`.
+Quieter than that, it is listed as owed with `quiet N min`; a worktree that no longer exists reads `worktree gone`.
+It closes backlog #672, which you filed on 2026-11-17 after the page said nothing was running while an agent built
+slice D.
+<!--tech-->
+Branch `running-now-worktree`. `scripts/session-state.py`: `--add --worktree PATH` and `--set-worktree ID PATH|none`
+store an absolute, existing directory on the ledger entry. `scripts/goal-tree.py`: `collect` measures every declared
+worktree ONCE through `agent-watchdog.py:newest_change_ns` (the watchdog's own walk, never a second one), and the
+pure `worktree_build(wt, at)` reads it against the snapshot's clock with the watchdog's `QUIET_MIN` (30) as the
+window; a measure that fails is `worktree NOT READ (…)`, and a change stamped more than a minute after the snapshot
+is owed, never running. A declared wait still holds a building item as owed. The Running now lede now says what the
+page can see. `agent-watchdog` joined the comprehensibility package (components map and declaration) because
+goal-tree now loads it; the shipping-sets edge pin moved 347 → 348 for that one edge.
