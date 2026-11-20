@@ -133,6 +133,36 @@ for: Gives the rules this project works by a mechanical enforcer, instead of a r
 anchors: dev-speed-first
 areas: (tooling)
 
+#### harness-speed
+state: built
+for: Keeps the build-and-check loop fast and cheap — CI wall-clock, the mutation sweep's cost, batched CI runs, and the token usage agents spend.
+areas: (tooling/speed)
+
+#### review-process
+state: built
+for: Runs the dual adversarial review loop and records its rounds, verdicts and merge holds as evidence a machine can read.
+areas: (tooling/review)
+
+#### mutation-and-test-quality
+state: built
+for: Proves the tests and guards can fail — the mutation harness, its pins and sweep, and self-test cases that pass for the right reason.
+areas: (tooling/mutation)
+
+#### hooks-and-session-continuity
+state: built
+for: Carries work across turns, compactions and sessions — the Claude Code hooks, the in-flight ledger, usage pacing and stall detection.
+areas: (tooling/hooks)
+
+#### backlog-and-page-tooling
+state: built
+for: Turns the backlog, goal tree, dashboard and explainers into pages a person can read, and serves them.
+areas: (tooling/pages)
+
+#### guard-soundness
+state: built
+for: Makes each guard check what it claims to — no false green, no copy of a rule that drifts, no gate that can be walked past.
+areas: (tooling/guards)
+
 ### status-visibility
 state: built
 for: Lets a person who was away see where the work stands and what needs a decision from them.
