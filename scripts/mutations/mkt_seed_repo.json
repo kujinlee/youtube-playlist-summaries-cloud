@@ -86,5 +86,38 @@
    ]
   ],
   "expect": "every typed fact is what the committed file it names says"
+ },
+ {
+  "name": "a typed fact's source names the right file among other words",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "_item(\"ratchet-check-docs\", \"python3 scripts/check-docs.py\"",
+    "_item(\"ratchet-check-docs\", \"cat scripts/check-docs.py\""
+   ]
+  ],
+  "expect": "every typed fact is what the committed file it names says"
+ },
+ {
+  "name": "a new typed fact has no parse",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "        # Emptiness, seeded on purpose",
+    "        _item(\"roadmap-steps\", \"README.md\", \"Milestone 9 — invented\"),\n        # Emptiness, seeded on purpose"
+   ]
+  ],
+  "expect": "every typed fact is what the committed file it names says"
+ },
+ {
+  "name": "a ratchet called absent is committed",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "({\"scripts/check-docs.py\": CHECK_DOCS}",
+    "({\"scripts/check-docs.py\": CHECK_DOCS, \"scripts/check-test-counts.py\": \"print(1)\\n\"}"
+   ]
+  ],
+  "expect": "every ratchet the seed calls absent is untracked at HEAD"
  }
 ]

@@ -2,7 +2,7 @@
 """Build the tier-A seeded stranger repository and its known-facts file (marketplace-inventory plan, Task 13;
 spec §6, pass condition 2).
 
-    python3 scripts/mkt_seed_repo.py --self-test  # 13 cases
+    python3 scripts/mkt_seed_repo.py --self-test  # 14 cases
     python3 scripts/mkt_seed_repo.py --out DIR
 
 seed(out) makes `out/repo` — a git repository with a FIXED history (fixed author, fixed dates through
@@ -21,7 +21,9 @@ ways: a page that invents content for an empty item is `wrong`, a page that retu
 `missing-capability`. Items read from git (the log, the branch, the ahead count) are DERIVED from the built
 repository by running git, never typed; the fixed dates make them identical on every run. The other non-empty
 items (roadmap status, deployed line, waiting decision, open backlog rows, the ratchet's output) ARE typed, so a
-self-test case re-reads each from the COMMITTED file it names, by its own parse, and refuses any that disagrees.
+self-test case re-reads each from the COMMITTED file it names, by its own parse, and refuses any that disagrees —
+or that it has no parse for: every item neither git-derived nor empty must be in the case's own map. The emptiness
+of `ratchets-absent` is checked against the seeded tree (each path it names is untracked at HEAD).
 
 What this cannot do: it seeds `brief`'s facts only. The other page skills have no seeded facts (plan Task 14
 Step 4: their pass condition 2 is `argued`).
@@ -246,11 +248,13 @@ def _self_test_body() -> int:
                              timeout=60)
         by = {i["id"]: i["expected"] for i in a.items}
         src = {i["id"]: i["source"] for i in a.items}
-        # The file (or command) each answer above was parsed from, written out independently: a fact whose `source`
-        # names a different file is a false pairing even when its answer is right (r2 Codex m1).
-        parsed_from = {"roadmap-status": "docs/roadmap-to-launch.md", "roadmap-deployed": "docs/roadmap-to-launch.md",
+        # The WHOLE source each answer above was parsed from (the command, verb included, for a command item), written
+        # out independently and compared exactly: a fact whose `source` names a different file, or the right file
+        # among other words, is a false pairing even when its answer is right (r2 Codex m1, r3 Claude m1).
+        parsed_from = {"roadmap-status": "docs/roadmap-to-launch.md",
+                       "roadmap-deployed": "grep 'Deployed: release' docs/roadmap-to-launch.md",
                        "decision-waiting": "docs/roadmap-to-launch.md", "backlog-open": "docs/backlog.md",
-                       "ratchet-check-docs": "scripts/check-docs.py"}
+                       "ratchet-check-docs": "python3 scripts/check-docs.py"}
         held = {
             "roadmap-status": by["roadmap-status"] in [ln for ln in roadmap if ln.startswith("Status: ")],
             "roadmap-deployed": by["roadmap-deployed"] in [ln for ln in roadmap if "Deployed: release" in ln],
@@ -258,10 +262,23 @@ def _self_test_body() -> int:
             "backlog-open": open_rows != "" and by["backlog-open"] == open_rows,
             "ratchet-check-docs": by["ratchet-check-docs"] == f"rc {ran.returncode}: {ran.stdout.strip()}",
         }
-        held = {k: ok_ and parsed_from[k] in src[k].split() + [src[k]] for k, ok_ in held.items()}
-        return sorted(k for k, ok_ in held.items() if not ok_)
+        held = {k: ok_ and src[k] == parsed_from[k] for k, ok_ in held.items()}
+        # Identity, not a hand-listed key set: every item that is neither read from git (an independent literal) nor
+        # correctly empty is a TYPED fact and must have a parse above — one with none is red, never skipped (r3 m2).
+        git_derived = {"git-log", "git-status", "branch", "ahead-count"}
+        unchecked = [i["id"] for i in a.items
+                     if i["id"] not in git_derived and not i["empty_is_correct"] and i["id"] not in held]
+        return sorted([k for k, ok_ in held.items() if not ok_] + unchecked)
     case("every typed fact is what the committed file it names says", typed_facts_disagreeing_with_the_committed_files,
          [])
+
+    def absent_ratchets_tracked():
+        # The emptiness `ratchets-absent` claims, read from the seeded tree: every path its source names is untracked
+        # at HEAD (r3 m3). The 3 is an independent literal, so an item that names fewer paths cannot pass vacuously.
+        tracked = set(_git(Path(a.repo), "ls-tree", "-r", "--name-only", "HEAD").split())
+        named = [i["source"] for i in a.items if i["id"] == "ratchets-absent"][0].split()
+        return (len(named), sorted(p for p in named if p in tracked))
+    case("every ratchet the seed calls absent is untracked at HEAD", absent_ratchets_tracked, (3, []))
 
     def refused():
         try:

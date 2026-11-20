@@ -54,8 +54,13 @@ in the world's `.serve.log`): the port is shared state with the author's desktop
 
 ## Coverage matrix and pass conditions (spec §6)
 
-Condition 4: **(a) does the component document how to recover from failure? — no, for every component** (spec §6 4(a));
-so 4(b) holds vacuously for every exercised component and is recorded `pass` on that ground, not on a run.
+Condition 4: **(a) does the component document how to recover from failure? — answered per component from the
+driver's output (`results.jsonl`, world 2), not from the spec's premise.** Two do: `brief-compose` (`run
+/explain-diff once first`) and `gen-dashboard` (`Run /explain-diff once to produce one, then re-run`). Following that
+advice was observed to fail — `explain-diff` ran and produced a page with NO Ask tray, so the tray page both scripts
+demand still does not exist (S2) — so **4(b) FAILS for both**. No other exercised component's output documents a
+recovery: for those, 4(b) holds vacuously and is recorded `pass` on that ground, not on a run. (r3 Claude M1 regraded
+the two from a vacuous `pass`.)
 Condition 2 is scored against `known-facts.json` for `brief` only; for the other page skills it is `not scored — no
 seeded facts`, hence `argued`. Unexercised components are `argued` throughout (spec §4b).
 
@@ -66,11 +71,11 @@ seeded facts`, hence `argued`. Unexercised components are `argued` throughout (s
 | `skill-explain-findings` | yes | A-skill-explain-findings | no | fail | argued | fail | pass | pass | no page: `../shared/explainer-delivery.md` did not resolve from the skill's CWD; verdicts given in text |
 | `skill-explain-topic` | yes | A-skill-explain-topic | no | fail | argued | fail | pass | pass | page file written by the model to ~/explainers, NOT served, no Ask tray: `brief-compose.py` refuses without a tray source page |
 | `skill-dashboard` | yes | A-skill-dashboard | no | fail | argued | fail | pass | pass | no entry, no page: the skill expects the HOST repo's docs/dashboard-entries.md, scripts/regen-pages.py, .agents/skills/shared/…, docs/anchors.md |
-| `brief-compose` | yes | A-script-brief-compose | no | fail | argued | fail | pass | pass | rc 1 `no explainer directory at <world>/home/explainers`; with the directory present it refuses: no page has an Ask tray |
+| `brief-compose` | yes | A-script-brief-compose | no | fail | argued | fail | fail | pass | rc 1 `no explainer directory at <world>/home/explainers`; with the directory present it refuses: no page has an Ask tray |
 | `explainer-serve` | yes | A-script-explainer-serve | yes | fail | argued | pass | pass | pass | all three serve conditions held (start `serving <world HOME>/explainers`, pidfile 44052 = listener 44052, GET / 200 with sentinel); GET page 200; POST /questions 200 and recorded in the world's questions.md. Condition 1 FAILS: the page served was the experiment's own sentinel, with no Ask tray, so no page a reader can ask a question INSIDE was served — the endpoint answering a POST is not that (S2) |
 | `ask-answerer` | yes | A-script-ask-answerer-status | no | argued | argued | argued | pass | pass | `--status` rc 0 named the world's folder and caps; `--once` (answering a question = a model call) NOT run, so the useful operation is argued. `operation_ok` is `no` because the useful operation was NOT RUN, not because it failed (the sidecar's field is a bool) |
 | `regen-pages` | yes | A-script-regen-pages-all | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — git cannot name this repository's common directory from <install dir>`: it locates the repo from its OWN install path, not the user's CWD |
-| `gen-dashboard` | yes | A-script-gen-dashboard | no | argued | argued | fail | pass | pass | rc 1: reads <install dir>/docs/backlog.md (absent), then brief-compose refuses (no tray page) |
+| `gen-dashboard` | yes | A-script-gen-dashboard | no | argued | argued | fail | fail | pass | rc 1: reads <install dir>/docs/backlog.md (absent), then brief-compose refuses (no tray page) |
 | `gen-goals-page` | yes | A-script-gen-goals-page | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — docs/anchors.md or scripts/gen-backlog-page.py is missing` (looked up beside the install, not in the repo) |
 | `gen-features-page` | yes | A-script-gen-features-page | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — <install dir>/docs/features.md is missing` |
 | `gen-backlog-page` | yes | A-script-gen-backlog-page | no | argued | argued | fail | pass | pass | rc 1 traceback FileNotFoundError <install dir>/docs/backlog.md — the seeded repo HAS docs/backlog.md; the script reads beside itself |
@@ -101,7 +106,7 @@ seeded facts`, hence `argued`. Unexercised components are `argued` throughout (s
 condition 2 FAILS** (the hollow-page rule: a measured run that fails; it forbids SHIP).
 
 Supplementary, NOT the pass condition — the skill's chat answer scored against the same 12 items (world 2 run,
-23:26:59):
+23:28:13, finished):
 
 | Item | Expected (seeded) | Chat answer | Mark |
 |---|---|---|---|

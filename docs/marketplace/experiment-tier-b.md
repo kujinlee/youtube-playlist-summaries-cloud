@@ -46,9 +46,13 @@ Total 1.10 USD, 5 runs, stranger account. **No page with an Ask tray was produce
 skill.** Every skill's base directory was again the STAGED marketplace (`<run>/mkt/comprehensibility/skills/<skill>`),
 isolation note I2 of tier A.
 
-Pass conditions match tier A's matrix for every component except `skill-explain-diff`, whose useful operation FAILS
-here (page not served: conditions 1 and 3 fail). Condition 2 is `argued` for every page skill: there are no seeded
-facts for this host. The skill answers themselves were accurate where checked by hand against the clone (`brief`:
+Pass conditions match tier A's matrix for every component except two: `skill-explain-diff`, whose useful operation
+FAILS here (page not served: conditions 1 and 3 fail), and `skill-brief`, whose condition 2 is `argued` here where
+tier A's is `fail` — condition 2 is `argued` for every page skill, as there are no seeded facts for this host.
+Condition 4 carries tier A's per-component answer: the scripted messages are identical here (`brief-compose` `run
+/explain-diff once first`, `gen-dashboard` `Run /explain-diff once to produce one, then re-run`; this run's
+`results.jsonl`), and following them fails the same way, so 4 is `fail` for those two and a vacuous `pass` for the
+rest (r3 Claude M1). The skill answers themselves were accurate where checked by hand against the clone (`brief`:
 branch `main`, clean tree, HEAD `dec7e4188`), but that is not scored.
 
 ## Resources reached that belong to the host repository (the third list)
