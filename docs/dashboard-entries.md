@@ -21040,3 +21040,17 @@ Task 15 (2026-11-19): `Yeachan-Heo/oh-my-claudecode` at `dec7e418`, full clone (
 (1.10 USD) produced 0 askable pages and 0 skill-served pages (`explain-diff` wrote but did not serve, unlike tier A).
 `RunRecord.opened` inside the host: 0 real files (one `<unknown>` traceback artefact). Port 7391 stopped 23:37:48,
 restarted 23:43:07.
+
+Folded the first review of the install experiment. Three grades were looser than the rules allow and are now strict:
+the page server no longer counts as producing a page a reader can ask in, the question-answerer is recorded as not
+measured rather than working, and one skill's success no longer counts as "through the installed paths". Two
+problems the experiment found in this project's own tools are now backlog items.
+<!--tech-->
+Marketplace slice E round 1 fold (`docs/reviews/coordinator/hse-slice-e-r1-coordinator.md`): tier-A record and
+sidecar regraded — `explainer-serve` condition 1 pass → fail (CM1), `ask-answerer.operation_ok` true → false, headline
+7 fail / 1 pass / 1 not measured (CM2, XM1), `skill-explain-diff` condition 3 pass → argued (I2; Cm1); S1/S2 no
+longer claimed to explain every failure (Xm1); `brief`'s chat answer no longer called working (Xm2). Matrix and JSON
+agree on all 33 rows. `mkt_seed_repo.py`: a case re-reads the 5 typed facts from the committed files (13/13; 7
+mutations, all killed by their named case); docstring states the 12 chosen items (Cm2). Filed backlog #674
+(preflight passes a world under the real `HOME`; I1) and #675 (`exec_edges` drops an argv base naming another tree).
+Tier-B names its 16 `RunRecord` runs (Cm3).

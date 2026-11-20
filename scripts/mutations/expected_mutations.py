@@ -2406,8 +2406,8 @@ EXPECTED_MUTATIONS = {
     "scripts/mkt_isolate.py": 53,
     # 2026-11-19, marketplace-inventory plan Task 13: the seeded stranger repository, pinned in the commit that
     # creates it (5): fixed dates, the correctly-empty flag, the non-empty-out refusal, known-facts beside the
-    # repository, the full git log.
-    "scripts/mkt_seed_repo.py": 5,
+    # repository, the full git log. +2 at the r1 fold (Claude CM3): two typed facts drifting from their committed file.
+    "scripts/mkt_seed_repo.py": 7,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out

@@ -53,8 +53,9 @@ branch `main`, clean tree, HEAD `dec7e4188`), but that is not scored.
 
 ## Resources reached that belong to the host repository (the third list)
 
-Every `RunRecord.opened` path inside `<world HOME>/project`, over all 11 scripted and serve runs and the 5
-post-skill `--stop` runs:
+Every `RunRecord.opened` path inside `<world HOME>/project`, over all 16 runs that carry a `RunRecord` (the driver's
+`results.jsonl`): the 8 scripted operations above, the 3 serve runs (`explainer-serve --status`, the start,
+`--stop`; the GETs and the POST are the driver's HTTP requests, not runs), and the 5 post-skill `--stop` runs:
 
 | Run | Path | Reading |
 |---|---|---|

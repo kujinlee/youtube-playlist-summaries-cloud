@@ -2,7 +2,7 @@
 """Build the tier-A seeded stranger repository and its known-facts file (marketplace-inventory plan, Task 13;
 spec §6, pass condition 2).
 
-    python3 scripts/mkt_seed_repo.py --self-test  # 12 cases
+    python3 scripts/mkt_seed_repo.py --self-test  # 13 cases
     python3 scripts/mkt_seed_repo.py --out DIR
 
 seed(out) makes `out/repo` — a git repository with a FIXED history (fixed author, fixed dates through
@@ -12,12 +12,16 @@ line, and NO `.claude/` — and writes `out/known-facts.json` BESIDE it (never i
 `git status` stays clean). `out` must be absent or empty: anything else is CANNOT RUN (rc 2).
 
 The known facts are `brief`'s ground-truth items (`.agents/skills/brief/SKILL.md` → *Step 1 — establish ground
-truth*), one per command or file that step names, each with the answer THIS repository gives. An item whose seeded
+truth*): 12 CHOSEN items, each with the answer THIS repository gives. Not one per command or file that step names:
+`git diff --stat <boundary>..HEAD`, `docs/reviews/` and `docs/superpowers/` have no item, and the three absent ratchets
+share one (`ratchets-absent`). An item whose seeded
 fact is emptiness carries `"expected": ""` and `"empty_is_correct": true` (a clean `git status --short`, a ratchet
 the repository does not have, a live release no stranger command can read), so pass condition 2 can fail both
 ways: a page that invents content for an empty item is `wrong`, a page that returns nothing for a non-empty item is
 `missing-capability`. Items read from git (the log, the branch, the ahead count) are DERIVED from the built
-repository by running git, never typed; the fixed dates make them identical on every run.
+repository by running git, never typed; the fixed dates make them identical on every run. The other non-empty
+items (roadmap status, deployed line, waiting decision, open backlog rows, the ratchet's output) ARE typed, so a
+self-test case re-reads each from the COMMITTED file it names, by its own parse, and refuses any that disagrees.
 
 What this cannot do: it seeds `brief`'s facts only. The other page skills have no seeded facts (plan Task 14
 Step 4: their pass condition 2 is `argued`).
@@ -228,6 +232,29 @@ def _self_test_body() -> int:
     case("the seeded check-docs prints its known line",
          lambda: subprocess.run([sys.executable, str(Path(a.repo) / "scripts/check-docs.py")], capture_output=True,
                                 text=True, timeout=60).stdout.strip(), CHECK_DOCS_LINE)
+
+    def typed_facts_disagreeing_with_the_committed_files():
+        # An independent parse of what the repository COMMITTED — never the module's ROADMAP/BACKLOG constants — so
+        # a typed fact that drifts from its file (a wrong line index, a hand-edited row) goes red here.
+        repo = Path(a.repo)
+        roadmap = _git(repo, "show", "HEAD:docs/roadmap-to-launch.md").splitlines()
+        backlog = _git(repo, "show", "HEAD:docs/backlog.md").splitlines()
+        rows = [[c.strip() for c in ln.strip("|").split("|")] for ln in backlog if ln.startswith("| ")]
+        open_rows = "; ".join(f"#{r[0]} {r[1]}" for r in rows if r[0].isdigit() and r[2] == "open")
+        decisions = [ln.split("Decision: ", 1)[1].rstrip(".") for ln in roadmap if ln.startswith("- ⛔ Decision: ")]
+        ran = subprocess.run([sys.executable, str(repo / "scripts/check-docs.py")], capture_output=True, text=True,
+                             timeout=60)
+        by = {i["id"]: i["expected"] for i in a.items}
+        held = {
+            "roadmap-status": by["roadmap-status"] in [ln for ln in roadmap if ln.startswith("Status: ")],
+            "roadmap-deployed": by["roadmap-deployed"] in [ln for ln in roadmap if "Deployed: release" in ln],
+            "decision-waiting": by["decision-waiting"] in decisions,
+            "backlog-open": open_rows != "" and by["backlog-open"] == open_rows,
+            "ratchet-check-docs": by["ratchet-check-docs"] == f"rc {ran.returncode}: {ran.stdout.strip()}",
+        }
+        return sorted(k for k, ok_ in held.items() if not ok_)
+    case("every typed fact is what the committed file it names says", typed_facts_disagreeing_with_the_committed_files,
+         [])
 
     def refused():
         try:

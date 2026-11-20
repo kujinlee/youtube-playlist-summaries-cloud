@@ -7,8 +7,11 @@ The sidecar `experiment-tier-a.json` is generated from the SAME dict as the cove
 
 **Headline (population: the 33 components `components.json` assigns to package `comprehensibility`; 14 exercised,
 19 not):** the package installs, and its server works. **Every page skill FAILS pass condition 1** — no exercised run
-produced a page a reader can ask a question in — and **7 of the 9 exercised scripts fail their useful operation** (all but
-`explainer-serve` and `ask_answerer --status`). Two causes explain all of it (suite defects S1 and S2 below).
+produced a page a reader can ask a question in. Of the 9 exercised scripts, **7 fail their useful operation**, 1
+completes it (`explainer-serve`), and 1 is NOT MEASURED (`ask_answerer`: only `--status` ran; answering a question
+was not run). Suite defects S1 and S2 (below) account for the 7 script failures and for both pages produced without
+an Ask tray (`explain-diff`, `explain-topic`); the three page skills that produced no page failed earlier, on S3
+(`brief`, `explain-findings`, `dashboard`) and, for `dashboard`, also S4.
 `brief` FAILS pass condition 2: there is no page, so no seeded item reaches a page.
 
 ## How it was run
@@ -59,13 +62,13 @@ seeded facts`, hence `argued`. Unexercised components are `argued` throughout (s
 | Component | Exercised | Scenario | operation_ok | 1 | 2 | 3 | 4 | 5 | Evidence |
 |---|---|---|---|---|---|---|---|---|---|
 | `skill-brief` | yes | A-skill-brief | no | fail | fail | fail | pass | pass | no page: the skill named `scripts/brief-compose.py` / `explainer-serve.py` CWD-relative and found neither in the seeded repo; answered in text only. Condition 2 FAILS (no page carries any item; text-answer scoring below, supplementary) |
-| `skill-explain-diff` | yes | A-skill-explain-diff | yes | fail | argued | pass | pass | pass | page written by the model and served by the package's `explainer-serve.py` on 7391 (HTTP 200); NO Ask tray — no existing page had one to copy (bootstrap circularity) |
+| `skill-explain-diff` | yes | A-skill-explain-diff | yes | fail | argued | argued | pass | pass | page written by the model and served by the package's `explainer-serve.py` on 7391 (HTTP 200); NO Ask tray — no existing page had one to copy (bootstrap circularity). Condition 3 is `argued`, not `pass`: the server ran from the STAGED marketplace, not the installed paths the condition names (I2) |
 | `skill-explain-findings` | yes | A-skill-explain-findings | no | fail | argued | fail | pass | pass | no page: `../shared/explainer-delivery.md` did not resolve from the skill's CWD; verdicts given in text |
 | `skill-explain-topic` | yes | A-skill-explain-topic | no | fail | argued | fail | pass | pass | page file written by the model to ~/explainers, NOT served, no Ask tray: `brief-compose.py` refuses without a tray source page |
 | `skill-dashboard` | yes | A-skill-dashboard | no | fail | argued | fail | pass | pass | no entry, no page: the skill expects the HOST repo's docs/dashboard-entries.md, scripts/regen-pages.py, .agents/skills/shared/…, docs/anchors.md |
 | `brief-compose` | yes | A-script-brief-compose | no | fail | argued | fail | pass | pass | rc 1 `no explainer directory at <world>/home/explainers`; with the directory present it refuses: no page has an Ask tray |
-| `explainer-serve` | yes | A-script-explainer-serve | yes | pass | argued | pass | pass | pass | all three serve conditions held (start `serving <world HOME>/explainers`, pidfile 44052 = listener 44052, GET / 200 with sentinel); GET page 200; POST /questions 200 and recorded in the world's questions.md |
-| `ask-answerer` | yes | A-script-ask-answerer-status | yes | argued | argued | argued | pass | pass | `--status` rc 0 named the world's folder and caps; `--once` (answering a question = a model call) NOT run, so the useful operation is argued |
+| `explainer-serve` | yes | A-script-explainer-serve | yes | fail | argued | pass | pass | pass | all three serve conditions held (start `serving <world HOME>/explainers`, pidfile 44052 = listener 44052, GET / 200 with sentinel); GET page 200; POST /questions 200 and recorded in the world's questions.md. Condition 1 FAILS: the page served was the experiment's own sentinel, with no Ask tray, so no page a reader can ask a question INSIDE was served — the endpoint answering a POST is not that (S2) |
+| `ask-answerer` | yes | A-script-ask-answerer-status | no | argued | argued | argued | pass | pass | `--status` rc 0 named the world's folder and caps; `--once` (answering a question = a model call) NOT run, so the useful operation is argued. `operation_ok` is `no` because the useful operation was NOT RUN, not because it failed (the sidecar's field is a bool) |
 | `regen-pages` | yes | A-script-regen-pages-all | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — git cannot name this repository's common directory from <install dir>`: it locates the repo from its OWN install path, not the user's CWD |
 | `gen-dashboard` | yes | A-script-gen-dashboard | no | argued | argued | fail | pass | pass | rc 1: reads <install dir>/docs/backlog.md (absent), then brief-compose refuses (no tray page) |
 | `gen-goals-page` | yes | A-script-gen-goals-page | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — docs/anchors.md or scripts/gen-backlog-page.py is missing` (looked up beside the install, not in the repo) |
@@ -115,8 +118,9 @@ Supplementary, NOT the pass condition — the skill's chat answer scored against
 | live-release | empty | `flyctl` not installed, v4 unconfirmed | correctly-empty |
 | task-list | empty | `TaskList` disabled | correctly-empty |
 
-Population: 12 items; **6 correct, 4 correctly-empty, 2 missing-capability, 0 wrong.** The ground-truth half of
-`brief` works for a stranger; the page half does not.
+Population: 12 items; **6 correct, 4 correctly-empty, 2 missing-capability, 0 wrong.** The chat answer's ground
+truth is partial — it omitted the ahead count and gave 3 of 5 commit subjects without SHAs — and there is no page
+half at all.
 
 ## The three lists
 
@@ -145,8 +149,11 @@ Population: 12 items; **6 correct, 4 correctly-empty, 2 missing-capability, 0 wr
 
 - **Scan prediction for each failure (plan Step 5): NOT RUN.** `ScanReport` (Task 8, slice D, PR #600) is not merged,
   so no finding id can be named. Feeds Task 16, which needs slice D.
-- `check-shipping-sets.py`'s edge reader reports `scripts/mkt_seed_repo.py -> scripts/check-docs.py`, from a STRING
-  naming the seeded repository's own file — an over-report (found while re-pinning its Phase 6 case in this branch).
+- `check-shipping-sets.py`'s edge reader reports `scripts/mkt_seed_repo.py -> scripts/check-docs.py`, from the
+  self-test's interpreter argv `[sys.executable, str(Path(a.repo) / "scripts/check-docs.py")]`, which runs the SEEDED
+  repository's own file: the reader drops the base (`Path(a.repo)`) by design and resolves the rest from this
+  repository's root — an over-report (found while re-pinning its Phase 6 case in this branch; cause located at the
+  round 1 fold: removing that argv removes the edge, while rewording the `source` label does not). Filed as backlog #675.
 
 ### Isolation and unobservable accesses
 
@@ -155,7 +162,7 @@ Population: 12 items; **6 correct, 4 correctly-empty, 2 missing-capability, 0 wr
   `/Users/<author>/.claude/CLAUDE.md` (its transcript: `Contents of /Users/<author>/.claude/CLAUDE.md`). The `brief` run
   there answered in the author's banner format and declined to build the page. **`preflight` passed** (`[]`) — it does
   not check this. World 2, under `DARWIN_USER_TEMP_DIR`, loaded none (`Contents of` absent in all 5 transcripts).
-  A stated limit of `build_world`/`preflight`, recorded; not repaired.
+  A stated limit of `build_world`/`preflight`, recorded; not repaired here — filed as backlog #674.
 - **I2 — skills ran from the STAGED marketplace, outside the world.** Every skill's base directory was
   `<run>/mkt/comprehensibility/skills/<skill>` — the local-directory marketplace source, a sibling of the world — not
   the installed cache; `explain-diff` ran `explainer-serve.py` from `<run>/mkt/comprehensibility/scripts`. The staged

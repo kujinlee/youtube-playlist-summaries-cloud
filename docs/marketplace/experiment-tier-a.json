@@ -20,7 +20,7 @@
       "pass_conditions": {
         "1": "fail",
         "2": "argued",
-        "3": "pass",
+        "3": "argued",
         "4": "pass",
         "5": "pass"
       }
@@ -78,7 +78,7 @@
       "scenario": "A-script-explainer-serve",
       "operation_ok": true,
       "pass_conditions": {
-        "1": "pass",
+        "1": "fail",
         "2": "argued",
         "3": "pass",
         "4": "pass",
@@ -88,7 +88,7 @@
     "ask-answerer": {
       "exercised": true,
       "scenario": "A-script-ask-answerer-status",
-      "operation_ok": true,
+      "operation_ok": false,
       "pass_conditions": {
         "1": "argued",
         "2": "argued",
