@@ -1,0 +1,57 @@
+[
+ {
+  "name": "the commits take the clock's date",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "        extra.update(GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)",
+    "        extra.update()"
+   ]
+  ],
+  "expect": "two seeds give identical trees"
+ },
+ {
+  "name": "no item is ever correctly empty",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "\"empty_is_correct\": expected == \"\"}",
+    "\"empty_is_correct\": False}"
+   ]
+  ],
+  "expect": "at least one item is correctly empty and one is non-empty"
+ },
+ {
+  "name": "a non-empty out is not refused",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "    if out.exists() and (",
+    "    if False and ("
+   ]
+  ],
+  "expect": "a non-empty out is CANNOT RUN"
+ },
+ {
+  "name": "known-facts.json is written inside the repository",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "    (out / \"known-facts.json\").write_text(",
+    "    (repo / \"known-facts.json\").write_text("
+   ]
+  ],
+  "expect": "known-facts.json is written beside the repository, and matches what seed returned"
+ },
+ {
+  "name": "the git log fact is cut to one commit",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "_git(repo, \"log\", \"--oneline\", \"-15\")",
+    "_git(repo, \"log\", \"--oneline\", \"-1\")"
+   ]
+  ],
+  "expect": "the git log fact names every seeded commit, newest first"
+ }
+]

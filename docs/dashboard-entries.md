@@ -21005,3 +21005,14 @@ edge SET (344, digest `2cfb6a85d091b861`), not the count (Cm2). `--closure`: 0 g
 none dropped). `scripts/regen-pages.py`: the crash case again refuses a second `[FAIL]` line (Xm3/Cm3). Self-tests
 140/140 and 121/121; mutations 195 and 73, the 14 new or re-anchored entries all killed by their named case. CM2 and
 Cm4 (the exact-name censuses) are stated as bounds and split to backlog #671.
+
+## 2026-11-19
+Started the install experiment for the marketplace work: a small made-up project with known facts, so a test can
+tell whether the status page a stranger gets says the right things about it, says nothing where nothing is the right
+answer, or says nothing because something is missing. The project is built the same way every time.
+<!--tech-->
+Marketplace slice E, plan `docs/superpowers/plans/2026-11-11-marketplace-inventory.md` Task 13 (branch `hse-e`):
+`scripts/mkt_seed_repo.py` — `seed(out)` builds `out/repo` (5 commits, fixed author and dates, roadmap, backlog, one
+`scripts/check-docs.py`, no `.claude/`) and `out/known-facts.json` beside it: 12 of `brief`'s ground-truth items, 4
+of them correctly empty. 12/12 self-test cases, 5 mutations all killed by their named case; wired W1-W8 (manifest,
+`expected_mutations.py`, the declared-counts case, `POPULATION`, `EXAMINED_KEYS`, a `ci.yml` step).

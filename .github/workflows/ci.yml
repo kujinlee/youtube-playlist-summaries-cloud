@@ -899,6 +899,11 @@ jobs:
       - name: mkt_stage self-test
         run: python3 scripts/mkt_stage.py --self-test
 
+      # The seeded stranger repository (marketplace-inventory plan, Task 13). A tool, not a check-* guard:
+      # this step is its caller; scripts/mutations/mkt_seed_repo.json stops it going vacuous.
+      - name: mkt_seed_repo self-test
+        run: python3 scripts/mkt_seed_repo.py --self-test
+
       # The component map's completeness check (marketplace-inventory plan, Task 5): every supporting
       # artifact is in a component or a reasoned exclusion, and no glob exclusion hides a file a
       # package executes. The map is checked against the tree this run checked out.
