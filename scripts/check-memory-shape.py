@@ -72,7 +72,7 @@ Callers: `.github/workflows/ci.yml`, next to `check-memory-index-budget.py`.
 
 Usage:
     python3 scripts/check-memory-shape.py
-    python3 scripts/check-memory-shape.py --self-test  # 48 cases
+    python3 scripts/check-memory-shape.py --self-test  # 50 cases
 """
 from __future__ import annotations
 
@@ -402,6 +402,10 @@ def _self_test_body() -> int:
     check("parse_frontmatter strips quotes and reads metadata.type",
           parse_frontmatter('---\nname: "n"\ndescription: \'d\'\nmetadata:\n  type: user\n---\nB')[0],
           {"name": "n", "description": "d", "metadata.type": "user"})
+    # ⟳ a mutation SURVIVED here: a file with no opening fence but a `---` rule further down was
+    # parsed as frontmatter. Its codes are the same (FRONTMATTER either way), so assert the parse.
+    check("parse_frontmatter: no opening fence is NO frontmatter, even with a `---` rule later",
+          parse_frontmatter("**Rule.**\n\n---\n\nmore")[0], None)
     check("parse_frontmatter returns the body AFTER the closing fence",
           parse_frontmatter("---\nname: n\n---\nBODY\nmore")[1], ["BODY", "more"])
     check("a message names the file and the rule",
@@ -451,7 +455,12 @@ def _self_test_body() -> int:
         check("the FAIL message names the file and the rule", "HISTORY-FIRST beta.md" in out, True)
         rc, out = run(lambda: main([], memdir=absent))
         check("a missing corpus is CANNOT RUN, not a pass", rc, 2)
-        check("a CANNOT RUN names the directory it examined", str(absent) in out, True)
+        # ⟳ two mutations SURVIVED here. With the absent arm severed, the empty-corpus arm still
+        # gave rc 2; and the exception text already carries the path, so `str(absent) in out`
+        # held with the directory dropped from the sentence. Assert WHICH arm, and the sentence.
+        check("an absent corpus says it could not be READ, not that it holds no files",
+              ("could not be READ" in out, "holds no memory files" in out), (True, False))
+        check("a CANNOT RUN names the directory it examined", f"corpus at {absent} " in out, True)
         rc, out = run(lambda: main([], memdir=bare))
         check("an index with no memory files is CANNOT RUN, not a vacuous pass", rc, 2)
         rc, out = run(lambda: main(["--bogus"], memdir=clean))

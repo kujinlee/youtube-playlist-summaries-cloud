@@ -4,8 +4,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    for need in (\"name\", \"description\", \"metadata.type\"):\n",
-        "    for need in (\"name\", \"metadata.type\"):\n"
+        "\"name\", \"description\", \"metadata",
+        "\"name\", \"metadata"
       ]
     ],
     "expect": [
@@ -17,8 +17,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    for need in (\"name\", \"description\", \"metadata.type\"):\n",
-        "    for need in (\"description\", \"metadata.type\"):\n"
+        "for need in (\"name\", ",
+        "for need in ("
       ]
     ],
     "expect": [
@@ -30,8 +30,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    for need in (\"name\", \"description\", \"metadata.type\"):\n",
-        "    for need in (\"name\", \"description\"):\n"
+        "\"description\", \"metadata.type\"):",
+        "\"description\"):"
       ]
     ],
     "expect": [
@@ -48,7 +48,7 @@
       ]
     ],
     "expect": [
-      "FRONTMATTER: a file with no frontmatter block"
+      "parse_frontmatter: no opening fence is NO frontmatter, even with a `---` rule later"
     ]
   },
   {
@@ -281,8 +281,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "_DECORATION = \"#>*_` \\t⛔⭐✅️\"",
-        "_DECORATION = \">*_` \\t⛔⭐✅️\""
+        "\"#>*_`",
+        "\">*_`"
       ]
     ],
     "expect": [
@@ -390,7 +390,7 @@
       ]
     ],
     "expect": [
-      "a missing corpus is CANNOT RUN, not a pass"
+      "an absent corpus says it could not be READ, not that it holds no files"
     ]
   },
   {
