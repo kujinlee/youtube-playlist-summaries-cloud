@@ -5577,6 +5577,7 @@ def _self_test_body() -> int:
                                       # manifest in the same commit.
                                       "scripts/check-main-drivable.py",
                                       "scripts/check-memory-index-budget.py",
+                                      "scripts/check-memory-shape.py",
                                       "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
                                       "scripts/check-page-links.py",

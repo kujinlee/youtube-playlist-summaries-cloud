@@ -1,0 +1,474 @@
+[
+  {
+    "name": "`description` is no longer required",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    for need in (\"name\", \"description\", \"metadata.type\"):\n",
+        "    for need in (\"name\", \"metadata.type\"):\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a file missing `description`"
+    ]
+  },
+  {
+    "name": "`name` is no longer required",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    for need in (\"name\", \"description\", \"metadata.type\"):\n",
+        "    for need in (\"description\", \"metadata.type\"):\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a file missing `name`"
+    ]
+  },
+  {
+    "name": "`metadata.type` is no longer required",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    for need in (\"name\", \"description\", \"metadata.type\"):\n",
+        "    for need in (\"name\", \"description\"):\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a file missing `metadata.type`"
+    ]
+  },
+  {
+    "name": "a file with no opening fence is parsed as if it had one",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if not lines or lines[0].strip() != \"---\":\n",
+        "    if not lines:\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a file with no frontmatter block"
+    ]
+  },
+  {
+    "name": "an UNCLOSED frontmatter block is read to the end of the file instead of refused",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    else:\n        return None, lines\n    fields",
+        "    else:\n        end = len(lines)\n    fields"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an UNCLOSED frontmatter block"
+    ]
+  },
+  {
+    "name": "a top-level `type:` is accepted as `metadata.type`",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            if not in_metadata:\n                fields[key] = value\n",
+        "            if not in_metadata:\n                fields[key] = value\n                fields[\"metadata.\" + key] = value\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a TOP-LEVEL `type:` is not `metadata.type`"
+    ]
+  },
+  {
+    "name": "quotes around a value are kept, so a quoted name never equals its slug",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        value = value.strip().strip('\"').strip(\"'\")\n",
+        "        value = value.strip()\n"
+      ]
+    ],
+    "expect": [
+      "parse_frontmatter strips quotes and reads metadata.type"
+    ]
+  },
+  {
+    "name": "the body includes the closing fence, so `---` is read as the first line",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return fields, lines[end + 1:]\n",
+        "    return fields, lines[end:]\n"
+      ]
+    ],
+    "expect": [
+      "parse_frontmatter returns the body AFTER the closing fence",
+      "EMPTY-BODY: frontmatter and nothing after it"
+    ]
+  },
+  {
+    "name": "an unknown metadata.type is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if mtype and mtype not in TYPES:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "TYPE: an unknown metadata.type"
+    ]
+  },
+  {
+    "name": "`name` is never compared to the slug",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if name and name != slug:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "NAME: `name` differs from the filename slug"
+    ]
+  },
+  {
+    "name": "the slug keeps its `.md`, so every correct file is reported as misnamed",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    slug = fname[:-3] if fname.endswith(\".md\") else fname\n",
+        "    slug = fname\n"
+      ]
+    ],
+    "expect": [
+      "a clean corpus has no violations"
+    ]
+  },
+  {
+    "name": "a body with no non-blank line reads as an empty-string first line, so EMPTY-BODY never fires",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            return line\n    return None\n",
+        "            return line\n    return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "EMPTY-BODY: frontmatter and nothing after it"
+    ]
+  },
+  {
+    "name": "blank lines are not skipped, so a history heading under a blank line passes",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if line.strip():\n            return line\n",
+        "        if True:\n            return line\n"
+      ]
+    ],
+    "expect": [
+      "blank lines are skipped before the first line is read"
+    ]
+  },
+  {
+    "name": "the ⟳ correction-layer marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"⟳\", re.compile(r\"⟳\")),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `## ⟳ <date>` correction heading",
+      "HISTORY-FIRST: a bare `⟳` line"
+    ]
+  },
+  {
+    "name": "the History marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"History\", re.compile(r\"History\\b\", re.IGNORECASE)),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `## History` heading",
+      "HISTORY-FIRST: `History:` label"
+    ]
+  },
+  {
+    "name": "the History marker loses its word boundary, so `Historyless` is history",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "r\"History\\b\", re.IGNORECASE",
+        "r\"History\", re.IGNORECASE"
+      ]
+    ],
+    "expect": [
+      "NOT history: a word that merely starts with `History`"
+    ]
+  },
+  {
+    "name": "the Split-out-of marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"Split out of\", re.compile(r\"Split out of\\b\", re.IGNORECASE)),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `> Split out of` provenance"
+    ]
+  },
+  {
+    "name": "the `Was:` marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"Was:\", re.compile(r\"Was\\s*(\\(?\" + _DATE + r\"\\)?)?\\s*:\")),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `Was:` with a date",
+      "HISTORY-FIRST: `Was:` undated"
+    ]
+  },
+  {
+    "name": "the `Was:` marker no longer needs its colon, so `Washing` is history",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "re.compile(r\"Was\\s*(\\(?\" + _DATE + r\"\\)?)?\\s*:\")",
+        "re.compile(r\"Was\")"
+      ]
+    ],
+    "expect": [
+      "NOT history: a word that merely starts with `Was`"
+    ]
+  },
+  {
+    "name": "the date-then-Was marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"Was:\", re.compile(_DATE + r\"\\W{0,4}Was\\b\")),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a date, then `Was`"
+    ]
+  },
+  {
+    "name": "⛔ is no longer stripped as decoration",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_DECORATION = \"#>*_` \\t⛔⭐✅️\"",
+        "_DECORATION = \"#>*_` \\t⭐✅️\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a decorated `⛔ **⟳ …**` line"
+    ]
+  },
+  {
+    "name": "`#` is no longer stripped as decoration",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_DECORATION = \"#>*_` \\t⛔⭐✅️\"",
+        "_DECORATION = \">*_` \\t⛔⭐✅️\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `## History` heading"
+    ]
+  },
+  {
+    "name": "a marker anywhere in the line counts, not only at its start",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if pattern.match(stripped):\n",
+        "        if pattern.search(stripped):\n"
+      ]
+    ],
+    "expect": [
+      "NOT history: a rule that MENTIONS history later"
+    ]
+  },
+  {
+    "name": "`[[name]]` links are not read",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return {a or (b.strip() + \".md\") for a, b in _LINK_RE.findall(text)}\n",
+        "    return {a for a, b in _LINK_RE.findall(text) if a}\n"
+      ]
+    ],
+    "expect": [
+      "link_targets reads both link forms"
+    ]
+  },
+  {
+    "name": "a link the index makes to a missing file is not reported",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if target not in texts:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "MISSING: the index links a file that does not exist"
+    ]
+  },
+  {
+    "name": "an unreachable file is not reported",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if fname not in reached:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "UNLISTED: a file nothing reaches"
+    ]
+  },
+  {
+    "name": "hop 2 is not followed, so the slice-history shape is reported as unlisted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        reached = reached | {x for x in link_targets(texts[t]) if x in texts}\n",
+        "        reached = reached\n"
+      ]
+    ],
+    "expect": [
+      "a clean corpus has no violations"
+    ]
+  },
+  {
+    "name": "reachability becomes TRANSITIVE, past the stated two-hop bound",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    for t in sorted(reached):\n        reached = reached | {x for x in link_targets(texts[t]) if x in texts}\n",
+        "    frontier = sorted(reached)\n    while frontier:\n        t = frontier.pop()\n        new = {x for x in link_targets(texts[t]) if x in texts} - reached\n        reached = reached | new\n        frontier += sorted(new)\n"
+      ]
+    ],
+    "expect": [
+      "UNLISTED: THREE hops is not reachable (the bound is two)"
+    ]
+  },
+  {
+    "name": "a corpus with violations exits 0",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if found:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "main over a corpus with a history opener is rc 1"
+    ]
+  },
+  {
+    "name": "an absent corpus is checked as if present",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if index_text is None:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "a missing corpus is CANNOT RUN, not a pass"
+    ]
+  },
+  {
+    "name": "an index with no memory files is a vacuous pass",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if not texts:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "an index with no memory files is CANNOT RUN, not a vacuous pass"
+    ]
+  },
+  {
+    "name": "CANNOT RUN collapses onto OK",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "OK, VIOLATIONS, CANNOT_RUN = 0, 1, 2\n",
+        "OK, VIOLATIONS, CANNOT_RUN = 0, 1, 0\n"
+      ]
+    ],
+    "expect": [
+      "a missing corpus is CANNOT RUN, not a pass"
+    ]
+  },
+  {
+    "name": "an undecodable file escapes as a traceback",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    except (OSError, UnicodeDecodeError) as exc:\n",
+        "    except OSError as exc:\n"
+      ]
+    ],
+    "expect": [
+      "an undecodable file is CANNOT RUN, not a traceback"
+    ]
+  },
+  {
+    "name": "a CANNOT RUN names the module default, not the directory it examined",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "CANNOT RUN — the memory corpus at {shown} ",
+        "CANNOT RUN — the memory corpus at docs/memory "
+      ]
+    ],
+    "expect": [
+      "a CANNOT RUN names the directory it examined"
+    ]
+  },
+  {
+    "name": "an unknown argument is ignored",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return [a for a in argv if a != \"--self-test\"]\n",
+        "    return []\n"
+      ]
+    ],
+    "expect": [
+      "the unknown-argument predicate keeps only what is not `--self-test`"
+    ]
+  },
+  {
+    "name": "the OK message stops counting the files it checked",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "memory shape ok — {len(texts)} files",
+        "memory shape ok — files"
+      ]
+    ],
+    "expect": [
+      "an OK message counts the files it checked"
+    ]
+  }
+]

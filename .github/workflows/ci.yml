@@ -605,6 +605,17 @@ jobs:
       - name: check-memory-index-budget self-test
         run: python3 scripts/check-memory-index-budget.py --self-test
 
+      # The budget step above measures the index's SIZE; this one checks each memory file's SHAPE.
+      # A file must have its frontmatter, carry a `name` equal to its slug, be reachable from
+      # MEMORY.md within two hops, and OPEN with its current rule rather than a history marker (owner
+      # 2026-11-13, option B part 1; marker set derived from audit PR #585 — bound in the docstring).
+      # rc 2 is CANNOT RUN, never a pass. Like the budget step, it reads the COMMITTED tree only.
+      - name: Memory file shape
+        run: python3 scripts/check-memory-shape.py
+
+      - name: check-memory-shape self-test
+        run: python3 scripts/check-memory-shape.py --self-test
+
       # ⛔ THE ONLY GATE THAT READS BOTH SIDES OF THE MATCHER/HOOK SEAM, and it exists because two
       # LIVE defects lived there with 188 self-test cases and 91 mutations on the python side alone
       # (backlog #201, #202). The matcher defines the exit codes; `.claude/hooks/surface-recall.sh`

@@ -72,7 +72,7 @@ Callers: `.github/workflows/ci.yml`, next to `check-memory-index-budget.py`.
 
 Usage:
     python3 scripts/check-memory-shape.py
-    python3 scripts/check-memory-shape.py --self-test
+    python3 scripts/check-memory-shape.py --self-test  # 48 cases
 """
 from __future__ import annotations
 
@@ -398,6 +398,7 @@ def _self_test_body() -> int:
     check("link_targets reads both link forms",
           link_targets("[a](x.md) and [[y]] and [z](http://e.com) and [w](v.md#h)"),
           {"x.md", "y.md"})
+    check("link_targets finds nothing in text without links", link_targets("plain [x] text"), set())
     check("parse_frontmatter strips quotes and reads metadata.type",
           parse_frontmatter('---\nname: "n"\ndescription: \'d\'\nmetadata:\n  type: user\n---\nB')[0],
           {"name": "n", "description": "d", "metadata.type": "user"})
@@ -409,12 +410,22 @@ def _self_test_body() -> int:
           ["NAME beta.md"])
     check("the unknown-argument predicate keeps only what is not `--self-test`",
           unknown_args(["--self-test", "--bogus", "x"]), ["--bogus", "x"])
+    check("the unknown-argument predicate is empty for the accepted forms",
+          (unknown_args([]), unknown_args(["--self-test"])), ([], []))
 
     # --- driving main() over constructed worlds: rc in all three directions ----------------------
-    def run(argv: list[str], memdir: pathlib.Path) -> tuple[int, str]:
+    # A raise is recorded as the case's `got`, never left to crash the suite: the mutation harness
+    # reads a crash before `[FAIL] <case>` as no kill at all. The wanted rcs are LITERALS (0, 1, 2),
+    # so a mutant that collapses CANNOT_RUN onto OK cannot satisfy a case that compares the constants.
+    # Each case calls `main` at its OWN call site, so `check-fixture-variation` sees argv and memdir
+    # take different values rather than one helper parameter.
+    def run(call) -> tuple[object, str]:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            rc = main(argv, memdir=memdir)
+            try:
+                rc: object = call()
+            except Exception as exc:  # noqa: BLE001 — reported as the case's result
+                rc = f"RAISED {type(exc).__name__}"
         return rc, buf.getvalue()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -432,22 +443,22 @@ def _self_test_body() -> int:
         (dirty / "beta.md").write_text(_mem("beta", "## ⟳ 2026-01-01 — old\n"), encoding="utf-8")
         (bare / INDEX_NAME).write_text(idx, encoding="utf-8")
 
-        rc, out = run([], clean)
-        check("main over a clean corpus is rc 0", rc, OK)
+        rc, out = run(lambda: main([], memdir=clean))
+        check("main over a clean corpus is rc 0", rc, 0)
         check("an OK message counts the files it checked", "3 files" in out, True)
-        rc, out = run([], dirty)
-        check("main over a corpus with a history opener is rc 1", rc, VIOLATIONS)
+        rc, out = run(lambda: main([], memdir=dirty))
+        check("main over a corpus with a history opener is rc 1", rc, 1)
         check("the FAIL message names the file and the rule", "HISTORY-FIRST beta.md" in out, True)
-        rc, out = run([], absent)
-        check("a missing corpus is CANNOT RUN, not a pass", rc, CANNOT_RUN)
+        rc, out = run(lambda: main([], memdir=absent))
+        check("a missing corpus is CANNOT RUN, not a pass", rc, 2)
         check("a CANNOT RUN names the directory it examined", str(absent) in out, True)
-        rc, out = run([], bare)
-        check("an index with no memory files is CANNOT RUN, not a vacuous pass", rc, CANNOT_RUN)
-        rc, out = run(["--bogus"], clean)
-        check("an unknown argument is CANNOT RUN", (rc, "unrecognised" in out), (CANNOT_RUN, True))
+        rc, out = run(lambda: main([], memdir=bare))
+        check("an index with no memory files is CANNOT RUN, not a vacuous pass", rc, 2)
+        rc, out = run(lambda: main(["--bogus"], memdir=clean))
+        check("an unknown argument is CANNOT RUN", (rc, "unrecognised" in out), (2, True))
         (dirty / "beta.md").write_bytes(b"---\nname: beta\n\xff\xfe\n---\n")
-        rc, out = run([], dirty)
-        check("an undecodable file is CANNOT RUN, not a traceback", rc, CANNOT_RUN)
+        rc, out = run(lambda: main([], memdir=dirty))
+        check("an undecodable file is CANNOT RUN, not a traceback", rc, 2)
 
     check("MEMDIR is the repo's docs/memory", MEMDIR, ROOT / "docs" / "memory")
 

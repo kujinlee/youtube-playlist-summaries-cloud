@@ -2208,6 +2208,10 @@ EXPECTED_MUTATIONS = {
     # either count. The docstring argued bytes-vs-chars was load-bearing and no case witnessed it.
     "scripts/check-memory-index-budget.py": 28,
     "scripts/check-memory-link.py": 8,
+    # 2026-11-19 (memory hygiene option B, part 1): the memory-shape guard joins with 36 — one or more
+    # per rule, per history marker, per CANNOT RUN arm, and the two-hop reachability bound in both
+    # directions (hop 2 dropped; reachability made transitive).
+    "scripts/check-memory-shape.py": 36,
     # backlog #410 (2026-10-30): the stalled-work detector joins with 31 entries — 22, plus 9 for the
     # untrusted-gh-text fold (cross-repo PRs dropped, every printed gh string held to a shape).
     # ⟳ r1 fold: 31 → 58. NINE retired WITH THEIR SUBJECT — the no-upstream exclusion, the age window,
