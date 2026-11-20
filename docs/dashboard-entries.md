@@ -21086,3 +21086,13 @@ sub-area — `(tooling/speed)` 48, `(tooling/review)` 30, `(tooling/mutation)` 4
 `docs/backlog.md`: only the Bundle cell of those 279 rows changed, `(tooling)` → `(tooling/<sub>)`; a second tag such
 as `(comprehensibility/explainers)` is kept. Closed `(tooling)` rows are unchanged and stay under the parent node by
 `nearest_claim`. Same mechanism as `status-visibility`/`feature-map`; the page is regenerated from these sources.
+
+## 2026-11-20
+The marketplace experiment now has a seed repository its runs are scored against (slice E). Its four review rounds kept
+finding gaps in the seed's own self-test, each one caused by the previous fix, so an architecture review was convened
+before merging. It found one cause behind all of them, and the redesign is filed rather than done here: no shipped fact
+is wrong, and the redesign changes the scored facts file, so it owes its own review.
+<!--tech-->
+PR #604 (harness-ships-elsewhere slice E). Phase 6: `docs/reviews/architecture-review-2026-11-20-mkt-seed-repo.md` —
+13 of 20 one-sided edits of the seed pass the self-test; a declare-once redesign turns all 20 red. Filed as backlog
+#678, superseding #676.
