@@ -20,6 +20,8 @@ WHAT FAILS (rc 1), one rule code per line of output:
   NAME          `name` is not the filename's slug (`foo-bar.md` must say `name: foo-bar`)
   MISSING       `MEMORY.md` links a memory file that does not exist
   UNLISTED      a file is not REACHABLE from `MEMORY.md` within two hops (see the bound below)
+  CANNOT-READ   a MISSING or UNLISTED verdict that depends on a link a reader may not see (see
+                THE LINK READER below); the message names the remedy
   HISTORY-FIRST the first non-blank body line after the frontmatter is a history marker
   EMPTY-BODY    a file has frontmatter and nothing after it, so it opens with no rule at all
 
@@ -66,10 +68,34 @@ rule fails 57 of 195 files today (measured 2026-11-19), and by design: `slice-hi
 size limit. So a file passes when MEMORY.md links it, or when a file that MEMORY.md links links it
 (two hops). Measured 2026-11-19: 138 at hop 1, 57 at hop 2, 0 unreachable. A link is
 `](name.md)` or `[[name]]`, read after dropping a `#anchor`, a `"title"`, `<…>`, a leading `./`
-and a wiki `|alias` (r1, Claude), and never inside an HTML comment (r1, Codex: a reader cannot
-follow it). A link inside a CODE SPAN or fence still counts: a reader can see and follow it. A `<!--`
-or `-->` INSIDE a code span or a fenced block is literal text, not a delimiter (r2, Codex). An
-INDENTED code block (four spaces) is not recognised as code, so a `<!--` in one still opens a comment.
+and a wiki `|alias` (r1, Claude).
+
+⛔ THE LINK READER BRACKETS; IT DOES NOT PARSE (Phase 6, 2026-11-20,
+`docs/reviews/architecture-review-2026-11-20-memory-link-reader.md`). Whether a reader sees a link
+depends on block structure, on how an HTML parser reads what the renderer passes through, and on
+which reader is meant: the harness loads MEMORY.md as raw text, a rendered page hides a comment. No
+regex answers that, and three review rounds of one regex each caused the next round's finding. So:
+  - a link is UNCERTAIN when it overlaps text from the file's FIRST `<!` or `<?` to its end, or the
+    rest of a line from any run of three backticks or tildes (a fence info string). Otherwise SURE.
+  - reachability is computed twice: with the SURE links only (lower bound) and with every link
+    (upper bound). MISSING is missing at the lower bound, UNLISTED unreachable at the upper; both
+    are then certain, because reachability is monotone in the link set. A verdict the two bounds
+    disagree on is CANNOT-READ (rc 1), never a pass.
+  - measured 2026-11-20 against `markdown-it` 14.2.0 (`html: true`) read back with Python's
+    `html.parser`, over 300,000 generated documents (the review's fuzz corpus, seeds 11-22): 0 sure
+    links the page hides, 0 shown links the reader misses. The reader this replaced counted a hidden
+    link in 31,560 of them, silently. On the memory corpus the change added 0 violations.
+⚠ THE READER'S BOUND, STATED:
+  - it refuses more than it must: 124,890 of those 300,000 documents hold an uncertain link, and the
+    link was in fact visible in 76,266 (both re-measured on this script, 2026-11-20). A literal `<!` or `<?` in a code span makes every later link
+    uncertain; that is paid only where a verdict depends on one (the corpus pays 0 today).
+  - raw HTML TAGS (`<div `, `<script>`, an attribute) and link reference definitions also hide links,
+    and are NOT regions: making every `<tag` an opener refuses 65 valid files of the real corpus,
+    which is full of `<path>` and `<N>` placeholders (the review's measurement, 2026-11-20).
+  - a link built from entities (`&#91;&#91;a]]`) or split by a backslash (`[\\[a]]`) is not read at
+    either bound: loud toward UNLISTED, but a dead one is a quiet missed MISSING. Not probed.
+  - the oracle is `markdown-it` + `html.parser`, not GitHub's renderer or a browser.
+
 MISSING is checked for MEMORY.md's own links only. Broken links inside
 other memory files (10 measured 2026-11-19, several of them deliberate placeholders or paths outside
 the folder) are not this check's subject.
@@ -86,13 +112,14 @@ Callers: `.github/workflows/ci.yml`, next to `check-memory-index-budget.py`.
 
 Usage:
     python3 scripts/check-memory-shape.py
-    python3 scripts/check-memory-shape.py --self-test  # 104 cases
+    python3 scripts/check-memory-shape.py --self-test  # 134 cases
 """
 from __future__ import annotations
 
 import pathlib
 import re
 import sys
+from typing import Callable
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MEMDIR = ROOT / "docs" / "memory"
@@ -129,22 +156,20 @@ _HEADING_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
 # rather than silently not a link.
 _MD_LINK_RE = re.compile(r"\]\(([^)]*)\)")
 _WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
-# ⟳ r1 (Codex MAJOR): a link inside an HTML comment is invisible to a reader, so it reaches nothing.
-# An unclosed `<!--` comments out the rest of the text, as it does in HTML.
-# ⟳ r2 (Codex MAJOR + MINOR, both caused by the r1 fold): a `<!--` or `-->` inside a CODE SPAN or a
-# fenced block is literal text, not a delimiter. One scan matches the LEFTMOST of a fenced block, an
-# inline code span or a comment, so a delimiter inside code is consumed with the code (and kept), and
-# a backtick inside a comment is consumed with the comment (and dropped). A span closes on a backtick
-# run of the SAME length, and never across a blank line; an opener with no closer is literal.
-_COMMENT_RE = re.compile(
-    r"^[ ]{0,3}(?P<fence>`{3,}|~{3,})[^\n]*\n.*?(?:^[ ]{0,3}(?P=fence)[`~]*[ \t]*$|\Z)"
-    r"|(?<!`)(?P<ticks>`+)(?!`)(?:(?!\n[ \t]*\n).)+?(?<!`)(?P=ticks)(?!`)"
-    r"|<!--.*?(?:-->|\Z)", re.DOTALL | re.MULTILINE)
-
-
-def _keep_code(match: re.Match[str]) -> str:
-    """PURE. A `_COMMENT_RE` match is dropped when it is a comment, and kept whole when it is code."""
-    return "" if match.group(0).startswith("<!--") else match.group(0)
+# ⟳ 2026-11-20, Phase 6 fold (docs/reviews/architecture-review-2026-11-20-memory-link-reader.md):
+# BRACKET, DO NOT PARSE. Rounds 1-3 grew a regex that approximated CommonMark (`_COMMENT_RE`, deleted)
+# and each round's fold caused the next round's finding. A link is UNCERTAIN when it overlaps a
+# region a reader MIGHT not see, and SURE otherwise. The regions only ever widen: a wider region
+# moves a link from sure to uncertain, which can only turn a pass into a loud CANNOT-READ.
+#   - from the FIRST `<!` or `<?` to the end of the text: a comment, a bogus comment, a declaration
+#     or a processing instruction, closed or not (a container or a `>` can end it before its closer);
+#   - the rest of a line from its first run of three backticks or tildes: a fence's info string,
+#     which a renderer emits as an attribute.
+# The two are found by SEPARATE scans, so one construct can never consume the other's opener: one
+# leftmost scan over all of them is the round 2 defect, reproduced in the review's own prototype
+# (refutation 3).
+_OPENER_RE = re.compile(r"<[!?]")
+_FENCE_TAIL_RE = re.compile(r"(?:`{3}|~{3})[^\n]*")
 
 # ⟳ r1 (Codex MAJOR): a frontmatter value this reader would accept but YAML would not. Measured
 # 2026-11-20 over the live corpus: 189 double-quoted values, 796 plain, 0 single-quoted, 0 flow,
@@ -263,21 +288,48 @@ def history_marker(line: str) -> str | None:
     return None
 
 
-def link_targets(text: str) -> set[str]:
-    """PURE. Every `](x.md)` and `[[x]]` target in `text` outside an HTML comment, as a filename."""
-    visible = _COMMENT_RE.sub(_keep_code, text)
-    out: set[str] = set()
-    for raw in _MD_LINK_RE.findall(visible):
-        parts = raw.strip().split()
+def uncertain_regions(text: str) -> list[tuple[int, int]]:
+    """PURE. The (start, end) spans of `text` a reader might not see (see `_OPENER_RE`)."""
+    opener = _OPENER_RE.search(text)
+    regions = [(opener.start(), len(text))] if opener else []
+    return regions + [m.span() for m in _FENCE_TAIL_RE.finditer(text)]
+
+
+def link_reading(text: str) -> tuple[set[str], set[str]]:
+    """PURE. -> (sure, uncertain): every `](x.md)` and `[[x]]` target in `text`, as a filename.
+    A target is SURE when one of its links lies wholly outside every `uncertain_regions` span, and
+    UNCERTAIN when every link to it overlaps one. The two forms are scanned SEPARATELY, so the `]]`
+    of a wiki link can also close a markdown link (`[[a]](b.md)` links both)."""
+    regions = uncertain_regions(text)
+    sure: set[str] = set()
+    uncertain: set[str] = set()
+
+    def read(match: re.Match[str], target: str) -> None:
+        hidden = any(match.start() < end and start < match.end() for start, end in regions)
+        (uncertain if hidden else sure).add(target)
+
+    for m in _MD_LINK_RE.finditer(text):
+        parts = m.group(1).strip().split()
         target = parts[0].strip("<>").split("#", 1)[0] if parts else ""
         target = target[2:] if target.startswith("./") else target
         if target.endswith(".md"):
-            out.add(target)
-    for raw in _WIKI_LINK_RE.findall(visible):
-        name = raw.split("|", 1)[0].split("#", 1)[0].strip()
+            read(m, target)
+    for m in _WIKI_LINK_RE.finditer(text):
+        name = m.group(1).split("|", 1)[0].split("#", 1)[0].strip()
         if name:
-            out.add(name + ".md")
-    return out
+            read(m, name + ".md")
+    return sure, uncertain - sure
+
+
+def sure_links(text: str) -> set[str]:
+    """PURE. The LOWER bound: the targets a reader certainly sees."""
+    return link_reading(text)[0]
+
+
+def every_link(text: str) -> set[str]:
+    """PURE. The UPPER bound: every target, seen or not."""
+    sure, uncertain = link_reading(text)
+    return sure | uncertain
 
 
 def file_violations(fname: str, text: str) -> list[str]:
@@ -309,19 +361,35 @@ def file_violations(fname: str, text: str) -> list[str]:
     return out
 
 
-def index_violations(index_text: str, texts: dict[str, str]) -> list[str]:
-    """PURE. MISSING (the index links a file that is not there) and UNLISTED (two-hop reachability)."""
-    out: list[str] = []
-    hop1 = link_targets(index_text)
-    for target in sorted(hop1):
-        if target not in texts:
-            out.append(f"MISSING {INDEX_NAME}: links `{target}`, which does not exist")
+def reachability(index_text: str, texts: dict[str, str],
+                 links: Callable[[str], set[str]]) -> tuple[set[str], set[str]]:
+    """PURE. -> (missing, unreached) for a reader who follows exactly the links `links` returns:
+    the index's targets that do not exist, and the files not reached within two hops."""
+    hop1 = links(index_text)
+    missing = {target for target in hop1 if target not in texts}
     reached = {t for t in hop1 if t in texts}
     for t in sorted(reached):
-        reached = reached | {x for x in link_targets(texts[t]) if x in texts}
-    for fname in sorted(texts):
-        if fname not in reached:
-            out.append(f"UNLISTED {fname}: not linked from {INDEX_NAME}, nor from any file it links")
+        reached = reached | {x for x in links(texts[t]) if x in texts}
+    return missing, {fname for fname in texts if fname not in reached}
+
+
+_REMEDY = ("move the link above the file's first `<!`/`<?`, or off the line holding a run of "
+           "three backticks or tildes")
+
+
+def index_violations(index_text: str, texts: dict[str, str]) -> list[str]:
+    """PURE. MISSING and UNLISTED, each computed at BOTH bounds. Reachability is monotone in the link
+    set, so a verdict the bounds agree on holds for every reading in between, and only that verdict
+    is reported. Where they disagree the answer depends on how the text renders: CANNOT-READ."""
+    missing_lo, unreached_lo = reachability(index_text, texts, sure_links)
+    missing_hi, unreached_hi = reachability(index_text, texts, every_link)
+    out = [f"MISSING {INDEX_NAME}: links `{t}`, which does not exist" for t in sorted(missing_lo)]
+    out += [f"CANNOT-READ {INDEX_NAME}: links `{t}`, which does not exist, in text a reader may not "
+            f"see; {_REMEDY}" for t in sorted(missing_hi - missing_lo)]
+    out += [f"UNLISTED {f}: not linked from {INDEX_NAME}, nor from any file it links"
+            for f in sorted(unreached_hi)]
+    out += [f"CANNOT-READ {f}: reached only through a link a reader may not see; {_REMEDY}"
+            for f in sorted(unreached_lo - unreached_hi)]
     return out
 
 
@@ -537,25 +605,87 @@ def _self_test_body() -> int:
     check("UNLISTED: THREE hops is not reachable (the bound is two)", codes(idx, t), ["UNLISTED"])
 
     # ⟳ r1 (Codex MAJOR): reached ONLY through a commented-out link is not reached.
+    # ⟳ 2026-11-20 Phase 6 fold, CHANGED ON PURPOSE: UNLISTED -> CANNOT-READ. Whether a reader sees a
+    # link in a comment depends on the reader (a rendered page, or the raw text the harness loads).
     idx, t = world()
     t["delta.md"] = _mem("delta")
     t["alpha.md"] = _mem("alpha", "**The rule:** x. See [[gamma]]. <!-- [[delta]] -->\n")
-    check("UNLISTED: a file linked only inside an HTML comment", codes(idx, t), ["UNLISTED"])
+    check("CANNOT-READ: a file linked only inside an HTML comment", codes(idx, t), ["CANNOT-READ"])
 
     # ⟳ r1 (Claude MINOR): an anchored, titled or aliased index link to a missing file is MISSING.
     for form in ("[x](gone.md#h)", '[x](gone.md "t")', "[[gone|alias]]", "[[gone#h]]"):
         idx, t = world()
         check(f"MISSING: an index link of the form {form}", codes(idx + f"- {form}\n", t), ["MISSING"])
     # ⟳ r2 (Codex MAJOR + MINOR, caused by the r1 fold): a comment delimiter inside code is literal.
+    # ⟳ 2026-11-20 Phase 6 fold, CHANGED ON PURPOSE: the reader no longer knows code spans or fences,
+    # so a `<!--` anywhere makes every later link uncertain. Each verdict that then depends on those
+    # links is CANNOT-READ — loud, with the remedy — where round 2 made it pass. That is the price the
+    # review states (section 4); the corpus pays 0 of it.
     idx, t = world()
-    check("a `<!--` inside a code span does not hide the links after it (the Codex input)",
-          codes("# Memory Index\n\n- `<!--` [[alpha]]\n- [[beta]]\n", t), [])
+    check("CANNOT-READ: a `<!--` inside a code span makes the links after it uncertain (the Codex input)",
+          codes("# Memory Index\n\n- `<!--` [[alpha]]\n- [[beta]]\n", t),
+          ["CANNOT-READ", "CANNOT-READ", "CANNOT-READ"])
     idx, t = world()
-    check("a link between two code-span delimiters is visible, so a dead one is MISSING",
-          codes(idx + "- `<!--` [[gone]] `-->`\n", t), ["MISSING"])
+    check("CANNOT-READ: a dead link between two code-span delimiters is missing only if seen",
+          codes(idx + "- `<!--` [[gone]] `-->`\n", t), ["CANNOT-READ"])
     idx, t = world()
-    check("a `<!--` inside a fenced block (with a blank line in it) hides nothing after the fence",
-          codes("# Memory Index\n\n```html\n<!--\n\nx\n```\n- [A](alpha.md)\n- [[beta]]\n", t), [])
+    check("CANNOT-READ: a `<!--` inside a fenced block makes the links after the fence uncertain",
+          codes("# Memory Index\n\n```html\n<!--\n\nx\n```\n- [A](alpha.md)\n- [[beta]]\n", t),
+          ["CANNOT-READ", "CANNOT-READ", "CANNOT-READ"])
+
+    # ⟳ 2026-11-20, Phase 6 fold (docs/reviews/architecture-review-2026-11-20-memory-link-reader.md):
+    # the review's inputs. Each is a file's ONLY link to `t1.md`, so a reader that counts it passes in
+    # silence; eight of the nine gave rc 0 at `ab5cccb2`. The first four are the four silent classes
+    # of its differential (section 2), the rest its refutation rows 1, 3, 4 and 5 (section 4).
+    for label, hidden in (
+            ("a fence INFO STRING", "```[[t1]]"),
+            ("a bogus comment `<?…`", "<?x[[t1]]"),
+            ("a bogus comment `<!…`", "<!x [[t1]]"),
+            ("span and block structure", "`# \n<!--`[[t1]]"),
+            ("an escaped backtick", "\\`    <!--`[[t1]]# ``````> ``-->"),
+            ("refutation 1, a comment spliced out of a link",
+             "[x](t1<!-- -->.md) <!-- [y](t1.md) -->"),
+            ("refutation 3, one construct eats another's opener", "<!\\```\n<!--``>\n>[[t1]]"),
+            ("refutation 4, a container ends before the `-->`", " - <!--\n--> >[[t1]]- "),
+            ("refutation 5, a blockquote marker is not a closing `>`", "> <?\\\n>- [[t1]]1. <!``")):
+        idx, t = world()
+        t["t1.md"] = _mem("t1")
+        check(f"CANNOT-READ: a file reached only through {label}", codes(idx + hidden + "\n", t),
+              ["CANNOT-READ"])
+        idx, t = world()
+        t["t1.md"] = _mem("t1")
+        t["alpha.md"] = _mem("alpha", f"**The rule:** x. See [[gamma]].\n{hidden}\n")
+        check(f"CANNOT-READ: a file reached at hop 2 only through {label}", codes(idx, t),
+              ["CANNOT-READ"])
+    idx, t = world()
+    check("CANNOT-READ: a link after a `<!` to a file that does not exist (missing only if seen)",
+          codes(idx + "<!-- [[gone]] -->\n", t), ["CANNOT-READ"])
+    idx, t = world()
+    check("an uncertain link to a file reachable ANYWAY is no violation: the bounds agree",
+          codes(idx + "<!-- [[alpha]] [[gamma]] -->\n", t), [])
+    idx, t = world()
+    t["t1.md"] = _mem("t1")
+    check("a link BEFORE the first `<!` on its line stays sure",
+          codes(idx + "- [[t1]] <!-- x -->\n", t), [])
+    idx, t = world()
+    t["t1.md"] = _mem("t1")
+    check("the fence region ends at its line: a link on the NEXT line is sure",
+          codes(idx + "```html\n[[t1]]\n```\n", t), [])
+    idx, t = world()
+    t["t1.md"] = _mem("t1")
+    check("a link BEFORE a fence run on its line is sure", codes(idx + "- [[t1]] ```x\n", t), [])
+    idx, t = world()
+    t["t1.md"] = _mem("t1")
+    check("a TILDE fence line is a region too", codes(idx + "~~~[[t1]]\n", t), ["CANNOT-READ"])
+    idx, t = world()
+    check("a dead link the bounds agree on is MISSING, not CANNOT-READ: both forms after a wiki link",
+          codes(idx + "- [[gone]](lost.md)\n", t), ["MISSING", "MISSING"])
+    msgs = index_violations(world()[0] + "<!--\n[[t1]]\n", {**world()[1], "t1.md": _mem("t1")})
+    check("a CANNOT-READ message names the file and the remedy",
+          [("CANNOT-READ t1.md:" in m, "move the link" in m) for m in msgs], [(True, True)])
+    msgs = index_violations(world()[0] + "<!--\n[[gone]]\n", world()[1])
+    check("a CANNOT-READ for a missing target names the target and the remedy",
+          [("`gone.md`" in m, "move the link" in m) for m in msgs], [(True, True)])
 
     idx, t = world()
     idx = "# Memory Index\n\n- [A](./alpha.md#top) — a\n- [[beta|B]] — b\n"
@@ -631,23 +761,33 @@ def _self_test_body() -> int:
 
     # --- the pieces, directly ----------------------------------------------------------------
     # ⟳ r1 (Claude MINOR): `v.md#h` now counts as a link to `v.md` — the anchor is dropped.
-    check("link_targets reads both link forms",
-          link_targets("[a](x.md) and [[y]] and [z](http://e.com) and [w](v.md#h)"),
-          {"x.md", "y.md", "v.md"})
-    check("link_targets normalises a title, `<…>`, `./`, an alias and a wiki anchor",
-          link_targets('[a](x.md "T") [b](<y.md>) [c](./z.md) [[w|W]] [[u#h]] [[#only-anchor]]'),
-          {"x.md", "y.md", "z.md", "w.md", "u.md"})
+    check("link_reading reads both link forms",
+          link_reading("[a](x.md) and [[y]] and [z](http://e.com) and [w](v.md#h)"),
+          ({"x.md", "y.md", "v.md"}, set()))
+    check("link_reading normalises a title, `<…>`, `./`, an alias and a wiki anchor",
+          link_reading('[a](x.md "T") [b](<y.md>) [c](./z.md) [[w|W]] [[u#h]] [[#only-anchor]]'),
+          ({"x.md", "y.md", "z.md", "w.md", "u.md"}, set()))
     # ⟳ r1 (Codex MAJOR): a link inside an HTML comment is not a link a reader can follow.
-    check("link_targets ignores links inside HTML comments, closed or not",
-          link_targets("[[a]] <!-- [[b]] --> [[c]] <!-- [d](d.md)"), {"a.md", "c.md"})
-    # ⟳ r2: a backtick with no closer, or one past a blank line, is literal, so the `<!--` is real.
-    check("link_targets: a backtick with no closing run opens no code span",
-          link_targets("x ` <!-- [[b]]"), set())
-    check("link_targets: a code span never crosses a blank line",
-          link_targets("`a\n\n<!-- [[b]] `"), set())
-    check("link_targets: a link INSIDE a code span or a fenced block still counts (stated bound)",
-          link_targets("see `[[a]]`\n```\n[[b]]\n```\n"), {"a.md", "b.md"})
-    check("link_targets finds nothing in text without links", link_targets("plain [x] text"), set())
+    # ⟳ 2026-11-20 Phase 6 fold, CHANGED ON PURPOSE: nothing is stripped. Everything after the first
+    # `<!` is UNCERTAIN, including `[[c]]` after the comment closes (a container may have ended it).
+    check("link_reading: every link after the first `<!` is uncertain, closed comment or not",
+          link_reading("[[a]] <!-- [[b]] --> [[c]] <!-- [d](d.md)"), ({"a.md"}, {"b.md", "c.md", "d.md"}))
+    check("link_reading: a target linked once SURE and once uncertain is sure",
+          link_reading("[[a]] <!-- [[a]] [[b]] -->"), ({"a.md"}, {"b.md"}))
+    check("link_reading: a link that STRADDLES the opener is uncertain",
+          link_reading('[x](a.md "<!--") [[b|<?]]'), (set(), {"a.md", "b.md"}))
+    check("link_reading: a link INSIDE a code span or a fenced block is sure (stated bound)",
+          link_reading("see `[[a]]`\n```\n[[b]]\n```\n"), ({"a.md", "b.md"}, set()))
+    check("link_reading: a fence region is the rest of ITS line, on every line that has a run",
+          link_reading("[[a]] ~~~ [[b]]\n[[c]] ``` x ```` [[d]]\n[[e]]"),
+          ({"a.md", "c.md", "e.md"}, {"b.md", "d.md"}))
+    check("link_reading: a wiki link's `]]` also closes a markdown link, so both are read",
+          link_reading("[[a]](b.md)"), ({"a.md", "b.md"}, set()))
+    check("link_reading finds nothing in text without links", link_reading("plain [x] text"),
+          (set(), set()))
+    check("uncertain_regions: the first `<!` or `<?` runs to the end; a fence run to its line's end",
+          (uncertain_regions("ab<?c<!d"), uncertain_regions("x\n```y\nz"), uncertain_regions("x")),
+          ([(2, 8)], [(2, 6)], []))
     check("parse_frontmatter strips quotes and reads metadata.type",
           parse_frontmatter('---\nname: "n"\ndescription: \'d\'\nmetadata:\n  type: user\n---\nB')[0],
           {"name": "n", "description": "d", "metadata.type": "user"})

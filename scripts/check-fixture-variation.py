@@ -893,9 +893,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # by a second call site rather than exempted.
     # ⟳ 2026-11-20, PR #605 review r1 fold: + `scalar_problem.value` (the YAML-scalar check), re-derived
     # with `analyse()`: 8 keys, no findings.
-    "check-memory-shape.py": ('link_targets.text', 'main.argv', 'main.memdir', 'parse_frontmatter.text',
+    # ⟳ 2026-11-20, PR #605 Phase 6 fold (the link reader brackets instead of parsing): `link_targets`
+    # is gone; + `link_reading.text`, `uncertain_regions.text`, `index_violations.index_text` and
+    # `index_violations.texts` (the CANNOT-READ message cases call it directly). Re-derived with
+    # `analyse()`: 11 keys, no findings.
+    "check-memory-shape.py": ('index_violations.index_text', 'index_violations.texts',
+                              'link_reading.text', 'main.argv', 'main.memdir', 'parse_frontmatter.text',
                               'scalar_problem.value', 'shape_violations.index_text',
-                              'shape_violations.texts', 'unknown_args.argv'),
+                              'shape_violations.texts', 'uncertain_regions.text', 'unknown_args.argv'),
     "check-memory-link.py": ('link_verdict.is_symlink', 'link_verdict.link_exists', 'link_verdict.n_entries', 'link_verdict.target', 'link_verdict.tracked', 'slug_for.repo'),
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher, pinned in the commit that creates it
     # — this guard REFUSED the file until it was, the fifth time it has caught a new script

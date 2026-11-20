@@ -306,12 +306,12 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    for raw in _WIKI_LINK_RE.findall(visible):\n",
-        "    for raw in []:\n"
+        "    for m in _WIKI_LINK_RE.finditer(text):\n",
+        "    for m in []:\n"
       ]
     ],
     "expect": [
-      "link_targets reads both link forms"
+      "link_reading reads both link forms"
     ]
   },
   {
@@ -319,8 +319,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "        if target not in texts:\n",
-        "        if False:\n"
+        "    missing = {target for target in hop1 if target not in texts}\n",
+        "    missing = set()\n"
       ]
     ],
     "expect": [
@@ -332,8 +332,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "        if fname not in reached:\n",
-        "        if False:\n"
+        "    return missing, {fname for fname in texts if fname not in reached}\n",
+        "    return missing, set()\n"
       ]
     ],
     "expect": [
@@ -345,7 +345,7 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "        reached = reached | {x for x in link_targets(texts[t]) if x in texts}\n",
+        "        reached = reached | {x for x in links(texts[t]) if x in texts}\n",
         "        reached = reached\n"
       ]
     ],
@@ -358,8 +358,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    for t in sorted(reached):\n        reached = reached | {x for x in link_targets(texts[t]) if x in texts}\n",
-        "    frontier = sorted(reached)\n    while frontier:\n        t = frontier.pop()\n        new = {x for x in link_targets(texts[t]) if x in texts} - reached\n        reached = reached | new\n        frontier += sorted(new)\n"
+        "    for t in sorted(reached):\n        reached = reached | {x for x in links(texts[t]) if x in texts}\n",
+        "    frontier = sorted(reached)\n    while frontier:\n        t = frontier.pop()\n        new = {x for x in links(texts[t]) if x in texts} - reached\n        reached = reached | new\n        frontier += sorted(new)\n"
       ]
     ],
     "expect": [
@@ -575,30 +575,30 @@
     ]
   },
   {
-    "name": "links inside HTML comments count again",
+    "name": "links after a `<!` are SURE again (the comment/declaration region is gone)",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    visible = _COMMENT_RE.sub(_keep_code, text)\n",
-        "    visible = text\n"
+        "    regions = [(opener.start(), len(text))] if opener else []\n",
+        "    regions = []\n"
       ]
     ],
     "expect": [
-      "UNLISTED: a file linked only inside an HTML comment",
-      "link_targets ignores links inside HTML comments, closed or not"
+      "CANNOT-READ: a file linked only inside an HTML comment",
+      "link_reading: every link after the first `<!` is uncertain, closed comment or not"
     ]
   },
   {
-    "name": "an UNCLOSED HTML comment no longer hides the rest of the text",
+    "name": "the `<!`/`<?` region ends at the opener instead of running to the end of the text",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    r\"|<!--.*?(?:-->|\\Z)\", re.DOTALL | re.MULTILINE)",
-        "    r\"|<!--.*?-->\", re.DOTALL | re.MULTILINE)"
+        "[(opener.start(), len(text))]",
+        "[opener.span()]"
       ]
     ],
     "expect": [
-      "link_targets ignores links inside HTML comments, closed or not"
+      "CANNOT-READ: a file reached only through refutation 4, a container ends before the `-->`"
     ]
   },
   {
@@ -619,8 +619,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "        parts = raw.strip().split()\n",
-        "        parts = [raw.strip()]\n"
+        "        parts = m.group(1).strip().split()\n",
+        "        parts = [m.group(1).strip()]\n"
       ]
     ],
     "expect": [
@@ -632,8 +632,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "        name = raw.split(\"|\", 1)[0].split(\"#\", 1)[0].strip()\n",
-        "        name = raw.split(\"#\", 1)[0].strip()\n"
+        "        name = m.group(1).split(\"|\", 1)[0].split(\"#\", 1)[0].strip()\n",
+        "        name = m.group(1).split(\"#\", 1)[0].strip()\n"
       ]
     ],
     "expect": [
@@ -650,7 +650,7 @@
       ]
     ],
     "expect": [
-      "link_targets normalises a title, `<\u2026>`, `./`, an alias and a wiki anchor"
+      "link_reading normalises a title, `<\u2026>`, `./`, an alias and a wiki anchor"
     ]
   },
   {
@@ -971,69 +971,224 @@
     ]
   },
   {
-    "name": "a fenced block is not code, so a `<!--` in it opens a comment",
+    "name": "the `<?` arm is dropped: a processing instruction opens no region",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    r\"^[ ]{0,3}(?P<fence>`{3,}|~{3,})[^\\n]*\\n.*?(?:^[ ]{0,3}(?P=fence)[`~]*[ \\t]*$|\\Z)\"\n    r\"|(?<!`)",
-        "    r\"(?<!`)"
+        "_OPENER_RE = re.compile(r\"<[!?]\")",
+        "_OPENER_RE = re.compile(r\"<!\")"
       ]
     ],
     "expect": [
-      "a `<!--` inside a fenced block (with a blank line in it) hides nothing after the fence"
+      "CANNOT-READ: a file reached only through a bogus comment `<?\u2026`"
     ]
   },
   {
-    "name": "an inline code span is not code, so a `<!--` in it opens a comment",
+    "name": "only a real `<!--` opens a region, not a bogus `<!x`",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    r\"|(?<!`)(?P<ticks>`+)(?!`)(?:(?!\\n[ \\t]*\\n).)+?(?<!`)(?P=ticks)(?!`)\"\n",
-        ""
+        "re.compile(r\"<[!?]\")",
+        "re.compile(r\"<!--|<\\?\")"
       ]
     ],
     "expect": [
-      "a `<!--` inside a code span does not hide the links after it (the Codex input)",
-      "a link between two code-span delimiters is visible, so a dead one is MISSING"
+      "CANNOT-READ: a file reached only through a bogus comment `<!\u2026`"
     ]
   },
   {
-    "name": "a backtick with no closing run opens a code span to the end of the text",
+    "name": "the fence region is dropped: an info string is read as visible",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "(?<!`)(?P=ticks)(?!`)\"",
-        "(?:(?<!`)(?P=ticks)(?!`)|\\Z)\""
+        "    return regions + [m.span() for m in _FENCE_TAIL_RE.finditer(text)]\n",
+        "    return regions\n"
       ]
     ],
     "expect": [
-      "link_targets: a backtick with no closing run opens no code span"
+      "CANNOT-READ: a file reached only through a fence INFO STRING"
     ]
   },
   {
-    "name": "a code span may cross a blank line",
+    "name": "a tilde run opens no fence region",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "(?:(?!\\n[ \\t]*\\n).)+?",
-        "(?:.)+?"
+        "_FENCE_TAIL_RE = re.compile(r\"(?:`{3}|~{3})[^\\n]*\")",
+        "_FENCE_TAIL_RE = re.compile(r\"`{3}[^\\n]*\")"
       ]
     ],
     "expect": [
-      "link_targets: a code span never crosses a blank line"
+      "a TILDE fence line is a region too"
     ]
   },
   {
-    "name": "code is dropped along with comments, so a link inside code reaches nothing",
+    "name": "the fence region crosses its line's end",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    return \"\" if match.group(0).startswith(\"<!--\") else match.group(0)\n",
-        "    return \"\"\n"
+        "~{3})[^\\n]*\"",
+        "~{3})[\\s\\S]*\""
       ]
     ],
     "expect": [
-      "link_targets: a link INSIDE a code span or a fenced block still counts (stated bound)"
+      "the fence region ends at its line: a link on the NEXT line is sure"
+    ]
+  },
+  {
+    "name": "a region's END is ignored, so a link after a fence line is uncertain",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "hidden = any(match.start() < end and ",
+        "hidden = any("
+      ]
+    ],
+    "expect": [
+      "the fence region ends at its line: a link on the NEXT line is sure"
+    ]
+  },
+  {
+    "name": "a link that STRADDLES a region's start is read as sure",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "end and start < match.end()",
+        "end and start <= match.start()"
+      ]
+    ],
+    "expect": [
+      "link_reading: a link that STRADDLES the opener is uncertain"
+    ]
+  },
+  {
+    "name": "a link BEFORE a region on its line is read as uncertain",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        " and start < match.end() for",
+        " for"
+      ]
+    ],
+    "expect": [
+      "a link BEFORE the first `<!` on its line stays sure"
+    ]
+  },
+  {
+    "name": "an uncertain link to a target also linked SURE wins",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return sure, uncertain - sure\n",
+        "    return sure - uncertain, uncertain\n"
+      ]
+    ],
+    "expect": [
+      "link_reading: a target linked once SURE and once uncertain is sure"
+    ]
+  },
+  {
+    "name": "the upper bound drops the uncertain links",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return sure | uncertain\n",
+        "    return sure\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file linked only inside an HTML comment"
+    ]
+  },
+  {
+    "name": "the LOWER bound reads every link, so a verdict that depends on a hidden link passes",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    missing_lo, unreached_lo = reachability(index_text, texts, sure_links)\n",
+        "    missing_lo, unreached_lo = reachability(index_text, texts, every_link)\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a fence INFO STRING"
+    ]
+  },
+  {
+    "name": "the UPPER bound reads only sure links, so a disagreement is reported as UNLISTED",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    missing_hi, unreached_hi = reachability(index_text, texts, every_link)\n",
+        "    missing_hi, unreached_hi = reachability(index_text, texts, sure_links)\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file linked only inside an HTML comment"
+    ]
+  },
+  {
+    "name": "a target missing only at the upper bound is not reported",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            f\"see; {_REMEDY}\" for t in sorted(missing_hi - missing_lo)]\n",
+        "            f\"see; {_REMEDY}\" for t in []]\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a link after a `<!` to a file that does not exist (missing only if seen)"
+    ]
+  },
+  {
+    "name": "a file unreachable only at the lower bound is not reported",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            for f in sorted(unreached_lo - unreached_hi)]\n",
+        "            for f in []]\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through span and block structure"
+    ]
+  },
+  {
+    "name": "the wiki form's `]]` cannot close a markdown link",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_MD_LINK_RE = re.compile(r\"\\]\\(([^)]*)\\)\")",
+        "_MD_LINK_RE = re.compile(r\"(?<!\\])\\]\\(([^)]*)\\)\")"
+      ]
+    ],
+    "expect": [
+      "link_reading: a wiki link's `]]` also closes a markdown link, so both are read"
+    ]
+  },
+  {
+    "name": "the missing-target CANNOT-READ names no remedy",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "f\"see; {_REMEDY}\" for t in sorted(missing_hi",
+        "f\"see\" for t in sorted(missing_hi"
+      ]
+    ],
+    "expect": [
+      "a CANNOT-READ for a missing target names the target and the remedy"
+    ]
+  },
+  {
+    "name": "the unreached-file CANNOT-READ names no remedy",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    out += [f\"CANNOT-READ {f}: reached only through a link a reader may not see; {_REMEDY}\"\n",
+        "    out += [f\"CANNOT-READ {f}: reached only through a link a reader may not see\"\n"
+      ]
+    ],
+    "expect": [
+      "a CANNOT-READ message names the file and the remedy"
     ]
   }
 ]
