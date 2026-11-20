@@ -75,5 +75,16 @@
    ]
   ],
   "expect": "every typed fact is what the committed file it names says"
+ },
+ {
+  "name": "a typed fact names the wrong source file",
+  "file": "scripts/mkt_seed_repo.py",
+  "edits": [
+   [
+    "_item(\"roadmap-status\", \"docs/roadmap-to-launch.md\"",
+    "_item(\"roadmap-status\", \"README.md\""
+   ]
+  ],
+  "expect": "every typed fact is what the committed file it names says"
  }
 ]

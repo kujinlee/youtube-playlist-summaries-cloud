@@ -245,6 +245,12 @@ def _self_test_body() -> int:
         ran = subprocess.run([sys.executable, str(repo / "scripts/check-docs.py")], capture_output=True, text=True,
                              timeout=60)
         by = {i["id"]: i["expected"] for i in a.items}
+        src = {i["id"]: i["source"] for i in a.items}
+        # The file (or command) each answer above was parsed from, written out independently: a fact whose `source`
+        # names a different file is a false pairing even when its answer is right (r2 Codex m1).
+        parsed_from = {"roadmap-status": "docs/roadmap-to-launch.md", "roadmap-deployed": "docs/roadmap-to-launch.md",
+                       "decision-waiting": "docs/roadmap-to-launch.md", "backlog-open": "docs/backlog.md",
+                       "ratchet-check-docs": "scripts/check-docs.py"}
         held = {
             "roadmap-status": by["roadmap-status"] in [ln for ln in roadmap if ln.startswith("Status: ")],
             "roadmap-deployed": by["roadmap-deployed"] in [ln for ln in roadmap if "Deployed: release" in ln],
@@ -252,6 +258,7 @@ def _self_test_body() -> int:
             "backlog-open": open_rows != "" and by["backlog-open"] == open_rows,
             "ratchet-check-docs": by["ratchet-check-docs"] == f"rc {ran.returncode}: {ran.stdout.strip()}",
         }
+        held = {k: ok_ and parsed_from[k] in src[k].split() + [src[k]] for k, ok_ in held.items()}
         return sorted(k for k, ok_ in held.items() if not ok_)
     case("every typed fact is what the committed file it names says", typed_facts_disagreeing_with_the_committed_files,
          [])
