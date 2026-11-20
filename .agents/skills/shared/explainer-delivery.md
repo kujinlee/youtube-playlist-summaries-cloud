@@ -236,14 +236,12 @@ element that asks it; the composer does the rest:
   answered with a link to the first open one; once none is open it reads `N decisions on this page · 0
   remaining · all answered`, no link. An EMPTY or whitespace-only value counts as OPEN. A page with no mark
   gets no counter.
-- **The composer REFUSES (CANNOT RUN) a mark it can tell is unreachable or unrenderable**: under a `hidden` or
-  `inert` attribute; inside `template`/`noscript`/`select`/`svg`/`math`; inside a `<details>` but outside its
-  `<summary>` (open or not), or on the `<details>` itself; on a table-structure element (`<tr>`…), a
-  form or raw-text element (`select`, `textarea`, `script`…) or a void element (`img`, `br`…) — the list is
-  `_DECISION_REFUSE_ON`; or an id colliding with the generated `ex-decision-n`. Move the mark to a plain
-  visible element. ⚠ **Bound:** it reads ATTRIBUTES, not CSS — a mark under `style="display:none"` or a
-  stylesheet rule, or after misnested markup the browser re-parents into a hidden parent, IS counted. Look
-  at the composed page.
+- **The composer REFUSES (CANNOT RUN) a mark it can tell would not be seen at its spot**, naming the element and
+  the reason — move the mark to a plain visible element. The rules live in ONE place, `brief-compose.py`'s decision
+  scanner (`_DECISION_REFUSE_ON`, `_DECISION_REFUSE_INSIDE`, `_DECISION_HIDING_ATTRS`, the `<details>`/`<summary>`
+  rule, and an `id`/`name` already equal to a generated `ex-decision-n`); read them there, this list is not repeated.
+  ⚠ **Bound:** it reads MARKUP, not CSS — a mark under `style="display:none"` or a stylesheet rule, or after
+  misnested markup the browser re-parents into a hidden parent, IS counted. Look at the composed page.
 - ⚠ **Nothing checks that EVERY question is marked** (backlog #615): an unmarked question is invisible to the
   counter, so read the page for owner questions before delivering it.
 - The tag colours are palette tokens (`--decide*` yellow, `--decided*` green) the composer adds for light,
