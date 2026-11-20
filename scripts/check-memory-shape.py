@@ -13,7 +13,9 @@ WHAT FAILS (rc 1), one rule code per line of output:
   FRONTMATTER   a file has no `---` frontmatter, or lacks `name`, `description` or `metadata.type`,
                 or holds a line this reader would accept but YAML would not (see `scalar_problem`):
                 an unterminated quote or flow collection, an indicator-led or `: `-holding unquoted
-                value, or a non-blank line that is not `key: value` (r1, Codex)
+                value, or a non-blank line that is not `key: value` (r1, Codex); a double-quoted
+                escape YAML does not define, or text after a closing quote that is not a
+                ` # comment` (r2, Codex). A trailing comment is valid, and is not part of the value
   TYPE          `metadata.type` is not one of user | feedback | project | reference
   NAME          `name` is not the filename's slug (`foo-bar.md` must say `name: foo-bar`)
   MISSING       `MEMORY.md` links a memory file that does not exist
@@ -65,7 +67,9 @@ size limit. So a file passes when MEMORY.md links it, or when a file that MEMORY
 (two hops). Measured 2026-11-19: 138 at hop 1, 57 at hop 2, 0 unreachable. A link is
 `](name.md)` or `[[name]]`, read after dropping a `#anchor`, a `"title"`, `<…>`, a leading `./`
 and a wiki `|alias` (r1, Claude), and never inside an HTML comment (r1, Codex: a reader cannot
-follow it). A link inside a CODE SPAN or fence still counts: a reader can see and follow it.
+follow it). A link inside a CODE SPAN or fence still counts: a reader can see and follow it. A `<!--`
+or `-->` INSIDE a code span or a fenced block is literal text, not a delimiter (r2, Codex). An
+INDENTED code block (four spaces) is not recognised as code, so a `<!--` in one still opens a comment.
 MISSING is checked for MEMORY.md's own links only. Broken links inside
 other memory files (10 measured 2026-11-19, several of them deliberate placeholders or paths outside
 the folder) are not this check's subject.
@@ -82,7 +86,7 @@ Callers: `.github/workflows/ci.yml`, next to `check-memory-index-budget.py`.
 
 Usage:
     python3 scripts/check-memory-shape.py
-    python3 scripts/check-memory-shape.py --self-test  # 89 cases
+    python3 scripts/check-memory-shape.py --self-test  # 104 cases
 """
 from __future__ import annotations
 
@@ -127,15 +131,37 @@ _MD_LINK_RE = re.compile(r"\]\(([^)]*)\)")
 _WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 # ⟳ r1 (Codex MAJOR): a link inside an HTML comment is invisible to a reader, so it reaches nothing.
 # An unclosed `<!--` comments out the rest of the text, as it does in HTML.
-_COMMENT_RE = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
+# ⟳ r2 (Codex MAJOR + MINOR, both caused by the r1 fold): a `<!--` or `-->` inside a CODE SPAN or a
+# fenced block is literal text, not a delimiter. One scan matches the LEFTMOST of a fenced block, an
+# inline code span or a comment, so a delimiter inside code is consumed with the code (and kept), and
+# a backtick inside a comment is consumed with the comment (and dropped). A span closes on a backtick
+# run of the SAME length, and never across a blank line; an opener with no closer is literal.
+_COMMENT_RE = re.compile(
+    r"^[ ]{0,3}(?P<fence>`{3,}|~{3,})[^\n]*\n.*?(?:^[ ]{0,3}(?P=fence)[`~]*[ \t]*$|\Z)"
+    r"|(?<!`)(?P<ticks>`+)(?!`)(?:(?!\n[ \t]*\n).)+?(?<!`)(?P=ticks)(?!`)"
+    r"|<!--.*?(?:-->|\Z)", re.DOTALL | re.MULTILINE)
+
+
+def _keep_code(match: re.Match[str]) -> str:
+    """PURE. A `_COMMENT_RE` match is dropped when it is a comment, and kept whole when it is code."""
+    return "" if match.group(0).startswith("<!--") else match.group(0)
 
 # ⟳ r1 (Codex MAJOR): a frontmatter value this reader would accept but YAML would not. Measured
 # 2026-11-20 over the live corpus: 189 double-quoted values, 796 plain, 0 single-quoted, 0 flow,
 # 0 indicator-led — and ONE plain value holding `: ` (a YAML "mapping values are not allowed" error),
 # fixed in the same commit.
 _YAML_INDICATORS = "[]{}`@&*!|>%#,?"
-_DQ_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+# ⟳ r2 (Codex MAJOR): `\q` passed. A double-quoted scalar may hold only the escapes YAML 1.2 defines
+# (§5.7): `\0 \a \b \t \n \v \f \r \e \  \" \/ \\ \N \_ \L \P`, a TAB, `\xHH`, `\uHHHH`, `\UHHHHHHHH`.
+_ESCAPE = r'\\(?:[0abt\tnvfre "/\\N_LP]|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'
+_DQ_RE = re.compile(r'"(?:[^"\\]|' + _ESCAPE + r')*"')
+_DQ_ANY_ESCAPE_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
 _SQ_RE = re.compile(r"'(?:[^']|'')*'")
+# ⟳ r2 (Codex MINOR, caused by the r1 fold): `"valid" # comment` is valid YAML. After a closing quote
+# only a comment may follow, and YAML requires whitespace before its `#`. A PLAIN value's comment is
+# ` #` onwards, too: it is dropped before the `: ` rule, and from the value read.
+_TAIL_RE = re.compile(r"(?:\s+#.*)?")
+_PLAIN_COMMENT_RE = re.compile(r"\s#.*")
 
 
 def scalar_problem(value: str) -> str | None:
@@ -143,15 +169,31 @@ def scalar_problem(value: str) -> str | None:
     YAML string scalar, or None when it is. An empty value is not this function's question."""
     if not value:
         return None
-    if value[0] == '"':
-        return None if _DQ_RE.fullmatch(value) else "an unterminated double-quoted string"
-    if value[0] == "'":
-        return None if _SQ_RE.fullmatch(value) else "an unterminated single-quoted string"
+    if value[0] in "\"'":
+        quoted = (_DQ_RE if value[0] == '"' else _SQ_RE).match(value)
+        if quoted is None:
+            if value[0] == "'":
+                return "an unterminated single-quoted string"
+            if _DQ_ANY_ESCAPE_RE.match(value):
+                return "a double-quoted string holding an escape YAML does not define"
+            return "an unterminated double-quoted string"
+        return None if _TAIL_RE.fullmatch(value[quoted.end():]) else (
+            "a quoted string followed by text that is not a ` # comment`")
     if value[0] in _YAML_INDICATORS:
         return f"an unquoted value starting with the YAML indicator `{value[0]}`"
-    if ": " in value or value.endswith(":"):
+    plain = _PLAIN_COMMENT_RE.sub("", value)
+    if ": " in plain or plain.endswith(":"):
         return "an unquoted value holding `: `, which YAML reads as a nested mapping"
     return None
+
+
+def scalar_text(value: str) -> str:
+    """PURE. `value` (stripped) without a trailing YAML comment, its quotes still on. A value that
+    `scalar_problem` refuses is returned unchanged: it is reported, not read."""
+    if value and value[0] in "\"'":
+        quoted = (_DQ_RE if value[0] == '"' else _SQ_RE).match(value)
+        return value[:quoted.end()] if quoted else value
+    return _PLAIN_COMMENT_RE.sub("", value)
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str] | None, list[str]]:
@@ -184,6 +226,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str] | None, list[str]]:
         problem = scalar_problem(value.strip())
         if problem:
             malformed.append(f"`{key}` is {problem}")
+        value = scalar_text(value.strip())
         value = value.strip().strip('"').strip("'")
         if not indented:
             in_metadata = key == "metadata"
@@ -222,7 +265,7 @@ def history_marker(line: str) -> str | None:
 
 def link_targets(text: str) -> set[str]:
     """PURE. Every `](x.md)` and `[[x]]` target in `text` outside an HTML comment, as a filename."""
-    visible = _COMMENT_RE.sub("", text)
+    visible = _COMMENT_RE.sub(_keep_code, text)
     out: set[str] = set()
     for raw in _MD_LINK_RE.findall(visible):
         parts = raw.strip().split()
@@ -430,6 +473,40 @@ def _self_test_body() -> int:
         idx, t = world()
         t["beta.md"] = f"---\nname: beta\n{line}\nmetadata:\n  type: project\n---\n\nRule.\n"
         check(f"NOT malformed: {label}", codes(idx, t), [])
+    # ⟳ r2 (Codex MAJOR): an escape YAML does not define; text after a closing quote that is not a
+    # comment; a `#` that is not preceded by whitespace.
+    for label, line in (
+            ("a double-quoted value with the undefined escape `\\q` (the Codex input)",
+             r'description: "bad\q"'),
+            ("a quoted value followed by text that is not a comment", 'description: "a" b'),
+            ("a quoted value followed by `#` with no space before it", 'description: "a"#x'),
+    ):
+        idx, t = world()
+        t["beta.md"] = f"---\nname: beta\n{line}\nmetadata:\n  type: project\n---\n\nRule.\n"
+        check(f"FRONTMATTER: {label}", codes(idx, t), ["FRONTMATTER"])
+    # ⟳ r2 (Codex MINOR, caused by the r1 fold): valid YAML that the r1 rules refused.
+    for label, line in (
+            ("every escape YAML defines, in a double-quoted value",
+             r'description: "t\t n\n q\" s\\ sl\/ x\x41 u\u00e9 U\U0001F600 sp\  z\0 e\e N\N"'),
+            ("a double-quoted value, then a ` # comment` (the Codex input)",
+             'description: "valid" # comment'),
+            ("a plain value whose ` # comment` holds `: `", "description: d # see: the rule"),
+    ):
+        idx, t = world()
+        t["beta.md"] = f"---\nname: beta\n{line}\nmetadata:\n  type: project\n---\n\nRule.\n"
+        check(f"NOT malformed: {label}", codes(idx, t), [])
+    idx, t = world()
+    t["beta.md"] = '---\nname: "beta" # the slug\ndescription: d\nmetadata:\n  type: project\n---\n\nR.\n'
+    check("a trailing comment is not part of the value read: `name: \"beta\" # …` is the slug",
+          codes(idx, t), [])
+    idx, t = world()
+    t["beta.md"] = "---\nname: beta # the slug\ndescription: d\nmetadata:\n  type: project\n---\n\nR.\n"
+    check("a PLAIN value's trailing comment is not read either: `name: beta # …` is the slug",
+          codes(idx, t), [])
+    check("scalar_problem tells a bad escape from an unterminated string",
+          (scalar_problem(r'"bad\q"'), scalar_problem('"never closed')),
+          ("a double-quoted string holding an escape YAML does not define",
+           "an unterminated double-quoted string"))
     check("scalar_problem names the defect, and is None for an empty value",
           (scalar_problem(""), scalar_problem("ok"), scalar_problem("[x")),
           (None, None, "an unquoted value starting with the YAML indicator `[`"))
@@ -469,6 +546,17 @@ def _self_test_body() -> int:
     for form in ("[x](gone.md#h)", '[x](gone.md "t")', "[[gone|alias]]", "[[gone#h]]"):
         idx, t = world()
         check(f"MISSING: an index link of the form {form}", codes(idx + f"- {form}\n", t), ["MISSING"])
+    # ⟳ r2 (Codex MAJOR + MINOR, caused by the r1 fold): a comment delimiter inside code is literal.
+    idx, t = world()
+    check("a `<!--` inside a code span does not hide the links after it (the Codex input)",
+          codes("# Memory Index\n\n- `<!--` [[alpha]]\n- [[beta]]\n", t), [])
+    idx, t = world()
+    check("a link between two code-span delimiters is visible, so a dead one is MISSING",
+          codes(idx + "- `<!--` [[gone]] `-->`\n", t), ["MISSING"])
+    idx, t = world()
+    check("a `<!--` inside a fenced block (with a blank line in it) hides nothing after the fence",
+          codes("# Memory Index\n\n```html\n<!--\n\nx\n```\n- [A](alpha.md)\n- [[beta]]\n", t), [])
+
     idx, t = world()
     idx = "# Memory Index\n\n- [A](./alpha.md#top) — a\n- [[beta|B]] — b\n"
     check("an anchored and an aliased index link REACH their files", codes(idx, t), [])
@@ -552,6 +640,13 @@ def _self_test_body() -> int:
     # ⟳ r1 (Codex MAJOR): a link inside an HTML comment is not a link a reader can follow.
     check("link_targets ignores links inside HTML comments, closed or not",
           link_targets("[[a]] <!-- [[b]] --> [[c]] <!-- [d](d.md)"), {"a.md", "c.md"})
+    # ⟳ r2: a backtick with no closer, or one past a blank line, is literal, so the `<!--` is real.
+    check("link_targets: a backtick with no closing run opens no code span",
+          link_targets("x ` <!-- [[b]]"), set())
+    check("link_targets: a code span never crosses a blank line",
+          link_targets("`a\n\n<!-- [[b]] `"), set())
+    check("link_targets: a link INSIDE a code span or a fenced block still counts (stated bound)",
+          link_targets("see `[[a]]`\n```\n[[b]]\n```\n"), {"a.md", "b.md"})
     check("link_targets finds nothing in text without links", link_targets("plain [x] text"), set())
     check("parse_frontmatter strips quotes and reads metadata.type",
           parse_frontmatter('---\nname: "n"\ndescription: \'d\'\nmetadata:\n  type: user\n---\nB')[0],

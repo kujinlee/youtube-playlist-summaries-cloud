@@ -2214,7 +2214,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-20, PR #605 review r1 fold: 36 -> 65. Six anchors rebound to the rewritten markers,
     # decoration and link reader; 29 added for the YAML-scalar arms, HTML-comment stripping, link
     # normalisation, ⚠ / `(` / list-marker decoration and the History / Was marker changes.
-    "scripts/check-memory-shape.py": 65,
+    # ⟳ 2026-11-20, PR #605 review r2 fold: 65 -> 79. Eight anchors rebound to the rewritten scalar
+    # and comment readers; 14 added for YAML escapes, trailing comments and code-span delimiters.
+    "scripts/check-memory-shape.py": 79,
     # backlog #410 (2026-10-30): the stalled-work detector joins with 31 entries — 22, plus 9 for the
     # untrusted-gh-text fold (cross-repo PRs dropped, every printed gh string held to a shape).
     # ⟳ r1 fold: 31 → 58. NINE retired WITH THEIR SUBJECT — the no-upstream exclusion, the age window,

@@ -170,17 +170,17 @@
     ]
   },
   {
-    "name": "the ⟳ correction-layer marker is dropped",
+    "name": "the \u27f3 correction-layer marker is dropped",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    (\"⟳\", re.compile(r\"(?:\" + _DATE + r\"\\W{0,4})?⟳\")),\n",
+        "    (\"\u27f3\", re.compile(r\"(?:\" + _DATE + r\"\\W{0,4})?\u27f3\")),\n",
         ""
       ]
     ],
     "expect": [
-      "HISTORY-FIRST: `## ⟳ <date>` correction heading",
-      "HISTORY-FIRST: a bare `⟳` line"
+      "HISTORY-FIRST: `## \u27f3 <date>` correction heading",
+      "HISTORY-FIRST: a bare `\u27f3` line"
     ]
   },
   {
@@ -188,7 +188,7 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    (\"History\", re.compile(r\"History\\**\\s*(?:[:(—–]|$)\", re.IGNORECASE)),\n",
+        "    (\"History\", re.compile(r\"History\\**\\s*(?:[:(\u2014\u2013]|$)\", re.IGNORECASE)),\n",
         ""
       ]
     ],
@@ -263,16 +263,16 @@
     ]
   },
   {
-    "name": "⛔ is no longer stripped as decoration",
+    "name": "\u26d4 is no longer stripped as decoration",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "_DECORATION = \"#>*_`( \\t⛔⭐✅⚠️\"",
-        "_DECORATION = \"#>*_`( \\t⭐✅⚠️\""
+        "_DECORATION = \"#>*_`( \\t\u26d4\u2b50\u2705\u26a0\ufe0f\"",
+        "_DECORATION = \"#>*_`( \\t\u2b50\u2705\u26a0\ufe0f\""
       ]
     ],
     "expect": [
-      "HISTORY-FIRST: a decorated `⛔ **⟳ …**` line"
+      "HISTORY-FIRST: a decorated `\u26d4 **\u27f3 \u2026**` line"
     ]
   },
   {
@@ -436,8 +436,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "CANNOT RUN — the memory corpus at {shown} ",
-        "CANNOT RUN — the memory corpus at docs/memory "
+        "CANNOT RUN \u2014 the memory corpus at {shown} ",
+        "CANNOT RUN \u2014 the memory corpus at docs/memory "
       ]
     ],
     "expect": [
@@ -462,8 +462,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "memory shape ok — {len(texts)} files",
-        "memory shape ok — files"
+        "memory shape ok \u2014 {len(texts)} files",
+        "memory shape ok \u2014 files"
       ]
     ],
     "expect": [
@@ -488,8 +488,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "        return None if _DQ_RE.fullmatch(value) else \"an unterminated double-quoted string\"\n",
-        "        return None\n"
+        "            return \"an unterminated double-quoted string\"\n",
+        "            return None\n"
       ]
     ],
     "expect": [
@@ -501,8 +501,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "        return None if _SQ_RE.fullmatch(value) else \"an unterminated single-quoted string\"\n",
-        "        return None\n"
+        "                return \"an unterminated single-quoted string\"\n",
+        "                return None\n"
       ]
     ],
     "expect": [
@@ -514,7 +514,7 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "_DQ_RE = re.compile(r'\"(?:[^\"\\\\]|\\\\.)*\"')",
+        "_DQ_RE = re.compile(r'\"(?:[^\"\\\\]|' + _ESCAPE + r')*\"')",
         "_DQ_RE = re.compile(r'\"[^\"]*\"')"
       ]
     ],
@@ -527,7 +527,7 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    if \": \" in value or value.endswith(\":\"):\n",
+        "    if \": \" in plain or plain.endswith(\":\"):\n",
         "    if False:\n"
       ]
     ],
@@ -540,8 +540,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "\": \" in value or value.endswith(\":\"):",
-        "\":\" in value:"
+        "\": \" in plain or plain.endswith(\":\"):",
+        "\":\" in plain:"
       ]
     ],
     "expect": [
@@ -579,7 +579,7 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    visible = _COMMENT_RE.sub(\"\", text)\n",
+        "    visible = _COMMENT_RE.sub(_keep_code, text)\n",
         "    visible = text\n"
       ]
     ],
@@ -593,8 +593,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "_COMMENT_RE = re.compile(r\"<!--.*?(?:-->|\\Z)\", re.DOTALL)",
-        "_COMMENT_RE = re.compile(r\"<!--.*?-->\", re.DOTALL)"
+        "    r\"|<!--.*?(?:-->|\\Z)\", re.DOTALL | re.MULTILINE)",
+        "    r\"|<!--.*?-->\", re.DOTALL | re.MULTILINE)"
       ]
     ],
     "expect": [
@@ -650,7 +650,7 @@
       ]
     ],
     "expect": [
-      "link_targets normalises a title, `<…>`, `./`, an alias and a wiki anchor"
+      "link_targets normalises a title, `<\u2026>`, `./`, an alias and a wiki anchor"
     ]
   },
   {
@@ -667,16 +667,16 @@
     ]
   },
   {
-    "name": "⚠ is no longer stripped as decoration",
+    "name": "\u26a0 is no longer stripped as decoration",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "✅⚠️\"",
-        "✅️\""
+        "\u2705\u26a0\ufe0f\"",
+        "\u2705\ufe0f\""
       ]
     ],
     "expect": [
-      "HISTORY-FIRST: a `⚠ ⟳` line"
+      "HISTORY-FIRST: a `\u26a0 \u27f3` line"
     ]
   },
   {
@@ -689,7 +689,7 @@
       ]
     ],
     "expect": [
-      "HISTORY-FIRST: a parenthesised `(⟳ …)`"
+      "HISTORY-FIRST: a parenthesised `(\u27f3 \u2026)`"
     ]
   },
   {
@@ -702,8 +702,8 @@
       ]
     ],
     "expect": [
-      "HISTORY-FIRST: a list item `- ⟳`",
-      "HISTORY-FIRST: a numbered list item `9. ⟳`"
+      "HISTORY-FIRST: a list item `- \u27f3`",
+      "HISTORY-FIRST: a numbered list item `9. \u27f3`"
     ]
   },
   {
@@ -716,7 +716,7 @@
       ]
     ],
     "expect": [
-      "HISTORY-FIRST: a numbered list item `9. ⟳`"
+      "HISTORY-FIRST: a numbered list item `9. \u27f3`"
     ]
   },
   {
@@ -729,20 +729,20 @@
       ]
     ],
     "expect": [
-      "HISTORY-FIRST: a list item, then a glyph `- ⚠ ⟳`"
+      "HISTORY-FIRST: a list item, then a glyph `- \u26a0 \u27f3`"
     ]
   },
   {
-    "name": "a date before ⟳ no longer counts",
+    "name": "a date before \u27f3 no longer counts",
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "re.compile(r\"(?:\" + _DATE + r\"\\W{0,4})?⟳\")",
-        "re.compile(r\"⟳\")"
+        "re.compile(r\"(?:\" + _DATE + r\"\\W{0,4})?\u27f3\")",
+        "re.compile(r\"\u27f3\")"
       ]
     ],
     "expect": [
-      "HISTORY-FIRST: a date-first `**<date> ⟳**`"
+      "HISTORY-FIRST: a date-first `**<date> \u27f3**`"
     ]
   },
   {
@@ -750,7 +750,7 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "re.compile(r\"History\\**\\s*(?:[:(—–]|$)\", re.IGNORECASE)",
+        "re.compile(r\"History\\**\\s*(?:[:(\u2014\u2013]|$)\", re.IGNORECASE)",
         "re.compile(r\"History\\b\", re.IGNORECASE)"
       ]
     ],
@@ -789,8 +789,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "r\"History\\**\\s*(?:[:(—–]|$)\"",
-        "r\"History\\s*(?:[:(—–]|$)\""
+        "r\"History\\**\\s*(?:[:(\u2014\u2013]|$)\"",
+        "r\"History\\s*(?:[:(\u2014\u2013]|$)\""
       ]
     ],
     "expect": [
@@ -842,12 +842,198 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    if not value:\n        return None\n    if value[0] == '\"':",
-        "    if not value:\n        return \"empty\"\n    if value[0] == '\"':"
+        "    if not value:\n        return None\n    if value[0] in \"\\\"'\":",
+        "    if not value:\n        return \"empty\"\n    if value[0] in \"\\\"'\":"
       ]
     ],
     "expect": [
       "scalar_problem names the defect, and is None for an empty value"
+    ]
+  },
+  {
+    "name": "any backslash escape is accepted in a double-quoted value again",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_ESCAPE = r'\\\\(?:[0abt\\tnvfre \"/\\\\N_LP]|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'",
+        "_ESCAPE = r'\\\\.'"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a double-quoted value with the undefined escape `\\q` (the Codex input)"
+    ]
+  },
+  {
+    "name": "the `\\x`, `\\u` and `\\U` escapes are refused",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'",
+        ")'"
+      ]
+    ],
+    "expect": [
+      "NOT malformed: every escape YAML defines, in a double-quoted value"
+    ]
+  },
+  {
+    "name": "a bad escape is reported as an unterminated string",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            if _DQ_ANY_ESCAPE_RE.match(value):\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "scalar_problem tells a bad escape from an unterminated string"
+    ]
+  },
+  {
+    "name": "a ` # comment` after a closing quote is refused",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_TAIL_RE = re.compile(r\"(?:\\s+#.*)?\")",
+        "_TAIL_RE = re.compile(r\"\")"
+      ]
+    ],
+    "expect": [
+      "NOT malformed: a double-quoted value, then a ` # comment` (the Codex input)",
+      "a trailing comment is not part of the value read: `name: \"beta\" # \u2026` is the slug"
+    ]
+  },
+  {
+    "name": "any text after a closing quote is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        return None if _TAIL_RE.fullmatch(value[quoted.end():]) else (",
+        "        return None if True else ("
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a quoted value followed by text that is not a comment",
+      "FRONTMATTER: a quoted value followed by `#` with no space before it"
+    ]
+  },
+  {
+    "name": "a `#` with no whitespace before it opens a comment after a closing quote",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "r\"(?:\\s+#",
+        "r\"(?:\\s*#"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a quoted value followed by `#` with no space before it"
+    ]
+  },
+  {
+    "name": "a plain value's comment counts toward the `: ` rule",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    plain = _PLAIN_COMMENT_RE.sub(\"\", value)\n",
+        "    plain = value\n"
+      ]
+    ],
+    "expect": [
+      "NOT malformed: a plain value whose ` # comment` holds `: `"
+    ]
+  },
+  {
+    "name": "a trailing comment is read as part of the value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        value = scalar_text(value.strip())\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a trailing comment is not part of the value read: `name: \"beta\" # \u2026` is the slug",
+      "a PLAIN value's trailing comment is not read either: `name: beta # \u2026` is the slug"
+    ]
+  },
+  {
+    "name": "a plain value's trailing comment is read as part of the value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return _PLAIN_COMMENT_RE.sub(\"\", value)\n",
+        "    return value\n"
+      ]
+    ],
+    "expect": [
+      "a PLAIN value's trailing comment is not read either: `name: beta # \u2026` is the slug"
+    ]
+  },
+  {
+    "name": "a fenced block is not code, so a `<!--` in it opens a comment",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    r\"^[ ]{0,3}(?P<fence>`{3,}|~{3,})[^\\n]*\\n.*?(?:^[ ]{0,3}(?P=fence)[`~]*[ \\t]*$|\\Z)\"\n    r\"|(?<!`)",
+        "    r\"(?<!`)"
+      ]
+    ],
+    "expect": [
+      "a `<!--` inside a fenced block (with a blank line in it) hides nothing after the fence"
+    ]
+  },
+  {
+    "name": "an inline code span is not code, so a `<!--` in it opens a comment",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    r\"|(?<!`)(?P<ticks>`+)(?!`)(?:(?!\\n[ \\t]*\\n).)+?(?<!`)(?P=ticks)(?!`)\"\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a `<!--` inside a code span does not hide the links after it (the Codex input)",
+      "a link between two code-span delimiters is visible, so a dead one is MISSING"
+    ]
+  },
+  {
+    "name": "a backtick with no closing run opens a code span to the end of the text",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "(?<!`)(?P=ticks)(?!`)\"",
+        "(?:(?<!`)(?P=ticks)(?!`)|\\Z)\""
+      ]
+    ],
+    "expect": [
+      "link_targets: a backtick with no closing run opens no code span"
+    ]
+  },
+  {
+    "name": "a code span may cross a blank line",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "(?:(?!\\n[ \\t]*\\n).)+?",
+        "(?:.)+?"
+      ]
+    ],
+    "expect": [
+      "link_targets: a code span never crosses a blank line"
+    ]
+  },
+  {
+    "name": "code is dropped along with comments, so a link inside code reaches nothing",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return \"\" if match.group(0).startswith(\"<!--\") else match.group(0)\n",
+        "    return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "link_targets: a link INSIDE a code span or a fenced block still counts (stated bound)"
     ]
   }
 ]
