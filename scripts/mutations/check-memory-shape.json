@@ -1222,8 +1222,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "                state = c if c in \"\\\"'\" else \"unquoted\"\n",
-        "                state = c if c == '\"' else \"unquoted\"\n"
+        "c if c in \"\\\"'\" else",
+        "c if c == '\"' else"
       ]
     ],
     "expect": [
@@ -1274,8 +1274,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "        if c == \"\\n\":\n            break\n",
-        "        if c == \"\\n\":\n            return i\n"
+        "\"\\n\":\n            break\n",
+        "\"\\n\":\n            return i\n"
       ]
     ],
     "expect": [
