@@ -934,5 +934,44 @@
     "expect": [
       "the re-arm command is shell-quoted: split as a shell splits it, a path with a space gives the same watch"
     ]
+  },
+  {
+    "name": "#672: newest_change_ns returns the OLDEST time",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "return max(e.mtime_ns for e in observe(Watch(\"worktree\", worktree)))",
+        "return min(e.mtime_ns for e in observe(Watch(\"worktree\", worktree)))"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: newest_change_ns is the NEWEST time among everything `observe` reads -- a file newer than HEAD, then a commit (HEAD) newer than the file, in ONE case"
+    ]
+  },
+  {
+    "name": "#672: QUIET_MIN drifts from the checklist's window",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "QUIET_MIN = 30",
+        "QUIET_MIN = 31"
+      ]
+    ],
+    "expect": [
+      "backlog #672: QUIET_MIN is the window the checklist arms the watchdog with"
+    ]
+  },
+  {
+    "name": "#672: a missing worktree reads as time 0",
+    "file": "scripts/agent-watchdog.py",
+    "edits": [
+      [
+        "def newest_change_ns(worktree: str) -> int:\n",
+        "def newest_change_ns(worktree: str) -> int:\n    if not os.path.isdir(worktree):\n        return 0\n"
+      ]
+    ],
+    "expect": [
+      "backlog #672: newest_change_ns of a missing worktree is CANNOT RUN, never a time"
+    ]
   }
 ]

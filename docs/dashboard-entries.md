@@ -21027,6 +21027,72 @@ declared registration, since the spec names no form of one: every hook registere
 finding.
 
 ## 2026-11-19
+Every memory file is now checked on each pull request. A memory that opens with an old history note
+instead of the rule it currently teaches, or that is malformed, misnamed, or reachable from nowhere in
+the memory index, now turns CI red instead of drifting until the next manual audit.
+<!--tech-->
+Memory hygiene option B, part 1 (branch `memory-shape-check`). New `scripts/check-memory-shape.py`
+(stdlib): FRONTMATTER, TYPE, NAME (slug), EMPTY-BODY, HISTORY-FIRST (markers derived from audit PR #585:
+`⟳`, `History`, `Split out of`, `Was:`, date-then-`Was`), MISSING, UNLISTED (two-hop reachability, as
+slice-history's design documents; the literal one-hop rule would fail 57 of 195). Live: 195 files, 0
+violations; the pre-audit tree (`4d76f76a^`) gives 5. Self-test 50/50; mutations 36/36 killed, each by
+its named case. Wired in `ci.yml` next to the memory-index budget. The weekly content audit is part 2.
+
+## 2026-11-19
+The features page's biggest section — the rules-and-checks harness — is now split into six smaller sections you can
+read one at a time: speed, the review process, mutation and test quality, hooks and session continuity, the backlog
+and page tooling, and whether the checks themselves are sound. Every open item in that section was read and placed in
+exactly one of the six. It was your choice on 2026-10-30 (option A), and it closes backlog #511.
+<!--tech-->
+Branch `backlog-511`. `docs/features.md`: six `####` child nodes under `guard-and-gate-harness`, each claiming one
+sub-area — `(tooling/speed)` 48, `(tooling/review)` 30, `(tooling/mutation)` 42, `(tooling/hooks)` 53,
+`(tooling/pages)` 37, `(tooling/guards)` 69 open rows (279 in all; the row's title said 127, from when it was filed).
+`docs/backlog.md`: only the Bundle cell of those 279 rows changed, `(tooling)` → `(tooling/<sub>)`; a second tag such
+as `(comprehensibility/explainers)` is kept. Closed `(tooling)` rows are unchanged and stay under the parent node by
+`nearest_claim`. Same mechanism as `status-visibility`/`feature-map`; the page is regenerated from these sources.
+
+## 2026-11-19
+When work merges that today's plan does not mention, the session is now told, on every message, that the plan needs
+redoing. Until now only the goal-tree page showed this, as a warning line that did not say who should act, and you
+saw that pressing Refresh did not make it go away. That line now says the coordinator re-records the plan and that
+Refresh does not clear it. The same warning appears in the note the session reads before each reply, so someone is
+prompted to do the re-planning; it is computed by the page's own code, so the page and the note cannot disagree.
+<!--tech-->
+Owner 11-17 09:47 (option A) and 09:49; backlog #647. `scripts/goal-tree.py`: the STALE line's subject sits between
+`AGENDA_STALE_HEAD` / `AGENDA_STALE_TAIL`; text now ends "the coordinator re-records the agenda (Refresh does not clear
+this)". `scripts/check-stalled-work.py`: a `STALE-AGENDA` status (stalled, rc 1; its own hook tier after
+`DIRTY-NO-CI`), read by loading goal-tree through importlib and calling `agenda_context` on the last line of the main
+checkout's `.claude/goal-tree-log.jsonl`; a missing or unreadable log is a NOTE (NOT CHECKED), never clear. Round 1 fold: the hook prints an
+unread-agenda NOTE even when nothing is stalled; goal-tree's `is_snapshot` is the one snapshot test. Self-tests
+539/539 and 252/252; 3 + 18 new mutations.
+
+## 2026-11-20
+The instructions every explainer page is built from now explain how to mark a decision on a page: put a mark on
+the question, and the page shows a yellow "DECISION n of N" tag there, turning green with the answer once one is
+given, plus a counter under the title. The page builder already did this (since 11-11); only the instructions that
+page-building sessions read did not say so, so a session had no way to learn the mark without opening the script.
+<!--tech-->
+`.agents/skills/shared/explainer-delivery.md` §3a documents the `data-decision` markup (`data-decision` = open,
+`data-decision="<answer>"` = answered, `data-decision-label`), that the numbers and counter are derived by
+`scripts/brief-compose.py` `render_decisions` (backlog #603, PR #563), the CANNOT RUN on an invisible mark, and the
+unmarked-question gap (backlog #615). No code change: `brief-compose.py --self-test` 226/226 unchanged.
+
+## 2026-11-20
+The goal tree's *Running now* can now see work that is being built. An item in the in-flight list can name the
+worktree it is built in, and the page reads how recently that worktree changed: a change in the last 30 minutes puts
+the item under *Running now* as `building · last change N min ago`, instead of `nothing running` or `not started`.
+Quieter than that, it is listed as owed with `quiet N min`; a worktree that no longer exists reads `worktree gone`.
+It closes backlog #672, which you filed on 2026-11-17 after the page said nothing was running while an agent built
+slice D.
+<!--tech-->
+Branch `running-now-worktree`. `scripts/session-state.py`: `--add --worktree PATH` and `--set-worktree ID PATH|none`
+store an absolute, existing directory on the ledger entry. `scripts/goal-tree.py`: `collect` measures every declared
+worktree ONCE through `agent-watchdog.py:newest_change_ns` (the watchdog's own walk, never a second one), and the
+pure `worktree_build(wt, at)` reads it against the snapshot's clock with the watchdog's `QUIET_MIN` (30) as the
+window; a measure that fails is `worktree NOT READ (…)`, and a change stamped more than a minute after the snapshot
+is owed, never running. A declared wait still holds a building item as owed. The Running now lede now says what the
+page can see. `agent-watchdog` joined the comprehensibility package (components map and declaration) because
+goal-tree now loads it; the shipping-sets edge pin moved 347 → 348 for that one edge.
 Started the install experiment for the marketplace work: a small made-up project with known facts, so a test can
 tell whether the status page a stranger gets says the right things about it, says nothing where nothing is the right
 answer, or says nothing because something is missing. The project is built the same way every time.
@@ -21075,18 +21141,6 @@ mutations, all killed by their named case); docstring states the 12 chosen items
 (preflight passes a world under the real `HOME`; I1) and #675 (`exec_edges` drops an argv base naming another tree).
 Tier-B names its 16 `RunRecord` runs (Cm3).
 
-The features page's biggest section — the rules-and-checks harness — is now split into six smaller sections you can
-read one at a time: speed, the review process, mutation and test quality, hooks and session continuity, the backlog
-and page tooling, and whether the checks themselves are sound. Every open item in that section was read and placed in
-exactly one of the six. It was your choice on 2026-10-30 (option A), and it closes backlog #511.
-<!--tech-->
-Branch `backlog-511`. `docs/features.md`: six `####` child nodes under `guard-and-gate-harness`, each claiming one
-sub-area — `(tooling/speed)` 48, `(tooling/review)` 30, `(tooling/mutation)` 42, `(tooling/hooks)` 53,
-`(tooling/pages)` 37, `(tooling/guards)` 69 open rows (279 in all; the row's title said 127, from when it was filed).
-`docs/backlog.md`: only the Bundle cell of those 279 rows changed, `(tooling)` → `(tooling/<sub>)`; a second tag such
-as `(comprehensibility/explainers)` is kept. Closed `(tooling)` rows are unchanged and stay under the parent node by
-`nearest_claim`. Same mechanism as `status-visibility`/`feature-map`; the page is regenerated from these sources.
-
 ## 2026-11-20
 The marketplace experiment now has a seed repository its runs are scored against (slice E). Its four review rounds kept
 finding gaps in the seed's own self-test, each one caused by the previous fix, so an architecture review was convened
@@ -21096,17 +21150,3 @@ is wrong, and the redesign changes the scored facts file, so it owes its own rev
 PR #604 (harness-ships-elsewhere slice E). Phase 6: `docs/reviews/architecture-review-2026-11-20-mkt-seed-repo.md` —
 13 of 20 one-sided edits of the seed pass the self-test; a declare-once redesign turns all 20 red. Filed as backlog
 #678, superseding #676.
-## 2026-11-19
-When work merges that today's plan does not mention, the session is now told, on every message, that the plan needs
-redoing. Until now only the goal-tree page showed this, as a warning line that did not say who should act, and you
-saw that pressing Refresh did not make it go away. That line now says the coordinator re-records the plan and that
-Refresh does not clear it. The same warning appears in the note the session reads before each reply, so someone is
-prompted to do the re-planning; it is computed by the page's own code, so the page and the note cannot disagree.
-<!--tech-->
-Owner 11-17 09:47 (option A) and 09:49; backlog #647. `scripts/goal-tree.py`: the STALE line's subject sits between
-`AGENDA_STALE_HEAD` / `AGENDA_STALE_TAIL`; text now ends "the coordinator re-records the agenda (Refresh does not clear
-this)". `scripts/check-stalled-work.py`: a `STALE-AGENDA` status (stalled, rc 1; its own hook tier after
-`DIRTY-NO-CI`), read by loading goal-tree through importlib and calling `agenda_context` on the last line of the main
-checkout's `.claude/goal-tree-log.jsonl`; a missing or unreadable log is a NOTE (NOT CHECKED), never clear. Round 1 fold: the hook prints an
-unread-agenda NOTE even when nothing is stalled; goal-tree's `is_snapshot` is the one snapshot test. Self-tests
-539/539 and 252/252; 3 + 18 new mutations.

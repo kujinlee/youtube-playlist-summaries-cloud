@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/memory-shape-check-r5-claude.md": "100644 c706aa5701da5c012d94fd7d9a415dc424c53f34"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f03fe93aefef25a496f939fd9c55e7802f4cc7f8",
+  "intrusions": [],
+  "loosening_answers": {
+    "639d2b2f0db1": "not a loosening"
+  },
+  "model": null,
+  "prompt": "PR 605 r5 Claude half: refute the r4 fold's tag-interior region (011a0094..1418c49a)",
+  "reason": "claude half filed: 10128 chars, names f03fe93aefef",
+  "refused": false,
+  "review": "memory-shape-check-r5-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a18b1220a2c7c4e21",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

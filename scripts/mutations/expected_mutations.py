@@ -444,9 +444,32 @@ EXPECTED_MUTATIONS = {
     # (r1 Codex 5's idle rule is now `not pending and not recorded`). Seven new, one or more per new rule: an absent
     # `after` read as a prerequisite, a damaged element dropped, a non-list read as none, an element that merely
     # contains a ref accepted, prose re-read, a thread not reading its entries' declarations, a prose wait expiring.
+    # ⟳ 2026-11-20 merge of master (with backlog #647) into PR #606: 467 + 3 = 470, exactly the union — #647 added
+    # three entries (438 -> 441) and this branch 29 (438 -> 467); the merged manifest holds 470, no name repeated.
+    # ⟳ 2026-11-20, backlog #672 (Running now sees a building worktree): 438 -> 454, none retired. Sixteen new: a
+    # building worktree not making its item running; the window compared with <=; every change read as building; a
+    # started item keeping `not started`; a missing worktree measured instead of `gone`; a failed measure dropping its
+    # reason; a future stamp read as building; the placed, loose and thread sites each carrying no worktree; the fold
+    # dropping every reading; the lede saying open PRs only; collect() measuring nothing; a running item not saying it
+    # builds; a quiet/gone/unread worktree not said under Owed; the measure not the watchdog's. Not mutated: the
+    # `_sibling` sys.modules registration (removing it fails the import of agent-watchdog, loudly, at load).
+    # Seven re-bound to the moved text, same intent: the no-goal and placed NOW entries (three), the placed and
+    # loose entries' `_ledger_owed`, the lede's removal, and the prose-wait idle rule.
+    # ⟳ 2026-11-20, PR #606 round 2 fold: 466 -> 467, none retired. One new: --owed-idle reading its clock outside
+    # the CANNOT RUN handler (r2 Codex, fix-induced by the round 1 move of the clock read).
+    # ⟳ 2026-11-20, PR #606 round 1 fold: 454 -> 466, none retired. Twelve new: the digest, the session-start block and
+    # the page each judging builds at the snapshot's time instead of the reader's (XM1/F1); both stamps truncated to the
+    # minute and the measure stamped to the minute (Xm1); the ahead tolerance compared with <= or widened (F3); only
+    # a building worktree counting as started (F2); a building item with a declared wait made running (F3); a declared
+    # path with no reading given a change time (F3); a running item hiding a non-building worktree (XM3); --snapshot
+    # keeping the clock read before collect (XM2/F5). Seven re-bound to the moved text, same intent: the window, the
+    # quiet branch and the ahead branch (now in seconds), the building text (now in the busy lambda), the page's agenda
+    # call (now passing the judge), the placed entries' `_builds`, and --owed-idle's injected clock (now read_clock).
+    # Not mutated: --record-agenda's clock re-read after collect (no case drives that path with a moving clock), and
+    # write_page forwarding `judge` (dropping it falls back to `built`, the same minute — no case can tell them apart).
     # ⟳ 2026-11-19, backlog #647 (agenda-stale-wording): 438 -> 440, none retired — the STALE line's who-acts wording,
     # and its `it`/`them`.
-    "scripts/goal-tree.py": 441,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6) -> 440 (#647) -> 441 (#647 r1)
+    "scripts/goal-tree.py": 470,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1720,7 +1743,16 @@ EXPECTED_MUTATIONS = {
     # Three rebound to the moved text (the stored entry, the --add call, the write before ledger_set_after).
     # ⟳ 2026-11-15, master (PR #592) merged into PR #593: 140 + 8 = 148. The two sets touch disjoint entries; merged by
     # name, three-way, so a re-bound entry keeps the side that changed it.
-    "scripts/session-state.py": 148,
+    # ⟳ 2026-11-20, backlog #672: 148 -> 155, none retired. Seven new for the declared `worktree`: --add never storing
+    # it, a missing directory accepted, --set-worktree `none` keeping the key, re-stamping `at`, reporting an unknown id
+    # as success, `none` read as a path, --worktree outside --add not stray. (⟳ 2026-11-20, PR #606 r1 Claude F4: this line
+    # said `os.path.abspath` could not be witnessed — wrong: a relative --set-worktree, given from a known cwd, is.)
+    # Four re-bound to the moved text, same intent: the goal/thread store, --waits and --after at the --add call,
+    # and --after's stray check.
+    # ⟳ 2026-11-20, PR #606 round 1 fold: 155 -> 157, none retired. Two new: a relative worktree stored as given, the
+    # abspath dropped (F4, witnessed by a relative --set-worktree from a known cwd); the main checkout accepted as a
+    # worktree (F6).
+    "scripts/session-state.py": 157,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
@@ -2210,6 +2242,24 @@ EXPECTED_MUTATIONS = {
     # either count. The docstring argued bytes-vs-chars was load-bearing and no case witnessed it.
     "scripts/check-memory-index-budget.py": 28,
     "scripts/check-memory-link.py": 8,
+    # 2026-11-19 (memory hygiene option B, part 1): the memory-shape guard joins with 36 — one or more
+    # per rule, per history marker, per CANNOT RUN arm, and the two-hop reachability bound in both
+    # directions (hop 2 dropped; reachability made transitive).
+    # ⟳ 2026-11-20, PR #605 review r1 fold: 36 -> 65. Six anchors rebound to the rewritten markers,
+    # decoration and link reader; 29 added for the YAML-scalar arms, HTML-comment stripping, link
+    # normalisation, ⚠ / `(` / list-marker decoration and the History / Was marker changes.
+    # ⟳ 2026-11-20, PR #605 review r2 fold: 65 -> 79. Eight anchors rebound to the rewritten scalar
+    # and comment readers; 14 added for YAML escapes, trailing comments and code-span delimiters.
+    # ⟳ 2026-11-20, PR #605 Phase 6 fold (the link reader brackets instead of parsing): 79 -> 91.
+    # FIVE retired WITH THEIR SUBJECT, the code-span / fence / keep-code arms of the deleted
+    # `_COMMENT_RE`; nine rebound to the rewritten reader (wiki scan, MISSING, UNLISTED, hop 2,
+    # transitive, the two comment-region entries, title, alias); 17 added, one per region, per
+    # region edge, per bound and per CANNOT-READ arm.
+    # ⟳ 2026-11-20, PR #605 review r4 fold (Codex BLOCKER, a link in a raw tag's attribute was sure):
+    # 91 -> 102. One rebound (the fence-region entry, `uncertain_regions` rewritten); 11 added for the
+    # tag-interior region: the region, both quotes, a quote in a name and in an unquoted value, the
+    # line end (both arms), `</`, every-tag-to-the-end, first-tag-only, and `=` after a space.
+    "scripts/check-memory-shape.py": 102,
     # backlog #410 (2026-10-30): the stalled-work detector joins with 31 entries — 22, plus 9 for the
     # untrusted-gh-text fold (cross-repo PRs dropped, every printed gh string held to a shape).
     # ⟳ r1 fold: 31 → 58. NINE retired WITH THEIR SUBJECT — the no-upstream exclusion, the age window,
@@ -2495,7 +2545,9 @@ EXPECTED_MUTATIONS = {
     # newest time compared (`e.mtime_ns`, was `e[2]`), the re-arm listing the quiet. Not mutated: a GIT entry's
     # name made a constant -- unseen only when `index` and `logs/HEAD` exchange their exact time and size between
     # two polls, which no git operation does, so the class case cannot witness it.
-    "scripts/agent-watchdog.py": 70,
+    # ⟳ 2026-11-20, backlog #672: 70 -> 73, none retired. Three new: newest_change_ns returning the OLDEST time,
+    # QUIET_MIN drifting from the checklist's armed window, a missing worktree read as time 0 instead of CANNOT RUN.
+    "scripts/agent-watchdog.py": 73,
     # The publishability scan (marketplace-inventory plan Tasks 8-12, spec §5). Pinned in the commit that creates it
     # (Task 8, 2026-11-17): 17 — the file set (emptied, substituted member, count, symlinks, undeclared, coordinates,
     # absent file, outside the repository), the CANNOT RUN entry's shape, measured_at, and the CLI's exits.

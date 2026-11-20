@@ -1,5 +1,5 @@
 {
- "measured_at": "81ccd8d8",
+ "measured_at": "a6ed26fc",
  "packages": {
   "ci-layer": {
    "channel": "reusable-workflow",
@@ -66,6 +66,7 @@
       "scripts/mutations/check-main-drivable.json",
       "scripts/mutations/check-memory-index-budget.json",
       "scripts/mutations/check-memory-link.json",
+      "scripts/mutations/check-memory-shape.json",
       "scripts/mutations/check-merge-ready.json",
       "scripts/mutations/check-page-links.json",
       "scripts/mutations/check-paid-caller-arrival.json",
@@ -130,7 +131,7 @@
       "scripts/mutations/sweep-costs.json",
       "scripts/mutations/sweep-red-alert.json"
      ],
-     "expected_count": 104
+     "expected_count": 105
     },
     "mutation-sweep-job": {
      "files": [
@@ -164,6 +165,7 @@
     ".claude/hooks/regen-goals-page.sh",
     ".claude/hooks/regen-pages.sh",
     ".claude/hooks/run-hook.sh",
+    "scripts/agent-watchdog.py",
     "scripts/ask_answerer.py",
     "scripts/brief-compose.py",
     "scripts/check-anchors.py",
@@ -193,6 +195,12 @@
     "skills/shared/handoff-path.md"
    ],
    "components": {
+    "agent-watchdog": {
+     "files": [
+      "scripts/agent-watchdog.py"
+     ],
+     "expected_count": 1
+    },
     "ask-answerer": {
      "files": [
       "scripts/ask_answerer.py"
