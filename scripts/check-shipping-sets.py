@@ -2232,6 +2232,9 @@ def _self_test_body() -> int:
         # measured 2026-11-17 over the tracked `.py` files, the same set line for line as the reader at b03beb45
         # (lost 0, gained 0). A commit that adds a load to a tracked script moves it: diff the two readers' line
         # lists by hand, then re-pin.
+        # ⟳ 2026-11-17 marketplace-inventory Task 8: 344 + 3 = 347 / f52dc45f48609f44. The three gained lines, diffed
+        # by hand: `check-publishability.py` -> `check-shipping-sets.py` and -> `fixture_git.py` (the new script's
+        # two loads), and `check-selftest-counts.py` -> `check-publishability.py` (its POPULATION row). Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         live_set = lambda: sorted(f"{f} -> {e}" for f in tracked_py for e in exec_edges(REPO, f))  # noqa: E731
         case("Phase 6: over every tracked `.py` the reader's edge SET is PINNED — the rewrite lost none and gained "
@@ -2239,7 +2242,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (344, "2cfb6a85d091b861", []))
+             (347, "f52dc45f48609f44", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
