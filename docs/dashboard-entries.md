@@ -21016,3 +21016,16 @@ Marketplace slice E, plan `docs/superpowers/plans/2026-11-11-marketplace-invento
 `scripts/check-docs.py`, no `.claude/`) and `out/known-facts.json` beside it: 12 of `brief`'s ground-truth items, 4
 of them correctly empty. 12/12 self-test cases, 5 mutations all killed by their named case; wired W1-W8 (manifest,
 `expected_mutations.py`, the declared-counts case, `POPULATION`, `EXAMINED_KEYS`, a `ci.yml` step).
+
+Ran the first install experiment: the page-building toolkit installed into a clean, made-up stranger's machine. It
+installs, and its local page server works. But no page a stranger can ask a question in was produced: the scripts look
+for the project beside their own install folder instead of where the user is, and the Ask box can only be copied from
+a page that already has one, so a newcomer can never get the first. Record: `docs/marketplace/experiment-tier-a.md`.
+<!--tech-->
+Task 14 (2026-11-19, 33 `comprehensibility` components, 14 exercised): pass condition 1 fails for all 5 page skills;
+7 of 9 exercised scripts fail their operation (suite defects S1 install-relative paths, S2 Ask-tray bootstrap); `brief`
+condition 2 FAILS (no page; its chat answer scored 6 correct, 4 correctly-empty, 2 missing of 12). Isolation defect
+I1: a world under the author's home loads the author's `~/.claude/CLAUDE.md` and `preflight` passes; re-run under
+`DARWIN_USER_TEMP_DIR`. Step 5 (scan prediction) NOT RUN: slice D unmerged. Port 7391 stopped 23:26:11, restarted
+23:31:53. Also re-pinned `check-shipping-sets.py`'s Phase 6 edge set (347, `1c64fcc5c8bd9add`) and declared
+`scripts/mutations/mkt_seed_repo.json` in `shipping-sets.json` (Task 13 follow-up).

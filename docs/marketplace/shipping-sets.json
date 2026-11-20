@@ -113,6 +113,7 @@
       "scripts/mutations/gen-work-lines.json",
       "scripts/mutations/goal-tree.json",
       "scripts/mutations/mkt_isolate.json",
+      "scripts/mutations/mkt_seed_repo.json",
       "scripts/mutations/mkt_stage.json",
       "scripts/mutations/observer_log.json",
       "scripts/mutations/page_chrome.json",
@@ -128,7 +129,7 @@
       "scripts/mutations/sweep-costs.json",
       "scripts/mutations/sweep-red-alert.json"
      ],
-     "expected_count": 102
+     "expected_count": 103
     },
     "mutation-sweep-job": {
      "files": [
