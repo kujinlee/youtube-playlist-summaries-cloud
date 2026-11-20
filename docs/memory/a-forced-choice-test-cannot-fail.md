@@ -1,6 +1,6 @@
 ---
 name: a-forced-choice-test-cannot-fail
-description: FIRES-WHEN: scoring a matcher, classifier or retriever against a labelled set — measuring only the cases that SHOULD match
+description: "FIRES-WHEN: scoring a matcher, classifier or retriever against a labelled set — measuring only the cases that SHOULD match"
 metadata:
   type: feedback
 ---
