@@ -33,3 +33,12 @@ findings:
 | Id | Finding | Fold |
 |---|---|---|
 | Xm1 | the absent-ratchet case counts `ABSENT_RATCHETS` names without requiring them distinct: three copies of `check-roadmap-consistency` pass 14/14 while the other two ratchets drop out of the fact | filed, backlog #676 (round cap) |
+
+## Phase 6 outcome (2026-11-20)
+
+`docs/reviews/architecture-review-2026-11-20-mkt-seed-repo.md`: **file it, no redesign in this PR.** The self-test
+re-derives each fact's pairing by hand, so 13 of 20 one-sided edits of the seed pass 14/14; a redesign (each fact
+declared once as a command, every answer read by running it, compared whole to one independent literal) turns all 20
+red. It is filed, not done here, because no finding says a shipped fact is wrong (the scored `known-facts.json` is
+unchanged), the redesign changes that file and owes its own round 1, and no later plan task edits the seed. Backlog
+#678 carries it and supersedes #676.
