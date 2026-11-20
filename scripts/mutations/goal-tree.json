@@ -2934,8 +2934,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    now += [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": _one_line(",
-        "    now += [] if 1 else [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": _one_line("
+        "    now += [_run_if_building({\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": _one_line(",
+        "    now += [] if 1 else [_run_if_building({\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": _one_line("
       ]
     ],
     "expect": [
@@ -3403,7 +3403,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        + '<p class=\"lede\">open PRs only: a background job or an agent is not visible to this page</p>'\n",
+        "        + f'<p class=\"lede\">open PRs, and ledger work whose declared worktree changed in the last {_WD.QUIET_MIN} '\n          'min: any other background job or agent is not visible to this page</p>'\n",
         ""
       ]
     ],
@@ -4909,8 +4909,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"))\n                for u in g.get(\"placed\") or []",
-        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"))\n                for u in []"
+        "| _builds([u], snap.get(\"at\")))\n                for u in g.get(\"placed\") or []",
+        "| _builds([u], snap.get(\"at\")))\n                for u in []"
       ]
     ],
     "expect": [
@@ -4948,8 +4948,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                 \"waits\": u.get(\"waits\")} | _owed_keys([u], u.get(\"blockers\"))\n                for u in g.get(\"placed\")",
-        "                 \"waits\": None} | _owed_keys([u], u.get(\"blockers\"))\n                for u in g.get(\"placed\")"
+        "\"what\": _one_line(u.get(\"what\")), \"waits\": u.get(\"waits\")}",
+        "\"what\": _one_line(u.get(\"what\")), \"waits\": None}"
       ]
     ],
     "expect": [
@@ -5320,8 +5320,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"parked\": is_parked(e)} | _ledger_waits(e)\n                                                    | _ledger_owed(e, src))",
-        "\"parked\": is_parked(e)} | _ledger_waits(e)\n                                                    )"
+        "| _ledger_waits(e)\n                                                    | _ledger_owed(e, src) | _ledger_worktree(e, src))",
+        "| _ledger_waits(e)\n                                                    | _ledger_worktree(e, src))"
       ]
     ],
     "expect": [
@@ -5333,8 +5333,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "             | _ledger_owed(e, src)\n             for e in unnamed if not is_parked(e)]",
-        "             for e in unnamed if not is_parked(e)]"
+        "             | _ledger_owed(e, src) | _ledger_worktree(e, src)\n             for e in unnamed if not is_parked(e)]",
+        "             | _ledger_worktree(e, src)\n             for e in unnamed if not is_parked(e)]"
       ]
     ],
     "expect": [
@@ -5720,12 +5720,220 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        " and not recorded\n    alarms",
-        " and not (recorded and not blockers)\n    alarms"
+        " and not recorded\n    builds = x.get(\"builds\") or []",
+        " and not (recorded and not blockers)\n    builds = x.get(\"builds\") or []"
       ]
     ],
     "expect": [
       "⭐ r1 Codex 5: an item with a live recorded wait or an OPEN prerequisite is NOT idle, whatever else finished; a listed item shows EVERY reason it has, not the first"
+    ]
+  },
+  {
+    "name": "#672: a building worktree does not make its item running",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if _building(x) and not x.get(\"waits\"):\n        x[\"running\"] = True",
+        "if False:\n        x[\"running\"] = True"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672 FALSIFIER 1: a ledger entry whose declared worktree changed 5 min before the snapshot is under Running now as `building · last change 5 min ago` — the page never says `nothing running` or `not started`, and the session-start Owed-and-idle block does not list it"
+    ]
+  },
+  {
+    "name": "#672: the window compared with <= (30 min still running)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if mins < _WD.QUIET_MIN:",
+        "if mins <= _WD.QUIET_MIN:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: the window is the WATCHDOG's (QUIET_MIN) — 29 min is running, 30 min is owed: two snapshot times over ONE worktree, in ONE case"
+    ]
+  },
+  {
+    "name": "#672: every change read as building, however old",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return {\"state\": \"quiet\", \"text\": f\"quiet {mins} min\"}",
+        "return {\"state\": \"building\", \"text\": f\"building · last change {mins} min ago\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672 FALSIFIER 2: one whose worktree changed 3 h before the snapshot is NOT under Running now: it is Owed as `quiet 180 min`, and its finished blocker no longer says `not started`"
+    ]
+  },
+  {
+    "name": "#672: a started item keeps `not started`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return f\"{when} ({b['ref']})\" + (\"\" if started else \", not started\")",
+        "return f\"{when} ({b['ref']}), not started\""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672 FALSIFIER 2: one whose worktree changed 3 h before the snapshot is NOT under Running now: it is Owed as `quiet 180 min`, and its finished blocker no longer says `not started`"
+    ]
+  },
+  {
+    "name": "#672: a missing worktree is measured, never `gone`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not os.path.isdir(p):\n            out[p] = {\"gone\": True}",
+        "        if False:\n            out[p] = {\"gone\": True}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: a declared worktree that is MISSING reads `worktree gone` under Owed, never running"
+    ]
+  },
+  {
+    "name": "#672: a failed measure drops its reason",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "out[p] = {\"unread\": _SS.clean(f\"{type(exc).__name__}: {exc}\", 160)}",
+        "out[p] = {\"unread\": \"x\"}"
+      ]
+    ],
+    "expect": [
+      "backlog #672: a worktree whose measure FAILED, or whose change is stamped after the snapshot, is Owed and says which — never read as running"
+    ]
+  },
+  {
+    "name": "#672: a change stamped after the snapshot read as building",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if mins < -1:",
+        "if mins < -100:"
+      ]
+    ],
+    "expect": [
+      "backlog #672: a worktree whose measure FAILED, or whose change is stamped after the snapshot, is Owed and says which — never read as running"
+    ]
+  },
+  {
+    "name": "#672: an entry placed by its goal carries no worktree",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "| _ledger_owed(e, src) | _ledger_worktree(e, src))",
+        "| _ledger_owed(e, src))"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: an entry placed by its GOAL field, and one under NO goal, are each running while their worktree builds — the two other sites, in ONE case"
+    ]
+  },
+  {
+    "name": "#672: a loose entry carries no worktree",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "             | _ledger_owed(e, src) | _ledger_worktree(e, src)\n",
+        "             | _ledger_owed(e, src)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: an entry placed by its GOAL field, and one under NO goal, are each running while their worktree builds — the two other sites, in ONE case"
+    ]
+  },
+  {
+    "name": "#672: a thread's entries carry no worktree",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "               | _ledger_worktree(e, src)   # backlog #672\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672 FALSIFIER 1: a ledger entry whose declared worktree changed 5 min before the snapshot is under Running now as `building · last change 5 min ago` — the page never says `nothing running` or `not started`, and the session-start Owed-and-idle block does not list it"
+    ]
+  },
+  {
+    "name": "#672: the fold drops every worktree reading",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for b in x.get(\"builds\") or []:   # backlog #672",
+        "for b in []:   # backlog #672"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672 FALSIFIER 1: a ledger entry whose declared worktree changed 5 min before the snapshot is under Running now as `building · last change 5 min ago` — the page never says `nothing running` or `not started`, and the session-start Owed-and-idle block does not list it"
+    ]
+  },
+  {
+    "name": "#672: the lede says open PRs only",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "<p class=\"lede\">open PRs, and ledger work",
+        "<p class=\"lede\">open PRs only, and ledger work"
+      ]
+    ],
+    "expect": [
+      "backlog #672: Running now says what it can see — open PRs AND ledger work with a building worktree"
+    ]
+  },
+  {
+    "name": "#672: collect() measures no worktree",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "src[\"worktrees\"] = measure_worktrees(src[\"ledger\"])",
+        "src[\"worktrees\"] = {}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: collect() reads every DECLARED worktree through the watchdog's measure — one changed at a known minute, one missing"
+    ]
+  },
+  {
+    "name": "#672: a running item does not say it is building",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for b in x.get(\"builds\") or [] if b[\"state\"] == \"building\")",
+        "for b in x.get(\"builds\") or [] if False)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672 FALSIFIER 1: a ledger entry whose declared worktree changed 5 min before the snapshot is under Running now as `building · last change 5 min ago` — the page never says `nothing running` or `not started`, and the session-start Owed-and-idle block does not list it"
+    ]
+  },
+  {
+    "name": "#672: a quiet, gone or unread worktree is not said under Owed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if w[\"state\"] != \"building\" and w[\"text\"] not in alarms:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672 FALSIFIER 2: one whose worktree changed 3 h before the snapshot is NOT under Running now: it is Owed as `quiet 180 min`, and its finished blocker no longer says `not started`"
+    ]
+  },
+  {
+    "name": "#672: the measure is not the watchdog's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "measure = measure or _WD.newest_change_ns",
+        "measure = measure or (lambda p: 0)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: collect() reads every DECLARED worktree through the watchdog's measure — one changed at a known minute, one missing"
     ]
   }
 ]

@@ -444,7 +444,16 @@ EXPECTED_MUTATIONS = {
     # (r1 Codex 5's idle rule is now `not pending and not recorded`). Seven new, one or more per new rule: an absent
     # `after` read as a prerequisite, a damaged element dropped, a non-list read as none, an element that merely
     # contains a ref accepted, prose re-read, a thread not reading its entries' declarations, a prose wait expiring.
-    "scripts/goal-tree.py": 438,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    # ⟳ 2026-11-20, backlog #672 (Running now sees a building worktree): 438 -> 454, none retired. Sixteen new: a
+    # building worktree not making its item running; the window compared with <=; every change read as building; a
+    # started item keeping `not started`; a missing worktree measured instead of `gone`; a failed measure dropping its
+    # reason; a future stamp read as building; the placed, loose and thread sites each carrying no worktree; the fold
+    # dropping every reading; the lede saying open PRs only; collect() measuring nothing; a running item not saying it
+    # builds; a quiet/gone/unread worktree not said under Owed; the measure not the watchdog's. Not mutated: the
+    # `_sibling` sys.modules registration (removing it fails the import of agent-watchdog, loudly, at load).
+    # Seven re-bound to the moved text, same intent: the no-goal and placed NOW entries (three), the placed and
+    # loose entries' `_ledger_owed`, the lede's removal, and the prose-wait idle rule.
+    "scripts/goal-tree.py": 454,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1718,7 +1727,13 @@ EXPECTED_MUTATIONS = {
     # Three rebound to the moved text (the stored entry, the --add call, the write before ledger_set_after).
     # ⟳ 2026-11-15, master (PR #592) merged into PR #593: 140 + 8 = 148. The two sets touch disjoint entries; merged by
     # name, three-way, so a re-bound entry keeps the side that changed it.
-    "scripts/session-state.py": 148,
+    # ⟳ 2026-11-20, backlog #672: 148 -> 155, none retired. Seven new for the declared `worktree`: --add never storing
+    # it, a missing directory accepted, --set-worktree `none` keeping the key, re-stamping `at`, reporting an unknown id
+    # as success, `none` read as a path, --worktree outside --add not stray. Not mutated: `os.path.abspath` (every
+    # caller passes an absolute path, so no case can witness it).
+    # Four re-bound to the moved text, same intent: the goal/thread store, --waits and --after at the --add call,
+    # and --after's stray check.
+    "scripts/session-state.py": 155,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
@@ -2482,7 +2497,9 @@ EXPECTED_MUTATIONS = {
     # newest time compared (`e.mtime_ns`, was `e[2]`), the re-arm listing the quiet. Not mutated: a GIT entry's
     # name made a constant -- unseen only when `index` and `logs/HEAD` exchange their exact time and size between
     # two polls, which no git operation does, so the class case cannot witness it.
-    "scripts/agent-watchdog.py": 70,
+    # ⟳ 2026-11-20, backlog #672: 70 -> 73, none retired. Three new: newest_change_ns returning the OLDEST time,
+    # QUIET_MIN drifting from the checklist's armed window, a missing worktree read as time 0 instead of CANNOT RUN.
+    "scripts/agent-watchdog.py": 73,
     # The publishability scan (marketplace-inventory plan Tasks 8-12, spec §5). Pinned in the commit that creates it
     # (Task 8, 2026-11-17): 17 — the file set (emptied, substituted member, count, symlinks, undeclared, coordinates,
     # absent file, outside the repository), the CANNOT RUN entry's shape, measured_at, and the CLI's exits.

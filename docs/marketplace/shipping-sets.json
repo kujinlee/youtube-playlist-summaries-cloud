@@ -1,5 +1,5 @@
 {
- "measured_at": "81ccd8d8",
+ "measured_at": "a66e6509",
  "packages": {
   "ci-layer": {
    "channel": "reusable-workflow",
@@ -163,6 +163,7 @@
     ".claude/hooks/regen-goals-page.sh",
     ".claude/hooks/regen-pages.sh",
     ".claude/hooks/run-hook.sh",
+    "scripts/agent-watchdog.py",
     "scripts/ask_answerer.py",
     "scripts/brief-compose.py",
     "scripts/check-anchors.py",
@@ -192,6 +193,12 @@
     "skills/shared/handoff-path.md"
    ],
    "components": {
+    "agent-watchdog": {
+     "files": [
+      "scripts/agent-watchdog.py"
+     ],
+     "expected_count": 1
+    },
     "ask-answerer": {
      "files": [
       "scripts/ask_answerer.py"

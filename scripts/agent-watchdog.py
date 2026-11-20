@@ -2,7 +2,7 @@
 """Wake the orchestrator when a builder it spawned goes quiet (backlog #657).
 
     python3 scripts/agent-watchdog.py QUIET_MIN name=worktree[:transcript] [name=worktree[:transcript] ...]
-    python3 scripts/agent-watchdog.py --self-test  # 76 cases
+    python3 scripts/agent-watchdog.py --self-test  # 79 cases
 
 WHY THIS EXISTS. The owner, 2026-11-15: "It seems that orchestrator need to actively check progress of
 subagents periodically." An orchestrator that only waits for a builder's report learns nothing from a builder
@@ -89,6 +89,10 @@ POLL_S = 60
 # One silent foreground call of a subagent cannot outlast this (`check-agent-long-call.LIMIT_S`). DEFINED here,
 # not imported, so a lone copy of this file still runs; a self-test case reads the sibling and refuses a drift.
 LONGEST_SILENT_CALL_S = 270
+# The window the checklist arms this watchdog with (`docs/process-checklists.md`, *Agent lifetime*:
+# `agent-watchdog.py 30 ...`). The goal tree reads it (backlog #672), so the page's `building` / `quiet` turn at the
+# same minute the watchdog would wake the orchestrator. A self-test case reads the checklist and refuses a drift.
+QUIET_MIN = 30
 EXCLUDED_DIRS = (".git", "node_modules", ".next")
 GIT_REQUIRED = "HEAD"
 GIT_OPTIONAL = ("index", "logs/HEAD")
@@ -218,6 +222,15 @@ def observe(w: Watch) -> "list[Entry]":
             raise CannotRun(f"the transcript {w.transcript} is not a regular file")
         entries.append(_entry("", tst))
     return entries
+
+
+def newest_change_ns(worktree: str) -> int:
+    """backlog #672: the newest modification time (ns) of everything `observe` reads for this worktree, no transcript
+    -- the watchdog's own measure read ONCE, by a page that renders once and has no earlier poll to compare with (the
+    goal tree's *Running now*). It is CannotRun exactly when `observe` is: a missing worktree, an unreadable git
+    directory. ⚠ Unlike `main`, its caller DOES compare this time with a clock, so a file stamped in the future reads
+    as a change made now (a bound the page states); every other bound of the module docstring applies as it is."""
+    return max(e.mtime_ns for e in observe(Watch("worktree", worktree)))
 
 
 def fingerprint(entries: "list[Entry]") -> str:
@@ -422,6 +435,26 @@ def _self_test_body() -> int:
     except OSError as exc:
         _limit = f"unreadable: {exc}"
     case("the silent-call bound equals check-agent-long-call's LIMIT_S", LONGEST_SILENT_CALL_S, _limit)
+    try:
+        with open(os.path.join(_here, os.pardir, "docs", "process-checklists.md"), encoding="utf-8") as fh:
+            _armed = sorted(set(re.findall(r"agent-watchdog\.py (\d+) ", fh.read())))
+    except OSError as exc:
+        _armed = f"unreadable: {exc}"
+    case("backlog #672: QUIET_MIN is the window the checklist arms the watchdog with", _armed, [str(QUIET_MIN)])
+
+    # --- backlog #672: the measure read ONCE, for a page that renders once (the goal tree) -------------------
+    w = World()
+    wn, gn = w.wt("n")
+    _newest = []
+    for file_at, head_at in ((w.t0 - 60, w.t0 - 600), (w.t0 - 900, w.t0 - 120)):
+        w.stamp(os.path.join(wn, "src", "a.py"), file_at)
+        w.stamp(os.path.join(gn, "HEAD"), head_at)
+        _newest.append(refused(newest_change_ns, wn))
+    case("⭐ backlog #672: newest_change_ns is the NEWEST time among everything `observe` reads -- a file newer than "
+         "HEAD, then a commit (HEAD) newer than the file, in ONE case",
+         _newest, [int(w.t0 - 60) * 10**9, int(w.t0 - 120) * 10**9])
+    case("backlog #672: newest_change_ns of a missing worktree is CANNOT RUN, never a time",
+         is_refusal(refused(newest_change_ns, os.path.join(w.root, "gone"))), True)
 
     # --- the git directory ---------------------------------------------------------------------------------
     w = World()
