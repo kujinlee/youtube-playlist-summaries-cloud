@@ -226,16 +226,24 @@ element that asks it; the composer does the rest:
 
 | Fragment markup | Composed page |
 |---|---|
-| `<p data-decision>Keep the stranger audience?</p>` | yellow `🟨 ✍ DECISION n of N` tag after it — OPEN |
+| `<p data-decision>Keep the stranger audience?</p>` | yellow `🟨 ✍ DECISION n of N` tag as the element's FIRST child, before the question text — OPEN |
 | `<p data-decision="Yes — owner, 11-11">Keep the stranger audience?</p>` | green `🟩 ✍ DECISION n of N — ANSWERED: Yes — owner, 11-11` |
 | `<p data-decision data-decision-label="D7">…</p>` | the tag leads with `D7 — DECISION n of N` |
 
 - **Answering = setting the attribute's value to the answer, then recomposing** (§3's rule — same commit).
-- **Never type a number.** `n`, `N`, and the counter under the title (total · remaining · answered, with a
-  link to the first open one) are all derived by `brief-compose.py` (`render_decisions`) from one parse of
-  the fragment. A page with no mark gets no counter.
-- **A mark the reader could not see is CANNOT RUN**, not a silently-counted tag (hidden, inert, inside
-  `template`/`noscript`/`select`/`svg`/`math`, or in a collapsed `<details>`) — move it to a visible element.
+- **Never type a number.** `n`, `N`, and the counter under the title are all derived by `brief-compose.py`
+  (`render_decisions`) from one parse of the fragment. While any is open the counter reads total · remaining ·
+  answered with a link to the first open one; once none is open it reads `N decisions on this page · 0
+  remaining · all answered`, no link. An EMPTY or whitespace-only value counts as OPEN. A page with no mark
+  gets no counter.
+- **The composer REFUSES (CANNOT RUN) a mark it can tell is unreachable or unrenderable**: under a `hidden` or
+  `inert` attribute; inside `template`/`noscript`/`select`/`svg`/`math`; inside a `<details>` but outside its
+  `<summary>` (open or not), or on the `<details>` itself; on a table-structure element (`<tr>`…), a
+  form or raw-text element (`select`, `textarea`, `script`…) or a void element (`img`, `br`…) — the list is
+  `_DECISION_REFUSE_ON`; or an id colliding with the generated `ex-decision-n`. Move the mark to a plain
+  visible element. ⚠ **Bound:** it reads ATTRIBUTES, not CSS — a mark under `style="display:none"` or a
+  stylesheet rule, or after misnested markup the browser re-parents into a hidden parent, IS counted. Look
+  at the composed page.
 - ⚠ **Nothing checks that EVERY question is marked** (backlog #615): an unmarked question is invisible to the
   counter, so read the page for owner questions before delivering it.
 - The tag colours are palette tokens (`--decide*` yellow, `--decided*` green) the composer adds for light,
