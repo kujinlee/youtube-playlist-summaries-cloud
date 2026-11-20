@@ -21093,3 +21093,19 @@ window; a measure that fails is `worktree NOT READ (…)`, and a change stamped 
 is owed, never running. A declared wait still holds a building item as owed. The Running now lede now says what the
 page can see. `agent-watchdog` joined the comprehensibility package (components map and declaration) because
 goal-tree now loads it; the shipping-sets edge pin moved 347 → 348 for that one edge.
+
+## 2026-11-20
+Two things from this morning. First, the Fable/Opus comparison you asked for at the weekly reset: over 18 recorded
+runs, Fable cost about four times as much per unit of usage as Opus and did no better on building or fixing. Its fixes
+caused 9 new review findings over two runs against Opus's 2, and its builds needed more review rounds. Fable has only
+run architecture reviews, so there is nothing to compare there yet; the next one runs on Opus to give that comparison.
+The model routing stays as it is. Second, a gap is filed: one change merged although its review had flagged that the
+same part kept breaking after each fix, which should have triggered an architecture review first.
+<!--tech-->
+Pilot data: `.claude/fable-pilot.jsonl` (18 rows, main checkout). Folds: Fable 58/85 min, fix-induced 5+4; Opus
+71/24 min, fix-induced 2+0. Builds: Fable 748 min/4 rounds/6 fix-induced (b625), 110 min/4 rounds (slice D); Opus
+538 min/2 rounds/0 (b619), 95 min/1 round (slice C). Phase 6: Fable only, 134/108/17 min. `~/.claude/meter/regress.py`
+coefficients (% per M weighted tokens): five_hour opus 1.85, other(Fable) 7.82, R² 0.92; seven_day opus 0.22, Fable
+1.07, R² 0.37 — Fable ≈ 4.2–4.9× Opus. Ledger `fable-compare-week` closed. Backlog #680: slice D detector 4 armed
+THRASHING (r3 and r4 fix-induced) and PR #600 merged without Phase 6; `check-merge-ready.py` does not read the
+coordinator's thrashing answer.
