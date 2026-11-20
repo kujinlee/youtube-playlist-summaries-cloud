@@ -444,6 +444,8 @@ EXPECTED_MUTATIONS = {
     # (r1 Codex 5's idle rule is now `not pending and not recorded`). Seven new, one or more per new rule: an absent
     # `after` read as a prerequisite, a damaged element dropped, a non-list read as none, an element that merely
     # contains a ref accepted, prose re-read, a thread not reading its entries' declarations, a prose wait expiring.
+    # ⟳ 2026-11-20 merge of master (with backlog #647) into PR #606: 467 + 3 = 470, exactly the union — #647 added
+    # three entries (438 -> 441) and this branch 29 (438 -> 467); the merged manifest holds 470, no name repeated.
     # ⟳ 2026-11-20, backlog #672 (Running now sees a building worktree): 438 -> 454, none retired. Sixteen new: a
     # building worktree not making its item running; the window compared with <=; every change read as building; a
     # started item keeping `not started`; a missing worktree measured instead of `gone`; a failed measure dropping its
@@ -465,7 +467,9 @@ EXPECTED_MUTATIONS = {
     # call (now passing the judge), the placed entries' `_builds`, and --owed-idle's injected clock (now read_clock).
     # Not mutated: --record-agenda's clock re-read after collect (no case drives that path with a moving clock), and
     # write_page forwarding `judge` (dropping it falls back to `built`, the same minute — no case can tell them apart).
-    "scripts/goal-tree.py": 467,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    # ⟳ 2026-11-19, backlog #647 (agenda-stale-wording): 438 -> 440, none retired — the STALE line's who-acts wording,
+    # and its `it`/`them`.
+    "scripts/goal-tree.py": 470,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -2285,7 +2289,14 @@ EXPECTED_MUTATIONS = {
     # state, never a hook tier: 7), and r3 Claude R3-F1's well-formed suite node (3). Re-bound to the reshaped lines:
     # 5 (head_has_run inverted, the head-run test, the NOT MEASURED wording, DIRTY-NO-CI's stalled state and tier);
     # 3 expects renamed with their cases, one of them (the missing checkSuites key) stale since r2.
-    "scripts/check-stalled-work.py": 133,
+    # ⟳ 2026-11-19, backlog #647 (agenda-stale-wording): 133 -> 141, none retired. Eight new, the STALE AGENDA line: the
+    # subject read off goal-tree's own line, a malformed agenda not clear, a stalled state, its tier, `#` kept, a missing
+    # log a NOTE, the NEWEST snapshot read, and collect's wiring.
+    # ⟳ 2026-11-20, #647 r1 fold: 141 -> 151, none retired. Ten new: the hook prints an agenda NOT CHECKED note alone
+    # (and no other note alone), the last line passes goal-tree's `is_snapshot`, no bytecode written and the setting
+    # put back, the MAIN checkout's log read, the loader, goal-tree and checkout given are the ones used, and the
+    # "every step is done" line is not a late merge.
+    "scripts/check-stalled-work.py": 151,
     # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
     # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
     # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the

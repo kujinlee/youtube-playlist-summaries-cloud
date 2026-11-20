@@ -6108,5 +6108,44 @@
     "expect": [
       "PR #606 r2 Codex: a clock that FAILS under `--owed-idle` prints the block's own bounded CANNOT RUN line and exits OWED_IDLE_RC — never a traceback with nothing on stdout"
     ]
+  },
+  {
+    "name": "backlog #647: the STALE line no longer says who acts or that Refresh does not clear it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"(Refresh does not clear this).\"))",
+        "\"Re-record it.\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-17 09:47/09:49: the STALE line says WHO acts and that the page's Refresh does NOT clear it — one line"
+    ]
+  },
+  {
+    "name": "backlog #647: two late threads read `it`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"{'it' if len(d['late']) == 1 else 'them'}; the coordinator",
+        "f\"{'it'}; the coordinator"
+      ]
+    ],
+    "expect": [
+      "owner 11-17: two late threads are `them`, both named, on ONE line"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: a snapshot needs only `goals`, not `at`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return isinstance(rec, dict) and \"goals\" in rec and \"at\" in rec",
+        "return isinstance(rec, dict) and \"goals\" in rec"
+      ]
+    ],
+    "expect": [
+      "a snapshot is a dict with BOTH `goals` and `at` — `{}`, a list and either key alone are not"
+    ]
   }
 ]

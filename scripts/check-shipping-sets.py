@@ -2235,9 +2235,15 @@ def _self_test_body() -> int:
         # ⟳ 2026-11-17 marketplace-inventory Task 8: 344 + 3 = 347 / f52dc45f48609f44. The three gained lines, diffed
         # by hand: `check-publishability.py` -> `check-shipping-sets.py` and -> `fixture_git.py` (the new script's
         # two loads), and `check-selftest-counts.py` -> `check-publishability.py` (its POPULATION row). Lost: 0.
+        # ⟳ 2026-11-20 merge of backlog #647 (branch agenda-stale-wording): 347 + 1 = 348 / 4bb7d4965ff49f79. The one
+        # gained line, diffed by hand against master's 347: `scripts/check-stalled-work.py -> scripts/goal-tree.py` (its
+        # importlib load of `agenda_context`). Lost: 0.
         # ⟳ 2026-11-20 backlog #672: 347 + 1 = 348 / 2169c547cfd21a44. The one gained line, diffed by hand against
         # 11d0568d's reader: `goal-tree.py` -> `agent-watchdog.py` (Running now reads a worktree through the
         # watchdog's own measure). Lost: 0. `agent-watchdog` joined the comprehensibility map and declaration with it.
+        # ⟳ 2026-11-20 merge of master (with backlog #647) into PR #606: 349 / 99e3cf5ebaef48a3, exactly the UNION of
+        # the two 348s above — master's `check-stalled-work.py -> goal-tree.py` and this branch's `goal-tree.py ->
+        # agent-watchdog.py`, each side's one gain over the shared 347. Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         live_set = lambda: sorted(f"{f} -> {e}" for f in tracked_py for e in exec_edges(REPO, f))  # noqa: E731
         case("Phase 6: over every tracked `.py` the reader's edge SET is PINNED — the rewrite lost none and gained "
@@ -2245,7 +2251,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (348, "2169c547cfd21a44", []))
+             (349, "99e3cf5ebaef48a3", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
