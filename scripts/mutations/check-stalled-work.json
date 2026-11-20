@@ -173,8 +173,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if rc != STALLED_RC:\n        return None",
-        "    if False:\n        return None"
+        "    if rc != STALLED_RC:\n        # r1 (Codex",
+        "    if False:\n        # r1 (Codex"
       ]
     ],
     "expect": [
@@ -724,8 +724,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "(\"UNPROCESSED\",), (\"MERGED\",))",
-        "(\"MERGED\",), (\"UNPROCESSED\",))"
+        "(\"UNPROCESSED\",),\n              (\"MERGED\",))",
+        "(\"MERGED\",),\n              (\"UNPROCESSED\",))"
       ]
     ],
     "expect": [
@@ -1462,8 +1462,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "HOOK_TIERS = ((\"DIRTY-NO-CI\",), (\"STALLED\"",
-        "HOOK_TIERS = ((\"STALLED\""
+        "HOOK_TIERS = ((\"DIRTY-NO-CI\",), (\"STALE-AGENDA\",), (\"STALLED\"",
+        "HOOK_TIERS = ((\"STALE-AGENDA\",), (\"STALLED\""
       ]
     ],
     "expect": [
@@ -1566,8 +1566,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "HOOK_TIERS = ((\"DIRTY-NO-CI\",), (\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\"),",
-        "HOOK_TIERS = ((\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\"),"
+        "HOOK_TIERS = ((\"DIRTY-NO-CI\",), (\"STALE-AGENDA\",), (\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\"),",
+        "HOOK_TIERS = ((\"STALE-AGENDA\",), (\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\"),"
       ]
     ],
     "expect": [
@@ -1741,6 +1741,240 @@
     ],
     "expect": [
       "545 r2: own_prs REFUSES an empty baseRefName, and one with a space; accepts a slash"
+    ]
+  },
+  {
+    "name": "backlog #647: agenda_late never finds goal-tree's STALE line",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if k == \"stale\" and text.startswith(gt.AGENDA_STALE_HEAD)",
+        "if k == \"now\" and text.startswith(gt.AGENDA_STALE_HEAD)"
+      ]
+    ],
+    "expect": [
+      "⭐ #647: a thread merged after the plan was set that NO step names is the stale subject, read off goal-tree's own STALE line"
+    ]
+  },
+  {
+    "name": "backlog #647: a malformed agenda reads as no subject (clear)",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "raise ValueError(f\"its agenda is malformed: {ag}\")",
+        "return None"
+      ]
+    ],
+    "expect": [
+      "#647: a MALFORMED agenda raises (it becomes a NOTE), never reads as clear"
+    ]
+  },
+  {
+    "name": "backlog #647: STALE-AGENDA is not a stalled state",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "STALLED_STATES = (\"STALE-AGENDA\", \"STALLED\"",
+        "STALLED_STATES = (\"STALLED\""
+      ]
+    ],
+    "expect": [
+      "⭐ #647: the line, in render's format — `STALE-AGENDA agenda <subject> merged after the plan was set; re-plan it — <who acts>` — and it is STALLED (rc 1)"
+    ]
+  },
+  {
+    "name": "backlog #647: the STALE-AGENDA tier moves below unpushed tips",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "(\"STALE-AGENDA\",), (\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\"), (\"UNPROCESSED\",),",
+        "(\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\"), (\"STALE-AGENDA\",), (\"UNPROCESSED\",),"
+      ]
+    ],
+    "expect": [
+      "⭐ #647: in the hook block STALE-AGENDA is its own tier — after DIRTY-NO-CI, before unpushed tips — and is counted in `showing N of M`"
+    ]
+  },
+  {
+    "name": "backlog #647: an agenda subject loses its `#`",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "AGENDA_KEEP_RE = re.compile(r\"[^A-Za-z0-9 ._:/,=()'#-]\")",
+        "AGENDA_KEEP_RE = re.compile(r\"[^A-Za-z0-9 ._:/,=()'-]\")"
+      ]
+    ],
+    "expect": [
+      "#647: the subject is shaped — a newline and a backtick do not survive; `#` does"
+    ]
+  },
+  {
+    "name": "backlog #647: a missing goal-tree log is silent, not a NOTE",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "            return [], [\"agenda-no-log\"]\n",
+        "            return [], []\n"
+      ]
+    ],
+    "expect": [
+      "#647: no goal-tree log in the main checkout is a NOTE (agenda NOT CHECKED), never clear"
+    ]
+  },
+  {
+    "name": "backlog #647: the OLDEST logged snapshot is read, not the newest",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "            tail = gt._last_line(fh)\n        snap = json.loads(tail",
+        "            tail = fh.readline()\n        snap = json.loads(tail"
+      ]
+    ],
+    "expect": [
+      "⭐ #647: the NEWEST logged snapshot (the one the page renders) is read — stale there is a fact"
+    ]
+  },
+  {
+    "name": "backlog #647: collect never adds the stale-agenda fact",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    facts += stale\n",
+        "    facts += []\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #647, END TO END: the hook prints the STALE AGENDA line, and its count, when nothing else is stalled"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: the hook drops a stale-agenda NOT CHECKED note when nothing is stalled",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "unread = [ln for ln in lines if ln.startswith(\"NOTE\") and AGENDA_UNREAD in ln]",
+        "unread = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r1: nothing stalled but the agenda NOT CHECKED — the hook prints the note, framed as data, never silence"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: ANY note (a scratchpad one too) makes the hook print when nothing is stalled",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "ln.startswith(\"NOTE\") and AGENDA_UNREAD in ln]",
+        "ln.startswith(\"NOTE\")]"
+      ]
+    ],
+    "expect": [
+      "r1: nothing stalled and only a scratchpad note — the hook still prints NOTHING"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: the last line is accepted as any dict, not goal-tree's own snapshot test",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if not gt.is_snapshot(snap):",
+        "if not isinstance(snap, dict):"
+      ]
+    ],
+    "expect": [
+      "r1: a last line that is a dict but not a snapshot (`{}`) is a NOTE, never clear"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: loading goal-tree writes bytecode again",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "saved, sys.dont_write_bytecode = sys.dont_write_bytecode, True",
+        "saved = sys.dont_write_bytecode"
+      ]
+    ],
+    "expect": [
+      "r1: loading goal-tree writes NO bytecode, and the caller's own setting is put back"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: the caller's bytecode setting is never put back",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    finally:\n        sys.dont_write_bytecode = saved\n",
+        "    finally:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "r1: loading goal-tree writes NO bytecode, and the caller's own setting is put back"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: the log is read from the LAST worktree listed, not the main checkout",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "agenda_facts(Path(every_tree[0][\"path\"]))",
+        "agenda_facts(Path(every_tree[-1][\"path\"]))"
+      ]
+    ],
+    "expect": [
+      "r1: run from a LINKED worktree, the stale agenda is read from the main checkout's log, with no note"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: agenda_facts ignores the goal-tree loader it is given",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "gt = (gt_loader or _goal_tree)()",
+        "gt = _goal_tree()"
+      ]
+    ],
+    "expect": [
+      "#647: goal-tree failing to LOAD is a NOTE naming why, never clear"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: agenda_late reads its own goal-tree, not the one given",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "for k, text in gt.agenda_context(snap, ag):",
+        "for k, text in _goal_tree().agenda_context(snap, ag):"
+      ]
+    ],
+    "expect": [
+      "#647: the subject is read off the goal-tree GIVEN, between its markers — and the 'every step is done' line is not a late merge"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: agenda_late takes ANY stale line, the 'every step is done' one too",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if k == \"stale\" and text.startswith(gt.AGENDA_STALE_HEAD) and gt.AGENDA_STALE_TAIL in text:",
+        "if k == \"stale\":"
+      ]
+    ],
+    "expect": [
+      "#647: the subject is read off the goal-tree GIVEN, between its markers — and the 'every step is done' line is not a late merge"
+    ]
+  },
+  {
+    "name": "backlog #647 r1: agenda_facts reads a fixed path, not the checkout given",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "path = main / gt.LOG_REL",
+        "path = Path(\"/nonexistent-647\") / gt.LOG_REL"
+      ]
+    ],
+    "expect": [
+      "#647: the log read is the one under the checkout given — two checkouts, two answers"
     ]
   }
 ]
