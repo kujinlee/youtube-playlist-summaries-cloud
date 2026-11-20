@@ -21050,3 +21050,18 @@ sub-area — `(tooling/speed)` 48, `(tooling/review)` 30, `(tooling/mutation)` 4
 `docs/backlog.md`: only the Bundle cell of those 279 rows changed, `(tooling)` → `(tooling/<sub>)`; a second tag such
 as `(comprehensibility/explainers)` is kept. Closed `(tooling)` rows are unchanged and stay under the parent node by
 `nearest_claim`. Same mechanism as `status-visibility`/`feature-map`; the page is regenerated from these sources.
+
+## 2026-11-19
+When work merges that today's plan does not mention, the session is now told, on every message, that the plan needs
+redoing. Until now only the goal-tree page showed this, as a warning line that did not say who should act, and you
+saw that pressing Refresh did not make it go away. That line now says the coordinator re-records the plan and that
+Refresh does not clear it. The same warning appears in the note the session reads before each reply, so someone is
+prompted to do the re-planning; it is computed by the page's own code, so the page and the note cannot disagree.
+<!--tech-->
+Owner 11-17 09:47 (option A) and 09:49; backlog #647. `scripts/goal-tree.py`: the STALE line's subject sits between
+`AGENDA_STALE_HEAD` / `AGENDA_STALE_TAIL`; text now ends "the coordinator re-records the agenda (Refresh does not clear
+this)". `scripts/check-stalled-work.py`: a `STALE-AGENDA` status (stalled, rc 1; its own hook tier after
+`DIRTY-NO-CI`), read by loading goal-tree through importlib and calling `agenda_context` on the last line of the main
+checkout's `.claude/goal-tree-log.jsonl`; a missing or unreadable log is a NOTE (NOT CHECKED), never clear. Round 1 fold: the hook prints an
+unread-agenda NOTE even when nothing is stalled; goal-tree's `is_snapshot` is the one snapshot test. Self-tests
+539/539 and 252/252; 3 + 18 new mutations.
