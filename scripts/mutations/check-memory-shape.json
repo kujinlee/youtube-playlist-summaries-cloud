@@ -174,7 +174,7 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    (\"⟳\", re.compile(r\"⟳\")),\n",
+        "    (\"⟳\", re.compile(r\"(?:\" + _DATE + r\"\\W{0,4})?⟳\")),\n",
         ""
       ]
     ],
@@ -188,12 +188,11 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    (\"History\", re.compile(r\"History\\b\", re.IGNORECASE)),\n",
+        "    (\"History\", re.compile(r\"History\\**\\s*(?:[:(—–]|$)\", re.IGNORECASE)),\n",
         ""
       ]
     ],
     "expect": [
-      "HISTORY-FIRST: `## History` heading",
       "HISTORY-FIRST: `History:` label"
     ]
   },
@@ -207,7 +206,7 @@
       ]
     ],
     "expect": [
-      "NOT history: a word that merely starts with `History`"
+      "NOT history: a HEADING whose first word merely starts with `History`"
     ]
   },
   {
@@ -228,7 +227,7 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    (\"Was:\", re.compile(r\"Was\\s*(\\(?\" + _DATE + r\"\\)?)?\\s*:\")),\n",
+        "    (\"Was:\", re.compile(r\"Was\\**\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\", re.IGNORECASE)),\n",
         ""
       ]
     ],
@@ -242,8 +241,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "re.compile(r\"Was\\s*(\\(?\" + _DATE + r\"\\)?)?\\s*:\")",
-        "re.compile(r\"Was\")"
+        "re.compile(r\"Was\\**\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\", re.IGNORECASE)",
+        "re.compile(r\"Was\", re.IGNORECASE)"
       ]
     ],
     "expect": [
@@ -255,7 +254,7 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    (\"Was:\", re.compile(_DATE + r\"\\W{0,4}Was\\b\")),\n",
+        "    (\"Was:\", re.compile(_DATE + r\"\\W{0,4}Was\\b\", re.IGNORECASE)),\n",
         ""
       ]
     ],
@@ -268,8 +267,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "_DECORATION = \"#>*_` \\t⛔⭐✅️\"",
-        "_DECORATION = \"#>*_` \\t⭐✅️\""
+        "_DECORATION = \"#>*_`( \\t⛔⭐✅⚠️\"",
+        "_DECORATION = \"#>*_`( \\t⭐✅⚠️\""
       ]
     ],
     "expect": [
@@ -307,8 +306,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    return {a or (b.strip() + \".md\") for a, b in _LINK_RE.findall(text)}\n",
-        "    return {a for a, b in _LINK_RE.findall(text) if a}\n"
+        "    for raw in _WIKI_LINK_RE.findall(visible):\n",
+        "    for raw in []:\n"
       ]
     ],
     "expect": [
@@ -469,6 +468,386 @@
     ],
     "expect": [
       "an OK message counts the files it checked"
+    ]
+  },
+  {
+    "name": "a YAML-malformed frontmatter value is no longer reported",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if fields.get(\"!malformed\"):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an unterminated flow sequence (the Codex input)"
+    ]
+  },
+  {
+    "name": "an unterminated double-quoted string is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        return None if _DQ_RE.fullmatch(value) else \"an unterminated double-quoted string\"\n",
+        "        return None\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an unterminated double-quoted string"
+    ]
+  },
+  {
+    "name": "an unterminated single-quoted string is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        return None if _SQ_RE.fullmatch(value) else \"an unterminated single-quoted string\"\n",
+        "        return None\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an unterminated single-quoted string"
+    ]
+  },
+  {
+    "name": "a double-quoted string may not hold an escaped quote",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_DQ_RE = re.compile(r'\"(?:[^\"\\\\]|\\\\.)*\"')",
+        "_DQ_RE = re.compile(r'\"[^\"]*\"')"
+      ]
+    ],
+    "expect": [
+      "NOT malformed: a double-quoted value holding `: ` and an escaped quote"
+    ]
+  },
+  {
+    "name": "an unquoted value holding `: ` is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if \": \" in value or value.endswith(\":\"):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an unquoted value holding `: ` (the live defect)"
+    ]
+  },
+  {
+    "name": "any colon in an unquoted value is refused, not only `: `",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "\": \" in value or value.endswith(\":\"):",
+        "\":\" in value:"
+      ]
+    ],
+    "expect": [
+      "NOT malformed: a plain value with a colon not followed by a space"
+    ]
+  },
+  {
+    "name": "a YAML-indicator-led unquoted value is accepted",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if value[0] in _YAML_INDICATORS:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: an unquoted value led by a YAML indicator"
+    ]
+  },
+  {
+    "name": "a frontmatter line with no `key:` is skipped in silence",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            malformed.append(f\"line {raw.strip()[:40]!r} is not `key: value`\")\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "FRONTMATTER: a line with no `key:` at all"
+    ]
+  },
+  {
+    "name": "links inside HTML comments count again",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    visible = _COMMENT_RE.sub(\"\", text)\n",
+        "    visible = text\n"
+      ]
+    ],
+    "expect": [
+      "UNLISTED: a file linked only inside an HTML comment",
+      "link_targets ignores links inside HTML comments, closed or not"
+    ]
+  },
+  {
+    "name": "an UNCLOSED HTML comment no longer hides the rest of the text",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_COMMENT_RE = re.compile(r\"<!--.*?(?:-->|\\Z)\", re.DOTALL)",
+        "_COMMENT_RE = re.compile(r\"<!--.*?-->\", re.DOTALL)"
+      ]
+    ],
+    "expect": [
+      "link_targets ignores links inside HTML comments, closed or not"
+    ]
+  },
+  {
+    "name": "a markdown link's `#anchor` is kept, so `gone.md#h` is no link",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        ".strip(\"<>\").split(\"#\", 1)[0] if parts",
+        ".strip(\"<>\") if parts"
+      ]
+    ],
+    "expect": [
+      "MISSING: an index link of the form [x](gone.md#h)"
+    ]
+  },
+  {
+    "name": "a markdown link's title is kept, so `gone.md \"t\"` is no link",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        parts = raw.strip().split()\n",
+        "        parts = [raw.strip()]\n"
+      ]
+    ],
+    "expect": [
+      "MISSING: an index link of the form [x](gone.md \"t\")"
+    ]
+  },
+  {
+    "name": "a wiki link's `|alias` is kept",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        name = raw.split(\"|\", 1)[0].split(\"#\", 1)[0].strip()\n",
+        "        name = raw.split(\"#\", 1)[0].strip()\n"
+      ]
+    ],
+    "expect": [
+      "an anchored and an aliased index link REACH their files"
+    ]
+  },
+  {
+    "name": "a wiki link's `#anchor` is kept",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        ".split(\"|\", 1)[0].split(\"#\", 1)[0].strip()",
+        ".split(\"|\", 1)[0].strip()"
+      ]
+    ],
+    "expect": [
+      "link_targets normalises a title, `<…>`, `./`, an alias and a wiki anchor"
+    ]
+  },
+  {
+    "name": "a leading `./` is kept, so `./alpha.md` reaches nothing",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        target = target[2:] if target.startswith(\"./\") else target\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "an anchored and an aliased index link REACH their files"
+    ]
+  },
+  {
+    "name": "⚠ is no longer stripped as decoration",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "✅⚠️\"",
+        "✅️\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a `⚠ ⟳` line"
+    ]
+  },
+  {
+    "name": "`(` is no longer stripped as decoration",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "\"#>*_`(",
+        "\"#>*_`"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a parenthesised `(⟳ …)`"
+    ]
+  },
+  {
+    "name": "a list marker is no longer stripped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        stripped = _LIST_MARKER.sub(\"\", stripped, count=1) if _LIST_MARKER.match(stripped) else stripped\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a list item `- ⟳`",
+      "HISTORY-FIRST: a numbered list item `9. ⟳`"
+    ]
+  },
+  {
+    "name": "a numbered list marker is no longer stripped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_LIST_MARKER = re.compile(r\"(?:[-+]|\\d+[.)])\\s+\")",
+        "_LIST_MARKER = re.compile(r\"[-+]\\s+\")"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a numbered list item `9. ⟳`"
+    ]
+  },
+  {
+    "name": "decoration and a list marker are stripped once, not until stable",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if stripped == before:\n            break\n",
+        "        break\n"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a list item, then a glyph `- ⚠ ⟳`"
+    ]
+  },
+  {
+    "name": "a date before ⟳ no longer counts",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "re.compile(r\"(?:\" + _DATE + r\"\\W{0,4})?⟳\")",
+        "re.compile(r\"⟳\")"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a date-first `**<date> ⟳**`"
+    ]
+  },
+  {
+    "name": "`History` fires on any word start again, outside a heading",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "re.compile(r\"History\\**\\s*(?:[:(—–]|$)\", re.IGNORECASE)",
+        "re.compile(r\"History\\b\", re.IGNORECASE)"
+      ]
+    ],
+    "expect": [
+      "NOT history: a rule sentence that begins with `History`"
+    ]
+  },
+  {
+    "name": "the heading-only `History` marker is dropped",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    (\"History\", re.compile(r\"History\\b\", re.IGNORECASE)),\n)",
+        ")"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a `## History and detail` heading"
+    ]
+  },
+  {
+    "name": "the heading-only `History` marker applies to every line, not only headings",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_HISTORY_MARKERS + (_HEADING_MARKERS if heading else ())",
+        "_HISTORY_MARKERS + _HEADING_MARKERS"
+      ]
+    ],
+    "expect": [
+      "NOT history: a rule sentence that begins with `History`"
+    ]
+  },
+  {
+    "name": "the `History` label can no longer cross a closing bold",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "r\"History\\**\\s*(?:[:(—–]|$)\"",
+        "r\"History\\s*(?:[:(—–]|$)\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a bold `**History**:` label (the colon outside the bold)"
+    ]
+  },
+  {
+    "name": "the `Was:` marker is case-sensitive again",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "r\"Was\\**\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\", re.IGNORECASE",
+        "r\"Was\\**\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `WAS:` in capitals",
+      "HISTORY-FIRST: `was:` in lower case"
+    ]
+  },
+  {
+    "name": "the `Was:` marker can no longer cross a closing bold before its date",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "r\"Was\\**\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\"",
+        "r\"Was\\s*(\\(?\" + _DATE + r\"\\)?)?\\**\\s*:\""
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: `**Was** (<date>):` with the bold closed first"
+    ]
+  },
+  {
+    "name": "the date-then-Was marker is case-sensitive again",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "re.compile(_DATE + r\"\\W{0,4}Was\\b\", re.IGNORECASE)",
+        "re.compile(_DATE + r\"\\W{0,4}Was\\b\")"
+      ]
+    ],
+    "expect": [
+      "HISTORY-FIRST: a date, then a lower-case `was`"
+    ]
+  },
+  {
+    "name": "scalar_problem reports an empty value as malformed",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    if not value:\n        return None\n    if value[0] == '\"':",
+        "    if not value:\n        return \"empty\"\n    if value[0] == '\"':"
+      ]
+    ],
+    "expect": [
+      "scalar_problem names the defect, and is None for an empty value"
     ]
   }
 ]

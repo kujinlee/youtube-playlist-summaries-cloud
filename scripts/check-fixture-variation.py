@@ -886,8 +886,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # that creates it. DERIVED by running `analyse()` on the delivered source: 7 keys, no findings —
     # after `main.argv`, `main.memdir`, `link_targets.text` and `unknown_args.argv` were each varied
     # by a second call site rather than exempted.
+    # ⟳ 2026-11-20, PR #605 review r1 fold: + `scalar_problem.value` (the YAML-scalar check), re-derived
+    # with `analyse()`: 8 keys, no findings.
     "check-memory-shape.py": ('link_targets.text', 'main.argv', 'main.memdir', 'parse_frontmatter.text',
-                              'shape_violations.index_text', 'shape_violations.texts', 'unknown_args.argv'),
+                              'scalar_problem.value', 'shape_violations.index_text',
+                              'shape_violations.texts', 'unknown_args.argv'),
     "check-memory-link.py": ('link_verdict.is_symlink', 'link_verdict.link_exists', 'link_verdict.n_entries', 'link_verdict.target', 'link_verdict.tracked', 'slug_for.repo'),
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher, pinned in the commit that creates it
     # — this guard REFUSED the file until it was, the fifth time it has caught a new script

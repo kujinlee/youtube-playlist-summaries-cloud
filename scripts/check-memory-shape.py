@@ -10,7 +10,10 @@ already owns the index's SIZE, and this script does not re-measure it.
 
 WHAT FAILS (rc 1), one rule code per line of output:
 
-  FRONTMATTER   a file has no `---` frontmatter, or lacks `name`, `description` or `metadata.type`
+  FRONTMATTER   a file has no `---` frontmatter, or lacks `name`, `description` or `metadata.type`,
+                or holds a line this reader would accept but YAML would not (see `scalar_problem`):
+                an unterminated quote or flow collection, an indicator-led or `: `-holding unquoted
+                value, or a non-blank line that is not `key: value` (r1, Codex)
   TYPE          `metadata.type` is not one of user | feedback | project | reference
   NAME          `name` is not the filename's slug (`foo-bar.md` must say `name: foo-bar`)
   MISSING       `MEMORY.md` links a memory file that does not exist
@@ -24,18 +27,20 @@ NEVER a pass. rc 0 = every file passed every rule.
 ⛔ THE HISTORY-MARKER SET, AND WHERE IT CAME FROM. It was derived from PR #585 by comparing every
 file's first body line at `4d76f76a^` and at `4d76f76a`, and from the markers in the corpus before
 and after the merge. It was not invented. After stripping leading markdown decoration (`#`, `>`,
-`*`, `_`, a backtick, whitespace, and the house glyphs ⛔ ⭐ ✅), a first line is HISTORY when it
-starts with:
+`*`, `_`, `(`, a backtick, whitespace, a list marker `-`/`+`/`9.`, and the house glyphs ⛔ ⭐ ✅ ⚠ —
+repeatedly, until nothing more strips), a first line is HISTORY when it starts with:
 
-  `⟳`              the correction-layer glyph. Before the audit, 25+ `## ⟳ <date>` correction
-                   headings existed, and one was a file's opener (`launch-roadmap-state.md`). The
+  `⟳`              the correction-layer glyph, optionally after a leading date. Before the
+                   audit, 25+ `## ⟳ <date>` correction headings existed, and one was a file's opener (`launch-roadmap-state.md`). The
                    audit memory's rule is "never append another ⟳ section".
   `History`        the label the audit itself put on demoted history: `## History`,
                    `## History (condensed)`, `History: split out of …` (80+ after the merge, none
-                   as an opener).
+                   as an opener). In a HEADING the bare word counts; elsewhere only as a LABEL —
+                   followed by `:`, `(`, a dash or the line's end — so a rule sentence that begins
+                   "History goes below …" is not history (r1, Claude).
   `Split out of`   a provenance note. The audit removed it from the top of 2 files
                    (`slice-history.md`, `m4-superseded-trail.md`).
-  `Was:`, `Was <date>:`, or `<date> … Was`
+  `Was:`, `Was <date>:`, or `<date> … Was` (any case; the bold may close before the date)
                    the brief's date-stamped "Was:". ⚠ WITNESSED ZERO TIMES in the corpus before
                    or after the audit. It is in the set because the brief names it, not because the
                    audit removed one.
@@ -48,6 +53,8 @@ starts with:
   - History that is not marked. A paragraph of old narrative with no marker passes. This is a SHAPE
     check over the first line, not a reading of whether the rule is current. The weekly content
     audit owns that question.
+  - A marker that is not at the line's start after decoration: `**Note:** ⟳ …`, a label before the
+    date (`**MERGED 2026-09-21** — was …`). A date-then-`Was` is caught only when the date LEADS.
   - Only the FIRST non-blank body line is read. A `⟳` section appended BELOW the rule (the
     "never append another ⟳ section" half of the rule) is not detected here.
 
@@ -56,7 +63,10 @@ rule fails 57 of 195 files today (measured 2026-11-19), and by design: `slice-hi
 "NEW slice rows go HERE, never in MEMORY.md", because the index is truncated in silence past its
 size limit. So a file passes when MEMORY.md links it, or when a file that MEMORY.md links links it
 (two hops). Measured 2026-11-19: 138 at hop 1, 57 at hop 2, 0 unreachable. A link is
-`](name.md)` or `[[name]]`. MISSING is checked for MEMORY.md's own links only. Broken links inside
+`](name.md)` or `[[name]]`, read after dropping a `#anchor`, a `"title"`, `<…>`, a leading `./`
+and a wiki `|alias` (r1, Claude), and never inside an HTML comment (r1, Codex: a reader cannot
+follow it). A link inside a CODE SPAN or fence still counts: a reader can see and follow it.
+MISSING is checked for MEMORY.md's own links only. Broken links inside
 other memory files (10 measured 2026-11-19, several of them deliberate placeholders or paths outside
 the folder) are not this check's subject.
 
@@ -72,7 +82,7 @@ Callers: `.github/workflows/ci.yml`, next to `check-memory-index-budget.py`.
 
 Usage:
     python3 scripts/check-memory-shape.py
-    python3 scripts/check-memory-shape.py --self-test  # 50 cases
+    python3 scripts/check-memory-shape.py --self-test  # 89 cases
 """
 from __future__ import annotations
 
@@ -89,24 +99,68 @@ OK, VIOLATIONS, CANNOT_RUN = 0, 1, 2
 TYPES = frozenset({"user", "feedback", "project", "reference"})
 
 # Leading decoration stripped before a first line is matched. ⟳ is NOT in it: it is a marker.
-_DECORATION = "#>*_` \t⛔⭐✅️"
+# ⟳ r1 (Claude MAJOR): ⚠ was missing, and it is the corpus's MOST frequent line-start glyph (70 line
+# starts, against ⛔ 43). `(` is in it too, and a list marker is stripped by `_LIST_MARKER`.
+_DECORATION = "#>*_`( \t⛔⭐✅⚠️"
+_LIST_MARKER = re.compile(r"(?:[-+]|\d+[.)])\s+")
 _DATE = r"\d{4}-\d{2}-\d{2}"
+# ⟳ r1 (Claude MINOR): a bare `History\b` fired on a CURRENT-rule sentence that begins with the
+# word ("History goes BELOW the rule"). Outside a heading, `History` is now a marker only as a LABEL:
+# followed by `:`, `(`, a dash, or the end of the line, through any closing bold. In a HEADING
+# (`## History and detail`, witnessed) the bare word still counts: `_HEADING_MARKERS`.
+# ⟳ r1 (Claude MINOR): `Was` is IGNORECASE like the others, and may close its bold before the date.
 _HISTORY_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("⟳", re.compile(r"⟳")),
-    ("History", re.compile(r"History\b", re.IGNORECASE)),
+    ("⟳", re.compile(r"(?:" + _DATE + r"\W{0,4})?⟳")),
+    ("History", re.compile(r"History\**\s*(?:[:(—–]|$)", re.IGNORECASE)),
     ("Split out of", re.compile(r"Split out of\b", re.IGNORECASE)),
-    ("Was:", re.compile(r"Was\s*(\(?" + _DATE + r"\)?)?\s*:")),
-    ("Was:", re.compile(_DATE + r"\W{0,4}Was\b")),
+    ("Was:", re.compile(r"Was\**\s*(\(?" + _DATE + r"\)?)?\**\s*:", re.IGNORECASE)),
+    ("Was:", re.compile(_DATE + r"\W{0,4}Was\b", re.IGNORECASE)),
+)
+_HEADING_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("History", re.compile(r"History\b", re.IGNORECASE)),
 )
 
-_LINK_RE = re.compile(r"\]\(([^)\s#]+\.md)\)|\[\[([^\]|#]+)\]\]")
+# ⟳ r1 (Claude MINOR): a link is read whole, then normalised — `#anchor`, a `"title"`, `<…>`, a
+# leading `./`, and a wiki `|alias` are dropped — so a dead `[x](gone.md#h)` in the index is MISSING
+# rather than silently not a link.
+_MD_LINK_RE = re.compile(r"\]\(([^)]*)\)")
+_WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+# ⟳ r1 (Codex MAJOR): a link inside an HTML comment is invisible to a reader, so it reaches nothing.
+# An unclosed `<!--` comments out the rest of the text, as it does in HTML.
+_COMMENT_RE = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
+
+# ⟳ r1 (Codex MAJOR): a frontmatter value this reader would accept but YAML would not. Measured
+# 2026-11-20 over the live corpus: 189 double-quoted values, 796 plain, 0 single-quoted, 0 flow,
+# 0 indicator-led — and ONE plain value holding `: ` (a YAML "mapping values are not allowed" error),
+# fixed in the same commit.
+_YAML_INDICATORS = "[]{}`@&*!|>%#,?"
+_DQ_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+_SQ_RE = re.compile(r"'(?:[^']|'')*'")
+
+
+def scalar_problem(value: str) -> str | None:
+    """PURE. Why `value` (a frontmatter value, already stripped of whitespace) is not a well-formed
+    YAML string scalar, or None when it is. An empty value is not this function's question."""
+    if not value:
+        return None
+    if value[0] == '"':
+        return None if _DQ_RE.fullmatch(value) else "an unterminated double-quoted string"
+    if value[0] == "'":
+        return None if _SQ_RE.fullmatch(value) else "an unterminated single-quoted string"
+    if value[0] in _YAML_INDICATORS:
+        return f"an unquoted value starting with the YAML indicator `{value[0]}`"
+    if ": " in value or value.endswith(":"):
+        return "an unquoted value holding `: `, which YAML reads as a nested mapping"
+    return None
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str] | None, list[str]]:
     """PURE. -> (fields, body lines). `fields` is None when there is no closed `---` block.
 
     Reads only the shape this corpus uses: top-level `key: value`, and `type:` indented under
-    `metadata:`. Quotes around a value are removed. This is not a YAML parser.
+    `metadata:`. Quotes around a value are removed. This is not a YAML parser, so what it cannot
+    vouch for is REPORTED, not read: a non-blank line with no `key:`, and a value `scalar_problem`
+    refuses, land in `fields["!malformed"]` (one reason per line, joined by `; `).
     """
     lines = text.split("\n")
     if not lines or lines[0].strip() != "---":
@@ -117,6 +171,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str] | None, list[str]]:
     else:
         return None, lines
     fields: dict[str, str] = {}
+    malformed: list[str] = []
     in_metadata = False
     for raw in lines[1:end]:
         if not raw.strip():
@@ -124,7 +179,11 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str] | None, list[str]]:
         indented = raw[0] in " \t"
         key, sep, value = raw.strip().partition(":")
         if not sep:
+            malformed.append(f"line {raw.strip()[:40]!r} is not `key: value`")
             continue
+        problem = scalar_problem(value.strip())
+        if problem:
+            malformed.append(f"`{key}` is {problem}")
         value = value.strip().strip('"').strip("'")
         if not indented:
             in_metadata = key == "metadata"
@@ -132,6 +191,8 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str] | None, list[str]]:
                 fields[key] = value
         elif in_metadata:
             fields["metadata." + key] = value
+    if malformed:
+        fields["!malformed"] = "; ".join(malformed)
     return fields, lines[end + 1:]
 
 
@@ -145,16 +206,35 @@ def first_body_line(body: list[str]) -> str | None:
 
 def history_marker(line: str) -> str | None:
     """PURE. The name of the history marker `line` opens with, or None for a current-rule line."""
-    stripped = line.lstrip(_DECORATION)
-    for label, pattern in _HISTORY_MARKERS:
+    heading = line.lstrip().startswith("#")
+    stripped = line
+    while True:
+        before = stripped
+        stripped = stripped.lstrip(_DECORATION)
+        stripped = _LIST_MARKER.sub("", stripped, count=1) if _LIST_MARKER.match(stripped) else stripped
+        if stripped == before:
+            break
+    for label, pattern in _HISTORY_MARKERS + (_HEADING_MARKERS if heading else ()):
         if pattern.match(stripped):
             return label
     return None
 
 
 def link_targets(text: str) -> set[str]:
-    """PURE. Every `](x.md)` and `[[x]]` target in `text`, as a filename."""
-    return {a or (b.strip() + ".md") for a, b in _LINK_RE.findall(text)}
+    """PURE. Every `](x.md)` and `[[x]]` target in `text` outside an HTML comment, as a filename."""
+    visible = _COMMENT_RE.sub("", text)
+    out: set[str] = set()
+    for raw in _MD_LINK_RE.findall(visible):
+        parts = raw.strip().split()
+        target = parts[0].strip("<>").split("#", 1)[0] if parts else ""
+        target = target[2:] if target.startswith("./") else target
+        if target.endswith(".md"):
+            out.add(target)
+    for raw in _WIKI_LINK_RE.findall(visible):
+        name = raw.split("|", 1)[0].split("#", 1)[0].strip()
+        if name:
+            out.add(name + ".md")
+    return out
 
 
 def file_violations(fname: str, text: str) -> list[str]:
@@ -163,6 +243,8 @@ def file_violations(fname: str, text: str) -> list[str]:
     fields, body = parse_frontmatter(text)
     if fields is None:
         return [f"FRONTMATTER {fname}: no closed `---` frontmatter block"]
+    if fields.get("!malformed"):
+        out.append(f"FRONTMATTER {fname}: not well-formed YAML: {fields['!malformed']}")
     for need in ("name", "description", "metadata.type"):
         if not fields.get(need):
             out.append(f"FRONTMATTER {fname}: `{need}` is missing or empty")
@@ -328,6 +410,30 @@ def _self_test_body() -> int:
     t["beta.md"] = "---\nname: beta\ndescription: d\nmetadata:\n  type: project\n\nRule.\n"
     check("FRONTMATTER: an UNCLOSED frontmatter block", codes(idx, t), ["FRONTMATTER"])
 
+    # ⟳ r1 (Codex MAJOR): values this reader accepted but YAML refuses. Each is FRONTMATTER alone.
+    for label, line in (
+            ("an unterminated flow sequence (the Codex input)", "description: [unterminated"),
+            ("an unterminated double-quoted string", 'description: "never closed'),
+            ("an unterminated single-quoted string", "description: 'never closed"),
+            ("an unquoted value holding `: ` (the live defect)", "description: FIRES-WHEN: scoring"),
+            ("an unquoted value led by a YAML indicator", "description: `code` first"),
+            ("a line with no `key:` at all", "description: d\njust some text"),
+    ):
+        idx, t = world()
+        t["beta.md"] = f"---\nname: beta\n{line}\nmetadata:\n  type: project\n---\n\nRule.\n"
+        check(f"FRONTMATTER: {label}", codes(idx, t), ["FRONTMATTER"])
+    for label, line in (
+            ("a double-quoted value holding `: ` and an escaped quote", r'description: "A: \"b\" c"'),
+            ("a single-quoted value with a doubled quote", "description: 'it''s: fine'"),
+            ("a plain value with a colon not followed by a space", "description: see 10:30 today"),
+    ):
+        idx, t = world()
+        t["beta.md"] = f"---\nname: beta\n{line}\nmetadata:\n  type: project\n---\n\nRule.\n"
+        check(f"NOT malformed: {label}", codes(idx, t), [])
+    check("scalar_problem names the defect, and is None for an empty value",
+          (scalar_problem(""), scalar_problem("ok"), scalar_problem("[x")),
+          (None, None, "an unquoted value starting with the YAML indicator `[`"))
+
     idx, t = world()
     t["beta.md"] = _mem("beta", mtype="decision")
     check("TYPE: an unknown metadata.type", codes(idx, t), ["TYPE"])
@@ -353,6 +459,20 @@ def _self_test_body() -> int:
     t["gamma.md"] = _mem("gamma", "Rule. See [[deep]].\n", mtype="reference")
     check("UNLISTED: THREE hops is not reachable (the bound is two)", codes(idx, t), ["UNLISTED"])
 
+    # ⟳ r1 (Codex MAJOR): reached ONLY through a commented-out link is not reached.
+    idx, t = world()
+    t["delta.md"] = _mem("delta")
+    t["alpha.md"] = _mem("alpha", "**The rule:** x. See [[gamma]]. <!-- [[delta]] -->\n")
+    check("UNLISTED: a file linked only inside an HTML comment", codes(idx, t), ["UNLISTED"])
+
+    # ⟳ r1 (Claude MINOR): an anchored, titled or aliased index link to a missing file is MISSING.
+    for form in ("[x](gone.md#h)", '[x](gone.md "t")', "[[gone|alias]]", "[[gone#h]]"):
+        idx, t = world()
+        check(f"MISSING: an index link of the form {form}", codes(idx + f"- {form}\n", t), ["MISSING"])
+    idx, t = world()
+    idx = "# Memory Index\n\n- [A](./alpha.md#top) — a\n- [[beta|B]] — b\n"
+    check("an anchored and an aliased index link REACH their files", codes(idx, t), [])
+
     idx, t = world()
     t["beta.md"] = _mem("beta", "\n\n")
     check("EMPTY-BODY: frontmatter and nothing after it", codes(idx, t), ["EMPTY-BODY"])
@@ -367,6 +487,24 @@ def _self_test_body() -> int:
             ("`Was:` with a date", "**Was (2026-10-01):** the rule said otherwise."),
             ("`Was:` undated", "Was: always ask first."),
             ("a date, then `Was`", "2026-10-01 — Was the old rule."),
+            # ⟳ r1 (Claude MAJOR): a one-glyph or list-item prefix hid each of these.
+            ("a `⚠ ⟳` line", "⚠ ⟳ 2026-10-01 corrected the rule."),
+            ("a `⚠️ ⟳` line (with the variation selector)", "⚠️ ⟳ 2026-10-01 corrected the rule."),
+            ("a list item `- ⟳`", "- ⟳ 2026-10-01 the rule moved."),
+            ("a list item, then a glyph `- ⚠ ⟳`", "- ⚠ ⟳ 2026-10-01 the rule moved."),
+            ("a numbered list item `9. ⟳`", "9. ⟳ 2026-10-01 the rule moved."),
+            ("a parenthesised `(⟳ …)`", "(⟳ 2026-10-01: the rule moved.)"),
+            ("a date-first `**<date> ⟳**`", "**2026-10-01 ⟳** the rule moved."),
+            # ⟳ r1 (Claude MINOR): `Was:` was case-sensitive, and could not cross a closing bold.
+            ("`WAS:` in capitals", "WAS: ask first."),
+            ("a date, then a lower-case `was`", "2026-10-01 — was the old rule."),
+            ("`was:` in lower case", "was: ask first."),
+            ("`**Was** (<date>):` with the bold closed first", "**Was** (2026-10-01): ask first."),
+            # ⟳ r1 (Claude MINOR): the forms the tightened `History` must still catch, as witnessed.
+            ("a `## History and detail` heading", "## History and detail"),
+            ("a `## History — …` heading", "## History — the eight rounds"),
+            ("a bold `**History:**` label", "**History:** on 10-30 I set it."),
+            ("a bold `**History**:` label (the colon outside the bold)", "**History**: on 10-30 I set it."),
     ):
         idx, t = world()
         t["beta.md"] = _mem("beta", opener + "\n\n**The rule:** current.\n")
@@ -381,6 +519,15 @@ def _self_test_body() -> int:
             ("a rule that MENTIONS history later", "**The rule:** history goes below; never ⟳ on top."),
             ("a word that merely starts with `Was`", "Washing the cache is not the fix."),
             ("a word that merely starts with `History`", "Historyless rows are fine."),
+            ("a HEADING whose first word merely starts with `History`", "## Historyless rows are kept"),
+            # ⟳ r1 (Claude MINOR): a current rule may BEGIN with the word `History`.
+            ("a rule sentence that begins with `History`", "History goes BELOW the current rule."),
+            ("`HISTORY of …` in capitals", "HISTORY of this rule is in slice-history."),
+            ("`History-first …` (a hyphen is not a label)", "History-first openers are refused."),
+            ("a plain list-item rule", "- **The rule:** each memory opens with its rule."),
+            # the date-then-`Was` form matches only when the DATE leads the line, so a dated STATUS
+            # opener the bound keeps (label first, then the date) is not caught by its `was`.
+            ("a status opener whose date is not first, then `was`", "**MERGED 2026-09-21** — was green, now live."),
     ):
         idx, t = world()
         t["beta.md"] = _mem("beta", opener + "\n")
@@ -395,9 +542,16 @@ def _self_test_body() -> int:
     check("a ⟳ section BELOW the rule passes (stated bound)", codes(idx, t), [])
 
     # --- the pieces, directly ----------------------------------------------------------------
+    # ⟳ r1 (Claude MINOR): `v.md#h` now counts as a link to `v.md` — the anchor is dropped.
     check("link_targets reads both link forms",
           link_targets("[a](x.md) and [[y]] and [z](http://e.com) and [w](v.md#h)"),
-          {"x.md", "y.md"})
+          {"x.md", "y.md", "v.md"})
+    check("link_targets normalises a title, `<…>`, `./`, an alias and a wiki anchor",
+          link_targets('[a](x.md "T") [b](<y.md>) [c](./z.md) [[w|W]] [[u#h]] [[#only-anchor]]'),
+          {"x.md", "y.md", "z.md", "w.md", "u.md"})
+    # ⟳ r1 (Codex MAJOR): a link inside an HTML comment is not a link a reader can follow.
+    check("link_targets ignores links inside HTML comments, closed or not",
+          link_targets("[[a]] <!-- [[b]] --> [[c]] <!-- [d](d.md)"), {"a.md", "c.md"})
     check("link_targets finds nothing in text without links", link_targets("plain [x] text"), set())
     check("parse_frontmatter strips quotes and reads metadata.type",
           parse_frontmatter('---\nname: "n"\ndescription: \'d\'\nmetadata:\n  type: user\n---\nB')[0],
