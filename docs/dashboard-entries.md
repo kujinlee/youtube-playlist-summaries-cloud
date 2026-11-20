@@ -21017,3 +21017,16 @@ Memory hygiene option B, part 1 (branch `memory-shape-check`). New `scripts/chec
 slice-history's design documents; the literal one-hop rule would fail 57 of 195). Live: 195 files, 0
 violations; the pre-audit tree (`4d76f76a^`) gives 5. Self-test 50/50; mutations 36/36 killed, each by
 its named case. Wired in `ci.yml` next to the memory-index budget. The weekly content audit is part 2.
+
+## 2026-11-19
+The features page's biggest section — the rules-and-checks harness — is now split into six smaller sections you can
+read one at a time: speed, the review process, mutation and test quality, hooks and session continuity, the backlog
+and page tooling, and whether the checks themselves are sound. Every open item in that section was read and placed in
+exactly one of the six. It was your choice on 2026-10-30 (option A), and it closes backlog #511.
+<!--tech-->
+Branch `backlog-511`. `docs/features.md`: six `####` child nodes under `guard-and-gate-harness`, each claiming one
+sub-area — `(tooling/speed)` 48, `(tooling/review)` 30, `(tooling/mutation)` 42, `(tooling/hooks)` 53,
+`(tooling/pages)` 37, `(tooling/guards)` 69 open rows (279 in all; the row's title said 127, from when it was filed).
+`docs/backlog.md`: only the Bundle cell of those 279 rows changed, `(tooling)` → `(tooling/<sub>)`; a second tag such
+as `(comprehensibility/explainers)` is kept. Closed `(tooling)` rows are unchanged and stay under the parent node by
+`nearest_claim`. Same mechanism as `status-visibility`/`feature-map`; the page is regenerated from these sources.
