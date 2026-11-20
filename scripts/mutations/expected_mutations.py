@@ -2221,7 +2221,11 @@ EXPECTED_MUTATIONS = {
     # `_COMMENT_RE`; nine rebound to the rewritten reader (wiki scan, MISSING, UNLISTED, hop 2,
     # transitive, the two comment-region entries, title, alias); 17 added, one per region, per
     # region edge, per bound and per CANNOT-READ arm.
-    "scripts/check-memory-shape.py": 91,
+    # ⟳ 2026-11-20, PR #605 review r4 fold (Codex BLOCKER, a link in a raw tag's attribute was sure):
+    # 91 -> 102. One rebound (the fence-region entry, `uncertain_regions` rewritten); 11 added for the
+    # tag-interior region: the region, both quotes, a quote in a name and in an unquoted value, the
+    # line end (both arms), `</`, every-tag-to-the-end, first-tag-only, and `=` after a space.
+    "scripts/check-memory-shape.py": 102,
     # backlog #410 (2026-10-30): the stalled-work detector joins with 31 entries — 22, plus 9 for the
     # untrusted-gh-text fold (cross-repo PRs dropped, every printed gh string held to a shape).
     # ⟳ r1 fold: 31 → 58. NINE retired WITH THEIR SUBJECT — the no-upstream exclusion, the age window,

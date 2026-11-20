@@ -75,8 +75,10 @@ and a wiki `|alias` (r1, Claude).
 depends on block structure, on how an HTML parser reads what the renderer passes through, and on
 which reader is meant: the harness loads MEMORY.md as raw text, a rendered page hides a comment. No
 regex answers that, and three review rounds of one regex each caused the next round's finding. So:
-  - a link is UNCERTAIN when it overlaps text from the file's FIRST `<!` or `<?` to its end, or the
-    rest of a line from any run of three backticks or tildes (a fence info string). Otherwise SURE.
+  - a link is UNCERTAIN when it overlaps text from the file's FIRST `<!` or `<?` to its end, the
+    rest of a line from any run of three backticks or tildes (a fence info string), or the INTERIOR
+    of a raw HTML tag: from `<` and an ASCII letter or `/` to its closing `>`, read with the HTML
+    tokenizer's attribute states, or to the END OF THE TEXT when its line ends first (r4). Otherwise SURE.
   - reachability is computed twice: with the SURE links only (lower bound) and with every link
     (upper bound). MISSING is missing at the lower bound, UNLISTED unreachable at the upper; both
     are then certain, because reachability is monotone in the link set. A verdict the two bounds
@@ -89,11 +91,24 @@ regex answers that, and three review rounds of one regex each caused the next ro
   - it refuses more than it must: 124,890 of those 300,000 documents hold an uncertain link, and the
     link was in fact visible in 76,266 (both re-measured on this script, 2026-11-20). A literal `<!` or `<?` in a code span makes every later link
     uncertain; that is paid only where a verdict depends on one (the corpus pays 0 today).
-  - raw HTML TAGS (`<div `, `<script>`, an attribute) and link reference definitions also hide links,
-    and are NOT regions: making every `<tag` an opener refuses 65 valid files of the real corpus,
-    which is full of `<path>` and `<N>` placeholders (the review's measurement, 2026-11-20).
-  - a link built from entities (`&#91;&#91;a]]`) or split by a backslash (`[\\[a]]`) is not read at
-    either bound: loud toward UNLISTED, but a dead one is a quiet missed MISSING. Not probed.
+  - a raw HTML tag's INTERIOR is a region (r4, Codex BLOCKER: `<span title="[[alpha]]">` was sure);
+    the text between and beside tags is not, and is visible. Measured 2026-11-20 over 300,000 documents
+    whose generator adds raw tags with quoted and unquoted attributes holding links (seeds 11-22):
+    0 sure links the page hides (3,696 before the region), 0 shown links missed; documents holding an
+    uncertain link 49,826 -> 79,448, and holding one that was in fact visible 34,598 -> 61,111. The
+    memory corpus holds 110 tags in 51 files, none open at its line's end: 0 violations added, 0
+    CANNOT-READ. A tag runs to the end of the TEXT, not to the next blank line, when its line ends
+    inside it: a list or blockquote ending the block (`- <div title="x` / `foo">` / `[[t1]]`) hides
+    the NEXT line from a renderer whose closing quote it escaped. An angle-bracket destination
+    (`[b](<y.md>)`) is a tag region too, and can hide a link in its href. Every `<tag` to the END
+    is not the region: that refused 65 valid files (`<path>`, `<N>`; the review's measurement).
+  - NOT regions, and also hiding a link: the CONTENT of `<script>` / `<style>` (a browser hides it;
+    the oracle's `html.parser` reports it as text), and link reference definitions. A markdown link
+    inside an HTML BLOCK (`<div>` / `[a](x.md)` / `</div>`) renders as literal text, not a link: it is
+    SURE, and the text IS shown, so it is no hidden link — but it cannot be followed. Not probed
+    beyond the oracle's one input each.
+  - a link built from entities (`&#91;&#91;a]]`), split by a backslash (`[\\[a]]`) or written as
+    raw HTML (`<a href="x.md">`) is not read at either bound: loud toward UNLISTED, but a dead one is a quiet missed MISSING. Not probed.
   - the oracle is `markdown-it` + `html.parser`, not GitHub's renderer or a browser.
 
 MISSING is checked for MEMORY.md's own links only. Broken links inside
@@ -112,7 +127,7 @@ Callers: `.github/workflows/ci.yml`, next to `check-memory-index-budget.py`.
 
 Usage:
     python3 scripts/check-memory-shape.py
-    python3 scripts/check-memory-shape.py --self-test  # 134 cases
+    python3 scripts/check-memory-shape.py --self-test  # 159 cases
 """
 from __future__ import annotations
 
@@ -170,6 +185,15 @@ _WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 # (refutation 3).
 _OPENER_RE = re.compile(r"<[!?]")
 _FENCE_TAIL_RE = re.compile(r"(?:`{3}|~{3})[^\n]*")
+# ⟳ r4 (Codex BLOCKER, not fix-induced): `<span title="[[alpha]]">` was SURE, and the page hides it in
+# an attribute. A THIRD region, found by its own scan: the INTERIOR of a raw HTML tag, from `<` and an
+# ASCII letter or `/` to the `>` that closes it, read with the HTML tokenizer's attribute states (a `>`
+# inside a quoted value does not close; a quote opens a value only after `=`). A tag the line ends
+# inside runs to the end of the TEXT: a renderer may end its block or container there, escape the
+# closing quote, and leave the tag open over everything after it. Every `<tag` is NOT an opener to
+# the end: that refused 65 valid files (`<path>`, `<N>` placeholders are closed on their line).
+_TAG_START_RE = re.compile(r"<[A-Za-z/]")
+_TAG_SPACE = " \t\f\r"
 
 # ⟳ r1 (Codex MAJOR): a frontmatter value this reader would accept but YAML would not. Measured
 # 2026-11-20 over the live corpus: 189 double-quoted values, 796 plain, 0 single-quoted, 0 flow,
@@ -288,11 +312,48 @@ def history_marker(line: str) -> str | None:
     return None
 
 
+def tag_end(text: str, start: int) -> int:
+    """PURE. The index just past the `>` that closes the raw HTML tag opened at `text[start]` (a `<`),
+    or `len(text)` when its line ends first. The states are the HTML tokenizer's (tag name, attribute
+    name, before / after a value, quoted and unquoted value), so only an unquoted `>` closes."""
+    state = "name"
+    for i in range(start + 1, len(text)):
+        c = text[i]
+        if c == "\n":
+            break
+        if state in ('"', "'"):
+            if c == state:
+                state = "after-quoted"
+            continue
+        if state == "unquoted":
+            if c == ">":
+                return i + 1
+            state = "before-name" if c in _TAG_SPACE else "unquoted"
+        elif state == "before-value":
+            if c == ">":
+                return i + 1
+            if c not in _TAG_SPACE:
+                state = c if c in "\"'" else "unquoted"
+        elif c == ">":
+            return i + 1
+        elif c == "/":
+            state = "before-name"
+        elif c in _TAG_SPACE:
+            state = {"attr": "after-attr", "after-attr": "after-attr"}.get(state, "before-name")
+        elif c == "=" and state in ("attr", "after-attr"):
+            state = "before-value"
+        elif state != "name":
+            state = "attr"
+    return len(text)
+
+
 def uncertain_regions(text: str) -> list[tuple[int, int]]:
-    """PURE. The (start, end) spans of `text` a reader might not see (see `_OPENER_RE`)."""
+    """PURE. The (start, end) spans of `text` a reader might not see (see `_OPENER_RE` and
+    `_TAG_START_RE`). Each of the three kinds is found by its own scan."""
     opener = _OPENER_RE.search(text)
     regions = [(opener.start(), len(text))] if opener else []
-    return regions + [m.span() for m in _FENCE_TAIL_RE.finditer(text)]
+    regions += [m.span() for m in _FENCE_TAIL_RE.finditer(text)]
+    return regions + [(m.start(), tag_end(text, m.start())) for m in _TAG_START_RE.finditer(text)]
 
 
 def link_reading(text: str) -> tuple[set[str], set[str]]:
@@ -373,8 +434,8 @@ def reachability(index_text: str, texts: dict[str, str],
     return missing, {fname for fname in texts if fname not in reached}
 
 
-_REMEDY = ("move the link above the file's first `<!`/`<?`, or off the line holding a run of "
-           "three backticks or tildes")
+_REMEDY = ("move the link out of any raw HTML tag, above the file's first `<!`/`<?`, and off the "
+           "line holding a run of three backticks or tildes")
 
 
 def index_violations(index_text: str, texts: dict[str, str]) -> list[str]:
@@ -647,7 +708,18 @@ def _self_test_body() -> int:
              "[x](t1<!-- -->.md) <!-- [y](t1.md) -->"),
             ("refutation 3, one construct eats another's opener", "<!\\```\n<!--``>\n>[[t1]]"),
             ("refutation 4, a container ends before the `-->`", " - <!--\n--> >[[t1]]- "),
-            ("refutation 5, a blockquote marker is not a closing `>`", "> <?\\\n>- [[t1]]1. <!``")):
+            ("refutation 5, a blockquote marker is not a closing `>`", "> <?\\\n>- [[t1]]1. <!``"),
+            # ⟳ r4 (Codex BLOCKER): the interior of a raw HTML tag. Each was SURE at `011a0094`, and
+            # each is hidden in markdown-it + html.parser except the closing and unclosed tags, which
+            # render as text: those are the region's stated price, paid loudly.
+            ("a raw tag's attribute (the Codex input)", '<span title="[[t1]]">details</span>'),
+            ("a quoted `>` inside an attribute", '<span title="a>b [[t1]]">x</span>'),
+            ("a single-quoted attribute", "<span title='a>b [[t1]]'>x</span>"),
+            ("a quote in an attribute NAME, which opens no value", "<div b'c d=\"x' >[[t1]] \">"),
+            ("a tag its line ends inside", '<span title="x [[t1]]'),
+            ("a container that ends the tag's block", '- <div title="x\nfoo">\n[[t1]]'),
+            ("a closing tag's attribute", '</span title="[[t1]]">'),
+            ("an angle-bracket link destination, rendered into an href", "[b](<t2 [[t1]]>)")):
         idx, t = world()
         t["t1.md"] = _mem("t1")
         check(f"CANNOT-READ: a file reached only through {label}", codes(idx + hidden + "\n", t),
@@ -677,6 +749,19 @@ def _self_test_body() -> int:
     idx, t = world()
     t["t1.md"] = _mem("t1")
     check("a TILDE fence line is a region too", codes(idx + "~~~[[t1]]\n", t), ["CANNOT-READ"])
+    # ⟳ r4: the tag region is the tag's INTERIOR. Text beside or between tags is visible (markdown-it
+    # + html.parser), so it stays sure: the corpus holds 110 tags, `<path>` and `<N>` placeholders.
+    idx, t = world()
+    check("CANNOT-READ: the reported input, the index's only link inside a raw tag's attribute",
+          codes("# Memory Index\n\n<span title=\"[[alpha]]\">details</span>\n",
+                {"alpha.md": _mem("alpha")}), ["CANNOT-READ"])
+    for label, shown in (("a `<path>` placeholder beside it", "- see <path> and [[t1]]"),
+                         ("text BETWEEN two tags", "<b>[[t1]]</b>"),
+                         ("text after a tag with an attribute", "<b x=1>[[t1]]</b>"),
+                         ("text after a tag whose UNQUOTED value holds a quote", '<div title=a"b>[[t1]]')):
+        idx, t = world()
+        t["t1.md"] = _mem("t1")
+        check(f"a link is sure beside a raw tag: {label}", codes(idx + shown + "\n", t), [])
     idx, t = world()
     check("a dead link the bounds agree on is MISSING, not CANNOT-READ: both forms after a wiki link",
           codes(idx + "- [[gone]](lost.md)\n", t), ["MISSING", "MISSING"])
@@ -764,9 +849,12 @@ def _self_test_body() -> int:
     check("link_reading reads both link forms",
           link_reading("[a](x.md) and [[y]] and [z](http://e.com) and [w](v.md#h)"),
           ({"x.md", "y.md", "v.md"}, set()))
+    # ⟳ r4, CHANGED ON PURPOSE: `[b](<y.md>)` is still read as `y.md`, but now as UNCERTAIN — its
+    # `<y` opens a tag region, and an angle-bracket destination can hide a link in its href
+    # (`[b](<t2 [[t1]]>)`, a case above). The corpus holds 0 angle-bracket destinations.
     check("link_reading normalises a title, `<…>`, `./`, an alias and a wiki anchor",
           link_reading('[a](x.md "T") [b](<y.md>) [c](./z.md) [[w|W]] [[u#h]] [[#only-anchor]]'),
-          ({"x.md", "y.md", "z.md", "w.md", "u.md"}, set()))
+          ({"x.md", "z.md", "w.md", "u.md"}, {"y.md"}))
     # ⟳ r1 (Codex MAJOR): a link inside an HTML comment is not a link a reader can follow.
     # ⟳ 2026-11-20 Phase 6 fold, CHANGED ON PURPOSE: nothing is stripped. Everything after the first
     # `<!` is UNCERTAIN, including `[[c]]` after the comment closes (a container may have ended it).
@@ -788,6 +876,16 @@ def _self_test_body() -> int:
     check("uncertain_regions: the first `<!` or `<?` runs to the end; a fence run to its line's end",
           (uncertain_regions("ab<?c<!d"), uncertain_regions("x\n```y\nz"), uncertain_regions("x")),
           ([(2, 8)], [(2, 6)], []))
+    check("tag_end: an unquoted `>` closes; a quoted one, in either quote, does not",
+          (tag_end("<a>x", 0), tag_end('x <a b=">">y', 2), tag_end("<a b='>'>y", 0),
+           tag_end('<a b = ">">y', 0), tag_end("<a b=>x", 0)), (3, 11, 9, 11, 6))
+    check("tag_end: a tag its line ends inside, or the text, runs to the end of the text",
+          (tag_end("<a b\nc>d", 0), tag_end('<a b="x\n">', 0), tag_end("<a", 0)), (8, 10, 2))
+    check("tag_end: a quote opens a value only after `=`; in a name or an unquoted value it is a letter",
+          (tag_end("<a b\"c>d", 0), tag_end("<a b=c\"d>e", 0), tag_end("<a b \"=\">\">x", 0)),
+          (7, 9, 11))
+    check("uncertain_regions: a tag's interior, each `<` found by its own scan",
+          uncertain_regions("a <b c='>'> <x>"), [(2, 11), (12, 15)])
     check("parse_frontmatter strips quotes and reads metadata.type",
           parse_frontmatter('---\nname: "n"\ndescription: \'d\'\nmetadata:\n  type: user\n---\nB')[0],
           {"name": "n", "description": "d", "metadata.type": "user"})

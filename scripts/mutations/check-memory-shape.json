@@ -1001,8 +1001,8 @@
     "file": "scripts/check-memory-shape.py",
     "edits": [
       [
-        "    return regions + [m.span() for m in _FENCE_TAIL_RE.finditer(text)]\n",
-        "    return regions\n"
+        "    regions += [m.span() for m in _FENCE_TAIL_RE.finditer(text)]\n",
+        ""
       ]
     ],
     "expect": [
@@ -1189,6 +1189,149 @@
     ],
     "expect": [
       "a CANNOT-READ message names the file and the remedy"
+    ]
+  },
+  {
+    "name": "r4: the tag-interior region is not added, so a link in an attribute is sure",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "    return regions + [(m.start(), tag_end(text, m.start())) for m in _TAG_START_RE.finditer(text)]\n",
+        "    return regions\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: the reported input, the index's only link inside a raw tag's attribute"
+    ]
+  },
+  {
+    "name": "r4: no quote opens a value, so a quoted `>` closes the tag",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "                state = c if c in \"\\\"'\" else \"unquoted\"\n",
+        "                state = \"unquoted\"\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a quoted `>` inside an attribute"
+    ]
+  },
+  {
+    "name": "r4: a single quote opens no value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "                state = c if c in \"\\\"'\" else \"unquoted\"\n",
+        "                state = c if c == '\"' else \"unquoted\"\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a single-quoted attribute"
+    ]
+  },
+  {
+    "name": "r4: a quote in an attribute NAME opens a value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        elif state != \"name\":\n            state = \"attr\"\n",
+        "        elif state != \"name\":\n            state = c if c in \"\\\"'\" else \"attr\"\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a quote in an attribute NAME, which opens no value"
+    ]
+  },
+  {
+    "name": "r4: a quote inside an UNQUOTED value opens a value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "            state = \"before-name\" if c in _TAG_SPACE else \"unquoted\"\n",
+        "            state = \"before-name\" if c in _TAG_SPACE else (c if c in \"\\\"'\" else \"unquoted\")\n"
+      ]
+    ],
+    "expect": [
+      "a link is sure beside a raw tag: text after a tag whose UNQUOTED value holds a quote"
+    ]
+  },
+  {
+    "name": "r4: a tag continues across a line end",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if c == \"\\n\":\n            break\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a container that ends the tag's block"
+    ]
+  },
+  {
+    "name": "r4: a tag its line ends inside ends at the line end, not the end of the text",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        if c == \"\\n\":\n            break\n",
+        "        if c == \"\\n\":\n            return i\n"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a container that ends the tag's block"
+    ]
+  },
+  {
+    "name": "r4: `</` does not open a tag region",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "_TAG_START_RE = re.compile(r\"<[A-Za-z/]\")",
+        "_TAG_START_RE = re.compile(r\"<[A-Za-z]\")"
+      ]
+    ],
+    "expect": [
+      "CANNOT-READ: a file reached only through a closing tag's attribute"
+    ]
+  },
+  {
+    "name": "r4: every `<tag` opens a region to the end of the text (the design that refused 65 files)",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "[(m.start(), tag_end(text, m.start())) for m in _TAG_START_RE",
+        "[(m.start(), len(text)) for m in _TAG_START_RE"
+      ]
+    ],
+    "expect": [
+      "a link is sure beside a raw tag: a `<path>` placeholder beside it"
+    ]
+  },
+  {
+    "name": "r4: only the FIRST tag is scanned",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "(m.start(), tag_end(text, m.start())) for m in _TAG_START_RE.finditer(text)]",
+        "(m.start(), tag_end(text, m.start())) for m in list(_TAG_START_RE.finditer(text))[:1]]"
+      ]
+    ],
+    "expect": [
+      "uncertain_regions: a tag's interior, each `<` found by its own scan"
+    ]
+  },
+  {
+    "name": "r4: `=` after a space does not start a value",
+    "file": "scripts/check-memory-shape.py",
+    "edits": [
+      [
+        "        elif c == \"=\" and state in (\"attr\", \"after-attr\"):\n",
+        "        elif c == \"=\" and state == \"attr\":\n"
+      ]
+    ],
+    "expect": [
+      "tag_end: an unquoted `>` closes; a quoted one, in either quote, does not"
     ]
   }
 ]
