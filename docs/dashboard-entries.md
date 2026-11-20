@@ -21006,6 +21006,39 @@ none dropped). `scripts/regen-pages.py`: the crash case again refuses a second `
 140/140 and 121/121; mutations 195 and 73, the 14 new or re-anchored entries all killed by their named case. CM2 and
 Cm4 (the exact-name censuses) are stated as bounds and split to backlog #671.
 
+## 2026-11-17
+There is now a scan that reads every part of the harness we mean to publish and lists what ties it to this
+repository. It looks for seven kinds of tie: words that only mean something here, commands that run files the
+package does not carry, tools with no built-in test or no usage text, bare names of checks, documents and harness
+tools, skills that need another skill, programs and settings a tool needs on the machine, and hooks that only run
+because this repository's settings file names them. The first report covers all 45 parts and lists 228 ties; 11
+parts have none. Nothing is published yet. The list of harness tool names the scan uses is the coordinator
+session's own list, plus three names this repository's instructions use that the session does not have.
+<!--tech-->
+Marketplace slice D (plan Tasks 8-12, branch `hse-d`). `scripts/check-publishability.py`: seven detectors over
+`docs/marketplace/components.json` and the per-package shipping sets, a finding with an id
+(`<component>:<detector>:<n>`) or a mention without one; a component that cannot be scanned is CANNOT RUN (rc 2),
+never clean. First report `docs/marketplace/scan-2026-11-17.json` (measured at `f8390575`): 45 scanned, 0 CANNOT
+RUN, 228 findings (detector 1: 4, 2: 130, 3: 1, 4: 37, 5: 4, 6: 40, 7: 12). CI runs the self-test and the scan.
+97 self-test cases; 145 mutations, all killed by the case each names (local run, this script only).
+`docs/marketplace/harness-tools.txt` is the coordinator session's list (`claude` 2.1.323), with `TaskList`,
+`TaskCreate` and `TaskUpdate` in a separate block: this repository names them, the session does not expose them. Detector 7 recognises no
+declared registration, since the spec names no form of one: every hook registered in `.claude/settings.json` is a
+finding.
+
+## 2026-11-19
+The features page's biggest section — the rules-and-checks harness — is now split into six smaller sections you can
+read one at a time: speed, the review process, mutation and test quality, hooks and session continuity, the backlog
+and page tooling, and whether the checks themselves are sound. Every open item in that section was read and placed in
+exactly one of the six. It was your choice on 2026-10-30 (option A), and it closes backlog #511.
+<!--tech-->
+Branch `backlog-511`. `docs/features.md`: six `####` child nodes under `guard-and-gate-harness`, each claiming one
+sub-area — `(tooling/speed)` 48, `(tooling/review)` 30, `(tooling/mutation)` 42, `(tooling/hooks)` 53,
+`(tooling/pages)` 37, `(tooling/guards)` 69 open rows (279 in all; the row's title said 127, from when it was filed).
+`docs/backlog.md`: only the Bundle cell of those 279 rows changed, `(tooling)` → `(tooling/<sub>)`; a second tag such
+as `(comprehensibility/explainers)` is kept. Closed `(tooling)` rows are unchanged and stay under the parent node by
+`nearest_claim`. Same mechanism as `status-visibility`/`feature-map`; the page is regenerated from these sources.
+
 ## 2026-11-19
 The instructions every explainer page is built from now explain how to mark a decision on a page: put a mark on
 the question, and the page shows a yellow "DECISION n of N" tag there, turning green with the answer once one is
