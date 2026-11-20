@@ -36,7 +36,7 @@ halves:
   codex: ran
   claude: gap
 findings:
-  - {id: Xb1, severity: Critical, aim: deliverable, fix_induced: false, component: link-reader, disposition: folded}
+  - {id: Xb1, severity: Blocking, aim: deliverable, fix_induced: false, component: link-reader, disposition: fixed}
 ```
 
 | Id | Finding | Fold |
