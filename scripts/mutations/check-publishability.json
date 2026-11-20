@@ -1,0 +1,1740 @@
+[
+ {
+  "name": "file set: an emptied set is not refused",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if not found:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "an emptied set is CANNOT RUN"
+ },
+ {
+  "name": "file set: identity is not compared, only the count",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if found != want:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a substituted member with equal cardinality is CANNOT RUN"
+ },
+ {
+  "name": "file set: the expected count is not compared",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if len(found) != declared[\"expected_count\"]:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a declared count that is not the resolved count is CANNOT RUN"
+ },
+ {
+  "name": "file set: symlinks are not resolved",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    real = (base / rel).resolve()\n",
+    "    real = (base / rel)\n"
+   ]
+  ],
+  "expect": "a set walked through a symlinked directory finds the known positive"
+ },
+ {
+  "name": "file set: an undeclared component is not refused",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if declared is None:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a component the declaration does not name is CANNOT RUN"
+ },
+ {
+  "name": "file set: a plugin declaration is read in repository paths",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "place = SS.source_path if decl[\"channel\"] == \"plugin\" else (lambda f: f)\n    want = {_real(base, place(f), cid)[1]",
+    "place = (lambda f: f)\n    want = {_real(base, place(f), cid)[1]"
+   ]
+  ],
+  "expect": "a set walked through a symlinked directory finds the known positive"
+ },
+ {
+  "name": "file set: a reusable-workflow declaration is read in installed paths",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "== \"plugin\" else (lambda f: f)\n    want = {_real(base, place(f), cid)[1]",
+    "== \"plugin\" else SS.source_path\n    want = {_real(base, place(f), cid)[1]"
+   ]
+  ],
+  "expect": "resolve: a reusable-workflow declaration is read in repository paths, a single file resolved"
+ },
+ {
+  "name": "file set: a listed file absent from disk is a member",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        elif real.is_file():\n",
+    "        else:\n"
+   ]
+  ],
+  "expect": "resolve: a listed file that is not on disk is no member, and a set of only that is CANNOT RUN"
+ },
+ {
+  "name": "file set: a path outside the repository is not refused",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return real, real.relative_to(base).as_posix()\n",
+    "        return real, os.path.relpath(real, base)\n"
+   ]
+  ],
+  "expect": "resolve: an entry that resolves outside the repository is CANNOT RUN"
+ },
+ {
+  "name": "report: a CANNOT RUN entry carries an empty findings list",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "{\"status\": CANNOT_RUN, \"why\": str(e)}",
+    "{\"status\": CANNOT_RUN, \"why\": str(e), \"findings\": []}"
+   ]
+  ],
+  "expect": "the report for a CANNOT RUN component carries no findings field that reads as zero"
+ },
+ {
+  "name": "report: measured_at is not the commit",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"measured_at\": _head(root)",
+    "\"measured_at\": \"unmeasured\""
+   ]
+  ],
+  "expect": "the report's measured_at is the commit of the tree scanned"
+ },
+ {
+  "name": "scan: a refused map is not CANNOT RUN",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    except SS.Refused as e:\n",
+    "    except SS.CannotRun as e:\n"
+   ]
+  ],
+  "expect": "CLI: a map the map rules refuse is rc 2, CANNOT RUN"
+ },
+ {
+  "name": "scan: a package the declaration lacks is not refused",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            if c[\"package\"] not in packages:\n",
+    "            if False:\n"
+   ]
+  ],
+  "expect": "a component whose package the declaration does not hold is CANNOT RUN"
+ },
+ {
+  "name": "CLI: a CANNOT RUN component exits 0",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    return 2 if any(e[\"status\"] != SCANNED",
+    "    return 0 if any(e[\"status\"] != SCANNED"
+   ]
+  ],
+  "expect": "CLI: one CANNOT RUN component is rc 2 and the line says why, beside a scanned one"
+ },
+ {
+  "name": "CLI: an unreadable declaration exits 0",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        print(f\"{CANNOT_RUN}: {e}\")\n        return 2\n",
+    "        print(f\"{CANNOT_RUN}: {e}\")\n        return 0\n"
+   ]
+  ],
+  "expect": "CLI: an emptied shipping-sets.json is rc 2, CANNOT RUN, and no component line"
+ },
+ {
+  "name": "CLI: --out writes nothing",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if a.out:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "CLI: --out writes the report, a CANNOT RUN entry as it is"
+ },
+ {
+  "name": "render: the summary counts the wrong status",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    done = sum(e[\"status\"] == SCANNED",
+    "    done = sum(e[\"status\"] != SCANNED"
+   ]
+  ],
+  "expect": "CLI: every component scanned is rc 0, one line per component and a summary"
+ },
+ {
+  "name": "vocabulary: the owner segment of the remote is dropped",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    ")[-2:])",
+    ")[-1:])"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: the package.json name is not taken",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "terms.add(pkg.get(\"name\", \"\"))",
+    "terms.add(\"\")"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: unscoped dependency keys are taken instead of scopes",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if k.startswith(\"@\")}",
+    "if not k.startswith(\"@\")}"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: a directory holding a candidate is not excluded",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for d in product - {c.split(\"/\")[0] for c in _candidates(root)}}",
+    "for d in product}"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: a Mocking boundaries module that is not on disk is taken",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    ", para) if (root / m).is_file()}",
+    ", para)}"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: module stems are read from the whole document, not the paragraph",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "`\", para) if",
+    "`\", doc.read_text()) if"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: an exported .env.example name is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(?:export\\s+)?",
+    ""
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: fly.toml yields nothing",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if (root / \"fly.toml\").is_file():\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: terms keep their case",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "terms = {t.lower() for t in terms if t}",
+    "terms = {t for t in terms if t}"
+   ]
+  ],
+  "expect": "the vocabulary of a fixture repository is derived from its remote, package.json, source directories holding no candidate, Mocking boundaries paragraph, .env.example and fly.toml"
+ },
+ {
+  "name": "vocabulary: an empty vocabulary is not refused",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if not terms:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a repository from which no term can be derived is CANNOT RUN"
+ },
+ {
+  "name": "vocabulary: an unreadable package.json is not CANNOT RUN",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            raise CannotRun(f\"cannot read package.json: {e}\") from e\n",
+    "            raise\n"
+   ]
+  ],
+  "expect": "a package.json that does not parse is CANNOT RUN"
+ },
+ {
+  "name": "vocabulary: the fly term is typed as a literal",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "terms.add(Path(\"fly.toml\").stem)",
+    "terms.add(\"fly\")"
+   ]
+  ],
+  "expect": "the source of derive_vocabulary contains no string literal EQUAL to any of the four spec terms"
+ },
+ {
+  "name": "matching: a term is matched at the start of a longer word",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "re.escape(t) + r\"(?![A-Za-z0-9])\")",
+    "re.escape(t))"
+   ]
+  ],
+  "expect": "the longest term wins where two overlap, and a term inside a longer word is no match"
+ },
+ {
+  "name": "matching: a term is matched at the end of a longer word",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(r\"(?<![A-Za-z0-9])\" + re.escape(t)",
+    "(r\"\" + re.escape(t)"
+   ]
+  ],
+  "expect": "the longest term wins where two overlap, and a term inside a longer word is no match"
+ },
+ {
+  "name": "matching: the shortest term wins",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "key=lambda t: (-len(t), t))]",
+    "key=lambda t: (len(t), t))]"
+   ]
+  ],
+  "expect": "the longest term wins where two overlap, and a term inside a longer word is no match"
+ },
+ {
+  "name": "matching: a directory term is matched after a dot or a hyphen",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(r\"(?<![\\w.-])\"",
+    "(r\"(?<![\\w])\""
+   ]
+  ],
+  "expect": "the longest term wins where two overlap, and a term inside a longer word is no match"
+ },
+ {
+  "name": "classify: a from-import is not a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "isinstance(node, ast.ImportFrom) and hit(node.module or \"\")",
+    "isinstance(node, ast.ImportFrom) and False"
+   ]
+  ],
+  "expect": "import of a project module is a dependency"
+ },
+ {
+  "name": "classify: a plain import is not a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "isinstance(node, ast.Import) and any(hit(a.name) for a in node.names)",
+    "isinstance(node, ast.Import) and False"
+   ]
+  ],
+  "expect": "import of a project module is a dependency"
+ },
+ {
+  "name": "classify: an env read with a positional or keyword default is a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "working or fallback",
+    "fallback"
+   ]
+  ],
+  "expect": "an env read with a default that works is a mention"
+ },
+ {
+  "name": "classify: a keyword default is not seen",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " + [k.value for k in up.keywords if k.arg == \"default\"]",
+    ""
+   ]
+  ],
+  "expect": "an env read with a default that works is a mention"
+ },
+ {
+  "name": "classify: an `or` fallback is not a default",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for g in rest)",
+    "for g in [])"
+   ]
+  ],
+  "expect": "an env read with a default that works is a mention"
+ },
+ {
+  "name": "classify: an environ subscript is not a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "in (\"os.environ\", \"environ\"):\n        return \"config\"",
+    "in (\"os.environ\", \"environ\"):\n        return None"
+   ]
+  ],
+  "expect": "an env read whose absence raises is a dependency"
+ },
+ {
+  "name": "classify: a getter with no default is not a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "or fallback else \"config\"",
+    "or fallback else None"
+   ]
+  ],
+  "expect": "an env read whose absence raises is a dependency"
+ },
+ {
+  "name": "classify: a process runner's argument is not an invocation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return \"invocation\" if name in RUNNERS",
+    "return None if name in RUNNERS"
+   ]
+  ],
+  "expect": "an invocation and a path read are dependencies; a comment and a plain string are mentions"
+ },
+ {
+  "name": "classify: a path joined with / is not a read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "isinstance(up.op, ast.Div):\n            return \"config\"",
+    "isinstance(up.op, ast.Div):\n            return None"
+   ]
+  ],
+  "expect": "an invocation and a path read are dependencies; a comment and a plain string are mentions"
+ },
+ {
+  "name": "classify: an opened path is not a read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "else \"config\" if name in PATH_READERS",
+    "else None if name in PATH_READERS"
+   ]
+  ],
+  "expect": "an invocation and a path read are dependencies; a comment and a plain string are mentions"
+ },
+ {
+  "name": "classify: a Python file that does not parse is judged a mention",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        raise CannotRun(f\"{rel} does not parse: {e}\") from e\n",
+    "        return ast.parse(\"\"), {}\n"
+   ]
+  ],
+  "expect": "a Python file that does not parse is CANNOT RUN, never a mention"
+ },
+ {
+  "name": "classify: a term the line does not hold is still judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if not word.search(text):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "shell: a command line is a dependency, a comment a mention, and a term the line does not hold a mention"
+ },
+ {
+  "name": "classify: a shell comment is an invocation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if file.suffix == \".sh\":\n        return None if text.lstrip().startswith(\"#\") else \"invocation\"",
+    "if file.suffix == \".sh\":\n        return \"invocation\""
+   ]
+  ],
+  "expect": "shell: a command line is a dependency, a comment a mention, and a term the line does not hold a mention"
+ },
+ {
+  "name": "classify: an invoked file's path is not an invocation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for m in SS.EXEC_RE.finditer(text)):\n        return \"invocation\"",
+    "for m in SS.EXEC_RE.finditer(text)):\n        return None"
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: every fenced block is a command",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if fence in SHELL_FENCES:\n",
+    "        if True:\n"
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: a comment inside a shell fence is a command",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if fence in SHELL_FENCES:\n            return None if text.lstrip().startswith(\"#\") else \"invocation\"",
+    "        if fence in SHELL_FENCES:\n            return \"invocation\""
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: a closing fence opens another",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "m.group(1).lower() if fence is None else None",
+    "m.group(1).lower()"
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: a read instruction is not a prerequisite",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "re.search(INSTRUCTS + tok, text, re.I) or ",
+    ""
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: a stated requirement is not a prerequisite",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " or re.search(REQUIRES + r\"(?<![A-Za-z0-9])\" + tok, text, re.I)",
+    ""
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: an instruction verb counts anywhere in a sentence",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(r\"(?:^\\s*(?:[-*>]\\s+|\\d+\\.\\s+)*|[.;:]\\s+)(?:\\*\\*)?",
+    "(r\""
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "classify: a requirement reaches any distance",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "{0,40}",
+    "*"
+   ]
+  ],
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
+ },
+ {
+  "name": "report: a mention is given an id",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(findings if kind else mentions).append(",
+    "(findings).append("
+   ]
+  ],
+  "expect": "a verdict cannot cite a mention"
+ },
+ {
+  "name": "report: ids do not count from one",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "count.get(f[\"detector\"], 0) + 1",
+    "count.get(f[\"detector\"], 0) + 2"
+   ]
+  ],
+  "expect": "detector 1: the dependencies of a file are findings with ids in file-and-line order, the term named"
+ },
+ {
+  "name": "report: a finding does not carry its term",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"text\": text.strip(), \"term\": term}",
+    "\"text\": text.strip()}"
+   ]
+  ],
+  "expect": "a finding carries exactly the Finding fields and the term"
+ },
+ {
+  "name": "detector 2: the set is the component's own, not the package's",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings += _invocations(files, base, _shipped(decl), decl[\"channel\"])",
+    "findings += _invocations(files, base, {f.relative_to(base).as_posix() for f in files}, decl[\"channel\"])"
+   ]
+  ],
+  "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
+ },
+ {
+  "name": "detector 2: a plugin's shipped set is left in installed coordinates",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    return {place(f) for c in",
+    "    return {f for c in"
+   ]
+  ],
+  "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
+ },
+ {
+  "name": "detector 2: a shell comment is a command",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if not rel.endswith(\".md\") and text.lstrip().startswith(\"#\"):",
+    "if False:"
+   ]
+  ],
+  "expect": "shell: a command line invoking a shipped file is cwd-relative and one invoking another file outside-set; a comment and a rooted path are no finding"
+ },
+ {
+  "name": "detector 2: a path rooted at a variable is read as bare",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "rooted = \"$\" in text[m.start():m.start(1)]",
+    "rooted = False"
+   ]
+  ],
+  "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
+ },
+ {
+  "name": "detector 2: a rooted path is dropped even when the package does not ship its target",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "or (rooted and target in shipped):",
+    "or rooted:"
+   ]
+  ],
+  "expect": "an invocation of a file outside every package is outside-set"
+ },
+ {
+  "name": "detector 2: a path above the tree is judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if target.startswith((\"..\", \"/\")) or ",
+    "if "
+   ]
+  ],
+  "expect": "a path that climbs above the tree is not judged"
+ },
+ {
+  "name": "detector 2: one target named twice on a line is two findings",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                    seen.add(target)\n",
+    "                    pass\n"
+   ]
+  ],
+  "expect": "an invocation of a file outside every package is outside-set"
+ },
+ {
+  "name": "detector 2: a plugin's cwd-relative finding names no fix",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                    elif channel == \"plugin\":\n",
+    "                    elif False:\n"
+   ]
+  ],
+  "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
+ },
+ {
+  "name": "detector 2: the fix is written in repository coordinates",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "PLUGIN_ROOT + SS.installed_path(target)",
+    "PLUGIN_ROOT + target"
+   ]
+  ],
+  "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
+ },
+ {
+  "name": "detector 2: a workflow is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "COMMANDS = (\".md\", \".sh\", \".yml\", \".yaml\")",
+    "COMMANDS = (\".md\", \".sh\")"
+   ]
+  ],
+  "expect": "a reusable workflow's invocations are judged too, and no plugin-root fix is named for it"
+ },
+ {
+  "name": "detector 2: a Python load is reported whether or not the repository holds the target",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                if (base / target).is_file() or target in invoked:\n",
+    "                if True:\n"
+   ]
+  ],
+  "expect": "Python: a load of a repository file the package does not ship is outside-set at the line naming it; a shipped sibling and a standard module are no finding"
+ },
+ {
+  "name": "detector 2: a Python load of a shipped sibling is outside-set",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "sorted(edges - shipped):",
+    "sorted(edges):"
+   ]
+  ],
+  "expect": "Python: a load of a repository file the package does not ship is outside-set at the line naming it; a shipped sibling and a standard module are no finding"
+ },
+ {
+  "name": "detector 2: a Python finding is always put on line 1",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "n = next((i for i, text in enumerate(lines, 1) if named.search(text)), 1)",
+    "n = 1"
+   ]
+  ],
+  "expect": "Python: a load of a repository file the package does not ship is outside-set at the line naming it; a shipped sibling and a standard module are no finding"
+ },
+ {
+  "name": "detector 2: a target the package does not ship is cwd-relative",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                    if target not in shipped:\n",
+    "                    if False:\n"
+   ]
+  ],
+  "expect": "an invocation of a file outside every package is outside-set"
+ },
+ {
+  "name": "detector 2: a finding does not carry its target",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"text\": text.strip(), \"target\": target}",
+    "\"text\": text.strip()}"
+   ]
+  ],
+  "expect": "detector 2: ids count from one within the detector, and a finding carries its target"
+ },
+ {
+  "name": "detector 3: a mention of the flag anywhere in the file is a self-test",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if not any(isinstance(n, ast.Constant) and n.value == SELF_TEST_FLAG for n in ast.walk(tree)):",
+    "if SELF_TEST_FLAG not in f.read_text():"
+   ]
+  ],
+  "expect": "a --self-test named only in a comment is no self-test, and a usage block alone is a user doc"
+ },
+ {
+  "name": "detector 3: a missing self-test is not reported",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            out.append({**row, \"kind\": \"no-self-test\"})\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": "a script with neither is no-self-test and no-user-doc, each a finding on its first line"
+ },
+ {
+  "name": "detector 3: a library owes a usage block",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if \"entry-point\" in roles and not usage:\n",
+    "        if not usage:\n"
+   ]
+  ],
+  "expect": "page_chrome.py with no CLI is not a detector-3 finding when its role is library"
+ },
+ {
+  "name": "detector 3: a missing usage block is not reported",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            out.append({**row, \"kind\": \"no-user-doc\"})\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": "a script with neither is no-self-test and no-user-doc, each a finding on its first line"
+ },
+ {
+  "name": "detector 3: a docstring line naming the file is a usage block wherever it starts",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "ln[:1] in (\" \", \"\\t\") and ",
+    ""
+   ]
+  ],
+  "expect": "a script with neither is no-self-test and no-user-doc, each a finding on its first line"
+ },
+ {
+  "name": "detector 3: any indented docstring line is a usage block",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " and f.name in ln for ln in",
+    " for ln in"
+   ]
+  ],
+  "expect": "...and the same file is no-user-doc when its role is entry-point, with or without library"
+ },
+ {
+  "name": "detector 3: a data component is judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for f in files if {\"entry-point\", \"library\"} & set(roles) else ():",
+    "for f in files:"
+   ]
+  ],
+  "expect": "detector 3 judges the Python of an entry point or a library: a data component and a shell file are not judged"
+ },
+ {
+  "name": "detector 3: a file that is not Python is judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if not rel.endswith(\".py\"):\n            continue\n        tree, lines",
+    "        tree, lines"
+   ]
+  ],
+  "expect": "detector 3 judges the Python of an entry point or a library: a data component and a shell file are not judged"
+ },
+ {
+  "name": "detector 3: every component is judged as an entry point",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings += _self_test_and_docs(files, base, c[\"roles\"])",
+    "findings += _self_test_and_docs(files, base, (\"entry-point\",))"
+   ]
+  ],
+  "expect": "page_chrome.py with no CLI is not a detector-3 finding when its role is library"
+ },
+ {
+  "name": "detector 4: any text after `# date:` is a date",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "r\"#\\s*date:\\s*\\d{4}-\\d{2}-\\d{2}\\b\"",
+    "r\"#\\s*date:\""
+   ]
+  ],
+  "expect": "a harness-tools.txt with no date or version header is CANNOT RUN"
+ },
+ {
+  "name": "detector 4: a tool list with no version header is read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "and any(re.match(r\"#\\s*claude --version:\\s*\\d+\\.\\d+\", ln) for ln in head)",
+    "and True"
+   ]
+  ],
+  "expect": "a harness-tools.txt with no date or version header is CANNOT RUN"
+ },
+ {
+  "name": "detector 4: a tool list naming no tool is read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if not names:\n        raise CannotRun(f\"{TOOLS} names no tool\")\n",
+    ""
+   ]
+  ],
+  "expect": "...and so is one that is absent, or that names no tool"
+ },
+ {
+  "name": "detector 4: a header line is a tool name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if ln.strip() and not ln.startswith(\"#\"))",
+    "if ln.strip())"
+   ]
+  ],
+  "expect": "...and so is one that is absent, or that names no tool"
+ },
+ {
+  "name": "detector 4: an absent tool list is an empty one",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        raise CannotRun(f\"{TOOLS} cannot be read: {e}\") from e\n",
+    "        lines = []\n"
+   ]
+  ],
+  "expect": "...and so is one that is absent, or that names no tool"
+ },
+ {
+  "name": "detector 4: the tool names are fixed in the code",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if m.group(0) in tools}",
+    "if m.group(0) in {\"TaskList\", \"TaskCreate\"}}"
+   ]
+  ],
+  "expect": "the tool list is read from the file: a name it gains is found, and one it loses is not"
+ },
+ {
+  "name": "detector 4: every camel-case word is a tool name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " for m in CAMEL_RE.finditer(text) if m.group(0) in tools}",
+    " for m in CAMEL_RE.finditer(text)}"
+   ]
+  ],
+  "expect": "a camel-case word absent from harness-tools.txt (JavaScript, SessionStart) is not a tool-name finding"
+ },
+ {
+  "name": "detector 4: a check-* name with no script is a guard",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " for m in GUARD_RE.finditer(text) if m.group(0) in guards}",
+    " for m in GUARD_RE.finditer(text)}"
+   ]
+  ],
+  "expect": "check-deploy-freshness (line 78: a check-* name with no scripts/ file, in a historical sentence) is not a guard-name item"
+ },
+ {
+  "name": "detector 4: a guard written as a path is a bare name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "GUARD_RE = re.compile(r\"(?<![\\w/.-])check-",
+    "GUARD_RE = re.compile(r\"(?<![\\w.-])check-"
+   ]
+  ],
+  "expect": "a bare name in an instruction is a finding with an id; in a plain sentence it is a mention; and a guard written as a path is not a bare name at all"
+ },
+ {
+  "name": "detector 4: a doc path the package ships is an item",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " for m in DOC_RE.finditer(text) if not held(m.group(0))}",
+    " for m in DOC_RE.finditer(text)}"
+   ]
+  ],
+  "expect": "a doc path the package does not ship is an item, to the end of the path; a path or a directory the package ships is not"
+ },
+ {
+  "name": "detector 4: a directory holding a shipped file is not held",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "held = lambda path: path in shipped or any(f.startswith(path.rstrip(\"/\") + \"/\") for f in shipped)",
+    "held = lambda path: path in shipped"
+   ]
+  ],
+  "expect": "a doc path the package does not ship is an item, to the end of the path; a path or a directory the package ships is not"
+ },
+ {
+  "name": "detector 4: a shipped file is held only through its directory",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "held = lambda path: path in shipped or any(",
+    "held = lambda path: any("
+   ]
+  ],
+  "expect": "a doc path the package does not ship is an item, to the end of the path; a path or a directory the package ships is not"
+ },
+ {
+  "name": "detector 4: a doc path stops at its first dot",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "DOC_RE = re.compile(r\"(?<![\\w/.-])docs/[\\w./-]*[\\w/]\")",
+    "DOC_RE = re.compile(r\"(?<![\\w/.-])docs/[\\w/-]*[\\w/]\")"
+   ]
+  ],
+  "expect": "a doc path the package does not ship is an item, to the end of the path; a path or a directory the package ships is not"
+ },
+ {
+  "name": "detector 4: every match is a finding",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(findings if _kind(f, n, name) else mentions).append(row)",
+    "findings.append(row)"
+   ]
+  ],
+  "expect": "a bare name in an instruction is a finding with an id; in a plain sentence it is a mention; and a guard written as a path is not a bare name at all"
+ },
+ {
+  "name": "detector 4: every match is a mention",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(findings if _kind(f, n, name) else mentions)",
+    "mentions"
+   ]
+  ],
+  "expect": "a bare name in an instruction is a finding with an id; in a plain sentence it is a mention; and a guard written as a path is not a bare name at all"
+ },
+ {
+  "name": "detector 4: a row does not hold its kind",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"text\": text.strip(), \"kind\": kind, \"term\": name}",
+    "\"text\": text.strip(), \"term\": name}"
+   ]
+  ],
+  "expect": "a detector-4 finding has an id, its kind and its name; a detector-4 mention has no id"
+ },
+ {
+  "name": "detector 4: the set is the component's own, not the package's",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "named, bare = _bare_names(files, base, _shipped(decl), tools)",
+    "named, bare = _bare_names(files, base, {f.relative_to(base).as_posix() for f in files}, tools)"
+   ]
+  ],
+  "expect": "a doc path the package does not ship is an item, to the end of the path; a path or a directory the package ships is not"
+ },
+ {
+  "name": "detector 4: the mentions are dropped",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings, mentions = findings + named, mentions + bare",
+    "findings = findings + named"
+   ]
+  ],
+  "expect": "a bare name in an instruction is a finding with an id; in a plain sentence it is a mention; and a guard written as a path is not a bare name at all"
+ },
+ {
+  "name": "detector 5: a file that is not Markdown is read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if not rel.endswith(\".md\"):\n            continue\n",
+    ""
+   ]
+  ],
+  "expect": "detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before `skill`, a path and a bare code span are not; and only Markdown is read"
+ },
+ {
+  "name": "detector 5: a skill the package ships is a finding",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if not any(home.format(skill.split(\":\")[-1]) in shipped for home in SKILL_HOMES):",
+    "if True:"
+   ]
+  ],
+  "expect": "a skill required from inside the same package is not a finding"
+ },
+ {
+  "name": "detector 5: any word before `skill` is a skill name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for m in NAMED.finditer(text) if m.group(1) or re.search(\"[-:]\", m.group(2))}",
+    "for m in NAMED.finditer(text)}"
+   ]
+  ],
+  "expect": "detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before `skill`, a path and a bare code span are not; and only Markdown is read"
+ },
+ {
+  "name": "detector 5: `comes from` is not a requirement",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for shape in (SLASHED, PROVENANCE)",
+    "for shape in (SLASHED,)"
+   ]
+  ],
+  "expect": "brief and explain-findings require artifact-design"
+ },
+ {
+  "name": "detector 5: `use /X` is not a requirement",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for shape in (SLASHED, PROVENANCE) for m in",
+    "for shape in (PROVENANCE,) for m in"
+   ]
+  ],
+  "expect": "detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before `skill`, a path and a bare code span are not; and only Markdown is read"
+ },
+ {
+  "name": "detector 5: `use /a/path` names a skill",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "SKILL_NAME + r\"`?(?![\\w/.])\", re.I)",
+    "SKILL_NAME + r\"`?\", re.I)"
+   ]
+  ],
+  "expect": "detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before `skill`, a path and a bare code span are not; and only Markdown is read"
+ },
+ {
+  "name": "detector 5: a required skill is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            named |= {m.group(2).lower() for m in REQUIRED.finditer(text)\n                      if m.group(1) or re.search(\"[-:]\", m.group(2))}\n",
+    ""
+   ]
+  ],
+  "expect": "detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before `skill`, a path and a bare code span are not; and only Markdown is read"
+ },
+ {
+  "name": "detector 5: the set is the component's own, not the package's",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings += _skill_requirements(files, base, _shipped(decl))",
+    "findings += _skill_requirements(files, base, {f.relative_to(base).as_posix() for f in files})"
+   ]
+  ],
+  "expect": "a skill required from inside the same package is not a finding"
+ },
+ {
+  "name": "detector 5: a finding does not hold the skill",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"kind\": \"requires-skill\", \"term\": skill})",
+    "\"kind\": \"requires-skill\", \"term\": \"\"})"
+   ]
+  ],
+  "expect": "brief and explain-findings require artifact-design"
+ },
+ {
+  "name": "detector 6: a standard module is a prerequisite",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(name in sys.stdlib_module_names or name in modules)",
+    "(name in modules)"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: a module the package ships is a prerequisite",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(name in sys.stdlib_module_names or name in modules))",
+    "(name in sys.stdlib_module_names))"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: the set is the component's own, not the package's",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings += _prerequisites(files, base, _shipped(decl))",
+    "findings += _prerequisites(files, base, {f.relative_to(base).as_posix() for f in files})"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: an `import x` is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                    seen |= {(node.lineno, \"import\", a.name.split(\".\")[0]) for a in node.names}\n",
+    "                    pass\n"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: a `from x import` is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                    seen.add((node.lineno, \"import\", node.module.split(\".\")[0]))\n",
+    "                    pass\n"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: a dotted import is named whole",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"import\", node.module.split(\".\")[0]))",
+    "\"import\", node.module))"
+   ]
+  ],
+  "expect": "a fixture importing an absent package is a detector-6 finding"
+ },
+ {
+  "name": "detector 6: an interpreter is an executable",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "name in SS.INTERPRETERS + SHELL_BUILTINS)}",
+    "name in SHELL_BUILTINS)}"
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: a shell builtin is an executable",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "SS.INTERPRETERS + SHELL_BUILTINS)}",
+    "SS.INTERPRETERS)}"
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: a path is an executable",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if program and re.fullmatch(r\"[\\w+-]+\", program):",
+    "if program:"
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: the last line that has a name is reported",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "first.setdefault((kind, name), n)",
+    "first[(kind, name)] = n"
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: the left end of a `+` is not followed",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):\n            node = node.left\n",
+    ""
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: a command string is named whole",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return node.value.split()[0]\n",
+    "        return node.value\n"
+   ]
+  ],
+  "expect": "Python: the program a runner is handed is an executable finding, once per file at its first line; an interpreter, a shell builtin, a path, an argv that is not written out and a string that only mentions one are not"
+ },
+ {
+  "name": "detector 6: a list's first element is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if isinstance(node, (ast.List, ast.Tuple)) and node.elts:",
+    "if isinstance(node, ast.Tuple) and node.elts:"
+   ]
+  ],
+  "expect": "gen-dashboard.py's gh call is an executable finding"
+ },
+ {
+  "name": "detector 6: an environment write is a read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if _env_read(node, parent) and not written:",
+    "if _env_read(node, parent):"
+   ]
+  ],
+  "expect": "an environment read with no default is a config finding; a read with a default, a write and a path that is opened are not"
+ },
+ {
+  "name": "detector 6: a read with a default is a prerequisite",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return named and _python_use(node, parent) == \"config\"",
+    "return named"
+   ]
+  ],
+  "expect": "an environment read with no default is a config finding; a read with a default, a write and a path that is opened are not"
+ },
+ {
+  "name": "detector 6: an opened path is an environment read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "named and _python_use(node, parent)",
+    "_python_use(node, parent)"
+   ]
+  ],
+  "expect": "an environment read with no default is a config finding; a read with a default, a write and a path that is opened are not"
+ },
+ {
+  "name": "detector 6: a shell comment is read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                if not text.lstrip().startswith(\"#\"):\n                    seen |= {(n, \"executable\"",
+    "                if True:\n                    seen |= {(n, \"executable\""
+   ]
+  ],
+  "expect": "shell: a known program in command position is an executable finding; a comment, an argument and a directory name are not, and Markdown is not read for programs"
+ },
+ {
+  "name": "detector 6: a program anywhere on a shell line is a command",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "SHELL_COMMAND = re.compile(r\"(?:^|[|;&(`]|\\b(?:then|do|else|if|while|until|exec|time|command\\s+-v)\\s)\\s*(\"",
+    "SHELL_COMMAND = re.compile(r\"\\b(\""
+   ]
+  ],
+  "expect": "shell: a known program in command position is an executable finding; a comment, an argument and a directory name are not, and Markdown is not read for programs"
+ },
+ {
+  "name": "detector 6: `command -v` is not command position",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "exec|time|command\\s+-v)\\s)",
+    "exec|time)\\s)"
+   ]
+  ],
+  "expect": "shell: a known program in command position is an executable finding; a comment, an argument and a directory name are not, and Markdown is not read for programs"
+ },
+ {
+  "name": "detector 6: Markdown is read for programs",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        elif rel.endswith(\".sh\"):\n            for n, text in enumerate(lines, 1):\n                if not text.lstrip()",
+    "        else:\n            for n, text in enumerate(lines, 1):\n                if not text.lstrip()"
+   ]
+  ],
+  "expect": "shell: a known program in command position is an executable finding; a comment, an argument and a directory name are not, and Markdown is not read for programs"
+ },
+ {
+  "name": "detector 6: a finding does not hold its name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"text\": lines[n - 1].strip(), \"kind\": kind, \"term\": name}\n                for (kind, name), n in first.items()]",
+    "\"text\": lines[n - 1].strip(), \"kind\": kind}\n                for (kind, name), n in first.items()]"
+   ]
+  ],
+  "expect": "a detector-6 finding has an id, its kind and its term"
+ },
+ {
+  "name": "lines: a form feed starts a new line",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return tuple(file.read_text().split(\"\\n\"))",
+    "return tuple(file.read_text().splitlines())"
+   ]
+  ],
+  "expect": "a line number is the file's own: a form feed inside a line starts no new line"
+ },
+ {
+  "name": "detector 7: a registered hook is asked like any file",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if rel in hooks:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a regen hook with a settings.json stanza and no declaration is needs-registration"
+ },
+ {
+  "name": "detector 7: a registered hook that says user is exempt",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if rel in hooks:",
+    "if rel in hooks and not _says_user(f, rel):"
+   ]
+  ],
+  "expect": "...and a registered hook that says invoked-by: user is needs-registration all the same: the stanza is how it is reached"
+ },
+ {
+  "name": "detector 7: a stanza finding does not name the stanza",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "out.append({**row, \"target\": HOOK_STANZAS})",
+    "out.append(row)"
+   ]
+  ],
+  "expect": "a regen hook with a settings.json stanza and no declaration is needs-registration"
+ },
+ {
+  "name": "detector 7: the registration is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    hooks = SS.registered_hooks(base)\n",
+    "    hooks = set()\n"
+   ]
+  ],
+  "expect": "a regen hook with a settings.json stanza and no declaration is needs-registration"
+ },
+ {
+  "name": "detector 7: a test is a production caller",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if other != rel and not _is_test(other) and",
+    "if other != rel and"
+   ]
+  ],
+  "expect": "a hook invoked only by its self-test is needs-registration"
+ },
+ {
+  "name": "detector 7: a file is its own caller",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "other != rel and not _is_test(other)",
+    "not _is_test(other)"
+   ]
+  ],
+  "expect": "a hook invoked only by its self-test is needs-registration"
+ },
+ {
+  "name": "detector 7: a caller is not looked for",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "rel in _runs(base, other) for other in sorted(shipped)",
+    "False for other in sorted(shipped)"
+   ]
+  ],
+  "expect": "a hook another shipped file runs in production is not a detector-7 finding"
+ },
+ {
+  "name": "detector 7: a caller outside the package counts",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "findings += _registrations(files, base, _shipped(decl), c[\"roles\"], hooks)",
+    "findings += _registrations(files, base, set(_tracked(base)), c[\"roles\"], hooks)"
+   ]
+  ],
+  "expect": "...and it is one when the file that runs it is not in the package"
+ },
+ {
+  "name": "detector 7: the declaration is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        elif not _says_user(f, rel) and not any(\n",
+    "        elif not any(\n"
+   ]
+  ],
+  "expect": "a CLI declaring invoked-by: user is exempt"
+ },
+ {
+  "name": "detector 7: a Python file may declare anywhere",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        block = (ast.get_docstring(_parsed(file)[0], clean=False) or \"\").splitlines()\n    elif rel.endswith(\".md\"):",
+    "        block = lines\n    elif rel.endswith(\".md\"):"
+   ]
+  ],
+  "expect": "...and the same CLI without the declaration is needs-registration; so is one that says it outside its usage block, a skill that says it outside its front matter and a hook that says it below its opening comment"
+ },
+ {
+  "name": "detector 7: a skill may declare below its front matter",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "block = lines[1:end] if lines and lines[0].strip() == \"---\" else ()",
+    "block = lines"
+   ]
+  ],
+  "expect": "...and the same CLI without the declaration is needs-registration; so is one that says it outside its usage block, a skill that says it outside its front matter and a hook that says it below its opening comment"
+ },
+ {
+  "name": "detector 7: a hook may declare anywhere",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "block = lines[:next((i for i, ln in enumerate(lines) if not ln.startswith(\"#\")), len(lines))]",
+    "block = lines"
+   ]
+  ],
+  "expect": "...and the same CLI without the declaration is needs-registration; so is one that says it outside its usage block, a skill that says it outside its front matter and a hook that says it below its opening comment"
+ },
+ {
+  "name": "detector 7: a library is asked",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    for f in files if \"entry-point\" in roles else ():\n        rel = f.relative_to(base).as_posix()\n        hook =",
+    "    for f in files:\n        rel = f.relative_to(base).as_posix()\n        hook ="
+   ]
+  ],
+  "expect": "a library is not asked what registers it"
+ },
+ {
+  "name": "detector 7: a test file is asked",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if _is_test(rel) or not (hook or",
+    "if not (hook or"
+   ]
+  ],
+  "expect": "a test file, and a shell file that is no hook, are not asked"
+ },
+ {
+  "name": "detector 7: every shell file is a hook",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "hook = rel.startswith(\".claude/hooks/\") and rel.endswith(\".sh\")",
+    "hook = rel.endswith(\".sh\")"
+   ]
+  ],
+  "expect": "a test file, and a shell file that is no hook, are not asked"
+ },
+ {
+  "name": "classify: a None default counts as a working one",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "working = any(not _always_none(g) for g in given)",
+    "working = bool(given)"
+   ]
+  ],
+  "expect": "XM1: a None default, positional or keyword, is no working default; a real one still is"
+ },
+ {
+  "name": "detector 2: a missing Python target named in the source is dropped",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "if (base / target).is_file() or target in invoked:",
+    "if (base / target).is_file():"
+   ]
+  ],
+  "expect": "XM2: a Python invocation of a file the repository does not hold is outside-set; an import is not"
+ },
+ {
+  "name": "detector 4: 'use', 'call' and 'invoke' do not instruct",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "|source|use|call|invoke)",
+    "|source)"
+   ]
+  ],
+  "expect": "XM3: an imperative 'use' or 'call' before a tool name makes it a finding, not a mention"
+ },
+ {
+  "name": "classify: a None given through `or` counts as a working fallback",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "fallback = any(not _always_none(g) for g in rest)",
+    "fallback = bool(rest)"
+   ]
+  ],
+  "expect": "r2: a None given through `or` is no working fallback; a real fallback still is"
+ },
+ {
+  "name": "detector 2: a runner's `./` target is compared unnormalised",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "invoked = {os.path.normpath(n.value) for n",
+    "invoked = {(n.value) for n"
+   ]
+  ],
+  "expect": "r2: a runner's missing target is matched after `./` is normalised, and a load the reader could not read is `unread`, never zero findings"
+ },
+ {
+  "name": "detector 2: a load the reader could not read is dropped",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            for at in unread:\n",
+    "            for at in []:\n"
+   ]
+  ],
+  "expect": "r2: a runner's missing target is matched after `./` is normalised, and a load the reader could not read is `unread`, never zero findings"
+ },
+ {
+  "name": "detector 4: a colon-introduced list item is no dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return \"prerequisite\" if _introduced(lines, i) else None",
+    "return None"
+   ]
+  ],
+  "expect": "r2: a list item or an untagged block introduced by an imperative ending in a colon is a finding; a list under a label is a mention"
+ },
+ {
+  "name": "detector 4: an untagged block is never a dependency",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return \"prerequisite\" if fence == \"\" and _introduced(lines, opened) else None",
+    "return None"
+   ]
+  ],
+  "expect": "r2: a list item or an untagged block introduced by an imperative ending in a colon is a finding; a list under a label is a mention"
+ },
+ {
+  "name": "detector 4: an introducing paragraph needs no imperative",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    return any(not re.search(NEGATES, para",
+    "    return True or any(not re.search(NEGATES, para"
+   ]
+  ],
+  "expect": "r2: a list item or an untagged block introduced by an imperative ending in a colon is a finding; a list under a label is a mention"
+ },
+ {
+  "name": "classify: an `or` of None operands counts as a working fallback",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "isinstance(g, ast.BoolOp) and all(_always_none(v) for v in g.values))",
+    "False)"
+   ]
+  ],
+  "expect": "r3: an `or` of operands that are all None is no working fallback"
+ },
+ {
+  "name": "detector 4: a blank line between two items ends the list",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            while j > 0 and not lines[j].strip():  # a blank",
+    "            while False:  # a blank"
+   ]
+  ],
+  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
+ },
+ {
+  "name": "detector 4: an earlier list does not end the introducing paragraph",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            and not LIST_ITEM.match(lines[start - 1]):  # an earlier",
+    "            and True:  # an earlier"
+   ]
+  ],
+  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
+ },
+ {
+  "name": "detector 4: a negated verb still introduces a list",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "NEGATES = r\"\\b(?:never|not|no)\\b|n't\\b\"",
+    "NEGATES = r\"(?!)\""
+   ]
+  ],
+  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
+ }
+]

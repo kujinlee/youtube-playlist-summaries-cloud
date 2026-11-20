@@ -5590,6 +5590,8 @@ def _self_test_body() -> int:
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-plan-task-order.py",
                                       "scripts/check-producer-enumeration.py",
+                                      # ⟳ 2026-11-17, marketplace-inventory Task 8: the publishability scan.
+                                      "scripts/check-publishability.py",
                                       # ⟳ 2026-09-12: the guard that enforces R4, finally subject
                                       # to it. A LIVE inventory entry, added with the manifest.
                                       "scripts/check-python-pin.py",

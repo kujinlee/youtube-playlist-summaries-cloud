@@ -1,0 +1,26 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/marketplace/scan-2026-11-17.json": "100644 2521084352f6c607805cb36a40ba669928dc7a7a",
+    "docs/reviews/claude/hse-slice-d-r2-claude.md": "100644 62a43925f3b9aed0c550f1db681bf2be94d7f28c",
+    "docs/reviews/coordinator/hse-slice-d-r2-coordinator.md": "100644 3d975d14b053bceb3d157089fd886ce0a2104bb5",
+    "scripts/check-publishability.py": "100644 18610c096ac8a96319b33368af6445c13458f183",
+    "scripts/mutations/check-publishability.json": "100644 c783a3aebac44c1cd42e019f5f14c299fa90886a",
+    "scripts/mutations/expected_mutations.py": "100644 7e302b99795e016b823f93e434991286a435e556"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "9984c3c161211cbf801c3bd4280f129ba718b17a",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 7237 chars, names 9984c3c16121",
+  "refused": false,
+  "review": "hse-slice-d-r2-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/hse-d",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
