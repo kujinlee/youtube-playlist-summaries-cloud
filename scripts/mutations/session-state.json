@@ -1238,8 +1238,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "                       | ({\"goal\": goal, \"thread\": thread} if goal else {}))",
-        "                       )"
+        "                       | ({\"goal\": goal, \"thread\": thread} if goal else {})\n                       | ({\"worktree\": wt}",
+        "                       | ({\"worktree\": wt}"
       ]
     ],
     "expect": "backlog #505: --goal and --thread are STORED on the entry"
@@ -1534,8 +1534,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "args.goal, args.thread, args.waits, parse_after(args.after))",
-        "args.goal, args.thread, None, parse_after(args.after))"
+        "args.goal, args.thread, args.waits, parse_after(args.after), args.worktree)",
+        "args.goal, args.thread, None, parse_after(args.after), args.worktree)"
       ]
     ],
     "expect": [
@@ -1862,8 +1862,8 @@
         "            if False:\n                print(f\"CANNOT RUN — {ADD_NEEDS_AFTER}"
       ],
       [
-        "parse_after(args.after))",
-        "parse_after(args.after or AFTER_NONE))"
+        "parse_after(args.after), args.worktree)",
+        "parse_after(args.after or AFTER_NONE), args.worktree)"
       ]
     ],
     "expect": [
@@ -1914,12 +1914,129 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "                                   (\"--after\", args.after is not None and not args.add)) if on]",
-        "                                   (\"--after\", False)) if on]"
+        "(\"--after\", args.after is not None and not args.add),\n",
+        "(\"--after\", False),\n"
       ]
     ],
     "expect": [
       "backlog #650: --after outside --add is a stray flag, CANNOT RUN"
+    ]
+  },
+  {
+    "name": "#672: --add --worktree never stores it",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "| ({\"worktree\": wt} if wt else {}))",
+        ")"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: --add --worktree STORES the directory, absolute; a missing directory is CANNOT RUN with nothing written; none given stores no key — three inputs, ONE case"
+    ]
+  },
+  {
+    "name": "#672: a missing directory accepted as a worktree",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    path = os.path.abspath(worktree)\n    if not os.path.isdir(path):",
+        "    path = os.path.abspath(worktree)\n    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: --add --worktree STORES the directory, absolute; a missing directory is CANNOT RUN with nothing written; none given stores no key — three inputs, ONE case"
+    ]
+  },
+  {
+    "name": "#672: --set-worktree none keeps the key",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "e.pop(\"worktree\", None)",
+        "pass"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: --set-worktree rewrites `worktree` and keeps every other key, `at` included; `none` removes it — two values over ONE entry"
+    ]
+  },
+  {
+    "name": "#672: --set-worktree re-stamps `at`",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "e[\"worktree\"] = wt",
+        "e[\"worktree\"], e[\"at\"] = wt, \"restamped\""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: --set-worktree rewrites `worktree` and keeps every other key, `at` included; `none` removes it — two values over ONE entry"
+    ]
+  },
+  {
+    "name": "#672: --set-worktree on an unknown id reports success",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            return False\n        for e in hit:\n            if wt is None:",
+        "            return True\n        for e in hit:\n            if wt is None:"
+      ]
+    ],
+    "expect": [
+      "backlog #672: --set-worktree on an unknown id is exit 1, a missing directory exit 2 — and the ledger is byte-identical after both"
+    ]
+  },
+  {
+    "name": "#672: --worktree outside --add is not stray",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "(\"--worktree\", args.worktree is not None and not args.add)",
+        "(\"--worktree\", False)"
+      ]
+    ],
+    "expect": [
+      "backlog #672: --worktree outside --add is a stray flag, CANNOT RUN"
+    ]
+  },
+  {
+    "name": "#672: `none` read as a path",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "None if value == \"none\" else value",
+        "value"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #672: --set-worktree rewrites `worktree` and keeps every other key, `at` included; `none` removes it — two values over ONE entry"
+    ]
+  },
+  {
+    "name": "PR #606 r1 F4: --set-worktree stores a relative path as given",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "path = os.path.abspath(worktree)",
+        "path = worktree"
+      ]
+    ],
+    "expect": [
+      "r1 Claude F4: --set-worktree with a RELATIVE path stores it ABSOLUTE, against the cwd it was given in"
+    ]
+  },
+  {
+    "name": "PR #606 r1 F6: the main checkout accepted as a worktree",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if os.path.commonpath([real, hooks_dir]) == real:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Claude F6: --worktree / --set-worktree REFUSE the main checkout, a directory holding it, and its `.claude/` — exit 2 each, the ledger byte-identical; a worktree beside them is still accepted (above)"
     ]
   }
 ]

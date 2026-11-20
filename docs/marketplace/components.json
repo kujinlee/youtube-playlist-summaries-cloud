@@ -254,6 +254,18 @@
       ]
     },
     {
+      "id": "agent-watchdog",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "package": "comprehensibility",
+      "files": [
+        "scripts/agent-watchdog.py"
+      ]
+    },
+    {
       "id": "gen-work-lines",
       "effort": 3,
       "roles": [
