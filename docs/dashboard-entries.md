@@ -21005,3 +21005,15 @@ edge SET (344, digest `2cfb6a85d091b861`), not the count (Cm2). `--closure`: 0 g
 none dropped). `scripts/regen-pages.py`: the crash case again refuses a second `[FAIL]` line (Xm3/Cm3). Self-tests
 140/140 and 121/121; mutations 195 and 73, the 14 new or re-anchored entries all killed by their named case. CM2 and
 Cm4 (the exact-name censuses) are stated as bounds and split to backlog #671.
+
+## 2026-11-19
+Every memory file is now checked on each pull request. A memory that opens with an old history note
+instead of the rule it currently teaches, or that is malformed, misnamed, or reachable from nowhere in
+the memory index, now turns CI red instead of drifting until the next manual audit.
+<!--tech-->
+Memory hygiene option B, part 1 (branch `memory-shape-check`). New `scripts/check-memory-shape.py`
+(stdlib): FRONTMATTER, TYPE, NAME (slug), EMPTY-BODY, HISTORY-FIRST (markers derived from audit PR #585:
+`⟳`, `History`, `Split out of`, `Was:`, date-then-`Was`), MISSING, UNLISTED (two-hop reachability, as
+slice-history's design documents; the literal one-hop rule would fail 57 of 195). Live: 195 files, 0
+violations; the pre-audit tree (`4d76f76a^`) gives 5. Self-test 50/50; mutations 36/36 killed, each by
+its named case. Wired in `ci.yml` next to the memory-index budget. The weekly content audit is part 2.

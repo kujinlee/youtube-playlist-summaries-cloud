@@ -152,6 +152,7 @@ copy that drifts. One line per row; each row's measurements and history are in
 | `scripts/check-python-pin.py` | every CI job pins Python or is exempt with a reason, the pins agree, and in CI the pin took effect |
 | `scripts/check-docs.py` | documentation integrity, including this file's line budget |
 | `scripts/check-memory-index-budget.py` | the always-loaded memory index fits the harness's injection budget (characters) |
+| `scripts/check-memory-shape.py` | every memory file opens with its current rule (no history marker first), has well-formed frontmatter, and is reachable from MEMORY.md |
 | `scripts/check-backlog-closure.py` | warns when a merged subject closes a backlog row that lacks `✅` (warn-only) |
 | `scripts/check-review-rounds.py` | a review round has BOTH halves, or a written `REVIEW GAP:` reason |
 | `scripts/check-anchors.py` | every living spec/plan declares the GOAL it belongs to (ADR-0010; `docs/anchors.md`) |
