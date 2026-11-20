@@ -2240,9 +2240,10 @@ def _self_test_body() -> int:
         # ⟳ 2026-11-20 merge of backlog #647 (branch agenda-stale-wording): 347 + 1 = 348 / 4bb7d4965ff49f79. The one
         # gained line, diffed by hand against master's 347: `scripts/check-stalled-work.py -> scripts/goal-tree.py` (its
         # importlib load of `agenda_context`). Lost: 0.
-        # ⟳ 2026-11-20 merge of master (with backlog #647) into memory-shape-check: 352 / f1ac176e1d1b6aa8, exactly the UNION
-        # of the two sides (this branch 349, master 348; all three line lists dumped: 0 lines in neither side, 0 lost).
-        # Not 347 + 2 + 1: the sides share 345, not 347. Lost: 0.
+        # ⟳ 2026-11-20 merge of master (with backlog #647) into memory-shape-check: 350 / fbc515c3ecfed2c9 = 347 + 2 + 1,
+        # exactly the UNION of the two parents (this branch 349, master 348, shared 347; each measured from its own
+        # `git archive`, 0 lines in neither side, 0 lost). A first pin of 352 was measured on the working tree mid-merge,
+        # where `git ls-files` lists a conflicted file once per stage and counts its edges more than once. Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         live_set = lambda: sorted(f"{f} -> {e}" for f in tracked_py for e in exec_edges(REPO, f))  # noqa: E731
         case("Phase 6: over every tracked `.py` the reader's edge SET is PINNED — the rewrite lost none and gained "
@@ -2250,7 +2251,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (352, "f1ac176e1d1b6aa8", []))
+             (350, "fbc515c3ecfed2c9", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
