@@ -21270,3 +21270,25 @@ copy); rescan measured at `3db9d353`. Round 2 fold (`2f4b59ce`, both Codex MAJOR
 nearest enclosing function binding the name (`_Scopes._nonlocal`). Self-test 116 → 121, mutations 226 → 237 (4
 replaced, 11 new, each red on its named case on a scratch copy; the 59 existing detector-2 mutations re-run red);
 rescan at `2f4b59ce`, 365 findings, none gained or lost. Phase 6 build (r2-r3 THRASHING, `docs/reviews/architecture-review-2026-11-21-publishability-install-root.md` §4, route `split`): `_from_file`, `_fstring_path`, `_inert`, `_rebinds` and detector 2's use of `_Scopes` are deleted; one mention walk with one decoder `_step` (default USE), one call table `ROLES` keyed `(callee, (position, keyword))`, and a file-wide census (`_census`): a name reused anywhere is reported at its binding as `.`. Every r1-r3 input is a `P6 corpus:` case (22 red at `b79d4bad`). Self-test 121 → 174, mutations 237 → 228 (45 removed: 29 anchors deleted, 16 `_Scopes`/`_literal` survivors now reachable only from detector 6, backlog #691; 36 new, each red on its named case on a scratch copy). Rescan +2 findings (`check-plan-code:6355` `.`, `check-surface-recall:519` a fixture path), the rest line moves.
+
+## 2026-11-21 [needs-you]
+The publishability scan's check for scripts that treat the folder above their installed copy as the project was
+rebuilt from an architecture review, after two rounds in which every fix opened a new hole. The rebuild fixed all 11
+known misses and found a real one nobody had seen. But the review round after it found a new miss that the rebuild
+itself caused: when a script's own-folder name is reused anywhere in the file, a project path built from it is no
+longer reported. The review decided in advance that a miss like this means no more patching by me, and that the
+choice goes to you. Four other misses turned up too; each was already there before the rebuild, so they are filed
+for later.
+
+**Decide:** How should the scan treat a path it stops following before it reaches the installed copy's top folder?
+- report it as "not judged", so every such stop is a finding — fixes the new miss and the four older ones, at the cost of extra findings I have not counted yet; I count them before merging [recommended]
+- report only the reused-name case the rebuild broke, as the review's fallback names — fixes the new miss, and the four older ones stay filed
+- keep the rebuild as it is, state the new miss as a known limit, and merge
+<!--tech-->
+PR #613 (Marketplace Task 16), round 4: `docs/reviews/coordinator/marketplace-task16-r4-coordinator.md`. B1 verified
+on fresh `git show` copies: `SCRIPT_DIR = Path(__file__).resolve().parent; REPO = SCRIPT_DIR.parent;
+def main(argv): SCRIPT_DIR = ...; cwd=REPO` → `[(7, '.')]` at b79d4bad, `[]` at 7f54a324. Cause: the census reports
+the unfollowed name at its binding's level (1) and `report` keeps only `level == depth`
+(`scripts/check-publishability.py` `_install_root_uses.report`). Option 1 is r4 Claude's proposal; option 2 is §6's
+(a0) direction of `docs/reviews/architecture-review-2026-11-21-publishability-install-root.md`. The older misses are
+backlog #692. The PR is not merged until this is answered.
