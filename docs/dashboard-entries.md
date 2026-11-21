@@ -21237,3 +21237,17 @@ timeline) when every live row is in `closed_rows` and no live ledger entry names
 takes a list tail as its merge only when every row is ✅; 11 self-test cases, 18 mutations (pin 502 -> 520); review
 r3's two MINORs filed as backlog #690. backlog #630 ✅: owner card A (11-21 09:50), recorded on row 23 of
 `docs/optimization-register.md`. `docs/goal-threads.md`: lines for backlog #689 and backlog #685.
+
+## 2026-11-21
+The publishability scan's check for instructions in Markdown (telling a reader to run or read something) got the
+architecture review it skipped when it merged after two rounds where each fix opened a new hole. The review found two
+separate problems in one function. How the check reads a block of text can be redesigned once; it recommends that,
+and measured that it catches 4 real dependencies the check misses today without losing any. Whether a sentence is a
+real instruction or a prohibition cannot be made exact; there the review says to stop patching and remove a filter, so
+the check errs toward reporting. Nothing changed in the code yet.
+
+Nothing waits on you for this.
+<!--tech-->
+Backlog #680 part (1). `docs/reviews/architecture-review-2026-11-21-publishability-detector4.md` (Fable): candidate F,
+corpus 57 rows EXACT 44 / MISS 7 / FALSE 6 vs HEAD 32 / 22 / 3; live 302 → 306 (4 gained on
+`.agents/skills/brief/SKILL.md:62`, 0 lost); coordinator re-ran HEAD's self-test (105/105) and the live count (302).
