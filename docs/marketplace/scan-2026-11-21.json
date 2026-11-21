@@ -814,18 +814,18 @@
           "file": "scripts/check-docs.py",
           "id": "check-docs:2:7",
           "kind": "install-root",
-          "line": 369,
+          "line": 368,
           "target": "docs/backlog.md",
-          "text": "if not path.exists():"
+          "text": "path = ROOT / \"docs/backlog.md\""
         },
         {
           "detector": 2,
           "file": "scripts/check-docs.py",
           "id": "check-docs:2:8",
           "kind": "install-root",
-          "line": 563,
+          "line": 562,
           "target": "docs/roadmap-to-launch.md",
-          "text": "if not path.exists():"
+          "text": "path = ROOT / \"docs\" / \"roadmap-to-launch.md\""
         },
         {
           "detector": 4,
@@ -1405,6 +1405,15 @@
           "detector": 2,
           "file": "scripts/check-plan-code.py",
           "id": "check-plan-code:2:10",
+          "kind": "install-root",
+          "line": 6355,
+          "target": ".",
+          "text": "_repo = pathlib.Path(__file__).resolve().parent.parent"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-plan-code.py",
+          "id": "check-plan-code:2:11",
           "kind": "unread",
           "line": 8119,
           "target": null,
@@ -3452,6 +3461,15 @@
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
           "id": "check-surface-recall:2:11",
+          "kind": "install-root",
+          "line": 519,
+          "target": ".claude/hooks/does-not-exist.sh",
+          "text": "lambda: render(5, \"\", hook=HOOK.parent / \"does-not-exist.sh\"))"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-surface-recall.py",
+          "id": "check-surface-recall:2:12",
           "kind": "unread",
           "line": 523,
           "target": null,
@@ -3460,7 +3478,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:12",
+          "id": "check-surface-recall:2:13",
           "kind": "unread",
           "line": 526,
           "target": null,
@@ -3469,7 +3487,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:13",
+          "id": "check-surface-recall:2:14",
           "kind": "unread",
           "line": 528,
           "target": null,
@@ -3478,7 +3496,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:14",
+          "id": "check-surface-recall:2:15",
           "kind": "unread",
           "line": 531,
           "target": null,
@@ -3487,7 +3505,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:15",
+          "id": "check-surface-recall:2:16",
           "kind": "unread",
           "line": 565,
           "target": null,
@@ -3496,7 +3514,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:16",
+          "id": "check-surface-recall:2:17",
           "kind": "unread",
           "line": 650,
           "target": null,
@@ -3505,7 +3523,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:17",
+          "id": "check-surface-recall:2:18",
           "kind": "unread",
           "line": 654,
           "target": null,
@@ -3514,7 +3532,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:18",
+          "id": "check-surface-recall:2:19",
           "kind": "unread",
           "line": 657,
           "target": null,
@@ -3523,7 +3541,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:19",
+          "id": "check-surface-recall:2:20",
           "kind": "unread",
           "line": 667,
           "target": null,
@@ -3532,7 +3550,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:20",
+          "id": "check-surface-recall:2:21",
           "kind": "unread",
           "line": 669,
           "target": null,
@@ -3541,7 +3559,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:21",
+          "id": "check-surface-recall:2:22",
           "kind": "unread",
           "line": 705,
           "target": null,
@@ -3550,7 +3568,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:22",
+          "id": "check-surface-recall:2:23",
           "kind": "unread",
           "line": 799,
           "target": null,
@@ -3559,7 +3577,7 @@
         {
           "detector": 2,
           "file": "scripts/check-surface-recall.py",
-          "id": "check-surface-recall:2:23",
+          "id": "check-surface-recall:2:24",
           "kind": "unread",
           "line": 823,
           "target": null,
@@ -5222,9 +5240,9 @@
           "file": "scripts/gen-dashboard.py",
           "id": "gen-dashboard:2:2",
           "kind": "install-root",
-          "line": 3305,
+          "line": 3297,
           "target": "docs/dashboard-entries.md",
-          "text": "(_store_label(STORE_DEFAULT), _store_label(pathlib.Path(\"/tmp/elsewhere.md\"))),"
+          "text": "globals()[\"STORE_DEFAULT\"] = _saved_default"
         },
         {
           "detector": 2,
@@ -6155,7 +6173,7 @@
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:1",
           "kind": "unread",
-          "line": 228,
+          "line": 234,
           "target": null,
           "text": "exec(compile(pathlib.Path(path).read_bytes(), path, \"exec\", dont_inherit=True), mod.__dict__)"
         },
@@ -6164,7 +6182,7 @@
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:2",
           "kind": "install-root",
-          "line": 3030,
+          "line": 3107,
           "target": "docs/goal-tree-answers.json",
           "text": "answers, answers_error = load_answers(answers_path or ROOT / ANSWERS_REL)"
         },
@@ -6173,7 +6191,7 @@
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:3",
           "kind": "install-root",
-          "line": 3082,
+          "line": 3159,
           "target": ".",
           "text": "def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,"
         },
@@ -6182,7 +6200,7 @@
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:4",
           "kind": "unread",
-          "line": 3399,
+          "line": 3476,
           "target": null,
           "text": "write_page(out, [snap5], minute(t0 + 5 * 60), composer=[sys.executable, \"-c\", \"pass\"], judge=judge)"
         },
@@ -6191,7 +6209,7 @@
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:5",
           "kind": "install-root",
-          "line": 3765,
+          "line": 3842,
           "target": ".claude/hooks/session-state.sh",
           "text": "hook = [ln for ln in (ROOT / \".claude\" / \"hooks\" / \"session-state.sh\").read_text().splitlines()"
         },
@@ -6200,7 +6218,7 @@
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:6",
           "kind": "unread",
-          "line": 3777,
+          "line": 3854,
           "target": null,
           "text": "r = subprocess.run([\"bash\", \"-c\", f\"REPO_ROOT={shlex.quote(str(tdp))}\\n\" + \"\\n\".join(hook)],"
         },
@@ -6209,7 +6227,7 @@
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:7",
           "kind": "unread",
-          "line": 4819,
+          "line": 4896,
           "target": null,
           "text": "composer=[sys.executable, \"-c\", \"pass\"]))"
         },
@@ -6218,7 +6236,7 @@
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:8",
           "kind": "install-root",
-          "line": 5447,
+          "line": 5524,
           "target": "docs/explainers",
           "text": "tray_src = next((f for f in sorted((ROOT / \"docs\" / \"explainers\").glob(\"*.html\"), reverse=True)"
         }
@@ -6236,7 +6254,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 91,
+          "line": 97,
           "term": "docs/goal-threads.md",
           "text": "EXIT CODES (repo convention): 0 = done \u00b7 1 = `docs/goal-threads.md` or the log is malformed \u00b7"
         },
@@ -6244,7 +6262,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 114,
+          "line": 120,
           "term": "docs/goal-threads.md",
           "text": "THREADS_REL = \"docs/goal-threads.md\""
         },
@@ -6252,7 +6270,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 117,
+          "line": 123,
           "term": "docs/goal-tree-answers.json",
           "text": "ANSWERS_REL = \"docs/goal-tree-answers.json\""
         },
@@ -6260,7 +6278,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 121,
+          "line": 127,
           "term": "docs/dashboard-entries.md",
           "text": "DASHBOARD_REL = \"docs/dashboard-entries.md\""
         },
@@ -6268,7 +6286,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 122,
+          "line": 128,
           "term": "docs/backlog.md",
           "text": "BACKLOG_REL = \"docs/backlog.md\""
         },
@@ -6276,7 +6294,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 210,
+          "line": 216,
           "term": "docs/reviews/architecture-review-2026-11-08-goal-tree-sibling-cache.md",
           "text": "`docs/reviews/architecture-review-2026-11-08-goal-tree-sibling-cache.md`). Nothing here writes a sibling's"
         },
@@ -6284,7 +6302,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 263,
+          "line": 269,
           "term": "docs/goal-threads.md",
           "text": "\"\"\"`docs/goal-threads.md` or the log breaks its grammar. Never caught into a pass.\"\"\""
         },
@@ -6292,7 +6310,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 347,
+          "line": 353,
           "term": "docs/goal-threads.md",
           "text": "sharing any ref with a thread `docs/goal-threads.md` declares, in any goal, is not added again (after the merge"
         },
@@ -6300,7 +6318,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 857,
+          "line": 892,
           "term": "docs/backlog.md",
           "text": "# the tree reads docs/backlog.md from its own checkout, so a \u2705 row with its PR open SHOULD read \u23f3; a title cannot"
         },
@@ -6308,7 +6326,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 1185,
+          "line": 1251,
           "term": "docs/reviews/architecture-review-2026-11-06-needs-owner-settled.md",
           "text": "#     the Phase 6 review (docs/reviews/architecture-review-2026-11-06-needs-owner-settled.md) removed it; that"
         },
@@ -6316,7 +6334,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "guard-name",
-          "line": 1386,
+          "line": 1452,
           "term": "check-docs",
           "text": "by gen-backlog-page's ONE row parser (its `CELL_SPLIT` is check-docs'). None is a live row; a key that is"
         },
@@ -6324,7 +6342,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "guard-name",
-          "line": 1552,
+          "line": 1618,
           "term": "check-stalled-work",
           "text": "check-stalled-work.py to the last one (backlog #647 r1, Codex: a last line of `{}` read as clear there).\"\"\""
         },
@@ -6332,7 +6350,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "guard-name",
-          "line": 1592,
+          "line": 1658,
           "term": "check-vocabulary-collisions",
           "text": "# is the duplicate vocabulary check-vocabulary-collisions.py exists to refuse. The page says \"AGENDA \u2014"
         },
@@ -6340,7 +6358,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "guard-name",
-          "line": 2091,
+          "line": 2157,
           "term": "check-stalled-work",
           "text": "# backlog #647: the STALE line's subject (the late threads) sits between these two; check-stalled-work.py reads it there"
         },
@@ -6348,7 +6366,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "guard-name",
-          "line": 2111,
+          "line": 2177,
           "term": "check-stalled-work",
           "text": "# clear it (a Refresh re-derives the same plan). check-stalled-work.py reads this line's subject between the two"
         },
@@ -6356,7 +6374,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 2860,
+          "line": 2937,
           "term": "docs/goal-threads.md",
           "text": "parts = ['<main>', '<p class=\"meta\">DECLARED IN docs/goal-threads.md \u00b7 STATES DERIVED FROM GIT, '"
         },
@@ -6364,7 +6382,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 4063,
+          "line": 4140,
           "term": "docs/goal-threads.md",
           "text": "[\"entry w2: its thread is not read\", \"entry w505: goal 'nope' is not declared in docs/goal-threads.md\"])"
         },
@@ -6372,7 +6390,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 4071,
+          "line": 4148,
           "term": "docs/goal-threads.md",
           "text": "([2], [\"entry w505: goal 'g' is not declared in docs/goal-threads.md\"], [1]))"
         },
@@ -6380,7 +6398,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 4159,
+          "line": 4236,
           "term": "docs/goal-threads.md",
           "text": "[\"entry p4: goal 'nope' is not declared in docs/goal-threads.md\"]))"
         },
@@ -6388,7 +6406,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 4216,
+          "line": 4293,
           "term": "docs/goal-threads.md",
           "text": "if \"p9 \u00b7 w\" in l], [\"\u2514\u2500 p9 \u00b7 w \u00b7 \u26a0 its goal ' g' is not declared in docs/goal-threads.md\"])"
         },
@@ -6396,7 +6414,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 4467,
+          "line": 4544,
           "term": "docs/backlog.md",
           "text": "[(\"cannot\", f\"CANNOT RUN \u2014 backlog #{n} is not a row of the Items table in docs/backlog.md\")"
         },
@@ -6404,7 +6422,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 4471,
+          "line": 4548,
           "term": "docs/backlog.md",
           "text": "fates=None, fates_error=\"docs/backlog.md NOT READ (FileNotFoundError: gone)\"))),"
         },
@@ -6412,7 +6430,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 4472,
+          "line": 4549,
           "term": "docs/backlog.md",
           "text": "(\"\u26a0\", \"CANNOT RUN \u2014 docs/backlog.md NOT READ (FileNotFoundError: gone), so a superseded or \""
         },
@@ -6420,7 +6438,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 4478,
+          "line": 4555,
           "term": "docs/backlog.md",
           "text": "[\"1 line(s) of docs/backlog.md the row parser could not read\"]))"
         },
@@ -6428,7 +6446,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "guard-name",
-          "line": 5019,
+          "line": 5096,
           "term": "check-stalled-work",
           "text": "# backlog #647 r1: ONE snapshot test, shared with check-stalled-work.py's read of the last line"
         },
@@ -6436,7 +6454,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 5062,
+          "line": 5139,
           "term": "docs/backlog.md",
           "text": "needs_from_backlog(BACKLOG_BAD)[1], [\"1 line(s) of docs/backlog.md the row parser could not read\"])"
         },
@@ -6444,7 +6462,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 5599,
+          "line": 5676,
           "term": "docs/backlog.md",
           "text": "(None, \"1 line(s) of docs/backlog.md the row parser could not read\", \"cannot\"))"
         },
@@ -6452,7 +6470,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 5606,
+          "line": 5683,
           "term": "docs/backlog.md",
           "text": "(_s_gone[\"fates\"], _s_gone[\"fates_error\"].startswith(\"docs/backlog.md NOT READ (FileNotFoundError\"),"
         },
@@ -6460,7 +6478,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 5607,
+          "line": 5684,
           "term": "docs/backlog.md",
           "text": "_s_gone[\"errors\"].get(\"backlog\", \"\").startswith(\"docs/backlog.md NOT READ\")), (None, True, True))"
         }
@@ -12559,6 +12577,14 @@
         },
         {
           "detector": 4,
+          "file": "scripts/mutations/check-publishability.json",
+          "kind": "guard-name",
+          "line": 2288,
+          "term": "check-plan-code",
+          "text": "\"expect\": \"P6: dirname(p=...) climbs like dirname(...); a root exported (bound, never read in its file) is reported at its binding; and the check-plan-code.py shape (one name bound to the root twice and tuple-unpacked once in one function) is reported at its first binding\""
+        },
+        {
+          "detector": 4,
           "file": "scripts/mutations/check-reference-namespace.json",
           "kind": "doc-path",
           "line": 81,
@@ -16421,5 +16447,5 @@
       "status": "scanned"
     }
   },
-  "measured_at": "2f4b59ce8203c99c06ced774205d0f21c5d774c6"
+  "measured_at": "b3051290cd6c7ceeab0fbd67e4c5d2604c7a9b47"
 }
