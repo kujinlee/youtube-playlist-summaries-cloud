@@ -21233,6 +21233,7 @@ backlog #689 (filed and fixed here): `derive_thread` in `scripts/goal-tree.py` �
 the row is ✅ in its Status cell (`_subject_merges_row`; the exact `(backlog #N)` form keeps its meaning), so those
 rows find their real merge and a PR that only touched an open row does not close it; a tree leaf no PR names reads
 ✅ by its Status cell (`by_cell`, bucketed older with no merge age in its fold, told as "ticked" not landed in the
-timeline) when every live row is in `closed_rows` and no live ledger entry names it; 10 self-test cases, 17
-mutations (pin 502 -> 519). backlog #630 ✅: owner card A (11-21 09:50), recorded on row 23 of
+timeline) when every live row is in `closed_rows` and no live ledger entry names it; a leaf naming several rows
+takes a list tail as its merge only when every row is ✅; 11 self-test cases, 18 mutations (pin 502 -> 520); review
+r3's two MINORs filed as backlog #690. backlog #630 ✅: owner card A (11-21 09:50), recorded on row 23 of
 `docs/optimization-register.md`. `docs/goal-threads.md`: lines for backlog #689 and backlog #685.
