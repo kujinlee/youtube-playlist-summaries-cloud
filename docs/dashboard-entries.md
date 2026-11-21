@@ -21227,9 +21227,11 @@ The marketplace publishability scan now catches the two install failures it had 
 package was installed into a stranger's repository, six of its scripts looked for the project beside their own
 installed copy instead of in the user's repository, and several skills told the reader to follow a package file by a
 relative path that did not resolve. The scan scored both clean; it now reports each one, with the fix for the skills.
-The failures it still cannot see from the files (the Ask tray that only an earlier page can supply, the host
-repository's conventions, a home-directory folder, and whether a model follows the delivery steps) are written down
-as named limits in both experiment records. Plan Task 16; nothing waits on you.
+After the first review round it also reports the missing home-directory folder that one script refuses to run
+without, and the store file a skill tells the reader to append to, and it no longer flags harmless uses such as a
+comparison or a print. The failures it still cannot see from the files (the Ask tray that only an earlier page can
+supply, a host convention cited in passing, package files named only in description, and whether a model follows
+the delivery steps) are written down as named limits in both experiment records. Plan Task 16; nothing waits on you.
 <!--tech-->
 Branch `marketplace-task16`. `scripts/check-publishability.py` detector 2 gains `install-root`
 (`_install_root_uses`: a path built from `__file__` whose `.parent` / `parents[k]` / `os.path.dirname` depth reaches
@@ -21240,4 +21242,9 @@ scratch copy with both clauses disabled (95/98, the three new cases `got []`). R
 `docs/marketplace/scan-2026-11-21.json` (46 components, 0 CANNOT RUN). Mutations 158 → 175, three anchors rebound
 in place; the 17 new and 3 rebound each run red against their named case on a scratch copy. Records: a scan-defects
 table and list in `experiment-tier-a.md` and `experiment-tier-b.md`, limits L1–L5. Backlog #675 (a shipping-set
-over-report) stays open, outside this population.
+over-report) stays open, outside this population. Round 1 fold (`3db9d353`): names are looked up in Python's scope
+(`_Scopes`, `_Bound`: followed only when every store agrees), a `..` part climbs a level, inert uses are skipped
+(`_inert`), class-body and `globals()` bindings (`_rebinds`); detector 6 `home-path` (`_homes`, `_absent_home`,
+`_fails`) closes L3; detector 4 section openers (`_heads_section`) narrow L2; new limit L6 (package files named in
+prose). Self-test 109 → 116, mutations 175 → 226 (4 rebound, 51 new, each red on its named case on a scratch
+copy); rescan measured at `3db9d353`.

@@ -179,6 +179,15 @@
           "line": 2621,
           "target": "docs/explainers",
           "text": "_real = sorted((pathlib.Path(__file__).resolve().parent.parent / \"docs\" / \"explainers\")"
+        },
+        {
+          "detector": 6,
+          "file": "scripts/brief-compose.py",
+          "id": "brief-compose:6:1",
+          "kind": "home-path",
+          "line": 789,
+          "term": "~/explainers",
+          "text": "if not root.is_dir():"
         }
       ],
       "mentions": [
@@ -787,15 +796,6 @@
           "file": "scripts/check-docs.py",
           "id": "check-docs:2:5",
           "kind": "install-root",
-          "line": 254,
-          "target": "docs/backlog.md",
-          "text": "if not path.exists():"
-        },
-        {
-          "detector": 2,
-          "file": "scripts/check-docs.py",
-          "id": "check-docs:2:6",
-          "kind": "install-root",
           "line": 301,
           "target": ".agents/skills",
           "text": "agents, claude = ROOT / \".agents\" / \"skills\", ROOT / \".claude\" / \"skills\""
@@ -803,11 +803,29 @@
         {
           "detector": 2,
           "file": "scripts/check-docs.py",
-          "id": "check-docs:2:7",
+          "id": "check-docs:2:6",
           "kind": "install-root",
           "line": 301,
           "target": ".claude/skills",
           "text": "agents, claude = ROOT / \".agents\" / \"skills\", ROOT / \".claude\" / \"skills\""
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-docs.py",
+          "id": "check-docs:2:7",
+          "kind": "install-root",
+          "line": 369,
+          "target": "docs/backlog.md",
+          "text": "if not path.exists():"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/check-docs.py",
+          "id": "check-docs:2:8",
+          "kind": "install-root",
+          "line": 563,
+          "target": "docs/roadmap-to-launch.md",
+          "text": "if not path.exists():"
         },
         {
           "detector": 4,
@@ -1351,15 +1369,6 @@
           "detector": 2,
           "file": "scripts/check-plan-code.py",
           "id": "check-plan-code:2:6",
-          "kind": "install-root",
-          "line": 3446,
-          "target": ".",
-          "text": "_sp.run = _real"
-        },
-        {
-          "detector": 2,
-          "file": "scripts/check-plan-code.py",
-          "id": "check-plan-code:2:7",
           "kind": "unread",
           "line": 3852,
           "target": null,
@@ -1368,7 +1377,7 @@
         {
           "detector": 2,
           "file": "scripts/check-plan-code.py",
-          "id": "check-plan-code:2:8",
+          "id": "check-plan-code:2:7",
           "kind": "unread",
           "line": 5273,
           "target": null,
@@ -1377,7 +1386,7 @@
         {
           "detector": 2,
           "file": "scripts/check-plan-code.py",
-          "id": "check-plan-code:2:9",
+          "id": "check-plan-code:2:8",
           "kind": "unread",
           "line": 5298,
           "target": null,
@@ -1386,7 +1395,7 @@
         {
           "detector": 2,
           "file": "scripts/check-plan-code.py",
-          "id": "check-plan-code:2:10",
+          "id": "check-plan-code:2:9",
           "kind": "unread",
           "line": 5327,
           "target": null,
@@ -1395,7 +1404,7 @@
         {
           "detector": 2,
           "file": "scripts/check-plan-code.py",
-          "id": "check-plan-code:2:11",
+          "id": "check-plan-code:2:10",
           "kind": "unread",
           "line": 8119,
           "target": null,
@@ -3246,15 +3255,6 @@
           "text": "proc = subprocess.run([\"bash\", str(hook)], capture_output=True, text=True,"
         },
         {
-          "detector": 2,
-          "file": "scripts/check-rc-contract.py",
-          "id": "check-rc-contract:2:2",
-          "kind": "install-root",
-          "line": 449,
-          "target": ".",
-          "text": "print(f\"FAILED: {f.relative_to(ROOT)} not found \u2014 treat this as NOT RUN.\")"
-        },
-        {
           "detector": 6,
           "file": "scripts/check-rc-contract.py",
           "id": "check-rc-contract:6:1",
@@ -4011,9 +4011,9 @@
           "file": "scripts/explainer-serve.py",
           "id": "explainer-serve:2:1",
           "kind": "install-root",
-          "line": 690,
+          "line": 692,
           "target": ".",
-          "text": "fallback_ok = REPO.is_dir()"
+          "text": "return SrcRoot(REPO if fallback_ok else None,"
         },
         {
           "detector": 2,
@@ -5213,18 +5213,18 @@
           "file": "scripts/gen-dashboard.py",
           "id": "gen-dashboard:2:1",
           "kind": "install-root",
-          "line": 33,
+          "line": 514,
           "target": ".",
-          "text": "ENTRY_STORE = STORE_DEFAULT.relative_to(ROOT).as_posix()"
+          "text": "cwd=ROOT, capture_output=True, text=True, timeout=20)"
         },
         {
           "detector": 2,
           "file": "scripts/gen-dashboard.py",
           "id": "gen-dashboard:2:2",
           "kind": "install-root",
-          "line": 33,
+          "line": 3305,
           "target": "docs/dashboard-entries.md",
-          "text": "ENTRY_STORE = STORE_DEFAULT.relative_to(ROOT).as_posix()"
+          "text": "(_store_label(STORE_DEFAULT), _store_label(pathlib.Path(\"/tmp/elsewhere.md\"))),"
         },
         {
           "detector": 2,
@@ -15483,9 +15483,9 @@
           "file": "scripts/regen-pages.py",
           "id": "regen-pages:2:1",
           "kind": "install-root",
-          "line": 421,
+          "line": 423,
           "target": ".",
-          "text": "if os.path.realpath(repo) == os.path.realpath(ROOT):"
+          "text": "rc, here = _git([\"rev-parse\", \"--path-format=absolute\", \"--git-common-dir\"], ROOT, 10)"
         },
         {
           "detector": 2,
@@ -15986,6 +15986,15 @@
           "text": "**Follow `.agents/skills/shared/explainer-delivery.md`.** It is the one description of how the page"
         },
         {
+          "detector": 4,
+          "file": ".agents/skills/dashboard/SKILL.md",
+          "id": "skill-dashboard:4:1",
+          "kind": "doc-path",
+          "line": 28,
+          "term": "docs/dashboard-entries.md",
+          "text": "`docs/dashboard-entries.md`. **Append-only, newest at the END.**"
+        },
+        {
           "detector": 7,
           "file": ".agents/skills/dashboard/SKILL.md",
           "id": "skill-dashboard:7:1",
@@ -16002,14 +16011,6 @@
           "line": 14,
           "term": "docs/anchors.md",
           "text": "The goal (`docs/anchors.md`, anchor `status-visibility`): *a person who was away can see the current"
-        },
-        {
-          "detector": 4,
-          "file": ".agents/skills/dashboard/SKILL.md",
-          "kind": "doc-path",
-          "line": 28,
-          "term": "docs/dashboard-entries.md",
-          "text": "`docs/dashboard-entries.md`. **Append-only, newest at the END.**"
         }
       ],
       "status": "scanned"
@@ -16420,5 +16421,5 @@
       "status": "scanned"
     }
   },
-  "measured_at": "75f2c58179b2a1e721c18b2efd698e8492cea88f"
+  "measured_at": "3db9d35375b5b9d9eb3ed8db4784eb2a375893fe"
 }
