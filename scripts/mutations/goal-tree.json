@@ -108,7 +108,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if any(_subject_merges_row(subj, n, src.get(\"closed_rows\")) for n in live_rows)), None)",
+        "if any(_subject_merges_row(subj, n, leaf_closed) for n in live_rows)), None)",
         "if any(re.search(rf\"backlog #{n}\", subj) for n in live_rows)), None)"
       ]
     ],
@@ -1221,8 +1221,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "src.get(\"closed_rows\")) for n in live_rows)), None)",
-        "src.get(\"closed_rows\")) for n in rows)), None)"
+        "leaf_closed) for n in live_rows)), None)",
+        "leaf_closed) for n in rows)), None)"
       ]
     ],
     "expect": [
@@ -6582,8 +6582,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "leaf_cells is not None and all(n in leaf_cells for n in live_rows)",
-        "(leaf_cells is None or all(n in leaf_cells for n in live_rows))"
+        "live_rows and leaf_cells is not None and all(n in leaf_cells for n in live_rows)",
+        "live_rows and (leaf_cells is None or all(n in leaf_cells for n in live_rows))"
       ]
     ],
     "expect": [
@@ -6686,8 +6686,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "return closed_rows is not None and n in closed_rows and _subject_names_row(subject, n)",
-        "return (closed_rows is None or n in closed_rows) and _subject_names_row(subject, n)"
+        "return closed_rows is not None and n in closed_rows and",
+        "return (closed_rows is None or n in closed_rows) and"
       ]
     ],
     "expect": [
@@ -6712,8 +6712,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if any(_subject_merges_row(subj, n, src.get(\"closed_rows\")) for n in live_rows)), None)",
-        "if any(_subject_names_row(subj, n) for n in live_rows)), None)"
+        "any(_subject_merges_row(subj, n, leaf_closed) for n in live_rows)",
+        "any(_subject_names_row(subj, n) for n in live_rows)"
       ]
     ],
     "expect": [
@@ -6725,8 +6725,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if _subject_merges_row(subject, n, closed)), None)",
-        "if _subject_merges_row(subject, n, None)), None)"
+        "_subject_merges_row(subject, n, closed)), None)",
+        "_subject_merges_row(subject, n, None)), None)"
       ]
     ],
     "expect": [
@@ -6738,8 +6738,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if named and row_open:\n",
-        "        if hit and row_open:\n"
+        "if named and row_open:",
+        "if hit and row_open:"
       ]
     ],
     "expect": [
