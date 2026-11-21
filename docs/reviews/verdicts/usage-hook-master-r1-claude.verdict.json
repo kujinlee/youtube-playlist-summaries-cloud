@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/usage-hook-master-r1-claude.md": "100644 6be7857f735eec01a7d5569f72c0517f7646a51d"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "ca56bebe4c0bc525e1bdaa5a826ef9f49ea4c859",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 9190 chars, names ca56bebe4c0b",
+  "refused": false,
+  "review": "usage-hook-master-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/usage-hook-master",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

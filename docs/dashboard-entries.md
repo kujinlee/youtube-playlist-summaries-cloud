@@ -21199,3 +21199,25 @@ docs/reviews/architecture-review-2026-11-20-backlog-closed-rule.md); 229 of 636 
 none changes. Self-test cases: goal-tree 562 → 582, gen-backlog-page 247 → 250. Mutations: goal-tree 470 → 502,
 gen-backlog-page 77 → 82 (each round's new and rebound entries run in a scratch copy, all killed). Review rounds 1 (both
 halves), 2 (Codex) and 3 (Claude) folded; backlog row #672 closed in the r1 fold (PR #606 had merged).
+
+## 2026-11-20
+The usage-limit hooks no longer change with the branch being edited. When the session is working inside a worktree,
+the hooks that slow down or stop new agents near the weekly limit now always run from the main checkout, never from
+the worktree's branch, so an unmerged branch cannot loosen the stop for the session that wrote it. The rule they
+apply was already taken from master (backlog #522); this closes the remaining gap, the hook scripts themselves
+(backlog #513). Every other hook still runs from the worktree, as before.
+<!--tech-->
+Branch `usage-hook-master`. `.claude/hooks/run-hook.sh`: for a `usage-pace-*` name, GIT names the main checkout
+(review round 3 armed Phase 6 on thrashing, `docs/reviews/architecture-review-2026-11-20-usage-hook-launcher.md`; the
+r1/r2 hand-parsing of `.git` files and `commondir` is deleted). One `git rev-parse --git-dir --git-common-dir
+--show-toplevel` runs at the walk's root with every exported GIT_* unset and a 5 s alarm; a bare repository is NOT RUN;
+main is the common dir's parent when it is named `.git`, else the work tree git reports from the common dir (a
+submodule), else the session's own checkout when it is not a linked worktree (a `--separate-git-dir` checkout); a git
+failure, timeout, malformed answer or a main with no copy is NOT RUN — never the worktree's copy; a usage hook's NOT
+RUN is exit 0 with a fixed JSON line on stdout. Ordinary hooks run no git. Cost: about +37 ms per usage-pace launch,
+measured. Chosen over `origin/master`'s hook shells because the hooks derive their root
+from their own path and `usage-pace-run.sh` reads `origin/master` through that checkout; the guard is already
+`origin/master`'s. `scripts/check-run-hook.py --self-test` 163/163: worlds U1–U6, every r1–r3 review input over real
+git layouts, four GIT_* steering cases and two fake gits; launcher mutants u1, u8, g0–g12, c2–c3 and r-<name> killed;
+manifest mutations 18 → 47. Bound: `check-idle-stop.py` and the
+agent-call hooks IMPORT `check-usage-pace.py` from the checkout and are unchanged.

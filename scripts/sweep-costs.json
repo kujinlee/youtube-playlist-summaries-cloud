@@ -14,7 +14,8 @@
   "hand-timed:scripts/check-publishability.py@marketplace-inventory Tasks 8-12 (145 mutations in 998 s = 6.9 s each locally under the mutation harness; re-priced 5.0 -> 7.0 s, no CI sample yet)",
   "hand-timed:scripts/mkt_seed_repo.py@marketplace slice E r1 fold (self-test 2.0 s locally over 13 cases; priced 2.5 s, no CI sample yet; the row Task 13 omitted)",
   "hand-timed:scripts/check-memory-shape.py@memory-shape-check (self-test 0.12 s locally over 50 cases; priced 0.2 s and 0.3 s, no CI sample yet)",
-  "hand-timed:scripts/check-rm-backup.py@backlog #685 (self-test 0.15 s locally over 112 cases, measured 11-20; priced 0.2 s and 0.3 s, no CI sample yet)"
+  "hand-timed:scripts/check-rm-backup.py@backlog #685 (self-test 0.15 s locally over 112 cases, measured 11-20; priced 0.2 s and 0.3 s, no CI sample yet)",
+  "hand-timed:scripts/check-run-hook.py@PR #610 CI shard 17 (job 136801140835: control 52 s, 34 mutations in 1416 s = 41.7 s each; re-priced 1.9 -> 42 s, the 36 samples predate the 163-case self-test)"
  ],
  "defaults": {
   "mutation": 10.162,
@@ -421,9 +422,9 @@
    "mutations": 24
   },
   "scripts/check-run-hook.py": {
-   "control": 1.975,
-   "recontrol": 1.942,
-   "mutation": 1.921,
+   "control": 52.0,
+   "recontrol": 52.0,
+   "mutation": 42.0,
    "samples": 36,
    "mutations": 36
   },
