@@ -67,7 +67,7 @@ earlier commands ran (a `source` is not followed).
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED (allowed,
 said on stderr). `--self-test` 0 = every case passed, 1 = a case failed.
 
-    python3 scripts/check-rm-backup.py --self-test  # 126 cases
+    python3 scripts/check-rm-backup.py --self-test  # 128 cases
 """
 from __future__ import annotations
 
@@ -794,9 +794,12 @@ def bash_brackets(t: str) -> list[str]:
     so the target is refused. A `[` with no closing `]` is a literal character, in both.
     ⚠ The lexer has already dropped quotes and backslashes, so `[\\^a]` and `["^"a]` (a LITERAL caret) arrive
     looking like `[^a]`: the hook cannot tell which bash meant. It backs up BOTH — each negating set is read
-    negated and literal (its negator moved last), every combination — plus Python's own reading of the raw
-    target (which also covers a set bash leaves literal because it spans a `/`). Over-backing-up is harmless;
-    a reading the hook chose wrongly was the silent miss of two rounds in a row (thrashing, r5)."""
+    negated and literal (its negator moved last), every combination; `plan` adds the target as a literal name
+    (which also covers a set bash leaves literal because it spans a `/`). Over-backing-up is harmless; a
+    reading the hook chose wrongly was the silent miss of two rounds in a row (thrashing, r5). ⛔ What NO
+    reading can cover is REFUSED by `plan` before this runs: a set beside `*`/`?` (a quoted `"[id]"*` keeps
+    its brackets literal, and the lexer cannot say which were quoted) and a set with a `-` (bash ranges
+    follow the locale's collation, Python's code points) — Phase 6, `architecture-review-2026-11-20-rm-backup-glob.md`."""
     pieces, i = [], 0                            # each piece: a list of alternative readings
     while i < len(t):
         if t[i] != "[":
@@ -819,7 +822,7 @@ def bash_brackets(t: str) -> list[str]:
     out = [""]
     for p in pieces:
         out = [o + alt for o in out for alt in p]
-    return list(dict.fromkeys(out + [t]))
+    return list(dict.fromkeys(out))
 
 
 def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
@@ -856,11 +859,14 @@ def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
                                  "hook cannot see")
             continue
         for t in targets:
+            if "[" in t and (any(c in t for c in "*?") or re.search(r"\[\]?[^]]*-", t)):   # Phase 6
+                raise Refuse(f"the target `{t}` puts a bracket set beside a wildcard or a range, which bash reads by "
+                             "quotes and locale collation the hook cannot see")
             if not os.path.isabs(t):
                 if here is None:
                     raise Refuse(f"the relative target `{t}` follows a `cd` the hook cannot follow")
-                t = os.path.join(here, t)
-            pats = bash_brackets(t)              # r4 R4-1, r5 R5-1: every reading bash might mean
+                t = os.path.join(glob.escape(here), t)   # Phase 6 P6-2: `cd app/[id]` is a literal directory
+            pats = bash_brackets(t)              # r4 R4-1, r5 R5-1: every reading bash might mean (escaped dir kept)
             matches = ([m for q in pats for m in glob.glob(q)] if any(c in t for c in "*?[")
                        else []) + [t]   # the lexer drops quotes: a
             for m in dict.fromkeys(matches):     # quoted `'a[1].txt'` is a literal name, so read it both ways
@@ -1132,23 +1138,27 @@ def _self_test_body() -> int:
              [targets(f"find -H {scratch}/out -delete"), targets(f"find {scratch}/out/ -delete"),
              ], ["refused"] * 2)
         os.remove(os.path.join(scratch, "out"))
-        os.makedirs(os.path.join(work, "g"))
-        Path(work, "g", "a1").write_text("G")
-        Path(work, "g", "keep").write_text("K")
-        case("a `[^k]` bracket backs up what its negation deletes; a `[[:digit:]]` class is refused (r4 R4-1)",
-             [targets("rm -f g/[^k]*"), targets("rm -f g/[[:alpha:]]*")], [["repo/sub/g/a1", "repo/sub/g/keep"], "refused"])
-        case("a bracket set is read as bash reads it: a leading `]` is a member, `^` later is literal (r4 push-time review)",
-             [targets("rm -f g/[][:alpha:]]*"), targets("rm -f g/[k^]*"), targets("rm -f g/[!]^]*")],
-             ["refused", ["repo/sub/g/keep"], ["repo/sub/g/a1", "repo/sub/g/keep"]])
-        Path(work, "g", "^note").write_text("N")
-        Path(work, "g", "!x").write_text("X")
-        os.makedirs(os.path.join(work, "g", "[^a"))
-        Path(work, "g", "[^a", "b]one").write_text("B")
-        case("a caret the lexer cannot tell quoted from negating is read BOTH ways; a set spanning `/` as Python reads it (r5 R5-1/R5-2)",
-             [targets("rm -f g/[\\^a]*"), targets("rm -f g/[^a/b]*"), targets("rm -f g/[\\!a]*")],
-             [["repo/sub/g/!x", "repo/sub/g/[^a", "repo/sub/g/^note", "repo/sub/g/a1", "repo/sub/g/keep"],
-              ["repo/sub/g/[^a/b]one"], ["repo/sub/g/!x", "repo/sub/g/[^a", "repo/sub/g/^note", "repo/sub/g/a1", "repo/sub/g/keep"]])
-        shutil.rmtree(os.path.join(work, "g"))
+        os.makedirs(os.path.join(work, "h", "[^a"))
+        for n in ("a", "b", "k", "!", "^", "]"):
+            Path(work, "h", n).write_text(n)
+        Path(work, "h", "[^a", "b]one").write_text("B")
+        H = lambda *n: [f"repo/sub/h/{x}" for x in n]
+        case("a bracket set beside a wildcard, or holding a `-`, is refused: quotes and locale the hook cannot see (Phase 6 P6-1/P6-3/P6-4, r6 R6-1)",
+             [targets("rm -f h/[a-z]*"), targets('rm -f "h/[^a/"*'), targets("rm -f -- h/[a\\-z]x"),
+              targets("rm -f h/[\\!a-]"), targets("rm -f h/?[k]")], ["refused"] * 5)
+        case("a `[^k]` set is read negated AND with a literal caret; a `[[:alpha:]]` class and five negated sets are refused (r4 R4-1, r5 R5-1, r6 R6-2)",
+             [targets("rm -f h/[^k]"), targets("rm -f h/[\\!a]"), targets("rm -f h/[[:alpha:]]"),
+              targets("rm -f h/[!a][!a][!a][!a][!a]")],
+             [H("!", "]", "^", "a", "b", "k"), H("!", "]", "^", "a", "b", "k"), "refused", "refused"])
+        case("a bracket set is read as bash reads it: a leading `]` is a member, `^` later is literal, a set spanning `/` is a literal name (r4 push-time review, r5 R5-2)",
+             [targets("rm -f h/[][:alpha:]]"), targets("rm -f h/[k^]"), targets("rm -f h/[!]^]"), targets("rm -f h/[^a/b]one")],
+             ["refused", H("^", "k"), H("!", "]", "^", "a", "b", "k"), H("[^a/b]one")])
+        os.makedirs(os.path.join(work, "app", "[id]"))
+        Path(work, "app", "[id]", "x.bak").write_text("X")
+        Path(work, "app", "i").write_text("I")
+        case("a bracketed working directory is a literal path, not a set (Phase 6 P6-2)",
+             targets('cd "app/[id]" && rm -f *.bak'), ["repo/sub/app/[id]/x.bak"])
+        shutil.rmtree(os.path.join(work, "h")); shutil.rmtree(os.path.join(work, "app"))
         case("a quoted `a[1].txt` is backed up as the name it is, not only as a pattern (r1 Claude probe)",
              targets("rm 'a[1].txt'"), ["repo/sub/a[1].txt"])
         os.remove(os.path.join(work, "a[1].txt"))

@@ -1209,7 +1209,7 @@
       ]
     ],
     "expect": [
-      "a `[^k]` bracket backs up what its negation deletes; a `[[:digit:]]` class is refused (r4 R4-1)"
+      "a `[^k]` set is read negated AND with a literal caret; a `[[:alpha:]]` class and five negated sets are refused (r4 R4-1, r5 R5-1, r6 R6-2)"
     ]
   },
   {
@@ -1222,7 +1222,7 @@
       ]
     ],
     "expect": [
-      "a `[^k]` bracket backs up what its negation deletes; a `[[:digit:]]` class is refused (r4 R4-1)"
+      "a `[^k]` set is read negated AND with a literal caret; a `[[:alpha:]]` class and five negated sets are refused (r4 R4-1, r5 R5-1, r6 R6-2)"
     ]
   },
   {
@@ -1235,7 +1235,7 @@
       ]
     ],
     "expect": [
-      "a bracket set is read as bash reads it: a leading `]` is a member, `^` later is literal (r4 push-time review)"
+      "a bracket set is read as bash reads it: a leading `]` is a member, `^` later is literal, a set spanning `/` is a literal name (r4 push-time review, r5 R5-2)"
     ]
   },
   {
@@ -1248,7 +1248,7 @@
       ]
     ],
     "expect": [
-      "a `[^k]` bracket backs up what its negation deletes; a `[[:digit:]]` class is refused (r4 R4-1)"
+      "a `[^k]` set is read negated AND with a literal caret; a `[[:alpha:]]` class and five negated sets are refused (r4 R4-1, r5 R5-1, r6 R6-2)"
     ]
   },
   {
@@ -1261,20 +1261,59 @@
       ]
     ],
     "expect": [
-      "a caret the lexer cannot tell quoted from negating is read BOTH ways; a set spanning `/` as Python reads it (r5 R5-1/R5-2)"
+      "a `[^k]` set is read negated AND with a literal caret; a `[[:alpha:]]` class and five negated sets are refused (r4 R4-1, r5 R5-1, r6 R6-2)"
     ]
   },
   {
-    "name": "r5 R5-2: the raw target is not globbed",
+    "name": "r6 R6-2: no cap on negated sets",
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "return list(dict.fromkeys(out + [t]))",
-        "return list(dict.fromkeys(out))"
+        "if sum(len(p) > 1 for p in pieces) > 4:",
+        "if False:"
       ]
     ],
     "expect": [
-      "a caret the lexer cannot tell quoted from negating is read BOTH ways; a set spanning `/` as Python reads it (r5 R5-1/R5-2)"
+      "a `[^k]` set is read negated AND with a literal caret; a `[[:alpha:]]` class and five negated sets are refused (r4 R4-1, r5 R5-1, r6 R6-2)"
+    ]
+  },
+  {
+    "name": "Phase 6: a bracket set beside a wildcard is globbed",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if \"[\" in t and (any(c in t for c in \"*?\") or",
+        "if \"[\" in t and (False or"
+      ]
+    ],
+    "expect": [
+      "a bracket set beside a wildcard, or holding a `-`, is refused: quotes and locale the hook cannot see (Phase 6 P6-1/P6-3/P6-4, r6 R6-1)"
+    ]
+  },
+  {
+    "name": "Phase 6: a bracket range is globbed",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "or re.search(r\"\\[\\]?[^]]*-\", t)):   # Phase 6",
+        "or False):   # Phase 6"
+      ]
+    ],
+    "expect": [
+      "a bracket set beside a wildcard, or holding a `-`, is refused: quotes and locale the hook cannot see (Phase 6 P6-1/P6-3/P6-4, r6 R6-1)"
+    ]
+  },
+  {
+    "name": "Phase 6 P6-2: the working directory is globbed as a pattern",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "t = os.path.join(glob.escape(here), t)",
+        "t = os.path.join(here, t)"
+      ]
+    ],
+    "expect": [
+      "a bracketed working directory is a literal path, not a set (Phase 6 P6-2)"
     ]
   }
 ]
