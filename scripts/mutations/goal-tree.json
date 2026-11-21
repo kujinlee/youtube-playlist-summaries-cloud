@@ -108,8 +108,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "re.search(rf\"\\(backlog #{n}\\)\", subj) for n in live_rows)), None)",
-        "re.search(rf\"backlog #{n}\", subj) for n in live_rows)), None)"
+        "if any(_subject_names_row(subj, n) for n in live_rows)), None)",
+        "if any(re.search(rf\"backlog #{n}\", subj) for n in live_rows)), None)"
       ]
     ],
     "expect": [
@@ -1221,8 +1221,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "subj) for n in live_rows)), None)",
-        "subj) for n in rows)), None)"
+        "(subj, n) for n in live_rows)), None)",
+        "(subj, n) for n in rows)), None)"
       ]
     ],
     "expect": [
@@ -3851,11 +3851,11 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        r for r, rest in added if rest.startswith(GLYPH[\"merged\"])]",
+        "        r for r, rest in added if rest.startswith(GLYPH[\"merged\"]) and not rest.startswith(by_cell)]",
         "        ]"
       ],
       [
-        "(\"added\", [r for r, rest in added if not rest.startswith(GLYPH[\"merged\"])]),",
+        "(\"added\", [r for r, rest in added if not rest.startswith(GLYPH[\"merged\"]) or rest.startswith(by_cell)]),",
         "(\"added\", [r for r, rest in added]),"
       ]
     ],
@@ -5224,7 +5224,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if re.search(rf\"\\(backlog #{n}\\)\", subject)), None)",
+        "if _subject_names_row(subject, n)), None)",
         "if False), None)"
       ]
     ],
@@ -6387,8 +6387,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "subj) for n in row_open)), None)",
-        "subj) for n in live_rows)), None)"
+        "(subj, n) for n in row_open)), None)",
+        "(subj, n) for n in live_rows)), None)"
       ]
     ],
     "expect": [
@@ -6569,8 +6569,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if live_rows and leaf_cells is not None and all(n in leaf_cells for n in live_rows):",
-        "if live_rows and leaf_cells is not None and any(n in leaf_cells for n in live_rows):"
+        "leaf_cells is not None and all(n in leaf_cells for n in live_rows)",
+        "leaf_cells is not None and any(n in leaf_cells for n in live_rows)"
       ]
     ],
     "expect": [
@@ -6582,8 +6582,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if live_rows and leaf_cells is not None and all(n in leaf_cells for n in live_rows):",
-        "if live_rows and (leaf_cells is None or all(n in leaf_cells for n in live_rows)):"
+        "leaf_cells is not None and all(n in leaf_cells for n in live_rows)",
+        "(leaf_cells is None or all(n in leaf_cells for n in live_rows))"
       ]
     ],
     "expect": [
@@ -6591,16 +6591,81 @@
     ]
   },
   {
-    "name": "backlog #689: the leaf reading by cell removed",
+    "name": "backlog #689 r1 X1: a live ledger entry no longer beats the cell ✅",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if live_rows and leaf_cells is not None and all(n in leaf_cells for n in live_rows):",
-        "if False and leaf_cells is not None and all(n in leaf_cells for n in live_rows):"
+        "                    and not flying_here):",
+        "                    ):"
       ]
     ],
     "expect": [
-      "⭐ backlog #689: a tree LEAF no PR names is ✅ by its rows' Status cells when EVERY row is ✅ there, and ⬜ when any is not; an open PR naming a ✅ row still reads ⏳; unread cells never read ✅"
+      "⭐ backlog #689 r1 X1: a live (unparked) ledger entry naming a ✅-by-cell leaf keeps it IN FLIGHT, its declared wait said; a PARKED entry leaves it ✅ by the cell"
+    ]
+  },
+  {
+    "name": "backlog #689 r1 M1: a ✅-by-cell leaf no longer buckets older",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if state == \"merged\" and t.get(\"by_cell\"):",
+        "if False and t.get(\"by_cell\"):"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r1 M1: a ✅-by-cell leaf buckets OLDER at any clock; a leaf merged WITH a time is recent within the window and older past it"
+    ]
+  },
+  {
+    "name": "backlog #689 r1 m5: the subject matcher reads only `(backlog #N)`, not a list tail",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_ROW_TAIL_RE = re.compile(r\"\\(backlog #\\d+(?:, (?:backlog )?#\\d+)*\\)\")",
+        "_ROW_TAIL_RE = re.compile(r\"\\(backlog #\\d+\\)\")"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r1: _subject_names_row reads `(backlog #N)` and a list tail (first, middle, last, and the `backlog #` repeated form); never a number that is a PREFIX of another, a PR number, or a mention outside the parenthesised list"
+    ]
+  },
+  {
+    "name": "backlog #689 r1 m5: the subject matcher matches a number by PREFIX",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return any(int(m) == n for g in _ROW_TAIL_RE.findall",
+        "return any(m.startswith(str(n)) for g in _ROW_TAIL_RE.findall"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r1: _subject_names_row reads `(backlog #N)` and a list tail (first, middle, last, and the `backlog #` repeated form); never a number that is a PREFIX of another, a PR number, or a mention outside the parenthesised list"
+    ]
+  },
+  {
+    "name": "backlog #689 r1 X2: the change line says `merged` for a ✅-by-cell leaf",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return TICKED if t.get(\"by_cell\") else t[\"state\"]",
+        "return t[\"state\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r1 X2: the timeline tells ⬜ → ✅-by-cell as MOVED and an added ✅-by-cell leaf as ADDED, never landed; a real merge (list tail) is still told as landed"
+    ]
+  },
+  {
+    "name": "backlog #689 r1 X2: an added ✅-by-cell leaf is told as landed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "r for r, rest in added if rest.startswith(GLYPH[\"merged\"]) and not rest.startswith(by_cell)]",
+        "r for r, rest in added if rest.startswith(GLYPH[\"merged\"])]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r1 X2: the timeline tells ⬜ → ✅-by-cell as MOVED and an added ✅-by-cell leaf as ADDED, never landed; a real merge (list tail) is still told as landed"
     ]
   }
 ]

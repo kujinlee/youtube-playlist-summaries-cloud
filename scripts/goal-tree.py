@@ -81,9 +81,14 @@ TRIGGERS: `/goal-tree` (`.claude/commands/goal-tree.md`) runs it before printing
 after `gh pr merge`, and alone after an edit of the threads file; the page's Refresh button runs it with
 no arguments.
 
-⚠ BOUNDS, stated. A backlog-only thread finds its PR by the `(backlog #N)` subject tail on master and by
-`backlog #N` in an open PR's title; a PR that names its row any other way is not found, and the thread
-reads "no PR names it yet" unless every live row it names is ✅ in its Status cell (backlog #689), when it reads ✅. The in-flight ledger is matched by (KIND, number) (`_ledger_refs`): an entry's
+⚠ BOUNDS, stated. A backlog-only thread finds its PR by the `(backlog #N)` subject tail on master — or a list tail,
+`(backlog #515, #611)` / `(backlog #12, backlog #13)` (`_subject_names_row`) — and by `backlog #N` in an open PR's
+title; a PR that names its row any other way is not found, and the thread reads "no PR names it yet" unless every
+live row it names is ✅ in its Status cell and no live ledger entry names it (backlog #689), when it reads ✅ by the
+cell (`by_cell`, bucketed older: it has no merge time). That ✅ is read from the checkout the script runs in, so a
+branch that ticks its own row reads ✅ there before its PR opens (the agenda's accepted r3 F2 limit); the pages render
+from a fresh origin/master. With git or gh unread such a leaf reads CANNOT RUN, the stricter reading, unlike an agenda
+step. The in-flight ledger is matched by (KIND, number) (`_ledger_refs`): an entry's
 declared `thread` refs, else the `PR #N` / `backlog #N` in its id and text. A bare `#424` or an id's `-424` names
 nothing, so such an entry shows IN FLIGHT UNDER NO GOAL rather than on a guessed thread. `gh pr list --state all` is capped at
 ALL_LIMIT, so an old PR beyond it reads NOT FOUND, never a guessed state.
@@ -461,6 +466,17 @@ def _declared_blockers(entries, src: dict) -> list:
     return out
 
 
+# backlog #689 r1 (m5): a merge subject names a row as `(backlog #N)` or in a list tail `(backlog #515, #611, #612)` /
+# `(backlog #12, backlog #13)`. A number is matched WHOLE (`#61` never matches `#611`); a mention outside the parenthesised
+# backlog list (`Fix backlog #12 parsing`) names no row.
+_ROW_TAIL_RE = re.compile(r"\(backlog #\d+(?:, (?:backlog )?#\d+)*\)")
+
+
+def _subject_names_row(subject: str, n: int) -> bool:
+    """PURE. True when merge `subject` names backlog row `n` in a `(backlog #…)` list (backlog #689 r1)."""
+    return any(int(m) == n for g in _ROW_TAIL_RE.findall(subject or "") for m in re.findall(r"#(\d+)", g))
+
+
 def _row_list(rows) -> str:
     """PURE. `backlog #1, backlog #2` — the rows a step's Status reading names (backlog #515)."""
     return ", ".join(f"backlog #{n}" for n in rows)
@@ -533,7 +549,7 @@ def _blocker(kind: str, n: int, src: dict) -> dict:
     if n not in closed:
         return {"ref": ref, "state": "open"}
     hit = next(((sha, pr) for sha, pr, subject in src.get("merged_rows") or []
-                if re.search(rf"\(backlog #{n}\)", subject)), None)
+                if _subject_names_row(subject, n)), None)
     return {"ref": ref, "state": "done",
             "when": ((src.get("all_merged_at") or {}).get(hit[1]) or (src.get("merged_at") or {}).get(hit[0]))
             if hit else None}
@@ -777,6 +793,8 @@ def bucket(t: dict, at) -> str:
     if state in ("merged", "closed"):
         if state == "closed" and "closed_at" not in t:
             return "older"
+        if state == "merged" and t.get("by_cell"):
+            return "older"   # backlog #689 r1 M1: ✅ by its Status cell alone has no merge time to age — never recent
         # ⛔ review r2 X1: every ref's end (`ended_at`); a snapshot logged before it was stored has only the
         # aggregate's own time. OLDER only when EVERY end was read and is past the window.
         ends = t.get("ended_at", [t.get("merged_at") if state == "merged" else t.get("closed_at")])
@@ -824,7 +842,11 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
     lets a declared `waits on` whose date has passed be FLAGGED expired rather than block (backlog #612); None reads no
     expiry. `by_row` — an AGENDA STEP's reading (backlog #515/#611): each live backlog row it names is done by its
     Status cell (`closed_rows`), never by a merged PR that names it; a tree leaf keeps the merge reading, and only a
-    leaf NO PR names (none merged, none open) reads its rows' Status cells — ✅ when every live row is (backlog #689)."""
+    leaf NO PR names (none merged, none open) reads its rows' Status cells — ✅ when every live row is (backlog #689),
+    unless a live (unparked) ledger entry names it: in-flight work beats the cell. ⚠ BOUNDED (r1 M2): the cells are read
+    from the checkout this runs in, so a branch that ticks its own row reads ✅ before its PR opens — the agenda's
+    accepted r3 F2 limit; the pages render from a fresh origin/master. (r1 m3) With git or gh unread, an all-✅ leaf
+    reads CANNOT RUN — the stricter reading, unlike an agenda step."""
     prs = [n for k, n in t["refs"] if k == "PR"]
     rows = list(dict.fromkeys(n for k, n in t["refs"] if k == "backlog"))   # r1 C8: a row named twice is ONE row
     # backlog #484: each backlog ref has its OWN fate (None = live). `fates` is None when the backlog was not
@@ -860,6 +882,7 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
     # a stale hold costs a glance (the detail says the ✅ is in the cell and names the PR), a false ✅ hides open work.
     cells_held = by_cells and bool(opened)
     by_cells = by_cells and not cells_held
+    by_cell = False   # backlog #689 r1 M1: a tree leaf ✅ by its Status cell alone — no merge time, so it buckets older
     if prs:
         found = [_pr_state(n, src) for n in prs]
         state = next(s for s in PRECEDENCE if any(f[0] == s for f in found))
@@ -870,7 +893,7 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
         state, detail = "cannot", f"CANNOT RUN — {unread}"
     else:
         hit = next(((sha, pr) for sha, pr, subj in src.get("merged_rows") or []
-                    if any(re.search(rf"\(backlog #{n}\)", subj) for n in live_rows)), None)
+                    if any(_subject_names_row(subj, n) for n in live_rows)), None)
         if by_cells:
             state, detail = "merged", ", ".join(f"backlog #{n}" for n in live_rows) + " ✅ in its Status cell"
             if unread:
@@ -890,19 +913,24 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
                 detail = (", ".join(f"backlog #{n}" for n in live_rows) + " ✅ in its Status cell, but an open PR "
                           "names it · " + detail)
         else:
-            # backlog #689: a tree LEAF no PR names (a PR subject `(backlog #1, #2)` names no row) is ✅ by its rows'
-            # Status cells when EVERY live row is ✅ there — it read ⬜ queued while the backlog said DONE
-            leaf_cells = src.get("closed_rows") if not by_row else None
-            if live_rows and leaf_cells is not None and all(n in leaf_cells for n in live_rows):
-                state, detail = "merged", (_row_list(live_rows) + " ✅ in its Status cell · no merged PR names it")
+            # backlog #689: a tree LEAF no PR names is ✅ by its rows' Status cells when EVERY live row is ✅ there — it
+            # read ⬜ queued while the backlog said DONE. r1 X1: a live (unparked) ledger entry naming it beats the
+            # cell — the work is in flight, so it takes the ⬜ → ⏳ path below and its declared wait is said.
+            leaf_cells = src.get("closed_rows")
+            flying_here = any(not is_parked(e) for e in src["ledger"] if _ledger_refs(e) & _thread_refs(t))
+            if (live_rows and leaf_cells is not None and all(n in leaf_cells for n in live_rows)
+                    and not flying_here):
+                state, detail = "merged", (_row_list(live_rows) + " ✅ in its Status cell · no merge subject names "
+                                           + ("it" if len(live_rows) == 1 else "them") + " as a row")
+                by_cell = True
             else:
                 state, detail = "next", "no PR names it yet"
         if hit and row_open:
             # backlog #515/#611: the PR that named the row is CONTEXT — it may have filed the row, or landed only part.
             # r1 C1: it is a PR that named an OPEN row, and the row it named is said — never a PR that named another row
-            ctx = next(((sha, pr, [n for n in row_open if re.search(rf"\(backlog #{n}\)", subj)])
+            ctx = next(((sha, pr, [n for n in row_open if _subject_names_row(subj, n)])
                         for sha, pr, subj in src.get("merged_rows") or []
-                        if any(re.search(rf"\(backlog #{n}\)", subj) for n in row_open)), None)
+                        if any(_subject_names_row(subj, n) for n in row_open)), None)
             said = (f"PR #{ctx[1]} ({ctx[0]}) merged naming {_row_list(ctx[2])}" if ctx
                     else "no merged PR names " + ("it" if len(row_open) == 1 else "them"))
             detail = (f"{_row_list(row_open)} is not ✅ in its Status cell · {said}"
@@ -974,6 +1002,8 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
         out["waits"] = f"⚠ wait expired {expired}: {t['waits']}"
     if entries:
         out["entries"] = entries
+    if by_cell and state == "merged":   # backlog #689 r1 M1: set only when true, so other trees fingerprint as before
+        out["by_cell"] = True
     if blockers:
         out["blockers"] = blockers
     if state == "closed":
@@ -1056,6 +1086,15 @@ def fingerprint(snap: dict) -> str:
     return json.dumps({k: v for k, v in snap.items() if k not in ("at", "head")}, sort_keys=True)
 
 
+# backlog #689 r1 X2/m6: the state WORD a change line gives a leaf ✅ by its Status cell alone (`by_cell`) — not
+# `merged`, so the timeline's story tells it as moved, never as landed (no merge is behind it). Its glyph stays ✅.
+TICKED = "ticked"
+
+
+def _said_state(t: dict) -> str:
+    return TICKED if t.get("by_cell") else t["state"]
+
+
 NO_READER_CHANGE = "no change a reader would see (the stored tree differs only in wording)"
 
 
@@ -1091,10 +1130,11 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
             continue
         if k not in a:
             out.append(f"added [{b[k]['relation']}] {k[1].split(' · ', 1)[1]}: "
-                       f"{GLYPH[b[k]['state']]} {b[k]['detail']}")
-        elif (a[k]["state"], a[k]["detail"]) != (b[k]["state"], b[k]["detail"]):
-            out.append(f"[{b[k]['relation']}] {k[1].split(' · ', 1)[1]}: {a[k]['state']} → "
-                       f"{GLYPH[b[k]['state']]} {b[k]['state']} — {b[k]['detail']}")
+                       f"{GLYPH[b[k]['state']]} " + (f"{TICKED} — " if b[k].get("by_cell") else "")
+                       + b[k]["detail"])
+        elif (_said_state(a[k]), a[k]["detail"]) != (_said_state(b[k]), b[k]["detail"]):
+            out.append(f"[{b[k]['relation']}] {k[1].split(' · ', 1)[1]}: {_said_state(a[k])} → "
+                       f"{GLYPH[b[k]['state']]} {_said_state(b[k])} — {b[k]['detail']}")
     out += [f"removed [{a[k]['relation']}] {k[1].split(' · ', 1)[1]}" for k in a if k not in b and k not in handed]
     pu, cu = {u["pr"] for u in prev["undeclared"]}, {u["pr"] for u in cur["undeclared"]}
     out += [f"undeclared PR #{n} appeared" for n in sorted(cu - pu)]
@@ -2415,15 +2455,17 @@ def story(ch: list[str]) -> str:
     trans = [(ref(c[:m.start()]), m[1], m[2]) for c in ch if c.startswith("[")
              for m in [re.search(r": (\w+) → \S+ (\w+) — ", c)] if m]
     added = [(ref(k), rest) for c in ch if c.startswith("added [") for k, _, rest in [c[6:].partition(": ")]]
-    # an added thread already merged LANDED in this interval (its glyph is the merged one), so it is told as landed
+    # an added thread already merged LANDED in this interval (its glyph is the merged one), so it is told as landed —
+    # unless it is ✅ by its Status cell alone (`TICKED`, backlog #689 r1 X2): no merge is behind it, so it is "added"
+    by_cell = f"{GLYPH['merged']} {TICKED} — "
     landed = [r for r, a, b in trans if b == "merged" and a != "merged"] + [
-        r for r, rest in added if rest.startswith(GLYPH["merged"])]
+        r for r, rest in added if rest.startswith(GLYPH["merged"]) and not rest.startswith(by_cell)]
     moved = [f"{r} → {b}" for r, a, b in trans if b != "merged" and a != b]
     goals = [c.split(": ", 1)[1] for c in ch if c.startswith("goal added: ")]
     bits = [f"{head} {names(refs)}" for head, refs in (
         ("goal opened:", goals), ("landed", landed),
         # "added [rel] KEY: GLYPH detail" — a key is refs only, so it ends at the first ": " (timeline-story r2 P2)
-        ("added", [r for r, rest in added if not rest.startswith(GLYPH["merged"])]),
+        ("added", [r for r, rest in added if not rest.startswith(GLYPH["merged"]) or rest.startswith(by_cell)]),
         # "declared on master: [rel] name (was in the ledger as …): …" — the ref ends at the hand-off note (r1 P2)
         ("declared on master:", [ref(c[20:].split(" (was in the ledger", 1)[0]) for c in ch
                                  if c.startswith("declared on master: ")]),
@@ -5847,7 +5889,50 @@ def _self_test_cases(*, outside: dict) -> int:
         case("backlog #689: the ✅-by-cell leaf says it is the Status cell, names every row, and names no PR",
              (_l689[0]["detail"], "backlog #12" in _l689[3]["detail"] and "backlog #13" in _l689[3]["detail"],
               _l689[1]["detail"]),
-             ("backlog #12 ✅ in its Status cell · no merged PR names it", True, "no PR names it yet"))
+             ("backlog #12 ✅ in its Status cell · no merge subject names it as a row", True, "no PR names it yet"))
+        # backlog #689 r1 m5: a merge subject names a row as `(backlog #N)` or in a list tail — a number WHOLE
+        case("⭐ backlog #689 r1: _subject_names_row reads `(backlog #N)` and a list tail (first, middle, last, and the "
+             "`backlog #` repeated form); never a number that is a PREFIX of another, a PR number, or a mention outside "
+             "the parenthesised list",
+             [_subject_names_row(sj, n) for sj, n in (
+                 ("x (backlog #12) (#20)", 12), ("y (backlog #515, #611, #612) (#611)", 515),
+                 ("y (backlog #515, #611, #612) (#611)", 611), ("y (backlog #515, #611, #612) (#611)", 612),
+                 ("z (backlog #12, backlog #13) (#5)", 12), ("z (backlog #12, backlog #13) (#5)", 13),
+                 ("y (backlog #515, #611, #612) (#611)", 61), ("y (backlog #611) (#7)", 61),
+                 ("y (backlog #61) (#7)", 611), ("w (backlog #5) (#611)", 611),
+                 ("Fix backlog #12 parsing (backlog #13) (#9)", 12))],
+             [True] * 6 + [False] * 5)
+        _tail = dict(merged_rows=[("cccc333", 40, "w (backlog #12, #13) (#40)")], all_merged_at={40: "2026-11-20 09:00"},
+                     closed_rows={12, 13})
+        _t12, _t13 = _lf([["backlog", 12]], **_tail), _lf([["backlog", 13]], **_tail)
+        case("backlog #689 r1: a leaf whose row a merge subject names in a LIST TAIL resolves to that merge — two rows, "
+             "one subject, each with its time and PR, neither read by the cell",
+             [(x["state"], x["detail"], x["merged_at"], x.get("by_cell")) for x in (_t12, _t13)],
+             [("merged", "merged 11-20 09:00 · cccc333 via PR #40", "2026-11-20 09:00", None)] * 2)
+        # backlog #689 r1 X1: a live ledger entry naming the leaf beats the cell-only ✅; a PARKED one does not
+        _x1 = [derive_thread({"key": "k", "refs": [["backlog", 12]], "waits": "the owner's reply"},
+                             src(closed_rows={12}, ledger=[e]))
+               for e in ({"id": "work-12", "what": "building backlog #12"},
+                         {"id": "park-12", "what": "backlog #12", "kind": _SS.KIND_WAIT})]
+        case("⭐ backlog #689 r1 X1: a live (unparked) ledger entry naming a ✅-by-cell leaf keeps it IN FLIGHT, its declared "
+             "wait said; a PARKED entry leaves it ✅ by the cell",
+             [(x["state"], x.get("by_cell"), " · waits on the owner's reply (declared)" in x["detail"]) for x in _x1],
+             [("inflight", None, True), ("merged", True, False)])
+        # backlog #689 r1 M1: a cell-only ✅ has no merge time to age, so it is OLDER; a merged leaf with a time ages
+        case("⭐ backlog #689 r1 M1: a ✅-by-cell leaf buckets OLDER at any clock; a leaf merged WITH a time is recent "
+             "within the window and older past it",
+             [bucket(x, at) for x in (_l689[0], _t12) for at in ("2026-11-20 10:00", "2027-06-01 10:00")],
+             ["older", "older", "recent", "older"])
+        # backlog #689 r1 X2/m6: the timeline tells a cell-only ✅ as moved/added, never as landed
+        _base = derive([], src(), "2026-11-20 10:00")
+        _snap = lambda th: dict(_base, goals=[{"slug": "g", "threads": [dict(th, key="fix · backlog #12 · w",
+                                                                             relation="fix")]}])
+        _q = _snap(_lf([["backlog", 12]], closed_rows=set()))
+        case("⭐ backlog #689 r1 X2: the timeline tells ⬜ → ✅-by-cell as MOVED and an added ✅-by-cell leaf as ADDED, "
+             "never landed; a real merge (list tail) is still told as landed",
+             [story(changes(_q, _snap(_l689[0]))), story(changes(_q, _snap(_t12))),
+              story(changes(dict(_base, goals=[{"slug": "g", "threads": []}]), _snap(_l689[0])))],
+             ["Moved backlog #12 → ticked.", "Landed backlog #12.", "Added backlog #12."])
         # backlog #612 — a declared wait whose date has passed is FLAGGED, never shown as a live reason
         case("backlog #612: wait_expired reads the LATEST date a wait names (YYYY-MM-DD or MM-DD), against today",
              [wait_expired(w, at) for w, at in (

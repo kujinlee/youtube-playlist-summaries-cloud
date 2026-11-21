@@ -483,7 +483,7 @@ EXPECTED_MUTATIONS = {
     # Codex m2 (the ahead-window is 120 days, not round 1's 92: 1). Rebound, not counted: the ~six-months entry's
     # anchor (`WAIT_AHEAD_DAYS = 120 `), and the four C5 entries' expected case name (03-25 replaces 02-25).
     # ⟳ 2026-11-20, agenda-row-state r3 fold: 501 -> 502. F3 (a date exactly WAIT_AHEAD_DAYS ahead is next year's: 1).
-    "scripts/goal-tree.py": 505,  # 502 -> 505 (backlog #689: the leaf read by Status cell, 3 clauses); 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    "scripts/goal-tree.py": 510,  # 502 -> 510 (backlog #689 + r1 fold: one per clause — all/any, unread cells, ledger beats cell, by_cell bucket, list tail, whole number, two timeline words); 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
