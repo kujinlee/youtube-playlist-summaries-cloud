@@ -1,0 +1,26 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/backlog.md": "100644 43d491897b0d52965f11938ff6aed068a9614b0d",
+    "docs/reviews/claude/tree-leaf-row-status-r3-claude.md": "100644 a2f5e38ba8c48f9953ea289ea3b5418ceec50d6b",
+    "docs/reviews/coordinator/tree-leaf-row-status-r3-coordinator.md": "100644 b57eb614c3879dca6932c228976e97fad9107579",
+    "scripts/goal-tree.py": "100644 2fa1bae3446b92e6745f58348bed2863ab4eca63",
+    "scripts/mutations/expected_mutations.py": "100644 93f823290b03844960221fca6b7ccb773fdae6a0",
+    "scripts/mutations/goal-tree.json": "100644 9b3c8b68886571d2c43c23d88415e72fa6ea4e7f"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "d237dfe772a9888c6ac6ba36b3045fecf67002a0",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 7781 chars, names d237dfe772a9",
+  "refused": false,
+  "review": "tree-leaf-row-status-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/tree-leaf-row-status",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
