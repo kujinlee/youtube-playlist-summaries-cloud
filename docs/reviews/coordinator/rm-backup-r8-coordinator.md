@@ -1,5 +1,7 @@
 # rm-backup — round 8 coordinator (Claude half; past the round cap)
 
+REVIEW GAP: codex — alternation (round 8 runs ONE half; round 7 was Codex).
+
 Reviewed: the round-7 fold `fb91c343` (every `[` in an `rm` target is refused). The verdict was recorded
 against `2ba7acbd`, the merge of origin/master on top of it. That merge changes none of
 `scripts/check-rm-backup.py`, `scripts/mutations/` or `expected_mutations.py`; `git diff --stat fb91c343 2ba7acbd`
