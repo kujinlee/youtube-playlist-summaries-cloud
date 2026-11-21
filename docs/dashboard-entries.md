@@ -21180,3 +21180,22 @@ and 11 more plus three push-time holes, FILED as backlog #686. Round 3 (Codex) f
 variable setters (`let`, `IFS`) and a push-time security review two more (`eval`, `${X:=v}`); the setter list was
 replaced by an allowlist: a command that sets a variable any way but `NAME=value` reads no variable in an `rm` target. Round 2 (Claude) found 13 more holes
 and three push-time security reviews 8; the `mktemp` exemption was dropped rather than patched a sixth time. Round 1 (Codex + probes salvaged from the stopped Claude reviewer) found 21 holes and two push-time security reviews 5 more; all fixed. A `#` mid-word and a `<<<`/quoted `<<` no longer hide an `rm` (11-20 security review). Bounds: an `rm` inside a quoted string, `bash -c`, `eval` or another language is not seen.
+
+## 2026-11-20
+The goal tree's plan stops calling a backlog item done just because some merged pull request mentions it. A plan step
+that names a backlog item now follows that item's own status: a pull request that only filed the item, or did part of
+it, is shown beside the step but no longer ticks it, and an item marked done is ticked even when no pull request names
+it. A declared "waits on" whose date has passed is now flagged as expired instead of still being shown as the reason.
+<!--tech-->
+Branch `agenda-row-state`, backlog #515, #611, #612 (`scripts/goal-tree.py`). `derive_thread(…, now, by_row)`: an
+agenda step naming rows and no PR reads `closed_rows` (✅ → merged; open → ⬜/⏳ with `PR #N (sha) merged naming it`;
+unread → CANNOT RUN); a step naming its PR follows the PR; tree leaves unchanged. `wait_expired(text, now)` flags a
+declared wait whose latest date is before today (`⚠ wait expired <date>`), in the leaf, the agenda step and the OWED
+`waits`; an expired wait never outvotes a live one on a step; an open PR naming a row outranks the row's ✅ (r2). A
+yearless wait date is read at most 120 days ahead, else last year's. `gen-backlog-page.status_closed`: a ✅ after an open
+marker is a finished half (open) unless the Item cell is ✅ — only the FIRST status mark is state, since the cell is
+written newest-first (r3, Phase 6: round 2's capitalised-closing-word clause was reverted after it closed reopened rows;
+docs/reviews/architecture-review-2026-11-20-backlog-closed-rule.md); 229 of 636 live rows closed before and after,
+none changes. Self-test cases: goal-tree 562 → 582, gen-backlog-page 247 → 250. Mutations: goal-tree 470 → 502,
+gen-backlog-page 77 → 82 (each round's new and rebound entries run in a scratch copy, all killed). Review rounds 1 (both
+halves), 2 (Codex) and 3 (Claude) folded; backlog row #672 closed in the r1 fold (PR #606 had merged).

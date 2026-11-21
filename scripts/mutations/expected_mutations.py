@@ -469,7 +469,21 @@ EXPECTED_MUTATIONS = {
     # write_page forwarding `judge` (dropping it falls back to `built`, the same minute — no case can tell them apart).
     # ⟳ 2026-11-19, backlog #647 (agenda-stale-wording): 438 -> 440, none retired — the STALE line's who-acts wording,
     # and its `it`/`them`.
-    "scripts/goal-tree.py": 470,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    # ⟳ 2026-11-20, agenda-row-state (backlog #515, #611, #612): 470 -> 487, none retired — a step naming rows and no
+    # PR is done by the rows' Status cells (8: open rows, all-closed, the hit gate, the context line, CANNOT RUN, the
+    # PR-named exemption, the agenda's flag, the leaf's default); a passed declared wait is flagged (9: the leaf's
+    # reading, derive's clock, the flagged `waits`, today not expired, the latest date, the year nearest now, the live
+    # wait outvoting, the agenda's clock, a `#NN-NN` not a date).
+    # ⟳ 2026-11-20, agenda-row-state r1 fold: 487 -> 499, none retired — Codex X1 (any-closed ticks a two-row step);
+    # C1 (the context PR names an OPEN row, and says which: 2); C7 (an all-✅ step survives a failed git/gh read, and
+    # says so: 2); C8 (a row named twice, once); C4 (a letter or dot before a date: 2); C5 (the ahead-window, its
+    # width, the latest year in reach, a written year unmoved: 4). Rebound, not counted: the all-✅ branch (`by_cells`),
+    # the `#NN-NN` lookbehind, and the subject-parentheses anchor (now three copies of the regex).
+    # ⟳ 2026-11-20, agenda-row-state r2 fold: 499 -> 501. Codex M1 (an open PR outranks an all-✅ step's cells: 1);
+    # Codex m2 (the ahead-window is 120 days, not round 1's 92: 1). Rebound, not counted: the ~six-months entry's
+    # anchor (`WAIT_AHEAD_DAYS = 120 `), and the four C5 entries' expected case name (03-25 replaces 02-25).
+    # ⟳ 2026-11-20, agenda-row-state r3 fold: 501 -> 502. F3 (a date exactly WAIT_AHEAD_DAYS ahead is next year's: 1).
+    "scripts/goal-tree.py": 502,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -556,7 +570,13 @@ EXPECTED_MUTATIONS = {
     # parse reading it.
     # ⟳ 2026-11-03, backlog #470: 64 -> 65. the word diff keeps a key whole (+1).
     # ⟳ 2026-11-03, backlog #470 review round 1: 65 -> 67. publish_rows: the rows that exist, and its warning (+2).
-    "scripts/gen-backlog-page.py": 77,
+    # ⟳ 2026-11-20, agenda-row-state r1 C2: 77 -> 81. `status_closed` — any ✅ closes, the Item-cell ✅ exemption,
+    # ⏳ as an open marker, and parse using the rule (+4).
+    # ⟳ 2026-11-20, agenda-row-state r2 Codex m1: 81 -> 84. A ✅ before a capitalised closing word closes the row —
+    # the clause removed, read in any case, and without its word boundary (+3).
+    # ⟳ 2026-11-20, agenda-row-state r3 (Phase 6, backlog-closed-rule): 84 -> 82. The r2 closing-word clause is
+    # REVERTED with its three entries (-3); only the FIRST status mark is state — the last mark read instead (+1).
+    "scripts/gen-backlog-page.py": 82,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
