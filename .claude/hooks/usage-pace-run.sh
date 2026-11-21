@@ -12,8 +12,8 @@
 # trust. The prompt hook says so in context; spawn and wake allow with a systemMessage (unknown is not a stop).
 # Bounds: the guard is read from THIS checkout's `refs/remotes/origin/master`, as last fetched — a stale fetch runs an older
 # reviewed guard, never an unreviewed one. ⚠ THE THREAT IS ACCIDENT, NOT A HOSTILE BRANCH: this launcher, and
-# the three hooks calling it, still come from the checkout (run-hook.sh's limit L2), so a branch editing THEM runs its
-# edit; and the ref is locally writable. What it closes is the measured case — a branch's GUARD governing its session.
+# the three hooks calling it, come from the MAIN checkout (run-hook.sh, backlog #513 — a worktree's branch no longer
+# runs its edit of them, but a branch checked out IN the main checkout does); and the ref is locally writable. What it closes is the measured case — a branch's GUARD governing its session.
 # r7 Codex BLOCKER: an inherited SHELLOPTS=errexit exited on the guard's failure before `cannot` could speak — this
 # launcher's error handling is its own, so no inherited option may change it.
 set +e +u +o pipefail

@@ -21166,3 +21166,20 @@ is wrong, and the redesign changes the scored facts file, so it owes its own rev
 PR #604 (harness-ships-elsewhere slice E). Phase 6: `docs/reviews/architecture-review-2026-11-20-mkt-seed-repo.md` —
 13 of 20 one-sided edits of the seed pass the self-test; a declare-once redesign turns all 20 red. Filed as backlog
 #678, superseding #676.
+
+## 2026-11-20
+The usage-limit hooks no longer change with the branch being edited. When the session is working inside a worktree,
+the hooks that slow down or stop new agents near the weekly limit now always run from the main checkout, never from
+the worktree's branch, so an unmerged branch cannot loosen the stop for the session that wrote it. The rule they
+apply was already taken from master (backlog #522); this closes the remaining gap, the hook scripts themselves
+(backlog #513). Every other hook still runs from the worktree, as before.
+<!--tech-->
+Branch `usage-hook-master`. `.claude/hooks/run-hook.sh`: a `usage-pace-*` name found under a `.git` FILE reads its
+`gitdir:` (relative resolved against the worktree), and when that git dir has `commondir` (a linked worktree, not a
+submodule) resolves it with `cd -P`; it must end in `.git`, and its parent becomes the root. A `.git` file with no
+gitdir line, or a common dir that is missing or not a `.git` directory, is NOT RUN naming backlog #513 — never the
+worktree's copy. No git process runs. Chosen over `origin/master`'s hook shells because the hooks derive their root
+from their own path and `usage-pace-run.sh` reads `origin/master` through that checkout; the guard is already
+`origin/master`'s. `scripts/check-run-hook.py --self-test` 98/98: worlds U1–U6 (red against the old launcher, 10
+cases), launcher mutants u1–u8 killed, 3 new manifest mutations (18 → 21). Bound: `check-idle-stop.py` and the
+agent-call hooks IMPORT `check-usage-pace.py` from the checkout and are unchanged.

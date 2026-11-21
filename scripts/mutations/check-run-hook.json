@@ -234,5 +234,44 @@
     "expect": [
       "a launch past its budget is a named red world (TIMED_OUT), not a crash"
     ]
+  },
+  {
+    "name": "U2's worktree keeps an ABSOLUTE gitdir (backlog #513)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (p[\"wtrel\"] / \".git\").write_text(f\"gitdir: {os.path.relpath(gd, p['wtrel'])}\\n\")",
+        "    (p[\"wtrel\"] / \".git\").write_text(f\"gitdir: {gd}\\n\")"
+      ]
+    ],
+    "expect": [
+      "U2's world: the worktree's .git names its gitdir RELATIVELY"
+    ]
+  },
+  {
+    "name": "U4's decoy beside the non-.git common dir has no usage hook (backlog #513)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    put(x / \"baremain/.claude/hooks\" / USAGE, PROBE)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "mutant u4 the common dir need not be a .git directory is killed"
+    ]
+  },
+  {
+    "name": "the submodule carries no usage hook (backlog #513)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    put(vsrc / \".claude/hooks\" / USAGE, PROBE)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "U3 a usage hook in a submodule (no commondir): the SUBMODULE's own copy"
+    ]
   }
 ]

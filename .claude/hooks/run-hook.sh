@@ -6,6 +6,8 @@
 # It runs <name>.sh from THE CHECKOUT THE SESSION IS WORKING IN, which is the nearest ancestor of the
 # PHYSICAL cwd that contains `.git` (a directory in a main checkout, a file in a linked worktree or a
 # submodule). Only when NO ancestor has `.git` does it use $CLAUDE_PROJECT_DIR.
+# ONE EXCEPTION (backlog #513): a `usage-pace-*` hook found in a LINKED WORKTREE runs from that worktree's
+# MAIN checkout instead — a budget guard must not change with the branch being edited.
 #
 # WHY THIS SHAPE, AND NOT ONE OF THE THREE THAT LOST (PR #409 r1–r3;
 # docs/reviews/architecture-review-2026-10-26-hook-launch.md). Every lost design FELL BACK to another
@@ -62,6 +64,39 @@ if [ -z "$root" ]; then
   echo "run-hook: NOT RUN $name — no checkout contains $(pwd -P) and CLAUDE_PROJECT_DIR is unset" >&2
   exit 1
 fi
+# Backlog #513: a USAGE-PACE hook governs what the session spends, so it never follows the branch being edited.
+# From a linked worktree it runs from the MAIN checkout, found on the filesystem alone (the worktree's `.git` file
+# names its git dir, whose `commondir` names the main checkout's `.git`); no git process runs. The guard it calls
+# is origin/master's (usage-pace-run.sh, backlog #522). A worktree whose main checkout cannot be located is
+# NOT RUN — never the worktree's own copy, which is exactly what this refuses to trust.
+case $name in
+  usage-pace-*)
+    if [ -f "$root/.git" ]; then
+      line=
+      IFS= read -r line < "$root/.git" 2>/dev/null  # its status is not read: a last line with no newline is fine
+      gitdir=${line#gitdir: }
+      if [ "$gitdir" = "$line" ] || [ -z "$gitdir" ]; then
+        echo "run-hook: NOT RUN $name — $root/.git names no gitdir, so its main checkout cannot be located" >&2
+        exit 1
+      fi
+      case $gitdir in /*) ;; *) gitdir="$root/$gitdir";; esac
+      if [ -f "$gitdir/commondir" ]; then
+        common=
+        IFS= read -r common < "$gitdir/commondir" 2>/dev/null
+        case $common in /*) ;; *) common="$gitdir/$common";; esac
+        common=$(cd -P -- "$common" 2>/dev/null && pwd -P && echo .) || common=
+        common=${common%.}
+        common=${common%$'\n'}
+        # The common dir is the main checkout's `.git` directory (a bare repository's is not, and is NOT RUN).
+        if [ "${common##*/}" != .git ]; then
+          echo "run-hook: NOT RUN $name — the main checkout of the worktree $root cannot be located" \
+               "(the worktree's own copy is not used, backlog #513)" >&2
+          exit 1
+        fi
+        root=${common%/*}
+      fi
+    fi;;
+esac
 hook="$root/.claude/hooks/$name"
 if [ ! -f "$hook" ]; then
   echo "run-hook: NOT RUN $name — $root has no .claude/hooks/$name (no other checkout's copy is used)" >&2

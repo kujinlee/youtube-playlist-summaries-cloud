@@ -37,6 +37,10 @@ and 0.022 s under `/private/tmp`. One W12 launch took 80–93 s of the 60 s budg
 the first of `outside_candidates()` with no directory on its path holding `CROWDED` entries or more,
 and none qualifying is CANNOT RUN. Linux `getcwd` handles long paths in the kernel, so CI never paid it.
 
+⟳ backlog #513: a `usage-pace-*` hook found in a LINKED WORKTREE runs from its MAIN checkout (U1–U6), located
+through the worktree's `.git` file and its git dir's `commondir`; a worktree whose main cannot be located is NOT
+RUN, never its own copy. Its mutants are u1–u8.
+
 WHAT WOULD MAKE THIS FAIL (its falsifier): a world whose exit code, hook file or output streams differ
 from the review's table, or a mutant whose named world stays green.
 
@@ -47,7 +51,7 @@ is NOT run here. W15 (a session launched in a subdirectory loads no project hook
 any launcher and has no case.
 
     python3 scripts/check-run-hook.py               # the worlds, over the repo's launcher
-    python3 scripts/check-run-hook.py --self-test  # 79 cases
+    python3 scripts/check-run-hook.py --self-test  # 98 cases
 
 EXIT CODES (repo convention): 0 = every world as required · 1 = a world differs · 2 = CANNOT RUN
 (no git, no launcher, a world that could not be built — never a pass).
@@ -85,6 +89,9 @@ printf 'probe-stdout-364\\n'
 printf 'probe-stderr-364\\n' >&2
 exit "${PROBE_EXIT:-7}"
 """
+# Backlog #513: a `usage-pace-*` hook runs from a linked worktree's MAIN checkout. Every world that carries
+# `probe.sh` carries this one too, so a usage world differs from its `probe.sh` twin in the name alone.
+USAGE = "usage-pace-probe.sh"
 SEG = "d" * 100  # one path segment of the long-path world
 TIMED_OUT = -999  # a launch past its budget: no real exit code, and distinct from every one above
 
@@ -258,6 +265,7 @@ def build(x: Path, launcher: Path) -> World:
     """Every world of the review's §1, under `x`. Raises CannotRun if any of it cannot be built."""
     main = x / "main"
     put(main / ".claude/hooks/probe.sh", PROBE)
+    put(main / ".claude/hooks" / USAGE, PROBE)
     for d in ("scripts", "sub/deep"):
         (main / d).mkdir(parents=True)
         (main / d / ".keep").write_text("")
@@ -281,6 +289,7 @@ def build(x: Path, launcher: Path) -> World:
     (p["wtmiss"] / ".claude/hooks/probe.sh").unlink()
     vsrc = x / "vendsrc"                                    # W8: a submodule with its own hooks
     put(vsrc / ".claude/hooks/probe.sh", PROBE)
+    put(vsrc / ".claude/hooks" / USAGE, PROBE)
     (vsrc / "scripts").mkdir()
     (vsrc / "scripts/.keep").write_text("")
     git(x, "init", "-q", str(vsrc))
@@ -308,6 +317,32 @@ def build(x: Path, launcher: Path) -> World:
         (r / "sub").mkdir()
         git(x, "init", "-q", str(r))
     p["nl"], p["nlnl"] = x / "nl", x / "nl\n"
+    # U1–U6 (backlog #513). A worktree whose `.git` names its git dir RELATIVELY (git's `worktree.useRelativePaths`).
+    p["wtrel"] = x / "wtrel"
+    git(main, "worktree", "add", "-q", "-b", "rel", str(p["wtrel"]), "main")
+    gd = (p["wtrel"] / ".git").read_text().split("gitdir: ", 1)[1].strip()
+    (p["wtrel"] / ".git").write_text(f"gitdir: {os.path.relpath(gd, p['wtrel'])}\n")
+    # A worktree-shaped `.git` whose `commondir` names a directory NOT called `.git` — beside which sits a
+    # `.git` directory and a usage hook, so a launcher that skipped the name check would run THAT copy.
+    p["wtbare"] = x / "wtbare"
+    put(p["wtbare"] / ".claude/hooks" / USAGE, PROBE)
+    (p["wtbare"] / "sub").mkdir()
+    (x / "baregd").mkdir()
+    (x / "baregd/commondir").write_text(str(x / "baremain/notgit") + "\n")
+    (x / "baremain/notgit").mkdir(parents=True)
+    (x / "baremain/.git").mkdir()
+    put(x / "baremain/.claude/hooks" / USAGE, PROBE)
+    (p["wtbare"] / ".git").write_text(f"gitdir: {x / 'baregd'}\n")
+    # ...and one whose `commondir` names a directory that does not exist.
+    p["wtgone"] = x / "wtgone"
+    put(p["wtgone"] / ".claude/hooks" / USAGE, PROBE)
+    (x / "gonegd").mkdir()
+    (x / "gonegd/commondir").write_text(str(x / "no-such-dir/.git") + "\n")
+    (p["wtgone"] / ".git").write_text(f"gitdir: {x / 'gonegd'}\n")
+    # A `.git` FILE that names no gitdir at all.
+    p["wtjunk"] = x / "wtjunk"
+    put(p["wtjunk"] / ".claude/hooks" / USAGE, PROBE)
+    (p["wtjunk"] / ".git").write_text("not a gitdir line\n")
     # Files a refused name would reach if the refusal were gone — so a missing refusal RUNS something.
     put(main / ".claude/x.sh", PROBE)                       # `../x.sh`
     put(main / ".claude/hooks/a/b.sh", PROBE)               # `a/b.sh`
@@ -374,6 +409,22 @@ def cases(w: World) -> list[Case]:
              project=""),
         Case("W14 CLAUDE_PROJECT_DIR unset, below main's root: 127 and nothing runs (no worse than today)",
              m / "scripts", 127, NOT_RAN, project=None),
+        # Backlog #513: a usage-pace hook never follows the branch being edited.
+        Case(U1, p["wtnew"] / "scripts", PROBE_RC, ran(m, USAGE), args=[USAGE]),
+        Case("U1 a usage hook in a pre-launcher worktree outside main: MAIN's copy", p["wt"] / "scripts", PROBE_RC,
+             ran(m, USAGE), args=[USAGE]),
+        Case("U1 a usage hook in a worktree nested under main: MAIN's copy", p["nested"] / "scripts", PROBE_RC,
+             ran(m, USAGE), args=[USAGE]),
+        Case("U1 a usage hook in the main checkout: main's copy (as before)", m / "scripts", PROBE_RC,
+             ran(m, USAGE), args=[USAGE]),
+        Case(U2, p["wtrel"] / "scripts", PROBE_RC, ran(m, USAGE), args=[USAGE]),
+        Case(U3, p["vend"] / "scripts", PROBE_RC, ran(p["vend"], USAGE), args=[USAGE]),
+        Case(U4, p["wtbare"] / "sub", 1, NOT_RAN, args=[USAGE]),
+        Case("U4 a worktree whose commondir names a missing directory: NOT RUN, its own copy NOT run",
+             p["wtgone"], 1, NOT_RAN, args=[USAGE]),
+        Case(U5, p["wtjunk"], 1, NOT_RAN, args=[USAGE]),
+        Case("U6 a NON-usage hook in the same worktree still runs the WORKTREE's copy", p["wtrel"] / "scripts", PROBE_RC,
+             ran(p["wtrel"])),
         Case("refused name `../x.sh` (exit 2, nothing runs)", m / "scripts", 2, NOT_RAN, args=["../x.sh"]),
         Case("refused name `a/b.sh` (exit 2, nothing runs)", m / "scripts", 2, NOT_RAN, args=["a/b.sh"]),
         Case("refused name `.x.sh` (exit 2, nothing runs)", m / "scripts", 2, NOT_RAN, args=[".x.sh"]),
@@ -390,10 +441,16 @@ def verdict(got: tuple, want: tuple) -> bool:
 
 
 W10 = "W10 cwd outside any checkout: the project dir's hook"
+U1 = "U1 a usage hook in a post-launcher worktree: the MAIN checkout's copy, not the branch's (backlog #513)"
+U2 = "U2 a usage hook in a worktree whose .git names its gitdir RELATIVELY: MAIN's copy"
+U3 = "U3 a usage hook in a submodule (no commondir): the SUBMODULE's own copy"
+U4 = "U4 a worktree whose commondir is not a .git directory: NOT RUN, its own and that dir's copies NOT run"
+U5 = "U5 a usage hook under a .git file that names no gitdir: NOT RUN, its own copy NOT run"
 IO_CASES = ("stdin reaches the hook, byte for byte", "the hook is passed NO argument (its name is not forwarded)")
 STREAM_CASES = ("exit 0 with stdout (the shape of the push gate's DENY): stdout, stderr and code arrive exactly",
                 "exit 2 (a blocking hook): stdout, stderr and code arrive exactly")
 MSG_CASE = "NOT RUN names the hook and says no other checkout's copy is used"
+USAGE_MSG_CASE = "a usage hook's NOT RUN names the hook and backlog #513"
 
 
 def run_worlds(w: World, markers: Path, only: frozenset[str] | None = None) -> list[tuple[str, tuple, tuple]]:
@@ -422,6 +479,9 @@ def run_worlds(w: World, markers: Path, only: frozenset[str] | None = None) -> l
         r = launch(w.paths["wtmiss"] / "scripts", str(w.main), ["probe.sh"], {}, markers / "msg")
         out.append((MSG_CASE, ("NOT RUN probe.sh" in r.err, "no other checkout's copy is used" in r.err),
                     (True, True)))
+    if only is None or USAGE_MSG_CASE in only:
+        r = launch(w.paths["wtbare"], str(w.main), [USAGE], {}, markers / "umsg")
+        out.append((USAGE_MSG_CASE, (r.rc, f"NOT RUN {USAGE}" in r.err, "backlog #513" in r.err), (1, True, True)))
     return out
 
 
@@ -494,6 +554,23 @@ MUTANTS = [
            (STREAM_CASES[1],)),
     Mutant("m18 the hook's stderr is merged into stdout", 'exec bash "$hook"', 'exec bash "$hook" 2>&1',
            (STREAM_CASES[0],)),
+    # Backlog #513: the usage-pace exception.
+    Mutant("u1 the usage-pace exception is gone (the branch's copy runs)", "  usage-pace-*)", "  usage-pace-none-*)",
+           (U1, U2)),
+    Mutant("u2 a relative gitdir is not resolved against the worktree",
+           'case $gitdir in /*) ;; *) gitdir="$root/$gitdir";; esac\n', "", (U2,)),
+    Mutant("u3 a relative commondir is not resolved against the gitdir",
+           'case $common in /*) ;; *) common="$gitdir/$common";; esac\n', "", (U1,)),
+    Mutant("u4 the common dir need not be a .git directory", '[ "${common##*/}" != .git ]', "false", (U4,)),
+    Mutant("u5 an unlocatable main checkout falls back to the worktree's copy",
+           '(the worktree\'s own copy is not used, backlog #513)" >&2\n          exit 1',
+           '(the worktree\'s own copy is not used, backlog #513)" >&2\n          :', (U4,)),
+    Mutant("u6 a .git file naming no gitdir is not refused",
+           'if [ "$gitdir" = "$line" ] || [ -z "$gitdir" ]; then', "if false; then", (U5,)),
+    Mutant("u7 a submodule (no commondir) is treated as a worktree", 'if [ -f "$gitdir/commondir" ]; then',
+           "if :; then", (U3,)),
+    Mutant("u8 the exception covers EVERY hook", "  usage-pace-*)", "  *)",
+           ("U6 a NON-usage hook in the same worktree still runs the WORKTREE's copy",)),
 ]
 
 
@@ -511,7 +588,7 @@ def red_names(results: list[tuple[str, tuple, tuple]]) -> set[str]:
 def kill_report(w: World, markers: Path, real: str, mutants: list[Mutant]) -> list[tuple[str, object, object]]:
     """One case per mutant: it must be bound AND its named worlds must go red. Restores the launcher."""
     target = w.main / LAUNCHER_REL
-    known = {c.name for c in cases(w)} | set(IO_CASES) | set(STREAM_CASES) | {MSG_CASE}
+    known = {c.name for c in cases(w)} | set(IO_CASES) | set(STREAM_CASES) | {MSG_CASE, USAGE_MSG_CASE}
     out = []
     try:
         for m in mutants:
@@ -667,6 +744,9 @@ def _suite_over_world(rows: list, w: World, x: Path, launcher: Path) -> None:
         rows.append(("a mutant that changes nothing is reported SURVIVED, not killed",
                      kill_report(w, markers, real, [named])[0][1].startswith("SURVIVED"), True))
         rows.extend(kill_report(w, markers, real, MUTANTS))
+    # U2's precondition: its world's `.git` really names the gitdir relatively, or U2 tests nothing new.
+    rows.append(("U2's world: the worktree's .git names its gitdir RELATIVELY",
+                 (w.paths["wtrel"] / ".git").read_text().startswith("gitdir: /"), False))
     # W10's precondition (r1 Codex P2 / Claude m5): the world proves its cwd is outside every checkout.
     inside = w.main / "scripts"
     rows.append(("W10's base: a directory inside a checkout does not qualify", no_git_base([inside]), None))
