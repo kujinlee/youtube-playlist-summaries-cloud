@@ -2050,7 +2050,7 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "        return self.enclosing(scope) if kind is ast.Nonlocal else scope",
+    "        return self._nonlocal(scope, name) if kind is ast.Nonlocal else scope",
     "        return scope"
    ]
   ],
@@ -2127,30 +2127,30 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "    if isinstance(up, (ast.Compare, ast.FormattedValue)):",
-    "    if isinstance(up, ast.FormattedValue):"
+    "    if isinstance(up, ast.Compare):\n        return True\n",
+    "    if False:\n        return True\n"
    ]
   ],
   "expect": "S1 (r1 m3, Codex MINOR): a comparison, an f-string or print, relative_to and an existence test of the root itself do not use the root as the project; the git call does, and so does a test of a path below it"
  },
  {
-  "name": "detector 2: an f-string hands the root on",
+  "name": "detector 2: an f-string piece is not a derivation, so the root is judged inside the f-string",
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "(ast.Compare, ast.FormattedValue)):",
-    "(ast.Compare,)):"
+    "    if isinstance(node, ast.FormattedValue):\n        return _from_file(node.value, names, consts)\n",
+    ""
    ]
   ],
-  "expect": "S1 (r1 m3, Codex MINOR): a comparison, an f-string or print, relative_to and an existence test of the root itself do not use the root as the project; the git call does, and so does a test of a path below it"
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
  },
  {
-  "name": "detector 2: str() does not pass through",
+  "name": "detector 2: str() is not a derivation",
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "    while isinstance(up, ast.Call) and _dotted(up.func) in PASS_THROUGH and len(up.args) == 1 \\\n            and up.args[0] is node:",
-    "    while False:"
+    "           \"str\", ",
+    "           "
    ]
   ],
   "expect": "S1 (r1 m3, Codex MINOR): a comparison, an f-string or print, relative_to and an existence test of the root itself do not use the root as the project; the git call does, and so does a test of a path below it"
@@ -2484,5 +2484,126 @@
    ]
   ],
   "expect": "S3 (r1 m6): an invocation and a read of the SAME target on one line are one finding"
+ },
+ {
+  "name": "detector 2: os.fspath() is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    ", \"os.fspath\"}",
+    "}"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
+ },
+ {
+  "name": "detector 2: an f-string is not a derivation, so its piece is judged where the f-string sits",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if isinstance(node, ast.JoinedStr):\n        return _fstring_path(node, names, consts)\n",
+    ""
+   ]
+  ],
+  "expect": "S1 (r2 X1): a path derived through an f-string (bound and joined), joinpath and os.fspath is judged where it stops deriving; a root passed through an UNLISTED wrapper is reported, not hidden"
+ },
+ {
+  "name": "detector 2: an f-string's literal tail after the path is not joined",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return got[0], got[1] + (rest[0].value[1:],)",
+    "        return got"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a path derived through an f-string (bound and joined), joinpath and os.fspath is judged where it stops deriving; a root passed through an UNLISTED wrapper is reported, not hidden"
+ },
+ {
+  "name": "detector 2: os.path.relpath is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if name == \"os.path.relpath\" and node.args:",
+    "        if False:"
+   ]
+  ],
+  "expect": "S1 (r2 X1, Codex MAJOR): the root handed on through os.path.relpath(ROOT) is install-root"
+ },
+ {
+  "name": "detector 2: a relpath measured against the root derives its first argument anyway",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            return None if start is not None and _from_file(start, names, consts) \\\n                else _from_file(node.args[0], names, consts)",
+    "            return _from_file(node.args[0], names, consts)"
+   ]
+  ],
+  "expect": "S1 (r1 m3, Codex MINOR): a comparison, an f-string or print, relative_to and an existence test of the root itself do not use the root as the project; the git call does, and so does a test of a path below it"
+ },
+ {
+  "name": "detector 2: relpath's `start=` keyword is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(k.value for k in node.keywords if k.arg == \"start\")",
+    "(k.value for k in ())"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
+ },
+ {
+  "name": "detector 2: joinpath is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if isinstance(node.func, ast.Attribute) and node.func.attr == \"joinpath\":",
+    "        if False:"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a path derived through an f-string (bound and joined), joinpath and os.fspath is judged where it stops deriving; a root passed through an UNLISTED wrapper is reported, not hidden"
+ },
+ {
+  "name": "detector 2: a keyword argument of an inert call is not stepped through",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if isinstance(up, ast.keyword):\n        node, up = up, parent.get(up)\n",
+    ""
+   ]
+  ],
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
+ },
+ {
+  "name": "detector 2: a keyword of an inert call is not one of its arguments",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " or node in up.keywords)",
+    ")"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
+ },
+ {
+  "name": "detector 2: nonlocal stops at the first enclosing function, binding or not",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "is None and name in self.binds.get(up, ()):",
+    "is None:"
+   ]
+  ],
+  "expect": "S1 (r2 X2, Codex MAJOR): `nonlocal` rebinds the NEAREST enclosing function that binds the name — two levels out when the middle function does not, the middle one when it does, and through a middle one that declares it `nonlocal` too"
+ },
+ {
+  "name": "detector 2: a middle function's own nonlocal declaration does not pass the name further out",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            if self.declared.get(up, {}).get(name) is None and name",
+    "            if name"
+   ]
+  ],
+  "expect": "S1 (r2 X2, Codex MAJOR): `nonlocal` rebinds the NEAREST enclosing function that binds the name — two levels out when the middle function does not, the middle one when it does, and through a middle one that declares it `nonlocal` too"
  }
 ]

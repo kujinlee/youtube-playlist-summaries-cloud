@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 116 cases
+    python3 scripts/check-publishability.py --self-test  # 121 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -431,17 +431,49 @@ def _shipped(decl: dict) -> set[str]:
 
 COMMANDS = (".md", ".sh", ".yml", ".yaml")              # text whose lines can invoke a file (`SS.EXEC_RE`)
 PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}/"
-FILE_OF = {"Path", "pathlib.Path", "os.path.abspath", "os.path.realpath"}   # f(__file__): the file itself
+FILE_OF = {"Path", "pathlib.Path", "os.path.abspath", "os.path.realpath",  # f(__file__): the file itself
+           "str", "os.fspath"}                                              # the same path, as a string
 SAME_PATH = {"resolve", "absolute"}                                         # x.resolve(): the same path
+
+# ⛔ THE DERIVATIONS, LISTED (review r2 X1). A value DERIVED from a from-file path is that path again, so the
+# use judged is the OUTERMOST derived expression, never a step inside it (`_install_root_uses` skips an inner
+# node whose parent is itself from-file). The r1 rule judged the root at its immediate parent, so an f-string
+# or `relpath` it called inert hid a root that the derived value then handed on (`cwd=f"{ROOT}"`,
+# `os.chdir(os.path.relpath(ROOT))`). The derivations are: `.parent`, `.parents[k]`, `os.path.dirname`; a `/`
+# or `os.path.join` or `.joinpath` of literal parts; `.resolve()`/`.absolute()`; a call in FILE_OF (`Path`,
+# `abspath`, `realpath`, `str`, `os.fspath`); `os.path.relpath(p)` with no start, or with a start that is not
+# from-file; and an f-string whose FIRST piece is the path (`f"{ROOT}"`, `f"{ROOT}/docs/x.md"` joins
+# `docs/x.md`) or that embeds it anywhere else (the string carries the path: `f"root {ROOT}"` is the root).
+# ⛔ DIRECTION: a wrapper NOT listed here is not a derivation, so the root is judged at that call — as an
+# argument handed on, which `_inert` reports unless the call is listed there. An omission in either list
+# therefore errs toward a FINDING, never toward silence: a false negative publishes a broken component, a
+# false positive costs one reading.
+
+
+def _fstring_path(node, names: dict, consts: dict):
+    """An f-string's from-file path (see THE DERIVATIONS): its first piece's path, with the literal text after
+    it joined when that text starts with `/` and nothing else follows; else the first embedded path as is."""
+    pieces = [_from_file(v, names, consts) if isinstance(v, ast.FormattedValue) else None for v in node.values]
+    got = next((p for p in pieces if p), None)
+    if not got:
+        return None
+    rest = node.values[1:]
+    if len(rest) == 1 and isinstance(rest[0], ast.Constant) and rest[0].value.startswith("/"):
+        return got[0], got[1] + (rest[0].value[1:],)
+    return got
 
 
 def _from_file(node, names: dict, consts: dict):
     """`(level, parts)` when `node` is a path built from the file's own location: `level` directories above the
     file (`Path(__file__)` is 0, each `.parent` or `os.path.dirname` one more, `.parents[k]` k + 1), then the
     literal `parts` joined below that directory. A name bound to such a path (`names`) is one too, and a name bound
-    to a string literal (`consts`) is that literal. Anything else: None."""
+    to a string literal (`consts`) is that literal; so is every DERIVATION listed above. Anything else: None."""
     if isinstance(node, ast.Name):
         return (0, ()) if node.id == "__file__" else names.get(node)
+    if isinstance(node, ast.JoinedStr):
+        return _fstring_path(node, names, consts)
+    if isinstance(node, ast.FormattedValue):
+        return _from_file(node.value, names, consts)
     if isinstance(node, ast.Attribute) and node.attr == "parent":
         got = _from_file(node.value, names, consts)
         return (got[0] + 1, ()) if got and not got[1] else None
@@ -461,6 +493,14 @@ def _from_file(node, names: dict, consts: dict):
             return (got[0] + 1, ()) if got and not got[1] else None
         if name == "os.path.join" and node.args:
             got, parts = _from_file(node.args[0], names, consts), [_literal(a, consts) for a in node.args[1:]]
+            return (got[0], got[1] + tuple(parts)) if got and None not in parts else None
+        if name == "os.path.relpath" and node.args:
+            start = node.args[1] if len(node.args) > 1 else next(
+                (k.value for k in node.keywords if k.arg == "start"), None)
+            return None if start is not None and _from_file(start, names, consts) \
+                else _from_file(node.args[0], names, consts)
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "joinpath":
+            got, parts = _from_file(node.func.value, names, consts), [_literal(a, consts) for a in node.args]
             return (got[0], got[1] + tuple(parts)) if got and None not in parts else None
         if isinstance(node.func, ast.Attribute) and node.func.attr in SAME_PATH and not node.args:
             return _from_file(node.func.value, names, consts)
@@ -483,14 +523,18 @@ class _Scopes:
     function, a lambda, a class body or a comprehension; else the module. A store is `(position, value)`: the
     value is the expression of a one-name `=` or annotated `x: T = v`, and None (unknown) for every other store
     — a parameter, a loop, `with` or tuple target, an augmented assignment, an import, a `def`, a `class`, an
-    `except ... as`. A `global` name is the module's; a `nonlocal` one the enclosing function's."""
+    `except ... as`. A `global` name is the module's; a `nonlocal` one the nearest enclosing function's that
+    binds it (`_nonlocal`)."""
 
     def __init__(self, tree, parent: dict):
         self.tree, self.parent, self.stores, declared = tree, parent, {}, {}
         for node in ast.walk(tree):
             if isinstance(node, (ast.Global, ast.Nonlocal)):
                 declared.setdefault(self.scope(node), {}).update(dict.fromkeys(node.names, type(node)))
-        self.declared = declared
+        self.declared, self.binds = declared, {}
+        for node in ast.walk(tree):
+            for scope, name, _ in self._stored(node):
+                self.binds.setdefault(scope, set()).add(name)
         for node in ast.walk(tree):
             for scope, name, value in self._stored(node):
                 self.stores.setdefault(self.owner(scope, name), {}).setdefault(name, []).append(
@@ -526,7 +570,18 @@ class _Scopes:
         kind = self.declared.get(scope, {}).get(name)
         if kind is ast.Global:
             return self.tree
-        return self.enclosing(scope) if kind is ast.Nonlocal else scope
+        return self._nonlocal(scope, name) if kind is ast.Nonlocal else scope
+
+    def _nonlocal(self, scope, name: str):
+        """The scope a `nonlocal name` in `scope` rebinds (review r2 X2): Python's rule, the NEAREST enclosing
+        function that binds the name itself — one that declares it `nonlocal` too passes it further out. A name
+        no enclosing function binds is a SyntaxError to Python; the enclosing scope is returned for it."""
+        up = self.enclosing(scope)
+        while up is not self.tree:
+            if self.declared.get(up, {}).get(name) is None and name in self.binds.get(up, ()):
+                return up
+            up = self.enclosing(up)
+        return self.enclosing(scope)
 
     def enclosing(self, scope):
         """The scope a name not stored in `scope` is looked up in next: a class body is skipped."""
@@ -583,7 +638,6 @@ def _placed(got) -> tuple[int, str] | None:
     return level, "/".join(segs) or "."
 
 
-PASS_THROUGH = {"str", "os.fspath"}
 INERT_CALLS = {"print", "os.path.relpath"}               # shown or measured against, never handed on
 RELATIVE = {"relative_to", "is_relative_to", "samefile"}
 EXISTS = {"is_dir", "exists", "is_file"}
@@ -591,17 +645,18 @@ EXISTS_CALLS = {"os.path.isdir", "os.path.exists", "os.path.isfile"}
 
 
 def _inert(node, parent: dict, target: str) -> bool:
-    """True when this use of a from-file path does not hand it on as the project (review r1 m3, Codex MINOR):
-    an operand of a comparison, a value inside an f-string, an argument of `print` or `os.path.relpath`, either
-    side of `relative_to`/`is_relative_to`/`samefile` (`str()` and `os.fspath()` passing through) — and, for the
-    root itself, a test that it exists, which an installed root always does. Every other use hands it on."""
+    """True when the TERMINAL use of a from-file path — the outermost expression still derived from it (THE
+    DERIVATIONS) — does not hand it on as the project (review r1 m3, r2 X1): an operand of a comparison, an
+    argument of `print` or of an `os.path.relpath` that measures against the path (a relpath that derives it is
+    judged further out), either side of `relative_to`/`is_relative_to`/`samefile` — and, for the root itself, a
+    test that it exists, which an installed root always does. ⛔ EVERY OTHER USE HANDS IT ON, the direction
+    THE DERIVATIONS states: a context not listed here is a finding."""
     up = parent.get(node)
-    while isinstance(up, ast.Call) and _dotted(up.func) in PASS_THROUGH and len(up.args) == 1 \
-            and up.args[0] is node:
-        node, up = up, parent.get(up)
-    if isinstance(up, (ast.Compare, ast.FormattedValue)):
+    if isinstance(up, ast.Compare):
         return True
-    if isinstance(up, ast.Call) and any(a is node for a in up.args):
+    if isinstance(up, ast.keyword):
+        node, up = up, parent.get(up)
+    if isinstance(up, ast.Call) and (any(a is node for a in up.args) or node in up.keywords):
         name = _dotted(up.func)
         return name in INERT_CALLS or (isinstance(up.func, ast.Attribute) and up.func.attr in RELATIVE) \
             or (target == "." and name in EXISTS_CALLS)
@@ -2116,6 +2171,70 @@ def _self_test_body() -> int:
     case("S3 (r1 m6): an invocation and a read of the SAME target on one line are one finding",
          lambda: rows(found(w_r1, {"s": [".agents/skills/s/SKILL.md", ".agents/skills/s/x.sh"]}, "s", 2)),
          [(2, "cwd-relative", ".agents/skills/s/x.sh", "${CLAUDE_PLUGIN_ROOT}/skills/s/x.sh")])
+
+    # --- Task 16, review r2 fold: a derived value is judged where it stops deriving; `nonlocal` as Python does ---
+    head = 'import os, pathlib, shlex, subprocess\nROOT = pathlib.Path(__file__).parent.parent\n'
+    w_r2 = world({"scripts/fstr.py": head + 'subprocess.run(["git"], cwd=f"{ROOT}")\n',
+                  "scripts/rel.py": head + 'os.chdir(os.path.relpath(ROOT))\n',
+                  "scripts/quiet.py": head + ('if ROOT == pathlib.Path.cwd() or str(ROOT) in os.environ:\n'
+                                              '    print(f"root {ROOT}", os.fspath(ROOT), str(ROOT))\n'
+                                              'print(os.path.relpath(ROOT / "docs" / "p.md", ROOT))\n'
+                                              'NAMES = [os.path.relpath(ROOT / "docs" / "q.md", start=ROOT)]\n'),
+                  "scripts/derive.py": head + ('DOCS = f"{ROOT}/docs"\n'
+                                               'open(f"{DOCS}/x.md")\n'
+                                               'open(ROOT.joinpath("docs", "j.md"))\n'
+                                               'open(os.fspath(ROOT / "docs" / "f.md"))\n'
+                                               'shlex.quote(str(ROOT))\n'),
+                  "scripts/nonloc.py": ('import pathlib\n'
+                                        'def a():\n'
+                                        '    root = pathlib.Path(__file__).resolve().parent.parent\n'
+                                        '    def b():\n'
+                                        '        def c():\n'
+                                        '            nonlocal root\n'
+                                        '            root = None\n'
+                                        '        c()\n'
+                                        '    b()\n'
+                                        '    return root / "docs" / "x.md"\n'
+                                        'def a2():\n'
+                                        '    root = pathlib.Path(__file__).resolve().parent.parent\n'
+                                        '    def b2():\n'
+                                        '        root = 3\n'
+                                        '        def c2():\n'
+                                        '            nonlocal root\n'
+                                        '            root = None\n'
+                                        '    return root / "docs" / "y.md"\n'
+                                        'def a3():\n'
+                                        '    root = pathlib.Path(__file__).resolve().parent.parent\n'
+                                        '    def b3():\n'
+                                        '        nonlocal root\n'
+                                        '        root = root.resolve()\n'
+                                        '        def c3():\n'
+                                        '            nonlocal root\n'
+                                        '            root = None\n'
+                                        '    return root / "docs" / "z.md"\n')})
+
+    def rooted_r2(cid: str) -> list:
+        return [(f["line"], f["target"]) for f in found(w_r2, {cid: [f"scripts/{cid}.py"]}, cid, 2)
+                if f["kind"] == "install-root"]
+    case("S1 (r2 X1, Codex MAJOR): the root handed on through an f-string is install-root",
+         lambda: rooted_r2("fstr"),
+         [(3, ".")])
+    case("S1 (r2 X1, Codex MAJOR): the root handed on through os.path.relpath(ROOT) is install-root",
+         lambda: rooted_r2("rel"),
+         [(3, ".")])
+    case("S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured "
+         "against by relpath's start, positional or `start=`, is no finding",
+         lambda: rooted_r2("quiet"),
+         [])
+    case("S1 (r2 X1): a path derived through an f-string (bound and joined), joinpath and os.fspath is judged "
+         "where it stops deriving; a root passed through an UNLISTED wrapper is reported, not hidden",
+         lambda: rooted_r2("derive"),
+         [(4, "docs/x.md"), (5, "docs/j.md"), (6, "docs/f.md"), (7, ".")])
+    case("S1 (r2 X2, Codex MAJOR): `nonlocal` rebinds the NEAREST enclosing function that binds the name — two "
+         "levels out when the middle function does not, the middle one when it does, and through a middle one "
+         "that declares it `nonlocal` too",
+         lambda: rooted_r2("nonloc"),
+         [(18, "docs/y.md")])
 
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
         print("NOT RUN under the mutation harness: 10 live-tree cases (CI's ordinary step runs them)")

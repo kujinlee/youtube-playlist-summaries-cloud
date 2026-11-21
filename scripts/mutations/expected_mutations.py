@@ -2605,5 +2605,5 @@ EXPECTED_MUTATIONS = {
     # detector 6 home-path guards (B1: the guard, raise/exit/return, the existence forms, every HOME producer, the
     # first-store rule); detector 4 section openers (M1: the exact span, the heading, the body bound, the acting
     # verbs); the invocation/read shared dedup (m6).
-    "scripts/check-publishability.py": 226,
+    "scripts/check-publishability.py": 237,
 }
