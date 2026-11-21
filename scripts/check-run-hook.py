@@ -58,7 +58,7 @@ is NOT run here. W15 (a session launched in a subdirectory loads no project hook
 any launcher and has no case.
 
     python3 scripts/check-run-hook.py               # the worlds, over the repo's launcher
-    python3 scripts/check-run-hook.py --self-test  # 132 cases
+    python3 scripts/check-run-hook.py --self-test  # 133 cases
 
 EXIT CODES (repo convention): 0 = every world as required · 1 = a world differs · 2 = CANNOT RUN
 (no git, no launcher, a world that could not be built — never a pass).
@@ -922,6 +922,9 @@ def _suite_over_world(rows: list, w: World, x: Path, launcher: Path) -> None:
     # directory the launcher chose — so the case tests agreement with git, not an invention of the launcher's.
     rows.append(("C2's world: git names the common dir's parent (the symlink target) as the main worktree",
                  git_main_worktree(w.paths["symwt"]), str(w.paths["store"])))
+    # The control for the row above: for an ordinary worktree git names the ordinary main checkout.
+    rows.append(("C2's control: for an ordinary worktree git names the main checkout as the main worktree",
+                 git_main_worktree(w.paths["wt"]), str(w.main)))
     rows.append(("C1's world: the unreadable gitdir really cannot be entered",
                  os.access(w.main / ".git/worktrees/wtunread", os.X_OK), False))
     # U2's precondition: its world's `.git` really names the gitdir relatively, or U2 tests nothing new.
