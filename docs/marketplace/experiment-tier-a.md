@@ -211,16 +211,18 @@ are the only witnesses of the new rule.
   r2 CLAUDE M7 test (the component fails without it); a guard that exits 0 is a working default, not reported.
 - **L4 — model adherence.** Whether a model follows a skill's delivery loop (tier B: `explain-diff` wrote its page and
   skipped serving it, where tier A's run served it) is not a property of the files.
-- **L5 — what detector 2's `install-root` does NOT see:** a root reached through a call of the program's own function,
-  or a path part held in anything but a literal or a name bound to one; and it judges paths in a self-test's fixture
-  strings like any other (e.g. `recall-llm:2:6`, `.claude/plans/p.md`), an over-report, not a miss. A name is looked
-  up in Python's scope (round 1 m2), and **a name whose stores disagree is not followed** — a root re-bound to anything
-  else in its scope is a miss, by design (the stores cannot say which one a use sees); a `nonlocal` store is the
-  nearest enclosing function's that binds the name (round 2 X2). A value DERIVED from the root (an f-string, `str`,
-  `os.fspath`, `relpath` without a root start, `joinpath`, `/`, `os.path.join`) is judged where it stops deriving
-  (round 2 X1), and only that terminal use can be **inert**: a comparison, an argument of `print` or of a `relpath`
-  measured against the root, either side of `relative_to`/`samefile`, and a test that the root itself exists. Every
-  other terminal use is reported, an unlisted wrapper included — an omission errs toward a finding, not a miss.
+- **L5 — what detector 2's `install-root` does NOT see** (Phase 6 rule, the MENTION WALK of
+  `docs/reviews/architecture-review-2026-11-21-publishability-install-root.md` §4): every mention of a file-anchored
+  value is walked upward through ONE decoder whose default is USE, so an unlisted use is reported, never hidden. It
+  does NOT name the path a root reaches through a call of the program's own function (reported where it is passed or
+  returned), or a part held in anything but a literal or a name bound to one string literal everywhere. **A name
+  reused anywhere in its file is not followed** — a second function's local, a parameter, a `global`/`nonlocal`
+  rebinding, a loop or `with` target: its root is reported AT THE BINDING, as `.`, and the paths built from it later
+  are not named — coarser, never silent (e.g. `check-plan-code:2` at `:6355`). The only silencers are inert uses (a
+  comparison, `print`, `relative_to`/`samefile`, a `relpath` start that is itself file-anchored, an existence test of
+  the root itself), a part that leaves the tree, a level that is not the install depth, and a shipped target. It
+  judges paths in a self-test's fixture strings like any other (e.g. `recall-llm:2:6`, `.claude/plans/p.md`, and
+  `check-surface-recall:2` `.claude/hooks/does-not-exist.sh` at `:519`), an over-report, not a miss.
 - **L6 — a package file named in descriptive prose (round 1 M2).** `scripts/check-dashboard-entry.py`
   (`.agents/skills/dashboard/SKILL.md:21`) and `.claude/hooks/regen-dashboard.sh` (`:88`) are shipped, named bare,
   and were reported absent by tier B's `dashboard` session. They sit in neither an invocation, a read/follow line, an

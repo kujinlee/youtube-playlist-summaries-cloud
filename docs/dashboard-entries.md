@@ -21246,7 +21246,7 @@ relative path that did not resolve. The scan scored both clean; it now reports e
 After the first review round it also reports the missing home-directory folder that one script refuses to run
 without, and the store file a skill tells the reader to append to, and it no longer flags harmless uses such as a
 comparison or a print. After the second round it also catches a script that passes its own install folder on
-through a formatted string or a relative-path call, which the first round's fix had hidden. The failures it still cannot see from the files (the Ask tray that only an earlier page can
+through a formatted string or a relative-path call, which the first round's fix had hidden. After the third round showed each fix opening a new hole in the same rule, an architecture review replaced the rule: every use of the install folder is now reported unless it is one of a short list of harmless uses, so a form nobody thought of shows up as a finding instead of staying hidden. The failures it still cannot see from the files (the Ask tray that only an earlier page can
 supply, a host convention cited in passing, package files named only in description, and whether a model follows
 the delivery steps) are written down as named limits in both experiment records. Plan Task 16; nothing waits on you.
 <!--tech-->
@@ -21269,4 +21269,4 @@ copy); rescan measured at `3db9d353`. Round 2 fold (`2f4b59ce`, both Codex MAJOR
 `_from_file`, so `_inert` judges only the terminal use and an unlisted one is reported; `nonlocal` resolves to the
 nearest enclosing function binding the name (`_Scopes._nonlocal`). Self-test 116 → 121, mutations 226 → 237 (4
 replaced, 11 new, each red on its named case on a scratch copy; the 59 existing detector-2 mutations re-run red);
-rescan at `2f4b59ce`, 365 findings, none gained or lost.
+rescan at `2f4b59ce`, 365 findings, none gained or lost. Phase 6 build (r2-r3 THRASHING, `docs/reviews/architecture-review-2026-11-21-publishability-install-root.md` §4, route `split`): `_from_file`, `_fstring_path`, `_inert`, `_rebinds` and detector 2's use of `_Scopes` are deleted; one mention walk with one decoder `_step` (default USE), one call table `ROLES` keyed `(callee, (position, keyword))`, and a file-wide census (`_census`): a name reused anywhere is reported at its binding as `.`. Every r1-r3 input is a `P6 corpus:` case (22 red at `b79d4bad`). Self-test 121 → 174, mutations 237 → 228 (45 removed: 29 anchors deleted, 16 `_Scopes`/`_literal` survivors now reachable only from detector 6, backlog #691; 36 new, each red on its named case on a scratch copy). Rescan +2 findings (`check-plan-code:6355` `.`, `check-surface-recall:519` a fixture path), the rest line moves.
