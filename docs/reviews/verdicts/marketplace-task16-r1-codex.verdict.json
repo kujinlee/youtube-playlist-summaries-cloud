@@ -1,0 +1,23 @@
+{
+  "attempts": [
+    "  gpt-6.2-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.2-astra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.1-terra: ok \u2014 1825 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "07664d06afc825aef36df9e8a7dceb9522a8ded4",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/t16r1/run.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "loosening_answers": {},
+  "model": "gpt-6.1-terra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/t16r1/prompt.md",
+  "reason": "1825 chars",
+  "refused": false,
+  "review": "marketplace-task16-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/marketplace-task16"
+}
