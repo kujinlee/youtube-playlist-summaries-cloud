@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/agenda-row-state-r5-claude.md": "100644 673e5e027ae12136880249958f64fce2c4bdecc8"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "4d816cce9dee10fc625d90071106605dba469748",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "r5 Claude half: refute the r4 fold (147aa6e3) rebinding goal-tree mutation entries 139/472/490",
+  "reason": "claude half filed: 4509 chars, names 4d816cce9dee",
+  "refused": false,
+  "review": "agenda-row-state-r5-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agenda-row-state",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
