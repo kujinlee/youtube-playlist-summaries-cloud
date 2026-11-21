@@ -28,6 +28,11 @@ findings:
   - {id: S9, severity: Medium, aim: deliverable, fix_induced: false, component: exemptions, disposition: fixed}
   - {id: C1, severity: High, aim: deliverable, fix_induced: false, component: scan, disposition: fixed}
   - {id: C2, severity: Medium, aim: deliverable, fix_induced: false, component: targets, disposition: fixed}
+  - {id: S10, severity: High, aim: deliverable, fix_induced: true, component: scan, disposition: fixed}
+  - {id: S11, severity: High, aim: deliverable, fix_induced: true, component: scan, disposition: fixed}
+  - {id: S12, severity: High, aim: deliverable, fix_induced: false, component: find, disposition: fixed}
+  - {id: S13, severity: Medium, aim: deliverable, fix_induced: true, component: variables, disposition: fixed}
+  - {id: S14, severity: Medium, aim: deliverable, fix_induced: true, component: exemptions, disposition: fixed}
   - {id: C3, severity: Medium, aim: deliverable, fix_induced: false, component: targets, disposition: fixed}
   - {id: C4, severity: High, aim: deliverable, fix_induced: false, component: command-position, disposition: fixed}
   - {id: C5, severity: High, aim: deliverable, fix_induced: false, component: find, disposition: fixed}
@@ -61,16 +66,21 @@ the branch.
 | C3 | `rm 'a[1].txt'`: the lexer drops the quotes, so it was globbed as `a1.txt` and nothing was copied | each target is read both as a pattern and as the literal name |
 | C4 | `/usr/bin/xargs rm`, `/usr/bin/find . -delete`: a path to the tool was not the tool | the basename is compared |
 | C5 | `find . -exec sudo rm {} \;`: only an `rm` right after `-exec` counted | any `rm` word in a find with `-exec`/`-execdir`/`-ok`/`-okdir` refuses |
+| S10 | (C1 fold) `(( a[1] ))`: the depth count also counted `[` but never `]`, so the span ran to the end and a later `<<`/`#` went unread | each form counts only its own bracket; any substitution inside the span is read for an `rm`, unclosed spans too |
+| S11 | (R1-2 fold) `cat <<EOF` / `$(` / `rm v` / `)`: the body was read line by line, so a substitution spanning lines was missed | the whole body is read when its delimiter comes, and at end of input when it never does |
+| S12 | `find -H scratch/link -delete`, `find scratch/link/ -delete`: the start was judged without following it, though `-H` and a trailing `/` follow | the start must be exempt both as the entry and at its `realpath` |
+| S13 | (S3 fold) `( T=$(mktemp -d) ); rm -r $T`: a `mktemp` assignment skipped the subshell bookkeeping, so FRESH outlived the subshell | the subshell and pipeline checks run before the `mktemp` rule |
+| S14 | (R1-3 fold) `cd $T/sub; rm x`: `cd` into a path below the fresh dir counted as `cd $T` | only `cd $T` itself (`$T`, `${T}`, `$T/`) keeps the exemption; a relative `find` start below the fresh dir under `-H` or through a `/` refuses |
 | S9 | `rm lnk/../inner/c`: `normpath` collapsed `lnk/..` lexically, so the copy looked at `./inner/c` while the kernel deleted `dir/inner/c` | no lexical normalisation anywhere: each target's parent is `realpath`-resolved (follows the link, then `..`) and the last name kept |
 
-**Measured after the fold:** self-test 83/83; scoped mutation sweep 26/26 killed, each by the case it names (two
+**Measured after the fold (S10–S14 included):** self-test 88/88; scoped mutation sweep 34/34 killed, each by the case it names (two
 survivors on the way were a missing refusal case and a redundant pair of prune guards — the prune mutation now removes
-both); replay over 17,974 past Bash calls: 271 `rm`s seen, 20 refused (baseline 19), 4 NOT CHECKED. A C1 case first used
+both); replay over 18,013 past Bash calls: 268 `rm`s seen, 23 refused (baseline 19), 4 NOT CHECKED. The 3 refusals S14 added are one pattern, `cd $T && find scripts/mutations … -delete` after an `rsync -a` filled `$T` — a start that could be a copied link, so the refusal is right by the rule. An S10 case first used `(( a[1] ))` then `rm`, which the mutation also passed (an over-run copies text, it never hides it); the case now puts a quoted heredoc after it, whose body must still be stripped. A C1 case first used
 literal operands (`1<<2`) and its mutation survived (a digit cannot start a heredoc delimiter); it now uses `x<<y`. A first
 C2 draft expanded braces; the existing brace-list refusal was kept and widened instead (less code, same safety). A first draft
 refused 33 — every extra one a false positive of the word-search substitution rule (S6), gone once bodies are parsed.
 
-**Not thrashing:** S4–S8 were caused by the fold's own draft, inside one round, and caught before the push.
+**Not thrashing:** S4–S8 were caused by the fold's own draft, and S10, S11, S13 and S14 by incomplete earlier fixes in this same round, all caught by push-time security reviews before the fold was pushed. Arming needs two consecutive ROUNDS whose findings came from the previous round's fix; this is one round. Round 2 (the Claude half) will show whether the scan component keeps producing them.
 
 **Bounds kept, stated in the docstring:** an `rm` the shell builds at run time inside a quoted string, `eval`, `bash -c`,
 a script file or another language; a command NAME from an unknown variable; `unlink`/`rmdir`.

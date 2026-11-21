@@ -53,7 +53,7 @@ earlier commands ran (a `source` is not followed).
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED (allowed,
 said on stderr). `--self-test` 0 = every case passed, 1 = a case failed.
 
-    python3 scripts/check-rm-backup.py --self-test  # 83 cases
+    python3 scripts/check-rm-backup.py --self-test  # 88 cases
 """
 from __future__ import annotations
 
@@ -96,6 +96,9 @@ VAR = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
 
 
 FRESH = "\0fresh"
+BARE_VAR = re.compile(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/?")      # `$T`, `${T}`, `$T/`: the variable itself, no path below it
+HEREDOC_RM = ("an unquoted heredoc body runs a command substitution with an `rm` the hook does not read; quote the "
+              "delimiter (`<<'EOF'`)")
 FIND = "\0find"     # marks a `find … -delete` / `-exec rm` call: its start paths follow   # the value of a variable assigned `$(mktemp …)` in the SAME command
 
 
@@ -262,12 +265,15 @@ def strip_heredocs(command: str) -> str:
             out.append("$(" + command[i + 1:j] + ")")    # read it as the `$(…)` it is
             i = j + 1
         elif command.startswith("((", i) or command.startswith("$[", i):
-            close, depth, j = ("]", 0, i + 1) if c == "$" else (")", 0, i)
+            opener, close = ("[", "]") if c == "$" else ("(", ")")
+            depth, j = 0, i + (c == "$")
             while j < n:     # arithmetic: its `<<` is a shift, never a heredoc (r1 Claude probe); copied whole
-                depth += command[j] in "([" and 1 or (command[j] == close and -1) or 0
+                depth += (command[j] == opener) - (command[j] == close)    # its own bracket only: `a[1]` (push-time review)
                 j += 1
                 if depth == 0:
                     break
+            if any(runs_rm(b) for b in substitutions(command[i:j])):    # unclosed: the rest, all of it read here
+                raise Refuse("an arithmetic expression runs a command substitution with an `rm`")
             out.append(command[i:j])
             i = j
         elif c == "#" and (i == 0 or (command[i - 1] in WORD_START and i - 1 != escaped)):
@@ -281,6 +287,7 @@ def strip_heredocs(command: str) -> str:
         elif c == "\n" and pending:
             out.append(c)
             i += 1
+            body: list[str] = []
             while pending and i < n:
                 nl = command.find("\n", i)
                 line = command[i:] if nl < 0 else command[i:nl]
@@ -288,9 +295,14 @@ def strip_heredocs(command: str) -> str:
                 strip, word, literal = pending[0]
                 if (line.lstrip("\t") if strip else line) == word:
                     pending.pop(0)
-                elif not literal and any(runs_rm(b) for b in substitutions(line)):
-                    raise Refuse("an unquoted heredoc body runs a command substitution with an `rm` the hook does "
-                                 "not read; quote the delimiter (`<<'EOF'`)")
+                    text = "\n".join(body)     # one `$(` may span lines (push-time review): read the WHOLE body
+                    if not literal and any(runs_rm(b) for b in substitutions(text)):
+                        raise Refuse(HEREDOC_RM)
+                    body = []
+                else:
+                    body.append(line)
+            if pending and not pending[0][2] and any(runs_rm(b) for b in substitutions("\n".join(body))):
+                raise Refuse(HEREDOC_RM)     # a body whose delimiter never comes
             if not pending and i <= n and i > 0 and command[i - 1] == "\n":
                 i -= 1      # the newline that ends the delimiter line separates commands: keep it
         else:
@@ -402,13 +414,13 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
                     break
         if not args:
             for var, val in assigns:     # a bare assignment sets a shell variable
-                if val == "$" and sep_after == "(" and j + 1 < n and toks[j + 1] == "mktemp":
-                    env[var] = FRESH     # `T=$(mktemp …)`: a path this command creates, holding nothing older
-                    continue
                 if depth > 0:
-                    assigned_at[var] = depth     # forgotten when its subshell closes (push-time review S3)
+                    assigned_at[var] = depth     # forgotten when its subshell closes (S3), a `mktemp` one too
                 if prev_sep in ("|", "|&", "&") or sep_after in ("|", "|&", "&"):
                     env[var] = None              # a pipeline or background part runs in a subshell of its own
+                    continue
+                if val == "$" and sep_after == "(" and j + 1 < n and toks[j + 1] == "mktemp":
+                    env[var] = FRESH     # `T=$(mktemp …)`: a path this command creates, holding nothing older
                     continue
                 try:
                     env[var] = expand(val, env) if val else ""
@@ -436,10 +448,11 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
                 {"-exec", "-execdir", "-ok", "-okdir"} & set(args)       # `-exec sudo rm {}` is an `-exec rm`
                 and any(os.path.basename(w.lstrip("\\")) == "rm" for w in args[1:]))):
             starts = []
-            lead = 1
+            lead, follow = 1, False
             while lead < len(args) and re.fullmatch(r"-[HLPEXdsxf]+", args[lead]):
                 if set(args[lead]) & {"L", "f"}:
                     raise Refuse("`find -L` / `-f` reaches targets the hook cannot see")
+                follow = follow or "H" in args[lead]
                 lead += 1
             if "-follow" in args:
                 raise Refuse("`find -follow` reaches targets the hook cannot see")
@@ -447,7 +460,13 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
                 if w.startswith("-") or w in ("(", "!"):
                     break
                 starts.append(w)
-            calls.append(([FIND] + [expand(t, env) for t in (starts or ["."])], here))
+            found = [expand(t, env) for t in (starts or ["."])]
+            for raw, t in zip(starts or ["."], found):
+                if ((t == FRESH and follow and not BARE_VAR.fullmatch(raw))
+                        or (here == FRESH and t != FRESH and not os.path.isabs(t) and (follow or "/" in t))):
+                    raise Refuse("a `find` start below a directory `mktemp` made, under `-H` or through a `/`, "
+                                 "follows entries the hook cannot see")
+            calls.append(([FIND] + found, here))
         elif name == "cd":
             simple = depth == 0 and prev_sep in (None, ";", "&&", "\n") and sep_after in (None, ";", "&&", "\n")
             if not simple or len(args) != 2 or args[1] == "-":
@@ -456,7 +475,7 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
                 try:
                     dest = expand(args[1], env)
                     if dest == FRESH:
-                        here = FRESH
+                        here = FRESH if BARE_VAR.fullmatch(args[1]) else None    # `$T/sub` may be a link (push-time review)
                         continue_ = True
                     else:
                         continue_ = False
@@ -537,8 +556,8 @@ def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
                 if t == FRESH or (here == FRESH and not os.path.isabs(t) and ".." not in t.split("/")):
                     continue
                 base = t if os.path.isabs(t) else (os.path.join(here, t) if here not in (None, FRESH) else None)
-                if base is None or not (_inside(base, root) or (
-                        session and f"/{session}/scratchpad/" in _entry(base) + "/")):
+                if base is None or not all(_inside(p, root) or (session and f"/{session}/scratchpad/" in _entry(p) + "/")
+                                           for p in (base, os.path.realpath(base))):    # -H, `link/`: where it LEADS
                     raise Refuse("`find -delete` / `-exec rm` outside the session scratchpad deletes targets the "
                                  "hook cannot see")
             continue
@@ -826,6 +845,22 @@ def _self_test_body() -> int:
              [targets("x=1; y=2; echo $((x<<y))\nrm a.tmp"), targets("(( z = x << y ))\nrm a.tmp"),
               targets("echo $[x<<y]\nrm a.tmp")], [["repo/sub/a.tmp"]] * 3)
         Path(work, "a[1].txt").write_text("L")
+        case("arithmetic counts only its own bracket and reads its substitutions, unclosed too (push-time review)",
+             [targets("(( a[1] )); cat <<'X'\nrm a.tmp\nX"), targets('(( x; echo "$(rm a.tmp)"'), targets("echo $(( $(rm a.tmp) ))")],
+             [[], "refused", "refused"])
+        case("an unquoted heredoc body is read whole: a `$(` spanning lines, a body with no delimiter (push-time review)",
+             [targets("cat <<EOF\n$(\nrm a.tmp\n)\nEOF"), targets("cat <<EOF\n$(rm a.tmp)")], ["refused", "refused"])
+        case("a `mktemp` variable set in a subshell is forgotten when it closes (push-time review)",
+             targets("( T=$(mktemp -d) ); rm -r $T"), "refused")
+        case("`cd $T/sub` is not `cd $T`: a relative `rm` after it is refused (push-time review)",
+             [targets("T=$(mktemp -d); cd $T/sub; rm x"), targets("T=$(mktemp -d); cd $T; rm x")], ["refused", []])
+        os.symlink(os.path.join(work, "dir"), os.path.join(scratch, "out"))
+        case("a `find` start that follows a link is judged where it LEADS (push-time review)",
+             [targets(f"find -H {scratch}/out -delete"), targets(f"find {scratch}/out/ -delete"),
+              targets("T=$(mktemp -d); cd $T; find -H sub -delete"), targets("T=$(mktemp -d); cd $T; find sub/x -delete"),
+              targets("T=$(mktemp -d); find -H $T/sub -delete"), targets("T=$(mktemp -d); cd $T; find sub -delete")],
+             ["refused"] * 5 + [[]])
+        os.remove(os.path.join(scratch, "out"))
         case("a quoted `a[1].txt` is backed up as the name it is, not only as a pattern (r1 Claude probe)",
              targets("rm 'a[1].txt'"), ["repo/sub/a[1].txt"])
         os.remove(os.path.join(work, "a[1].txt"))

@@ -134,8 +134,8 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "elif not literal and any(runs_rm(b) for b in substitutions(line)):",
-        "elif False:"
+        "if not literal and any(runs_rm(b) for b in substitutions(text)):",
+        "if False:"
       ]
     ],
     "expect": [
@@ -339,6 +339,110 @@
     ],
     "expect": [
       "`/usr/bin/xargs rm`, `/usr/bin/find -delete` and `-exec sudo rm` are refused (r1 Claude probe)"
+    ]
+  },
+  {
+    "name": "arithmetic counts every bracket",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(command[j] == opener) - (command[j] == close)",
+        "(command[j] in \"([\") - (command[j] == close)"
+      ]
+    ],
+    "expect": [
+      "arithmetic counts only its own bracket and reads its substitutions, unclosed too (push-time review)"
+    ]
+  },
+  {
+    "name": "a substitution inside arithmetic is not read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if any(runs_rm(b) for b in substitutions(command[i:j])):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "arithmetic counts only its own bracket and reads its substitutions, unclosed too (push-time review)"
+    ]
+  },
+  {
+    "name": "a heredoc body is read line by line",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "text = \"\\n\".join(body)     #",
+        "text = body[-1] if body else \"\"     #"
+      ]
+    ],
+    "expect": [
+      "an unquoted heredoc body is read whole: a `$(` spanning lines, a body with no delimiter (push-time review)"
+    ]
+  },
+  {
+    "name": "a heredoc body with no delimiter is not read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if pending and not pending[0][2] and any(",
+        "if False and any("
+      ]
+    ],
+    "expect": [
+      "an unquoted heredoc body is read whole: a `$(` spanning lines, a body with no delimiter (push-time review)"
+    ]
+  },
+  {
+    "name": "a `mktemp` variable outlives its subshell",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                if depth > 0:\n                    assigned_at[var] = depth     # forgotten when its subshell closes (S3), a `mktemp` one too\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a `mktemp` variable set in a subshell is forgotten when it closes (push-time review)"
+    ]
+  },
+  {
+    "name": "`cd $T/sub` counts as `cd $T`",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "here = FRESH if BARE_VAR.fullmatch(args[1]) else None",
+        "here = FRESH"
+      ]
+    ],
+    "expect": [
+      "`cd $T/sub` is not `cd $T`: a relative `rm` after it is refused (push-time review)"
+    ]
+  },
+  {
+    "name": "a `find` start is judged without following it",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "for p in (base, os.path.realpath(base))):",
+        "for p in (base,)):"
+      ]
+    ],
+    "expect": [
+      "a `find` start that follows a link is judged where it LEADS (push-time review)"
+    ]
+  },
+  {
+    "name": "a `find` start below a mktemp dir is not refused",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                if ((t == FRESH and follow and not BARE_VAR.fullmatch(raw))",
+        "                if False and ((t == FRESH and follow and not BARE_VAR.fullmatch(raw))"
+      ]
+    ],
+    "expect": [
+      "a `find` start that follows a link is judged where it LEADS (push-time review)"
     ]
   }
 ]
