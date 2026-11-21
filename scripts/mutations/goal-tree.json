@@ -108,7 +108,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if any(_subject_names_row(subj, n) for n in live_rows)), None)",
+        "if any(_subject_merges_row(subj, n, src.get(\"closed_rows\")) for n in live_rows)), None)",
         "if any(re.search(rf\"backlog #{n}\", subj) for n in live_rows)), None)"
       ]
     ],
@@ -1221,8 +1221,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "(subj, n) for n in live_rows)), None)",
-        "(subj, n) for n in rows)), None)"
+        "src.get(\"closed_rows\")) for n in live_rows)), None)",
+        "src.get(\"closed_rows\")) for n in rows)), None)"
       ]
     ],
     "expect": [
@@ -5224,7 +5224,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if _subject_names_row(subject, n)), None)",
+        "if _subject_merges_row(subject, n, closed)), None)",
         "if False), None)"
       ]
     ],
@@ -6192,7 +6192,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if hit and row_open:\n",
+        "        if named and row_open:\n",
         "        if False:\n"
       ]
     ],
@@ -6666,6 +6666,123 @@
     ],
     "expect": [
       "⭐ backlog #689 r1 X2: the timeline tells ⬜ → ✅-by-cell as MOVED and an added ✅-by-cell leaf as ADDED, never landed; a real merge (list tail) is still told as landed"
+    ]
+  },
+  {
+    "name": "backlog #689 r2 X3: a list tail counts as a row's merge whatever its Status cell",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return closed_rows is not None and n in closed_rows and _subject_names_row(subject, n)",
+        "return _subject_names_row(subject, n)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r2 X3: a list-tail subject is a leaf's merge only when its row is ✅ in its Status cell — the backlog #406 shape (row open) reads as before, the same subject with the row ✅ is merged with that PR's time, the exact form with the row open is merged as before, and unread cells never let a list tail count"
+    ]
+  },
+  {
+    "name": "backlog #689 r2 X3: unread Status cells let a list tail count",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return closed_rows is not None and n in closed_rows and _subject_names_row(subject, n)",
+        "return (closed_rows is None or n in closed_rows) and _subject_names_row(subject, n)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r2 X3: a list-tail subject is a leaf's merge only when its row is ✅ in its Status cell — the backlog #406 shape (row open) reads as before, the same subject with the row ✅ is merged with that PR's time, the exact form with the row open is merged as before, and unread cells never let a list tail count"
+    ]
+  },
+  {
+    "name": "backlog #689 r2 X3: the exact `(backlog #N)` form no longer counts on its own",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if re.search(rf\"\\(backlog #{n}\\)\", subject or \"\"):\n        return True\n",
+        "    if False:\n        return True\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r2 X3: a list-tail subject is a leaf's merge only when its row is ✅ in its Status cell — the backlog #406 shape (row open) reads as before, the same subject with the row ✅ is merged with that PR's time, the exact form with the row open is merged as before, and unread cells never let a list tail count"
+    ]
+  },
+  {
+    "name": "backlog #689 r2 X3: the leaf's merge lookup reads any naming subject, not a merge",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if any(_subject_merges_row(subj, n, src.get(\"closed_rows\")) for n in live_rows)), None)",
+        "if any(_subject_names_row(subj, n) for n in live_rows)), None)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r2 X3: a list-tail subject is a leaf's merge only when its row is ✅ in its Status cell — the backlog #406 shape (row open) reads as before, the same subject with the row ✅ is merged with that PR's time, the exact form with the row open is merged as before, and unread cells never let a list tail count"
+    ]
+  },
+  {
+    "name": "backlog #689 r2 X3: a prerequisite's merge lookup ignores its Status cell",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if _subject_merges_row(subject, n, closed)), None)",
+        "if _subject_merges_row(subject, n, None)), None)"
+      ]
+    ],
+    "expect": [
+      "backlog #689 r2 X3: a ✅ prerequisite row named only in a list tail is done WITH that merge's time; an agenda step whose row is open still says, as CONTEXT, the PR whose list tail named it"
+    ]
+  },
+  {
+    "name": "backlog #689 r2 X3: an open row's context says a PR only when one MERGED it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if named and row_open:\n",
+        "        if hit and row_open:\n"
+      ]
+    ],
+    "expect": [
+      "backlog #689 r2 X3: a ✅ prerequisite row named only in a list tail is done WITH that merge's time; an agenda step whose row is open still says, as CONTEXT, the PR whose list tail named it"
+    ]
+  },
+  {
+    "name": "backlog #689 r2 X4: the older fold ages a ✅-by-cell leaf",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "aged = [t for t in older if not t.get(\"by_cell\")]",
+        "aged = older"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r2 X4: a fold of ✅-by-cell leaves only says the Status cell with no merge age; a fold of real merges keeps its wording; a MIXED fold claims the age for the merges only"
+    ]
+  },
+  {
+    "name": "backlog #689 r2 X4: a mixed older fold drops its ✅-by-cell count from the summary",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "+ (f\" ({len(aged)}); {cell_said}\" if cells else \"\")",
+        "+ \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r2 X4: a fold of ✅-by-cell leaves only says the Status cell with no merge age; a fold of real merges keeps its wording; a MIXED fold claims the age for the merges only"
+    ]
+  },
+  {
+    "name": "backlog #689 r2 X4: an older fold of only ✅-by-cell leaves names them merged in its text line",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                else \"✅ by its Status cell\")",
+        "                else \"merged\")"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r2 X4: a fold of ✅-by-cell leaves only says the Status cell with no merge age; a fold of real merges keeps its wording; a MIXED fold claims the age for the merges only"
     ]
   }
 ]

@@ -21229,8 +21229,10 @@ for. Before this, Goal 2 showed five queued rows when only one was left. Your Fa
 Fable keeps the architecture reviews and specs/plans, and Opus does folds and builds.
 <!--tech-->
 backlog #689 (filed and fixed here): `derive_thread` in `scripts/goal-tree.py` — a merge subject's list tail
-`(backlog #515, #611, #612)` now names each row (`_subject_names_row`), so those rows find their real merge; a
-tree leaf no PR names reads ✅ by its Status cell (`by_cell`, bucketed older, told as "ticked" not landed in the
-timeline) when every live row is in `closed_rows` and no live ledger entry names it; 7 self-test cases, 8
-mutations (pin 502 -> 510). backlog #630 ✅: owner card A (11-21 09:50), recorded on row 23 of
+`(backlog #515, #611, #612)` now names each row (`_subject_names_row`), and counts as that row's merge only when
+the row is ✅ in its Status cell (`_subject_merges_row`; the exact `(backlog #N)` form keeps its meaning), so those
+rows find their real merge and a PR that only touched an open row does not close it; a tree leaf no PR names reads
+✅ by its Status cell (`by_cell`, bucketed older with no merge age in its fold, told as "ticked" not landed in the
+timeline) when every live row is in `closed_rows` and no live ledger entry names it; 10 self-test cases, 17
+mutations (pin 502 -> 519). backlog #630 ✅: owner card A (11-21 09:50), recorded on row 23 of
 `docs/optimization-register.md`. `docs/goal-threads.md`: lines for backlog #689 and backlog #685.
