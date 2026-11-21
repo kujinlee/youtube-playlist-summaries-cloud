@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/agenda-row-state-r3-claude.md": "100644 3bccd016366491fb9b3a91efb2ff9cd652bc9c36"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "b1e98095f91188816ddf01ffdd1e729e75042e09",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 9313 chars, names b1e98095f911",
+  "refused": false,
+  "review": "agenda-row-state-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agenda-row-state",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

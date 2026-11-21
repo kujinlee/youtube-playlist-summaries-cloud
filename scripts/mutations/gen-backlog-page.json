@@ -938,5 +938,60 @@
       ]
     ],
     "expect": "unlaid_rows: a list does NOT excuse a wall of prose in front of it (row-cues r2 Codex M1)"
+  },
+  {
+    "name": "r1 C2: any ✅ in the Status cell closes the row",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return first == \"✅\" or sev == \"done\"",
+        "    return True"
+      ]
+    ],
+    "expect": "⭐ r1 C2: a ✅ AFTER an open marker in the Status cell is a finished half — open, unless the Item cell is ✅"
+  },
+  {
+    "name": "r1 C2: an Item cell led by ✅ does not keep a row closed",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "first == \"✅\" or sev == \"done\"",
+        "first == \"✅\" or False"
+      ]
+    ],
+    "expect": "⭐ r1 C2: a ✅ AFTER an open marker in the Status cell is a finished half — open, unless the Item cell is ✅"
+  },
+  {
+    "name": "r1 C2: ⏳ is not an open marker",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "OPEN_MARKS = \"🔴🟠🟡🟢⏳\"",
+        "OPEN_MARKS = \"🔴🟠🟡🟢\""
+      ]
+    ],
+    "expect": "⭐ r1 C2: a ✅ AFTER an open marker in the Status cell is a finished half — open, unless the Item cell is ✅"
+  },
+  {
+    "name": "r1 C2: the parser does not use the narrowed closed rule",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "closed=status_closed(status, sev)",
+        "closed=(\"✅\" in status)"
+      ]
+    ],
+    "expect": "r1 C2: the parser reads a PARTLY-DONE row (no Item marker, a finished half's ✅) as OPEN"
+  },
+  {
+    "name": "r3 Phase 6: the LAST status mark is read as the row's state",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "(c for c in status if c == \"✅\" or c in OPEN_MARKS)",
+        "(c for c in reversed(status) if c == \"✅\" or c in OPEN_MARKS)"
+      ]
+    ],
+    "expect": "⭐ r3 Phase 6: only the FIRST status mark is state — a later ✅ with a capitalised FIXED/CLOSED/DONE/MERGED is history and the row reads OPEN (a reopened row, a finished half, an owed tick, an oldest-first closure)"
   }
 ]

@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 247 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 250 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -52,7 +52,12 @@ A NOTE ON THE OPEN/CLOSED RULE
 ------------------------------
 Not reimplemented here. `CELL_SPLIT` is imported from `scripts/check-docs.py` and the same test is
 applied — Status cell, closed iff it contains a check mark — so this page and the marker ratchet
-cannot disagree about what is open. The two tables in the file have DIFFERENT column counts, so each
+cannot disagree about what is open. ⟳ 2026-11-20 (agenda-row-state r1 C2): ONE narrowing, `status_closed` —
+a ✅ that FOLLOWS an open marker (🔴🟠🟡🟢⏳) in the Status cell, under an Item cell not led by ✅, is a
+finished HALF and the row is open. The marker ratchet would refuse such a row anyway when its Item cell leads
+with a severity marker; the narrowing closes the case it cannot see (no Item marker at all). r3 (Phase 6, backlog-closed-rule): the
+r2 clause that let a later `✅ FIXED` close the row was REVERTED — the cell is written newest-first, so only its
+first mark is state. The two tables in the file have DIFFERENT column counts, so each
 row is read against its own header rather than a fixed width; a positional read that assumed one
 shape is exactly how #46 and #50 were once closed while both were open.
 """
@@ -1456,6 +1461,28 @@ def unread_note(unread: Sequence[str]) -> list[str]:
             "no ⭐, no #, no leading space"]
 
 
+OPEN_MARKS = "🔴🟠🟡🟢⏳"     # a Status cell's open markers: severity and pending (agenda-row-state r1 C2)
+
+
+def status_closed(status: str, sev: str) -> bool:
+    """PURE (agenda-row-state r1 C2). A row is closed when its Status cell carries ✅ — EXCEPT a cell that names an
+    open marker (🔴🟠🟡🟢⏳) BEFORE its first ✅, under an Item cell that does not lead with ✅ either: that is a
+    PARTLY-DONE cell whose ✅ ticks a finished half (`🟡 PARTLY DONE — items (1)-(4) ✅ …`), and it is open. A
+    cell that opens `🟠 OPEN …` and later says `✅ **FIXED …**` under a `✅ (was 🟠)` Item cell stays closed: the
+    Item cell says done (eight live rows on 2026-11-20 have that shape; none changes its reading under this rule).
+    WHY THE FIRST MARK: the backlog writes a row's NEWEST state at the FRONT of its Status cell and keeps the history
+    after it (`✅ **DONE …** … PREVIOUSLY: 🟠 STILL OPEN …`), so a ✅ later in the cell is history, not state, and no
+    clause here reads one (Phase 6, docs/reviews/architecture-review-2026-11-20-backlog-closed-rule.md: the r2 clause
+    that did — a ✅ before a capitalised FIXED/CLOSED/… anywhere — was reverted after it closed reopened rows).
+    ⚠ BOUND: a cell written oldest-first under an Item cell with no marker (`🟢 FILED …; ✅ FIXED …`) reads OPEN.
+    Its cure is to write the closure FIRST (`✅ FIXED … — FILED …`), or to lead the Item cell with ✅; 0 of 636 live
+    rows and 0 of 352 historical versions of the file read differently under the reverted clause."""
+    if "✅" not in status:
+        return False
+    first = next((c for c in status if c == "✅" or c in OPEN_MARKS), "✅")
+    return first == "✅" or sev == "done"
+
+
 def parse(lines: Sequence[str], unread: list[str] | None = None) -> list[dict]:
     """Rows, in file order. Pass `unread` to also collect the lines this REFUSED TO READ.
 
@@ -1564,7 +1591,7 @@ def parse(lines: Sequence[str], unread: list[str] | None = None) -> list[dict]:
         rows.append(dict(
             num=int(num), sev=sev, title=title, body=rest, section=section, was=was,
             touches=col.get("touches", ""), size=col.get("size", ""), bundle=col.get("bundle", ""),
-            status=status, closed=("✅" in status), kind=kind, parents=parents,
+            status=status, closed=status_closed(status, sev), kind=kind, parents=parents,
             # ⚠ read, not inferred. The first version of this flag WAS an inference ("says MERGED
             # but has no ✅") and it fired on #46, #50 and #54 — all genuinely open, all merely
             # DESCRIBING a wrong closure. A derived flag that is wrong is worse than no flag.
@@ -2529,7 +2556,8 @@ could not be expressed by pointing at an item number.</p>
 <b>Rows parsed</b> {len(rows)} &nbsp;·&nbsp; <b>open</b> {len(open_rows)} &nbsp;·&nbsp;
 <b>closed</b> {len(closed_rows)} &nbsp;·&nbsp; open by severity: crit {by_sev['crit']},
 high {by_sev['high']}, med {by_sev['med']}, low {by_sev['low']}, unmarked {by_sev['none']}<br>
-<b>Open/closed rule</b> the Status cell contains ✅ — the same cell and the same test
+<b>Open/closed rule</b> the Status cell contains ✅, and not only after an open marker (🔴🟠🟡🟢⏳) under an
+Item cell not led by ✅ — the same cell and the same test
 <code>scripts/check-docs.py</code> uses (its <code>CELL_SPLIT</code> is imported, not copied)<br>
 <b>Regenerate</b> python3 scripts/gen-backlog-page.py &nbsp;·&nbsp; <b>Built</b> {stamp}
 </div>
@@ -3581,6 +3609,36 @@ def _self_test_body() -> int:
 
     case("closed iff the Status cell has a check mark",
          lambda: by[2]["closed"] and by[9]["closed"] and not by[1]["closed"] and not by[3]["closed"])
+    # agenda-row-state r1 C2: a PARTLY-DONE Status cell whose ✅ ticks a finished half is OPEN — unless the Item
+    # cell says done (the live shape `✅ (was 🟠)` + `🟠 OPEN … ✅ FIXED …`, eight rows on 2026-11-20)
+    case("⭐ r1 C2: a ✅ AFTER an open marker in the Status cell is a finished half — open, unless the Item cell is ✅",
+         lambda: [status_closed("🟡 **PARTLY DONE** — items (1)-(4) ✅ merged in PR #509; item (5) open", "none"),
+                  status_closed("🟡 **PARTLY DONE** — items (1)-(4) ✅ merged in PR #509; item (5) open", "med"),
+                  status_closed("⏳ BUILT, PR pending — half (1) ✅", "none"),
+                  status_closed("🟠 **OPEN** — … ✅ **FIXED 2026-10-26**", "done"),
+                  status_closed("  **✅ MERGED** PR #1", "none"),
+                  status_closed("✅ (was ⏳) merged PR #606 — 🟡 a follow-up filed", "none"),
+                  status_closed("*(renumbered)* ✅ ADOPTED", "none"),
+                  status_closed("🟡 open, nothing done", "done"),
+                  status_closed("🟡 open", "none")]
+         == [False, False, False, True, True, True, True, False, False])
+    # r3 (Phase 6): the Status cell is newest-first, so a ✅ AFTER an open marker is HISTORY — these read OPEN under a
+    # marker-less Item cell (r3 F1's inputs, and r2 Codex m1's oldest-first row, whose cure is to write the closure first)
+    case("⭐ r3 Phase 6: only the FIRST status mark is state — a later ✅ with a capitalised FIXED/CLOSED/DONE/MERGED is "
+         "history and the row reads OPEN (a reopened row, a finished half, an owed tick, an oldest-first closure)",
+         lambda: [status_closed(s, "none") for s in (
+                      "🟠 **REOPENED 2026-11-07** — its trigger fired again; previously ✅ CLOSED 2026-10-24",
+                      "🟡 **PARTLY DONE** — (1) ✅ DONE in PR #9; (2) open",
+                      "⏳ … ✅ FIXED in part",
+                      "⏳ pending — the ✅ MERGED tick is owed when PR #9 merges",
+                      "🟡 open — ✅ **(was 🟠)** FIXED half (1)",
+                      "🟢 FILED 2026-01-01; ✅ FIXED 2026-02-01")]
+                 + [status_closed("✅ FIXED 2026-02-01 — 🟢 FILED 2026-01-01", "none")]
+         == [False] * 6 + [True])
+    case("r1 C2: the parser reads a PARTLY-DONE row (no Item marker, a finished half's ✅) as OPEN",
+         lambda: [r["closed"] for r in parse(["## Items", "", "| # | Item | Status |", "|---|---|---|",
+                                               "| 900 | **Partly done** — x | 🟡 **PARTLY DONE** — (1) ✅ PR #509; (2) open |",
+                                               "| 901 | **Done** — x | ✅ merged PR #510 |"], [])] == [False, True])
     case("severity comes from the leading marker", lambda: by[1]["sev"] == "high")
     case("a closed row keeps its ORIGINAL severity out of the title",
          lambda: by[2]["title"] == "Beta" and by[2]["was"] == "🟡")
