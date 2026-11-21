@@ -1,0 +1,1241 @@
+[
+  {
+    "name": "the scratchpad exemption is dropped: a scratchpad target is backed up",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if _inside(m, root) or (session and f\"/{session}/scratchpad/\" in _entry(m) + \"/\"):",
+        "if _inside(m, root):"
+      ]
+    ],
+    "expect": [
+      "a target in this session's scratchpad needs no backup"
+    ]
+  },
+  {
+    "name": "only a bare `rm` is recognised: `/bin/rm` is missed",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "elif base == \"rm\":",
+        "elif name == \"rm\":"
+      ]
+    ],
+    "expect": [
+      "`sudo rm`, `command rm`, `\\rm` and `/bin/rm` are seen"
+    ]
+  },
+  {
+    "name": "heredoc bodies are read as commands",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "pending.append((strip, word, literal))",
+        "pass"
+      ]
+    ],
+    "expect": [
+      "a heredoc body is data, not commands"
+    ]
+  },
+  {
+    "name": "a failed copy no longer refuses the rm",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "raise Refuse(f\"the backup of `{p}` failed ({exc})\")",
+        "continue"
+      ]
+    ],
+    "expect": [
+      "a copy that fails refuses the `rm`"
+    ]
+  },
+  {
+    "name": "the size cap is dropped",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        if total > MAX_BYTES or count > MAX_FILES:\n            raise Refuse(f\"the targets are too large",
+        "        if False:\n            raise Refuse(f\"the targets are too large"
+      ]
+    ],
+    "expect": [
+      "targets over the cap are refused"
+    ]
+  },
+  {
+    "name": "an unknown variable expands to nothing instead of refusing",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "            raise Refuse(f\"the variable `${name}` in `{word}` has no value the hook can see\")",
+        "            return \"\""
+      ]
+    ],
+    "expect": [
+      "an unknown variable is refused"
+    ]
+  },
+  {
+    "name": "a `#` anywhere opens a comment, as shlex reads it",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "elif c == \"#\" and (i == 0 or (command[i - 1] in WORD_START and i - 1 != escaped)):",
+        "elif c == \"#\":"
+      ]
+    ],
+    "expect": [
+      "a `#` inside a word opens no comment (the 11-20 security review)"
+    ]
+  },
+  {
+    "name": "a here-string `<<<` opens a heredoc",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "and (i == 0 or command[i - 1] != \"<\")    # `<<<` is a here-string",
+        "    # `<<<` is a here-string"
+      ]
+    ],
+    "expect": [
+      "`<<<` and a quoted `<<` open no heredoc (the 11-20 security review)"
+    ]
+  },
+  {
+    "name": "an escaped blank ends a word",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "escaped = i + 1     #",
+        "escaped = -1     #"
+      ]
+    ],
+    "expect": [
+      "an escaped blank ends no word: `\\ #` opens no comment (r1 R1-1)"
+    ]
+  },
+  {
+    "name": "an unquoted heredoc's substitution is not read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if not literal and any(runs_rm(b) for b in substitutions(text)):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "an unquoted heredoc's command substitution with `rm` is refused; a quoted one is data (r1 R1-2)"
+    ]
+  },
+  {
+    "name": "a wrapper's later `rm` is not looked for",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "args, name = args[a:], w   #",
+        "pass   #"
+      ]
+    ],
+    "expect": [
+      "a wrapper's option values do not hide `rm` (r1 R1-6, push-time S1)"
+    ]
+  },
+  {
+    "name": "ANSI-C quoting is not decoded",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "decode_ansi_c(strip_heredocs(command))",
+        "strip_heredocs(command)"
+      ]
+    ],
+    "expect": [
+      "ANSI-C `$'…'` and quote tricks spell `rm` and are seen (push-time S2)"
+    ]
+  },
+  {
+    "name": "a subshell's assignment outlives it",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                env[var] = None                  # bash's outer value",
+        "                pass                  # bash's outer value"
+      ]
+    ],
+    "expect": [
+      "a variable set in a subshell or a pipeline part is not the outer one (push-time S3)"
+    ]
+  },
+  {
+    "name": "containment follows the entry's own link",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "return os.path.join(os.path.realpath(head or \".\"), tail)",
+        "return os.path.realpath(path)"
+      ]
+    ],
+    "expect": [
+      "a link OUTSIDE the backup root to a path inside it is backed up as the link (r1 R1-4)"
+    ]
+  },
+  {
+    "name": "prune follows a session link",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if os.path.islink(sess) or not os.path.isdir(sess):",
+        "if not os.path.isdir(sess):"
+      ],
+      [
+        "if os.path.islink(stamp) or os.path.dirname(os.path.dirname(os.path.realpath(stamp))) != real_root:",
+        "if os.path.islink(stamp):"
+      ]
+    ],
+    "expect": [
+      "prune never follows a session link out of the root (r1 R1-5)"
+    ]
+  },
+  {
+    "name": "a substitution in double quotes is not parsed",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "            if runs_rm(command[i + 2:j - 1] if c == \"$\" else command[i + 1:j - 1]):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "a quote inside a substitution ends no outer string; `r$X` inside one is parsed, not grepped"
+    ]
+  },
+  {
+    "name": "combined find flags are not split",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                if set(args[lead]) & {\"L\", \"f\"}:",
+        "                if args[lead] in (\"-L\", \"-f\"):"
+      ]
+    ],
+    "expect": [
+      "`function f { rm x; }` and `find -LH` are seen"
+    ]
+  },
+  {
+    "name": "the prefilter skips a command whose name a variable builds",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "and \"$\" not in command    # `r$X` builds a name",
+        "    # `r$X` builds a name"
+      ]
+    ],
+    "expect": [
+      "a quote inside a substitution ends no outer string; `r$X` inside one is parsed, not grepped"
+    ]
+  },
+  {
+    "name": "a target's `..` is collapsed lexically",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                m = _entry(m)                    # the parent RESOLVED",
+        "                m = os.path.normpath(m)                    # the parent RESOLVED"
+      ]
+    ],
+    "expect": [
+      "`lnk/../x` is found where the kernel finds it, past the link, not lexically"
+    ]
+  },
+  {
+    "name": "arithmetic is not skipped: its `<<` opens a heredoc",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        elif command.startswith(\"((\", i) or command.startswith(\"$[\", i):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "arithmetic `<<` is a shift, not a heredoc: the `rm` after it is seen (r1 Claude probe)"
+    ]
+  },
+  {
+    "name": "a brace range is not refused",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(,|\\.\\.)[^}]*\\}\")",
+        "(,)[^}]*\\}\")"
+      ]
+    ],
+    "expect": [
+      "a brace list and a brace range are refused"
+    ]
+  },
+  {
+    "name": "a pattern is read only as a pattern",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "else []) + [lit]   # the lexer",
+        "else [lit])   # the lexer"
+      ]
+    ],
+    "expect": [
+      "a wildcard target in a directory the hook cannot list is backed up as the literal name (r7)"
+    ]
+  },
+  {
+    "name": "`-exec` counts only an `rm` right after it",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                and any(os.path.basename(w.lstrip(\"\\\\\")) == \"rm\" for w in args[1:]))):",
+        "                and any(a + 1 < len(args) and args[a] in (\"-exec\", \"-execdir\", \"-ok\") and args[a + 1] == \"rm\" for a in range(len(args))))):"
+      ]
+    ],
+    "expect": [
+      "`/usr/bin/xargs rm`, `/usr/bin/find -delete` and `-exec sudo rm` are refused (r1 Claude probe)"
+    ]
+  },
+  {
+    "name": "a path to xargs is not xargs",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "elif base == \"xargs\" and any(",
+        "elif name == \"xargs\" and any("
+      ]
+    ],
+    "expect": [
+      "`/usr/bin/xargs rm`, `/usr/bin/find -delete` and `-exec sudo rm` are refused (r1 Claude probe)"
+    ]
+  },
+  {
+    "name": "arithmetic counts every bracket",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(command[j] == opener) - (command[j] == close)",
+        "(command[j] in \"([\") - (command[j] == close)"
+      ]
+    ],
+    "expect": [
+      "arithmetic counts only its own bracket and reads its substitutions, unclosed too (push-time review)"
+    ]
+  },
+  {
+    "name": "a substitution inside arithmetic is not read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if any(runs_rm(b) for b in substitutions(command[i:j])):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "arithmetic counts only its own bracket and reads its substitutions, unclosed too (push-time review)"
+    ]
+  },
+  {
+    "name": "a heredoc body is read line by line",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "text = \"\\n\".join(body)     #",
+        "text = body[-1] if body else \"\"     #"
+      ]
+    ],
+    "expect": [
+      "an unquoted heredoc body is read whole: a `$(` spanning lines, a body with no delimiter (push-time review)"
+    ]
+  },
+  {
+    "name": "a heredoc body with no delimiter is not read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if pending and not pending[0][2] and any(",
+        "if False and any("
+      ]
+    ],
+    "expect": [
+      "an unquoted heredoc body is read whole: a `$(` spanning lines, a body with no delimiter (push-time review)"
+    ]
+  },
+  {
+    "name": "a variable outlives its subshell",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        if depth > 0:\n            assigned_at[var] = depth\n        if piped or var in poisoned:",
+        "        if piped or var in poisoned:"
+      ]
+    ],
+    "expect": [
+      "a variable set in a subshell or a pipeline part is not the outer one (push-time S3)"
+    ]
+  },
+  {
+    "name": "a `find` start is judged without following it",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "for p in (base, os.path.realpath(base))):",
+        "for p in (base,)):"
+      ]
+    ],
+    "expect": [
+      "a `find` start that follows a link is judged where it LEADS (push-time review)"
+    ]
+  },
+  {
+    "name": "r2 R2-1: the heredoc delimiter stops at the first non-word character",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "while j < n and command[j] not in \" \\t\\r\\n;&|()<>\":\n        c = command[j]\n        if c == \"\\\\\" and j + 1 < n:",
+        "while j < n and (command[j].isalnum() or command[j] in \"_'\\\"\\\\\"):\n        c = command[j]\n        if c == \"\\\\\" and j + 1 < n:"
+      ]
+    ],
+    "expect": [
+      "a heredoc delimiter is the whole word after quote removal (r2 R2-1)"
+    ]
+  },
+  {
+    "name": "r2 R2-1: quotes are kept in the heredoc delimiter",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "word.append(command[j + 1:end])",
+        "word.append(command[j:end + 1])"
+      ]
+    ],
+    "expect": [
+      "a heredoc delimiter is the whole word after quote removal (r2 R2-1)"
+    ]
+  },
+  {
+    "name": "r2 R2-1: an unterminated delimiter quote is read to the end",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "raise Refuse(\"a heredoc delimiter with an unterminated quote cannot be read\")",
+        "return n, strip, \"\".join(word), True"
+      ]
+    ],
+    "expect": [
+      "a heredoc whose delimiter cannot be read is refused (r2 R2-1)"
+    ]
+  },
+  {
+    "name": "r2 R2-2: the runner scan finds only `rm`",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if os.path.basename(w) in (\"rm\", \"xargs\", \"find\") and args[a - 1]",
+        "if os.path.basename(w) == \"rm\" and args[a - 1]"
+      ]
+    ],
+    "expect": [
+      "a wrapper with an option value does not hide `find` or `xargs rm` (r2 R2-2)"
+    ]
+  },
+  {
+    "name": "r2 R2-3: an unquoted variable is not split",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "return [val] + val.split() if",
+        "return [val] if"
+      ]
+    ],
+    "expect": [
+      "an unquoted variable holding blanks is backed up whole and word by word (r2 R2-3)"
+    ]
+  },
+  {
+    "name": "r2 R2-4: a cd into a missing directory is trusted",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(risky or not os.path.isdir(here))",
+        "(risky)"
+      ]
+    ],
+    "expect": [
+      "a `cd` into a missing directory leaves the shell where it was (r2 R2-4)"
+    ]
+  },
+  {
+    "name": "r2 R2-4: a cd after a command that can fail is trusted",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "risky = risky or bool(args) and not",
+        "risky = False and not"
+      ]
+    ],
+    "expect": [
+      "a `cd` after a command that can fail is known only inside its `&&` chain (r2 R2-4)"
+    ]
+  },
+  {
+    "name": "r2 R2-4: a cd under if/then/{ is trusted",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "guarded = k > 0 or compound > 0",
+        "guarded = False"
+      ]
+    ],
+    "expect": [
+      "a `cd` under `if`/`then` may not run (r2 R2-4)"
+    ]
+  },
+  {
+    "name": "r2 R2-4: a conditional cd stays known after its chain ends",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "            if cond_cd:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "a `cd` into a missing directory leaves the shell where it was (r2 R2-4)"
+    ]
+  },
+  {
+    "name": "r2 R2-6: $PWD is the hook's, not the payload cwd",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "env[\"PWD\"] = cwd                     # r2 R2-6",
+        "pass                     # r2 R2-6"
+      ]
+    ],
+    "expect": [
+      "`$PWD` is the payload's cwd, and `cd` moves `$PWD` and `$OLDPWD` (r2 R2-6)"
+    ]
+  },
+  {
+    "name": "r2 R2-6: cd does not move $PWD",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "env[\"OLDPWD\"], env[\"PWD\"] = old, here",
+        "env[\"OLDPWD\"] = old"
+      ]
+    ],
+    "expect": [
+      "`$PWD` is the payload's cwd, and `cd` moves `$PWD` and `$OLDPWD` (r2 R2-6)"
+    ]
+  },
+  {
+    "name": "r2 R2-7: builtin is not looked through",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "\"exec\", \"builtin\"}",
+        "\"exec\"}"
+      ]
+    ],
+    "expect": [
+      "`builtin cd` moves the shell (r2 R2-7)"
+    ]
+  },
+  {
+    "name": "r2 R2-7: eval/source keep the cwd",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "here = None                          # r2 R2-7",
+        "pass                          # r2 R2-7"
+      ]
+    ],
+    "expect": [
+      "`eval`, `source` and `.` make the cwd and every variable unknown (r2 R2-7)"
+    ]
+  },
+  {
+    "name": "r2 R2-8: ${S:-x} is not expanded",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "word = DEFAULT.sub(default, word)",
+        "pass"
+      ]
+    ],
+    "expect": [
+      "`${S:-x}` and `${S-x}` use the default when S is empty or unset (r2 R2-8)"
+    ]
+  },
+  {
+    "name": "r2 R2-8: an empty value does not take the `:-` default",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if name in env and not (colon and env[name] == \"\"):",
+        "if name in env:"
+      ]
+    ],
+    "expect": [
+      "`${S:-x}` and `${S-x}` use the default when S is empty or unset (r2 R2-8)"
+    ]
+  },
+  {
+    "name": "r2 R2-9: the prefilter reads -delete in the raw text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "\"-delete\" not in bare",
+        "\"-delete\" not in command"
+      ]
+    ],
+    "expect": [
+      "`-de\"\"lete` is `-delete`: the prefilter reads quote-stripped text (r2 R2-9)"
+    ]
+  },
+  {
+    "name": "r2 R2-9: a glob or brace command name is not refused",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "raise PatternName(f\"the command name",
+        "PatternName(f\"the command name"
+      ]
+    ],
+    "expect": [
+      "a command name that is a glob or a brace list that may be `rm` is refused (r2 R2-9)"
+    ]
+  },
+  {
+    "name": "r2 R2-9: the prefilter skips a glob command name",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if no_rm and not re.search(r\"[*?\\[{]\", bare):",
+        "if no_rm:"
+      ]
+    ],
+    "expect": [
+      "a command name that is a glob or a brace list that may be `rm` is refused (r2 R2-9)"
+    ]
+  },
+  {
+    "name": "r2 R2-9: the prefilter swallows a glob command name's refusal",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if no_rm and not isinstance(exc, PatternName):",
+        "if no_rm:"
+      ]
+    ],
+    "expect": [
+      "a command name that is a glob or a brace list that may be `rm` is refused (r2 R2-9)"
+    ]
+  },
+  {
+    "name": "r2 fold: a case pattern is read as a command name",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        if pattern:\n            pass\n",
+        "        if False:\n            pass\n"
+      ]
+    ],
+    "expect": [
+      "a `case` pattern is not a command name, and its `)` closes no subshell"
+    ]
+  },
+  {
+    "name": "r2 fold: a case pattern's `)` closes a subshell",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "elif sep_after == \")\" and not pat_list:",
+        "elif sep_after == \")\":"
+      ]
+    ],
+    "expect": [
+      "a `case` pattern is not a command name, and its `)` closes no subshell"
+    ]
+  },
+  {
+    "name": "r2 R2-10: `${` is not copied whole by strip_heredocs",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "elif command.startswith(\"${\", i):",
+        "elif False:"
+      ]
+    ],
+    "expect": [
+      "`<<` inside `${…}` opens no heredoc (r2 R2-10)"
+    ]
+  },
+  {
+    "name": "r2 R2-11: a quoted operator character is an operator",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "_protect(decode_ansi_c(",
+        "(decode_ansi_c("
+      ]
+    ],
+    "expect": [
+      "a quoted operator character is a word, not an operator (r2 R2-11)"
+    ]
+  },
+  {
+    "name": "r2 fold: a backslash-newline is kept in the word",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if text[i + 1] != \"\\n\":",
+        "if True:"
+      ]
+    ],
+    "expect": [
+      "a backslash-newline continues the word list (found in r2's fold)"
+    ]
+  },
+  {
+    "name": "r2 R2-12: an out-of-range \\U escape crashes",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "return chr(code) if code < 0x110000 else \"\\\\\" + s",
+        "return chr(code)"
+      ]
+    ],
+    "expect": [
+      "an out-of-range `\\U` escape is left as it is, not a crash (r2 R2-12)"
+    ]
+  },
+  {
+    "name": "r2 S16: every `)` in a case pattern list is a pattern",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "            in_pat = sep_after != \")\"\n",
+        "            in_pat = True\n"
+      ]
+    ],
+    "expect": [
+      "a subshell opened in a `case` arm is closed by its `)`, not read as a pattern (r2 S16)"
+    ]
+  },
+  {
+    "name": "r2 S16: `;&` and `;;&` are not operators",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "|;;&|;;|;&|",
+        "|;;|"
+      ]
+    ],
+    "expect": [
+      "a subshell opened in a `case` arm is closed by its `)`, not read as a pattern (r2 S16)"
+    ]
+  },
+  {
+    "name": "r2 S18: a quoted operator character stays a placeholder",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    return word.translate(UNPROTECT)",
+        "    return word"
+      ]
+    ],
+    "expect": [
+      "a quoted operator character in a target is restored before the path is read (r2 S18)"
+    ]
+  },
+  {
+    "name": "r2 S16 fold: a guarded assignment is a plain one",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        elif cond and (var not in env or env[var] != val):\n",
+        "        elif False:\n"
+      ]
+    ],
+    "expect": [
+      "an assignment under a guard that may not run leaves the variable unknown (found in r2 S16's fold)"
+    ]
+  },
+  {
+    "name": "r2 S20: a guarded assignment to an unset variable is stored",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(var not in env or env[var] != val)",
+        "env.get(var, val) != val"
+      ]
+    ],
+    "expect": [
+      "an assignment under a guard to an UNSET variable leaves it unknown; the same value stays (r2 S20)"
+    ]
+  },
+  {
+    "name": "r2 S21: the refusal has no scratchpad mktemp hint",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(`mktemp -d \\\"$SCRATCH/x.XXXX\\\"` with a \"",
+        "\""
+      ]
+    ],
+    "expect": [
+      "a refusal tells the reader to make temp dirs in the scratchpad (r2 S21)"
+    ]
+  },
+  {
+    "name": "r2 S21: a scratchpad mktemp template is unknown",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    return m[1] + m[2] + \"?\" * len(m[3])",
+        "    return None"
+      ]
+    ],
+    "expect": [
+      "a `mktemp` template in this session's scratchpad is the glob of its names and needs no backup (r2 S21)"
+    ]
+  },
+  {
+    "name": "r2 S21: a mktemp template anywhere is a glob",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if not m or scratch not in os.path.realpath(m[1]) + \"/\":",
+        "if not m:"
+      ]
+    ],
+    "expect": [
+      "a `mktemp` template outside the scratchpad, through a link, or not alone in its word is unknown (r2 S21)"
+    ]
+  },
+  {
+    "name": "r2 S21: anything after the mktemp `)` is ignored",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "toks[c] == \")\" and (c + 1 == len(toks) or toks[c + 1] in (\";\", \"&&\", \"||\", \"\\n\", \")\"))",
+        "toks[c] == \")\""
+      ]
+    ],
+    "expect": [
+      "a `mktemp` template outside the scratchpad, through a link, or not alone in its word is unknown (r2 S21)"
+    ]
+  },
+  {
+    "name": "r2 S20: an `&&`-chain assignment outlives its chain",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "            for v in chained:\n                env[v] = None\n",
+        "            for v in chained:\n                pass\n"
+      ]
+    ],
+    "expect": [
+      "an assignment under a guard to an UNSET variable leaves it unknown; the same value stays (r2 S20)"
+    ]
+  },
+  {
+    "name": "r2 S20: an `&&`-chain assignment is always unknown",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "            if chain_only:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "an assignment under a guard to an UNSET variable leaves it unknown; the same value stays (r2 S20)"
+    ]
+  },
+  {
+    "name": "r3: an opaque command still reads its variables",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    if OPAQUE in env and (\"$\" in word or word.startswith(\"~\")):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)"
+    ]
+  },
+  {
+    "name": "r3 R3-1: `let` is not an opaque word",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "OPAQUE_WORDS = {\"let\", \"declare\",",
+        "OPAQUE_WORDS = {\"declare\","
+      ]
+    ],
+    "expect": [
+      "`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)"
+    ]
+  },
+  {
+    "name": "r3 R3-1: `((` is not opaque text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "re.compile(r\"\\(\\(|\\[\\[",
+        "re.compile(r\"\\[\\["
+      ]
+    ],
+    "expect": [
+      "`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)"
+    ]
+  },
+  {
+    "name": "r3 R3-1: `$[` is not opaque text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    if \"$((\" in command or \"$[\" in command:",
+        "    if \"$((\" in command:"
+      ]
+    ],
+    "expect": [
+      "`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)"
+    ]
+  },
+  {
+    "name": "r3 R3-1: `[[` is not opaque text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "|\\[\\[|\\bIFS",
+        "|\\bIFS"
+      ]
+    ],
+    "expect": [
+      "`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)"
+    ]
+  },
+  {
+    "name": "r3 R3-2: `IFS` in the command is not opaque",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "|\\bIFS\\b|",
+        "|"
+      ]
+    ],
+    "expect": [
+      "an `IFS` in the command or a non-default one in the environment makes variables unreadable (r3 R3-2)"
+    ]
+  },
+  {
+    "name": "r3 R3-2: the environment's IFS is not read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "environ.get(\"IFS\", \" \\t\\n\") != \" \\t\\n\" or ",
+        ""
+      ]
+    ],
+    "expect": [
+      "an `IFS` in the command or a non-default one in the environment makes variables unreadable (r3 R3-2)"
+    ]
+  },
+  {
+    "name": "r3: `X+=` is not opaque text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "|\\+=|",
+        "|"
+      ]
+    ],
+    "expect": [
+      "`X+=v` and `X[0]=v` change X: variables are unreadable (r3)"
+    ]
+  },
+  {
+    "name": "r3: `X[i]=` is not opaque text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "|\\w\\[[^\\]]*\\]=\")",
+        "\")"
+      ]
+    ],
+    "expect": [
+      "`X+=v` and `X[0]=v` change X: variables are unreadable (r3)"
+    ]
+  },
+  {
+    "name": "r3 S24: an assigning `${…}` is not opaque",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    if any(ASSIGNING_BRACE.search(b)",
+        "    if False and any(ASSIGNING_BRACE.search(b)"
+      ]
+    ],
+    "expect": [
+      "a `${…}` that can assign (`:=`, `[X=0]`, `:off`) makes variables unreadable; `${!X}` `${X#p}` do not (r3 S24)"
+    ]
+  },
+  {
+    "name": "r3 S23: `eval` is not an opaque word",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "RUNS_TEXT = {\"eval\", \"source\", \".\"}",
+        "RUNS_TEXT = {\"source\", \".\"}"
+      ]
+    ],
+    "expect": [
+      "after `eval`, a default is not taken for a name the hook never saw set (r3 S23)"
+    ]
+  },
+  {
+    "name": "r3: `export` is not an opaque word",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "\"local\", \"export\", \"readonly\"",
+        "\"local\", \"readonly\""
+      ]
+    ],
+    "expect": [
+      "`export`/`declare`/`local` make every variable unreadable, with or without `=` (r3)"
+    ]
+  },
+  {
+    "name": "r3: opaque refuses a literal target too",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(\"$\" in word or word.startswith(\"~\")):",
+        "True:"
+      ]
+    ],
+    "expect": [
+      "an opaque command still backs up a LITERAL target (r3)"
+    ]
+  },
+  {
+    "name": "r3: a heredoc body's `$((` is not read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    if \"$((\" in command or \"$[\" in command:\n        return True",
+        "    if False:\n        return True"
+      ]
+    ],
+    "expect": [
+      "a heredoc body's text is data, but its `$((…))` still assigns (r3 replay)"
+    ]
+  },
+  {
+    "name": "r3: opaque text is read in heredoc bodies",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "OPAQUE_TEXT.search(strip_heredocs(command))",
+        "OPAQUE_TEXT.search(command)"
+      ]
+    ],
+    "expect": [
+      "a heredoc body's text is data, but its `$((…))` still assigns (r3 replay)"
+    ]
+  },
+  {
+    "name": "r3d: `.` is opaque anywhere, not only in command position",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(at_command and name in RUNS_TEXT)",
+        "(name in RUNS_TEXT)"
+      ]
+    ],
+    "expect": [
+      "`.` as an argument, `printf` without `-v`, and a known command name are not setters (r3d replay)"
+    ]
+  },
+  {
+    "name": "r3d: an option setter's flag is searched past its own command",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "for w in itertools.takewhile(lambda w: w not in SEPARATORS, toks[i + 1:])):",
+        "for w in toks[i + 1:]):"
+      ]
+    ],
+    "expect": [
+      "`.` as an argument, `printf` without `-v`, and a known command name are not setters (r3d replay)"
+    ]
+  },
+  {
+    "name": "r3d: an option setter is not opaque",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        if name in OPTION_SETTERS and any(",
+        "        if False and any("
+      ]
+    ],
+    "expect": [
+      "`printf -v`, `wait -p`, `compgen -V` and a hidden command name make variables unreadable (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a look-through word's options hide a `.`",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "at_command = (prev in LOOK_THROUGH if j < i - 1 else",
+        "at_command = (False if j < i - 1 else"
+      ]
+    ],
+    "expect": [
+      "`printf -v`, `wait -p`, `compgen -V` and a hidden command name make variables unreadable (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: an unassigned `$` command name is not a hidden setter",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if name not in given or os.path.basename",
+        "if os.path.basename"
+      ]
+    ],
+    "expect": [
+      "`printf -v`, `wait -p`, `compgen -V` and a hidden command name make variables unreadable (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a `$` command name given a setter's name is not a hidden setter",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "os.path.basename(given[name]) in setters:",
+        "False:"
+      ]
+    ],
+    "expect": [
+      "`printf -v`, `wait -p`, `compgen -V` and a hidden command name make variables unreadable (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a namer's name is not poisoned",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                poisoned.add(w)",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: `unset -n` is not opaque",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                    if \"n\" in w:",
+        "                    if False:"
+      ]
+    ],
+    "expect": [
+      "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a non-name `unset` word is not opaque",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                if not re.fullmatch(r\"[A-Za-z_][A-Za-z0-9_]*\", w):",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a poisoned name is not cleared from the start environment",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    for v in poisoned:\n        env[v] = None",
+        "    for v in ():\n        env[v] = None"
+      ]
+    ],
+    "expect": [
+      "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a poisoned name's later assignment is read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        if piped or var in poisoned:",
+        "        if piped:"
+      ]
+    ],
+    "expect": [
+      "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
+    ]
+  },
+  {
+    "name": "Phase 6 P6-2: the working directory is globbed as a pattern",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "pat = t if os.path.isabs(t) else os.path.join(glob.escape(here), t)",
+        "pat = t if os.path.isabs(t) else os.path.join(here, t)"
+      ]
+    ],
+    "expect": [
+      "a bracketed working directory is a literal path, not a set (Phase 6 P6-2)"
+    ]
+  },
+  {
+    "name": "r6 push-time: the literal fallback is the escaped pattern",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "lit = t if os.path.isabs(t) else os.path.join(here, t)",
+        "lit = t if os.path.isabs(t) else os.path.join(glob.escape(here), t)"
+      ]
+    ],
+    "expect": [
+      "a plain name inside a bracketed working directory is backed up as that name (r6 push-time review)"
+    ]
+  },
+  {
+    "name": "r7: a `[` in an rm target is read, not refused",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "            if \"[\" in t:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "r7: a quoted set beside an active one, and an escaped `]` hiding a range, are refused (R7-1 `\"[a]\"[bc]`, R7-2 `[a\\]-z]`)"
+    ]
+  }
+]

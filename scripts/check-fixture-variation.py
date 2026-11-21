@@ -456,6 +456,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     "check-agent-large-read.py": (
         "decide.doc", "decide.env", "main.argv", "main.env", "main.stdin_bytes",
     ),
+    # backlog #685 (2026-11-20): the rm-backup hook, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; `main.argv` EXEMPT with its reason.
+    "check-rm-backup.py": (
+        "decide.environ", "decide.now", "decide.payload", "decide.root", "main.argv", "main.env", "main.stdin_bytes",
+        "plan.environ", "plan.payload", "plan.root", "prune.now", "prune.root",
+    ),
     "check-agent-long-call.py": (
         "decide.doc", "decide.env", "main.argv", "main.env", "main.stdin_text",
     ),
@@ -1504,6 +1510,8 @@ EXEMPT: dict[str, str] = {
     "batch-ci.py:merge_into.run": "merge_into() is driven through ONE helper (`merged`) in the union fixture, whose runner is real git; what it decides on is the two sides' CONTENT, varied across five real merges (and through plan/land in the main e2e)",
     # backlog #440 (2026-11-01): check-compaction-boundary.py's main() is driven once.
     # backlog #457 (2026-11-01): check-agent-large-read.py's main() is driven from one helper.
+    # backlog #685 (2026-11-20): the hook has one mode; `--self-test` is reached through `sys.argv`, not `main(argv)`.
+    "check-rm-backup.py:main.argv": "the hook has ONE mode, `--hook`; the payloads and environments it decides on are varied at `decide` and at main's own `stdin_bytes` (a deny, a silent backup, an unreadable payload)",
     "check-agent-large-read.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
     "check-agent-large-read.py:main.env": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
     "check-agent-large-read.py:main.stdin_bytes": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
