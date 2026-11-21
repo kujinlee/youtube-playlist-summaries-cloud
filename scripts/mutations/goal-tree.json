@@ -1824,8 +1824,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        elif hit and not row_open:\n            whens = [(src.get(\"all_merged_at\") or {}).get(hit[1]) or (src.get(\"merged_at\") or {}).get(hit[0])]",
-        "        elif hit and not row_open:\n            whens = [(src.get(\"merged_at\") or {}).get(hit[0])]"
+        "        elif hit and not row_open and not cells_held:\n            whens = [(src.get(\"all_merged_at\") or {}).get(hit[1]) or (src.get(\"merged_at\") or {}).get(hit[0])]",
+        "        elif hit and not row_open and not cells_held:\n            whens = [(src.get(\"merged_at\") or {}).get(hit[0])]"
       ]
     ],
     "expect": [
@@ -6179,8 +6179,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        elif hit and not row_open:",
-        "        elif hit:"
+        "        elif hit and not row_open and not cells_held:",
+        "        elif hit and not cells_held:"
       ]
     ],
     "expect": [
@@ -6413,8 +6413,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    elif unread and not by_cells:",
-        "    elif unread:"
+        "    elif unread and not by_cells and not cells_held:",
+        "    elif unread and not cells_held:"
       ]
     ],
     "expect": [
