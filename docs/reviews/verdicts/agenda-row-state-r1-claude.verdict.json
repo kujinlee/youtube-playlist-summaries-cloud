@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/agenda-row-state-r1-claude.md": "100644 fd1c368e116718fce13b011d4386c9620ba67161",
+    "docs/reviews/codex/agenda-row-state-r1-codex.md": "100644 c172b2c0cedab7bf1dd8546d5590e6c96114f07b",
+    "docs/reviews/verdicts/agenda-row-state-r1-codex.verdict.json": "100644 53531d920a102f8540e8ebc412c1527283fac69e"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "2247577cbd822363d0e2d4013462830db592be5c",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 9346 chars, names 2247577cbd82",
+  "refused": false,
+  "review": "agenda-row-state-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agenda-row-state",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
