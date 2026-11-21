@@ -21181,6 +21181,7 @@ variable setters (`let`, `IFS`) and a push-time security review two more (`eval`
 replaced by an allowlist: a command that sets a variable any way but `NAME=value` reads no variable in an `rm` target. Round 2 (Claude) found 13 more holes
 and three push-time security reviews 8; the `mktemp` exemption was dropped rather than patched a sixth time. Round 1 (Codex + probes salvaged from the stopped Claude reviewer) found 21 holes and two push-time security reviews 5 more; all fixed. A `#` mid-word and a `<<<`/quoted `<<` no longer hide an `rm` (11-20 security review). Bounds: an `rm` inside a quoted string, `bash -c`, `eval` or another language is not seen.
 
+## 2026-11-20
 The goal tree's plan stops calling a backlog item done just because some merged pull request mentions it. A plan step
 that names a backlog item now follows that item's own status: a pull request that only filed the item, or did part of
 it, is shown beside the step but no longer ticks it, and an item marked done is ticked even when no pull request names
