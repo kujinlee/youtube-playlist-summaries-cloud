@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 109 cases
+    python3 scripts/check-publishability.py --self-test  # 116 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -302,6 +302,8 @@ def _markdown_kind(lines, line: int, token: str) -> str | None:
         return "prerequisite" if fence == "" and _introduced(lines, opened) else None
     if re.search(INSTRUCTS + tok, text, re.I) or re.search(REQUIRES + r"(?<![A-Za-z0-9])" + tok, text, re.I):
         return "prerequisite"
+    if _heads_section(lines, line, tok):
+        return "prerequisite"
     if LIST_ITEM.match(text):
         i = line - 1
         while i > 0:
@@ -321,6 +323,25 @@ def _always_none(g) -> bool:  # `None`, or an `or`/`and` of operands that are ea
 
 
 LIST_ITEM = re.compile(r"\s*(?:\d+[.)]|[-*+])\s+")
+HEADING = re.compile(r"\s*#{1,6}\s")
+
+
+def _heads_section(lines, line: int, tok: str) -> bool:
+    """Whether line `line` OPENS a section with a code span that is the term alone — the first line under a heading
+    — and the section's body, to the next heading, has a line that `ACTS` (review r1 M1: `## The store` /
+    `` `docs/dashboard-entries.md` `` / `> ⛔ **Append one block.**`). The section is then that file's procedure.
+    A later line, or a section with no such line, is description."""
+    if not re.match(r"\s*`" + tok + "`", lines[line - 1], re.I):
+        return False
+    above = next((ln for ln in reversed(lines[:line - 1]) if ln.strip()), "")
+    if not HEADING.match(above):
+        return False
+    for ln in lines[line:]:
+        if HEADING.match(ln):
+            return False
+        if ACTS.match(ln):
+            return True
+    return False
 
 
 def _introduced(lines, at: int) -> bool:
@@ -345,6 +366,9 @@ def _introduced(lines, at: int) -> bool:
 LEAD_VERBS = r"\b(?:read|load|open|run|edit|update|consult|follow|source|use|call|invoke|stop)\b"
 # A verb a few words after one of these is no imperative ("tools that we never use:", review r3).
 NEGATES = r"\b(?:never|not|no)\b|n't\b"
+# A line of a section's body that tells the reader to act on the section's subject: a lead verb, or one that
+# writes to it, OPENING the line (a list mark, a quote, a ⛔/⚠ and bold allowed before it).
+ACTS = re.compile(r"\s*(?:[-*>]\s+)*(?:[⛔⚠]\S*\s*)?(?:\*\*)?(?:" + LEAD_VERBS + r"|\b(?:append|write|add)\b)", re.I)
 
 
 def _kind(file: Path, line: int, token: str) -> str | None:
@@ -417,7 +441,7 @@ def _from_file(node, names: dict, consts: dict):
     literal `parts` joined below that directory. A name bound to such a path (`names`) is one too, and a name bound
     to a string literal (`consts`) is that literal. Anything else: None."""
     if isinstance(node, ast.Name):
-        return (0, ()) if node.id == "__file__" else names.get(node.id)
+        return (0, ()) if node.id == "__file__" else names.get(node)
     if isinstance(node, ast.Attribute) and node.attr == "parent":
         got = _from_file(node.value, names, consts)
         return (got[0] + 1, ()) if got and not got[1] else None
@@ -446,41 +470,185 @@ def _from_file(node, names: dict, consts: dict):
 def _literal(node, consts: dict) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
-    return consts.get(node.id) if isinstance(node, ast.Name) else None
+    return consts.get(node) if isinstance(node, ast.Name) else None
+
+
+SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef,
+          ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+
+
+class _Scopes:
+    """Every STORE of every name in a module, filed under the scope Python files it in (review r1 m2: a name
+    bound file-wide made `_real = _sp.run` in one function the install root `_real` of another). A scope is a
+    function, a lambda, a class body or a comprehension; else the module. A store is `(position, value)`: the
+    value is the expression of a one-name `=` or annotated `x: T = v`, and None (unknown) for every other store
+    — a parameter, a loop, `with` or tuple target, an augmented assignment, an import, a `def`, a `class`, an
+    `except ... as`. A `global` name is the module's; a `nonlocal` one the enclosing function's."""
+
+    def __init__(self, tree, parent: dict):
+        self.tree, self.parent, self.stores, declared = tree, parent, {}, {}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Global, ast.Nonlocal)):
+                declared.setdefault(self.scope(node), {}).update(dict.fromkeys(node.names, type(node)))
+        self.declared = declared
+        for node in ast.walk(tree):
+            for scope, name, value in self._stored(node):
+                self.stores.setdefault(self.owner(scope, name), {}).setdefault(name, []).append(
+                    ((node.lineno, node.col_offset), value))
+
+    def _stored(self, node):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            up = self.parent.get(node)
+            one = (isinstance(up, ast.Assign) and len(up.targets) == 1 and up.targets[0] is node) or \
+                isinstance(up, ast.AnnAssign)
+            return [(self.scope(node), node.id, up.value if one else None)]
+        if isinstance(node, ast.arg):
+            return [(self.parent.get(self.parent.get(node)), node.arg, None)]
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            return [(self.scope(node), node.name, None)]
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            return [(self.scope(node), (a.asname or a.name).split(".")[0], None) for a in node.names]
+        if isinstance(node, ast.ExceptHandler) and node.name:
+            return [(self.scope(node), node.name, None)]
+        return []
+
+    def scope(self, node):
+        child, up = node, self.parent.get(node)
+        while up is not None:
+            if isinstance(up, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and child in up.body:
+                return up                            # a default, a decorator or an annotation is the enclosing one's
+            if isinstance(up, ast.Lambda) and child is up.body or isinstance(up, SCOPES[4:]):
+                return up
+            child, up = up, self.parent.get(up)
+        return self.tree
+
+    def owner(self, scope, name: str):
+        kind = self.declared.get(scope, {}).get(name)
+        if kind is ast.Global:
+            return self.tree
+        return self.enclosing(scope) if kind is ast.Nonlocal else scope
+
+    def enclosing(self, scope):
+        """The scope a name not stored in `scope` is looked up in next: a class body is skipped."""
+        up = self.scope(scope)
+        while isinstance(up, ast.ClassDef):
+            up = self.scope(up)
+        return up
+
+
+class _Bound:
+    """What a NAME holds, by `value(expr)` over its stores in the scope Python resolves it in (`_Scopes`). With
+    `every`, a name holds a value only when EVERY store of it there holds that same value — a later store may use
+    the earlier (`ROOT = ROOT.resolve()`); without it, the first store that holds one does (a path below HOME is
+    one on any branch of a default)."""
+
+    def __init__(self, scopes: _Scopes, value, every: bool = True):
+        self.scopes, self.value, self.every, self.memo = scopes, value, every, {}
+
+    def get(self, node):
+        s = self.scopes
+        scope = s.owner(s.scope(node), node.id)
+        while node.id not in s.stores.get(scope, {}):
+            if scope is s.tree:
+                return None
+            scope = s.enclosing(scope)
+        key = (scope, node.id)
+        if key in self.memo:
+            return self.memo[key]                    # under way: what its stores so far agree on
+        self.memo[key] = got = None
+        for _, expr in sorted(s.stores[scope][node.id], key=lambda st: st[0]):
+            v = self.value(expr) if expr is not None else None
+            if not self.every:
+                if v is not None:
+                    got = v
+                    break
+            elif v is None or (got is not None and v != got):
+                got = None
+                break
+            else:
+                self.memo[key] = got = v
+        self.memo[key] = got
+        return got
+
+
+def _placed(got) -> tuple[int, str] | None:
+    """`(level, target)` of a `_from_file` path, a `..` part climbing a level (review r1 M3); the directory
+    itself is `.`. An absolute part leaves the file's tree: None."""
+    joined = os.path.normpath("/".join(got[1])) if got[1] else "."
+    if joined.startswith("/"):
+        return None
+    level, segs = got[0], [p for p in joined.split("/") if p != "."]
+    while segs and segs[0] == "..":
+        level, segs = level + 1, segs[1:]
+    return level, "/".join(segs) or "."
+
+
+PASS_THROUGH = {"str", "os.fspath"}
+INERT_CALLS = {"print", "os.path.relpath"}               # shown or measured against, never handed on
+RELATIVE = {"relative_to", "is_relative_to", "samefile"}
+EXISTS = {"is_dir", "exists", "is_file"}
+EXISTS_CALLS = {"os.path.isdir", "os.path.exists", "os.path.isfile"}
+
+
+def _inert(node, parent: dict, target: str) -> bool:
+    """True when this use of a from-file path does not hand it on as the project (review r1 m3, Codex MINOR):
+    an operand of a comparison, a value inside an f-string, an argument of `print` or `os.path.relpath`, either
+    side of `relative_to`/`is_relative_to`/`samefile` (`str()` and `os.fspath()` passing through) — and, for the
+    root itself, a test that it exists, which an installed root always does. Every other use hands it on."""
+    up = parent.get(node)
+    while isinstance(up, ast.Call) and _dotted(up.func) in PASS_THROUGH and len(up.args) == 1 \
+            and up.args[0] is node:
+        node, up = up, parent.get(up)
+    if isinstance(up, (ast.Compare, ast.FormattedValue)):
+        return True
+    if isinstance(up, ast.Call) and any(a is node for a in up.args):
+        name = _dotted(up.func)
+        return name in INERT_CALLS or (isinstance(up.func, ast.Attribute) and up.func.attr in RELATIVE) \
+            or (target == "." and name in EXISTS_CALLS)
+    if isinstance(up, ast.Attribute) and up.value is node and getattr(parent.get(up), "func", None) is up:
+        return up.attr in RELATIVE or (target == "." and up.attr in EXISTS)
+    return False
+
+
+def _rebinds(up, scopes: _Scopes) -> bool:
+    """Whether an assignment BINDS a name whose uses are judged instead: one name, outside a class body (a class
+    attribute is used as `self.x`, which is not followed, so a field default is judged where it is bound), or a
+    module name rebound through `globals()["X"] = v`."""
+    target = up.targets[0] if isinstance(up, ast.Assign) else up.target
+    if isinstance(target, ast.Subscript):
+        return isinstance(target.value, ast.Call) and _dotted(target.value.func) == "globals"
+    return isinstance(target, ast.Name) and not isinstance(scopes.scope(up), ast.ClassDef)
 
 
 def _install_root_uses(tree, parent: dict, depth: int, held) -> list[tuple[int, str]]:
     """`(line, target)` for each use of the file's own INSTALL ROOT (the directory `depth` levels above it, in
     installed coordinates) as the project: a path below it that the package does not ship (`held` is false), or
-    the root itself handed on (a `cwd=`, a `git -C`, an argument, a default). One per target, at its first line;
-    the target of the root itself is `.`. A name bound to the root, or to a path below it, is judged where it is
-    used, not where it is bound. BOUND: only literal parts are joined (a part held in a name bound to a string
-    literal included); a root reached through a call of the program's own function is not followed."""
-    binds = sorted((n for n in ast.walk(tree) if isinstance(n, ast.Assign) and len(n.targets) == 1
-                    and isinstance(n.targets[0], ast.Name)), key=lambda n: (n.lineno, n.col_offset))
-    consts = {}
-    for n in binds:
-        if isinstance(n.value, ast.Constant) and isinstance(n.value.value, str):
-            consts.setdefault(n.targets[0].id, n.value.value)
-    names = {}
-    for n in binds:                                  # in source order: a name is built from the names above it
-        got = _from_file(n.value, names, consts)
-        if got:
-            names.setdefault(n.targets[0].id, got)
+    the root itself handed on (a `cwd=`, a `git -C`, an argument, a default). One per target, at its first line
+    that is not `_inert`; the target of the root itself is `.`. A name bound to the root, or to a path below it,
+    is judged where it is used, not where it is bound, and is looked up in Python's scope (`_Bound`). BOUND: only
+    literal parts are joined (a part held in a name bound to a string literal included); a root reached through a
+    call of the program's own function is not followed; a name whose stores in its scope disagree (`x = ROOT`,
+    then `x = x / "a"`) is not followed."""
+    scopes = _Scopes(tree, parent)
+    consts = _Bound(scopes, lambda e: e.value if isinstance(e, ast.Constant) and isinstance(e.value, str) else None)
+    names = _Bound(scopes, lambda e: _from_file(e, names, consts))
     first = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
             continue
         got = _from_file(node, names, consts)
-        if not got or got[0] != depth:
+        place = _placed(got) if got else None
+        if not place or place[0] != depth:
             continue
         up = parent.get(node)
-        if up is not None and _from_file(up, names, consts):
+        outer = parent.get(up) if getattr(parent.get(up), "func", None) is up else up    # `x.resolve()`
+        if outer is not None and _from_file(outer, names, consts):
             continue                                 # a longer path is judged instead
-        if isinstance(up, ast.Assign) and up.value is node and isinstance(up.targets[0], ast.Name) \
-                and up.targets[0].id in names:
+        if isinstance(up, (ast.Assign, ast.AnnAssign)) and up.value is node and _rebinds(up, scopes):
             continue                                 # a binding: judged at each use
-        target = os.path.normpath("/".join(got[1])) if got[1] else "."
+        target = place[1]
+        if _inert(node, parent, target):
+            continue
         if target == "." or not held(target):
             first[target] = min(first.get(target, node.lineno), node.lineno)
     return sorted((n, t) for t, n in first.items())
@@ -701,7 +869,10 @@ def _prerequisites(files: list, base: Path, shipped: set) -> list:
     (`_argv0`), an interpreter (`SS.INTERPRETERS`), a shell builtin and a path apart, a path being detector
     2's subject; in a
     shell file, one of `PROGRAMS` in command position, comments apart. `config` (Python): an environment
-    variable read with no working default, by detector 1's own rule (`_python_use`).
+    variable read with no working default, by detector 1's own rule (`_python_use`). `home-path` (Python, review
+    r1 B1): a path below the user's HOME whose absence the code turns into an error — an `if not P.exists()`
+    (`is_dir`, `is_file`, `os.path.isdir/exists/isfile`) whose body raises, exits non-zero or returns a non-zero
+    number (`_fails`); `term` is the path, `~/...` (`_home`). A guard that falls back is no prerequisite.
 
     BOUND: an argv that is not written out (a variable, `sys.executable`) is not judged; a shell file is asked
     only about the programs on the `PROGRAMS` list, and a quoted string that holds a separator before one reads
@@ -713,7 +884,12 @@ def _prerequisites(files: list, base: Path, shipped: set) -> list:
         rel, lines, seen = f.relative_to(base).as_posix(), _lines(f), set()
         if rel.endswith(".py"):
             tree, parent = _parsed(f)
+            homes = _homes(tree, parent)
             for node in ast.walk(tree):
+                if isinstance(node, ast.If) and _fails(node.body):
+                    term = _absent_home(node.test, homes)
+                    if term:
+                        seen.add((node.lineno, "home-path", term))
                 if isinstance(node, ast.Import):
                     seen |= {(node.lineno, "import", a.name.split(".")[0]) for a in node.names}
                 elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
@@ -739,6 +915,81 @@ def _prerequisites(files: list, base: Path, shipped: set) -> list:
         out += [{"detector": 6, "file": rel, "line": n, "text": lines[n - 1].strip(), "kind": kind, "term": name}
                 for (kind, name), n in first.items()]
     return out
+
+
+def _home(node, homes, consts) -> str | None:
+    """`~/...` when `node` is a path below HOME written out: `Path.home()` with literal parts (`/`,
+    `os.path.join`), `os.path.expanduser("~/...")`, `Path("~/...").expanduser()`, either branch of an `x if c
+    else y` or an `or`, or a name holding one on any of its stores (`_Bound` without `every`). Else None."""
+    if isinstance(node, ast.Name):
+        return homes.get(node)
+    if isinstance(node, ast.IfExp):
+        return _home(node.body, homes, consts) or _home(node.orelse, homes, consts)
+    if isinstance(node, ast.BoolOp):
+        return next((h for v in node.values if (h := _home(v, homes, consts))), None)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        got, part = _home(node.left, homes, consts), _literal(node.right, consts)
+        return f"{got}/{part}" if got and part is not None else None
+    if not isinstance(node, ast.Call):
+        return None
+    name, args = _dotted(node.func), node.args
+    if name in ("Path.home", "pathlib.Path.home") and not args:
+        return "~"
+    if name in ("os.path.expanduser", "Path", "pathlib.Path") and len(args) == 1:
+        lit = _literal(args[0], consts)
+        if name == "os.path.expanduser" and lit and (lit == "~" or lit.startswith("~/")):
+            return lit.rstrip("/")
+        return _home(args[0], homes, consts) if name != "os.path.expanduser" else None
+    if name == "os.path.join" and args:
+        got, parts = _home(args[0], homes, consts), [_literal(a, consts) for a in args[1:]]
+        return "/".join([got] + parts) if got and None not in parts else None
+    if isinstance(node.func, ast.Attribute) and not args:
+        inner = node.func.value
+        if node.func.attr == "expanduser" and isinstance(inner, ast.Call) and _dotted(inner.func) in FILE_OF \
+                and len(inner.args) == 1:
+            lit = _literal(inner.args[0], consts)
+            return lit.rstrip("/") if lit and (lit == "~" or lit.startswith("~/")) else None
+        if node.func.attr in SAME_PATH:
+            return _home(inner, homes, consts)
+    return None
+
+
+def _homes(tree, parent: dict):
+    """The `_Bound` a home path's name is looked up in, with its string literals."""
+    scopes = _Scopes(tree, parent)
+    consts = _Bound(scopes, lambda e: e.value if isinstance(e, ast.Constant) and isinstance(e.value, str) else None)
+    homes = _Bound(scopes, lambda e: _home(e, homes, consts), every=False)
+    homes.consts = consts
+    return homes
+
+
+def _absent_home(test, homes) -> str | None:
+    """The home path an `if` test asks to be ABSENT (`not P.exists()`, `not os.path.isdir(P)`, ...), else None."""
+    if not (isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not) and isinstance(test.operand, ast.Call)):
+        return None
+    call = test.operand
+    if isinstance(call.func, ast.Attribute) and call.func.attr in EXISTS and not call.args:
+        return _home(call.func.value, homes, homes.consts)
+    if _dotted(call.func) in EXISTS_CALLS and len(call.args) == 1:
+        return _home(call.args[0], homes, homes.consts)
+    return None
+
+
+def _fails(body: list) -> bool:
+    """Whether an `if` body ends the program in an error: a `raise`, a `sys.exit`/`exit`/`quit` whose argument
+    is not 0 or None (a computed one is presumed an error), or a `return` of a non-zero int."""
+    for st in body:
+        if isinstance(st, ast.Raise):
+            return True
+        if isinstance(st, ast.Expr) and isinstance(st.value, ast.Call) \
+                and _dotted(st.value.func) in ("sys.exit", "exit", "quit") and st.value.args:
+            code = st.value.args[0]
+            if not (isinstance(code, ast.Constant) and code.value in (0, None)):
+                return True
+        if isinstance(st, ast.Return) and isinstance(st.value, ast.Constant) and type(st.value.value) is int \
+                and st.value.value != 0:
+            return True
+    return False
 
 
 def _env_read(node: ast.Constant, parent: dict) -> bool:
@@ -1691,7 +1942,7 @@ def _self_test_body() -> int:
                  'subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--git-common-dir"])\n'
                  'UP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n'
                  'open(os.path.join(UP, "docs", "anchors.md"))\n'
-                 'print(pathlib.Path(__file__).parents[1] / "docs/backlog.md", "--self-test")\n')
+                 'READS = [pathlib.Path(__file__).parents[1] / "docs/backlog.md", "--self-test"]\n')
     skill_md = ("# S\n"
                 "**Follow `../shared/d.md`** for the delivery.\n"
                 "Read [`../shared/d.md`](../shared/d.md) again.\n"
@@ -1704,7 +1955,7 @@ def _self_test_body() -> int:
                   ".agents/skills/s/SKILL.md": skill_md, ".agents/skills/shared/d.md": "# D\n",
                   ".agents/skills/s/run.py": ('import pathlib\n'
                                               'PLUG = pathlib.Path(__file__).parents[2]\n'
-                                              'print(PLUG / "docs" / "x.md", PLUG / "skills" / "s" / "SKILL.md")\n')})
+                                              'open(PLUG / "docs" / "x.md"), open(PLUG / "skills" / "s" / "SKILL.md")\n')})
 
     def rooted(cid: str) -> list:
         sets = {cid: [f"scripts/{cid}.py"], "tool": ["scripts/tool.py"]}
@@ -1730,6 +1981,141 @@ def _self_test_body() -> int:
                             2)),
          [(n, "cwd-relative", ".agents/skills/shared/d.md", "${CLAUDE_PLUGIN_ROOT}/skills/shared/d.md")
           for n in (2, 3, 4)] + [(7, "outside-set", ".agents/skills/shared/gone.md", None)])
+
+    # --- Task 16, review r1 fold: the root's forms, its scope, the uses that hand it on; HOME; a section ----------
+    up_like = ('import os\nimport pathlib\n'
+               'R = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")\n'
+               'open(os.path.join(R, "docs", "b.md"))\n'
+               'P = pathlib.Path(__file__).parent / ".."\n'
+               'print((P / "docs" / "c.md").read_text())\n'
+               'Q = pathlib.Path(__file__).parent / "sub" / ".."\n'
+               'print(open(Q / "d.md"), open(os.path.join(R, "..", "e.md")))\n'
+               'ANN: pathlib.Path = pathlib.Path(__file__).resolve().parent.parent\n'
+               'open(ANN / "docs" / "f.md")\n'
+               'open(pathlib.Path(__file__).parent.parent / "/etc/x")\n')
+    scope_like = ('import pathlib\n'
+                  'def f():\n    x = 3\n    return x\n'
+                  'def g():\n    x = pathlib.Path(__file__).resolve().parent.parent\n    return x / "docs" / "g.md"\n'
+                  'def h():\n    y = pathlib.Path(__file__).resolve().parent.parent\n    y = 3\n    return y\n'
+                  'ROOT = pathlib.Path(__file__).resolve().parent.parent\n'
+                  'def k():\n    return ROOT / "docs" / "k.md"\n'
+                  'def m(ROOT=None):\n    return ROOT\n'
+                  'ROOT = ROOT.resolve()\n'
+                  'class C:\n    repo: pathlib.Path = ROOT\n'
+                  'def t():\n    globals()["G"] = ROOT / "docs" / "gl.md"\n')
+    scope2_like = ('import pathlib\n'
+                   'BASE = pathlib.Path(__file__).resolve().parent.parent\n'
+                   'def gl():\n    global BASE\n    BASE = None\n'
+                   'def use():\n    return BASE / "docs" / "z.md"\n'
+                   'def outer():\n    p = pathlib.Path(__file__).resolve().parent.parent\n'
+                   '    def inner():\n        nonlocal p\n        p = None\n'
+                   '    return p / "docs" / "n.md"\n'
+                   'TOP = pathlib.Path(__file__).resolve().parent.parent\n'
+                   'class K:\n    TOP = 3\n    def f(self):\n        return TOP / "docs" / "c.md"\n'
+                   'lam = lambda TOP: TOP / "docs" / "l.md"\n'
+                   'sq = [TOP / "docs" / "q.md" for TOP in range(2)]\n'
+                   'def exc():\n    try:\n        pass\n    except OSError as TOP:\n        pass\n'
+                   '    return TOP / "docs" / "e.md"\n'
+                   'def imp():\n    import TOP\n    return TOP / "docs" / "i.md"\n'
+                   'def dd():\n    def TOP():\n        pass\n    return TOP / "docs" / "d.md"\n'
+                   'def ann():\n    TOP: int\n    return TOP / "docs" / "a.md"\n')
+    inert_like = ('import os, pathlib\nimport subprocess\n'
+                  'ROOT = pathlib.Path(__file__).resolve().parent.parent\n'
+                  'STORE = ROOT / "docs" / "s.md"\n'
+                  'NAME = STORE.relative_to(ROOT).as_posix()\n'
+                  'def same(repo):\n'
+                  '    if repo == ROOT or ROOT.is_dir():\n'
+                  '        print(f"root {ROOT}", str(ROOT))\n'
+                  '    if os.path.isdir(ROOT) and STORE.samefile(ROOT):\n'
+                  '        return os.path.relpath(STORE, ROOT)\n'
+                  '    return subprocess.run(["git", "-C", str(ROOT), "log"])\n'
+                  'def read():\n'
+                  '    if not STORE.exists():\n'
+                  '        return None\n'
+                  '    return STORE\n')
+    home_like = ('import os\nimport pathlib\nimport sys\n'
+                 'ROOT = pathlib.Path.home() / "explainers"\n'
+                 'OUT = pathlib.Path.home() / "out"\n'
+                 'def pick(root=None):\n'
+                 '    root = ROOT if root is None else root\n'
+                 '    if not root.is_dir():\n'
+                 '        raise SystemExit(f"no explainer directory at {root}")\n'
+                 '    return root\n'
+                 'def write():\n'
+                 '    if not OUT.is_dir():\n'
+                 '        OUT.mkdir()\n'
+                 'def soft():\n'
+                 '    d = os.path.expanduser("~/cache")\n'
+                 '    if not os.path.isdir(d):\n'
+                 '        return None\n'
+                 '    return d\n'
+                 'def hard():\n'
+                 '    if not os.path.exists(os.path.expanduser("~/conf")):\n'
+                 '        sys.exit(2)\n'
+                 'def fine():\n'
+                 '    if not os.path.exists(os.path.expanduser("~/done")):\n'
+                 '        sys.exit(0)\n'
+                 'def ret():\n'
+                 '    if not (pathlib.Path.home() / "r").is_file():\n'
+                 '        return 1\n'
+                 'def more():\n'
+                 '    if not os.path.isdir(os.path.join(pathlib.Path("~/j").expanduser(), "k")):\n'
+                 '        raise OSError\n'
+                 '    if not (os.environ.get("X") or pathlib.Path(pathlib.Path.home().resolve() / "b")).exists():\n'
+                 '        raise OSError\n')
+    section_md = ("# K\n## The store\n\n"
+                  "`docs/store.md`. **Append-only.**\n\n"
+                  "> ⛔ **Append one block.**\n\n"
+                  "`docs/also.md` holds the archive.\n\n"
+                  "## Other\n\n"
+                  "`docs/other.md` is where the history lives.\n\n"
+                  "The goal (`docs/goal.md`) is stated there.\n\n"
+                  "## Env\n\n`docs/env.md=x` is set.\n\nRun it.\n\n`docs/late.md` is kept.\n\nAppend nothing.\n")
+    w_r1 = world({"scripts/up.py": up_like, "scripts/scope.py": scope_like, "scripts/scope2.py": scope2_like, "scripts/inert.py": inert_like,
+                  "scripts/home.py": home_like, ".agents/skills/k/SKILL.md": section_md,
+                  ".agents/skills/s/SKILL.md": "# S\nRun `bash .agents/skills/s/x.sh`, then read "
+                                               "`.agents/skills/s/x.sh` again.\n",
+                  ".agents/skills/s/x.sh": "echo hi\n"})
+
+    def rooted_r1(cid: str) -> list:
+        return [(f["line"], f["target"]) for f in found(w_r1, {cid: [f"scripts/{cid}.py"]}, cid, 2)
+                if f["kind"] == "install-root"]
+    case("S1 (r1 M3): a `..` part climbs a level, in a join and after a `/`; a `..` that returns to the file's own "
+         "directory or climbs past the root is no finding; an annotated binding is a binding",
+         lambda: rooted_r1("up"),
+         [(4, "docs/b.md"), (6, "docs/c.md"), (10, "docs/f.md")])
+    case("S1 (r1 m2, Codex MAJOR): a name is looked up in Python's scope — a function's own local, a parameter that "
+         "shadows the root, a name rebound to something else — and a rebinding to the same path keeps it; a class body's field default "
+         "is judged where it is bound, and a `globals()[...]` restore is a rebinding",
+         lambda: rooted_r1("scope"),
+         [(7, "docs/g.md"), (14, "docs/k.md"), (19, ".")])
+    case("S1 (r1 m3, Codex MINOR): a comparison, an f-string or print, relative_to and an existence test of the "
+         "root itself do not use the root as the project; the git call does, and so does a test of a path below it",
+         lambda: rooted_r1("inert"),
+         [(11, "."), (13, "docs/s.md")])
+    case("S1 (r1 m2): a `global` rebinding is the module's and a `nonlocal` one the enclosing function's; a class "
+         "body is not seen from its methods; a lambda's parameter, a comprehension's target, an `except ... as`, "
+         "an import, a `def` and a bare annotation each make the name a local that holds no path",
+         lambda: rooted_r1("scope2"),
+         [(18, "docs/c.md")])
+    case("L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path "
+         "prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none",
+         lambda: [(f["line"], f["term"]) for f in found(w_r1, {"home": ["scripts/home.py"]}, "home", 6)
+                  if f["kind"] == "home-path"],
+         [(8, "~/explainers"), (20, "~/conf"), (26, "~/r"), (29, "~/j/k"), (31, "~/b")])
+
+    def doc_rows(cid: str, files: list) -> tuple:
+        e = scan(*put(w_r1, [comp(cid, files)], {cid: [SS.installed_path(f) for f in files]}), root=w_r1)
+        e = e["components"][cid]
+        return tuple([(r["line"], r["term"]) for r in e[k] if r["detector"] == 4] for k in ("findings", "mentions"))
+    case("S4 (r1 M1): a docs/ path that OPENS a section whose body instructs is a prerequisite; a later line, a "
+         "section with no instruction, a span that holds more than the path and a path in description are mentions",
+         lambda: doc_rows("k", [".agents/skills/k/SKILL.md"]),
+         ([(4, "docs/store.md")], [(8, "docs/also.md"), (12, "docs/other.md"), (14, "docs/goal.md"),
+                                   (18, "docs/env.md"), (22, "docs/late.md")]))
+    case("S3 (r1 m6): an invocation and a read of the SAME target on one line are one finding",
+         lambda: rows(found(w_r1, {"s": [".agents/skills/s/SKILL.md", ".agents/skills/s/x.sh"]}, "s", 2)),
+         [(2, "cwd-relative", ".agents/skills/s/x.sh", "${CLAUDE_PLUGIN_ROOT}/skills/s/x.sh")])
 
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
         print("NOT RUN under the mutation harness: 10 live-tree cases (CI's ordinary step runs them)")

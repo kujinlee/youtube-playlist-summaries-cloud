@@ -2597,5 +2597,13 @@ EXPECTED_MUTATIONS = {
     # .parent / parents[k] / dirname levels, the join and its literal names, the shipped filter, the depth, the
     # binding and inner-path skips), +5 the Markdown read/follow references (the clause, the verb, ../ resolution,
     # docs/ left to detector 4, one finding per target per line). Experiment failures S1 and S3.
-    "scripts/check-publishability.py": 175,
+    # ⟳ Task 16 review r1 fold (2026-11-21): 175 → 226 — four anchors rebound in place (the name lookup, the
+    # placed depth, the longer-path and binding skips); +51: detector 2 scopes (function/lambda/comprehension/class,
+    # parameters, global/nonlocal, except-as, import, def, annotation, disagreeing stores, the provisional memo),
+    # the `..` climb and absolute part, the inert uses (comparison, f-string, str(), print/relpath, relative_to
+    # either side, existence tests of the root only), the class-body and globals() bindings, `x.resolve()`;
+    # detector 6 home-path guards (B1: the guard, raise/exit/return, the existence forms, every HOME producer, the
+    # first-store rule); detector 4 section openers (M1: the exact span, the heading, the body bound, the acting
+    # verbs); the invocation/read shared dedup (m6).
+    "scripts/check-publishability.py": 226,
 }
