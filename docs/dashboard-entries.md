@@ -21221,3 +21221,14 @@ from their own path and `usage-pace-run.sh` reads `origin/master` through that c
 git layouts, four GIT_* steering cases and two fake gits; launcher mutants u1, u8, g0–g12, c2–c3 and r-<name> killed;
 manifest mutations 18 → 47. Bound: `check-idle-stop.py` and the
 agent-call hooks IMPORT `check-usage-pace.py` from the checkout and are unchanged.
+
+## 2026-11-21
+The goal tree no longer shows finished backlog rows as still queued. A leaf whose row says ✅ DONE in the
+backlog now reads done even when no merged pull request's title names that row the exact way the tree looks
+for. Before this, Goal 2 showed five queued rows when only one was left. Your Fable answer is also recorded:
+Fable keeps the architecture reviews and specs/plans, and Opus does folds and builds.
+<!--tech-->
+backlog #689 (filed and fixed here): `derive_thread` in `scripts/goal-tree.py` — a tree leaf that no merged
+or open PR names reads ✅ when every live row it names is in `closed_rows`; 2 self-test cases, 3 mutations
+(pin 502 -> 505). backlog #630 ✅: owner card A (11-21 09:50), recorded on row 23 of
+`docs/optimization-register.md`. `docs/goal-threads.md`: lines for backlog #689 and backlog #685.

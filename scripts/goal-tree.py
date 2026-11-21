@@ -82,8 +82,8 @@ after `gh pr merge`, and alone after an edit of the threads file; the page's Ref
 no arguments.
 
 ⚠ BOUNDS, stated. A backlog-only thread finds its PR by the `(backlog #N)` subject tail on master and by
-`backlog #N` in an open PR's title; a PR that names its row any other way is not found and the thread
-reads "no PR names it yet". The in-flight ledger is matched by (KIND, number) (`_ledger_refs`): an entry's
+`backlog #N` in an open PR's title; a PR that names its row any other way is not found, and the thread
+reads "no PR names it yet" unless every live row it names is ✅ in its Status cell (backlog #689), when it reads ✅. The in-flight ledger is matched by (KIND, number) (`_ledger_refs`): an entry's
 declared `thread` refs, else the `PR #N` / `backlog #N` in its id and text. A bare `#424` or an id's `-424` names
 nothing, so such an entry shows IN FLIGHT UNDER NO GOAL rather than on a guessed thread. `gh pr list --state all` is capped at
 ALL_LIMIT, so an old PR beyond it reads NOT FOUND, never a guessed state.
@@ -823,7 +823,8 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
     """PURE. One declared thread + the read sources -> the thread with `state` and `detail`. `now` (the minute stamp)
     lets a declared `waits on` whose date has passed be FLAGGED expired rather than block (backlog #612); None reads no
     expiry. `by_row` — an AGENDA STEP's reading (backlog #515/#611): each live backlog row it names is done by its
-    Status cell (`closed_rows`), never by a merged PR that names it; a tree leaf keeps the merge reading."""
+    Status cell (`closed_rows`), never by a merged PR that names it; a tree leaf keeps the merge reading, and only a
+    leaf NO PR names (none merged, none open) reads its rows' Status cells — ✅ when every live row is (backlog #689)."""
     prs = [n for k, n in t["refs"] if k == "PR"]
     rows = list(dict.fromkeys(n for k, n in t["refs"] if k == "backlog"))   # r1 C8: a row named twice is ONE row
     # backlog #484: each backlog ref has its OWN fate (None = live). `fates` is None when the backlog was not
@@ -889,7 +890,13 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
                 detail = (", ".join(f"backlog #{n}" for n in live_rows) + " ✅ in its Status cell, but an open PR "
                           "names it · " + detail)
         else:
-            state, detail = "next", "no PR names it yet"
+            # backlog #689: a tree LEAF no PR names (a PR subject `(backlog #1, #2)` names no row) is ✅ by its rows'
+            # Status cells when EVERY live row is ✅ there — it read ⬜ queued while the backlog said DONE
+            leaf_cells = src.get("closed_rows") if not by_row else None
+            if live_rows and leaf_cells is not None and all(n in leaf_cells for n in live_rows):
+                state, detail = "merged", (_row_list(live_rows) + " ✅ in its Status cell · no merged PR names it")
+            else:
+                state, detail = "next", "no PR names it yet"
         if hit and row_open:
             # backlog #515/#611: the PR that named the row is CONTEXT — it may have filed the row, or landed only part.
             # r1 C1: it is a PR that named an OPEN row, and the row it named is said — never a PR that named another row
@@ -5829,6 +5836,18 @@ def _self_test_cases(*, outside: dict) -> int:
               derive_thread({"key": "k", "refs": [["backlog", 10]], "waits": None}, src(closed_rows={10}),
                             "2026-11-20 10:00", by_row=True)["state"]],
              ["merged", "merged", "next", "merged"])
+        _lf = lambda refs, **kw: derive_thread({"key": "k", "refs": refs, "waits": None}, src(**kw))
+        _l689 = [_lf([["backlog", 12]], closed_rows={12}), _lf([["backlog", 12]], closed_rows=set()),
+                 _lf([["backlog", 12], ["backlog", 13]], closed_rows={12}),
+                 _lf([["backlog", 12], ["backlog", 13]], closed_rows={12, 13}),
+                 _lf([["backlog", 11]], closed_rows={11}), _lf([["backlog", 12]], closed_rows=None)]
+        case("⭐ backlog #689: a tree LEAF no PR names is ✅ by its rows' Status cells when EVERY row is ✅ there, and ⬜ "
+             "when any is not; an open PR naming a ✅ row still reads ⏳; unread cells never read ✅",
+             [x["state"] for x in _l689], ["merged", "next", "next", "merged", "open", "next"])
+        case("backlog #689: the ✅-by-cell leaf says it is the Status cell, names every row, and names no PR",
+             (_l689[0]["detail"], "backlog #12" in _l689[3]["detail"] and "backlog #13" in _l689[3]["detail"],
+              _l689[1]["detail"]),
+             ("backlog #12 ✅ in its Status cell · no merged PR names it", True, "no PR names it yet"))
         # backlog #612 — a declared wait whose date has passed is FLAGGED, never shown as a live reason
         case("backlog #612: wait_expired reads the LATEST date a wait names (YYYY-MM-DD or MM-DD), against today",
              [wait_expired(w, at) for w, at in (

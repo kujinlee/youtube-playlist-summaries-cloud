@@ -6563,5 +6563,44 @@
     "expect": [
       "r3 F3: the window's edges read on 11-20 — 03-21 is 244 days back (THIS year's, expired); 03-20 is exactly 120 days ahead next year (not expired)"
     ]
+  },
+  {
+    "name": "backlog #689: ANY ✅ row closes the leaf, not every row",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if live_rows and leaf_cells is not None and all(n in leaf_cells for n in live_rows):",
+        "if live_rows and leaf_cells is not None and any(n in leaf_cells for n in live_rows):"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689: a tree LEAF no PR names is ✅ by its rows' Status cells when EVERY row is ✅ there, and ⬜ when any is not; an open PR naming a ✅ row still reads ⏳; unread cells never read ✅"
+    ]
+  },
+  {
+    "name": "backlog #689: unread Status cells (None) read as every row closed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if live_rows and leaf_cells is not None and all(n in leaf_cells for n in live_rows):",
+        "if live_rows and (leaf_cells is None or all(n in leaf_cells for n in live_rows)):"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689: a tree LEAF no PR names is ✅ by its rows' Status cells when EVERY row is ✅ there, and ⬜ when any is not; an open PR naming a ✅ row still reads ⏳; unread cells never read ✅"
+    ]
+  },
+  {
+    "name": "backlog #689: the leaf reading by cell removed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if live_rows and leaf_cells is not None and all(n in leaf_cells for n in live_rows):",
+        "if False and leaf_cells is not None and all(n in leaf_cells for n in live_rows):"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689: a tree LEAF no PR names is ✅ by its rows' Status cells when EVERY row is ✅ there, and ⬜ when any is not; an open PR naming a ✅ row still reads ⏳; unread cells never read ✅"
+    ]
   }
 ]
