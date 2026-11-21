@@ -982,5 +982,38 @@
       ]
     ],
     "expect": "r1 C2: the parser reads a PARTLY-DONE row (no Item marker, a finished half's ✅) as OPEN"
+  },
+  {
+    "name": "r2 Codex m1: a closing word after a ✅ does not close the row",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        " or bool(CLOSING_WORD_RE.search(status))",
+        ""
+      ]
+    ],
+    "expect": "⭐ r2 Codex m1: a ✅ written before a closing word in CAPITALS closes the row wherever it stands — bold or a `(was …)` between allowed; a lower-case `✅ merged` (a finished half) or `✅ Fixed` does not"
+  },
+  {
+    "name": "r2 Codex m1: the closing word is read in any case",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "CLOSING_WORD_RE = re.compile(r\"",
+        "CLOSING_WORD_RE = re.compile(r\"(?i)"
+      ]
+    ],
+    "expect": "⭐ r2 Codex m1: a ✅ written before a closing word in CAPITALS closes the row wherever it stands — bold or a `(was …)` between allowed; a lower-case `✅ merged` (a finished half) or `✅ Fixed` does not"
+  },
+  {
+    "name": "r2 Codex m1: the closing word needs no word boundary",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "|MERGED|DONE)\\b\")",
+        "|MERGED|DONE)\")"
+      ]
+    ],
+    "expect": "⭐ r2 Codex m1: a ✅ written before a closing word in CAPITALS closes the row wherever it stands — bold or a `(was …)` between allowed; a lower-case `✅ merged` (a finished half) or `✅ Fixed` does not"
   }
 ]

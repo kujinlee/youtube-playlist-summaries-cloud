@@ -21177,7 +21177,10 @@ Branch `agenda-row-state`, backlog #515, #611, #612 (`scripts/goal-tree.py`). `d
 agenda step naming rows and no PR reads `closed_rows` (✅ → merged; open → ⬜/⏳ with `PR #N (sha) merged naming it`;
 unread → CANNOT RUN); a step naming its PR follows the PR; tree leaves unchanged. `wait_expired(text, now)` flags a
 declared wait whose latest date is before today (`⚠ wait expired <date>`), in the leaf, the agenda step and the OWED
-`waits`; an expired wait never outvotes a live one on a step. 11 new self-test cases (562 → 573); goal-tree mutations
-470 → 487 (17 new, 4 rebound to moved text; the 21 run in a scratch copy: 21 killed). On the live tree the current
-agenda's step 4 (backlog #672) turns ✅ → ⏳: PR #606 built it, but row #672's Status cell still reads `⏳ BUILT
-2026-11-20, PR pending`.
+`waits`; an expired wait never outvotes a live one on a step; an open PR naming a row outranks the row's ✅ (r2). A
+yearless wait date is read at most 120 days ahead, else last year's. `gen-backlog-page.status_closed`: a ✅ after an open
+marker is a finished half (open) unless the Item cell is ✅ or the ✅ precedes a capitalised closing word (FIXED, CLOSED,
+SUPERSEDED, MERGED, DONE); 229 of 636 live rows closed before and after, none changes. Self-test cases: goal-tree
+562 → 581, gen-backlog-page 247 → 251. Mutations: goal-tree 470 → 501, gen-backlog-page 77 → 84 (each round's new and
+rebound entries run in a scratch copy, all killed). Review rounds 1 (both halves) and 2 (Codex) folded; backlog row
+#672 closed in the r1 fold (PR #606 had merged).

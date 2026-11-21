@@ -479,7 +479,10 @@ EXPECTED_MUTATIONS = {
     # says so: 2); C8 (a row named twice, once); C4 (a letter or dot before a date: 2); C5 (the ahead-window, its
     # width, the latest year in reach, a written year unmoved: 4). Rebound, not counted: the all-✅ branch (`by_cells`),
     # the `#NN-NN` lookbehind, and the subject-parentheses anchor (now three copies of the regex).
-    "scripts/goal-tree.py": 499,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    # ⟳ 2026-11-20, agenda-row-state r2 fold: 499 -> 501. Codex M1 (an open PR outranks an all-✅ step's cells: 1);
+    # Codex m2 (the ahead-window is 120 days, not round 1's 92: 1). Rebound, not counted: the ~six-months entry's
+    # anchor (`WAIT_AHEAD_DAYS = 120 `), and the four C5 entries' expected case name (03-25 replaces 02-25).
+    "scripts/goal-tree.py": 501,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -568,7 +571,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-03, backlog #470 review round 1: 65 -> 67. publish_rows: the rows that exist, and its warning (+2).
     # ⟳ 2026-11-20, agenda-row-state r1 C2: 77 -> 81. `status_closed` — any ✅ closes, the Item-cell ✅ exemption,
     # ⏳ as an open marker, and parse using the rule (+4).
-    "scripts/gen-backlog-page.py": 81,
+    # ⟳ 2026-11-20, agenda-row-state r2 Codex m1: 81 -> 84. A ✅ before a capitalised closing word closes the row —
+    # the clause removed, read in any case, and without its word boundary (+3).
+    "scripts/gen-backlog-page.py": 84,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and

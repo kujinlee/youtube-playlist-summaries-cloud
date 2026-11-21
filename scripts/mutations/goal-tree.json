@@ -6483,7 +6483,7 @@
       ]
     ],
     "expect": [
-      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 02-25 last February's; a written year is never moved (2027-05-20 is latest)"
+      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 03-25 last March's; a written year is never moved (2027-05-20 is latest)"
     ]
   },
   {
@@ -6491,12 +6491,12 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "WAIT_AHEAD_DAYS = 92 ",
+        "WAIT_AHEAD_DAYS = 120 ",
         "WAIT_AHEAD_DAYS = 182 "
       ]
     ],
     "expect": [
-      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 02-25 last February's; a written year is never moved (2027-05-20 is latest)"
+      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 03-25 last March's; a written year is never moved (2027-05-20 is latest)"
     ]
   },
   {
@@ -6509,7 +6509,7 @@
       ]
     ],
     "expect": [
-      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 02-25 last February's; a written year is never moved (2027-05-20 is latest)"
+      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 03-25 last March's; a written year is never moved (2027-05-20 is latest)"
     ]
   },
   {
@@ -6522,7 +6522,33 @@
       ]
     ],
     "expect": [
-      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 02-25 last February's; a written year is never moved (2027-05-20 is latest)"
+      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 03-25 last March's; a written year is never moved (2027-05-20 is latest)"
+    ]
+  },
+  {
+    "name": "r2 Codex m2: the ahead-window is the 92 days of round 1",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "WAIT_AHEAD_DAYS = 120    # r1 C5",
+        "WAIT_AHEAD_DAYS = 92    # r1 C5"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex m2: the ahead-window is about four months — 04-04 read on 01-01 is THIS April's (93 days ahead, not expired), 04-30 too (119); 05-02 (121) is last year's; and 05-20 read on 11-20 is still THIS May's"
+    ]
+  },
+  {
+    "name": "r2 Codex M1: an open PR no longer outranks an all-✅ step's Status cells",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    cells_held = by_cells and bool(opened)",
+        "    cells_held = False"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: an OPEN PR naming a row outranks the row's ✅ — with the merge log unread and with it read, the step reads ⏳ open naming the PR, never ✅; with no open PR the closed row is still ✅"
     ]
   }
 ]
