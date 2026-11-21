@@ -1198,5 +1198,31 @@
     "expect": [
       "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
     ]
+  },
+  {
+    "name": "r4 R4-1: `[^` is read as Python reads it",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "pat = t.replace(\"[^\", \"[!\")",
+        "pat = t"
+      ]
+    ],
+    "expect": [
+      "a `[^k]` bracket is a negation as in bash; a `[[:digit:]]` class is refused (r4 R4-1)"
+    ]
+  },
+  {
+    "name": "r4 R4-1: a POSIX bracket class is globbed",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if re.search(r\"\\[[^]/]*\\[[:=.]\", t):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "a `[^k]` bracket is a negation as in bash; a `[[:digit:]]` class is refused (r4 R4-1)"
+    ]
   }
 ]

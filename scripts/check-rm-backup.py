@@ -67,7 +67,7 @@ earlier commands ran (a `source` is not followed).
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED (allowed,
 said on stderr). `--self-test` 0 = every case passed, 1 = a case failed.
 
-    python3 scripts/check-rm-backup.py --self-test  # 123 cases
+    python3 scripts/check-rm-backup.py --self-test  # 124 cases
 """
 from __future__ import annotations
 
@@ -824,7 +824,10 @@ def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
                 if here is None:
                     raise Refuse(f"the relative target `{t}` follows a `cd` the hook cannot follow")
                 t = os.path.join(here, t)
-            matches = (glob.glob(t) if any(c in t for c in "*?[") else []) + [t]   # the lexer drops quotes: a
+            if re.search(r"\[[^]/]*\[[:=.]", t):    # r4 R4-1: Python's glob has no `[[:digit:]]` classes
+                raise Refuse(f"the target `{t}` uses a bracket class the hook cannot expand as bash does")
+            pat = t.replace("[^", "[!")          # r4 R4-1: bash reads `[^k]` as `[!k]`; Python as `^` or `k`
+            matches = (glob.glob(pat) if any(c in t for c in "*?[") else []) + [t]   # the lexer drops quotes: a
             for m in dict.fromkeys(matches):     # quoted `'a[1].txt'` is a literal name, so read it both ways
                 follow = m.endswith("/")         # `rm -r link/` deletes what the link points at, on macOS
                 m = _entry(m)                    # the parent RESOLVED, so `lnk/../x` is where the kernel finds it
@@ -1094,6 +1097,12 @@ def _self_test_body() -> int:
              [targets(f"find -H {scratch}/out -delete"), targets(f"find {scratch}/out/ -delete"),
              ], ["refused"] * 2)
         os.remove(os.path.join(scratch, "out"))
+        os.makedirs(os.path.join(work, "g"))
+        Path(work, "g", "a1").write_text("G")
+        Path(work, "g", "keep").write_text("K")
+        case("a `[^k]` bracket is a negation as in bash; a `[[:digit:]]` class is refused (r4 R4-1)",
+             [targets("rm -f g/[^k]*"), targets("rm -f g/[[:alpha:]]*")], [["repo/sub/g/a1"], "refused"])
+        shutil.rmtree(os.path.join(work, "g"))
         case("a quoted `a[1].txt` is backed up as the name it is, not only as a pattern (r1 Claude probe)",
              targets("rm 'a[1].txt'"), ["repo/sub/a[1].txt"])
         os.remove(os.path.join(work, "a[1].txt"))
