@@ -859,16 +859,17 @@ def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
                                  "hook cannot see")
             continue
         for t in targets:
-            if "[" in t and (any(c in t for c in "*?") or re.search(r"\[\]?[^]]*-", t)):   # Phase 6
+            if "[" in t and (any(c in t for c in "*?") or re.search(r"\[[!^]?\]?[^]]*-", t)):   # Phase 6; r6 push-time: `[!]-z]`
                 raise Refuse(f"the target `{t}` puts a bracket set beside a wildcard or a range, which bash reads by "
                              "quotes and locale collation the hook cannot see")
             if not os.path.isabs(t):
                 if here is None:
                     raise Refuse(f"the relative target `{t}` follows a `cd` the hook cannot follow")
-                t = os.path.join(glob.escape(here), t)   # Phase 6 P6-2: `cd app/[id]` is a literal directory
-            pats = bash_brackets(t)              # r4 R4-1, r5 R5-1: every reading bash might mean (escaped dir kept)
-            matches = ([m for q in pats for m in glob.glob(q)] if any(c in t for c in "*?[")
-                       else []) + [t]   # the lexer drops quotes: a
+            lit = t if os.path.isabs(t) else os.path.join(here, t)       # r6 push-time: the NAME, unescaped
+            pat = t if os.path.isabs(t) else os.path.join(glob.escape(here), t)   # Phase 6 P6-2: `cd app/[id]` is literal
+            pats = bash_brackets(pat)            # r4 R4-1, r5 R5-1: every reading bash might mean (escaped dir kept)
+            matches = ([m for q in pats for m in glob.glob(q)] if any(c in pat for c in "*?[")
+                       else []) + [lit]   # the lexer drops quotes: a
             for m in dict.fromkeys(matches):     # quoted `'a[1].txt'` is a literal name, so read it both ways
                 follow = m.endswith("/")         # `rm -r link/` deletes what the link points at, on macOS
                 m = _entry(m)                    # the parent RESOLVED, so `lnk/../x` is where the kernel finds it
@@ -1145,7 +1146,7 @@ def _self_test_body() -> int:
         H = lambda *n: [f"repo/sub/h/{x}" for x in n]
         case("a bracket set beside a wildcard, or holding a `-`, is refused: quotes and locale the hook cannot see (Phase 6 P6-1/P6-3/P6-4, r6 R6-1)",
              [targets("rm -f h/[a-z]*"), targets('rm -f "h/[^a/"*'), targets("rm -f -- h/[a\\-z]x"),
-              targets("rm -f h/[\\!a-]"), targets("rm -f h/?[k]")], ["refused"] * 5)
+              targets("rm -f h/[\\!a-]"), targets("rm -f h/?[k]"), targets("rm -f h/[!]-z]")], ["refused"] * 6)
         case("a `[^k]` set is read negated AND with a literal caret; a `[[:alpha:]]` class and five negated sets are refused (r4 R4-1, r5 R5-1, r6 R6-2)",
              [targets("rm -f h/[^k]"), targets("rm -f h/[\\!a]"), targets("rm -f h/[[:alpha:]]"),
               targets("rm -f h/[!a][!a][!a][!a][!a]")],
@@ -1158,6 +1159,9 @@ def _self_test_body() -> int:
         Path(work, "app", "i").write_text("I")
         case("a bracketed working directory is a literal path, not a set (Phase 6 P6-2)",
              targets('cd "app/[id]" && rm -f *.bak'), ["repo/sub/app/[id]/x.bak"])
+        Path(work, "app", "[id]", "a[1]").write_text("A")
+        case("a quoted bracketed name inside a bracketed working directory is backed up as that name (r6 push-time review)",
+             targets('cd "app/[id]" && rm -f "a[1]"'), ["repo/sub/app/[id]/a[1]"])
         shutil.rmtree(os.path.join(work, "h")); shutil.rmtree(os.path.join(work, "app"))
         case("a quoted `a[1].txt` is backed up as the name it is, not only as a pattern (r1 Claude probe)",
              targets("rm 'a[1].txt'"), ["repo/sub/a[1].txt"])

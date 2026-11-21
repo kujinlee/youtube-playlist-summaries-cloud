@@ -281,8 +281,8 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "else []) + [t]   # the lexer",
-        "else [t])   # the lexer"
+        "else []) + [lit]   # the lexer",
+        "else [lit])   # the lexer"
       ]
     ],
     "expect": [
@@ -1243,8 +1243,8 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "pats = bash_brackets(t)",
-        "pats = (bash_brackets(t), [t])[1]"
+        "pats = bash_brackets(pat)",
+        "pats = (bash_brackets(pat), [pat])[1]"
       ]
     ],
     "expect": [
@@ -1295,7 +1295,7 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "or re.search(r\"\\[\\]?[^]]*-\", t)):   # Phase 6",
+        "or re.search(r\"\\[[!^]?\\]?[^]]*-\", t)):   # Phase 6",
         "or False):   # Phase 6"
       ]
     ],
@@ -1308,12 +1308,38 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "t = os.path.join(glob.escape(here), t)",
-        "t = os.path.join(here, t)"
+        "pat = t if os.path.isabs(t) else os.path.join(glob.escape(here), t)",
+        "pat = t if os.path.isabs(t) else os.path.join(here, t)"
       ]
     ],
     "expect": [
       "a bracketed working directory is a literal path, not a set (Phase 6 P6-2)"
+    ]
+  },
+  {
+    "name": "r6 push-time: the literal fallback is the escaped pattern",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "lit = t if os.path.isabs(t) else os.path.join(here, t)",
+        "lit = t if os.path.isabs(t) else os.path.join(glob.escape(here), t)"
+      ]
+    ],
+    "expect": [
+      "a quoted bracketed name inside a bracketed working directory is backed up as that name (r6 push-time review)"
+    ]
+  },
+  {
+    "name": "r6 push-time: a negator before a leading `]` hides a range",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "r\"\\[[!^]?\\]?[^]]*-\", t)",
+        "r\"\\[\\]?[^]]*-\", t)"
+      ]
+    ],
+    "expect": [
+      "a bracket set beside a wildcard, or holding a `-`, is refused: quotes and locale the hook cannot see (Phase 6 P6-1/P6-3/P6-4, r6 R6-1)"
     ]
   }
 ]

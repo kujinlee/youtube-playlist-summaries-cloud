@@ -63,3 +63,13 @@ bracket glob target).
 convened for it before the merge and its answer is this fold: the hook stops deriving a meaning it cannot know
 and refuses instead. The class-removing redesign (ask bash, `compgen -G`, with a quote-aware lexer; measured safe
 and 5 ms a call by the review) is recorded on **backlog #686**, size M.
+
+**Push-time security review of `cea4ffe3` (automated, two MEDIUM findings, both real, both folded).**
+- *The literal fallback was the escaped path.* After P6-2's `glob.escape(here)`, the name appended "as the name it
+  is" was `app/[[]id]/a[1]`, which does not exist; `cd "app/[id]" && rm -f "a[1]"` deleted `app/[id]/a[1]` with no
+  backup. The hook now keeps two strings, `pat` (escaped directory, globbed) and `lit` (the plain name). Case: "a
+  quoted bracketed name inside a bracketed working directory is backed up as that name".
+- *A negator hid a range from the refusal.* `\[\]?[^]]*-` missed `[!]-z]` (a negated set whose first member is `]`
+  and which holds a range). The regex now allows `[!^]?` before the `]`. Case: `h/[!]-z]` added to the refusal case.
+- Measured: self-test 128/128; scoped sweep 103/103 (two mutations added, each reverting one fix, killed by its case;
+  three rebound to the new text); replay over 18,528 past Bash calls: 0 verdicts lost, 0 new against round 6.
