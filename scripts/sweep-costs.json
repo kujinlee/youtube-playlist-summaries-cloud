@@ -13,7 +13,8 @@
   "hand-timed:scripts/check-shipping-sets.py@PR #598 review r1 fold (117 cases; the self-test is 6.8 s locally under the mutation harness, which skips its 3 live-tree cases, and 29.3 s outside it; re-priced 11.0 -> 7.0 s, no CI sample yet)",
   "hand-timed:scripts/check-publishability.py@marketplace-inventory Tasks 8-12 (145 mutations in 998 s = 6.9 s each locally under the mutation harness; re-priced 5.0 -> 7.0 s, no CI sample yet)",
   "hand-timed:scripts/mkt_seed_repo.py@marketplace slice E r1 fold (self-test 2.0 s locally over 13 cases; priced 2.5 s, no CI sample yet; the row Task 13 omitted)",
-  "hand-timed:scripts/check-memory-shape.py@memory-shape-check (self-test 0.12 s locally over 50 cases; priced 0.2 s and 0.3 s, no CI sample yet)"
+  "hand-timed:scripts/check-memory-shape.py@memory-shape-check (self-test 0.12 s locally over 50 cases; priced 0.2 s and 0.3 s, no CI sample yet)",
+  "hand-timed:scripts/check-rm-backup.py@backlog #685 (self-test 0.11 s locally over 64 cases; priced 0.2 s and 0.3 s, no CI sample yet)"
  ],
  "defaults": {
   "mutation": 10.162,
@@ -742,6 +743,13 @@
    "mutations": 0
   },
   "scripts/check-memory-shape.py": {
+   "control": 0.2,
+   "recontrol": 0.2,
+   "mutation": 0.3,
+   "samples": 0,
+   "mutations": 0
+  },
+  "scripts/check-rm-backup.py": {
    "control": 0.2,
    "recontrol": 0.2,
    "mutation": 0.3,

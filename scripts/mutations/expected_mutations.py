@@ -1917,6 +1917,8 @@ EXPECTED_MUTATIONS = {
     # summed — one entry per clause of `split_list` and `list_spans` (+15); the `cd DIR &&` prefix of
     # `simple_command` became a list part (-4, +1 for the list's `cd` test): 95.
     "scripts/check-agent-large-read.py": 107,
+    # backlog #685 (2026-11-20): pinned in the commit that creates it — one mutation per rule the hook applies.
+    "scripts/check-rm-backup.py": 9,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.

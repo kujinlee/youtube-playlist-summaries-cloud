@@ -21166,3 +21166,13 @@ is wrong, and the redesign changes the scored facts file, so it owes its own rev
 PR #604 (harness-ships-elsewhere slice E). Phase 6: `docs/reviews/architecture-review-2026-11-20-mkt-seed-repo.md` —
 13 of 20 one-sided edits of the seed pass the self-test; a declare-once redesign turns all 20 red. Filed as backlog
 #678, superseding #676.
+
+## 2026-11-20
+An `rm` the agent runs is now backed up automatically before it runs, as the owner asked on 11-20 (a backup instead
+of asking for approval). Temp files in the session scratchpad need none. An `rm` whose targets the hook cannot work
+out is refused with a message saying how to write it so it can be backed up.
+<!--tech-->
+Backlog #685, PR #608: `scripts/check-rm-backup.py` + `.claude/hooks/rm-backup.sh` (PreToolUse Bash). Copies to
+`~/.claude/rm-backups/<session>/<stamp>/`, logged in `log.jsonl`, pruned after 14 days. Self-test 64/64; 9 mutations,
+9 killed by their named case. Transcript replay: 17,778 Bash calls, 268 `rm`s seen, 19 refused (loop variables and
+run-time values). A `#` mid-word and a `<<<`/quoted `<<` no longer hide an `rm` (11-20 security review). Bounds: an `rm` inside a quoted string, `bash -c`, `eval` or another language is not seen.

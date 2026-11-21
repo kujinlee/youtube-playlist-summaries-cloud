@@ -654,6 +654,10 @@
       "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
     },
     {
+      "path": "scripts/check-rm-backup.py",
+      "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
+    },
+    {
       "path": "scripts/check-agent-long-call.py",
       "reason": "governance: reached from a governance hook, an excluded skill, or the prose of a data document (docs/memory/, the velocity documents), never by an executable edge from a package entry-point"
     },

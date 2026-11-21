@@ -1,0 +1,119 @@
+[
+  {
+    "name": "the scratchpad exemption is dropped: a scratchpad target is backed up",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if _inside(m, root) or (session and f\"/{session}/scratchpad/\" in os.path.realpath(m) + \"/\"):",
+        "if _inside(m, root):"
+      ]
+    ],
+    "expect": [
+      "a target in this session's scratchpad needs no backup"
+    ]
+  },
+  {
+    "name": "only a bare `rm` is recognised: `/bin/rm` is missed",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "elif os.path.basename(name) == \"rm\":",
+        "elif name == \"rm\":"
+      ]
+    ],
+    "expect": [
+      "`sudo rm`, `command rm`, `\\rm` and `/bin/rm` are seen"
+    ]
+  },
+  {
+    "name": "heredoc bodies are read as commands",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "pending.append((m.group(0).startswith(\"<<-\"), m.group(2)))",
+        "pass"
+      ]
+    ],
+    "expect": [
+      "a heredoc body is data, not commands"
+    ]
+  },
+  {
+    "name": "a failed copy no longer refuses the rm",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "raise Refuse(f\"the backup of `{p}` failed ({exc})\")",
+        "continue"
+      ]
+    ],
+    "expect": [
+      "a copy that fails refuses the `rm`"
+    ]
+  },
+  {
+    "name": "a mktemp directory is no longer exempt",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "env[var] = FRESH     #",
+        "env[var] = None     #"
+      ]
+    ],
+    "expect": [
+      "a directory `mktemp` made in the same command needs no backup (the 11-20 replay's commonest shape)"
+    ]
+  },
+  {
+    "name": "the size cap is dropped",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        if total > MAX_BYTES or count > MAX_FILES:\n            raise Refuse(f\"the targets are too large",
+        "        if False:\n            raise Refuse(f\"the targets are too large"
+      ]
+    ],
+    "expect": [
+      "targets over the cap are refused"
+    ]
+  },
+  {
+    "name": "an unknown variable expands to nothing instead of refusing",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "            raise Refuse(f\"the variable `${name}` in `{word}` has no value the hook can see\")",
+        "            return \"\""
+      ]
+    ],
+    "expect": [
+      "an unknown variable is refused"
+    ]
+  },
+  {
+    "name": "a `#` anywhere opens a comment, as shlex reads it",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "elif c == \"#\" and (i == 0 or command[i - 1] in WORD_START):",
+        "elif c == \"#\":"
+      ]
+    ],
+    "expect": [
+      "a `#` inside a word opens no comment (the 11-20 security review)"
+    ]
+  },
+  {
+    "name": "a here-string `<<<` opens a heredoc",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "and (i == 0 or command[i - 1] != \"<\")    # `<<<` is a here-string",
+        "    # `<<<` is a here-string"
+      ]
+    ],
+    "expect": [
+      "`<<<` and a quoted `<<` open no heredoc (the 11-20 security review)"
+    ]
+  }
+]
