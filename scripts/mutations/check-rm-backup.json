@@ -1204,12 +1204,12 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "neg = j < len(t) and t[j] in \"!^\"",
-        "neg = j < len(t) and t[j] in \"!\""
+        "neg = t[j] if j < len(t) and t[j] in \"!^\" else \"\"",
+        "neg = t[j] if j < len(t) and t[j] in \"!\" else \"\""
       ]
     ],
     "expect": [
-      "a `[^k]` bracket is a negation as in bash; a `[[:digit:]]` class is refused (r4 R4-1)"
+      "a `[^k]` bracket backs up what its negation deletes; a `[[:digit:]]` class is refused (r4 R4-1)"
     ]
   },
   {
@@ -1222,7 +1222,7 @@
       ]
     ],
     "expect": [
-      "a `[^k]` bracket is a negation as in bash; a `[[:digit:]]` class is refused (r4 R4-1)"
+      "a `[^k]` bracket backs up what its negation deletes; a `[[:digit:]]` class is refused (r4 R4-1)"
     ]
   },
   {
@@ -1243,12 +1243,38 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "pat = bash_brackets(t)",
-        "pat = (bash_brackets(t), t)[1]"
+        "pats = bash_brackets(t)",
+        "pats = (bash_brackets(t), [t])[1]"
       ]
     ],
     "expect": [
-      "a `[^k]` bracket is a negation as in bash; a `[[:digit:]]` class is refused (r4 R4-1)"
+      "a `[^k]` bracket backs up what its negation deletes; a `[[:digit:]]` class is refused (r4 R4-1)"
+    ]
+  },
+  {
+    "name": "r5 R5-1: a negating set is read only negated",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "[\"[!\" + body + \"]\", \"[\" + body + neg + \"]\"] if neg",
+        "[\"[!\" + body + \"]\"] if neg"
+      ]
+    ],
+    "expect": [
+      "a caret the lexer cannot tell quoted from negating is read BOTH ways; a set spanning `/` as Python reads it (r5 R5-1/R5-2)"
+    ]
+  },
+  {
+    "name": "r5 R5-2: the raw target is not globbed",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "return list(dict.fromkeys(out + [t]))",
+        "return list(dict.fromkeys(out))"
+      ]
+    ],
+    "expect": [
+      "a caret the lexer cannot tell quoted from negating is read BOTH ways; a set spanning `/` as Python reads it (r5 R5-1/R5-2)"
     ]
   }
 ]

@@ -67,7 +67,7 @@ earlier commands ran (a `source` is not followed).
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED (allowed,
 said on stderr). `--self-test` 0 = every case passed, 1 = a case failed.
 
-    python3 scripts/check-rm-backup.py --self-test  # 125 cases
+    python3 scripts/check-rm-backup.py --self-test  # 126 cases
 """
 from __future__ import annotations
 
@@ -786,28 +786,40 @@ def _size(path: str) -> tuple[int, int]:
     return (total, count)
 
 
-def bash_brackets(t: str) -> str:
-    """A glob target with each bracket expression read as bash reads it (r4 R4-1 + its push-time review).
+def bash_brackets(t: str) -> list[str]:
+    """Every Python-glob reading of a target's bracket sets that bash might mean (r4 R4-1, S29, r5 R5-1/R5-2).
 
     A set opens at `[`; a `!` or `^` right after it negates (Python's glob knows only `!`); a `]` right after
     that is a member, not the end. Inside a set, `[:`, `[=` or `[.` opens a class Python's glob cannot expand,
-    so the target is refused. A `[` with no closing `]` is a literal character, in both."""
-    out, i = [], 0
+    so the target is refused. A `[` with no closing `]` is a literal character, in both.
+    ⚠ The lexer has already dropped quotes and backslashes, so `[\\^a]` and `["^"a]` (a LITERAL caret) arrive
+    looking like `[^a]`: the hook cannot tell which bash meant. It backs up BOTH — each negating set is read
+    negated and literal (its negator moved last), every combination — plus Python's own reading of the raw
+    target (which also covers a set bash leaves literal because it spans a `/`). Over-backing-up is harmless;
+    a reading the hook chose wrongly was the silent miss of two rounds in a row (thrashing, r5)."""
+    pieces, i = [], 0                            # each piece: a list of alternative readings
     while i < len(t):
         if t[i] != "[":
-            out.append(t[i]); i += 1; continue
+            pieces.append([t[i]]); i += 1; continue
         j = i + 1
-        neg = j < len(t) and t[j] in "!^"
-        j += neg
+        neg = t[j] if j < len(t) and t[j] in "!^" else ""
+        j += bool(neg)
         k = j + (j < len(t) and t[j] == "]")
         while k < len(t) and t[k] != "]":
             if t[k] == "[" and k + 1 < len(t) and t[k + 1] in ":=.":
                 raise Refuse(f"the target `{t}` uses a bracket class the hook cannot expand as bash does")
             k += 1
         if k >= len(t):                          # unclosed: a literal `[`
-            out.append(t[i]); i += 1; continue
-        out.append("[" + ("!" if neg else "") + t[j:k + 1]); i = k + 1
-    return "".join(out)
+            pieces.append([t[i]]); i += 1; continue
+        body = t[j:k]                            # the members, a leading `]` included
+        pieces.append(["[!" + body + "]", "[" + body + neg + "]"] if neg else ["[" + body + "]"])
+        i = k + 1
+    if sum(len(p) > 1 for p in pieces) > 4:
+        raise Refuse(f"the target `{t}` has more negated bracket sets than the hook reads both ways")
+    out = [""]
+    for p in pieces:
+        out = [o + alt for o in out for alt in p]
+    return list(dict.fromkeys(out + [t]))
 
 
 def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
@@ -848,8 +860,9 @@ def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
                 if here is None:
                     raise Refuse(f"the relative target `{t}` follows a `cd` the hook cannot follow")
                 t = os.path.join(here, t)
-            pat = bash_brackets(t)               # r4 R4-1: `[^k]` and `[[:digit:]]` as bash reads them
-            matches = (glob.glob(pat) if any(c in t for c in "*?[") else []) + [t]   # the lexer drops quotes: a
+            pats = bash_brackets(t)              # r4 R4-1, r5 R5-1: every reading bash might mean
+            matches = ([m for q in pats for m in glob.glob(q)] if any(c in t for c in "*?[")
+                       else []) + [t]   # the lexer drops quotes: a
             for m in dict.fromkeys(matches):     # quoted `'a[1].txt'` is a literal name, so read it both ways
                 follow = m.endswith("/")         # `rm -r link/` deletes what the link points at, on macOS
                 m = _entry(m)                    # the parent RESOLVED, so `lnk/../x` is where the kernel finds it
@@ -1122,11 +1135,19 @@ def _self_test_body() -> int:
         os.makedirs(os.path.join(work, "g"))
         Path(work, "g", "a1").write_text("G")
         Path(work, "g", "keep").write_text("K")
-        case("a `[^k]` bracket is a negation as in bash; a `[[:digit:]]` class is refused (r4 R4-1)",
-             [targets("rm -f g/[^k]*"), targets("rm -f g/[[:alpha:]]*")], [["repo/sub/g/a1"], "refused"])
+        case("a `[^k]` bracket backs up what its negation deletes; a `[[:digit:]]` class is refused (r4 R4-1)",
+             [targets("rm -f g/[^k]*"), targets("rm -f g/[[:alpha:]]*")], [["repo/sub/g/a1", "repo/sub/g/keep"], "refused"])
         case("a bracket set is read as bash reads it: a leading `]` is a member, `^` later is literal (r4 push-time review)",
              [targets("rm -f g/[][:alpha:]]*"), targets("rm -f g/[k^]*"), targets("rm -f g/[!]^]*")],
              ["refused", ["repo/sub/g/keep"], ["repo/sub/g/a1", "repo/sub/g/keep"]])
+        Path(work, "g", "^note").write_text("N")
+        Path(work, "g", "!x").write_text("X")
+        os.makedirs(os.path.join(work, "g", "[^a"))
+        Path(work, "g", "[^a", "b]one").write_text("B")
+        case("a caret the lexer cannot tell quoted from negating is read BOTH ways; a set spanning `/` as Python reads it (r5 R5-1/R5-2)",
+             [targets("rm -f g/[\\^a]*"), targets("rm -f g/[^a/b]*"), targets("rm -f g/[\\!a]*")],
+             [["repo/sub/g/!x", "repo/sub/g/[^a", "repo/sub/g/^note", "repo/sub/g/a1", "repo/sub/g/keep"],
+              ["repo/sub/g/[^a/b]one"], ["repo/sub/g/!x", "repo/sub/g/[^a", "repo/sub/g/^note", "repo/sub/g/a1", "repo/sub/g/keep"]])
         shutil.rmtree(os.path.join(work, "g"))
         case("a quoted `a[1].txt` is backed up as the name it is, not only as a pattern (r1 Claude probe)",
              targets("rm 'a[1].txt'"), ["repo/sub/a[1].txt"])
