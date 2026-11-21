@@ -6784,5 +6784,18 @@
     "expect": [
       "⭐ backlog #689 r2 X4: a fold of ✅-by-cell leaves only says the Status cell with no merge age; a fold of real merges keeps its wording; a MIXED fold claims the age for the merges only"
     ]
+  },
+  {
+    "name": "backlog #689 r3 M1: a several-row leaf takes a list tail as its merge when ANY row is ✅",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "leaf_closed = _cr if _cr is not None and all(n in _cr for n in live_rows) else None",
+        "leaf_closed = _cr"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #689 r3 M1: a leaf naming SEVERAL rows takes a list-tail subject as its merge only when EVERY live row is ✅ in its Status cell — one ✅ of two reads queued, both ✅ read merged with the PR's time"
+    ]
   }
 ]

@@ -906,8 +906,12 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
     else:
         # r2 X3: `hit` is the leaf's MERGE, so a list tail counts only for a row ✅ in its Status cell; `named` (any
         # subject naming a live row, list tail included) is CONTEXT only — it decides whether an open row says the PR.
+        # r3 M1: a leaf naming SEVERAL rows takes a list tail as its merge only when EVERY live row is ✅ there — one ✅
+        # row of two made `(backlog #23, backlog #46) (#537)` read merged while backlog #46 was open
+        _cr = src.get("closed_rows")
+        leaf_closed = _cr if _cr is not None and all(n in _cr for n in live_rows) else None
         hit = next(((sha, pr) for sha, pr, subj in src.get("merged_rows") or []
-                    if any(_subject_merges_row(subj, n, src.get("closed_rows")) for n in live_rows)), None)
+                    if any(_subject_merges_row(subj, n, leaf_closed) for n in live_rows)), None)
         named = any(_subject_names_row(subj, n) for _, _, subj in src.get("merged_rows") or [] for n in live_rows)
         if by_cells:
             state, detail = "merged", ", ".join(f"backlog #{n}" for n in live_rows) + " ✅ in its Status cell"
@@ -5949,6 +5953,13 @@ def _self_test_cases(*, outside: dict) -> int:
               ("merged", "merged 11-08 10:00 · 311d363 via PR #537", "2026-11-08 10:00"),
               ("merged", "merged 11-09 10:00 · aaaa46 via PR #50", "2026-11-09 10:00"),
               ("next", "no PR names it yet", None)])
+        # backlog #689 r3 M1: a leaf naming TWO rows, one ✅, the subject's list tail naming both — not merged; both ✅,
+        # merged with the PR's time. One subject, two cell sets, in one case
+        _m1 = [_lf([["backlog", 23], ["backlog", 46]], closed_rows=c, **_x3m) for c in ({23}, {23, 46}, None)]
+        case("⭐ backlog #689 r3 M1: a leaf naming SEVERAL rows takes a list-tail subject as its merge only when EVERY "
+             "live row is ✅ in its Status cell — one ✅ of two reads queued, both ✅ read merged with the PR's time",
+             [(x["state"], x.get("merged_at")) for x in _m1],
+             [("next", None), ("merged", "2026-11-08 10:00"), ("next", None)])
         case("backlog #689 r2 X3: a ✅ prerequisite row named only in a list tail is done WITH that merge's time; an agenda "
              "step whose row is open still says, as CONTEXT, the PR whose list tail named it",
              (_blocker("backlog", 46, src(closed_rows={23, 46}, fates={23: None, 46: None}, **_x3m)),
