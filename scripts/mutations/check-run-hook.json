@@ -249,19 +249,6 @@
     ]
   },
   {
-    "name": "U4's decoy beside the non-.git common dir has no usage hook (backlog #513)",
-    "file": "scripts/check-run-hook.py",
-    "edits": [
-      [
-        "    put(x / \"baremain/.claude/hooks\" / USAGE, PROBE)\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "mutant u4 the common dir need not be a .git directory is killed"
-    ]
-  },
-  {
     "name": "the submodule carries no usage hook (backlog #513)",
     "file": "scripts/check-run-hook.py",
     "edits": [
@@ -272,6 +259,175 @@
     ],
     "expect": [
       "U3 a usage hook in a submodule (no commondir): the SUBMODULE's own copy"
+    ]
+  },
+  {
+    "name": "C1's dangling world keeps its gitdir (backlog #513 r1)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (main / \".git/worktrees/wtdang\").rename(x / \"wtdang-gitdir-moved\")\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "C1 a worktree whose gitdir is gone (main renamed, worktree pruned): NOT RUN, its own copy NOT run"
+    ]
+  },
+  {
+    "name": "C1's no-commondir world keeps its commondir (backlog #513 r1 X1)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (main / \".git/worktrees/wtnocd/commondir\").unlink()\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "C1 a worktree whose gitdir has no commondir: NOT RUN, its own copy NOT run (r1 X1)"
+    ]
+  },
+  {
+    "name": "C1's unreadable gitdir is readable (backlog #513 r1)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (main / \".git/worktrees/wtunread\").chmod(0)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "C1 a worktree whose gitdir cannot be read: NOT RUN, its own copy NOT run"
+    ]
+  },
+  {
+    "name": "C1's unreadable .git file is readable (backlog #513 r1)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (p[\"wtlockgit\"] / \".git\").chmod(0)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "C1 a worktree whose .git file cannot be read: NOT RUN, neither copy run"
+    ]
+  },
+  {
+    "name": "X2's main checkout path holds no newline (backlog #513 r1)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "nlmain = x / \"nlmain\\nname\"",
+        "nlmain = x / \"nlmain-name\""
+      ]
+    ],
+    "expect": [
+      "X2 a worktree of a main checkout whose path holds a newline: NOT RUN, its own copy NOT run"
+    ]
+  },
+  {
+    "name": "X2's commondir holds no newline (backlog #513 r1)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "write_text(f\"{main / '.git'}\\nname\\n\")",
+        "write_text(f\"{main / '.git'}\\n\")"
+      ]
+    ],
+    "expect": [
+      "X2 a commondir that holds a newline: NOT RUN, even though its first line names main's .git"
+    ]
+  },
+  {
+    "name": "a case's stderr reason is not compared (backlog #513 r1 C4)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "        if c.want_err is not None:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "mutant c1d the .git file is read to its first line only (X2's truncation) is killed"
+    ]
+  },
+  {
+    "name": "a case's stdout is not compared (backlog #513 r1 C3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "        if c.want_out is not None:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "mutant c3b the prompt hook's NOT RUN is a systemMessage, which UserPromptSubmit does not add to context is killed"
+    ]
+  },
+  {
+    "name": "the real usage hook names are not planted in main (backlog #513 r1 X3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    for n in REAL_USAGE:\n        put(main / \".claude/hooks\" / n, PROBE)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "X3 usage-pace-wake.sh in a post-launcher worktree: MAIN's copy"
+    ]
+  },
+  {
+    "name": "the real-name cases are dropped (backlog #513 r1 X3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "        *real_name_cases(w),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "mutant r-usage-pace-wake.sh the usage-pace-wake.sh hook alone runs the worktree's copy is killed"
+    ]
+  },
+  {
+    "name": "REAL_USAGE is checked against no hook at all (backlog #513 r1 X3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        ".glob(\"usage-pace-*.sh\")",
+        ".glob(\"usage-pace-*.none\")"
+      ]
+    ],
+    "expect": [
+      "X3 REAL_USAGE names exactly the repository's usage-pace-*.sh hooks"
+    ]
+  },
+  {
+    "name": "C2's precondition asks git for the toplevel, not the main worktree (backlog #513 r1)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "[\"git\", \"worktree\", \"list\", \"--porcelain\"]",
+        "[\"git\", \"rev-parse\", \"--show-toplevel\"]"
+      ]
+    ],
+    "expect": [
+      "C2's world: git names the common dir's parent (the symlink target) as the main worktree"
+    ]
+  },
+  {
+    "name": "the expected prompt JSON does not parse (backlog #513 r1 C3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "+ _NOT_RUN_TEXT + '\"}}\\n')",
+        "+ _NOT_RUN_TEXT + '\"}\\n')"
+      ]
+    ],
+    "expect": [
+      "C3 both NOT RUN JSON lines parse, under the keys their events read"
     ]
   }
 ]

@@ -34,7 +34,8 @@
 #      checkout — NOT RUN when it has no hooks, the same as the old relative form at that root.
 #      In THIS repo: `.remember/.git` is a nested repo inside the main checkout, so a session whose cwd
 #      is under `.remember/` runs every hook NOT RUN, the push gate included (the old form: 127 there).
-#   L5 NOT RUN exits 1: visible, not blocking.
+#   L5 NOT RUN exits 1: visible, not blocking. A usage-pace hook's NOT RUN exits 0 with a fixed JSON line instead
+#      (backlog #513 r1 C3), as usage-pace-run.sh's own CANNOT RUN does.
 #   L6 the hooks' internal `git` calls still follow the cwd and the GIT_* environment.
 #   L7 Windows / PowerShell are not considered.
 #   L8 the SHELL'S STARTUP ENVIRONMENT is trusted: an inherited BASH_ENV, ENV, SHELLOPTS or BASHOPTS is honoured by
@@ -67,38 +68,73 @@ fi
 # Backlog #513: a USAGE-PACE hook governs what the session spends, so it never follows the branch being edited.
 # From a linked worktree it runs from the MAIN checkout, found on the filesystem alone (the worktree's `.git` file
 # names its git dir, whose `commondir` names the main checkout's `.git`); no git process runs. The guard it calls
-# is origin/master's (usage-pace-run.sh, backlog #522). A worktree whose main checkout cannot be located is
-# NOT RUN — never the worktree's own copy, which is exactly what this refuses to trust.
+# is origin/master's (usage-pace-run.sh, backlog #522).
+# ⛔ FAIL CLOSED (r1 C1, X1, X2): once `.git` is a FILE, every step of locating the main checkout must succeed, or
+# the hook is NOT RUN — never the worktree's own copy, which is exactly what this refuses to trust. NOT RUN when:
+#   - `.git` names no gitdir, or cannot be read;
+#   - the gitdir or its `commondir` holds a newline (`.git` is read to EOF, never to its first line, which once
+#     truncated `main<newline>name/...` to a path whose missing commondir fell through to the worktree's copy);
+#   - the gitdir is missing or unreadable (a renamed main checkout, a pruned worktree);
+#   - there is no `commondir` and the gitdir is not itself a repository (no `objects/`). A SUBMODULE's gitdir
+#     (`.git/modules/<name>`) and a main checkout's `--separate-git-dir` ARE repositories, so they keep their own
+#     copy, as before;
+#   - the common dir is not named `.git` (a bare repository, a separate git dir under another name).
+# ⚠ WHICH CHECKOUT IS "MAIN" (r1 C2): the common dir's parent, which is what `git worktree list` itself names
+# first. When the main checkout's `.git` is a SYMLINK, or a separate git dir happens to be named `.git`, that is a
+# directory the owner may not think of as main, and nothing on disk or in git distinguishes it. It runs only if
+# it holds .claude/hooks/<name>; otherwise NOT RUN. Either way the worktree's own copy is never run.
+# A usage hook's NOT RUN is said where the session sees it (r1 C3): exactly as usage-pace-run.sh's `cannot` does,
+# a FIXED JSON line on stdout (additionalContext for the prompt hook, a systemMessage otherwise) and exit 0
+# (unknown is not a stop); the detail goes to stderr.
+usage_not_run() {
+  echo "run-hook: NOT RUN $name — $1" >&2
+  if [ "$name" = usage-pace-prompt.sh ]; then
+    printf '%s\n' '{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "⚠ usage pace NOT RUN — run-hook.sh could not locate this hook in the main checkout (backlog #513: the copy in a worktree is not trusted; the reason is on stderr). Treat the usage verdict as NOT RUN; unknown is not a stop."}}'
+  else
+    printf '%s\n' '{"systemMessage": "⚠ usage pace NOT RUN — run-hook.sh could not locate this hook in the main checkout (backlog #513: the copy in a worktree is not trusted; the reason is on stderr). Treat the usage verdict as NOT RUN; unknown is not a stop."}'
+  fi
+  exit 0
+}
 case $name in
   usage-pace-*)
     if [ -f "$root/.git" ]; then
       line=
-      IFS= read -r line < "$root/.git" 2>/dev/null  # its status is not read: a last line with no newline is fine
+      IFS= read -r -d '' line < "$root/.git" 2>/dev/null  # to EOF; its status is not read (EOF is not an error)
+      line=${line%$'\n'}
       gitdir=${line#gitdir: }
       if [ "$gitdir" = "$line" ] || [ -z "$gitdir" ]; then
-        echo "run-hook: NOT RUN $name — $root/.git names no gitdir, so its main checkout cannot be located" >&2
-        exit 1
+        usage_not_run "$root/.git names no gitdir, so its main checkout cannot be located (backlog #513)"
       fi
+      case $gitdir in *$'\n'*) usage_not_run "the gitdir named by $root/.git holds a newline (backlog #513)";; esac
       case $gitdir in /*) ;; *) gitdir="$root/$gitdir";; esac
+      gitdir=$(cd -P -- "$gitdir" 2>/dev/null && pwd -P && echo .) || gitdir=
+      gitdir=${gitdir%.}
+      gitdir=${gitdir%$'\n'}
+      if [ -z "$gitdir" ]; then
+        usage_not_run "the gitdir named by $root/.git is missing or unreadable (backlog #513)"
+      fi
       if [ -f "$gitdir/commondir" ]; then
         common=
-        IFS= read -r common < "$gitdir/commondir" 2>/dev/null
+        IFS= read -r -d '' common < "$gitdir/commondir" 2>/dev/null
+        common=${common%$'\n'}
+        case $common in *$'\n'*) usage_not_run "the commondir of $gitdir holds a newline (backlog #513)";; esac
         case $common in /*) ;; *) common="$gitdir/$common";; esac
         common=$(cd -P -- "$common" 2>/dev/null && pwd -P && echo .) || common=
         common=${common%.}
         common=${common%$'\n'}
         # The common dir is the main checkout's `.git` directory (a bare repository's is not, and is NOT RUN).
         if [ "${common##*/}" != .git ]; then
-          echo "run-hook: NOT RUN $name — the main checkout of the worktree $root cannot be located" \
-               "(the worktree's own copy is not used, backlog #513)" >&2
-          exit 1
+          usage_not_run "the main checkout of the worktree $root cannot be located (the worktree's own copy is not used, backlog #513)"
         fi
         root=${common%/*}
+      elif [ ! -d "$gitdir/objects" ]; then
+        usage_not_run "the gitdir $gitdir has no commondir and is not a repository (backlog #513)"
       fi
     fi;;
 esac
 hook="$root/.claude/hooks/$name"
 if [ ! -f "$hook" ]; then
+  case $name in usage-pace-*) usage_not_run "$root has no .claude/hooks/$name (backlog #513)";; esac
   echo "run-hook: NOT RUN $name — $root has no .claude/hooks/$name (no other checkout's copy is used)" >&2
   exit 1
 fi
