@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/tree-leaf-row-status-r5-claude.md": "100644 04d3266d6577e0b38f4e9871837b179db197997f"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "7c1a3917f78bb20a24178e9b32742af6161c3595",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 4801 chars, names 7c1a3917f78b",
+  "refused": false,
+  "review": "tree-leaf-row-status-r5-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/tree-leaf-row-status",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

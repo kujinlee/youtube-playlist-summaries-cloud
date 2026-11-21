@@ -101,6 +101,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #610 · only the fresh-clone build writes the served goal-tree page; a direct run is refused
 - fix · backlog #611 · an agenda step naming a backlog row is ticked by the row's status, not by the PR that filed it
 - fix · backlog #612 · a declared wait whose date has passed is flagged, not shown as a reason
+- fix · backlog #689 · a tree leaf whose row is ✅ in its Status cell reads done, not queued, when no merge subject names it
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
 > 2026-10-28 04:12 "when auto-compaction-guard is fully built, continue the works and test the effectiveness of the guard"
@@ -208,6 +209,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #641, PR #584 · the shared dashboard log makes parallel PRs conflict and restart CI: filed with its measurement
 - bookkeeping · backlog #643, PR #584 · `npm run test:e2e` is never fully green locally (F5c fails on master; production smoke needs auth fixtures)
 - fix · backlog #619, PR #580 · the mutation sweep reads one record per shard, so a lost, duplicated or unfinished shard goes red instead of reading as clean
+- fix · backlog #685, PR #608 · an rm is backed up before it runs, or refused when its targets cannot be seen
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
