@@ -21238,6 +21238,7 @@ takes a list tail as its merge only when every row is ✅; 11 self-test cases, 1
 r3's two MINORs filed as backlog #690. backlog #630 ✅: owner card A (11-21 09:50), recorded on row 23 of
 `docs/optimization-register.md`. `docs/goal-threads.md`: lines for backlog #689 and backlog #685.
 
+## 2026-11-21
 The marketplace publishability scan now catches the two install failures it had missed. When the comprehensibility
 package was installed into a stranger's repository, six of its scripts looked for the project beside their own
 installed copy instead of in the user's repository, and several skills told the reader to follow a package file by a
