@@ -6,8 +6,8 @@
 # It runs <name>.sh from THE CHECKOUT THE SESSION IS WORKING IN, which is the nearest ancestor of the
 # PHYSICAL cwd that contains `.git` (a directory in a main checkout, a file in a linked worktree or a
 # submodule). Only when NO ancestor has `.git` does it use $CLAUDE_PROJECT_DIR.
-# ONE EXCEPTION (backlog #513): a `usage-pace-*` hook found in a LINKED WORKTREE runs from that worktree's
-# MAIN checkout instead — a budget guard must not change with the branch being edited.
+# ONE EXCEPTION (backlog #513): a `usage-pace-*` hook runs from the MAIN checkout of the session's repository,
+# as git names it — a budget guard must not change with the branch being edited.
 #
 # WHY THIS SHAPE, AND NOT ONE OF THE THREE THAT LOST (PR #409 r1–r3;
 # docs/reviews/architecture-review-2026-10-26-hook-launch.md). Every lost design FELL BACK to another
@@ -16,7 +16,8 @@
 # back to main; r3 required a launcher marker, so every worktree made before the launcher skipped to
 # main. Each qualification made a new world that fell through to main. This launcher has NO
 # qualification: the filesystem alone names the checkout, nothing in the environment is consulted
-# except CLAUDE_PROJECT_DIR for the no-`.git` case, and no git process runs.
+# except CLAUDE_PROJECT_DIR for the no-`.git` case, and no git process runs — except for a usage-pace
+# hook (below), where git names the main checkout under a GIT_*-free environment.
 #   - The walk is `${dir%/*}`, not `dirname`: macOS `dirname` fails above 1024 characters, and `$(…)`
 #     strips a trailing newline, which picks the sibling `nl` over `nl<newline>`.
 #   - `pwd -P` is read through a sentinel `.` for the same reason.
@@ -66,35 +67,25 @@ if [ -z "$root" ]; then
   exit 1
 fi
 # Backlog #513: a USAGE-PACE hook governs what the session spends, so it never follows the branch being edited.
-# From a linked worktree it runs from the MAIN checkout, found on the filesystem alone (the worktree's `.git` file
-# names its git dir, whose `commondir` names the main checkout's `.git`); no git process runs. The guard it calls
-# is origin/master's (usage-pace-run.sh, backlog #522).
-# ⛔ FAIL CLOSED (r1 C1, X1, X2): once `.git` is a FILE, every step of locating the main checkout must succeed, or
-# the hook is NOT RUN — never the worktree's own copy, which is exactly what this refuses to trust. NOT RUN when:
-#   - `.git` names no gitdir, or cannot be read;
-#   - the gitdir or its `commondir` holds a newline (`.git` is read to EOF, never to its first line, which once
-#     truncated `main<newline>name/...` to a path whose missing commondir fell through to the worktree's copy);
-#   - the gitdir is missing or unreadable (a renamed main checkout, a pruned worktree);
-#   - there is no `commondir` and the gitdir's PATH is a worktree's, `<common>/worktrees/<name>` (r2: decided by
-#     that shape, never by what the gitdir holds — an `objects/` made in a worktree's gitdir once ran its own copy);
-#   - there is no `commondir` and the gitdir is not a repository (`is_repo`: HEAD, objects/ and refs/). A
-#     SUBMODULE's gitdir (`.git/modules/<name>`) and a main checkout's `--separate-git-dir` ARE repositories at a
-#     non-worktree path, so they keep their own copy, as before;
-#   - the common dir is not named `.git` (a bare repository, a separate git dir under another name);
-#   - the common dir is not a repository (`is_repo`; r2: an empty directory named `decoy/.git` once ran the decoy's
-#     copy);
-#   - the gitdir is not physically `<common>/worktrees/<name>` — the common dir does not CONTAIN this worktree's
-#     gitdir, so it is some other repository (r2). This is the back-pointer read from the common dir's side: a
-#     decoy passes it only by holding this worktree's gitdir, which makes it, to git too, this worktree's repository.
-# ⚠ WHICH CHECKOUT IS "MAIN" (r1 C2): the common dir's parent, which is what `git worktree list` itself names
-# first. When the main checkout's `.git` is a SYMLINK, or a separate git dir happens to be named `.git`, that is a
-# directory the owner may not think of as main, and nothing on disk or in git distinguishes it. It runs only if
-# it holds .claude/hooks/<name>; otherwise NOT RUN. Either way the worktree's own copy is never run.
-# A usage hook's NOT RUN is said where the session sees it (r1 C3): exactly as usage-pace-run.sh's `cannot` does,
-# a FIXED JSON line on stdout (additionalContext for the prompt hook, a systemMessage otherwise) and exit 0
-# (unknown is not a stop); the detail goes to stderr.
-# A git repository directory, as git's own discovery requires one: a HEAD file and objects/ and refs/ directories.
-is_repo() { [ -f "$1/HEAD" ] && [ -d "$1/objects" ] && [ -d "$1/refs" ]; }
+# It runs from the MAIN checkout of the repository the session is in, and GIT names that checkout (r3 Phase 6,
+# docs/reviews/architecture-review-2026-11-20-usage-hook-launcher.md: three rounds of hand-parsing `.git`/`commondir`
+# each made a new layout disagree with git). The guard it calls is origin/master's (usage-pace-run.sh, backlog #522).
+#   1. `git rev-parse --path-format=absolute --git-dir --git-common-dir --show-toplevel`, run with `-C $root`, under
+#      an environment with EVERY exported GIT_* name unset (PR #409 r2 lost to GIT_DIR / GIT_CEILING_DIRECTORIES
+#      steering git; here nothing but the directory steers it), under a 5 s alarm.
+#   2. NOT RUN when the common dir is a bare repository (`core.bare`): it has no main checkout.
+#   3. The main checkout is the one that OWNS the common dir: its parent when the common dir is named `.git` (git's own
+#      main-worktree rule, the first entry `git worktree list` prints); else the work tree git reports from inside the
+#      common dir (a submodule's `.git/modules/<name>`, whose core.worktree names it); else, when the session is NOT in
+#      a linked worktree (git-dir == common-dir, a `--separate-git-dir` checkout), the session's own toplevel.
+#      A linked worktree whose main checkout git cannot name (its main uses a separate git dir) is NOT RUN.
+# ⛔ FAIL CLOSED: a git failure, a timeout, or output that is not exactly three lines is NOT RUN, and so is a main
+# checkout with no .claude/hooks/<name> (below) — never the session's own copy. A usage hook's NOT RUN is said where the session sees it
+# (r1 C3): exactly as usage-pace-run.sh's `cannot` does, a FIXED JSON line on stdout (additionalContext for the prompt
+# hook, a systemMessage otherwise) and exit 0 (unknown is not a stop); the detail goes to stderr.
+# ⚠ BOUNDS, stated (r3 M2): a layout git reads as a STANDALONE repository (a worktree's gitdir hand-given its own
+# objects/, r3 B2) runs that checkout's own copy, because that is git's answer; a symlinked or misnamed `.git` makes
+# its parent "main" exactly as git does (r1 C2); git's per-user config (~/.gitconfig) is still read.
 usage_not_run() {
   echo "run-hook: NOT RUN $name — $1" >&2
   if [ "$name" = usage-pace-prompt.sh ]; then
@@ -104,50 +95,34 @@ usage_not_run() {
   fi
   exit 0
 }
+# git, with no GIT_* variable from the session and a 5 s alarm (macOS has no `timeout`; SIGALRM survives the exec).
+git_clean() (
+  for v in $(compgen -e); do case $v in GIT_*) unset "$v";; esac; done
+  exec perl -e 'alarm shift; exec @ARGV or exit 127' 5 git "$@"
+)
 case $name in
   usage-pace-*)
-    if [ -f "$root/.git" ]; then
-      line=
-      IFS= read -r -d '' line < "$root/.git" 2>/dev/null  # to EOF; its status is not read (EOF is not an error)
-      line=${line%$'\n'}
-      gitdir=${line#gitdir: }
-      if [ "$gitdir" = "$line" ] || [ -z "$gitdir" ]; then
-        usage_not_run "$root/.git names no gitdir, so its main checkout cannot be located (backlog #513)"
-      fi
-      case $gitdir in *$'\n'*) usage_not_run "the gitdir named by $root/.git holds a newline (backlog #513)";; esac
-      case $gitdir in /*) ;; *) gitdir="$root/$gitdir";; esac
-      gitdir=$(cd -P -- "$gitdir" 2>/dev/null && pwd -P && echo .) || gitdir=
-      gitdir=${gitdir%.}
-      gitdir=${gitdir%$'\n'}
-      if [ -z "$gitdir" ]; then
-        usage_not_run "the gitdir named by $root/.git is missing or unreadable (backlog #513)"
-      fi
-      if [ -f "$gitdir/commondir" ]; then
-        common=
-        IFS= read -r -d '' common < "$gitdir/commondir" 2>/dev/null
-        common=${common%$'\n'}
-        case $common in *$'\n'*) usage_not_run "the commondir of $gitdir holds a newline (backlog #513)";; esac
-        case $common in /*) ;; *) common="$gitdir/$common";; esac
-        common=$(cd -P -- "$common" 2>/dev/null && pwd -P && echo .) || common=
-        common=${common%.}
-        common=${common%$'\n'}
-        # The common dir is the main checkout's `.git` directory (a bare repository's is not, and is NOT RUN).
-        if [ "${common##*/}" != .git ]; then
-          usage_not_run "the main checkout of the worktree $root cannot be located (the worktree's own copy is not used, backlog #513)"
-        fi
-        if ! is_repo "$common"; then
-          usage_not_run "the common dir $common is not a git repository (no HEAD, objects/ or refs/; backlog #513 r2)"
-        fi
-        if [ "${gitdir%/*}" != "$common/worktrees" ]; then
-          usage_not_run "the gitdir $gitdir is not inside its common dir's worktrees/ (backlog #513 r2)"
-        fi
-        root=${common%/*}
-      elif [ "${gitdir%/*/*}/worktrees" = "${gitdir%/*}" ]; then
-        usage_not_run "the gitdir $gitdir is a worktree's (…/worktrees/<name>) and has no commondir (backlog #513 r2)"
-      elif ! is_repo "$gitdir"; then
-        usage_not_run "the gitdir $gitdir has no commondir and is not a repository (backlog #513)"
-      fi
-    fi;;
+    out=$(git_clean -C "$root" rev-parse --path-format=absolute --git-dir --git-common-dir --show-toplevel 2>/dev/null) \
+      || usage_not_run "git cannot read the repository at $root (backlog #513)"
+    gd=${out%%$'\n'*}; rest=${out#*$'\n'}; common=${rest%%$'\n'*}; top=${rest#*$'\n'}
+    case $top in *$'\n'*) usage_not_run "git's answer for $root is not three lines (a path holds a newline; backlog #513)";; esac
+    if [ "$gd" = "$out" ] || [ "$common" = "$rest" ] || [ -z "$top" ]; then
+      usage_not_run "git's answer for $root is not three lines (backlog #513)"
+    fi
+    bare=$(git_clean -C "$root" config --bool core.bare 2>/dev/null)
+    if [ "$bare" = true ]; then
+      usage_not_run "the repository of $root is bare ($common), so it has no main checkout (backlog #513)"
+    fi
+    if [ "${common##*/}" = .git ]; then
+      main=${common%/*}
+    elif owner=$(git_clean -C "$common" rev-parse --show-toplevel 2>/dev/null) && [ -n "$owner" ]; then
+      main=$owner
+    elif [ "$gd" = "$common" ]; then
+      main=$top
+    else
+      usage_not_run "git names no main checkout for the worktree $top (its common dir $common; backlog #513)"
+    fi
+    root=$main;;
 esac
 hook="$root/.claude/hooks/$name"
 if [ ! -f "$hook" ]; then

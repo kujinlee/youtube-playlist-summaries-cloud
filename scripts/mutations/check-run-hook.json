@@ -349,7 +349,7 @@
       ]
     ],
     "expect": [
-      "mutant c1d the .git file is read to its first line only (X2's truncation) is killed"
+      "mutant g2 a git failure is not refused is killed"
     ]
   },
   {
@@ -431,7 +431,7 @@
     ]
   },
   {
-    "name": "C1 r2's Codex-1 world keeps its commondir (backlog #513 r2)",
+    "name": "C1 r2's Codex-1 world keeps its commondir, so it is a healthy worktree (backlog #513 r2)",
     "file": "scripts/check-run-hook.py",
     "edits": [
       [
@@ -440,7 +440,7 @@
       ]
     ],
     "expect": [
-      "C1 r2 a worktree's gitdir with no commondir but an objects/ (a repository's shape): NOT RUN, decided by its path, its own copy NOT run"
+      "C1 r2 a worktree's gitdir with no commondir but an objects/ (a repository's shape): git reads a standalone repository, so ITS OWN copy runs (r3: git's answer)"
     ]
   },
   {
@@ -479,7 +479,7 @@
       ]
     ],
     "expect": [
-      "C1 r2 a commondir naming ANOTHER real repository's .git: NOT RUN, it does not contain the gitdir, its copy NOT run"
+      "C1 r2 a commondir naming ANOTHER real repository's .git: git names that repository's checkout main, so ITS copy runs (r3: git's answer)"
     ]
   },
   {
@@ -492,7 +492,7 @@
       ]
     ],
     "expect": [
-      "C1 r2 a common dir that contains the gitdir but has no HEAD: NOT RUN, its copy NOT run"
+      "C1 r2 a common dir that contains the gitdir but has no objects: NOT RUN, its copy NOT run"
     ]
   },
   {
@@ -506,6 +506,110 @@
     ],
     "expect": [
       "C1 r2 a gitdir with no commondir, not at a worktree path, that is not a repository: NOT RUN"
+    ]
+  },
+  {
+    "name": "r3: the GIT_COMMON_DIR steering case sets no GIT_* (backlog #513 r3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "             extra={\"GIT_COMMON_DIR\": str(p[\"steer\"] / \".git\")}),",
+        "             extra={}),"
+      ]
+    ],
+    "expect": [
+      "mutant g0 the session's GIT_* environment reaches git (PR #409 r2's loss) is killed"
+    ]
+  },
+  {
+    "name": "r3: the GIT_CONFIG_COUNT steering case sets no GIT_* (backlog #513 r3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "extra={\"GIT_CONFIG_COUNT\": \"1\", \"GIT_CONFIG_KEY_0\": \"core.bare\", \"GIT_CONFIG_VALUE_0\": \"true\"}",
+        "extra={}"
+      ]
+    ],
+    "expect": [
+      "mutant g0b only GIT_DIR is unset (a hand-kept list) is killed"
+    ]
+  },
+  {
+    "name": "r3 M1's main checkout keeps its git dir inside it (backlog #513 r3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "git(x, \"init\", \"-q\", f\"--separate-git-dir={x / 'gitdirs/worktrees/proj'}\", str(p[\"mK\"]))",
+        "git(x, \"init\", \"-q\", str(p[\"mK\"]))"
+      ]
+    ],
+    "expect": [
+      "M1 r3's world: mK's git dir is ITS OWN common dir, at a …/worktrees/<name> path"
+    ]
+  },
+  {
+    "name": "r3 M3's bare repository is cloned with a work tree (backlog #513 r3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "git(x, \"clone\", \"-q\", \"--bare\", str(main), str(x / \"bare.git\"))",
+        "git(x, \"clone\", \"-q\", str(main), str(x / \"bare.git\"))"
+      ]
+    ],
+    "expect": [
+      "M3 r3's worlds: both bare repositories really are bare (core.bare)"
+    ]
+  },
+  {
+    "name": "r3 B2's moved gitdir gets no objects/, so git cannot read it (backlog #513 r3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (main / \".git/wB2moved/objects\").mkdir()\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "B2 r3 a worktree gitdir moved out of worktrees/, commondir removed, objects/ made: git reads a standalone repository, so ITS OWN copy (git's answer)"
+    ]
+  },
+  {
+    "name": "r3: the never-answering fake git fails at once (backlog #513 r3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "\"#!/bin/sh\\nexec sleep 20\\n\"",
+        "\"#!/bin/sh\\nexit 1\\n\""
+      ]
+    ],
+    "expect": [
+      "mutant g1 git runs with no alarm is killed"
+    ]
+  },
+  {
+    "name": "r3: the one-line fake git answers nothing (backlog #513 r3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "\"#!/bin/sh\\necho /one-line\\n\"",
+        "\"#!/bin/sh\\nexit 1\\n\""
+      ]
+    ],
+    "expect": [
+      "r3 a git that answers one line: NOT RUN, nothing runs"
+    ]
+  },
+  {
+    "name": "r3 C1's wB names its own fresh gitdir path, not main's .git (backlog #513 r3)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (p[\"wB\"] / \".git\").write_text(f\"gitdir: {main / '.git'}\\n\")",
+        "    (p[\"wB\"] / \".git\").write_text(f\"gitdir: {main / '.git/worktrees/wB'}\\n\")"
+      ]
+    ],
+    "expect": [
+      "C1 r3's world: git names main's .git as wB's common dir AND its git dir"
     ]
   }
 ]
