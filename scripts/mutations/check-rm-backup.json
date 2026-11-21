@@ -372,8 +372,8 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "        if depth > 0:\n            assigned_at[var] = depth\n        if var in namerefs:",
-        "        if var in namerefs:"
+        "        if depth > 0:\n            assigned_at[var] = depth\n        if piped or var in poisoned:",
+        "        if piped or var in poisoned:"
       ]
     ],
     "expect": [
@@ -537,58 +537,6 @@
     ]
   },
   {
-    "name": "r2 R2-6: a for variable keeps its earlier value",
-    "file": "scripts/check-rm-backup.py",
-    "edits": [
-      [
-        "setvar(args[1], None)                # r2 R2-6",
-        "pass                # r2 R2-6"
-      ]
-    ],
-    "expect": [
-      "a `for` variable is not the value assigned before the loop (r2 R2-6)"
-    ]
-  },
-  {
-    "name": "r2 R2-6: read/getopts/mapfile/unset leave the variable",
-    "file": "scripts/check-rm-backup.py",
-    "edits": [
-      [
-        "elif first in (\"read\", \"mapfile\", \"readarray\", \"getopts\", \"unset\"):",
-        "elif first in ():"
-      ]
-    ],
-    "expect": [
-      "`read`, `printf -v`, `getopts`, `mapfile` and `unset` make a variable unknown (r2 R2-6)"
-    ]
-  },
-  {
-    "name": "r2 R2-6: printf -v leaves the variable",
-    "file": "scripts/check-rm-backup.py",
-    "edits": [
-      [
-        "elif first == \"printf\" and \"-v\" in args[:-1]:",
-        "elif False:"
-      ]
-    ],
-    "expect": [
-      "`read`, `printf -v`, `getopts`, `mapfile` and `unset` make a variable unknown (r2 R2-6)"
-    ]
-  },
-  {
-    "name": "r2 R2-6: export X=v does not set X",
-    "file": "scripts/check-rm-backup.py",
-    "edits": [
-      [
-        "setvar(m[1], None if attr else value(m[2]))",
-        "pass"
-      ]
-    ],
-    "expect": [
-      "`export`/`declare`/`local` X=v set X; without `=` they leave it (r2 R2-6)"
-    ]
-  },
-  {
     "name": "r2 R2-7: builtin is not looked through",
     "file": "scripts/check-rm-backup.py",
     "edits": [
@@ -615,19 +563,6 @@
     ]
   },
   {
-    "name": "r2 R2-7: eval/source keep every variable",
-    "file": "scripts/check-rm-backup.py",
-    "edits": [
-      [
-        "env = dict.fromkeys(env)",
-        "pass"
-      ]
-    ],
-    "expect": [
-      "`eval`, `source` and `.` make the cwd and every variable unknown (r2 R2-7)"
-    ]
-  },
-  {
     "name": "r2 R2-8: ${S:-x} is not expanded",
     "file": "scripts/check-rm-backup.py",
     "edits": [
@@ -637,7 +572,7 @@
       ]
     ],
     "expect": [
-      "`${S:-x}`, `${S-x}` and `${S:=x}` use the default when S is empty or unset (r2 R2-8)"
+      "`${S:-x}` and `${S-x}` use the default when S is empty or unset (r2 R2-8)"
     ]
   },
   {
@@ -650,20 +585,7 @@
       ]
     ],
     "expect": [
-      "`${S:-x}`, `${S-x}` and `${S:=x}` use the default when S is empty or unset (r2 R2-8)"
-    ]
-  },
-  {
-    "name": "r2 R2-8: ${S:=x} does not assign S",
-    "file": "scripts/check-rm-backup.py",
-    "edits": [
-      [
-        "            env[name] = val\n",
-        "            pass\n"
-      ]
-    ],
-    "expect": [
-      "`${S:-x}`, `${S-x}` and `${S:=x}` use the default when S is empty or unset (r2 R2-8)"
+      "`${S:-x}` and `${S-x}` use the default when S is empty or unset (r2 R2-8)"
     ]
   },
   {
@@ -797,32 +719,6 @@
     ]
   },
   {
-    "name": "r2 S15: an attribute option is a plain assignment",
-    "file": "scripts/check-rm-backup.py",
-    "edits": [
-      [
-        "attr = attr or bool(set(w[1:]) & set(\"naAilcu\"))",
-        "attr = attr"
-      ]
-    ],
-    "expect": [
-      "`declare -n/-a/-A/-i` make a variable unknown, and a nameref's assignment every one (r2 S15)"
-    ]
-  },
-  {
-    "name": "r2 S15: a nameref's assignment sets only its own name",
-    "file": "scripts/check-rm-backup.py",
-    "edits": [
-      [
-        "        if var in namerefs:\n",
-        "        if False:\n"
-      ]
-    ],
-    "expect": [
-      "`declare -n/-a/-A/-i` make a variable unknown, and a nameref's assignment every one (r2 S15)"
-    ]
-  },
-  {
     "name": "r2 S16: every `)` in a case pattern list is a pattern",
     "file": "scripts/check-rm-backup.py",
     "edits": [
@@ -885,32 +781,6 @@
     ],
     "expect": [
       "an assignment under a guard to an UNSET variable leaves it unknown; the same value stays (r2 S20)"
-    ]
-  },
-  {
-    "name": "r2 S22: a case-transform option is a plain assignment",
-    "file": "scripts/check-rm-backup.py",
-    "edits": [
-      [
-        "set(\"naAilcu\"))     #",
-        "set(\"naAi\"))     #"
-      ]
-    ],
-    "expect": [
-      "`declare -l/-u/-c` transform a value, and a declared attribute outlives its `declare` (r2 S22)"
-    ]
-  },
-  {
-    "name": "r2 S22: a declared attribute is forgotten after the declare",
-    "file": "scripts/check-rm-backup.py",
-    "edits": [
-      [
-        "        elif piped or var in attrs:\n",
-        "        elif piped:\n"
-      ]
-    ],
-    "expect": [
-      "`declare -l/-u/-c` transform a value, and a declared attribute outlives its `declare` (r2 S22)"
     ]
   },
   {
@@ -989,6 +859,344 @@
     ],
     "expect": [
       "an assignment under a guard to an UNSET variable leaves it unknown; the same value stays (r2 S20)"
+    ]
+  },
+  {
+    "name": "r3: an opaque command still reads its variables",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    if OPAQUE in env and (\"$\" in word or word.startswith(\"~\")):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)"
+    ]
+  },
+  {
+    "name": "r3 R3-1: `let` is not an opaque word",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "OPAQUE_WORDS = {\"let\", \"declare\",",
+        "OPAQUE_WORDS = {\"declare\","
+      ]
+    ],
+    "expect": [
+      "`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)"
+    ]
+  },
+  {
+    "name": "r3 R3-1: `((` is not opaque text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "re.compile(r\"\\(\\(|\\[\\[",
+        "re.compile(r\"\\[\\["
+      ]
+    ],
+    "expect": [
+      "`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)"
+    ]
+  },
+  {
+    "name": "r3 R3-1: `$[` is not opaque text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    if \"$((\" in command or \"$[\" in command:",
+        "    if \"$((\" in command:"
+      ]
+    ],
+    "expect": [
+      "`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)"
+    ]
+  },
+  {
+    "name": "r3 R3-1: `[[` is not opaque text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "|\\[\\[|\\bIFS",
+        "|\\bIFS"
+      ]
+    ],
+    "expect": [
+      "`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)"
+    ]
+  },
+  {
+    "name": "r3 R3-2: `IFS` in the command is not opaque",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "|\\bIFS\\b|",
+        "|"
+      ]
+    ],
+    "expect": [
+      "an `IFS` in the command or a non-default one in the environment makes variables unreadable (r3 R3-2)"
+    ]
+  },
+  {
+    "name": "r3 R3-2: the environment's IFS is not read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "environ.get(\"IFS\", \" \\t\\n\") != \" \\t\\n\" or ",
+        ""
+      ]
+    ],
+    "expect": [
+      "an `IFS` in the command or a non-default one in the environment makes variables unreadable (r3 R3-2)"
+    ]
+  },
+  {
+    "name": "r3: `X+=` is not opaque text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "|\\+=|",
+        "|"
+      ]
+    ],
+    "expect": [
+      "`X+=v` and `X[0]=v` change X: variables are unreadable (r3)"
+    ]
+  },
+  {
+    "name": "r3: `X[i]=` is not opaque text",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "|\\w\\[[^\\]]*\\]=\")",
+        "\")"
+      ]
+    ],
+    "expect": [
+      "`X+=v` and `X[0]=v` change X: variables are unreadable (r3)"
+    ]
+  },
+  {
+    "name": "r3 S24: an assigning `${…}` is not opaque",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    if any(ASSIGNING_BRACE.search(b)",
+        "    if False and any(ASSIGNING_BRACE.search(b)"
+      ]
+    ],
+    "expect": [
+      "a `${…}` that can assign (`:=`, `[X=0]`, `:off`) makes variables unreadable; `${!X}` `${X#p}` do not (r3 S24)"
+    ]
+  },
+  {
+    "name": "r3 S23: `eval` is not an opaque word",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "RUNS_TEXT = {\"eval\", \"source\", \".\"}",
+        "RUNS_TEXT = {\"source\", \".\"}"
+      ]
+    ],
+    "expect": [
+      "after `eval`, a default is not taken for a name the hook never saw set (r3 S23)"
+    ]
+  },
+  {
+    "name": "r3: `export` is not an opaque word",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "\"local\", \"export\", \"readonly\"",
+        "\"local\", \"readonly\""
+      ]
+    ],
+    "expect": [
+      "`export`/`declare`/`local` make every variable unreadable, with or without `=` (r3)"
+    ]
+  },
+  {
+    "name": "r3: opaque refuses a literal target too",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(\"$\" in word or word.startswith(\"~\")):",
+        "True:"
+      ]
+    ],
+    "expect": [
+      "an opaque command still backs up a LITERAL target (r3)"
+    ]
+  },
+  {
+    "name": "r3: a heredoc body's `$((` is not read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    if \"$((\" in command or \"$[\" in command:\n        return True",
+        "    if False:\n        return True"
+      ]
+    ],
+    "expect": [
+      "a heredoc body's text is data, but its `$((…))` still assigns (r3 replay)"
+    ]
+  },
+  {
+    "name": "r3: opaque text is read in heredoc bodies",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "OPAQUE_TEXT.search(strip_heredocs(command))",
+        "OPAQUE_TEXT.search(command)"
+      ]
+    ],
+    "expect": [
+      "a heredoc body's text is data, but its `$((…))` still assigns (r3 replay)"
+    ]
+  },
+  {
+    "name": "r3d: `.` is opaque anywhere, not only in command position",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(at_command and name in RUNS_TEXT)",
+        "(name in RUNS_TEXT)"
+      ]
+    ],
+    "expect": [
+      "`.` as an argument, `printf` without `-v`, and a known command name are not setters (r3d replay)"
+    ]
+  },
+  {
+    "name": "r3d: an option setter's flag is searched past its own command",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "for w in itertools.takewhile(lambda w: w not in SEPARATORS, toks[i + 1:])):",
+        "for w in toks[i + 1:]):"
+      ]
+    ],
+    "expect": [
+      "`.` as an argument, `printf` without `-v`, and a known command name are not setters (r3d replay)"
+    ]
+  },
+  {
+    "name": "r3d: an option setter is not opaque",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        if name in OPTION_SETTERS and any(",
+        "        if False and any("
+      ]
+    ],
+    "expect": [
+      "`printf -v`, `wait -p`, `compgen -V` and a hidden command name make variables unreadable (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a look-through word's options hide a `.`",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "at_command = (prev in LOOK_THROUGH if j < i - 1 else",
+        "at_command = (False if j < i - 1 else"
+      ]
+    ],
+    "expect": [
+      "`printf -v`, `wait -p`, `compgen -V` and a hidden command name make variables unreadable (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: an unassigned `$` command name is not a hidden setter",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if name not in given or os.path.basename",
+        "if os.path.basename"
+      ]
+    ],
+    "expect": [
+      "`printf -v`, `wait -p`, `compgen -V` and a hidden command name make variables unreadable (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a `$` command name given a setter's name is not a hidden setter",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "os.path.basename(given[name]) in setters:",
+        "False:"
+      ]
+    ],
+    "expect": [
+      "`printf -v`, `wait -p`, `compgen -V` and a hidden command name make variables unreadable (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a namer's name is not poisoned",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                poisoned.add(w)",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: `unset -n` is not opaque",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                    if \"n\" in w:",
+        "                    if False:"
+      ]
+    ],
+    "expect": [
+      "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a non-name `unset` word is not opaque",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                if not re.fullmatch(r\"[A-Za-z_][A-Za-z0-9_]*\", w):",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a poisoned name is not cleared from the start environment",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "    for v in poisoned:\n        env[v] = None",
+        "    for v in ():\n        env[v] = None"
+      ]
+    ],
+    "expect": [
+      "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
+    ]
+  },
+  {
+    "name": "r3d: a poisoned name's later assignment is read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        if piped or var in poisoned:",
+        "        if piped:"
+      ]
+    ],
+    "expect": [
+      "a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)"
     ]
   }
 ]

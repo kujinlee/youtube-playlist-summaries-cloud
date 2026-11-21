@@ -21173,7 +21173,9 @@ of asking for approval). Temp files in the session scratchpad need none. An `rm`
 out is refused with a message saying how to write it so it can be backed up.
 <!--tech-->
 Backlog #685, PR #608: `scripts/check-rm-backup.py` + `.claude/hooks/rm-backup.sh` (PreToolUse Bash). Copies to
-`~/.claude/rm-backups/<session>/<stamp>/`, logged in `log.jsonl`, pruned after 14 days. Self-test 112/112; 76 mutations,
-76 killed by their named case. Transcript replay: 18,097 Bash calls, 185 `rm`s seen, 106 refused (a `mktemp` dir
-outside the scratchpad, loop variables, run-time values, and `cd` targets gone since). Round 2 (Claude) found 13 more holes
+`~/.claude/rm-backups/<session>/<stamp>/`, logged in `log.jsonl`, pruned after 14 days. Self-test 123/123; 92 mutations,
+92 killed by their named case. Transcript replay: 18,249 Bash calls, 184 `rm`s seen, 116 refused (a `mktemp` dir
+outside the scratchpad, loop variables, run-time values, and `cd` targets gone since). Round 3 (Codex) found two more
+variable setters (`let`, `IFS`) and a push-time security review two more (`eval`, `${X:=v}`); the setter list was
+replaced by an allowlist: a command that sets a variable any way but `NAME=value` reads no variable in an `rm` target. Round 2 (Claude) found 13 more holes
 and three push-time security reviews 8; the `mktemp` exemption was dropped rather than patched a sixth time. Round 1 (Codex + probes salvaged from the stopped Claude reviewer) found 21 holes and two push-time security reviews 5 more; all fixed. A `#` mid-word and a `<<<`/quoted `<<` no longer hide an `rm` (11-20 security review). Bounds: an `rm` inside a quoted string, `bash -c`, `eval` or another language is not seen.

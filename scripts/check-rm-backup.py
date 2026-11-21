@@ -41,11 +41,15 @@ NOT_RUNNERS (`echo`, `grep`, `git`, …) is read as a possible runner: a later s
 holds a tracked file). The working directory starts at the payload's `cwd` (so does `$PWD`) and
 follows a top-level `cd <literal>`, moving `$PWD`/`$OLDPWD`; any other `cd` (inside `(…)` or a compound, `cd -`, after
 `||`, unresolvable) makes it UNKNOWN. A `cd` into a directory that does not exist now, or after a command in its own
-`&&` chain, is followed only to the end of that chain (r2 R2-4). A variable set by `for`, `read`, `printf -v`,
-`getopts`, `mapfile`, `unset`, `declare -n/-a/-A/-i/-l/-u/-c` (then and on every later `X=v`, r2 S22), or under a guard that may not run
-unless it already held that value (r2 S20), is UNKNOWN; a nameref's assignment makes EVERY variable unknown (r2 S15); `export`/`declare`/`local` X=v set it. A `)`
+`&&` chain, is followed only to the end of that chain (r2 R2-4). VARIABLES ARE READ ONLY IN A COMMAND THAT SETS
+THEM BY PLAIN `NAME=value` WORDS (r3): if anything else that can set one appears anywhere — `let`, `read`, `declare`
+and the other OPAQUE_WORDS, `eval`/`source`/`.` as a command, `printf -v`/`wait -p`/`compgen -V`, a `$`-built command
+name, `((…))`, `$[…]`, `[[…]]`, `IFS`, `X+=`, `X[i]=`, a `${…}` holding `=`, a computed subscript or `:offset`, or a
+non-default IFS in the environment — every `$`, `${…}` and `~` in an `rm` target is refused (use a literal path). A
+name given to `for`/`select`/`unset` is unknown for the whole command; other variables stay read (r3 replay).
+A plain assignment under a guard that may not run is UNKNOWN unless the variable already held that value (r2 S20). A `)`
 is a `case` pattern only after `case W in` or `;;`/`;&`/`;;&` (r2 S16). Targets are expanded for `~`,
-`$VAR`/`${VAR}`, `${V:-x}`/`${V-x}`/`${V:=x}` (assigned earlier in the command, else the hook's environment) and
+`$VAR`/`${VAR}`, `${V:-x}`/`${V-x}` (assigned earlier in the command, else the hook's environment) and
 globs; a variable's value holding blanks is backed up whole AND word by word (the quotes are gone). A glob matching
 nothing, like a missing file, needs no backup. `T=$(mktemp …)` is UNKNOWN — no exemption, it is a taint the hook cannot track
 (r2 S13/S14/R2-5/S17/S21) — except `T=$(mktemp [-d] /literal/scratchpad/x.XXXX)`, which is the glob of the names it
@@ -63,13 +67,14 @@ earlier commands ran (a `source` is not followed).
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED (allowed,
 said on stderr). `--self-test` 0 = every case passed, 1 = a case failed.
 
-    python3 scripts/check-rm-backup.py --self-test  # 112 cases
+    python3 scripts/check-rm-backup.py --self-test  # 123 cases
 """
 from __future__ import annotations
 
 import datetime as _dt
 import fnmatch
 import glob
+import itertools
 import json
 import os
 import re
@@ -103,12 +108,25 @@ WORD_START = " \t\r\n;&|()<>"     # a `#` after one of these opens a comment
 ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
 OPERATOR = re.compile(r"&>>|<<<|&&|\|\||;;&|;;|;&|\|&|>>|<<|&>|>&|<&|>\||[;&|()<>\n]")
 VAR = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
-DEFAULT = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:?)([-=?])([^}]*)\}")      # `${S:-x}` `${S-x}` `${S:=x}` `${S:?}`
+DEFAULT = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:?)([-?])([^}]*)\}")      # `${S:-x}` `${S-x}` `${S:?}`
 PUNCT = ";&|()<>\n"
 PROTECT = {ord(c): chr(0xE000 + k) for k, c in enumerate(PUNCT)}     # a QUOTED operator character (r2 R2-11)
 UNPROTECT = {ord(v): k for k, v in PROTECT.items()}     # r2 R2-11 fold: keyed by code point, or nothing is restored
 BRACE = re.compile(r"(?<!\$)\{[^}]*(,|\.\.)[^}]*\}")
-SETTERS = {"export", "declare", "local", "readonly", "typeset"}
+# r3: every way a command can set a variable other than a plain `NAME=value` word. When one appears ANYWHERE in the
+# command, no variable is read: a `$`, `${…}` or `~` in an `rm` target refuses. An allowlist of what is read, not a
+# list of setters to follow — rounds 1–3 each found another setter (S15/S22 `declare`, R2-6 `read`, R3-1 `let`,
+# R3-2 `IFS`, S23 `eval`, S24 `${X:=v}`). A `for`/`select`/`unset` poisons only the names it is given: the replay
+# refused 37 more past commands when they were opaque words, 11 once narrowed — each true by this rule.
+OPAQUE = "\0opaque"
+OPAQUE_WORDS = {"let", "declare", "typeset", "local", "export", "readonly", "read", "mapfile", "readarray", "getopts",
+                "coproc"}                                  # opaque wherever they appear
+RUNS_TEXT = {"eval", "source", "."}                         # opaque in COMMAND POSITION (`git diff .` is not `.`)
+OPTION_SETTERS = {"printf": "v", "wait": "p", "compgen": "V"}   # opaque with that option letter anywhere
+NAMERS = {"for", "select", "unset"}                         # the names they are given are unknown for the whole command
+OPAQUE_TEXT = re.compile(r"\(\(|\[\[|\bIFS\b|\+=|\w\[[^\]]*\]=")     # `((…))`, `[[ -eq ]]`, IFS, `X+=`, `X[0]=`
+# a `${…}` that can assign: any `=`, a subscript other than `[0]`/`[@]`/`[*]`, or a `:offset` (both arithmetic)
+ASSIGNING_BRACE = re.compile(r"=|\[(?!\d+\]|[@*]\])|^[!#]?[A-Za-z_][A-Za-z0-9_]*:(?![-?+])")
 COMPOUND_OPEN, COMPOUND_CLOSE = {"if", "while", "until", "{"}, {"fi", "done", "esac", "}"}
 
 
@@ -433,6 +451,10 @@ def expand(word: str, env: dict[str, str | None]) -> str:
     """`~` and `$VAR`; raises Refuse when the value cannot be known."""
     if "$(" in word or "`" in word:
         raise Refuse(f"the target `{word}` is built by a command substitution")
+    if OPAQUE in env and ("$" in word or word.startswith("~")):
+        raise Refuse(f"the target `{word}` uses a variable, and the command sets variables in a way the hook does not "
+                     "read (`let`, `read`, `declare`, `for`, `IFS`, `((…))`, `${X:=v}`, `X+=`, `eval` …): use a "
+                     "literal path")     # r3
 
     def default(m: re.Match) -> str:     # r2 R2-8: the default replaces an unset (or, with `:`, empty) value
         name, colon, op, alt = m.groups()
@@ -440,10 +462,7 @@ def expand(word: str, env: dict[str, str | None]) -> str:
             return "${" + name + "}"     # `${S:?}` names S; an unknown value refuses below
         if name in env and not (colon and env[name] == ""):
             return env[name]
-        val = expand(alt, env) if alt else ""
-        if op == "=":
-            env[name] = val
-        return val
+        return expand(alt, env) if alt else ""
     word = DEFAULT.sub(default, word)
     word = word.replace("$$", "*")    # the shell's pid: a glob over every pid backs up a superset
     if BRACE.search(word):     # `{a,b}` and the range `{1..3}` (r1 Claude probe)
@@ -494,17 +513,73 @@ def _mktemp_template(toks: list[str], s: int, scratch: str | None) -> str | None
     return m[1] + m[2] + "?" * len(m[3])
 
 
+def _hidden_setter(word: str, toks: list[str]) -> bool:
+    """A `$`-built command name whose value could be a setter: a variable no plain `NAME=value` word in the command
+    gives, or one given a setter's name (`X=eval; $X …`)."""
+    if "$" not in word or ASSIGN.match(word):
+        return False
+    given = {m[1]: m[2] for m in map(ASSIGN.match, toks) if m}
+    setters = OPAQUE_WORDS | RUNS_TEXT | set(OPTION_SETTERS) | NAMERS
+    for m in VAR.finditer(word):
+        name = m[1] or m[2]
+        if name not in given or os.path.basename(given[name]) in setters:
+            return True
+    return False
+
+
+def _opaque(toks: list[str], command: str, environ: dict[str, str]) -> tuple[bool, set[str]]:
+    """(opaque, poisoned): opaque when the command can set a variable other than by a plain `NAME=value` word or a
+    name a NAMER is given; poisoned, the names `for`/`select`/`unset` are given (r3)."""
+    if environ.get("IFS", " \t\n") != " \t\n" or OPAQUE_TEXT.search(strip_heredocs(command)):
+        return True, set()       # shell syntax: a heredoc body is data, a comment is nothing
+    if "$((" in command or "$[" in command:
+        return True, set()       # these assign in an unquoted heredoc body too, so the raw text is read
+    if any(ASSIGNING_BRACE.search(b) for b in re.findall(r"\$\{([^}]*)\}?", command)):
+        return True, set()       # `${X:=v}`, `${a[X=0]}`, `${X:off}`
+    poisoned: set[str] = set()
+    for i, t in enumerate(toks):
+        name = os.path.basename(t)
+        j = i - 1
+        while j >= 0 and toks[j].startswith("-") and toks[j] not in SEPARATORS:
+            j -= 1               # `command -p .`: options of a look-through word
+        prev = toks[j] if j >= 0 else ";"
+        at_command = (prev in LOOK_THROUGH if j < i - 1 else
+                      prev in SEPARATORS or prev in KEYWORDS or prev in LOOK_THROUGH or bool(ASSIGN.match(prev)))
+        if name in OPAQUE_WORDS or (at_command and name in RUNS_TEXT) or (at_command and _hidden_setter(t, toks)):
+            return True, set()
+        if name in OPTION_SETTERS and any(w.startswith("-") and OPTION_SETTERS[name] in w
+                                          for w in itertools.takewhile(lambda w: w not in SEPARATORS, toks[i + 1:])):
+            return True, set()
+        if name in NAMERS:
+            for w in toks[i + 1:]:
+                if w in SEPARATORS or w in ("in", "do"):
+                    break
+                if w.startswith("-"):
+                    if "n" in w:
+                        return True, set()   # `unset -n`
+                    continue
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", w):
+                    return True, set()       # `unset 'a[X=0]'`, `for ((`
+                poisoned.add(w)
+                if name != "unset":
+                    break
+    return False, poisoned
+
+
 def rm_calls(command: str, cwd: str, environ: dict[str, str],
              scratch: str | None = None) -> list[tuple[list[str], str | None]]:
     """Each `rm` in a command position: (its expanded target words, the cwd it runs in or None if unknown)."""
     toks = words(command)
     env: dict[str, str | None] = dict(environ)
     env["PWD"] = cwd                     # r2 R2-6: the shell's own, not the hook's
+    opaque, poisoned = _opaque(toks, command, environ)
+    if opaque:
+        env[OPAQUE] = None
+    for v in poisoned:
+        env[v] = None            # r3: a `for`/`select`/`unset` name is unknown for the whole command
     here: str | None = cwd
     depth = compound = in_case = 0
     in_pat = cond = False        # r2 S16: inside a `case` pattern list; this command may not run
-    namerefs: set[str] = set()   # r2 S15: `declare -n` names: an assignment to one sets a variable the hook cannot name
-    attrs: set[str] = set()      # r2 S22: names declared -i/-l/-u/-c/-a/-A: a later `X=v` is not stored as `v`
     chained: set[str] = set()    # r2 S20: set only after `&&`: true for the rest of that `&&` chain, unknown after it
     chain_only = False
     cond_cd = risky = False      # r2 R2-4: a `cd` whose outcome is known only inside its chain; a command before it
@@ -517,12 +592,8 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str],
     def setvar(var: str, val: str | None) -> None:
         if depth > 0:
             assigned_at[var] = depth
-        if var in namerefs:
-            for v in env:
-                env[v] = None            # r2 S15: it assigns the variable it refers to
+        if piped or var in poisoned:
             val = None
-        elif piped or var in attrs:
-            val = None                   # r2 S22
         elif cond and (var not in env or env[var] != val):
             if chain_only:
                 chained.add(var)         # r2 S20: a later `&& rm $X` runs only if this ran
@@ -650,31 +721,8 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str],
             env["OLDPWD"], env["PWD"] = old, here
         elif name in ("pushd", "popd"):
             here = env["PWD"] = None
-        if first in ("for", "select") and len(args) > 1:
-            setvar(args[1], None)                # r2 R2-6: a variable set other than by `NAME=value`
-        elif first in ("read", "mapfile", "readarray", "getopts", "unset"):
-            for w in args[1:]:
-                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", w):
-                    setvar(w, None)
-        elif first == "printf" and "-v" in args[:-1]:
-            setvar(args[args.index("-v") + 1], None)
-        elif first in SETTERS:
-            attr = False
-            for w in args[1:]:
-                if w[:1] in "-+":
-                    attr = attr or bool(set(w[1:]) & set("naAilcu"))     # r2 S15/S22: nameref, array, integer, case transform
-                    if "n" in w[1:] and first != "export":
-                        namerefs.update(ASSIGN.match(x)[1] if ASSIGN.match(x) else x for x in args[1:]
-                                        if not x.startswith(("-", "+")))
-                elif m := ASSIGN.match(w):
-                    setvar(m[1], None if attr else value(m[2]))
-                    attrs.update([m[1]] if attr else [])
-                elif attr:
-                    setvar(w, None)
-                    attrs.add(w)
-        elif first in ("eval", "source", "."):
-            here = None                          # r2 R2-7: the text it runs is not read
-            env = dict.fromkeys(env)
+        if first in ("eval", "source", "."):
+            here = None                          # r2 R2-7: the text it runs is not read (its variables: r3 OPAQUE)
         in_case = max(0, in_case + (first == "case") - (first == "esac"))
         if pat_list:
             in_pat = sep_after != ")"
@@ -1090,17 +1138,50 @@ def _self_test_body() -> int:
         case("`read`, `printf -v`, `getopts`, `mapfile` and `unset` make a variable unknown (r2 R2-6)",
              [targets(f"X=b.txt; {s}; rm $X") for s in ("read X < f", "printf -v X a.tmp", "getopts ab X",
                                                         "mapfile X < f", "unset X")], ["refused"] * 5)
-        case("`export`/`declare`/`local` X=v set X; without `=` they leave it (r2 R2-6)",
-             [targets("X=b.txt; export X=a.tmp; rm $X"), targets("X=b.txt; declare -x X; rm $X")],
-             [["repo/sub/a.tmp"], ["repo/sub/b.txt"]])
+        case("`export`/`declare`/`local` make every variable unreadable, with or without `=` (r3)",
+             [targets("X=b.txt; export X=a.tmp; rm $X"), targets("X=b.txt; declare -x X; rm $X"),
+              targets("local X=a.tmp; rm a.tmp")], ["refused", "refused", ["repo/sub/a.tmp"]])
+        case("`let`, `((…))`, `$((…))`, `$[…]` and `[[ -eq ]]` assign arithmetically: variables are unreadable (r3 R3-1)",
+             [targets(f"X=b.txt; {s}; rm $X") for s in ("let X=0", "(( X = 0 ))", "echo $((X=0))", "echo $[X=0]",
+                                                        "[[ 1 -eq X=0 ]]", "\\let X=0")], ["refused"] * 6)
+        case("an `IFS` in the command or a non-default one in the environment makes variables unreadable (r3 R3-2)",
+             [targets("IFS=:; X=a.tmp:b.txt; rm $X"), targets("X=a.tmp; rm $X", environ={**env, "IFS": ":"}),
+              targets("X=a.tmp; rm $X", environ={**env, "IFS": " \t\n"})], ["refused", "refused", ["repo/sub/a.tmp"]])
+        case("`X+=v` and `X[0]=v` change X: variables are unreadable (r3)",
+             [targets("X=a; X+=.tmp; rm $X"), targets("X=b.txt; X[0]=a.tmp; rm $X")], ["refused"] * 2)
+        case("a `${…}` that can assign (`:=`, `[X=0]`, `:off`) makes variables unreadable; `${!X}` `${X#p}` do not (r3 S24)",
+             [targets("rm -f ${S:=a.tmp} $S"), targets("X=b.txt; echo ${a[X=0]}; rm $X"),
+              targets("X=b.txt; echo ${X:1}; rm $X"), targets("X=b.txt; echo ${!X} ${X#b} ${P[0]}; rm $X")],
+             ["refused"] * 3 + [["repo/sub/b.txt"]])
+        case("after `eval`, a default is not taken for a name the hook never saw set (r3 S23)",
+             targets(f"eval S=b.txt; rm -f ${{S:-{work}/a.tmp}}"), "refused")
+        case("a heredoc body's text is data, but its `$((…))` still assigns (r3 replay)",
+             [targets("X=a.tmp; python3 - <<'E'\nd['k']=1; n+=1\nfor x in y: pass\nE\nrm $X"),
+              targets("X=b.txt; cat <<E\n$((X=0))\nE\nrm $X")], [["repo/sub/a.tmp"], "refused"])
+        case("an opaque command still backs up a LITERAL target (r3)",
+             [targets("let X=0; rm a.tmp"), targets("read X < f; rm b.txt")], [["repo/sub/a.tmp"], ["repo/sub/b.txt"]])
+        case("`.` as an argument, `printf` without `-v`, and a known command name are not setters (r3d replay)",
+             [targets("git diff .; X=a.tmp; rm $X"), targets("printf '%s' x; X=a.tmp; rm $X"),
+              targets("C=git; $C status; X=a.tmp; rm $X"),
+              targets("printf x > f && grep -v y f; X=a.tmp; rm $X")], [["repo/sub/a.tmp"]] * 4)
+        case("`printf -v`, `wait -p`, `compgen -V` and a hidden command name make variables unreadable (r3d)",
+             [targets("X=a.tmp; printf -v X b.txt; rm $X"), targets("X=a.tmp; wait -p X; rm $X"),
+              targets("X=a.tmp; compgen -V X; rm $X"), targets("X=a.tmp; $CMD X; rm $X"),
+              targets("C=eval; X=$KNOWN/a.tmp; $C X=b.txt; rm $X"), targets("X=$KNOWN/a.tmp; command -p . f; rm $X")], ["refused"] * 6)
+        case("a `for`/`select`/`unset` name is unknown for the whole command; other variables stay read (r3d)",
+             [targets("for X in b.txt; do :; done; rm $X"), targets("X=a.tmp; unset X; rm $X"),
+              targets("X=a.tmp; for f in b.txt; do :; done; rm $X"), targets("X=a.tmp; unset -n Y; rm $X"),
+              targets("X=a.tmp; for X in b.txt; do :; done; rm $X"), targets("X=a.tmp; unset $V; rm $X"),
+              targets("for KNOWN in b.txt; do :; done; rm $KNOWN/a.tmp")],
+             ["refused", "refused", ["repo/sub/a.tmp"], "refused", "refused", "refused", "refused"])
         case("`builtin cd` moves the shell (r2 R2-7)", targets("builtin cd ..; rm x.tmp"), ["repo/x.tmp"])
         case("`eval`, `source` and `.` make the cwd and every variable unknown (r2 R2-7)",
              [targets("source f; rm a.tmp"), targets("X=$KNOWN/a.tmp; eval X=b.txt; rm $X"), targets(". f; rm a.tmp")],
              ["refused"] * 3)
-        case("`${S:-x}`, `${S-x}` and `${S:=x}` use the default when S is empty or unset (r2 R2-8)",
+        case("`${S:-x}` and `${S-x}` use the default when S is empty or unset (r2 R2-8)",
              [targets("S=; rm -f ${S:-a.tmp}"), targets("S=b.txt; rm -f ${S:-a.tmp}"), targets("rm -f ${S-a.tmp}"),
-              targets("S=; rm -f x${S-a.tmp}"), targets("rm -f ${S:=a.tmp} $S"), targets("X=$NOPE; rm ${X:-a.tmp}")],
-             [["repo/sub/a.tmp"], ["repo/sub/b.txt"], ["repo/sub/a.tmp"], [], ["repo/sub/a.tmp"] * 2, "refused"])
+              targets("S=; rm -f x${S-a.tmp}"), targets("X=$NOPE; rm ${X:-a.tmp}")],
+             [["repo/sub/a.tmp"], ["repo/sub/b.txt"], ["repo/sub/a.tmp"], [], "refused"])
         case("`-de\"\"lete` is `-delete`: the prefilter reads quote-stripped text (r2 R2-9)",
              targets('find . -name a.tmp -de""lete'), "refused")
         case("a command name that is a glob or a brace list that may be `rm` is refused (r2 R2-9)",
@@ -1144,6 +1225,11 @@ def _self_test_body() -> int:
               targets(f"T=$(mktemp -d {scratch}/x.XXXX)/..; rm -rf $T/sub"),
               targets(f"T=$(mktemp -d {scratch}/x.XXXX; echo {work}); rm -rf $T")], ["refused"] * 4)
         os.remove(os.path.join(scratch, "out"))
+        os.makedirs(os.path.join(scratch, "x.ABCD"))
+        os.symlink(os.path.join(work, "dir", "inner"), os.path.join(scratch, "x.ABCD", "l"))
+        case("a link inside a scratchpad `mktemp` dir is followed: the target it leads to is backed up (r3 S25)",
+             targets(f"T=$(mktemp -d {scratch}/x.XXXX); rm $T/l/c"), ["repo/sub/dir/inner/c"])
+        shutil.rmtree(os.path.join(scratch, "x.ABCD"))
         case("an assignment under a guard to an UNSET variable leaves it unknown; the same value stays (r2 S20)",
              [targets("if false; then X=a.tmp; fi; rm $X"), targets("X=a.tmp; if c; then X=a.tmp; fi; rm $X"),
               targets("cd /; true && X=a.tmp; rm $X"), targets("true && X=a.tmp || rm $X"),
