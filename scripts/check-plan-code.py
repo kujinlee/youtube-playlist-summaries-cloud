@@ -5601,6 +5601,8 @@ def _self_test_body() -> int:
                                       "scripts/check-review-decision.py",
                                       "scripts/check-review-recorded.py",
                                       "scripts/check-review-rounds.py",
+                                      # backlog #685: the rm-backup hook, with its manifest.
+                                      "scripts/check-rm-backup.py",
                                       "scripts/check-roadmap-consistency.py",
                                       "scripts/check-run-hook.py",
                                       "scripts/check-selection-card.py",

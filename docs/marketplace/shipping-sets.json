@@ -84,6 +84,7 @@
       "scripts/mutations/check-review-decision.json",
       "scripts/mutations/check-review-recorded.json",
       "scripts/mutations/check-review-rounds.json",
+      "scripts/mutations/check-rm-backup.json",
       "scripts/mutations/check-roadmap-consistency.json",
       "scripts/mutations/check-run-hook.json",
       "scripts/mutations/check-selection-card.json",
@@ -131,7 +132,7 @@
       "scripts/mutations/sweep-costs.json",
       "scripts/mutations/sweep-red-alert.json"
      ],
-     "expected_count": 105
+     "expected_count": 106
     },
     "mutation-sweep-job": {
      "files": [
