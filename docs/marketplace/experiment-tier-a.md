@@ -156,7 +156,7 @@ half at all.
 against the scan (Task 16, 2026-11-21). "Scan-clean" is read PER FAILURE: a component is scan-clean for a failure
 when the scan held no dependency finding naming that failure's cause (read literally — no finding at all — only
 `brief-compose` was clean, which would have hidden every other failure). Before: `scan-2026-11-17.json`; after:
-`scan-2026-11-21.json` (measured at `3db9d353`, the round 1 fold commit: its scanner over its own tree).
+`scan-2026-11-21.json` (measured at `2f4b59ce`, the round 2 fold commit: its scanner over its own tree).
 
 | Failure | Components it hit | The scan before Task 16 | Now | Closed by |
 |---|---|---|---|---|
@@ -175,7 +175,11 @@ first, then the code — 100/105 red at the first run (the sixth, `S3 (r1 m6)`, 
 dedup already existed, so it is a regression lock); GREEN `116/116`. Against the previous scan, the fold removed
 seven false findings (a comparison, a `print`, `relative_to` ×2, `REPO.is_dir()`, a file-wide name binding, the
 `_sp.run = _real` restore) and added eight (among them `brief-compose:6:1`, `skill-dashboard:4:1`, and
-`check-docs` reads that a disagreeing name had masked).
+`check-docs` reads that a disagreeing name had masked). Round 2 fold (`2f4b59ce`, both Codex r2 MAJORs caused by
+the round 1 fold): five cases written first, four RED (`117/121`; the compared-and-printed negative passed and is
+a lock); GREEN `121/121`. The live scan is unchanged: 365 findings, none gained or lost — no shipped file hands a
+file-derived root through an f-string, `relpath`, `joinpath` or a multi-level `nonlocal`, so the fixture cases
+are the only witnesses of the new rule.
 
 **The scan defects list** — each entry closed by a scan commit or a named limit:
 
@@ -211,9 +215,12 @@ seven false findings (a comparison, a `print`, `relative_to` ×2, `REPO.is_dir()
   or a path part held in anything but a literal or a name bound to one; and it judges paths in a self-test's fixture
   strings like any other (e.g. `recall-llm:2:6`, `.claude/plans/p.md`), an over-report, not a miss. A name is looked
   up in Python's scope (round 1 m2), and **a name whose stores disagree is not followed** — a root re-bound to anything
-  else in its scope is a miss, by design (the stores cannot say which one a use sees). Uses that do not hand the root
-  on are **inert** and not reported (round 1 m3): a comparison, an f-string, `print`/`os.path.relpath`, either side of
-  `relative_to`/`samefile`, and a test that the root itself exists.
+  else in its scope is a miss, by design (the stores cannot say which one a use sees); a `nonlocal` store is the
+  nearest enclosing function's that binds the name (round 2 X2). A value DERIVED from the root (an f-string, `str`,
+  `os.fspath`, `relpath` without a root start, `joinpath`, `/`, `os.path.join`) is judged where it stops deriving
+  (round 2 X1), and only that terminal use can be **inert**: a comparison, an argument of `print` or of a `relpath`
+  measured against the root, either side of `relative_to`/`samefile`, and a test that the root itself exists. Every
+  other terminal use is reported, an unlisted wrapper included — an omission errs toward a finding, not a miss.
 - **L6 — a package file named in descriptive prose (round 1 M2).** `scripts/check-dashboard-entry.py`
   (`.agents/skills/dashboard/SKILL.md:21`) and `.claude/hooks/regen-dashboard.sh` (`:88`) are shipped, named bare,
   and were reported absent by tier B's `dashboard` session. They sit in neither an invocation, a read/follow line, an

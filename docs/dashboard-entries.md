@@ -21229,7 +21229,8 @@ installed copy instead of in the user's repository, and several skills told the 
 relative path that did not resolve. The scan scored both clean; it now reports each one, with the fix for the skills.
 After the first review round it also reports the missing home-directory folder that one script refuses to run
 without, and the store file a skill tells the reader to append to, and it no longer flags harmless uses such as a
-comparison or a print. The failures it still cannot see from the files (the Ask tray that only an earlier page can
+comparison or a print. After the second round it also catches a script that passes its own install folder on
+through a formatted string or a relative-path call, which the first round's fix had hidden. The failures it still cannot see from the files (the Ask tray that only an earlier page can
 supply, a host convention cited in passing, package files named only in description, and whether a model follows
 the delivery steps) are written down as named limits in both experiment records. Plan Task 16; nothing waits on you.
 <!--tech-->
@@ -21247,4 +21248,9 @@ over-report) stays open, outside this population. Round 1 fold (`3db9d353`): nam
 (`_inert`), class-body and `globals()` bindings (`_rebinds`); detector 6 `home-path` (`_homes`, `_absent_home`,
 `_fails`) closes L3; detector 4 section openers (`_heads_section`) narrow L2; new limit L6 (package files named in
 prose). Self-test 109 → 116, mutations 175 → 226 (4 rebound, 51 new, each red on its named case on a scratch
-copy); rescan measured at `3db9d353`.
+copy); rescan measured at `3db9d353`. Round 2 fold (`2f4b59ce`, both Codex MAJORs caused by the r1 fold, route
+`redesign`): derivations (f-string, `str`, `os.fspath`, `relpath` without a root start, `joinpath`) are path forms in
+`_from_file`, so `_inert` judges only the terminal use and an unlisted one is reported; `nonlocal` resolves to the
+nearest enclosing function binding the name (`_Scopes._nonlocal`). Self-test 116 → 121, mutations 226 → 237 (4
+replaced, 11 new, each red on its named case on a scratch copy; the 59 existing detector-2 mutations re-run red);
+rescan at `2f4b59ce`, 365 findings, none gained or lost.

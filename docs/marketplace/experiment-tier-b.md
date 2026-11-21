@@ -87,7 +87,7 @@ followed by the world's own `--stop`; no listener remained before the restart.
 
 ## Scan defects (plan Task 16)
 
-Held against the scan on 2026-11-21 (`scan-2026-11-21.json`, measured at `3db9d353`, the round 1 fold commit), "scan-clean" read per
+Held against the scan on 2026-11-21 (`scan-2026-11-21.json`, measured at `2f4b59ce`, the round 2 fold commit), "scan-clean" read per
 failure as in tier A's record (→ *Scan defects (the scan or its readers)*): a component is scan-clean for a failure
 when no dependency finding named that failure's cause.
 
