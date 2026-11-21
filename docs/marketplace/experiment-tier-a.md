@@ -152,13 +152,54 @@ half at all.
 
 ### Scan defects (the scan or its readers)
 
-- **Scan prediction for each failure (plan Step 5): NOT RUN.** `ScanReport` (Task 8, slice D, PR #600) is not merged,
-  so no finding id can be named. Feeds Task 16, which needs slice D.
+**Scan defects (plan Task 16): S1 and S3 — both closed by a scan commit.** The experiment's failures were held
+against the scan (Task 16, 2026-11-21). "Scan-clean" is read PER FAILURE: a component is scan-clean for a failure
+when the scan held no dependency finding naming that failure's cause (read literally — no finding at all — only
+`brief-compose` was clean, which would have hidden every other failure). Before: `scan-2026-11-17.json`; after:
+`scan-2026-11-21.json` (measured at `75f2c581`, the commit this branch was cut from).
+
+| Failure | Components it hit | The scan before Task 16 | Now | Closed by |
+|---|---|---|---|---|
+| S1 (project located from the install path) | `regen-pages`, `goal-tree`, `gen-backlog-page`, `gen-features-page`, `gen-goals-page`, `gen-dashboard` | no finding naming the cause (`gen-backlog-page:4` named the `docs/backlog.md` path only as a doc-path) | detector 2 `install-root`: `regen-pages:2:1`, `goal-tree:2:3`, `gen-backlog-page:2:2`, `gen-features-page:2:7`, `gen-goals-page:2:3`, `gen-dashboard:2:2` and the rest of each component's `install-root` rows | **case added (red→green)**: three `S1:` self-test cases |
+| S3 (package files named CWD-relative) | `skill-brief`, `skill-explain-findings`, `skill-dashboard` | `skill-dashboard:2:1` (`scripts/regen-pages.py`) only; the `Follow ../shared/explainer-delivery.md` line was no finding on any skill | detector 2 `cwd-relative` with the plugin-root fix: `skill-brief:2:1`, `skill-explain-findings:2:1`, `skill-dashboard:2:2` (and `skill-explain-diff:2:1`, `skill-explain-topic:2:1`, which carry the same line) | **case added (red→green)**: one `S3:` self-test case |
+| S2 (the Ask tray cannot be bootstrapped) | `brief-compose`, `gen-dashboard`, `skill-explain-diff`, `skill-explain-topic`, `explainer-serve` condition 1 | none | none | **limit recorded**: L1 below |
+| S4 (the host's conventions assumed) | `skill-dashboard` | mentions only (`docs/dashboard-entries.md`, `docs/anchors.md`) | the same | **limit recorded**: L2 below |
+| `brief-compose` refuses without `~/explainers` | `brief-compose` | none | none | **limit recorded**: L3 below |
+| S5 (hooks not registered) | the 5 `hook-regen-*` | `hook-regen-*:7:1` `needs-registration` | the same | not scan-clean: predicted |
+
+RED, recorded: with the two new detector clauses disabled on a scratch copy and the four cases kept, the self-test
+reported `95/98 self-test cases passed` — the three cases then present (two `S1:`, one `S3:`) each `[FAIL] … got []`.
+GREEN after the fix: `109/109`. The fourth case (`S1: ...judged in INSTALLED coordinates`) was added after the fix;
+its mutation (the depth taken from the source path) goes red against it.
+
+**The scan defects list** — each entry closed by a scan commit or a named limit:
+
+- S1 — closed by the scan commit of Task 16 (detector 2 `install-root`).
+- S3 — closed by the scan commit of Task 16 (detector 2, Markdown read/follow references).
+- S2 — closed by limit L1. S4 — closed by limit L2. `~/explainers` — closed by limit L3.
 - `check-shipping-sets.py`'s edge reader reports `scripts/mkt_seed_repo.py -> scripts/check-docs.py`, from the
   self-test's interpreter argv `[sys.executable, str(Path(a.repo) / "scripts/check-docs.py")]`, which runs the SEEDED
   repository's own file: the reader drops the base (`Path(a.repo)`) by design and resolves the rest from this
   repository's root — an over-report (found while re-pinning its Phase 6 case in this branch; cause located at the
   round 1 fold: removing that argv removes the edge, while rewording the `source` label does not). Filed as backlog #675.
+  **Outside Task 16's population and still OPEN:** it is an over-report by the shipping-set reader, not an experiment
+  failure on a scan-clean component, so it is neither closed by a scan commit nor a limit here.
+
+### Limits of the scan (what it cannot express — each a named limit, not a defect it could repair)
+
+- **L1 — bootstrap circularity (S2).** A precondition on runtime state that only the package's own earlier output
+  creates (a page that already has an Ask tray). The scan reads files, not the state a first run starts from; a
+  refusal guarded by `if no page has a tray` is the same code whether a tray page exists or not.
+- **L2 — host conventions in prose (S4).** A skill that expects the HOST repository to keep `docs/dashboard-entries.md`
+  or `docs/anchors.md` names them in description, not in one of the INSTRUCTS / REQUIRES sentence shapes, so they
+  are mentions. Making every named `docs/` path a dependency would be positional matching (spec rule M7).
+- **L3 — a home-directory prerequisite.** `brief-compose` refuses without `~/explainers`. The scan can see the path
+  but cannot decide that its absence is fatal rather than a branch with a working default (spec rule M7).
+- **L4 — model adherence.** Whether a model follows a skill's delivery loop (tier B: `explain-diff` wrote its page and
+  skipped serving it, where tier A's run served it) is not a property of the files.
+- **L5 — what detector 2's `install-root` does NOT see:** a root reached through a call of the program's own function,
+  or a path part held in anything but a literal or a name bound to one; and it judges paths in a self-test's fixture
+  strings like any other (e.g. `recall-llm:2:6`, `.claude/plans/p.md`), an over-report, not a miss.
 
 ### Isolation and unobservable accesses
 

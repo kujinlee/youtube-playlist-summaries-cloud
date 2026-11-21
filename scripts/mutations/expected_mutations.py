@@ -2593,5 +2593,9 @@ EXPECTED_MUTATIONS = {
     # block, the imperative the introduction must hold); five anchors rebound in place.
     # ⟳ review r3 fold (2026-11-17): 154 → 158 — +1 an `or` of None operands, +3 detector 4 (blank lines inside a
     # list, an earlier list ends the introduction, a negated verb); three anchors rebound in place.
-    "scripts/check-publishability.py": 158,
+    # ⟳ Task 16 (2026-11-21): 158 → 175 — +12 detector 2 install-root (the call site, installed coordinates, the
+    # .parent / parents[k] / dirname levels, the join and its literal names, the shipped filter, the depth, the
+    # binding and inner-path skips), +5 the Markdown read/follow references (the clause, the verb, ../ resolution,
+    # docs/ left to detector 4, one finding per target per line). Experiment failures S1 and S3.
+    "scripts/check-publishability.py": 175,
 }

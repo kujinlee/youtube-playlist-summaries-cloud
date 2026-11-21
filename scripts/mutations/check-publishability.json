@@ -697,8 +697,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "                    seen.add(target)\n",
-    "                    pass\n"
+    "                    seen.add(target)\n                    out.append(_located(",
+    "                    out.append(_located("
    ]
   ],
   "expect": "an invocation of a file outside every package is outside-set"
@@ -708,8 +708,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "                    elif channel == \"plugin\":\n",
-    "                    elif False:\n"
+    "    if channel == \"plugin\":\n        return {**row, \"kind\": \"cwd-relative\", \"fix\"",
+    "    if False:\n        return {**row, \"kind\": \"cwd-relative\", \"fix\""
    ]
   ],
   "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
@@ -774,8 +774,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "                    if target not in shipped:\n",
-    "                    if False:\n"
+    "    if target not in shipped:\n        return {**row, \"kind\": \"outside-set\"}",
+    "    if False:\n        return {**row, \"kind\": \"outside-set\"}"
    ]
   ],
   "expect": "an invocation of a file outside every package is outside-set"
@@ -1736,5 +1736,192 @@
    ]
   ],
   "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
+ },
+ {
+  "name": "detector 2: install-root findings are never emitted",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            for n, target in _install_root_uses(tree, parent, len(here.parts), held):",
+    "            for n, target in []:"
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2: install-root depth is the SOURCE path, not the installed one",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            here = Path(SS.installed_path(rel) if channel == \"plugin\" else rel)",
+    "            here = Path(rel)"
+   ]
+  ],
+  "expect": "S1: ...judged in INSTALLED coordinates: a skill's script three levels below the plugin root reaches it with parents[2], and the skill's own installed file below it is shipped"
+ },
+ {
+  "name": "detector 2: a .parent step does not climb a level",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return (got[0] + 1, ()) if got and not got[1] else None\n    if isinstance(node, ast.Subscript)",
+    "        return (got[0], ()) if got and not got[1] else None\n    if isinstance(node, ast.Subscript)"
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2: parents[k] climbs k levels, not k + 1",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return (got[0] + node.slice.value + 1, ())",
+    "return (got[0] + node.slice.value, ())"
+   ]
+  ],
+  "expect": "S1: ...the root reached through a name bound to its directory, os.path.dirname twice, and parents[1]"
+ },
+ {
+  "name": "detector 2: os.path.dirname does not climb a level",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            got = _from_file(node.args[0], names, consts)\n            return (got[0] + 1, ())",
+    "            got = _from_file(node.args[0], names, consts)\n            return (got[0], ())"
+   ]
+  ],
+  "expect": "S1: ...the root reached through a name bound to its directory, os.path.dirname twice, and parents[1]"
+ },
+ {
+  "name": "detector 2: a `/` join drops the part it joins",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "return (got[0], got[1] + (part,)) if got and part is not None else None",
+    "return (got[0], got[1]) if got and part is not None else None"
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2: a name bound to a string literal is not a part",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    return consts.get(node.id) if isinstance(node, ast.Name) else None",
+    "    return None"
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2: install-root reports a path the package ships",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if target == \".\" or not held(target):",
+    "        if True:"
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2: install-root reports a path above or beside the root",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if not got or got[0] != depth:",
+    "        if not got or got[0] > depth:"
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2: install-root reports the binding of a root name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):\n            continue\n",
+    ""
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2: install-root reports the inner part of a longer path",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if up is not None and _from_file(up, names, consts):\n            continue",
+    "        if False:\n            continue"
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2: install-root reports where a path name is bound, not used",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                and up.targets[0].id in names:",
+    "                and False:"
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2: Markdown read/follow references are never judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                if rel.endswith(\".md\") and SS.READ_LINE_RE.search(text):",
+    "                if False:"
+   ]
+  ],
+  "expect": "S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a docs/ path are no finding"
+ },
+ {
+  "name": "detector 2: a path in prose that is no read/follow instruction is judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " and SS.READ_LINE_RE.search(text):",
+    ":"
+   ]
+  ],
+  "expect": "S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a docs/ path are no finding"
+ },
+ {
+  "name": "detector 2: a ./ or ../ read reference is not resolved against its file",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                                                  if tok.startswith((\"./\", \"../\")) else tok)",
+    "                                                  if False else tok)"
+   ]
+  ],
+  "expect": "S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a docs/ path are no finding"
+ },
+ {
+  "name": "detector 2: a docs/ read reference is judged by detector 2 too",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                        if target.startswith((\"..\", \"/\", \"docs/\")) or target in seen:",
+    "                        if target.startswith((\"..\", \"/\")) or target in seen:"
+   ]
+  ],
+  "expect": "S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a docs/ path are no finding"
+ },
+ {
+  "name": "detector 2: one read target written twice on a line is two findings",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"docs/\")) or target in seen:\n                            continue                 # above the tree",
+    "\"docs/\")):\n                            continue                 # above the tree"
+   ]
+  ],
+  "expect": "S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a docs/ path are no finding"
  }
 ]

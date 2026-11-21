@@ -21221,3 +21221,23 @@ from their own path and `usage-pace-run.sh` reads `origin/master` through that c
 git layouts, four GIT_* steering cases and two fake gits; launcher mutants u1, u8, g0–g12, c2–c3 and r-<name> killed;
 manifest mutations 18 → 47. Bound: `check-idle-stop.py` and the
 agent-call hooks IMPORT `check-usage-pace.py` from the checkout and are unchanged.
+
+## 2026-11-21
+The marketplace publishability scan now catches the two install failures it had missed. When the comprehensibility
+package was installed into a stranger's repository, six of its scripts looked for the project beside their own
+installed copy instead of in the user's repository, and several skills told the reader to follow a package file by a
+relative path that did not resolve. The scan scored both clean; it now reports each one, with the fix for the skills.
+The failures it still cannot see from the files (the Ask tray that only an earlier page can supply, the host
+repository's conventions, a home-directory folder, and whether a model follows the delivery steps) are written down
+as named limits in both experiment records. Plan Task 16; nothing waits on you.
+<!--tech-->
+Branch `marketplace-task16`. `scripts/check-publishability.py` detector 2 gains `install-root`
+(`_install_root_uses`: a path built from `__file__` whose `.parent` / `parents[k]` / `os.path.dirname` depth reaches
+the file's INSTALLED root, joined with literals, reported where it names a path the package does not ship or hands
+the root on as `.`) and judges Markdown read/follow lines (`SS.READ_LINE_RE` + `SS.READ_PATH_RE`, `../` resolved
+against the file; `docs/` left to detector 4) through the shared `_located` row. Self-test 105 → 109; RED first on a
+scratch copy with both clauses disabled (95/98, the three new cases `got []`). Rescan
+`docs/marketplace/scan-2026-11-21.json` (46 components, 0 CANNOT RUN). Mutations 158 → 175, three anchors rebound
+in place; the 17 new and 3 rebound each run red against their named case on a scratch copy. Records: a scan-defects
+table and list in `experiment-tier-a.md` and `experiment-tier-b.md`, limits L1–L5. Backlog #675 (a shipping-set
+over-report) stays open, outside this population.

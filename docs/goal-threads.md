@@ -224,3 +224,4 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this; APPROVED by the owner 11-11 05:53, folded as section 2c, round 7 converged
 - fix · backlog #384 · the comprehensibility suite's overarching design: the pages are a large part of what the plugin ships
 - fix · backlog #644 · one piece of work has one name: goal, anchor, feature node and ledger id agree, and a check keeps them agreeing
+- fix · PR #376 · plan Task 16: the publishability scan now predicts the install experiment's two scan-clean failures (a script finding the project from its install path; a skill told to follow a package file by a relative path); the rest are named limits

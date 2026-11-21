@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 105 cases
+    python3 scripts/check-publishability.py --self-test  # 109 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -31,8 +31,13 @@ bounds of that judgement); anything else, a fixture string inside a self-test in
 
 DETECTOR 2, cross-repo invocation (`_invocations`), judged against the INSTALLED layout and against the PACKAGE's
 set: `outside-set` is an invocation of a file the package does not ship; `cwd-relative` is one of a file it does
-ship, written bare, and a plugin's finding names the fix `${CLAUDE_PLUGIN_ROOT}/<installed path>`. A detector-2
-finding also holds its `target`.
+ship, written bare, and a plugin's finding names the fix `${CLAUDE_PLUGIN_ROOT}/<installed path>`. A Markdown
+line that tells the reader to READ or FOLLOW a file (`SS.READ_LINE_RE`, `SS.READ_PATH_RE`) is judged the same
+way, a `./` or `../` path against the file's own directory (a `docs/` path stays detector 4's). `install-root`
+(`_install_root_uses`) is a script that takes the directory its own file is installed below for the PROJECT: a
+path built below it that the package does not ship, or the root itself handed on (`.`), the cause of a generator
+that read and wrote the plugin cache instead of the user's repository. A detector-2 finding also holds its
+`target`.
 
 DETECTOR 3, self-test and user documentation (`_self_test_and_docs`): `no-self-test` and `no-user-doc`, asked of
 the Python of an entry point or a library; a library owes no usage block.
@@ -402,6 +407,83 @@ def _shipped(decl: dict) -> set[str]:
 
 COMMANDS = (".md", ".sh", ".yml", ".yaml")              # text whose lines can invoke a file (`SS.EXEC_RE`)
 PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}/"
+FILE_OF = {"Path", "pathlib.Path", "os.path.abspath", "os.path.realpath"}   # f(__file__): the file itself
+SAME_PATH = {"resolve", "absolute"}                                         # x.resolve(): the same path
+
+
+def _from_file(node, names: dict, consts: dict):
+    """`(level, parts)` when `node` is a path built from the file's own location: `level` directories above the
+    file (`Path(__file__)` is 0, each `.parent` or `os.path.dirname` one more, `.parents[k]` k + 1), then the
+    literal `parts` joined below that directory. A name bound to such a path (`names`) is one too, and a name bound
+    to a string literal (`consts`) is that literal. Anything else: None."""
+    if isinstance(node, ast.Name):
+        return (0, ()) if node.id == "__file__" else names.get(node.id)
+    if isinstance(node, ast.Attribute) and node.attr == "parent":
+        got = _from_file(node.value, names, consts)
+        return (got[0] + 1, ()) if got and not got[1] else None
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and node.value.attr == "parents" \
+            and isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, int):
+        got = _from_file(node.value.value, names, consts)
+        return (got[0] + node.slice.value + 1, ()) if got and not got[1] else None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        got, part = _from_file(node.left, names, consts), _literal(node.right, consts)
+        return (got[0], got[1] + (part,)) if got and part is not None else None
+    if isinstance(node, ast.Call):
+        name = _dotted(node.func)
+        if name in FILE_OF and len(node.args) == 1:
+            return _from_file(node.args[0], names, consts)
+        if name == "os.path.dirname" and len(node.args) == 1:
+            got = _from_file(node.args[0], names, consts)
+            return (got[0] + 1, ()) if got and not got[1] else None
+        if name == "os.path.join" and node.args:
+            got, parts = _from_file(node.args[0], names, consts), [_literal(a, consts) for a in node.args[1:]]
+            return (got[0], got[1] + tuple(parts)) if got and None not in parts else None
+        if isinstance(node.func, ast.Attribute) and node.func.attr in SAME_PATH and not node.args:
+            return _from_file(node.func.value, names, consts)
+    return None
+
+
+def _literal(node, consts: dict) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return consts.get(node.id) if isinstance(node, ast.Name) else None
+
+
+def _install_root_uses(tree, parent: dict, depth: int, held) -> list[tuple[int, str]]:
+    """`(line, target)` for each use of the file's own INSTALL ROOT (the directory `depth` levels above it, in
+    installed coordinates) as the project: a path below it that the package does not ship (`held` is false), or
+    the root itself handed on (a `cwd=`, a `git -C`, an argument, a default). One per target, at its first line;
+    the target of the root itself is `.`. A name bound to the root, or to a path below it, is judged where it is
+    used, not where it is bound. BOUND: only literal parts are joined (a part held in a name bound to a string
+    literal included); a root reached through a call of the program's own function is not followed."""
+    binds = sorted((n for n in ast.walk(tree) if isinstance(n, ast.Assign) and len(n.targets) == 1
+                    and isinstance(n.targets[0], ast.Name)), key=lambda n: (n.lineno, n.col_offset))
+    consts = {}
+    for n in binds:
+        if isinstance(n.value, ast.Constant) and isinstance(n.value.value, str):
+            consts.setdefault(n.targets[0].id, n.value.value)
+    names = {}
+    for n in binds:                                  # in source order: a name is built from the names above it
+        got = _from_file(n.value, names, consts)
+        if got:
+            names.setdefault(n.targets[0].id, got)
+    first = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            continue
+        got = _from_file(node, names, consts)
+        if not got or got[0] != depth:
+            continue
+        up = parent.get(node)
+        if up is not None and _from_file(up, names, consts):
+            continue                                 # a longer path is judged instead
+        if isinstance(up, ast.Assign) and up.value is node and isinstance(up.targets[0], ast.Name) \
+                and up.targets[0].id in names:
+            continue                                 # a binding: judged at each use
+        target = os.path.normpath("/".join(got[1])) if got[1] else "."
+        if target == "." or not held(target):
+            first[target] = min(first.get(target, node.lineno), node.lineno)
+    return sorted((n, t) for t, n in first.items())
 
 
 def _invocations(files: list, base: Path, shipped: set, channel: str) -> list:
@@ -425,10 +507,16 @@ def _invocations(files: list, base: Path, shipped: set, channel: str) -> list:
     an unjudged coupling is shown, never counted as none (review r2). BOUND: a load of a SHIPPED file is not judged
     here, whatever directory it is resolved from at run time."""
     out = []
+    installed = {SS.installed_path(f) for f in shipped} if channel == "plugin" else set(shipped)
+    held = lambda p: p in installed or any(f.startswith(p + "/") for f in installed)  # noqa: E731
     for f in files:
         rel, lines = f.relative_to(base).as_posix(), _lines(f)
         if rel.endswith(".py"):
             tree, parent = _parsed(f)
+            here = Path(SS.installed_path(rel) if channel == "plugin" else rel)
+            for n, target in _install_root_uses(tree, parent, len(here.parts), held):
+                out.append({"detector": 2, "file": rel, "line": n, "text": lines[n - 1].strip(),
+                            "kind": "install-root", "target": target})
             invoked = {os.path.normpath(n.value) for n in ast.walk(tree) if isinstance(n, ast.Constant)
                        and isinstance(n.value, str) and _python_use(n, parent) == "invocation"}
             edges, unread = SS.python_loads(rel, f.read_text())
@@ -453,14 +541,27 @@ def _invocations(files: list, base: Path, shipped: set, channel: str) -> list:
                     if target.startswith(("..", "/")) or target in seen or (rooted and target in shipped):
                         continue
                     seen.add(target)
-                    row = {"detector": 2, "file": rel, "line": n, "text": text.strip(), "target": target}
-                    if target not in shipped:
-                        out.append({**row, "kind": "outside-set"})
-                    elif channel == "plugin":
-                        out.append({**row, "kind": "cwd-relative", "fix": PLUGIN_ROOT + SS.installed_path(target)})
-                    else:
-                        out.append({**row, "kind": "cwd-relative"})
+                    out.append(_located(rel, n, text, target, shipped, channel))
+                if rel.endswith(".md") and SS.READ_LINE_RE.search(text):
+                    for tok in SS.READ_PATH_RE.findall(text):
+                        target = os.path.normpath(os.path.join(os.path.dirname(rel), tok)
+                                                  if tok.startswith(("./", "../")) else tok)
+                        if target.startswith(("..", "/", "docs/")) or target in seen:
+                            continue                 # above the tree; a `docs/` path is detector 4's
+                        seen.add(target)
+                        out.append(_located(rel, n, text, target, shipped, channel))
     return out
+
+
+def _located(rel: str, n: int, text: str, target: str, shipped: set, channel: str) -> dict:
+    """Detector 2's row for a reference on line `n` of `rel` to `target`, a path written relative: `outside-set`
+    when the package does not ship it, else `cwd-relative`, a plugin's with its fix under the plugin root."""
+    row = {"detector": 2, "file": rel, "line": n, "text": text.strip(), "target": target}
+    if target not in shipped:
+        return {**row, "kind": "outside-set"}
+    if channel == "plugin":
+        return {**row, "kind": "cwd-relative", "fix": PLUGIN_ROOT + SS.installed_path(target)}
+    return {**row, "kind": "cwd-relative"}
 
 
 SELF_TEST_FLAG = "--self-test"
@@ -1569,6 +1670,66 @@ def _self_test_body() -> int:
          lambda: items(w_r3, {"x": [".agents/skills/x/SKILL.md"]}, "x"),
          ([(4, "tool-name", "TaskList"), (6, "tool-name", "TaskCreate")],
           [(10, "tool-name", "TaskCreate"), (15, "tool-name", "TaskList")]))
+
+    # --- Task 16: what the install experiment hit and the scan scored clean ----------------------------------
+    gen_like = ('"""Gen.\n\n    python3 scripts/gen.py --self-test\n"""\n'
+                'import pathlib\nimport subprocess\nimport sys\n'
+                'ROOT = pathlib.Path(__file__).resolve().parent.parent\n'
+                'DOCS = ROOT / "docs"\n'
+                'STORE = "docs/store.md"\n'
+                'TOOL = ROOT / "scripts" / "tool.py"\n'
+                'SIB = pathlib.Path(__file__).with_name("tool.py")\n'
+                'HERE = pathlib.Path(__file__).resolve().parent / "tool.py"\n'
+                'def main(root=ROOT):\n'
+                '    text = (DOCS / "features.md").read_text()\n'
+                '    subprocess.run(["git", "log"], cwd=ROOT)\n'
+                '    return (ROOT / STORE).read_text(), "--self-test" in sys.argv, TOOL, SIB, HERE, text\n')
+    tree_like = ('"""Tree.\n\n    python3 scripts/tree.py --self-test\n"""\n'
+                 'import os\nimport pathlib\nimport subprocess\n'
+                 'SCRIPTS = pathlib.Path(__file__).resolve().parent\n'
+                 'ROOT = SCRIPTS.parent\n'
+                 'subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--git-common-dir"])\n'
+                 'UP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n'
+                 'open(os.path.join(UP, "docs", "anchors.md"))\n'
+                 'print(pathlib.Path(__file__).parents[1] / "docs/backlog.md", "--self-test")\n')
+    skill_md = ("# S\n"
+                "**Follow `../shared/d.md`** for the delivery.\n"
+                "Read [`../shared/d.md`](../shared/d.md) again.\n"
+                "**Follow `.agents/skills/shared/d.md`.**\n"
+                "See `../shared/d.md` for the rest.\n"
+                "Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/d.md`.\n"
+                "Read `../shared/gone.md` first.\n"
+                "Read `docs/backlog.md`.\n")
+    w_16 = world({"scripts/gen.py": gen_like, "scripts/tree.py": tree_like, "scripts/tool.py": safe,
+                  ".agents/skills/s/SKILL.md": skill_md, ".agents/skills/shared/d.md": "# D\n",
+                  ".agents/skills/s/run.py": ('import pathlib\n'
+                                              'PLUG = pathlib.Path(__file__).parents[2]\n'
+                                              'print(PLUG / "docs" / "x.md", PLUG / "skills" / "s" / "SKILL.md")\n')})
+
+    def rooted(cid: str) -> list:
+        sets = {cid: [f"scripts/{cid}.py"], "tool": ["scripts/tool.py"]}
+        return [(f["line"], f["target"]) for f in found(w_16, sets, cid, 2) if f["kind"] == "install-root"]
+    case("S1: a script that takes its OWN install root for the project is install-root at each path below it "
+         "the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's "
+         "own directory are no finding",
+         lambda: rooted("gen"),
+         [(14, "."), (15, "docs/features.md"), (17, "docs/store.md")])
+    case("S1: ...the root reached through a name bound to its directory, os.path.dirname twice, and parents[1]",
+         lambda: rooted("tree"),
+         [(10, "."), (12, "docs/anchors.md"), (13, "docs/backlog.md")])
+    case("S1: ...judged in INSTALLED coordinates: a skill's script three levels below the plugin root reaches "
+         "it with parents[2], and the skill's own installed file below it is shipped",
+         lambda: [(f["line"], f["target"]) for f in found(w_16, {"s": [".agents/skills/s/run.py",
+                                                                     ".agents/skills/s/SKILL.md"]}, "s", 2)
+                  if f["kind"] == "install-root"],
+         [(3, "docs/x.md")])
+    case("S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with "
+         "the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a "
+         "docs/ path are no finding",
+         lambda: rows(found(w_16, {"s": [".agents/skills/s/SKILL.md"], "d": [".agents/skills/shared/d.md"]}, "s",
+                            2)),
+         [(n, "cwd-relative", ".agents/skills/shared/d.md", "${CLAUDE_PLUGIN_ROOT}/skills/shared/d.md")
+          for n in (2, 3, 4)] + [(7, "outside-set", ".agents/skills/shared/gone.md", None)])
 
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
         print("NOT RUN under the mutation harness: 10 live-tree cases (CI's ordinary step runs them)")
