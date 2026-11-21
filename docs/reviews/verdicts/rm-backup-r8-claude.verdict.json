@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/rm-backup-r8-claude.md": "100644 1b6d6280934b0faacf49ebe937bdcbab99e03951"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "2ba7acbdecc6ee7ae448e263c23e352adf1563ed",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 8326 chars, names 2ba7acbdecc6",
+  "refused": false,
+  "review": "rm-backup-r8-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/rm-backup",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

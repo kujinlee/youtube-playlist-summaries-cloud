@@ -174,6 +174,8 @@ POPULATION: frozenset[str] = frozenset({
     "check-agent-long-call.py",
     # ⟳ 2026-11-01 (backlog #457): pinned in the commit that creates it.
     "check-agent-large-read.py",
+    # ⟳ 2026-11-20 (backlog #685): pinned in the commit that creates it.
+    "check-rm-backup.py",
     # ⟳ 2026-10-26 (backlog #223): pinned in the commit that creates it.
     "check-hook-commands.py",
     # ⟳ 2026-11-16 (the idle-stop guard, owner 02:51): pinned in the commit that creates it.
