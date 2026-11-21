@@ -22,9 +22,10 @@ THE DECISION, for a PreToolUse payload (the first that applies wins):
     NOT CHECKED  the payload or command cannot be read (stderr, exit 1: allowed, and said)
     deny         an `rm` whose targets the hook cannot SEE: `xargs rm`, `-exec rm`, `find -delete`, `find -L`, a target
                  holding `$(`, a backtick, a brace list or a variable with no known value, a RELATIVE target after a
-                 `cd` the hook cannot follow, or a path BELOW a same-command `mktemp` directory (a link there leads
-                 anywhere); and a command substitution the lexer cannot split (an unquoted heredoc body, a
-                 double-quoted string) whose text holds an `rm` word
+                 `cd` the hook cannot follow (a `$(mktemp …)` value is unknown: r2 S21); and a command substitution the lexer cannot split (an unquoted heredoc body, a
+                 double-quoted string) whose text holds an `rm` word; a command NAME that is a glob or brace list
+                 that may expand to `rm`/`find`/`xargs` (`/bin/r? v`, `{rm,v}`); after `eval`/`source`/`.`, any
+                 relative or variable target
     deny         the targets total more than MAX_BYTES or MAX_FILES (too large to copy on every call)
     deny         a copy failed (the `rm` must not run without its backup)
     allow        every visible target is backed up, needs none (missing, inside this session's scratchpad or the
@@ -37,27 +38,37 @@ a later `$NAME` expands to it — but not past the subshell or pipeline part tha
 decodes it, and a backtick substitution is read as the `$(…)` it is. `\\rm` and `/bin/rm` count. Any command NOT in
 NOT_RUNNERS (`echo`, `grep`, `git`, …) is read as a possible runner: a later standalone `rm` word in it starts an
 `rm` call (`sudo -u root rm x`, `timeout 5 rm x`) — too wide costs an extra backup. `git rm` is not an `rm` (git
-holds a tracked file). The working directory starts at the payload's `cwd` and
-follows a top-level `cd <literal>`; any other `cd` (inside `(…)`, `cd -`, after `||`, unresolvable) makes it UNKNOWN.
-Targets are expanded for `~`, `$VAR`/`${VAR}` (assigned earlier in the command, else the hook's environment) and
-globs; a glob matching nothing, like a missing file, needs no backup.
+holds a tracked file). The working directory starts at the payload's `cwd` (so does `$PWD`) and
+follows a top-level `cd <literal>`, moving `$PWD`/`$OLDPWD`; any other `cd` (inside `(…)` or a compound, `cd -`, after
+`||`, unresolvable) makes it UNKNOWN. A `cd` into a directory that does not exist now, or after a command in its own
+`&&` chain, is followed only to the end of that chain (r2 R2-4). A variable set by `for`, `read`, `printf -v`,
+`getopts`, `mapfile`, `unset`, `declare -n/-a/-A/-i/-l/-u/-c` (then and on every later `X=v`, r2 S22), or under a guard that may not run
+unless it already held that value (r2 S20), is UNKNOWN; a nameref's assignment makes EVERY variable unknown (r2 S15); `export`/`declare`/`local` X=v set it. A `)`
+is a `case` pattern only after `case W in` or `;;`/`;&`/`;;&` (r2 S16). Targets are expanded for `~`,
+`$VAR`/`${VAR}`, `${V:-x}`/`${V-x}`/`${V:=x}` (assigned earlier in the command, else the hook's environment) and
+globs; a variable's value holding blanks is backed up whole AND word by word (the quotes are gone). A glob matching
+nothing, like a missing file, needs no backup. `T=$(mktemp …)` is UNKNOWN — no exemption, it is a taint the hook cannot track
+(r2 S13/S14/R2-5/S17/S21) — except `T=$(mktemp [-d] /literal/scratchpad/x.XXXX)`, which is the glob of the names it
+can make, inside the scratchpad, so needs no backup: make temp dirs there.
 
 ⚠ BOUNDS, stated: an `rm` the shell builds at run time is not seen and not backed up — inside a quoted string
 (`trap 'rm -f "$T"' EXIT`, `bash -c "rm x"`, `eval`), in a script file the command runs, or by another language
 (`python -c 'os.remove(…)'`). `unlink` and `rmdir` are not gated (`rmdir` removes only an empty directory). A heredoc
 whose delimiter is not on a line of its own takes the rest of the command as its body, as bash does: at worst an extra
 backup or a refusal, never a missed `rm` in real command text. A command NAME from an unknown variable (`$X v`) is
-not seen. Containment in an exempt place is judged on the ENTRY `rm` removes (its last link not followed). The environment is the HOOK's, not the shell's after
+not seen, nor is a glob word found after a runner's options (`timeout 5 /bin/r? v`). Containment in an exempt place is
+judged on the ENTRY `rm` removes (its last link not followed). The environment is the HOOK's, not the shell's after
 earlier commands ran (a `source` is not followed).
 
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED (allowed,
 said on stderr). `--self-test` 0 = every case passed, 1 = a case failed.
 
-    python3 scripts/check-rm-backup.py --self-test  # 88 cases
+    python3 scripts/check-rm-backup.py --self-test  # 112 cases
 """
 from __future__ import annotations
 
 import datetime as _dt
+import fnmatch
 import glob
 import json
 import os
@@ -71,9 +82,9 @@ from pathlib import Path
 MAX_BYTES = 256 * 1024 * 1024
 MAX_FILES = 20_000
 KEEP_DAYS = 14
-SEPARATORS = {";", "&", "&&", "|", "||", "|&", "(", ")", "\n", ";;"}
+SEPARATORS = {";", "&", "&&", "|", "||", "|&", "(", ")", "\n", ";;", ";&", ";;&"}
 KEYWORDS = {"then", "do", "else", "elif", "{", "}", "!", "if", "while", "until"}
-LOOK_THROUGH = {"sudo", "command", "env", "nice", "time", "nohup", "exec"}
+LOOK_THROUGH = {"sudo", "command", "env", "nice", "time", "nohup", "exec", "builtin"}     # r2 R2-7: `builtin cd`
 # commands that never run their arguments: a later word `rm` is data to them. Every OTHER command is read as a
 # possible runner (`timeout 5 rm x`, `sudo -u root rm x`): a later standalone `rm` word starts an `rm` call. Too
 # wide costs an extra backup; too narrow would miss a deletion (r1 R1-6 and the push-time review).
@@ -89,17 +100,21 @@ ANSI_SIMPLE = {"n": "\n", "t": "\t", "r": "\r", "a": "\a", "b": "\b", "e": "\x1b
                "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
 REDIRECTS = {"<", ">", ">>", "<<", "<<<", ">&", "<&", "&>", "&>>", ">|"}
 WORD_START = " \t\r\n;&|()<>"     # a `#` after one of these opens a comment
-HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
-OPERATOR = re.compile(r"&>>|<<<|&&|\|\||;;|\|&|>>|<<|&>|>&|<&|>\||[;&|()<>\n]")
+OPERATOR = re.compile(r"&>>|<<<|&&|\|\||;;&|;;|;&|\|&|>>|<<|&>|>&|<&|>\||[;&|()<>\n]")
 VAR = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
+DEFAULT = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:?)([-=?])([^}]*)\}")      # `${S:-x}` `${S-x}` `${S:=x}` `${S:?}`
+PUNCT = ";&|()<>\n"
+PROTECT = {ord(c): chr(0xE000 + k) for k, c in enumerate(PUNCT)}     # a QUOTED operator character (r2 R2-11)
+UNPROTECT = {ord(v): k for k, v in PROTECT.items()}     # r2 R2-11 fold: keyed by code point, or nothing is restored
+BRACE = re.compile(r"(?<!\$)\{[^}]*(,|\.\.)[^}]*\}")
+SETTERS = {"export", "declare", "local", "readonly", "typeset"}
+COMPOUND_OPEN, COMPOUND_CLOSE = {"if", "while", "until", "{"}, {"fi", "done", "esac", "}"}
 
 
-FRESH = "\0fresh"
-BARE_VAR = re.compile(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/?")      # `$T`, `${T}`, `$T/`: the variable itself, no path below it
 HEREDOC_RM = ("an unquoted heredoc body runs a command substitution with an `rm` the hook does not read; quote the "
               "delimiter (`<<'EOF'`)")
-FIND = "\0find"     # marks a `find … -delete` / `-exec rm` call: its start paths follow   # the value of a variable assigned `$(mktemp …)` in the SAME command
+FIND = "\0find"     # marks a `find … -delete` / `-exec rm` call: its start paths follow
 
 
 class Unreadable(Exception):
@@ -108,6 +123,10 @@ class Unreadable(Exception):
 
 class Refuse(Exception):
     """The `rm` must not run: its targets cannot be seen or backed up."""
+
+
+class PatternName(Refuse):
+    """A command NAME that is a glob or brace list and may expand to `rm`, `find` or `xargs` (r2 R2-9)."""
 
 
 def _subst_end(text: str, j: int) -> int:
@@ -208,12 +227,63 @@ def decode_ansi_c(text: str) -> str:
 def _ansi_char(m: re.Match) -> str:
     s = m.group(1)
     if s[0] in "xuU" and len(s) > 1:
-        return chr(int(s[1:], 16))
+        code = int(s[1:], 16)
+        return chr(code) if code < 0x110000 else "\\" + s     # r2 R2-12: out of range stays literal, as bash 3.2
     if s[0] in "01234567":
         return chr(int(s, 8))
     if s[0] == "c" and len(s) == 2:
         return chr(ord(s[1]) & 31)
     return ANSI_SIMPLE.get(s, "\\" + s)
+
+
+def _heredoc_word(command: str, i: int) -> tuple[int, bool, str, bool]:
+    """At a `<<`: (end, `<<-`, the delimiter after quote removal, quoted?). The delimiter is the WHOLE shell word
+    (r2 R2-1: `END-X`, `E"OF"`, `\\EOF`); a word that cannot be read refuses."""
+    j = i + 2
+    strip = command.startswith("-", j)
+    j += strip
+    while j < len(command) and command[j] in " \t":
+        j += 1
+    word, quoted, n, start = [], False, len(command), j
+    while j < n and command[j] not in " \t\r\n;&|()<>":
+        c = command[j]
+        if c == "\\" and j + 1 < n:
+            word.append(command[j + 1])
+            quoted, j = True, j + 2
+        elif c in "'\"":
+            end = command.find(c, j + 1)
+            if end < 0:
+                raise Refuse("a heredoc delimiter with an unterminated quote cannot be read")
+            word.append(command[j + 1:end])
+            quoted, j = True, end + 1
+        else:
+            word.append(c)
+            j += 1
+    if j == start:
+        raise Refuse("a heredoc with no delimiter word cannot be read")
+    return j, strip, "".join(word), quoted
+
+
+def _brace_end(text: str, j: int) -> int:
+    """The index just past the `}` closing a `${` whose body starts at `j`. Unclosed: the end."""
+    depth, quote, n = 1, None, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\" and quote != "'":
+            j += 2
+            continue
+        if quote:
+            quote = None if c == quote else quote
+        elif c in "'\"":
+            quote = c
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return n
 
 
 def strip_heredocs(command: str) -> str:
@@ -256,6 +326,10 @@ def strip_heredocs(command: str) -> str:
                 j += 2 if command[j] == "\\" else 1
             out.append(command[i:j + 1])
             i = j + 1
+        elif command.startswith("${", i):
+            j = _brace_end(command, i + 2)      # r2 R2-10: a subscript's `<<` is a shift; copied whole
+            out.append(command[i:j])
+            i = j
         elif c == "`":
             j = i + 1
             while j < n and command[j] != "`":
@@ -280,10 +354,11 @@ def strip_heredocs(command: str) -> str:
             nl = command.find("\n", i)
             i = n if nl < 0 else nl
         elif (command.startswith("<<", i) and (i == 0 or command[i - 1] != "<")    # `<<<` is a here-string
-              and (m := HEREDOC.match(command, i))):
-            pending.append((m.group(0).startswith("<<-"), m.group(2), bool(m.group(1))))
-            out.append(m.group(0))
-            i = m.end()
+              and not command.startswith("<<<", i)):
+            end, strip, word, literal = _heredoc_word(command, i)
+            pending.append((strip, word, literal))
+            out.append(command[i:end])
+            i = end
         elif c == "\n" and pending:
             out.append(c)
             i += 1
@@ -311,9 +386,32 @@ def strip_heredocs(command: str) -> str:
     return "".join(out)
 
 
+def _protect(text: str) -> str:
+    """An operator character that shlex will read as QUOTED or escaped becomes a placeholder, so only an unquoted
+    run is an operator (r2 R2-11: `echo ")"`). A backslash-newline outside single quotes is a line continuation,
+    removed as bash removes it (`rm a \\<newline>b` names `b`). The quote state mirrors shlex's own."""
+    out, i, n, quote = [], 0, len(text), None
+    while i < n:
+        c = text[i]
+        if c == "\\" and quote != "'" and i + 1 < n:
+            if text[i + 1] != "\n":
+                out.append(c + text[i + 1].translate(PROTECT))
+            i += 2
+            continue
+        if quote:
+            quote = None if c == quote else quote
+            out.append(c if quote is None else c.translate(PROTECT))
+        else:
+            quote = c if c in "'\"" else None
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def words(command: str) -> list[str]:
     """Shell words and operators; a newline is its own operator."""
-    lex = shlex.shlex(decode_ansi_c(strip_heredocs(command)), posix=True, punctuation_chars=";&|()<>\n")
+    text = _protect(decode_ansi_c(strip_heredocs(command)))
+    lex = shlex.shlex(text, posix=True, punctuation_chars=PUNCT)
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
     lex.commenters = ""     # comments are removed by `strip_heredocs`, which knows where a word starts
@@ -324,10 +422,10 @@ def words(command: str) -> list[str]:
     out = []
     for t in toks:
         # a run of punctuation such as `);` or `;\n` arrives as ONE token: split it into shell operators, longest first
-        if t and set(t) <= set(";&|()<>\n"):
+        if t and set(t) <= set(PUNCT):
             out.extend(OPERATOR.findall(t))
         else:
-            out.append(t)
+            out.append(t)     # a quoted operator character stays a placeholder until `expand` (r2 S18)
     return out
 
 
@@ -335,26 +433,25 @@ def expand(word: str, env: dict[str, str | None]) -> str:
     """`~` and `$VAR`; raises Refuse when the value cannot be known."""
     if "$(" in word or "`" in word:
         raise Refuse(f"the target `{word}` is built by a command substitution")
-    word = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*):[?-][^}]*\}", r"${\1}", word)   # `${S:?}` names S
-    word = word.replace("$$", "*")    # the shell's pid: a glob over every pid backs up a superset
-    if re.search(r"(?<!\$)\{[^}]*(,|\.\.)[^}]*\}", word):     # `{a,b}` and the range `{1..3}` (r1 Claude probe)
-        raise Refuse(f"the target `{word}` is a brace list")
 
-    fresh = re.match(r"^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))(/(.*))?$", word)
-    if fresh and env.get(fresh.group(1) or fresh.group(2)) == FRESH:
-        rest = fresh.group(4) or ""
-        if ".." in rest.split("/"):
-            raise Refuse(f"the target `{word}` climbs out of a directory `mktemp` made")
-        if "/" in rest or (rest and word.endswith("/")):
-            raise Refuse(f"the target `{word}` reaches below a directory `mktemp` made, through entries the hook "
-                         f"cannot see (a symlink there leads anywhere); delete the directory itself")
-        return FRESH
+    def default(m: re.Match) -> str:     # r2 R2-8: the default replaces an unset (or, with `:`, empty) value
+        name, colon, op, alt = m.groups()
+        if op == "?" or (name in env and env[name] is None):
+            return "${" + name + "}"     # `${S:?}` names S; an unknown value refuses below
+        if name in env and not (colon and env[name] == ""):
+            return env[name]
+        val = expand(alt, env) if alt else ""
+        if op == "=":
+            env[name] = val
+        return val
+    word = DEFAULT.sub(default, word)
+    word = word.replace("$$", "*")    # the shell's pid: a glob over every pid backs up a superset
+    if BRACE.search(word):     # `{a,b}` and the range `{1..3}` (r1 Claude probe)
+        raise Refuse(f"the target `{word}` is a brace list")
 
     def sub(m: re.Match) -> str:
         name = m.group(1) or m.group(2)
         val = env.get(name)
-        if val == FRESH:
-            raise Refuse(f"`${name}` (made by `mktemp`) is used inside `{word}`, not at its start")
         if val is None:
             raise Refuse(f"the variable `${name}` in `{word}` has no value the hook can see")
         return val
@@ -366,19 +463,79 @@ def expand(word: str, env: dict[str, str | None]) -> str:
         if not home:
             raise Refuse(f"`~` in `{word}` has no HOME the hook can see")
         word = home + word[1:]
-    return word
+    return word.translate(UNPROTECT)     # r2 R2-11 fold: `rm "a;b"` names `a;b`
 
 
-def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list[str], str | None]]:
+def expand_words(word: str, env: dict[str, str | None]) -> list[str]:
+    """`expand`, and when a variable's value holds blanks, each blank-separated piece too: the lexer has dropped the
+    quotes, so `rm $X` (split) and `rm "$X"` (whole) look alike — back up both readings (r2 R2-3)."""
+    val = expand(word, env)
+    return [val] + val.split() if "$" in word and re.search(r"\s", val) else [val]
+
+
+def _mktemp_template(toks: list[str], s: int, scratch: str | None) -> str | None:
+    """`toks[s:]` is a substitution body that is exactly `mktemp [-d|-q|-u] /literal/name.XXX…` whose directory is this
+    session's scratchpad, closed by `)` and a separator: the glob of the names it can make (`x.????`). Anything else
+    is an unknown value (r2: the `mktemp` exemption is dropped — a value, not a taint)."""
+    if not scratch or s >= len(toks) or toks[s] != "mktemp":
+        return None
+    c, words_ = s + 1, []
+    while c < len(toks) and toks[c] not in SEPARATORS:
+        words_.append(toks[c])
+        c += 1
+    if not (c < len(toks) and toks[c] == ")" and (c + 1 == len(toks) or toks[c + 1] in (";", "&&", "||", "\n", ")"))):
+        return None
+    opts, rest = [w for w in words_ if w in ("-d", "-q", "-u")], [w for w in words_ if w not in ("-d", "-q", "-u")]
+    if len(rest) != 1 or not os.path.isabs(rest[0]) or re.search(r"[$`*?\[{\\]", rest[0]):
+        return None
+    m = re.fullmatch(r"(.*/)([^/]*?)(X{3,})", rest[0])
+    if not m or scratch not in os.path.realpath(m[1]) + "/":
+        return None
+    return m[1] + m[2] + "?" * len(m[3])
+
+
+def rm_calls(command: str, cwd: str, environ: dict[str, str],
+             scratch: str | None = None) -> list[tuple[list[str], str | None]]:
     """Each `rm` in a command position: (its expanded target words, the cwd it runs in or None if unknown)."""
     toks = words(command)
     env: dict[str, str | None] = dict(environ)
+    env["PWD"] = cwd                     # r2 R2-6: the shell's own, not the hook's
     here: str | None = cwd
-    depth = 0
+    depth = compound = in_case = 0
+    in_pat = cond = False        # r2 S16: inside a `case` pattern list; this command may not run
+    namerefs: set[str] = set()   # r2 S15: `declare -n` names: an assignment to one sets a variable the hook cannot name
+    attrs: set[str] = set()      # r2 S22: names declared -i/-l/-u/-c/-a/-A: a later `X=v` is not stored as `v`
+    chained: set[str] = set()    # r2 S20: set only after `&&`: true for the rest of that `&&` chain, unknown after it
+    chain_only = False
+    cond_cd = risky = False      # r2 R2-4: a `cd` whose outcome is known only inside its chain; a command before it
     assigned_at: dict[str, int] = {}
     calls = []
     i, n = 0, len(toks)
     prev_sep = None
+    piped = False
+
+    def setvar(var: str, val: str | None) -> None:
+        if depth > 0:
+            assigned_at[var] = depth
+        if var in namerefs:
+            for v in env:
+                env[v] = None            # r2 S15: it assigns the variable it refers to
+            val = None
+        elif piped or var in attrs:
+            val = None                   # r2 S22
+        elif cond and (var not in env or env[var] != val):
+            if chain_only:
+                chained.add(var)         # r2 S20: a later `&& rm $X` runs only if this ran
+            else:
+                val = None               # r2 S20: under a guard, the old value (or unset) or the new one
+        env[var] = val
+
+    def value(val: str) -> str | None:
+        try:
+            return expand(val, env) if val else ""
+        except Refuse:
+            return None
+
     while i < n:
         # one simple command: toks[i:j]
         j = i
@@ -386,9 +543,14 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
             j += 1
         cmd = toks[i:j]
         sep_after = toks[j] if j < n else None
+        piped = prev_sep in ("|", "|&", "&") or sep_after in ("|", "|&", "&")
         k = 0
         while k < len(cmd) and cmd[k] in KEYWORDS:
+            compound = max(0, compound + (cmd[k] in COMPOUND_OPEN) - (cmd[k] == "}"))
             k += 1
+        guarded = k > 0 or compound > 0      # r2 R2-4: under `then`/`do`/`{`/…, a `cd` may not run
+        cond = guarded or prev_sep in ("&&", "||")
+        chain_only = not guarded and prev_sep == "&&"
         assigns = []
         while k < len(cmd) and (m := ASSIGN.match(cmd[k])):
             assigns.append(m.groups())
@@ -406,27 +568,31 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
                 name = expand(name, env)       # `X=rm; $X victim`
             except Refuse:
                 pass                           # a command name the hook cannot see: a stated BOUND
-        if name and os.path.basename(name) != "rm" and name not in NOT_RUNNERS and os.path.basename(name) not in ("xargs", "find"):
+        first = base = os.path.basename(name)
+        header = first == "case" and args[2:3] == ["in"]
+        pattern = (in_pat and cmd[:1] != ["esac"]) or (header and len(args) > 3)     # a `case` pattern `x*)`
+        pat_list = pattern or header     # r2 S16: its `(` and `)` open and close no subshell
+        if pattern:
+            pass
+        elif BRACE.search(name) or (re.search(r"[*?\[]", base) and any(fnmatch.fnmatchcase(c, base)
+                                                                    for c in ("rm", "find", "xargs"))):
+            raise PatternName(f"the command name `{name}` is a pattern or brace list that may run `rm`")    # r2 R2-9
+        if name and base not in ("rm", "xargs", "find") and name not in NOT_RUNNERS:
             for a in range(1, len(args)):
                 w = args[a].lstrip("\\")
-                if os.path.basename(w) == "rm" and args[a - 1] not in REDIRECTS:
-                    args, name = args[a:], w   # `timeout 5 rm x`, `sudo -u root rm x`
+                if os.path.basename(w) in ("rm", "xargs", "find") and args[a - 1] not in REDIRECTS:
+                    args, name = args[a:], w   # `timeout 5 rm x`, `nice -n 5 find …` (r2 R2-2)
                     break
+            base = os.path.basename(name)
         if not args:
-            for var, val in assigns:     # a bare assignment sets a shell variable
-                if depth > 0:
-                    assigned_at[var] = depth     # forgotten when its subshell closes (S3), a `mktemp` one too
-                if prev_sep in ("|", "|&", "&") or sep_after in ("|", "|&", "&"):
-                    env[var] = None              # a pipeline or background part runs in a subshell of its own
-                    continue
-                if val == "$" and sep_after == "(" and j + 1 < n and toks[j + 1] == "mktemp":
-                    env[var] = FRESH     # `T=$(mktemp …)`: a path this command creates, holding nothing older
-                    continue
-                try:
-                    env[var] = expand(val, env) if val else ""
-                except Refuse:
-                    env[var] = None
-        elif os.path.basename(name) == "rm":
+            for var, val in assigns:     # a bare assignment sets a shell variable; forgotten when its subshell
+                if val == "$" and sep_after == "(":     # closes (S3); piped: None
+                    setvar(var, _mktemp_template(toks, j + 1, scratch))    # `T=$(…)`: unknown, but a scratchpad
+                elif val == "" and sep_after == "(":                       # `mktemp` template is its glob
+                    setvar(var, None)    # an array `X=(a b)`
+                else:
+                    setvar(var, value(val))
+        elif base == "rm":
             targets, opts_done = [], False
             a = 1
             while a < len(args):
@@ -441,8 +607,8 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
                 else:
                     targets.append(w)
                 a += 1
-            calls.append(([expand(t, env) for t in targets], here))
-        elif (base := os.path.basename(name)) == "xargs" and any(os.path.basename(w.lstrip("\\")) == "rm" for w in args[1:]):
+            calls.append(([w for t in targets for w in expand_words(t, env)], here))
+        elif base == "xargs" and any(os.path.basename(w.lstrip("\\")) == "rm" for w in args[1:]):
             raise Refuse("`xargs rm` deletes targets the hook cannot see")
         elif base == "find" and ("-delete" in args or (
                 {"-exec", "-execdir", "-ok", "-okdir"} & set(args)       # `-exec sudo rm {}` is an `-exec rm`
@@ -460,39 +626,77 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
                 if w.startswith("-") or w in ("(", "!"):
                     break
                 starts.append(w)
-            found = [expand(t, env) for t in (starts or ["."])]
-            for raw, t in zip(starts or ["."], found):
-                if ((t == FRESH and follow and not BARE_VAR.fullmatch(raw))
-                        or (here == FRESH and t != FRESH and not os.path.isabs(t) and (follow or "/" in t))):
-                    raise Refuse("a `find` start below a directory `mktemp` made, under `-H` or through a `/`, "
-                                 "follows entries the hook cannot see")
+            found = [t for raw in (starts or ["."]) for t in expand_words(raw, env)]
             calls.append(([FIND] + found, here))
         elif name == "cd":
-            simple = depth == 0 and prev_sep in (None, ";", "&&", "\n") and sep_after in (None, ";", "&&", "\n")
+            old = here
+            simple = (depth == 0 and not guarded and prev_sep in (None, ";", "&&", "\n")
+                      and sep_after in (None, ";", "&&", "\n"))
             if not simple or len(args) != 2 or args[1] == "-":
                 here = None
             else:
                 try:
                     dest = expand(args[1], env)
-                    if dest == FRESH:
-                        here = FRESH if BARE_VAR.fullmatch(args[1]) else None    # `$T/sub` may be a link (push-time review)
-                        continue_ = True
+                    if os.path.isabs(dest):
+                        here = os.path.normpath(dest)
+                    elif here is None:
+                        pass
                     else:
-                        continue_ = False
-                    if not continue_:
-                        if os.path.isabs(dest):
-                            here = os.path.normpath(dest)
-                        elif here is None or here == FRESH:
-                            here = None
-                        else:
-                            here = os.path.normpath(os.path.join(here, dest))
+                        here = os.path.normpath(os.path.join(here, dest))
                 except Refuse:
                     here = None
+                if here is not None and (risky or not os.path.isdir(here)):
+                    cond_cd = True   # r2 R2-4: it may fail or not run; the shell is there only inside its `&&` chain
+            env["OLDPWD"], env["PWD"] = old, here
         elif name in ("pushd", "popd"):
-            here = None
-        if sep_after == "(":
+            here = env["PWD"] = None
+        if first in ("for", "select") and len(args) > 1:
+            setvar(args[1], None)                # r2 R2-6: a variable set other than by `NAME=value`
+        elif first in ("read", "mapfile", "readarray", "getopts", "unset"):
+            for w in args[1:]:
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", w):
+                    setvar(w, None)
+        elif first == "printf" and "-v" in args[:-1]:
+            setvar(args[args.index("-v") + 1], None)
+        elif first in SETTERS:
+            attr = False
+            for w in args[1:]:
+                if w[:1] in "-+":
+                    attr = attr or bool(set(w[1:]) & set("naAilcu"))     # r2 S15/S22: nameref, array, integer, case transform
+                    if "n" in w[1:] and first != "export":
+                        namerefs.update(ASSIGN.match(x)[1] if ASSIGN.match(x) else x for x in args[1:]
+                                        if not x.startswith(("-", "+")))
+                elif m := ASSIGN.match(w):
+                    setvar(m[1], None if attr else value(m[2]))
+                    attrs.update([m[1]] if attr else [])
+                elif attr:
+                    setvar(w, None)
+                    attrs.add(w)
+        elif first in ("eval", "source", "."):
+            here = None                          # r2 R2-7: the text it runs is not read
+            env = dict.fromkeys(env)
+        in_case = max(0, in_case + (first == "case") - (first == "esac"))
+        if pat_list:
+            in_pat = sep_after != ")"
+        elif sep_after in (";;", ";&", ";;&"):
+            in_pat = True
+        elif cmd[:1] == ["esac"]:
+            in_pat = False
+        if first in ("for", "case", "select", "function"):
+            compound += 1
+        elif first in COMPOUND_CLOSE:
+            compound = max(0, compound - 1)
+        risky = risky or bool(args) and not (name == "cd" and here is not None and not cond_cd)
+        if sep_after not in ("&&", "|", "|&"):     # `a && b | c && d` is one chain
+            if cond_cd:
+                here = env["PWD"] = None
+            cond_cd = risky = False
+            for v in chained:
+                env[v] = None
+            chained.clear()
+        if sep_after == "(" and not pat_list:
             depth += 1        # a `cd` inside a subshell makes the cwd UNKNOWN (conservative: it may not leak out)
-        elif sep_after == ")":
+        elif sep_after == ")" and not pat_list:    # a `case` pattern's `)` closes no subshell
             depth = max(0, depth - 1)
             for var in [v for v, d in assigned_at.items() if d > depth]:
                 env[var] = None                  # bash's outer value is not the one the subshell set
@@ -542,35 +746,32 @@ def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
     command = ti.get("command")
     if not isinstance(command, str):
         raise Unreadable("`command` is not a string")
-    if not mentions_rm(command) and "-delete" not in command and "$" not in command:   # `r$X` builds a name
+    bare = re.sub(r"[\\'\"]", "", command)       # r2 R2-9: `-de""lete` is `-delete`
+    no_rm = not mentions_rm(command) and "-delete" not in bare and "$" not in command    # `r$X` builds a name
+    if no_rm and not re.search(r"[*?\[{]", bare):
         return []
     cwd = payload.get("cwd")
     if not isinstance(cwd, str) or not os.path.isabs(cwd):
         raise Unreadable("the payload has no absolute `cwd`")
     session = str(payload.get("session_id") or "")
     out: list[str] = []
-    for targets, here in rm_calls(command, cwd, environ):
+    try:
+        calls = rm_calls(command, cwd, environ, f"/{session}/scratchpad/" if session else None)
+    except (Unreadable, Refuse) as exc:
+        if no_rm and not isinstance(exc, PatternName):
+            return []     # read only for a pattern command name (`/bin/r? v`); anything else names no `rm`
+        raise
+    for targets, here in calls:
         if targets and targets[0] == FIND:
             # a `find` that deletes: allowed only when every start path is exempt (it needs no backup)
             for t in targets[1:]:
-                if t == FRESH or (here == FRESH and not os.path.isabs(t) and ".." not in t.split("/")):
-                    continue
-                base = t if os.path.isabs(t) else (os.path.join(here, t) if here not in (None, FRESH) else None)
+                base = t if os.path.isabs(t) else (os.path.join(here, t) if here is not None else None)
                 if base is None or not all(_inside(p, root) or (session and f"/{session}/scratchpad/" in _entry(p) + "/")
                                            for p in (base, os.path.realpath(base))):    # -H, `link/`: where it LEADS
                     raise Refuse("`find -delete` / `-exec rm` outside the session scratchpad deletes targets the "
                                  "hook cannot see")
             continue
         for t in targets:
-            if t == FRESH:
-                continue
-            if not os.path.isabs(t) and here == FRESH:
-                if ".." in t.split("/"):
-                    raise Refuse(f"the relative target `{t}` climbs out of a directory `mktemp` made")
-                if "/" in t:
-                    raise Refuse(f"the relative target `{t}` reaches below a directory `mktemp` made, through "
-                                 f"entries the hook cannot see")
-                continue
             if not os.path.isabs(t):
                 if here is None:
                     raise Refuse(f"the relative target `{t}` follows a `cd` the hook cannot follow")
@@ -649,8 +850,8 @@ def decide(payload: object, environ: dict[str, str], root: str, now: _dt.datetim
     except Refuse as exc:
         return (f"⛔ REFUSED (backlog #685): {exc}. An `rm` runs only after its targets are backed up, and this hook "
                 f"could not do that. Write each target as a literal path (a variable assigned earlier in the SAME "
-                f"command is fine), or put temp files in the session scratchpad from the start (they need no "
-                f"backup), or copy the target under {root}/ yourself and delete it with `rm` on the literal path.")
+                f"command is fine), or make temp dirs in the session scratchpad (`mktemp -d \"$SCRATCH/x.XXXX\"` with a "
+                f"literal scratchpad path), which needs no backup, or copy the target under {root}/ yourself and delete it with `rm` on the literal path.")
     return None
 
 
@@ -729,6 +930,8 @@ def _self_test_body() -> int:
                 return "refused"
             except Unreadable:
                 return "not checked"
+            except Exception as exc:     # r2 R2-12: a crash is a red CASE, not a dead suite
+                return f"crashed: {type(exc).__name__}"
 
         # ── which `rm`s are seen, and what they back up
         case("the measured failure: `rm ../x.tmp` from a subdirectory is backed up",
@@ -793,13 +996,10 @@ def _self_test_body() -> int:
         case("ANSI-C `$'…'` and quote tricks spell `rm` and are seen (push-time S2)",
              targets("$'rm' a.tmp; $'\\x72m' b.txt; r\\m ../x.tmp"), ["repo/sub/a.tmp", "repo/sub/b.txt", "repo/x.tmp"])
         case("a command name from a known variable is expanded", targets("X=rm; $X a.tmp"), ["repo/sub/a.tmp"])
-        case("a path BELOW a mktemp directory's entries is refused; the directory and its entries are not (r1 R1-3)",
-             [targets("T=$(mktemp -d); rm -rf $T/out/v"), targets("T=$(mktemp -d); rm -rf $T/out/"),
-              targets("T=$(mktemp -d); rm -rf $T $T/out")], ["refused", "refused", []])
         case("a variable set in a subshell or a pipeline part is not the outer one (push-time S3)",
              [targets("( X=a.tmp ); rm $X"), targets("X=a.tmp | true; rm $X"), targets("( X=a.tmp; rm $X )")],
              ["refused", "refused", ["repo/sub/a.tmp"]])
-        case("`find -L` is refused; `find -H dir -delete` still reads its start path",
+        case("`find -L` is refused; `find -H` outside the scratchpad is refused (r2 R2-13)",
              [targets("find -L . -delete"), targets("find -H dir -delete")], ["refused", "refused"])
         case("a `#` inside a word opens no comment (the 11-20 security review)",
              targets("echo a#b; rm a.tmp"), ["repo/sub/a.tmp"])
@@ -826,16 +1026,7 @@ def _self_test_body() -> int:
         case("an unknown variable is refused", targets("rm $NOPE/a.tmp"), "refused")
         case("a brace list and a brace range are refused", [targets("rm {a.tmp,b.txt}"), targets("rm f{1..3}")],
              ["refused", "refused"])
-        case("a directory `mktemp` made in the same command needs no backup (the 11-20 replay's commonest shape)",
-             [targets('T=$(mktemp -d); cp a.tmp "$T/"; rm -rf "$T"'), targets("D=$(mktemp -d) && rm -f $D/x ${D}")],
-             [[], []])
-        case("relative targets after `cd` into a `mktemp` directory need no backup",
-             targets("D=$(mktemp -d) && cd $D && rm -rf scripts"), [])
-        case("a `..` out of a `mktemp` directory is refused",
-             [targets("T=$(mktemp -d); rm -rf $T/../a.tmp"), targets("D=$(mktemp -d) && cd $D && rm -f ../x")],
-             ["refused", "refused"])
-        case("a `mktemp` variable inside a longer path is refused", targets("T=$(mktemp -d); rm -f x$T"), "refused")
-        case("a variable from a substitution other than `mktemp` is refused", targets("T=$(ls -d x*); rm -f $T"),
+        case("a variable from a command substitution is refused", targets("T=$(ls -d x*); rm -f $T"),
              "refused")
         case("`xargs rm` is refused", targets("ls | xargs rm"), "refused")
         case("`/usr/bin/xargs rm`, `/usr/bin/find -delete` and `-exec sudo rm` are refused (r1 Claude probe)",
@@ -850,16 +1041,10 @@ def _self_test_body() -> int:
              [[], "refused", "refused"])
         case("an unquoted heredoc body is read whole: a `$(` spanning lines, a body with no delimiter (push-time review)",
              [targets("cat <<EOF\n$(\nrm a.tmp\n)\nEOF"), targets("cat <<EOF\n$(rm a.tmp)")], ["refused", "refused"])
-        case("a `mktemp` variable set in a subshell is forgotten when it closes (push-time review)",
-             targets("( T=$(mktemp -d) ); rm -r $T"), "refused")
-        case("`cd $T/sub` is not `cd $T`: a relative `rm` after it is refused (push-time review)",
-             [targets("T=$(mktemp -d); cd $T/sub; rm x"), targets("T=$(mktemp -d); cd $T; rm x")], ["refused", []])
         os.symlink(os.path.join(work, "dir"), os.path.join(scratch, "out"))
         case("a `find` start that follows a link is judged where it LEADS (push-time review)",
              [targets(f"find -H {scratch}/out -delete"), targets(f"find {scratch}/out/ -delete"),
-              targets("T=$(mktemp -d); cd $T; find -H sub -delete"), targets("T=$(mktemp -d); cd $T; find sub/x -delete"),
-              targets("T=$(mktemp -d); find -H $T/sub -delete"), targets("T=$(mktemp -d); cd $T; find sub -delete")],
-             ["refused"] * 5 + [[]])
+             ], ["refused"] * 2)
         os.remove(os.path.join(scratch, "out"))
         case("a quoted `a[1].txt` is backed up as the name it is, not only as a pattern (r1 Claude probe)",
              targets("rm 'a[1].txt'"), ["repo/sub/a[1].txt"])
@@ -877,6 +1062,101 @@ def _self_test_body() -> int:
         case("an ABSOLUTE target after an unfollowable `cd` is still backed up",
              targets(f"cd - && rm {work}/a.tmp"), ["repo/sub/a.tmp"])
 
+        # ── round 2 (r2 R2-1 … R2-13)
+        case("a heredoc delimiter is the whole word after quote removal (r2 R2-1)",
+             [targets("cat <<END-X\nhi\nEND-X\nrm a.tmp"), targets("cat <<E.OF\nhi\nE.OF\nrm a.tmp"),
+              targets('cat <<E"OF"\nhi $(rm b.txt)\nEOF\nrm a.tmp'), targets("cat <<\\EOF\nhi\nEOF\nrm a.tmp")],
+             [["repo/sub/a.tmp"]] * 4)
+        case("a heredoc whose delimiter cannot be read is refused (r2 R2-1)", targets("cat <<'EOF\nrm a.tmp"),
+             "refused")
+        case("a wrapper with an option value does not hide `find` or `xargs rm` (r2 R2-2)",
+             [targets("nice -n 5 find . -name a.tmp -delete"), targets("env -u HOME find . -name a.tmp -delete"),
+              targets("nice -n 5 xargs rm < list"), targets("timeout 5 find . -delete")], ["refused"] * 4)
+        case("an unquoted variable holding blanks is backed up whole and word by word (r2 R2-3)",
+             targets('X="a.tmp b.txt"; rm $X'), ["repo/sub/a.tmp", "repo/sub/b.txt"])
+        case("a `cd` into a missing directory leaves the shell where it was (r2 R2-4)",
+             targets("cd nope; rm a.tmp"), "refused")
+        case("a `cd` after a command that can fail is known only inside its `&&` chain (r2 R2-4)",
+             [targets("test -d dir && cd dir; rm a.tmp"), targets("test -d dir && cd dir && rm inner/c")],
+             ["refused", ["repo/sub/dir/inner/c"]])
+        case("a `cd` under `if`/`then` may not run (r2 R2-4)",
+             [targets("if false; then cd dir; fi; rm a.tmp"), targets("{ cd dir; }; rm a.tmp")], ["refused"] * 2)
+        case("`$PWD` is the payload's cwd, and `cd` moves `$PWD` and `$OLDPWD` (r2 R2-6)",
+             [targets("rm -f $PWD/a.tmp", environ={**env, "PWD": tmp}), targets("cd .. && rm -f $PWD/x.tmp"),
+              targets("cd .. && rm -f $OLDPWD/a.tmp"), targets("cd nope; rm -f $PWD/a.tmp")],
+             [["repo/sub/a.tmp"], ["repo/x.tmp"], ["repo/sub/a.tmp"], "refused"])
+        case("a `for` variable is not the value assigned before the loop (r2 R2-6)",
+             targets("X=dir/inner/c; for X in a.tmp; do rm $X; done"), "refused")
+        case("`read`, `printf -v`, `getopts`, `mapfile` and `unset` make a variable unknown (r2 R2-6)",
+             [targets(f"X=b.txt; {s}; rm $X") for s in ("read X < f", "printf -v X a.tmp", "getopts ab X",
+                                                        "mapfile X < f", "unset X")], ["refused"] * 5)
+        case("`export`/`declare`/`local` X=v set X; without `=` they leave it (r2 R2-6)",
+             [targets("X=b.txt; export X=a.tmp; rm $X"), targets("X=b.txt; declare -x X; rm $X")],
+             [["repo/sub/a.tmp"], ["repo/sub/b.txt"]])
+        case("`builtin cd` moves the shell (r2 R2-7)", targets("builtin cd ..; rm x.tmp"), ["repo/x.tmp"])
+        case("`eval`, `source` and `.` make the cwd and every variable unknown (r2 R2-7)",
+             [targets("source f; rm a.tmp"), targets("X=$KNOWN/a.tmp; eval X=b.txt; rm $X"), targets(". f; rm a.tmp")],
+             ["refused"] * 3)
+        case("`${S:-x}`, `${S-x}` and `${S:=x}` use the default when S is empty or unset (r2 R2-8)",
+             [targets("S=; rm -f ${S:-a.tmp}"), targets("S=b.txt; rm -f ${S:-a.tmp}"), targets("rm -f ${S-a.tmp}"),
+              targets("S=; rm -f x${S-a.tmp}"), targets("rm -f ${S:=a.tmp} $S"), targets("X=$NOPE; rm ${X:-a.tmp}")],
+             [["repo/sub/a.tmp"], ["repo/sub/b.txt"], ["repo/sub/a.tmp"], [], ["repo/sub/a.tmp"] * 2, "refused"])
+        case("`-de\"\"lete` is `-delete`: the prefilter reads quote-stripped text (r2 R2-9)",
+             targets('find . -name a.tmp -de""lete'), "refused")
+        case("a command name that is a glob or a brace list that may be `rm` is refused (r2 R2-9)",
+             [targets("{rm,a.tmp}"), targets("/bin/r? a.tmp"), targets("ls *.tmp {a,b}"), targets("[ -f a.tmp ]")],
+             ["refused", "refused", [], []])
+        case("a `case` pattern is not a command name, and its `)` closes no subshell",
+             [targets("case x in a) echo;; r*) echo hi;; esac; rm a.tmp"), targets("(case x in a) echo;; esac; X=b.txt); rm $X")],
+             [["repo/sub/a.tmp"], "refused"])
+        case("`<<` inside `${…}` opens no heredoc (r2 R2-10)", targets("echo ${a[x<<y]}\nrm a.tmp"),
+             ["repo/sub/a.tmp"])
+        case("a quoted operator character is a word, not an operator (r2 R2-11)",
+             [targets('(echo ")"; cd dir; true); rm a.tmp'), targets('echo "x;rm b.txt"; rm a.tmp')],
+             ["refused", ["repo/sub/a.tmp"]])
+        case("a backslash-newline continues the word list (found in r2's fold)",
+             targets("rm a.tmp \\\nb.txt"), ["repo/sub/a.tmp", "repo/sub/b.txt"])
+        case("an out-of-range `\\U` escape is left as it is, not a crash (r2 R2-12)",
+             targets("echo $'\\UFFFFFFFF'; rm a.tmp"), ["repo/sub/a.tmp"])
+
+        case("`declare -n/-a/-A/-i` make a variable unknown, and a nameref's assignment every one (r2 S15)",
+             [targets("declare -n X=/etc; rm -r $X"), targets("X=b.txt; declare -i X=a.tmp; rm $X"),
+              targets("X=b.txt; typeset -a X=a.tmp; rm $X"), targets("declare -n R=X; X=b.txt; R=a.tmp; rm $X")],
+             ["refused"] * 4)
+        case("a subshell opened in a `case` arm is closed by its `)`, not read as a pattern (r2 S16)",
+             [targets("X=a.tmp; case x in a) (X=a.tmp; true);; esac; rm $X"),
+              targets("case x in a) echo;& r*) echo;;& c*) echo;; esac; rm a.tmp")],
+             ["refused", ["repo/sub/a.tmp"]])
+        case("an assignment under a guard that may not run leaves the variable unknown (found in r2 S16's fold)",
+             [targets("X=b.txt; if false; then X=a.tmp; fi; rm $X"), targets("X=b.txt; false && X=a.tmp; rm $X")],
+             ["refused"] * 2)
+        case("a `$(mktemp …)` value is unknown: deleting it, `cd` into it or a `find` in it is refused (r2 S21)",
+             [targets("T=$(mktemp -d); rm -rf $T"), targets("T=$(mktemp -d); cd $T; rm x"),
+              targets("T=$(mktemp -d); find $T -delete"), targets("T=$(mktemp -d); cp a.tmp $T/; rm -rf $T")],
+             ["refused"] * 4)
+        case("a `mktemp` template in this session's scratchpad is the glob of its names and needs no backup (r2 S21)",
+             [targets(f'T=$(mktemp -d "{scratch}/x.XXXX"); mv a.tmp $T/; rm -rf $T'),
+              targets(f"T=$(mktemp -d {scratch}/x.XXXX) && cd $T && rm -rf w")], [[], []])
+        os.symlink(os.path.join(work, "dir"), os.path.join(scratch, "out"))
+        case("a `mktemp` template outside the scratchpad, through a link, or not alone in its word is unknown (r2 S21)",
+             [targets(f"T=$(mktemp -d {work}/x.XXXX); mv a.tmp $T/; rm -rf $T"),
+              targets(f"T=$(mktemp -d {scratch}/out/x.XXXX); mv a.tmp $T/; rm -rf $T"),
+              targets(f"T=$(mktemp -d {scratch}/x.XXXX)/..; rm -rf $T/sub"),
+              targets(f"T=$(mktemp -d {scratch}/x.XXXX; echo {work}); rm -rf $T")], ["refused"] * 4)
+        os.remove(os.path.join(scratch, "out"))
+        case("an assignment under a guard to an UNSET variable leaves it unknown; the same value stays (r2 S20)",
+             [targets("if false; then X=a.tmp; fi; rm $X"), targets("X=a.tmp; if c; then X=a.tmp; fi; rm $X"),
+              targets("cd /; true && X=a.tmp; rm $X"), targets("true && X=a.tmp || rm $X"),
+              targets("true && X=a.tmp && echo && rm $X")], ["refused", ["repo/sub/a.tmp"], "refused", "refused",
+                                                             ["repo/sub/a.tmp"]])
+        case("`declare -l/-u/-c` transform a value, and a declared attribute outlives its `declare` (r2 S22)",
+             [targets("declare -u X=a.tmp; rm $X"), targets("typeset -c X=a.tmp; rm $X"),
+              targets("X=b.txt; declare -u X; X=a.tmp; rm $X")], ["refused"] * 3)
+        Path(work, "q;x").write_text("Q")
+        case("a quoted operator character in a target is restored before the path is read (r2 S18)",
+             targets('rm "q;x"'), ["repo/sub/q;x"])
+        os.remove(os.path.join(work, "q;x"))
+
         # ── NOT CHECKED
         case("an unbalanced quote is NOT CHECKED", targets("rm 'a.tmp"), "not checked")
         case("a relative cwd is NOT CHECKED", targets("rm a.tmp", cwd="rel"), "not checked")
@@ -885,6 +1165,8 @@ def _self_test_body() -> int:
              "Unreadable")
 
         # ── the copy itself
+        case("a refusal tells the reader to make temp dirs in the scratchpad (r2 S21)",
+             "mktemp -d \"$SCRATCH/x.XXXX\"" in (decide(pay("T=$(mktemp -d); rm -rf $T"), env, root, now) or ""), True)
         reason = decide(pay("rm -rf dir ../x.tmp link"), env, root, now)
         case("decide allows once the copies are made", reason, None)
         stamp = os.path.join(root, "sess-1", now.strftime("%Y%m%d-%H%M%S-%f"))
