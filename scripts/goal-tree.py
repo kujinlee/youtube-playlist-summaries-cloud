@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 562 cases
+    python3 scripts/goal-tree.py --self-test                 # 573 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -5722,8 +5722,14 @@ def _self_test_cases(*, outside: dict) -> int:
              [st["state"] for st in derive_agenda(dict(_rag, at="t", id=1, ticked=[]), _s515)["steps"]],
              ["cannot", "cannot", "merged", "cannot"])
         case("backlog #515 BOUND: a tree LEAF naming the same row keeps its merge state (the Status rule is the step's)",
-             derive_thread({"key": "k", "refs": [["backlog", 10]], "waits": None}, src(closed_rows=set()))["state"],
-             "merged")
+             [derive_thread({"key": "k", "refs": [["backlog", 10]], "waits": None}, src(closed_rows=set()))["state"],
+              derive_thread({"key": "k", "refs": [["backlog", 10]], "waits": None}, src(closed_rows=set()),
+                            "2026-11-20 10:00", by_row=False)["state"],
+              derive_thread({"key": "k", "refs": [["backlog", 10]], "waits": None}, src(closed_rows=set()),
+                            None, by_row=True)["state"],
+              derive_thread({"key": "k", "refs": [["backlog", 10]], "waits": None}, src(closed_rows={10}),
+                            "2026-11-20 10:00", by_row=True)["state"]],
+             ["merged", "merged", "next", "merged"])
         # backlog #612 — a declared wait whose date has passed is FLAGGED, never shown as a live reason
         case("backlog #612: wait_expired reads the LATEST date a wait names (YYYY-MM-DD or MM-DD), against today",
              [wait_expired(w, at) for w, at in (
@@ -5738,6 +5744,10 @@ def _self_test_cases(*, outside: dict) -> int:
                  ("the weekly reset (Fri 11-06 02:00)", "t"),
                  (None, "2026-11-20 10:00"))],
              ["2026-11-06", None, None, "2026-11-14", None, "2026-12-30", None, None, None, None])
+        case("backlog #612: a wait's expiry moves with BOTH its text and the clock",
+             [wait_expired("back 11-25", "2026-11-26 00:00"), wait_expired("back 11-25", "2026-11-25 23:00"),
+              wait_expired("back 2026-11-25", "2026-11-26 00:00"), wait_expired("back soon", "2026-11-26 00:00")],
+             ["2026-11-25", None, "2026-11-25", None])
         _w612 = "the weekly reset (Fri 11-06 02:00)"
         _snap612 = [derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #12 · x · waits on '
                                          + _w612 + "\n"), src(), at)["goals"][0]["threads"][0] for at in

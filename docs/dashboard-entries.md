@@ -21177,7 +21177,7 @@ Branch `agenda-row-state`, backlog #515, #611, #612 (`scripts/goal-tree.py`). `d
 agenda step naming rows and no PR reads `closed_rows` (✅ → merged; open → ⬜/⏳ with `PR #N (sha) merged naming it`;
 unread → CANNOT RUN); a step naming its PR follows the PR; tree leaves unchanged. `wait_expired(text, now)` flags a
 declared wait whose latest date is before today (`⚠ wait expired <date>`), in the leaf, the agenda step and the OWED
-`waits`; an expired wait never outvotes a live one on a step. 10 new self-test cases (562 → 572); goal-tree mutations
+`waits`; an expired wait never outvotes a live one on a step. 11 new self-test cases (562 → 573); goal-tree mutations
 470 → 487 (17 new, 4 rebound to moved text; the 21 run in a scratch copy: 21 killed). On the live tree the current
 agenda's step 4 (backlog #672) turns ✅ → ⏳: PR #606 built it, but row #672's Status cell still reads `⏳ BUILT
 2026-11-20, PR pending`.
