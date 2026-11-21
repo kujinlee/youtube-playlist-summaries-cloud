@@ -6550,5 +6550,18 @@
     "expect": [
       "⭐ r2 Codex M1: an OPEN PR naming a row outranks the row's ✅ — with the merge log unread and with it read, the step reads ⏳ open naming the PR, never ✅; with no open PR the closed row is still ✅"
     ]
+  },
+  {
+    "name": "r3 F3: a date exactly WAIT_AHEAD_DAYS ahead is out of reach",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        ".days <= WAIT_AHEAD_DAYS]",
+        ".days < WAIT_AHEAD_DAYS]"
+      ]
+    ],
+    "expect": [
+      "r3 F3: the window's edges read on 11-20 — 03-21 is 244 days back (THIS year's, expired); 03-20 is exactly 120 days ahead next year (not expired)"
+    ]
   }
 ]

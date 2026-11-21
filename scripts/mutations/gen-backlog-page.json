@@ -984,36 +984,14 @@
     "expect": "r1 C2: the parser reads a PARTLY-DONE row (no Item marker, a finished half's ✅) as OPEN"
   },
   {
-    "name": "r2 Codex m1: a closing word after a ✅ does not close the row",
+    "name": "r3 Phase 6: the LAST status mark is read as the row's state",
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        " or bool(CLOSING_WORD_RE.search(status))",
-        ""
+        "(c for c in status if c == \"✅\" or c in OPEN_MARKS)",
+        "(c for c in reversed(status) if c == \"✅\" or c in OPEN_MARKS)"
       ]
     ],
-    "expect": "⭐ r2 Codex m1: a ✅ written before a closing word in CAPITALS closes the row wherever it stands — bold or a `(was …)` between allowed; a lower-case `✅ merged` (a finished half) or `✅ Fixed` does not"
-  },
-  {
-    "name": "r2 Codex m1: the closing word is read in any case",
-    "file": "scripts/gen-backlog-page.py",
-    "edits": [
-      [
-        "CLOSING_WORD_RE = re.compile(r\"",
-        "CLOSING_WORD_RE = re.compile(r\"(?i)"
-      ]
-    ],
-    "expect": "⭐ r2 Codex m1: a ✅ written before a closing word in CAPITALS closes the row wherever it stands — bold or a `(was …)` between allowed; a lower-case `✅ merged` (a finished half) or `✅ Fixed` does not"
-  },
-  {
-    "name": "r2 Codex m1: the closing word needs no word boundary",
-    "file": "scripts/gen-backlog-page.py",
-    "edits": [
-      [
-        "|MERGED|DONE)\\b\")",
-        "|MERGED|DONE)\")"
-      ]
-    ],
-    "expect": "⭐ r2 Codex m1: a ✅ written before a closing word in CAPITALS closes the row wherever it stands — bold or a `(was …)` between allowed; a lower-case `✅ merged` (a finished half) or `✅ Fixed` does not"
+    "expect": "⭐ r3 Phase 6: only the FIRST status mark is state — a later ✅ with a capitalised FIXED/CLOSED/DONE/MERGED is history and the row reads OPEN (a reopened row, a finished half, an owed tick, an oldest-first closure)"
   }
 ]

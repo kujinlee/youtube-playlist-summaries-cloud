@@ -55,8 +55,9 @@ applied — Status cell, closed iff it contains a check mark — so this page an
 cannot disagree about what is open. ⟳ 2026-11-20 (agenda-row-state r1 C2): ONE narrowing, `status_closed` —
 a ✅ that FOLLOWS an open marker (🔴🟠🟡🟢⏳) in the Status cell, under an Item cell not led by ✅, is a
 finished HALF and the row is open. The marker ratchet would refuse such a row anyway when its Item cell leads
-with a severity marker; the narrowing closes the case it cannot see (no Item marker at all). r2 Codex m1: a ✅ written before a closing
-word in capitals (FIXED, CLOSED, SUPERSEDED, MERGED, DONE) closes the row wherever it stands (`CLOSING_WORD_RE`). The two tables in the file have DIFFERENT column counts, so each
+with a severity marker; the narrowing closes the case it cannot see (no Item marker at all). r3 (Phase 6, backlog-closed-rule): the
+r2 clause that let a later `✅ FIXED` close the row was REVERTED — the cell is written newest-first, so only its
+first mark is state. The two tables in the file have DIFFERENT column counts, so each
 row is read against its own header rather than a fixed width; a positional read that assumed one
 shape is exactly how #46 and #50 were once closed while both were open.
 """
@@ -1461,10 +1462,6 @@ def unread_note(unread: Sequence[str]) -> list[str]:
 
 
 OPEN_MARKS = "🔴🟠🟡🟢⏳"     # a Status cell's open markers: severity and pending (agenda-row-state r1 C2)
-# agenda-row-state r2 Codex m1: a ✅ written directly before a closing word in CAPITALS (bold and a `(was …)` allowed
-# between) closes the row wherever it stands — `🟢 FILED …; ✅ FIXED …` is closed. Case-sensitive on purpose: a finished
-# half is written `(1)-(4) ✅ merged in PR #509`, in lower case, and stays open
-CLOSING_WORD_RE = re.compile(r"✅[\s*]*(?:\(was [^)]*\)[\s*]*)?(?:FIXED|CLOSED|SUPERSEDED|MERGED|DONE)\b")
 
 
 def status_closed(status: str, sev: str) -> bool:
@@ -1473,13 +1470,17 @@ def status_closed(status: str, sev: str) -> bool:
     PARTLY-DONE cell whose ✅ ticks a finished half (`🟡 PARTLY DONE — items (1)-(4) ✅ …`), and it is open. A
     cell that opens `🟠 OPEN …` and later says `✅ **FIXED …**` under a `✅ (was 🟠)` Item cell stays closed: the
     Item cell says done (eight live rows on 2026-11-20 have that shape; none changes its reading under this rule).
-    r2 Codex m1: so does a ✅ followed by a closing word in capitals (CLOSING_WORD_RE) — `🟢 FILED …; ✅ FIXED …`
-    under an Item cell with no marker is closed. Measured on 2026-11-20: 229 of 636 live rows closed before and after;
-    no live row changes its reading (every row with a ✅ was already closed)."""
+    WHY THE FIRST MARK: the backlog writes a row's NEWEST state at the FRONT of its Status cell and keeps the history
+    after it (`✅ **DONE …** … PREVIOUSLY: 🟠 STILL OPEN …`), so a ✅ later in the cell is history, not state, and no
+    clause here reads one (Phase 6, docs/reviews/architecture-review-2026-11-20-backlog-closed-rule.md: the r2 clause
+    that did — a ✅ before a capitalised FIXED/CLOSED/… anywhere — was reverted after it closed reopened rows).
+    ⚠ BOUND: a cell written oldest-first under an Item cell with no marker (`🟢 FILED …; ✅ FIXED …`) reads OPEN.
+    Its cure is to write the closure FIRST (`✅ FIXED … — FILED …`), or to lead the Item cell with ✅; 0 of 636 live
+    rows and 0 of 352 historical versions of the file read differently under the reverted clause."""
     if "✅" not in status:
         return False
     first = next((c for c in status if c == "✅" or c in OPEN_MARKS), "✅")
-    return first == "✅" or sev == "done" or bool(CLOSING_WORD_RE.search(status))
+    return first == "✅" or sev == "done"
 
 
 def parse(lines: Sequence[str], unread: list[str] | None = None) -> list[dict]:
@@ -3619,23 +3620,21 @@ def _self_test_body() -> int:
                   status_closed("✅ (was ⏳) merged PR #606 — 🟡 a follow-up filed", "none"),
                   status_closed("*(renumbered)* ✅ ADOPTED", "none"),
                   status_closed("🟡 open, nothing done", "done"),
-                  status_closed("🟡 open", "none"),
-                  status_closed("🟠 **OPEN** — … ✅ landed 2026-10-26", "done")]
-         == [False, False, False, True, True, True, True, False, False, True])
-    case("⭐ r2 Codex m1: a ✅ written before a closing word in CAPITALS closes the row wherever it stands — bold or "
-         "a `(was …)` between allowed; a lower-case `✅ merged` (a finished half) or `✅ Fixed` does not",
-         lambda: [status_closed("🟢 FILED 2026-01-01; ✅ FIXED 2026-02-01", "none"),
-                  status_closed("🟡 open — (1) ✅ **CLOSED** by PR #9", "none"),
-                  status_closed("⏳ pending — ✅ (was 🟡) SUPERSEDED by backlog #9", "none"),
-                  status_closed("🟡 **PARTLY DONE** — items (1)-(4) ✅ merged in PR #509; item (5) open", "none"),
-                  status_closed("🟡 open — ✅ Fixed (1) only", "none"),
-                  status_closed("🟡 open — ✅ FIXEDNESS pending", "none")]
-         == [True, True, True, False, False, False])
-    case("r2 Codex m1: the parser reads `🟢 FILED …; ✅ FIXED …` under a marker-less Item cell as CLOSED",
-         lambda: [r["closed"] for r in parse(["## Items", "", "| # | Item | Status |", "|---|---|---|",
-                                               "| 900 | **Fix** | 🟢 FILED 2026-01-01; ✅ FIXED 2026-02-01 |",
-                                               "| 901 | **Half** | 🟢 FILED 2026-01-01; (1) ✅ merged |"], [])]
-         == [True, False])
+                  status_closed("🟡 open", "none")]
+         == [False, False, False, True, True, True, True, False, False])
+    # r3 (Phase 6): the Status cell is newest-first, so a ✅ AFTER an open marker is HISTORY — these read OPEN under a
+    # marker-less Item cell (r3 F1's inputs, and r2 Codex m1's oldest-first row, whose cure is to write the closure first)
+    case("⭐ r3 Phase 6: only the FIRST status mark is state — a later ✅ with a capitalised FIXED/CLOSED/DONE/MERGED is "
+         "history and the row reads OPEN (a reopened row, a finished half, an owed tick, an oldest-first closure)",
+         lambda: [status_closed(s, "none") for s in (
+                      "🟠 **REOPENED 2026-11-07** — its trigger fired again; previously ✅ CLOSED 2026-10-24",
+                      "🟡 **PARTLY DONE** — (1) ✅ DONE in PR #9; (2) open",
+                      "⏳ … ✅ FIXED in part",
+                      "⏳ pending — the ✅ MERGED tick is owed when PR #9 merges",
+                      "🟡 open — ✅ **(was 🟠)** FIXED half (1)",
+                      "🟢 FILED 2026-01-01; ✅ FIXED 2026-02-01")]
+                 + [status_closed("✅ FIXED 2026-02-01 — 🟢 FILED 2026-01-01", "none")]
+         == [False] * 6 + [True])
     case("r1 C2: the parser reads a PARTLY-DONE row (no Item marker, a finished half's ✅) as OPEN",
          lambda: [r["closed"] for r in parse(["## Items", "", "| # | Item | Status |", "|---|---|---|",
                                                "| 900 | **Partly done** — x | 🟡 **PARTLY DONE** — (1) ✅ PR #509; (2) open |",

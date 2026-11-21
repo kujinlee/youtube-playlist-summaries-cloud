@@ -21179,8 +21179,9 @@ unread → CANNOT RUN); a step naming its PR follows the PR; tree leaves unchang
 declared wait whose latest date is before today (`⚠ wait expired <date>`), in the leaf, the agenda step and the OWED
 `waits`; an expired wait never outvotes a live one on a step; an open PR naming a row outranks the row's ✅ (r2). A
 yearless wait date is read at most 120 days ahead, else last year's. `gen-backlog-page.status_closed`: a ✅ after an open
-marker is a finished half (open) unless the Item cell is ✅ or the ✅ precedes a capitalised closing word (FIXED, CLOSED,
-SUPERSEDED, MERGED, DONE); 229 of 636 live rows closed before and after, none changes. Self-test cases: goal-tree
-562 → 581, gen-backlog-page 247 → 251. Mutations: goal-tree 470 → 501, gen-backlog-page 77 → 84 (each round's new and
-rebound entries run in a scratch copy, all killed). Review rounds 1 (both halves) and 2 (Codex) folded; backlog row
-#672 closed in the r1 fold (PR #606 had merged).
+marker is a finished half (open) unless the Item cell is ✅ — only the FIRST status mark is state, since the cell is
+written newest-first (r3, Phase 6: round 2's capitalised-closing-word clause was reverted after it closed reopened rows;
+docs/reviews/architecture-review-2026-11-20-backlog-closed-rule.md); 229 of 636 live rows closed before and after,
+none changes. Self-test cases: goal-tree 562 → 582, gen-backlog-page 247 → 250. Mutations: goal-tree 470 → 502,
+gen-backlog-page 77 → 82 (each round's new and rebound entries run in a scratch copy, all killed). Review rounds 1 (both
+halves), 2 (Codex) and 3 (Claude) folded; backlog row #672 closed in the r1 fold (PR #606 had merged).

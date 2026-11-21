@@ -477,14 +477,15 @@ def wait_expired(text, now) -> "str | None":
     """PURE (backlog #612). The LATEST date a declared wait's text names, as `YYYY-MM-DD`, when that date is BEFORE
     `now`'s day; else None — a wait naming no date, naming one today or later, or judged with no readable `now`, is
     not expired. A `MM-DD` takes the LATEST year that puts it no more than WAIT_AHEAD_DAYS (about four months) after
-    `now`'s day, so the window is the 245 days before today and the 120 after (r1 C5: 12-30 read on 01-03 is last
+    `now`'s day, so the window is the 244 days before today and the 120 after (r3 F3: 03-20 read on 11-20 is exactly 120 days
+    ahead, so it is NEXT year's; 03-21 is THIS year's, 244 back. A leap day in the span moves the edge by one) (r1 C5: 12-30 read on 01-03 is last
     year's; 01-05 read on 12-30 is next year's; 05-20 read on 11-20 is THIS year's, so expired — "nearest" read it as
     next May, 181 days ahead against 184 back, and never flagged it. r2 Codex m2: 04-04 read on 01-01 is THIS April's,
     93 days ahead — the 92-day window read it as last year's and flagged a future wait). The window leans to the past
     because a wrong flag says "re-check it" and a written year cures it, while a missed one hides a stale wait. An impossible date (13-45, 02-30) is not a date,
     and a 02-29 with no leap year in reach reads as no date. ⚠ BOUND: the text is prose — a date it NARRATES ("parked
     11-14") reads the same as one it waits for, so the result is a FLAG to re-check, never a verdict that the wait is
-    over; a yearless date over WAIT_AHEAD_DAYS ahead is misread as last year's, so it flags early; and one over 245
+    over; a yearless date over WAIT_AHEAD_DAYS ahead is misread as last year's, so it flags early; and one 245 or more
     days past is misread as next year's, so it never flags."""
     if not isinstance(text, str) or not isinstance(now, str):
         return None
@@ -849,7 +850,13 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
     unread = src["errors"].get("merged") or src["errors"].get("gh")
     by_cells = by_row and bool(live_rows) and closed is not None and not row_open
     # r2 Codex M1: an OPEN PR naming a row outranks the row's ✅ — whether or not the merge log was read, a step whose
-    # rows are all ✅ but which an open PR still works on reads ⏳ open, never ✅ (the precedence: open before merged)
+    # rows are all ✅ but which an open PR still works on reads ⏳ open, never ✅ (the precedence: open before merged).
+    # ⚠ STATED LIMIT (r3 F2, kept on purpose): `opened` matches a title that merely MENTIONS `backlog #N`, so an
+    # unrelated open PR (`File backlog #700, found after backlog #10`) holds a finished step at ⏳, while the tree leaf
+    # (by_row=False) reads it ✅. Kept because in the house flow the ✅ is ticked ON the PR branch before it opens and
+    # the tree reads docs/backlog.md from its own checkout, so a ✅ row with its PR open SHOULD read ⏳; a title cannot
+    # tell the two apart, and `and not hit` would show a second slice ✅ once its first merged. The cost is asymmetric:
+    # a stale hold costs a glance (the detail says the ✅ is in the cell and names the PR), a false ✅ hides open work.
     cells_held = by_cells and bool(opened)
     by_cells = by_cells and not cells_held
     if prs:
@@ -5804,6 +5811,10 @@ def _self_test_cases(*, outside: dict) -> int:
              [wait_expired(w, at) for w, at in (("back 04-04", "2026-01-01 09:00"), ("back 04-30", "2026-01-01 09:00"),
                                                 ("back 05-02", "2026-01-01 09:00"), ("back 05-20", "2026-11-20 10:00"))],
              [None, None, "2025-05-02", "2026-05-20"])
+        case("r3 F3: the window's edges read on 11-20 — 03-21 is 244 days back (THIS year's, expired); 03-20 is exactly "
+             "120 days ahead next year (not expired)",
+             [wait_expired(w, "2026-11-20 12:00") for w in ("re-check 03-21", "re-check 03-20")],
+             ["2026-03-21", None])
         _s515 = src()
         _s515.pop("closed_rows", None)
         case("⛔ backlog #515: a step naming a row reads CANNOT RUN when the Status cells were not read — never ✅",
