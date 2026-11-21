@@ -1,7 +1,9 @@
 # Round 3 — `agenda-row-state` — coordinator — NOT CONVERGED (Claude), folded; Phase 6 convened
 
 Round 3 ran ONE half by alternation: Claude (`docs/reviews/claude/agenda-row-state-r3-claude.md`), reviewing `b1e98095`
-(the r2 fold). The Codex half is a gap by alternation. REVIEW GAP: codex — alternation.
+(the r2 fold). The Codex half is a gap by alternation.
+
+REVIEW GAP: codex — alternation.
 
 Claude found 3 MINOR (F1, F2, F3). There was no BLOCKER. **All three were caused by the r2 fold**, one in each of the
 components round 2 named. In `backlog-closed-rule`, round 2's m1 came from round 1's C2 fix and round 3's F1 came from

@@ -1,7 +1,9 @@
 # Round 2 — `agenda-row-state` — coordinator — NOT CONVERGED (Codex), folded
 
 Round 2 ran ONE half by alternation: Codex (`docs/reviews/codex/agenda-row-state-r2-codex.md`), reviewing `81874196`
-(the r1 fold `5e182173` plus a master merge). The Claude half is a gap by alternation. REVIEW GAP: claude — alternation.
+(the r1 fold `5e182173` plus a master merge). The Claude half is a gap by alternation.
+
+REVIEW GAP: claude — alternation.
 
 Codex found 1 MAJOR (M1) and 2 MINOR (m1, m2). There was no BLOCKER. **All three were caused by the r1 fold**, each in a
 different component: M1 by C7's all-✅ shortcut, m1 by C2's narrowing, and m2 by C5's 92-day window. This is the first
