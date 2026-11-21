@@ -21166,3 +21166,18 @@ is wrong, and the redesign changes the scored facts file, so it owes its own rev
 PR #604 (harness-ships-elsewhere slice E). Phase 6: `docs/reviews/architecture-review-2026-11-20-mkt-seed-repo.md` —
 13 of 20 one-sided edits of the seed pass the self-test; a declare-once redesign turns all 20 red. Filed as backlog
 #678, superseding #676.
+
+## 2026-11-20
+The goal tree's plan stops calling a backlog item done just because some merged pull request mentions it. A plan step
+that names a backlog item now follows that item's own status: a pull request that only filed the item, or did part of
+it, is shown beside the step but no longer ticks it, and an item marked done is ticked even when no pull request names
+it. A declared "waits on" whose date has passed is now flagged as expired instead of still being shown as the reason.
+<!--tech-->
+Branch `agenda-row-state`, backlog #515, #611, #612 (`scripts/goal-tree.py`). `derive_thread(…, now, by_row)`: an
+agenda step naming rows and no PR reads `closed_rows` (✅ → merged; open → ⬜/⏳ with `PR #N (sha) merged naming it`;
+unread → CANNOT RUN); a step naming its PR follows the PR; tree leaves unchanged. `wait_expired(text, now)` flags a
+declared wait whose latest date is before today (`⚠ wait expired <date>`), in the leaf, the agenda step and the OWED
+`waits`; an expired wait never outvotes a live one on a step. 10 new self-test cases (562 → 572); goal-tree mutations
+470 → 487 (17 new, 4 rebound to moved text; the 21 run in a scratch copy: 21 killed). On the live tree the current
+agenda's step 4 (backlog #672) turns ✅ → ⏳: PR #606 built it, but row #672's Status cell still reads `⏳ BUILT
+2026-11-20, PR pending`.

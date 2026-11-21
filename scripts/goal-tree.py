@@ -432,7 +432,7 @@ def declared_prerequisites(entry: dict) -> list:
     exactly ONE `PR #N` / `backlog #N`, is a blocker `{"ref": <cleaned text>, "state": "unread"}` — shown as
     `state not read`, never dropped.
     ⛔ THE CONTRACT: prose is NEVER read for prerequisites — not `what`, not `on_done`, not a recorded `waits`, not a
-    thread line's `· waits on`. A prose wait never expires: it is a live reason whatever ref it mentions. A
+    thread line's `· waits on`. A prose wait is never a prerequisite, whatever ref it mentions (backlog #612 reads only its DATES, to FLAG it expired). A
     counterexample that depends on what a sentence MEANS is outside this contract — three rounds of a matcher each
     misread the sentence the previous fold had decided, and the field removed the question."""
     if "after" not in entry:
@@ -459,6 +459,43 @@ def _declared_blockers(entries, src: dict) -> list:
             if b not in out:
                 out.append(b)
     return out
+
+
+def _row_list(rows) -> str:
+    """PURE. `backlog #1, backlog #2` — the rows a step's Status reading names (backlog #515)."""
+    return ", ".join(f"backlog #{n}" for n in rows)
+
+
+# backlog #612: a date a free-text wait names — `2026-11-06` or `11-06` (the year read as the one nearest `now`)
+WAIT_DATE_RE = re.compile(r"(?<![\d#-])(?:(\d{4})-)?(\d{2})-(\d{2})(?![\d-])")
+
+
+def wait_expired(text, now) -> "str | None":
+    """PURE (backlog #612). The LATEST date a declared wait's text names, as `YYYY-MM-DD`, when that date is BEFORE
+    `now`'s day; else None — a wait naming no date, naming one today or later, or judged with no readable `now`, is
+    not expired. A `MM-DD` takes the year that puts it nearest `now` (12-30 read on 01-03 is last year's). An
+    impossible date (13-45, 02-30) is not a date. ⚠ BOUND: the text is prose — a date it NARRATES ("parked 11-14")
+    reads the same as one it waits for, so the result is a FLAG to re-check, never a verdict that the wait is over."""
+    if not isinstance(text, str) or not isinstance(now, str):
+        return None
+    try:
+        today = _dt.datetime.strptime(now[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    dates = []
+    for m in WAIT_DATE_RE.finditer(text):
+        y, mo, d = m.group(1), int(m.group(2)), int(m.group(3))
+        years = [int(y)] if y else [today.year - 1, today.year, today.year + 1]
+        cands = []
+        for yr in years:
+            try:
+                cands.append(_dt.date(yr, mo, d))
+            except ValueError:
+                pass
+        if cands:
+            dates.append(min(cands, key=lambda c: abs((c - today).days)))
+    latest = max(dates) if dates else None
+    return latest.isoformat() if latest and latest < today else None
 
 
 def _blocker(kind: str, n: int, src: dict) -> dict:
@@ -770,8 +807,11 @@ def _pr_state(n: int, src: dict) -> tuple[str, str]:
     return "notfound", f"PR #{n} is not among the {ALL_LIMIT} newest PRs gh listed"
 
 
-def derive_thread(t: dict, src: dict) -> dict:
-    """PURE. One declared thread + the read sources -> the thread with `state` and `detail`."""
+def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = False) -> dict:
+    """PURE. One declared thread + the read sources -> the thread with `state` and `detail`. `now` (the minute stamp)
+    lets a declared `waits on` whose date has passed be FLAGGED expired rather than block (backlog #612); None reads no
+    expiry. `by_row` — an AGENDA STEP's reading (backlog #515/#611): each live backlog row it names is done by its
+    Status cell (`closed_rows`), never by a merged PR that names it; a tree leaf keeps the merge reading."""
     prs = [n for k, n in t["refs"] if k == "PR"]
     rows = [n for k, n in t["refs"] if k == "backlog"]
     # backlog #484: each backlog ref has its OWN fate (None = live). `fates` is None when the backlog was not
@@ -788,6 +828,11 @@ def derive_thread(t: dict, src: dict) -> dict:
     opened = [p for p in (src.get("open") or {}).values()
               if any(re.search(rf"\bbacklog #{n}\b", p.get("title") or "") for n in live_rows)]
     resolved = [int(q["number"]) for q in opened]
+    # backlog #515/#611: an agenda step naming rows and NO PR is done by the rows' Status cells, never by a merged PR
+    # found naming them; a step that names its PR follows that PR. `closed` None = the cells were not read
+    by_row = by_row and not prs
+    closed = src.get("closed_rows") if by_row else None
+    row_open = [n for n in live_rows if n not in closed] if by_row and closed is not None else []
     if prs:
         found = [_pr_state(n, src) for n in prs]
         state = next(s for s in PRECEDENCE if any(f[0] == s for f in found))
@@ -799,7 +844,12 @@ def derive_thread(t: dict, src: dict) -> dict:
     else:
         hit = next(((sha, pr) for sha, pr, subj in src["merged_rows"]
                     if any(re.search(rf"\(backlog #{n}\)", subj) for n in live_rows)), None)
-        if hit:
+        if by_row and live_rows and not row_open and closed is not None:
+            state, detail = "merged", ", ".join(f"backlog #{n}" for n in live_rows) + " ✅ in its Status cell"
+            if hit:
+                whens = [(src.get("all_merged_at") or {}).get(hit[1]) or (src.get("merged_at") or {}).get(hit[0])]
+                detail += f" · merged {merge_when(whens[0])} · {hit[0]} via PR #{hit[1]}"
+        elif hit and not row_open:
             whens = [(src.get("all_merged_at") or {}).get(hit[1]) or (src.get("merged_at") or {}).get(hit[0])]
             state, detail = "merged", f"merged {merge_when(whens[0])} · {hit[0]} via PR #{hit[1]}"
         elif opened:
@@ -809,6 +859,13 @@ def derive_thread(t: dict, src: dict) -> dict:
                                      + " · " + _SS.check_summary(p.get("statusCheckRollup")))
         else:
             state, detail = "next", "no PR names it yet"
+        if hit and row_open:
+            # backlog #515/#611: the PR that named the row is CONTEXT — it may have filed the row, or landed only part
+            detail = (f"{_row_list(row_open)} is not ✅ in its Status cell · PR #{hit[1]} ({hit[0]}) merged naming it"
+                      f" · " + ("no open PR names it" if state == "next" else detail))
+    if by_row and live_rows and state != "cannot" and closed is None:
+        state, detail = "cannot", (f"CANNOT RUN — the Status cells of {BACKLOG_REL} were not read, so whether "
+                                   f"{_row_list(live_rows)} is done cannot be told")
     if rows:
         # backlog #484 — THE PRECEDENCE, exactly. Each ref contributes its own state and the leaf shows the worst:
         #   1. ⚠ CANNOT RUN — the backlog was not read, or a named row is not in its Items table. Never ✅.
@@ -850,7 +907,11 @@ def derive_thread(t: dict, src: dict) -> dict:
         detail += " · parked: " + "; ".join(parked)
     if t.get("ledger"):
         detail += f" · declared in the ledger ({t['ledger']}), not yet on master"
-    if t.get("waits") and state in ("next", "inflight"):
+    expired = wait_expired(t.get("waits"), now)
+    if t.get("waits") and expired and state in ("next", "inflight"):
+        # backlog #612: a declared wait whose latest date has passed is FLAGGED, never shown as a live reason
+        detail += f" · ⚠ wait expired {expired}: {t['waits']} (declared) — re-check it or re-declare it"
+    elif t.get("waits") and state in ("next", "inflight"):
         state = "blocked" if state == "next" else state
         detail += f" · waits on {t['waits']} (declared)"
     # backlog #514 r2: a wait an entry naming this thread declares (`--add --waits`) is said on the leaf in every state,
@@ -865,6 +926,8 @@ def derive_thread(t: dict, src: dict) -> dict:
     open_prs = sorted({n for n in prs if n in src["open"]} | ({open_pr} if open_pr is not None else set()) | set(resolved))
     out = dict(t, state=state, detail=detail, merged_at=merged_at, parked=bool(parked), inflight=bool(flying),
                open_pr=open_pr, open_prs=open_prs)
+    if t.get("waits") and expired:   # backlog #612: every reader of `waits` (the agenda's OWED list) sees the flag
+        out["waits"] = f"⚠ wait expired {expired}: {t['waits']}"
     if entries:
         out["entries"] = entries
     if blockers:
@@ -881,7 +944,7 @@ def derive_thread(t: dict, src: dict) -> dict:
 def derive(goals: list[dict], src: dict, now: str) -> dict:
     """PURE. Goals + sources -> one snapshot. `cannot` lists every source that could not be read."""
     goals, thread_problems = ledger_threads(goals, src["ledger"])
-    out_goals = [dict(g, threads=[derive_thread(t, src) for t in g["threads"]]) for g in goals]
+    out_goals = [dict(g, threads=[derive_thread(t, src, now) for t in g["threads"]]) for g in goals]
     # ⛔ review r1 X1: an open PR is represented only by a STRUCTURED association — a thread's refs, or the open PR
     # its backlog row resolved to — never by a mention in detail text (a ledger entry quoting `PR #99` hid PR #99).
     named_prs = {n for g in out_goals for t in g["threads"] for k, n in t["refs"] if k == "PR"}
@@ -1636,7 +1699,7 @@ def _refset(refs: list) -> frozenset:
     return frozenset(map(tuple, refs))
 
 
-def derive_agenda(ag: dict | None, src: dict, threads: list[dict] = ()) -> dict | None:
+def derive_agenda(ag: dict | None, src: dict, threads: list[dict] = (), now: "str | None" = None) -> dict | None:
     """PURE. One agenda + the read sources -> its steps with `state` and `detail`. A step naming a
     row or PR goes through `derive_thread`, the tree's own derivation, WITH the `waits` a declared
     thread naming the same refs carries — so a row the tree shows ❌ waiting is not ⬜ here (r1 Codex
@@ -1652,12 +1715,15 @@ def derive_agenda(ag: dict | None, src: dict, threads: list[dict] = ()) -> dict 
             said = declared.setdefault(_refset(t["refs"]), [])
             if t["waits"] not in said:
                 said.append(t["waits"])
+    # backlog #612: an EXPIRED declared wait never outvotes a live one — the step waits on the live waits; only
+    # when every wait has expired is the (flagged) expired text passed on
+    declared = {k: ([w for w in v if not wait_expired(w, now)] or v) for k, v in declared.items()}
     waits = {k: "; ".join(sorted(v)) for k, v in declared.items()}   # sorted: no declaration order (r3 Codex L4)
     steps = []
     for n, st in enumerate(ag["steps"], 1):
         if st["refs"]:
             d = derive_thread({"key": f"step {n}", "refs": st["refs"],
-                               "waits": waits.get(_refset(st["refs"]))}, src)
+                               "waits": waits.get(_refset(st["refs"]))}, src, now, by_row=True)
             steps.append(dict(st, n=n, state=d["state"], detail=d["detail"]))
         elif n in ag.get("ticked", []):
             steps.append(dict(st, n=n, state="merged", detail="ticked by hand (names no backlog row or PR)"))
@@ -1721,7 +1787,7 @@ def record_agenda(path: pathlib.Path, ag: dict, now: str, src: dict | None, thre
             if src is None:
                 states = [{"n": n, "state": "cannot"} for n in range(1, len(prev["steps"]) + 1)]
             else:
-                states = [{"n": s["n"], "state": s["state"]} for s in derive_agenda(prev, src, threads)["steps"]]
+                states = [{"n": s["n"], "state": s["state"]} for s in derive_agenda(prev, src, threads, now)["steps"]]
             lines.append({"kind": "replaced", "at": now, "of": prev["id"], "states": states})
         lines.append(dict(ag, kind="agenda", at=now, id=len(cur) + 1))
         return lines, f"agenda recorded at {now} ({len(ag['steps'])} step(s)) -> {AGENDA_REL}"
@@ -3064,7 +3130,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
             # snapshot down with it — the tree was read whole (r2 Codex M4)
             try:
                 cur = agendas(read_agenda_log(agenda_path))
-                live["agenda"] = derive_agenda(cur[-1] if cur else None, src, declared)
+                live["agenda"] = derive_agenda(cur[-1] if cur else None, src, declared, now)
                 live["agenda_history"] = agenda_history(cur)
             except Malformed as exc:
                 live["agenda"] = {"malformed": str(exc)}
@@ -3917,7 +3983,8 @@ def _self_test_cases(*, outside: dict) -> int:
                 "all": {20: "MERGED", 21: "OPEN", 22: "CLOSED", 23: "MERGED"},
                 "all_merge_sha": {23: "bbbb2222"}, "ledger": [], "ledger_problems": [],
                 "head": "aaaa111", "repo": "o/r", "errors": {}, "fates_error": None,
-                "fates": {n: None for n in range(1, 100)}}   # rows 1-99 exist, none fated
+                "fates": {n: None for n in range(1, 100)},   # rows 1-99 exist, none fated
+                "closed_rows": set()}                        # …and none closed (backlog #515: steps read it)
         base.update(kw)
         return base
 
@@ -5628,6 +5695,68 @@ def _self_test_cases(*, outside: dict) -> int:
         _both = derive_agenda(dict(_oag, at="t", id=1, ticked=[]), src(), [_t_wait, _t_go, _t_wait2])["steps"][0]["detail"]
         _rev = derive_agenda(dict(_oag, at="t", id=1, ticked=[]), src(), [_t_wait2, _t_go, _t_wait])["steps"][0]["detail"]
         case("the joined waits read the same in either declaration order (r3 Codex L4)", _rev == _both, True)
+        # backlog #515 / #611 — a step naming a backlog row is done by the ROW's Status cell (✅), never by a merged
+        # PR that merely names it (a filing PR names the row it files; a PR can land part of a row)
+        _rag = parse_agenda("window: w\n## g\n- backlog #10 · a row a merged PR named\n- backlog #12 · a row no PR names\n"
+                            "- backlog #10, PR #20 · the row and its PR\n- backlog #11 · a row an open PR works on\n")
+
+        def _rs515(**kw):
+            return [(st["state"], st["detail"]) for st in derive_agenda(dict(_rag, at="t", id=1, ticked=[]), src(**kw))["steps"]]
+        _open, _shut = _rs515(closed_rows=set()), _rs515(closed_rows={10, 12})
+        case("⭐ backlog #515: a step naming a row a merged PR names stays ⬜ while the row's Status cell is not ✅ — "
+             "the PR shown as context — and is ✅ once it is",
+             ((_open[0][0], "backlog #10 is not ✅ in its Status cell" in _open[0][1], "PR #20" in _open[0][1]),
+              _shut[0][0], "via PR #20" in _shut[0][1]), (("next", True, True), "merged", True))
+        case("⭐ backlog #611: a step naming a row is ✅ by the row's Status cell even when NO merged PR names it, "
+             "and ⬜ while it is not",
+             (_shut[1], _open[1][0]), (("merged", "backlog #12 ✅ in its Status cell"), "next"))
+        case("backlog #611 BOUND: a step naming a row AND its PR follows the PR it names — ✅ merged whatever the "
+             "row's Status cell says (the step is that PR; a row it mentions may be one the PR filed)",
+             (_open[2][0], _shut[2][0], "Status cell" in _open[2][1]), ("merged", "merged", False))
+        _r11 = _rs515(closed_rows=set(), merged_rows=[("aaaa111", 20, "x (backlog #11) (#20)")])
+        case("backlog #515: a row a merged PR named, still open, with an OPEN PR naming it reads ⏳ open — never ✅",
+             (_r11[3][0], "PR #30 open" in _r11[3][1], "PR #20" in _r11[3][1]), ("open", True, True))
+        _s515 = src()
+        _s515.pop("closed_rows", None)
+        case("⛔ backlog #515: a step naming a row reads CANNOT RUN when the Status cells were not read — never ✅",
+             [st["state"] for st in derive_agenda(dict(_rag, at="t", id=1, ticked=[]), _s515)["steps"]],
+             ["cannot", "cannot", "merged", "cannot"])
+        case("backlog #515 BOUND: a tree LEAF naming the same row keeps its merge state (the Status rule is the step's)",
+             derive_thread({"key": "k", "refs": [["backlog", 10]], "waits": None}, src(closed_rows=set()))["state"],
+             "merged")
+        # backlog #612 — a declared wait whose date has passed is FLAGGED, never shown as a live reason
+        case("backlog #612: wait_expired reads the LATEST date a wait names (YYYY-MM-DD or MM-DD), against today",
+             [wait_expired(w, at) for w, at in (
+                 ("the weekly reset (Fri 11-06 02:00)", "2026-11-20 10:00"),
+                 ("the weekly reset (Fri 11-06 02:00)", "2026-11-06 23:59"),
+                 ("parked 2026-11-14, back 11-25", "2026-11-20 10:00"),
+                 ("parked 2026-11-14 06:45", "2026-11-20 10:00"),
+                 ("the owner's walkthrough", "2026-11-20 10:00"),
+                 ("the 12-30 freeze", "2027-01-03 09:00"),
+                 ("the 01-05 thaw", "2026-12-30 09:00"),
+                 ("PR #10-30 and 2026-02-30", "2026-11-20 10:00"),
+                 ("the weekly reset (Fri 11-06 02:00)", "t"),
+                 (None, "2026-11-20 10:00"))],
+             ["2026-11-06", None, None, "2026-11-14", None, "2026-12-30", None, None, None, None])
+        _w612 = "the weekly reset (Fri 11-06 02:00)"
+        _snap612 = [derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #12 · x · waits on '
+                                         + _w612 + "\n"), src(), at)["goals"][0]["threads"][0] for at in
+                    ("2026-11-20 10:00", "2026-11-05 10:00")]
+        case("⭐ backlog #612: a passed declared wait leaves the leaf ⬜ and FLAGGED expired; before its date it is ❌",
+             [(t["state"], "⚠ wait expired 2026-11-06" in t["detail"], (t.get("waits") or "").startswith("⚠ wait expired"))
+              for t in _snap612], [("next", True, True), ("blocked", False, False)])
+        _st612 = [derive_agenda(dict(_wag, at="t", id=1, ticked=[]), src(),
+                                [{"key": "k", "refs": [["backlog", 12]], "waits": _w612}], now=at)["steps"][0]
+                  for at in ("2026-11-20 10:00", "2026-11-05 10:00")]
+        case("backlog #612: an agenda step whose declared wait has passed reads ⬜ and says expired; before, ❌",
+             [(st["state"], "⚠ wait expired 2026-11-06" in st["detail"]) for st in _st612],
+             [("next", True), ("blocked", False)])
+        _mix612 = derive_agenda(dict(_wag, at="t", id=1, ticked=[]), src(),
+                                [{"key": "k", "refs": [["backlog", 12]], "waits": _w612},
+                                 {"key": "j", "refs": [["backlog", 12]], "waits": "the owner"}], now="2026-11-20 10:00")
+        case("backlog #612: a step with one live and one expired declared wait still waits on the LIVE one",
+             (_mix612["steps"][0]["state"], "waits on the owner (declared)" in _mix612["steps"][0]["detail"]),
+             ("blocked", True))
         case("...and EVERY distinct declared wait is said, not only the first (r2 Codex H1)",
              ("waits on PR #20; the owner (declared)" in _both, _both.count("the owner")), (True, 1))
         _txt = agenda_lines({"agenda": derive_agenda(dict(ag, at="2026-11-04 09:00", id=1, ticked=[3]), _s1)})

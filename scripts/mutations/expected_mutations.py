@@ -469,7 +469,12 @@ EXPECTED_MUTATIONS = {
     # write_page forwarding `judge` (dropping it falls back to `built`, the same minute — no case can tell them apart).
     # ⟳ 2026-11-19, backlog #647 (agenda-stale-wording): 438 -> 440, none retired — the STALE line's who-acts wording,
     # and its `it`/`them`.
-    "scripts/goal-tree.py": 470,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    # ⟳ 2026-11-20, agenda-row-state (backlog #515, #611, #612): 470 -> 487, none retired — a step naming rows and no
+    # PR is done by the rows' Status cells (8: open rows, all-closed, the hit gate, the context line, CANNOT RUN, the
+    # PR-named exemption, the agenda's flag, the leaf's default); a passed declared wait is flagged (9: the leaf's
+    # reading, derive's clock, the flagged `waits`, today not expired, the latest date, the year nearest now, the live
+    # wait outvoting, the agenda's clock, a `#NN-NN` not a date).
+    "scripts/goal-tree.py": 487,  # 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

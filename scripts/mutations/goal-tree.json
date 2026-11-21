@@ -121,8 +121,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if t.get(\"waits\") and state in (\"next\", \"inflight\"):",
-        "    if t.get(\"waits\"):"
+        "    elif t.get(\"waits\") and state in (\"next\", \"inflight\"):",
+        "    elif t.get(\"waits\"):"
       ],
       [
         "        state = \"blocked\" if state == \"next\" else state",
@@ -1824,8 +1824,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            whens = [(src.get(\"all_merged_at\") or {}).get(hit[1]) or (src.get(\"merged_at\") or {}).get(hit[0])]",
-        "            whens = [(src.get(\"merged_at\") or {}).get(hit[0])]"
+        "        elif hit and not row_open:\n            whens = [(src.get(\"all_merged_at\") or {}).get(hit[1]) or (src.get(\"merged_at\") or {}).get(hit[0])]",
+        "        elif hit and not row_open:\n            whens = [(src.get(\"merged_at\") or {}).get(hit[0])]"
       ]
     ],
     "expect": [
@@ -2136,8 +2136,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src, declared)",
-        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src, [])"
+        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src, declared, now)",
+        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src, [], now)"
       ]
     ],
     "expect": [
@@ -3868,8 +3868,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    resolved = [int(q[\"number\"]) for q in opened]\n    if prs:",
-        "    resolved = [int(q[\"number\"]) for q in opened] if not prs and not any(re.search(rf\"\\(backlog #{n}\\)\", s_) for _, _, s_ in src.get(\"merged_rows\") or [] for n in live_rows) else []\n    if prs:"
+        "    resolved = [int(q[\"number\"]) for q in opened]\n    # backlog #515/#611",
+        "    resolved = [int(q[\"number\"]) for q in opened] if not prs and not any(re.search(rf\"\\(backlog #{n}\\)\", s_) for _, _, s_ in src.get(\"merged_rows\") or [] for n in live_rows) else []\n    # backlog #515/#611"
       ]
     ],
     "expect": [
@@ -6146,6 +6146,227 @@
     ],
     "expect": [
       "a snapshot is a dict with BOTH `goals` and `at` — `{}`, a list and either key alone are not"
+    ]
+  },
+  {
+    "name": "backlog #515: a step's open rows are never computed (a merged PR naming the row reads done)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    row_open = [n for n in live_rows if n not in closed] if by_row and closed is not None else []",
+        "    row_open = []"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #515: a step naming a row a merged PR names stays ⬜ while the row's Status cell is not ✅ — the PR shown as context — and is ✅ once it is"
+    ]
+  },
+  {
+    "name": "backlog #611: a step whose rows are all ✅ is not done by the Status cell",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if by_row and live_rows and not row_open and closed is not None:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #611: a step naming a row is ✅ by the row's Status cell even when NO merged PR names it, and ⬜ while it is not"
+    ]
+  },
+  {
+    "name": "backlog #515: a merged PR naming a still-open row ticks the step",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif hit and not row_open:",
+        "        elif hit:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #515: a step naming a row a merged PR names stays ⬜ while the row's Status cell is not ✅ — the PR shown as context — and is ✅ once it is"
+    ]
+  },
+  {
+    "name": "backlog #515: the merged PR that named an open row is not shown as context",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if hit and row_open:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #515: a step naming a row a merged PR names stays ⬜ while the row's Status cell is not ✅ — the PR shown as context — and is ✅ once it is"
+    ]
+  },
+  {
+    "name": "backlog #515: unread Status cells do not make a row step CANNOT RUN",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if by_row and live_rows and state != \"cannot\" and closed is None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #515: a step naming a row reads CANNOT RUN when the Status cells were not read — never ✅"
+    ]
+  },
+  {
+    "name": "backlog #611: a step that names its PR is read by its rows too",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    by_row = by_row and not prs\n",
+        "    by_row = by_row\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #515: a step naming a row reads CANNOT RUN when the Status cells were not read — never ✅"
+    ]
+  },
+  {
+    "name": "backlog #515: the agenda does not ask for the Status reading",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "src, now, by_row=True)",
+        "src, now, by_row=False)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #515: a step naming a row a merged PR names stays ⬜ while the row's Status cell is not ✅ — the PR shown as context — and is ✅ once it is"
+    ]
+  },
+  {
+    "name": "backlog #515: a tree leaf reads its rows by Status cell too",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "now: \"str | None\" = None, by_row: bool = False) -> dict:",
+        "now: \"str | None\" = None, by_row: bool = True) -> dict:"
+      ]
+    ],
+    "expect": [
+      "backlog #515 BOUND: a tree LEAF naming the same row keeps its merge state (the Status rule is the step's)"
+    ]
+  },
+  {
+    "name": "backlog #612: a leaf's declared wait is never judged expired",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    expired = wait_expired(t.get(\"waits\"), now)",
+        "    expired = None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #612: a passed declared wait leaves the leaf ⬜ and FLAGGED expired; before its date it is ❌"
+    ]
+  },
+  {
+    "name": "backlog #612: derive does not pass the clock to the leaves",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "threads=[derive_thread(t, src, now) for t in g[\"threads\"]]",
+        "threads=[derive_thread(t, src) for t in g[\"threads\"]]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #612: a passed declared wait leaves the leaf ⬜ and FLAGGED expired; before its date it is ❌"
+    ]
+  },
+  {
+    "name": "backlog #612: the leaf's `waits` keeps the bare text, unflagged",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if t.get(\"waits\") and expired:   # backlog #612",
+        "    if False:   # backlog #612"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #612: a passed declared wait leaves the leaf ⬜ and FLAGGED expired; before its date it is ❌"
+    ]
+  },
+  {
+    "name": "backlog #612: a wait dated today reads expired",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return latest.isoformat() if latest and latest < today else None",
+        "return latest.isoformat() if latest and latest <= today else None"
+      ]
+    ],
+    "expect": [
+      "backlog #612: wait_expired reads the LATEST date a wait names (YYYY-MM-DD or MM-DD), against today"
+    ]
+  },
+  {
+    "name": "backlog #612: the EARLIEST date a wait names decides, not the latest",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    latest = max(dates) if dates else None",
+        "    latest = min(dates) if dates else None"
+      ]
+    ],
+    "expect": [
+      "backlog #612: wait_expired reads the LATEST date a wait names (YYYY-MM-DD or MM-DD), against today"
+    ]
+  },
+  {
+    "name": "backlog #612: an MM-DD always takes this year (12-30 read on 01-03 is next December)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "years = [int(y)] if y else [today.year - 1, today.year, today.year + 1]",
+        "years = [int(y)] if y else [today.year]"
+      ]
+    ],
+    "expect": [
+      "backlog #612: wait_expired reads the LATEST date a wait names (YYYY-MM-DD or MM-DD), against today"
+    ]
+  },
+  {
+    "name": "backlog #612: an expired declared wait outvotes a live one on the step",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "([w for w in v if not wait_expired(w, now)] or v)",
+        "v"
+      ]
+    ],
+    "expect": [
+      "backlog #612: a step with one live and one expired declared wait still waits on the LIVE one"
+    ]
+  },
+  {
+    "name": "backlog #612: the agenda step is derived with no clock",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_refset(st[\"refs\"]))}, src, now,",
+        "_refset(st[\"refs\"]))}, src, None,"
+      ]
+    ],
+    "expect": [
+      "backlog #612: an agenda step whose declared wait has passed reads ⬜ and says expired; before, ❌"
+    ]
+  },
+  {
+    "name": "backlog #612: a `#NN-NN` (a PR or row number) reads as a date",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(?<![\\d#-])",
+        "(?<![\\d-])"
+      ]
+    ],
+    "expect": [
+      "backlog #612: wait_expired reads the LATEST date a wait names (YYYY-MM-DD or MM-DD), against today"
     ]
   }
 ]
