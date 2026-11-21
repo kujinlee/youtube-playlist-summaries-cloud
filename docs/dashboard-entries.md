@@ -21176,10 +21176,12 @@ apply was already taken from master (backlog #522); this closes the remaining ga
 <!--tech-->
 Branch `usage-hook-master`. `.claude/hooks/run-hook.sh`: a `usage-pace-*` name found under a `.git` FILE reads its
 `gitdir:` (relative resolved against the worktree), and when that git dir has `commondir` (a linked worktree, not a
-submodule) resolves it with `cd -P`; it must end in `.git`, and its parent becomes the root. A `.git` file with no
-gitdir line, or a common dir that is missing or not a `.git` directory, is NOT RUN naming backlog #513 — never the
-worktree's copy. No git process runs. Chosen over `origin/master`'s hook shells because the hooks derive their root
+submodule) resolves it with `cd -P`; it must end in `.git`, be a repository (HEAD, objects/, refs/) and CONTAIN the
+gitdir as `worktrees/<name>`, and its parent becomes the root. A gitdir with no `commondir` at a worktree's path is
+NOT RUN whatever it holds (review round 2). A `.git` file with no gitdir line, an unreadable or dangling gitdir, a
+newline in either path, or a common dir that fails any test, is NOT RUN naming backlog #513 — never the worktree's
+copy; a usage hook's NOT RUN is exit 0 with a fixed JSON line on stdout. No git process runs. Chosen over `origin/master`'s hook shells because the hooks derive their root
 from their own path and `usage-pace-run.sh` reads `origin/master` through that checkout; the guard is already
-`origin/master`'s. `scripts/check-run-hook.py --self-test` 98/98: worlds U1–U6 (red against the old launcher, 10
-cases), launcher mutants u1–u8 killed, 3 new manifest mutations (18 → 21). Bound: `check-idle-stop.py` and the
+`origin/master`'s. `scripts/check-run-hook.py --self-test` 149/149: worlds U1–U6, the fail-closed worlds of review
+rounds 1 and 2, launcher mutants u1–u8, c1–c3, r-<name> and r2a–r2g killed; manifest mutations 18 → 39. Bound: `check-idle-stop.py` and the
 agent-call hooks IMPORT `check-usage-pace.py` from the checkout and are unchanged.

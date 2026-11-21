@@ -48,6 +48,11 @@ exit 0 with usage-pace-run.sh's fixed-JSON shape on stdout (C3), asserted byte f
 name (REAL_USAGE, an independent literal checked against the hooks directory) is run too, so special-casing one
 real name is caught (X3). Their mutants are c1–c5 and r-<name>.
 
+⟳ backlog #513 r2 (Codex): a gitdir with no `commondir` at a worktree's path (`<common>/worktrees/<name>`) is NOT RUN
+whatever it holds, and a common dir must be a repository (HEAD, objects/, refs/) that CONTAINS the gitdir. Both of
+Codex's inputs are cases (NOCDOBJ, DECOY), with a real other repository (OTHER), one fake per missing part, and a
+junk gitdir; U1 and U3 are the healthy-worktree and submodule controls. Their mutants are r2a–r2g.
+
 WHAT WOULD MAKE THIS FAIL (its falsifier): a world whose exit code, hook file or output streams differ
 from the review's table, or a mutant whose named world stays green.
 
@@ -58,7 +63,7 @@ is NOT run here. W15 (a session launched in a subdirectory loads no project hook
 any launcher and has no case.
 
     python3 scripts/check-run-hook.py               # the worlds, over the repo's launcher
-    python3 scripts/check-run-hook.py --self-test  # 133 cases
+    python3 scripts/check-run-hook.py --self-test  # 149 cases
 
 EXIT CODES (repo convention): 0 = every world as required · 1 = a world differs · 2 = CANNOT RUN
 (no git, no launcher, a world that could not be built — never a pass).
@@ -426,6 +431,51 @@ def build_fail_closed(x: Path, main: Path, w: World) -> None:
     git(symmain, "commit", "-q", "-m", "a main checkout whose .git is a symlink")
     p["symwt"], p["store"] = x / "symwt", store
     git(symmain, "worktree", "add", "-q", str(p["symwt"]))
+    build_r2(x, main, w)
+
+
+def build_r2(x: Path, main: Path, w: World) -> None:
+    """Backlog #513 r2 (Codex): a worktree is decided by its gitdir's PATH, and its common dir must be a real repository
+    that CONTAINS that gitdir. Each world carries a usage hook where a wrong answer would run it."""
+    p = w.paths
+    for k in ("wtnocdobj", "wtdecoy", "wtother"):
+        p[k] = x / k
+        git(main, "worktree", "add", "-q", "-b", k, str(p[k]), "main")
+        put(p[k] / ".claude/hooks" / USAGE, PROBE)
+    # r2 Codex 1, exactly: a real worktree's gitdir loses its commondir and gains `objects/` — a repository's shape.
+    (main / ".git/worktrees/wtnocdobj/commondir").unlink()
+    (main / ".git/worktrees/wtnocdobj/objects").mkdir()
+    # r2 Codex 2, exactly: the commondir names an EMPTY directory called `decoy/.git`, beside a usage hook.
+    (x / "decoy/.git").mkdir(parents=True)
+    put(x / "decoy/.claude/hooks" / USAGE, PROBE)
+    (main / ".git/worktrees/wtdecoy/commondir").write_text(str(x / "decoy/.git") + "\n")
+    # The decoy made a REAL repository: it passes is_repo, so only the containment check refuses it.
+    p["other"] = x / "other"
+    put(p["other"] / ".claude/hooks" / USAGE, PROBE)
+    git(x, "init", "-q", str(p["other"]))
+    (main / ".git/worktrees/wtother/commondir").write_text(str(p["other"] / ".git") + "\n")
+    # A decoy that DOES contain the gitdir but lacks one of a repository's three parts: only is_repo refuses it.
+    for part in FAKE_PARTS:
+        fake, k = x / f"fake-{part}", f"wtfake-{part}"
+        p[k] = x / k
+        gd = fake / ".git/worktrees" / k
+        gd.mkdir(parents=True)
+        (gd / "commondir").write_text("../..\n")
+        for other in FAKE_PARTS:
+            if other == part:
+                continue
+            if other == "HEAD":
+                (fake / ".git/HEAD").write_text("ref: refs/heads/main\n")
+            else:
+                (fake / ".git" / other).mkdir()
+        put(fake / ".claude/hooks" / USAGE, PROBE)
+        put(p[k] / ".claude/hooks" / USAGE, PROBE)
+        (p[k] / ".git").write_text(f"gitdir: {gd}\n")
+    # No commondir at a NON-worktree path, and not a repository: neither a submodule nor a main checkout.
+    p["wtjunkgd"] = x / "wtjunkgd"
+    put(p["wtjunkgd"] / ".claude/hooks" / USAGE, PROBE)
+    (x / "junkgd").mkdir()
+    (p["wtjunkgd"] / ".git").write_text(f"gitdir: {x / 'junkgd'}\n")
 
 
 def git_main_worktree(cwd: Path) -> str | None:
@@ -511,7 +561,13 @@ def cases(w: World) -> list[Case]:
         Case(GONE, p["wtgone"], 0, NOT_RAN, args=[USAGE], want_err=LOCATE_ERR, want_out=SYSTEM_JSON),
         Case(U5, p["wtjunk"], 0, NOT_RAN, args=[USAGE], want_err="names no gitdir", want_out=SYSTEM_JSON),
         Case(DANG, p["wtdang"] / "scripts", 0, NOT_RAN, args=[USAGE], want_err=MISSING_ERR, want_out=SYSTEM_JSON),
-        Case(NOCD, p["wtnocd"] / "scripts", 0, NOT_RAN, args=[USAGE], want_err="has no commondir and is not a repository",
+        Case(NOCD, p["wtnocd"] / "scripts", 0, NOT_RAN, args=[USAGE], want_err=WTSHAPE_ERR, want_out=SYSTEM_JSON),
+        Case(NOCDOBJ, p["wtnocdobj"] / "scripts", 0, NOT_RAN, args=[USAGE], want_err=WTSHAPE_ERR, want_out=SYSTEM_JSON),
+        Case(DECOY, p["wtdecoy"] / "scripts", 0, NOT_RAN, args=[USAGE], want_err=NOTREPO_ERR, want_out=SYSTEM_JSON),
+        Case(OTHER, p["wtother"] / "scripts", 0, NOT_RAN, args=[USAGE], want_err=CONTAIN_ERR, want_out=SYSTEM_JSON),
+        *(Case(fake_case(part), p[f"wtfake-{part}"], 0, NOT_RAN, args=[USAGE], want_err=NOTREPO_ERR,
+               want_out=SYSTEM_JSON) for part in FAKE_PARTS),
+        Case(JUNKGD, p["wtjunkgd"], 0, NOT_RAN, args=[USAGE], want_err="has no commondir and is not a repository",
              want_out=SYSTEM_JSON),
         Case(UNREAD, p["wtunread"] / "scripts", 0, NOT_RAN, args=[USAGE], want_err=MISSING_ERR, want_out=SYSTEM_JSON),
         Case(LOCKGIT, p["wtlockgit"], 0, NOT_RAN, args=[USAGE], want_err="names no gitdir", want_out=SYSTEM_JSON),
@@ -569,6 +625,22 @@ NL = "X2 a worktree of a main checkout whose path holds a newline: NOT RUN, its 
 NLCD = "X2 a commondir that holds a newline: NOT RUN, even though its first line names main's .git"
 SYM = ("C2 a main checkout whose .git is a symlink: git's main (the common dir's parent) has no copy, so NOT RUN — "
        "neither the worktree's nor the symlink holder's copy")
+NOCDOBJ = ("C1 r2 a worktree's gitdir with no commondir but an objects/ (a repository's shape): NOT RUN, decided by "
+           "its path, its own copy NOT run")
+DECOY = "C1 r2 a commondir naming an EMPTY directory called decoy/.git: NOT RUN, the decoy's copy NOT run"
+OTHER = ("C1 r2 a commondir naming ANOTHER real repository's .git: NOT RUN, it does not contain the gitdir, its copy "
+         "NOT run")
+JUNKGD = "C1 r2 a gitdir with no commondir, not at a worktree path, that is not a repository: NOT RUN"
+FAKE_PARTS = ("HEAD", "objects", "refs")  # is_repo's three parts, an independent literal of the launcher's
+
+
+def fake_case(part: str) -> str:
+    return f"C1 r2 a common dir that contains the gitdir but has no {part}: NOT RUN, its copy NOT run"
+
+
+WTSHAPE_ERR = "is a worktree's (…/worktrees/<name>) and has no commondir"
+NOTREPO_ERR = "is not a git repository"
+CONTAIN_ERR = "is not inside its common dir's worktrees/"
 LOCATE_ERR = "the main checkout of the worktree"
 MISSING_ERR = "is missing or unreadable"
 NL_ERR = "holds a newline"
@@ -705,10 +777,22 @@ MUTANTS = [
     # Backlog #513 r1: fail closed once `.git` is a file.
     Mutant("c1a a missing or unreadable gitdir is not refused", 'if [ -z "$gitdir" ]; then', "if false; then",
            (DANG, UNREAD)),
-    Mutant("c1b a gitdir with no commondir keeps the worktree's root (the old fall-through)",
-           'elif [ ! -d "$gitdir/objects" ]; then', "elif false; then", (NOCD,)),
+    Mutant("c1b a non-repository gitdir with no commondir keeps the worktree's root (the old fall-through)",
+           'elif ! is_repo "$gitdir"; then', "elif false; then", (JUNKGD,)),
     Mutant("c1c a gitdir with no commondir is always refused (a submodule loses its own copy)",
-           'elif [ ! -d "$gitdir/objects" ]; then', "elif :; then", (U3,)),
+           'elif ! is_repo "$gitdir"; then', "elif :; then", (U3,)),
+    # Backlog #513 r2 (Codex): the path decides a worktree; the common dir must be a repository that contains it.
+    Mutant("r2a a worktree-path gitdir with no commondir is not refused (r2 Codex 1: objects/ passes it)",
+           'elif [ "${gitdir%/*/*}/worktrees" = "${gitdir%/*}" ]; then', "elif false; then", (NOCDOBJ, NOCD)),
+    Mutant("r2b every no-commondir gitdir is read as a worktree's (a submodule loses its own copy)",
+           'elif [ "${gitdir%/*/*}/worktrees" = "${gitdir%/*}" ]; then', "elif :; then", (U3,)),
+    Mutant("r2c the common dir need not be a repository (r2 Codex 2: the empty decoy/.git)",
+           'if ! is_repo "$common"; then', "if false; then", (DECOY, *(fake_case(pt) for pt in FAKE_PARTS))),
+    Mutant("r2d the common dir need not contain the gitdir (another repository is accepted)",
+           'if [ "${gitdir%/*}" != "$common/worktrees" ]; then', "if false; then", (OTHER,)),
+    Mutant("r2e is_repo does not require HEAD", '[ -f "$1/HEAD" ] && ', "", (fake_case("HEAD"),)),
+    Mutant("r2f is_repo does not require objects/", ' && [ -d "$1/objects" ]', "", (fake_case("objects"),)),
+    Mutant("r2g is_repo does not require refs/", ' && [ -d "$1/refs" ]', "", (fake_case("refs"),)),
     Mutant("c1d the .git file is read to its first line only (X2's truncation)",
            "IFS= read -r -d '' line <", "IFS= read -r line <", (NL,)),
     Mutant("c1e a newline in the gitdir is not refused",
@@ -925,6 +1009,16 @@ def _suite_over_world(rows: list, w: World, x: Path, launcher: Path) -> None:
     # The control for the row above: for an ordinary worktree git names the ordinary main checkout.
     rows.append(("C2's control: for an ordinary worktree git names the main checkout as the main worktree",
                  git_main_worktree(w.paths["wt"]), str(w.main)))
+    # r2's preconditions: Codex 1's gitdir really HAS a repository's shape, so only its PATH can refuse it; and each
+    # fake common dir lacks exactly the one part its case names.
+    nocdobj = w.main / ".git/worktrees/wtnocdobj"
+    rows.append(("C1 r2's world: Codex 1's gitdir has HEAD, objects/ and refs/ and no commondir",
+                 ((nocdobj / "HEAD").is_file(), (nocdobj / "objects").is_dir(), (nocdobj / "refs").is_dir(),
+                  (nocdobj / "commondir").exists()), (True, True, True, False)))
+    rows.append(("C1 r2's world: each fake common dir lacks exactly its named part",
+                 [sorted(c.name for c in (w.x / f"fake-{pt}/.git").iterdir() if c.name != "worktrees")
+                  for pt in FAKE_PARTS],
+                 [sorted(set(FAKE_PARTS) - {pt}) for pt in FAKE_PARTS]))
     rows.append(("C1's world: the unreadable gitdir really cannot be entered",
                  os.access(w.main / ".git/worktrees/wtunread", os.X_OK), False))
     # U2's precondition: its world's `.git` really names the gitdir relatively, or U2 tests nothing new.

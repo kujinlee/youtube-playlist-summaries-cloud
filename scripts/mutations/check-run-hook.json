@@ -429,5 +429,83 @@
     "expect": [
       "C3 both NOT RUN JSON lines parse, under the keys their events read"
     ]
+  },
+  {
+    "name": "C1 r2's Codex-1 world keeps its commondir (backlog #513 r2)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (main / \".git/worktrees/wtnocdobj/commondir\").unlink()\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "C1 r2 a worktree's gitdir with no commondir but an objects/ (a repository's shape): NOT RUN, decided by its path, its own copy NOT run"
+    ]
+  },
+  {
+    "name": "C1 r2's Codex-1 world makes no objects/ (backlog #513 r2)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (main / \".git/worktrees/wtnocdobj/objects\").mkdir()\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "C1 r2's world: Codex 1's gitdir has HEAD, objects/ and refs/ and no commondir"
+    ]
+  },
+  {
+    "name": "C1 r2's decoy world keeps main's commondir (backlog #513 r2)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (main / \".git/worktrees/wtdecoy/commondir\").write_text(str(x / \"decoy/.git\") + \"\\n\")\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "C1 r2 a commondir naming an EMPTY directory called decoy/.git: NOT RUN, the decoy's copy NOT run"
+    ]
+  },
+  {
+    "name": "C1 r2's other-repository world keeps main's commondir (backlog #513 r2)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (main / \".git/worktrees/wtother/commondir\").write_text(str(p[\"other\"] / \".git\") + \"\\n\")\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "C1 r2 a commondir naming ANOTHER real repository's .git: NOT RUN, it does not contain the gitdir, its copy NOT run"
+    ]
+  },
+  {
+    "name": "C1 r2's fake common dirs lack no part (backlog #513 r2)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "            if other == part:\n                continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "C1 r2 a common dir that contains the gitdir but has no HEAD: NOT RUN, its copy NOT run"
+    ]
+  },
+  {
+    "name": "C1 r2's junk gitdir is a repository (backlog #513 r2)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    (x / \"junkgd\").mkdir()\n",
+        "    (x / \"junkgd/objects\").mkdir(parents=True)\n    (x / \"junkgd/refs\").mkdir()\n    (x / \"junkgd/HEAD\").write_text(\"ref: refs/heads/main\\n\")\n"
+      ]
+    ],
+    "expect": [
+      "C1 r2 a gitdir with no commondir, not at a worktree path, that is not a repository: NOT RUN"
+    ]
   }
 ]

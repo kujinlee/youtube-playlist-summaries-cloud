@@ -75,10 +75,17 @@ fi
 #   - the gitdir or its `commondir` holds a newline (`.git` is read to EOF, never to its first line, which once
 #     truncated `main<newline>name/...` to a path whose missing commondir fell through to the worktree's copy);
 #   - the gitdir is missing or unreadable (a renamed main checkout, a pruned worktree);
-#   - there is no `commondir` and the gitdir is not itself a repository (no `objects/`). A SUBMODULE's gitdir
-#     (`.git/modules/<name>`) and a main checkout's `--separate-git-dir` ARE repositories, so they keep their own
-#     copy, as before;
-#   - the common dir is not named `.git` (a bare repository, a separate git dir under another name).
+#   - there is no `commondir` and the gitdir's PATH is a worktree's, `<common>/worktrees/<name>` (r2: decided by
+#     that shape, never by what the gitdir holds — an `objects/` made in a worktree's gitdir once ran its own copy);
+#   - there is no `commondir` and the gitdir is not a repository (`is_repo`: HEAD, objects/ and refs/). A
+#     SUBMODULE's gitdir (`.git/modules/<name>`) and a main checkout's `--separate-git-dir` ARE repositories at a
+#     non-worktree path, so they keep their own copy, as before;
+#   - the common dir is not named `.git` (a bare repository, a separate git dir under another name);
+#   - the common dir is not a repository (`is_repo`; r2: an empty directory named `decoy/.git` once ran the decoy's
+#     copy);
+#   - the gitdir is not physically `<common>/worktrees/<name>` — the common dir does not CONTAIN this worktree's
+#     gitdir, so it is some other repository (r2). This is the back-pointer read from the common dir's side: a
+#     decoy passes it only by holding this worktree's gitdir, which makes it, to git too, this worktree's repository.
 # ⚠ WHICH CHECKOUT IS "MAIN" (r1 C2): the common dir's parent, which is what `git worktree list` itself names
 # first. When the main checkout's `.git` is a SYMLINK, or a separate git dir happens to be named `.git`, that is a
 # directory the owner may not think of as main, and nothing on disk or in git distinguishes it. It runs only if
@@ -86,6 +93,8 @@ fi
 # A usage hook's NOT RUN is said where the session sees it (r1 C3): exactly as usage-pace-run.sh's `cannot` does,
 # a FIXED JSON line on stdout (additionalContext for the prompt hook, a systemMessage otherwise) and exit 0
 # (unknown is not a stop); the detail goes to stderr.
+# A git repository directory, as git's own discovery requires one: a HEAD file and objects/ and refs/ directories.
+is_repo() { [ -f "$1/HEAD" ] && [ -d "$1/objects" ] && [ -d "$1/refs" ]; }
 usage_not_run() {
   echo "run-hook: NOT RUN $name — $1" >&2
   if [ "$name" = usage-pace-prompt.sh ]; then
@@ -126,8 +135,16 @@ case $name in
         if [ "${common##*/}" != .git ]; then
           usage_not_run "the main checkout of the worktree $root cannot be located (the worktree's own copy is not used, backlog #513)"
         fi
+        if ! is_repo "$common"; then
+          usage_not_run "the common dir $common is not a git repository (no HEAD, objects/ or refs/; backlog #513 r2)"
+        fi
+        if [ "${gitdir%/*}" != "$common/worktrees" ]; then
+          usage_not_run "the gitdir $gitdir is not inside its common dir's worktrees/ (backlog #513 r2)"
+        fi
         root=${common%/*}
-      elif [ ! -d "$gitdir/objects" ]; then
+      elif [ "${gitdir%/*/*}/worktrees" = "${gitdir%/*}" ]; then
+        usage_not_run "the gitdir $gitdir is a worktree's (…/worktrees/<name>) and has no commondir (backlog #513 r2)"
+      elif ! is_repo "$gitdir"; then
         usage_not_run "the gitdir $gitdir has no commondir and is not a repository (backlog #513)"
       fi
     fi;;
