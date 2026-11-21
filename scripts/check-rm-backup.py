@@ -20,9 +20,11 @@ THE DECISION, for a PreToolUse payload (the first that applies wins):
 
     allow        the tool is not Bash, or the command has no `rm` in a command position
     NOT CHECKED  the payload or command cannot be read (stderr, exit 1: allowed, and said)
-    deny         an `rm` whose targets the hook cannot SEE: `xargs rm`, `-exec rm`, `find -delete`, a target holding
-                 `$(`, a backtick, a brace list or a variable with no known value, or a RELATIVE target after a `cd`
-                 the hook cannot follow
+    deny         an `rm` whose targets the hook cannot SEE: `xargs rm`, `-exec rm`, `find -delete`, `find -L`, a target
+                 holding `$(`, a backtick, a brace list or a variable with no known value, a RELATIVE target after a
+                 `cd` the hook cannot follow, or a path BELOW a same-command `mktemp` directory (a link there leads
+                 anywhere); and a command substitution the lexer cannot split (an unquoted heredoc body, a
+                 double-quoted string) whose text holds an `rm` word
     deny         the targets total more than MAX_BYTES or MAX_FILES (too large to copy on every call)
     deny         a copy failed (the `rm` must not run without its backup)
     allow        every visible target is backed up, needs none (missing, inside this session's scratchpad or the
@@ -31,8 +33,11 @@ THE DECISION, for a PreToolUse payload (the first that applies wins):
 WHAT IS READ. Heredoc bodies are removed first (their text is data, not commands). The rest is split into words by
 `shlex` with the shell operators as punctuation; a word is in a COMMAND POSITION at the start and after `;`, `&`,
 `&&`, `|`, `||`, `(`, a newline, or `then`/`do`/`else`/`{`. Leading `NAME=value` words are skipped (and remembered:
-a later `$NAME` expands to it). `sudo`, `command`, `env`, `nice`, `time` and `\\rm` are looked through; `/bin/rm`
-counts. `git rm` is not an `rm` (git holds a tracked file). The working directory starts at the payload's `cwd` and
+a later `$NAME` expands to it — but not past the subshell or pipeline part that set it). `$'…'` is decoded as bash
+decodes it, and a backtick substitution is read as the `$(…)` it is. `\\rm` and `/bin/rm` count. Any command NOT in
+NOT_RUNNERS (`echo`, `grep`, `git`, …) is read as a possible runner: a later standalone `rm` word in it starts an
+`rm` call (`sudo -u root rm x`, `timeout 5 rm x`) — too wide costs an extra backup. `git rm` is not an `rm` (git
+holds a tracked file). The working directory starts at the payload's `cwd` and
 follows a top-level `cd <literal>`; any other `cd` (inside `(…)`, `cd -`, after `||`, unresolvable) makes it UNKNOWN.
 Targets are expanded for `~`, `$VAR`/`${VAR}` (assigned earlier in the command, else the hook's environment) and
 globs; a glob matching nothing, like a missing file, needs no backup.
@@ -41,13 +46,14 @@ globs; a glob matching nothing, like a missing file, needs no backup.
 (`trap 'rm -f "$T"' EXIT`, `bash -c "rm x"`, `eval`), in a script file the command runs, or by another language
 (`python -c 'os.remove(…)'`). `unlink` and `rmdir` are not gated (`rmdir` removes only an empty directory). A heredoc
 whose delimiter is not on a line of its own takes the rest of the command as its body, as bash does: at worst an extra
-backup or a refusal, never a missed `rm` in real command text. The environment is the HOOK's, not the shell's after
+backup or a refusal, never a missed `rm` in real command text. A command NAME from an unknown variable (`$X v`) is
+not seen. Containment in an exempt place is judged on the ENTRY `rm` removes (its last link not followed). The environment is the HOOK's, not the shell's after
 earlier commands ran (a `source` is not followed).
 
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED (allowed,
 said on stderr). `--self-test` 0 = every case passed, 1 = a case failed.
 
-    python3 scripts/check-rm-backup.py --self-test  # 64 cases
+    python3 scripts/check-rm-backup.py --self-test  # 83 cases
 """
 from __future__ import annotations
 
@@ -68,6 +74,19 @@ KEEP_DAYS = 14
 SEPARATORS = {";", "&", "&&", "|", "||", "|&", "(", ")", "\n", ";;"}
 KEYWORDS = {"then", "do", "else", "elif", "{", "}", "!", "if", "while", "until"}
 LOOK_THROUGH = {"sudo", "command", "env", "nice", "time", "nohup", "exec"}
+# commands that never run their arguments: a later word `rm` is data to them. Every OTHER command is read as a
+# possible runner (`timeout 5 rm x`, `sudo -u root rm x`): a later standalone `rm` word starts an `rm` call. Too
+# wide costs an extra backup; too narrow would miss a deletion (r1 R1-6 and the push-time review).
+NOT_RUNNERS = {"echo", "printf", "grep", "egrep", "fgrep", "rg", "git", "gh", "man", "which", "type", "whatis",
+               "apropos", "help", "alias", "unalias", "hash", "cd", "pushd", "popd", "test", "[", "[[", "cat",
+               "ls", "head", "tail", "wc", "sort", "uniq", "diff", "sed", "awk", "jq", "tr", "cut", "less", "more",
+               "tee", "export", "declare", "local", "readonly", "unset", "set", "shift", "read", "return", "exit",
+               "true", "false", ":"}     # never `for`/`case`/`function`: their bodies run (push-time review)
+# `rm` as a word in text the lexer does not split into commands, after quote characters are dropped (`r\m`, `"r"m`)
+RM_WORD = re.compile(r"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_./-]*/)?rm(?![A-Za-z0-9_.-])")
+ANSI_ESCAPE = re.compile(r"\\(x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|[0-7]{1,3}|c.|.)", re.S)
+ANSI_SIMPLE = {"n": "\n", "t": "\t", "r": "\r", "a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f",
+               "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
 REDIRECTS = {"<", ">", ">>", "<<", "<<<", ">&", "<&", "&>", "&>>", ">|"}
 WORD_START = " \t\r\n;&|()<>"     # a `#` after one of these opens a comment
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
@@ -88,6 +107,112 @@ class Refuse(Exception):
     """The `rm` must not run: its targets cannot be seen or backed up."""
 
 
+def _subst_end(text: str, j: int) -> int:
+    """The index just past the `)` closing a `$(` whose body starts at `j`; its quotes are its own. Unclosed: the end."""
+    depth, quote, n = 1, None, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\" and quote != "'":
+            j += 2
+            continue
+        if quote:
+            quote = None if c == quote else quote
+        elif c in "'\"":
+            quote = c
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return n
+
+
+def substitutions(text: str) -> list[str]:
+    """The body of every `$(…)` and backtick substitution in `text`, read as bash reads one in double quotes."""
+    bodies, i, n = [], 0, len(text)
+    while i < n:
+        if text[i] == "\\":
+            i += 2
+        elif text.startswith("$(", i):
+            j = _subst_end(text, i + 2)
+            bodies.append(text[i + 2:j - 1] if text[j - 1:j] == ")" else text[i + 2:])
+            i = j
+        elif text[i] == "`":
+            j = i + 1
+            while j < n and text[j] != "`":
+                j += 2 if text[j] == "\\" else 1
+            bodies.append(text[i + 1:j])
+            i = j + 1
+        else:
+            i += 1
+    return bodies
+
+
+def runs_rm(text: str) -> bool:
+    """A substitution body holds an `rm` call, read by `rm_calls` itself (push-time review: a word search is
+    defeated by `r$X`, and a quote inside the body ends no outer string). Unreadable counts as yes."""
+    try:
+        return bool(rm_calls(text, "/", {}))
+    except Refuse:
+        return True
+
+
+def mentions_rm(text: str) -> bool:
+    """`rm` appears as a word once quoting is dropped (`r\\m`, `"r"m`, `$'\\x72m'` all run `rm`)."""
+    try:
+        text = decode_ansi_c(text)
+    except Refuse:
+        return True
+    return bool(RM_WORD.search(re.sub(r"[\\'\"]", "", text))) or "$'" in text
+
+
+def decode_ansi_c(text: str) -> str:
+    """Every `$'…'` outside quotes replaced by the word bash makes of it, single-quoted (r1 push-time review)."""
+    out, i, n, quote = [], 0, len(text), None
+    while i < n:
+        c = text[i]
+        if quote:
+            if c == "\\" and quote == '"' and i + 1 < n:
+                out.append(text[i:i + 2])
+                i += 2
+                continue
+            quote = None if c == quote else quote
+            out.append(c)
+            i += 1
+        elif c == "\\" and i + 1 < n:
+            out.append(text[i:i + 2])
+            i += 2
+        elif c == "$" and text.startswith("$'", i):
+            j = i + 2
+            while j < n and text[j] != "'":
+                j += 2 if text[j] == "\\" else 1
+            if j >= n:
+                raise Refuse("an unterminated `$'…'` string cannot be read")
+            out.append(shlex.quote(ANSI_ESCAPE.sub(_ansi_char, text[i + 2:j])))
+            i = j + 1
+        elif c == "$" and text.startswith('$"', i):
+            i += 1          # `$"…"` is a translated string: without a catalogue it is `"…"`
+        else:
+            if c in "'\"":
+                quote = c
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def _ansi_char(m: re.Match) -> str:
+    s = m.group(1)
+    if s[0] in "xuU" and len(s) > 1:
+        return chr(int(s[1:], 16))
+    if s[0] in "01234567":
+        return chr(int(s, 8))
+    if s[0] == "c" and len(s) == 2:
+        return chr(ord(s[1]) & 31)
+    return ANSI_SIMPLE.get(s, "\\" + s)
+
+
 def strip_heredocs(command: str) -> str:
     """The command with every comment and every heredoc BODY removed, read the way bash reads them.
 
@@ -96,7 +221,7 @@ def strip_heredocs(command: str) -> str:
     of `<<<` (a here-string). A heredoc whose delimiter never comes takes the rest of the command as its body,
     as bash does, so nothing after it runs."""
     out, pending = [], []
-    i, n, quote = 0, len(command), None
+    i, n, quote, escaped = 0, len(command), None, -1
     while i < n:
         c = command[i]
         if quote == "'":
@@ -105,7 +230,15 @@ def strip_heredocs(command: str) -> str:
             i += 1
         elif c == "\\" and i + 1 < n:
             out.append(command[i:i + 2])
+            escaped = i + 1     # an escaped blank is part of a word: a `#` after it opens no comment (r1 R1-1)
             i += 2
+        elif quote == '"' and (command.startswith("$(", i) or c == "`"):
+            j = _subst_end(command, i + 2) if c == "$" else command.find("`", i + 1) + 1 or n
+            if runs_rm(command[i + 2:j - 1] if c == "$" else command[i + 1:j - 1]):
+                raise Refuse("a command substitution inside a double-quoted string runs an `rm` the hook does not "
+                             "back up")
+            out.append(command[i:j])
+            i = j
         elif quote == '"':
             quote = None if c == '"' else quote
             out.append(c)
@@ -114,12 +247,35 @@ def strip_heredocs(command: str) -> str:
             quote = c
             out.append(c)
             i += 1
-        elif c == "#" and (i == 0 or command[i - 1] in WORD_START):
+        elif c == "$" and command.startswith("$'", i):
+            j = i + 2       # `$'…'`: a backslash escapes its quote; decoded after the bodies are gone
+            while j < n and command[j] != "'":
+                j += 2 if command[j] == "\\" else 1
+            out.append(command[i:j + 1])
+            i = j + 1
+        elif c == "`":
+            j = i + 1
+            while j < n and command[j] != "`":
+                j += 2 if command[j] == "\\" else 1
+            if j >= n:
+                raise Refuse("an unterminated backtick substitution cannot be read")
+            out.append("$(" + command[i + 1:j] + ")")    # read it as the `$(…)` it is
+            i = j + 1
+        elif command.startswith("((", i) or command.startswith("$[", i):
+            close, depth, j = ("]", 0, i + 1) if c == "$" else (")", 0, i)
+            while j < n:     # arithmetic: its `<<` is a shift, never a heredoc (r1 Claude probe); copied whole
+                depth += command[j] in "([" and 1 or (command[j] == close and -1) or 0
+                j += 1
+                if depth == 0:
+                    break
+            out.append(command[i:j])
+            i = j
+        elif c == "#" and (i == 0 or (command[i - 1] in WORD_START and i - 1 != escaped)):
             nl = command.find("\n", i)
             i = n if nl < 0 else nl
         elif (command.startswith("<<", i) and (i == 0 or command[i - 1] != "<")    # `<<<` is a here-string
               and (m := HEREDOC.match(command, i))):
-            pending.append((m.group(0).startswith("<<-"), m.group(2)))
+            pending.append((m.group(0).startswith("<<-"), m.group(2), bool(m.group(1))))
             out.append(m.group(0))
             i = m.end()
         elif c == "\n" and pending:
@@ -129,9 +285,12 @@ def strip_heredocs(command: str) -> str:
                 nl = command.find("\n", i)
                 line = command[i:] if nl < 0 else command[i:nl]
                 i = n if nl < 0 else nl + 1
-                strip, word = pending[0]
+                strip, word, literal = pending[0]
                 if (line.lstrip("\t") if strip else line) == word:
                     pending.pop(0)
+                elif not literal and any(runs_rm(b) for b in substitutions(line)):
+                    raise Refuse("an unquoted heredoc body runs a command substitution with an `rm` the hook does "
+                                 "not read; quote the delimiter (`<<'EOF'`)")
             if not pending and i <= n and i > 0 and command[i - 1] == "\n":
                 i -= 1      # the newline that ends the delimiter line separates commands: keep it
         else:
@@ -142,7 +301,7 @@ def strip_heredocs(command: str) -> str:
 
 def words(command: str) -> list[str]:
     """Shell words and operators; a newline is its own operator."""
-    lex = shlex.shlex(strip_heredocs(command), posix=True, punctuation_chars=";&|()<>\n")
+    lex = shlex.shlex(decode_ansi_c(strip_heredocs(command)), posix=True, punctuation_chars=";&|()<>\n")
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
     lex.commenters = ""     # comments are removed by `strip_heredocs`, which knows where a word starts
@@ -166,13 +325,17 @@ def expand(word: str, env: dict[str, str | None]) -> str:
         raise Refuse(f"the target `{word}` is built by a command substitution")
     word = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*):[?-][^}]*\}", r"${\1}", word)   # `${S:?}` names S
     word = word.replace("$$", "*")    # the shell's pid: a glob over every pid backs up a superset
-    if "{" in word and "," in word and "${" not in word:
+    if re.search(r"(?<!\$)\{[^}]*(,|\.\.)[^}]*\}", word):     # `{a,b}` and the range `{1..3}` (r1 Claude probe)
         raise Refuse(f"the target `{word}` is a brace list")
 
     fresh = re.match(r"^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))(/(.*))?$", word)
     if fresh and env.get(fresh.group(1) or fresh.group(2)) == FRESH:
-        if ".." in (fresh.group(4) or "").split("/"):
+        rest = fresh.group(4) or ""
+        if ".." in rest.split("/"):
             raise Refuse(f"the target `{word}` climbs out of a directory `mktemp` made")
+        if "/" in rest or (rest and word.endswith("/")):
+            raise Refuse(f"the target `{word}` reaches below a directory `mktemp` made, through entries the hook "
+                         f"cannot see (a symlink there leads anywhere); delete the directory itself")
         return FRESH
 
     def sub(m: re.Match) -> str:
@@ -200,6 +363,7 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
     env: dict[str, str | None] = dict(environ)
     here: str | None = cwd
     depth = 0
+    assigned_at: dict[str, int] = {}
     calls = []
     i, n = 0, len(toks)
     prev_sep = None
@@ -225,10 +389,26 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
                 k += 1
         args = cmd[k:]
         name = args[0].lstrip("\\") if args else ""
+        if "$" in name:
+            try:
+                name = expand(name, env)       # `X=rm; $X victim`
+            except Refuse:
+                pass                           # a command name the hook cannot see: a stated BOUND
+        if name and os.path.basename(name) != "rm" and name not in NOT_RUNNERS and os.path.basename(name) not in ("xargs", "find"):
+            for a in range(1, len(args)):
+                w = args[a].lstrip("\\")
+                if os.path.basename(w) == "rm" and args[a - 1] not in REDIRECTS:
+                    args, name = args[a:], w   # `timeout 5 rm x`, `sudo -u root rm x`
+                    break
         if not args:
             for var, val in assigns:     # a bare assignment sets a shell variable
                 if val == "$" and sep_after == "(" and j + 1 < n and toks[j + 1] == "mktemp":
                     env[var] = FRESH     # `T=$(mktemp …)`: a path this command creates, holding nothing older
+                    continue
+                if depth > 0:
+                    assigned_at[var] = depth     # forgotten when its subshell closes (push-time review S3)
+                if prev_sep in ("|", "|&", "&") or sep_after in ("|", "|&", "&"):
+                    env[var] = None              # a pipeline or background part runs in a subshell of its own
                     continue
                 try:
                     env[var] = expand(val, env) if val else ""
@@ -250,13 +430,20 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
                     targets.append(w)
                 a += 1
             calls.append(([expand(t, env) for t in targets], here))
-        elif name == "xargs" and any(os.path.basename(w) == "rm" for w in args[1:]):
+        elif (base := os.path.basename(name)) == "xargs" and any(os.path.basename(w.lstrip("\\")) == "rm" for w in args[1:]):
             raise Refuse("`xargs rm` deletes targets the hook cannot see")
-        elif name == "find" and any(w == "-delete" for w in args) or (
-                name == "find" and any(w in ("-exec", "-execdir", "-ok") and a + 1 < len(args)
-                                       and os.path.basename(args[a + 1]) == "rm" for a, w in enumerate(args))):
+        elif base == "find" and ("-delete" in args or (
+                {"-exec", "-execdir", "-ok", "-okdir"} & set(args)       # `-exec sudo rm {}` is an `-exec rm`
+                and any(os.path.basename(w.lstrip("\\")) == "rm" for w in args[1:]))):
             starts = []
-            for w in args[1:]:
+            lead = 1
+            while lead < len(args) and re.fullmatch(r"-[HLPEXdsxf]+", args[lead]):
+                if set(args[lead]) & {"L", "f"}:
+                    raise Refuse("`find -L` / `-f` reaches targets the hook cannot see")
+                lead += 1
+            if "-follow" in args:
+                raise Refuse("`find -follow` reaches targets the hook cannot see")
+            for w in args[lead:]:
                 if w.startswith("-") or w in ("(", "!"):
                     break
                 starts.append(w)
@@ -288,14 +475,25 @@ def rm_calls(command: str, cwd: str, environ: dict[str, str]) -> list[tuple[list
             depth += 1        # a `cd` inside a subshell makes the cwd UNKNOWN (conservative: it may not leak out)
         elif sep_after == ")":
             depth = max(0, depth - 1)
+            for var in [v for v, d in assigned_at.items() if d > depth]:
+                env[var] = None                  # bash's outer value is not the one the subshell set
+                del assigned_at[var]
         prev_sep = sep_after
         i = j + 1
     return calls
 
 
+def _entry(path: str) -> str:
+    """The directory entry `rm` removes: its parent resolved, its own last name NOT followed (r1 R1-4)."""
+    head, tail = os.path.split(path.rstrip("/") or "/")     # never `normpath`: `link/..` is not `.` to the kernel
+    if tail in ("", ".", ".."):
+        return os.path.realpath(path)
+    return os.path.join(os.path.realpath(head or "."), tail)
+
+
 def _inside(path: str, root: str) -> bool:
     try:
-        return os.path.commonpath([os.path.realpath(path), os.path.realpath(root)]) == os.path.realpath(root)
+        return os.path.commonpath([_entry(path), os.path.realpath(root)]) == os.path.realpath(root)
     except ValueError:
         return False
 
@@ -325,7 +523,7 @@ def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
     command = ti.get("command")
     if not isinstance(command, str):
         raise Unreadable("`command` is not a string")
-    if not re.search(r"(^|[^A-Za-z0-9_-])rm($|[^A-Za-z0-9_-])", command) and "-delete" not in command:
+    if not mentions_rm(command) and "-delete" not in command and "$" not in command:   # `r$X` builds a name
         return []
     cwd = payload.get("cwd")
     if not isinstance(cwd, str) or not os.path.isabs(cwd):
@@ -340,7 +538,7 @@ def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
                     continue
                 base = t if os.path.isabs(t) else (os.path.join(here, t) if here not in (None, FRESH) else None)
                 if base is None or not (_inside(base, root) or (
-                        session and f"/{session}/scratchpad/" in os.path.realpath(base) + "/")):
+                        session and f"/{session}/scratchpad/" in _entry(base) + "/")):
                     raise Refuse("`find -delete` / `-exec rm` outside the session scratchpad deletes targets the "
                                  "hook cannot see")
             continue
@@ -350,17 +548,23 @@ def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
             if not os.path.isabs(t) and here == FRESH:
                 if ".." in t.split("/"):
                     raise Refuse(f"the relative target `{t}` climbs out of a directory `mktemp` made")
+                if "/" in t:
+                    raise Refuse(f"the relative target `{t}` reaches below a directory `mktemp` made, through "
+                                 f"entries the hook cannot see")
                 continue
             if not os.path.isabs(t):
                 if here is None:
                     raise Refuse(f"the relative target `{t}` follows a `cd` the hook cannot follow")
                 t = os.path.join(here, t)
-            matches = glob.glob(t) if any(c in t for c in "*?[") else [t]
-            for m in matches:
-                m = os.path.normpath(m)
+            matches = (glob.glob(t) if any(c in t for c in "*?[") else []) + [t]   # the lexer drops quotes: a
+            for m in dict.fromkeys(matches):     # quoted `'a[1].txt'` is a literal name, so read it both ways
+                follow = m.endswith("/")         # `rm -r link/` deletes what the link points at, on macOS
+                m = _entry(m)                    # the parent RESOLVED, so `lnk/../x` is where the kernel finds it
                 if not os.path.lexists(m):
                     continue
-                if _inside(m, root) or (session and f"/{session}/scratchpad/" in os.path.realpath(m) + "/"):
+                if follow and os.path.islink(m):
+                    m = os.path.realpath(m)
+                if _inside(m, root) or (session and f"/{session}/scratchpad/" in _entry(m) + "/"):
                     continue
                 out.append(m)
     total, count = 0, 0
@@ -402,8 +606,13 @@ def back_up(paths: list[str], payload: dict, root: str, now: _dt.datetime) -> li
 def prune(root: str, now: _dt.datetime) -> None:
     """Remove stamp directories older than KEEP_DAYS (they were backups made by this hook)."""
     cutoff = (now - _dt.timedelta(days=KEEP_DAYS)).strftime("%Y%m%d-%H%M%S")
-    for sess in glob.glob(os.path.join(root, "*", "")):
+    real_root = os.path.realpath(root)
+    for sess in glob.glob(os.path.join(root, "*")):
+        if os.path.islink(sess) or not os.path.isdir(sess):
+            continue                    # a link here leads out of the root (r1 R1-5)
         for stamp in glob.glob(os.path.join(sess, "[0-9]" * 8 + "-*")):
+            if os.path.islink(stamp) or os.path.dirname(os.path.dirname(os.path.realpath(stamp))) != real_root:
+                continue
             if os.path.basename(stamp)[:15] < cutoff:
                 shutil.rmtree(stamp, ignore_errors=True)
 
@@ -544,11 +753,50 @@ def _self_test_body() -> int:
         case("a command after a heredoc is still read",
              targets("cat > m.txt <<EOF\nhello\nEOF\nrm a.tmp"), ["repo/sub/a.tmp"])
         case("a comment is not a command", targets("echo hi  # then rm a.tmp"), [])
+        case("an escaped blank ends no word: `\\ #` opens no comment (r1 R1-1)",
+             targets("echo foo\\ #; rm a.tmp"), ["repo/sub/a.tmp"])
+        case("an unquoted heredoc's command substitution with `rm` is refused; a quoted one is data (r1 R1-2)",
+             [targets("cat <<EOF\n$(rm a.tmp)\nEOF"), targets("cat <<'EOF'\n$(rm a.tmp)\nEOF")],
+             ["refused", []])
+        case("`rm` inside a double-quoted substitution is refused; a backtick one is read (r1)",
+             [targets('echo "$(rm a.tmp)"'), targets("echo `rm a.tmp`")], ["refused", ["repo/sub/a.tmp"]])
+        case("a wrapper's option values do not hide `rm` (r1 R1-6, push-time S1)",
+             targets("sudo -u root rm a.tmp; timeout 5 rm b.txt; nice -n 5 rm ../x.tmp"),
+             ["repo/sub/a.tmp", "repo/sub/b.txt", "repo/x.tmp"])
+        case("a quote inside a substitution ends no outer string; `r$X` inside one is parsed, not grepped",
+             [targets('echo "$(echo "x"; rm a.tmp)"'), targets('echo "$(X=m; r$X a.tmp)"'),
+              targets('echo "$(git log --oneline | grep rm)"'), targets("cat <<EOF\n$(date) rm\nEOF")],
+             ["refused", "refused", [], []])
+        case("`function f { rm x; }` and `find -LH` are seen",
+             [targets("function f { rm a.tmp; }"), targets(f"find -LH {scratch} -delete"), targets(f"find -H {scratch} -delete")],
+             [["repo/sub/a.tmp"], "refused", []])
+        case("`rm` as data to a command that never runs it is not a call", targets("echo rm b.txt; git rm a.tmp"), [])
+        case("ANSI-C `$'…'` and quote tricks spell `rm` and are seen (push-time S2)",
+             targets("$'rm' a.tmp; $'\\x72m' b.txt; r\\m ../x.tmp"), ["repo/sub/a.tmp", "repo/sub/b.txt", "repo/x.tmp"])
+        case("a command name from a known variable is expanded", targets("X=rm; $X a.tmp"), ["repo/sub/a.tmp"])
+        case("a path BELOW a mktemp directory's entries is refused; the directory and its entries are not (r1 R1-3)",
+             [targets("T=$(mktemp -d); rm -rf $T/out/v"), targets("T=$(mktemp -d); rm -rf $T/out/"),
+              targets("T=$(mktemp -d); rm -rf $T $T/out")], ["refused", "refused", []])
+        case("a variable set in a subshell or a pipeline part is not the outer one (push-time S3)",
+             [targets("( X=a.tmp ); rm $X"), targets("X=a.tmp | true; rm $X"), targets("( X=a.tmp; rm $X )")],
+             ["refused", "refused", ["repo/sub/a.tmp"]])
+        case("`find -L` is refused; `find -H dir -delete` still reads its start path",
+             [targets("find -L . -delete"), targets("find -H dir -delete")], ["refused", "refused"])
         case("a `#` inside a word opens no comment (the 11-20 security review)",
              targets("echo a#b; rm a.tmp"), ["repo/sub/a.tmp"])
         case("`<<<` and a quoted `<<` open no heredoc (the 11-20 security review)",
              [targets("cat <<<EOF\nrm a.tmp\nEOF"), targets('echo "<<EOF"\nrm b.txt\nEOF')],
              [["repo/sub/a.tmp"], ["repo/sub/b.txt"]])
+        os.symlink(os.path.join(work, "dir"), os.path.join(work, "into-root"))
+        case("a link OUTSIDE the backup root to a path inside it is backed up as the link (r1 R1-4)",
+             sorted(plan(pay("rm into-root"), env, os.path.join(work, "dir"))), [os.path.join(work, "into-root")])
+        case("`rm -r link/` backs up what the link points at (macOS follows it)",
+             sorted(os.path.relpath(p, tmp) for p in plan(pay("rm -r into-root/"), env, root)), ["repo/sub/dir"])
+        os.remove(os.path.join(work, "into-root"))
+        os.symlink(os.path.join(work, "dir", "inner"), os.path.join(work, "lnk"))
+        case("`lnk/../x` is found where the kernel finds it, past the link, not lexically",
+             sorted(os.path.relpath(p, tmp) for p in plan(pay("rm lnk/../inner/c"), env, root)), ["repo/sub/dir/inner/c"])
+        os.remove(os.path.join(work, "lnk"))
         case("a target inside the backup root needs no backup",
              sorted(plan(pay("rm -r dir/inner"), env, os.path.join(work, "dir"))), [])
         case("a non-Bash tool is allowed without reading",
@@ -557,7 +805,8 @@ def _self_test_body() -> int:
         # ── what is refused: the targets cannot be seen
         case("a command substitution target is refused", targets("rm $(cat list)"), "refused")
         case("an unknown variable is refused", targets("rm $NOPE/a.tmp"), "refused")
-        case("a brace list is refused", targets("rm {a.tmp,b.txt}"), "refused")
+        case("a brace list and a brace range are refused", [targets("rm {a.tmp,b.txt}"), targets("rm f{1..3}")],
+             ["refused", "refused"])
         case("a directory `mktemp` made in the same command needs no backup (the 11-20 replay's commonest shape)",
              [targets('T=$(mktemp -d); cp a.tmp "$T/"; rm -rf "$T"'), targets("D=$(mktemp -d) && rm -f $D/x ${D}")],
              [[], []])
@@ -570,6 +819,16 @@ def _self_test_body() -> int:
         case("a variable from a substitution other than `mktemp` is refused", targets("T=$(ls -d x*); rm -f $T"),
              "refused")
         case("`xargs rm` is refused", targets("ls | xargs rm"), "refused")
+        case("`/usr/bin/xargs rm`, `/usr/bin/find -delete` and `-exec sudo rm` are refused (r1 Claude probe)",
+             [targets("/usr/bin/xargs rm < list"), targets("/usr/bin/find . -delete"),
+              targets("find . -exec sudo rm {} \\;")], ["refused", "refused", "refused"])
+        case("arithmetic `<<` is a shift, not a heredoc: the `rm` after it is seen (r1 Claude probe)",
+             [targets("x=1; y=2; echo $((x<<y))\nrm a.tmp"), targets("(( z = x << y ))\nrm a.tmp"),
+              targets("echo $[x<<y]\nrm a.tmp")], [["repo/sub/a.tmp"]] * 3)
+        Path(work, "a[1].txt").write_text("L")
+        case("a quoted `a[1].txt` is backed up as the name it is, not only as a pattern (r1 Claude probe)",
+             targets("rm 'a[1].txt'"), ["repo/sub/a[1].txt"])
+        os.remove(os.path.join(work, "a[1].txt"))
         case("`find -delete` under this session's scratchpad needs no backup",
              targets(f"find {scratch} -name '*.txt' -delete"), [])
         case("`${S:?}` names S, and `$$` backs up every pid's file",
@@ -608,12 +867,16 @@ def _self_test_body() -> int:
         unreadable = os.path.join(work, "locked")
         os.makedirs(os.path.join(unreadable, "in"))
         Path(unreadable, "in", "f").write_text("F")
-        os.chmod(os.path.join(unreadable, "in"), 0)
+
+        def broken_copytree(*a, **k):
+            raise OSError("injected copy failure")
+        real_copytree, shutil.copytree = shutil.copytree, broken_copytree
         try:
             r = decide(pay("rm -rf locked"), env, root, now + _dt.timedelta(seconds=1))
         finally:
-            os.chmod(os.path.join(unreadable, "in"), 0o755)
-        case("a copy that fails refuses the `rm`", (r or "").startswith("⛔ REFUSED"), os.geteuid() != 0)
+            shutil.copytree = real_copytree
+        case("a copy that fails refuses the `rm`", ((r or "").startswith("⛔ REFUSED"), "injected" in (r or "")),
+             (True, True))
 
         # ── the size cap
         global MAX_FILES
@@ -631,7 +894,12 @@ def _self_test_body() -> int:
         prune(os.path.join(tmp, "no-such-root"), now)
         case("prune of a root that does not exist yet is a no-op", os.path.exists(os.path.join(tmp, "no-such-root")),
              False)
+        outside = os.path.join(tmp, "outside", "20200101-000000-000000")
+        os.makedirs(outside)
+        os.symlink(os.path.join(tmp, "outside"), os.path.join(root, "linked-session"))
         prune(root, now)
+        case("prune never follows a session link out of the root (r1 R1-5)", os.path.exists(outside), True)
+        os.remove(os.path.join(root, "linked-session"))
         case("prune removes a stamp older than KEEP_DAYS and keeps today's",
              (os.path.exists(old), os.path.exists(stamp)), (False, True))
 

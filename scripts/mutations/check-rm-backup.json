@@ -4,7 +4,7 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "if _inside(m, root) or (session and f\"/{session}/scratchpad/\" in os.path.realpath(m) + \"/\"):",
+        "if _inside(m, root) or (session and f\"/{session}/scratchpad/\" in _entry(m) + \"/\"):",
         "if _inside(m, root):"
       ]
     ],
@@ -30,7 +30,7 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "pending.append((m.group(0).startswith(\"<<-\"), m.group(2)))",
+        "pending.append((m.group(0).startswith(\"<<-\"), m.group(2), bool(m.group(1))))",
         "pass"
       ]
     ],
@@ -95,7 +95,7 @@
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "elif c == \"#\" and (i == 0 or command[i - 1] in WORD_START):",
+        "elif c == \"#\" and (i == 0 or (command[i - 1] in WORD_START and i - 1 != escaped)):",
         "elif c == \"#\":"
       ]
     ],
@@ -114,6 +114,231 @@
     ],
     "expect": [
       "`<<<` and a quoted `<<` open no heredoc (the 11-20 security review)"
+    ]
+  },
+  {
+    "name": "an escaped blank ends a word",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "escaped = i + 1     #",
+        "escaped = -1     #"
+      ]
+    ],
+    "expect": [
+      "an escaped blank ends no word: `\\ #` opens no comment (r1 R1-1)"
+    ]
+  },
+  {
+    "name": "an unquoted heredoc's substitution is not read",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "elif not literal and any(runs_rm(b) for b in substitutions(line)):",
+        "elif False:"
+      ]
+    ],
+    "expect": [
+      "an unquoted heredoc's command substitution with `rm` is refused; a quoted one is data (r1 R1-2)"
+    ]
+  },
+  {
+    "name": "a mktemp directory's deeper entries are exempt",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if \"/\" in rest or (rest and word.endswith(\"/\")):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "a path BELOW a mktemp directory's entries is refused; the directory and its entries are not (r1 R1-3)"
+    ]
+  },
+  {
+    "name": "a wrapper's later `rm` is not looked for",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "args, name = args[a:], w   #",
+        "pass   #"
+      ]
+    ],
+    "expect": [
+      "a wrapper's option values do not hide `rm` (r1 R1-6, push-time S1)"
+    ]
+  },
+  {
+    "name": "ANSI-C quoting is not decoded",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "lex = shlex.shlex(decode_ansi_c(strip_heredocs(command)), posix=True",
+        "lex = shlex.shlex(strip_heredocs(command), posix=True"
+      ]
+    ],
+    "expect": [
+      "ANSI-C `$'…'` and quote tricks spell `rm` and are seen (push-time S2)"
+    ]
+  },
+  {
+    "name": "a subshell's assignment outlives it",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                env[var] = None                  # bash's outer value",
+        "                pass                  # bash's outer value"
+      ]
+    ],
+    "expect": [
+      "a variable set in a subshell or a pipeline part is not the outer one (push-time S3)"
+    ]
+  },
+  {
+    "name": "containment follows the entry's own link",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "return os.path.join(os.path.realpath(head or \".\"), tail)",
+        "return os.path.realpath(path)"
+      ]
+    ],
+    "expect": [
+      "a link OUTSIDE the backup root to a path inside it is backed up as the link (r1 R1-4)"
+    ]
+  },
+  {
+    "name": "prune follows a session link",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "if os.path.islink(sess) or not os.path.isdir(sess):",
+        "if not os.path.isdir(sess):"
+      ],
+      [
+        "if os.path.islink(stamp) or os.path.dirname(os.path.dirname(os.path.realpath(stamp))) != real_root:",
+        "if os.path.islink(stamp):"
+      ]
+    ],
+    "expect": [
+      "prune never follows a session link out of the root (r1 R1-5)"
+    ]
+  },
+  {
+    "name": "a substitution in double quotes is not parsed",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "            if runs_rm(command[i + 2:j - 1] if c == \"$\" else command[i + 1:j - 1]):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "a quote inside a substitution ends no outer string; `r$X` inside one is parsed, not grepped"
+    ]
+  },
+  {
+    "name": "combined find flags are not split",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                if set(args[lead]) & {\"L\", \"f\"}:",
+        "                if args[lead] in (\"-L\", \"-f\"):"
+      ]
+    ],
+    "expect": [
+      "`function f { rm x; }` and `find -LH` are seen"
+    ]
+  },
+  {
+    "name": "the prefilter skips a command whose name a variable builds",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "and \"-delete\" not in command and \"$\" not in command:",
+        "and \"-delete\" not in command:"
+      ]
+    ],
+    "expect": [
+      "a quote inside a substitution ends no outer string; `r$X` inside one is parsed, not grepped"
+    ]
+  },
+  {
+    "name": "a target's `..` is collapsed lexically",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                m = _entry(m)                    # the parent RESOLVED",
+        "                m = os.path.normpath(m)                    # the parent RESOLVED"
+      ]
+    ],
+    "expect": [
+      "`lnk/../x` is found where the kernel finds it, past the link, not lexically"
+    ]
+  },
+  {
+    "name": "arithmetic is not skipped: its `<<` opens a heredoc",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "        elif command.startswith(\"((\", i) or command.startswith(\"$[\", i):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "arithmetic `<<` is a shift, not a heredoc: the `rm` after it is seen (r1 Claude probe)"
+    ]
+  },
+  {
+    "name": "a brace range is not refused",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(,|\\.\\.)[^}]*\\}\", word):",
+        "(,)[^}]*\\}\", word):"
+      ]
+    ],
+    "expect": [
+      "a brace list and a brace range are refused"
+    ]
+  },
+  {
+    "name": "a pattern is read only as a pattern",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "else []) + [t]   # the lexer",
+        "else [t])   # the lexer"
+      ]
+    ],
+    "expect": [
+      "a quoted `a[1].txt` is backed up as the name it is, not only as a pattern (r1 Claude probe)"
+    ]
+  },
+  {
+    "name": "`-exec` counts only an `rm` right after it",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "                and any(os.path.basename(w.lstrip(\"\\\\\")) == \"rm\" for w in args[1:]))):",
+        "                and any(a + 1 < len(args) and args[a] in (\"-exec\", \"-execdir\", \"-ok\") and args[a + 1] == \"rm\" for a in range(len(args))))):"
+      ]
+    ],
+    "expect": [
+      "`/usr/bin/xargs rm`, `/usr/bin/find -delete` and `-exec sudo rm` are refused (r1 Claude probe)"
+    ]
+  },
+  {
+    "name": "a path to xargs is not xargs",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "(base := os.path.basename(name)) == \"xargs\"",
+        "(base := name) == \"xargs\""
+      ]
+    ],
+    "expect": [
+      "`/usr/bin/xargs rm`, `/usr/bin/find -delete` and `-exec sudo rm` are refused (r1 Claude probe)"
     ]
   }
 ]

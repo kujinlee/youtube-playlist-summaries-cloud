@@ -21173,6 +21173,6 @@ of asking for approval). Temp files in the session scratchpad need none. An `rm`
 out is refused with a message saying how to write it so it can be backed up.
 <!--tech-->
 Backlog #685, PR #608: `scripts/check-rm-backup.py` + `.claude/hooks/rm-backup.sh` (PreToolUse Bash). Copies to
-`~/.claude/rm-backups/<session>/<stamp>/`, logged in `log.jsonl`, pruned after 14 days. Self-test 64/64; 9 mutations,
-9 killed by their named case. Transcript replay: 17,778 Bash calls, 268 `rm`s seen, 19 refused (loop variables and
-run-time values). A `#` mid-word and a `<<<`/quoted `<<` no longer hide an `rm` (11-20 security review). Bounds: an `rm` inside a quoted string, `bash -c`, `eval` or another language is not seen.
+`~/.claude/rm-backups/<session>/<stamp>/`, logged in `log.jsonl`, pruned after 14 days. Self-test 83/83; 26 mutations,
+26 killed by their named case. Transcript replay: 17,974 Bash calls, 271 `rm`s seen, 20 refused (loop variables and
+run-time values). Round 1 (Codex + probes salvaged from the stopped Claude reviewer) found 21 holes; all fixed. A `#` mid-word and a `<<<`/quoted `<<` no longer hide an `rm` (11-20 security review). Bounds: an `rm` inside a quoted string, `bash -c`, `eval` or another language is not seen.
