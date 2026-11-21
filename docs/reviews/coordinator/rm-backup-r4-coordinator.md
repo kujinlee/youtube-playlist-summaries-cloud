@@ -28,6 +28,7 @@ findings:
   - {id: S26, severity: Medium, aim: deliverable, fix_induced: true, component: variables, disposition: filed}
   - {id: S27, severity: Medium, aim: deliverable, fix_induced: true, component: variables, disposition: filed}
   - {id: S28, severity: Medium, aim: deliverable, fix_induced: false, component: variables, disposition: filed}
+  - {id: S29, severity: Medium, aim: deliverable, fix_induced: true, component: glob, disposition: fixed}
 ```
 
 **Round 4 is the round cap** (`review-method.md` §0 Q4c): findings are FILED unless a BLOCKER. All non-BLOCKERs
@@ -38,6 +39,13 @@ hook backed up `keep` (the one file bash keeps) and missed the rest; `[[:digit:]
 backed up. Fix: `[^` is rewritten to `[!` before globbing; a POSIX bracket class (`[[:x:]]`, `[[=x=]]`, `[[.x.]]`)
 is refused. Case: "a `[^k]` bracket is a negation as in bash; a `[[:digit:]]` class is refused (r4 R4-1)"; two
 mutations, one per half, each killed by it.
+
+**S29 — a push-time review of THIS fold (`8150f1cf`), fixed.** The first R4-1 fix read a bracket set with a regex
+that stopped at the first `]`, so `[][:digit:]]*` (a set opening with a literal `]`) slipped the refusal and was
+globbed: the hook backed up nothing, bash deleted `]` (probed). It also rewrote `[^` anywhere, not only where a set
+opens. Replaced by `bash_brackets`, a scanner reading each set as bash does (an optional `!`/`^`, then a leading `]`
+as a member, refused on `[:`/`[=`/`[.` inside); case "a bracket set is read as bash reads it …", checked against
+bash 3.2 (`[k^]*` → `keep`; `[!]^]*` → `a1 keep`); four mutations, each killed by the case it names.
 
 **The push-time findings on `0286e19b` (S26–S28), each probed by the coordinator** — the hook's `plan` on a real
 fixture, then bash on a copy:
@@ -57,9 +65,9 @@ the allowlist's shapes.
 composing a bypass; a BLOCKER here is a silent miss in a command someone types without trying to. `[^k]*` is that
 (an ordinary glob); `trap`, `$_`, `CDPATH=`, a redirect before `eval`, `r\`+newline+`m` are not.
 
-**Measured after the fold (scratch "fold r4", copied into this branch):** self-test 124/124; scoped mutation sweep
-94/94 killed, each by the case it names; replay over 18,296 past Bash calls: 184 `rm`s seen, 116 refused — 0 newly
-refused, 0 no longer refused against round 3.
+**Measured after the fold (scratch "fold r4", copied into this branch):** self-test 125/125; scoped mutation sweep
+96/96 killed, each by the case it names; replay over 18,332 past Bash calls: 185 `rm`s seen, 117 refused — 0 no longer refused against round 3, and the
+one newly refused is this round's own probe command (a new call, not a changed verdict).
 
 **Thrashing — not armed.** Round 4's findings are not caused by round 3's fold except S26/S27 (`variables`); round
 3's fold-induced findings (S23/S24) were also `variables`, caused by round 2's fold. That is two consecutive rounds

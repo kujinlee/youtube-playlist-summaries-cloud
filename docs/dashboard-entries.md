@@ -21173,8 +21173,8 @@ of asking for approval). Temp files in the session scratchpad need none. An `rm`
 out is refused with a message saying how to write it so it can be backed up.
 <!--tech-->
 Backlog #685, PR #608: `scripts/check-rm-backup.py` + `.claude/hooks/rm-backup.sh` (PreToolUse Bash). Copies to
-`~/.claude/rm-backups/<session>/<stamp>/`, logged in `log.jsonl`, pruned after 14 days. Self-test 124/124; 94 mutations,
-94 killed by their named case. Transcript replay: 18,296 Bash calls, 184 `rm`s seen, 116 refused (a `mktemp` dir
+`~/.claude/rm-backups/<session>/<stamp>/`, logged in `log.jsonl`, pruned after 14 days. Self-test 125/125; 96 mutations,
+96 killed by their named case. Transcript replay: 18,332 Bash calls, 185 `rm`s seen, 117 refused (a `mktemp` dir
 outside the scratchpad, loop variables, run-time values, and `cd` targets gone since). Round 4 (Claude, the round cap) found one BLOCKER, folded (`[^k]*` read as Python reads it; `[[:digit:]]` matched nothing),
 and 11 more plus three push-time holes, FILED as backlog #686. Round 3 (Codex) found two more
 variable setters (`let`, `IFS`) and a push-time security review two more (`eval`, `${X:=v}`); the setter list was

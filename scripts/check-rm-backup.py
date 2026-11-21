@@ -67,7 +67,7 @@ earlier commands ran (a `source` is not followed).
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED (allowed,
 said on stderr). `--self-test` 0 = every case passed, 1 = a case failed.
 
-    python3 scripts/check-rm-backup.py --self-test  # 124 cases
+    python3 scripts/check-rm-backup.py --self-test  # 125 cases
 """
 from __future__ import annotations
 
@@ -786,6 +786,30 @@ def _size(path: str) -> tuple[int, int]:
     return (total, count)
 
 
+def bash_brackets(t: str) -> str:
+    """A glob target with each bracket expression read as bash reads it (r4 R4-1 + its push-time review).
+
+    A set opens at `[`; a `!` or `^` right after it negates (Python's glob knows only `!`); a `]` right after
+    that is a member, not the end. Inside a set, `[:`, `[=` or `[.` opens a class Python's glob cannot expand,
+    so the target is refused. A `[` with no closing `]` is a literal character, in both."""
+    out, i = [], 0
+    while i < len(t):
+        if t[i] != "[":
+            out.append(t[i]); i += 1; continue
+        j = i + 1
+        neg = j < len(t) and t[j] in "!^"
+        j += neg
+        k = j + (j < len(t) and t[j] == "]")
+        while k < len(t) and t[k] != "]":
+            if t[k] == "[" and k + 1 < len(t) and t[k + 1] in ":=.":
+                raise Refuse(f"the target `{t}` uses a bracket class the hook cannot expand as bash does")
+            k += 1
+        if k >= len(t):                          # unclosed: a literal `[`
+            out.append(t[i]); i += 1; continue
+        out.append("[" + ("!" if neg else "") + t[j:k + 1]); i = k + 1
+    return "".join(out)
+
+
 def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
     """The absolute paths to back up; raises Refuse or Unreadable."""
     ti = payload.get("tool_input")
@@ -824,9 +848,7 @@ def plan(payload: dict, environ: dict[str, str], root: str) -> list[str]:
                 if here is None:
                     raise Refuse(f"the relative target `{t}` follows a `cd` the hook cannot follow")
                 t = os.path.join(here, t)
-            if re.search(r"\[[^]/]*\[[:=.]", t):    # r4 R4-1: Python's glob has no `[[:digit:]]` classes
-                raise Refuse(f"the target `{t}` uses a bracket class the hook cannot expand as bash does")
-            pat = t.replace("[^", "[!")          # r4 R4-1: bash reads `[^k]` as `[!k]`; Python as `^` or `k`
+            pat = bash_brackets(t)               # r4 R4-1: `[^k]` and `[[:digit:]]` as bash reads them
             matches = (glob.glob(pat) if any(c in t for c in "*?[") else []) + [t]   # the lexer drops quotes: a
             for m in dict.fromkeys(matches):     # quoted `'a[1].txt'` is a literal name, so read it both ways
                 follow = m.endswith("/")         # `rm -r link/` deletes what the link points at, on macOS
@@ -1102,6 +1124,9 @@ def _self_test_body() -> int:
         Path(work, "g", "keep").write_text("K")
         case("a `[^k]` bracket is a negation as in bash; a `[[:digit:]]` class is refused (r4 R4-1)",
              [targets("rm -f g/[^k]*"), targets("rm -f g/[[:alpha:]]*")], [["repo/sub/g/a1"], "refused"])
+        case("a bracket set is read as bash reads it: a leading `]` is a member, `^` later is literal (r4 push-time review)",
+             [targets("rm -f g/[][:alpha:]]*"), targets("rm -f g/[k^]*"), targets("rm -f g/[!]^]*")],
+             ["refused", ["repo/sub/g/keep"], ["repo/sub/g/a1", "repo/sub/g/keep"]])
         shutil.rmtree(os.path.join(work, "g"))
         case("a quoted `a[1].txt` is backed up as the name it is, not only as a pattern (r1 Claude probe)",
              targets("rm 'a[1].txt'"), ["repo/sub/a[1].txt"])

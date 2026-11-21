@@ -1200,12 +1200,12 @@
     ]
   },
   {
-    "name": "r4 R4-1: `[^` is read as Python reads it",
+    "name": "r4 R4-1: `^` does not negate",
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "pat = t.replace(\"[^\", \"[!\")",
-        "pat = t"
+        "neg = j < len(t) and t[j] in \"!^\"",
+        "neg = j < len(t) and t[j] in \"!\""
       ]
     ],
     "expect": [
@@ -1213,12 +1213,38 @@
     ]
   },
   {
-    "name": "r4 R4-1: a POSIX bracket class is globbed",
+    "name": "r4 R4-1: a POSIX class is globbed",
     "file": "scripts/check-rm-backup.py",
     "edits": [
       [
-        "if re.search(r\"\\[[^]/]*\\[[:=.]\", t):",
+        "if t[k] == \"[\" and k + 1 < len(t) and t[k + 1] in \":=.\":",
         "if False:"
+      ]
+    ],
+    "expect": [
+      "a `[^k]` bracket is a negation as in bash; a `[[:digit:]]` class is refused (r4 R4-1)"
+    ]
+  },
+  {
+    "name": "r4 push-time: a leading `]` closes the set",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "k = j + (j < len(t) and t[j] == \"]\")",
+        "k = j"
+      ]
+    ],
+    "expect": [
+      "a bracket set is read as bash reads it: a leading `]` is a member, `^` later is literal (r4 push-time review)"
+    ]
+  },
+  {
+    "name": "r4 push-time: brackets passed through raw",
+    "file": "scripts/check-rm-backup.py",
+    "edits": [
+      [
+        "pat = bash_brackets(t)",
+        "pat = (bash_brackets(t), t)[1]"
       ]
     ],
     "expect": [
