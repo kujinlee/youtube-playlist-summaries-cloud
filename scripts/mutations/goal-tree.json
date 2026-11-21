@@ -108,8 +108,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "re.search(rf\"\\(backlog #{n}\\)\", subj)",
-        "re.search(rf\"backlog #{n}\", subj)"
+        "re.search(rf\"\\(backlog #{n}\\)\", subj) for n in live_rows)), None)",
+        "re.search(rf\"backlog #{n}\", subj) for n in live_rows)), None)"
       ]
     ],
     "expect": [
@@ -6166,7 +6166,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if by_row and live_rows and not row_open and closed is not None:",
+        "        if by_cells:",
         "        if False:"
       ]
     ],
@@ -6361,12 +6361,168 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "(?<![\\d#-])",
-        "(?<![\\d-])"
+        ".#-])(?:",
+        ".-])(?:"
       ]
     ],
     "expect": [
       "backlog #612: wait_expired reads the LATEST date a wait names (YYYY-MM-DD or MM-DD), against today"
+    ]
+  },
+  {
+    "name": "r1 Codex X1: ANY closed row ticks a two-row step",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and closed is not None and not row_open\n",
+        "and closed is not None and len(row_open) < len(live_rows)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex X1: a step naming two rows is ✅ only when BOTH are ✅ — one closed and one open is ⬜, in either order and whichever is closed"
+    ]
+  },
+  {
+    "name": "r1 C1: the context PR is the first naming ANY live row, not an open one",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "subj) for n in row_open)), None)",
+        "subj) for n in live_rows)), None)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C1: the merged PR shown beside an OPEN row is one that named THAT row, and says which — a PR that named only a closed row is never attributed to the open one"
+    ]
+  },
+  {
+    "name": "r1 C1: the context line does not say which row the PR named",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "merged naming {_row_list(ctx[2])}\" if ctx",
+        "merged naming it\" if ctx"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C1: the merged PR shown beside an OPEN row is one that named THAT row, and says which — a PR that named only a closed row is never attributed to the open one"
+    ]
+  },
+  {
+    "name": "r1 C7: a failed git/gh read makes an all-✅ step CANNOT RUN",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    elif unread and not by_cells:",
+        "    elif unread:"
+      ]
+    ],
+    "expect": [
+      "r1 C7: a step whose rows are ALL ✅ reads ✅ by its Status cells when git or gh failed, and says the merge was not read; one with an open row still reads CANNOT RUN"
+    ]
+  },
+  {
+    "name": "r1 C7: an all-✅ step read with git/gh failed does not say the merge was not read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if unread:\n                detail += f\" · the merge was not read",
+        "            if False:\n                detail += f\" · the merge was not read"
+      ]
+    ],
+    "expect": [
+      "r1 C7: a step whose rows are ALL ✅ reads ✅ by its Status cells when git or gh failed, and says the merge was not read; one with an open row still reads CANNOT RUN"
+    ]
+  },
+  {
+    "name": "r1 C8: a row named twice is kept twice",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "list(dict.fromkeys(n for k, n in t[\"refs\"] if k == \"backlog\"))",
+        "[n for k, n in t[\"refs\"] if k == \"backlog\"]"
+      ]
+    ],
+    "expect": [
+      "r1 C8: a row a step names twice is said once"
+    ]
+  },
+  {
+    "name": "r1 C4: a letter before a date token is a boundary",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(?<![\\w.",
+        "(?<![\\d."
+      ]
+    ],
+    "expect": [
+      "r1 C4: a date token needs the text's start or a boundary before it — `3.11-06`, `v1.11-06`, `a11-06b` and `3a11-06` are not dates; `(11-06` and `Fri 11-06` are"
+    ]
+  },
+  {
+    "name": "r1 C4: a dot before a date token is a boundary",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\\w.#-])",
+        "\\w#-])"
+      ]
+    ],
+    "expect": [
+      "r1 C4: a date token needs the text's start or a boundary before it — `3.11-06`, `v1.11-06`, `a11-06b` and `3a11-06` are not dates; `(11-06` and `Fri 11-06` are"
+    ]
+  },
+  {
+    "name": "r1 C5: a yearless date may be read any distance ahead",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "cands = cands if y else [c for c in cands if (c - today).days <= WAIT_AHEAD_DAYS]",
+        "cands = cands"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 02-25 last February's; a written year is never moved (2027-05-20 is latest)"
+    ]
+  },
+  {
+    "name": "r1 C5: the ahead-window is the old ~six months",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "WAIT_AHEAD_DAYS = 92 ",
+        "WAIT_AHEAD_DAYS = 182 "
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 02-25 last February's; a written year is never moved (2027-05-20 is latest)"
+    ]
+  },
+  {
+    "name": "r1 C5: a yearless date takes the EARLIEST year in reach",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            dates.append(max(cands))",
+        "            dates.append(min(cands))"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 02-25 last February's; a written year is never moved (2027-05-20 is latest)"
+    ]
+  },
+  {
+    "name": "r1 C5: a written year is moved by the ahead-window too",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "cands = cands if y else [c for c in cands if",
+        "cands = [c for c in cands if"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's (expired), 02-10 next February's, 02-25 last February's; a written year is never moved (2027-05-20 is latest)"
     ]
   }
 ]

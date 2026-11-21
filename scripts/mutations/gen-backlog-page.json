@@ -938,5 +938,49 @@
       ]
     ],
     "expect": "unlaid_rows: a list does NOT excuse a wall of prose in front of it (row-cues r2 Codex M1)"
+  },
+  {
+    "name": "r1 C2: any ✅ in the Status cell closes the row",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return first == \"✅\" or sev == \"done\"",
+        "    return True"
+      ]
+    ],
+    "expect": "⭐ r1 C2: a ✅ AFTER an open marker in the Status cell is a finished half — open, unless the Item cell is ✅"
+  },
+  {
+    "name": "r1 C2: an Item cell led by ✅ does not keep a row closed",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "first == \"✅\" or sev == \"done\"",
+        "first == \"✅\" or False"
+      ]
+    ],
+    "expect": "⭐ r1 C2: a ✅ AFTER an open marker in the Status cell is a finished half — open, unless the Item cell is ✅"
+  },
+  {
+    "name": "r1 C2: ⏳ is not an open marker",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "OPEN_MARKS = \"🔴🟠🟡🟢⏳\"",
+        "OPEN_MARKS = \"🔴🟠🟡🟢\""
+      ]
+    ],
+    "expect": "⭐ r1 C2: a ✅ AFTER an open marker in the Status cell is a finished half — open, unless the Item cell is ✅"
+  },
+  {
+    "name": "r1 C2: the parser does not use the narrowed closed rule",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "closed=status_closed(status, sev)",
+        "closed=(\"✅\" in status)"
+      ]
+    ],
+    "expect": "r1 C2: the parser reads a PARTLY-DONE row (no Item marker, a finished half's ✅) as OPEN"
   }
 ]

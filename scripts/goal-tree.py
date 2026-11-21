@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 573 cases
+    python3 scripts/goal-tree.py --self-test                 # 579 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -466,16 +466,22 @@ def _row_list(rows) -> str:
     return ", ".join(f"backlog #{n}" for n in rows)
 
 
-# backlog #612: a date a free-text wait names — `2026-11-06` or `11-06` (the year read as the one nearest `now`)
-WAIT_DATE_RE = re.compile(r"(?<![\d#-])(?:(\d{4})-)?(\d{2})-(\d{2})(?![\d-])")
+# backlog #612: a date a free-text wait names — `2026-11-06` or `11-06` (the year read by `wait_expired`). r1 C4: it
+# starts the text or follows a non-word character other than `.`, `#` or `-`: `3.11-06`, `v1.11-06`, `a11-06b`,
+# `PR #10-30` are not dates
+WAIT_DATE_RE = re.compile(r"(?<![\w.#-])(?:(\d{4})-)?(\d{2})-(\d{2})(?![\d-])")
+WAIT_AHEAD_DAYS = 92     # r1 C5: a yearless `MM-DD` is read at most this many days AHEAD of today; further is last year's
 
 
 def wait_expired(text, now) -> "str | None":
     """PURE (backlog #612). The LATEST date a declared wait's text names, as `YYYY-MM-DD`, when that date is BEFORE
     `now`'s day; else None — a wait naming no date, naming one today or later, or judged with no readable `now`, is
-    not expired. A `MM-DD` takes the year that puts it nearest `now` (12-30 read on 01-03 is last year's). An
-    impossible date (13-45, 02-30) is not a date. ⚠ BOUND: the text is prose — a date it NARRATES ("parked 11-14")
-    reads the same as one it waits for, so the result is a FLAG to re-check, never a verdict that the wait is over."""
+    not expired. A `MM-DD` takes the LATEST year that puts it no more than WAIT_AHEAD_DAYS after `now`'s day (r1 C5:
+    12-30 read on 01-03 is last year's; 01-05 read on 12-30 is next year's; 05-20 read on 11-20 is THIS year's, so
+    expired — "nearest" read it as next May and never flagged it). An impossible date (13-45, 02-30) is not a date,
+    and a 02-29 with no leap year in reach reads as no date. ⚠ BOUND: the text is prose — a date it NARRATES ("parked
+    11-14") reads the same as one it waits for, so the result is a FLAG to re-check, never a verdict that the wait is
+    over; and a yearless date over WAIT_AHEAD_DAYS ahead is misread as last year's, so it flags early."""
     if not isinstance(text, str) or not isinstance(now, str):
         return None
     try:
@@ -492,8 +498,9 @@ def wait_expired(text, now) -> "str | None":
                 cands.append(_dt.date(yr, mo, d))
             except ValueError:
                 pass
+        cands = cands if y else [c for c in cands if (c - today).days <= WAIT_AHEAD_DAYS]
         if cands:
-            dates.append(min(cands, key=lambda c: abs((c - today).days)))
+            dates.append(max(cands))
     latest = max(dates) if dates else None
     return latest.isoformat() if latest and latest < today else None
 
@@ -813,7 +820,7 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
     expiry. `by_row` — an AGENDA STEP's reading (backlog #515/#611): each live backlog row it names is done by its
     Status cell (`closed_rows`), never by a merged PR that names it; a tree leaf keeps the merge reading."""
     prs = [n for k, n in t["refs"] if k == "PR"]
-    rows = [n for k, n in t["refs"] if k == "backlog"]
+    rows = list(dict.fromkeys(n for k, n in t["refs"] if k == "backlog"))   # r1 C8: a row named twice is ONE row
     # backlog #484: each backlog ref has its OWN fate (None = live). `fates` is None when the backlog was not
     # read, and holds EVERY Items row (fated or None) when it was, so a row absent from it does not exist.
     fates = src.get("fates")
@@ -833,20 +840,26 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
     by_row = by_row and not prs
     closed = src.get("closed_rows") if by_row else None
     row_open = [n for n in live_rows if n not in closed] if by_row and closed is not None else []
+    # r1 C7: a step whose rows are ALL ✅ needs neither git nor gh — its Status cells decide it, so a failed read of
+    # either does not make it CANNOT RUN (it says the merge was not read instead)
+    unread = src["errors"].get("merged") or src["errors"].get("gh")
+    by_cells = by_row and bool(live_rows) and closed is not None and not row_open
     if prs:
         found = [_pr_state(n, src) for n in prs]
         state = next(s for s in PRECEDENCE if any(f[0] == s for f in found))
         detail = " · ".join(d for _, d in found)
         whens = [_merge_time(n, src) for n, f in zip(prs, found) if f[0] == "merged"]
         closes = [(src.get("all_closed_at") or {}).get(n) for n, f in zip(prs, found) if f[0] == "closed"]
-    elif src["errors"].get("merged") or src["errors"].get("gh"):
-        state, detail = "cannot", f"CANNOT RUN — {src['errors'].get('merged') or src['errors'].get('gh')}"
+    elif unread and not by_cells:
+        state, detail = "cannot", f"CANNOT RUN — {unread}"
     else:
-        hit = next(((sha, pr) for sha, pr, subj in src["merged_rows"]
+        hit = next(((sha, pr) for sha, pr, subj in src.get("merged_rows") or []
                     if any(re.search(rf"\(backlog #{n}\)", subj) for n in live_rows)), None)
-        if by_row and live_rows and not row_open and closed is not None:
+        if by_cells:
             state, detail = "merged", ", ".join(f"backlog #{n}" for n in live_rows) + " ✅ in its Status cell"
-            if hit:
+            if unread:
+                detail += f" · the merge was not read ({unread})"
+            elif hit:
                 whens = [(src.get("all_merged_at") or {}).get(hit[1]) or (src.get("merged_at") or {}).get(hit[0])]
                 detail += f" · merged {merge_when(whens[0])} · {hit[0]} via PR #{hit[1]}"
         elif hit and not row_open:
@@ -860,8 +873,14 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
         else:
             state, detail = "next", "no PR names it yet"
         if hit and row_open:
-            # backlog #515/#611: the PR that named the row is CONTEXT — it may have filed the row, or landed only part
-            detail = (f"{_row_list(row_open)} is not ✅ in its Status cell · PR #{hit[1]} ({hit[0]}) merged naming it"
+            # backlog #515/#611: the PR that named the row is CONTEXT — it may have filed the row, or landed only part.
+            # r1 C1: it is a PR that named an OPEN row, and the row it named is said — never a PR that named another row
+            ctx = next(((sha, pr, [n for n in row_open if re.search(rf"\(backlog #{n}\)", subj)])
+                        for sha, pr, subj in src.get("merged_rows") or []
+                        if any(re.search(rf"\(backlog #{n}\)", subj) for n in row_open)), None)
+            said = (f"PR #{ctx[1]} ({ctx[0]}) merged naming {_row_list(ctx[2])}" if ctx
+                    else "no merged PR names " + ("it" if len(row_open) == 1 else "them"))
+            detail = (f"{_row_list(row_open)} is not ✅ in its Status cell · {said}"
                       f" · " + ("no open PR names it" if state == "next" else detail))
     if by_row and live_rows and state != "cannot" and closed is None:
         state, detail = "cannot", (f"CANNOT RUN — the Status cells of {BACKLOG_REL} were not read, so whether "
@@ -1920,6 +1939,9 @@ def agenda_digest(snap: dict, ag: dict, now=None) -> dict:
                 # backlog #514 r2 (Codex MAJOR): the thread line's `· waits on` AND every wait an entry naming the
                 # thread declares — both shown, the line's first; neither hides the other
                 waits = _join_waits(t.get("waits"), *(x.get("waits") for x in t.get("entries") or []))
+                # agenda-row-state r1 C3, kept: an EXPIRED declared wait (`⚠ wait expired …`) still keeps the item OWED.
+                # It is still DECLARED (owner card A: RUNNING is an open PR nothing declares a wait on), and OWED is
+                # where the flag is shown — a Running item renders no `waits`, so moving it there would hide the flag
                 now.append(_run_if_building(
                     {"label": label, "goal": goal_head(i, g["slug"]), "what": t.get("what") or "",
                      "running": bool(ops or t["state"] == "open") and not waits,
@@ -5716,6 +5738,48 @@ def _self_test_cases(*, outside: dict) -> int:
         _r11 = _rs515(closed_rows=set(), merged_rows=[("aaaa111", 20, "x (backlog #11) (#20)")])
         case("backlog #515: a row a merged PR named, still open, with an OPEN PR naming it reads ⏳ open — never ✅",
              (_r11[3][0], "PR #30 open" in _r11[3][1], "PR #20" in _r11[3][1]), ("open", True, True))
+        # agenda-row-state r1 — the fold's cases (Codex X1, Claude C1, C4, C5, C7, C8)
+        def _st(refs, **kw):
+            d = derive_thread({"key": "k", "refs": refs, "waits": None}, src(**kw), "2026-11-20 10:00", by_row=True)
+            return d["state"], d["detail"]
+        _b10, _b12 = ["backlog", 10], ["backlog", 12]
+        case("⭐ r1 Codex X1: a step naming two rows is ✅ only when BOTH are ✅ — one closed and one open is ⬜, "
+             "in either order and whichever is closed",
+             [_st(r, closed_rows=c)[0] for r, c in (([_b10, _b12], {10}), ([_b10, _b12], {12}), ([_b12, _b10], {10}),
+                                                    ([_b10, _b12], {10, 12}))],
+             ["next", "next", "next", "merged"])
+        _c1 = [_st([_b10, _b12], closed_rows={10})[1],
+               _st([_b10, _b12], closed_rows={10}, merged_rows=[("cccc333", 25, "y (backlog #12) (#25)"),
+                                                             ("aaaa111", 20, "x (backlog #10) (#20)")])[1],
+               _st([_b10, _b12], closed_rows=set())[1]]
+        case("⭐ r1 C1: the merged PR shown beside an OPEN row is one that named THAT row, and says which — a PR that "
+             "named only a closed row is never attributed to the open one",
+             [("PR #20" in _c1[0], "no merged PR names it" in _c1[0]),
+              ("PR #25 (cccc333) merged naming backlog #12" in _c1[1], "PR #20" in _c1[1]),
+              "backlog #10, backlog #12 is not ✅ in its Status cell · PR #20 (aaaa111) merged naming backlog #10" in _c1[2]],
+             [(False, True), (True, False), True])
+        _c7 = [_st([_b12], closed_rows={12}, errors={"gh": "gh down"}),
+               _st([_b12], closed_rows={12}, errors={"merged": "git log failed"}),
+               _st([_b12], closed_rows=set(), errors={"gh": "gh down"})]
+        case("r1 C7: a step whose rows are ALL ✅ reads ✅ by its Status cells when git or gh failed, and says the merge "
+             "was not read; one with an open row still reads CANNOT RUN",
+             [(st, "the merge was not read" in dt or dt[:10]) for st, dt in _c7],
+             [("merged", True), ("merged", True), ("cannot", "CANNOT RUN")])
+        case("r1 C8: a row a step names twice is said once",
+             [_st([_b10, _b10], closed_rows={10})[1].count("backlog #10"),
+              _st([_b12, _b12], closed_rows=set(), merged_rows=[("aaaa111", 20, "x (backlog #12) (#20)")])[1]
+              .count("backlog #12")],
+             [1, 2])
+        case("r1 C4: a date token needs the text's start or a boundary before it — `3.11-06`, `v1.11-06`, `a11-06b` "
+             "and `3a11-06` are not dates; `(11-06` and `Fri 11-06` are",
+             [wait_expired(w, "2026-11-20 10:00") for w in
+              ("Python 3.11-06", "v1.11-06", "sha a11-06b", "commit 3a11-06", "reset (11-06)", "11-06 reset")],
+             [None, None, None, None, "2026-11-06", "2026-11-06"])
+        case("⭐ r1 C5: a yearless date is read at most WAIT_AHEAD_DAYS ahead — 05-20 read on 11-20 is THIS May's "
+             "(expired), 02-10 next February's, 02-25 last February's; a written year is never moved (2027-05-20 is latest)",
+             [wait_expired(w, "2026-11-20 10:00") for w in
+              ("05-20 thing", "02-10 thing", "02-25 thing", "back 2027-05-20, parked 05-20")],
+             ["2026-05-20", None, "2026-02-25", None])
         _s515 = src()
         _s515.pop("closed_rows", None)
         case("⛔ backlog #515: a step naming a row reads CANNOT RUN when the Status cells were not read — never ✅",
