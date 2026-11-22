@@ -838,7 +838,7 @@ cargo-mutants **from each project's own documentation, fetched in this task**; a
 written `unverified`. The mutation engine itself is expected `DON'T-SHIP` with `harvest: practice` candidates.
 Grade: `argued` for all (spec §2b).
 
-- [ ] **Steps:** read scan → fetch the four engines' docs → write rows → `python3 scripts/check-inventory.py`
+- [x] **Steps:** read scan → fetch the four engines' docs → write rows → `python3 scripts/check-inventory.py`
   (after Task 19 exists; until then, validate the rows parse) → commit.
 
 **FAILS IF:** a row's comparison sentence names an engine capability with no fetched source and is not marked

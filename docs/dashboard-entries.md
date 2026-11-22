@@ -21285,3 +21285,21 @@ architecture review counts only if it exists at HEAD; unchanged by the r3 fold: 
 name, a `<<` key or a ` #` in a judged value is unreadable, and only an added or modified non-empty architecture review
 clears the HOLD; backlog #695 filed). Self-tests check-merge-ready 467/467, check-review-decision 130/130; mutations
 check-merge-ready 188 -> 214, check-review-decision 30 -> 33.
+
+## 2026-11-22
+The marketplace inventory has its first rows: the six pieces of the CI mutation sweep, graded for whether a stranger's
+project could use them. The mutation engine itself is not worth shipping. A stranger's CI should be able to plug in
+any mutation tool, and every one of our mutations is written against this repository's own checks. What carries over
+is a lesson already written up as a portable practice. The nightly sweep job, its red-sweep alert and the parser it
+reads could ship together as one reusable GitHub workflow once they stop calling our engine directly. Each sweep
+feature is compared with four well-known mutation tools, using those tools' own documentation. Only one of them
+documents splitting a run across CI machines. None of the pages documents choosing tests by what a change imports,
+or a nightly sweep that opens an issue. All six grades are argued, not measured.
+
+Nothing waits on you for this.
+<!--tech-->
+Marketplace slice F, plan Task 17, branch `marketplace-task17`. New `docs/marketplace/inventory.json`: 6 effort (2)
+rows (check-plan-code and mutation-manifests DON'T-SHIP with harvest practice §22/§10, velocity-docs DON'T-SHIP;
+mutation-sweep-job, sweep-red-alert and coverage-verdict NEEDS-WORK with a portable-core reusable-workflow route), all
+phase later and grade argued. Cites come from scan-2026-11-17.json; engine_comparison has 15 entries, 1 of them
+unverified. No `recall` key yet (Task 18 adds it).
