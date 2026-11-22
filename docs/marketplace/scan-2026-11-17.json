@@ -15319,42 +15319,6 @@
           "detector": 4,
           "file": ".agents/skills/brief/SKILL.md",
           "id": "skill-brief:4:4",
-          "kind": "guard-name",
-          "line": 62,
-          "term": "check-docs",
-          "text": "`check-docs`, `check-roadmap-consistency`, `check-test-counts`, `check-producer-enumeration`."
-        },
-        {
-          "detector": 4,
-          "file": ".agents/skills/brief/SKILL.md",
-          "id": "skill-brief:4:5",
-          "kind": "guard-name",
-          "line": 62,
-          "term": "check-producer-enumeration",
-          "text": "`check-docs`, `check-roadmap-consistency`, `check-test-counts`, `check-producer-enumeration`."
-        },
-        {
-          "detector": 4,
-          "file": ".agents/skills/brief/SKILL.md",
-          "id": "skill-brief:4:6",
-          "kind": "guard-name",
-          "line": 62,
-          "term": "check-roadmap-consistency",
-          "text": "`check-docs`, `check-roadmap-consistency`, `check-test-counts`, `check-producer-enumeration`."
-        },
-        {
-          "detector": 4,
-          "file": ".agents/skills/brief/SKILL.md",
-          "id": "skill-brief:4:7",
-          "kind": "guard-name",
-          "line": 62,
-          "term": "check-test-counts",
-          "text": "`check-docs`, `check-roadmap-consistency`, `check-test-counts`, `check-producer-enumeration`."
-        },
-        {
-          "detector": 4,
-          "file": ".agents/skills/brief/SKILL.md",
-          "id": "skill-brief:4:8",
           "kind": "doc-path",
           "line": 70,
           "term": "docs/roadmap-to-launch.md",
@@ -15419,6 +15383,38 @@
           "line": 59,
           "term": "docs/superpowers/",
           "text": "`docs/superpowers/`, and `git log` messages, which in this repo carry the reasoning."
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/brief/SKILL.md",
+          "kind": "guard-name",
+          "line": 62,
+          "term": "check-docs",
+          "text": "`check-docs`, `check-roadmap-consistency`, `check-test-counts`, `check-producer-enumeration`."
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/brief/SKILL.md",
+          "kind": "guard-name",
+          "line": 62,
+          "term": "check-producer-enumeration",
+          "text": "`check-docs`, `check-roadmap-consistency`, `check-test-counts`, `check-producer-enumeration`."
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/brief/SKILL.md",
+          "kind": "guard-name",
+          "line": 62,
+          "term": "check-roadmap-consistency",
+          "text": "`check-docs`, `check-roadmap-consistency`, `check-test-counts`, `check-producer-enumeration`."
+        },
+        {
+          "detector": 4,
+          "file": ".agents/skills/brief/SKILL.md",
+          "kind": "guard-name",
+          "line": 62,
+          "term": "check-test-counts",
+          "text": "`check-docs`, `check-roadmap-consistency`, `check-test-counts`, `check-producer-enumeration`."
         },
         {
           "detector": 4,
@@ -15856,5 +15852,5 @@
       "status": "scanned"
     }
   },
-  "measured_at": "c5afc7c06539da872df21e1b30ec5d0034f02933"
+  "measured_at": "637950d2d159740a9c2885dc13ef531051951c89"
 }

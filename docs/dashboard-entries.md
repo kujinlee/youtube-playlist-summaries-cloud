@@ -21251,3 +21251,17 @@ Nothing waits on you for this.
 Backlog #680 part (1). `docs/reviews/architecture-review-2026-11-21-publishability-detector4.md` (Fable): candidate F,
 corpus 57 rows EXACT 44 / MISS 7 / FALSE 6 vs HEAD 32 / 22 / 3; live 302 → 306 (4 gained on
 `.agents/skills/brief/SKILL.md:62`, 0 lost); coordinator re-ran HEAD's self-test (105/105) and the live count (302).
+
+## 2026-11-21
+The redesigned reading of Markdown instructions was built and then refuted by its first review: it silently stopped
+reporting real dependencies the old check found (a list nested under another, and a line starting with `#` that is not
+a heading, which cost three dependencies in a real spec). The review had decided in advance what happens then, so
+there was no second attempt: the old check is kept, with only its negation filter removed, which can only ever add a
+report. The scan is back at its 302 findings. The four dependencies the redesign would have caught are filed.
+
+Nothing waits on you for this.
+<!--tech-->
+Backlog #680 PR #614. Build F (c5afc7c0) refuted at r1 (Codex B1 `first_sibling`, Claude B1 `#`-led heading), both
+FAILS IF 1 caused by the build; §6 fallback N: 49c3f923's walkers, `NEGATES` deleted, r3 negation case flipped, its
+mutation re-aimed at a planted filter; self-test 105/105, rescan 46 components / 302. Coordinator:
+`docs/reviews/coordinator/phase6-detector4-r1-coordinator.md`. F's misses filed as backlog #693.
