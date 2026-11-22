@@ -639,8 +639,9 @@ def _self_test_body():
                        side={k: v for k, v in sidecar.items() if k != "lib"}), ["ship-experiment"])
     case("a SHIP library whose scenario names no component id is an error",
          lambda: rules(row("ship-lib", scenario="the brief page, end to end")), ["ship-experiment"])
-    case("a SHIP library whose scenario names a library, not an entry-point, is an error",
-         lambda: rules(row("ship-lib", scenario="lib: itself")), ["ship-experiment"])
+    case("a SHIP library whose scenario names a library with a passing entry, not an entry-point, is an error",
+         lambda: rules(row("ship-lib", scenario="lib: itself"), side={**sidecar, "lib": sidecar["ep"]}),
+         ["ship-experiment"])
     case("a SHIP library is not held to its own exercised: false entry",
          lambda: rules(row("ship-lib")), [])
     # [ship-experiment] — outside the rule

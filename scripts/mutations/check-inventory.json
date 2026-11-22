@@ -195,7 +195,7 @@
     "return head if comp else None"
    ]
   ],
-  "expect": "a SHIP library whose scenario names a library, not an entry-point, is an error"
+  "expect": "a SHIP library whose scenario names a library with a passing entry, not an entry-point, is an error"
  },
  {
   "name": "a phase-1 row may sit outside its shipping set",
