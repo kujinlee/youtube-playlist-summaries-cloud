@@ -2528,6 +2528,8 @@ EXPECTED_MUTATIONS = {
     # entry per load-bearing clause: the checkpoint (population, ratio, majority, the two CANNOT RUNs), every
     # row_errors rule (backlog #696 a, c and f among them), every inventory-level rule, the exit-code ranking,
     # the input loader and render's one verdict-and-grade cell. Each verified red by hand in a full clone.
+    # ⟳ r1 fold: 98 — the row shape pass, field by field. ⟳ r2 fold: 124 — the integer past the float range
+    # (CODEX X1), every input field a rule reads (CODEX X2's class check), JSON nested too deep, non-UTF-8 text.
     "scripts/check-inventory.py": 124,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
