@@ -21317,3 +21317,19 @@ check-plan-code:2:1 cite is gone.
 engine_comparison has 15 entries, 0 unverified; absences are scoped to the fetched pages. Review round 1 fold:
 coverage-verdict re-argued (stdlib-only type module, imported at runtime only by check-plan-code), sweep-red-alert's
 C3 re-argued from RECORD_SCHEMA, self-test cites relabelled. No `recall` key yet (Task 18 adds it).
+
+## 2026-11-22
+The memory notes a stranger would receive can now be built without the files you excluded, and with your quoted words
+reworded. A check reads the built copy and confirms none of your original quotes and none of the 16 excluded files are
+in it. Whether those notes ship at all still waits on your content review, so they stay not shippable for now. The
+recall tool was tried with no notes to recall from: it did nothing, silently, so it is not part of the first release.
+<!--tech-->
+Marketplace slice F, plan Task 18, branch `marketplace-task18`. `docs/marketplace/inventory.json`: 6 effort (1) rows
+(recall-llm, hook-surface-recall, memory-corpus NEEDS-WORK; check-surface-recall, check-rc-contract,
+check-ratchet-contract DON'T-SHIP), all phase later, each `rests_on` typed per amended spec §5 rule 1; memory-corpus
+holds `C5: unanswered` on the c5 ground. Top-level `"recall": {"a": false, "b": "unanswered"}`; probe recorded in
+`docs/marketplace/experiment-tier-a.md` "Recall with an empty corpus" (run_isolated; armed `--arm` rc 6 CANNOT RUN, no
+memory directory; unarmed rc 2). New `scripts/build-shipped-corpus.py` (`--out`/`--check`/`--self-test`, 20 cases,
+18 mutations in `scripts/mutations/build-shipped-corpus.json`, all red in a full clone) and the 6 group-D paraphrases
+in `docs/marketplace/shipped-corpus/` with `sources.json` (sha256 of each source). Real build: 180 files, check PASS
+over 686 derived quote fragments and 16 excluded names.
