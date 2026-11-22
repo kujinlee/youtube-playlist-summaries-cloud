@@ -449,7 +449,6 @@ def main(argv=None):
 
 def _self_test():
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
     import fixture_git
     with fixture_git.isolated():
         return _self_test_body()
