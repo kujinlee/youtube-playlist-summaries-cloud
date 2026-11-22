@@ -1,0 +1,673 @@
+[
+ {
+  "name": "a 1-if-feasible row counts in the checkpoint population",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return _fires([r for r in rows if r[\"phase\"] == \"1\"])",
+    "return _fires([r for r in rows if r[\"phase\"] in (\"1\", \"1-if-feasible\")])"
+   ]
+  ],
+  "expect": "stray 1-if-feasible rows are never counted"
+ },
+ {
+  "name": "exactly half fires",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return 2 * len(over) > len(pop)",
+    "return 2 * len(over) >= len(pop)"
+   ]
+  ],
+  "expect": "one of two at 3x is not MORE than half"
+ },
+ {
+  "name": "exactly 3x does not count",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    ">= 3 * r[\"cost\"][\"next_project_hours\"]]",
+    "> 3 * r[\"cost\"][\"next_project_hours\"]]"
+   ]
+  ],
+  "expect": "two of three phase-1 rows at exactly 3x fire"
+ },
+ {
+  "name": "an empty phase 1 reads as did-not-fire",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "raise ValueError(\"CANNOT RUN: no phase-1 rows\")",
+    "return False"
+   ]
+  ],
+  "expect": "an empty phase 1 raises, never `did not fire`"
+ },
+ {
+  "name": "next_project_hours 0 is counted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not r[\"cost\"][\"next_project_hours\"] > 0:",
+    "if False:"
+   ]
+  ],
+  "expect": "next_project_hours 0 raises, never fires"
+ },
+ {
+  "name": "a missing grade is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if grade not in GRADES:",
+    "if grade is not None and grade not in GRADES:"
+   ]
+  ],
+  "expect": "a NEEDS-WORK row with no grade is an error"
+ },
+ {
+  "name": "an unknown verdict is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if verdict not in VERDICTS:",
+    "if False:"
+   ]
+  ],
+  "expect": "a verdict outside the vocabulary is an error"
+ },
+ {
+  "name": "a row may relabel its roles",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif row.get(\"effort\") != comp.get(\"effort\") or list(roles) != list(comp.get(\"roles\") or []):",
+    "elif row.get(\"effort\") != comp.get(\"effort\"):"
+   ]
+  ],
+  "expect": "a row whose roles differ from the map is an error (a relabelled data row escapes no rule)"
+ },
+ {
+  "name": "a row may relabel its effort",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif row.get(\"effort\") != comp.get(\"effort\") or list(roles)",
+    "elif list(roles)"
+   ]
+  ],
+  "expect": "a row whose effort differs from the map is an error"
+ },
+ {
+  "name": "a row outside the map is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "err(\"map\", \"no component with this id in components.json\")",
+    "pass"
+   ]
+  ],
+  "expect": "a row for a component not in the map is an error"
+ },
+ {
+  "name": "the experiment rule ignores the channel",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "ctx.channels.get(package) == \"plugin\":",
+    "True:"
+   ]
+  ],
+  "expect": "a SHIP entry-point in a non-plugin package is outside the experiment rule"
+ },
+ {
+  "name": "an unexercised entry backs a SHIP",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "entry.get(\"exercised\") is True and ",
+    ""
+   ]
+  ],
+  "expect": "a SHIP row whose tier-A entry is exercised: false is an error"
+ },
+ {
+  "name": "a failed operation backs a SHIP",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "entry.get(\"operation_ok\") is True and bool(pcs)",
+    "bool(pcs)"
+   ]
+  ],
+  "expect": "a SHIP entry-point whose operation_ok is false is an error"
+ },
+ {
+  "name": "an entry with no pass conditions backs a SHIP",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "operation_ok\") is True and bool(pcs)",
+    "operation_ok\") is True"
+   ]
+  ],
+  "expect": "a SHIP entry-point whose entry has no pass conditions is an error"
+ },
+ {
+  "name": "a CANNOT RUN pass condition backs a SHIP",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "v in (\"fail\", \"CANNOT RUN\")",
+    "v == \"fail\""
+   ]
+  ],
+  "expect": "a SHIP entry-point with a pass condition `CANNOT RUN` is an error"
+ },
+ {
+  "name": "a SHIP entry-point needs no entry of its own",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not _backs(sidecar.get(rid)):",
+    "if False:"
+   ]
+  ],
+  "expect": "a SHIP entry-point with no tier-A entry is an error"
+ },
+ {
+  "name": "a library's named entry-point is not checked",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif not _backs(sidecar.get(named)):",
+    "elif False:"
+   ]
+  ],
+  "expect": "the same SHIP library row naming a failing entry-point is an error"
+ },
+ {
+  "name": "a library may name a library",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return head if comp and \"entry-point\" in (comp.get(\"roles\") or []) else None",
+    "return head if comp else None"
+   ]
+  ],
+  "expect": "a SHIP library whose scenario names a library, not an entry-point, is an error"
+ },
+ {
+  "name": "a phase-1 row may sit outside its shipping set",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if phase == \"1\" and comp is not None and rid not in ctx.shipping.get(package, set()):",
+    "if False:"
+   ]
+  ],
+  "expect": "a phase-1 row absent from its package's shipping set is an error"
+ },
+ {
+  "name": "an unknown phase is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if phase not in PHASES:",
+    "if False:"
+   ]
+  ],
+  "expect": "a row at the map's 1-if-feasible label is an error"
+ },
+ {
+  "name": "recall.b is not consulted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "recall.get(\"a\") is True and recall.get(\"b\") == \"pass\"",
+    "recall.get(\"a\") is True"
+   ]
+  ],
+  "expect": "a recall row at phase 1 with recall.a true and recall.b unanswered is an error"
+ },
+ {
+  "name": "a truthy recall.a passes",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(recall.get(\"a\") is True and",
+    "(recall.get(\"a\") and"
+   ]
+  ],
+  "expect": "a recall row at phase 1 with recall.a the string \"true\" is an error"
+ },
+ {
+  "name": "next_project_hours 0 is a valid cost",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif not nxt > 0:",
+    "elif not nxt >= 0:"
+   ]
+  ],
+  "expect": "next_project_hours of 0 is an error"
+ },
+ {
+  "name": "a string cost is a number",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not (_num(pub) and _num(nxt)):",
+    "if not (pub is not None and nxt is not None):"
+   ]
+  ],
+  "expect": "a cost estimate that is not a number is an error"
+ },
+ {
+  "name": "an inherited grade needs no scenario",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if grade == \"inherited\" and not row.get(\"scenario\"):",
+    "if False:"
+   ]
+  ],
+  "expect": "an inherited grade with no scenario is an error"
+ },
+ {
+  "name": "an empty rests_on is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif not grounds and not ship:",
+    "elif False:"
+   ]
+  ],
+  "expect": "a non-SHIP row with an empty rests_on is an error"
+ },
+ {
+  "name": "an unknown ground kind is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if kind not in GROUND_KINDS:",
+    "if kind is None:"
+   ]
+  ],
+  "expect": "a ground of an unknown kind is an error"
+ },
+ {
+  "name": "a finding ground with empty ids is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(ids, list) or not ids:",
+    "if not isinstance(ids, list):"
+   ]
+  ],
+  "expect": "a finding ground with empty ids is an error"
+ },
+ {
+  "name": "a borrowed finding id resolves",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "own = {f.get(\"id\") for f in ((scan.get(rid) or {}).get(\"findings\") or [])}",
+    "own = {f.get(\"id\") for c in scan.values() for f in ((c or {}).get(\"findings\") or [])}"
+   ]
+  ],
+  "expect": "a borrowed finding id from another component is an error"
+ },
+ {
+  "name": "a decision anywhere in the spec resolves",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if any(line.startswith(f\"| **{d}** |\") for line in table)",
+    "if any(line.startswith(f\"| **{d}** |\") for line in spec_lines)"
+   ]
+  ],
+  "expect": "a decision only in §2c is an error"
+ },
+ {
+  "name": "a heading prefix resolves",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "line.rstrip() == f\"### {g['heading']}\"",
+    "line.startswith(f\"### {g['heading']}\")"
+   ]
+  ],
+  "expect": "a spec heading that is only a prefix of a real one is an error"
+ },
+ {
+  "name": "a section runs past the next section",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "            if later.startswith(\"## \"):",
+    "            if False:"
+   ]
+  ],
+  "expect": "section 2 does not reach a heading under section 2b"
+ },
+ {
+  "name": "an empty section is a missing section",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(sec, str) or not sec.strip():",
+    "if not isinstance(sec, str):"
+   ]
+  ],
+  "expect": "a spec ground with an empty section is an error"
+ },
+ {
+  "name": "an empty heading is a missing heading",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if \"heading\" in g and (not isinstance(g[\"heading\"], str) or not g[\"heading\"].strip()):",
+    "if False:"
+   ]
+  ],
+  "expect": "a spec ground with an empty heading is an error"
+ },
+ {
+  "name": "an empty decision is a missing decision",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(d, str) or not d.strip():",
+    "if not isinstance(d, str):"
+   ]
+  ],
+  "expect": "a spec ground with an empty decision is an error"
+ },
+ {
+  "name": "an experiment ground with no scenario matches a None entry",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(scen, str) or not scen.strip():",
+    "if False:"
+   ]
+  ],
+  "expect": "an experiment ground with no scenario on a component whose entry has none is still an error"
+ },
+ {
+  "name": "another component's scenario resolves",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if entry.get(\"scenario\") != scen:",
+    "if False:"
+   ]
+  ],
+  "expect": "another component's experiment scenario is an error"
+ },
+ {
+  "name": "a scenario with no fail resolves",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif \"fail\" not in (entry.get(\"pass_conditions\") or {}).values():",
+    "elif False:"
+   ]
+  ],
+  "expect": "this component's scenario with no pass condition `fail` is an error"
+ },
+ {
+  "name": "a c5 ground resolves whatever C5 is",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if criteria.get(\"C5\") != \"unanswered\":",
+    "if False:"
+   ]
+  ],
+  "expect": "a c5 ground while C5 is pass is an error"
+ },
+ {
+  "name": "C2 fail is not checked for a finding ground",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "\"fail\" in (criteria.get(\"C2\"), criteria.get(\"C3\"))",
+    "criteria.get(\"C3\") == \"fail\""
+   ]
+  ],
+  "expect": "C2 fail graded measured with no finding ground is an error"
+ },
+ {
+  "name": "a finding ground does not satisfy the measured rule",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and not any(isinstance(g, dict) and g.get(\"kind\") == \"finding\" for g in grounds)):",
+    "):"
+   ]
+  ],
+  "expect": "the same C3 fail graded measured with a finding ground is clean"
+ },
+ {
+  "name": "a non-SHIP row needs no route",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not route and not ship:",
+    "if False:"
+   ]
+  ],
+  "expect": "a non-SHIP row with no route is an error"
+ },
+ {
+  "name": "an unknown route kind is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "route.get(\"kind\") not in ROUTE_KINDS)",
+    "not route.get(\"kind\"))"
+   ]
+  ],
+  "expect": "a route kind outside the vocabulary is an error"
+ },
+ {
+  "name": "a practice entry without its number matches",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "row.get(\"practice_entry\") not in ctx.practice_headings:",
+    "not any(h.endswith(str(row.get(\"practice_entry\"))) for h in ctx.practice_headings):"
+   ]
+  ],
+  "expect": "a practice_entry without its number is an error"
+ },
+ {
+  "name": "a data row's C4 is not checked",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if \"data\" in roles and criteria.get(\"C4\") != \"struck\":",
+    "if False:"
+   ]
+  ],
+  "expect": "a data row with C4 pass is an error"
+ },
+ {
+  "name": "the corpus rule ignores C5",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if rid == \"memory-corpus\" and ship and criteria.get(\"C5\") == \"unanswered\":",
+    "if rid == \"memory-corpus\" and ship:"
+   ]
+  ],
+  "expect": "the memory-corpus row SHIP with C5 pass is clean"
+ },
+ {
+  "name": "the corpus rule covers every data row",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if rid == \"memory-corpus\" and ship and",
+    "if ship and"
+   ]
+  ],
+  "expect": "another data row SHIP while its C5 is unanswered is not the corpus rule"
+ },
+ {
+  "name": "an effort (2) row may be measured",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if grade == \"measured\" and row.get(\"effort\") in (1, 2):",
+    "if grade == \"measured\" and row.get(\"effort\") in (1,):"
+   ]
+  ],
+  "expect": "a measured grade on an effort (2) row is an error"
+ },
+ {
+  "name": "a component with no row is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if cid not in ids:",
+    "        if False:"
+   ]
+  ],
+  "expect": "a component in the map with no row is an error"
+ },
+ {
+  "name": "a duplicate row is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "ids.count(i) > 1",
+    "ids.count(i) > 2"
+   ]
+  ],
+  "expect": "two rows for one component is an error"
+ },
+ {
+  "name": "no phase-1 package is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    if not phase1:",
+    "    if False:"
+   ]
+  ],
+  "expect": "no phase-1 package in the map is an error"
+ },
+ {
+  "name": "a phase-1 package with no set is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if pkg not in ctx.shipping:",
+    "if False:"
+   ]
+  ],
+  "expect": "a phase-1 package with no shipping-sets entry is an error"
+ },
+ {
+  "name": "a stale scan is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if latest_scan is not None and inventory.get(\"scan\") != latest_scan:",
+    "if False:"
+   ]
+  ],
+  "expect": "an inventory naming a scan other than the latest is an error"
+ },
+ {
+  "name": "the oldest scan is read",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "f\"{MKT}/{scans[-1].name}\"",
+    "f\"{MKT}/{scans[0].name}\""
+   ]
+  ],
+  "expect": "the latest scan is the one read, and an inventory naming an older one exits 1"
+ },
+ {
+  "name": "the checkpoint is computed over rows with errors",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    if errors:\n",
+    "    if errors and False:\n"
+   ]
+  ],
+  "expect": "rows with an error AND a crossed threshold exit 1, not 3"
+ },
+ {
+  "name": "a checkpoint that cannot run exits 0",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "print(f\"{e}. Treat the D1 checkpoint as NOT RUN.\", file=status)\n        return 2",
+    "print(f\"{e}. Treat the D1 checkpoint as NOT RUN.\", file=status)\n        return 0"
+   ]
+  ],
+  "expect": "a clean inventory with no phase-1 rows exits 2"
+ },
+ {
+  "name": "a fired checkpoint exits 0",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "Stop: Human step H4.\", file=status)\n        return 3",
+    "Stop: Human step H4.\", file=status)\n        return 0"
+   ]
+  ],
+  "expect": "a clean inventory over the threshold exits 3"
+ },
+ {
+  "name": "an absent input crashes",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "except (OSError, ValueError) as e:",
+    "except ValueError as e:"
+   ]
+  ],
+  "expect": "an absent inventory.json exits 2, CANNOT RUN"
+ },
+ {
+  "name": "no scan file crashes",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    if not scans:",
+    "    if False:"
+   ]
+  ],
+  "expect": "no scan file exits 2, CANNOT RUN"
+ },
+ {
+  "name": "render splits verdict and grade",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_cell(f\"{r.get('verdict')} · {r.get('grade')}\"),",
+    "_cell(r.get('verdict')), _cell(r.get('grade')),"
+   ]
+  ],
+  "expect": "render puts verdict and grade in one cell"
+ },
+ {
+  "name": "render leaves a pipe unescaped",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "str(v).replace(\"|\", \"\\\\|\")",
+    "str(v)"
+   ]
+  ],
+  "expect": "render escapes a pipe inside a cell"
+ }
+]
