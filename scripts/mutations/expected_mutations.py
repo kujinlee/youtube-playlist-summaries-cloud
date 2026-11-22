@@ -1118,7 +1118,9 @@ EXPECTED_MUTATIONS = {
     #   two #329 anchors re-pointed onto the new `ANSWERED` constant, nothing retired.
     # ⟳ 2026-11-21, backlog #680 (2) r2 X1: 30 -> 32 — `parse_round` COUNTS every `findings:` key (1) and
     #   NAMES a field set twice in one finding (1); nothing retired, nothing re-pointed.
-    "scripts/check-review-decision.py": 32,
+    # ⟳ 2026-11-21, backlog #680 (2) r3 C2: 32 -> 33 — `parse_round` finds the findings key by its NORMALISED
+    #   name (1); nothing retired; ONE RE-BOUND — r2 X1's key-count anchor, onto `len(fk)`.
+    "scripts/check-review-decision.py": 33,
     # ⟳ 2026-10-23: check-decision-scheme 86 -> 106. Trigger 3 changed its question (route
     # collapse -> a lost bet whose next route was never logged) and the `missed-escalation`
     # acknowledgment row joined. TWO entries RETIRED WITH THEIR SUBJECT — the collapse floor and
@@ -2104,7 +2106,14 @@ EXPECTED_MUTATIONS = {
     # ⟳ r2 fold: 203 -> 207 = 203 + 4, none retired; one RE-BOUND (#680 (b)'s anchor, onto the new HEAD clause). A second `findings:` key read as readable (1)
     # and a field set twice in one finding read as readable (1) (X1); an architecture review not required to
     # exist at HEAD (1), and thrash_gate passing the range instead of the HEAD tree as what exists there (1) (X2).
-    "scripts/check-merge-ready.py": 207,
+    # ⟳ r3 fold: 207 -> 214 = 207 + 8 - 1. Clean is the POSITIVE form `[]` with nothing under it (1); every `- `
+    # line under a bare key must be a parsed item (1), and a bare key with none is unreadable (1) (C1); a near-miss
+    # field name (1) and a `<<` merge key (1) are unreadable (C3); a ` #` comment in component/fix_induced (1) (C4);
+    # an R/C entry (1) and an empty blob (1) clear nothing (C5). ONE RETIRED WITH ITS SUBJECT: r2 X2's
+    # `frozenset(tree)` argument is gone — `counted` replaced it, and a deletion is excluded structurally (no
+    # `new` path). THREE RE-BOUND: #680 (b) and r2 X2's first onto `f in counted`, r1 X1's onto `if not clean and
+    # inline != ""`.
+    "scripts/check-merge-ready.py": 214,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 123 cases
+    python3 scripts/check-review-decision.py --self-test  # 130 cases
 
 WHY THIS EXISTS
 ---------------
@@ -485,6 +485,14 @@ def parse_round(text: str) -> dict:
     one's items are silently unread — and `findings_dup_fields` names each field set twice in one item
     (`_scalarise` keeps the LAST value, so `fix_induced: true, fix_induced: false` reads as false). Both
     reported, not judged; `check-merge-ready` reads a count other than 1, or any duplicate, as unreadable.
+    ⟳ r3 C1/C2/C3 (Claude): the key is now found by its NORMALISED name (`KEY0`, `_norm_key`): `findings :`,
+    `"findings":` and `'findings':` count in `findings_keys` and the first one's value is `findings_inline`.
+    Under it, to the next COLUMN-0 key, `findings_rest` counts the non-blank, non-comment lines and
+    `findings_dashes` those that begin `- ` at ANY indentation (an unindented sequence is valid YAML; the
+    item readers stop at the first unindented line and miss it). `findings_fields` names every field
+    spelling the parsed items carry, raw. All reported, never judged; `parse_header` strips them all, so
+    its output is unchanged, and the ITEM readers are untouched — `check-merge-ready` makes clean a
+    POSITIVE form from these fields instead of inferring it from zero parsed items.
     """
     body = header_body(text)
     rm = re.search(r"^round:\s*(\d+)\s*$", body, re.M)
@@ -511,12 +519,35 @@ def parse_round(text: str) -> dict:
     if declared != len(findings):
         raise ValueError(f"header declares {declared} finding item(s) but "
                          f"{len(findings)} parsed — refusing to guess")
-    key = re.search(r"^findings:(.*)$", body, re.M)
     names = [[p.split(":", 1)[0].strip() for p in item if ":" in p] for item in _items]
-    return {"round": int(rm.group(1)), "findings": findings, "findings_key": key is not None,
-            "findings_inline": key.group(1).strip() if key else None,
-            "findings_keys": len(re.findall(r"^findings:", body, re.M)),
+    # ⟳ r3 C1/C2 (#680 (2)): the key is found by its NORMALISED name — `findings :`, `"findings":` and
+    # `'findings':` are the same YAML key — and the span under it runs to the next COLUMN-0 KEY, not to the
+    # first unindented line (an unindented `- ` sequence is valid YAML and belongs to the key above it).
+    lines = body.split("\n")
+    keys = [(i, m) for i, m in enumerate(map(KEY0.match, lines)) if m]
+    fk = [(i, m) for i, m in keys if _norm_key(m["k"]) == "findings"]
+    under = []
+    if fk:
+        i0 = fk[0][0]
+        under = lines[i0 + 1:next((i for i, _m in keys if i > i0), len(lines))]
+    under = [l for l in under if l.strip() and not l.lstrip().startswith("#")]
+    return {"round": int(rm.group(1)), "findings": findings, "findings_key": bool(fk),
+            "findings_inline": fk[0][1]["v"].strip() if fk else None,
+            "findings_keys": len(fk),
+            "findings_rest": len(under),
+            "findings_dashes": sum(1 for l in under if re.match(r"^[ \t]*-(?:[ \t]|$)", l)),
+            "findings_fields": sorted({k for ks in names for k in ks}),
             "findings_dup_fields": sorted({k for ks in names for k in ks if ks.count(k) > 1})}
+
+
+# A COLUMN-0 mapping key in a round header: quoted, or bare and not a comment, a sequence dash or a flow
+# bracket. `v` is the text after the colon (#680 (2) r3).
+KEY0 = re.compile(r"""^(?P<k>"[^"\n]*"|'[^'\n]*'|[^\s#\-\[\]{}'"][^:\n]*?)[ \t]*:(?P<v>(?:[ \t].*)?)$""")
+
+
+def _norm_key(k: str) -> str:
+    """A key with its quotes and surrounding whitespace removed — how YAML names it (#680 (2) r3 C2)."""
+    return k.strip().strip("\"'").strip()
 
 
 def parse_header(text: str) -> dict:
@@ -531,6 +562,8 @@ def parse_header(text: str) -> dict:
     del head["findings_inline"]                     # check-merge-ready's question, not this layer's
     del head["findings_keys"]                       # ...as are these two (#680 (2) r2 X1): stripped, so
     del head["findings_dup_fields"]                 # this layer's output is unchanged
+    for k in ("findings_rest", "findings_dashes", "findings_fields"):   # ...and r3's three (#680 (2) r3)
+        del head[k]
     body = header_body(text)
     # ⛔ r3 Blocking (Codex): `_findings_span` returns "" when the key is ABSENT, so
     # declared == 0 == len(findings) and nothing validated — a header with no `findings:`
@@ -1258,6 +1291,30 @@ def _self_test_body() -> int:
     case("#680 r2 X1: ...and parse_header's output carries neither new field",
          _try(lambda: sorted(parse_header(_dup.replace("findings:\nfindings:", "findings:")))),
          ["findings", "fixes_nontrivial", "round"])
+
+    # ── backlog #680 (2), r3 C1/C2/C3: the SHAPE under the findings key, so check-merge-ready can require a
+    # POSITIVE clean form instead of inferring "clean" from zero parsed items. Reported, never judged here.
+    _hd = "```yaml\nround: 4\nfixes_nontrivial: false\n"
+    _fi = "{id: X, severity: Low, aim: instrument, fix_induced: true, component: c, disposition: fixed}"
+    case("#680 r3 C2: parse_round counts a key that NORMALISES to `findings` — spaced, double- and single-quoted",
+         _try(lambda: parse_round(_hd + f"findings: []\nfindings :\n  - {_fi}\n\"findings\":\n'findings': []\n```")
+              ["findings_keys"]), 4)
+    case("#680 r3 C2: ...and the inline value is read after the ONE key, whatever its spelling",
+         _try(lambda: parse_round(_hd + "\"findings\" : []  # none\n```")["findings_inline"]), "[]  # none")
+    _sh = lambda b: _try(lambda: (lambda r: (r["findings_rest"], r["findings_dashes"], len(r["findings"])))(
+        parse_round(_hd + b + "verdict: x\n```")))
+    case("#680 r3 C1: an UNINDENTED `- ` item under a bare key is counted as a dash line, though not parsed",
+         _sh(f"findings:\n- {_fi}\n"), (1, 1, 0))
+    case("#680 r3 C1: `findings: []` with an indented item under it reports the line under it",
+         _sh(f"findings: []\n  - {_fi}\n"), (1, 1, 0))
+    case("#680 r3 C1: ...and `findings: []` then blank and comment lines reports nothing under it",
+         _sh("findings: []\n\n# nothing\n  # still nothing\n"), (0, 0, 0))
+    case("#680 r3 C1: an indented block item: two lines under the key, one dash, one parsed item",
+         _sh("findings:\n  - id: X\n    fix_induced: true\n"), (2, 1, 1))
+    case("#680 r3 C3: parse_round names every field spelling the items carry, raw",
+         _try(lambda: parse_round(_hd + "findings:\n  - {id: X, \"fix_induced\": true, fix-induced: x}\n"
+                                  "  - {<<: *b}\n```")["findings_fields"]),
+         ['"fix_induced"', "<<", "fix-induced", "id"])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

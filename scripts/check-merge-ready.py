@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 448 cases
+    python3 scripts/check-merge-ready.py --self-test # 467 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -1739,11 +1739,13 @@ def pin_falls(old: dict, new: dict) -> list[str]:
 # coordinator doc the PR's range touches is judged on its LAST TWO rounds by `check-review-decision`'s
 # OWN `thrashing_component`, over its OWN `parse_round` — imported, never re-implemented (a second copy
 # of a rule is this repository's most-measured drift). Thrashing with no `architecture-review-*.md` under
-# `docs/reviews/` or `docs/reviews/coordinator/` added or changed in the range HOLDs.
+# `docs/reviews/` or `docs/reviews/coordinator/` ADDED or MODIFIED in the range, non-empty at HEAD, HOLDs
+# (a rename, a copy or an empty file is not a review run — r3 C5).
 # ⟳ 2026-11-21 (coordinator, on a measurement): `rounds_for`'s VALIDATION is not used. It refused 92 of
 # 181 subjects — PR #600's own among them — so a gate on it answered CANNOT RUN on its own target. A
 # round whose header is missing, unparseable, has no `findings:` key or an inline `findings:` value other
-# than `[]` HOLDS instead ("cannot judge") — when it could change the answer (`thrash_holds`): an unreadable
+# than `[]`, or that is not clean in the POSITIVE form and leaves a `- ` line unparsed (r3 C1), HOLDS instead
+# ("cannot judge") — when it could change the answer (`thrash_holds`): an unreadable
 # round is not proof of no thrashing, and a HOLD goes to a person. Only a sibling that cannot be imported,
 # or a rule that raises anything but `parse_round`'s own `ValueError`, is CANNOT RUN.
 # ⚠ THE DOCS ARE READ AT THE PR'S HEAD COMMIT through `git_reader`, like `gather` — never the working
@@ -1819,6 +1821,11 @@ def _exact_round(x):
     return x if type(x) is _Malformed else _exact_data(x)
 
 
+def _norm_field(k: str) -> str:
+    """A finding's field name as a near-miss would spell it: quotes stripped, `-` -> `_`, lowercased (r3 C3)."""
+    return k.strip().strip("\"'").strip().replace("-", "_").lower()
+
+
 def coordinator_subjects(files: list[str]) -> list[str]:
     """PURE. The review subjects whose coordinator docs the range adds, changes, renames or deletes."""
     return sorted({m["subject"] for m in map(COORD_DOC.match, files) if m})
@@ -1831,17 +1838,22 @@ def last_two_docs(tree_paths: list[str], subject: str) -> "list[tuple[int, str]]
     return docs[-2:]
 
 
-def thrash_holds(files: list[str], rounds_by_subject: dict, thrashing, head_paths) -> list[str]:
+def thrash_holds(files: list[str], rounds_by_subject: dict, thrashing, counted) -> list[str]:
     """PURE (given a pure `thrashing`). The HOLD reasons for thrashing armed with no Phase 6 review.
 
     `rounds_by_subject` maps a subject to its last two rounds, ascending; each is a parsed round
     (`{"round", "findings"}`) or `{"round": n, "unreadable": why}`. `thrashing` is
     `check-review-decision.thrashing_component` — injected so this stays pure and the RULE has one owner.
-    `head_paths` is every path in the HEAD tree: a review clears the HOLD only if the range changes it
-    AND it exists at HEAD — the range names a DELETED file too, and deleting an old review is not running
-    one (r2 X2, Codex). Required, so a caller cannot skip it.
+    `counted` is the set of range paths that COUNT as a review having been run (`thrash_gate` builds it):
+    a review clears the HOLD only if the range changes it AND it is in `counted`. Required, so a caller
+    cannot skip it. ⟳ r2 X2 (Codex): deleting an old review is not running one. ⟳ r3 C5 (Claude): nor is
+    renaming or copying one, or adding an empty file — so `counted` holds only `A` and `M` entries whose
+    blob at HEAD is non-empty; `R` and `C` entries clear nothing.
+    ⚠ BOUND (stated, not closed): a ONE-CHARACTER edit to an OLD architecture review is an `M` entry with a
+    non-empty blob, so it still clears every subject — the rule is "added or modified", and nothing here
+    reads what the review says or whether it is new.
     """
-    if any(ARCH_REVIEW.match(f) and f in head_paths for f in files):
+    if any(ARCH_REVIEW.match(f) and f in counted for f in files):
         return []
     out = []
     for subject in sorted(rounds_by_subject):
@@ -1865,7 +1877,7 @@ def thrash_holds(files: list[str], rounds_by_subject: dict, thrashing, head_path
     return out
 
 
-def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = None) -> list[str]:
+def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = None, *, fs: list[dict]) -> list[str]:
     """The thrashing HOLD reasons for the range, reading each subject's last two coordinator docs AT `head`.
 
     RAISES `ThrashUnjudgeable` when the sibling cannot be imported or its rule raises; `read` raising (a
@@ -1876,7 +1888,13 @@ def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = N
     a field set twice in one finding (r2 X1). Anything else `parse_round` raises is a broken RULE:
     `ThrashUnjudgeable` (r1 C4). A duplicate `round:` key is NOT refused: the gate never reads its value —
     the round number is the doc's FILENAME's (`last_two_docs`).
-    An architecture review clears the HOLD only if it is in the range AND in the HEAD tree (r2 X2).
+    ⟳ r3 C1/C2/C3/C4 (Claude): "clean" is a POSITIVE form — the one key that normalises to `findings`
+    reads literally `[]` (a comment allowed) with no non-blank, non-comment line under it. Every other shape
+    must account for each `- ` line under the key with a parsed item (none under a bare key is unreadable);
+    an item field that normalises to `fix_induced` or `component` but is spelled otherwise, or a `<<` merge
+    key, is unreadable; so is a `component` or `fix_induced` value carrying a ` #` comment.
+    `fs` is `gather`'s per-file records (`status`, `new`): an architecture review counts only as an `A` or
+    `M` entry whose blob at `head` is non-empty (r2 X2, r3 C5) — see `thrash_holds`. Required.
     ⚠ BOUND (r1 C5): the rounds are the subject's two highest-numbered docs IN THE HEAD TREE. A PR that
     DELETES a subject's newest coordinator docs is judged on the older pair that remains (or on nothing,
     if one or none remains) — the deletion is in the range, so the subject is named, but its rounds are
@@ -1912,19 +1930,49 @@ def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = N
                 if type(dups) is not list or dups:
                     raise _RoundUnreadable(f"a finding sets {dups!r} more than once — only the last value is "
                                            f"read, so the round is not judged")
-                inline = r.get("findings_inline")
-                if type(inline) is not str or not (inline == "" or EMPTY_INLINE.match(inline)):
-                    raise _RoundUnreadable(f"`findings:` has an inline value {str(inline)[:60]!r} — only `[]` "
-                                           f"is read inline, so its items are unread and it is not a clean round")
+                # ⟳ r3 C1 (Claude): CLEAN IS A POSITIVE FORM, never the absence of parsed items — r1 X1, r2 X1
+                # and r3 C1/C2 were one class: valid YAML whose items the reader missed, read as "no findings".
+                inline, rest, dashes = (r.get("findings_inline"), r.get("findings_rest"), r.get("findings_dashes"))
+                if type(inline) is not str or type(rest) is not int or type(dashes) is not int:
+                    raise _RoundUnreadable("parse_round returned no findings shape")
+                clean = bool(EMPTY_INLINE.match(inline)) and rest == 0
+                if not clean and inline != "":
+                    raise _RoundUnreadable(f"`findings:` has an inline value {inline[:60]!r}"
+                                           + (f" with {rest} line(s) under it — `[]` claims none, so they are "
+                                              f"unread and it is not a clean round" if rest else
+                                              " — only `[]` is read inline, so its items are unread and it is "
+                                              "not a clean round"))
+                if not clean and (dashes == 0 or dashes != len(r["findings"])):
+                    raise _RoundUnreadable(f"`findings:` has {dashes} item line(s) under it but {len(r['findings'])} "
+                                           f"parsed — an unread item is not a clean round")
+                # ⟳ r3 C3: a near-miss field name is silently NOT the field (`f.get("fix_induced")` is None).
+                fields = r.get("findings_fields")
+                if type(fields) is not list:
+                    raise _RoundUnreadable("parse_round returned no field names")
+                bad = [k for k in fields if type(k) is not str or k.startswith("<<")
+                       or (_norm_field(k) in ("fix_induced", "component") and k not in ("fix_induced", "component"))]
+                if bad:
+                    raise _RoundUnreadable(f"a finding names {bad!r}, not spelled `fix_induced` or `component` — "
+                                           f"it is not read, so the round is not judged")
+                # ⟳ r3 C4: `_scalarise` keeps a trailing `# comment` IN the value; refused here, not stripped there.
+                for f in r["findings"]:
+                    for k in ("component", "fix_induced"):
+                        if type(f.get(k)) is str and re.search(r"[ \t]#", f[k]):
+                            raise _RoundUnreadable(f"a finding's {k} {f[k][:60]!r} carries a ` #` comment — "
+                                                   f"YAML would drop it, this reader keeps it, so it is not judged")
                 r["round"] = n
             except _RoundUnreadable as exc:
                 r = {"round": n, "unreadable": str(exc)}
             rounds.append(r)
         if rounds:
             rounds_by_subject[subject] = rounds
+    # r2 X2 + r3 C5: a deletion has no `new` path and a rename or copy is not `A`/`M`, so neither counts.
+    counted = frozenset(e["new"] for e in fs if e.get("status") in ("A", "M") and e.get("new")
+                        and ARCH_REVIEW.match(e["new"])
+                        and read(["git", "cat-file", "-s", f"{head}:{e['new']}"]).strip() != "0")
     return thrash_holds(files, rounds_by_subject,
                         lambda rs: _cross(lambda x: crd.thrashing_component(x), rs,
-                                          reduce=_exact_component, error=ThrashUnjudgeable), frozenset(tree))
+                                          reduce=_exact_component, error=ThrashUnjudgeable), counted)
 
 
 def hold_reasons(files: list[str], diff: str, head: str | None,
@@ -2233,7 +2281,7 @@ def main(argv: list[str]) -> int:
     if gathered:
         # backlog #680 (2): the coordinator docs at HEAD — this runs from the PR's worktree.
         try:
-            thrash = thrash_gate(git_reader(_run), files)
+            thrash = thrash_gate(git_reader(_run), files, fs=fs)
         except Exception as exc:          # the rule could not run: CANNOT RUN, never a silent pass
             thrash = []
             code, line = 2, (f"CANNOT RUN — the thrashing check could not run ({_describe(exc)}), so "
@@ -4000,6 +4048,8 @@ def _self_test_body() -> int:
                 return cp("".join(f"{c_path}\0" for c_path, _t in coord))
             if cmd[:3] == ["git", "cat-file", "blob"] and cmd[3].startswith("HEAD:"):
                 return cp(dict(coord).get(cmd[3][5:], ""))
+            if cmd[:3] == ["git", "cat-file", "-s"] and cmd[3].startswith("HEAD:"):
+                return cp(f"{len(dict(coord).get(cmd[3][5:], ''))}\n")     # r3 C5: the blob's SIZE
             if cmd[:2] == ["git", "ls-tree"]:
                 return cp(tree)                     # no blobs unless a case gives some
             if cmd[:2] == ["git", "diff"]:
@@ -4679,21 +4729,25 @@ def _self_test_body() -> int:
         return (f"# Round {n}\n\n```yaml\nround: {n}\nfixes_nontrivial: false\n" + findings + "```\n")
     _ind = "findings:\n  - {id: X1, severity: Medium, aim: deliverable, fix_induced: true, component: det4, disposition: narrowed}\n"
     _cln = "findings: []\n"
-    def _tgate(docs, extra=(), src=None, present=()):
+    def _tgate(docs, extra=(), src=None, present=(), status=None, empty=()):
         """`thrash_gate` over a fresh commit holding `docs` ({round: text}) for subject `s`, the range naming
         every doc plus `extra`; `present` are `extra` paths also COMMITTED (the rest are absent at HEAD, as
-        a deletion leaves them); or `CANNOT RUN: <exc>` when it raises."""
+        a deletion leaves them), `empty` the present ones committed EMPTY; `status` maps an `extra` path to
+        its --name-status letter (default `A` if present, `D` if not); or `CANNOT RUN: <exc>` when it raises."""
         shutil.rmtree(_tg / "docs", ignore_errors=True)
         (_tg / "docs/reviews/coordinator").mkdir(parents=True)
         for n, t in docs.items():
             (_tg / f"docs/reviews/coordinator/s-r{n}-coordinator.md").write_text(t)
         for rel in present:
-            (_tg / rel).write_text("a review\n")
+            (_tg / rel).write_text("" if rel in empty else "a review\n")
         try:
             _tgread(["git", "add", "-A"])
             _tgread(["git", "commit", "-qm", "c", "--allow-empty"])
             fl = [f"docs/reviews/coordinator/s-r{n}-coordinator.md" for n in docs] + list(extra)
-            return thrash_gate(_tgread, fl, "HEAD", src)
+            st = {**{f: "A" for f in fl}, **{f: ("A" if f in present else "D") for f in extra}, **(status or {})}
+            fs = [{"status": st[f], "old": None if st[f] == "A" else f, "new": None if st[f] == "D" else f,
+                   "copy": st[f] == "C", "hunks": []} for f in fl]
+            return thrash_gate(_tgread, fl, "HEAD", src, fs=fs)
         except Exception as exc:
             return f"CANNOT RUN: {exc.__class__.__name__}"
     try:
@@ -4774,14 +4828,14 @@ def _self_test_body() -> int:
         return _tgread(cmd)
     _fl2 = ["docs/reviews/coordinator/s-r3-coordinator.md", "docs/reviews/coordinator/s-r4-coordinator.md"]
     check("#680 real git: `head` is honoured — at HEAD~1 (thrashing) it HOLDS, through the reader given",
-          (thrash_gate(_rec, _fl2, "HEAD~1", REVIEW_DECISION), any("HEAD~1:" in " ".join(c) for c in _seen)),
+          (thrash_gate(_rec, _fl2, "HEAD~1", REVIEW_DECISION, fs=[]), any("HEAD~1:" in " ".join(c) for c in _seen)),
           (_armed, True))
     check("#680 real git: ...and at HEAD (r4 clean) it does not",
-          thrash_gate(_tgread, list(reversed(_fl2)), "HEAD", REVIEW_DECISION), [])
+          thrash_gate(_tgread, list(reversed(_fl2)), "HEAD", REVIEW_DECISION, fs=[]), [])
     def _no_read(cmd):
         raise AssertionError(f"read called: {cmd}")
     check("#680: a range with no coordinator doc returns [] WITHOUT reading git or importing the rule",
-          thrash_gate(_no_read, ["docs/x.md"], "HEAD~1", _tg / "absent.py"), [])
+          thrash_gate(_no_read, ["docs/x.md"], "HEAD~1", _tg / "absent.py", fs=[]), [])
     # ── r2 X1 (Codex): a SECOND `findings:` key is unread (only the first is), and a field set twice in one
     # item keeps its LAST value — each is UNREADABLE, never clean. Codex's own r4 first.
     _dupk = "findings: []\n" + _inl
@@ -4801,6 +4855,50 @@ def _self_test_body() -> int:
           _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}, extra=["docs/reviews/architecture-review-old.md"]), _armed)
     check("#680 r2 X2 real git: a coordinator-dir review PRESENT at HEAD clears it",
           _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}, extra=[_CAR], present=[_CAR]), [])
+    # ── r3 (Claude) C1/C2/C3: "clean" is a POSITIVE form — `findings: []` with nothing under it — and every
+    # other shape must account for each `- ` line under the key with a parsed item, through ONE key that
+    # normalises to `findings`. Each variant is valid YAML with a fix-induced finding (A excepted, invalid).
+    _FI = "{id: X, severity: High, aim: deliverable, fix_induced: true, component: det4, disposition: fixed}"
+    for _nm, _b, _why in (
+            ("C1 J: an UNINDENTED flow item under a bare key", f"findings:\n- {_FI}\n", "item line"),
+            ("C1 J2: an UNINDENTED block item under a bare key",
+             "findings:\n- id: X\n  fix_induced: true\n  component: det4\n", "item line"),
+            ("C1 A: `findings: []` with an indented item under it", f"findings: []\n  - {_FI}\n", "inline value"),
+            ("C2 P: `findings: []` then a second key spelled `findings :`",
+             f"findings: []\nfindings :\n  - {_FI}\n", "2 `findings:` keys"),
+            ("C2 Q: `findings: []` then a second key spelled `\"findings\":`",
+             f"findings: []\n\"findings\":\n  - {_FI}\n", "2 `findings:` keys"),
+            ("C2 R: a bare key, then `\"findings\": [...]`", f"findings:\n\"findings\": [{_FI}]\n",
+             "2 `findings:` keys"),
+            ("C2 N: the only key spelled `findings :`", f"findings :\n  - {_FI}\n", "item line"),
+            ("C3 B: a quoted `\"fix_induced\"` key", "findings:\n  - {id: X, \"fix_induced\": true, component: det4}\n",
+             "not spelled"),
+            ("C3 C: a hyphenated `fix-induced` key", "findings:\n  - {id: X, fix-induced: true, component: det4}\n",
+             "not spelled"),
+            ("C3 H: a YAML merge key", f"base: &b {_FI}\nfindings:\n  - {{<<: *b}}\n", "not spelled"),
+            ("C4: a `# comment` after the component", "findings:\n  - id: X\n    fix_induced: true\n"
+             "    component: det4  # the detector\n", "comment")):
+        check(f"⭐ #680 r3 {_nm} — beside a fix-induced r3, it is cannot-judge, never clean",
+              _cj(_tgate({3: _doc(3, _ind), 4: _doc(4, _b)}), (4,), _why), True)
+    check("#680 r3 C1: `findings: []` with only blank and comment lines under it is still a clean round",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, "findings: []\n\n  # none this round\n")}), [])
+    check("#680 r3 C1: a bare `findings:` with NO item under it is cannot-judge, never clean",
+          _cj(_tgate({3: _doc(3, _ind), 4: _doc(4, "findings:\n")}), (4,), "item line"), True)
+    check("#680 r3 C2: `\"findings\": []` as the ONLY key is a clean round — the spelling is the same key",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, "\"findings\": []\n")}), [])
+    check("#680 r3 C4: `fix_induced: false  # comment` is cannot-judge, not read as a true string",
+          _cj(_tgate({3: _doc(3, _ind), 4: _doc(4, "findings:\n  - id: X\n    fix_induced: false  # no\n"
+                                                 "    component: det4\n")}), (4,), "comment"), True)
+    # ── r3 C5: a review clears the HOLD only as an ADDED or MODIFIED file whose blob at HEAD is non-empty.
+    _two = {3: _doc(3, _ind), 4: _doc(4, _ind)}
+    check("⭐ #680 r3 C5: a RENAMED old review (status R) clears nothing — it still HOLDS",
+          _tgate(_two, extra=[_CAR], present=[_CAR], status={_CAR: "R"}), _armed)
+    check("#680 r3 C5: a COPIED old review (status C) clears nothing",
+          _tgate(_two, extra=[_CAR], present=[_CAR], status={_CAR: "C"}), _armed)
+    check("⭐ #680 r3 C5: an EMPTY new review clears nothing",
+          _tgate(_two, extra=[_CAR], present=[_CAR], empty=[_CAR]), _armed)
+    check("#680 r3 C5: a MODIFIED non-empty review clears it (the stated bound)",
+          _tgate(_two, extra=[_CAR], present=[_CAR], status={_CAR: "M"}), [])
     shutil.rmtree(_tg, ignore_errors=True)
 
     shutil.rmtree(_tree_root, ignore_errors=True)

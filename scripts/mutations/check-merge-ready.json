@@ -2374,7 +2374,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    if any(ARCH_REVIEW.match(f) and f in head_paths for f in files):\n        return []\n",
+    "    if any(ARCH_REVIEW.match(f) and f in counted for f in files):\n        return []\n",
     ""
    ]
   ],
@@ -2440,7 +2440,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                if type(inline) is not str or not (inline == \"\" or EMPTY_INLINE.match(inline)):\n",
+    "                if not clean and inline != \"\":\n",
     "                if False:\n"
    ]
   ],
@@ -2528,21 +2528,98 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    if any(ARCH_REVIEW.match(f) and f in head_paths for f in files):\n",
+    "    if any(ARCH_REVIEW.match(f) and f in counted for f in files):\n",
     "    if any(ARCH_REVIEW.match(f) for f in files):\n"
    ]
   ],
   "expect": "\u2b50 #680 r2 X2: a DELETED coordinator-dir architecture review (in the range, absent at HEAD) still HOLDS"
  },
  {
-  "name": "backlog #680 (2) r2 X2: thrash_gate passes the RANGE, not the HEAD tree, as the paths present at HEAD",
+  "name": "backlog #680 (2) r3 C1: `findings: []` is clean even with lines under it — clean is no longer the POSITIVE form",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "reduce=_exact_component, error=ThrashUnjudgeable), frozenset(tree))",
-    "reduce=_exact_component, error=ThrashUnjudgeable), frozenset(files))"
+    "                clean = bool(EMPTY_INLINE.match(inline)) and rest == 0\n",
+    "                clean = bool(EMPTY_INLINE.match(inline))\n"
    ]
   ],
-  "expect": "\u2b50 #680 r2 X2 real git: a DELETED coordinator-dir review (named in the range, absent at HEAD) HOLDS"
+  "expect": "⭐ #680 r3 C1 A: `findings: []` with an indented item under it — beside a fix-induced r3, it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C1: a `- ` line under a bare key need not become a parsed item",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if not clean and (dashes == 0 or dashes != len(r[\"findings\"])):\n",
+    "                if not clean and dashes == 0:\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C1 J: an UNINDENTED flow item under a bare key — beside a fix-induced r3, it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C1: a bare `findings:` with no item under it reads as a clean round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(dashes == 0 or dashes != len(",
+    "(dashes != len("
+   ]
+  ],
+  "expect": "#680 r3 C1: a bare `findings:` with NO item under it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C3: a near-miss spelling of `fix_induced` or `component` is read as a readable round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                       or (_norm_field(k) in (\"fix_induced\", \"component\") and k not in (\"fix_induced\", \"component\"))]\n",
+    "                       or False]\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C3 B: a quoted `\"fix_induced\"` key — beside a fix-induced r3, it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C3: a YAML merge key `<<` in a finding is read as a readable round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "type(k) is not str or k.startswith(\"<<\")\n",
+    "type(k) is not str\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C3 H: a YAML merge key — beside a fix-induced r3, it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C4: a ` #` comment inside a component or fix_induced value is read as part of it",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                        if type(f.get(k)) is str and re.search(r\"[ \\t]#\", f[k]):\n",
+    "                        if False:\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C4: a `# comment` after the component — beside a fix-induced r3, it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C5: a RENAMED or COPIED old architecture review clears the HOLD",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    counted = frozenset(e[\"new\"] for e in fs if e.get(\"status\") in (\"A\", \"M\") and e.get(\"new\")\n",
+    "    counted = frozenset(e[\"new\"] for e in fs if e.get(\"status\") in (\"A\", \"M\", \"R\", \"C\") and e.get(\"new\")\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C5: a RENAMED old review (status R) clears nothing — it still HOLDS"
+ },
+ {
+  "name": "backlog #680 (2) r3 C5: an EMPTY architecture-review file clears the HOLD",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "f\"{head}:{e['new']}\"]).strip() != \"0\")\n",
+    "f\"{head}:{e['new']}\"]).strip() != \"\")\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C5: an EMPTY new review clears nothing"
  }
 ]

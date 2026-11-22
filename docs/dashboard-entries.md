@@ -21280,5 +21280,8 @@ Backlog #680 part (2), branch `merge-ready-thrash-hold`. `scripts/check-merge-re
 with `parse_header`). Base rate over 41 coordinator-touching master commits: 8 HOLD (5 armed, 3 cannot-judge), 0
 CANNOT RUN (12 before the r1 fold: coordinator-dir architecture reviews now count, a lone round no longer HOLDs;
 unchanged by the r2 fold: a second `findings:` key or a field set twice in a finding is unreadable, and an
-architecture review counts only if it exists at HEAD). Self-tests check-merge-ready 448/448, check-review-decision
-123/123; mutations check-merge-ready 188 -> 207, check-review-decision 30 -> 32.
+architecture review counts only if it exists at HEAD; unchanged by the r3 fold: a round is clean only as a literal
+`findings: []` with nothing under it, any other shape must parse as many items as it has `- ` lines, a near-miss field
+name, a `<<` key or a ` #` in a judged value is unreadable, and only an added or modified non-empty architecture review
+clears the HOLD; backlog #695 filed). Self-tests check-merge-ready 467/467, check-review-decision 130/130; mutations
+check-merge-ready 188 -> 214, check-review-decision 30 -> 33.

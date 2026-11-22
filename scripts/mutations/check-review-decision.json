@@ -410,8 +410,8 @@
     "file": "scripts/check-review-decision.py",
     "edits": [
       [
-        "            \"findings_keys\": len(re.findall(r\"^findings:\", body, re.M)),\n",
-        "            \"findings_keys\": 1 if key else 0,\n"
+        "            \"findings_keys\": len(fk),\n",
+        "            \"findings_keys\": 1 if fk else 0,\n"
       ]
     ],
     "expect": [
@@ -429,6 +429,19 @@
     ],
     "expect": [
       "#680 r2 X1: parse_round names a field set twice in one item, flow and block alike"
+    ]
+  },
+  {
+    "name": "backlog #680 (2) r3 C2: parse_round counts only the exact `findings:` spelling, not every spelling of the key",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "    fk = [(i, m) for i, m in keys if _norm_key(m[\"k\"]) == \"findings\"]\n",
+        "    fk = [(i, m) for i, m in keys if m[\"k\"] == \"findings\"]\n"
+      ]
+    ],
+    "expect": [
+      "#680 r3 C2: parse_round counts a key that NORMALISES to `findings` — spaced, double- and single-quoted"
     ]
   }
 ]
