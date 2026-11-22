@@ -21,7 +21,7 @@ Each row was re-judged against C1 to C5 and given exactly one option:
 
 - **`coverage-verdict` — option (a).** Verdict stays DON'T-SHIP, grade argued. Option (b), SHIP, was rejected: its
   only runtime importer is the DON'T-SHIP engine (`check-plan-code.py` line 108; `sweep-red-alert.py` line 442 is in
-  its self-test), so no bundle would load it, and spec §4 calls such an orphan library a scope question. The stated
+  its self-test), so no bundle would load it, and spec §4 calls such an orphan library a scope question (⟳ **corrected in round 3, r3 C4: a misquote.** `coverage_verdict` is imported by `check-plan-code`, so §4's orphan row, *"imported by **no** entry-point"*, does not apply; the row that does is *"imported only by entry-points that are themselves `argued`"*, which sets the grade `argued` and says nothing against SHIP. The r3 fold re-judged the row SHIP + argued). The stated
   reason is the consumer's verdict, so it cites what that verdict rests on: **`check-plan-code:2:1`** (line 2494,
   detector 2 `unread`), the one finding `check-plan-code`'s row cites for its C3 fail, labelled *via its only
   runtime consumer*. `check-plan-code:6:3` is not cited, because that row cites it for a C2 **pass**.

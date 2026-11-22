@@ -21292,19 +21292,28 @@ project could use them. The mutation engine itself is not worth shipping. A stra
 any mutation tool, and every one of our mutations is written against this repository's own checks. What carries over
 is a lesson already written up as a portable practice. The nightly sweep job and its red-sweep alert could ship
 together as one reusable GitHub workflow once they stop calling our engine and read a published record format. The
-small verdict-type library is clean but has nothing to ship with: only the engine uses it. Each sweep feature is
+small verdict-type library passes every test and is graded shippable later, inside the same CI package as the engine
+that uses it. Each sweep feature is
 compared with four well-known mutation tools, using pages of those tools' own documentation. In the pages fetched,
 only one tool documents splitting a run across CI machines, none chooses test suites by what a change imports, and
 none describes a nightly sweep that opens an issue. All six grades are argued, not measured.
 
-Nothing waits on you for this.
+You decided (2026-11-22) what a "not shippable" grade must point to. It now names its reason from four kinds: a
+problem the scan found in that same piece, a section of the spec, a failed install test, or a content review not yet
+done. Borrowing another piece's problem, which went wrong three review rounds running, is now refused. You also
+ruled that the verdict-type library is not part of the mutation engine, so it can ship. Nothing else waits on you
+for this.
 <!--tech-->
 Marketplace slice F, plan Task 17, branch `marketplace-task17`. New `docs/marketplace/inventory.json`: 6 effort (2)
-rows (check-plan-code and mutation-manifests DON'T-SHIP with harvest practice §22/§10, velocity-docs and
-coverage-verdict DON'T-SHIP with harvest none; mutation-sweep-job and sweep-red-alert NEEDS-WORK with a portable-core
-reusable-workflow route), all phase later and grade argued. Cites come from scan-2026-11-17.json; coverage-verdict
-and mutation-manifests have no scan findings of their own, so (round 2 fold) each cites check-plan-code:2:1, the one
-finding check-plan-code's row cites for its C3 fail, labelled "via its only runtime consumer" / "via its executor".
+rows (check-plan-code and mutation-manifests DON'T-SHIP with harvest practice §22/§10, velocity-docs DON'T-SHIP with
+harvest none; mutation-sweep-job and sweep-red-alert NEEDS-WORK with a portable-core reusable-workflow route;
+coverage-verdict SHIP, bundle ci-layer), all phase later and grade argued. Owner decision 2026-11-22 (option A, Phase 6
+review architecture-review-2026-11-22-marketplace-inventory-rows): spec §5 rule 1 amended so a non-SHIP row's
+`rests_on` names its ground from four kinds (finding of its OWN component, spec section/decision, failed experiment
+scenario, c5), each resolved against its owner file; plan Task 19 reworded to match (not built). Round 3 fold:
+check-plan-code rests on spec §3 Effort (2) + §2c, mutation-manifests on spec §3 Effort (2) + c5 (78 of 105 manifest
+target files outside every package, re-measured), the other three on their own scan findings; the transitive
+check-plan-code:2:1 cite is gone.
 engine_comparison has 15 entries, 0 unverified; absences are scoped to the fetched pages. Review round 1 fold:
 coverage-verdict re-argued (stdlib-only type module, imported at runtime only by check-plan-code), sweep-red-alert's
 C3 re-argued from RECORD_SCHEMA, self-test cites relabelled. No `recall` key yet (Task 18 adds it).
