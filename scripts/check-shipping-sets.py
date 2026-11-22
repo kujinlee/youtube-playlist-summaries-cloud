@@ -2262,6 +2262,9 @@ def _self_test_body() -> int:
         # ⟳ 2026-11-20 backlog #685 (the rm-backup hook): 354 + 2 = 356 / b5acf6669ff888d6. Its two gained lines, listed
         # by hand: `check-rm-backup.py` -> `fixture_git.py` (its suite's isolation) and `check-selftest-counts.py` ->
         # `check-rm-backup.py` (its POPULATION row). Lost: 0.
+        # ⟳ 2026-11-22 marketplace plan Task 18 (the shipped-corpus build): 356 + 1 = 357 / 229ba8a8831f504b. The one gained line,
+        # diffed by hand against 667fc4ac's reader: `check-selftest-counts.py` -> `build-shipped-corpus.py` (its
+        # POPULATION row). Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2273,7 +2276,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (356, "b5acf6669ff888d6", []))
+             (357, "229ba8a8831f504b", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
