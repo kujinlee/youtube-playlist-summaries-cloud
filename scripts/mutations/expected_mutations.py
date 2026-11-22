@@ -2514,6 +2514,11 @@ EXPECTED_MUTATIONS = {
     # creates it (5): fixed dates, the correctly-empty flag, the non-empty-out refusal, known-facts beside the
     # repository, the full git log. +2 at the r1 fold (Claude CM3): two typed facts drifting from their committed file.
     "scripts/mkt_seed_repo.py": 11,
+    # 2026-11-22, marketplace-inventory plan Task 18: the shipped-corpus build, pinned in the commit that creates it.
+    # One entry per group-table rule (first row, sizes), per build rule (exclusion, paraphrase, index filter, stale
+    # source, missing paraphrase, non-empty out), per quote rule (per paragraph, blockquote, ellipsis, six-word runs,
+    # emphasis), and per check rule (no quotes, empty output, excluded name, nested output, a hit fails).
+    "scripts/build-shipped-corpus.py": 18,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out

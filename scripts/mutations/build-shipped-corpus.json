@@ -1,0 +1,200 @@
+[
+ {
+  "name": "a later table row overwrites the first one's file list",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if m and m.group(1) not in out:",
+    "        if m:"
+   ]
+  ],
+  "expect": "the group table is read from the first row per letter, the Answered table's repeat ignored"
+ },
+ {
+  "name": "wrong group sizes are accepted",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    if got != GROUP_SIZES:",
+    "    if False:"
+   ]
+  ],
+  "expect": "a decision table with the wrong group sizes is CANNOT RUN"
+ },
+ {
+  "name": "excluded files are copied",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if p.name in excluded:\n            continue\n",
+    "        if False:\n            continue\n"
+   ]
+  ],
+  "expect": "a clean build writes the kept files, the paraphrases and the index, and no excluded file"
+ },
+ {
+  "name": "a D file ships its source, not its paraphrase",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "            shutil.copyfile(para / p.name, out / p.name)",
+    "            shutil.copyfile(p, out / p.name)"
+   ]
+  ],
+  "expect": "a D file in the output is its paraphrase, not its source"
+ },
+ {
+  "name": "the index keeps lines that link an excluded file",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "                    if not any(f\"({n})\" in ln for n in excluded)]",
+    "                    if True]"
+   ]
+  ],
+  "expect": "the index drops the lines that link an excluded file and keeps the rest"
+ },
+ {
+  "name": "a stale paraphrase is used",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if recorded.get(n) != _sha(src / n):",
+    "        if False:"
+   ]
+  ],
+  "expect": "a stale paraphrase (its source changed after sources.json) is CANNOT RUN"
+ },
+ {
+  "name": "a D file with no paraphrase is not refused",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if not (para / n).is_file():\n            raise",
+    "        if False:\n            raise"
+   ]
+  ],
+  "expect": "a D file with no paraphrase is CANNOT RUN"
+ },
+ {
+  "name": "a non-empty --out is not refused",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    if out.exists() and (not out.is_dir() or any(out.iterdir())):",
+    "    if False:"
+   ]
+  ],
+  "expect": "a non-empty --out is CANNOT RUN"
+ },
+ {
+  "name": "quotes are read over the whole file, not per paragraph",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    for para in re.split(r\"\\n\\s*\\n\", text):",
+    "    for para in [text]:"
+   ]
+  ],
+  "expect": "a quote is read within one paragraph, never paired with a later paragraph's close"
+ },
+ {
+  "name": "blockquote quotes are not extracted",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if lines and re.match(r'^\\s*>\\s*\"', lines[0]):",
+    "        if False:"
+   ]
+  ],
+  "expect": "italic and multi-line blockquote quotes are both extracted"
+ },
+ {
+  "name": "a quote is not split at an ellipsis",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "re.split(r\"…|\\.\\.\\.\", quote)",
+    "[quote]"
+   ]
+  ],
+  "expect": "an ellipsis splits a quote into fragments, and short fragments are dropped"
+ },
+ {
+  "name": "a long fragment is searched for only whole",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    return [\" \".join(w[i:i + WINDOW]) for i in range(max(1, len(w) - WINDOW + 1))]",
+    "    return [fragment]"
+   ]
+  ],
+  "expect": "a quote reused in part, with its other words changed, fails check 1 on a six-word run"
+ },
+ {
+  "name": "markdown emphasis is not normalised away",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    text = re.sub(r\"[*_`\\\\]\", \"\", text)\n",
+    "\n"
+   ]
+  ],
+  "expect": "a source quote in a kept output file fails check 1, through emphasis, case and line breaks"
+ },
+ {
+  "name": "no quotes found is a pass",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    if not frags:",
+    "    if False:"
+   ]
+  ],
+  "expect": "no quote in any source D file is CANNOT RUN, not a pass"
+ },
+ {
+  "name": "an empty output is a pass",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    if not files:",
+    "    if False:"
+   ]
+  ],
+  "expect": "an output directory with no files is CANNOT RUN, not a pass"
+ },
+ {
+  "name": "an excluded file in the output is not reported",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if p.name in excluded:\n            hits.append",
+    "        if False:\n            hits.append"
+   ]
+  ],
+  "expect": "an excluded file in the output fails check 2"
+ },
+ {
+  "name": "only the top level of the output is searched",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    files = sorted(p for p in out.rglob(\"*\") if p.is_file())",
+    "    files = sorted(p for p in out.glob(\"*\") if p.is_file())"
+   ]
+  ],
+  "expect": "an excluded file nested in a subdirectory of the output fails check 2"
+ },
+ {
+  "name": "a hit does not fail the check",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    if hits:",
+    "    if False:"
+   ]
+  ],
+  "expect": "an excluded file in the output fails check 2"
+ }
+]
