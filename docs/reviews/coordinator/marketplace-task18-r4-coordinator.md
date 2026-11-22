@@ -1,5 +1,16 @@
 # Round 4 — `marketplace-task18` — coordinator — a line mixing a real link and a pseudo-link hides a quote; FILED as backlog #698 (past the round cap)
 
+```yaml
+round: 4
+fixes_nontrivial: false
+subject: marketplace-task18
+halves:
+  codex: ran
+  claude: "GAP: alternation"
+findings:
+  - {id: X1, severity: Major, aim: deliverable, fix_induced: false, component: matcher, disposition: filed}
+```
+
 Codex reviewed 2856ce3c (the round 3 fold of plan Task 18, PR #617): `docs/reviews/codex/marketplace-task18-r4-codex.md`.
 It reports X1 MAJOR, `fix_induced: false`, with verdict NOT CONVERGED. Its loosening answer is "not a loosening".
 

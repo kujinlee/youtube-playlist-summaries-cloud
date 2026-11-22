@@ -1,5 +1,16 @@
 # Round 3 — `marketplace-task18` — coordinator — round 2's link and URL reduction deletes visible words; the check is made to match under either view
 
+```yaml
+round: 3
+fixes_nontrivial: true
+subject: marketplace-task18
+halves:
+  codex: "GAP: alternation"
+  claude: ran
+findings:
+  - {id: C1, severity: Major, aim: deliverable, fix_induced: true, component: matcher, disposition: fixed}
+```
+
 The Claude half reviewed afcb6e85 (the round 2 fold of plan Task 18, PR #617): `docs/reviews/claude/marketplace-task18-r3-claude.md`.
 It reports C1 MAJOR, `fix_induced: true`, with verdict NOT CONVERGED.
 
