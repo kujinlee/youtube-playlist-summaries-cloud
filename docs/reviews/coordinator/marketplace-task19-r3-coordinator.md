@@ -39,6 +39,18 @@ Thrashing means two consecutive rounds whose findings came from the previous rou
 ## Dispositions
 
 - **C1 (MAJOR, fix-induced): deep nesting reaches `RecursionError` via `repr` in a message. Sent to Phase 6.** It fails closed (rc 1 with a traceback, never rc 0), so it is not a BLOCKER. The reviewer's proposed fix is a depth bound in `_read_json`; the committed files nest at most 7 levels deep.
+  **Fixed in 4f31d00b.** This is the Phase 6 fold. `_read_json` refuses nesting past `MAX_DEPTH = 32`, checked by an iterative walk; the committed inputs measure at most 6 deep. No message prints an input value except through `_show`, and `main` is a net (INTERNAL ERROR, rc 2). The evidence:
+  - Self-test 296/296. "an inventory.json nested 33 deep is refused" sits beside "32 is read".
+  - The permanent fuzz case: 2,054 edits of the fixture inputs, with no escape and no INTERNAL ERROR.
+  - The thin fuzz through the real reader: 54,235 runs over the Task-20-shaped tree and 29,337 over the live tree. No exception escaped and none reached the net.
+  - attack.py on the folded script: 66 cases, 0 TRACEBACK, 0 FAIL-OPEN. The one WRONG is P9, which is now rc 2 where the corpus expected rc 1. That is the intended refusal; see C2.
+  - Mutations in a full `git clone`: 136 of 136 killed, each attributed to the case it names. All 6,497 manifest anchors resolve.
+  - The live tree is rc 1 with exactly 34 `[missing]` errors. The two Task-20-shaped trees are rc 0.
 - **C2 (MINOR): an unknown `package` skips the SHIP rule (rc 0), and duplicate component ids are not refused. Sent to Phase 6.** This one is fail-OPEN, so whatever the redesign, it must be closed before merge.
+  **Fixed in 4f31d00b.** `_reference_errors` refuses, at rc 2:
+  - a component whose `package` names no package;
+  - two components with one id.
+
+  Each has a case and an adjacent negative, and each has a mutation that is killed by the case it names. The coordinator's addition is closed too: a map component `phase` outside `MAP_PHASES` is rc 2 (corpus P9, which was fail-open under the prototype), with `1-if-feasible` as its negative. The map channel and the pass condition are type-strict `_one_of` vocabularies. `CHANNELS` and `MAP_PHASES` equal `check-shipping-sets`' own, which is asserted by import.
 
 The Phase 6 review is filed as backlog #699 and convened at once. Its recommendation is folded on this branch, and the merge waits for it, because `check-merge-ready.py` HOLDs a thrashing PR with no architecture review in range (backlog #680, part 2).
