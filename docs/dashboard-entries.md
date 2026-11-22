@@ -21303,7 +21303,8 @@ Marketplace slice F, plan Task 17, branch `marketplace-task17`. New `docs/market
 rows (check-plan-code and mutation-manifests DON'T-SHIP with harvest practice §22/§10, velocity-docs and
 coverage-verdict DON'T-SHIP with harvest none; mutation-sweep-job and sweep-red-alert NEEDS-WORK with a portable-core
 reusable-workflow route), all phase later and grade argued. Cites come from scan-2026-11-17.json; coverage-verdict
-and mutation-manifests have no scan findings and cite nothing (the plan gap is filed as a backlog row).
+and mutation-manifests have no scan findings of their own, so (round 2 fold) each cites check-plan-code:2:1, the one
+finding check-plan-code's row cites for its C3 fail, labelled "via its only runtime consumer" / "via its executor".
 engine_comparison has 15 entries, 0 unverified; absences are scoped to the fetched pages. Review round 1 fold:
 coverage-verdict re-argued (stdlib-only type module, imported at runtime only by check-plan-code), sweep-red-alert's
 C3 re-argued from RECORD_SCHEMA, self-test cites relabelled. No `recall` key yet (Task 18 adds it).
