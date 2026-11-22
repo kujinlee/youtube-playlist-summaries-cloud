@@ -675,8 +675,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "(\"grade\", _in(GRADES),",
-    "(\"grade\", lambda v: isinstance(v, str),"
+    "_in(GRADES), f\"one of {', '.join(GRADES)} (§4b",
+    "lambda v: isinstance(v, str), f\"one of {', '.join(GRADES)} (§4b"
    ]
   ],
   "expect": "a grade outside the vocabulary is an error"
@@ -763,8 +763,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "isinstance(v, int) and not isinstance(v, bool), \"an integer\"",
-    "not isinstance(v, bool), \"an integer\""
+    "(\"effort\", lambda v: isinstance(v, int) and",
+    "(\"effort\", lambda v: True and"
    ]
   ],
   "expect": "an effort that is a string is a shape error"
@@ -785,8 +785,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "isinstance(v, list) and bool(v) and all(_in(ROLES)(x) for x in v)",
-    "isinstance(v, list) and bool(v)"
+    "all(_in(ROLES)(x) for x in v)",
+    "True"
    ]
   ],
   "expect": "a role outside the vocabulary is a shape error"
@@ -851,8 +851,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "set(v) == set(CRITERIA)",
-    "set(v) >= set(CRITERIA)"
+    "isinstance(v, dict) and set(v) == set(CRITERIA)",
+    "isinstance(v, dict) and set(v) >= set(CRITERIA)"
    ]
   ],
   "expect": "criteria with a key outside C1-C5 is a shape error"
@@ -884,8 +884,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "_finite(v.get(\"public_bar_hours\")) and v[\"public_bar_hours\"] > 0",
-    "_num(v.get(\"public_bar_hours\")) and v[\"public_bar_hours\"] > 0"
+    "and _finite(v.get(\"public_bar_hours\"))",
+    "and _num(v.get(\"public_bar_hours\"))"
    ]
   ],
   "expect": "an infinite public_bar_hours is a shape error"
