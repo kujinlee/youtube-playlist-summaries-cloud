@@ -63,6 +63,7 @@
       "scripts/mutations/check-handoff-path.json",
       "scripts/mutations/check-hook-commands.json",
       "scripts/mutations/check-idle-stop.json",
+      "scripts/mutations/check-inventory.json",
       "scripts/mutations/check-live-schema.json",
       "scripts/mutations/check-main-drivable.json",
       "scripts/mutations/check-memory-index-budget.json",
@@ -133,7 +134,7 @@
       "scripts/mutations/sweep-costs.json",
       "scripts/mutations/sweep-red-alert.json"
      ],
-     "expected_count": 107
+     "expected_count": 108
     },
     "mutation-sweep-job": {
      "files": [

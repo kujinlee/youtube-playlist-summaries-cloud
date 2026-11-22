@@ -2524,6 +2524,11 @@ EXPECTED_MUTATIONS = {
     # excluded-content hash: per-line trailing whitespace, trailing blank lines, the excluded side canonical (r2 X2).
     # ⟳ round-3 fold: 27 — the plain view dropped from the output side, and from the quote side (r3 C1).
     "scripts/build-shipped-corpus.py": 27,
+    # 2026-11-22, marketplace-inventory plan Task 19: the inventory guard, pinned in the commit that creates it. One
+    # entry per load-bearing clause: the checkpoint (population, ratio, majority, the two CANNOT RUNs), every
+    # row_errors rule (backlog #696 a, c and f among them), every inventory-level rule, the exit-code ranking,
+    # the input loader and render's one verdict-and-grade cell. Each verified red by hand in a full clone.
+    "scripts/check-inventory.py": 61,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out

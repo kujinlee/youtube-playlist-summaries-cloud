@@ -4,7 +4,7 @@
     python3 scripts/check-inventory.py              # the live inventory under this repository
     python3 scripts/check-inventory.py --render     # the same checks; on rc 0 or 3, the Markdown view on stdout
     python3 scripts/check-inventory.py --root DIR   # another tree (the self-test's fixture worlds)
-    python3 scripts/check-inventory.py --self-test  # 144 cases
+    python3 scripts/check-inventory.py --self-test  # 149 cases
 
 It reads `docs/marketplace/inventory.json`, `components.json`, `shipping-sets.json`, the LATEST `scan-<date>.json`
 (by name), `experiment-tier-a.json`, the spec (which owns the `spec` ground kind, §5 rule 1) and
@@ -827,6 +827,22 @@ def _self_test_body():
     case("a measured grade on an effort (2) row is an error",
          lambda: rules(row("ci", grade="measured")), ["measured-effort"])
     case("a measured grade on an effort (3) row is clean", lambda: rules(row("nw", grade="measured")), [])
+
+    # ── direct calls: each input, varied at its own call site ────────────────────────────────────────────────
+    case("a finding ground against a scan with no entry for the component is an error",
+         lambda: [e.split(" ")[1] for e in row_errors(row("nw"), {}, spec, sidecar, ctx=mkctx())], ["[ground-finding]"])
+    case("a spec ground against a spec with no such heading is an error",
+         lambda: [e.split(" ")[1] for e in row_errors(row("data"), scan, "## 3. Scope\n", sidecar, ctx=mkctx())],
+         ["[ground-spec]"])
+    case("a SHIP entry-point with an empty sidecar, its package not a plugin, is clean",
+         lambda: row_errors(row("ship-ep"), scan, spec, {}, ctx=mkctx(channels={"comp": "reusable-workflow"})), [])
+    case("an empty map and an empty inventory have only the phase-1-package error",
+         lambda: inventory_errors({"rows": [], "scan": None}, mkctx(components={}), None),
+         ["inventory: [phase1-package] no phase-1 package is named in components.json"])
+    def bogus():
+        with contextlib.redirect_stderr(io.StringIO()):
+            return main(["--bogus"])
+    case("an unknown argument alone exits 2", bogus, 2)
 
     # ── inventory level ──────────────────────────────────────────────────────────────────────────────────────
     full = [row(n) for n in base]
