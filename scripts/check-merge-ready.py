@@ -1732,14 +1732,144 @@ def pin_falls(old: dict, new: dict) -> list[str]:
     return out
 
 
+# ── THRASHING ARMED, NO PHASE 6 REVIEW (backlog #680 part 2) ─────────────────────────────────────
+# ⛔ PR #600 merged (11d0568d) with rounds 3 and 4 of `hse-slice-d` both carrying fix-induced findings in
+# detector 4 — the Phase 6 arming condition (docs/dev-process.md → *The arming condition*) — and no
+# architecture review, because nothing here read the coordinator docs. Now: every review subject whose
+# coordinator doc the PR's range touches is judged on its LAST TWO rounds by `check-review-decision`'s
+# OWN `thrashing_component`, over its OWN `parse_round` — imported, never re-implemented (a second copy
+# of a rule is this repository's most-measured drift). Thrashing with no `docs/reviews/architecture-
+# review-*.md` added or changed in the range HOLDs.
+# ⟳ 2026-11-21 (coordinator, on a measurement): `rounds_for`'s VALIDATION is not used. It refused 92 of
+# 181 subjects — PR #600's own among them — so a gate on it answered CANNOT RUN on its own target. A
+# round whose header is missing, unparseable or has no `findings:` key HOLDS instead ("cannot judge"): an unreadable round is
+# not proof of no thrashing, and a HOLD goes to a person. Only a sibling that cannot be imported, or a
+# rule that raises, is CANNOT RUN.
+# ⚠ THE DOCS ARE READ AT THE PR'S HEAD COMMIT through `git_reader`, like `gather` — never the working
+# tree (`rounds_for` reads the working tree; it is not called). The script runs from the PR's worktree,
+# so an UNCOMMITTED coordinator doc is not seen, exactly as an uncommitted file is not in the range.
+# ⚠ BOUNDS: "last two" are the two highest round numbers in the FILE NAMES; a gap (r2 and r4) is judged
+# as adjacent, as `thrashing_component` would. ANY architecture review in the range clears EVERY
+# subject — it is not matched to the component it names (a decision, reported, not made here).
+REVIEW_DECISION = Path(__file__).with_name("check-review-decision.py")
+COORD_DOC = re.compile(r"^docs/reviews/coordinator/(?P<subject>.+)-r(?P<n>\d+)-coordinator\.md$")
+ARCH_REVIEW = re.compile(r"^docs/reviews/architecture-review-[^/]+\.md$")
+PHASE6_FIX = "run the Phase 6 architecture review — docs/dev-process.md → The arming condition"
+
+
+class ThrashUnjudgeable(Exception):
+    """The thrashing rule itself could not run (sibling missing, or its rule raised). `main()`: CANNOT RUN."""
+
+
+class _RoundUnreadable(Exception):
+    """One round's header could not be parsed. Becomes a HOLD ("cannot judge"), never CANNOT RUN."""
+
+
+def _exact_data(x):
+    """A FRESH copy of a parsed round in exact builtins — `_cross`'s rule: no sibling subclass leaves the try."""
+    if type(x) is dict:
+        return {_exact_data(k): _exact_data(v) for k, v in dict.items(x)}
+    if type(x) is list:
+        return [_exact_data(v) for v in list.__iter__(x)]
+    if type(x) is str:
+        return str.__str__(x)
+    if type(x) is bool or x is None:
+        return x
+    if type(x) is int:
+        return int.__int__(x)
+    raise TypeError(f"parse_round returned a {type(x).__name__}, not a plain dict/list/str/int/bool/None")
+
+
+def _exact_component(got) -> "str | None":
+    """`thrashing_component`'s answer as None or a FRESH exact str."""
+    if got is None:
+        return None
+    if type(got) is not str:
+        raise TypeError("thrashing_component returned neither None nor an exact str")
+    return str.__str__(got)
+
+
+def coordinator_subjects(files: list[str]) -> list[str]:
+    """PURE. The review subjects whose coordinator docs the range adds, changes, renames or deletes."""
+    return sorted({m["subject"] for m in map(COORD_DOC.match, files) if m})
+
+
+def last_two_docs(tree_paths: list[str], subject: str) -> "list[tuple[int, str]]":
+    """PURE. (round, path) of `subject`'s two highest-numbered coordinator docs in the tree, ascending."""
+    docs = sorted((int(m["n"]), m.group(0)) for m in map(COORD_DOC.match, tree_paths)
+                  if m and m["subject"] == subject)
+    return docs[-2:]
+
+
+def thrash_holds(files: list[str], rounds_by_subject: dict, thrashing) -> list[str]:
+    """PURE (given a pure `thrashing`). The HOLD reasons for thrashing armed with no Phase 6 review.
+
+    `rounds_by_subject` maps a subject to its last two rounds, ascending; each is a parsed round
+    (`{"round", "findings"}`) or `{"round": n, "unreadable": why}`. `thrashing` is
+    `check-review-decision.thrashing_component` — injected so this stays pure and the RULE has one owner.
+    """
+    if any(ARCH_REVIEW.match(f) for f in files):
+        return []
+    out = []
+    for subject in sorted(rounds_by_subject):
+        rounds = rounds_by_subject[subject]
+        bad = [r for r in rounds if "unreadable" in r]
+        if bad:
+            out.extend(f"cannot judge thrashing for {subject} r{r['round']}: {r['unreadable']} — read it, "
+                       f"or {PHASE6_FIX}" for r in bad)
+            continue
+        comp = thrashing(rounds)
+        if comp:
+            out.append(f"thrashing armed: {subject}'s component {comp!r} carried fix-induced findings in "
+                       f"both r{rounds[-2]['round']} and r{rounds[-1]['round']}, and no "
+                       f"docs/reviews/architecture-review-*.md is in this PR's range — {PHASE6_FIX}")
+    return out
+
+
+def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = None) -> list[str]:
+    """The thrashing HOLD reasons for the range, reading each subject's last two coordinator docs AT `head`.
+
+    RAISES `ThrashUnjudgeable` when the sibling cannot be imported or its rule raises; `read` raising (a
+    git failure) propagates — `main()` reports both as CANNOT RUN. A round that cannot be parsed is a HOLD."""
+    subjects = coordinator_subjects(files)
+    if not subjects:
+        return []
+    crd = _import_sibling(src or REVIEW_DECISION, "_crd_for_merge_ready", ThrashUnjudgeable)
+    tree = [p for p in read(["git", "ls-tree", "-r", "-z", "--name-only", "--full-tree", head]).split("\0") if p]
+    rounds_by_subject = {}
+    for subject in subjects:
+        rounds = []
+        for n, path in last_two_docs(tree, subject):
+            text = read(["git", "cat-file", "blob", f"{head}:{path}"])
+            try:
+                r = _cross(lambda t: crd.parse_round(t), text, reduce=_exact_data, error=_RoundUnreadable)
+                if type(r) is not dict or type(r.get("findings")) is not list:
+                    raise _RoundUnreadable("parse_round returned no findings list")
+                # ⟳ 2026-11-21 (measured): PR #600's r4 had NO `findings:` key and recorded its
+                # fix-induced MAJOR only in prose; read as "no findings", PR #600 itself passed.
+                if r.get("findings_key") is not True:
+                    raise _RoundUnreadable("header has no `findings:` key — an absent list is not a "
+                                           "clean round")
+                r["round"] = n
+            except _RoundUnreadable as exc:
+                r = {"round": n, "unreadable": str(exc)}
+            rounds.append(r)
+        if rounds:
+            rounds_by_subject[subject] = rounds
+    return thrash_holds(files, rounds_by_subject,
+                        lambda rs: _cross(lambda x: crd.thrashing_component(x), rs,
+                                          reduce=_exact_component, error=ThrashUnjudgeable))
+
+
 def hold_reasons(files: list[str], diff: str, head: str | None,
                  app_tests_at: str | None, no_review: bool, fs: list[dict] | None = None, *,
-                 pins: "tuple[dict, dict]", answered: frozenset = frozenset()) -> list[str]:
+                 pins: "tuple[dict, dict]", thrash, answered: frozenset = frozenset()) -> list[str]:
     """PURE. Why a READY pull request must still be HELD for the owner. Empty = no exception.
 
     `no_review` is the review gate's OWN matcher's answer for `NO-REVIEW:` (passed in, so the
     rule stays pure and cannot disagree with the gate about where a waiver counts). `pins` is
-    `pin_pair`'s (base, head) mutation pins, read outside so this stays pure.
+    `pin_pair`'s (base, head) mutation pins, read outside so this stays pure. `thrash` is `thrash_gate`'s
+    reasons, read outside for the same reason — required, so a caller cannot skip it by forgetting it.
     """
     out: list[str] = []
     per = diff_lines(diff, fs)
@@ -1790,6 +1920,8 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
         out.append(f"app code changed ({len(app)} file(s), e.g. {app[0]}) and nobody has attested "
                    f"a local test:integration + test:e2e pass at this head — run both, then re-run "
                    f"with --app-tests-passed {head or '<head sha>'} (an attestation; not verified)")
+    # 5. THRASHING ARMED WITH NO PHASE 6 REVIEW (backlog #680 part 2) — see `thrash_gate`.
+    out.extend(thrash)
     return out
 
 
@@ -2033,6 +2165,13 @@ def main(argv: list[str]) -> int:
                          "rule's exceptions were NOT checked. Treat this as NOT RUN.")
         holds, gathered = [], False
     if gathered:
+        # backlog #680 (2): the coordinator docs at HEAD — this runs from the PR's worktree.
+        try:
+            thrash = thrash_gate(git_reader(_run), files)
+        except Exception as exc:          # the rule could not run: CANNOT RUN, never a silent pass
+            thrash = []
+            code, line = 2, (f"CANNOT RUN — the thrashing check could not run ({_describe(exc)}), so "
+                             "an armed Phase 6 review was NOT checked. Treat this as NOT RUN.")
         try:
             nr = granted_escapes(body_file.read_text()).get("NO-REVIEW:") is not None
         except Exception as exc:
@@ -2059,7 +2198,7 @@ def main(argv: list[str]) -> int:
                       f"Ask the final review round (`--flagged-block` prints the prompt section): "
                       + ", ".join(i for i, _p, _t in left[:6]) + (" …" if len(left) > 6 else ""))
         holds = (hold_reasons(files, "", head, args.app_tests_passed, bool(nr), fs=fs, pins=pins,
-                              answered=answered)
+                              thrash=thrash, answered=answered)
                  if nr is not None else [])
     for h in holds:
         print(f"  HOLD {h}")
@@ -2338,7 +2477,7 @@ def _self_test_body() -> int:
     def DF(path, *hunk):
         return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n" + "\n".join(hunk) + "\n"
     def H(files=(), diff="", head="abc", at=None, nr=False):
-        return hold_reasons(list(files), diff, head, at, nr, pins=({}, {}))
+        return hold_reasons(list(files), diff, head, at, nr, thrash=(), pins=({}, {}))
     def _raises(fn, exc):
         try:
             fn()
@@ -2361,7 +2500,7 @@ def _self_test_body() -> int:
               has(pin_falls({"scripts/a.py": o}, {"scripts/a.py": n}), f"{o} -> {n}"), True)
     check("...but a pin that RISES is not", pin_falls({"scripts/a.py": 125}, {"scripts/a.py": 129}), [])
     check("...and hold_reasons carries a falling pin through (the pins are required, not optional)",
-          has(hold_reasons([], "", "abc", None, False, pins=({"scripts/a.py": 9}, {"scripts/a.py": 8})),
+          has(hold_reasons([], "", "abc", None, False, thrash=(), pins=({"scripts/a.py": 9}, {"scripts/a.py": 8})),
               "9 -> 8"), True)
     for o, n in ((274, 271), (9, 1)):
         check(f"a declared self-test count that drops {o} -> {n} is a loosening",
@@ -2570,18 +2709,18 @@ def _self_test_body() -> int:
           (frozenset(), frozenset()))
     _fp = DF(_CK, "-    return 1", "-    sys.exit(2)", "+    pass")
     check("#508: hold_reasons with NO answers holds both flagged lines",
-          [r for r in hold_reasons([_CK], _fp, "abc", None, False, pins=({}, {})) if "failure path" in r],
+          [r for r in hold_reasons([_CK], _fp, "abc", None, False, thrash=(), pins=({}, {})) if "failure path" in r],
           [f"loosens a gate: {_CK} removes or rewrites 2 line(s) on a failure path, e.g. 'return 1'"])
     check("#508: ...with ONE answered, the other still holds",
-          [r for r in hold_reasons([_CK], _fp, "abc", None, False, pins=({}, {}), answered=frozenset(_ids[:1]))
+          [r for r in hold_reasons([_CK], _fp, "abc", None, False, thrash=(), pins=({}, {}), answered=frozenset(_ids[:1]))
            if "failure path" in r],
           [f"loosens a gate: {_CK} removes or rewrites 1 line(s) on a failure path, e.g. 'sys.exit(2)'"
            f" (1 other answered `not a loosening` by a review of this tree)"])
     check("#508: ...with BOTH answered, the failure-path hold is cleared",
-          hold_reasons([_CK], _fp, "abc", None, False, pins=({}, {}), answered=frozenset(_ids)), [])
+          hold_reasons([_CK], _fp, "abc", None, False, thrash=(), pins=({}, {}), answered=frozenset(_ids)), [])
     check("#508: ...and an answer never clears a DIFFERENT hold (a falling count stays held)",
           has(hold_reasons([_CK], DF(_CK, "-    z --self-test  # 9 cases", "+    z --self-test  # 6 cases"),
-                           "abc", None, False, pins=({}, {}), answered=frozenset(_ids)), "fewer self-test"), True)
+                           "abc", None, False, thrash=(), pins=({}, {}), answered=frozenset(_ids)), "fewer self-test"), True)
     _blk = flagged_block(failure_path_flags(_fp))
     check("#508: the prompt block names every flagged id, its path and its line",
           all(i in _blk for i in _ids) and _CK in _blk and "sys.exit(2)" in _blk, True)
@@ -2655,10 +2794,10 @@ def _self_test_body() -> int:
           has(H([G], _398), "failure path"), True)
     # Direct calls with DISTINCT literals in every position, beside `H`'s one call site.
     check("a PR #398-shaped removal AND a waiver give both reasons, with no head at all",
-          [r.split(":")[0] for r in hold_reasons([G], _398, None, None, True, pins=({}, {}))],
+          [r.split(":")[0] for r in hold_reasons([G], _398, None, None, True, thrash=(), pins=({}, {}))],
           ["loosens a gate", "relied on a waiver"])
     check("app code cleared at head 'f00d' stays cleared with nothing else wrong",
-          hold_reasons(["worker/run.ts"], "", "f00d", "f00d", False, pins=({}, {})), [])
+          hold_reasons(["worker/run.ts"], "", "f00d", "f00d", False, thrash=(), pins=({}, {})), [])
     check("a removed `return 1` in a gate is a loosening",
           has(H([".claude/hooks/h.sh"], DF(".claude/hooks/h.sh", "-    return 1", "+    return 0")), "failure path"), True)
     check("...but the SAME line MOVED (removed and re-added) is not",
@@ -2845,7 +2984,7 @@ def _self_test_body() -> int:
         _g("update-index", "--add", "--cacheinfo", "160000," + "2" * 40 + ",zmodule")
         _g("commit", "-qm", "head")
         _files, _fs = gather(_gread, _base)
-        _real = hold_reasons(_files, "", "h", "h", False, fs=_fs, pins=({}, {}))
+        _real = hold_reasons(_files, "", "h", "h", False, fs=_fs, thrash=(), pins=({}, {}))
         _err = None
     except Exception as exc:                          # git missing or the parse raised: say so
         _real, _err = [], f"{exc.__class__.__name__}: {exc}"
@@ -3751,7 +3890,8 @@ def _self_test_body() -> int:
     import contextlib, io
     _real_run = globals()["_run"]
     _tmp = Path(tempfile.mkdtemp()) / "body.md"
-    def _fake(files, diff, body="", status=None, tree="", pins_head=None, refuse=(), batch_runs="[]", ahead=()):
+    def _fake(files, diff, body="", status=None, tree="", pins_head=None, refuse=(), batch_runs="[]", ahead=(),
+              coord=()):
         # The machine list defaults to one `M` per file; `diff` is every file's patch (no hunks
         # unless a case gives some), since each file's patch is asked for separately.
         if status is None:
@@ -3790,6 +3930,10 @@ def _self_test_body() -> int:
                 return cp(_syn() if cmd[2].startswith("mb:") else (pins_head or _syn()))
             if cmd in (HEAD_LS, HEAD_CAT):                  # backlog #538: HEAD's scripts/, as raw blobs
                 return _head_git(cmd, kw)
+            if cmd[:3] == ["git", "ls-tree", "-r"] and "--name-only" in cmd:   # backlog #680: the coordinator docs
+                return cp("".join(f"{c_path}\0" for c_path, _t in coord))
+            if cmd[:3] == ["git", "cat-file", "blob"] and cmd[3].startswith("HEAD:"):
+                return cp(dict(coord).get(cmd[3][5:], ""))
             if cmd[:2] == ["git", "ls-tree"]:
                 return cp(tree)                     # no blobs unless a case gives some
             if cmd[:2] == ["git", "diff"]:
@@ -3800,9 +3944,9 @@ def _self_test_body() -> int:
         return run
     _batch_calls: list = []                       # R1-F8: every batch-line call, with the timeout it carried
     def _main(files, pr, tests_at=None, diff="", body="", status=None, tree="", pins_head=None, refuse=(),
-              harness=None, extra=(), batch_runs="[]", ahead=()):
+              harness=None, extra=(), batch_runs="[]", ahead=(), coord=()):
         """`main()` over the fake, read by a working tree holding HEAD's pins file and `harness` (backlog #536)."""
-        globals()["_run"] = _fake(files, diff, body, status, tree, pins_head, refuse, batch_runs, ahead)
+        globals()["_run"] = _fake(files, diff, body, status, tree, pins_head, refuse, batch_runs, ahead, coord)
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()), \
@@ -3814,6 +3958,25 @@ def _self_test_body() -> int:
         finally:
             globals()["_run"] = _real_run
         return rc, buf.getvalue()
+    # backlog #680 (2): THROUGH main() — a PR whose coordinator docs record thrashing HOLDS, rc=3, naming it;
+    # and with an architecture review in its range it is READY.
+    _cd = [(f"docs/reviews/coordinator/s-r{_n}-coordinator.md",
+            f"```yaml\nround: {_n}\nfindings:\n  - {{id: X, severity: Low, aim: instrument, fix_induced: true, "
+            f"component: det4, disposition: fixed}}\n```\n") for _n in (1, 2)]
+    _rc, _o = _main([p for p, _t in _cd], "680", coord=_cd)
+    check("⭐ #680: main() HOLDS a READY PR whose coordinator docs arm THRASHING, rc=3, naming subject and component",
+          (_rc, "HOLD thrashing armed: s's component 'det4'" in _o), (3, True))
+    _rc, _o = _main([p for p, _t in _cd] + ["docs/reviews/architecture-review-2026-11-21-s.md"], "681", coord=_cd)
+    check("⭐ #680: ...and with an architecture review in the range main() reports READY, rc=0",
+          (_rc, "thrashing" in _o), (0, False))
+    _real_rd = globals()["REVIEW_DECISION"]
+    globals()["REVIEW_DECISION"] = Path(tempfile.mkdtemp()) / "check-review-decision.py"   # absent
+    try:
+        _rc, _o = _main([p for p, _t in _cd], "682", coord=_cd)
+    finally:
+        globals()["REVIEW_DECISION"] = _real_rd
+    check("⭐ #680: main() with the thrashing rule UNIMPORTABLE is CANNOT RUN, rc=2 — never READY, never a HOLD",
+          (_rc, "the thrashing check could not run" in _o), (2, True))
     _rc, _o = _main(["docs/reviews/decision-scheme/baseline.json"], "1")
     check("⭐ main() HOLDS a READY PR that edits a pinned baseline, rc=3, naming why",
           (_rc, "HOLD — ready by every gate" in _o, "pinned baseline" in _o), (3, True, True))
@@ -4180,7 +4343,9 @@ def _self_test_body() -> int:
               (_rc, "not JSON" in _o), (0, True))
         _c3 = _g8("rev-parse", "HEAD")
         # r1 M2: the round's coordinator document and the decision log are committed after it.
-        _w8("docs/reviews/coordinator/k-r1-coordinator.md", "folded\n")
+        # ⟳ backlog #680 (2): a header with an explicit `findings: []` — a doc with none now HOLDS as
+        # "cannot judge thrashing", which is not what this case is about.
+        _w8("docs/reviews/coordinator/k-r1-coordinator.md", "folded\n\n```yaml\nround: 1\nfindings: []\n```\n")
         _w8("docs/reviews/decision-scheme/decision-log.jsonl", "{}\n")
         _g8("add", "-A")
         _g8("commit", "-qm", "post-round records")
@@ -4323,7 +4488,7 @@ def _self_test_body() -> int:
         _rd1x(["git", "commit", "-qam", "move a() into c(); b() drops the space"])
         _f1x, _fs1x = gather(_rd1x, _b1x)
         _got1x = ([t for _i, _p, t in failure_path_flags("", fs=_fs1x)],
-                  has(hold_reasons(_f1x, "", "h", None, False, fs=_fs1x, pins=({}, {})), "failure path"))
+                  has(hold_reasons(_f1x, "", "h", None, False, fs=_fs1x, thrash=(), pins=({}, {})), "failure path"))
     except Exception as exc:                          # git missing or the parse raised: a red case, said
         _got1x = f"{exc.__class__.__name__}: {exc}"
     finally:
@@ -4356,13 +4521,103 @@ def _self_test_body() -> int:
         _rd3m(["git", "commit", "-qam", "move a()'s line into c(); b() drops the space"])
         _f3m, _fs3m = gather(_rd3m, _b3m)
         _got3m = ([t for _i, _p, t in failure_path_flags("", fs=_fs3m)],
-                  has(hold_reasons(_f3m, "", "h", None, False, fs=_fs3m, pins=({}, {})), "failure path"))
+                  has(hold_reasons(_f3m, "", "h", None, False, fs=_fs3m, thrash=(), pins=({}, {})), "failure path"))
     except Exception as exc:                          # git missing or the parse raised: a red case, said
         _got3m = f"{exc.__class__.__name__}: {exc}"
     finally:
         shutil.rmtree(_r3m, ignore_errors=True)
     check("⭐ #508 r3 M1 real git: the MIRROR order (b() before a(), a() padded) is flagged and HELD too",
           _got3m, (['expected = """--self-test # 6 cases'], True))
+
+    # ── backlog #680 (2): THRASHING ARMED WITH NO PHASE 6 REVIEW ─────────────────────────────────────
+    # The RULE is check-review-decision's own `thrashing_component`, imported — the pure cases run it on
+    # each fixture, so a case here also proves the borrowed rule answers the PR #600 shape the way it must.
+    _th_err = None
+    try:
+        _crd = _import_sibling(REVIEW_DECISION, "_crd_for_selftest", ThrashUnjudgeable)
+        _thr = _crd.thrashing_component
+    except Exception as exc:                          # a red case, said — never a crash
+        _th_err, _thr = f"{exc.__class__.__name__}: {exc}", (lambda _r: None)
+    check("#680: the borrowed thrashing rule LOADS from check-review-decision.py", _th_err, None)
+    def _F(comp, induced):
+        return {"id": "X", "severity": "Medium", "aim": "deliverable", "fix_induced": induced,
+                "component": comp, "disposition": "fixed"}
+    _C600 = "docs/reviews/coordinator/hse-slice-d-r4-coordinator.md"
+    _AR = "docs/reviews/architecture-review-2026-11-21-x.md"
+    _R600 = {"hse-slice-d": [{"round": 3, "findings": [_F("detector-4-prose", True), _F("detector-6-config", False)]},
+                             {"round": 4, "findings": [_F("detector-4-prose", True)]}]}
+    _WANT600 = ["thrashing armed: hse-slice-d's component 'detector-4-prose' carried fix-induced findings in both "
+                "r3 and r4, and no docs/reviews/architecture-review-*.md is in this PR's range — " + PHASE6_FIX]
+    check("#680 (a): the PR #600 shape — two consecutive fix-induced rounds in one component, no review — HOLDS",
+          thrash_holds([_C600], _R600, _thr), _WANT600)
+    check("#680 (b): ...and the same with an architecture review in the range does not",
+          thrash_holds([_C600, _AR], _R600, _thr), [])
+    check("#680 (b'): ...an architecture-review file NOT under docs/reviews/ is not one",
+          thrash_holds([_C600, "docs/architecture-review-x.md"], _R600, _thr), _WANT600)
+    check("#680 (c): the PR #614 shape — r1 all fix-induced, r2 clean — does not HOLD",
+          thrash_holds(["docs/reviews/coordinator/phase6-detector4-r2-coordinator.md"],
+                       {"phase6-detector4": [{"round": 1, "findings": [_F("walkers", True), _F("negates", True)]},
+                                             {"round": 2, "findings": []}]}, _thr), [])
+    check("#680 (d): fix-induced findings in two DIFFERENT components across the last two rounds do not HOLD",
+          thrash_holds([_C600], {"hse-slice-d": [{"round": 3, "findings": [_F("detector-4-prose", True)]},
+                                                 {"round": 4, "findings": [_F("detector-6-config", True)]}]}, _thr), [])
+    _UNR = {"hse-slice-d": [{"round": 3, "findings": [_F("detector-4-prose", True)]},
+                            {"round": 4, "unreadable": "ValueError: no ```yaml header block"}]}
+    check("#680 (e): an unparseable LAST round HOLDS as 'cannot judge', never CANNOT RUN and never a pass",
+          thrash_holds([_C600], _UNR, _thr),
+          ["cannot judge thrashing for hse-slice-d r4: ValueError: no ```yaml header block — read it, or "
+           + PHASE6_FIX])
+    check("#680: hold_reasons carries the thrashing reasons through (they are required, not optional)",
+          hold_reasons([], "", "abc", None, False, thrash=_WANT600, pins=({}, {})), _WANT600)
+    check("#680: a range with no coordinator doc names no subject", coordinator_subjects(["docs/x.md", _AR]), [])
+    # THROUGH THE REAL WIRING: a git repository, the docs read AT the head commit by `thrash_gate`.
+    _tg = Path(tempfile.mkdtemp())
+    def _tgrun(cmd, **kw):
+        return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]], cwd=_tg,
+                              capture_output=True, env=fixture_git.env(HOME=str(_tg)), **kw)
+    _tgread = git_reader(_tgrun)
+    def _doc(n, findings):
+        return (f"# Round {n}\n\n```yaml\nround: {n}\nfixes_nontrivial: false\n" + findings + "```\n")
+    _ind = "findings:\n  - {id: X1, severity: Medium, aim: deliverable, fix_induced: true, component: det4, disposition: narrowed}\n"
+    _cln = "findings: []\n"
+    def _tgate(docs, extra=(), src=None):
+        """`thrash_gate` over a fresh commit holding `docs` ({round: text}) for subject `s`, the range naming
+        every doc plus `extra`; or `CANNOT RUN: <exc>` when it raises."""
+        shutil.rmtree(_tg / "docs", ignore_errors=True)
+        (_tg / "docs/reviews/coordinator").mkdir(parents=True)
+        for n, t in docs.items():
+            (_tg / f"docs/reviews/coordinator/s-r{n}-coordinator.md").write_text(t)
+        try:
+            _tgread(["git", "add", "-A"])
+            _tgread(["git", "commit", "-qm", "c", "--allow-empty"])
+            fl = [f"docs/reviews/coordinator/s-r{n}-coordinator.md" for n in docs] + list(extra)
+            return thrash_gate(_tgread, fl, "HEAD", src)
+        except Exception as exc:
+            return f"CANNOT RUN: {exc.__class__.__name__}"
+    try:
+        _tgread(["git", "init", "-q"])
+        _tg_ok = None
+    except Exception as exc:
+        _tg_ok = f"{exc.__class__.__name__}: {exc}"
+    check("#680 real git: the fixture repository initialises", _tg_ok, None)
+    _armed = [f"thrashing armed: s's component 'det4' carried fix-induced findings in both r3 and r4, and no "
+              f"docs/reviews/architecture-review-*.md is in this PR's range — {PHASE6_FIX}"]
+    check("#680 real git (a): two fix-induced rounds in one component, read at HEAD, HOLD — `disposition` ignored",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}), _armed)
+    check("#680 real git: only the LAST TWO rounds are judged — thrashing in r1/r2, then a clean r3, does not HOLD",
+          _tgate({1: _doc(1, _ind), 2: _doc(2, _ind), 3: _doc(3, _cln)}), [])
+    check("#680 real git (e): an unparseable last-round YAML HOLDS with the cannot-judge reason",
+          _tgate({3: _doc(3, _ind), 4: "# Round 4\n\nno header here\n"}),
+          ["cannot judge thrashing for s r4: ValueError: no ```yaml header block — read it, or " + PHASE6_FIX])
+    check("#680 real git: an ABSENT `findings:` key is an absent record — it HOLDS as cannot-judge",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, "verdict: CONVERGED\n")}),
+          ["cannot judge thrashing for s r4: header has no `findings:` key — an absent list is not a clean "
+           "round — read it, or " + PHASE6_FIX])
+    check("#680 real git: an EXPLICIT `findings: []` is a clean round — no HOLD",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, _cln)}), [])
+    check("#680 real git: a missing sibling is CANNOT RUN, never a silent pass",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}, src=_tg / "absent.py"), "CANNOT RUN: ThrashUnjudgeable")
+    shutil.rmtree(_tg, ignore_errors=True)
 
     shutil.rmtree(_tree_root, ignore_errors=True)
     print(f"\n{cases - failures}/{cases} self-test cases passed")

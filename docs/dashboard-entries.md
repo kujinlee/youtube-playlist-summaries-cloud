@@ -21265,3 +21265,17 @@ Backlog #680 PR #614. Build F (c5afc7c0) refuted at r1 (Codex B1 `first_sibling`
 FAILS IF 1 caused by the build; §6 fallback N: 49c3f923's walkers, `NEGATES` deleted, r3 negation case flipped, its
 mutation re-aimed at a planted filter; self-test 105/105, rescan 46 components / 302. Coordinator:
 `docs/reviews/coordinator/phase6-detector4-r1-coordinator.md`. F's misses filed as backlog #693.
+
+## 2026-11-21
+The merge check now stops a pull request that is ready by every other gate when its review rounds show the pattern
+that should have called an architecture review: two rounds in a row where fixing one problem caused a new one in the
+same part of the code. It lets the request through when an architecture review is part of it. If the last two round
+records cannot be read, it stops and asks a person to read them rather than guessing. Run over recent history, it
+would have stopped the pull request that started this (PR #600) and not the one that fixed it (PR #614).
+
+Nothing waits on you for this.
+<!--tech-->
+Backlog #680 part (2), branch `merge-ready-thrash-hold`. `scripts/check-merge-ready.py` `thrash_gate` / `thrash_holds`
+(hold reason 5), rule imported from `scripts/check-review-decision.py` (`thrashing_component`; new `parse_round` shared
+with `parse_header`). Base rate over 41 coordinator-touching master commits: 12 HOLD, 0 CANNOT RUN. Self-tests
+check-merge-ready 419/419, check-review-decision 119/119; mutations 188 -> 197.

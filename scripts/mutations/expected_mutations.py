@@ -2091,7 +2091,11 @@ EXPECTED_MUTATIONS = {
     # = 181 + 6, none retired, none re-bound. A stdlib-named HEAD `scripts/` name is refused (module, package, not
     # over-broad) (3), the group kill (1), the bounded post-kill wait (1), and the duplicate-key refusal (1). The NaN
     # refusal is deleted: the schema check already refuses every non-int, so its only observable was a message.
-    "scripts/check-merge-ready.py": 188,
+    # ⟳ 2026-11-21, backlog #680 part (2): 188 -> 197 = 188 + 9, none retired. The thrashing HOLD: dropped from
+    # hold_reasons (1), not passed by main (1), an armed component unreported (1), an architecture review in range
+    # ignored (1), an unimportable rule swallowed in thrash_gate (1) and in main (1), an unparseable round skipped (1),
+    # an absent `findings:` key read as clean (1), and the first two rounds judged instead of the last two (1).
+    "scripts/check-merge-ready.py": 197,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

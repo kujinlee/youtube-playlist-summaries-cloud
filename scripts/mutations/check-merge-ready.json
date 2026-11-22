@@ -1378,8 +1378,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                              answered=answered)",
-    "                              answered=frozenset())"
+    " answered=answered)",
+    " answered=frozenset())"
    ]
   ],
   "expect": "⭐ #508 real git: answered `not a loosening` by a verdict on the EXACT tree, the HOLD clears, rc=0"
@@ -2335,5 +2335,104 @@
   "expect": [
    "⛔ backlog #538 Phase 6 (R3-F3): a child whose JSON repeats a key is CANNOT RUN, though the last value would pass the schema"
   ]
+ },
+ {
+  "name": "backlog #680 (2): the thrashing HOLD reason is dropped from hold_reasons, so an armed PR merges READY",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    out.extend(thrash)\n",
+    "    pass\n"
+   ]
+  ],
+  "expect": "#680: hold_reasons carries the thrashing reasons through (they are required, not optional)"
+ },
+ {
+  "name": "backlog #680 (2): main() never passes the thrashing reasons to hold_reasons",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "pins=pins,\n                              thrash=thrash,",
+    "pins=pins,\n                              thrash=[],"
+   ]
+  ],
+  "expect": "⭐ #680: main() HOLDS a READY PR whose coordinator docs arm THRASHING, rc=3, naming subject and component"
+ },
+ {
+  "name": "backlog #680 (2): an armed component is not reported, so thrashing reads as nothing",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        comp = thrashing(rounds)\n        if comp:\n",
+    "        comp = thrashing(rounds)\n        if False:\n"
+   ]
+  ],
+  "expect": "#680 (a): the PR #600 shape — two consecutive fix-induced rounds in one component, no review — HOLDS"
+ },
+ {
+  "name": "backlog #680 (2): an architecture review in the range is ignored, so a reviewed PR still HOLDS",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if any(ARCH_REVIEW.match(f) for f in files):\n        return []\n",
+    ""
+   ]
+  ],
+  "expect": "#680 (b): ...and the same with an architecture review in the range does not"
+ },
+ {
+  "name": "backlog #680 (2): an unimportable thrashing rule is swallowed as 'no subjects', a silent pass",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    crd = _import_sibling(src or REVIEW_DECISION, \"_crd_for_merge_ready\", ThrashUnjudgeable)\n",
+    "    try:\n        crd = _import_sibling(src or REVIEW_DECISION, \"_crd_for_merge_ready\", ThrashUnjudgeable)\n    except ThrashUnjudgeable:\n        return []\n"
+   ]
+  ],
+  "expect": "#680 real git: a missing sibling is CANNOT RUN, never a silent pass"
+ },
+ {
+  "name": "backlog #680 (2): main() swallows the thrashing CANNOT RUN, so an unjudged PR reads READY",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            thrash = []\n            code, line = 2, (f\"CANNOT RUN — the thrashing check could not run",
+    "            thrash = []\n            _x, _y = 2, (f\"CANNOT RUN — the thrashing check could not run"
+   ]
+  ],
+  "expect": "⭐ #680: main() with the thrashing rule UNIMPORTABLE is CANNOT RUN, rc=2 — never READY, never a HOLD"
+ },
+ {
+  "name": "backlog #680 (2): an unparseable round is skipped, so an unreadable last round reads as no thrashing",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                r = {\"round\": n, \"unreadable\": str(exc)}\n",
+    "                continue\n"
+   ]
+  ],
+  "expect": "#680 real git (e): an unparseable last-round YAML HOLDS with the cannot-judge reason"
+ },
+ {
+  "name": "backlog #680 (2): an ABSENT findings: key reads as a clean round, PR #600's own r4",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if r.get(\"findings_key\") is not True:\n",
+    "                if False:\n"
+   ]
+  ],
+  "expect": "#680 real git: an ABSENT `findings:` key is an absent record — it HOLDS as cannot-judge"
+ },
+ {
+  "name": "backlog #680 (2): the FIRST two rounds are judged, not the last two",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return docs[-2:]\n",
+    "    return docs[:2]\n"
+   ]
+  ],
+  "expect": "#680 real git: only the LAST TWO rounds are judged — thrashing in r1/r2, then a clean r3, does not HOLD"
  }
 ]

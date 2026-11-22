@@ -456,17 +456,29 @@ def decide(rounds: list[dict], scope: str, tree_reviewed: bool) -> tuple[str, st
 FINDING_RE = re.compile(r"\{([^}]*)\}")
 
 
-def parse_header(text: str) -> dict:
-    """The ```yaml block after a round document's title.
-
-    ⛔ RAISES on a missing or malformed header. It must never return an empty round:
-    an empty round reads as "no findings", which reads as convergence — a silent pass
-    over a document nobody could read. "Cannot run" is a failure, never a pass.
-    """
+def header_body(text: str) -> str:
+    """The body of the ```yaml block after a round document's title. RAISES when there is none."""
     m = re.search(r"```yaml\n(.*?)```", text, re.S)
     if not m:
         raise ValueError("no ```yaml header block")
-    body = m.group(1)
+    return m.group(1)
+
+
+def parse_round(text: str) -> dict:
+    """`{"round", "findings"}` read from a round document's header, UNVALIDATED — THE ONE YAML READER.
+
+    ⟳ 2026-11-21, backlog #680 (2): split out of `parse_header` so `check-merge-ready.py` can read a
+    round's findings WITHOUT this script's field validation. That gate asks only whether the last two
+    rounds thrashed, and validation refused 92 of 181 subjects (`disposition: narrowed`, `severity:
+    Major`, no `findings:` key) — PR #600's own `hse-slice-d` among them. Both callers share THIS parse;
+    a second YAML reader is the shape this repository has measured drifting most.
+
+    RAISES on no block, no `round:` line, or findings items that did not all parse (parity: a lost
+    item is a lost finding, which would read as "no thrashing"). A header with no `findings:` key
+    parses to NO findings here, with `findings_key` False; `parse_header` refuses it, and so does
+    `check-merge-ready` (PR #600's r4 had no key and recorded its fix-induced MAJOR only in prose).
+    """
+    body = header_body(text)
     rm = re.search(r"^round:\s*(\d+)\s*$", body, re.M)
     if not rm:
         raise ValueError("header has no `round:` line")
@@ -486,6 +498,24 @@ def parse_header(text: str) -> dict:
     # whole body refused a legitimate header whose `halves.claude` was a block scalar
     # containing a bullet — a false CANNOT RUN, and a guard that refuses valid input is a
     # guard that gets switched off.
+    declared = len(re.findall(r"^\s*-\s", _findings_span(body), re.M))
+    if declared != len(findings):
+        raise ValueError(f"header declares {declared} finding item(s) but "
+                         f"{len(findings)} parsed — refusing to guess")
+    return {"round": int(rm.group(1)), "findings": findings,
+            "findings_key": re.search(r"^findings:", body, re.M) is not None}
+
+
+def parse_header(text: str) -> dict:
+    """The ```yaml block after a round document's title: `parse_round`, then VALIDATED.
+
+    ⛔ RAISES on a missing or malformed header. It must never return an empty round:
+    an empty round reads as "no findings", which reads as convergence — a silent pass
+    over a document nobody could read. "Cannot run" is a failure, never a pass.
+    """
+    head = parse_round(text)
+    del head["findings_key"]                        # this layer answers it below, by refusing
+    body = header_body(text)
     # ⛔ r3 Blocking (Codex): `_findings_span` returns "" when the key is ABSENT, so
     # declared == 0 == len(findings) and nothing validated — a header with no `findings:`
     # key at all passed as a CLEAN ROUND. r1's B1 for the third time, through a third
@@ -493,13 +523,8 @@ def parse_header(text: str) -> dict:
     if not re.search(r"^findings:", body, re.M):
         raise ValueError("header has no `findings:` key — an absent list is not an "
                          "empty round; write `findings:` explicitly to claim zero")
-    declared = len(re.findall(r"^\s*-\s", _findings_span(body), re.M))
-    if declared != len(findings):
-        raise ValueError(f"header declares {declared} finding item(s) but "
-                         f"{len(findings)} parsed — refusing to guess")
-    for f in findings:
+    for f in head["findings"]:
         _validate(f)
-    head = {"round": int(rm.group(1)), "findings": findings}
     for key, allowed in ROUND_REQUIRED.items():
         mm = re.search(rf"^{key}:\s*(\S+)\s*$", body, re.M)
         if not mm:
