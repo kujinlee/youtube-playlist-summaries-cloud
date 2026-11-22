@@ -136,8 +136,8 @@
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "    return \" \".join(re.sub(r\"[\\W_]+\", \" \", text.lower()).split())",
-    "    return \" \".join(re.sub(r\"[^\\w*]+\", \" \", text.lower()).split())"
+    "re.sub(r\"[\\W_]+\", \" \", text.lower())",
+    "re.sub(r\"[^\\w*]+\", \" \", text.lower())"
    ]
   ],
   "expect": "a source quote in a kept output file fails check 1, through emphasis, case and line breaks"
