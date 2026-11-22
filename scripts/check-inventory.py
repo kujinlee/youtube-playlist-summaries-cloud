@@ -1,0 +1,957 @@
+#!/usr/bin/env python3
+"""The marketplace inventory's falsifiers as a guard, and the D1 checkpoint (marketplace-inventory plan, Task 19).
+
+    python3 scripts/check-inventory.py              # the live inventory under this repository
+    python3 scripts/check-inventory.py --render     # the same checks; on rc 0 or 3, the Markdown view on stdout
+    python3 scripts/check-inventory.py --root DIR   # another tree (the self-test's fixture worlds)
+    python3 scripts/check-inventory.py --self-test  # 144 cases
+
+It reads `docs/marketplace/inventory.json`, `components.json`, `shipping-sets.json`, the LATEST `scan-<date>.json`
+(by name), `experiment-tier-a.json`, the spec (which owns the `spec` ground kind, §5 rule 1) and
+`docs/portable-practices.md` (which owns `practice_entry`).
+
+Exit codes RANK, and the order is the rule (plan Task 19): an input unreadable or absent → 2 (CANNOT RUN: treat
+as NOT RUN); else any row or inventory error → 1, and the checkpoint is NOT computed (a fire over rows with errors
+is not evidence); else `checkpoint_fires` raising (no phase-1 rows) → 2; else the checkpoint fired → 3 (stop: Human
+step H4); else 0. So rc 1 outranks rc 3.
+
+Every error is printed as `<row id>: [<rule>] <why>`; the rule tag names which falsifier refused it.
+
+`row_errors` refuses (each a spec falsifier; the plan's list, plus backlog #696 (a), (c) and (f)):
+  [grade]            a grade missing, or not one of GRADES (§4b: a verdict without a grade is incomplete)
+  [verdict]          a verdict not one of VERDICTS
+  [map]              a row whose id is not in components.json, or whose effort or roles differ from the map's (the
+                     role rules below read the row's roles; a row that relabelled itself `data` would escape them)
+  [ship-experiment]  a SHIP row in a `plugin`-channel package the tier-A experiment does not back (§9), BY ROLE:
+                     an entry-point needs its OWN sidecar entry with exercised true, operation_ok true, at least
+                     one pass condition, and none `fail` or `CANNOT RUN`; a library is held to that test on the
+                     entry-point component its `scenario` names (the id before the first `:`), refused if it names
+                     none; a data row is outside the rule (its C4 is struck), and so is a non-plugin package
+  [shipping-set]     a phase-1 row whose component is absent from its package's components in shipping-sets.json
+  [phase]            a phase that is neither "1" nor "later"
+  [recall-phase]     a recall (effort 1) row at "1" unless the inventory's recall.a is true and recall.b is "pass"
+  [cost]             a cost with either estimate missing, or not a number
+  [next-project]     next_project_hours <= 0 (the ratio is undefined)
+  [inherited]        an `inherited` grade with no scenario
+  [rests-on]         a non-SHIP row whose rests_on is empty or not a list
+  [ground-kind]      a rests_on entry whose kind is not one of GROUND_KINDS
+  [ground-empty]     (backlog #696 f) a `finding` ground with no ids; a `spec` ground with an empty section,
+                     heading or decision; an `experiment` ground with no scenario
+  [ground-finding]   a finding id absent from the scan's findings for the row's OWN component (a borrowed id
+                     from another component is refused)
+  [ground-spec]      a spec section with no `## <n>. ` line; a heading with no exact `### <heading>` line under
+                     that section (before the next `## `); a decision with no `| **D<n>** |` table row in §2 and
+                     no `### D<n>.` heading in §2b
+  [ground-experiment] an experiment scenario that is not this component's sidecar entry, or has no pass
+                     condition `fail`
+  [ground-c5]        a c5 ground on a row whose C5 is not `unanswered`
+  [measured-finding] C2 or C3 `fail` at grade `measured` with no `finding` ground
+  [route]            a non-SHIP row with no route (§9 D10)
+  [route-kind]       (backlog #696 a) a route whose kind is not one of ROUTE_KINDS (refused on any row)
+  [practice]         (backlog #696 c) a `practice` harvest whose practice_entry is not EXACTLY a `## ` heading of
+                     docs/portable-practices.md: the full heading text WITH its number and WITHOUT the `## `
+                     prefix, e.g. `10. A surviving mutation does not mean "add a test" — first ask ...`
+  [data-c4]          a data row with a C4 other than "struck"
+  [corpus-c5]        the memory-corpus row with a SHIP verdict while its C5 is unanswered (§7 item 11)
+  [measured-effort]  a `measured` grade on an effort (1) or (2) row (§2b)
+and at the inventory level (`inventory_errors`):
+  [missing]          a component in components.json with no row
+  [duplicate]        two rows for one component
+  [phase1-package]   no phase-1 package named (no component of phase "1" in the map)
+  [package-shipping] a phase-1 package with no entry in shipping-sets.json
+  [scan]             the inventory names a scan other than the latest one
+
+The guard checks that a ground RESOLVES, not that it bears on the verdict; that stays the reviewer's judgement.
+
+Guard classification (check-guard-coverage's vocabulary): SHAPE — every rule asks whether a row is well-formed and
+referentially sound against files read at one moment; none asks who got there first.
+
+Caller: the `check-inventory self-test` step of .github/workflows/ci.yml runs `--self-test` ONLY. The live run joins
+CI in plan Task 20, in the commit that completes the rows (until then a missing component is rc 1 by construction).
+"""
+from __future__ import annotations
+
+import contextlib
+import copy
+import io
+import json
+import re
+import sys
+import tempfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+MKT = "docs/marketplace"
+SPEC = "docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md"
+PRACTICES = "docs/portable-practices.md"
+
+VERDICTS = ("SHIP", "NEEDS-WORK", "DON'T-SHIP")
+GRADES = ("measured", "inherited", "argued", "none")
+PHASES = ("1", "later")
+GROUND_KINDS = ("finding", "spec", "experiment", "c5")
+
+# backlog #696 (a): the route vocabulary is spec D10's four routes, and nothing else.
+ROUTE_KINDS = {
+    "decouple-config": "decouple it behind a config file, so its project-specific values become settings",
+    "template-repository": "ship it as a template repository rather than a plugin",
+    "portable-core": "ship only its portable core, leaving the project-specific part behind",
+    "practice": "publish it as a practice (D6's `harvest: practice`), not as code",
+}
+
+
+class CannotRun(Exception):
+    pass
+
+
+class Context:
+    """What a row is checked against besides the four positional inputs: the component map, the package channels,
+    each package's shipping set, the practice headings, and the inventory's recall answers."""
+
+    def __init__(self, components, channels, shipping, practice_headings, recall):
+        self.components = components            # id -> component dict (components.json)
+        self.channels = channels                # package -> channel
+        self.shipping = shipping                # package -> set of component ids (shipping-sets.json)
+        self.practice_headings = practice_headings
+        self.recall = recall                    # inventory.json `recall`
+
+
+def _fires(pop):
+    """public_bar >= 3 x next_project for MORE THAN HALF of `pop`."""
+    if not pop:
+        raise ValueError("CANNOT RUN: no phase-1 rows")
+    for r in pop:
+        if not r["cost"]["next_project_hours"] > 0:
+            raise ValueError(f"CANNOT RUN: {r.get('id', '?')} has next_project_hours <= 0 "
+                             "(a row error; row_errors must have refused it first)")
+    over = [r for r in pop
+            if r["cost"]["public_bar_hours"] >= 3 * r["cost"]["next_project_hours"]]
+    return 2 * len(over) > len(pop)
+
+
+def checkpoint_fires(rows):
+    """D1 checkpoint (spec §2c) over the phase-1 population: phase "1" rows, and nothing else.
+    Task 18 resolves recall to "1" or "later" (D11's "only if"); a row still carrying the map's
+    "1-if-feasible" label is a row error refused before this runs (rc 1 outranks), and is not counted."""
+    return _fires([r for r in rows if r["phase"] == "1"])
+
+
+def _num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _section_lines(spec_lines, sec):
+    """The lines under the `## <sec>. ` heading, up to the next `## ` line; None when there is no such heading."""
+    for i, line in enumerate(spec_lines):
+        if line.startswith(f"## {sec}. "):
+            out = []
+            for later in spec_lines[i + 1:]:
+                if later.startswith("## "):
+                    break
+                out.append(later)
+            return out
+    return None
+
+
+def _spec_ground_error(g, spec_lines):
+    """None when the spec ground resolves; else (rule, why)."""
+    if "decision" in g:
+        d = g["decision"]
+        if not isinstance(d, str) or not d.strip():
+            return "ground-empty", "a spec ground with an empty decision"
+        table = _section_lines(spec_lines, "2") or []
+        walk = _section_lines(spec_lines, "2b") or []
+        if any(line.startswith(f"| **{d}** |") for line in table) or any(line.startswith(f"### {d}.") for line in walk):
+            return None
+        return "ground-spec", f"the spec has no decision {d} in §2 or §2b"
+    sec = g.get("section")
+    if not isinstance(sec, str) or not sec.strip():
+        return "ground-empty", "a spec ground with an empty section"
+    if "heading" in g and (not isinstance(g["heading"], str) or not g["heading"].strip()):
+        return "ground-empty", "a spec ground with an empty heading"
+    body = _section_lines(spec_lines, sec)
+    if body is None:
+        return "ground-spec", f"the spec has no `## {sec}. ` section"
+    if "heading" in g and not any(line.rstrip() == f"### {g['heading']}" for line in body):
+        return "ground-spec", f"the spec has no `### {g['heading']}` under section {sec}"
+    return None
+
+
+def _backs(entry):
+    """A tier-A sidecar entry backs a SHIP: exercised, operation_ok, and every one of its pass conditions neither
+    `fail` nor `CANNOT RUN` (an entry with no pass conditions is no evidence)."""
+    pcs = (entry or {}).get("pass_conditions") or {}
+    return (bool(entry) and entry.get("exercised") is True and entry.get("operation_ok") is True and bool(pcs)
+            and not any(v in ("fail", "CANNOT RUN") for v in pcs.values()))
+
+
+def _named_entry_point(scenario, components):
+    """The entry-point component id a library's scenario names (the text before the first `:`), or None."""
+    if not isinstance(scenario, str):
+        return None
+    head = scenario.split(":", 1)[0].strip()
+    comp = components.get(head)
+    return head if comp and "entry-point" in (comp.get("roles") or []) else None
+
+
+def row_errors(row, scan, spec_text, sidecar, *, ctx):
+    """Every falsifier this row trips, as `<id>: [<rule>] <why>` strings (the rules are listed in the module
+    docstring). `ctx` is REQUIRED (keyword-only): without the map, a role rule cannot be applied, and a call that
+    omits it raises TypeError rather than skipping the rules silently."""
+    rid = row.get("id", "?")
+    errs = []
+
+    def err(rule, why):
+        errs.append(f"{rid}: [{rule}] {why}")
+
+    verdict, grade = row.get("verdict"), row.get("grade")
+    roles = row.get("roles") or []
+    criteria = row.get("criteria") or {}
+    ship = verdict == "SHIP"
+
+    if grade not in GRADES:
+        err("grade", f"grade {grade!r} is missing or not one of {', '.join(GRADES)}")
+    if verdict not in VERDICTS:
+        err("verdict", f"verdict {verdict!r} is not one of {', '.join(VERDICTS)}")
+
+    comp = ctx.components.get(rid)
+    if comp is None:
+        err("map", "no component with this id in components.json")
+    elif row.get("effort") != comp.get("effort") or list(roles) != list(comp.get("roles") or []):
+        err("map", f"effort {row.get('effort')!r} / roles {roles!r} differ from components.json's "
+                   f"{comp.get('effort')!r} / {comp.get('roles')!r}")
+
+    package = (comp or {}).get("package")
+    if ship and comp is not None and ctx.channels.get(package) == "plugin":
+        if "entry-point" in roles:
+            if not _backs(sidecar.get(rid)):
+                err("ship-experiment", "SHIP entry-point not backed by its own tier-A entry (exercised, "
+                                       "operation_ok, no pass condition fail or CANNOT RUN)")
+        elif "library" in roles:
+            named = _named_entry_point(row.get("scenario"), ctx.components)
+            if named is None:
+                err("ship-experiment", f"SHIP library whose scenario {row.get('scenario')!r} names no entry-point "
+                                       "component id")
+            elif not _backs(sidecar.get(named)):
+                err("ship-experiment", f"SHIP library whose named entry-point {named} is not backed by its tier-A "
+                                       "entry")
+
+    phase = row.get("phase")
+    if phase not in PHASES:
+        err("phase", f"phase {phase!r} is neither \"1\" nor \"later\"")
+    if phase == "1" and comp is not None and rid not in ctx.shipping.get(package, set()):
+        err("shipping-set", f"phase-1 row absent from package {package!r}'s components in shipping-sets.json")
+    if phase == "1" and row.get("effort") == 1:
+        recall = ctx.recall or {}
+        if not (recall.get("a") is True and recall.get("b") == "pass"):
+            err("recall-phase", f"recall row at phase \"1\" while recall.a is {recall.get('a')!r} and recall.b "
+                                f"is {recall.get('b')!r}")
+
+    cost = row.get("cost") if isinstance(row.get("cost"), dict) else {}
+    pub, nxt = cost.get("public_bar_hours"), cost.get("next_project_hours")
+    if not (_num(pub) and _num(nxt)):
+        err("cost", f"a cost estimate is missing (public_bar_hours {pub!r}, next_project_hours {nxt!r})")
+    elif not nxt > 0:
+        err("next-project", f"next_project_hours is {nxt!r}, which leaves the ratio undefined")
+
+    if grade == "inherited" and not row.get("scenario"):
+        err("inherited", "an inherited grade with no scenario")
+
+    grounds = row.get("rests_on")
+    if not isinstance(grounds, list):
+        if not ship:
+            err("rests-on", "a non-SHIP row whose rests_on is not a list")
+        grounds = []
+    elif not grounds and not ship:
+        err("rests-on", "a non-SHIP row with an empty rests_on")
+
+    spec_lines = spec_text.split("\n")
+    own = {f.get("id") for f in ((scan.get(rid) or {}).get("findings") or [])}
+    for g in grounds:
+        kind = g.get("kind") if isinstance(g, dict) else None
+        if kind not in GROUND_KINDS:
+            err("ground-kind", f"a ground of kind {kind!r}, not one of {', '.join(GROUND_KINDS)}")
+        elif kind == "finding":
+            ids = g.get("ids")
+            if not isinstance(ids, list) or not ids:
+                err("ground-empty", "a finding ground with no ids")
+                continue
+            for fid in ids:
+                if fid not in own:
+                    err("ground-finding", f"finding {fid!r} is not in the scan's findings for {rid}")
+        elif kind == "spec":
+            bad = _spec_ground_error(g, spec_lines)
+            if bad:
+                err(*bad)
+        elif kind == "experiment":
+            scen = g.get("scenario")
+            if not isinstance(scen, str) or not scen.strip():
+                err("ground-empty", "an experiment ground with no scenario")
+                continue
+            entry = sidecar.get(rid) or {}
+            if entry.get("scenario") != scen:
+                err("ground-experiment", f"scenario {scen!r} is not {rid}'s tier-A entry")
+            elif "fail" not in (entry.get("pass_conditions") or {}).values():
+                err("ground-experiment", f"scenario {scen!r} has no pass condition `fail`")
+        elif kind == "c5":
+            if criteria.get("C5") != "unanswered":
+                err("ground-c5", f"a c5 ground while C5 is {criteria.get('C5')!r}")
+
+    if (grade == "measured" and "fail" in (criteria.get("C2"), criteria.get("C3"))
+            and not any(isinstance(g, dict) and g.get("kind") == "finding" for g in grounds)):
+        err("measured-finding", "C2 or C3 fail graded measured with no finding ground")
+
+    route = row.get("route")
+    if not route and not ship:
+        err("route", "a non-SHIP row with no route (§9 D10)")
+    if route and (not isinstance(route, dict) or route.get("kind") not in ROUTE_KINDS):
+        kind = route.get("kind") if isinstance(route, dict) else route
+        err("route-kind", f"route kind {kind!r} is not one of {', '.join(ROUTE_KINDS)}")
+
+    if row.get("harvest") == "practice" and row.get("practice_entry") not in ctx.practice_headings:
+        err("practice", f"practice_entry {row.get('practice_entry')!r} is not exactly a `## ` heading of "
+                        f"{PRACTICES} (the heading text with its number, without `## `)")
+    if "data" in roles and criteria.get("C4") != "struck":
+        err("data-c4", f"a data row with C4 {criteria.get('C4')!r}, not \"struck\"")
+    if rid == "memory-corpus" and ship and criteria.get("C5") == "unanswered":
+        err("corpus-c5", "the memory-corpus row ships while its C5 is unanswered (§7 item 11)")
+    if grade == "measured" and row.get("effort") in (1, 2):
+        err("measured-effort", f"a measured grade on an effort ({row.get('effort')}) row (§2b)")
+    return errs
+
+
+def inventory_errors(inventory, ctx, latest_scan=None):
+    """The inventory-level falsifiers (module docstring), as `inventory: [<rule>] <why>` strings."""
+    errs = []
+    rows = inventory.get("rows") or []
+    ids = [r.get("id") for r in rows]
+    for cid in ctx.components:
+        if cid not in ids:
+            errs.append(f"inventory: [missing] component {cid} has no row")
+    for cid in sorted({i for i in ids if ids.count(i) > 1}, key=str):
+        errs.append(f"inventory: [duplicate] {ids.count(cid)} rows for {cid}")
+    phase1 = sorted({c.get("package") for c in ctx.components.values() if c.get("phase") == "1"}, key=str)
+    if not phase1:
+        errs.append("inventory: [phase1-package] no phase-1 package is named in components.json")
+    for pkg in phase1:
+        if pkg not in ctx.shipping:
+            errs.append(f"inventory: [package-shipping] phase-1 package {pkg!r} has no entry in shipping-sets.json")
+    if latest_scan is not None and inventory.get("scan") != latest_scan:
+        errs.append(f"inventory: [scan] the inventory names scan {inventory.get('scan')!r}; the latest is "
+                    f"{latest_scan!r}")
+    return errs
+
+
+def _cell(v):
+    return "—" if v in (None, "") else str(v).replace("|", "\\|")
+
+
+def render(rows):
+    """The inventory as one Markdown table. Verdict and grade share ONE cell (`SHIP · argued`), so a SHIP row
+    never reads as proven when it was only argued (§4b)."""
+    out = ["| Component | Effort | Phase | Verdict · grade | Harvest | Route |",
+           "|---|---|---|---|---|---|"]
+    for r in rows:
+        route = r.get("route") if isinstance(r.get("route"), dict) else None
+        out.append("| " + " | ".join([
+            _cell(r.get("id")), _cell(r.get("effort")), _cell(r.get("phase")),
+            _cell(f"{r.get('verdict')} · {r.get('grade')}"), _cell(r.get("harvest")),
+            _cell(route.get("kind") if route else None)]) + " |")
+    return "\n".join(out) + "\n"
+
+
+def _read_json(path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError) as e:
+        raise CannotRun(f"{path} is unreadable ({type(e).__name__}: {e})") from e
+
+
+def load(root):
+    """Every input, or CannotRun naming the first one that is absent, unreadable or of the wrong shape."""
+    root = Path(root)
+    mkt = root / MKT
+    inventory = _read_json(mkt / "inventory.json")
+    cmap = _read_json(mkt / "components.json")
+    sets = _read_json(mkt / "shipping-sets.json")
+    scans = sorted(mkt.glob("scan-*.json"))
+    if not scans:
+        raise CannotRun(f"no scan-<date>.json under {mkt}")
+    scan = _read_json(scans[-1])
+    side = _read_json(mkt / "experiment-tier-a.json")
+    try:
+        spec_text = (root / SPEC).read_text()
+        practices = (root / PRACTICES).read_text()
+    except OSError as e:
+        raise CannotRun(f"{e.filename} is unreadable ({type(e).__name__})") from e
+    shapes = ((inventory, "rows", list, "inventory.json"), (cmap, "components", list, "components.json"),
+              (cmap, "packages", dict, "components.json"), (sets, "packages", dict, "shipping-sets.json"),
+              (scan, "components", dict, scans[-1].name), (side, "components", dict, "experiment-tier-a.json"))
+    for doc, key, typ, name in shapes:
+        if not isinstance(doc, dict) or not isinstance(doc.get(key), typ):
+            raise CannotRun(f"{name} has no `{key}` {typ.__name__}")
+    headings = frozenset(line[3:].rstrip("\n") for line in practices.splitlines() if line.startswith("## "))
+    if not headings:
+        raise CannotRun(f"{PRACTICES} has no `## ` heading")
+    if "## " not in spec_text:
+        raise CannotRun(f"{SPEC} has no `## ` heading")
+    ctx = Context(components={c.get("id"): c for c in cmap["components"]},
+                  channels={k: (v or {}).get("channel") for k, v in cmap["packages"].items()},
+                  shipping={k: set(((v or {}).get("components") or {})) for k, v in sets["packages"].items()},
+                  practice_headings=headings, recall=inventory.get("recall"))
+    return inventory, ctx, scan["components"], side["components"], spec_text, f"{MKT}/{scans[-1].name}"
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv == ["--self-test"]:
+        return _self_test()
+    root, render_md = REPO, False
+    rest = list(argv)
+    while rest:
+        a = rest.pop(0)
+        if a == "--render":
+            render_md = True
+        elif a == "--root" and rest:
+            root = Path(rest.pop(0))
+        else:
+            print("usage: check-inventory.py [--root DIR] [--render] | --self-test", file=sys.stderr)
+            return 2
+    try:
+        inventory, ctx, scan, side, spec_text, latest = load(root)
+    except CannotRun as e:
+        print(f"CANNOT RUN: {e}. Treat this check as NOT RUN.")
+        return 2
+    rows = inventory["rows"]
+    errors = inventory_errors(inventory, ctx, latest)
+    for r in rows:
+        errors += row_errors(r, scan, spec_text, side, ctx=ctx)
+    status = sys.stderr if render_md else sys.stdout
+    if errors:
+        for e in errors:
+            print(e, file=status)
+        print(f"FAIL: {len(errors)} inventory error(s) over {len(rows)} rows; the D1 checkpoint was NOT computed",
+              file=status)
+        return 1
+    try:
+        fired = checkpoint_fires(rows)
+    except ValueError as e:
+        print(f"{e}. Treat the D1 checkpoint as NOT RUN.", file=status)
+        return 2
+    if render_md:
+        print(render(rows), end="")
+    if fired:
+        print(f"CHECKPOINT: the D1 checkpoint FIRED over {sum(r['phase'] == '1' for r in rows)} phase-1 rows "
+              "(public bar >= 3x next project for more than half). Stop: Human step H4.", file=status)
+        return 3
+    print(f"OK: {len(rows)} rows, 0 errors; the D1 checkpoint did not fire", file=status)
+    return 0
+
+
+def _self_test():
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _plan_asserts():
+    """The plan's checkpoint asserts (Task 19), run as written."""
+    def _row(phase, pub, nxt):
+        return {"phase": phase, "cost": {"public_bar_hours": pub, "next_project_hours": nxt}}
+
+    def _raises(rows):
+        try:
+            checkpoint_fires(rows)
+        except ValueError:
+            return True
+        return False
+
+    C3 = [_row("1", 3, 1), _row("1", 3, 1), _row("1", 1, 1)]                          # 2 of 3 at exactly 3x
+    assert checkpoint_fires(C3)
+    assert not checkpoint_fires([_row("1", 3, 1), _row("1", 1, 1)])                    # 1 of 2 is not MORE than half
+    assert not checkpoint_fires([_row("1", 2.9, 1), _row("1", 2.9, 1)])                # below 3x
+    assert checkpoint_fires([_row("1", 9, 1), _row("later", 1, 1), _row("later", 1, 1)])  # later rows do not count
+    assert _raises([_row("later", 9, 1)])                                              # empty phase 1 is not "did not fire"
+    # r1 CODEX 2: recall moved to "later" (D11 failed) cannot suppress the checkpoint.
+    assert checkpoint_fires(C3 + [_row("later", 1, 1)] * 4)
+    # r2 CLAUDE M3: a stray "1-if-feasible" row is never counted (row_errors refuses it first), so it cannot
+    # suppress the checkpoint either — and it never makes the checkpoint refuse.
+    assert checkpoint_fires(C3 + [_row("1-if-feasible", 1, 1)] * 4)
+    # r1 CLAUDE m2: next_project_hours = 0 never fires automatically.
+    assert _raises([_row("1", 1, 0)])
+    assert _raises([_row("1", 0, 0)])
+    return True
+
+
+def _self_test_body():
+    ok = fail = 0
+
+    def case(name, got_fn, want):
+        nonlocal ok, fail
+        try:
+            got = got_fn()
+        except Exception as e:      # a crash is a red case, named, never a pass
+            got = f"RAISED {type(e).__name__}: {e}"
+        if got == want:
+            ok += 1
+        else:
+            fail += 1
+            print(f"[FAIL] {name}: got {got!r} want {want!r}")
+
+    # ── the fixture world ────────────────────────────────────────────────────────────────────────────────────
+    components = {
+        "ep": {"id": "ep", "effort": 3, "roles": ["entry-point"], "phase": "1", "package": "comp"},
+        "ep2": {"id": "ep2", "effort": 3, "roles": ["entry-point"], "phase": "1", "package": "comp"},
+        "lib": {"id": "lib", "effort": 3, "roles": ["library"], "phase": "1", "package": "comp"},
+        "dat": {"id": "dat", "effort": 3, "roles": ["data"], "phase": "1", "package": "comp"},
+        "rec": {"id": "rec", "effort": 1, "roles": ["entry-point"], "phase": "1-if-feasible", "package": "recall"},
+        "memory-corpus": {"id": "memory-corpus", "effort": 1, "roles": ["data"], "phase": "1-if-feasible",
+                          "package": "recall"},
+        "ci": {"id": "ci", "effort": 2, "roles": ["entry-point"], "phase": "later", "package": "ci-layer"},
+    }
+    channels = {"comp": "plugin", "recall": "plugin", "ci-layer": "reusable-workflow"}
+    shipping = {"comp": {"ep", "ep2", "lib", "dat"}, "recall": {"rec", "memory-corpus"}, "ci-layer": {"ci"}}
+    headings = frozenset({"10. A thing — first ask", "How an entry earns a place here"})
+
+    def mkctx(**over):
+        kw = dict(components=components, channels=channels, shipping=shipping, practice_headings=headings,
+                  recall={"a": False, "b": "unanswered"})
+        kw.update(over)
+        return Context(**kw)
+
+    scan = {"ep": {"findings": [{"id": "ep:2:1"}], "mentions": [{"term": "x"}]},
+            "ep2": {"findings": [{"id": "ep2:3:1"}, {"id": "ep2:3:2"}]},
+            "lib": {"findings": []}, "dat": {"findings": []}}
+    sidecar = {
+        "ep": {"exercised": True, "scenario": "A-ep", "operation_ok": True,
+               "pass_conditions": {"1": "pass", "2": "argued", "3": "pass"}},
+        "ep2": {"exercised": True, "scenario": "A-ep2", "operation_ok": False,
+                "pass_conditions": {"1": "fail", "2": "pass"}},
+        "lib": {"exercised": False, "scenario": None, "operation_ok": False, "pass_conditions": {"1": "argued"}},
+    }
+    spec = "\n".join([
+        "# Spec", "## 2. Decisions of record", "| **D1** | Audience |", "| **D2** | Decomposition |",
+        "## 2b. The walkthrough", "### D1 becomes a working target", "### D10. Every component records a route",
+        "## 2c. Owner approval", "| **D7** | Licence |", "### Kept apart",
+        "## 3. Scope", "### Effort (3) — comprehensibility", "### Effort (2) — development velocity",
+        "## 4. The criteria", "### The role table", ""])
+
+    def crit(**over):
+        c = {"C1": "pass", "C2": "pass", "C3": "pass", "C4": "pass", "C5": "pass"}
+        c.update(over)
+        return c
+
+    def cost(pub=6.0, nxt=2.0):
+        return {"public_bar_hours": pub, "next_project_hours": nxt, "grade": "argued"}
+
+    base = {
+        "ship-ep": {"id": "ep", "effort": 3, "roles": ["entry-point"], "phase": "1", "verdict": "SHIP",
+                    "grade": "measured", "scenario": "A-ep", "rests_on": [], "harvest": "none",
+                    "practice_entry": None, "criteria": crit(), "cost": cost(), "route": None},
+        "nw": {"id": "ep2", "effort": 3, "roles": ["entry-point"], "phase": "1", "verdict": "NEEDS-WORK",
+               "grade": "argued", "scenario": "A-ep2", "rests_on": [{"kind": "finding", "ids": ["ep2:3:1"]}],
+               "harvest": "none", "practice_entry": None, "criteria": crit(C3="fail"), "cost": cost(),
+               "route": {"kind": "decouple-config", "cost_hours": 4.0, "grade": "argued"}},
+        "ship-lib": {"id": "lib", "effort": 3, "roles": ["library"], "phase": "1", "verdict": "SHIP",
+                     "grade": "inherited", "scenario": "ep: the A-ep scenario", "rests_on": [], "harvest": "none",
+                     "practice_entry": None, "criteria": crit(), "cost": cost(), "route": None},
+        "data": {"id": "dat", "effort": 3, "roles": ["data"], "phase": "1", "verdict": "DON'T-SHIP",
+                 "grade": "argued", "scenario": None,
+                 "rests_on": [{"kind": "spec", "section": "3", "heading": "Effort (2) — development velocity"}],
+                 "harvest": "practice", "practice_entry": "10. A thing — first ask",
+                 "criteria": crit(C3="fail", C4="struck"), "cost": cost(),
+                 "route": {"kind": "practice", "cost_hours": 1.0, "grade": "argued"}},
+        "rec": {"id": "rec", "effort": 1, "roles": ["entry-point"], "phase": "later", "verdict": "NEEDS-WORK",
+                "grade": "argued", "scenario": None, "rests_on": [{"kind": "spec", "decision": "D1"}],
+                "harvest": "none", "practice_entry": None, "criteria": crit(C4="fail"), "cost": cost(),
+                "route": {"kind": "template-repository", "cost_hours": 1.0, "grade": "argued"}},
+        "corpus": {"id": "memory-corpus", "effort": 1, "roles": ["data"], "phase": "later", "verdict": "NEEDS-WORK",
+                   "grade": "argued", "scenario": None, "rests_on": [{"kind": "c5"}], "harvest": "none",
+                   "practice_entry": None, "criteria": crit(C4="struck", C5="unanswered"), "cost": cost(),
+                   "route": {"kind": "portable-core", "cost_hours": 2.0, "grade": "argued"}},
+        "ci": {"id": "ci", "effort": 2, "roles": ["entry-point"], "phase": "later", "verdict": "SHIP",
+               "grade": "argued", "scenario": None, "rests_on": [], "harvest": "none", "practice_entry": None,
+               "criteria": crit(), "cost": cost(), "route": None},
+    }
+
+    def row(name, **over):
+        r = copy.deepcopy(base[name])
+        for k, v in over.items():
+            if v is _DROP:
+                r.pop(k, None)
+            else:
+                r[k] = v
+        return r
+
+    def rules(r, side=None, ctx=None):
+        errs = row_errors(r, scan, spec, sidecar if side is None else side, ctx=ctx or mkctx())
+        return sorted({re.search(r"\[([a-z0-9-]+)\]", e).group(1) for e in errs})
+
+    # ── every base row is clean (the adjacent negative for every rule below) ─────────────────────────────────
+    for name in base:
+        case(f"the base row {name} is clean", lambda n=name: rules(row(n)), [])
+
+    # [grade]
+    case("a NEEDS-WORK row with no grade is an error", lambda: rules(row("nw", grade=_DROP)), ["grade"])
+    case("the same NEEDS-WORK row graded is clean", lambda: rules(row("nw", grade="argued")), [])
+    case("a SHIP row with no grade is an error", lambda: rules(row("ship-ep", grade=None)), ["grade"])
+    case("a grade outside the vocabulary is an error", lambda: rules(row("nw", grade="proven")), ["grade"])
+    case("the grade `none` is a grade", lambda: rules(row("nw", grade="none")), [])
+    # [verdict]
+    case("a verdict outside the vocabulary is an error",
+         lambda: rules(row("nw", verdict="Needs-Work")), ["verdict"])
+    # [map]
+    case("a row whose roles differ from the map is an error (a relabelled data row escapes no rule)",
+         lambda: rules(row("ship-ep", roles=["data"], criteria=crit(C4="struck"))), ["map"])
+    case("a row whose effort differs from the map is an error", lambda: rules(row("nw", effort=2)), ["map"])
+    case("a row for a component not in the map is an error",
+         lambda: rules(row("nw", id="ghost", rests_on=[{"kind": "c5"}], criteria=crit(C3="fail", C5="unanswered"))),
+         ["map"])
+    # [ship-experiment] — entry-point
+    case("a SHIP row whose tier-A entry is exercised: false is an error",
+         lambda: rules(row("ship-ep"), side={**sidecar, "ep": {**sidecar["ep"], "exercised": False}}),
+         ["ship-experiment"])
+    case("the same SHIP row with exercised: true, operation_ok: true is clean",
+         lambda: rules(row("ship-ep"), side={**sidecar, "ep": {**sidecar["ep"], "exercised": True,
+                                                               "operation_ok": True}}), [])
+    case("a SHIP entry-point whose operation_ok is false is an error",
+         lambda: rules(row("ship-ep"), side={**sidecar, "ep": {**sidecar["ep"], "operation_ok": False}}),
+         ["ship-experiment"])
+    case("a SHIP entry-point with a pass condition `fail` is an error",
+         lambda: rules(row("ship-ep"), side={**sidecar, "ep": {**sidecar["ep"],
+                                                               "pass_conditions": {"1": "pass", "2": "fail"}}}),
+         ["ship-experiment"])
+    case("a SHIP entry-point with a pass condition `CANNOT RUN` is an error",
+         lambda: rules(row("ship-ep"), side={**sidecar, "ep": {**sidecar["ep"],
+                                                               "pass_conditions": {"1": "CANNOT RUN"}}}),
+         ["ship-experiment"])
+    case("a SHIP entry-point whose entry has no pass conditions is an error",
+         lambda: rules(row("ship-ep"), side={**sidecar, "ep": {**sidecar["ep"], "pass_conditions": {}}}),
+         ["ship-experiment"])
+    case("a SHIP entry-point with no tier-A entry is an error",
+         lambda: rules(row("ship-ep"), side={k: v for k, v in sidecar.items() if k != "ep"}), ["ship-experiment"])
+    # [ship-experiment] — library
+    case("a SHIP library row with no sidecar entry of its own, whose scenario names a passing entry-point, is clean",
+         lambda: rules(row("ship-lib"), side={k: v for k, v in sidecar.items() if k != "lib"}), [])
+    case("the same SHIP library row naming a failing entry-point is an error",
+         lambda: rules(row("ship-lib", scenario="ep2: the A-ep2 scenario"),
+                       side={k: v for k, v in sidecar.items() if k != "lib"}), ["ship-experiment"])
+    case("a SHIP library whose scenario names no component id is an error",
+         lambda: rules(row("ship-lib", scenario="the brief page, end to end")), ["ship-experiment"])
+    case("a SHIP library whose scenario names a library, not an entry-point, is an error",
+         lambda: rules(row("ship-lib", scenario="lib: itself")), ["ship-experiment"])
+    case("a SHIP library is not held to its own exercised: false entry",
+         lambda: rules(row("ship-lib")), [])
+    # [ship-experiment] — outside the rule
+    case("a SHIP data row in a plugin package is outside the experiment rule",
+         lambda: rules(row("data", verdict="SHIP", rests_on=[], route=None, harvest="none", practice_entry=None)),
+         [])
+    case("a SHIP entry-point in a non-plugin package is outside the experiment rule",
+         lambda: rules(row("ci")), [])
+    case("the same SHIP entry-point, its package a plugin, is an error",
+         lambda: rules(row("ci"), ctx=mkctx(channels={**channels, "ci-layer": "plugin"})), ["ship-experiment"])
+    case("a NEEDS-WORK entry-point with no tier-A entry is outside the experiment rule",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "decision": "D2"}]),
+                       side={k: v for k, v in sidecar.items() if k != "ep2"}), [])
+    # [shipping-set]
+    case("a phase-1 row absent from its package's shipping set is an error",
+         lambda: rules(row("nw"), ctx=mkctx(shipping={**shipping, "comp": {"ep", "lib", "dat"}})), ["shipping-set"])
+    case("the same row at phase later, absent from the set, is clean",
+         lambda: rules(row("nw", phase="later"), ctx=mkctx(shipping={**shipping, "comp": {"ep", "lib", "dat"}})),
+         [])
+    case("a phase-1 row whose package has no shipping-sets entry is an error",
+         lambda: rules(row("nw"), ctx=mkctx(shipping={k: v for k, v in shipping.items() if k != "comp"})),
+         ["shipping-set"])
+    # [phase]
+    case("a row at the map's 1-if-feasible label is an error",
+         lambda: rules(row("rec", phase="1-if-feasible")), ["phase"])
+    case("a row with no phase is an error", lambda: rules(row("nw", phase=_DROP)), ["phase"])
+    # [recall-phase]
+    case("a recall row at phase 1 while recall.a is false is an error",
+         lambda: rules(row("rec", phase="1")), ["recall-phase"])
+    case("the same recall row at phase 1 with recall.a true and recall.b pass is clean",
+         lambda: rules(row("rec", phase="1"), ctx=mkctx(recall={"a": True, "b": "pass"})), [])
+    case("a recall row at phase 1 with recall.a true and recall.b unanswered is an error",
+         lambda: rules(row("rec", phase="1"), ctx=mkctx(recall={"a": True, "b": "unanswered"})), ["recall-phase"])
+    case("a recall row at phase 1 with recall.a the string \"true\" is an error",
+         lambda: rules(row("rec", phase="1"), ctx=mkctx(recall={"a": "true", "b": "pass"})), ["recall-phase"])
+    case("a non-recall row at phase 1 is not held to the recall answers",
+         lambda: rules(row("nw"), ctx=mkctx(recall={"a": False, "b": "fail"})), [])
+    # [cost] / [next-project]
+    case("a cost with no public_bar_hours is an error",
+         lambda: rules(row("nw", cost={"next_project_hours": 2.0})), ["cost"])
+    case("a cost with no next_project_hours is an error",
+         lambda: rules(row("nw", cost={"public_bar_hours": 2.0})), ["cost"])
+    case("a row with no cost is an error", lambda: rules(row("nw", cost=None)), ["cost"])
+    case("a cost estimate that is not a number is an error",
+         lambda: rules(row("nw", cost=cost(pub="6"))), ["cost"])
+    case("next_project_hours of 0 is an error", lambda: rules(row("nw", cost=cost(nxt=0))), ["next-project"])
+    case("negative next_project_hours is an error", lambda: rules(row("nw", cost=cost(nxt=-1.0))), ["next-project"])
+    case("next_project_hours of 0.5 is clean", lambda: rules(row("nw", cost=cost(nxt=0.5))), [])
+    # [inherited]
+    case("an inherited grade with no scenario is an error",
+         lambda: rules(row("nw", grade="inherited", scenario=None)), ["inherited"])
+    case("the same inherited row with a scenario is clean",
+         lambda: rules(row("nw", grade="inherited", scenario="ep: A-ep")), [])
+    # [rests-on]
+    case("a non-SHIP row with an empty rests_on is an error", lambda: rules(row("nw", rests_on=[])), ["rests-on"])
+    case("a non-SHIP row with no rests_on is an error", lambda: rules(row("nw", rests_on=_DROP)), ["rests-on"])
+    case("a SHIP row with an empty rests_on is clean", lambda: rules(row("ship-ep", rests_on=[])), [])
+    # [ground-kind]
+    case("a ground of an unknown kind is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "scope"}])), ["ground-kind"])
+    case("a ground with no kind is an error",
+         lambda: rules(row("nw", rests_on=[{"ids": ["ep2:3:1"]}])), ["ground-kind"])
+    case("an unknown ground on a SHIP row is an error too",
+         lambda: rules(row("ship-ep", rests_on=[{"kind": "cites"}])), ["ground-kind"])
+    # [ground-finding]
+    case("a finding id that is not in the scan is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "finding", "ids": ["ep2:9:9"]}])), ["ground-finding"])
+    case("a borrowed finding id from another component is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "finding", "ids": ["ep:2:1"]}])), ["ground-finding"])
+    case("one borrowed id among own ids is still an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "finding", "ids": ["ep2:3:1", "ep:2:1"]}])), ["ground-finding"])
+    case("two of the row's own finding ids are clean",
+         lambda: rules(row("nw", rests_on=[{"kind": "finding", "ids": ["ep2:3:1", "ep2:3:2"]}])), [])
+    # [ground-empty] (backlog #696 f)
+    case("a finding ground with empty ids is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "finding", "ids": []}])), ["ground-empty"])
+    case("a finding ground with no ids key is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "finding"}])), ["ground-empty"])
+    case("a finding ground whose ids is a string, not a list, is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "finding", "ids": "ep2:3:1"}])), ["ground-empty"])
+    case("a spec ground with an empty section is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "section": ""}])), ["ground-empty"])
+    case("a spec ground with no section and no decision is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec"}])), ["ground-empty"])
+    case("a spec ground with an empty heading is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "section": "3", "heading": ""}])), ["ground-empty"])
+    case("a spec ground with an empty decision is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "decision": ""}])), ["ground-empty"])
+    case("an experiment ground with no scenario is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "experiment", "scenario": None}])), ["ground-empty"])
+    case("an experiment ground with no scenario on a component whose entry has none is still an error",
+         lambda: rules(row("nw", id="lib", roles=["library"], scenario="ep: x",
+                           rests_on=[{"kind": "experiment", "scenario": None}])), ["ground-empty"])
+    # [ground-spec]
+    case("a spec section the spec does not have is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "section": "9"}])), ["ground-spec"])
+    case("a spec section alone, which the spec has, is clean",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "section": "2c"}])), [])
+    case("a spec heading that is not under its section is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "section": "4",
+                                            "heading": "Effort (2) — development velocity"}])), ["ground-spec"])
+    case("section 2 does not reach a heading under section 2b",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "section": "2",
+                                            "heading": "D10. Every component records a route"}])), ["ground-spec"])
+    case("the same heading under section 2b is clean",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "section": "2b",
+                                            "heading": "D10. Every component records a route"}])), [])
+    case("a spec heading that is only a prefix of a real one is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "section": "3", "heading": "Effort (2)"}])),
+         ["ground-spec"])
+    case("a decision in the §2 table is clean",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "decision": "D2"}])), [])
+    case("a decision headed in §2b is clean",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "decision": "D10"}])), [])
+    case("a decision only in §2c is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "decision": "D7"}])), ["ground-spec"])
+    case("a decision the spec does not have is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "decision": "D99"}])), ["ground-spec"])
+    case("a decision that is a prefix of a real one is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "decision": "D"}])), ["ground-spec"])
+    # [ground-experiment]
+    case("this component's failed experiment scenario is clean",
+         lambda: rules(row("nw", rests_on=[{"kind": "experiment", "scenario": "A-ep2"}])), [])
+    case("another component's experiment scenario is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "experiment", "scenario": "A-ep"}])), ["ground-experiment"])
+    case("a scenario the sidecar does not have is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "experiment", "scenario": "A-nope"}])), ["ground-experiment"])
+    case("this component's scenario with no pass condition `fail` is an error",
+         lambda: rules(row("nw", id="ep", rests_on=[{"kind": "experiment", "scenario": "A-ep"}])),
+         ["ground-experiment"])
+    # [ground-c5]
+    case("a c5 ground while C5 is pass is an error",
+         lambda: rules(row("nw", rests_on=[{"kind": "c5"}])), ["ground-c5"])
+    case("the same c5 ground while C5 is unanswered is clean",
+         lambda: rules(row("nw", rests_on=[{"kind": "c5"}], criteria=crit(C3="fail", C5="unanswered"))), [])
+    # [measured-finding]
+    case("C3 fail graded measured with no finding ground is an error",
+         lambda: rules(row("nw", grade="measured", rests_on=[{"kind": "spec", "decision": "D1"}])),
+         ["measured-finding"])
+    case("C2 fail graded measured with no finding ground is an error",
+         lambda: rules(row("nw", grade="measured", criteria=crit(C2="fail"),
+                           rests_on=[{"kind": "spec", "decision": "D1"}])), ["measured-finding"])
+    case("the same C3 fail graded measured with a finding ground is clean",
+         lambda: rules(row("nw", grade="measured")), [])
+    case("the same C3 fail graded argued with no finding ground is clean",
+         lambda: rules(row("nw", rests_on=[{"kind": "spec", "decision": "D1"}])), [])
+    # [route] / [route-kind] (backlog #696 a)
+    case("a non-SHIP row with no route is an error", lambda: rules(row("nw", route=None)), ["route"])
+    case("a SHIP row with no route is clean", lambda: rules(row("ship-ep", route=None)), [])
+    for kind in ROUTE_KINDS:
+        case(f"the route kind {kind} is clean",
+             lambda k=kind: rules(row("nw", route={"kind": k, "cost_hours": 1.0, "grade": "argued"})), [])
+    case("a route kind outside the vocabulary is an error",
+         lambda: rules(row("nw", route={"kind": "rewrite-it", "cost_hours": 1.0})), ["route-kind"])
+    case("a route with no kind is an error", lambda: rules(row("nw", route={"cost_hours": 1.0})), ["route-kind"])
+    case("a route that is a bare string is an error", lambda: rules(row("nw", route="practice")), ["route-kind"])
+    case("an unknown route kind on a SHIP row is an error too",
+         lambda: rules(row("ship-ep", route={"kind": "plugin"})), ["route-kind"])
+    # [practice] (backlog #696 c)
+    case("a practice_entry without its number is an error",
+         lambda: rules(row("data", practice_entry="A thing — first ask")), ["practice"])
+    case("a practice_entry with the `## ` prefix is an error",
+         lambda: rules(row("data", practice_entry="## 10. A thing — first ask")), ["practice"])
+    case("a practice harvest with no practice_entry is an error",
+         lambda: rules(row("data", practice_entry=None)), ["practice"])
+    case("an unnumbered heading, given exactly, is clean",
+         lambda: rules(row("data", practice_entry="How an entry earns a place here")), [])
+    case("no practice harvest needs no practice_entry",
+         lambda: rules(row("data", harvest="none", practice_entry=None)), [])
+    # [data-c4]
+    case("a data row with C4 pass is an error", lambda: rules(row("data", criteria=crit(C3="fail"))), ["data-c4"])
+    # [corpus-c5]
+    case("the memory-corpus row SHIP while its C5 is unanswered is an error",
+         lambda: rules(row("corpus", verdict="SHIP")), ["corpus-c5"])
+    case("the memory-corpus row SHIP with C5 pass is clean",
+         lambda: rules(row("corpus", verdict="SHIP", rests_on=[], criteria=crit(C4="struck"))), [])
+    case("another data row SHIP while its C5 is unanswered is not the corpus rule",
+         lambda: rules(row("data", verdict="SHIP", criteria=crit(C3="fail", C4="struck", C5="unanswered"),
+                           rests_on=[])), [])
+    # [measured-effort]
+    case("a measured grade on an effort (1) row is an error",
+         lambda: rules(row("rec", grade="measured")), ["measured-effort"])
+    case("a measured grade on an effort (2) row is an error",
+         lambda: rules(row("ci", grade="measured")), ["measured-effort"])
+    case("a measured grade on an effort (3) row is clean", lambda: rules(row("nw", grade="measured")), [])
+
+    # ── inventory level ──────────────────────────────────────────────────────────────────────────────────────
+    full = [row(n) for n in base]
+
+    def inv_rules(rows, ctx=None, scan_name="docs/marketplace/scan-2026-01-01.json"):
+        errs = inventory_errors({"rows": rows, "scan": "docs/marketplace/scan-2026-01-01.json"}, ctx or mkctx(),
+                                scan_name)
+        return sorted({re.search(r"\[([a-z0-9-]+)\]", e).group(1) for e in errs})
+
+    case("an inventory with a row per component is clean", lambda: inv_rules(full), [])
+    case("a component in the map with no row is an error", lambda: inv_rules(full[:-1]), ["missing"])
+    case("two rows for one component is an error", lambda: inv_rules(full + [row("nw")]), ["duplicate"])
+    case("no phase-1 package in the map is an error",
+         lambda: inv_rules(full, mkctx(components={k: {**v, "phase": "later"} for k, v in components.items()})),
+         ["phase1-package"])
+    case("a phase-1 package with no shipping-sets entry is an error",
+         lambda: inv_rules(full, mkctx(shipping={k: v for k, v in shipping.items() if k != "comp"})),
+         ["package-shipping"])
+    case("an inventory naming a scan other than the latest is an error",
+         lambda: inv_rules(full, scan_name="docs/marketplace/scan-2026-02-01.json"), ["scan"])
+
+    # ── the checkpoint ───────────────────────────────────────────────────────────────────────────────────────
+    def _row(phase, pub, nxt):
+        return {"phase": phase, "cost": {"public_bar_hours": pub, "next_project_hours": nxt}}
+
+    def _raises(rows):
+        try:
+            checkpoint_fires(rows)
+        except ValueError:
+            return True
+        return False
+
+    C3 = [_row("1", 3, 1), _row("1", 3, 1), _row("1", 1, 1)]
+    case("the plan's checkpoint asserts, run as written", _plan_asserts, True)
+    case("two of three phase-1 rows at exactly 3x fire", lambda: checkpoint_fires(C3), True)
+    case("one of two at 3x is not MORE than half", lambda: checkpoint_fires([_row("1", 3, 1), _row("1", 1, 1)]), False)
+    case("two rows at 2.9x do not fire", lambda: checkpoint_fires([_row("1", 2.9, 1), _row("1", 2.9, 1)]), False)
+    case("later rows do not count against a firing phase-1 row",
+         lambda: checkpoint_fires([_row("1", 9, 1), _row("later", 1, 1), _row("later", 1, 1)]), True)
+    case("an empty phase 1 raises, never `did not fire`", lambda: _raises([_row("later", 9, 1)]), True)
+    case("recall rows moved to later cannot suppress the checkpoint",
+         lambda: checkpoint_fires(C3 + [_row("later", 1, 1)] * 4), True)
+    case("stray 1-if-feasible rows are never counted",
+         lambda: checkpoint_fires(C3 + [_row("1-if-feasible", 1, 1)] * 4), True)
+    case("next_project_hours 0 raises, never fires", lambda: _raises([_row("1", 1, 0)]), True)
+    case("next_project_hours 0 with public bar 0 raises", lambda: _raises([_row("1", 0, 0)]), True)
+
+    # ── render ───────────────────────────────────────────────────────────────────────────────────────────────
+    md = render([row("ship-lib"), row("nw")])
+    case("render puts verdict and grade in one cell",
+         lambda: [ln.split(" | ")[3] for ln in md.splitlines()[2:]], ["SHIP · inherited", "NEEDS-WORK · argued"])
+    case("render has one header, one rule and a line per row", lambda: len(md.splitlines()), 4)
+    case("render escapes a pipe inside a cell",
+         lambda: "a\\|b" in render([row("nw", harvest="a|b")]), True)
+
+    # ── the CLI, end to end over a fixture tree ──────────────────────────────────────────────────────────────
+    cli_components = [components[k] for k in ("ep", "ep2", "lib")]
+
+    def tree(name, rows, *, drop=None, scans=("scan-2026-01-01.json",), inv_scan="docs/marketplace/scan-2026-01-01.json"):
+        root = Path(tempfile.mkdtemp(prefix=f"inv-{name}-"))
+        mkt = root / MKT
+        mkt.mkdir(parents=True)
+        files = {
+            "inventory.json": {"scan": inv_scan, "recall": {"a": False, "b": "unanswered"}, "rows": rows},
+            "components.json": {"packages": {"comp": {"channel": "plugin"}}, "components": cli_components},
+            "shipping-sets.json": {"packages": {"comp": {"components": {k: {} for k in ("ep", "ep2", "lib")}}}},
+            "experiment-tier-a.json": {"components": sidecar},
+        }
+        for s in scans:
+            files[s] = {"components": scan}
+        for n, doc in files.items():
+            if n != drop:
+                (mkt / n).write_text(json.dumps(doc))
+        (root / SPEC).parent.mkdir(parents=True)
+        (root / SPEC).write_text(spec)
+        (root / PRACTICES).write_text("# Practices\n\n## 10. A thing — first ask\n")
+        return root
+
+    def run(root, *extra):
+        buf, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+            rc = main(["--root", str(root), *extra])
+        return rc, buf.getvalue() + err.getvalue(), buf.getvalue()
+
+    def costed(pubs):
+        return [row(n, cost=cost(pub=p, nxt=1.0)) for n, p in zip(("ship-ep", "nw", "ship-lib"), pubs)]
+
+    case("a clean inventory below the threshold exits 0",
+         lambda: (lambda r: (r[0], "did not fire" in r[1]))(run(tree("zero", costed((1.0, 1.0, 9.0))))), (0, True))
+    case("a clean inventory over the threshold exits 3",
+         lambda: (lambda r: (r[0], "CHECKPOINT" in r[1]))(run(tree("three", costed((9.0, 9.0, 1.0))))), (3, True))
+    case("rows with an error AND a crossed threshold exit 1, not 3",
+         lambda: (lambda r: (r[0], "ep2: [grade]" in r[1], "CHECKPOINT" in r[1]))(
+             run(tree("one", costed((9.0, 9.0, 1.0))[:1] + [row("nw", grade=None, cost=cost(9.0, 1.0))]
+                      + costed((9.0, 9.0, 1.0))[2:]))), (1, True, False))
+    case("a component in the map with no row exits 1",
+         lambda: (lambda r: (r[0], "[missing] component lib" in r[1]))(
+             run(tree("missing", costed((1.0, 1.0, 1.0))[:2]))), (1, True))
+    case("a clean inventory with no phase-1 rows exits 2",
+         lambda: (lambda r: (r[0], "no phase-1 rows" in r[1]))(
+             run(tree("nophase1", [{**r, "phase": "later"} for r in costed((1.0, 1.0, 1.0))]))), (2, True))
+    case("an absent inventory.json exits 2, CANNOT RUN",
+         lambda: (lambda r: (r[0], "CANNOT RUN" in r[1]))(run(tree("absent", [], drop="inventory.json"))), (2, True))
+    case("an absent sidecar exits 2, CANNOT RUN",
+         lambda: (lambda r: (r[0], "experiment-tier-a.json" in r[1]))(
+             run(tree("noside", costed((1.0, 1.0, 1.0)), drop="experiment-tier-a.json"))), (2, True))
+    case("no scan file exits 2, CANNOT RUN",
+         lambda: (lambda r: (r[0], "no scan-<date>.json" in r[1]))(run(tree("noscan", costed((1.0, 1.0, 1.0)),
+                                                                            scans=()))), (2, True))
+    case("the latest scan is the one read, and an inventory naming an older one exits 1",
+         lambda: (lambda r: (r[0], "[scan]" in r[1]))(
+             run(tree("twoscans", costed((1.0, 1.0, 1.0)), scans=("scan-2026-01-01.json", "scan-2026-03-01.json")))),
+         (1, True))
+    case("--render prints the table on stdout when the inventory is clean",
+         lambda: (lambda r: (r[0], r[2].splitlines()[2].split(" | ")[3]))(
+             run(tree("render", costed((1.0, 1.0, 1.0))), "--render")), (0, "SHIP · measured"))
+    case("--render prints no table over rows with errors",
+         lambda: (lambda r: (r[0], r[2]))(run(tree("rendererr", costed((1.0, 1.0, 1.0))[:2]), "--render")), (1, ""))
+    case("an unknown argument exits 2", lambda: run(tree("usage", []), "--live")[0], 2)
+
+    print(f"{ok}/{ok + fail} self-test cases passed")
+    return 0 if fail == 0 else 1
+
+
+_DROP = object()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
