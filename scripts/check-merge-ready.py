@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 400 cases
+    python3 scripts/check-merge-ready.py --self-test # 432 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -1738,13 +1738,14 @@ def pin_falls(old: dict, new: dict) -> list[str]:
 # architecture review, because nothing here read the coordinator docs. Now: every review subject whose
 # coordinator doc the PR's range touches is judged on its LAST TWO rounds by `check-review-decision`'s
 # OWN `thrashing_component`, over its OWN `parse_round` — imported, never re-implemented (a second copy
-# of a rule is this repository's most-measured drift). Thrashing with no `docs/reviews/architecture-
-# review-*.md` added or changed in the range HOLDs.
+# of a rule is this repository's most-measured drift). Thrashing with no `architecture-review-*.md` under
+# `docs/reviews/` or `docs/reviews/coordinator/` added or changed in the range HOLDs.
 # ⟳ 2026-11-21 (coordinator, on a measurement): `rounds_for`'s VALIDATION is not used. It refused 92 of
 # 181 subjects — PR #600's own among them — so a gate on it answered CANNOT RUN on its own target. A
-# round whose header is missing, unparseable or has no `findings:` key HOLDS instead ("cannot judge"): an unreadable round is
-# not proof of no thrashing, and a HOLD goes to a person. Only a sibling that cannot be imported, or a
-# rule that raises, is CANNOT RUN.
+# round whose header is missing, unparseable, has no `findings:` key or an inline `findings:` value other
+# than `[]` HOLDS instead ("cannot judge") — when it could change the answer (`thrash_holds`): an unreadable
+# round is not proof of no thrashing, and a HOLD goes to a person. Only a sibling that cannot be imported,
+# or a rule that raises anything but `parse_round`'s own `ValueError`, is CANNOT RUN.
 # ⚠ THE DOCS ARE READ AT THE PR'S HEAD COMMIT through `git_reader`, like `gather` — never the working
 # tree (`rounds_for` reads the working tree; it is not called). The script runs from the PR's worktree,
 # so an UNCOMMITTED coordinator doc is not seen, exactly as an uncommitted file is not in the range.
@@ -1753,7 +1754,12 @@ def pin_falls(old: dict, new: dict) -> list[str]:
 # subject — it is not matched to the component it names (a decision, reported, not made here).
 REVIEW_DECISION = Path(__file__).with_name("check-review-decision.py")
 COORD_DOC = re.compile(r"^docs/reviews/coordinator/(?P<subject>.+)-r(?P<n>\d+)-coordinator\.md$")
-ARCH_REVIEW = re.compile(r"^docs/reviews/architecture-review-[^/]+\.md$")
+# ⟳ r1 C2: the four most recent Phase 6 reviews (2026-11-15 ×3, 2026-11-17) were filed in the COORDINATOR
+# directory; matching the top level only HELD the very PRs that had run one. Both locations count; a half's
+# directory (`codex/`, `claude/`) does not.
+ARCH_REVIEW = re.compile(r"^docs/reviews/(?:coordinator/)?architecture-review-[^/]+\.md$")
+# ⟳ r1 X1/C1: the ONLY inline `findings:` value that is read — an explicit empty list, an optional comment.
+EMPTY_INLINE = re.compile(r"^\[\][ \t]*(?:#.*)?$")
 PHASE6_FIX = "run the Phase 6 architecture review — docs/dev-process.md → The arming condition"
 
 
@@ -1763,6 +1769,14 @@ class ThrashUnjudgeable(Exception):
 
 class _RoundUnreadable(Exception):
     """One round's header could not be parsed. Becomes a HOLD ("cannot judge"), never CANNOT RUN."""
+
+
+class _Malformed:
+    """`parse_round` refused the DOCUMENT — an exact `ValueError`, its contract for a malformed header.
+    Returned (not raised) through `_cross`, so that only this answer becomes "cannot judge" (r1 C4)."""
+
+    def __init__(self, why: str):
+        self.why = why
 
 
 def _exact_data(x):
@@ -1789,6 +1803,22 @@ def _exact_component(got) -> "str | None":
     return str.__str__(got)
 
 
+def _parse_or_malformed(crd, text):
+    """`crd.parse_round(text)`, or `_Malformed` for an EXACT `ValueError` (a subclass is the sibling's own
+    type, not its contract). Called inside `_cross`, so everything else it raises is `ThrashUnjudgeable`."""
+    try:
+        return crd.parse_round(text)
+    except ValueError as exc:
+        if type(exc) is not ValueError:
+            raise
+        return _Malformed(_describe(exc))
+
+
+def _exact_round(x):
+    """`_exact_data`, letting this script's own `_Malformed` marker through."""
+    return x if type(x) is _Malformed else _exact_data(x)
+
+
 def coordinator_subjects(files: list[str]) -> list[str]:
     """PURE. The review subjects whose coordinator docs the range adds, changes, renames or deletes."""
     return sorted({m["subject"] for m in map(COORD_DOC.match, files) if m})
@@ -1813,6 +1843,12 @@ def thrash_holds(files: list[str], rounds_by_subject: dict, thrashing) -> list[s
     out = []
     for subject in sorted(rounds_by_subject):
         rounds = rounds_by_subject[subject]
+        # ⟳ r1 C3: "cannot judge" only where the unreadable round could CHANGE the answer. Thrashing
+        # needs fix-induced findings in BOTH of the last two rounds, so a lone round cannot arm it, and
+        # neither can a pair with a READABLE round that has none — asked of the RULE itself, as the
+        # round paired with itself, so "has a fix-induced finding" keeps one owner.
+        if len(rounds) < 2 or any("unreadable" not in r and not thrashing([r, r]) for r in rounds):
+            continue
         bad = [r for r in rounds if "unreadable" in r]
         if bad:
             out.extend(f"cannot judge thrashing for {subject} r{r['round']}: {r['unreadable']} — read it, "
@@ -1822,7 +1858,7 @@ def thrash_holds(files: list[str], rounds_by_subject: dict, thrashing) -> list[s
         if comp:
             out.append(f"thrashing armed: {subject}'s component {comp!r} carried fix-induced findings in "
                        f"both r{rounds[-2]['round']} and r{rounds[-1]['round']}, and no "
-                       f"docs/reviews/architecture-review-*.md is in this PR's range — {PHASE6_FIX}")
+                       f"docs/reviews/[coordinator/]architecture-review-*.md is in this PR's range — {PHASE6_FIX}")
     return out
 
 
@@ -1830,7 +1866,15 @@ def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = N
     """The thrashing HOLD reasons for the range, reading each subject's last two coordinator docs AT `head`.
 
     RAISES `ThrashUnjudgeable` when the sibling cannot be imported or its rule raises; `read` raising (a
-    git failure) propagates — `main()` reports both as CANNOT RUN. A round that cannot be parsed is a HOLD."""
+    git failure) propagates — `main()` reports both as CANNOT RUN. A round that cannot be parsed is a HOLD
+    ("cannot judge"), where `thrash_holds` says it could change the answer. "Cannot be parsed" is an EXACT
+    `ValueError` from `parse_round` — its contract for a malformed header — a missing `findings:` key, or
+    an inline `findings:` value other than `[]` (its items are not read). Anything else `parse_round`
+    raises is a broken RULE: `ThrashUnjudgeable` (r1 C4).
+    ⚠ BOUND (r1 C5): the rounds are the subject's two highest-numbered docs IN THE HEAD TREE. A PR that
+    DELETES a subject's newest coordinator docs is judged on the older pair that remains (or on nothing,
+    if one or none remains) — the deletion is in the range, so the subject is named, but its rounds are
+    gone."""
     subjects = coordinator_subjects(files)
     if not subjects:
         return []
@@ -1842,7 +1886,9 @@ def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = N
         for n, path in last_two_docs(tree, subject):
             text = read(["git", "cat-file", "blob", f"{head}:{path}"])
             try:
-                r = _cross(lambda t: crd.parse_round(t), text, reduce=_exact_data, error=_RoundUnreadable)
+                r = _cross(_parse_or_malformed, crd, text, reduce=_exact_round, error=ThrashUnjudgeable)
+                if type(r) is _Malformed:
+                    raise _RoundUnreadable(r.why)
                 if type(r) is not dict or type(r.get("findings")) is not list:
                     raise _RoundUnreadable("parse_round returned no findings list")
                 # ⟳ 2026-11-21 (measured): PR #600's r4 had NO `findings:` key and recorded its
@@ -1850,6 +1896,10 @@ def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = N
                 if r.get("findings_key") is not True:
                     raise _RoundUnreadable("header has no `findings:` key — an absent list is not a "
                                            "clean round")
+                inline = r.get("findings_inline")
+                if type(inline) is not str or not (inline == "" or EMPTY_INLINE.match(inline)):
+                    raise _RoundUnreadable(f"`findings:` has an inline value {str(inline)[:60]!r} — only `[]` "
+                                           f"is read inline, so its items are unread and it is not a clean round")
                 r["round"] = n
             except _RoundUnreadable as exc:
                 r = {"round": n, "unreadable": str(exc)}
@@ -4547,13 +4597,19 @@ def _self_test_body() -> int:
     _R600 = {"hse-slice-d": [{"round": 3, "findings": [_F("detector-4-prose", True), _F("detector-6-config", False)]},
                              {"round": 4, "findings": [_F("detector-4-prose", True)]}]}
     _WANT600 = ["thrashing armed: hse-slice-d's component 'detector-4-prose' carried fix-induced findings in both "
-                "r3 and r4, and no docs/reviews/architecture-review-*.md is in this PR's range — " + PHASE6_FIX]
+                "r3 and r4, and no docs/reviews/[coordinator/]architecture-review-*.md is in this PR's range — " + PHASE6_FIX]
     check("#680 (a): the PR #600 shape — two consecutive fix-induced rounds in one component, no review — HOLDS",
           thrash_holds([_C600], _R600, _thr), _WANT600)
     check("#680 (b): ...and the same with an architecture review in the range does not",
           thrash_holds([_C600, _AR], _R600, _thr), [])
     check("#680 (b'): ...an architecture-review file NOT under docs/reviews/ is not one",
           thrash_holds([_C600, "docs/architecture-review-x.md"], _R600, _thr), _WANT600)
+    # r1 fold (C2): the four most recent Phase 6 reviews were filed in the COORDINATOR directory (a real name).
+    check("⭐ #680 r1 C2: an architecture review filed under docs/reviews/coordinator/ clears it too",
+          thrash_holds([_C600, "docs/reviews/coordinator/architecture-review-2026-11-17-hse-slice-c.md"], _R600, _thr), [])
+    check("#680 r1 C2: ...but one under another half's directory (docs/reviews/codex/) is not one",
+          thrash_holds([_C600, "docs/reviews/codex/architecture-review-2026-11-17-hse-slice-c.md"], _R600, _thr),
+          _WANT600)
     check("#680 (c): the PR #614 shape — r1 all fix-induced, r2 clean — does not HOLD",
           thrash_holds(["docs/reviews/coordinator/phase6-detector4-r2-coordinator.md"],
                        {"phase6-detector4": [{"round": 1, "findings": [_F("walkers", True), _F("negates", True)]},
@@ -4601,7 +4657,7 @@ def _self_test_body() -> int:
         _tg_ok = f"{exc.__class__.__name__}: {exc}"
     check("#680 real git: the fixture repository initialises", _tg_ok, None)
     _armed = [f"thrashing armed: s's component 'det4' carried fix-induced findings in both r3 and r4, and no "
-              f"docs/reviews/architecture-review-*.md is in this PR's range — {PHASE6_FIX}"]
+              f"docs/reviews/[coordinator/]architecture-review-*.md is in this PR's range — {PHASE6_FIX}"]
     check("#680 real git (a): two fix-induced rounds in one component, read at HEAD, HOLD — `disposition` ignored",
           _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}), _armed)
     check("#680 real git: only the LAST TWO rounds are judged — thrashing in r1/r2, then a clean r3, does not HOLD",
@@ -4617,6 +4673,50 @@ def _self_test_body() -> int:
           _tgate({3: _doc(3, _ind), 4: _doc(4, _cln)}), [])
     check("#680 real git: a missing sibling is CANNOT RUN, never a silent pass",
           _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}, src=_tg / "absent.py"), "CANNOT RUN: ThrashUnjudgeable")
+    # ── r1 fold (X1 = C1): an INLINE `findings:` value. Only `[]` is read inline; anything else leaves its
+    # items unread (`_findings_span` needs a bare `findings:` line), so the round is UNREADABLE, never clean.
+    def _cj(got, rounds, why="inline value"):
+        """True when `got` is exactly one cannot-judge reason per round in `rounds`, each naming `why`."""
+        return (type(got) is list and len(got) == len(rounds)
+                and all(g.startswith(f"cannot judge thrashing for s r{n}: ") and why in g and g.endswith(PHASE6_FIX)
+                        for g, n in zip(got, rounds)))
+    _inl = ("findings: [{id: X1, severity: Medium, aim: deliverable, fix_induced: true, component: det4, "
+            "disposition: fixed}]\n")
+    check("⭐ #680 r1 X1: an inline flow list of fix-induced findings in BOTH rounds is cannot-judge, never clean",
+          _cj(_tgate({3: _doc(3, _inl), 4: _doc(4, _inl)}), (3, 4)), True)
+    check("#680 r1 C1: an inline list of IDS (`findings: [a, b]`) in both rounds is cannot-judge, never clean",
+          _cj(_tgate({3: _doc(3, "findings: [a, b]\n"), 4: _doc(4, "findings: [c]\n")}), (3, 4)), True)
+    _cmt = ("findings:  # two\n  - {id: X1, severity: Medium, aim: deliverable, fix_induced: true, component: det4, "
+            "disposition: fixed}\n")
+    check("#680 r1 C1: `findings:  # comment` over block items (the items are dropped) is cannot-judge",
+          _cj(_tgate({3: _doc(3, _cmt), 4: _doc(4, _cmt)}), (3, 4)), True)
+    check("#680 r1 C1: `findings: []  # none` is an explicit empty list — a clean round, no HOLD",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, "findings: []  # none\n")}), [])
+    # ── r1 fold (C3): cannot-judge only when the unreadable round could CHANGE the answer. Thrashing needs
+    # fix-induced findings in BOTH of the last two rounds, so one round, or a readable round with none, rules it out.
+    check("#680 r1 C3: a subject with ONE round, unreadable, does not HOLD — thrashing needs two",
+          _tgate({1: "# Round 1\n\nno header here\n"}), [])
+    check("#680 r1 C3: an unreadable r3 beside a readable CLEAN r4 does not HOLD",
+          _tgate({3: "# Round 3\n\nno header here\n", 4: _doc(4, _cln)}), [])
+    _noi = ("findings:\n  - {id: X1, severity: Medium, aim: deliverable, fix_induced: false, component: det4, "
+            "disposition: fixed}\n")
+    check("#680 r1 C3: a readable r3 with findings but NONE fix-induced, beside an unreadable r4, does not HOLD",
+          _tgate({3: _doc(3, _noi), 4: "# Round 4\n\nno header here\n"}), [])
+    check("#680 r1 C3: BOTH rounds unreadable HOLDS, naming each",
+          _cj(_tgate({3: "# Round 3\n\nno header here\n", 4: "# Round 4\n\nnone\n"}), (3, 4), "no ```yaml"), True)
+    check("#680 r1 C3 (pure): one unreadable round alone does not HOLD",
+          thrash_holds([_C600], {"hse-slice-d": [{"round": 4, "unreadable": "ValueError: x"}]}, _thr), [])
+    check("#680 r1 C3 (pure): a readable clean round beside an unreadable one does not HOLD",
+          thrash_holds([_C600], {"hse-slice-d": [{"round": 3, "findings": []},
+                                                 {"round": 4, "unreadable": "ValueError: x"}]}, _thr), [])
+    # ── r1 fold (C4): only a `ValueError` from `parse_round` (its contract for a malformed header) means the
+    # DOCUMENT is unreadable. Anything else is a broken RULE: CANNOT RUN, never a HOLD that blames the doc.
+    _bk = Path(tempfile.mkdtemp())
+    (_bk / "broken_crd.py").write_text("def parse_round(text):\n    raise TypeError('a broken rule')\n\n"
+                                       "def thrashing_component(rounds):\n    return None\n")
+    check("#680 r1 C4: parse_round raising a TypeError (a broken rule) is CANNOT RUN, not a cannot-judge HOLD",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}, src=_bk / "broken_crd.py"), "CANNOT RUN: ThrashUnjudgeable")
+    shutil.rmtree(_bk, ignore_errors=True)
     shutil.rmtree(_tg, ignore_errors=True)
 
     shutil.rmtree(_tree_root, ignore_errors=True)

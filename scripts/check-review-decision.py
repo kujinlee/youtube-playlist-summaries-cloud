@@ -477,6 +477,10 @@ def parse_round(text: str) -> dict:
     item is a lost finding, which would read as "no thrashing"). A header with no `findings:` key
     parses to NO findings here, with `findings_key` False; `parse_header` refuses it, and so does
     `check-merge-ready` (PR #600's r4 had no key and recorded its fix-induced MAJOR only in prose).
+    `findings_inline` is the text after the FIRST `findings:` key on its own line, stripped (None with
+    no key). ⚠ Items are read only under a BARE `findings:` line, so an inline value — `[a, b]`,
+    `[{...}]`, even a trailing `# comment` — parses to NO findings; this layer reports the text and
+    does not judge it (r1 X1/C1, #680 (2)). `check-merge-ready` reads any value but `[]` as unreadable.
     """
     body = header_body(text)
     rm = re.search(r"^round:\s*(\d+)\s*$", body, re.M)
@@ -502,8 +506,9 @@ def parse_round(text: str) -> dict:
     if declared != len(findings):
         raise ValueError(f"header declares {declared} finding item(s) but "
                          f"{len(findings)} parsed — refusing to guess")
-    return {"round": int(rm.group(1)), "findings": findings,
-            "findings_key": re.search(r"^findings:", body, re.M) is not None}
+    key = re.search(r"^findings:(.*)$", body, re.M)
+    return {"round": int(rm.group(1)), "findings": findings, "findings_key": key is not None,
+            "findings_inline": key.group(1).strip() if key else None}
 
 
 def parse_header(text: str) -> dict:
@@ -515,6 +520,7 @@ def parse_header(text: str) -> dict:
     """
     head = parse_round(text)
     del head["findings_key"]                        # this layer answers it below, by refusing
+    del head["findings_inline"]                     # check-merge-ready's question, not this layer's
     body = header_body(text)
     # ⛔ r3 Blocking (Codex): `_findings_span` returns "" when the key is ABSENT, so
     # declared == 0 == len(findings) and nothing validated — a header with no `findings:`

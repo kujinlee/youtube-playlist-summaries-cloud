@@ -2095,7 +2095,11 @@ EXPECTED_MUTATIONS = {
     # hold_reasons (1), not passed by main (1), an armed component unreported (1), an architecture review in range
     # ignored (1), an unimportable rule swallowed in thrash_gate (1) and in main (1), an unparseable round skipped (1),
     # an absent `findings:` key read as clean (1), and the first two rounds judged instead of the last two (1).
-    "scripts/check-merge-ready.py": 197,
+    # ⟳ r1 fold: 197 -> 203 = 197 + 6, none retired, none re-bound. An inline `findings:` value read as clean (1)
+    # and `[] # comment` refused (1) (X1/C1); a coordinator-dir architecture review ignored (1) (C2); a lone
+    # unreadable round HOLDing (1) and a readable round with no fix-induced finding not ruling thrashing out (1)
+    # (C3); any parse_round exception read as an unreadable doc (1) (C4).
+    "scripts/check-merge-ready.py": 203,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

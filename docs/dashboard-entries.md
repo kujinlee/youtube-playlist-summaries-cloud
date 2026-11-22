@@ -21277,5 +21277,6 @@ Nothing waits on you for this.
 <!--tech-->
 Backlog #680 part (2), branch `merge-ready-thrash-hold`. `scripts/check-merge-ready.py` `thrash_gate` / `thrash_holds`
 (hold reason 5), rule imported from `scripts/check-review-decision.py` (`thrashing_component`; new `parse_round` shared
-with `parse_header`). Base rate over 41 coordinator-touching master commits: 12 HOLD, 0 CANNOT RUN. Self-tests
-check-merge-ready 419/419, check-review-decision 119/119; mutations 188 -> 197.
+with `parse_header`). Base rate over 41 coordinator-touching master commits: 8 HOLD (5 armed, 3 cannot-judge), 0
+CANNOT RUN (12 before the r1 fold: coordinator-dir architecture reviews now count, a lone round no longer HOLDs).
+Self-tests check-merge-ready 432/432, check-review-decision 119/119; mutations 188 -> 203.

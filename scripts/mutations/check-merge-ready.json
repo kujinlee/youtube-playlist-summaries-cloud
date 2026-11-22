@@ -2434,5 +2434,71 @@
    ]
   ],
   "expect": "#680 real git: only the LAST TWO rounds are judged — thrashing in r1/r2, then a clean r3, does not HOLD"
+ },
+ {
+  "name": "backlog #680 (2) r1 X1: an inline `findings:` value other than `[]` is read as a clean round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if type(inline) is not str or not (inline == \"\" or EMPTY_INLINE.match(inline)):\n",
+    "                if False:\n"
+   ]
+  ],
+  "expect": "\u2b50 #680 r1 X1: an inline flow list of fix-induced findings in BOTH rounds is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r1 X1: `findings: []` followed by a comment is refused as an inline value",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "EMPTY_INLINE = re.compile(r\"^\\[\\][ \\t]*(?:#.*)?$\")\n",
+    "EMPTY_INLINE = re.compile(r\"^\\[\\][ \\t]*$\")\n"
+   ]
+  ],
+  "expect": "#680 r1 C1: `findings: []  # none` is an explicit empty list \u2014 a clean round, no HOLD"
+ },
+ {
+  "name": "backlog #680 (2) r1 C2: an architecture review in docs/reviews/coordinator/ is not recognised",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "ARCH_REVIEW = re.compile(r\"^docs/reviews/(?:coordinator/)?architecture-review-[^/]+\\.md$\")\n",
+    "ARCH_REVIEW = re.compile(r\"^docs/reviews/architecture-review-[^/]+\\.md$\")\n"
+   ]
+  ],
+  "expect": "\u2b50 #680 r1 C2: an architecture review filed under docs/reviews/coordinator/ clears it too"
+ },
+ {
+  "name": "backlog #680 (2) r1 C3: a lone unreadable round HOLDS though thrashing needs two",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if len(rounds) < 2 or any(",
+    "        if any("
+   ]
+  ],
+  "expect": "#680 r1 C3: a subject with ONE round, unreadable, does not HOLD \u2014 thrashing needs two"
+ },
+ {
+  "name": "backlog #680 (2) r1 C3: a readable round with no fix-induced finding does not rule thrashing out",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    " and not thrashing([r, r]) for r in rounds):\n",
+    " and False for r in rounds):\n"
+   ]
+  ],
+  "expect": "#680 r1 C3: an unreadable r3 beside a readable CLEAN r4 does not HOLD"
+ },
+ {
+  "name": "backlog #680 (2) r1 C4: ANY exception from parse_round reads as an unreadable doc, not a broken rule",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except ValueError as exc:\n        if type(exc) is not ValueError:\n            raise\n        return _Malformed(",
+    "    except Exception as exc:\n        return _Malformed("
+   ]
+  ],
+  "expect": "#680 r1 C4: parse_round raising a TypeError (a broken rule) is CANNOT RUN, not a cannot-judge HOLD"
  }
 ]
