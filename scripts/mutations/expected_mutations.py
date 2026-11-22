@@ -1116,7 +1116,11 @@ EXPECTED_MUTATIONS = {
     # literals and the suite stayed 111/111 while the reader was told the opposite.
     # ⟳ 2026-10-24, backlog #318: 28 -> 30 — `refuted` is in the vocabulary AND answers a finding;
     #   two #329 anchors re-pointed onto the new `ANSWERED` constant, nothing retired.
-    "scripts/check-review-decision.py": 30,
+    # ⟳ 2026-11-21, backlog #680 (2) r2 X1: 30 -> 32 — `parse_round` COUNTS every `findings:` key (1) and
+    #   NAMES a field set twice in one finding (1); nothing retired, nothing re-pointed.
+    # ⟳ 2026-11-21, backlog #680 (2) r3 C2: 32 -> 33 — `parse_round` finds the findings key by its NORMALISED
+    #   name (1); nothing retired; ONE RE-BOUND — r2 X1's key-count anchor, onto `len(fk)`.
+    "scripts/check-review-decision.py": 33,
     # ⟳ 2026-10-23: check-decision-scheme 86 -> 106. Trigger 3 changed its question (route
     # collapse -> a lost bet whose next route was never logged) and the `missed-escalation`
     # acknowledgment row joined. TWO entries RETIRED WITH THEIR SUBJECT — the collapse floor and
@@ -2091,7 +2095,25 @@ EXPECTED_MUTATIONS = {
     # = 181 + 6, none retired, none re-bound. A stdlib-named HEAD `scripts/` name is refused (module, package, not
     # over-broad) (3), the group kill (1), the bounded post-kill wait (1), and the duplicate-key refusal (1). The NaN
     # refusal is deleted: the schema check already refuses every non-int, so its only observable was a message.
-    "scripts/check-merge-ready.py": 188,
+    # ⟳ 2026-11-21, backlog #680 part (2): 188 -> 197 = 188 + 9, none retired. The thrashing HOLD: dropped from
+    # hold_reasons (1), not passed by main (1), an armed component unreported (1), an architecture review in range
+    # ignored (1), an unimportable rule swallowed in thrash_gate (1) and in main (1), an unparseable round skipped (1),
+    # an absent `findings:` key read as clean (1), and the first two rounds judged instead of the last two (1).
+    # ⟳ r1 fold: 197 -> 203 = 197 + 6, none retired, none re-bound. An inline `findings:` value read as clean (1)
+    # and `[] # comment` refused (1) (X1/C1); a coordinator-dir architecture review ignored (1) (C2); a lone
+    # unreadable round HOLDing (1) and a readable round with no fix-induced finding not ruling thrashing out (1)
+    # (C3); any parse_round exception read as an unreadable doc (1) (C4).
+    # ⟳ r2 fold: 203 -> 207 = 203 + 4, none retired; one RE-BOUND (#680 (b)'s anchor, onto the new HEAD clause). A second `findings:` key read as readable (1)
+    # and a field set twice in one finding read as readable (1) (X1); an architecture review not required to
+    # exist at HEAD (1), and thrash_gate passing the range instead of the HEAD tree as what exists there (1) (X2).
+    # ⟳ r3 fold: 207 -> 214 = 207 + 8 - 1. Clean is the POSITIVE form `[]` with nothing under it (1); every `- `
+    # line under a bare key must be a parsed item (1), and a bare key with none is unreadable (1) (C1); a near-miss
+    # field name (1) and a `<<` merge key (1) are unreadable (C3); a ` #` comment in component/fix_induced (1) (C4);
+    # an R/C entry (1) and an empty blob (1) clear nothing (C5). ONE RETIRED WITH ITS SUBJECT: r2 X2's
+    # `frozenset(tree)` argument is gone — `counted` replaced it, and a deletion is excluded structurally (no
+    # `new` path). THREE RE-BOUND: #680 (b) and r2 X2's first onto `f in counted`, r1 X1's onto `if not clean and
+    # inline != ""`.
+    "scripts/check-merge-ready.py": 214,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

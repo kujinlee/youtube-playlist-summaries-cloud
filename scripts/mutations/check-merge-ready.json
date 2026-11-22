@@ -1378,8 +1378,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                              answered=answered)",
-    "                              answered=frozenset())"
+    " answered=answered)",
+    " answered=frozenset())"
    ]
   ],
   "expect": "⭐ #508 real git: answered `not a loosening` by a verdict on the EXACT tree, the HOLD clears, rc=0"
@@ -2335,5 +2335,291 @@
   "expect": [
    "⛔ backlog #538 Phase 6 (R3-F3): a child whose JSON repeats a key is CANNOT RUN, though the last value would pass the schema"
   ]
+ },
+ {
+  "name": "backlog #680 (2): the thrashing HOLD reason is dropped from hold_reasons, so an armed PR merges READY",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    out.extend(thrash)\n",
+    "    pass\n"
+   ]
+  ],
+  "expect": "#680: hold_reasons carries the thrashing reasons through (they are required, not optional)"
+ },
+ {
+  "name": "backlog #680 (2): main() never passes the thrashing reasons to hold_reasons",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "pins=pins,\n                              thrash=thrash,",
+    "pins=pins,\n                              thrash=[],"
+   ]
+  ],
+  "expect": "⭐ #680: main() HOLDS a READY PR whose coordinator docs arm THRASHING, rc=3, naming subject and component"
+ },
+ {
+  "name": "backlog #680 (2): an armed component is not reported, so thrashing reads as nothing",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        comp = thrashing(rounds)\n        if comp:\n",
+    "        comp = thrashing(rounds)\n        if False:\n"
+   ]
+  ],
+  "expect": "#680 (a): the PR #600 shape — two consecutive fix-induced rounds in one component, no review — HOLDS"
+ },
+ {
+  "name": "backlog #680 (2): an architecture review in the range is ignored, so a reviewed PR still HOLDS",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if any(ARCH_REVIEW.match(f) and f in counted for f in files):\n        return []\n",
+    ""
+   ]
+  ],
+  "expect": "#680 (b): ...and the same with an architecture review in the range does not"
+ },
+ {
+  "name": "backlog #680 (2): an unimportable thrashing rule is swallowed as 'no subjects', a silent pass",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    crd = _import_sibling(src or REVIEW_DECISION, \"_crd_for_merge_ready\", ThrashUnjudgeable)\n",
+    "    try:\n        crd = _import_sibling(src or REVIEW_DECISION, \"_crd_for_merge_ready\", ThrashUnjudgeable)\n    except ThrashUnjudgeable:\n        return []\n"
+   ]
+  ],
+  "expect": "#680 real git: a missing sibling is CANNOT RUN, never a silent pass"
+ },
+ {
+  "name": "backlog #680 (2): main() swallows the thrashing CANNOT RUN, so an unjudged PR reads READY",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            thrash = []\n            code, line = 2, (f\"CANNOT RUN — the thrashing check could not run",
+    "            thrash = []\n            _x, _y = 2, (f\"CANNOT RUN — the thrashing check could not run"
+   ]
+  ],
+  "expect": "⭐ #680: main() with the thrashing rule UNIMPORTABLE is CANNOT RUN, rc=2 — never READY, never a HOLD"
+ },
+ {
+  "name": "backlog #680 (2): an unparseable round is skipped, so an unreadable last round reads as no thrashing",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                r = {\"round\": n, \"unreadable\": str(exc)}\n",
+    "                continue\n"
+   ]
+  ],
+  "expect": "#680 real git (e): an unparseable last-round YAML HOLDS with the cannot-judge reason"
+ },
+ {
+  "name": "backlog #680 (2): an ABSENT findings: key reads as a clean round, PR #600's own r4",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if r.get(\"findings_key\") is not True:\n",
+    "                if False:\n"
+   ]
+  ],
+  "expect": "#680 real git: an ABSENT `findings:` key is an absent record — it HOLDS as cannot-judge"
+ },
+ {
+  "name": "backlog #680 (2): the FIRST two rounds are judged, not the last two",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return docs[-2:]\n",
+    "    return docs[:2]\n"
+   ]
+  ],
+  "expect": "#680 real git: only the LAST TWO rounds are judged — thrashing in r1/r2, then a clean r3, does not HOLD"
+ },
+ {
+  "name": "backlog #680 (2) r1 X1: an inline `findings:` value other than `[]` is read as a clean round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if not clean and inline != \"\":\n",
+    "                if False:\n"
+   ]
+  ],
+  "expect": "\u2b50 #680 r1 X1: an inline flow list of fix-induced findings in BOTH rounds is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r1 X1: `findings: []` followed by a comment is refused as an inline value",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "EMPTY_INLINE = re.compile(r\"^\\[\\][ \\t]*(?:#.*)?$\")\n",
+    "EMPTY_INLINE = re.compile(r\"^\\[\\][ \\t]*$\")\n"
+   ]
+  ],
+  "expect": "#680 r1 C1: `findings: []  # none` is an explicit empty list \u2014 a clean round, no HOLD"
+ },
+ {
+  "name": "backlog #680 (2) r1 C2: an architecture review in docs/reviews/coordinator/ is not recognised",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "ARCH_REVIEW = re.compile(r\"^docs/reviews/(?:coordinator/)?architecture-review-[^/]+\\.md$\")\n",
+    "ARCH_REVIEW = re.compile(r\"^docs/reviews/architecture-review-[^/]+\\.md$\")\n"
+   ]
+  ],
+  "expect": "\u2b50 #680 r1 C2: an architecture review filed under docs/reviews/coordinator/ clears it too"
+ },
+ {
+  "name": "backlog #680 (2) r1 C3: a lone unreadable round HOLDS though thrashing needs two",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if len(rounds) < 2 or any(",
+    "        if any("
+   ]
+  ],
+  "expect": "#680 r1 C3: a subject with ONE round, unreadable, does not HOLD \u2014 thrashing needs two"
+ },
+ {
+  "name": "backlog #680 (2) r1 C3: a readable round with no fix-induced finding does not rule thrashing out",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    " and not thrashing([r, r]) for r in rounds):\n",
+    " and False for r in rounds):\n"
+   ]
+  ],
+  "expect": "#680 r1 C3: an unreadable r3 beside a readable CLEAN r4 does not HOLD"
+ },
+ {
+  "name": "backlog #680 (2) r1 C4: ANY exception from parse_round reads as an unreadable doc, not a broken rule",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except ValueError as exc:\n        if type(exc) is not ValueError:\n            raise\n        return _Malformed(",
+    "    except Exception as exc:\n        return _Malformed("
+   ]
+  ],
+  "expect": "#680 r1 C4: parse_round raising a TypeError (a broken rule) is CANNOT RUN, not a cannot-judge HOLD"
+ },
+ {
+  "name": "backlog #680 (2) r2 X1: a second `findings:` key is read as a readable round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if type(nkeys) is not int or nkeys != 1:\n",
+    "                if False:\n"
+   ]
+  ],
+  "expect": "\u2b50 #680 r2 X1: `findings: []` then a second `findings: [...]` beside a fix-induced r3 is cannot-judge"
+ },
+ {
+  "name": "backlog #680 (2) r2 X1: a field set twice in one finding is read as a readable round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if type(dups) is not list or dups:\n",
+    "                if False:\n"
+   ]
+  ],
+  "expect": "\u2b50 #680 r2 X1: an item that sets `fix_induced` twice (true, then false) is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r2 X2: an architecture review need not exist at HEAD to clear the HOLD",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if any(ARCH_REVIEW.match(f) and f in counted for f in files):\n",
+    "    if any(ARCH_REVIEW.match(f) for f in files):\n"
+   ]
+  ],
+  "expect": "\u2b50 #680 r2 X2: a DELETED coordinator-dir architecture review (in the range, absent at HEAD) still HOLDS"
+ },
+ {
+  "name": "backlog #680 (2) r3 C1: `findings: []` is clean even with lines under it — clean is no longer the POSITIVE form",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                clean = bool(EMPTY_INLINE.match(inline)) and rest == 0\n",
+    "                clean = bool(EMPTY_INLINE.match(inline))\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C1 A: `findings: []` with an indented item under it — beside a fix-induced r3, it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C1: a `- ` line under a bare key need not become a parsed item",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if not clean and (dashes == 0 or dashes != len(r[\"findings\"])):\n",
+    "                if not clean and dashes == 0:\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C1 J: an UNINDENTED flow item under a bare key — beside a fix-induced r3, it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C1: a bare `findings:` with no item under it reads as a clean round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(dashes == 0 or dashes != len(",
+    "(dashes != len("
+   ]
+  ],
+  "expect": "#680 r3 C1: a bare `findings:` with NO item under it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C3: a near-miss spelling of `fix_induced` or `component` is read as a readable round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                       or (_norm_field(k) in (\"fix_induced\", \"component\") and k not in (\"fix_induced\", \"component\"))]\n",
+    "                       or False]\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C3 B: a quoted `\"fix_induced\"` key — beside a fix-induced r3, it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C3: a YAML merge key `<<` in a finding is read as a readable round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "type(k) is not str or k.startswith(\"<<\")\n",
+    "type(k) is not str\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C3 H: a YAML merge key — beside a fix-induced r3, it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C4: a ` #` comment inside a component or fix_induced value is read as part of it",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                        if type(f.get(k)) is str and re.search(r\"[ \\t]#\", f[k]):\n",
+    "                        if False:\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C4: a `# comment` after the component — beside a fix-induced r3, it is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r3 C5: a RENAMED or COPIED old architecture review clears the HOLD",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    counted = frozenset(e[\"new\"] for e in fs if e.get(\"status\") in (\"A\", \"M\") and e.get(\"new\")\n",
+    "    counted = frozenset(e[\"new\"] for e in fs if e.get(\"status\") in (\"A\", \"M\", \"R\", \"C\") and e.get(\"new\")\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C5: a RENAMED old review (status R) clears nothing — it still HOLDS"
+ },
+ {
+  "name": "backlog #680 (2) r3 C5: an EMPTY architecture-review file clears the HOLD",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "f\"{head}:{e['new']}\"]).strip() != \"0\")\n",
+    "f\"{head}:{e['new']}\"]).strip() != \"\")\n"
+   ]
+  ],
+  "expect": "⭐ #680 r3 C5: an EMPTY new review clears nothing"
  }
 ]

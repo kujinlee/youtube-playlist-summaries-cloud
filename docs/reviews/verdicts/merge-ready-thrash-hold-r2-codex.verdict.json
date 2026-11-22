@@ -1,0 +1,34 @@
+{
+  "attempts": [
+    "  gpt-6.2-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.2-astra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.1-terra: ok \u2014 2348 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "3cc76714c08e94b27e5834d86aae19f3f73fd263",
+  "intrusions": [],
+  "loosening_answers": {
+    "04bcea19aaed": "not a loosening",
+    "130c03d0a41d": "not a loosening",
+    "181d767d17f1": "not a loosening",
+    "18fb52b082c2": "not a loosening",
+    "45a26d5846d6": "not a loosening",
+    "51367c9106fc": "not a loosening",
+    "62bccbb32ede": "not a loosening",
+    "8be0bcf2d895": "not a loosening",
+    "a1e47caee6a2": "not a loosening",
+    "b033b18c7dd4": "not a loosening",
+    "c147b1dc0860": "not a loosening",
+    "cafeb27fe455": "not a loosening"
+  },
+  "model": "gpt-6.1-terra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/680b-r2/prompt.md",
+  "reason": "2348 chars",
+  "refused": false,
+  "review": "merge-ready-thrash-hold-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/phase6-detector4"
+}
