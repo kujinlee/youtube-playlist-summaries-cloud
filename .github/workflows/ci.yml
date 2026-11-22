@@ -918,6 +918,13 @@ jobs:
       - name: mkt_seed_repo self-test
         run: python3 scripts/mkt_seed_repo.py --self-test
 
+      # The shipped memory corpus build (marketplace-inventory plan, Task 18). A tool, not a check-* guard:
+      # this step is its caller; scripts/mutations/build-shipped-corpus.json stops it going vacuous. Its suite
+      # is hermetic (a built fixture world); the real build is run by hand, so an edit to a memory file never
+      # reddens an unrelated PR.
+      - name: build-shipped-corpus self-test
+        run: python3 scripts/build-shipped-corpus.py --self-test
+
       # The component map's completeness check (marketplace-inventory plan, Task 5): every supporting
       # artifact is in a component or a reasoned exclusion, and no glob exclusion hides a file a
       # package executes. The map is checked against the tree this run checked out.

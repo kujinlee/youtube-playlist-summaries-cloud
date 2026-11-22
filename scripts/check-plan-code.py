@@ -5533,6 +5533,8 @@ def _self_test_body() -> int:
                                       # ⟳ PR #440 r2: the bounded reader, a LIBRARY, added with its manifest.
                                       "scripts/bounded_read.py",
                                       "scripts/brief-compose.py",
+                                      # 2026-11-22, marketplace-inventory Task 18: a tool.
+                                      "scripts/build-shipped-corpus.py",
                                       # backlog #455: the subagent long-call hook, with its manifest.
                                       # backlog #457: the subagent large-read hook, with its manifest.
                                       "scripts/check-agent-large-read.py",

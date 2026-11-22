@@ -2514,6 +2514,16 @@ EXPECTED_MUTATIONS = {
     # creates it (5): fixed dates, the correctly-empty flag, the non-empty-out refusal, known-facts beside the
     # repository, the full git log. +2 at the r1 fold (Claude CM3): two typed facts drifting from their committed file.
     "scripts/mkt_seed_repo.py": 11,
+    # 2026-11-22, marketplace-inventory plan Task 18: the shipped-corpus build, pinned in the commit that creates it.
+    # One entry per group-table rule (first row, sizes), per build rule (exclusion, paraphrase, index filter, stale
+    # source, missing paraphrase, non-empty out), per quote rule (per paragraph, blockquote, ellipsis, six-word runs,
+    # emphasis), and per check rule (no quotes, empty output, excluded name, nested output, a hit fails).
+    # ⟳ round-1 fold: 20 — punctuation normalised as words (r1 X1/C1) and an excluded file's content under another
+    # name (r1 C5); the no-quotes entry now mutates the per-file CANNOT RUN (r1 C2).
+    # ⟳ round-2 fold: 25 — a Markdown link reduced to its text and a bare URL dropped (r2 X1), and the canonical
+    # excluded-content hash: per-line trailing whitespace, trailing blank lines, the excluded side canonical (r2 X2).
+    # ⟳ round-3 fold: 27 — the plain view dropped from the output side, and from the quote side (r3 C1).
+    "scripts/build-shipped-corpus.py": 27,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out

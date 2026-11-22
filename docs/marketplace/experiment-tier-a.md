@@ -184,3 +184,83 @@ Stranger account, `total_cost_usd` as `claude -p --output-format json` reported 
 runs. World 2: `brief` 0.068 (13 s), `explain-diff` 0.276 (85 s), `explain-findings` 0.076 (23 s), `explain-topic`
 0.220 (49 s), `dashboard` 0.054 (13 s); world 1 (discarded) `brief` 0.115 (24 s). **Total 0.81 USD.** The scripted
 half made no model call.
+
+## Recall with an empty corpus
+
+Spec §2c, D11 condition (a); marketplace-inventory plan Task 18. Measured **2026-11-22, 08:40–08:41 PST**, on branch
+`marketplace-task18` at `8efb3d0a` (its `scripts/`, `.claude/hooks/` and `docs/memory/` staged unchanged). Same
+machine and versions as above (`Python 3.14.4`, `claude` `2.1.323`, `git` `2.49.0`).
+
+**Outcome: a SILENT NO-OP, measured by the SUPPLEMENTARY run (`mkt18.rc0f4sjc`), not the primary one.** In the
+primary run (`mkt18.7c0qezhi`) the hook never reached the matcher: the allow-list lacked `dirname`, so line 41 of
+`surface-recall.sh` resolved `REPO_ROOT=/` and the hook exited at line 61 (`//scripts/recall-llm.py` absent), with
+`opened` = 0 in both hook records. The primary hook rows below are therefore NOT a measurement of the hook; the
+primary run measured the matcher only. The supplementary run, the same driver with `dirname` added to the
+allow-list, did reach the matcher (each hook record opened 44–47 files): installed into the seeded stranger
+repository, package `recall` surfaces nothing and says nothing — the unarmed hook exits 0 with stdout and stderr both
+empty (the matcher's rc 2, "no plan is armed", is swallowed by the hook by design). When a plan IS armed beside the
+install (a simulation; the package cannot arm one), the hook asks the reader to run `--arm`, and `--arm` fails with
+rc 6 "no memory directory for this project". Neither path ever reaches a model call or a memory entry. **`recall.a` =
+`false`** in `inventory.json`, resting on the supplementary run: the probe ran (bash and claude were reachable, the
+token was usable), so this is a measured false, not CANNOT RUN.
+
+### How it was run
+
+The driver is `task18/probe.py` in the session scratchpad, outside the repository. It calls `build_world(<run>/world,
+["python3","git","bash","claude"])`, `mkt_seed_repo.seed`, copies the seeded repository to `<world HOME>/project`,
+`stage([spec_from_map(components.json, "recall", "0.1.0")], <run>/mkt)`, `preflight(world, <ephemeral port>)` → `[]`,
+and `install(world, mkt, "recall")`. The install holds 8 files plus `docs/memory/` (196 `.md` files). Every probe ran
+through `run_isolated(world, argv, <world HOME>/project, 120)`. Run directory:
+`$(getconf DARWIN_USER_TEMP_DIR)/mkt18.7c0qezhi`.
+
+### What came back (quoted from the `RunRecord`s)
+
+| Probe (`argv`) | rc | stdout | stderr |
+|---|---|---|---|
+| `bash <install>/.claude/hooks/surface-recall.sh` | 0 | *(empty)* | `…/surface-recall.sh: line 41: dirname: command not found` |
+| `python3 <install>/scripts/recall-llm.py --fire` | 2 | *(empty)* | `CANNOT RUN: no plan is armed (…/recall/0.1.0/.claude/executing-plan absent), so there is no situation to match.` |
+| `… recall-llm.py --arm` | 2 | *(empty)* | the same sentence |
+| `… recall-llm.py --print-prompt` | 2 | *(empty)* | the same sentence |
+| ARMED: the hook | 0 | *(empty)* | `…/surface-recall.sh: line 41: dirname: command not found` |
+| ARMED: `--fire` | 3 | *(empty)* | ``STALE CACHE: probe.json does not exist — this plan was never armed for recall. Run `scripts/recall-llm.py --arm`.`` |
+| ARMED: `--arm` | 6 | *(empty)* | `CANNOT RUN: no memory directory for this project — nothing was checked.` |
+
+**The primary hook rows are NOT MEASURED: the hook exited before the matcher.** The `dirname` line is a gap in the
+probe's allow-list — every stranger's host has `dirname` — not a gap in the product, and a second run removes it. The same driver with
+`dirname` added to the allow-list (`mkt18.rc0f4sjc`) gave: the unarmed hook rc 0, stdout and stderr both empty; the
+ARMED hook rc 0 with this stdout:
+
+> ``{"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": "recall-llm: the recall cache for this plan is absent or stale, so no memory entry was\nsurfaced for this step. Run `python3 scripts/recall-llm.py --arm` to match this plan's steps\n(one model call, ~16s, covers every step). Detail: STALE CACHE: probe.json does not exist — this plan was never armed for recall. Run `scripts/recall-llm.py --arm`.\n"}}``
+
+and the ARMED `--arm` rc 6 with the same `no memory directory` sentence. The matcher's rc and stderr were otherwise
+the same as in the primary run.
+
+### Why it is a no-op: two causes, both read from the code
+
+- **The plan sentinel and the cache are keyed to the INSTALL directory.** `scripts/recall-llm.py:120–122` sets `ROOT`
+  to the script's grandparent and `SENTINEL = ROOT/.claude/executing-plan`. Installed, that is the plugin cache, not
+  the stranger's project, and nothing in the package writes a sentinel there: `begin-plan.py` does not ship.
+- **The corpus is looked up under the harness's per-project slug, not in the package.**
+  `scripts/recall-llm.py:417` (`memory_dir`) derives `~/.claude/projects/<slug of ROOT>/memory`. No such directory
+  exists in the world, so `--arm` returns rc 6. The 196 memory files the install DOES carry under `docs/memory/` are
+  never read: no `RunRecord.opened` names any of them.
+
+### The assertion, and what it does not cover
+
+**Held: no path under the repository's `docs/memory/` appears in any `RunRecord.opened`.** The driver checked all 7
+primary records against both checkouts' `docs/memory/` (this worktree and the main checkout), resolving symlinks, and
+separately checked for any path containing `/docs/memory/` at all, including the install's copy: both lists were
+empty in every record. The supplementary run's results file carries no assertion key of its own, so its 7 records
+were checked afterwards, in the round-1 fold, for any `opened` path containing `/memory/`: none (each record opened
+44–47 paths). That later check is the one that covers the hook, since only the supplementary hook reached the
+matcher. **Would have FAILED IF:** any `opened` path resolved under either directory.
+**Bound:** `bash` is a non-Python process, so the hook's own file access is NOT CAPTURED (the `unobservable` list
+says so for both hook runs). Only the Python `recall-llm.py` processes were observed.
+
+### The token check (a stated deviation, as in Task 14)
+
+`run_isolated` has no channel for `CLAUDE_CODE_OAUTH_TOKEN`, so token usability was checked with one direct
+`subprocess.run` of the world's `claude -p --model haiku --output-format json`, with `world.env` plus the token, from
+the world's project directory: rc 0, `is_error` false, result `READY`, `total_cost_usd` 0.0014717 (the supplementary
+run: 0.0014723). The token was read from its file inside the driver and never printed, logged or written. No probe
+invoked `claude`: no `RunRecord.executed` names it.

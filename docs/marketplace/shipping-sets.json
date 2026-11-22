@@ -32,6 +32,7 @@
       "scripts/mutations/begin-plan.json",
       "scripts/mutations/bounded_read.json",
       "scripts/mutations/brief-compose.json",
+      "scripts/mutations/build-shipped-corpus.json",
       "scripts/mutations/check-agent-large-read.json",
       "scripts/mutations/check-agent-long-call.json",
       "scripts/mutations/check-anchors.json",
@@ -132,7 +133,7 @@
       "scripts/mutations/sweep-costs.json",
       "scripts/mutations/sweep-red-alert.json"
      ],
-     "expected_count": 106
+     "expected_count": 107
     },
     "mutation-sweep-job": {
      "files": [
