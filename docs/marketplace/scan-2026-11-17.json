@@ -1,5 +1,60 @@
 {
   "components": {
+    "agent-watchdog": {
+      "findings": [
+        {
+          "detector": 4,
+          "file": "scripts/agent-watchdog.py",
+          "id": "agent-watchdog:4:1",
+          "kind": "guard-name",
+          "line": 432,
+          "term": "check-agent-long-call",
+          "text": "with open(os.path.join(_here, \"check-agent-long-call.py\"), encoding=\"utf-8\") as fh:"
+        }
+      ],
+      "mentions": [
+        {
+          "detector": 1,
+          "file": "scripts/agent-watchdog.py",
+          "line": 506,
+          "term": "lib/",
+          "text": "for d in (\"node_modules\", \".next\", \"lib/node_modules\")], [False] * 3)"
+        },
+        {
+          "detector": 4,
+          "file": "scripts/agent-watchdog.py",
+          "kind": "doc-path",
+          "line": 74,
+          "term": "docs/process-checklists.md",
+          "text": "NO-CALLER: the orchestrator starts this by hand as a background job each time it spawns a builder (`docs/process-checklists.md`, *Agent lifetime*); CI has no builder to watch, and the row keeps a hook in reserve if the convention lapses."
+        },
+        {
+          "detector": 4,
+          "file": "scripts/agent-watchdog.py",
+          "kind": "guard-name",
+          "line": 89,
+          "term": "check-agent-long-call",
+          "text": "# One silent foreground call of a subagent cannot outlast this (`check-agent-long-call.LIMIT_S`). DEFINED here,"
+        },
+        {
+          "detector": 4,
+          "file": "scripts/agent-watchdog.py",
+          "kind": "doc-path",
+          "line": 92,
+          "term": "docs/process-checklists.md",
+          "text": "# The window the checklist arms this watchdog with (`docs/process-checklists.md`, *Agent lifetime*:"
+        },
+        {
+          "detector": 4,
+          "file": "scripts/agent-watchdog.py",
+          "kind": "guard-name",
+          "line": 437,
+          "term": "check-agent-long-call",
+          "text": "case(\"the silent-call bound equals check-agent-long-call's LIMIT_S\", LONGEST_SILENT_CALL_S, _limit)"
+        }
+      ],
+      "status": "scanned"
+    },
     "ask-answerer": {
       "findings": [
         {
@@ -1158,7 +1213,7 @@
           "file": "scripts/check-plan-code.py",
           "id": "check-plan-code:2:10",
           "kind": "unread",
-          "line": 8114,
+          "line": 8119,
           "target": null,
           "text": "exec(compile(_dsrc + extra, \"<pins>\", \"exec\"), ns)"
         },
@@ -1167,7 +1222,7 @@
           "file": "scripts/check-plan-code.py",
           "id": "check-plan-code:4:1",
           "kind": "guard-name",
-          "line": 8157,
+          "line": 8162,
           "term": "check-plan-code",
           "text": "(_cp / \"scripts\" / \"check-plan-code.py\").write_text("
         },
@@ -1176,7 +1231,7 @@
           "file": "scripts/check-plan-code.py",
           "id": "check-plan-code:4:2",
           "kind": "guard-name",
-          "line": 8160,
+          "line": 8165,
           "term": "check-plan-code",
           "text": "pr = subprocess.Popen([sys.executable, str(_cp / \"scripts\" / \"check-plan-code.py\"), *argv],"
         },
@@ -1203,7 +1258,7 @@
           "file": "scripts/check-plan-code.py",
           "id": "check-plan-code:6:3",
           "kind": "config",
-          "line": 8583,
+          "line": 8588,
           "term": "GITHUB_ACTIONS",
           "text": "if os.environ.get(\"GITHUB_ACTIONS\") == \"true\":"
         }
@@ -1226,105 +1281,105 @@
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7692,
+          "line": 7697,
           "term": "app/",
           "text": "[_sel([\"app/page.tsx\"], event=e) for e in (\"push\", \"schedule\", \"workflow_dispatch\")],"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7695,
+          "line": 7700,
           "term": "app/",
           "text": "_sel([\"app/page.tsx\", \"README.md\", \"lib/gemini.ts\"]), frozenset())"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7695,
+          "line": 7700,
           "term": "gemini",
           "text": "_sel([\"app/page.tsx\", \"README.md\", \"lib/gemini.ts\"]), frozenset())"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7695,
+          "line": 7700,
           "term": "lib/",
           "text": "_sel([\"app/page.tsx\", \"README.md\", \"lib/gemini.ts\"]), frozenset())"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7699,
+          "line": 7704,
           "term": "app/",
           "text": "_sel([\"app/docs/readme.md\", \"x/scripts/y.py\"]), frozenset())"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7707,
+          "line": 7712,
           "term": "supabase/",
           "text": "_sel([\"supabase/migrations/0099_x.sql\"]), None)"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7715,
+          "line": 7720,
           "term": "app/",
           "text": "_why = select_manifests(\"pull_request\", [\"docs/reviews/r1.md\", \"app/x.ts\"], \"w\", _SRC, _H)[1]"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7729,
+          "line": 7734,
           "term": "lib/",
           "text": "(select_manifests(\"pull_request\", [\"lib/x.py\"], \"w\", {\"scripts/check-q.py\": \"'lib'\"}, _H,"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7731,
+          "line": 7736,
           "term": "lib/",
           "text": "select_manifests(\"pull_request\", [\"lib/x.py\"], \"w\", {\"scripts/check-q.py\": \"'lib'\"}, _H)[0]),"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7792,
+          "line": 7797,
           "term": "app/",
           "text": "for p in ([\"scripts/check-s03.py\"], [\"app/page.tsx\"], [])]"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7794,
+          "line": 7799,
           "term": "supabase/",
           "text": "for p in ([\"scripts/check-a.py\"], [\"docs/reviews/r1.md\"], [\"supabase/migrations/0099_x.sql\"])],"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7797,
+          "line": 7802,
           "term": "supabase/",
           "text": "[_smp([\"scripts/check-plan-code.py\", p], _SK1)[0] for p in (\"package.json\", \"supabase/x.sql\")],"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7917,
+          "line": 7922,
           "term": "lib/",
           "text": "_walks_dir(_gw.replace(\"'scripts/\", \"'lib/\"), \"scripts\"), _walks_dir(_gw, \"scripts\")),"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 7939,
+          "line": 7944,
           "term": "app/",
           "text": "_sel([\"app/package.json\"]), frozenset())"
         },
         {
           "detector": 1,
           "file": "scripts/check-plan-code.py",
-          "line": 8324,
+          "line": 8329,
           "term": "supabase",
           "text": "all(\"CANNOT RUN\" in p for p in _probs) and any(\"supabase\" in p for p in _probs),"
         },
@@ -1756,7 +1811,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5645,
+          "line": 5650,
           "term": "check-ratchet-contract",
           "text": "# `check-ratchet-contract`'s population never sees it;"
         },
@@ -1764,7 +1819,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5675,
+          "line": 5680,
           "term": "check-dashboard-entry",
           "text": "# 105 \u2192 120 (the ask-choices slice: +9 gen-dashboard, +6 check-dashboard-entry)."
         },
@@ -1772,7 +1827,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5699,
+          "line": 5704,
           "term": "check-selftest-counts",
           "text": "# 131 \u2192 139 (backlog #69 follow-on: check-selftest-counts, +8, a NEW manifest file). The"
         },
@@ -1780,7 +1835,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5705,
+          "line": 5710,
           "term": "check-theme-token-coverage",
           "text": "# token, which is the mechanism. `check-theme-token-coverage.py` holds the token set; a"
         },
@@ -1788,7 +1843,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5729,
+          "line": 5734,
           "term": "check-dashboard-entry",
           "text": "#   (2) check-dashboard-entry re-types ENTRY_ISH instead of deriving it."
         },
@@ -1796,7 +1851,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5737,
+          "line": 5742,
           "term": "check-banner-armed",
           "text": "# \u27f3 179 -> 186, backlog #96: check-banner-armed joins with 7. The population pin above"
         },
@@ -1804,7 +1859,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5749,
+          "line": 5754,
           "term": "check-plan-progress",
           "text": "# the fix is a PAIR \u2014 begin-plan.py refuses the tick, check-plan-progress.py reports the state"
         },
@@ -1812,7 +1867,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5764,
+          "line": 5769,
           "term": "check-plan-code",
           "text": "# \u27f3 359 -> 362, 2026-09-08 (backlog #91, review r2 M1): +3 on check-plan-code.py for the"
         },
@@ -1820,7 +1875,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5781,
+          "line": 5786,
           "term": "check-review-recorded",
           "text": "# \u27f3 387 -> 393, 2026-09-10: `check-review-recorded.py` joins the manifest in the SAME commit"
         },
@@ -1828,7 +1883,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5789,
+          "line": 5794,
           "term": "check-selection-card",
           "text": "# \u27f3 399 -> 405, 2026-09-10: `check-selection-card.py`, created and manifested in one commit."
         },
@@ -1836,7 +1891,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5797,
+          "line": 5802,
           "term": "check-plan-code",
           "text": "# \u27f3 412 -> 421, backlog #106: `brief-compose.py` joins the manifest with 8, and check-plan-code"
         },
@@ -1844,7 +1899,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5812,
+          "line": 5817,
           "term": "check-docs",
           "text": "progress_line(7, 38, \"check-docs.py\"), \"[7/38] check-docs.py\")"
         },
@@ -1852,7 +1907,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5861,
+          "line": 5866,
           "term": "check-paid-caller-arrival",
           "text": "# `check-paid-caller-arrival.py` is 16,701 B)."
         },
@@ -1860,7 +1915,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 5887,
+          "line": 5892,
           "term": "check-paid-caller-arrival",
           "text": "# a REAL control crash (`check-paid-caller-arrival.py`, 16,701 B of stdout) showed 50"
         },
@@ -1868,7 +1923,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6046,
+          "line": 6051,
           "term": "check-fixture-variation",
           "text": "# `check-fixture-variation.py`. Both sites used to pass `(3, 9, \"x.py\")`, so"
         },
@@ -1876,7 +1931,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6049,
+          "line": 6054,
           "term": "check-docs",
           "text": "stderr_progress(7, 38, \"check-docs.py\")"
         },
@@ -1884,7 +1939,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6051,
+          "line": 6056,
           "term": "check-docs",
           "text": "_fp.read_text(), \"[7/38] check-docs.py\\n\")"
         },
@@ -1892,7 +1947,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6251,
+          "line": 6256,
           "term": "check-fixture-variation",
           "text": "# check-fixture-variation: every call above passed ONE root and N=7, so neither was told from a constant."
         },
@@ -1900,7 +1955,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6277,
+          "line": 6282,
           "term": "check-fixture-variation",
           "text": "# check-fixture-variation: every sweep_shard call takes its index from a loop. Two by NAME, and their order."
         },
@@ -1908,7 +1963,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6331,
+          "line": 6336,
           "term": "check-fixture-variation",
           "text": "# check-fixture-variation: those three calls passed ONE manifest, ONE root and N=38. Each varied alone, on"
         },
@@ -1916,7 +1971,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6459,
+          "line": 6464,
           "term": "check-banner-armed",
           "text": "# tick still looks current, so the next importer gets the MUTANT. `check-banner-armed.py`"
         },
@@ -1924,7 +1979,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6490,
+          "line": 6495,
           "term": "check-fixture-variation",
           "text": "# suite handing it one value cannot tell it from a constant \u2014 `check-fixture-variation`"
         },
@@ -1932,7 +1987,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6497,
+          "line": 6502,
           "term": "check-selftest-counts",
           "text": "# Backlog #407: `child_env` is BORROWED (`check-selftest-counts.audit` runs every suite under it to count its"
         },
@@ -1940,7 +1995,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6532,
+          "line": 6537,
           "term": "check-main-drivable",
           "text": "(_why.startswith(LOCAL_REFUSAL), \"check-main-drivable.py: 183 mutation(s)\" in _why,"
         },
@@ -1948,7 +2003,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6586,
+          "line": 6591,
           "term": "check-fixture-variation",
           "text": "# `check-fixture-variation.py`, and the reason is this file's own round-6 finding: at one"
         },
@@ -1956,7 +2011,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6778,
+          "line": 6783,
           "term": "check-group-claims",
           "text": "# \u27f3 2026-09-11: 513 -> 524. `check-group-claims.py` joins the manifest with ELEVEN entries,"
         },
@@ -1964,7 +2019,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6802,
+          "line": 6807,
           "term": "check-fixture-variation",
           "text": "#     read. `check-fixture-variation.py` prompted these by refusing a draft in which"
         },
@@ -1972,7 +2027,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6826,
+          "line": 6831,
           "term": "check-ratchet-contract",
           "text": "# \u27f3 2026-09-12, SAME DAY, second slice: 549 -> 559. `check-ratchet-contract.py` joins with"
         },
@@ -1980,7 +2035,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6839,
+          "line": 6844,
           "term": "check-storage-independence",
           "text": "# `check-storage-independence.py` \u2014 the CI storage fixture's falsifier \u2014 whose manifest grew"
         },
@@ -1988,7 +2043,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6845,
+          "line": 6850,
           "term": "check-review-recorded",
           "text": "# \u27f3 2026-09-13, 559 -> 576: the final-tree rule in `check-review-recorded.py`. \u26a0 r11 Low: this"
         },
@@ -1996,7 +2051,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6861,
+          "line": 6866,
           "term": "check-guard-coverage",
           "text": "# `check-guard-coverage.py`. A merge's contents are a measurement, not the PR list. The conflict"
         },
@@ -2004,7 +2059,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6872,
+          "line": 6877,
           "term": "check-review-recorded",
           "text": "# this branch: +12 on `check-review-recorded.py` for rules extracted out of the git-reading"
         },
@@ -2012,7 +2067,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6896,
+          "line": 6901,
           "term": "check-review-recorded",
           "text": "# (+1 on check-review-recorded) for a FAIL-OPEN in the gate this branch ships: git's rename"
         },
@@ -2020,7 +2075,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6934,
+          "line": 6939,
           "term": "check-review-recorded",
           "text": "# crash) -> 61 (r2). Original note follows. `check-review-recorded.py` 43 -> 47: TWO entries"
         },
@@ -2028,7 +2083,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6941,
+          "line": 6946,
           "term": "check-features",
           "text": "# (`check-features.py` 17, `gen-features-page.py` 10), both seeded in the commit that wires"
         },
@@ -2036,7 +2091,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6946,
+          "line": 6951,
           "term": "check-features",
           "text": "# `check-features.py`, reasoned about beside its per-file count above. \u26a0 The round's third"
         },
@@ -2044,7 +2099,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6958,
+          "line": 6963,
           "term": "check-docs",
           "text": "# \u27f3 2026-09-20: 769 -> 770, the line-budget slack warning. ONE entry on `check-docs.py`, for"
         },
@@ -2052,7 +2107,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6963,
+          "line": 6968,
           "term": "check-merge-ready",
           "text": "# \u27f3 2026-09-20: 770 -> 775 -> 778, `check-merge-ready.py`, in two steps because its own review"
         },
@@ -2060,7 +2115,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6971,
+          "line": 6976,
           "term": "check-python-pin",
           "text": "# `check-python-pin.py`'s own, which this branch creates. A RISE, and not a new claim:"
         },
@@ -2068,7 +2123,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 6977,
+          "line": 6982,
           "term": "check-banner-armed",
           "text": "# \u27f3 881 -> 912, 2026-09-22: check-banner-armed 8 -> 39, the third warning class."
         },
@@ -2076,7 +2131,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7001,
+          "line": 7006,
           "term": "check-ci-watched",
           "text": "# plus two of the three pause corners), check-ci-watched 9 -> 14 (run_decide's wiring and"
         },
@@ -2084,7 +2139,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7003,
+          "line": 7008,
           "term": "check-plan-progress",
           "text": "# check-plan-progress 12 -> 17 (the comparison's third side). \u26a0 The two branches collided"
         },
@@ -2092,7 +2147,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7014,
+          "line": 7019,
           "term": "check-banner-armed",
           "text": "# entries are in each, are on the `check-banner-armed` entry above; this literal is the outside"
         },
@@ -2100,7 +2155,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7028,
+          "line": 7033,
           "term": "check-ci-watched",
           "text": "# direction of the new raising write), +4 across `check-ci-watched` and `check-closing-table`"
         },
@@ -2108,7 +2163,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7028,
+          "line": 7033,
           "term": "check-closing-table",
           "text": "# direction of the new raising write), +4 across `check-ci-watched` and `check-closing-table`"
         },
@@ -2116,7 +2171,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7030,
+          "line": 7035,
           "term": "check-dashboard-entry",
           "text": "# `check-dashboard-entry.py` (M2, backlog #168's remedy was an untested sentence). The two"
         },
@@ -2124,7 +2179,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7066,
+          "line": 7071,
           "term": "check-plan-code",
           "text": "# `check-plan-code.py` this one alone (DIAGNOSTIC_WINDOW, PROGRESS_WIDTH killed)."
         },
@@ -2132,7 +2187,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7078,
+          "line": 7083,
           "term": "check-review-rounds",
           "text": "# `check-review-rounds.py` 12 -> 17. NOTHING RETIRED \u2014 this fold adds guards for a"
         },
@@ -2140,7 +2195,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7081,
+          "line": 7086,
           "term": "check-review-rounds",
           "text": "# \u27f3 1015 -> 1023, folding round 2: `codex-review.py` 42 -> 45 and `check-review-rounds.py`"
         },
@@ -2148,7 +2203,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7089,
+          "line": 7094,
           "term": "check-rc-contract",
           "text": "# \u27f3 2026-09-30, backlog #201/#202: 1133 -> 1138, the +5 from `check-rc-contract`'s manifest."
         },
@@ -2156,7 +2211,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7091,
+          "line": 7096,
           "term": "check-rc-contract",
           "text": "# \u27f3 2026-09-30, round 5 of the same fold: 1148 -> 1160, the +12 from `check-rc-contract`'s"
         },
@@ -2164,7 +2219,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7100,
+          "line": 7105,
           "term": "check-fixture-variation",
           "text": "# \u27f3 2026-09-30, same fold, after `check-fixture-variation.py` refused the suite: 1160 -> 1162."
         },
@@ -2172,7 +2227,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7117,
+          "line": 7122,
           "term": "check-selftest-counts",
           "text": "# `check-selftest-counts.py`, which runs each pinned suite as a SUBPROCESS and matches"
         },
@@ -2180,7 +2235,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7126,
+          "line": 7131,
           "term": "check-rc-contract",
           "text": "# `check-rc-contract` \u2014 SEVEN RETIRED WITH THEIR SUBJECT, FIVE RETARGETED, TWO ADDED."
         },
@@ -2188,7 +2243,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7145,
+          "line": 7150,
           "term": "check-ratchet-contract",
           "text": "# the third) and +1 on `check-ratchet-contract` for the rule that a transient test FIXTURE in"
         },
@@ -2196,7 +2251,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7150,
+          "line": 7155,
           "term": "check-ratchet-contract",
           "text": "# and +4 on `check-ratchet-contract` (evaluate's wiring, caller_source_paths' wiring, the"
         },
@@ -2204,7 +2259,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7155,
+          "line": 7160,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-02, D2: 1178 -> 1196. The new guard `check-main-drivable.py` arrives with 18."
         },
@@ -2212,7 +2267,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7156,
+          "line": 7161,
           "term": "check-main-drivable",
           "text": "# \u27f3\u27f3 2026-10-02, D2 review round 1: 1196 -> 1219. `check-main-drivable` 18 -> 41, and the"
         },
@@ -2220,7 +2275,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7169,
+          "line": 7174,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-02, D2 review round 2: 1218 -> 1227. `check-main-drivable` 40 -> 49, and all"
         },
@@ -2228,7 +2283,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7176,
+          "line": 7181,
           "term": "check-main-drivable",
           "text": "# \u27f3\u27f3 2026-10-02, round 2's CLAUDE half: 1227 -> 1239, `check-main-drivable` 49 -> 61."
         },
@@ -2236,7 +2291,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7192,
+          "line": 7197,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-02, round 3: 1239 -> 1244. `check-main-drivable` 61 -> 66 \u2014 EIGHT added and"
         },
@@ -2244,7 +2299,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7204,
+          "line": 7209,
           "term": "check-main-drivable",
           "text": "# fourth fold: 1244 -> 1250. `check-main-drivable` 66 -> 72 \u2014 8 added, 14 RETARGETED and"
         },
@@ -2252,7 +2307,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7209,
+          "line": 7214,
           "term": "check-ratchet-contract",
           "text": "# `check-ratchet-contract.py`, the one file D1 was applied to. The verdict was a function of"
         },
@@ -2260,7 +2315,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7213,
+          "line": 7218,
           "term": "check-ratchet-contract",
           "text": "# compliance set identical, and `check-ratchet-contract.py` regains the param credit D1"
         },
@@ -2268,7 +2323,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7216,
+          "line": 7221,
           "term": "check-main-drivable",
           "text": "# \u27f3 ROUNDS 4 AND ITS CLAUDE HALF, 2026-10-03: 1249 -> 1255 -> 1260; `check-main-drivable`"
         },
@@ -2276,7 +2331,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7240,
+          "line": 7245,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-03, THE ROUND-5 FOLD: 1261 -> 1291, `check-main-drivable` 83 -> 113. THIRTY"
         },
@@ -2284,7 +2339,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7279,
+          "line": 7284,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-03, ROUND 6's CODEX HALF: 1290 -> 1294, `check-main-drivable` 112 -> 116. NOT"
         },
@@ -2292,7 +2347,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7302,
+          "line": 7307,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-04, ROUND 6's CLAUDE HALF: 1294 -> 1308, `check-main-drivable` 116 -> 130"
         },
@@ -2300,7 +2355,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7327,
+          "line": 7332,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-04, ROUND 7's CODEX HALF: 1308 -> 1311, `check-main-drivable` 130 -> 133. NOT"
         },
@@ -2308,7 +2363,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7341,
+          "line": 7346,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-04, ROUND 7's CLAUDE HALF: 1311 -> 1316, `check-main-drivable` 133 -> 138"
         },
@@ -2316,7 +2371,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7360,
+          "line": 7365,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-04, ROUND 8's CODEX HALF: 1316 -> 1320, `check-main-drivable` 138 -> 142"
         },
@@ -2324,7 +2379,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7384,
+          "line": 7389,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-05, ROUND 8's CLAUDE HALF: 1320 -> 1328, `check-main-drivable` 142 -> 150"
         },
@@ -2332,7 +2387,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7401,
+          "line": 7406,
           "term": "check-surface-recall",
           "text": "# `check-surface-recall.py:652`, one of the three best constructed worlds in this repo \u2014"
         },
@@ -2340,7 +2395,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7435,
+          "line": 7440,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-10-05, ROUND 9's CODEX HALF: 1329 -> 1333, `check-main-drivable` 151 -> 155"
         },
@@ -2348,7 +2403,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7455,
+          "line": 7460,
           "term": "check-ratchet-contract",
           "text": "# \u27f3 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of"
         },
@@ -2356,7 +2411,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7462,
+          "line": 7467,
           "term": "docs/reviews/architecture-review-2026-10-01.md",
           "text": "# covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it"
         },
@@ -2364,7 +2419,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7463,
+          "line": 7468,
           "term": "check-ci-watched",
           "text": "# found already in this repo at `check-ci-watched.py:860`."
         },
@@ -2372,7 +2427,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7469,
+          "line": 7474,
           "term": "check-rc-contract",
           "text": "# `check-rc-contract` (15 -> 16) and `check-surface-recall` (19 -> 20). Both sever the"
         },
@@ -2380,7 +2435,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7469,
+          "line": 7474,
           "term": "check-surface-recall",
           "text": "# `check-rc-contract` (15 -> 16) and `check-surface-recall` (19 -> 20). Both sever the"
         },
@@ -2388,7 +2443,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7479,
+          "line": 7484,
           "term": "check-plan-code",
           "text": "# \u27f3\u27f3\u27f3 2026-10-06, round 6 L1/L2/M1: 1200 -> 1203, three entries on `check-plan-code`"
         },
@@ -2396,7 +2451,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7486,
+          "line": 7491,
           "term": "check-main-drivable",
           "text": "# exactly `check-main-drivable`'s 183 entries, which is this branch's whole contribution to"
         },
@@ -2404,7 +2459,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7492,
+          "line": 7497,
           "term": "check-ci-watched",
           "text": "# \u27f3 2026-10-07, the CI-watch row-shape fix: 1394 -> 1399. `check-ci-watched` goes 30 -> 35"
         },
@@ -2412,7 +2467,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7514,
+          "line": 7519,
           "term": "check-ratchet-contract",
           "text": "# `--self-test`, and `check-ratchet-contract` R4 then required a manifest or a written"
         },
@@ -2420,7 +2475,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7521,
+          "line": 7526,
           "term": "check-ci-watched",
           "text": "# \u27f3 SAME COMMIT, THIRD MOVE: 1406 -> 1408, folding round 1's findings. `check-ci-watched`"
         },
@@ -2428,7 +2483,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7528,
+          "line": 7533,
           "term": "check-canonical-source",
           "text": "# \u27f3 2026-10-14, r6 H3 FOLD: 1411 -> 1413. `check-canonical-source` goes 3 -> 5, one entry per"
         },
@@ -2436,7 +2491,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7551,
+          "line": 7556,
           "term": "check-doc-citations",
           "text": "# \u27f3 2026-10-15, backlog #49 ROUND 4 (the redesign): 1432 -> 1439, and `check-doc-citations.py`"
         },
@@ -2444,7 +2499,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7559,
+          "line": 7564,
           "term": "check-doc-citations",
           "text": "# \u27f3 2026-10-15, backlog #49 ROUND 4 FOLD: 1439 -> 1452, `check-doc-citations.py` 20 -> 33. The"
         },
@@ -2452,7 +2507,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7572,
+          "line": 7577,
           "term": "check-doc-citations",
           "text": "# \u27f3 2026-10-15, backlog #49 ROUND 4 CODEX FOLD: 1452 -> 1458, `check-doc-citations.py` 33 -> 39."
         },
@@ -2460,7 +2515,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7585,
+          "line": 7590,
           "term": "check-doc-citations",
           "text": "# \u27f3\u27f3 2026-10-16, backlog #291 \u2014 THE SUM FALLS, 1458 -> 1437, and `check-doc-citations.py` goes"
         },
@@ -2468,7 +2523,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7664,
+          "line": 7669,
           "term": "docs/reviews/r1.md",
           "text": "\"scripts/check-e.py\": \"LOG = 'docs/reviews/r1.md'\\n\","
         },
@@ -2476,7 +2531,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7701,
+          "line": 7706,
           "term": "docs/reviews/r1.md",
           "text": "_sel([\"docs/reviews/r1.md\"]), frozenset({\"scripts/check-b.py\", \"scripts/check-e.py\"}))"
         },
@@ -2484,7 +2539,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7715,
+          "line": 7720,
           "term": "docs/reviews/r1.md",
           "text": "_why = select_manifests(\"pull_request\", [\"docs/reviews/r1.md\", \"app/x.ts\"], \"w\", _SRC, _H)[1]"
         },
@@ -2492,7 +2547,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7718,
+          "line": 7723,
           "term": "docs/reviews/r1.md",
           "text": "[\"  scripts/check-b.py <- docs/reviews/r1.md\", \"  scripts/check-e.py <- docs/reviews/r1.md\"])"
         },
@@ -2500,7 +2555,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7794,
+          "line": 7799,
           "term": "docs/reviews/r1.md",
           "text": "for p in ([\"scripts/check-a.py\"], [\"docs/reviews/r1.md\"], [\"supabase/migrations/0099_x.sql\"])],"
         },
@@ -2508,7 +2563,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7815,
+          "line": 7820,
           "term": "check-canonical-source",
           "text": "# alone moves a manifested suite (check-canonical-source's real-repo case goes red); the binary"
         },
@@ -2516,7 +2571,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7816,
+          "line": 7821,
           "term": "check-handoff-path",
           "text": "# skip hid it. Here it must select that suite AND check-handoff-path's."
         },
@@ -2524,7 +2579,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7820,
+          "line": 7825,
           "term": "check-canonical-source",
           "text": "case(\"\u2b50 the handoff canon alone selects check-handoff-path AND check-canonical-source\","
         },
@@ -2532,7 +2587,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7820,
+          "line": 7825,
           "term": "check-handoff-path",
           "text": "case(\"\u2b50 the handoff canon alone selects check-handoff-path AND check-canonical-source\","
         },
@@ -2540,7 +2595,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7846,
+          "line": 7851,
           "term": "check-dashboard-entry",
           "text": "case(\"backlog #498 on the real tree: check-dashboard-entry.py reaches compaction-state through gen-dashboard.py\","
         },
@@ -2548,7 +2603,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7864,
+          "line": 7869,
           "term": "check-merge-ready",
           "text": "case(\"\u2b50 backlog #533 on the real tree: a pins-only diff is a SELECTION, and it includes check-merge-ready, \""
         },
@@ -2556,7 +2611,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7874,
+          "line": 7879,
           "term": "docs/memory/MEMORY.md",
           "text": "\"scripts/check-n.py\": \"IDX = 'docs/memory/MEMORY.md'\\n\","
         },
@@ -2564,7 +2619,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7877,
+          "line": 7882,
           "term": "docs/memory/MEMORY.md",
           "text": "_sel([\"docs/memory/MEMORY.md\"], src=_WK),"
         },
@@ -2572,7 +2627,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7879,
+          "line": 7884,
           "term": "check-docs",
           "text": "case(\"...and on the real tree MEMORY.md selects the docs walkers check-docs and check-plan-file-tags\","
         },
@@ -2580,7 +2635,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7879,
+          "line": 7884,
           "term": "check-plan-file-tags",
           "text": "case(\"...and on the real tree MEMORY.md selects the docs walkers check-docs and check-plan-file-tags\","
         },
@@ -2588,7 +2643,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7881,
+          "line": 7886,
           "term": "docs/memory/MEMORY.md",
           "text": "<= (_rsel(\"docs/memory/MEMORY.md\") or {\"scripts/check-docs.py\", \"scripts/check-plan-file-tags.py\"}),"
         },
@@ -2596,7 +2651,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7884,
+          "line": 7889,
           "term": "docs/reviews/r1.md",
           "text": "_sel([\"docs/reviews/r1.md\"], src={\"scripts/check-r.py\": \"R = DOCS_DIR / 'reviews'\\n\","
         },
@@ -2604,7 +2659,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7896,
+          "line": 7901,
           "term": "check-canonical-source",
           "text": "# import root dropped one (`check-canonical-source` walks it through a loop variable)."
         },
@@ -2612,7 +2667,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7933,
+          "line": 7938,
           "term": "check-canonical-source",
           "text": "case(\"\u2b50 r2 X2 on the real tree: check-usage-pace.py selects check-canonical-source, which walks scripts/\","
         },
@@ -2620,7 +2675,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7933,
+          "line": 7938,
           "term": "check-usage-pace",
           "text": "case(\"\u2b50 r2 X2 on the real tree: check-usage-pace.py selects check-canonical-source, which walks scripts/\","
         },
@@ -2628,7 +2683,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7952,
+          "line": 7957,
           "term": "check-catalog-coverage",
           "text": "case(\"...and on the real tree m4_base_db reaches check-live-schema and check-catalog-coverage\","
         },
@@ -2636,7 +2691,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7952,
+          "line": 7957,
           "term": "check-live-schema",
           "text": "case(\"...and on the real tree m4_base_db reaches check-live-schema and check-catalog-coverage\","
         },
@@ -2644,7 +2699,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 7966,
+          "line": 7971,
           "term": "docs/b.md",
           "text": "changed_from_nul(\"scripts/a.py\\0docs/b.md\\0\"), [\"scripts/a.py\", \"docs/b.md\"])"
         },
@@ -2652,7 +2707,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 7988,
+          "line": 7993,
           "term": "check-merge-ready",
           "text": "# `check-merge-ready.py` HOLDS a falling pin (the base's and head's DISPLAYS, read by"
         },
@@ -2660,7 +2715,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 8026,
+          "line": 8031,
           "term": "check-merge-ready",
           "text": "# \u26d4 `check-merge-ready.py` HOLDS a falling pin by reading the `EXPECTED_MUTATIONS` DISPLAY at the"
         },
@@ -2668,7 +2723,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 8120,
+          "line": 8125,
           "term": "check-merge-ready",
           "text": "# REFUSED here; check-merge-ready, which reads displays, never has to see it."
         },
@@ -2676,7 +2731,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 8281,
+          "line": 8286,
           "term": "check-gate-falsifiability",
           "text": "# `check-gate-falsifiability.py` as having had this printer when it printed `FAIL`, and"
         },
@@ -2684,7 +2739,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 8282,
+          "line": 8287,
           "term": "check-handoff-path",
           "text": "# dropped `check-handoff-path.py`, whose near-miss printer CLEARS `startswith(\"[FAIL] \")`"
         },
@@ -2692,7 +2747,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 8297,
+          "line": 8302,
           "term": "check-plan-file-tags",
           "text": "#     `check-plan-file-tags.py` hazard with its sign flipped: prose about a rule"
         },
@@ -2700,7 +2755,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 8300,
+          "line": 8305,
           "term": "check-handoff-path",
           "text": "#     files that all conform: `check-handoff-path.py:109` assembles the marker"
         },
@@ -2708,7 +2763,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 8301,
+          "line": 8306,
           "term": "check-storage-grant-pin",
           "text": "#     (`f\"[{'ok' if ok else 'FAIL'}]\"`), `check-storage-grant-pin.py:151` has no trailing"
         },
@@ -2716,7 +2771,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 8303,
+          "line": 8308,
           "term": "check-producer-enumeration",
           "text": "#     printing, and `check-producer-enumeration.py` reports per row. Three of them carry"
         },
@@ -2724,7 +2779,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "doc-path",
-          "line": 8328,
+          "line": 8333,
           "term": "docs/dev-process.md",
           "text": "# The case count in the docstring is quoted in docs/dev-process.md. Derived, so"
         },
@@ -2732,7 +2787,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 8524,
+          "line": 8529,
           "term": "check-merge-ready",
           "text": "# that consumes them and before any mutation runs \u2014 check-merge-ready reads the display."
         },
@@ -2740,7 +2795,7 @@
           "detector": 4,
           "file": "scripts/check-plan-code.py",
           "kind": "guard-name",
-          "line": 8618,
+          "line": 8623,
           "term": "check-vocabulary-collisions",
           "text": "# was that harmonising them is the tidy-up check-vocabulary-collisions.py actively"
         }
@@ -3522,7 +3577,7 @@
           "fix": "${CLAUDE_PLUGIN_ROOT}/scripts/explainer-serve.py",
           "id": "contract-explainer-delivery:2:2",
           "kind": "cwd-relative",
-          "line": 224,
+          "line": 253,
           "target": "scripts/explainer-serve.py",
           "text": "python3 scripts/explainer-serve.py     # idempotent; a no-op if already up"
         },
@@ -3532,7 +3587,7 @@
           "fix": "${CLAUDE_PLUGIN_ROOT}/scripts/ask_answerer.py",
           "id": "contract-explainer-delivery:2:3",
           "kind": "cwd-relative",
-          "line": 250,
+          "line": 279,
           "target": "scripts/ask_answerer.py",
           "text": "\u26d4 **If the Ask answerer is running (\u00a76b; `python3 scripts/ask_answerer.py --status` says so), a question this"
         },
@@ -3542,7 +3597,7 @@
           "fix": "${CLAUDE_PLUGIN_ROOT}/scripts/explainer-serve.py",
           "id": "contract-explainer-delivery:2:4",
           "kind": "cwd-relative",
-          "line": 306,
+          "line": 335,
           "target": "scripts/explainer-serve.py",
           "text": "3. **what to do when that URL does not load** \u2014 `python3 scripts/explainer-serve.py`, safe to run"
         },
@@ -3552,7 +3607,7 @@
           "fix": "${CLAUDE_PLUGIN_ROOT}/scripts/ask_answerer.py",
           "id": "contract-explainer-delivery:2:5",
           "kind": "cwd-relative",
-          "line": 398,
+          "line": 427,
           "target": "scripts/ask_answerer.py",
           "text": "\u26d4 **While the Ask answerer runs (\u00a76b), claim the question first** \u2014 `python3 scripts/ask_answerer.py --claim ID`"
         },
@@ -3562,7 +3617,7 @@
           "fix": "${CLAUDE_PLUGIN_ROOT}/scripts/ask_answerer.py",
           "id": "contract-explainer-delivery:2:6",
           "kind": "cwd-relative",
-          "line": 418,
+          "line": 447,
           "target": "scripts/ask_answerer.py",
           "text": "| Start, stop, look | `python3 scripts/ask_answerer.py --start` \u00b7 `--stop` \u00b7 `--status` (running?, today's spend against the caps, questions NOT answered) |"
         },
@@ -3571,7 +3626,7 @@
           "file": ".agents/skills/shared/explainer-delivery.md",
           "id": "contract-explainer-delivery:4:1",
           "kind": "tool-name",
-          "line": 289,
+          "line": 318,
           "term": "TaskList",
           "text": "TaskList  ->  TaskStop every task whose command tails ~/explainers/questions.md"
         },
@@ -3580,7 +3635,7 @@
           "file": ".agents/skills/shared/explainer-delivery.md",
           "id": "contract-explainer-delivery:4:2",
           "kind": "tool-name",
-          "line": 289,
+          "line": 318,
           "term": "TaskStop",
           "text": "TaskList  ->  TaskStop every task whose command tails ~/explainers/questions.md"
         }
@@ -3662,7 +3717,7 @@
           "detector": 4,
           "file": ".agents/skills/shared/explainer-delivery.md",
           "kind": "guard-name",
-          "line": 339,
+          "line": 368,
           "term": "check-live-schema",
           "text": "remedy unable to clear it, which is exactly the failure `check-live-schema`'s accepted-additions"
         },
@@ -3670,7 +3725,7 @@
           "detector": 4,
           "file": ".agents/skills/shared/explainer-delivery.md",
           "kind": "doc-path",
-          "line": 343,
+          "line": 372,
           "term": "docs/explainers/",
           "text": "`docs/explainers/`, where **committing it** is what makes it outlive its session. Without the"
         },
@@ -3678,7 +3733,7 @@
           "detector": 4,
           "file": ".agents/skills/shared/explainer-delivery.md",
           "kind": "tool-name",
-          "line": 463,
+          "line": 492,
           "term": "SendUserFile",
           "text": "\u26a0 **Measured 2026-08-12: `SendUserFile` with `display: \"render\"` does NOT render these pages** \u2014"
         }
@@ -4348,7 +4403,7 @@
           "file": "scripts/gen-backlog-page.py",
           "id": "gen-backlog-page:4:1",
           "kind": "doc-path",
-          "line": 83,
+          "line": 88,
           "term": "docs/backlog.md",
           "text": "BACKLOG = REPO / \"docs/backlog.md\""
         },
@@ -4357,7 +4412,7 @@
           "file": "scripts/gen-backlog-page.py",
           "id": "gen-backlog-page:4:2",
           "kind": "doc-path",
-          "line": 1584,
+          "line": 1611,
           "term": "docs/backlog.md",
           "text": "\"docs/backlog.md\"], capture_output=True, text=True)"
         },
@@ -4366,7 +4421,7 @@
           "file": "scripts/gen-backlog-page.py",
           "id": "gen-backlog-page:4:3",
           "kind": "doc-path",
-          "line": 1588,
+          "line": 1615,
           "term": "docs/backlog.md",
           "text": "blob = subprocess.run([\"git\", \"-C\", str(REPO), \"show\", f\"{sha}:docs/backlog.md\"],"
         },
@@ -4375,7 +4430,7 @@
           "file": "scripts/gen-backlog-page.py",
           "id": "gen-backlog-page:6:1",
           "kind": "executable",
-          "line": 1583,
+          "line": 1610,
           "term": "git",
           "text": "log = subprocess.run([\"git\", \"-C\", str(REPO), \"log\", \"--format=%H %ct\", \"--\","
         },
@@ -4384,7 +4439,7 @@
           "file": "scripts/gen-backlog-page.py",
           "id": "gen-backlog-page:6:2",
           "kind": "config",
-          "line": 3391,
+          "line": 3419,
           "term": "HOME",
           "text": "saved_argv, saved_home = sys.argv, os.environ.get(\"HOME\")"
         },
@@ -4393,7 +4448,7 @@
           "file": "scripts/gen-backlog-page.py",
           "id": "gen-backlog-page:6:3",
           "kind": "executable",
-          "line": 3504,
+          "line": 3532,
           "term": "awk",
           "text": "return subprocess.run([\"awk\", prog], input=sample, capture_output=True,"
         },
@@ -4402,7 +4457,7 @@
           "file": "scripts/gen-backlog-page.py",
           "id": "gen-backlog-page:6:4",
           "kind": "executable",
-          "line": 4373,
+          "line": 4431,
           "term": "date",
           "text": "subprocess.run([\"date\", \"+%Y-%m-%d %H:%M %Z\"],"
         }
@@ -4411,42 +4466,42 @@
         {
           "detector": 1,
           "file": "scripts/gen-backlog-page.py",
-          "line": 155,
+          "line": 160,
           "term": "gemini",
           "text": "'A correction that FAILS still pays Gemini, and nothing records it \u2014 so neither the '"
         },
         {
           "detector": 1,
           "file": "scripts/gen-backlog-page.py",
-          "line": 491,
+          "line": 496,
           "term": "youtube",
           "text": "\"Once a stable blob address is used \u2014 the YouTube videoId, say \u2014 doesn't a title change \""
         },
         {
           "detector": 1,
           "file": "scripts/gen-backlog-page.py",
-          "line": 499,
+          "line": 504,
           "term": "lib/",
           "text": "\"than a symptom \u2014 <code>lib/serial-filename.ts</code> builds the base, and \""
         },
         {
           "detector": 1,
           "file": "scripts/gen-backlog-page.py",
-          "line": 500,
+          "line": 505,
           "term": "lib/",
           "text": "\"<code>lib/cloud-sync/reconcile-serial.ts</code> exists only to repair the divergence it \""
         },
         {
           "detector": 1,
           "file": "scripts/gen-backlog-page.py",
-          "line": 2708,
+          "line": 2736,
           "term": "lib/",
           "text": "| 1 | \ud83d\udfe0 **Alpha** \u2014 a thing that `breaks` | lib/a.ts | M + design | A | pending |"
         },
         {
           "detector": 1,
           "file": "scripts/gen-backlog-page.py",
-          "line": 2709,
+          "line": 2737,
           "term": "lib/",
           "text": "| 2 | \u2705 (was \ud83d\udfe1) **Beta** \u2014 done now | lib/b.ts | S | A | \u2705 **MERGED** |"
         },
@@ -4486,7 +4541,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 400,
+          "line": 405,
           "term": "check-group-claims",
           "text": "# Now `check-group-claims.py` holds its own copy of both strings and REFUSES when they diverge, so"
         },
@@ -4494,7 +4549,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 407,
+          "line": 412,
           "term": "check-group-claims",
           "text": "# finding again. The scope and the residue are written out in `check-group-claims.py`'s docstring."
         },
@@ -4502,7 +4557,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 571,
+          "line": 576,
           "term": "docs/backlog.md",
           "text": "\"<p><b>B \u2014 a <code>Depends</code> column in <code>docs/backlog.md</code>.</b> The data lives \""
         },
@@ -4510,7 +4565,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 586,
+          "line": 591,
           "term": "docs/backlog.md",
           "text": "\"page knows is invisible to anyone reading <code>docs/backlog.md</code> on GitHub \u2014 which is \""
         },
@@ -4518,7 +4573,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 683,
+          "line": 688,
           "term": "docs/superpowers/specs/2026-08-10-serve-path-deadline-design.md",
           "text": "GitHub, an ADR, a PR body \u2014 as `docs/superpowers/specs/2026-08-10-serve-path-deadline-design.md`"
         },
@@ -4526,7 +4581,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 815,
+          "line": 820,
           "term": "docs/backlog.md",
           "text": "inside a code span** \u2014 including `docs/backlog.md`'s own `select count(*) filter (\u2026)`, which"
         },
@@ -4534,7 +4589,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 834,
+          "line": 839,
           "term": "docs/backlog.md",
           "text": "# reading (line break, indenting etc)\"*. A row's body is one line in `docs/backlog.md` \u2014 median"
         },
@@ -4542,7 +4597,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1121,
+          "line": 1126,
           "term": "docs/backlog.md",
           "text": "# `docs/backlog.md` has been version-controlled since 2026-06-20; every edit is already recorded,"
         },
@@ -4550,7 +4605,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 1230,
+          "line": 1235,
           "term": "check-features",
           "text": "# `bundle=\"\"` through `col.get`, so its tags vanished from every reader and `check-features`"
         },
@@ -4558,7 +4613,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1233,
+          "line": 1238,
           "term": "docs/backlog.md",
           "text": "# 2026-10-27 over `docs/backlog.md`: exactly two `| # |` headers exist, one of each."
         },
@@ -4566,7 +4621,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 1240,
+          "line": 1245,
           "term": "check-features",
           "text": "# `check-features` never reads a kind as an area; the Status cell carries the closure \u2705 and, after its"
         },
@@ -4574,7 +4629,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 1284,
+          "line": 1289,
           "term": "check-features",
           "text": "\"\"\"PURE. One note per row with NO kind \u2014 reported on the page and by check-features, never guessed.\"\"\""
         },
@@ -4582,7 +4637,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1291,
+          "line": 1296,
           "term": "docs/anchors.md",
           "text": "`docs/anchors.md` does not register \u2014 each REFUSED by the page and by check-features.\"\"\""
         },
@@ -4590,7 +4645,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 1291,
+          "line": 1296,
           "term": "check-features",
           "text": "`docs/anchors.md` does not register \u2014 each REFUSED by the page and by check-features.\"\"\""
         },
@@ -4598,7 +4653,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1301,
+          "line": 1306,
           "term": "docs/anchors.md",
           "text": "out.append(f\"row {r['num']}: `epic: {v}` is not an anchor in docs/anchors.md\")"
         },
@@ -4606,7 +4661,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1312,
+          "line": 1317,
           "term": "docs/backlog.md",
           "text": "# `docs/backlog.md` has NONE (its only two table blocks are the item tables above), so this is empty"
         },
@@ -4614,7 +4669,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 1329,
+          "line": 1334,
           "term": "check-features",
           "text": "its fence note), and master's `check-features` read a fenced row too, so skipping fenced blocks"
         },
@@ -4622,7 +4677,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1330,
+          "line": 1335,
           "term": "docs/backlog.md",
           "text": "here would be the one way to make master red and this green. `docs/backlog.md` has 0 fences.\"\"\""
         },
@@ -4630,7 +4685,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1337,
+          "line": 1342,
           "term": "docs/backlog.md",
           "text": "f\"declared header \u2014 every table in docs/backlog.md must open with `| # | Item | \u2026 |` \""
         },
@@ -4638,7 +4693,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1384,
+          "line": 1389,
           "term": "docs/backlog.md",
           "text": "`> paragraphs of literal `|` on GitHub \u2026` is real prose in `docs/backlog.md` and was being"
         },
@@ -4646,7 +4701,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1451,
+          "line": 1456,
           "term": "docs/backlog.md",
           "text": "return [f\"{len(unread)} line(s) in docs/backlog.md sit inside a table and were not read \u2014 \""
         },
@@ -4654,7 +4709,15 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1486,
+          "line": 1475,
+          "term": "docs/reviews/architecture-review-2026-11-20-backlog-closed-rule.md",
+          "text": "clause here reads one (Phase 6, docs/reviews/architecture-review-2026-11-20-backlog-closed-rule.md: the r2 clause"
+        },
+        {
+          "detector": 4,
+          "file": "scripts/gen-backlog-page.py",
+          "kind": "doc-path",
+          "line": 1513,
           "term": "docs/backlog.md",
           "text": "# rows. Trading \"the warning is noisy\" for \"rows disappear\" is a bad trade, and `docs/backlog.md`"
         },
@@ -4662,7 +4725,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1501,
+          "line": 1528,
           "term": "docs/backlog.md",
           "text": "# that proves it is a file with TWO item tables \u2014 which `docs/backlog.md` is."
         },
@@ -4670,7 +4733,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 1606,
+          "line": 1633,
           "term": "check-features",
           "text": "# page compared the RAW string (`r[\"bundle\"] in n.areas`) and `check-features` collected raw strings"
         },
@@ -4678,7 +4741,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1607,
+          "line": 1634,
           "term": "docs/features.md",
           "text": "# too, so `docs/features.md` had to list `(cloud/money)` AND `(cloud / money)` and a row could carry"
         },
@@ -4686,7 +4749,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 1609,
+          "line": 1636,
           "term": "check-features",
           "text": "# `gen-features-page` for which node a row lands under, `check-features` for what is \"in use\"."
         },
@@ -4694,7 +4757,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 1641,
+          "line": 1668,
           "term": "check-features",
           "text": "and `check-features` \u2014 the CI gate over the same cell \u2014 FAILS on it.\"\"\""
         },
@@ -4702,7 +4765,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1677,
+          "line": 1704,
           "term": "docs/features.md",
           "text": "\u26a0 NEAREST, not ANY. `docs/features.md` has a node for `(cloud)` and another for"
         },
@@ -4710,7 +4773,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 1943,
+          "line": 1970,
           "term": "docs/backlog.md",
           "text": "# docs/backlog.md in this run\", pointing the reader at the generator. All three sentences are"
         },
@@ -4718,7 +4781,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 1964,
+          "line": 1991,
           "term": "check-group-claims",
           "text": "# page. Full scope and residue: `check-group-claims.py`'s docstring."
         },
@@ -4726,7 +4789,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 2085,
+          "line": 2112,
           "term": "docs/backlog.md",
           "text": "f'{len(unread)} line(s) in <code>docs/backlog.md</code> could not be read'"
         },
@@ -4734,7 +4797,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 2092,
+          "line": 2119,
           "term": "docs/backlog.md",
           "text": "'<code>docs/backlog.md</code> \u2014 a row must begin with <code>|</code> and '"
         },
@@ -4742,7 +4805,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 2102,
+          "line": 2129,
           "term": "docs/backlog.md",
           "text": "'<code>docs/backlog.md</code> in this run. What is out of date is the '"
         },
@@ -4750,7 +4813,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 2105,
+          "line": 2132,
           "term": "docs/backlog.md",
           "text": "'Every row this page COULD read was read from <code>docs/backlog.md</code> in '"
         },
@@ -4758,7 +4821,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 2441,
+          "line": 2468,
           "term": "docs/backlog.md",
           "text": "<p class=\"dek\">Every row of <code>docs/backlog.md</code>, parsed in this run \u2014 not summarised. The"
         },
@@ -4766,7 +4829,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 2528,
+          "line": 2555,
           "term": "docs/backlog.md",
           "text": "<b>Source</b> docs/backlog.md @ <b>{sha}</b> \u2014 last edited {edited}<br>"
         },
@@ -4774,7 +4837,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 2966,
+          "line": 2994,
           "term": "check-features",
           "text": "case(\"#394: the kind is NOT a tag \u2014 the Bundle cell is untouched, so check-features cannot read it as an area\","
         },
@@ -4782,7 +4845,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 2991,
+          "line": 3019,
           "term": "docs/anchors.md",
           "text": "\"row 19: `epic: nope` is not an anchor in docs/anchors.md\"])"
         },
@@ -4790,7 +4853,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 3087,
+          "line": 3115,
           "term": "docs/backlog.md",
           "text": "# \u26a0 r4 L-3. TWO `| # |` tables, which is what `docs/backlog.md` actually is \u2014 this is the"
         },
@@ -4798,7 +4861,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 3371,
+          "line": 3399,
           "term": "docs/backlog.md",
           "text": "# docs/backlog.md, which is seconds of work irrelevant to this path. \u26a0 `--out` and `$HOME` both"
         },
@@ -4806,7 +4869,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 3446,
+          "line": 3474,
           "term": "docs/backlog.md",
           "text": "# the only one that fires on the real `docs/backlog.md` today (ten items, #110 among them), and"
         },
@@ -4814,7 +4877,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 3552,
+          "line": 3580,
           "term": "docs/backlog.md",
           "text": "and \"docs/backlog.md\" in _box(_built([\"| \u2b502 | x |\"]), _INC))"
         },
@@ -4822,7 +4885,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 4253,
+          "line": 4311,
           "term": "check-plan-code",
           "text": "# \u26d4 THE FAILURE LINE IS A CONTRACT, and this suite was not keeping it. `check-plan-code`'s"
         },
@@ -4830,7 +4893,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 4312,
+          "line": 4370,
           "term": "docs/anchors.md",
           "text": "\"\"\"The anchors docs/anchors.md registers, read by `check-anchors.parse_registry` (its owner).\"\"\""
         },
@@ -4838,7 +4901,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 4312,
+          "line": 4370,
           "term": "check-anchors",
           "text": "\"\"\"The anchors docs/anchors.md registers, read by `check-anchors.parse_registry` (its owner).\"\"\""
         },
@@ -4846,7 +4909,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 4314,
+          "line": 4372,
           "term": "check-anchors",
           "text": "spec = _ilu.spec_from_file_location(\"_check_anchors\", pathlib.Path(__file__).with_name(\"check-anchors.py\"))"
         },
@@ -4854,7 +4917,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 4325,
+          "line": 4383,
           "term": "docs/backlog.md",
           "text": "-> None, or the warning to print when `docs/backlog.md` could not be read. Then every key links,"
         },
@@ -4862,7 +4925,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "guard-name",
-          "line": 4326,
+          "line": 4384,
           "term": "check-page-links",
           "text": "missing rows included, and `check-page-links.py` rule 3 reports any that dangle: loud, not lost."
         },
@@ -4870,7 +4933,7 @@
           "detector": 4,
           "file": "scripts/gen-backlog-page.py",
           "kind": "doc-path",
-          "line": 4372,
+          "line": 4430,
           "term": "docs/backlog.md",
           "text": "\"docs/backlog.md\")[:16].replace(\"T\", \" \"),"
         }
@@ -5709,7 +5772,7 @@
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:1",
           "kind": "unread",
-          "line": 216,
+          "line": 234,
           "target": null,
           "text": "exec(compile(pathlib.Path(path).read_bytes(), path, \"exec\", dont_inherit=True), mod.__dict__)"
         },
@@ -5718,16 +5781,25 @@
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:2",
           "kind": "unread",
-          "line": 3269,
+          "line": 3476,
           "target": null,
-          "text": "r = subprocess.run([\"bash\", \"-c\", f\"REPO_ROOT={shlex.quote(str(tdp))}\\n\" + \"\\n\".join(hook)],"
+          "text": "write_page(out, [snap5], minute(t0 + 5 * 60), composer=[sys.executable, \"-c\", \"pass\"], judge=judge)"
         },
         {
           "detector": 2,
           "file": "scripts/goal-tree.py",
           "id": "goal-tree:2:3",
           "kind": "unread",
-          "line": 4304,
+          "line": 3854,
+          "target": null,
+          "text": "r = subprocess.run([\"bash\", \"-c\", f\"REPO_ROOT={shlex.quote(str(tdp))}\\n\" + \"\\n\".join(hook)],"
+        },
+        {
+          "detector": 2,
+          "file": "scripts/goal-tree.py",
+          "id": "goal-tree:2:4",
+          "kind": "unread",
+          "line": 4896,
           "target": null,
           "text": "composer=[sys.executable, \"-c\", \"pass\"]))"
         }
@@ -5745,7 +5817,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 91,
+          "line": 97,
           "term": "docs/goal-threads.md",
           "text": "EXIT CODES (repo convention): 0 = done \u00b7 1 = `docs/goal-threads.md` or the log is malformed \u00b7"
         },
@@ -5753,7 +5825,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 114,
+          "line": 120,
           "term": "docs/goal-threads.md",
           "text": "THREADS_REL = \"docs/goal-threads.md\""
         },
@@ -5761,7 +5833,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 117,
+          "line": 123,
           "term": "docs/goal-tree-answers.json",
           "text": "ANSWERS_REL = \"docs/goal-tree-answers.json\""
         },
@@ -5769,7 +5841,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 121,
+          "line": 127,
           "term": "docs/dashboard-entries.md",
           "text": "DASHBOARD_REL = \"docs/dashboard-entries.md\""
         },
@@ -5777,7 +5849,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 122,
+          "line": 128,
           "term": "docs/backlog.md",
           "text": "BACKLOG_REL = \"docs/backlog.md\""
         },
@@ -5785,7 +5857,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 204,
+          "line": 216,
           "term": "docs/reviews/architecture-review-2026-11-08-goal-tree-sibling-cache.md",
           "text": "`docs/reviews/architecture-review-2026-11-08-goal-tree-sibling-cache.md`). Nothing here writes a sibling's"
         },
@@ -5793,7 +5865,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 245,
+          "line": 269,
           "term": "docs/goal-threads.md",
           "text": "\"\"\"`docs/goal-threads.md` or the log breaks its grammar. Never caught into a pass.\"\"\""
         },
@@ -5801,7 +5873,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 329,
+          "line": 353,
           "term": "docs/goal-threads.md",
           "text": "sharing any ref with a thread `docs/goal-threads.md` declares, in any goal, is not added again (after the merge"
         },
@@ -5809,7 +5881,15 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 980,
+          "line": 892,
+          "term": "docs/backlog.md",
+          "text": "# the tree reads docs/backlog.md from its own checkout, so a \u2705 row with its PR open SHOULD read \u23f3; a title cannot"
+        },
+        {
+          "detector": 4,
+          "file": "scripts/goal-tree.py",
+          "kind": "doc-path",
+          "line": 1251,
           "term": "docs/reviews/architecture-review-2026-11-06-needs-owner-settled.md",
           "text": "#     the Phase 6 review (docs/reviews/architecture-review-2026-11-06-needs-owner-settled.md) removed it; that"
         },
@@ -5817,7 +5897,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "guard-name",
-          "line": 1181,
+          "line": 1452,
           "term": "check-docs",
           "text": "by gen-backlog-page's ONE row parser (its `CELL_SPLIT` is check-docs'). None is a live row; a key that is"
         },
@@ -5825,15 +5905,39 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "guard-name",
-          "line": 1380,
+          "line": 1618,
+          "term": "check-stalled-work",
+          "text": "check-stalled-work.py to the last one (backlog #647 r1, Codex: a last line of `{}` read as clear there).\"\"\""
+        },
+        {
+          "detector": 4,
+          "file": "scripts/goal-tree.py",
+          "kind": "guard-name",
+          "line": 1658,
           "term": "check-vocabulary-collisions",
           "text": "# is the duplicate vocabulary check-vocabulary-collisions.py exists to refuse. The page says \"AGENDA \u2014"
         },
         {
           "detector": 4,
           "file": "scripts/goal-tree.py",
+          "kind": "guard-name",
+          "line": 2157,
+          "term": "check-stalled-work",
+          "text": "# backlog #647: the STALE line's subject (the late threads) sits between these two; check-stalled-work.py reads it there"
+        },
+        {
+          "detector": 4,
+          "file": "scripts/goal-tree.py",
+          "kind": "guard-name",
+          "line": 2177,
+          "term": "check-stalled-work",
+          "text": "# clear it (a Refresh re-derives the same plan). check-stalled-work.py reads this line's subject between the two"
+        },
+        {
+          "detector": 4,
+          "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 2605,
+          "line": 2937,
           "term": "docs/goal-threads.md",
           "text": "parts = ['<main>', '<p class=\"meta\">DECLARED IN docs/goal-threads.md \u00b7 STATES DERIVED FROM GIT, '"
         },
@@ -5841,7 +5945,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 3548,
+          "line": 4140,
           "term": "docs/goal-threads.md",
           "text": "[\"entry w2: its thread is not read\", \"entry w505: goal 'nope' is not declared in docs/goal-threads.md\"])"
         },
@@ -5849,7 +5953,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 3556,
+          "line": 4148,
           "term": "docs/goal-threads.md",
           "text": "([2], [\"entry w505: goal 'g' is not declared in docs/goal-threads.md\"], [1]))"
         },
@@ -5857,7 +5961,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 3644,
+          "line": 4236,
           "term": "docs/goal-threads.md",
           "text": "[\"entry p4: goal 'nope' is not declared in docs/goal-threads.md\"]))"
         },
@@ -5865,7 +5969,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 3701,
+          "line": 4293,
           "term": "docs/goal-threads.md",
           "text": "if \"p9 \u00b7 w\" in l], [\"\u2514\u2500 p9 \u00b7 w \u00b7 \u26a0 its goal ' g' is not declared in docs/goal-threads.md\"])"
         },
@@ -5873,7 +5977,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 3952,
+          "line": 4544,
           "term": "docs/backlog.md",
           "text": "[(\"cannot\", f\"CANNOT RUN \u2014 backlog #{n} is not a row of the Items table in docs/backlog.md\")"
         },
@@ -5881,7 +5985,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 3956,
+          "line": 4548,
           "term": "docs/backlog.md",
           "text": "fates=None, fates_error=\"docs/backlog.md NOT READ (FileNotFoundError: gone)\"))),"
         },
@@ -5889,7 +5993,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 3957,
+          "line": 4549,
           "term": "docs/backlog.md",
           "text": "(\"\u26a0\", \"CANNOT RUN \u2014 docs/backlog.md NOT READ (FileNotFoundError: gone), so a superseded or \""
         },
@@ -5897,15 +6001,23 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 3963,
+          "line": 4555,
           "term": "docs/backlog.md",
           "text": "[\"1 line(s) of docs/backlog.md the row parser could not read\"]))"
         },
         {
           "detector": 4,
           "file": "scripts/goal-tree.py",
+          "kind": "guard-name",
+          "line": 5096,
+          "term": "check-stalled-work",
+          "text": "# backlog #647 r1: ONE snapshot test, shared with check-stalled-work.py's read of the last line"
+        },
+        {
+          "detector": 4,
+          "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 4542,
+          "line": 5139,
           "term": "docs/backlog.md",
           "text": "needs_from_backlog(BACKLOG_BAD)[1], [\"1 line(s) of docs/backlog.md the row parser could not read\"])"
         },
@@ -5913,7 +6025,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 5079,
+          "line": 5676,
           "term": "docs/backlog.md",
           "text": "(None, \"1 line(s) of docs/backlog.md the row parser could not read\", \"cannot\"))"
         },
@@ -5921,7 +6033,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 5086,
+          "line": 5683,
           "term": "docs/backlog.md",
           "text": "(_s_gone[\"fates\"], _s_gone[\"fates_error\"].startswith(\"docs/backlog.md NOT READ (FileNotFoundError\"),"
         },
@@ -5929,7 +6041,7 @@
           "detector": 4,
           "file": "scripts/goal-tree.py",
           "kind": "doc-path",
-          "line": 5087,
+          "line": 5684,
           "term": "docs/backlog.md",
           "text": "_s_gone[\"errors\"].get(\"backlog\", \"\").startswith(\"docs/backlog.md NOT READ\")), (None, True, True))"
         }
@@ -5943,9 +6055,17 @@
           "detector": 4,
           "file": ".claude/hooks/run-hook.sh",
           "kind": "doc-path",
-          "line": 11,
+          "line": 13,
           "term": "docs/reviews/architecture-review-2026-10-26-hook-launch.md",
           "text": "# docs/reviews/architecture-review-2026-10-26-hook-launch.md). Every lost design FELL BACK to another"
+        },
+        {
+          "detector": 4,
+          "file": ".claude/hooks/run-hook.sh",
+          "kind": "doc-path",
+          "line": 71,
+          "term": "docs/reviews/architecture-review-2026-11-20-usage-hook-launcher.md",
+          "text": "# docs/reviews/architecture-review-2026-11-20-usage-hook-launcher.md: three rounds of hand-parsing `.git`/`commondir`"
         }
       ],
       "status": "scanned"
@@ -11503,14 +11623,14 @@
         {
           "detector": 1,
           "file": "scripts/mutations/expected_mutations.py",
-          "line": 1331,
+          "line": 1376,
           "term": "lib/",
           "text": "#   * `lib/\u2026` and `parse.ts:42` are stopped by the lowercase-prose rule, not by the path and"
         },
         {
           "detector": 1,
           "file": "scripts/mutations/expected_mutations.py",
-          "line": 1627,
+          "line": 1672,
           "term": "supabase/",
           "text": "# the union mutation lost its anchor and became \"the file entry dropped\", plus `supabase/` moved between sets."
         },
@@ -11897,6 +12017,14 @@
           "line": 294,
           "term": "docs/memory/MEMORY.md",
           "text": "\"    return (f\\\"ok \\u2014 docs/memory/MEMORY.md is {f['chars']:,} characters,\""
+        },
+        {
+          "detector": 4,
+          "file": "scripts/mutations/check-memory-shape.json",
+          "kind": "doc-path",
+          "line": 440,
+          "term": "docs/memory",
+          "text": "\"CANNOT RUN \\u2014 the memory corpus at docs/memory \""
         },
         {
           "detector": 4,
@@ -12342,7 +12470,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "tool-name",
-          "line": 475,
+          "line": 514,
           "term": "TaskStop",
           "text": "# hold their windows (the window itself, a background end, completion records, TaskStop, a"
         },
@@ -12350,7 +12478,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "tool-name",
-          "line": 481,
+          "line": 520,
           "term": "TaskStop",
           "text": "# tool-use-id match, END after START, a failed TaskStop, auto-backgrounded results, and a"
         },
@@ -12358,7 +12486,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 592,
+          "line": 637,
           "term": "check-ratchet-contract",
           "text": "# \u27f3 2026-09-10. A guard created and manifested in ONE commit \u2014 `check-ratchet-contract` flagged"
         },
@@ -12366,7 +12494,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 599,
+          "line": 644,
           "term": "check-ratchet-contract",
           "text": "# checks back, which is the shape `check-ratchet-contract` refuses by name (R4)."
         },
@@ -12374,7 +12502,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 652,
+          "line": 697,
           "term": "check-storage-grant-pin",
           "text": "# construction, the `check-storage-grant-pin` case-5 shape."
         },
@@ -12382,7 +12510,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 704,
+          "line": 749,
           "term": "check-ratchet-contract",
           "text": "# a written `NO-MUTATIONS: <why>`, and its regex matched line 16 of check-ratchet-contract's"
         },
@@ -12390,7 +12518,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 782,
+          "line": 827,
           "term": "check-plan-code",
           "text": "# \u27f3 backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear \u2014 they MOVED"
         },
@@ -12398,7 +12526,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 840,
+          "line": 885,
           "term": "check-python-pin",
           "text": "# \u27f3 2026-09-17: `check-python-pin.py` JOINS with 11 entries, in the commit that creates it \u2014"
         },
@@ -12406,7 +12534,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 841,
+          "line": 886,
           "term": "check-ratchet-contract",
           "text": "# `check-ratchet-contract.py` refused the file until it did, which is the manifest half of the"
         },
@@ -12414,7 +12542,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1045,
+          "line": 1090,
           "term": "check-review-decision",
           "text": "# check-review-decision.py \u2014 the ranker's margin/abstention, its reader, and the two"
         },
@@ -12422,7 +12550,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1048,
+          "line": 1093,
           "term": "check-decision-scheme",
           "text": "# check-decision-scheme.py \u2014 the route-escalation promise. Its bulk is the r1 REDESIGN:"
         },
@@ -12430,7 +12558,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1075,
+          "line": 1120,
           "term": "check-decision-scheme",
           "text": "# \u27f3 2026-10-23: check-decision-scheme 86 -> 106. Trigger 3 changed its question (route"
         },
@@ -12438,7 +12566,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1219,
+          "line": 1264,
           "term": "check-review-recorded",
           "text": "# `\"review\": \"codex-r3.md\"`, so the stem cannot tell them apart. \u26d4 `check-review-recorded`"
         },
@@ -12446,7 +12574,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1251,
+          "line": 1296,
           "term": "check-review-rounds",
           "text": "#     #176 and whose killing case is driven through the shipped `check-review-rounds."
         },
@@ -12454,7 +12582,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "doc-path",
-          "line": 1299,
+          "line": 1344,
           "term": "docs/reviews",
           "text": "#   refusal and the watch cover that tree's docs/reviews. r2 57 -> 60 \u2014 `--out` is resolved"
         },
@@ -12462,7 +12590,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "doc-path",
-          "line": 1306,
+          "line": 1351,
           "term": "docs/reviews",
           "text": "#   r6 66 -> 67 \u2014 the refusal also compares each checkout's RESOLVED docs/reviews (X1, a"
         },
@@ -12470,7 +12598,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "doc-path",
-          "line": 1307,
+          "line": 1352,
           "term": "docs/reviews",
           "text": "#   regression against master when docs/reviews is a symlink out of the checkout)."
         },
@@ -12478,7 +12606,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "doc-path",
-          "line": 1309,
+          "line": 1354,
           "term": "docs/reviews",
           "text": "#   (X1, a symlink nested in docs/reviews): the OR's master branch, its reviewed-root half, its"
         },
@@ -12486,7 +12614,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1442,
+          "line": 1487,
           "term": "check-plan-code",
           "text": "# only when its kill is ATTRIBUTABLE, which `check-plan-code` decides by matching `expect`"
         },
@@ -12494,7 +12622,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1529,
+          "line": 1574,
           "term": "check-plan-code",
           "text": "# \u27f3 2026-11-06 backlog #506 r2: 36 -> 34 \u2014 its three printed_total/RATIO entries moved to check-plan-code.json"
         },
@@ -12502,7 +12630,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1545,
+          "line": 1590,
           "term": "check-ratchet-contract",
           "text": "# check-ratchet-contract.py rather than from arithmetic (this file's own recorded lesson:"
         },
@@ -12510,7 +12638,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1548,
+          "line": 1593,
           "term": "check-plan-progress",
           "text": "# The ten check-plan-progress entries exist because the defect being fixed was a guard that"
         },
@@ -12518,7 +12646,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1578,
+          "line": 1623,
           "term": "check-plan-code",
           "text": "# patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it."
         },
@@ -12526,7 +12654,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1650,
+          "line": 1695,
           "term": "check-features",
           "text": "# with its subject: the escaped-pipe entry anchored `check-features`' own `CELL_SPLIT`, which is"
         },
@@ -12534,7 +12662,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "doc-path",
-          "line": 1708,
+          "line": 1753,
           "term": "docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md",
           "text": "# \u27f3 2026-11-15, backlog #651 Phase 6 redesign (docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md):"
         },
@@ -12542,7 +12670,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1767,
+          "line": 1821,
           "term": "check-merge-ready",
           "text": "# The 11 survivors R1-F7 named (11); check-merge-ready admission and its re-ask in land (R1-F1, 8); the base"
         },
@@ -12550,7 +12678,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1773,
+          "line": 1827,
           "term": "check-plan-code",
           "text": "# and transitivity \u2014 attribution now uses `check-plan-code.select_manifests`), 5 re-bound (the union rewrite"
         },
@@ -12558,7 +12686,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 1896,
+          "line": 1955,
           "term": "check-main-drivable",
           "text": "# `check-main-drivable.suite_entries` reads, a flag test with no entry, a file with no self-test, the named refusal);"
         },
@@ -12566,7 +12694,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "doc-path",
-          "line": 2031,
+          "line": 2090,
           "term": "docs/reviews/architecture-review-2026-11-08-held-pins-child.md",
           "text": "# \u27f3 2026-11-08, backlog #538 Phase 6 (`docs/reviews/architecture-review-2026-11-08-held-pins-child.md`): 181 -> 187"
         },
@@ -12574,7 +12702,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 2071,
+          "line": 2130,
           "term": "check-ratchet-contract",
           "text": "# manifest DEBT. `check-ratchet-contract` offered `MANIFEST_BASELINE = 1`, which would"
         },
@@ -12582,7 +12710,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 2097,
+          "line": 2156,
           "term": "check-rc-contract",
           "text": "# from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file"
         },
@@ -12590,7 +12718,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 2104,
+          "line": 2163,
           "term": "check-rc-contract",
           "text": "# \u26a0 FOUR OF THE 11 ARE RELOCATED, NOT NEW \u2014 they came from `check-rc-contract`'s manifest with"
         },
@@ -12598,7 +12726,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 2193,
+          "line": 2252,
           "term": "check-memory-index-budget",
           "text": "# \u27f3 2026-10-19: check-memory-index-budget joins at 7, declared sum 1545 -> 1552; then"
         },
@@ -12606,7 +12734,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 2196,
+          "line": 2255,
           "term": "check-decision-scheme",
           "text": "# \u27f3 2026-10-20: check-review-decision and the new check-decision-scheme join. \u26a0 No"
         },
@@ -12614,7 +12742,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 2196,
+          "line": 2255,
           "term": "check-review-decision",
           "text": "# \u27f3 2026-10-20: check-review-decision and the new check-decision-scheme join. \u26a0 No"
         },
@@ -12622,7 +12750,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "doc-path",
-          "line": 2251,
+          "line": 2328,
           "term": "docs/reviews/architecture-review-2026-11-08-dirty-pr-states.md",
           "text": "# \u27f3 backlog #545 Phase 6 fold (2026-11-08, `docs/reviews/architecture-review-2026-11-08-dirty-pr-states.md`):"
         },
@@ -12630,7 +12758,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "tool-name",
-          "line": 2262,
+          "line": 2346,
           "term": "SendMessage",
           "text": "# regular-file read, the expiring main-checkout override, the two readers, and the SendMessage gate."
         },
@@ -12638,7 +12766,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "doc-path",
-          "line": 2287,
+          "line": 2371,
           "term": "docs/reviews/architecture-review-2026-11-07-meter-log-tail-proof.md",
           "text": "# \u27f3 PR #531 r3 fold (the Phase 6 redesign, docs/reviews/architecture-review-2026-11-07-meter-log-tail-proof.md):"
         },
@@ -12646,7 +12774,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "doc-path",
-          "line": 2317,
+          "line": 2401,
           "term": "docs/backlog.md",
           "text": "# `docs/backlog.md`, and explainer-serve's new source-coverage case stats `docs/`."
         },
@@ -12654,7 +12782,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 2432,
+          "line": 2520,
           "term": "check-main-drivable",
           "text": "# \u27f3 2026-11-16 PR #598 CI (check-main-drivable D2): 105 + 1 = 106 \u2014 --closure reads the root main() is given."
         },
@@ -12662,7 +12790,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "tool-name",
-          "line": 2452,
+          "line": 2540,
           "term": "AskUserQuestion",
           "text": "# that no longer exists: the pause marker (3), the AskUserQuestion exception and its transcript parser (16),"
         },
@@ -12670,7 +12798,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "guard-name",
-          "line": 2460,
+          "line": 2548,
           "term": "check-agent-long-call",
           "text": "# (10, the 270 s floor and its identity with `check-agent-long-call.LIMIT_S` among them), the git directory (4),"
         },
@@ -12678,7 +12806,7 @@
           "detector": 4,
           "file": "scripts/mutations/expected_mutations.py",
           "kind": "doc-path",
-          "line": 2477,
+          "line": 2565,
           "term": "docs/reviews/architecture-review-2026-11-16-agent-watchdog.md",
           "text": "# r3 fold (Phase 6, `docs/reviews/architecture-review-2026-11-16-agent-watchdog.md`) -> 70: the entry is a"
         },
@@ -12689,6 +12817,14 @@
           "line": 250,
           "term": "docs/superpowers/specs/a-design.md",
           "text": "\"\\\"--follow\\\", \\\"--\\\", \\\"docs/superpowers/specs/a-design.md\\\"]\""
+        },
+        {
+          "detector": 4,
+          "file": "scripts/mutations/mkt_seed_repo.json",
+          "kind": "doc-path",
+          "line": 84,
+          "term": "docs/roadmap-to-launch.md",
+          "text": "\"_item(\\\"roadmap-status\\\", \\\"docs/roadmap-to-launch.md\\\"\","
         },
         {
           "detector": 4,
@@ -12892,54 +13028,54 @@
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:17",
           "kind": "outside-set",
-          "line": 455,
-          "target": "scripts/check-hook-commands.py",
-          "text": "run: python3 scripts/check-hook-commands.py --self-test"
+          "line": 456,
+          "target": "scripts/check-rm-backup.py",
+          "text": "run: python3 scripts/check-rm-backup.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:18",
           "kind": "outside-set",
-          "line": 459,
+          "line": 458,
           "target": "scripts/check-hook-commands.py",
-          "text": "run: python3 scripts/check-hook-commands.py"
+          "text": "run: python3 scripts/check-hook-commands.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:19",
           "kind": "outside-set",
-          "line": 464,
+          "line": 462,
+          "target": "scripts/check-hook-commands.py",
+          "text": "run: python3 scripts/check-hook-commands.py"
+        },
+        {
+          "detector": 2,
+          "file": ".github/workflows/ci.yml",
+          "id": "mutation-sweep-job:2:20",
+          "kind": "outside-set",
+          "line": 467,
           "target": "scripts/check-run-hook.py",
           "text": "run: python3 scripts/check-run-hook.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
-          "id": "mutation-sweep-job:2:20",
+          "id": "mutation-sweep-job:2:21",
           "kind": "cwd-relative",
-          "line": 468,
+          "line": 471,
           "target": "scripts/fixture_git.py",
           "text": "run: python3 scripts/fixture_git.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
-          "id": "mutation-sweep-job:2:21",
-          "kind": "outside-set",
-          "line": 470,
-          "target": "scripts/check-fixture-git-isolation.py",
-          "text": "run: python3 scripts/check-fixture-git-isolation.py --self-test"
-        },
-        {
-          "detector": 2,
-          "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:22",
           "kind": "outside-set",
-          "line": 472,
+          "line": 473,
           "target": "scripts/check-fixture-git-isolation.py",
-          "text": "run: python3 scripts/check-fixture-git-isolation.py"
+          "text": "run: python3 scripts/check-fixture-git-isolation.py --self-test"
         },
         {
           "detector": 2,
@@ -12947,44 +13083,44 @@
           "id": "mutation-sweep-job:2:23",
           "kind": "outside-set",
           "line": 475,
-          "target": "scripts/brief-compose.py",
-          "text": "run: python3 scripts/brief-compose.py --self-test"
+          "target": "scripts/check-fixture-git-isolation.py",
+          "text": "run: python3 scripts/check-fixture-git-isolation.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:24",
           "kind": "outside-set",
-          "line": 484,
-          "target": "scripts/check-arch-findings.py",
-          "text": "run: python3 scripts/check-arch-findings.py"
+          "line": 478,
+          "target": "scripts/brief-compose.py",
+          "text": "run: python3 scripts/brief-compose.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:25",
           "kind": "outside-set",
-          "line": 496,
-          "target": "scripts/check-gate-falsifiability.py",
-          "text": "run: python3 scripts/check-gate-falsifiability.py"
+          "line": 487,
+          "target": "scripts/check-arch-findings.py",
+          "text": "run: python3 scripts/check-arch-findings.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:26",
           "kind": "outside-set",
-          "line": 506,
-          "target": "scripts/check-roadmap-consistency.py",
-          "text": "run: python3 scripts/check-roadmap-consistency.py"
+          "line": 499,
+          "target": "scripts/check-gate-falsifiability.py",
+          "text": "run: python3 scripts/check-gate-falsifiability.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:27",
           "kind": "outside-set",
-          "line": 513,
-          "target": "scripts/check-review-rounds.py",
-          "text": "run: python3 scripts/check-review-rounds.py"
+          "line": 509,
+          "target": "scripts/check-roadmap-consistency.py",
+          "text": "run: python3 scripts/check-roadmap-consistency.py"
         },
         {
           "detector": 2,
@@ -12993,16 +13129,16 @@
           "kind": "outside-set",
           "line": 516,
           "target": "scripts/check-review-rounds.py",
-          "text": "run: python3 scripts/check-review-rounds.py --self-test"
+          "text": "run: python3 scripts/check-review-rounds.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:29",
           "kind": "outside-set",
-          "line": 527,
-          "target": "scripts/check-decision-scheme.py",
-          "text": "run: python3 scripts/check-decision-scheme.py"
+          "line": 519,
+          "target": "scripts/check-review-rounds.py",
+          "text": "run: python3 scripts/check-review-rounds.py --self-test"
         },
         {
           "detector": 2,
@@ -13011,16 +13147,16 @@
           "kind": "outside-set",
           "line": 530,
           "target": "scripts/check-decision-scheme.py",
-          "text": "run: python3 scripts/check-decision-scheme.py --self-test"
+          "text": "run: python3 scripts/check-decision-scheme.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:31",
           "kind": "outside-set",
-          "line": 538,
-          "target": "scripts/check-anchors.py",
-          "text": "run: python3 scripts/check-anchors.py"
+          "line": 533,
+          "target": "scripts/check-decision-scheme.py",
+          "text": "run: python3 scripts/check-decision-scheme.py --self-test"
         },
         {
           "detector": 2,
@@ -13029,16 +13165,16 @@
           "kind": "outside-set",
           "line": 541,
           "target": "scripts/check-anchors.py",
-          "text": "run: python3 scripts/check-anchors.py --self-test"
+          "text": "run: python3 scripts/check-anchors.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:33",
           "kind": "outside-set",
-          "line": 548,
-          "target": "scripts/check-goal-status.py",
-          "text": "run: python3 scripts/check-goal-status.py"
+          "line": 544,
+          "target": "scripts/check-anchors.py",
+          "text": "run: python3 scripts/check-anchors.py --self-test"
         },
         {
           "detector": 2,
@@ -13047,16 +13183,16 @@
           "kind": "outside-set",
           "line": 551,
           "target": "scripts/check-goal-status.py",
-          "text": "run: python3 scripts/check-goal-status.py --self-test"
+          "text": "run: python3 scripts/check-goal-status.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:35",
           "kind": "outside-set",
-          "line": 562,
-          "target": "scripts/check-memory-link.py",
-          "text": "run: python3 scripts/check-memory-link.py"
+          "line": 554,
+          "target": "scripts/check-goal-status.py",
+          "text": "run: python3 scripts/check-goal-status.py --self-test"
         },
         {
           "detector": 2,
@@ -13065,25 +13201,25 @@
           "kind": "outside-set",
           "line": 565,
           "target": "scripts/check-memory-link.py",
-          "text": "run: python3 scripts/check-memory-link.py --self-test"
+          "text": "run: python3 scripts/check-memory-link.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:37",
           "kind": "outside-set",
-          "line": 573,
-          "target": "scripts/check-plan-leak.py",
-          "text": "run: python3 scripts/check-plan-leak.py --self-test"
+          "line": 568,
+          "target": "scripts/check-memory-link.py",
+          "text": "run: python3 scripts/check-memory-link.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:38",
           "kind": "outside-set",
-          "line": 603,
-          "target": "scripts/check-memory-index-budget.py",
-          "text": "run: python3 scripts/check-memory-index-budget.py"
+          "line": 576,
+          "target": "scripts/check-plan-leak.py",
+          "text": "run: python3 scripts/check-plan-leak.py --self-test"
         },
         {
           "detector": 2,
@@ -13092,34 +13228,34 @@
           "kind": "outside-set",
           "line": 606,
           "target": "scripts/check-memory-index-budget.py",
-          "text": "run: python3 scripts/check-memory-index-budget.py --self-test"
+          "text": "run: python3 scripts/check-memory-index-budget.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:40",
           "kind": "outside-set",
-          "line": 615,
-          "target": "scripts/check-rc-contract.py",
-          "text": "run: python3 scripts/check-rc-contract.py"
+          "line": 609,
+          "target": "scripts/check-memory-index-budget.py",
+          "text": "run: python3 scripts/check-memory-index-budget.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:41",
           "kind": "outside-set",
-          "line": 618,
-          "target": "scripts/check-rc-contract.py",
-          "text": "run: python3 scripts/check-rc-contract.py --self-test"
+          "line": 617,
+          "target": "scripts/check-memory-shape.py",
+          "text": "run: python3 scripts/check-memory-shape.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:42",
           "kind": "outside-set",
-          "line": 626,
-          "target": "scripts/check-surface-recall.py",
-          "text": "run: python3 scripts/check-surface-recall.py"
+          "line": 620,
+          "target": "scripts/check-memory-shape.py",
+          "text": "run: python3 scripts/check-memory-shape.py --self-test"
         },
         {
           "detector": 2,
@@ -13127,152 +13263,152 @@
           "id": "mutation-sweep-job:2:43",
           "kind": "outside-set",
           "line": 629,
-          "target": "scripts/check-surface-recall.py",
-          "text": "run: python3 scripts/check-surface-recall.py --self-test"
+          "target": "scripts/check-rc-contract.py",
+          "text": "run: python3 scripts/check-rc-contract.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:44",
           "kind": "outside-set",
-          "line": 641,
-          "target": "scripts/check-features.py",
-          "text": "run: python3 scripts/check-features.py"
+          "line": 632,
+          "target": "scripts/check-rc-contract.py",
+          "text": "run: python3 scripts/check-rc-contract.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:45",
           "kind": "outside-set",
-          "line": 644,
-          "target": "scripts/check-features.py",
-          "text": "run: python3 scripts/check-features.py --self-test"
+          "line": 640,
+          "target": "scripts/check-surface-recall.py",
+          "text": "run: python3 scripts/check-surface-recall.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:46",
           "kind": "outside-set",
-          "line": 651,
-          "target": "scripts/check-ratchet-contract.py",
-          "text": "run: python3 scripts/check-ratchet-contract.py"
+          "line": 643,
+          "target": "scripts/check-surface-recall.py",
+          "text": "run: python3 scripts/check-surface-recall.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:47",
           "kind": "outside-set",
-          "line": 664,
-          "target": "scripts/check-explainer-delivery.py",
-          "text": "run: python3 scripts/check-explainer-delivery.py"
+          "line": 655,
+          "target": "scripts/check-features.py",
+          "text": "run: python3 scripts/check-features.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:48",
           "kind": "outside-set",
-          "line": 690,
-          "target": "scripts/check-claim-propagation.py",
-          "text": "run: python3 scripts/check-claim-propagation.py"
+          "line": 658,
+          "target": "scripts/check-features.py",
+          "text": "run: python3 scripts/check-features.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:49",
           "kind": "outside-set",
-          "line": 693,
-          "target": "scripts/check-claim-propagation.py",
-          "text": "run: python3 scripts/check-claim-propagation.py --self-test"
+          "line": 665,
+          "target": "scripts/check-ratchet-contract.py",
+          "text": "run: python3 scripts/check-ratchet-contract.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:50",
           "kind": "outside-set",
-          "line": 715,
-          "target": "scripts/check-canonical-source.py",
-          "text": "run: python3 scripts/check-canonical-source.py"
+          "line": 678,
+          "target": "scripts/check-explainer-delivery.py",
+          "text": "run: python3 scripts/check-explainer-delivery.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:51",
           "kind": "outside-set",
-          "line": 718,
-          "target": "scripts/check-canonical-source.py",
-          "text": "run: python3 scripts/check-canonical-source.py --self-test"
+          "line": 704,
+          "target": "scripts/check-claim-propagation.py",
+          "text": "run: python3 scripts/check-claim-propagation.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:52",
           "kind": "outside-set",
-          "line": 721,
-          "target": "scripts/check-plan-task-order.py",
-          "text": "run: python3 scripts/check-plan-task-order.py"
+          "line": 707,
+          "target": "scripts/check-claim-propagation.py",
+          "text": "run: python3 scripts/check-claim-propagation.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:53",
           "kind": "outside-set",
-          "line": 727,
-          "target": "scripts/check-plan-file-tags.py",
-          "text": "run: python3 scripts/check-plan-file-tags.py"
+          "line": 729,
+          "target": "scripts/check-canonical-source.py",
+          "text": "run: python3 scripts/check-canonical-source.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:54",
           "kind": "outside-set",
-          "line": 730,
-          "target": "scripts/check-plan-file-tags.py",
-          "text": "run: python3 scripts/check-plan-file-tags.py --self-test"
+          "line": 732,
+          "target": "scripts/check-canonical-source.py",
+          "text": "run: python3 scripts/check-canonical-source.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:55",
           "kind": "outside-set",
-          "line": 756,
-          "target": "scripts/check-guard-coverage.py",
-          "text": "run: python3 scripts/check-guard-coverage.py --self-test"
+          "line": 735,
+          "target": "scripts/check-plan-task-order.py",
+          "text": "run: python3 scripts/check-plan-task-order.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:56",
           "kind": "outside-set",
-          "line": 759,
-          "target": "scripts/check-vocabulary-collisions.py",
-          "text": "run: python3 scripts/check-vocabulary-collisions.py --self-test"
+          "line": 741,
+          "target": "scripts/check-plan-file-tags.py",
+          "text": "run: python3 scripts/check-plan-file-tags.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:57",
           "kind": "outside-set",
-          "line": 766,
-          "target": "scripts/check-banner-armed.py",
-          "text": "run: python3 scripts/check-banner-armed.py --self-test"
+          "line": 744,
+          "target": "scripts/check-plan-file-tags.py",
+          "text": "run: python3 scripts/check-plan-file-tags.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:58",
           "kind": "outside-set",
-          "line": 769,
-          "target": "scripts/begin-plan.py",
-          "text": "run: python3 scripts/begin-plan.py --self-test"
+          "line": 770,
+          "target": "scripts/check-guard-coverage.py",
+          "text": "run: python3 scripts/check-guard-coverage.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:59",
           "kind": "outside-set",
-          "line": 777,
-          "target": "scripts/check-theme-token-coverage.py",
-          "text": "run: python3 scripts/check-theme-token-coverage.py"
+          "line": 773,
+          "target": "scripts/check-vocabulary-collisions.py",
+          "text": "run: python3 scripts/check-vocabulary-collisions.py --self-test"
         },
         {
           "detector": 2,
@@ -13280,71 +13416,71 @@
           "id": "mutation-sweep-job:2:60",
           "kind": "outside-set",
           "line": 780,
-          "target": "scripts/check-theme-token-coverage.py",
-          "text": "run: python3 scripts/check-theme-token-coverage.py --self-test"
+          "target": "scripts/check-banner-armed.py",
+          "text": "run: python3 scripts/check-banner-armed.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:61",
           "kind": "outside-set",
-          "line": 789,
-          "target": "scripts/check-selftest-counts.py",
-          "text": "run: python3 scripts/check-selftest-counts.py --jobs 4"
+          "line": 783,
+          "target": "scripts/begin-plan.py",
+          "text": "run: python3 scripts/begin-plan.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:62",
           "kind": "outside-set",
-          "line": 792,
-          "target": "scripts/check-selftest-counts.py",
-          "text": "run: python3 scripts/check-selftest-counts.py --self-test"
+          "line": 791,
+          "target": "scripts/check-theme-token-coverage.py",
+          "text": "run: python3 scripts/check-theme-token-coverage.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:63",
           "kind": "outside-set",
-          "line": 801,
-          "target": "scripts/check-fixture-variation.py",
-          "text": "run: python3 scripts/check-fixture-variation.py"
+          "line": 794,
+          "target": "scripts/check-theme-token-coverage.py",
+          "text": "run: python3 scripts/check-theme-token-coverage.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:64",
           "kind": "outside-set",
-          "line": 804,
-          "target": "scripts/check-fixture-variation.py",
-          "text": "run: python3 scripts/check-fixture-variation.py --self-test"
+          "line": 803,
+          "target": "scripts/check-selftest-counts.py",
+          "text": "run: python3 scripts/check-selftest-counts.py --jobs 4"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:65",
           "kind": "outside-set",
-          "line": 815,
-          "target": "scripts/check-main-drivable.py",
-          "text": "run: python3 scripts/check-main-drivable.py"
+          "line": 806,
+          "target": "scripts/check-selftest-counts.py",
+          "text": "run: python3 scripts/check-selftest-counts.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:66",
           "kind": "outside-set",
-          "line": 818,
-          "target": "scripts/check-main-drivable.py",
-          "text": "run: python3 scripts/check-main-drivable.py --self-test"
+          "line": 815,
+          "target": "scripts/check-fixture-variation.py",
+          "text": "run: python3 scripts/check-fixture-variation.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:67",
           "kind": "outside-set",
-          "line": 826,
-          "target": "scripts/check-storage-independence.py",
-          "text": "run: python3 scripts/check-storage-independence.py"
+          "line": 818,
+          "target": "scripts/check-fixture-variation.py",
+          "text": "run: python3 scripts/check-fixture-variation.py --self-test"
         },
         {
           "detector": 2,
@@ -13352,35 +13488,35 @@
           "id": "mutation-sweep-job:2:68",
           "kind": "outside-set",
           "line": 829,
-          "target": "scripts/check-storage-independence.py",
-          "text": "run: python3 scripts/check-storage-independence.py --self-test"
+          "target": "scripts/check-main-drivable.py",
+          "text": "run: python3 scripts/check-main-drivable.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:69",
           "kind": "outside-set",
-          "line": 834,
-          "target": "scripts/check-group-claims.py",
-          "text": "run: python3 scripts/check-group-claims.py"
+          "line": 832,
+          "target": "scripts/check-main-drivable.py",
+          "text": "run: python3 scripts/check-main-drivable.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:70",
           "kind": "outside-set",
-          "line": 837,
-          "target": "scripts/check-group-claims.py",
-          "text": "run: python3 scripts/check-group-claims.py --self-test"
+          "line": 840,
+          "target": "scripts/check-storage-independence.py",
+          "text": "run: python3 scripts/check-storage-independence.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:71",
           "kind": "outside-set",
-          "line": 840,
-          "target": "scripts/check-producer-enumeration.py",
-          "text": "run: python3 scripts/check-producer-enumeration.py"
+          "line": 843,
+          "target": "scripts/check-storage-independence.py",
+          "text": "run: python3 scripts/check-storage-independence.py --self-test"
         },
         {
           "detector": 2,
@@ -13388,80 +13524,80 @@
           "id": "mutation-sweep-job:2:72",
           "kind": "outside-set",
           "line": 848,
-          "target": "scripts/check-storage-grant-pin.py",
-          "text": "run: python3 scripts/check-storage-grant-pin.py"
+          "target": "scripts/check-group-claims.py",
+          "text": "run: python3 scripts/check-group-claims.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:73",
           "kind": "outside-set",
-          "line": 862,
-          "target": "scripts/check-function-revokes.py",
-          "text": "run: python3 scripts/check-function-revokes.py"
+          "line": 851,
+          "target": "scripts/check-group-claims.py",
+          "text": "run: python3 scripts/check-group-claims.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:74",
           "kind": "outside-set",
-          "line": 865,
-          "target": "scripts/check-function-revokes.py",
-          "text": "run: python3 scripts/check-function-revokes.py --self-test"
+          "line": 854,
+          "target": "scripts/check-producer-enumeration.py",
+          "text": "run: python3 scripts/check-producer-enumeration.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:75",
           "kind": "outside-set",
-          "line": 873,
-          "target": "scripts/page_markup.py",
-          "text": "run: python3 scripts/page_markup.py --self-test"
+          "line": 862,
+          "target": "scripts/check-storage-grant-pin.py",
+          "text": "run: python3 scripts/check-storage-grant-pin.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:76",
           "kind": "outside-set",
-          "line": 882,
-          "target": "scripts/page_chrome.py",
-          "text": "run: python3 scripts/page_chrome.py --self-test"
+          "line": 876,
+          "target": "scripts/check-function-revokes.py",
+          "text": "run: python3 scripts/check-function-revokes.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:77",
           "kind": "outside-set",
-          "line": 888,
-          "target": "scripts/strace_reads.py",
-          "text": "run: python3 scripts/strace_reads.py --self-test"
+          "line": 879,
+          "target": "scripts/check-function-revokes.py",
+          "text": "run: python3 scripts/check-function-revokes.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:78",
           "kind": "outside-set",
-          "line": 894,
-          "target": "scripts/mkt_isolate.py",
-          "text": "run: python3 scripts/mkt_isolate.py --self-test"
+          "line": 887,
+          "target": "scripts/page_markup.py",
+          "text": "run: python3 scripts/page_markup.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:79",
           "kind": "outside-set",
-          "line": 900,
-          "target": "scripts/mkt_stage.py",
-          "text": "run: python3 scripts/mkt_stage.py --self-test"
+          "line": 896,
+          "target": "scripts/page_chrome.py",
+          "text": "run: python3 scripts/page_chrome.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:80",
           "kind": "outside-set",
-          "line": 906,
-          "target": "scripts/check-shipping-sets.py",
-          "text": "run: python3 scripts/check-shipping-sets.py --self-test"
+          "line": 902,
+          "target": "scripts/strace_reads.py",
+          "text": "run: python3 scripts/strace_reads.py --self-test"
         },
         {
           "detector": 2,
@@ -13469,213 +13605,249 @@
           "id": "mutation-sweep-job:2:81",
           "kind": "outside-set",
           "line": 908,
-          "target": "scripts/check-shipping-sets.py",
-          "text": "run: python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json"
+          "target": "scripts/mkt_isolate.py",
+          "text": "run: python3 scripts/mkt_isolate.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:82",
           "kind": "outside-set",
-          "line": 912,
-          "target": "scripts/check-shipping-sets.py",
-          "text": "run: python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json"
+          "line": 914,
+          "target": "scripts/mkt_stage.py",
+          "text": "run: python3 scripts/mkt_stage.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:83",
           "kind": "outside-set",
-          "line": 916,
-          "target": "scripts/check-publishability.py",
-          "text": "run: python3 scripts/check-publishability.py --self-test"
+          "line": 919,
+          "target": "scripts/mkt_seed_repo.py",
+          "text": "run: python3 scripts/mkt_seed_repo.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:84",
           "kind": "outside-set",
-          "line": 921,
-          "target": "scripts/check-publishability.py",
-          "text": "run: python3 scripts/check-publishability.py --out /dev/null"
+          "line": 925,
+          "target": "scripts/check-shipping-sets.py",
+          "text": "run: python3 scripts/check-shipping-sets.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:85",
           "kind": "outside-set",
-          "line": 930,
-          "target": "scripts/check-page-links.py",
-          "text": "run: python3 scripts/check-page-links.py --self-test"
+          "line": 927,
+          "target": "scripts/check-shipping-sets.py",
+          "text": "run: python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:86",
           "kind": "outside-set",
-          "line": 932,
-          "target": "scripts/check-page-links.py",
-          "text": "run: python3 scripts/check-page-links.py --sources"
+          "line": 931,
+          "target": "scripts/check-shipping-sets.py",
+          "text": "run: python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:87",
           "kind": "outside-set",
-          "line": 934,
-          "target": "scripts/check-page-links.py",
-          "text": "run: python3 scripts/check-page-links.py --build --ci"
+          "line": 935,
+          "target": "scripts/check-publishability.py",
+          "text": "run: python3 scripts/check-publishability.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:88",
           "kind": "outside-set",
-          "line": 942,
-          "target": "scripts/gen-dashboard.py",
-          "text": "run: python3 scripts/gen-dashboard.py --self-test"
+          "line": 940,
+          "target": "scripts/check-publishability.py",
+          "text": "run: python3 scripts/check-publishability.py --out /dev/null"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:89",
           "kind": "outside-set",
-          "line": 945,
-          "target": "scripts/check-dashboard-entry.py",
-          "text": "run: python3 scripts/check-dashboard-entry.py --self-test"
+          "line": 949,
+          "target": "scripts/check-page-links.py",
+          "text": "run: python3 scripts/check-page-links.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:90",
           "kind": "outside-set",
-          "line": 954,
-          "target": "scripts/gen-work-lines.py",
-          "text": "run: python3 scripts/gen-work-lines.py --self-test"
+          "line": 951,
+          "target": "scripts/check-page-links.py",
+          "text": "run: python3 scripts/check-page-links.py --sources"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:91",
           "kind": "outside-set",
-          "line": 959,
-          "target": "scripts/backfill-work-lines.py",
-          "text": "run: python3 scripts/backfill-work-lines.py --self-test"
+          "line": 953,
+          "target": "scripts/check-page-links.py",
+          "text": "run: python3 scripts/check-page-links.py --build --ci"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:92",
           "kind": "outside-set",
-          "line": 965,
-          "target": "scripts/goal-tree.py",
-          "text": "run: python3 scripts/goal-tree.py --self-test"
+          "line": 961,
+          "target": "scripts/gen-dashboard.py",
+          "text": "run: python3 scripts/gen-dashboard.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:93",
           "kind": "outside-set",
-          "line": 968,
-          "target": "scripts/regen-pages.py",
-          "text": "run: python3 scripts/regen-pages.py --self-test"
+          "line": 964,
+          "target": "scripts/check-dashboard-entry.py",
+          "text": "run: python3 scripts/check-dashboard-entry.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:94",
-          "kind": "cwd-relative",
-          "line": 1005,
-          "target": "scripts/check-plan-code.py",
-          "text": "run: python3 scripts/check-plan-code.py --self-test"
+          "kind": "outside-set",
+          "line": 973,
+          "target": "scripts/gen-work-lines.py",
+          "text": "run: python3 scripts/gen-work-lines.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:95",
           "kind": "outside-set",
-          "line": 1010,
-          "target": "scripts/gates-for-pr.py",
-          "text": "run: python3 scripts/gates-for-pr.py --self-test"
+          "line": 978,
+          "target": "scripts/backfill-work-lines.py",
+          "text": "run: python3 scripts/backfill-work-lines.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:96",
           "kind": "outside-set",
-          "line": 1037,
-          "target": "scripts/check-reference-namespace.py",
-          "text": "run: python3 scripts/check-reference-namespace.py --base \"origin/$GITHUB_BASE_REF\""
+          "line": 984,
+          "target": "scripts/goal-tree.py",
+          "text": "run: python3 scripts/goal-tree.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:97",
           "kind": "outside-set",
-          "line": 1042,
-          "target": "scripts/check-reference-namespace.py",
-          "text": "run: python3 scripts/check-reference-namespace.py --self-test"
+          "line": 987,
+          "target": "scripts/regen-pages.py",
+          "text": "run: python3 scripts/regen-pages.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:98",
-          "kind": "outside-set",
-          "line": 1056,
-          "target": "scripts/check-doc-citations.py",
-          "text": "run: python3 scripts/check-doc-citations.py --base \"origin/$GITHUB_BASE_REF\""
+          "kind": "cwd-relative",
+          "line": 1024,
+          "target": "scripts/check-plan-code.py",
+          "text": "run: python3 scripts/check-plan-code.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:99",
           "kind": "outside-set",
-          "line": 1061,
-          "target": "scripts/check-doc-citations.py",
-          "text": "run: python3 scripts/check-doc-citations.py --self-test"
+          "line": 1029,
+          "target": "scripts/gates-for-pr.py",
+          "text": "run: python3 scripts/gates-for-pr.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:100",
           "kind": "outside-set",
-          "line": 1069,
-          "target": "scripts/check-dashboard-entry.py",
-          "text": "python3 scripts/check-dashboard-entry.py \\"
+          "line": 1056,
+          "target": "scripts/check-reference-namespace.py",
+          "text": "run: python3 scripts/check-reference-namespace.py --base \"origin/$GITHUB_BASE_REF\""
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:101",
           "kind": "outside-set",
-          "line": 1094,
-          "target": "scripts/check-review-recorded.py",
-          "text": "python3 scripts/check-review-recorded.py \\"
+          "line": 1061,
+          "target": "scripts/check-reference-namespace.py",
+          "text": "run: python3 scripts/check-reference-namespace.py --self-test"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
           "id": "mutation-sweep-job:2:102",
           "kind": "outside-set",
-          "line": 1413,
+          "line": 1075,
+          "target": "scripts/check-doc-citations.py",
+          "text": "run: python3 scripts/check-doc-citations.py --base \"origin/$GITHUB_BASE_REF\""
+        },
+        {
+          "detector": 2,
+          "file": ".github/workflows/ci.yml",
+          "id": "mutation-sweep-job:2:103",
+          "kind": "outside-set",
+          "line": 1080,
+          "target": "scripts/check-doc-citations.py",
+          "text": "run: python3 scripts/check-doc-citations.py --self-test"
+        },
+        {
+          "detector": 2,
+          "file": ".github/workflows/ci.yml",
+          "id": "mutation-sweep-job:2:104",
+          "kind": "outside-set",
+          "line": 1088,
+          "target": "scripts/check-dashboard-entry.py",
+          "text": "python3 scripts/check-dashboard-entry.py \\"
+        },
+        {
+          "detector": 2,
+          "file": ".github/workflows/ci.yml",
+          "id": "mutation-sweep-job:2:105",
+          "kind": "outside-set",
+          "line": 1113,
+          "target": "scripts/check-review-recorded.py",
+          "text": "python3 scripts/check-review-recorded.py \\"
+        },
+        {
+          "detector": 2,
+          "file": ".github/workflows/ci.yml",
+          "id": "mutation-sweep-job:2:106",
+          "kind": "outside-set",
+          "line": 1432,
           "target": "scripts/check-python-pin.py",
           "text": "run: python3 scripts/check-python-pin.py"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
-          "id": "mutation-sweep-job:2:103",
+          "id": "mutation-sweep-job:2:107",
           "kind": "cwd-relative",
-          "line": 1496,
+          "line": 1515,
           "target": "scripts/check-plan-code.py",
           "text": "PYTHONUNBUFFERED=1 python3 scripts/check-plan-code.py --mutate . \\"
         },
         {
           "detector": 2,
           "file": ".github/workflows/ci.yml",
-          "id": "mutation-sweep-job:2:104",
+          "id": "mutation-sweep-job:2:108",
           "kind": "cwd-relative",
-          "line": 1609,
+          "line": 1628,
           "target": "scripts/sweep-red-alert.py",
           "text": "run: python3 scripts/sweep-red-alert.py"
         }
@@ -13754,28 +13926,28 @@
         {
           "detector": 1,
           "file": ".github/workflows/ci.yml",
-          "line": 738,
+          "line": 752,
           "term": "supabase",
           "text": "# FALSE and the claim's own evidence was taken on a machine with a Supabase container"
         },
         {
           "detector": 1,
           "file": ".github/workflows/ci.yml",
-          "line": 740,
+          "line": 754,
           "term": "supabase",
           "text": "# `supabase_db_*` container; with no container it exits 2 CANNOT RUN, which is exactly"
         },
         {
           "detector": 1,
           "file": ".github/workflows/ci.yml",
-          "line": 743,
+          "line": 757,
           "term": "supabase",
           "text": "#     Error response from daemon: No such container: supabase_db_..."
         },
         {
           "detector": 1,
           "file": ".github/workflows/ci.yml",
-          "line": 843,
+          "line": 857,
           "term": "supabase",
           "text": "# serve path spends on `tryGet -> absent`, which on Supabase means absent OR RLS-denied; it is"
         },
@@ -13895,7 +14067,15 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 454,
+          "line": 455,
+          "term": "check-rm-backup",
+          "text": "- name: check-rm-backup self-test"
+        },
+        {
+          "detector": 4,
+          "file": ".github/workflows/ci.yml",
+          "kind": "guard-name",
+          "line": 457,
           "term": "check-hook-commands",
           "text": "- name: check-hook-commands self-test"
         },
@@ -13903,7 +14083,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 463,
+          "line": 466,
           "term": "check-run-hook",
           "text": "- name: check-run-hook self-test"
         },
@@ -13911,7 +14091,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 469,
+          "line": 472,
           "term": "check-fixture-git-isolation",
           "text": "- name: check-fixture-git-isolation self-test"
         },
@@ -13919,7 +14099,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 482,
+          "line": 485,
           "term": "docs/reviews/architecture-findings-acceptance.md",
           "text": "# STORAGE_BACKEND branch. Criteria: docs/reviews/architecture-findings-acceptance.md"
         },
@@ -13927,7 +14107,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 508,
+          "line": 511,
           "term": "docs/plugins.md",
           "text": "# A review round has two halves, or a written reason why it does not. `docs/plugins.md` has"
         },
@@ -13935,7 +14115,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 515,
+          "line": 518,
           "term": "check-review-rounds",
           "text": "- name: check-review-rounds self-test"
         },
@@ -13943,7 +14123,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 520,
+          "line": 523,
           "term": "check-review-decision",
           "text": "# `check-review-decision.py` was correct and saw rounds=0 on 81% of the subjects where it"
         },
@@ -13951,7 +14131,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 522,
+          "line": 525,
           "term": "docs/reviews/decision-scheme/baseline.json",
           "text": "# History is the pinned baseline in docs/reviews/decision-scheme/baseline.json and is"
         },
@@ -13959,7 +14139,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 529,
+          "line": 532,
           "term": "check-decision-scheme",
           "text": "- name: check-decision-scheme self-test"
         },
@@ -13967,7 +14147,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 540,
+          "line": 543,
           "term": "check-anchors",
           "text": "- name: check-anchors self-test"
         },
@@ -13975,7 +14155,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 550,
+          "line": 553,
           "term": "check-goal-status",
           "text": "- name: check-goal-status self-test"
         },
@@ -13983,7 +14163,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 553,
+          "line": 556,
           "term": "docs/memory/",
           "text": "# The memory corpus moved into docs/memory/ on 2026-09-30 (backlog #194) so teammates could"
         },
@@ -13991,7 +14171,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 564,
+          "line": 567,
           "term": "check-memory-link",
           "text": "- name: check-memory-link self-test"
         },
@@ -13999,7 +14179,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 572,
+          "line": 575,
           "term": "check-plan-leak",
           "text": "- name: check-plan-leak self-test"
         },
@@ -14007,7 +14187,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 582,
+          "line": 585,
           "term": "check-docs",
           "text": "# link guard, `corpus_verdict` and `check-docs.py`'s line budget were all green. A CANNOT RUN"
         },
@@ -14015,7 +14195,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 586,
+          "line": 589,
           "term": "docs/memory/MEMORY.md",
           "text": "# *\"`docs/memory/MEMORY.md` is committed, so CI measures exactly the file a session loads\"* \u2014"
         },
@@ -14023,7 +14203,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 605,
+          "line": 608,
           "term": "check-memory-index-budget",
           "text": "- name: check-memory-index-budget self-test"
         },
@@ -14031,7 +14211,15 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 612,
+          "line": 619,
+          "term": "check-memory-shape",
+          "text": "- name: check-memory-shape self-test"
+        },
+        {
+          "detector": 4,
+          "file": ".github/workflows/ci.yml",
+          "kind": "guard-name",
+          "line": 626,
           "term": "check-ratchet-contract",
           "text": "# guard's population \u2014 `check-ratchet-contract`'s is `scripts/check-*.py`, so it cannot see a"
         },
@@ -14039,7 +14227,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 617,
+          "line": 631,
           "term": "check-rc-contract",
           "text": "- name: check-rc-contract self-test"
         },
@@ -14047,7 +14235,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 632,
+          "line": 646,
           "term": "docs/features.md",
           "text": "# it deliberately not do\". The page is DERIVED from docs/features.md, so the tree is the only"
         },
@@ -14055,7 +14243,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 643,
+          "line": 657,
           "term": "check-features",
           "text": "- name: check-features self-test"
         },
@@ -14063,7 +14251,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 647,
+          "line": 661,
           "term": "docs/process-checklists.md",
           "text": "# docs/process-checklists.md said \"there are three ratchets\" \u2014 from memory, and wrong by half;"
         },
@@ -14071,7 +14259,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 655,
+          "line": 669,
           "term": "check-producer-enumeration",
           "text": "# gate script or hook ran any of them. `check-producer-enumeration.py` was"
         },
@@ -14079,7 +14267,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 656,
+          "line": 670,
           "term": "docs/dev-process.md",
           "text": "# additionally listed in docs/dev-process.md under the heading \"What is"
         },
@@ -14087,7 +14275,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 679,
+          "line": 693,
           "term": "check-canonical-source",
           "text": "# declared site*) are DELETED; `check-canonical-source.py` now owns that concern with the"
         },
@@ -14095,7 +14283,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 695,
+          "line": 709,
           "term": "check-explainer-delivery",
           "text": "# \u26d4 NOT a generalisation of `check-explainer-delivery.py` \u2014 that wording was this guard's"
         },
@@ -14103,7 +14291,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 723,
+          "line": 737,
           "term": "check-plan-code",
           "text": "# Plan mode was RETIRED 2026-09-08. check-plan-code.py was the only reader those tags"
         },
@@ -14111,7 +14299,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 729,
+          "line": 743,
           "term": "check-plan-file-tags",
           "text": "- name: check-plan-file-tags self-test"
         },
@@ -14119,7 +14307,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 748,
+          "line": 762,
           "term": "check-vocabulary-collisions",
           "text": "# (check-vocabulary-collisions.py:125 \"PURE \u2014 catalog rows in ... No database\"), and that"
         },
@@ -14127,7 +14315,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 755,
+          "line": 769,
           "term": "check-guard-coverage",
           "text": "- name: check-guard-coverage self-test (rules only; the full run needs a live catalog)"
         },
@@ -14135,7 +14323,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 758,
+          "line": 772,
           "term": "check-vocabulary-collisions",
           "text": "- name: check-vocabulary-collisions self-test (rules only; full run needs a live catalog)"
         },
@@ -14143,7 +14331,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 765,
+          "line": 779,
           "term": "check-banner-armed",
           "text": "- name: check-banner-armed self-test"
         },
@@ -14151,7 +14339,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 784,
+          "line": 798,
           "term": "check-test-counts",
           "text": "# check-test-counts.py treats the jest suite. Five of the nine declarations were stale on the"
         },
@@ -14159,7 +14347,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 791,
+          "line": 805,
           "term": "check-selftest-counts",
           "text": "- name: check-selftest-counts self-test"
         },
@@ -14167,7 +14355,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 803,
+          "line": 817,
           "term": "check-fixture-variation",
           "text": "- name: check-fixture-variation self-test"
         },
@@ -14175,7 +14363,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 817,
+          "line": 831,
           "term": "check-main-drivable",
           "text": "- name: check-main-drivable self-test"
         },
@@ -14183,7 +14371,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 828,
+          "line": 842,
           "term": "check-storage-independence",
           "text": "- name: check-storage-independence self-test"
         },
@@ -14191,7 +14379,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 836,
+          "line": 850,
           "term": "check-group-claims",
           "text": "- name: check-group-claims self-test"
         },
@@ -14199,7 +14387,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 864,
+          "line": 878,
           "term": "check-function-revokes",
           "text": "- name: check-function-revokes self-test"
         },
@@ -14207,7 +14395,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 868,
+          "line": 882,
           "term": "check-ratchet-contract",
           "text": "# library, not a guard, so `check-ratchet-contract.py` neither sees it nor should:"
         },
@@ -14215,7 +14403,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 877,
+          "line": 891,
           "term": "check-ratchet-contract",
           "text": "# library, not a guard, so `check-ratchet-contract.py` neither sees it nor should."
         },
@@ -14223,15 +14411,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 885,
-          "term": "check-ratchet-contract",
-          "text": "# check-* guard, so `check-ratchet-contract.py` neither sees it nor should. THIS STEP stops its"
-        },
-        {
-          "detector": 4,
-          "file": ".github/workflows/ci.yml",
-          "kind": "guard-name",
-          "line": 891,
+          "line": 899,
           "term": "check-ratchet-contract",
           "text": "# check-* guard, so `check-ratchet-contract.py` neither sees it nor should. THIS STEP stops its"
         },
@@ -14240,6 +14420,14 @@
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
           "line": 905,
+          "term": "check-ratchet-contract",
+          "text": "# check-* guard, so `check-ratchet-contract.py` neither sees it nor should. THIS STEP stops its"
+        },
+        {
+          "detector": 4,
+          "file": ".github/workflows/ci.yml",
+          "kind": "guard-name",
+          "line": 924,
           "term": "check-shipping-sets",
           "text": "- name: check-shipping-sets self-test"
         },
@@ -14247,7 +14435,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 908,
+          "line": 927,
           "term": "docs/marketplace/components.json",
           "text": "run: python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json"
         },
@@ -14255,7 +14443,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 912,
+          "line": 931,
           "term": "docs/marketplace/shipping-sets.json",
           "text": "run: python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json"
         },
@@ -14263,7 +14451,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 915,
+          "line": 934,
           "term": "check-publishability",
           "text": "- name: check-publishability self-test"
         },
@@ -14271,7 +14459,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 920,
+          "line": 939,
           "term": "check-publishability",
           "text": "- name: check-publishability scan (red on CANNOT RUN)"
         },
@@ -14279,7 +14467,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 929,
+          "line": 948,
           "term": "check-page-links",
           "text": "- name: check-page-links self-test"
         },
@@ -14287,7 +14475,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 931,
+          "line": 950,
           "term": "check-page-links",
           "text": "- name: check-page-links (one link function)"
         },
@@ -14295,7 +14483,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 933,
+          "line": 952,
           "term": "check-page-links",
           "text": "- name: check-page-links (built pages, what a checkout can build)"
         },
@@ -14303,7 +14491,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 944,
+          "line": 963,
           "term": "check-dashboard-entry",
           "text": "- name: check-dashboard-entry self-test"
         },
@@ -14311,7 +14499,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 950,
+          "line": 969,
           "term": "check-selftest-counts",
           "text": "# cases; the real plans are read locally, by the goal tree. check-selftest-counts also executes this suite, but"
         },
@@ -14319,7 +14507,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1004,
+          "line": 1023,
           "term": "check-plan-code",
           "text": "- name: check-plan-code self-test"
         },
@@ -14327,7 +14515,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1015,
+          "line": 1034,
           "term": "check-review-recorded",
           "text": "# \u26d4 SAME FROZEN-PAYLOAD PROPERTY AS `check-review-recorded` BELOW, and backlog #168 exists"
         },
@@ -14335,7 +14523,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 1023,
+          "line": 1042,
           "term": "docs/backlog.md",
           "text": "# \u26d4 TWO SEQUENCES SHARE ONE VISUAL SPACE: GitHub PR numbers and `docs/backlog.md` row ids."
         },
@@ -14343,7 +14531,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1072,
+          "line": 1091,
           "term": "check-review-rounds",
           "text": "# \u26d4 THE ZERO-ROUND CASE. `check-review-rounds` audits rounds that EXIST; a branch with none"
         },
@@ -14351,7 +14539,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1088,
+          "line": 1107,
           "term": "check-review-recorded",
           "text": "- name: check-review-recorded (PR only)"
         },
@@ -14359,7 +14547,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1104,
+          "line": 1123,
           "term": "check-main-drivable",
           "text": "# branch: one guard (`check-main-drivable.py`) held 183 entries against its own ~30s"
         },
@@ -14367,7 +14555,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1133,
+          "line": 1152,
           "term": "check-banner-armed",
           "text": "# rather than quietly dropped. Shard 1 reported `CANNOT RUN \u2014 check-banner-armed.py is no"
         },
@@ -14375,7 +14563,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1139,
+          "line": 1158,
           "term": "check-banner-armed",
           "text": "# the next import got the MUTANT. `check-banner-armed.py` imports `observer_log`."
         },
@@ -14383,7 +14571,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1143,
+          "line": 1162,
           "term": "check-plan-code",
           "text": "# \u26d4 THE FIX IS IN `check-plan-code.py`, IN TWO HALVES, AND EITHER ALONE LEAVES A HOLE."
         },
@@ -14391,7 +14579,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1162,
+          "line": 1181,
           "term": "check-plan-code",
           "text": "# runner evaluates ONE YAML node for both the job's kill and the harness's budget; `check-plan-code.ci_deadline`"
         },
@@ -14399,7 +14587,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1166,
+          "line": 1185,
           "term": "check-plan-code",
           "text": "# would kill the step before the budget ran out): `check-plan-code.sweep_limit_pin`, run by its self-test, reds"
         },
@@ -14407,7 +14595,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1268,
+          "line": 1287,
           "term": "check-main-drivable",
           "text": "# \u26d4 AND ONE TARGET IS 68% OF THE WORK: `check-main-drivable.py`, 183 entries at ~48s each"
         },
@@ -14415,7 +14603,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1289,
+          "line": 1308,
           "term": "check-main-drivable",
           "text": "# six shards queue. At N=18 it is exactly 20. Since PR #449 memoised `check-main-drivable`"
         },
@@ -14423,7 +14611,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1377,
+          "line": 1396,
           "term": "check-plan-code",
           "text": "# \u26d4 FIRST, BEFORE CHECKOUT \u2014 PR #538 r2 fold (backlog #558). `check-plan-code.ci_deadline` counts the"
         },
@@ -14431,7 +14619,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1380,
+          "line": 1399,
           "term": "check-plan-code",
           "text": "# epoch is CANNOT RUN; `check-plan-code`'s self-test pins this step as the job's first, and the name once."
         },
@@ -14439,7 +14627,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1393,
+          "line": 1412,
           "term": "check-paid-caller-arrival",
           "text": "# `check-paid-caller-arrival` shells out to `node scripts/ts-comment-spans.mjs`, which"
         },
@@ -14447,7 +14635,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1433,
+          "line": 1452,
           "term": "check-plan-code",
           "text": "# with a CANNOT RUN sentence and a case in `check-plan-code.py`'s own suite."
         },
@@ -14455,7 +14643,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1440,
+          "line": 1459,
           "term": "check-plan-code",
           "text": "# \u26d4 THE DECISION IS NOT MADE HERE. `check-plan-code.select_manifests` makes it \u2014 pure, with"
         },
@@ -14463,7 +14651,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1468,
+          "line": 1487,
           "term": "check-review-decision",
           "text": "# the right way (measured: dropping `sorted()` in check-review-decision survived under 4 seeds of"
         },
@@ -14471,7 +14659,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "guard-name",
-          "line": 1548,
+          "line": 1567,
           "term": "check-python-pin",
           "text": "# The same pin as every other job in this file. `check-python-pin.py` asks it of every job,"
         },
@@ -14479,7 +14667,7 @@
           "detector": 4,
           "file": ".github/workflows/ci.yml",
           "kind": "doc-path",
-          "line": 1611,
+          "line": 1630,
           "term": "docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md",
           "text": "# \u27f3 backlog #651 (Phase 6 redesign, docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md):"
         }
@@ -14919,7 +15107,7 @@
           "file": "scripts/session-state.py",
           "id": "session-state:2:1",
           "kind": "unread",
-          "line": 1653,
+          "line": 1770,
           "target": null,
           "text": "_run([sys.executable, \"-c\", \"import time; time.sleep(5)\"], root, 0.3), (124, \"timed out after 0.3s\"))"
         },
@@ -14928,7 +15116,7 @@
           "file": "scripts/session-state.py",
           "id": "session-state:2:2",
           "kind": "unread",
-          "line": 1675,
+          "line": 1792,
           "target": null,
           "text": "rc_bg = _run([\"sh\", \"-c\", f\"sleep 30 >/dev/null 2>&1 & echo $! > {bg}; echo ok\"], root, 5)"
         },
@@ -14937,7 +15125,7 @@
           "file": "scripts/session-state.py",
           "id": "session-state:2:3",
           "kind": "unread",
-          "line": 1680,
+          "line": 1797,
           "target": null,
           "text": "rc_hung = _run([\"sh\", \"-c\", f\"sleep 30 >/dev/null 2>&1 & echo $! > {hung}; wait\"], root, 0.5)"
         },
@@ -14946,7 +15134,7 @@
           "file": "scripts/session-state.py",
           "id": "session-state:2:4",
           "kind": "unread",
-          "line": 1686,
+          "line": 1803,
           "target": null,
           "text": "rc_esc = _run([sys.executable, \"-c\","
         },
@@ -14955,7 +15143,7 @@
           "file": "scripts/session-state.py",
           "id": "session-state:2:5",
           "kind": "unread",
-          "line": 1699,
+          "line": 1816,
           "target": null,
           "text": "answered = _run([\"sh\", \"-c\", \"sleep 4 & echo ok; exit 0\"], root, 1.0)"
         },
@@ -14964,7 +15152,7 @@
           "file": "scripts/session-state.py",
           "id": "session-state:2:6",
           "kind": "unread",
-          "line": 1702,
+          "line": 1819,
           "target": null,
           "text": "held = _run([\"sh\", \"-c\", \"sleep 2.5 & echo ok; exit 0\"], root, 0.5, own_group=False)"
         },
@@ -14973,7 +15161,7 @@
           "file": "scripts/session-state.py",
           "id": "session-state:2:7",
           "kind": "unread",
-          "line": 1706,
+          "line": 1823,
           "target": null,
           "text": "(_run([\"sh\", \"-c\", \"ps -o pgid= -p $$\"], root, 5, own_group=False)[1].strip() == str(os.getpgrp()),"
         },
@@ -14982,7 +15170,7 @@
           "file": "scripts/session-state.py",
           "id": "session-state:2:8",
           "kind": "unread",
-          "line": 1707,
+          "line": 1824,
           "target": null,
           "text": "_run([\"sh\", \"-c\", \"ps -o pgid= -p $$\"], root, 5)[1].strip() == str(os.getpgrp())), (True, False))"
         },
@@ -14991,7 +15179,7 @@
           "file": "scripts/session-state.py",
           "id": "session-state:6:1",
           "kind": "executable",
-          "line": 1669,
+          "line": 1786,
           "term": "sleep",
           "text": "lone = subprocess.Popen([\"sleep\", \"30\"], start_new_session=True)"
         },
@@ -15000,7 +15188,7 @@
           "file": "scripts/session-state.py",
           "id": "session-state:6:2",
           "kind": "executable",
-          "line": 1801,
+          "line": 1918,
           "term": "git",
           "text": "g = lambda *a: subprocess.run([\"git\", \"-c\", \"user.name=t\", \"-c\", \"user.email=t@t\", *a], cwd=repo,  # noqa: E731"
         }
@@ -15010,7 +15198,7 @@
           "detector": 4,
           "file": "scripts/session-state.py",
           "kind": "doc-path",
-          "line": 103,
+          "line": 104,
           "term": "docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md",
           "text": "# \u27f3 backlog #651 (Phase 6 redesign, docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md): the"
         },
@@ -15018,7 +15206,7 @@
           "detector": 4,
           "file": "scripts/session-state.py",
           "kind": "doc-path",
-          "line": 378,
+          "line": 379,
           "term": "docs/goal-threads.md",
           "text": "ADD_NEEDS_GOAL = (\"--add needs --goal <slug> and --thread <line>: name the `## GOAL` of docs/goal-threads.md this \""
         },
@@ -15026,7 +15214,7 @@
           "detector": 4,
           "file": "scripts/session-state.py",
           "kind": "doc-path",
-          "line": 487,
+          "line": 529,
           "term": "docs/goal-threads.md",
           "text": "THREADS_REL = \"docs/goal-threads.md\""
         },
@@ -15034,7 +15222,7 @@
           "detector": 4,
           "file": "scripts/session-state.py",
           "kind": "doc-path",
-          "line": 500,
+          "line": 542,
           "term": "docs/goal-threads.md",
           "text": "\"\"\"Backlog #507: closing an entry that carries a ledger THREAD hands the thread to `docs/goal-threads.md` on"
         },
@@ -15042,7 +15230,7 @@
           "detector": 4,
           "file": "scripts/session-state.py",
           "kind": "guard-name",
-          "line": 728,
+          "line": 770,
           "term": "check-ci-watched",
           "text": "`check-ci-watched.py`'s `sentinel_for` (on master): the parent of `git rev-parse --path-format=absolute --git-common-dir`. An answer that is not an absolute,"
         },
@@ -15050,7 +15238,7 @@
           "detector": 4,
           "file": "scripts/session-state.py",
           "kind": "doc-path",
-          "line": 878,
+          "line": 920,
           "term": "docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md",
           "text": "\u26d4 THE CONTRACT (backlog #651, docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md \u00a75.2): a"
         },
@@ -15058,7 +15246,7 @@
           "detector": 4,
           "file": "scripts/session-state.py",
           "kind": "guard-name",
-          "line": 1001,
+          "line": 1043,
           "term": "check-selftest-counts",
           "text": "own402 = {\"id\": \"build-402\", \"what\": \"BUILD backlog #402 when the machine is less loaded \" + \"m\" * 100 + f\" ({tail}): check-selftest-counts\","
         },
@@ -15066,7 +15254,7 @@
           "detector": 4,
           "file": "scripts/session-state.py",
           "kind": "doc-path",
-          "line": 1269,
+          "line": 1311,
           "term": "docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md",
           "text": "# \u27f3 backlog #651, Phase 6 redesign (docs/reviews/coordinator/architecture-review-2026-11-15-sweep-liveness.md): the"
         },
@@ -15074,7 +15262,7 @@
           "detector": 4,
           "file": "scripts/session-state.py",
           "kind": "doc-path",
-          "line": 1887,
+          "line": 2004,
           "term": "docs/goal-threads.md",
           "text": "\"docs/goal-threads.md this work serves. When none fits, propose a goal named for its objective; \""
         },
@@ -15082,7 +15270,7 @@
           "detector": 4,
           "file": "scripts/session-state.py",
           "kind": "doc-path",
-          "line": 1891,
+          "line": 2008,
           "term": "docs/goal-threads.md",
           "text": "\"The goal tree shows it under the goal until master's docs/goal-threads.md declares the same refs\")"
         }
@@ -15664,5 +15852,5 @@
       "status": "scanned"
     }
   },
-  "measured_at": "53f2f20f68ddd90ca970e3278647500dcebc388c"
+  "measured_at": "637950d2d159740a9c2885dc13ef531051951c89"
 }
