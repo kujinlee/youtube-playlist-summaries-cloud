@@ -21330,9 +21330,9 @@ check-ratchet-contract DON'T-SHIP), all phase later, each `rests_on` typed per a
 holds `C5: unanswered` on the c5 ground. Top-level `"recall": {"a": false, "b": "unanswered"}`; probe recorded in
 `docs/marketplace/experiment-tier-a.md` "Recall with an empty corpus" (run_isolated; armed `--arm` rc 6 CANNOT RUN, no
 memory directory; unarmed rc 2; the hook measured by the supplementary run only). New
-`scripts/build-shipped-corpus.py` (`--out`/`--check`/`--self-test`, 25 cases, 20 mutations in
+`scripts/build-shipped-corpus.py` (`--out`/`--check`/`--self-test`, 28 cases, 25 mutations in
 `scripts/mutations/build-shipped-corpus.json`, all red in a full clone; quotes compared as WORDS, so a changed
-punctuation no longer hides one; a D file with no quote is CANNOT RUN; an excluded file's content under another name
-fails) and the 6 group-D paraphrases in `docs/marketplace/shipped-corpus/` (rule figures outside the owner's quotes
+punctuation or a Markdown link around each word no longer hides one; a D file with no quote is CANNOT RUN; an excluded
+file's content under another name fails, also with its line endings or trailing whitespace changed) and the 6 group-D paraphrases in `docs/marketplace/shipped-corpus/` (rule figures outside the owner's quotes
 kept) with `sources.json` (sha256 of each source). Real build: 180 files, check PASS over 708 derived quote fragments
 and 16 excluded names. Backlog #697 filed: the recall package still lists the raw `docs/memory/`.
