@@ -25,3 +25,4 @@ findings were `fix_induced: false`. Round 3's one finding is the first fix-induc
   - Re-run the 255-quote plant: every quote in all five disguises must still be caught.
   - A fresh real build must still PASS.
   - The docstring's "What this cannot see" section states what remains.
+  - **Fixed in d34359c6.** Every text is read under both views, link-reduced and plain, on the quote side and the output side. 3 new cases (31), 2 new mutations (27: the plain view dropped from each side), all 27 killed and attributed in a full clone. The 255-quote plant: 0 undetected; the reviewer's three lines: each FAIL (1 hit), and PASS under afcb6e85 (the control). A fresh real build: 180 files, 708 fragments, PASS.
