@@ -2,7 +2,7 @@
 """Build the memory corpus a stranger receives, and check the built output (marketplace-inventory plan, Task 18,
 step "Build the shipped corpus"; the owner's answer to walkthrough decision 5).
 
-    python3 scripts/build-shipped-corpus.py --self-test  # 25 cases
+    python3 scripts/build-shipped-corpus.py --self-test  # 28 cases
     python3 scripts/build-shipped-corpus.py --out DIR      # build into DIR, then run both checks on DIR
     python3 scripts/build-shipped-corpus.py --check DIR    # both checks on an already-built DIR
 
@@ -17,11 +17,13 @@ The two checks read the BUILT OUTPUT, never the transform:
   1. no original group-D quote is in any output file. The quotes are DERIVED from the SOURCE D files at check time
      (italic `*"…"*` quotes, and blockquotes that open with a `"`, each read within one paragraph), split at an
      ellipsis, and every fragment of three words or more — and every run of six consecutive words inside a longer
-     one — is searched for as WORDS: every run of punctuation, markdown emphasis, blockquote markers and whitespace is one
+     one — is searched for as WORDS: a Markdown link `[text](url)` or `[text][ref]` is first reduced to its text and a
+     bare URL dropped, then every run of punctuation, markdown emphasis, blockquote markers and whitespace is one
      space, and case is folded. A source D file with no quote found in it is CANNOT RUN, not a pass (its quotes would
      go unsearched).
-  2. no excluded file is present anywhere in the output tree — by name, or by content (an output file whose bytes
-     equal an excluded source file's, under any name).
+  2. no excluded file is present anywhere in the output tree — by name, or by content (an output file whose
+     CANONICAL bytes equal an excluded source file's, under any name: line endings unified, trailing whitespace
+     dropped from each line, trailing blank lines dropped, on both sides).
 
 rc 0 = built/checked and both checks pass; 1 = a check FAILED (each hit is named); 2 = CANNOT RUN (treat as NOT
 RUN): a group count other than 6/4/6/6, a listed file missing from the source, a D file with no paraphrase or a
@@ -29,9 +31,9 @@ stale one, an `--out` that is not absent or empty, a non-`.md` entry in the sour
 
 What this cannot see: a paraphrase that keeps an owner's words in a form the normaliser does not undo (a reworded
 sentence, a reused run of fewer than six words from a longer quote, a fragment under three words, a word split or
-joined differently), an excluded file's content in the output when it is not byte-identical (edited, or concatenated
-into another file), and private content that is not a quote. Dangling `[[links]]` from kept files to excluded ones are
-left as they are.
+joined differently, a link whose text is not the quoted word), an excluded file's content in the output when it differs
+by more than line endings and trailing whitespace (edited, or concatenated into another file), and private content
+that is not a quote. Dangling `[[links]]` from kept files to excluded ones are left as they are.
 """
 from __future__ import annotations
 
@@ -84,9 +86,13 @@ def quotes(text: str) -> list[str]:
 
 
 def norm(text: str) -> str:
-    """WORDS, not characters: every run of non-alphanumeric characters (punctuation, markdown emphasis, blockquote
-    markers, apostrophes of either kind, line breaks) becomes one space, and case is folded — so a quote reproduced
-    with its punctuation changed, added or stripped still matches."""
+    """WORDS, not characters: a Markdown link (`[text](url)`, `[text][ref]`) is reduced to its text and a bare URL is
+    dropped — their destinations would otherwise become words BETWEEN the quoted ones (round 2 X1) — then every run
+    of non-alphanumeric characters (punctuation, markdown emphasis, blockquote markers, apostrophes of either kind,
+    line breaks) becomes one space, and case is folded — so a quote reproduced with its punctuation changed, added or
+    stripped, or each word wrapped in a link, still matches."""
+    text = re.sub(r"\[([^\]\n]*)\](?:\([^)\n]*\)|\[[^\]\n]*\])", r"\1", text)
+    text = re.sub(r"(?:https?|ftp)://\S+|www\.\S+", " ", text)
     return " ".join(re.sub(r"[\W_]+", " ", text.lower()).split())
 
 
@@ -105,6 +111,14 @@ def windows(fragment: str) -> list[str]:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _canon_sha(path: Path) -> str:
+    """The hash of a file's CANONICAL bytes, for the excluded-content check (round 2 X2): every line ending is one
+    (`splitlines`), each line's trailing whitespace is dropped, and so are the trailing blank lines — so a copy with
+    CRLF endings or a ` \\n` appended still matches. `_sha` stays raw: the stale-paraphrase check wants ANY change."""
+    lines = path.read_bytes().splitlines()
+    return hashlib.sha256(b"\n".join(ln.rstrip() for ln in lines).rstrip(b"\n")).hexdigest()
 
 
 def build(root: Path, out: Path) -> list[str]:
@@ -159,15 +173,15 @@ def check(root: Path, out: Path) -> tuple[int, list[str]]:
         frags.update({s: n for s in mine})
     if unread:
         return 2, report + [f"CANNOT RUN: no quote found in group-D source(s) {unread} — their quotes were not checked"]
-    gone = {_sha(root / SRC / n): n for n in sorted(excluded)}
+    gone = {_canon_sha(root / SRC / n): n for n in sorted(excluded)}
     files = sorted(p for p in out.rglob("*") if p.is_file())
     if not files:
         return 2, report + [f"CANNOT RUN: {out} holds no files — nothing was checked"]
     for p in files:
         if p.name in excluded:
             hits.append(f"EXCLUDED FILE PRESENT: {p.relative_to(out)}")
-        elif _sha(p) in gone:
-            hits.append(f"EXCLUDED CONTENT PRESENT: {p.relative_to(out)} is {gone[_sha(p)]}")
+        elif _canon_sha(p) in gone:
+            hits.append(f"EXCLUDED CONTENT PRESENT: {p.relative_to(out)} is {gone[_canon_sha(p)]}")
     for p in files:
         body = norm(p.read_text(errors="replace"))
         for f, n in frags.items():
@@ -307,11 +321,23 @@ def _self_test_body() -> int:
                   (lambda r: (r[0], sorted(set(r[1]))))(  # a long quote hits on several six-word runs
                       planted("kept.md", "Don’t stop tonight; as un-used capacity will be lost!\n"))),
          ((1, ["QUOTE FROM d4.md IN kept.md"]), (1, ["QUOTE FROM d4.md IN kept.md"]), (1, ["QUOTE FROM d5.md IN kept.md"])))
+    case("a quote with each word wrapped in a Markdown link, or split by bare URLs, fails check 1 (links reduced to text)",
+         lambda: tuple((lambda r: (r[0], sorted(set(r[1]))))(planted("kept.md", t)) for t in (
+             "[297](https://x) [is](https://x) [NOT](https://x) [ready](https://x) [to](https://x) [merge](https://x)"
+             " — no review, `verify` pending.\n",
+             "[297][1] [is][1] [NOT][1] [ready][1] [to][1] [merge][1]\n\n[1]: https://x\n",
+             "297 https://x is https://x/a?b=c NOT www.x.org ready to merge\n")),
+         ((1, ["QUOTE FROM d4.md IN kept.md"]),) * 3)
     case("the words of a quote with its punctuation changed still match, apostrophes of either kind included",
          lambda: (norm("Don’t, stop: tonight!") == norm("don't stop tonight"), norm("**Say** the\n> conclusion")),
          (True, "say the conclusion"))
     case("an excluded file's content in the output under another name fails check 2",
          lambda: planted("renamed.md", "excluded b2.md\n"), (1, ["EXCLUDED CONTENT PRESENT"]))
+    case("an excluded file's content renamed with a whitespace line appended, or copied with CRLF endings, fails check 2 (canonical)",
+         lambda: (planted("renamed.md", "excluded b2.md\n \n"), planted("renamed.md", "excluded b2.md\r\n")),
+         ((1, ["EXCLUDED CONTENT PRESENT"]), (1, ["EXCLUDED CONTENT PRESENT"])))
+    case("an excluded file's content with a trailing blank line added fails check 2 (canonical)",
+         lambda: planted("renamed.md", "excluded b2.md\n\n\n"), (1, ["EXCLUDED CONTENT PRESENT"]))
     case("a kept file whose content differs from every excluded file does not fail check 2",
          lambda: planted("renamed.md", "excluded b2.md, edited\n"), (0, []))
     case("ONE source D file with no quote is CANNOT RUN, though the other five have quotes",

@@ -213,8 +213,63 @@
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "        elif _sha(p) in gone:",
+    "        elif _canon_sha(p) in gone:",
     "        elif False:"
+   ]
+  ],
+  "expect": "an excluded file's content in the output under another name fails check 2"
+ },
+ {
+  "name": "a Markdown link is not reduced to its text (its destination splits the quoted words)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    text = re.sub(r\"\\[([^\\]\\n]*)\\](?:\\([^)\\n]*\\)|\\[[^\\]\\n]*\\])\", r\"\\1\", text)",
+    "    pass"
+   ]
+  ],
+  "expect": "a quote with each word wrapped in a Markdown link, or split by bare URLs, fails check 1 (links reduced to text)"
+ },
+ {
+  "name": "a bare URL is not dropped (it splits the quoted words)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    text = re.sub(r\"(?:https?|ftp)://\\S+|www\\.\\S+\", \" \", text)",
+    "    pass"
+   ]
+  ],
+  "expect": "a quote with each word wrapped in a Markdown link, or split by bare URLs, fails check 1 (links reduced to text)"
+ },
+ {
+  "name": "trailing whitespace is kept per line in the canonical hash",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "b\"\\n\".join(ln.rstrip() for ln in lines)",
+    "b\"\\n\".join(ln for ln in lines)"
+   ]
+  ],
+  "expect": "an excluded file's content renamed with a whitespace line appended, or copied with CRLF endings, fails check 2 (canonical)"
+ },
+ {
+  "name": "trailing blank lines are kept in the canonical hash",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "for ln in lines).rstrip(b\"\\n\")).hexdigest()",
+    "for ln in lines)).hexdigest()"
+   ]
+  ],
+  "expect": "an excluded file's content with a trailing blank line added fails check 2 (canonical)"
+ },
+ {
+  "name": "the excluded side of the content check hashes raw bytes, not canonical",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    gone = {_canon_sha(root / SRC / n): n for n in sorted(excluded)}",
+    "    gone = {_sha(root / SRC / n): n for n in sorted(excluded)}"
    ]
   ],
   "expect": "an excluded file's content in the output under another name fails check 2"
