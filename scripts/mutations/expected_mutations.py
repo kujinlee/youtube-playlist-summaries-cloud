@@ -2593,8 +2593,5 @@ EXPECTED_MUTATIONS = {
     # block, the imperative the introduction must hold); five anchors rebound in place.
     # ⟳ review r3 fold (2026-11-17): 154 → 158 — +1 an `or` of None operands, +3 detector 4 (blank lines inside a
     # list, an earlier list ends the introduction, a negated verb); three anchors rebound in place.
-    # ⟳ Phase 6 build of detector 4 (2026-11-21, candidate F): 158 → 177 — the three line-walkers became one block
-    # reading; 12 entries rebound in place (the negated-verb entry now RE-ADDS the deleted filter), +19 for the block
-    # rules (climb, heading, colon, list ends, fence climb, table) and the sentence rules (unit, bound, every span).
-    "scripts/check-publishability.py": 177,
+    "scripts/check-publishability.py": 158,
 }

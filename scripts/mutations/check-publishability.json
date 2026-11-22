@@ -521,7 +521,7 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "        if lang in SHELL_FENCES:\n",
+    "        if fence in SHELL_FENCES:\n",
     "        if True:\n"
    ]
   ],
@@ -532,8 +532,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "        if lang in SHELL_FENCES:\n            return None if text.lstrip().startswith(\"#\") else \"invocation\"",
-    "        if lang in SHELL_FENCES:\n            return \"invocation\""
+    "        if fence in SHELL_FENCES:\n            return None if text.lstrip().startswith(\"#\") else \"invocation\"",
+    "        if fence in SHELL_FENCES:\n            return \"invocation\""
    ]
   ],
   "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
@@ -543,30 +543,30 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "            if m and opened is None:",
-    "            if m:"
+    "m.group(1).lower() if fence is None else None",
+    "m.group(1).lower()"
    ]
   ],
   "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
  },
  {
-  "name": "classify: a read instruction on its own line is not a prerequisite",
+  "name": "classify: a read instruction is not a prerequisite",
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "        if re.search(INSTRUCTS + tok, text, re.I):\n            return True",
+    "re.search(INSTRUCTS + tok, text, re.I) or ",
     ""
    ]
   ],
-  "expect": "p6: an imperative that opens a sentence reaches every code span to the sentence's end, a closing emphasis or quote included; a span in the next sentence is a mention"
+  "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
  },
  {
   "name": "classify: a stated requirement is not a prerequisite",
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "            if re.search(REQUIRES + r\"(?<![A-Za-z0-9])\\Z\", unit[:m.start()], re.I):",
-    "            if False:"
+    " or re.search(REQUIRES + r\"(?<![A-Za-z0-9])\" + tok, text, re.I)",
+    ""
    ]
   ],
   "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
@@ -576,8 +576,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "INSTRUCTS = r\"(?:^\\s*(?:[-*>]\\s+|\\d+\\.\\s+)*|[.;:]\\s+)(?:\\*\\*)?\" + IMPERATIVE",
-    "INSTRUCTS = r\"\\b\" + IMPERATIVE"
+    "(r\"(?:^\\s*(?:[-*>]\\s+|\\d+\\.\\s+)*|[.;:]\\s+)(?:\\*\\*)?",
+    "(r\""
    ]
   ],
   "expect": "Markdown: an invocation, a read instruction and a stated requirement are dependencies; prose and a data block are mentions"
@@ -1665,8 +1665,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "    if b.cls[i] == \"item\" and b.climbs(i):",
-    "    if False:"
+    "return \"prerequisite\" if _introduced(lines, i) else None",
+    "return None"
    ]
   ],
   "expect": "r2: a list item or an untagged block introduced by an imperative ending in a colon is a finding; a list under a label is a mention"
@@ -1676,19 +1676,19 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "        if lang == \"\" and (b.introduces(b.before(opened)) or b.climbs(b.owner(opened))):",
-    "        if False:"
+    "return \"prerequisite\" if fence == \"\" and _introduced(lines, opened) else None",
+    "return None"
    ]
   ],
   "expect": "r2: a list item or an untagged block introduced by an imperative ending in a colon is a finding; a list under a label is a mention"
  },
  {
-  "name": "detector 4: an introducing block needs no imperative",
+  "name": "detector 4: an introducing paragraph needs no imperative",
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "        return bool(re.search(LEAD_VERBS, \" \".join(self.lines[block[0]:block[1] + 1]), re.I))",
-    "        return True or bool(re.search(LEAD_VERBS, \" \".join(self.lines[block[0]:block[1] + 1]), re.I))"
+    "    return any(not re.search(NEGATES, para",
+    "    return True or any(not re.search(NEGATES, para"
    ]
   ],
   "expect": "r2: a list item or an untagged block introduced by an imperative ending in a colon is a finding; a list under a label is a mention"
@@ -1709,241 +1709,32 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "            if c == \"heading\" or (c in (\"text\", \"table\", \"fence-open\")",
-    "            if c in (\"heading\", \"blank\") or (c in (\"text\", \"table\", \"fence-open\")"
+    "            while j > 0 and not lines[j].strip():  # a blank",
+    "            while False:  # a blank"
    ]
   ],
-  "expect": "r3: blank lines between items keep the list; an imperative above an earlier list introduces nothing"
+  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
  },
  {
-  "name": "detector 4: an earlier list does not end the introducing paragraph (a lazy line joins any item)",
+  "name": "detector 4: an earlier list does not end the introducing paragraph",
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "self.cls[s - 1] == \"item\" and self.ind[s] > self.ind[s - 1])",
-    "self.cls[s - 1] == \"item\")"
+    "            and not LIST_ITEM.match(lines[start - 1]):  # an earlier",
+    "            and True:  # an earlier"
    ]
   ],
-  "expect": "p6: a block introduces a list when it ends in a colon, after emphasis markers; a loose item's continuation paragraph keeps the list (r4 MINOR); prose at the list's own indent ends it"
+  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
  },
  {
-  "name": "detector 4: a negated sentence introduces nothing (the deleted NEGATES filter, re-added)",
+  "name": "detector 4: a negated verb still introduces a list",
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "re.search(LEAD_VERBS, \" \".join(self.lines[block[0]:block[1] + 1]), re.I))",
-    "re.search(LEAD_VERBS, \" \".join(self.lines[block[0]:block[1] + 1]), re.I)) and not re.search(r\"\\b(?:never|not|no)\\b|n't\\b\", \" \".join(self.lines[block[0]:block[1] + 1]), re.I)"
+    "NEGATES = r\"\\b(?:never|not|no)\\b|n't\\b\"",
+    "NEGATES = r\"(?!)\""
    ]
   ],
-  "expect": "p6: a prohibition or a negated sentence above an introducing imperative leaves its list a dependency (r4 MAJOR x3, and the three shapes a sentence-clipped window still missed); a prohibition that ends in a colon introduces its list too, by decision (r3 Xm1): the failure direction is a finding"
- },
- {
-  "name": "block: the list item's own parent never introduces it (no climb)",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "            item = self.owner(top)",
-    "            item = None"
-   ]
-  ],
-  "expect": "p6: a nested item is introduced by its parent item, or by the paragraph above an enclosing list; under a plain parent it is a mention (r4 MINOR: '- Then read these:' + a nested item)"
- },
- {
-  "name": "block: a continuation line does not reach the item it continues",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    " or (\n                self.cls[s - 1] == \"item\" and self.ind[s] > self.ind[s - 1])",
-    ""
-   ]
-  ],
-  "expect": "p6: a nested item is introduced by its parent item, or by the paragraph above an enclosing list; under a plain parent it is a mention (r4 MINOR: '- Then read these:' + a nested item)"
- },
- {
-  "name": "block: a heading introduces nothing",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "        if j < 0 or self.cls[j] not in (\"text\", \"item\", \"heading\"):",
-    "        if j < 0 or self.cls[j] not in (\"text\", \"item\"):"
-   ]
-  ],
-  "expect": "p6: a heading that ends in a colon and holds an imperative introduces a list or an untagged fence, as it did before the block reading; a heading ends the list above it"
- },
- {
-  "name": "block: a heading does not end the list above it",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "            if c == \"heading\" or (c in (\"text\"",
-    "            if (c in (\"text\""
-   ]
-  ],
-  "expect": "p6: a heading that ends in a colon and holds an imperative introduces a list or an untagged fence, as it did before the block reading; a heading ends the list above it"
- },
- {
-  "name": "block: a blank line ends the block above a list",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "        while j >= 0 and self.cls[j] == \"blank\":",
-    "        while False:"
-   ]
-  ],
-  "expect": "r3: blank lines between items keep the list; an imperative above an earlier list introduces nothing"
- },
- {
-  "name": "block: prose at the list's indent does not end the list",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "c in (\"text\", \"table\", \"fence-open\") and self.ind[j] <= k",
-    "c in (\"table\", \"fence-open\") and self.ind[j] <= k"
-   ]
-  ],
-  "expect": "p6: a block introduces a list when it ends in a colon, after emphasis markers; a loose item's continuation paragraph keeps the list (r4 MINOR); prose at the list's own indent ends it"
- },
- {
-  "name": "block: an unindented fence does not end the list",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "\"table\", \"fence-open\") and self.ind[j] <= k",
-    "\"table\") and self.ind[j] <= k"
-   ]
-  ],
-  "expect": "p6: an untagged fence inside an introduced item is a dependency, and an indented fence between two items keeps the list; an unindented fence between items ends it"
- },
- {
-  "name": "block: an untagged fence inside an item is not reached by the item's list",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "b.introduces(b.before(opened)) or b.climbs(b.owner(opened))",
-    "b.introduces(b.before(opened))"
-   ]
-  ],
-  "expect": "p6: an untagged fence inside an introduced item is a dependency, and an indented fence between two items keeps the list; an unindented fence between items ends it"
- },
- {
-  "name": "block: the colon is read before emphasis markers are stripped",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    ".rstrip().rstrip(\"*_\").endswith(\":\")",
-    ".rstrip().endswith(\":\")"
-   ]
-  ],
-  "expect": "p6: a block introduces a list when it ends in a colon, after emphasis markers; a loose item's continuation paragraph keeps the list (r4 MINOR); prose at the list's own indent ends it"
- },
- {
-  "name": "block: an introducing block needs no colon",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "        if block is None or not self.lines[block[1]].rstrip().rstrip(\"*_\").endswith(\":\"):",
-    "        if block is None:"
-   ]
-  ],
-  "expect": "p6: a block introduces a list when it ends in a colon, after emphasis markers; a loose item's continuation paragraph keeps the list (r4 MINOR); prose at the list's own indent ends it"
- },
- {
-  "name": "block: a table row joins the paragraph above it",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "                c = \"table\"  ",
-    "                c = \"text\"  "
-   ]
-  ],
-  "expect": "p6: a table row is judged on its own line only: an instruction or a requirement in the row is a dependency; a verb on the line above is never joined to it"
- },
- {
-  "name": "sentence: the unit is the line alone (no hard-wrapped sentence)",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "\" \".join(self.lines[self.start(i, max(0, i - UNIT)):i + 1])",
-    "self.lines[i]"
-   ]
-  ],
-  "expect": "p6: a sentence hard-wrapped between its imperative and its code span is one sentence; a verb in an earlier sentence of the same paragraph reaches nothing (brief/SKILL.md:61-62's shape)"
- },
- {
-  "name": "sentence: the unit is unbounded",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "self.start(i, max(0, i - UNIT))",
-    "self.start(i, 0)"
-   ]
-  ],
-  "expect": "p6: the joined sentence looks back at most 12 lines of its paragraph"
- },
- {
-  "name": "sentence: an imperative reaches only its first code span (no every-span test)",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "                if OPENS.search(prefix, ends[-1] if ends else 0):",
-    "                if False:"
-   ]
-  ],
-  "expect": "p6: an imperative that opens a sentence reaches every code span to the sentence's end, a closing emphasis or quote included; a span in the next sentence is a mention"
- },
- {
-  "name": "sentence: an imperative in an earlier sentence reaches the term",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "OPENS.search(prefix, ends[-1] if ends else 0)",
-    "OPENS.search(prefix, 0)"
-   ]
-  ],
-  "expect": "p6: an imperative that opens a sentence reaches every code span to the sentence's end, a closing emphasis or quote included; a span in the next sentence is a mention"
- },
- {
-  "name": "sentence: a sentence ends at a stop with no closing emphasis allowed",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "SENTENCE_END = re.compile(r\"[.!?][*_)\\\"']*\\s\")",
-    "SENTENCE_END = re.compile(r\"[.!?]\\s\")"
-   ]
-  ],
-  "expect": "p6: an imperative that opens a sentence reaches every code span to the sentence's end, a closing emphasis or quote included; a span in the next sentence is a mention"
- },
- {
-  "name": "sentence: an opening imperative reaches a term outside any code span",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "if prefix.count(\"`\") % 2 == 1:",
-    "if True:"
-   ]
-  ],
-  "expect": "p6: an imperative that opens a sentence reaches every code span to the sentence's end, a closing emphasis or quote included; a span in the next sentence is a mention"
- },
- {
-  "name": "sentence: an imperative anywhere in a sentence opens it",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "OPENS = re.compile(r\"(?:^\\s*(?:[-*>]\\s+|\\d+\\.\\s+)*|[.;:!?]\\s+)(?:\\*\\*)?\" + IMPERATIVE, re.I)",
-    "OPENS = re.compile(r\"\\b\" + IMPERATIVE, re.I)"
-   ]
-  ],
-  "expect": "p6: an imperative that opens a sentence reaches every code span to the sentence's end, a closing emphasis or quote included; a span in the next sentence is a mention"
- },
- {
-  "name": "sentence: a term on an earlier line of the paragraph counts for this line",
-  "file": "scripts/check-publishability.py",
-  "edits": [
-   [
-    "            if m.start() < len(unit) - len(text):\n                continue",
-    "            pass"
-   ]
-  ],
-  "expect": "p6: an imperative that opens a sentence reaches every code span to the sentence's end, a closing emphasis or quote included; a span in the next sentence is a mention"
+  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
  }
 ]

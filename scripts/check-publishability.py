@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 116 cases
+    python3 scripts/check-publishability.py --self-test  # 105 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -278,180 +278,68 @@ SHELL_FENCES = {"bash", "sh", "shell", "zsh", "console"}
 # The two sentence shapes that make Markdown prose a documented prerequisite. INSTRUCTS: an imperative that OPENS
 # a line, a list item or a sentence, then a code span holding the term. REQUIRES: a requirement verb, then the
 # term within the same clause. Both are completed by the term itself at the point of use.
-IMPERATIVE = r"(?:read|load|open|run|edit|update|consult|follow|source|use|call|invoke)\b"
-INSTRUCTS = r"(?:^\s*(?:[-*>]\s+|\d+\.\s+)*|[.;:]\s+)(?:\*\*)?" + IMPERATIVE + r"[^`.]*`[^`]*"
+INSTRUCTS = (r"(?:^\s*(?:[-*>]\s+|\d+\.\s+)*|[.;:]\s+)(?:\*\*)?(?:read|load|open|run|edit|update|consult|follow"
+             r"|source|use|call|invoke)\b[^`.]*`[^`]*")
 REQUIRES = r"\b(?:requires?|needs?|depends on|must have|prerequisites?)\b[^.`;:,()]{0,40}"
-# An imperative that opens a sentence, for the every-span test; a sentence ends at `[.!?]`, any closing `*_)"'`,
-# then whitespace (`SENTENCE_END`).
-OPENS = re.compile(r"(?:^\s*(?:[-*>]\s+|\d+\.\s+)*|[.;:!?]\s+)(?:\*\*)?" + IMPERATIVE, re.I)
-SENTENCE_END = re.compile(r"[.!?][*_)\"']*\s")
-UNIT = 12                       # the joined sentence looks back at most this many lines of its paragraph
-LIST_ITEM = re.compile(r"\s*(?:\d+[.)]|[-*+])\s+")
-FENCE = re.compile(r"\s*(?:```|~~~)\s*([\w-]*)")
-# The imperatives an introducing paragraph must hold: INSTRUCTS' verbs, and "stop" (a procedure that halts work).
-LEAD_VERBS = r"\b(?:read|load|open|run|edit|update|consult|follow|source|use|call|invoke|stop)\b"
-
-
-class _Blocks:
-    """THE ONE READING of a Markdown file's block structure; every structural question the prose judgement asks
-    is answered here and nowhere else (Phase 6 review of detector 4, 2026-11-21: three backward line-walkers,
-    each with its own idea of a list, were the thrash). Each line is exactly one of `fence-open`, `fence-close`,
-    `code`, `blank`, `heading`, `item` (a list item's first line), `table` or `text`; `fence[i]` is
-    `(index of the opening line, its language)` for a line inside a fence or closing one. Any ``` or ~~~ line
-    toggles the fence, whatever its length or the opener's kind (a bound shared with the code this replaced)."""
-
-    def __init__(self, lines):
-        self.lines, self.cls, self.ind, self.fence = lines, [], [], {}
-        opened = None
-        for i, ln in enumerate(lines):
-            self.ind.append(len(ln) - len(ln.lstrip()))
-            m = FENCE.match(ln)
-            if m and opened is None:
-                opened, c = (i, m.group(1).lower()), "fence-open"
-            elif m:
-                self.fence[i], opened, c = opened, None, "fence-close"
-            elif opened is not None:
-                self.fence[i], c = opened, "code"
-            elif not ln.strip():
-                c = "blank"
-            elif ln.lstrip().startswith("#"):
-                c = "heading"
-            elif LIST_ITEM.match(ln):
-                c = "item"
-            elif ln.lstrip().startswith("|"):
-                c = "table"                     # never joined into a paragraph: the unbounded join hung
-            else:
-                c = "text"
-            self.cls.append(c)
-
-    def start(self, i: int, floor: int = 0) -> int:
-        """The first line of the paragraph that holds `text` line `i`, looking no further back than `floor`: a run
-        of text lines, opened by the item line it continues when it is indented deeper than that item."""
-        s = i
-        while s > floor and self.cls[s] == "text" and (self.cls[s - 1] == "text" or (
-                self.cls[s - 1] == "item" and self.ind[s] > self.ind[s - 1])):
-            s -= 1
-        return s
-
-    def owner(self, i: int):
-        """The index of the list item that holds line `i`, or None: the nearest earlier item indented less than
-        every line between them (an item's own first line is held by its PARENT item). A heading, or a line at
-        the left margin, holds nothing inside it."""
-        bound = self.ind[i]
-        for j in range(i - 1, -1, -1):
-            c = self.cls[j]
-            if c in ("blank", "code", "fence-close"):
-                continue
-            if bound == 0 or c == "heading":
-                return None
-            if c == "item" and self.ind[j] < bound:
-                return j
-            bound = min(bound, self.ind[j] + (c == "item"))
-        return None
-
-    def first_sibling(self, i: int) -> int:
-        """The first item of the list that item `i` belongs to: the earliest item at its indent not separated from
-        it by a heading, by a text, table or fence line at or left of its indent, or by a less indented item."""
-        top, k = i, self.ind[i]
-        for j in range(i - 1, -1, -1):
-            c = self.cls[j]
-            if c == "heading" or (c in ("text", "table", "fence-open") and self.ind[j] <= k) or \
-                    (c == "item" and self.ind[j] < k):
-                break
-            if c == "item" and self.ind[j] == k:
-                top = j
-        return top
-
-    def before(self, i: int):
-        """`(first, last)` line of the block right above line `i` (blank lines between allowed) when it is a
-        paragraph, a list item's line or a heading; else None. A heading is a one-line block."""
-        j = i - 1
-        while j >= 0 and self.cls[j] == "blank":
-            j -= 1
-        if j < 0 or self.cls[j] not in ("text", "item", "heading"):
-            return None
-        return (self.start(j), j) if self.cls[j] == "text" else (j, j)
-
-    def introduces(self, block) -> bool:
-        """THE ONE QUESTION: does `block` introduce what follows it as the steps to take? It ENDS WITH A COLON
-        (after emphasis markers) and holds a `LEAD_VERBS` word anywhere. There is NO NEGATION TEST, by decision:
-        "tools that we never use:" introduces its list, because a filter run after structure has named a term
-        silenced real dependencies ("Do not guess. Read these first:", review r4), and a missed dependency costs
-        more than a false finding, which costs one reading."""
-        if block is None or not self.lines[block[1]].rstrip().rstrip("*_").endswith(":"):
-            return False
-        return bool(re.search(LEAD_VERBS, " ".join(self.lines[block[0]:block[1] + 1]), re.I))
-
-    def climbs(self, item) -> bool:
-        """Whether the list holding `item` is introduced at its own level or at any enclosing one: at each level,
-        `introduces` asks of the block above that list's first item, then the walk moves to the owning item."""
-        while item is not None:
-            top = self.first_sibling(item)
-            if self.introduces(self.before(top)):
-                return True
-            item = self.owner(top)
-        return False
-
-    def instructs(self, i: int, token: str) -> bool:
-        """Whether a sentence shape names `token` on line `i`. First INSTRUCTS on the line itself, as before the
-        block reading: its `^` is the LINE's start, so it alone sees an imperative opening a wrapped line whose
-        predecessor ends with no stop. Then the UNIT, the paragraph joined up to line `i` and at most `UNIT` lines
-        back (a sentence hard-wrapped between its verb and the term; a table row or any other non-text line is a
-        unit of its own): REQUIRES ending at the term (the unit holds the line, so this contains REQUIRES on the
-        line, which is not tried separately), or an imperative that opens the term's sentence, which reaches
-        EVERY code span to that sentence's end (INSTRUCTS widened from the first span to every span)."""
-        text, tok = self.lines[i], re.escape(token)
-        if re.search(INSTRUCTS + tok, text, re.I):
-            return True
-        unit = " ".join(self.lines[self.start(i, max(0, i - UNIT)):i + 1])
-        masked = re.sub(r"`[^`]*`", lambda m: "`" + "x" * (len(m.group(0)) - 2) + "`", unit)
-        for m in re.finditer(tok, unit, re.I):
-            if m.start() < len(unit) - len(text):
-                continue                        # the term must be on line `i` itself
-            if re.search(REQUIRES + r"(?<![A-Za-z0-9])\Z", unit[:m.start()], re.I):
-                return True
-            prefix = masked[:m.start()]
-            if prefix.count("`") % 2 == 1:      # inside a code span
-                ends = [e.start() for e in SENTENCE_END.finditer(prefix)]
-                if OPENS.search(prefix, ends[-1] if ends else 0):
-                    return True
-        return False
-
-
-@functools.lru_cache(maxsize=None)
-def _blocks(lines: tuple) -> _Blocks:
-    return _Blocks(lines)
 
 
 def _markdown_kind(lines, line: int, token: str) -> str | None:
-    """Detector 1's and detector 4's judgement of `token` on Markdown `line`, from the file's one `_Blocks`
-    reading. A term is a mention only because no structure names it, never because a filter ran after one did.
-
-    BOUNDS (Phase 6 review §5.4): a prohibition or description that ends in a colon and holds a `LEAD_VERBS`
-    word introduces its list ("Do not run any of these:", "Files in use:"), by decision. MISSED: an imperative
-    after a comma or a modal ("Before you start, run ..."); a verb the lists lack ("Check these before
-    starting:"); a heading with no colon (`## Prerequisites`); an elliptical continuation; REQUIRES before a
-    code span; a term in an item's continuation line or paragraph (an item's body is not in its list's claim);
-    a lazy (unindented) continuation line; `_Read these:_`; a block quote's own nesting."""
-    b, i = _blocks(tuple(lines)), line - 1
-    text = lines[i]
-    if i in b.fence:
-        opened, lang = b.fence[i]
-        if lang in SHELL_FENCES:
+    fence = None                                        # the language of the open fence, "" for an untagged one
+    for ln in lines[:line - 1]:
+        m = re.match(r"\s*(?:```|~~~)\s*([\w-]*)", ln)
+        if m:
+            fence = m.group(1).lower() if fence is None else None
+    text, tok = lines[line - 1], re.escape(token)
+    if fence is not None:
+        if fence in SHELL_FENCES:
             return None if text.lstrip().startswith("#") else "invocation"
-        if lang == "" and (b.introduces(b.before(opened)) or b.climbs(b.owner(opened))):
-            return "prerequisite"
-        return None
-    if b.instructs(i, token):
+        opened = max(i for i, ln in enumerate(lines[:line - 1]) if re.match(r"\s*(?:```|~~~)", ln))
+        return "prerequisite" if fence == "" and _introduced(lines, opened) else None
+    if re.search(INSTRUCTS + tok, text, re.I) or re.search(REQUIRES + r"(?<![A-Za-z0-9])" + tok, text, re.I):
         return "prerequisite"
-    if b.cls[i] == "item" and b.climbs(i):
-        return "prerequisite"
+    if LIST_ITEM.match(text):
+        i = line - 1
+        while i > 0:
+            j = i - 1
+            while j > 0 and not lines[j].strip():  # a blank line between two items keeps the list (review r3)
+                j -= 1
+            if not (LIST_ITEM.match(lines[j]) or (j == i - 1 and lines[j][:1] in (" ", "\t"))):
+                break
+            i = j
+        return "prerequisite" if _introduced(lines, i) else None
     return None
 
 
 def _always_none(g) -> bool:  # `None`, or an `or`/`and` of operands that are each always None (review r3)
     return (isinstance(g, ast.Constant) and g.value is None) or (
         isinstance(g, ast.BoolOp) and all(_always_none(v) for v in g.values))
+
+
+LIST_ITEM = re.compile(r"\s*(?:\d+[.)]|[-*+])\s+")
+
+
+def _introduced(lines, at: int) -> bool:
+    """Whether the paragraph right above line index `at` (blank lines between allowed) ENDS WITH A COLON and holds
+    an imperative (`LEAD_VERBS`): the shape that introduces a list or an untagged block as the steps to take (review r2: a numbered list after
+    "Then read, in this order ...:", a tool procedure after "... BEFORE arming ...:")."""
+    i = at - 1
+    while i >= 0 and not lines[i].strip():
+        i -= 1
+    if i < 0 or not lines[i].rstrip().rstrip("*_").endswith(":"):
+        return False
+    start = i
+    while start > 0 and lines[start - 1].strip() and not re.match(r"\s*(?:#|```|~~~)", lines[start - 1]) \
+            and not LIST_ITEM.match(lines[start - 1]):  # an earlier list ends the paragraph (review r3)
+        start -= 1
+    para = " ".join(lines[start:i + 1])
+    return any(not re.search(NEGATES, para[max(0, m.start() - 24):m.start()], re.I)
+               for m in re.finditer(LEAD_VERBS, para, re.I))
+
+
+# The imperatives an introducing paragraph must hold: INSTRUCTS' verbs, and "stop" (a procedure that halts work).
+LEAD_VERBS = r"\b(?:read|load|open|run|edit|update|consult|follow|source|use|call|invoke|stop)\b"
+# A verb a few words after one of these is no imperative ("tools that we never use:", review r3).
+NEGATES = r"\b(?:never|not|no)\b|n't\b"
 
 
 def _kind(file: Path, line: int, token: str) -> str | None:
@@ -461,9 +349,8 @@ def _kind(file: Path, line: int, token: str) -> str | None:
 
     BOUNDS: a `.sh` line that is not a comment is an invocation whatever it does with the term; a fenced block
     is a command only when its fence is tagged as a shell; Markdown prose is a prerequisite only through the
-    two sentence shapes INSTRUCTS and REQUIRES (on the line, the wrapped sentence, every code span of one
-    imperative), or as an item of a list (a line of an untagged block) whose introducing block ends with a colon
-    (`_Blocks.introduces`; the full Markdown bounds are `_markdown_kind`'s)."""
+    two sentence shapes INSTRUCTS and REQUIRES, or as an item of a list (a line of an untagged block) whose
+    introducing paragraph ends with a colon (`_introduced`)."""
     file = Path(file)
     try:
         lines = _lines(file)
@@ -1671,123 +1558,17 @@ def _self_test_body() -> int:
     # --- round 3 fold (Codex): each input the review constructed --------------------------------------------
     w_r3 = world({"scripts/tok3.py": 'import os\nA = os.getenv("REVIEW_N") or (None or None)\n',
                   ".agents/skills/x/SKILL.md": ("# X\nRead these prerequisites:\n\n1. `TaskList`\n\n2. `TaskCreate`\n\n"
+                                                "A reference list of tools that we never use:\n\n- `TaskCreate` here\n\n"
                                                 "Read the section headings:\n- Overview\nHistorical examples:\n"
                                                 "- `TaskList` is only an example\n")})
     case("r3: an `or` of operands that are all None is no working fallback",
          lambda: [(f["line"], f["kind"]) for f in found(w_r3, {"t": ["scripts/tok3.py"]}, "t", 6) if f["kind"] == "config"],
          [(2, "config")])
-    case("r3: blank lines between items keep the list; an imperative above an earlier list introduces nothing",
+    case("r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, "
+         "introduces nothing",
          lambda: items(w_r3, {"x": [".agents/skills/x/SKILL.md"]}, "x"),
-         ([(4, "tool-name", "TaskList"), (6, "tool-name", "TaskCreate")], [(11, "tool-name", "TaskList")]))
-
-    # --- Phase 6 of the prose judgement (docs/reviews/architecture-review-2026-11-21-publishability-detector4.md):
-    # one block reading, one `introduces` question, no negation filter. Each input is judged on the LAST line of
-    # its text that holds the token, in a fresh `.md` file.
-    md_dir, md_n = Path(tempfile.mkdtemp(prefix="publishability-md-")).resolve(), [0]
-
-    def judged(*texts_and_tokens) -> list:
-        """`classify_match` of each `(text, token)`, on the last line of `text` that holds `token`."""
-        got = []
-        for text, token in texts_and_tokens:
-            md_n[0] += 1
-            f = md_dir / f"m{md_n[0]}.md"
-            f.write_text(text)
-            got.append(classify_match(f, max(i for i, ln in enumerate(text.split("\n"), 1) if token in ln), token))
-        return got
-
-    dep, men = "dependency", "mention"
-    case("p6: a prohibition or a negated sentence above an introducing imperative leaves its list a dependency "
-         "(r4 MAJOR x3, and the three shapes a sentence-clipped window still missed); a prohibition that ends in "
-         "a colon introduces its list too, by decision (r3 Xm1): the failure direction is a finding",
-         lambda: judged(*[(t + "\n\n- `CronList`\n", "CronList") for t in (
-             "Do not guess. Read these first:", "No shortcuts here; run these:",
-             "This step is not optional.\nRead these files:", "Don't skip these, read them all:",
-             "If you have not yet done so, run these:", "Never guess — read these first:",
-             "This is a reference list of tools that we never use:")]),
-         [dep] * 7)
-    case("p6: a sentence hard-wrapped between its imperative and its code span is one sentence; a verb in an "
-         "earlier sentence of the same paragraph reaches nothing (brief/SKILL.md:61-62's shape)",
-         lambda: judged(("Open\n`CronList` first.\n", "CronList"),
-                        ("**Run the repo's own ratchets** and report exit codes, not their prose output:\n"
-                         "`check-docs`, `check-test-counts`.\n", "check-docs"),
-                        ("This skill requires\nthe CronList tool.\n", "CronList"),
-                        ("Read the notes.\n`CronList` is unrelated.\n", "CronList"),
-                        ("Run the suite and read its output. Afterwards the\nold `CronList` notes can be ignored.\n",
-                         "CronList")),
-         [dep, dep, dep, men, men])
-    case("p6: an imperative that opens a sentence reaches every code span to the sentence's end, a closing "
-         "emphasis or quote included; a span in the next sentence is a mention",
-         lambda: judged(("Read `CronA` and `CronList` first.\n", "CronList"),
-                        ("Run `CronA`; then `CronList`.\n", "CronList"),
-                        ("**Run the repo's own ratchets** and report exit codes, not their prose output:\n"
-                         "`check-docs`, `check-test-counts`.\n", "check-test-counts"),
-                        ("Read `CronA`. The file `CronList` is unrelated.\n", "CronList"),
-                        ("Read *the notes.* The file `CronList` is unrelated.\n", "CronList"),
-                        ("Read `CronList` now.\nLater `CronList` is unrelated.\n", "CronList"),
-                        ("The tools we use are `CronA` and `CronList`.\n", "CronList"),
-                        ("Run the tool and see CronList.\n", "CronList"),
-                        ("Some context with no stop\nRead `CronList` first.\n", "CronList")),
-         [dep, dep, dep, men, men, men, men, men, dep])
-    case("p6: the joined sentence looks back at most 12 lines of its paragraph",
-         lambda: judged(("Read\n" + "the\n" * 3 + "`CronList` first.\n", "CronList"),
-                        ("Read\n" + "the\n" * 12 + "`CronList` first.\n", "CronList")),
-         [dep, men])
-    case("p6: a nested item is introduced by its parent item, or by the paragraph above an enclosing list; "
-         "under a plain parent it is a mention (r4 MINOR: '- Then read these:' + a nested item)",
-         lambda: judged(("- Then read these:\n  - `RemoteTrigger`\n", "RemoteTrigger"),
-                        ("- Then read these:\n\t- `RemoteTrigger`\n", "RemoteTrigger"),
-                        ("Read these:\n\n- Background:\n  - `CronList`\n", "CronList"),
-                        ("Run all of these:\n\n- group\n  - subgroup\n    - `CronList`\n", "CronList"),
-                        ("- Notes from the session\n  - `CronList` was mentioned\n", "CronList"),
-                        ("Some notes:\n\n- Background:\n  - `CronList`\n", "CronList"),
-                        ("1. Run the\n   following:\n   - `CronList`\n", "CronList")),
-         [dep, dep, dep, dep, men, men, dep])
-    case("p6: a block introduces a list when it ends in a colon, after emphasis markers; a loose item's "
-         "continuation paragraph keeps the list (r4 MINOR); prose at the list's own indent ends it",
-         lambda: judged(("**Read these first:**\n\n- `CronList`\n", "CronList"),
-                        ("Read the notes.\n\n- `CronList`\n", "CronList"),
-                        ("Read these files first:\n\n1. `Monitor`\n\n   It shows the live state.\n\n"
-                         "2. `ScheduleWakeup`\n", "ScheduleWakeup"),
-                        ("Read these:\n\n- `CronA`\n\nSome notes.\n\n- `CronList`\n", "CronList"),
-                        ("- Read the guide\nSome notes:\n- `CronList`\n", "CronList")),
-         [dep, men, dep, men, men])
-    case("p6: an untagged fence inside an introduced item is a dependency, and an indented fence between two "
-         "items keeps the list; an unindented fence between items ends it",
-         lambda: judged(("Run these in order:\n\n1. first\n\n   ```\n   TaskList\n   ```\n", "TaskList"),
-                        ("Read these:\n\n1. first\n\n   ```\n   sample\n   ```\n\n2. `CronList`\n", "CronList"),
-                        ("Read these:\n\n1. first\n\n```\nsample\n```\n\n2. `CronList`\n", "CronList")),
-         [dep, dep, men])
-    case("p6: a heading that ends in a colon and holds an imperative introduces a list or an untagged fence, as "
-         "it did before the block reading; a heading ends the list above it",
-         lambda: judged(("## Run these first:\n\n- `CronList`\n", "CronList"),
-                        ("### Then run:\n\n```\nTaskList\n```\n", "TaskList"),
-                        ("## History\n\n- `CronList`\n", "CronList"),
-                        ("Read these:\n\n- `CronA`\n\n## History\n\n- `CronList`\n", "CronList")),
-         [dep, dep, men, men])
-    case("p6: a table row is judged on its own line only: an instruction or a requirement in the row is a "
-         "dependency; a verb on the line above is never joined to it",
-         lambda: judged(("| step: Read `CronList` first |\n", "CronList"),
-                        ("| step | requires CronList |\n", "CronList"),
-                        ("Run the\n| `CronList` |\n", "CronList")),
-         [dep, dep, men])
-    case("brief/SKILL.md:62 (the fixture copy): the four ratchets line 61 says to run are findings, not mentions",
-         lambda: tuple([t for ln, _, t in rs if ln == 62] for rs in items(w_b, {"b": [B]}, "b")),
-         (["check-docs", "check-producer-enumeration", "check-roadmap-consistency", "check-test-counts"], []))
-
-    def timed(text: str, token: str) -> tuple:
-        """`(verdict, judged within 1 s)` for `token` on the last line of `text`."""
-        import time
-        t0 = time.monotonic()
-        got = judged((text, token))[0]
-        return got, time.monotonic() - t0 < 1.0
-
-    case("p6: one term in a file holding a 1 MB table, or a 1 MB run of non-blank prose lines, is judged within "
-         "1 s (FAILS IF 6)",
-         lambda: [timed("Read these:\n\n" + "| run the step; run it again | x |\n" * 30000 + "| `CronList` |\n",
-                        "CronList"),
-                  timed("Read the notes:\n" + "; run the step and then run the next one\n" * 25000
-                        + ". `CronList` is here\n", "CronList")],
-         [(men, True), (men, True)])
+         ([(4, "tool-name", "TaskList"), (6, "tool-name", "TaskCreate")],
+          [(10, "tool-name", "TaskCreate"), (15, "tool-name", "TaskList")]))
 
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
         print("NOT RUN under the mutation harness: 10 live-tree cases (CI's ordinary step runs them)")
