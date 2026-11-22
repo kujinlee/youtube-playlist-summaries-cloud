@@ -2518,7 +2518,9 @@ EXPECTED_MUTATIONS = {
     # One entry per group-table rule (first row, sizes), per build rule (exclusion, paraphrase, index filter, stale
     # source, missing paraphrase, non-empty out), per quote rule (per paragraph, blockquote, ellipsis, six-word runs,
     # emphasis), and per check rule (no quotes, empty output, excluded name, nested output, a hit fails).
-    "scripts/build-shipped-corpus.py": 18,
+    # ⟳ round-1 fold: 20 — punctuation normalised as words (r1 X1/C1) and an excluded file's content under another
+    # name (r1 C5); the no-quotes entry now mutates the per-file CANNOT RUN (r1 C2).
+    "scripts/build-shipped-corpus.py": 20,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out
