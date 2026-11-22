@@ -273,5 +273,27 @@
    ]
   ],
   "expect": "an excluded file's content in the output under another name fails check 2"
+ },
+ {
+  "name": "an output file is searched only in its link-reduced view (the plain view dropped)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        bodies = {norm(raw, links) for links in VIEWS}",
+    "        bodies = {norm(raw, True)}"
+   ]
+  ],
+  "expect": "a quote inside text that only LOOKS like a link, or glued to a URL, fails check 1 (the plain view is searched too)"
+ },
+ {
+  "name": "a source quote is fragmented only in its link-reduced view (the plain view dropped)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    for links in VIEWS:\n        for p in re.split(",
+    "    for links in (True,):\n        for p in re.split("
+   ]
+  ],
+  "expect": "a SOURCE quote holding text that only looks like a link is searched in its plain view too, and fails check 1"
  }
 ]

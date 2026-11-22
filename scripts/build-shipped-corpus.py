@@ -2,7 +2,7 @@
 """Build the memory corpus a stranger receives, and check the built output (marketplace-inventory plan, Task 18,
 step "Build the shipped corpus"; the owner's answer to walkthrough decision 5).
 
-    python3 scripts/build-shipped-corpus.py --self-test  # 28 cases
+    python3 scripts/build-shipped-corpus.py --self-test  # 31 cases
     python3 scripts/build-shipped-corpus.py --out DIR      # build into DIR, then run both checks on DIR
     python3 scripts/build-shipped-corpus.py --check DIR    # both checks on an already-built DIR
 
@@ -17,9 +17,12 @@ The two checks read the BUILT OUTPUT, never the transform:
   1. no original group-D quote is in any output file. The quotes are DERIVED from the SOURCE D files at check time
      (italic `*"…"*` quotes, and blockquotes that open with a `"`, each read within one paragraph), split at an
      ellipsis, and every fragment of three words or more — and every run of six consecutive words inside a longer
-     one — is searched for as WORDS: a Markdown link `[text](url)` or `[text][ref]` is first reduced to its text and a
-     bare URL dropped, then every run of punctuation, markdown emphasis, blockquote markers and whitespace is one
-     space, and case is folded. A source D file with no quote found in it is CANNOT RUN, not a pass (its quotes would
+     one — is searched for as WORDS: every run of punctuation, markdown emphasis, blockquote markers and whitespace
+     is one space, and case is folded. Each text is read under TWO views, on both sides: the PLAIN view, and the
+     LINK-REDUCED one, where a Markdown link `[text](url)` or `[text][ref]` is first reduced to its text and a bare
+     URL dropped. A fragment of either view of a quote that appears in either view of an output file is a hit; the
+     reduction only ever adds hits, since a bracket or parenthesis it reads as a link may be text a reader sees
+     (round 3 C1). A source D file with no quote found in it is CANNOT RUN, not a pass (its quotes would
      go unsearched).
   2. no excluded file is present anywhere in the output tree — by name, or by content (an output file whose
      CANONICAL bytes equal an excluded source file's, under any name: line endings unified, trailing whitespace
@@ -31,7 +34,8 @@ stale one, an `--out` that is not absent or empty, a non-`.md` entry in the sour
 
 What this cannot see: a paraphrase that keeps an owner's words in a form the normaliser does not undo (a reworded
 sentence, a reused run of fewer than six words from a longer quote, a fragment under three words, a word split or
-joined differently, a link whose text is not the quoted word), an excluded file's content in the output when it differs
+joined differently, a link whose text is not the quoted word, a quote whose words are split by a link in one place
+and by visible bracketed text in another, so that neither view holds a whole window), an excluded file's content in the output when it differs
 by more than line endings and trailing whitespace (edited, or concatenated into another file), and private content
 that is not a quote. Dangling `[[links]]` from kept files to excluded ones are left as they are.
 """
@@ -51,6 +55,7 @@ PARA = "docs/marketplace/shipped-corpus"
 GROUP_SIZES = {"A": 6, "B": 4, "C": 6, "D": 6}
 MIN_WORDS = 3
 WINDOW = 6
+VIEWS = (True, False)   # norm(text, links=...): the link-reduced view, then the plain one (round 3 C1)
 
 
 class CannotRun(Exception):
@@ -85,21 +90,30 @@ def quotes(text: str) -> list[str]:
     return found
 
 
-def norm(text: str) -> str:
-    """WORDS, not characters: a Markdown link (`[text](url)`, `[text][ref]`) is reduced to its text and a bare URL is
-    dropped — their destinations would otherwise become words BETWEEN the quoted ones (round 2 X1) — then every run
-    of non-alphanumeric characters (punctuation, markdown emphasis, blockquote markers, apostrophes of either kind,
-    line breaks) becomes one space, and case is folded — so a quote reproduced with its punctuation changed, added or
-    stripped, or each word wrapped in a link, still matches."""
-    text = re.sub(r"\[([^\]\n]*)\](?:\([^)\n]*\)|\[[^\]\n]*\])", r"\1", text)
-    text = re.sub(r"(?:https?|ftp)://\S+|www\.\S+", " ", text)
+def norm(text: str, links: bool = True) -> str:
+    """WORDS, not characters: with `links`, a Markdown link (`[text](url)`, `[text][ref]`) is reduced to its text and
+    a bare URL is dropped — their destinations would otherwise become words BETWEEN the quoted ones (round 2 X1) —
+    then every run of non-alphanumeric characters (punctuation, markdown emphasis, blockquote markers, apostrophes of
+    either kind, line breaks) becomes one space, and case is folded — so a quote reproduced with its punctuation
+    changed, added or stripped, or each word wrapped in a link, still matches. The reduction can also DELETE visible
+    words (`[a](b c)` and `[a][b c]` render as text, and `\\S+` swallows a word glued to a URL), so it is never the
+    only view: `check` and `fragments` read both (round 3 C1)."""
+    if links:
+        text = re.sub(r"\[([^\]\n]*)\](?:\([^)\n]*\)|\[[^\]\n]*\])", r"\1", text)
+        text = re.sub(r"(?:https?|ftp)://\S+|www\.\S+", " ", text)
     return " ".join(re.sub(r"[\W_]+", " ", text.lower()).split())
 
 
 def fragments(quote: str) -> list[str]:
-    """A quote split at each ellipsis, every piece of MIN_WORDS words or more, normalised."""
-    parts = [norm(p).strip(" .,;:") for p in re.split(r"…|\.\.\.", quote)]
-    return [p for p in parts if len(p.split()) >= MIN_WORDS]
+    """A quote split at each ellipsis, every piece of MIN_WORDS words or more, normalised under EACH view (link-reduced
+    and plain; a piece the two views agree on is listed once)."""
+    out: list[str] = []
+    for links in VIEWS:
+        for p in re.split(r"…|\.\.\.", quote):
+            s = norm(p, links).strip(" .,;:")
+            if len(s.split()) >= MIN_WORDS and s not in out:
+                out.append(s)
+    return out
 
 
 def windows(fragment: str) -> list[str]:
@@ -183,9 +197,10 @@ def check(root: Path, out: Path) -> tuple[int, list[str]]:
         elif _canon_sha(p) in gone:
             hits.append(f"EXCLUDED CONTENT PRESENT: {p.relative_to(out)} is {gone[_canon_sha(p)]}")
     for p in files:
-        body = norm(p.read_text(errors="replace"))
+        raw = p.read_text(errors="replace")
+        bodies = {norm(raw, links) for links in VIEWS}
         for f, n in frags.items():
-            if f in body:
+            if any(f in body for body in bodies):
                 hits.append(f"QUOTE FROM {n} IN {p.relative_to(out)}: {f[:80]!r}")
     report.append(f"checked {len(files)} output files for {len(frags)} quote fragments and {len(excluded)} "
                   f"excluded names")
@@ -328,9 +343,28 @@ def _self_test_body() -> int:
              "[297][1] [is][1] [NOT][1] [ready][1] [to][1] [merge][1]\n\n[1]: https://x\n",
              "297 https://x is https://x/a?b=c NOT www.x.org ready to merge\n")),
          ((1, ["QUOTE FROM d4.md IN kept.md"]),) * 3)
+    case("a quote inside text that only LOOKS like a link, or glued to a URL, fails check 1 (the plain view is searched too)",
+         lambda: tuple((lambda r: (r[0], sorted(set(r[1]))))(planted("kept.md", t)) for t in (
+             "Context [note](297 is NOT ready to merge) here.\n",
+             "Context [aside][297 is NOT ready to merge] here.\n",
+             "see <https://x>say the conclusion first, then explain\n")),
+         ((1, ["QUOTE FROM d4.md IN kept.md"]), (1, ["QUOTE FROM d4.md IN kept.md"]), (1, ["QUOTE FROM d1.md IN kept.md"])))
+
+    def linked_quote():
+        root = world("linkquote", d={**d_text, "d6.md": 'Rule six: *"see [aside][you are not emitting banners] now"*\n'})
+        out = base / "linkquote-out"
+        shutil.copytree(base / "good-out", out)
+        (out / "kept.md").write_text("They said: see aside, you are not emitting banners now.\n")
+        rc, lines = check(root, out)
+        return rc, sorted({ln.split(":")[0] for ln in lines if ln.startswith("QUOTE")})
+    case("a SOURCE quote holding text that only looks like a link is searched in its plain view too, and fails check 1",
+         linked_quote, (1, ["QUOTE FROM d6.md IN kept.md"]))
     case("the words of a quote with its punctuation changed still match, apostrophes of either kind included",
          lambda: (norm("Don’t, stop: tonight!") == norm("don't stop tonight"), norm("**Say** the\n> conclusion")),
          (True, "say the conclusion"))
+    case("the plain view keeps the words inside a bracket or parenthesis, and a word glued to a URL; the link-reduced view drops them",
+         lambda: (norm("[a](b c) <https://x>d", links=False), norm("[a](b c) <https://x>d", links=True)),
+         ("a b c https x d", "a"))
     case("an excluded file's content in the output under another name fails check 2",
          lambda: planted("renamed.md", "excluded b2.md\n"), (1, ["EXCLUDED CONTENT PRESENT"]))
     case("an excluded file's content renamed with a whitespace line appended, or copied with CRLF endings, fails check 2 (canonical)",

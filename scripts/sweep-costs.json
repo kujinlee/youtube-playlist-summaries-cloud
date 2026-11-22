@@ -12,7 +12,7 @@
   "hand-timed:scripts/mkt_stage.py@marketplace-inventory Task 6 (self-test 13.3 s locally after the --declare cases; re-priced 2.0 -> 13.5 s, no CI sample yet)",
   "hand-timed:scripts/check-shipping-sets.py@PR #598 review r1 fold (117 cases; the self-test is 6.8 s locally under the mutation harness, which skips its 3 live-tree cases, and 29.3 s outside it; re-priced 11.0 -> 7.0 s, no CI sample yet)",
   "hand-timed:scripts/check-publishability.py@marketplace-inventory Tasks 8-12 (145 mutations in 998 s = 6.9 s each locally under the mutation harness; re-priced 5.0 -> 7.0 s, no CI sample yet)",
-  "hand-timed:scripts/build-shipped-corpus.py@marketplace slice F Task 18 build (self-test 0.17 s locally over 20 cases, 0.23 s over 25 after the round-1 fold, 0.26 s over 28 after round 2; priced 0.5 s, no CI sample yet)",
+  "hand-timed:scripts/build-shipped-corpus.py@marketplace slice F Task 18 build (self-test 0.17 s locally over 20 cases, 0.23 s over 25 after the round-1 fold, 0.26 s over 28 after round 2, 0.29 s over 31 after round 3; priced 0.5 s, no CI sample yet)",
   "hand-timed:scripts/mkt_seed_repo.py@marketplace slice E r1 fold (self-test 2.0 s locally over 13 cases; priced 2.5 s, no CI sample yet; the row Task 13 omitted)",
   "hand-timed:scripts/check-memory-shape.py@memory-shape-check (self-test 0.12 s locally over 50 cases; priced 0.2 s and 0.3 s, no CI sample yet)",
   "hand-timed:scripts/check-rm-backup.py@backlog #685 (self-test 0.15 s locally over 112 cases, measured 11-20; priced 0.2 s and 0.3 s, no CI sample yet)",

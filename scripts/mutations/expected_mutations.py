@@ -2522,7 +2522,8 @@ EXPECTED_MUTATIONS = {
     # name (r1 C5); the no-quotes entry now mutates the per-file CANNOT RUN (r1 C2).
     # ⟳ round-2 fold: 25 — a Markdown link reduced to its text and a bare URL dropped (r2 X1), and the canonical
     # excluded-content hash: per-line trailing whitespace, trailing blank lines, the excluded side canonical (r2 X2).
-    "scripts/build-shipped-corpus.py": 25,
+    # ⟳ round-3 fold: 27 — the plain view dropped from the output side, and from the quote side (r3 C1).
+    "scripts/build-shipped-corpus.py": 27,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out
