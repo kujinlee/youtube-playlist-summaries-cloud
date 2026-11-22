@@ -21336,3 +21336,21 @@ punctuation or a Markdown link around each word no longer hides one, and each te
 file's content under another name fails, also with its line endings or trailing whitespace changed) and the 6 group-D paraphrases in `docs/marketplace/shipped-corpus/` (rule figures outside the owner's quotes
 kept) with `sources.json` (sha256 of each source). Real build: 180 files, check PASS over 708 derived quote fragments
 and 16 excluded names. Backlog #697 filed: the recall package still lists the raw `docs/memory/`.
+
+## 2026-11-22
+The marketplace inventory now has a checker. It refuses a row whose verdict has no grade, whose reason does not point
+at something real (a scan finding of its own component, a spec section or decision, a failed install scenario, or the
+unanswered content review), or whose next step is not one of the spec's four routes. It also computes the stop
+signal you approved: if publishing to the public bar costs at least three times what the next project would pay for
+more than half of the first-release rows, it stops for you. Today it reports the inventory incomplete: 34 components
+still have no row (the comprehensibility effort, plan Task 20), and the 12 rows written so far pass every rule.
+<!--tech-->
+Marketplace slice F, plan Task 19, branch `marketplace-task19`. New `scripts/check-inventory.py`: `row_errors`
+(24 rules, tagged `[rule]`, incl. backlog #696 (a) `ROUTE_KINDS` = decouple-config, template-repository,
+portable-core, practice; (c) `practice_entry` matched exactly against a `## ` heading of docs/portable-practices.md;
+(f) empty finding ids / spec section, heading or decision refused), `inventory_errors` (missing, duplicate,
+phase1-package, package-shipping, scan), the plan's `checkpoint_fires` embedded as written, `render` (verdict and
+grade in one cell), `--render`, exit codes in rank order: inputs unreadable 2, any error 1 (checkpoint not computed), checkpoint CANNOT RUN 2, fired 3, else 0. Self-test 149 cases;
+61 mutations in `scripts/mutations/check-inventory.json`, all red in a full clone. CI runs `--self-test` only; the
+live run joins in Task 20. Live run: rc 1, 34 `[missing]` effort (3) components, 0 errors on the 12 existing rows.
+Backlog #696: (a), (c), (f) resolved; (d), (e) open. check-shipping-sets edge pin 358 -> 360.
