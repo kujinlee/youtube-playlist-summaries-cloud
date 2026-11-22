@@ -2374,7 +2374,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    if any(ARCH_REVIEW.match(f) for f in files):\n        return []\n",
+    "    if any(ARCH_REVIEW.match(f) and f in head_paths for f in files):\n        return []\n",
     ""
    ]
   ],
@@ -2500,5 +2500,49 @@
    ]
   ],
   "expect": "#680 r1 C4: parse_round raising a TypeError (a broken rule) is CANNOT RUN, not a cannot-judge HOLD"
+ },
+ {
+  "name": "backlog #680 (2) r2 X1: a second `findings:` key is read as a readable round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if type(nkeys) is not int or nkeys != 1:\n",
+    "                if False:\n"
+   ]
+  ],
+  "expect": "\u2b50 #680 r2 X1: `findings: []` then a second `findings: [...]` beside a fix-induced r3 is cannot-judge"
+ },
+ {
+  "name": "backlog #680 (2) r2 X1: a field set twice in one finding is read as a readable round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if type(dups) is not list or dups:\n",
+    "                if False:\n"
+   ]
+  ],
+  "expect": "\u2b50 #680 r2 X1: an item that sets `fix_induced` twice (true, then false) is cannot-judge, never clean"
+ },
+ {
+  "name": "backlog #680 (2) r2 X2: an architecture review need not exist at HEAD to clear the HOLD",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if any(ARCH_REVIEW.match(f) and f in head_paths for f in files):\n",
+    "    if any(ARCH_REVIEW.match(f) for f in files):\n"
+   ]
+  ],
+  "expect": "\u2b50 #680 r2 X2: a DELETED coordinator-dir architecture review (in the range, absent at HEAD) still HOLDS"
+ },
+ {
+  "name": "backlog #680 (2) r2 X2: thrash_gate passes the RANGE, not the HEAD tree, as the paths present at HEAD",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "reduce=_exact_component, error=ThrashUnjudgeable), frozenset(tree))",
+    "reduce=_exact_component, error=ThrashUnjudgeable), frozenset(files))"
+   ]
+  ],
+  "expect": "\u2b50 #680 r2 X2 real git: a DELETED coordinator-dir review (named in the range, absent at HEAD) HOLDS"
  }
 ]

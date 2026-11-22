@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 119 cases
+    python3 scripts/check-review-decision.py --self-test  # 123 cases
 
 WHY THIS EXISTS
 ---------------
@@ -481,6 +481,10 @@ def parse_round(text: str) -> dict:
     no key). ⚠ Items are read only under a BARE `findings:` line, so an inline value — `[a, b]`,
     `[{...}]`, even a trailing `# comment` — parses to NO findings; this layer reports the text and
     does not judge it (r1 X1/C1, #680 (2)). `check-merge-ready` reads any value but `[]` as unreadable.
+    ⟳ r2 X1 (Codex): `findings_keys` counts EVERY `findings:` key — only the first is read, so a second
+    one's items are silently unread — and `findings_dup_fields` names each field set twice in one item
+    (`_scalarise` keeps the LAST value, so `fix_induced: true, fix_induced: false` reads as false). Both
+    reported, not judged; `check-merge-ready` reads a count other than 1, or any duplicate, as unreadable.
     """
     body = header_body(text)
     rm = re.search(r"^round:\s*(\d+)\s*$", body, re.M)
@@ -490,8 +494,9 @@ def parse_round(text: str) -> dict:
     # `halves.claude: "GAP: ... {disabled}"` count as a finding — a false CANNOT RUN from
     # ordinary human gap prose. Braces outside `findings:` are prose.
     _span = _findings_span(body)
-    findings = [_scalarise(fm.group(1).split(",")) for fm in FINDING_RE.finditer(_span)]
-    findings += _block_findings(body)
+    _flow = [fm.group(1).split(",") for fm in FINDING_RE.finditer(_span)]
+    _items = _flow + _block_items(body)
+    findings = [_scalarise(p) for p in _flow] + _block_findings(body)
 
     # ⛔ PARITY, NOT BEST EFFORT. r1 Blocking (Codex): the parser read only `{...}` flow
     # mappings, so an ordinary block-style item parsed to ZERO findings — and an empty
@@ -507,8 +512,11 @@ def parse_round(text: str) -> dict:
         raise ValueError(f"header declares {declared} finding item(s) but "
                          f"{len(findings)} parsed — refusing to guess")
     key = re.search(r"^findings:(.*)$", body, re.M)
+    names = [[p.split(":", 1)[0].strip() for p in item if ":" in p] for item in _items]
     return {"round": int(rm.group(1)), "findings": findings, "findings_key": key is not None,
-            "findings_inline": key.group(1).strip() if key else None}
+            "findings_inline": key.group(1).strip() if key else None,
+            "findings_keys": len(re.findall(r"^findings:", body, re.M)),
+            "findings_dup_fields": sorted({k for ks in names for k in ks if ks.count(k) > 1})}
 
 
 def parse_header(text: str) -> dict:
@@ -521,6 +529,8 @@ def parse_header(text: str) -> dict:
     head = parse_round(text)
     del head["findings_key"]                        # this layer answers it below, by refusing
     del head["findings_inline"]                     # check-merge-ready's question, not this layer's
+    del head["findings_keys"]                       # ...as are these two (#680 (2) r2 X1): stripped, so
+    del head["findings_dup_fields"]                 # this layer's output is unchanged
     body = header_body(text)
     # ⛔ r3 Blocking (Codex): `_findings_span` returns "" when the key is ABSENT, so
     # declared == 0 == len(findings) and nothing validated — a header with no `findings:`
@@ -620,12 +630,18 @@ def _block_findings(body: str) -> list[dict]:
           - id: H1
             severity: High
     """
+    return [f for f in map(_scalarise, _block_items(body)) if f]
+
+
+def _block_items(body: str) -> list[list[str]]:
+    """`_block_findings`' items as their raw `k: v` lines, before `_scalarise` keeps each field's LAST
+    value — so `parse_round` can see a field set twice (#680 (2) r2 X1)."""
     lines = body.split("\n")
     try:
         start = next(i for i, l in enumerate(lines) if re.match(r"^findings:\s*$", l))
     except StopIteration:
         return []
-    out: list[dict] = []
+    out: list[list[str]] = []
     cur: list[str] = []
     for line in lines[start + 1:]:
         if not line.strip():
@@ -635,7 +651,7 @@ def _block_findings(body: str) -> list[dict]:
         m = re.match(r"^\s*-\s*(.*)$", line)
         if m:
             if cur:
-                out.append(_scalarise(cur))
+                out.append(cur)
             cur = [m.group(1)] if m.group(1).strip() else []
             if cur and cur[0].startswith("{"):        # a flow mapping; already handled
                 cur = []
@@ -643,8 +659,8 @@ def _block_findings(body: str) -> list[dict]:
         elif cur is not None and ":" in line:
             cur.append(line.strip())
     if cur:
-        out.append(_scalarise(cur))
-    return [f for f in out if f]
+        out.append(cur)
+    return out
 
 
 def rounds_for(subject: str) -> list[dict]:
@@ -1224,6 +1240,24 @@ def _self_test_body() -> int:
              "    - connector disabled\nfindings:\n  - {id: L1, severity: Low,"
              " aim: instrument, fix_induced: false, component: c, disposition: filed}\n```"
          )["findings"]), 1)
+
+    # ── backlog #680 (2), r2 X1 (Codex): a SECOND `findings:` key, or a field named twice in one item, was
+    # silently dropped — only the first key is read, and an item keeps its LAST value. `parse_round` reports
+    # both, unjudged; check-merge-ready refuses them. `parse_header` strips both, so its output is unchanged.
+    _dup = ("```yaml\nround: 4\nfixes_nontrivial: false\nfindings:\nfindings:\n  - {id: X, severity: Low, aim:"
+            " instrument, fix_induced: true, component: c, disposition: fixed}\n```")
+    case("#680 r2 X1: parse_round COUNTS every `findings:` key — a second one is reported, never dropped",
+         _try(lambda: parse_round(_dup)["findings_keys"]), 2)
+    case("#680 r2 X1: ...and one key counts one",
+         _try(lambda: parse_round(_dup.replace("findings:\nfindings:", "findings:"))["findings_keys"]), 1)
+    _df = ("```yaml\nround: 4\nfixes_nontrivial: false\nfindings:\n  - {id: X, severity: Low, aim: instrument,"
+           " fix_induced: true, component: c, fix_induced: false, disposition: fixed}\n  - id: Y\n"
+           "    component: d\n    component: e\n    severity: Low\n```")
+    case("#680 r2 X1: parse_round names a field set twice in one item, flow and block alike",
+         _try(lambda: parse_round(_df)["findings_dup_fields"]), ["component", "fix_induced"])
+    case("#680 r2 X1: ...and parse_header's output carries neither new field",
+         _try(lambda: sorted(parse_header(_dup.replace("findings:\nfindings:", "findings:")))),
+         ["findings", "fixes_nontrivial", "round"])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

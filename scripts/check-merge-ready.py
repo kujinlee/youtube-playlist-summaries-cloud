@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 432 cases
+    python3 scripts/check-merge-ready.py --self-test # 448 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -1831,14 +1831,17 @@ def last_two_docs(tree_paths: list[str], subject: str) -> "list[tuple[int, str]]
     return docs[-2:]
 
 
-def thrash_holds(files: list[str], rounds_by_subject: dict, thrashing) -> list[str]:
+def thrash_holds(files: list[str], rounds_by_subject: dict, thrashing, head_paths) -> list[str]:
     """PURE (given a pure `thrashing`). The HOLD reasons for thrashing armed with no Phase 6 review.
 
     `rounds_by_subject` maps a subject to its last two rounds, ascending; each is a parsed round
     (`{"round", "findings"}`) or `{"round": n, "unreadable": why}`. `thrashing` is
     `check-review-decision.thrashing_component` — injected so this stays pure and the RULE has one owner.
+    `head_paths` is every path in the HEAD tree: a review clears the HOLD only if the range changes it
+    AND it exists at HEAD — the range names a DELETED file too, and deleting an old review is not running
+    one (r2 X2, Codex). Required, so a caller cannot skip it.
     """
-    if any(ARCH_REVIEW.match(f) for f in files):
+    if any(ARCH_REVIEW.match(f) and f in head_paths for f in files):
         return []
     out = []
     for subject in sorted(rounds_by_subject):
@@ -1869,8 +1872,11 @@ def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = N
     git failure) propagates — `main()` reports both as CANNOT RUN. A round that cannot be parsed is a HOLD
     ("cannot judge"), where `thrash_holds` says it could change the answer. "Cannot be parsed" is an EXACT
     `ValueError` from `parse_round` — its contract for a malformed header — a missing `findings:` key, or
-    an inline `findings:` value other than `[]` (its items are not read). Anything else `parse_round`
-    raises is a broken RULE: `ThrashUnjudgeable` (r1 C4).
+    an inline `findings:` value other than `[]` (its items are not read), more than one `findings:` key, or
+    a field set twice in one finding (r2 X1). Anything else `parse_round` raises is a broken RULE:
+    `ThrashUnjudgeable` (r1 C4). A duplicate `round:` key is NOT refused: the gate never reads its value —
+    the round number is the doc's FILENAME's (`last_two_docs`).
+    An architecture review clears the HOLD only if it is in the range AND in the HEAD tree (r2 X2).
     ⚠ BOUND (r1 C5): the rounds are the subject's two highest-numbered docs IN THE HEAD TREE. A PR that
     DELETES a subject's newest coordinator docs is judged on the older pair that remains (or on nothing,
     if one or none remains) — the deletion is in the range, so the subject is named, but its rounds are
@@ -1896,6 +1902,16 @@ def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = N
                 if r.get("findings_key") is not True:
                     raise _RoundUnreadable("header has no `findings:` key — an absent list is not a "
                                            "clean round")
+                # ⟳ r2 X1 (Codex): only the FIRST `findings:` key is read, so a second one's items are
+                # unread; and an item keeps a twice-set field's LAST value. Both are unreadable, never clean.
+                nkeys = r.get("findings_keys")
+                if type(nkeys) is not int or nkeys != 1:
+                    raise _RoundUnreadable(f"header has {nkeys} `findings:` keys — only the first is read, so "
+                                           f"the rest are unread and it is not a clean round")
+                dups = r.get("findings_dup_fields")
+                if type(dups) is not list or dups:
+                    raise _RoundUnreadable(f"a finding sets {dups!r} more than once — only the last value is "
+                                           f"read, so the round is not judged")
                 inline = r.get("findings_inline")
                 if type(inline) is not str or not (inline == "" or EMPTY_INLINE.match(inline)):
                     raise _RoundUnreadable(f"`findings:` has an inline value {str(inline)[:60]!r} — only `[]` "
@@ -1908,7 +1924,7 @@ def thrash_gate(read, files: list[str], head: str = "HEAD", src: Path | None = N
             rounds_by_subject[subject] = rounds
     return thrash_holds(files, rounds_by_subject,
                         lambda rs: _cross(lambda x: crd.thrashing_component(x), rs,
-                                          reduce=_exact_component, error=ThrashUnjudgeable))
+                                          reduce=_exact_component, error=ThrashUnjudgeable), frozenset(tree))
 
 
 def hold_reasons(files: list[str], diff: str, head: str | None,
@@ -4016,9 +4032,14 @@ def _self_test_body() -> int:
     _rc, _o = _main([p for p, _t in _cd], "680", coord=_cd)
     check("⭐ #680: main() HOLDS a READY PR whose coordinator docs arm THRASHING, rc=3, naming subject and component",
           (_rc, "HOLD thrashing armed: s's component 'det4'" in _o), (3, True))
-    _rc, _o = _main([p for p, _t in _cd] + ["docs/reviews/architecture-review-2026-11-21-s.md"], "681", coord=_cd)
+    _ar_s = "docs/reviews/architecture-review-2026-11-21-s.md"
+    # (r2 X2: the review must also be in the HEAD TREE — the fake's `ls-tree` lists every `coord` path.)
+    _rc, _o = _main([p for p, _t in _cd] + [_ar_s], "681", coord=_cd + [(_ar_s, "a review\n")])
     check("⭐ #680: ...and with an architecture review in the range main() reports READY, rc=0",
           (_rc, "thrashing" in _o), (0, False))
+    _rc, _o = _main([p for p, _t in _cd] + [_ar_s], "683", coord=_cd)
+    check("#680 r2 X2: main() with the review in the range but ABSENT at HEAD (deleted) still HOLDS, rc=3",
+          (_rc, "HOLD thrashing armed: s's component 'det4'" in _o), (3, True))
     _real_rd = globals()["REVIEW_DECISION"]
     globals()["REVIEW_DECISION"] = Path(tempfile.mkdtemp()) / "check-review-decision.py"   # absent
     try:
@@ -4596,36 +4617,58 @@ def _self_test_body() -> int:
     _AR = "docs/reviews/architecture-review-2026-11-21-x.md"
     _R600 = {"hse-slice-d": [{"round": 3, "findings": [_F("detector-4-prose", True), _F("detector-6-config", False)]},
                              {"round": 4, "findings": [_F("detector-4-prose", True)]}]}
+    _CAR = "docs/reviews/coordinator/architecture-review-2026-11-17-hse-slice-c.md"
+    # Every path the pure cases name, PRESENT at HEAD — so each keeps the meaning it had before r2 X2.
+    _HEAD = frozenset({_C600, _AR, _CAR, "docs/architecture-review-x.md",
+                       "docs/reviews/codex/architecture-review-2026-11-17-hse-slice-c.md"})
     _WANT600 = ["thrashing armed: hse-slice-d's component 'detector-4-prose' carried fix-induced findings in both "
                 "r3 and r4, and no docs/reviews/[coordinator/]architecture-review-*.md is in this PR's range — " + PHASE6_FIX]
     check("#680 (a): the PR #600 shape — two consecutive fix-induced rounds in one component, no review — HOLDS",
-          thrash_holds([_C600], _R600, _thr), _WANT600)
+          thrash_holds([_C600], _R600, _thr, _HEAD), _WANT600)
     check("#680 (b): ...and the same with an architecture review in the range does not",
-          thrash_holds([_C600, _AR], _R600, _thr), [])
+          thrash_holds([_C600, _AR], _R600, _thr, _HEAD), [])
     check("#680 (b'): ...an architecture-review file NOT under docs/reviews/ is not one",
-          thrash_holds([_C600, "docs/architecture-review-x.md"], _R600, _thr), _WANT600)
+          thrash_holds([_C600, "docs/architecture-review-x.md"], _R600, _thr, _HEAD), _WANT600)
     # r1 fold (C2): the four most recent Phase 6 reviews were filed in the COORDINATOR directory (a real name).
     check("⭐ #680 r1 C2: an architecture review filed under docs/reviews/coordinator/ clears it too",
-          thrash_holds([_C600, "docs/reviews/coordinator/architecture-review-2026-11-17-hse-slice-c.md"], _R600, _thr), [])
+          thrash_holds([_C600, "docs/reviews/coordinator/architecture-review-2026-11-17-hse-slice-c.md"], _R600, _thr, _HEAD), [])
     check("#680 r1 C2: ...but one under another half's directory (docs/reviews/codex/) is not one",
-          thrash_holds([_C600, "docs/reviews/codex/architecture-review-2026-11-17-hse-slice-c.md"], _R600, _thr),
+          thrash_holds([_C600, "docs/reviews/codex/architecture-review-2026-11-17-hse-slice-c.md"], _R600, _thr, _HEAD),
           _WANT600)
+    # ── r2 X2 (Codex): a review counts only if it EXISTS AT HEAD. A deletion is in the range too, and
+    # deleting an old review is not running a new one.
+    check("⭐ #680 r2 X2: a DELETED coordinator-dir architecture review (in the range, absent at HEAD) still HOLDS",
+          thrash_holds([_C600, _CAR], _R600, _thr, _HEAD - {_CAR}), _WANT600)
+    check("#680 r2 X2: a DELETED top-level architecture review still HOLDS",
+          thrash_holds([_C600, _AR], _R600, _thr, _HEAD - {_AR}), _WANT600)
+    check("#680 r2 X2: a review present at HEAD but NOT in the range does not clear it",
+          thrash_holds([_C600], _R600, _thr, _HEAD), _WANT600)
     check("#680 (c): the PR #614 shape — r1 all fix-induced, r2 clean — does not HOLD",
           thrash_holds(["docs/reviews/coordinator/phase6-detector4-r2-coordinator.md"],
                        {"phase6-detector4": [{"round": 1, "findings": [_F("walkers", True), _F("negates", True)]},
-                                             {"round": 2, "findings": []}]}, _thr), [])
+                                             {"round": 2, "findings": []}]}, _thr, _HEAD), [])
     check("#680 (d): fix-induced findings in two DIFFERENT components across the last two rounds do not HOLD",
           thrash_holds([_C600], {"hse-slice-d": [{"round": 3, "findings": [_F("detector-4-prose", True)]},
-                                                 {"round": 4, "findings": [_F("detector-6-config", True)]}]}, _thr), [])
+                                                 {"round": 4, "findings": [_F("detector-6-config", True)]}]}, _thr, _HEAD), [])
     _UNR = {"hse-slice-d": [{"round": 3, "findings": [_F("detector-4-prose", True)]},
                             {"round": 4, "unreadable": "ValueError: no ```yaml header block"}]}
     check("#680 (e): an unparseable LAST round HOLDS as 'cannot judge', never CANNOT RUN and never a pass",
-          thrash_holds([_C600], _UNR, _thr),
+          thrash_holds([_C600], _UNR, _thr, _HEAD),
           ["cannot judge thrashing for hse-slice-d r4: ValueError: no ```yaml header block — read it, or "
            + PHASE6_FIX])
     check("#680: hold_reasons carries the thrashing reasons through (they are required, not optional)",
           hold_reasons([], "", "abc", None, False, thrash=_WANT600, pins=({}, {})), _WANT600)
     check("#680: a range with no coordinator doc names no subject", coordinator_subjects(["docs/x.md", _AR]), [])
+    check("#680: a range names each subject ONCE, sorted, across rounds and directories",
+          coordinator_subjects([_C600, "docs/reviews/coordinator/a-r2-coordinator.md",
+                                "docs/reviews/coordinator/a-r1-coordinator.md", "docs/reviews/codex/b-r1-codex.md"]),
+          ["a", "hse-slice-d"])
+    # The RULE is injected: its answer, not a constant, decides — a stub naming another component is reported.
+    check("#680: thrash_holds reports the component the injected rule NAMES",
+          thrash_holds([_C600], _R600, lambda _rs: "stub-comp", _HEAD),
+          [_WANT600[0].replace("'detector-4-prose'", "'stub-comp'")])
+    check("#680: ...and a rule answering None over readable rounds HOLDS nothing",
+          thrash_holds([_C600], _R600, lambda _rs: None, _HEAD), [])
     # THROUGH THE REAL WIRING: a git repository, the docs read AT the head commit by `thrash_gate`.
     _tg = Path(tempfile.mkdtemp())
     def _tgrun(cmd, **kw):
@@ -4636,13 +4679,16 @@ def _self_test_body() -> int:
         return (f"# Round {n}\n\n```yaml\nround: {n}\nfixes_nontrivial: false\n" + findings + "```\n")
     _ind = "findings:\n  - {id: X1, severity: Medium, aim: deliverable, fix_induced: true, component: det4, disposition: narrowed}\n"
     _cln = "findings: []\n"
-    def _tgate(docs, extra=(), src=None):
+    def _tgate(docs, extra=(), src=None, present=()):
         """`thrash_gate` over a fresh commit holding `docs` ({round: text}) for subject `s`, the range naming
-        every doc plus `extra`; or `CANNOT RUN: <exc>` when it raises."""
+        every doc plus `extra`; `present` are `extra` paths also COMMITTED (the rest are absent at HEAD, as
+        a deletion leaves them); or `CANNOT RUN: <exc>` when it raises."""
         shutil.rmtree(_tg / "docs", ignore_errors=True)
         (_tg / "docs/reviews/coordinator").mkdir(parents=True)
         for n, t in docs.items():
             (_tg / f"docs/reviews/coordinator/s-r{n}-coordinator.md").write_text(t)
+        for rel in present:
+            (_tg / rel).write_text("a review\n")
         try:
             _tgread(["git", "add", "-A"])
             _tgread(["git", "commit", "-qm", "c", "--allow-empty"])
@@ -4705,10 +4751,10 @@ def _self_test_body() -> int:
     check("#680 r1 C3: BOTH rounds unreadable HOLDS, naming each",
           _cj(_tgate({3: "# Round 3\n\nno header here\n", 4: "# Round 4\n\nnone\n"}), (3, 4), "no ```yaml"), True)
     check("#680 r1 C3 (pure): one unreadable round alone does not HOLD",
-          thrash_holds([_C600], {"hse-slice-d": [{"round": 4, "unreadable": "ValueError: x"}]}, _thr), [])
+          thrash_holds([_C600], {"hse-slice-d": [{"round": 4, "unreadable": "ValueError: x"}]}, _thr, _HEAD), [])
     check("#680 r1 C3 (pure): a readable clean round beside an unreadable one does not HOLD",
           thrash_holds([_C600], {"hse-slice-d": [{"round": 3, "findings": []},
-                                                 {"round": 4, "unreadable": "ValueError: x"}]}, _thr), [])
+                                                 {"round": 4, "unreadable": "ValueError: x"}]}, _thr, _HEAD), [])
     # ── r1 fold (C4): only a `ValueError` from `parse_round` (its contract for a malformed header) means the
     # DOCUMENT is unreadable. Anything else is a broken RULE: CANNOT RUN, never a HOLD that blames the doc.
     _bk = Path(tempfile.mkdtemp())
@@ -4717,6 +4763,44 @@ def _self_test_body() -> int:
     check("#680 r1 C4: parse_round raising a TypeError (a broken rule) is CANNOT RUN, not a cannot-judge HOLD",
           _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}, src=_bk / "broken_crd.py"), "CANNOT RUN: ThrashUnjudgeable")
     shutil.rmtree(_bk, ignore_errors=True)
+    # ── `head`, `read`, `files` and `src` each DECIDE (check-fixture-variation): the docs are read at the
+    # commit named, through the reader given, for the subjects the range names, by the rule at `src`.
+    _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)})                       # commit 1: thrashing
+    (_tg / "docs/reviews/coordinator/s-r4-coordinator.md").write_text(_doc(4, _cln))
+    _tgread(["git", "commit", "-qam", "clean r4"])                    # commit 2: r4 clean
+    _seen = []
+    def _rec(cmd):
+        _seen.append(cmd)
+        return _tgread(cmd)
+    _fl2 = ["docs/reviews/coordinator/s-r3-coordinator.md", "docs/reviews/coordinator/s-r4-coordinator.md"]
+    check("#680 real git: `head` is honoured — at HEAD~1 (thrashing) it HOLDS, through the reader given",
+          (thrash_gate(_rec, _fl2, "HEAD~1", REVIEW_DECISION), any("HEAD~1:" in " ".join(c) for c in _seen)),
+          (_armed, True))
+    check("#680 real git: ...and at HEAD (r4 clean) it does not",
+          thrash_gate(_tgread, list(reversed(_fl2)), "HEAD", REVIEW_DECISION), [])
+    def _no_read(cmd):
+        raise AssertionError(f"read called: {cmd}")
+    check("#680: a range with no coordinator doc returns [] WITHOUT reading git or importing the rule",
+          thrash_gate(_no_read, ["docs/x.md"], "HEAD~1", _tg / "absent.py"), [])
+    # ── r2 X1 (Codex): a SECOND `findings:` key is unread (only the first is), and a field set twice in one
+    # item keeps its LAST value — each is UNREADABLE, never clean. Codex's own r4 first.
+    _dupk = "findings: []\n" + _inl
+    check("⭐ #680 r2 X1: `findings: []` then a second `findings: [...]` beside a fix-induced r3 is cannot-judge",
+          _cj(_tgate({3: _doc(3, _ind), 4: _doc(4, _dupk)}), (4,), "2 `findings:` keys"), True)
+    _dupb = "findings:\n" + _ind
+    check("#680 r2 X1: a bare `findings:` then a second one over block items is cannot-judge, never clean",
+          _cj(_tgate({3: _doc(3, _ind), 4: _doc(4, _dupb)}), (4,), "2 `findings:` keys"), True)
+    _dupf = ("findings:\n  - {id: X1, severity: Medium, aim: deliverable, fix_induced: true, component: det4, "
+             "fix_induced: false, disposition: fixed}\n")
+    check("⭐ #680 r2 X1: an item that sets `fix_induced` twice (true, then false) is cannot-judge, never clean",
+          _cj(_tgate({3: _doc(3, _ind), 4: _doc(4, _dupf)}), (4,), "fix_induced"), True)
+    # ── r2 X2, through the real wiring: the review must be in the HEAD TREE, not merely in the range.
+    check("⭐ #680 r2 X2 real git: a DELETED coordinator-dir review (named in the range, absent at HEAD) HOLDS",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}, extra=[_CAR]), _armed)
+    check("#680 r2 X2 real git: a DELETED top-level review HOLDS",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}, extra=["docs/reviews/architecture-review-old.md"]), _armed)
+    check("#680 r2 X2 real git: a coordinator-dir review PRESENT at HEAD clears it",
+          _tgate({3: _doc(3, _ind), 4: _doc(4, _ind)}, extra=[_CAR], present=[_CAR]), [])
     shutil.rmtree(_tg, ignore_errors=True)
 
     shutil.rmtree(_tree_root, ignore_errors=True)

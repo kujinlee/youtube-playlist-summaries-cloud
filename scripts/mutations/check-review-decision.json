@@ -404,5 +404,31 @@
     "expect": [
       "…and a refuted High is ANSWERED, so it converges like fixed and declined"
     ]
+  },
+  {
+    "name": "backlog #680 (2) r2 X1: parse_round counts only whether a `findings:` key exists, so a second one is dropped",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "            \"findings_keys\": len(re.findall(r\"^findings:\", body, re.M)),\n",
+        "            \"findings_keys\": 1 if key else 0,\n"
+      ]
+    ],
+    "expect": [
+      "#680 r2 X1: parse_round COUNTS every `findings:` key — a second one is reported, never dropped"
+    ]
+  },
+  {
+    "name": "backlog #680 (2) r2 X1: parse_round does not report a field set twice in one finding",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "for k in ks if ks.count(k) > 1})}",
+        "for k in ks if ks.count(k) > 2})}"
+      ]
+    ],
+    "expect": [
+      "#680 r2 X1: parse_round names a field set twice in one item, flow and block alike"
+    ]
   }
 ]

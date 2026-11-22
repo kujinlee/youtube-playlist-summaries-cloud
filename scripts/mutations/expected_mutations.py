@@ -1116,7 +1116,9 @@ EXPECTED_MUTATIONS = {
     # literals and the suite stayed 111/111 while the reader was told the opposite.
     # ⟳ 2026-10-24, backlog #318: 28 -> 30 — `refuted` is in the vocabulary AND answers a finding;
     #   two #329 anchors re-pointed onto the new `ANSWERED` constant, nothing retired.
-    "scripts/check-review-decision.py": 30,
+    # ⟳ 2026-11-21, backlog #680 (2) r2 X1: 30 -> 32 — `parse_round` COUNTS every `findings:` key (1) and
+    #   NAMES a field set twice in one finding (1); nothing retired, nothing re-pointed.
+    "scripts/check-review-decision.py": 32,
     # ⟳ 2026-10-23: check-decision-scheme 86 -> 106. Trigger 3 changed its question (route
     # collapse -> a lost bet whose next route was never logged) and the `missed-escalation`
     # acknowledgment row joined. TWO entries RETIRED WITH THEIR SUBJECT — the collapse floor and
@@ -2099,7 +2101,10 @@ EXPECTED_MUTATIONS = {
     # and `[] # comment` refused (1) (X1/C1); a coordinator-dir architecture review ignored (1) (C2); a lone
     # unreadable round HOLDing (1) and a readable round with no fix-induced finding not ruling thrashing out (1)
     # (C3); any parse_round exception read as an unreadable doc (1) (C4).
-    "scripts/check-merge-ready.py": 203,
+    # ⟳ r2 fold: 203 -> 207 = 203 + 4, none retired; one RE-BOUND (#680 (b)'s anchor, onto the new HEAD clause). A second `findings:` key read as readable (1)
+    # and a field set twice in one finding read as readable (1) (X1); an architecture review not required to
+    # exist at HEAD (1), and thrash_gate passing the range instead of the HEAD tree as what exists there (1) (X2).
+    "scripts/check-merge-ready.py": 207,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
