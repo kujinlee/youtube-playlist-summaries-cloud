@@ -191,12 +191,18 @@ Spec §2c, D11 condition (a); marketplace-inventory plan Task 18. Measured **202
 `marketplace-task18` at `8efb3d0a` (its `scripts/`, `.claude/hooks/` and `docs/memory/` staged unchanged). Same
 machine and versions as above (`Python 3.14.4`, `claude` `2.1.323`, `git` `2.49.0`).
 
-**Outcome: a SILENT NO-OP.** Installed into the seeded stranger repository, package `recall` surfaces nothing and
-says nothing: the hook exits 0 with empty stdout, and the matcher exits 2 ("no plan is armed"), which the hook
-swallows by design. When a plan IS armed beside the install (a simulation; the package cannot arm one), the hook
-asks the reader to run `--arm`, and `--arm` fails with rc 6 "no memory directory for this project". Neither path
-ever reaches a model call or a memory entry. **`recall.a` = `false`** in `inventory.json`: the probe ran (bash and
-claude were reachable, the token was usable), so this is a measured false, not CANNOT RUN.
+**Outcome: a SILENT NO-OP, measured by the SUPPLEMENTARY run (`mkt18.rc0f4sjc`), not the primary one.** In the
+primary run (`mkt18.7c0qezhi`) the hook never reached the matcher: the allow-list lacked `dirname`, so line 41 of
+`surface-recall.sh` resolved `REPO_ROOT=/` and the hook exited at line 61 (`//scripts/recall-llm.py` absent), with
+`opened` = 0 in both hook records. The primary hook rows below are therefore NOT a measurement of the hook; the
+primary run measured the matcher only. The supplementary run, the same driver with `dirname` added to the
+allow-list, did reach the matcher (each hook record opened 44–47 files): installed into the seeded stranger
+repository, package `recall` surfaces nothing and says nothing — the unarmed hook exits 0 with stdout and stderr both
+empty (the matcher's rc 2, "no plan is armed", is swallowed by the hook by design). When a plan IS armed beside the
+install (a simulation; the package cannot arm one), the hook asks the reader to run `--arm`, and `--arm` fails with
+rc 6 "no memory directory for this project". Neither path ever reaches a model call or a memory entry. **`recall.a` =
+`false`** in `inventory.json`, resting on the supplementary run: the probe ran (bash and claude were reachable, the
+token was usable), so this is a measured false, not CANNOT RUN.
 
 ### How it was run
 
@@ -219,7 +225,8 @@ through `run_isolated(world, argv, <world HOME>/project, 120)`. Run directory:
 | ARMED: `--fire` | 3 | *(empty)* | ``STALE CACHE: probe.json does not exist — this plan was never armed for recall. Run `scripts/recall-llm.py --arm`.`` |
 | ARMED: `--arm` | 6 | *(empty)* | `CANNOT RUN: no memory directory for this project — nothing was checked.` |
 
-**The `dirname` line is a PATH artefact of the allow-list, and a second run removes it.** The same driver with
+**The primary hook rows are NOT MEASURED: the hook exited before the matcher.** The `dirname` line is a gap in the
+probe's allow-list — every stranger's host has `dirname` — not a gap in the product, and a second run removes it. The same driver with
 `dirname` added to the allow-list (`mkt18.rc0f4sjc`) gave: the unarmed hook rc 0, stdout and stderr both empty; the
 ARMED hook rc 0 with this stdout:
 
@@ -241,9 +248,12 @@ the same as in the primary run.
 ### The assertion, and what it does not cover
 
 **Held: no path under the repository's `docs/memory/` appears in any `RunRecord.opened`.** The driver checked all 7
-records against both checkouts' `docs/memory/` (this worktree and the main checkout), resolving symlinks, and
+primary records against both checkouts' `docs/memory/` (this worktree and the main checkout), resolving symlinks, and
 separately checked for any path containing `/docs/memory/` at all, including the install's copy: both lists were
-empty in every record. **Would have FAILED IF:** any `opened` path resolved under either directory.
+empty in every record. The supplementary run's results file carries no assertion key of its own, so its 7 records
+were checked afterwards, in the round-1 fold, for any `opened` path containing `/memory/`: none (each record opened
+44–47 paths). That later check is the one that covers the hook, since only the supplementary hook reached the
+matcher. **Would have FAILED IF:** any `opened` path resolved under either directory.
 **Bound:** `bash` is a non-Python process, so the hook's own file access is NOT CAPTURED (the `unobservable` list
 says so for both hook runs). Only the Python `recall-llm.py` processes were observed.
 

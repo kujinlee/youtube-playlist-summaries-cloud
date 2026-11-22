@@ -343,9 +343,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # `analyse()` on the delivered source: 1 key, varied by two seeds (a, b) and the refusal case.
     "mkt_seed_repo.py": ("seed.out",),
     # marketplace-inventory plan Task 18 (2026-11-22): the shipped-corpus build. DERIVED by running `analyse()` on the
-    # delivered source: 8 keys.
+    # delivered source: 8 keys. ⟳ round-1 fold: 9 — `norm.text` is examined since `norm` gained its own case.
     "build-shipped-corpus.py": ("build.out", "build.root", "check.out", "check.root", "fragments.quote",
-                                "groups.decision_text", "quotes.text", "windows.fragment"),
+                                "groups.decision_text", "norm.text", "quotes.text", "windows.fragment"),
     "mkt_isolate.py": ("build_world.allow", "build_world.root", "explainer_port.env", "main.argv", "preflight.port",
                        "preflight.world", "read_audit.text", "read_audit.top", "run_isolated.argv",
                        "run_isolated.cwd", "run_isolated.timeout", "run_isolated.world"),

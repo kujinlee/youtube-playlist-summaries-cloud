@@ -6,7 +6,7 @@ metadata:
 ---
 
 > Shipped-corpus edition: the owner's quoted words in the source of this file are paraphrased to their essence, with
-> no names, dates, numbers or project details. The rules are unchanged.
+> no names, dates, numbers or project details. The rules are unchanged, and every rule figure outside a quote is kept.
 
 > Merged from three memories. Former names (still referenced by other memories): `output-style-plain-default`,
 > `feedback-announce-each-step`, `show-a-live-progress-line`.
@@ -22,15 +22,15 @@ metadata:
    *Announce each step before doing it* — take it from there, do not re-derive it: `## ▶ [mm-dd hh:mm] STEP n of N — …`
    with **Thread**, **Doing**, **Why** lines; timestamp from `date`. State the whole numbered plan once up front.
 3. **A step that grows is re-planned or sub-marked.** When a step produces its **second** distinct deliverable, emit
-   `▸ [mm-dd hh:mm] n.m — <what landed> · <measured fact>` before starting the next one. A step of more than a handful
-   of tool calls, or more than one finding/file, gets a numbered sub-plan up front.
+   `▸ [mm-dd hh:mm] n.m — <what landed> · <measured fact>` before starting the next one. More than ~5 tool calls or
+   more than one finding/file → give it a numbered sub-plan up front.
 4. **Reactive work gets a plan too.** Review rounds, CI watches, "fix what the reviewer found" have no numbered steps,
    so invent one on the spot ("STEP 1 of 3 — …"); a one-step plan is still a banner. A paused step gets
    `⏸ PAUSED on <what>` plus the waiting line.
 5. **Background work gets a progress signal that can show BAD news.** A compact status block in every message while
    work is in flight — one row per job, a state and a measured fact derived from a live check (`pgrep`, `docker ps`,
-   `ls -la`, `gh pr checks`), never from what I believe I started. "elapsed, output size, container state" is useful;
-   "⏳ working…" is not. ⚠ How to *watch* has a cost: a Monitor's every wake is a model turn — see
+   `ls -la`, `gh pr checks`), never from what I believe I started. `elapsed 6m · output 0 bytes · container exited`
+   is useful; `⏳ working…` is not. ⚠ How to *watch* has a cost: a Monitor's every wake is a model turn — see
    [[no-question-watch-while-owner-afk]] for when a one-shot background poll is cheaper; never poll in a loop myself.
 
 **Why:** the user does not follow the work in real time; silence and a stall look identical from their side. Their
@@ -49,16 +49,17 @@ from inside it. Never surface an internal id bare (a bare task number reads as a
 
 ## How the rule came about (paraphrased)
 - **Plain mode was chosen** after the user compared a dense and a plain version of the same content. It was
-  reinstated when a short status line silently assumed several facts the user had never been told, and they had to
-  ask more than once what it meant.
+  reinstated when a short status line silently assumed four facts the user had never been told, and they asked twice
+  what it meant.
 - **Banners were settled** after the user said they could not tell what was being worked on, and asked for something
   larger or more visible than bold text (a `##` heading renders large and coloured).
-- **Several recorded lapses**, each a different trigger: a script printed the banner to tool output, which the user
-  does not see; the plan ran out and a long run of review rounds had no banner; a step grew to many findings over
-  many tool calls and was never re-numbered; a step grew into many pieces and the sub-step marker, then only "on
-  trial", had never been used (a mechanism on trial needs a trigger, not a note).
+- **Four recorded lapses**, each a different trigger: a script printed the banner to tool output, which the user
+  does not see; the plan ran out and ~15 turns of review rounds had no banner; a step grew to twelve findings over ~20
+  tool calls and was never re-numbered; a step grew into nine pieces over ~40 tool calls, and the sub-step marker,
+  then only "on trial", had been used ZERO times (a mechanism on trial needs a trigger, not a note). No Monitor was
+  armed for a review subagent or a 20-minute sweep either.
 - **A progress line was asked for** when the user could not tell whether work was continuing or paused. The first
-  mechanism was a periodic heartbeat for long jobs.
-- **Timestamps were asked for** to gauge the cadence of development; the format changed several times in quick
-  succession before settling on a prepended `[mm-dd hh:mm]`. Lesson: a presentation preference is the user's to set —
+  mechanism was a Monitor heartbeat every 90–120 s for jobs over ~2 minutes.
+- **Timestamps were asked for** to gauge the cadence of development; the format changed three times in an hour
+  before settling on a prepended `[mm-dd hh:mm]`. Lesson: a presentation preference is the user's to set —
   state it, don't argue.

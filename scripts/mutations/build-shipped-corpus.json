@@ -136,22 +136,22 @@
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "    text = re.sub(r\"[*_`\\\\]\", \"\", text)\n",
-    "\n"
+    "    return \" \".join(re.sub(r\"[\\W_]+\", \" \", text.lower()).split())",
+    "    return \" \".join(re.sub(r\"[^\\w*]+\", \" \", text.lower()).split())"
    ]
   ],
   "expect": "a source quote in a kept output file fails check 1, through emphasis, case and line breaks"
  },
  {
-  "name": "no quotes found is a pass",
+  "name": "a D file with no quote found is a pass",
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "    if not frags:",
+    "    if unread:",
     "    if False:"
    ]
   ],
-  "expect": "no quote in any source D file is CANNOT RUN, not a pass"
+  "expect": "ONE source D file with no quote is CANNOT RUN, though the other five have quotes"
  },
  {
   "name": "an empty output is a pass",
@@ -196,5 +196,27 @@
    ]
   ],
   "expect": "an excluded file in the output fails check 2"
+ },
+ {
+  "name": "punctuation is not normalised away (characters compared, not words)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    return \" \".join(re.sub(r\"[\\W_]+\", \" \", text.lower()).split())",
+    "    return \" \".join(re.sub(r\"[\\s*_`\\\\>]+\", \" \", text.lower()).split())"
+   ]
+  ],
+  "expect": "a quote reproduced with its punctuation stripped, changed or added fails check 1 (words, not characters)"
+ },
+ {
+  "name": "an excluded file's content under another name is not reported",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        elif _sha(p) in gone:",
+    "        elif False:"
+   ]
+  ],
+  "expect": "an excluded file's content in the output under another name fails check 2"
  }
 ]

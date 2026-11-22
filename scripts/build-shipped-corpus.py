@@ -2,7 +2,7 @@
 """Build the memory corpus a stranger receives, and check the built output (marketplace-inventory plan, Task 18,
 step "Build the shipped corpus"; the owner's answer to walkthrough decision 5).
 
-    python3 scripts/build-shipped-corpus.py --self-test  # 20 cases
+    python3 scripts/build-shipped-corpus.py --self-test  # 25 cases
     python3 scripts/build-shipped-corpus.py --out DIR      # build into DIR, then run both checks on DIR
     python3 scripts/build-shipped-corpus.py --check DIR    # both checks on an already-built DIR
 
@@ -17,16 +17,21 @@ The two checks read the BUILT OUTPUT, never the transform:
   1. no original group-D quote is in any output file. The quotes are DERIVED from the SOURCE D files at check time
      (italic `*"…"*` quotes, and blockquotes that open with a `"`, each read within one paragraph), split at an
      ellipsis, and every fragment of three words or more — and every run of six consecutive words inside a longer
-     one — is searched for with markdown emphasis, blockquote markers, case and whitespace normalised away. Finding no quote at all in the source D files is CANNOT RUN, not a pass.
-  2. no excluded file name is present anywhere in the output tree.
+     one — is searched for as WORDS: every run of punctuation, markdown emphasis, blockquote markers and whitespace is one
+     space, and case is folded. A source D file with no quote found in it is CANNOT RUN, not a pass (its quotes would
+     go unsearched).
+  2. no excluded file is present anywhere in the output tree — by name, or by content (an output file whose bytes
+     equal an excluded source file's, under any name).
 
 rc 0 = built/checked and both checks pass; 1 = a check FAILED (each hit is named); 2 = CANNOT RUN (treat as NOT
 RUN): a group count other than 6/4/6/6, a listed file missing from the source, a D file with no paraphrase or a
-stale one, an `--out` that is not absent or empty, a non-`.md` entry in the source, or no quotes found.
+stale one, an `--out` that is not absent or empty, a non-`.md` entry in the source, or a D file with no quote found.
 
 What this cannot see: a paraphrase that keeps an owner's words in a form the normaliser does not undo (a reworded
-sentence, a reused run of fewer than six words from a longer quote, a fragment under three words), and private content that is not a quote. Dangling `[[links]]` from kept
-files to excluded ones are left as they are.
+sentence, a reused run of fewer than six words from a longer quote, a fragment under three words, a word split or
+joined differently), an excluded file's content in the output when it is not byte-identical (edited, or concatenated
+into another file), and private content that is not a quote. Dangling `[[links]]` from kept files to excluded ones are
+left as they are.
 """
 from __future__ import annotations
 
@@ -79,9 +84,10 @@ def quotes(text: str) -> list[str]:
 
 
 def norm(text: str) -> str:
-    text = re.sub(r"(?m)^\s*(>\s?)*", "", text)
-    text = re.sub(r"[*_`\\]", "", text)
-    return re.sub(r"\s+", " ", text).strip().lower()
+    """WORDS, not characters: every run of non-alphanumeric characters (punctuation, markdown emphasis, blockquote
+    markers, apostrophes of either kind, line breaks) becomes one space, and case is folded — so a quote reproduced
+    with its punctuation changed, added or stripped still matches."""
+    return " ".join(re.sub(r"[\W_]+", " ", text.lower()).split())
 
 
 def fragments(quote: str) -> list[str]:
@@ -143,21 +149,25 @@ def check(root: Path, out: Path) -> tuple[int, list[str]]:
     excluded = set(g["A"] + g["B"] + g["C"])
     report, hits = [], []
     frags: dict[str, str] = {}
+    unread = []
     for n in g["D"]:
         qs = quotes((root / SRC / n).read_text())
+        mine = {s for q in qs for f in fragments(q) for s in windows(f)}
         report.append(f"  {n}: {len(qs)} quotes")
-        for q in qs:
-            for f in fragments(q):
-                for s in windows(f):
-                    frags[s] = n
-    if not frags:
-        return 2, report + ["CANNOT RUN: no quote found in the source group-D files — nothing was checked"]
+        if not mine:
+            unread.append(n)
+        frags.update({s: n for s in mine})
+    if unread:
+        return 2, report + [f"CANNOT RUN: no quote found in group-D source(s) {unread} — their quotes were not checked"]
+    gone = {_sha(root / SRC / n): n for n in sorted(excluded)}
     files = sorted(p for p in out.rglob("*") if p.is_file())
     if not files:
         return 2, report + [f"CANNOT RUN: {out} holds no files — nothing was checked"]
     for p in files:
         if p.name in excluded:
             hits.append(f"EXCLUDED FILE PRESENT: {p.relative_to(out)}")
+        elif _sha(p) in gone:
+            hits.append(f"EXCLUDED CONTENT PRESENT: {p.relative_to(out)} is {gone[_sha(p)]}")
     for p in files:
         body = norm(p.read_text(errors="replace"))
         for f, n in frags.items():
@@ -221,7 +231,9 @@ def _self_test_body() -> int:
         "d1.md": 'Rule one.\n\nThe owner: *"say the conclusion first, then explain"*\n',
         "d2.md": '> "keep a reserve for the\n> later days of the week"\n\nRule two.\n',
         "d3.md": 'Rule three: *"the first part of a quote … and the part after the cut"*\n',
-        "d4.md": "Rule four, no quote.\n", "d5.md": "Rule five.\n", "d6.md": "Rule six.\n",
+        "d4.md": 'Rule four: *"#297 is NOT ready to merge — no review, `verify` pending."*\n',
+        "d5.md": 'Rule five: *"don\'t stop tonight, as un-used capacity will be lost"*\n',
+        "d6.md": 'Rule six: *"use the name of the owner here"*\n',
     }
 
     def world(name, d=None, decision=None, extra=None):
@@ -289,6 +301,23 @@ def _self_test_body() -> int:
     case("a long fragment yields its six-word runs, a short one itself",
          lambda: (windows("one two three four five six seven"), windows("one two three")),
          (["one two three four five six", "two three four five six seven"], ["one two three"]))
+    case("a quote reproduced with its punctuation stripped, changed or added fails check 1 (words, not characters)",
+         lambda: (planted("kept.md", "297 is not ready to merge\n"),
+                  planted("kept.md", "#297, is, not, ready, to, merge.\n"),
+                  (lambda r: (r[0], sorted(set(r[1]))))(  # a long quote hits on several six-word runs
+                      planted("kept.md", "Don’t stop tonight; as un-used capacity will be lost!\n"))),
+         ((1, ["QUOTE FROM d4.md IN kept.md"]), (1, ["QUOTE FROM d4.md IN kept.md"]), (1, ["QUOTE FROM d5.md IN kept.md"])))
+    case("the words of a quote with its punctuation changed still match, apostrophes of either kind included",
+         lambda: (norm("Don’t, stop: tonight!") == norm("don't stop tonight"), norm("**Say** the\n> conclusion")),
+         (True, "say the conclusion"))
+    case("an excluded file's content in the output under another name fails check 2",
+         lambda: planted("renamed.md", "excluded b2.md\n"), (1, ["EXCLUDED CONTENT PRESENT"]))
+    case("a kept file whose content differs from every excluded file does not fail check 2",
+         lambda: planted("renamed.md", "excluded b2.md, edited\n"), (0, []))
+    case("ONE source D file with no quote is CANNOT RUN, though the other five have quotes",
+         lambda: (lambda r: (r[0], r[1][-1]))(
+             check(world("onenoquote", d={**d_text, "d5.md": "Rule five, its quote reworded away.\n"}), base / "good-out")),
+         (2, "CANNOT RUN: no quote found in group-D source(s) ['d5.md'] — their quotes were not checked"))
     case("no quote in any source D file is CANNOT RUN, not a pass",
          lambda: check(world("noquote", d={n: "no quotes\n" for n in letters["D"]}), base / "good-out")[0], 2)
     def stale():

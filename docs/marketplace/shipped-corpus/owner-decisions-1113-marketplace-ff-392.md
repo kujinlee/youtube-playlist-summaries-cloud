@@ -6,7 +6,7 @@ metadata:
 ---
 
 > Shipped-corpus edition: the owner's quoted words in the source of this file are paraphrased to their essence, with
-> no names, dates, numbers or project details. The rules are unchanged.
+> no names, dates, numbers or project details. The rules are unchanged, and every rule figure outside a quote is kept.
 
 ## Current decisions (the owner's)
 

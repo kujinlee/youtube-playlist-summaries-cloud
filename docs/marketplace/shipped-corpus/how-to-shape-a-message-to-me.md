@@ -6,7 +6,7 @@ metadata:
 ---
 
 > Shipped-corpus edition: the owner's quoted words in the source of this file are paraphrased to their essence, with
-> no names, dates, numbers or project details. The rules are unchanged.
+> no names, dates, numbers or project details. The rules are unchanged, and every rule figure outside a quote is kept.
 
 **The rule — say it, show it, then say what happens next:**
 1. **OPEN with the conclusion, in one plain sentence** — what is true now or what the user should do.
