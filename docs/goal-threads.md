@@ -226,3 +226,4 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this; APPROVED by the owner 11-11 05:53, folded as section 2c, round 7 converged
 - fix · backlog #384 · the comprehensibility suite's overarching design: the pages are a large part of what the plugin ships
 - fix · backlog #644 · one piece of work has one name: goal, anchor, feature node and ledger id agree, and a check keeps them agreeing
+- fix · PR #616 · plan Task 17: the CI layer's six inventory rows, each naming the ground its verdict rests on (spec §5 rule 1 as amended 11-22); compared with four mutation tools' own docs

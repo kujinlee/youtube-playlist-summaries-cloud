@@ -838,7 +838,7 @@ cargo-mutants **from each project's own documentation, fetched in this task**; a
 written `unverified`. The mutation engine itself is expected `DON'T-SHIP` with `harvest: practice` candidates.
 Grade: `argued` for all (spec §2b).
 
-- [ ] **Steps:** read scan → fetch the four engines' docs → write rows → `python3 scripts/check-inventory.py`
+- [x] **Steps:** read scan → fetch the four engines' docs → write rows → `python3 scripts/check-inventory.py`
   (after Task 19 exists; until then, validate the rows parse) → commit.
 
 **FAILS IF:** a row's comparison sentence names an engine capability with no fetched source and is not marked
@@ -903,8 +903,10 @@ recall row has `phase: "1"` while `recall.a` is not `true` or `recall.b` is not 
 
 **Interfaces:**
 - Consumes: `inventory.json` rows written by Tasks 17-18 (and 20); `components.json` (Task 5);
-  `shipping-sets.json` (Task 6); the latest `scan-<date>.json` (Task 12); `experiment-tier-a.json` (Task 14).
-- Produces: `checkpoint_fires(rows: list[dict]) -> bool`; `row_errors(row: dict, scan: dict) -> list[str]`;
+  `shipping-sets.json` (Task 6); the latest `scan-<date>.json` (Task 12); `experiment-tier-a.json` (Task 14);
+  the spec file, which owns the `spec` ground kind (§5 rule 1).
+- Produces: `checkpoint_fires(rows: list[dict]) -> bool`;
+  `row_errors(row: dict, scan: dict, spec_text: str, sidecar: dict) -> list[str]`;
   `render(rows) -> str` (Markdown, verdict and grade in ONE table cell); CLI rc 0 clean, 1 row errors,
   2 CANNOT RUN, **3 CHECKPOINT** (the D1 checkpoint fired: stop and go to Human step H4).
 
@@ -913,7 +915,7 @@ Row schema (one per component in `components.json`; a missing component is an er
 ```json
 {"id": "brief", "effort": 3, "roles": ["entry-point"], "phase": "1",
  "verdict": "NEEDS-WORK", "grade": "measured", "scenario": "tier-A scripted: brief-compose page",
- "cites": ["brief:4:1", "brief:2:1"], "harvest": "none", "practice_entry": null,
+ "rests_on": [{"kind": "finding", "ids": ["brief:4:1", "brief:2:1"]}], "harvest": "none", "practice_entry": null,
  "criteria": {"C1": "pass", "C2": "pass", "C3": "fail", "C4": "fail", "C5": "pass"},
  "cost": {"public_bar_hours": 6.0, "next_project_hours": 2.0, "grade": "argued"},
  "route": {"kind": "decouple-config", "cost_hours": 4.0, "grade": "argued"}}
@@ -935,7 +937,14 @@ has no shipping set", per component, not only per package); **a row whose `phase
 row at `"1"` unless the inventory's `recall.a` is `true` and `recall.b` is `"pass"`** (§2c D11's "only if"; Task
 18 resolves the map's `"1-if-feasible"`, ⟳ r2 CLAUDE M3);
 **`next_project_hours` ≤ 0** (the ratio is undefined; ⟳ r1 CLAUDE m2); an `inherited` grade with no
-`scenario` (§4b); a non-ship verdict with no `cites`, or citing an id the scan did not emit (§5 rule 1); a non-ship
+`scenario` (§4b); a non-ship verdict with an empty `rests_on`, or an entry whose `kind` is not one of the four, or
+an entry that does not resolve against the file owning its kind (§5 rule 1, amended 2026-11-22 by the owner,
+option A): a `finding` id absent from the scan's `findings` for **the row's OWN component** (a mention
+candidate's id, or another component's finding, is refused, which is what stops a borrowed cite), a `spec`
+`section`/`heading` or `decision` the spec does not have, an `experiment` scenario that is not this component's
+entry in `experiment-tier-a.json` or has no pass condition `fail`, a `c5` entry on a row whose C5 is not
+`unanswered`; and a row with C2 or C3 `fail` at grade `measured` and no `finding` entry. The self-test carries
+the borrowed-id case and one failing case per kind. The guard checks that a ground RESOLVES, not that it bears; a non-ship
 row with no `route` (§9 D10); a `practice` harvest with no `practice_entry` naming a heading that exists in
 `docs/portable-practices.md` (§4c); a `data` row with a C4 value other than `"struck"` (§4); the memory-corpus row
 with a ship verdict while its `C5` is `unanswered` (§7 item 11); a `measured` grade on an effort (1) or (2) row
