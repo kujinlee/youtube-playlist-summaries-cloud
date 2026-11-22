@@ -983,8 +983,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "json.loads(path.read_text(), parse_constant=_refuse_constant)",
-    "json.loads(path.read_text())"
+    "parse_constant=_refuse_constant,\n                         object_pairs_hook",
+    "object_pairs_hook"
    ]
   ],
   "expect": "an inventory.json holding the JSON constant NaN exits 2, CANNOT RUN"
@@ -1005,8 +1005,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "    for c in cmap[\"components\"]:\n        if c[\"id\"] not in scan",
-    "    for c in ():\n        if c[\"id\"] not in scan"
+    "        if c[\"id\"] not in scan[\"components\"]:",
+    "        if False:"
    ]
   ],
   "expect": "an empty scan exits 2, CANNOT RUN"
@@ -1016,8 +1016,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "        if not isinstance(entry.get(\"findings\"), list):\n",
-    "        if entry.get(\"findings\") is None:\n"
+    "_obj(findings=_list_of(_obj(id=_STR)))",
+    "_obj(findings=_ANY)"
    ]
   ],
   "expect": "a scan entry whose findings is an object, not a list, exits 2, CANNOT RUN"
@@ -1027,8 +1027,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "        if not all(isinstance(f, dict) for f in entry[\"findings\"]):\n",
-    "        if False:\n"
+    "findings=_list_of(_obj(id=_STR))",
+    "findings=_list_of(_ANY)"
    ]
   ],
   "expect": "a scan entry whose findings holds a non-object exits 2, CANNOT RUN"
@@ -1104,8 +1104,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "        if not isinstance(c, dict):\n            raise CannotRun(f\"components.json has a component",
-    "        if False:\n            raise CannotRun(f\"components.json has a component"
+    "components=_list_of(_obj(id=_ID, effort=_INT, roles=_list_of(_STR), phase=_one_of(*MAP_PHASES),\n                                 package=_STR))),",
+    "components=_list_of(_ANY)),"
    ]
   ],
   "expect": "a component that is not an object exits 2, CANNOT RUN, never a traceback"
@@ -1115,8 +1115,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not _is_id(cid):",
-    "if cid is None:"
+    "_obj(id=_ID,",
+    "_obj(id=_ANY,"
    ]
   ],
   "expect": "a component id that is a list exits 2, CANNOT RUN, never a traceback"
@@ -1137,8 +1137,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not isinstance(c.get(\"effort\"), int) or",
-    "if False or"
+    "effort=_INT,",
+    "effort=_ANY,"
    ]
   ],
   "expect": "a component effort that is a string exits 2, CANNOT RUN, never a traceback"
@@ -1148,8 +1148,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "int) or isinstance(c.get(\"effort\"), bool):",
-    "int):"
+    "_INT = _is(\"an integer\", lambda v: isinstance(v, int) and not isinstance(v, bool))",
+    "_INT = _is(\"an integer\", lambda v: isinstance(v, int))"
    ]
   ],
   "expect": "a component effort that is a boolean exits 2, CANNOT RUN, never a traceback"
@@ -1159,8 +1159,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not isinstance(c.get(\"roles\"), list) or not all(",
-    "if False or not all("
+    "roles=_list_of(_STR)",
+    "roles=_ANY"
    ]
   ],
   "expect": "component roles that are a boolean exits 2, CANNOT RUN, never a traceback"
@@ -1170,8 +1170,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "or not all(isinstance(r, str) for r in c[\"roles\"]):",
-    "or False:"
+    "_list_of(_STR), phase=",
+    "_list_of(_ANY), phase="
    ]
   ],
   "expect": "component roles holding a non-string exits 2, CANNOT RUN, never a traceback"
@@ -1181,8 +1181,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not isinstance(c.get(\"phase\"), str):",
-    "if False:"
+    "phase=_one_of(*MAP_PHASES),\n",
+    "phase=_ANY,\n"
    ]
   ],
   "expect": "a component phase that is a list exits 2, CANNOT RUN, never a traceback"
@@ -1192,8 +1192,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not isinstance(c.get(\"package\"), str):",
-    "if False:"
+    "package=_STR))),",
+    "package=_ANY))),"
    ]
   ],
   "expect": "a component package that is a list exits 2, CANNOT RUN, never a traceback"
@@ -1203,8 +1203,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not isinstance(v, dict) or not isinstance(v.get(\"channel\")",
-    "if False or not isinstance(v.get(\"channel\")"
+    "packages=_map_of(_obj(channel=_one_of(*CHANNELS))),",
+    "packages=_map_of(_ANY),"
    ]
   ],
   "expect": "a map package that is not an object exits 2, CANNOT RUN, never a traceback"
@@ -1214,8 +1214,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "or not isinstance(v.get(\"channel\"), str):",
-    "or False:"
+    "channel=_one_of(*CHANNELS)",
+    "channel=_ANY"
    ]
   ],
   "expect": "a map package channel that is a list exits 2, CANNOT RUN, never a traceback"
@@ -1225,8 +1225,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not isinstance(v, dict) or not isinstance(v.get(\"components\")",
-    "if False or not isinstance(v.get(\"components\")"
+    "\"shipping-sets.json\": _obj(packages=_map_of(_obj(components=_map_of(_ANY)))),",
+    "\"shipping-sets.json\": _obj(packages=_map_of(_ANY)),"
    ]
   ],
   "expect": "a shipping-set package that is not an object exits 2, CANNOT RUN, never a traceback"
@@ -1236,8 +1236,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "or not isinstance(v.get(\"components\"), dict):",
-    "or False:"
+    "components=_map_of(_ANY)",
+    "components=_ANY"
    ]
   ],
   "expect": "a shipping-set package whose components is a boolean exits 2, CANNOT RUN, never a traceback"
@@ -1247,8 +1247,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "        if not isinstance(entry, dict):\n            raise CannotRun(f\"{scan_name}'s entry",
-    "        if False:\n            raise CannotRun(f\"{scan_name}'s entry"
+    "_map_of(_obj(findings=_list_of(_obj(id=_STR))))",
+    "_map_of(_ANY)"
    ]
   ],
   "expect": "a scan entry outside the map that is not an object exits 2, CANNOT RUN, never a traceback"
@@ -1258,8 +1258,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not all(isinstance(f.get(\"id\"), str) for f in entry[\"findings\"]):",
-    "if False:"
+    "_obj(id=_STR)",
+    "_obj(id=_ANY)"
    ]
   ],
   "expect": "a scan finding whose id is a list (CODEX X2) exits 2, CANNOT RUN, never a traceback"
@@ -1269,8 +1269,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "        if not isinstance(entry, dict):\n            raise CannotRun(f\"experiment-tier-a.json",
-    "        if False:\n            raise CannotRun(f\"experiment-tier-a.json"
+    "\"experiment-tier-a.json\": _obj(components=_map_of(_obj(",
+    "\"experiment-tier-a.json\": _obj(components=_map_of(_ANY) or _map_of(_obj("
    ]
   ],
   "expect": "a sidecar entry that is not an object exits 2, CANNOT RUN, never a traceback"
@@ -1280,8 +1280,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not isinstance(entry.get(\"exercised\"), bool) or",
-    "if False or"
+    "exercised=_BOOL",
+    "exercised=_ANY"
    ]
   ],
   "expect": "a sidecar exercised that is a string exits 2, CANNOT RUN, never a traceback"
@@ -1291,8 +1291,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "or not isinstance(entry.get(\"operation_ok\"), bool):",
-    "or False:"
+    "operation_ok=_BOOL, ",
+    ""
    ]
   ],
   "expect": "a sidecar operation_ok that is missing exits 2, CANNOT RUN, never a traceback"
@@ -1302,8 +1302,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not _str_or_null(entry.get(\"scenario\")):",
-    "if False:"
+    "scenario=_null_or(_STR)",
+    "scenario=_ANY"
    ]
   ],
   "expect": "a sidecar scenario that is a list exits 2, CANNOT RUN, never a traceback"
@@ -1313,8 +1313,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not isinstance(pcs, dict) or not all(",
-    "if False or not all("
+    "pass_conditions=_map_of(_one_of(*PASS_VALUES))",
+    "pass_conditions=_ANY"
    ]
   ],
   "expect": "sidecar pass_conditions that are a boolean exits 2, CANNOT RUN, never a traceback"
@@ -1324,8 +1324,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "or not all(isinstance(x, str) for x in pcs.values()):",
-    "or False:"
+    "_map_of(_one_of(*PASS_VALUES))",
+    "_map_of(_ANY)"
    ]
   ],
   "expect": "sidecar pass_conditions holding a non-string exits 2, CANNOT RUN, never a traceback"
@@ -1335,8 +1335,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not isinstance(inventory.get(\"recall\"), dict):",
-    "if False:"
+    "recall=_obj()",
+    "recall=_ANY"
    ]
   ],
   "expect": "an inventory recall that is a list exits 2, CANNOT RUN, never a traceback"
@@ -1362,5 +1362,140 @@
    ]
   ],
   "expect": "a 2026-10-15-marketplace-inventory-design.md that is not UTF-8 exits 2, CANNOT RUN, never a UnicodeDecodeError"
+ },
+ {
+  "name": "the depth bound is removed",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if depth > MAX_DEPTH:",
+    "if False:"
+   ]
+  ],
+  "expect": "an inventory.json nested 33 deep is refused"
+ },
+ {
+  "name": "a repeated JSON key is kept silently (no _unique_keys)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "object_pairs_hook=_unique_keys)",
+    ")"
+   ]
+  ],
+  "expect": "a repeated key in one object of components.json is rc 2 (Python would keep the last, silently)"
+ },
+ {
+  "name": "_one_of matches by value only",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "lambda v: any(type(v) is type(m) and v == m for m in vocab)",
+    "lambda v: any(v == m for m in vocab)"
+   ]
+  ],
+  "expect": "_one_of matches by TYPE: True is not 1, 1.0 is not 1, 1 is 1"
+ },
+ {
+  "name": "a map channel is any string (no CHANNELS vocabulary)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(channel=_one_of(*CHANNELS))",
+    "(channel=_STR)"
+   ]
+  ],
+  "expect": "a map channel `Plugin` is rc 2 (it would skip the SHIP rule)"
+ },
+ {
+  "name": "a pass condition is any string (no PASS_VALUES vocabulary)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_one_of(*PASS_VALUES)",
+    "_STR"
+   ]
+  ],
+  "expect": "a pass condition `FAIL` is rc 2 (it would back a SHIP)"
+ },
+ {
+  "name": "a map phase is any string (no MAP_PHASES vocabulary)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "phase=_one_of(*MAP_PHASES)",
+    "phase=_STR"
+   ]
+  ],
+  "expect": "a map phase `2` is rc 2, naming the phase"
+ },
+ {
+  "name": "two components with one id are accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if c[\"id\"] in seen:",
+    "        if False:"
+   ]
+  ],
+  "expect": "two components with one id (identical) is rc 2, naming it"
+ },
+ {
+  "name": "a component package that `packages` lacks is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if c[\"package\"] not in cmap[\"packages\"]:",
+    "        if False:"
+   ]
+  ],
+  "expect": "a component whose package names no package is rc 2, naming it"
+ },
+ {
+  "name": "the net returns 1 (Python's own exit, a false verdict)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "survived its case through the net).\n        return 2",
+    "survived its case through the net).\n        return 1"
+   ]
+  ],
+  "expect": "an exception inside _main is rc 2 with INTERNAL ERROR, and no line starts `CANNOT RUN: `"
+ },
+ {
+  "name": "output is not total (no backslashreplace)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "stream.reconfigure(errors=\"backslashreplace\")",
+    "pass"
+   ]
+  ],
+  "expect": [
+   "the fuzz: over 2000 edits of the fixture inputs, no exception escapes main and none reaches the net",
+   "a lone surrogate in a row id prints escaped, with the row's rc (1), never a traceback"
+  ]
+ },
+ {
+  "name": "the JSON reader decodes with the locale's encoding",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "doc = json.loads(path.read_bytes().decode(\"utf-8\")",
+    "doc = json.loads(path.read_text()"
+   ]
+  ],
+  "expect": "a UTF-8 non-ASCII inventory is read under LC_ALL=C (the reader decodes UTF-8, never the locale's)"
+ },
+ {
+  "name": "the text reader decodes with the locale's encoding",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return path.read_bytes().decode(\"utf-8\")",
+    "return path.read_text()"
+   ]
+  ],
+  "expect": "a UTF-8 non-ASCII inventory is read under LC_ALL=C (the reader decodes UTF-8, never the locale's)"
  }
 ]

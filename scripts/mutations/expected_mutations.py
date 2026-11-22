@@ -2530,7 +2530,10 @@ EXPECTED_MUTATIONS = {
     # the input loader and render's one verdict-and-grade cell. Each verified red by hand in a full clone.
     # ⟳ r1 fold: 98 — the row shape pass, field by field. ⟳ r2 fold: 124 — the integer past the float range
     # (CODEX X1), every input field a rule reads (CODEX X2's class check), JSON nested too deep, non-UTF-8 text.
-    "scripts/check-inventory.py": 124,
+    # ⟳ Phase 6 fold (2026-11-22): 136 — the 25 `_check_inputs`/reader entries re-anchored on FILE_SHAPES leaves,
+    # plus one per new rule: depth, repeated key, `_one_of` by type, the three vocabularies, two reference rules,
+    # the net's rc, backslashreplace, and both readers' UTF-8 decode.
+    "scripts/check-inventory.py": 136,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out

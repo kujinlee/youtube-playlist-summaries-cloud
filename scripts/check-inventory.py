@@ -4,18 +4,25 @@
     python3 scripts/check-inventory.py              # the live inventory under this repository
     python3 scripts/check-inventory.py --render     # the same checks; on rc 0 or 3, the Markdown view on stdout
     python3 scripts/check-inventory.py --root DIR   # another tree (the self-test's fixture worlds)
-    python3 scripts/check-inventory.py --self-test  # 267 cases
+    python3 scripts/check-inventory.py --self-test  # 296 cases
 
 It reads `docs/marketplace/inventory.json`, `components.json`, `shipping-sets.json`, the LATEST `scan-<date>.json`
 (by name), `experiment-tier-a.json`, the spec (which owns the `spec` ground kind, §5 rule 1) and
 `docs/portable-practices.md` (which owns `practice_entry`).
 
 Exit codes RANK, and the order is the rule (plan Task 19): an input unreadable or absent → 2 (CANNOT RUN: treat
-as NOT RUN; a JSON NaN/Infinity, JSON nested past the parser's stack, a spec or practices file that is not UTF-8,
-a scan with no entry for a component in the map, and any field a rule reads of the wrong type (`_check_inputs`
-lists them, r2 fold) are unreadable); else any row or inventory error → 1, and the checkpoint is NOT computed (a fire over rows with errors
+as NOT RUN); else any row or inventory error → 1, and the checkpoint is NOT computed (a fire over rows with errors
 is not evidence); else `checkpoint_fires` raising (no phase-1 rows) → 2; else the checkpoint fired → 3 (stop: Human
 step H4); else 0. So rc 1 outranks rc 3.
+
+Inputs are read by one bounded reader and one walker (Phase 6 review, 2026-11-22, backlog #699). `_read_json`
+returns a value that is UTF-8, free of NaN/Infinity and repeated keys, and at most MAX_DEPTH deep; FILE_SHAPES
+declares, per input file, every field a rule reads, and `_violations` is the only code that checks one. A field a
+rule compares with a literal is declared `_one_of` its vocabulary (a typo is unreadable, never "the other value").
+A rule relating two places lives in `_reference_errors`. Any failure of these is rc 2. No message prints an input
+value except through `_show`. `main` is a net: an exception nothing anticipated is rc 2 with `INTERNAL ERROR`,
+never Python's own exit 1, which is this guard's code for "row errors". Adding a rule that reads a new input field
+means adding that field to FILE_SHAPES in the same commit.
 
 Every error is printed as `<row id>: [<rule>] <why>`; the rule tag names which falsifier refused it.
 
@@ -216,7 +223,7 @@ def _shape_errors(row):
         if key not in row:
             out.append(f"{key} is missing; it must be {want}")
         elif not ok(row[key]):
-            out.append(f"{key} {row[key]!r} is not {want}")
+            out.append(f"{key} {_show(row[key])} is not {want}")
     return out
 
 
@@ -297,8 +304,8 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
     if comp is None:
         err("map", "no component with this id in components.json")
     elif row.get("effort") != comp.get("effort") or list(roles) != list(comp.get("roles") or []):
-        err("map", f"effort {row.get('effort')!r} / roles {roles!r} differ from components.json's "
-                   f"{comp.get('effort')!r} / {comp.get('roles')!r}")
+        err("map", f"effort {_show(row.get('effort'))} / roles {_show(roles)} differ from components.json's "
+                   f"{_show(comp.get('effort'))} / {_show(comp.get('roles'))}")
 
     package = (comp or {}).get("package")
     if ship and comp is not None and ctx.channels.get(package) == "plugin":
@@ -309,27 +316,27 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
         elif "library" in roles:
             named = _named_entry_point(row.get("scenario"), ctx.components)
             if named is None:
-                err("ship-experiment", f"SHIP library whose scenario {row.get('scenario')!r} names no entry-point "
+                err("ship-experiment", f"SHIP library whose scenario {_show(row.get('scenario'))} names no entry-point "
                                        "component id")
             elif ctx.components[named].get("package") != package:
                 err("ship-experiment", f"SHIP library whose named entry-point {named} is in package "
-                                       f"{ctx.components[named].get('package')!r}, not the library's {package!r}")
+                                       f"{_show(ctx.components[named].get('package'))}, not the library's {_show(package)}")
             elif not _backs(sidecar.get(named)):
                 err("ship-experiment", f"SHIP library whose named entry-point {named} is not backed by its tier-A "
                                        "entry")
 
     phase = row["phase"]
     if phase == "1" and comp is not None and rid not in ctx.shipping.get(package, set()):
-        err("shipping-set", f"phase-1 row absent from package {package!r}'s components in shipping-sets.json")
+        err("shipping-set", f"phase-1 row absent from package {_show(package)}'s components in shipping-sets.json")
     if phase == "1" and row.get("effort") == 1:
         recall = ctx.recall or {}
         if not (recall.get("a") is True and recall.get("b") == "pass"):
-            err("recall-phase", f"recall row at phase \"1\" while recall.a is {recall.get('a')!r} and recall.b "
-                                f"is {recall.get('b')!r}")
+            err("recall-phase", f"recall row at phase \"1\" while recall.a is {_show(recall.get('a'))} and recall.b "
+                                f"is {_show(recall.get('b'))}")
 
     nxt = row["cost"]["next_project_hours"]
     if not nxt > 0:
-        err("next-project", f"next_project_hours is {nxt!r}, which leaves the ratio undefined")
+        err("next-project", f"next_project_hours is {_show(nxt)}, which leaves the ratio undefined")
 
     if grade == "inherited" and not row.get("scenario"):
         err("inherited", "an inherited grade with no scenario")
@@ -343,7 +350,7 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
     for g in grounds:
         kind = g.get("kind") if isinstance(g, dict) else None
         if kind not in GROUND_KINDS:
-            err("ground-kind", f"a ground of kind {kind!r}, not one of {', '.join(GROUND_KINDS)}")
+            err("ground-kind", f"a ground of kind {_show(kind)}, not one of {', '.join(GROUND_KINDS)}")
         elif kind == "finding":
             ids = g.get("ids")
             if not isinstance(ids, list) or not ids:
@@ -351,7 +358,7 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
                 continue
             for fid in ids:
                 if not isinstance(fid, str) or fid not in own:
-                    err("ground-finding", f"finding {fid!r} is not in the scan's findings for {rid}")
+                    err("ground-finding", f"finding {_show(fid)} is not in the scan's findings for {rid}")
         elif kind == "spec":
             bad = _spec_ground_error(g, spec_lines)
             if bad:
@@ -363,12 +370,12 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
                 continue
             entry = sidecar.get(rid) or {}
             if entry.get("scenario") != scen:
-                err("ground-experiment", f"scenario {scen!r} is not {rid}'s tier-A entry")
+                err("ground-experiment", f"scenario {_show(scen)} is not {rid}'s tier-A entry")
             elif "fail" not in (entry.get("pass_conditions") or {}).values():
-                err("ground-experiment", f"scenario {scen!r} has no pass condition `fail`")
+                err("ground-experiment", f"scenario {_show(scen)} has no pass condition `fail`")
         elif kind == "c5":
             if criteria.get("C5") != "unanswered":
-                err("ground-c5", f"a c5 ground while C5 is {criteria.get('C5')!r}")
+                err("ground-c5", f"a c5 ground while C5 is {_show(criteria.get('C5'))}")
 
     if (grade == "measured" and "fail" in (criteria.get("C2"), criteria.get("C3"))
             and not any(isinstance(g, dict) and g.get("kind") == "finding" for g in grounds)):
@@ -378,10 +385,10 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
         err("route", "a non-SHIP row with no route (§9 D10)")
 
     if row.get("harvest") == "practice" and row.get("practice_entry") not in ctx.practice_headings:
-        err("practice", f"practice_entry {row.get('practice_entry')!r} is not exactly a `## ` heading of "
+        err("practice", f"practice_entry {_show(row.get('practice_entry'))} is not exactly a `## ` heading of "
                         f"{PRACTICES} (the heading text with its number, without `## `)")
     if "data" in roles and criteria.get("C4") != "struck":
-        err("data-c4", f"a data row with C4 {criteria.get('C4')!r}, not \"struck\"")
+        err("data-c4", f"a data row with C4 {_show(criteria.get('C4'))}, not \"struck\"")
     if rid == "memory-corpus" and ship and criteria.get("C5") == "unanswered":
         err("corpus-c5", "the memory-corpus row ships while its C5 is unanswered (§7 item 11)")
     if grade == "measured" and row.get("effort") in (1, 2):
@@ -404,10 +411,10 @@ def inventory_errors(inventory, ctx, latest_scan=None):
         errs.append("inventory: [phase1-package] no phase-1 package is named in components.json")
     for pkg in phase1:
         if pkg not in ctx.shipping:
-            errs.append(f"inventory: [package-shipping] phase-1 package {pkg!r} has no entry in shipping-sets.json")
+            errs.append(f"inventory: [package-shipping] phase-1 package {_show(pkg)} has no entry in shipping-sets.json")
     if latest_scan is not None and inventory.get("scan") != latest_scan:
-        errs.append(f"inventory: [scan] the inventory names scan {inventory.get('scan')!r}; the latest is "
-                    f"{latest_scan!r}")
+        errs.append(f"inventory: [scan] the inventory names scan {_show(inventory.get('scan'))}; the latest is "
+                    f"{_show(latest_scan)}")
     return errs
 
 
@@ -433,87 +440,164 @@ def _refuse_constant(name):
     raise ValueError(f"the JSON constant {name} is not a number")
 
 
+MAX_DEPTH = 32      # the committed inputs nest at most 6 deep (measured 2026-11-22); 32 is a decision, far above
+                    # the data and far below the stack
+
+
+def _unique_keys(pairs):
+    """One object's pairs as a dict, refusing a repeated key: Python's parser keeps the LAST and says nothing."""
+    out = {}
+    for k, v in pairs:
+        if k in out:
+            raise ValueError(f"the key {_show(k)} appears twice in one object")
+        out[k] = v
+    return out
+
+
 def _read_json(path):
-    """Parsed JSON, or CannotRun. JSON's NaN, Infinity and -Infinity are refused: they are not numbers, and Python's
-    parser would otherwise accept them (r1 fold, CLAUDE C1)."""
+    """THE reader for every JSON input: parsed, or CannotRun. What it returns is a BOUNDED value: UTF-8 text (never
+    the locale's encoding), no NaN or Infinity constant, no repeated key, and nested at most MAX_DEPTH deep, so
+    `repr`, `==` and a recursive walk are total over it."""
     try:
-        return json.loads(path.read_text(), parse_constant=_refuse_constant)
+        doc = json.loads(path.read_bytes().decode("utf-8"), parse_constant=_refuse_constant,
+                         object_pairs_hook=_unique_keys)
     except (OSError, ValueError) as e:
         raise CannotRun(f"{path} is unreadable ({type(e).__name__}: {e})") from e
-    except RecursionError as e:     # r2 fold (fuzz): JSON nested past the parser's stack is unreadable, not a crash
+    except RecursionError as e:
         raise CannotRun(f"{path} is unreadable (nested too deep to parse)") from e
+    todo = [(doc, 1)]
+    while todo:                     # iterative: the walk itself must not depend on the stack
+        v, depth = todo.pop()
+        if isinstance(v, (list, dict)):
+            if depth > MAX_DEPTH:
+                raise CannotRun(f"{path} is unreadable (nested deeper than {MAX_DEPTH} levels)")
+            todo.extend((x, depth + 1) for x in (v.values() if isinstance(v, dict) else v))
+    return doc
 
 
 def _read_text(path):
-    """The file's text, or CannotRun: absent or unreadable (OSError), or not UTF-8 (UnicodeDecodeError, a ValueError
-    that `except OSError` let through as a traceback before the r2 fold)."""
+    """The file's text as UTF-8, or CannotRun."""
     try:
-        return path.read_text()
+        return path.read_bytes().decode("utf-8")
     except (OSError, ValueError) as e:
         raise CannotRun(f"{path} is unreadable ({type(e).__name__})") from e
+
+
+CHANNELS = ("plugin", "reusable-workflow")                  # check-shipping-sets.py's CHANNELS (it owns the map)
+MAP_PHASES = ("1", "1-if-feasible", "later")                # check-shipping-sets.py's PHASES (the map's own)
+PASS_VALUES = ("pass", "fail", "argued", "CANNOT RUN")      # plan Task 14 Step 6
 
 
 def _is_id(v):
     return isinstance(v, str) and bool(v.strip())
 
 
-def _check_inputs(cmap, sets, scan, side, inventory, scan_name):
-    """CannotRun naming the first field a rule reads that has the wrong type (r2 fold, CODEX X2, and its class check):
-    the rules assume these, so a wrong-typed one is unreadable input, never a traceback. The fields, by file:
-      components.json   each component an object with id (non-empty string), effort (integer), roles (list of
-                        strings), phase (string), package (string); each package an object whose channel is a string;
-      shipping-sets.json  each package an object whose `components` is an object;
-      scan-<date>.json  every entry (not only the map's) an object whose findings is a list of objects, each with a
-                        string id; every component in the map has an entry;
-      experiment-tier-a.json  every entry an object with exercised and operation_ok booleans, scenario a string or
-                        null, and pass_conditions an object of strings;
-      inventory.json    recall an object (the rows are checked by ROW_SCHEMA, row by row)."""
+def _show(v):
+    """A value as a message may print it: bounded in length, and never the repr of a container."""
+    if isinstance(v, (list, dict)):
+        return f"a list of {len(v)}" if isinstance(v, list) else f"an object with {len(v)} keys"
+    text = repr(v)
+    return text if len(text) <= 60 else text[:57] + "..."
+
+
+# A SHAPE is (kind, what it must be, argument). Five kinds, and `_violations` is the only code that reads one.
+def _is(want, test):
+    return ("is", want, test)
+
+
+def _one_of(*vocab):
+    """Membership by TYPE and value: True is not 1, and 1.0 is not 1."""
+    return _is("one of " + ", ".join(repr(m) if not isinstance(m, str) else m for m in vocab),
+               lambda v: any(type(v) is type(m) and v == m for m in vocab))
+
+
+def _null_or(shape):
+    return ("null_or", f"null, or {shape[1]}", shape)
+
+
+def _list_of(item, least=0):
+    return ("list", f"a list of at least {least}, each {item[1]}" if least else f"a list, each {item[1]}",
+            (item, least))
+
+
+def _map_of(value):
+    return ("map", f"an object whose values are each {value[1]}", value)
+
+
+def _obj(**fields):
+    return ("obj", "an object with " + ", ".join(fields), fields)
+
+
+_ANY = _is("any value", lambda v: True)
+_STR = _is("a string", lambda v: isinstance(v, str))
+_ID = _is("a non-empty string", _is_id)
+_BOOL = _is("true or false", lambda v: isinstance(v, bool))
+_INT = _is("an integer", lambda v: isinstance(v, int) and not isinstance(v, bool))
+
+# Every field of an input FILE that a rule reads, and nothing a rule does not read. A field a rule compares with a
+# literal, where a miss would be SILENT, is `_one_of` its vocabulary: a typo is unreadable, never "the other value".
+FILE_SHAPES = {
+    "components.json": _obj(
+        packages=_map_of(_obj(channel=_one_of(*CHANNELS))),
+        components=_list_of(_obj(id=_ID, effort=_INT, roles=_list_of(_STR), phase=_one_of(*MAP_PHASES),
+                                 package=_STR))),
+    "shipping-sets.json": _obj(packages=_map_of(_obj(components=_map_of(_ANY)))),
+    "scan-<date>.json": _obj(components=_map_of(_obj(findings=_list_of(_obj(id=_STR))))),
+    "experiment-tier-a.json": _obj(components=_map_of(_obj(
+        exercised=_BOOL, operation_ok=_BOOL, scenario=_null_or(_STR),
+        pass_conditions=_map_of(_one_of(*PASS_VALUES))))),
+    "inventory.json": _obj(recall=_obj(), rows=_list_of(_ANY)),
+}
+
+
+def _violations(shape, v, at):
+    """Every place `v` departs from `shape`, as (where, why). It recurses on the SHAPE, never on the data, so its
+    depth is the shape's; and it prints a value only through `_show`."""
+    kind, want, arg = shape
+    if kind == "is":
+        if not arg(v):
+            yield at, f"is {_show(v)}, not {want}"
+    elif kind == "null_or":
+        if v is not None:
+            yield from _violations(arg, v, at)
+    elif kind == "list":
+        item, least = arg
+        if not isinstance(v, list) or len(v) < least:
+            yield at, f"is {_show(v)}, not {want}"
+        else:
+            for i, x in enumerate(v):
+                yield from _violations(item, x, f"{at}[{i}]")
+    elif kind == "map":
+        if not isinstance(v, dict):
+            yield at, f"is {_show(v)}, not {want}"
+        else:
+            for k, x in v.items():
+                yield from _violations(arg, x, f"{at}[{_show(k)}]")
+    elif kind == "obj":
+        if not isinstance(v, dict):
+            yield at, f"is {_show(v)}, not {want}"
+        else:
+            for k, s in arg.items():
+                if k not in v:
+                    yield f"{at}.{k}", f"is missing; it must be {s[1]}"
+                else:
+                    yield from _violations(s, v[k], f"{at}.{k}")
+    else:
+        raise AssertionError(f"no such shape kind: {kind}")
+
+
+def _reference_errors(cmap, scan, scan_name):
+    """The three input rules a shape cannot state, because each relates two places (r1 CODEX X1, r3 CLAUDE C2)."""
+    seen = set()
     for c in cmap["components"]:
-        if not isinstance(c, dict):
-            raise CannotRun(f"components.json has a component that is {type(c).__name__}, not an object")
-        cid = c.get("id")
-        if not _is_id(cid):
-            raise CannotRun(f"components.json has a component whose id {cid!r} is not a non-empty string")
-        if not isinstance(c.get("effort"), int) or isinstance(c.get("effort"), bool):
-            raise CannotRun(f"components.json's {cid} has effort {c.get('effort')!r}, not an integer")
-        if not isinstance(c.get("roles"), list) or not all(isinstance(r, str) for r in c["roles"]):
-            raise CannotRun(f"components.json's {cid} has roles {c.get('roles')!r}, not a list of strings")
-        if not isinstance(c.get("phase"), str):
-            raise CannotRun(f"components.json's {cid} has phase {c.get('phase')!r}, not a string")
-        if not isinstance(c.get("package"), str):
-            raise CannotRun(f"components.json's {cid} has package {c.get('package')!r}, not a string")
-    for k, v in cmap["packages"].items():
-        if not isinstance(v, dict) or not isinstance(v.get("channel"), str):
-            raise CannotRun(f"components.json's package {k!r} is not an object with a string channel")
-    for k, v in sets["packages"].items():
-        if not isinstance(v, dict) or not isinstance(v.get("components"), dict):
-            raise CannotRun(f"shipping-sets.json's package {k!r} is not an object with a `components` object")
-    for cid, entry in scan["components"].items():
-        if not isinstance(entry, dict):
-            raise CannotRun(f"{scan_name}'s entry for {cid!r} is not an object")
-        if not isinstance(entry.get("findings"), list):
-            raise CannotRun(f"{scan_name}'s entry for {cid!r} has no `findings` list")
-        if not all(isinstance(f, dict) for f in entry["findings"]):
-            raise CannotRun(f"{scan_name}'s entry for {cid!r} has a finding that is not an object")
-        if not all(isinstance(f.get("id"), str) for f in entry["findings"]):
-            raise CannotRun(f"{scan_name}'s entry for {cid!r} has a finding whose id is not a string")
-    # r1 fold (CODEX X1): a scan with no entry for a component in the map has no evidence for it, so it is
-    # unreadable input, never an empty set of findings.
-    for c in cmap["components"]:
+        if c["id"] in seen:
+            yield f"components.json has two components with the id {_show(c['id'])}"
+        seen.add(c["id"])
+        if c["package"] not in cmap["packages"]:
+            yield (f"components.json's {_show(c['id'])} names package {_show(c['package'])}, which `packages` does "
+                   "not have")
         if c["id"] not in scan["components"]:
-            raise CannotRun(f"{scan_name} has no entry for component {c['id']!r} in components.json")
-    for cid, entry in side["components"].items():
-        if not isinstance(entry, dict):
-            raise CannotRun(f"experiment-tier-a.json's entry for {cid!r} is not an object")
-        if not isinstance(entry.get("exercised"), bool) or not isinstance(entry.get("operation_ok"), bool):
-            raise CannotRun(f"experiment-tier-a.json's entry for {cid!r} lacks boolean exercised and operation_ok")
-        if not _str_or_null(entry.get("scenario")):
-            raise CannotRun(f"experiment-tier-a.json's entry for {cid!r} has a scenario that is not a string or null")
-        pcs = entry.get("pass_conditions")
-        if not isinstance(pcs, dict) or not all(isinstance(x, str) for x in pcs.values()):
-            raise CannotRun(f"experiment-tier-a.json's entry for {cid!r} has no pass_conditions object of strings")
-    if not isinstance(inventory.get("recall"), dict):
-        raise CannotRun(f"inventory.json's recall {inventory.get('recall')!r} is not an object")
+            yield f"{scan_name} has no entry for component {_show(c['id'])} in components.json"
 
 
 def load(root):
@@ -530,13 +614,13 @@ def load(root):
     side = _read_json(mkt / "experiment-tier-a.json")
     spec_text = _read_text(root / SPEC)
     practices = _read_text(root / PRACTICES)
-    shapes = ((inventory, "rows", list, "inventory.json"), (cmap, "components", list, "components.json"),
-              (cmap, "packages", dict, "components.json"), (sets, "packages", dict, "shipping-sets.json"),
-              (scan, "components", dict, scans[-1].name), (side, "components", dict, "experiment-tier-a.json"))
-    for doc, key, typ, name in shapes:
-        if not isinstance(doc, dict) or not isinstance(doc.get(key), typ):
-            raise CannotRun(f"{name} has no `{key}` {typ.__name__}")
-    _check_inputs(cmap, sets, scan, side, inventory, scans[-1].name)
+    for name, doc in (("inventory.json", inventory), ("components.json", cmap), ("shipping-sets.json", sets),
+                      (scans[-1].name, scan), ("experiment-tier-a.json", side)):
+        shape = FILE_SHAPES["scan-<date>.json" if doc is scan else name]
+        for where, why in _violations(shape, doc, ""):
+            raise CannotRun(f"{name}: {where or 'the document'} {why}")
+    for why in _reference_errors(cmap, scan, scans[-1].name):
+        raise CannotRun(why)
     headings = frozenset(line[3:].rstrip("\n") for line in practices.splitlines() if line.startswith("## "))
     if not headings:
         raise CannotRun(f"{PRACTICES} has no `## ` heading")
@@ -550,6 +634,28 @@ def load(root):
 
 
 def main(argv=None):
+    """`_main`, behind the soundness net: an exception no rule anticipated is rc 2 and NOT RUN, never Python's own
+    exit 1 (which is this guard's code for "row errors"). The message does not start `CANNOT RUN: `, so a case that
+    asserts a NAMED refusal cannot be satisfied by the net."""
+    for stream in (sys.stdout, sys.stderr):     # a string no encoder accepts is printed escaped, never raised
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
+    try:
+        return _main(argv)
+    except Exception as e:      # noqa: BLE001 — the net; rc 2, never success
+        where = e.__traceback__
+        while where.tb_next is not None:
+            where = where.tb_next
+        site = f"{Path(where.tb_frame.f_code.co_filename).name}:{where.tb_lineno}"     # the innermost frame
+        print(f"INTERNAL ERROR: check-inventory.py raised {type(e).__name__} at {site}; this is a defect in the "
+              "guard, not a verdict on the inventory — treat this check as NOT RUN.")
+        # ⚠ The words "CANNOT RUN" are deliberately ABSENT: nine older cases assert `"CANNOT RUN" in` the output for
+        # a refusal the GUARD must make, and the net saying them too satisfied those cases with a crash (measured:
+        # the mutation "a non-object finding is accepted" survived its case through the net).
+        return 2
+
+
+def _main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv == ["--self-test"]:
         return _self_test()
@@ -1377,6 +1483,239 @@ def _self_test_body():
         case(f"a {Path(rel).name} that is not UTF-8 exits 2, CANNOT RUN, never a UnicodeDecodeError",
              lambda rel=rel: (lambda r: (r[0], "CANNOT RUN" in r[1] and "UnicodeDecodeError" in r[1]))(
                  run(bytes_tree(f"bytes-{Path(rel).stem}", rel))), (2, True))
+
+    # ── Phase 6 fold (architecture review 2026-11-22, backlog #699): the bounded reader, FILE_SHAPES and its two
+    # vocabularies, the reference rules, total output and the net. Each case beside its adjacent negative.
+    def said(name, fname, fn, *more):
+        """rc, the CANNOT RUN line (or ""), and the whole output, over the clean CLI tree with `fn` applied."""
+        root = tree(name, costed((1.0, 1.0, 1.0)))
+        for f, g in ((fname, fn),) + more:
+            p = root / MKT / f
+            doc = json.loads(p.read_text())
+            g(doc)
+            p.write_text(json.dumps(doc))
+        rc, out, _ = run(root)
+        line = next((ln for ln in out.splitlines() if ln.startswith("CANNOT RUN: ")), "")
+        return rc, line, out
+
+    # a reference rule: a component whose package `packages` does not have (r3 CLAUDE C2, fail-OPEN before)
+    case("a component whose package names no package is rc 2, naming it",
+         lambda: (lambda r: (r[0], "names package 'nopkg'" in r[1]))(
+             said("ref-pkg", "components.json", at("components", 1, "package", value="nopkg"))), (2, True))
+    case("...the same map with the package present is readable (rc 0)",
+         lambda: said("ref-pkg-ok", "components.json",
+                      lambda d: (at("components", 1, "package", value="nopkg")(d),
+                                 at("packages", "nopkg", value={"channel": "plugin"})(d)),
+                      ("shipping-sets.json", at("packages", "nopkg", value={"components": {"ep2": {}}})))[:2],
+         (0, ""))
+    # a reference rule: two components with one id
+    for what, extra in (("identical", {}), ("differing in effort", {"effort": 2})):
+        case(f"two components with one id ({what}) is rc 2, naming it",
+             lambda extra=extra: (lambda r: (r[0], "two components with the id 'ep'" in r[1]))(
+                 said(f"ref-dup-{len(extra)}", "components.json",
+                      lambda d, extra=extra: d["components"].append({**d["components"][0], **extra}))), (2, True))
+    case("...a third component with a distinct id is readable (rc 1, [missing], no CANNOT RUN)",
+         lambda: (lambda r: (r[0], r[1], "[missing] component ep9" in r[2]))(
+             said("ref-dup-ok", "components.json", lambda d: d["components"].append({**d["components"][0], "id": "ep9"}),
+                  (SC, at("components", "ep9", value={"findings": []})))), (1, "", True))
+    # a reference rule: the scan covers the map (r1 CODEX X1) — its cases are under the r1 fold above.
+
+    # the vocabularies: a typo is unreadable, never "the other value"
+    case("a map channel `Plugin` is rc 2 (it would skip the SHIP rule)",
+         lambda: (lambda r: (r[0], "channel" in r[1]))(
+             said("voc-ch", "components.json", at("packages", "comp", "channel", value="Plugin"))), (2, True))
+    case("...channel `plugin` is readable (rc 0)",
+         lambda: said("voc-ch-ok", "components.json", at("packages", "comp", "channel", value="plugin"))[:2],
+         (0, ""))
+    for typo in ("FAIL", "failed"):
+        case(f"a pass condition `{typo}` is rc 2 (it would back a SHIP)",
+             lambda typo=typo: (lambda r: (r[0], "pass_conditions" in r[1]))(
+                 said(f"voc-pc-{typo}", "experiment-tier-a.json",
+                      at("components", "ep", "pass_conditions", "1", value=typo))), (2, True))
+    case("...a pass condition `fail` is rc 1 [ship-experiment]",
+         lambda: (lambda r: (r[0], r[1], "ep: [ship-experiment]" in r[2]))(
+             said("voc-pc-fail", "experiment-tier-a.json", at("components", "ep", "pass_conditions", "1", value="fail"))),
+         (1, "", True))
+    case("...all pass conditions `pass` is rc 0",
+         lambda: said("voc-pc-pass", "experiment-tier-a.json",
+                      at("components", "ep", "pass_conditions", value={"1": "pass", "2": "pass"}))[:2], (0, ""))
+    case("_one_of matches by TYPE: True is not 1, 1.0 is not 1, 1 is 1",
+         lambda: [bool(list(_violations(_one_of(1), v, ""))) for v in (True, 1.0, 1)],
+         [True, True, False])
+    # the coordinator's addition to the review: a map phase outside the vocabulary (corpus P9, rc 0 under c2)
+    case("a map phase `2` is rc 2, naming the phase",
+         lambda: (lambda r: (r[0], ".phase" in r[1]))(
+             said("voc-ph", "components.json", at("components", 0, "phase", value="2"))), (2, True))
+    case("...a map phase `1-if-feasible` is readable (rc 0)",
+         lambda: said("voc-ph-ok", "components.json", at("components", 0, "phase", value="1-if-feasible"))[:2],
+         (0, ""))
+    import importlib.util
+    spec_ss = importlib.util.spec_from_file_location("check_shipping_sets",
+                                                     Path(__file__).resolve().parent / "check-shipping-sets.py")
+    shipping_sets = importlib.util.module_from_spec(spec_ss)
+    sys.modules["check_shipping_sets"] = shipping_sets      # its dataclasses look their module up by name
+    try:
+        spec_ss.loader.exec_module(shipping_sets)
+    finally:
+        del sys.modules["check_shipping_sets"]
+    case("CHANNELS equals check-shipping-sets.CHANNELS (it owns the map), by import",
+         lambda: CHANNELS == shipping_sets.CHANNELS, True)
+    case("MAP_PHASES equals check-shipping-sets.PHASES (it owns the map), by import",
+         lambda: MAP_PHASES == shipping_sets.PHASES, True)
+
+    # the bounded reader: a repeated key, and the depth bound
+    def raw(name, fname, old, new):
+        root = tree(name, costed((1.0, 1.0, 1.0)))
+        p = root / MKT / fname
+        text = p.read_text()
+        assert old in text, (fname, old)
+        p.write_text(text.replace(old, new, 1))
+        rc, out, _ = run(root)
+        return rc, next((ln for ln in out.splitlines() if ln.startswith("CANNOT RUN: ")), "")
+    for fname, old, new, once in (
+            ("components.json", '{"packages": ', '{"packages": {}, "packages": ', '{"packages_x": {}, "packages": '),
+            ("inventory.json", '{"scan": ', '{"scan": "x", "scan": ', '{"scan_x": "x", "scan": ')):
+        case(f"a repeated key in one object of {fname} is rc 2 (Python would keep the last, silently)",
+             lambda f=fname, o=old, n=new: (lambda r: (r[0], "appears twice" in r[1]))(raw(f"dupkey-{f}", f, o, n)),
+             (2, True))
+        case(f"...the same object with a second, distinct key in {fname} is readable (rc 0)",
+             lambda f=fname, o=old, n=once: raw(f"dupkey-ok-{f}", f, o, n), (0, ""))
+    for depth, want in ((MAX_DEPTH + 1, (2, True)), (MAX_DEPTH, (0, False))):
+        nest = "[" * (depth - 1) + "]" * (depth - 1)     # the document itself is level 1
+        case(f"an inventory.json nested {depth} deep is {'refused' if want[0] else 'read'}",
+             lambda nest=nest, want=want: (lambda r: (r[0], f"nested deeper than {MAX_DEPTH}" in r[1]))(
+                 raw(f"depth{len(nest)}", "inventory.json", '{"scan": ', '{"_deep": ' + nest + ', "scan": ')),
+             want)
+
+    # total output: a child process, so the stream is a REAL encoder (StringIO accepts anything)
+    import os
+    import subprocess
+
+    def child(root, env, *extra):
+        e = {k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8", "LC_ALL", "LANG")}
+        e.update(env)
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--root", str(root), *extra],
+                           capture_output=True, env=e, timeout=60)
+        out = r.stdout + r.stderr
+        return r.returncode, b"Traceback" in out, b"INTERNAL ERROR" in out, out
+
+    def surrogate_tree(name):
+        root = tree(name, costed((1.0, 1.0, 1.0)))
+        p = root / MKT / "inventory.json"
+        p.write_text(p.read_text().replace('"id": "ep2"', '"id": "\\ud800"', 1))
+        return root
+    case("a lone surrogate in a row id prints escaped, with the row's rc (1), never a traceback",
+         lambda: (lambda r: (r[:3], b"\\ud800: [map]" in r[3]))(
+             child(surrogate_tree("surr"), {"PYTHONIOENCODING": "utf-8"})), ((1, False, False), True))
+    case("an ASCII-only stdout: a [shape] error prints, no traceback",
+         lambda: (lambda r: (r[:3], b"[shape]" in r[3]))(child(tree("ascii-shape", costed((1.0, 1.0, 1.0))[:2] + [
+             row("ship-lib", grade=None)]), {"PYTHONIOENCODING": "ascii"})), ((1, False, False), True))
+    case("an ASCII-only stdout: --render prints, no traceback",
+         lambda: (lambda r: (r[:3], b"SHIP \\xb7 measured" in r[3]))(
+             child(tree("ascii-render", costed((1.0, 1.0, 1.0))), {"PYTHONIOENCODING": "ascii"}, "--render")),
+         ((0, False, False), True))
+
+    def nonascii_tree(name):
+        root = tree(name, costed((1.0, 1.0, 1.0)))
+        p = root / MKT / "inventory.json"
+        doc = json.loads(p.read_text())
+        doc["note"] = "§ — é"
+        p.write_bytes(json.dumps(doc, ensure_ascii=False).encode("utf-8"))
+        return root
+    case("a UTF-8 non-ASCII inventory is read under LC_ALL=C (the reader decodes UTF-8, never the locale's)",
+         lambda: child(nonascii_tree("lc-c"), {"LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"})[:3],
+         (0, False, False))
+
+    # the net: an exception nothing anticipated is rc 2 and NOT RUN, never Python's exit 1
+    def boom(*a, **k):
+        raise LookupError("an exception no rule anticipated")
+
+    def netted():
+        g = globals()
+        saved = g["inventory_errors"]
+        g["inventory_errors"] = boom
+        try:
+            rc, out, _ = run(tree("net", costed((1.0, 1.0, 1.0))))
+        finally:
+            g["inventory_errors"] = saved
+        return (rc, "INTERNAL ERROR: check-inventory.py raised LookupError" in out,
+                any(ln.startswith("CANNOT RUN: ") for ln in out.splitlines()))
+    case("an exception inside _main is rc 2 with INTERNAL ERROR, and no line starts `CANNOT RUN: `", netted,
+         (2, True, False))
+    case("...the same tree with nothing injected is rc 0", lambda: run(tree("net-ok", costed((1.0, 1.0, 1.0))))[0], 0)
+
+    # the fuzz (thin): every node of every CLI fixture input replaced by each of 12 values, deleted, and (in a list)
+    # duplicated, through the REAL reader and a strict UTF-8 stream. No exception escapes `main`; no INTERNAL ERROR.
+    def fuzz():
+        root = tree("fuzz", costed((1.0, 1.0, 1.0)))
+        names = ("inventory.json", "components.json", "shipping-sets.json", "experiment-tier-a.json", SC)
+        docs = {n: json.loads((root / MKT / n).read_text()) for n in names}
+        current = {}
+        vals = (None, True, 0, 10 ** 400, 1.5, "", "zz", "\ud800", [], [[]], {}, {"id": []})
+
+        class Mem:
+            def __init__(self, data):
+                self.data = data
+
+            def read_bytes(self):
+                return self.data
+
+            def __str__(self):
+                return "<fuzz>"
+
+        def paths(node, pre=()):
+            yield pre
+            kids = node.items() if isinstance(node, dict) else enumerate(node) if isinstance(node, list) else ()
+            for k, v in kids:
+                yield from paths(v, pre + (k,))
+
+        bad, runs = [], 0
+        g = globals()
+        real = g["_read_json"]
+        g["_read_json"] = lambda path: real(Mem(current[path.name])) if path.name in current else real(path)
+        try:
+            for n in names:
+                for p in list(paths(docs[n])):
+                    edits = [("=" + repr(v)[:20], v) for v in vals] + ([("del", None)] if p else [])
+                    if p and isinstance(p[-1], int):
+                        edits.append(("dup", None))
+                    for tag, v in edits:
+                        doc = copy.deepcopy(docs[n])
+                        if not p:
+                            doc = v
+                        else:
+                            parent = doc
+                            for k in p[:-1]:
+                                parent = parent[k]
+                            if tag == "del":
+                                del parent[p[-1]]
+                            elif tag == "dup":
+                                parent.append(copy.deepcopy(parent[p[-1]]))
+                            else:
+                                parent[p[-1]] = v
+                        current.clear()
+                        current[n] = json.dumps(doc).encode()
+                        raw_out = io.BytesIO()
+                        stream = io.TextIOWrapper(raw_out, encoding="utf-8", errors="strict")
+                        old = sys.stdout, sys.stderr
+                        sys.stdout = sys.stderr = stream
+                        runs += 1
+                        try:
+                            try:
+                                main(["--root", str(root)])
+                                stream.flush()
+                            finally:
+                                sys.stdout, sys.stderr = old
+                        except BaseException as e:      # noqa: BLE001 — the fuzz counts what escapes
+                            bad.append(f"{n}:{p}{tag} ESCAPED {type(e).__name__}")
+                            continue
+                        if b"INTERNAL ERROR" in raw_out.getvalue():
+                            bad.append(f"{n}:{p}{tag} NET")
+        finally:
+            g["_read_json"] = real
+        return runs >= 2000, bad[:3]
+    case("the fuzz: over 2000 edits of the fixture inputs, no exception escapes main and none reaches the net",
+         fuzz, (True, []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 0 if fail == 0 else 1

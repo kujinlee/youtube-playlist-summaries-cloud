@@ -2268,6 +2268,9 @@ def _self_test_body() -> int:
         # ⟳ 2026-11-22 marketplace plan Task 19 (the inventory guard): 358 + 2 = 360 / f78ceca9f99c3fae. Its two gained lines,
         # diffed by hand against e7744605's `git archive`: `check-selftest-counts.py` -> `check-inventory.py` (its
         # POPULATION row) and `check-inventory.py` -> `fixture_git.py` (its suite's isolation). Lost: 0.
+        # ⟳ 2026-11-22 Task 19's Phase 6 fold: 360 + 1 = 361 / 534138f22f780cb0. Its one gained line, diffed by hand
+        # (sorted, `comm -3`) against cc211b78's `git archive`: `check-inventory.py` -> `check-shipping-sets.py` (the
+        # self-test's CHANNELS/PHASES equality, by import). Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2279,7 +2282,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (360, "f78ceca9f99c3fae", []))
+             (361, "534138f22f780cb0", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
