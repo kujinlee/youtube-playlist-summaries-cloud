@@ -631,8 +631,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "except (OSError, ValueError) as e:",
-    "except ValueError as e:"
+    "except (OSError, ValueError) as e:\n        raise CannotRun(f\"{path} is unreadable ({type(e).__name__}: {e})\")",
+    "except ValueError as e:\n        raise CannotRun(f\"{path} is unreadable ({type(e).__name__}: {e})\")"
    ]
   ],
   "expect": "an absent inventory.json exits 2, CANNOT RUN"
@@ -873,8 +873,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "return _num(v) and math.isfinite(v)",
-    "return _num(v)"
+    "return isinstance(v, float) and math.isfinite(v)",
+    "return isinstance(v, float)"
    ]
   ],
   "expect": "a NaN next_project_hours is a shape error"
@@ -994,8 +994,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "        if not isinstance(entry, dict):\n            raise CannotRun",
-    "        if entry is None and False:\n            raise CannotRun"
+    "        if c[\"id\"] not in scan[\"components\"]:\n",
+    "        if False:\n"
    ]
   ],
   "expect": "a scan with no entry for one component in the map exits 2, CANNOT RUN, naming it"
@@ -1005,8 +1005,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "for cid in (c.get(\"id\") for c in cmap[\"components\"]):",
-    "for cid in ():"
+    "    for c in cmap[\"components\"]:\n        if c[\"id\"] not in scan",
+    "    for c in ():\n        if c[\"id\"] not in scan"
    ]
   ],
   "expect": "an empty scan exits 2, CANNOT RUN"
@@ -1076,5 +1076,291 @@
    ]
   ],
   "expect": "two rows sharing an unhashable id are no inventory error, never a traceback (row_errors names them)"
+ },
+ {
+  "name": "an integer past the float range reaches math.isfinite",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return abs(v) <= sys.float_info.max",
+    "return math.isfinite(v)"
+   ]
+  ],
+  "expect": "a cost.public_bar_hours of 10**400 is a shape error, never an OverflowError"
+ },
+ {
+  "name": "an integer is never finite",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if isinstance(v, int) and not isinstance(v, bool):\n        return abs",
+    "if isinstance(v, bool):\n        return abs"
+   ]
+  ],
+  "expect": "a cost.public_bar_hours of 10**300 (an integer a float holds) is no shape error"
+ },
+ {
+  "name": "a non-object component reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if not isinstance(c, dict):\n            raise CannotRun(f\"components.json has a component",
+    "        if False:\n            raise CannotRun(f\"components.json has a component"
+   ]
+  ],
+  "expect": "a component that is not an object exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a component id of any type is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not _is_id(cid):",
+    "if cid is None:"
+   ]
+  ],
+  "expect": "a component id that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a blank component id is an id",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "def _is_id(v):\n    return isinstance(v, str) and bool(v.strip())",
+    "def _is_id(v):\n    return isinstance(v, str)"
+   ]
+  ],
+  "expect": "a component id that is blank, with a scan entry under that blank id exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a string component effort is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(c.get(\"effort\"), int) or",
+    "if False or"
+   ]
+  ],
+  "expect": "a component effort that is a string exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a boolean component effort is an integer",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "int) or isinstance(c.get(\"effort\"), bool):",
+    "int):"
+   ]
+  ],
+  "expect": "a component effort that is a boolean exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "component roles of any type reach iteration",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(c.get(\"roles\"), list) or not all(",
+    "if False or not all("
+   ]
+  ],
+  "expect": "component roles that are a boolean exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-string role is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "or not all(isinstance(r, str) for r in c[\"roles\"]):",
+    "or False:"
+   ]
+  ],
+  "expect": "component roles holding a non-string exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a component phase of any type is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(c.get(\"phase\"), str):",
+    "if False:"
+   ]
+  ],
+  "expect": "a component phase that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "an unhashable component package reaches the package set",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(c.get(\"package\"), str):",
+    "if False:"
+   ]
+  ],
+  "expect": "a component package that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-object map package reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(v, dict) or not isinstance(v.get(\"channel\")",
+    "if False or not isinstance(v.get(\"channel\")"
+   ]
+  ],
+  "expect": "a map package that is not an object exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a map package channel of any type is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "or not isinstance(v.get(\"channel\"), str):",
+    "or False:"
+   ]
+  ],
+  "expect": "a map package channel that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-object shipping-set package reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(v, dict) or not isinstance(v.get(\"components\")",
+    "if False or not isinstance(v.get(\"components\")"
+   ]
+  ],
+  "expect": "a shipping-set package that is not an object exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a shipping-set components of any type reaches set()",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "or not isinstance(v.get(\"components\"), dict):",
+    "or False:"
+   ]
+  ],
+  "expect": "a shipping-set package whose components is a boolean exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-object scan entry outside the map is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if not isinstance(entry, dict):\n            raise CannotRun(f\"{scan_name}'s entry",
+    "        if False:\n            raise CannotRun(f\"{scan_name}'s entry"
+   ]
+  ],
+  "expect": "a scan entry outside the map that is not an object exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-string finding id reaches the id set (CODEX X2)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not all(isinstance(f.get(\"id\"), str) for f in entry[\"findings\"]):",
+    "if False:"
+   ]
+  ],
+  "expect": "a scan finding whose id is a list (CODEX X2) exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-object sidecar entry reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if not isinstance(entry, dict):\n            raise CannotRun(f\"experiment-tier-a.json",
+    "        if False:\n            raise CannotRun(f\"experiment-tier-a.json"
+   ]
+  ],
+  "expect": "a sidecar entry that is not an object exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-boolean exercised is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(entry.get(\"exercised\"), bool) or",
+    "if False or"
+   ]
+  ],
+  "expect": "a sidecar exercised that is a string exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a missing operation_ok is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "or not isinstance(entry.get(\"operation_ok\"), bool):",
+    "or False:"
+   ]
+  ],
+  "expect": "a sidecar operation_ok that is missing exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a sidecar scenario of any type is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not _str_or_null(entry.get(\"scenario\")):",
+    "if False:"
+   ]
+  ],
+  "expect": "a sidecar scenario that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "non-object pass_conditions reach .values",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(pcs, dict) or not all(",
+    "if False or not all("
+   ]
+  ],
+  "expect": "sidecar pass_conditions that are a boolean exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-string pass condition is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "or not all(isinstance(x, str) for x in pcs.values()):",
+    "or False:"
+   ]
+  ],
+  "expect": "sidecar pass_conditions holding a non-string exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-object recall is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(inventory.get(\"recall\"), dict):",
+    "if False:"
+   ]
+  ],
+  "expect": "an inventory recall that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "JSON nested too deep reaches a RecursionError",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    except RecursionError as e:",
+    "    except ZeroDivisionError as e:"
+   ]
+  ],
+  "expect": "an inventory.json nested 200000 deep exits 2, CANNOT RUN, never a RecursionError"
+ },
+ {
+  "name": "a spec that is not UTF-8 reaches a UnicodeDecodeError",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    except (OSError, ValueError) as e:\n        raise CannotRun(f\"{path} is unreadable ({type(e).__name__})\")",
+    "    except OSError as e:\n        raise CannotRun(f\"{path} is unreadable ({type(e).__name__})\")"
+   ]
+  ],
+  "expect": "a 2026-10-15-marketplace-inventory-design.md that is not UTF-8 exits 2, CANNOT RUN, never a UnicodeDecodeError"
  }
 ]

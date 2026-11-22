@@ -4,15 +4,16 @@
     python3 scripts/check-inventory.py              # the live inventory under this repository
     python3 scripts/check-inventory.py --render     # the same checks; on rc 0 or 3, the Markdown view on stdout
     python3 scripts/check-inventory.py --root DIR   # another tree (the self-test's fixture worlds)
-    python3 scripts/check-inventory.py --self-test  # 215 cases
+    python3 scripts/check-inventory.py --self-test  # 267 cases
 
 It reads `docs/marketplace/inventory.json`, `components.json`, `shipping-sets.json`, the LATEST `scan-<date>.json`
 (by name), `experiment-tier-a.json`, the spec (which owns the `spec` ground kind, §5 rule 1) and
 `docs/portable-practices.md` (which owns `practice_entry`).
 
 Exit codes RANK, and the order is the rule (plan Task 19): an input unreadable or absent → 2 (CANNOT RUN: treat
-as NOT RUN; a JSON NaN/Infinity, and a scan with no entry holding a `findings` list for a component in the map,
-are unreadable); else any row or inventory error → 1, and the checkpoint is NOT computed (a fire over rows with errors
+as NOT RUN; a JSON NaN/Infinity, JSON nested past the parser's stack, a spec or practices file that is not UTF-8,
+a scan with no entry for a component in the map, and any field a rule reads of the wrong type (`_check_inputs`
+lists them, r2 fold) are unreadable); else any row or inventory error → 1, and the checkpoint is NOT computed (a fire over rows with errors
 is not evidence); else `checkpoint_fires` raising (no phase-1 rows) → 2; else the checkpoint fired → 3 (stop: Human
 step H4); else 0. So rc 1 outranks rc 3.
 
@@ -149,8 +150,12 @@ def _num(v):
 
 def _finite(v):
     """A number that is not NaN or infinite: NaN compares false with everything and infinity outranks every
-    estimate, so either would decide the checkpoint without being an estimate (r1 fold, CLAUDE C1)."""
-    return _num(v) and math.isfinite(v)
+    estimate, so either would decide the checkpoint without being an estimate (r1 fold, CLAUDE C1). An integer is
+    finite when a float can hold it: `math.isfinite` converts to float, and an integer past the float range raises
+    OverflowError there instead of answering (r2 fold, CODEX X1), so it is refused before the conversion."""
+    if isinstance(v, int) and not isinstance(v, bool):
+        return abs(v) <= sys.float_info.max
+    return isinstance(v, float) and math.isfinite(v)
 
 
 def _in(vocab):
@@ -435,6 +440,80 @@ def _read_json(path):
         return json.loads(path.read_text(), parse_constant=_refuse_constant)
     except (OSError, ValueError) as e:
         raise CannotRun(f"{path} is unreadable ({type(e).__name__}: {e})") from e
+    except RecursionError as e:     # r2 fold (fuzz): JSON nested past the parser's stack is unreadable, not a crash
+        raise CannotRun(f"{path} is unreadable (nested too deep to parse)") from e
+
+
+def _read_text(path):
+    """The file's text, or CannotRun: absent or unreadable (OSError), or not UTF-8 (UnicodeDecodeError, a ValueError
+    that `except OSError` let through as a traceback before the r2 fold)."""
+    try:
+        return path.read_text()
+    except (OSError, ValueError) as e:
+        raise CannotRun(f"{path} is unreadable ({type(e).__name__})") from e
+
+
+def _is_id(v):
+    return isinstance(v, str) and bool(v.strip())
+
+
+def _check_inputs(cmap, sets, scan, side, inventory, scan_name):
+    """CannotRun naming the first field a rule reads that has the wrong type (r2 fold, CODEX X2, and its class check):
+    the rules assume these, so a wrong-typed one is unreadable input, never a traceback. The fields, by file:
+      components.json   each component an object with id (non-empty string), effort (integer), roles (list of
+                        strings), phase (string), package (string); each package an object whose channel is a string;
+      shipping-sets.json  each package an object whose `components` is an object;
+      scan-<date>.json  every entry (not only the map's) an object whose findings is a list of objects, each with a
+                        string id; every component in the map has an entry;
+      experiment-tier-a.json  every entry an object with exercised and operation_ok booleans, scenario a string or
+                        null, and pass_conditions an object of strings;
+      inventory.json    recall an object (the rows are checked by ROW_SCHEMA, row by row)."""
+    for c in cmap["components"]:
+        if not isinstance(c, dict):
+            raise CannotRun(f"components.json has a component that is {type(c).__name__}, not an object")
+        cid = c.get("id")
+        if not _is_id(cid):
+            raise CannotRun(f"components.json has a component whose id {cid!r} is not a non-empty string")
+        if not isinstance(c.get("effort"), int) or isinstance(c.get("effort"), bool):
+            raise CannotRun(f"components.json's {cid} has effort {c.get('effort')!r}, not an integer")
+        if not isinstance(c.get("roles"), list) or not all(isinstance(r, str) for r in c["roles"]):
+            raise CannotRun(f"components.json's {cid} has roles {c.get('roles')!r}, not a list of strings")
+        if not isinstance(c.get("phase"), str):
+            raise CannotRun(f"components.json's {cid} has phase {c.get('phase')!r}, not a string")
+        if not isinstance(c.get("package"), str):
+            raise CannotRun(f"components.json's {cid} has package {c.get('package')!r}, not a string")
+    for k, v in cmap["packages"].items():
+        if not isinstance(v, dict) or not isinstance(v.get("channel"), str):
+            raise CannotRun(f"components.json's package {k!r} is not an object with a string channel")
+    for k, v in sets["packages"].items():
+        if not isinstance(v, dict) or not isinstance(v.get("components"), dict):
+            raise CannotRun(f"shipping-sets.json's package {k!r} is not an object with a `components` object")
+    for cid, entry in scan["components"].items():
+        if not isinstance(entry, dict):
+            raise CannotRun(f"{scan_name}'s entry for {cid!r} is not an object")
+        if not isinstance(entry.get("findings"), list):
+            raise CannotRun(f"{scan_name}'s entry for {cid!r} has no `findings` list")
+        if not all(isinstance(f, dict) for f in entry["findings"]):
+            raise CannotRun(f"{scan_name}'s entry for {cid!r} has a finding that is not an object")
+        if not all(isinstance(f.get("id"), str) for f in entry["findings"]):
+            raise CannotRun(f"{scan_name}'s entry for {cid!r} has a finding whose id is not a string")
+    # r1 fold (CODEX X1): a scan with no entry for a component in the map has no evidence for it, so it is
+    # unreadable input, never an empty set of findings.
+    for c in cmap["components"]:
+        if c["id"] not in scan["components"]:
+            raise CannotRun(f"{scan_name} has no entry for component {c['id']!r} in components.json")
+    for cid, entry in side["components"].items():
+        if not isinstance(entry, dict):
+            raise CannotRun(f"experiment-tier-a.json's entry for {cid!r} is not an object")
+        if not isinstance(entry.get("exercised"), bool) or not isinstance(entry.get("operation_ok"), bool):
+            raise CannotRun(f"experiment-tier-a.json's entry for {cid!r} lacks boolean exercised and operation_ok")
+        if not _str_or_null(entry.get("scenario")):
+            raise CannotRun(f"experiment-tier-a.json's entry for {cid!r} has a scenario that is not a string or null")
+        pcs = entry.get("pass_conditions")
+        if not isinstance(pcs, dict) or not all(isinstance(x, str) for x in pcs.values()):
+            raise CannotRun(f"experiment-tier-a.json's entry for {cid!r} has no pass_conditions object of strings")
+    if not isinstance(inventory.get("recall"), dict):
+        raise CannotRun(f"inventory.json's recall {inventory.get('recall')!r} is not an object")
 
 
 def load(root):
@@ -449,35 +528,23 @@ def load(root):
         raise CannotRun(f"no scan-<date>.json under {mkt}")
     scan = _read_json(scans[-1])
     side = _read_json(mkt / "experiment-tier-a.json")
-    try:
-        spec_text = (root / SPEC).read_text()
-        practices = (root / PRACTICES).read_text()
-    except OSError as e:
-        raise CannotRun(f"{e.filename} is unreadable ({type(e).__name__})") from e
+    spec_text = _read_text(root / SPEC)
+    practices = _read_text(root / PRACTICES)
     shapes = ((inventory, "rows", list, "inventory.json"), (cmap, "components", list, "components.json"),
               (cmap, "packages", dict, "components.json"), (sets, "packages", dict, "shipping-sets.json"),
               (scan, "components", dict, scans[-1].name), (side, "components", dict, "experiment-tier-a.json"))
     for doc, key, typ, name in shapes:
         if not isinstance(doc, dict) or not isinstance(doc.get(key), typ):
             raise CannotRun(f"{name} has no `{key}` {typ.__name__}")
-    # r1 fold (CODEX X1): a scan with no entry for a component in the map has no evidence for it, so it is
-    # unreadable input, never an empty set of findings.
-    for cid in (c.get("id") for c in cmap["components"]):
-        entry = scan["components"].get(cid) if isinstance(cid, str) else None
-        if not isinstance(entry, dict):
-            raise CannotRun(f"{scans[-1].name} has no entry for component {cid!r} in components.json")
-        if not isinstance(entry.get("findings"), list):
-            raise CannotRun(f"{scans[-1].name}'s entry for {cid!r} has no `findings` list")
-        if not all(isinstance(f, dict) for f in entry["findings"]):
-            raise CannotRun(f"{scans[-1].name}'s entry for {cid!r} has a finding that is not an object")
+    _check_inputs(cmap, sets, scan, side, inventory, scans[-1].name)
     headings = frozenset(line[3:].rstrip("\n") for line in practices.splitlines() if line.startswith("## "))
     if not headings:
         raise CannotRun(f"{PRACTICES} has no `## ` heading")
     if "## " not in spec_text:
         raise CannotRun(f"{SPEC} has no `## ` heading")
     ctx = Context(components={c.get("id"): c for c in cmap["components"]},
-                  channels={k: (v or {}).get("channel") for k, v in cmap["packages"].items()},
-                  shipping={k: set(((v or {}).get("components") or {})) for k, v in sets["packages"].items()},
+                  channels={k: v["channel"] for k, v in cmap["packages"].items()},
+                  shipping={k: set(v["components"]) for k, v in sets["packages"].items()},
                   practice_headings=headings, recall=inventory.get("recall"))
     return inventory, ctx, scan["components"], side["components"], spec_text, f"{MKT}/{scans[-1].name}"
 
@@ -1179,6 +1246,137 @@ def _self_test_body():
          lambda: (lambda r: (r[0], "CANNOT RUN" in r[1]))(
              run(tree("scan-find42", costed((1.0, 1.0, 1.0)),
                       scan_doc={"components": {**scan, "lib": {"findings": [42]}}}))), (2, True))
+
+    # ── r2 fold ──────────────────────────────────────────────────────────────────────────────────────────────
+    # CODEX X1, and its class check over every numeric field of ROW_SCHEMA: an integer past the float range is
+    # refused as a [shape] error, never an OverflowError. The adjacent negatives: an integer the float range holds.
+    huge = 10 ** 400
+    for field, where in (("public_bar_hours", "cost"), ("next_project_hours", "cost"), ("cost_hours", "route")):
+        for sign in (1, -1):
+            r = row("nw")
+            r[where][field] = sign * huge
+            case(f"a {where}.{field} of {'-' if sign < 0 else ''}10**400 is a shape error, never an OverflowError",
+                 lambda r=r: rules(r), ["shape"])
+        r = row("nw")
+        r[where][field] = 10 ** 300
+        case(f"a {where}.{field} of 10**300 (an integer a float holds) is no shape error", lambda r=r: rules(r), [])
+    case("an effort of 10**400 is a [map] error (an integer, unlike the map's), never a traceback",
+         lambda: rules(row("nw", effort=huge)), ["map"])
+    case("_finite: an integer one past the float range is not finite", lambda: _finite(int(sys.float_info.max) * 2),
+         False)
+    case("_finite: the largest float, as an integer, is finite", lambda: _finite(int(sys.float_info.max)), True)
+
+    def huge_tree(name, text):
+        root = tree(name, [row("ship-ep", cost=cost(pub=123456.5, nxt=1.0))] + costed((1.0, 1.0, 1.0))[1:])
+        p = root / MKT / "inventory.json"
+        p.write_text(p.read_text().replace("123456.5", text))
+        return root
+    case("an inventory.json cost of 1 followed by 400 zeros exits 1 with a [shape] error, never a traceback",
+         lambda: (lambda r: (r[0], "ep: [shape]" in r[1]))(run(huge_tree("huge", "1" + "0" * 400))), (1, True))
+    case("an inventory.json cost of 1 followed by 300 zeros is no error (the adjacent negative)",
+         lambda: run(huge_tree("huge300", "1" + "0" * 300))[0], 0)
+
+    # CODEX X2, and its class check over every field of the map, the shipping sets, the scan, the sidecar and the
+    # inventory that a rule reads: a wrong-typed one is CANNOT RUN (rc 2), never a traceback. Each case breaks ONE
+    # field of the clean CLI tree; its adjacent negative keeps the field's type and changes its value.
+    def edited(name, fname, fn, *more):
+        """rc, and whether main printed its CANNOT RUN line, over the clean CLI tree with `fn` applied to `fname`'s
+        JSON (and each further (fname, fn) pair in `more`)."""
+        root = tree(name, costed((1.0, 1.0, 1.0)))
+        for f, g in ((fname, fn),) + more:
+            p = root / MKT / f
+            doc = json.loads(p.read_text())
+            g(doc)
+            p.write_text(json.dumps(doc))
+        r = run(root)
+        return r[0], "CANNOT RUN: " in r[1]
+
+    def at(*path, value=None, drop=False):
+        def fn(doc):
+            for k in path[:-1]:
+                doc = doc[k]
+            if drop:
+                del doc[path[-1]]
+            else:
+                doc[path[-1]] = value
+        return fn
+
+    SC = "scan-2026-01-01.json"
+    bad_inputs = (
+        ("a component that is not an object", "components.json", at("components", 0, value=42)),
+        ("a component id that is a list", "components.json", at("components", 0, "id", value=["ep"])),
+        ("a component id that is blank, with a scan entry under that blank id", "components.json",
+         at("components", 0, "id", value=" "), (SC, at("components", " ", value={"findings": []}))),
+        ("a component with no id", "components.json", at("components", 0, "id", drop=True)),
+        ("a component effort that is a string", "components.json", at("components", 0, "effort", value="3")),
+        ("a component effort that is a boolean", "components.json", at("components", 0, "effort", value=True)),
+        ("component roles that are a boolean", "components.json", at("components", 0, "roles", value=True)),
+        ("component roles holding a non-string", "components.json", at("components", 0, "roles", value=[1])),
+        ("a component phase that is a list", "components.json", at("components", 0, "phase", value=["1"])),
+        ("a component package that is a list", "components.json", at("components", 0, "package", value=["comp"])),
+        ("a map package that is not an object", "components.json", at("packages", "comp", value=True)),
+        ("a map package channel that is a list", "components.json", at("packages", "comp", "channel", value=[])),
+        ("a shipping-set package that is not an object", "shipping-sets.json", at("packages", "comp", value=True)),
+        ("a shipping-set package whose components is a boolean", "shipping-sets.json",
+         at("packages", "comp", "components", value=True)),
+        ("a scan finding whose id is a list (CODEX X2)", SC, at("components", "ep", "findings", 0, "id", value=[])),
+        ("a scan finding with no id", SC, at("components", "ep", "findings", 0, "id", drop=True)),
+        ("a scan entry outside the map that is not an object", SC, at("components", "zz", value=True)),
+        ("a scan entry outside the map whose finding id is a list", SC,
+         at("components", "zz", value={"findings": [{"id": []}]})),
+        ("a sidecar entry that is not an object", "experiment-tier-a.json", at("components", "ep", value=True)),
+        ("a sidecar exercised that is a string", "experiment-tier-a.json",
+         at("components", "ep", "exercised", value="true")),
+        ("a sidecar operation_ok that is missing", "experiment-tier-a.json",
+         at("components", "ep", "operation_ok", drop=True)),
+        ("a sidecar scenario that is a list", "experiment-tier-a.json",
+         at("components", "ep", "scenario", value=["A-ep"])),
+        ("sidecar pass_conditions that are a boolean", "experiment-tier-a.json",
+         at("components", "ep", "pass_conditions", value=True)),
+        ("sidecar pass_conditions holding a non-string", "experiment-tier-a.json",
+         at("components", "ep", "pass_conditions", "1", value=1)),
+        ("an inventory recall that is a list", "inventory.json", at("recall", value=[True])),
+        ("an inventory with no recall", "inventory.json", at("recall", drop=True)),
+    )
+    for i, (what, fname, fn, *more) in enumerate(bad_inputs):
+        case(f"{what} exits 2, CANNOT RUN, never a traceback",
+             lambda i=i, f=fname, fn=fn, more=more: edited(f"in{i}", f, fn, *more), (2, True))
+    good_inputs = (
+        ("a component effort of another integer", "components.json", at("components", 0, "effort", value=4), 1),
+        ("a component phase of another string", "components.json", at("components", 0, "phase", value="later"), 0),
+        ("a map package channel of another string", "components.json",
+         at("packages", "comp", "channel", value="reusable-workflow"), 0),
+        ("an empty shipping-set components object", "shipping-sets.json",
+         at("packages", "comp", "components", value={}), 1),
+        ("a scan finding with another string id", SC, at("components", "ep", "findings", 0, "id", value="ep:9:9"), 0),
+        ("a scan entry outside the map that is well formed", SC, at("components", "zz", value={"findings": []}), 0),
+        ("a sidecar scenario of null", "experiment-tier-a.json", at("components", "ep2", "scenario", value=None), 0),
+        ("sidecar pass_conditions of another string", "experiment-tier-a.json",
+         at("components", "ep2", "pass_conditions", "1", value="argued"), 0),
+        ("an inventory recall with other answers", "inventory.json", at("recall", value={"a": True, "b": "pass"}), 0),
+    )
+    for i, (what, fname, fn, rc) in enumerate(good_inputs):
+        case(f"{what} is readable input (exit {rc}, no CANNOT RUN)",
+             lambda i=i, f=fname, fn=fn: edited(f"ok{i}", f, fn), (rc, False))
+
+    # the fuzz pass (r2 fold): JSON nested past the parser's stack, and a spec or practices file that is not UTF-8,
+    # are unreadable input (rc 2), never a RecursionError or UnicodeDecodeError traceback.
+    def deep_tree(name):
+        root = tree(name, costed((1.0, 1.0, 1.0)))
+        (root / MKT / "inventory.json").write_text("[" * 200000 + "]" * 200000)
+        return root
+    case("an inventory.json nested 200000 deep exits 2, CANNOT RUN, never a RecursionError",
+         lambda: (lambda r: (r[0], "CANNOT RUN" in r[1] and "nested too deep" in r[1]))(run(deep_tree("deep"))),
+         (2, True))
+
+    def bytes_tree(name, rel):
+        root = tree(name, costed((1.0, 1.0, 1.0)))
+        (root / rel).write_bytes(b"## 2. \xff\xfe not utf-8\n")
+        return root
+    for rel in (SPEC, PRACTICES):
+        case(f"a {Path(rel).name} that is not UTF-8 exits 2, CANNOT RUN, never a UnicodeDecodeError",
+             lambda rel=rel: (lambda r: (r[0], "CANNOT RUN" in r[1] and "UnicodeDecodeError" in r[1]))(
+                 run(bytes_tree(f"bytes-{Path(rel).stem}", rel))), (2, True))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 0 if fail == 0 else 1
