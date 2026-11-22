@@ -4,41 +4,45 @@
     python3 scripts/check-inventory.py              # the live inventory under this repository
     python3 scripts/check-inventory.py --render     # the same checks; on rc 0 or 3, the Markdown view on stdout
     python3 scripts/check-inventory.py --root DIR   # another tree (the self-test's fixture worlds)
-    python3 scripts/check-inventory.py --self-test  # 149 cases
+    python3 scripts/check-inventory.py --self-test  # 215 cases
 
 It reads `docs/marketplace/inventory.json`, `components.json`, `shipping-sets.json`, the LATEST `scan-<date>.json`
 (by name), `experiment-tier-a.json`, the spec (which owns the `spec` ground kind, §5 rule 1) and
 `docs/portable-practices.md` (which owns `practice_entry`).
 
 Exit codes RANK, and the order is the rule (plan Task 19): an input unreadable or absent → 2 (CANNOT RUN: treat
-as NOT RUN); else any row or inventory error → 1, and the checkpoint is NOT computed (a fire over rows with errors
+as NOT RUN; a JSON NaN/Infinity, and a scan with no entry holding a `findings` list for a component in the map,
+are unreadable); else any row or inventory error → 1, and the checkpoint is NOT computed (a fire over rows with errors
 is not evidence); else `checkpoint_fires` raising (no phase-1 rows) → 2; else the checkpoint fired → 3 (stop: Human
 step H4); else 0. So rc 1 outranks rc 3.
 
 Every error is printed as `<row id>: [<rule>] <why>`; the rule tag names which falsifier refused it.
 
-`row_errors` refuses (each a spec falsifier; the plan's list, plus backlog #696 (a), (c) and (f)):
-  [grade]            a grade missing, or not one of GRADES (§4b: a verdict without a grade is incomplete)
-  [verdict]          a verdict not one of VERDICTS
+`row_errors` FIRST checks the row's SHAPE (r1 fold); a row that fails it is reported and NOT handed to the rules:
+  [shape]            a row that is not an object, or a field of the plan's row schema (ROW_SCHEMA) missing or of the
+                     wrong type: a grade, verdict, phase, harvest, role, criterion key or value, cost grade or route
+                     kind outside its vocabulary (§4b: a verdict without a grade is incomplete; the map's
+                     1-if-feasible phase is refused); a cost or route estimate that is not a FINITE number, or a
+                     public_bar_hours or cost_hours that is not positive
+then the rules (each a spec falsifier; the plan's list, plus backlog #696 (a), (c) and (f)):
   [map]              a row whose id is not in components.json, or whose effort or roles differ from the map's (the
                      role rules below read the row's roles; a row that relabelled itself `data` would escape them)
   [ship-experiment]  a SHIP row in a `plugin`-channel package the tier-A experiment does not back (§9), BY ROLE:
                      an entry-point needs its OWN sidecar entry with exercised true, operation_ok true, at least
                      one pass condition, and none `fail` or `CANNOT RUN`; a library is held to that test on the
-                     entry-point component its `scenario` names (the id before the first `:`), refused if it names
-                     none; a data row is outside the rule (its C4 is struck), and so is a non-plugin package
+                     entry-point component its `scenario` names (the id before the first `:`, the convention
+                     `<entry-point id>: <description>`), refused if it names none or one from another package (§4:
+                     C4 is inherited from the entry-point that uses the library); a data row is outside the rule (its C4 is struck), and so is a non-plugin package
   [shipping-set]     a phase-1 row whose component is absent from its package's components in shipping-sets.json
-  [phase]            a phase that is neither "1" nor "later"
   [recall-phase]     a recall (effort 1) row at "1" unless the inventory's recall.a is true and recall.b is "pass"
-  [cost]             a cost with either estimate missing, or not a number
   [next-project]     next_project_hours <= 0 (the ratio is undefined)
   [inherited]        an `inherited` grade with no scenario
-  [rests-on]         a non-SHIP row whose rests_on is empty or not a list
+  [rests-on]         a non-SHIP row whose rests_on is empty
   [ground-kind]      a rests_on entry whose kind is not one of GROUND_KINDS
   [ground-empty]     (backlog #696 f) a `finding` ground with no ids; a `spec` ground with an empty section,
                      heading or decision; an `experiment` ground with no scenario
-  [ground-finding]   a finding id absent from the scan's findings for the row's OWN component (a borrowed id
-                     from another component is refused)
+  [ground-finding]   a finding id that is not a string, or absent from the scan's findings for the row's OWN
+                     component (a borrowed id from another component is refused)
   [ground-spec]      a spec section with no `## <n>. ` line; a heading with no exact `### <heading>` line under
                      that section (before the next `## `); a decision with no `| **D<n>** |` table row in §2 and
                      no `### D<n>.` heading in §2b
@@ -47,7 +51,6 @@ Every error is printed as `<row id>: [<rule>] <why>`; the rule tag names which f
   [ground-c5]        a c5 ground on a row whose C5 is not `unanswered`
   [measured-finding] C2 or C3 `fail` at grade `measured` with no `finding` ground
   [route]            a non-SHIP row with no route (§9 D10)
-  [route-kind]       (backlog #696 a) a route whose kind is not one of ROUTE_KINDS (refused on any row)
   [practice]         (backlog #696 c) a `practice` harvest whose practice_entry is not EXACTLY a `## ` heading of
                      docs/portable-practices.md: the full heading text WITH its number and WITHOUT the `## `
                      prefix, e.g. `10. A surviving mutation does not mean "add a test" — first ask ...`
@@ -75,6 +78,7 @@ import contextlib
 import copy
 import io
 import json
+import math
 import re
 import sys
 import tempfile
@@ -89,6 +93,10 @@ VERDICTS = ("SHIP", "NEEDS-WORK", "DON'T-SHIP")
 GRADES = ("measured", "inherited", "argued", "none")
 PHASES = ("1", "later")
 GROUND_KINDS = ("finding", "spec", "experiment", "c5")
+ROLES = ("entry-point", "library", "data")                  # spec §4's role table
+HARVESTS = ("practice", "none")                             # spec §4c, D6
+CRITERIA = ("C1", "C2", "C3", "C4", "C5")                   # spec §4
+CRITERION_VALUES = ("pass", "fail", "struck", "unanswered")  # §4 (`struck`: a data row's C4), §7 item 11
 
 # backlog #696 (a): the route vocabulary is spec D10's four routes, and nothing else.
 ROUTE_KINDS = {
@@ -137,6 +145,74 @@ def checkpoint_fires(rows):
 
 def _num(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _finite(v):
+    """A number that is not NaN or infinite: NaN compares false with everything and infinity outranks every
+    estimate, so either would decide the checkpoint without being an estimate (r1 fold, CLAUDE C1)."""
+    return _num(v) and math.isfinite(v)
+
+
+def _in(vocab):
+    """A string member of `vocab` (the str test first, so an unhashable value is refused, never a TypeError)."""
+    return lambda v: isinstance(v, str) and v in vocab
+
+
+def _str_or_null(v):
+    return v is None or isinstance(v, str)
+
+
+def _criteria_ok(v):
+    return (isinstance(v, dict) and set(v) == set(CRITERIA)
+            and all(_in(CRITERION_VALUES)(x) for x in v.values()))
+
+
+def _cost_ok(v):
+    """Both estimates finite, the public bar positive; `next_project_hours` <= 0 is its own rule ([next-project])."""
+    return (isinstance(v, dict) and _finite(v.get("public_bar_hours")) and v["public_bar_hours"] > 0
+            and _finite(v.get("next_project_hours")) and _in(GRADES)(v.get("grade")))
+
+
+def _route_ok(v):
+    return v is None or (isinstance(v, dict) and _in(ROUTE_KINDS)(v.get("kind"))
+                         and _finite(v.get("cost_hours")) and v["cost_hours"] > 0 and _in(GRADES)(v.get("grade")))
+
+
+# The plan's row schema (Task 19), one entry per field: (key, test, what the field must be). Every key is REQUIRED;
+# a nullable field is present with null. Keys outside the schema (`notes`) are allowed.
+ROW_SCHEMA = (
+    ("id", lambda v: isinstance(v, str) and bool(v.strip()), "a non-empty string"),
+    ("effort", lambda v: isinstance(v, int) and not isinstance(v, bool), "an integer"),
+    ("roles", lambda v: isinstance(v, list) and bool(v) and all(_in(ROLES)(x) for x in v),
+     f"a non-empty list of {', '.join(ROLES)}"),
+    ("phase", _in(PHASES), f"one of {', '.join(PHASES)} (the map's 1-if-feasible is resolved by Task 18)"),
+    ("verdict", _in(VERDICTS), f"one of {', '.join(VERDICTS)}"),
+    ("grade", _in(GRADES), f"one of {', '.join(GRADES)} (§4b: a verdict without a grade is incomplete)"),
+    ("scenario", _str_or_null, "a string or null"),
+    ("rests_on", lambda v: isinstance(v, list), "a list"),
+    ("harvest", _in(HARVESTS), f"one of {', '.join(HARVESTS)} (§4c)"),
+    ("practice_entry", _str_or_null, "a string or null"),
+    ("criteria", _criteria_ok, f"an object with exactly {', '.join(CRITERIA)}, each one of "
+                               f"{', '.join(CRITERION_VALUES)}"),
+    ("cost", _cost_ok, "an object with a finite positive public_bar_hours, a finite next_project_hours and a grade "
+                       f"one of {', '.join(GRADES)} (§2b)"),
+    ("route", _route_ok, f"null, or an object with a kind one of {', '.join(ROUTE_KINDS)}, a finite positive "
+                         f"cost_hours and a grade one of {', '.join(GRADES)}"),
+)
+
+
+def _shape_errors(row):
+    """Why `row` does not have the plan's row SHAPE, one string per field (empty when it does). Runs before every
+    rule, so a rule may assume the shape and no traceback is reachable from row content (r1 fold)."""
+    if not isinstance(row, dict):
+        return [f"a row that is {type(row).__name__}, not an object"]
+    out = []
+    for key, ok, want in ROW_SCHEMA:
+        if key not in row:
+            out.append(f"{key} is missing; it must be {want}")
+        elif not ok(row[key]):
+            out.append(f"{key} {row[key]!r} is not {want}")
+    return out
 
 
 def _section_lines(spec_lines, sec):
@@ -197,21 +273,20 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
     """Every falsifier this row trips, as `<id>: [<rule>] <why>` strings (the rules are listed in the module
     docstring). `ctx` is REQUIRED (keyword-only): without the map, a role rule cannot be applied, and a call that
     omits it raises TypeError rather than skipping the rules silently."""
-    rid = row.get("id", "?")
+    shape = _shape_errors(row)
+    if shape:
+        rid = row["id"] if isinstance(row, dict) and ROW_SCHEMA[0][1](row.get("id")) else "?"
+        return [f"{rid}: [shape] {why}" for why in shape]
+    rid = row["id"]
     errs = []
 
     def err(rule, why):
         errs.append(f"{rid}: [{rule}] {why}")
 
-    verdict, grade = row.get("verdict"), row.get("grade")
-    roles = row.get("roles") or []
-    criteria = row.get("criteria") or {}
+    verdict, grade = row["verdict"], row["grade"]
+    roles = row["roles"]
+    criteria = row["criteria"]
     ship = verdict == "SHIP"
-
-    if grade not in GRADES:
-        err("grade", f"grade {grade!r} is missing or not one of {', '.join(GRADES)}")
-    if verdict not in VERDICTS:
-        err("verdict", f"verdict {verdict!r} is not one of {', '.join(VERDICTS)}")
 
     comp = ctx.components.get(rid)
     if comp is None:
@@ -231,13 +306,14 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
             if named is None:
                 err("ship-experiment", f"SHIP library whose scenario {row.get('scenario')!r} names no entry-point "
                                        "component id")
+            elif ctx.components[named].get("package") != package:
+                err("ship-experiment", f"SHIP library whose named entry-point {named} is in package "
+                                       f"{ctx.components[named].get('package')!r}, not the library's {package!r}")
             elif not _backs(sidecar.get(named)):
                 err("ship-experiment", f"SHIP library whose named entry-point {named} is not backed by its tier-A "
                                        "entry")
 
-    phase = row.get("phase")
-    if phase not in PHASES:
-        err("phase", f"phase {phase!r} is neither \"1\" nor \"later\"")
+    phase = row["phase"]
     if phase == "1" and comp is not None and rid not in ctx.shipping.get(package, set()):
         err("shipping-set", f"phase-1 row absent from package {package!r}'s components in shipping-sets.json")
     if phase == "1" and row.get("effort") == 1:
@@ -246,22 +322,15 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
             err("recall-phase", f"recall row at phase \"1\" while recall.a is {recall.get('a')!r} and recall.b "
                                 f"is {recall.get('b')!r}")
 
-    cost = row.get("cost") if isinstance(row.get("cost"), dict) else {}
-    pub, nxt = cost.get("public_bar_hours"), cost.get("next_project_hours")
-    if not (_num(pub) and _num(nxt)):
-        err("cost", f"a cost estimate is missing (public_bar_hours {pub!r}, next_project_hours {nxt!r})")
-    elif not nxt > 0:
+    nxt = row["cost"]["next_project_hours"]
+    if not nxt > 0:
         err("next-project", f"next_project_hours is {nxt!r}, which leaves the ratio undefined")
 
     if grade == "inherited" and not row.get("scenario"):
         err("inherited", "an inherited grade with no scenario")
 
-    grounds = row.get("rests_on")
-    if not isinstance(grounds, list):
-        if not ship:
-            err("rests-on", "a non-SHIP row whose rests_on is not a list")
-        grounds = []
-    elif not grounds and not ship:
+    grounds = row["rests_on"]
+    if not grounds and not ship:
         err("rests-on", "a non-SHIP row with an empty rests_on")
 
     spec_lines = spec_text.split("\n")
@@ -276,7 +345,7 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
                 err("ground-empty", "a finding ground with no ids")
                 continue
             for fid in ids:
-                if fid not in own:
+                if not isinstance(fid, str) or fid not in own:
                     err("ground-finding", f"finding {fid!r} is not in the scan's findings for {rid}")
         elif kind == "spec":
             bad = _spec_ground_error(g, spec_lines)
@@ -300,12 +369,8 @@ def row_errors(row, scan, spec_text, sidecar, *, ctx):
             and not any(isinstance(g, dict) and g.get("kind") == "finding" for g in grounds)):
         err("measured-finding", "C2 or C3 fail graded measured with no finding ground")
 
-    route = row.get("route")
-    if not route and not ship:
+    if not row["route"] and not ship:
         err("route", "a non-SHIP row with no route (§9 D10)")
-    if route and (not isinstance(route, dict) or route.get("kind") not in ROUTE_KINDS):
-        kind = route.get("kind") if isinstance(route, dict) else route
-        err("route-kind", f"route kind {kind!r} is not one of {', '.join(ROUTE_KINDS)}")
 
     if row.get("harvest") == "practice" and row.get("practice_entry") not in ctx.practice_headings:
         err("practice", f"practice_entry {row.get('practice_entry')!r} is not exactly a `## ` heading of "
@@ -323,11 +388,11 @@ def inventory_errors(inventory, ctx, latest_scan=None):
     """The inventory-level falsifiers (module docstring), as `inventory: [<rule>] <why>` strings."""
     errs = []
     rows = inventory.get("rows") or []
-    ids = [r.get("id") for r in rows]
+    ids = [r.get("id") if isinstance(r, dict) else None for r in rows]   # a non-object row is row_errors' [shape]
     for cid in ctx.components:
         if cid not in ids:
             errs.append(f"inventory: [missing] component {cid} has no row")
-    for cid in sorted({i for i in ids if ids.count(i) > 1}, key=str):
+    for cid in sorted({i for i in ids if isinstance(i, str) and ids.count(i) > 1}, key=str):
         errs.append(f"inventory: [duplicate] {ids.count(cid)} rows for {cid}")
     phase1 = sorted({c.get("package") for c in ctx.components.values() if c.get("phase") == "1"}, key=str)
     if not phase1:
@@ -359,9 +424,15 @@ def render(rows):
     return "\n".join(out) + "\n"
 
 
+def _refuse_constant(name):
+    raise ValueError(f"the JSON constant {name} is not a number")
+
+
 def _read_json(path):
+    """Parsed JSON, or CannotRun. JSON's NaN, Infinity and -Infinity are refused: they are not numbers, and Python's
+    parser would otherwise accept them (r1 fold, CLAUDE C1)."""
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(), parse_constant=_refuse_constant)
     except (OSError, ValueError) as e:
         raise CannotRun(f"{path} is unreadable ({type(e).__name__}: {e})") from e
 
@@ -389,6 +460,16 @@ def load(root):
     for doc, key, typ, name in shapes:
         if not isinstance(doc, dict) or not isinstance(doc.get(key), typ):
             raise CannotRun(f"{name} has no `{key}` {typ.__name__}")
+    # r1 fold (CODEX X1): a scan with no entry for a component in the map has no evidence for it, so it is
+    # unreadable input, never an empty set of findings.
+    for cid in (c.get("id") for c in cmap["components"]):
+        entry = scan["components"].get(cid) if isinstance(cid, str) else None
+        if not isinstance(entry, dict):
+            raise CannotRun(f"{scans[-1].name} has no entry for component {cid!r} in components.json")
+        if not isinstance(entry.get("findings"), list):
+            raise CannotRun(f"{scans[-1].name}'s entry for {cid!r} has no `findings` list")
+        if not all(isinstance(f, dict) for f in entry["findings"]):
+            raise CannotRun(f"{scans[-1].name}'s entry for {cid!r} has a finding that is not an object")
     headings = frozenset(line[3:].rstrip("\n") for line in practices.splitlines() if line.startswith("## "))
     if not headings:
         raise CannotRun(f"{PRACTICES} has no `## ` heading")
@@ -591,15 +672,96 @@ def _self_test_body():
     for name in base:
         case(f"the base row {name} is clean", lambda n=name: rules(row(n)), [])
 
-    # [grade]
-    case("a NEEDS-WORK row with no grade is an error", lambda: rules(row("nw", grade=_DROP)), ["grade"])
+    # [shape] (r1 fold, X2/C1/C2/C3): every field of the plan's row schema, before any rule. Each case breaks ONE
+    # field of a base row that is otherwise clean (the base rows above are the adjacent negatives).
+    nan, inf = float("nan"), float("inf")
+    case("a row that is not an object is a shape error, never a traceback", lambda: rules(42), ["shape"])
+    case("a row that is a list is a shape error", lambda: rules([row("nw")]), ["shape"])
+    case("a row with no id is a shape error", lambda: rules(row("nw", id=_DROP)), ["shape"])
+    case("a row whose id is empty is a shape error", lambda: rules(row("nw", id=" ")), ["shape"])
+    case("a row whose id is a list is a shape error, never a traceback", lambda: rules(row("nw", id=["ep2"])),
+         ["shape"])
+    case("a row with no effort is a shape error", lambda: rules(row("nw", effort=_DROP)), ["shape"])
+    case("an effort that is a string is a shape error", lambda: rules(row("nw", effort="3")), ["shape"])
+    case("an effort that is a boolean is a shape error", lambda: rules(row("nw", effort=True)), ["shape"])
+    case("a row with no roles is a shape error", lambda: rules(row("nw", roles=_DROP)), ["shape"])
+    case("an empty roles list is a shape error", lambda: rules(row("nw", roles=[])), ["shape"])
+    case("roles given as a bare string is a shape error", lambda: rules(row("nw", roles="entry-point")), ["shape"])
+    case("a role outside the vocabulary is a shape error", lambda: rules(row("nw", roles=["Entry-point"])), ["shape"])
+    case("a row with no scenario key is a shape error", lambda: rules(row("nw", scenario=_DROP)), ["shape"])
+    case("a scenario that is a list is a shape error", lambda: rules(row("nw", scenario=["A-ep2"])), ["shape"])
+    case("a rests_on that is a string is a shape error", lambda: rules(row("nw", rests_on="finding")), ["shape"])
+    case("a SHIP row with no rests_on key is a shape error", lambda: rules(row("ship-ep", rests_on=_DROP)), ["shape"])
+    case("a row with no harvest is a shape error", lambda: rules(row("nw", harvest=_DROP)), ["shape"])
+    case("a harvest outside practice/none is a shape error", lambda: rules(row("nw", harvest="bogus")), ["shape"])
+    case("harvest `Practice` (wrong case) with a nonsense entry is a shape error, not an escape from [practice]",
+         lambda: rules(row("data", harvest="Practice", practice_entry="nonsense")), ["shape"])
+    case("a row with no practice_entry key is a shape error", lambda: rules(row("nw", practice_entry=_DROP)),
+         ["shape"])
+    case("a practice_entry that is a list is a shape error, never a traceback",
+         lambda: rules(row("data", practice_entry=["10. A thing — first ask"])), ["shape"])
+    case("a row with no criteria is a shape error", lambda: rules(row("nw", criteria=_DROP)), ["shape"])
+    case("criteria given as a list is a shape error", lambda: rules(row("nw", criteria=["pass"] * 5)), ["shape"])
+    case("criteria missing C5 is a shape error (the memory-corpus SHIP cannot skip its content review)",
+         lambda: rules(row("corpus", verdict="SHIP", rests_on=[],
+                           criteria={k: v for k, v in crit(C4="struck").items() if k != "C5"})), ["shape"])
+    case("criteria with a key outside C1-C5 is a shape error",
+         lambda: rules(row("nw", criteria={**crit(C3="fail"), "C6": "pass"})), ["shape"])
+    case("a criterion value outside the vocabulary is a shape error",
+         lambda: rules(row("nw", criteria=crit(C3="fail", C1="bogus"))), ["shape"])
+    case("every criterion value in the vocabulary is clean",
+         lambda: rules(row("nw", criteria=crit(C1="struck", C2="unanswered", C3="fail"))), [])
+    case("a cost that is not an object is a shape error", lambda: rules(row("nw", cost=[6.0, 2.0])), ["shape"])
+    case("a NaN public_bar_hours is a shape error (it would read as not over 3x)",
+         lambda: rules(row("nw", cost=cost(pub=nan))), ["shape"])
+    case("an infinite public_bar_hours is a shape error", lambda: rules(row("nw", cost=cost(pub=inf))), ["shape"])
+    case("a negative public_bar_hours is a shape error", lambda: rules(row("nw", cost=cost(pub=-9.0))), ["shape"])
+    case("a public_bar_hours of 0 is a shape error", lambda: rules(row("nw", cost=cost(pub=0))), ["shape"])
+    case("a public_bar_hours of 0.5 is clean", lambda: rules(row("nw", cost=cost(pub=0.5))), [])
+    case("an integer public_bar_hours is clean", lambda: rules(row("nw", cost=cost(pub=6))), [])
+    case("an infinite next_project_hours is a shape error (it would suppress the checkpoint)",
+         lambda: rules(row("nw", cost=cost(nxt=inf))), ["shape"])
+    case("a NaN next_project_hours is a shape error", lambda: rules(row("nw", cost=cost(nxt=nan))), ["shape"])
+    case("a boolean next_project_hours is a shape error", lambda: rules(row("nw", cost=cost(nxt=True))), ["shape"])
+    case("a cost with no grade is a shape error",
+         lambda: rules(row("nw", cost={"public_bar_hours": 6.0, "next_project_hours": 2.0})), ["shape"])
+    case("a cost grade outside the vocabulary is a shape error",
+         lambda: rules(row("nw", cost={**cost(), "grade": "guessed"})), ["shape"])
+    case("a row with no route key is a shape error", lambda: rules(row("ship-ep", route=_DROP)), ["shape"])
+    case("a route kind that is a list is a shape error, never a traceback",
+         lambda: rules(row("nw", route={"kind": ["practice"], "cost_hours": 1.0, "grade": "argued"})), ["shape"])
+    case("a route with no cost_hours is a shape error",
+         lambda: rules(row("nw", route={"kind": "decouple-config", "grade": "argued"})), ["shape"])
+    case("an infinite route cost_hours is a shape error",
+         lambda: rules(row("nw", route={"kind": "decouple-config", "cost_hours": inf, "grade": "argued"})), ["shape"])
+    case("a route cost_hours of 0 is a shape error",
+         lambda: rules(row("nw", route={"kind": "decouple-config", "cost_hours": 0, "grade": "argued"})), ["shape"])
+    case("a route with no grade is a shape error",
+         lambda: rules(row("nw", route={"kind": "decouple-config", "cost_hours": 4.0})), ["shape"])
+    case("a route grade outside the vocabulary is a shape error",
+         lambda: rules(row("nw", route={"kind": "decouple-config", "cost_hours": 4.0, "grade": "guessed"})),
+         ["shape"])
+    case("a route carrying extra keys (channel, uses) is clean",
+         lambda: rules(row("nw", route={"kind": "portable-core", "channel": "reusable-workflow", "uses": "x@y",
+                                        "cost_hours": 12.0, "grade": "argued"})), [])
+    case("a row carrying an extra key (notes) is clean", lambda: rules(row("nw", notes="why")), [])
+    case("a data row with no criteria reports ONLY [shape] (the rules never see a malformed row)",
+         lambda: row_errors(row("data", criteria=_DROP), scan, spec, sidecar, ctx=mkctx())[0].split(" ", 2)[:2]
+         + [len(row_errors(row("data", criteria=_DROP), scan, spec, sidecar, ctx=mkctx()))], ["dat:", "[shape]", 1])
+    case("a shape error names the row by its id", lambda: row_errors(row("nw", grade=_DROP), scan, spec, sidecar,
+                                                                     ctx=mkctx())[0].split(" ")[:2], ["ep2:", "[shape]"])
+    case("a non-object row is named `?`", lambda: row_errors(42, scan, spec, sidecar, ctx=mkctx())[0].split(" ")[:2],
+         ["?:", "[shape]"])
+
+    # grade (refused by [shape] since the r1 fold)
+    case("a NEEDS-WORK row with no grade is an error", lambda: rules(row("nw", grade=_DROP)), ["shape"])
     case("the same NEEDS-WORK row graded is clean", lambda: rules(row("nw", grade="argued")), [])
-    case("a SHIP row with no grade is an error", lambda: rules(row("ship-ep", grade=None)), ["grade"])
-    case("a grade outside the vocabulary is an error", lambda: rules(row("nw", grade="proven")), ["grade"])
+    case("a SHIP row with no grade is an error", lambda: rules(row("ship-ep", grade=None)), ["shape"])
+    case("a grade outside the vocabulary is an error", lambda: rules(row("nw", grade="proven")), ["shape"])
     case("the grade `none` is a grade", lambda: rules(row("nw", grade="none")), [])
-    # [verdict]
+    # verdict (refused by [shape] since the r1 fold)
     case("a verdict outside the vocabulary is an error",
-         lambda: rules(row("nw", verdict="Needs-Work")), ["verdict"])
+         lambda: rules(row("nw", verdict="Needs-Work")), ["shape"])
     # [map]
     case("a row whose roles differ from the map is an error (a relabelled data row escapes no rule)",
          lambda: rules(row("ship-ep", roles=["data"], criteria=crit(C4="struck"))), ["map"])
@@ -643,6 +805,14 @@ def _self_test_body():
          ["ship-experiment"])
     case("a SHIP library is not held to its own exercised: false entry",
          lambda: rules(row("ship-lib")), [])
+    # r1 fold (CLAUDE C4): the named entry-point must be in the library's OWN package (§4: C4 is inherited from the
+    # entry-point that uses the library).
+    case("a SHIP library naming a passing entry-point of ANOTHER package is an error",
+         lambda: rules(row("ship-lib", scenario="rec: the recall scenario"), side={**sidecar, "rec": sidecar["ep"]}),
+         ["ship-experiment"])
+    case("the same SHIP library naming that entry-point, moved into the library's package, is clean",
+         lambda: rules(row("ship-lib", scenario="rec: the recall scenario"), side={**sidecar, "rec": sidecar["ep"]},
+                       ctx=mkctx(components={**components, "rec": {**components["rec"], "package": "comp"}})), [])
     # [ship-experiment] — outside the rule
     case("a SHIP data row in a plugin package is outside the experiment rule",
          lambda: rules(row("data", verdict="SHIP", rests_on=[], route=None, harvest="none", practice_entry=None)),
@@ -663,10 +833,10 @@ def _self_test_body():
     case("a phase-1 row whose package has no shipping-sets entry is an error",
          lambda: rules(row("nw"), ctx=mkctx(shipping={k: v for k, v in shipping.items() if k != "comp"})),
          ["shipping-set"])
-    # [phase]
+    # phase (refused by [shape] since the r1 fold)
     case("a row at the map's 1-if-feasible label is an error",
-         lambda: rules(row("rec", phase="1-if-feasible")), ["phase"])
-    case("a row with no phase is an error", lambda: rules(row("nw", phase=_DROP)), ["phase"])
+         lambda: rules(row("rec", phase="1-if-feasible")), ["shape"])
+    case("a row with no phase is an error", lambda: rules(row("nw", phase=_DROP)), ["shape"])
     # [recall-phase]
     case("a recall row at phase 1 while recall.a is false is an error",
          lambda: rules(row("rec", phase="1")), ["recall-phase"])
@@ -678,14 +848,14 @@ def _self_test_body():
          lambda: rules(row("rec", phase="1"), ctx=mkctx(recall={"a": "true", "b": "pass"})), ["recall-phase"])
     case("a non-recall row at phase 1 is not held to the recall answers",
          lambda: rules(row("nw"), ctx=mkctx(recall={"a": False, "b": "fail"})), [])
-    # [cost] / [next-project]
+    # cost (refused by [shape] since the r1 fold) / [next-project]
     case("a cost with no public_bar_hours is an error",
-         lambda: rules(row("nw", cost={"next_project_hours": 2.0})), ["cost"])
+         lambda: rules(row("nw", cost={"next_project_hours": 2.0, "grade": "argued"})), ["shape"])
     case("a cost with no next_project_hours is an error",
-         lambda: rules(row("nw", cost={"public_bar_hours": 2.0})), ["cost"])
-    case("a row with no cost is an error", lambda: rules(row("nw", cost=None)), ["cost"])
+         lambda: rules(row("nw", cost={"public_bar_hours": 2.0, "grade": "argued"})), ["shape"])
+    case("a row with no cost is an error", lambda: rules(row("nw", cost=None)), ["shape"])
     case("a cost estimate that is not a number is an error",
-         lambda: rules(row("nw", cost=cost(pub="6"))), ["cost"])
+         lambda: rules(row("nw", cost=cost(pub="6"))), ["shape"])
     case("next_project_hours of 0 is an error", lambda: rules(row("nw", cost=cost(nxt=0))), ["next-project"])
     case("negative next_project_hours is an error", lambda: rules(row("nw", cost=cost(nxt=-1.0))), ["next-project"])
     case("next_project_hours of 0.5 is clean", lambda: rules(row("nw", cost=cost(nxt=0.5))), [])
@@ -696,7 +866,7 @@ def _self_test_body():
          lambda: rules(row("nw", grade="inherited", scenario="ep: A-ep")), [])
     # [rests-on]
     case("a non-SHIP row with an empty rests_on is an error", lambda: rules(row("nw", rests_on=[])), ["rests-on"])
-    case("a non-SHIP row with no rests_on is an error", lambda: rules(row("nw", rests_on=_DROP)), ["rests-on"])
+    case("a non-SHIP row with no rests_on is an error", lambda: rules(row("nw", rests_on=_DROP)), ["shape"])
     case("a SHIP row with an empty rests_on is clean", lambda: rules(row("ship-ep", rests_on=[])), [])
     # [ground-kind]
     case("a ground of an unknown kind is an error",
@@ -714,6 +884,8 @@ def _self_test_body():
          lambda: rules(row("nw", rests_on=[{"kind": "finding", "ids": ["ep2:3:1", "ep:2:1"]}])), ["ground-finding"])
     case("two of the row's own finding ids are clean",
          lambda: rules(row("nw", rests_on=[{"kind": "finding", "ids": ["ep2:3:1", "ep2:3:2"]}])), [])
+    case("a finding id that is an object is an error, never a traceback (r1 fold, CLAUDE C3)",
+         lambda: rules(row("nw", rests_on=[{"kind": "finding", "ids": ["ep2:3:1", {"a": 1}]}])), ["ground-finding"])
     # [ground-empty] (backlog #696 f)
     case("a finding ground with empty ids is an error",
          lambda: rules(row("nw", rests_on=[{"kind": "finding", "ids": []}])), ["ground-empty"])
@@ -787,18 +959,19 @@ def _self_test_body():
          lambda: rules(row("nw", grade="measured")), [])
     case("the same C3 fail graded argued with no finding ground is clean",
          lambda: rules(row("nw", rests_on=[{"kind": "spec", "decision": "D1"}])), [])
-    # [route] / [route-kind] (backlog #696 a)
+    # [route] / route kind (backlog #696 a; refused by [shape] since the r1 fold)
     case("a non-SHIP row with no route is an error", lambda: rules(row("nw", route=None)), ["route"])
     case("a SHIP row with no route is clean", lambda: rules(row("ship-ep", route=None)), [])
     for kind in ROUTE_KINDS:
         case(f"the route kind {kind} is clean",
              lambda k=kind: rules(row("nw", route={"kind": k, "cost_hours": 1.0, "grade": "argued"})), [])
     case("a route kind outside the vocabulary is an error",
-         lambda: rules(row("nw", route={"kind": "rewrite-it", "cost_hours": 1.0})), ["route-kind"])
-    case("a route with no kind is an error", lambda: rules(row("nw", route={"cost_hours": 1.0})), ["route-kind"])
-    case("a route that is a bare string is an error", lambda: rules(row("nw", route="practice")), ["route-kind"])
+         lambda: rules(row("nw", route={"kind": "rewrite-it", "cost_hours": 1.0, "grade": "argued"})), ["shape"])
+    case("a route with no kind is an error",
+         lambda: rules(row("nw", route={"cost_hours": 1.0, "grade": "argued"})), ["shape"])
+    case("a route that is a bare string is an error", lambda: rules(row("nw", route="practice")), ["shape"])
     case("an unknown route kind on a SHIP row is an error too",
-         lambda: rules(row("ship-ep", route={"kind": "plugin"})), ["route-kind"])
+         lambda: rules(row("ship-ep", route={"kind": "plugin", "cost_hours": 1.0, "grade": "argued"})), ["shape"])
     # [practice] (backlog #696 c)
     case("a practice_entry without its number is an error",
          lambda: rules(row("data", practice_entry="A thing — first ask")), ["practice"])
@@ -862,6 +1035,10 @@ def _self_test_body():
          ["package-shipping"])
     case("an inventory naming a scan other than the latest is an error",
          lambda: inv_rules(full, scan_name="docs/marketplace/scan-2026-02-01.json"), ["scan"])
+    case("a non-object row is no inventory error, never a traceback (row_errors names it)",
+         lambda: inv_rules(full + [42]), [])
+    case("two rows sharing an unhashable id are no inventory error, never a traceback (row_errors names them)",
+         lambda: inv_rules(full + [row("nw", id=["x"]), row("nw", id=["x"])]), [])
 
     # ── the checkpoint ───────────────────────────────────────────────────────────────────────────────────────
     def _row(phase, pub, nxt):
@@ -900,7 +1077,8 @@ def _self_test_body():
     # ── the CLI, end to end over a fixture tree ──────────────────────────────────────────────────────────────
     cli_components = [components[k] for k in ("ep", "ep2", "lib")]
 
-    def tree(name, rows, *, drop=None, scans=("scan-2026-01-01.json",), inv_scan="docs/marketplace/scan-2026-01-01.json"):
+    def tree(name, rows, *, drop=None, scans=("scan-2026-01-01.json",), inv_scan="docs/marketplace/scan-2026-01-01.json",
+             scan_doc=None):
         root = Path(tempfile.mkdtemp(prefix=f"inv-{name}-"))
         mkt = root / MKT
         mkt.mkdir(parents=True)
@@ -911,7 +1089,7 @@ def _self_test_body():
             "experiment-tier-a.json": {"components": sidecar},
         }
         for s in scans:
-            files[s] = {"components": scan}
+            files[s] = {"components": scan} if scan_doc is None else scan_doc
         for n, doc in files.items():
             if n != drop:
                 (mkt / n).write_text(json.dumps(doc))
@@ -934,7 +1112,7 @@ def _self_test_body():
     case("a clean inventory over the threshold exits 3",
          lambda: (lambda r: (r[0], "CHECKPOINT" in r[1]))(run(tree("three", costed((9.0, 9.0, 1.0))))), (3, True))
     case("rows with an error AND a crossed threshold exit 1, not 3",
-         lambda: (lambda r: (r[0], "ep2: [grade]" in r[1], "CHECKPOINT" in r[1]))(
+         lambda: (lambda r: (r[0], "ep2: [shape]" in r[1], "CHECKPOINT" in r[1]))(
              run(tree("one", costed((9.0, 9.0, 1.0))[:1] + [row("nw", grade=None, cost=cost(9.0, 1.0))]
                       + costed((9.0, 9.0, 1.0))[2:]))), (1, True, False))
     case("a component in the map with no row exits 1",
@@ -961,6 +1139,46 @@ def _self_test_body():
     case("--render prints no table over rows with errors",
          lambda: (lambda r: (r[0], r[2]))(run(tree("rendererr", costed((1.0, 1.0, 1.0))[:2]), "--render")), (1, ""))
     case("an unknown argument exits 2", lambda: run(tree("usage", []), "--live")[0], 2)
+
+    # r1 fold: a non-object row, and the rows beside it (CLAUDE C3)
+    case("a non-object row exits 1 with a [shape] line, and the other rows are still checked",
+         lambda: (lambda r: (r[0], "?: [shape]" in r[1], "ep2: [shape]" in r[1]))(
+             run(tree("nondict", costed((1.0, 1.0, 1.0))[:1] + [row("nw", grade=None, cost=cost(1.0, 1.0))]
+                      + costed((1.0, 1.0, 1.0))[2:] + [42]))), (1, True, True))
+    # r1 fold: JSON's NaN / Infinity / -Infinity are not numbers; the loader refuses them (CLAUDE C1)
+    for const, pub, nxt in (("NaN", nan, 1.0), ("Infinity", 1.0, inf), ("-Infinity", -inf, 1.0)):
+        case(f"an inventory.json holding the JSON constant {const} exits 2, CANNOT RUN",
+             lambda c=const, p=pub, n=nxt: (lambda r: (r[0], "CANNOT RUN" in r[1] and c in r[1]))(
+                 run(tree(f"const{c}", [row("ship-ep", cost=cost(pub=p, nxt=n))] + costed((1.0, 1.0, 1.0))[1:]))),
+             (2, True))
+
+    def big(name):
+        root = tree(name, [row("ship-ep", cost=cost(pub=123456.5, nxt=1.0))] + costed((1.0, 1.0, 1.0))[1:])
+        p = root / MKT / "inventory.json"
+        p.write_text(p.read_text().replace("123456.5", "1e999"))
+        return root
+    case("a cost of 1e999 (JSON parses it as infinity) exits 1 with a [shape] error",
+         lambda: (lambda r: (r[0], "ep: [shape]" in r[1]))(run(big("big"))), (1, True))
+    # r1 fold: a scan with no entry for a component in the map is unreadable input (CODEX X1). The adjacent
+    # negative is `a clean inventory below the threshold exits 0`, whose scan covers the map and one more.
+    case("a scan with no components at all exits 2, CANNOT RUN",
+         lambda: (lambda r: (r[0], "CANNOT RUN" in r[1]))(
+             run(tree("scan-nocomp", costed((1.0, 1.0, 1.0)), scan_doc={}))), (2, True))
+    case("an empty scan exits 2, CANNOT RUN",
+         lambda: (lambda r: (r[0], "CANNOT RUN" in r[1]))(
+             run(tree("scan-empty", costed((1.0, 1.0, 1.0)), scan_doc={"components": {}}))), (2, True))
+    case("a scan with no entry for one component in the map exits 2, CANNOT RUN, naming it",
+         lambda: (lambda r: (r[0], "CANNOT RUN" in r[1] and "lib" in r[1]))(
+             run(tree("scan-nolib", costed((1.0, 1.0, 1.0)),
+                      scan_doc={"components": {k: v for k, v in scan.items() if k != "lib"}}))), (2, True))
+    case("a scan entry whose findings is an object, not a list, exits 2, CANNOT RUN",
+         lambda: (lambda r: (r[0], "CANNOT RUN" in r[1]))(
+             run(tree("scan-findstr", costed((1.0, 1.0, 1.0)),
+                      scan_doc={"components": {**scan, "lib": {"findings": {}}}}))), (2, True))
+    case("a scan entry whose findings holds a non-object exits 2, CANNOT RUN",
+         lambda: (lambda r: (r[0], "CANNOT RUN" in r[1]))(
+             run(tree("scan-find42", costed((1.0, 1.0, 1.0)),
+                      scan_doc={"components": {**scan, "lib": {"findings": [42]}}}))), (2, True))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 0 if fail == 0 else 1

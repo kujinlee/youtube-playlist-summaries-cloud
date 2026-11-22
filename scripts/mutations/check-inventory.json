@@ -55,23 +55,23 @@
   "expect": "next_project_hours 0 raises, never fires"
  },
  {
-  "name": "a missing grade is accepted",
+  "name": "a null grade is accepted",
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if grade not in GRADES:",
-    "if grade is not None and grade not in GRADES:"
+    "(\"grade\", _in(GRADES),",
+    "(\"grade\", lambda v: v is None or _in(GRADES)(v),"
    ]
   ],
-  "expect": "a NEEDS-WORK row with no grade is an error"
+  "expect": "a SHIP row with no grade is an error"
  },
  {
   "name": "an unknown verdict is accepted",
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if verdict not in VERDICTS:",
-    "if False:"
+    "(\"verdict\", _in(VERDICTS),",
+    "(\"verdict\", lambda v: isinstance(v, str),"
    ]
   ],
   "expect": "a verdict outside the vocabulary is an error"
@@ -213,8 +213,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if phase not in PHASES:",
-    "if False:"
+    "(\"phase\", _in(PHASES),",
+    "(\"phase\", lambda v: isinstance(v, str),"
    ]
   ],
   "expect": "a row at the map's 1-if-feasible label is an error"
@@ -246,8 +246,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "elif not nxt > 0:",
-    "elif not nxt >= 0:"
+    "if not nxt > 0:",
+    "if not nxt >= 0:"
    ]
   ],
   "expect": "next_project_hours of 0 is an error"
@@ -257,8 +257,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not (_num(pub) and _num(nxt)):",
-    "if not (pub is not None and nxt is not None):"
+    "_finite(v.get(\"public_bar_hours\")) and v[\"public_bar_hours\"] > 0",
+    "v.get(\"public_bar_hours\") is not None and v[\"public_bar_hours\"] > 0"
    ]
   ],
   "expect": "a cost estimate that is not a number is an error"
@@ -279,8 +279,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "elif not grounds and not ship:",
-    "elif False:"
+    "if not grounds and not ship:",
+    "if False:"
    ]
   ],
   "expect": "a non-SHIP row with an empty rests_on is an error"
@@ -455,7 +455,7 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "if not route and not ship:",
+    "if not row[\"route\"] and not ship:",
     "if False:"
    ]
   ],
@@ -466,8 +466,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "route.get(\"kind\") not in ROUTE_KINDS)",
-    "not route.get(\"kind\"))"
+    "_in(ROUTE_KINDS)(v.get(\"kind\"))",
+    "v.get(\"kind\") is not None"
    ]
   ],
   "expect": "a route kind outside the vocabulary is an error"
@@ -669,5 +669,412 @@
    ]
   ],
   "expect": "render escapes a pipe inside a cell"
+ },
+ {
+  "name": "a grade outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"grade\", _in(GRADES),",
+    "(\"grade\", lambda v: isinstance(v, str),"
+   ]
+  ],
+  "expect": "a grade outside the vocabulary is an error"
+ },
+ {
+  "name": "a malformed row is handed to the rules",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    if shape:\n        rid =",
+    "    if False:\n        rid ="
+   ]
+  ],
+  "expect": "a data row with no criteria reports ONLY [shape] (the rules never see a malformed row)"
+ },
+ {
+  "name": "a non-object row reaches the field loop",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    if not isinstance(row, dict):\n        return [f\"a row that is",
+    "    if False:\n        return [f\"a row that is"
+   ]
+  ],
+  "expect": "a row that is not an object is a shape error, never a traceback"
+ },
+ {
+  "name": "a malformed row is named by a placeholder",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "rid = row[\"id\"] if isinstance(row, dict)",
+    "rid = \"?\" if isinstance(row, dict)"
+   ]
+  ],
+  "expect": "a shape error names the row by its id"
+ },
+ {
+  "name": "a non-object row is named `row`",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "ROW_SCHEMA[0][1](row.get(\"id\")) else \"?\"",
+    "ROW_SCHEMA[0][1](row.get(\"id\")) else \"row\""
+   ]
+  ],
+  "expect": "a non-object row is named `?`"
+ },
+ {
+  "name": "a missing key is not reported",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if key not in row:\n            out.append",
+    "        if False:\n            out.append"
+   ]
+  ],
+  "expect": "a row with no effort is a shape error"
+ },
+ {
+  "name": "a blank id is an id",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "lambda v: isinstance(v, str) and bool(v.strip()), \"a non-empty string\"",
+    "lambda v: isinstance(v, str), \"a non-empty string\""
+   ]
+  ],
+  "expect": "a row whose id is empty is a shape error"
+ },
+ {
+  "name": "a boolean effort is an integer",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "isinstance(v, int) and not isinstance(v, bool), \"an integer\"",
+    "isinstance(v, int), \"an integer\""
+   ]
+  ],
+  "expect": "an effort that is a boolean is a shape error"
+ },
+ {
+  "name": "a string effort passes the shape",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "isinstance(v, int) and not isinstance(v, bool), \"an integer\"",
+    "not isinstance(v, bool), \"an integer\""
+   ]
+  ],
+  "expect": "an effort that is a string is a shape error"
+ },
+ {
+  "name": "an empty roles list is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "isinstance(v, list) and bool(v) and all(_in(ROLES)(x) for x in v)",
+    "isinstance(v, list) and all(_in(ROLES)(x) for x in v)"
+   ]
+  ],
+  "expect": "an empty roles list is a shape error"
+ },
+ {
+  "name": "a role outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "isinstance(v, list) and bool(v) and all(_in(ROLES)(x) for x in v)",
+    "isinstance(v, list) and bool(v)"
+   ]
+  ],
+  "expect": "a role outside the vocabulary is a shape error"
+ },
+ {
+  "name": "any scenario is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"scenario\", _str_or_null,",
+    "(\"scenario\", lambda v: True,"
+   ]
+  ],
+  "expect": "a scenario that is a list is a shape error"
+ },
+ {
+  "name": "any practice_entry is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"practice_entry\", _str_or_null,",
+    "(\"practice_entry\", lambda v: True,"
+   ]
+  ],
+  "expect": "a practice_entry that is a list is a shape error, never a traceback"
+ },
+ {
+  "name": "a rests_on string is a list",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"rests_on\", lambda v: isinstance(v, list), \"a list\")",
+    "(\"rests_on\", lambda v: True, \"a list\")"
+   ]
+  ],
+  "expect": "a rests_on that is a string is a shape error"
+ },
+ {
+  "name": "a harvest outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"harvest\", _in(HARVESTS),",
+    "(\"harvest\", lambda v: isinstance(v, str),"
+   ]
+  ],
+  "expect": "a harvest outside practice/none is a shape error"
+ },
+ {
+  "name": "criteria may omit a key",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "set(v) == set(CRITERIA)",
+    "set(v) <= set(CRITERIA)"
+   ]
+  ],
+  "expect": "criteria missing C5 is a shape error (the memory-corpus SHIP cannot skip its content review)"
+ },
+ {
+  "name": "criteria may carry an extra key",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "set(v) == set(CRITERIA)",
+    "set(v) >= set(CRITERIA)"
+   ]
+  ],
+  "expect": "criteria with a key outside C1-C5 is a shape error"
+ },
+ {
+  "name": "a criterion value outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and all(_in(CRITERION_VALUES)(x) for x in v.values()))",
+    "and True)"
+   ]
+  ],
+  "expect": "a criterion value outside the vocabulary is a shape error"
+ },
+ {
+  "name": "NaN and infinity are finite",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return _num(v) and math.isfinite(v)",
+    "return _num(v)"
+   ]
+  ],
+  "expect": "a NaN next_project_hours is a shape error"
+ },
+ {
+  "name": "an infinite public bar is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_finite(v.get(\"public_bar_hours\")) and v[\"public_bar_hours\"] > 0",
+    "_num(v.get(\"public_bar_hours\")) and v[\"public_bar_hours\"] > 0"
+   ]
+  ],
+  "expect": "an infinite public_bar_hours is a shape error"
+ },
+ {
+  "name": "a public bar of 0 is positive",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "v[\"public_bar_hours\"] > 0",
+    "v[\"public_bar_hours\"] >= 0"
+   ]
+  ],
+  "expect": "a public_bar_hours of 0 is a shape error"
+ },
+ {
+  "name": "an infinite next-project estimate is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and _finite(v.get(\"next_project_hours\"))",
+    "and _num(v.get(\"next_project_hours\"))"
+   ]
+  ],
+  "expect": "an infinite next_project_hours is a shape error (it would suppress the checkpoint)"
+ },
+ {
+  "name": "a cost not an object reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return (isinstance(v, dict) and _finite(v.get(\"public_bar_hours\"))",
+    "return (_finite(v.get(\"public_bar_hours\"))"
+   ]
+  ],
+  "expect": "a cost that is not an object is a shape error"
+ },
+ {
+  "name": "a cost grade outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and _finite(v.get(\"next_project_hours\")) and _in(GRADES)(v.get(\"grade\"))",
+    "and _finite(v.get(\"next_project_hours\"))"
+   ]
+  ],
+  "expect": "a cost grade outside the vocabulary is a shape error"
+ },
+ {
+  "name": "a route not an object reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return v is None or (isinstance(v, dict) and _in(ROUTE_KINDS)",
+    "return v is None or (_in(ROUTE_KINDS)"
+   ]
+  ],
+  "expect": "a route that is a bare string is an error"
+ },
+ {
+  "name": "an infinite route cost is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and _finite(v.get(\"cost_hours\")) and v[\"cost_hours\"] > 0",
+    "and _num(v.get(\"cost_hours\")) and v[\"cost_hours\"] > 0"
+   ]
+  ],
+  "expect": "an infinite route cost_hours is a shape error"
+ },
+ {
+  "name": "a route cost of 0 is positive",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "v[\"cost_hours\"] > 0",
+    "v[\"cost_hours\"] >= 0"
+   ]
+  ],
+  "expect": "a route cost_hours of 0 is a shape error"
+ },
+ {
+  "name": "a route grade outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "v[\"cost_hours\"] > 0 and _in(GRADES)(v.get(\"grade\"))",
+    "v[\"cost_hours\"] > 0"
+   ]
+  ],
+  "expect": "a route grade outside the vocabulary is a shape error"
+ },
+ {
+  "name": "the JSON constants are numbers",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "json.loads(path.read_text(), parse_constant=_refuse_constant)",
+    "json.loads(path.read_text())"
+   ]
+  ],
+  "expect": "an inventory.json holding the JSON constant NaN exits 2, CANNOT RUN"
+ },
+ {
+  "name": "a scan missing a component is read as no findings",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if not isinstance(entry, dict):\n            raise CannotRun",
+    "        if entry is None and False:\n            raise CannotRun"
+   ]
+  ],
+  "expect": "a scan with no entry for one component in the map exits 2, CANNOT RUN, naming it"
+ },
+ {
+  "name": "an empty scan is read as no findings",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "for cid in (c.get(\"id\") for c in cmap[\"components\"]):",
+    "for cid in ():"
+   ]
+  ],
+  "expect": "an empty scan exits 2, CANNOT RUN"
+ },
+ {
+  "name": "a findings object is a list",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if not isinstance(entry.get(\"findings\"), list):\n",
+    "        if entry.get(\"findings\") is None:\n"
+   ]
+  ],
+  "expect": "a scan entry whose findings is an object, not a list, exits 2, CANNOT RUN"
+ },
+ {
+  "name": "a non-object finding is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if not all(isinstance(f, dict) for f in entry[\"findings\"]):\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a scan entry whose findings holds a non-object exits 2, CANNOT RUN"
+ },
+ {
+  "name": "a library may name another package's entry-point",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif ctx.components[named].get(\"package\") != package:",
+    "elif False:"
+   ]
+  ],
+  "expect": "a SHIP library naming a passing entry-point of ANOTHER package is an error"
+ },
+ {
+  "name": "an object finding id reaches the set lookup",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(fid, str) or fid not in own:",
+    "if fid not in own:"
+   ]
+  ],
+  "expect": "a finding id that is an object is an error, never a traceback (r1 fold, CLAUDE C3)"
+ },
+ {
+  "name": "inventory_errors reads .get on a non-object row",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "ids = [r.get(\"id\") if isinstance(r, dict) else None for r in rows]",
+    "ids = [r.get(\"id\") for r in rows]"
+   ]
+  ],
+  "expect": "a non-object row is no inventory error, never a traceback (row_errors names it)"
+ },
+ {
+  "name": "inventory_errors hashes an unhashable id",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "{i for i in ids if isinstance(i, str) and ids.count(i) > 1}",
+    "{i for i in ids if ids.count(i) > 1}"
+   ]
+  ],
+  "expect": "two rows sharing an unhashable id are no inventory error, never a traceback (row_errors names them)"
  }
 ]

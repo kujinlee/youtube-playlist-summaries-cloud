@@ -950,6 +950,7 @@ row with no `route` (§9 D10); a `practice` harvest with no `practice_entry` nam
 with a ship verdict while its `C5` is `unanswered` (§7 item 11); a `measured` grade on an effort (1) or (2) row
 (§2b); a cost with either estimate missing (§2b). And at the inventory level: no phase-1 package named, or a phase-1
 package with no entry in `shipping-sets.json` (§9 D11).
+⟳ r1 fold (CLAUDE C4): a library's `scenario` names its entry-point by the convention `<entry-point id>: <description>` (the component id before the first `:`), and that entry-point must be in the library's own package (§4: C4 is inherited from the entry-point that uses the library); a scenario that names none, or one from another package, is refused.
 
 The checkpoint, exactly as spec §2c states it (embedded because the threshold arithmetic is what the owner decided;
 it is run as written below). ⟳ r1 CODEX 2 / CLAUDE m3: the r0 function counted every `"1-if-feasible"` row, so
