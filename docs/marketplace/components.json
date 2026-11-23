@@ -678,7 +678,7 @@
         "docs/marketplace/shipped-corpus/route-agents-by-task-model.md",
         "docs/marketplace/shipped-corpus/the-user-does-not-follow-in-real-time.md"
       ],
-      "notes": "backlog #697: the SHIPPED corpus of walkthrough decision 5 (docs/marketplace/decision-5-suspect-files.md), listed file by file because a directory entry cannot leave a file out: every tracked docs/memory/ file except the 16 of groups A-C, the 6 of group D and MEMORY.md (each an exclusion below), plus each D file's paraphrase from docs/marketplace/shipped-corpus/. It is build-shipped-corpus.py's output less MEMORY.md, whose index lines for excluded files that script drops and a tracked-file stager cannot. check-shipping-sets.py --closure refuses any package that ships a file named for an A-C file or carrying an A-D source's bytes. A memory file added later is a --map gap until it is listed here or excluded, and the declaration is re-derived (mkt_stage.py --declare)."
+      "notes": "backlog #697: the SHIPPED corpus of walkthrough decision 5 (docs/marketplace/decision-5-suspect-files.md), listed file by file because a directory entry cannot leave a file out: every tracked docs/memory/ file except the 16 of groups A-C, the 6 of group D and MEMORY.md (each an exclusion below), plus each D file's paraphrase from docs/marketplace/shipped-corpus/. It is build-shipped-corpus.py's output less MEMORY.md: the tracked raw index links the excluded files, and the builder's filtered index (which links none) is not a tracked file, so mkt_stage.py, which stages tracked files at their repository paths, cannot ship it (backlog #707, decided at plan Task 21). The six paraphrases install at docs/marketplace/shipped-corpus/, outside docs/memory/ (backlog #707). check-shipping-sets.py --closure refuses any package that ships a file named for an A-C file or carrying an A-D source's bytes, and runs build-shipped-corpus.py --check over the corpus files a package ships, so no group-D quote ships unparaphrased. A memory file added later is a --map gap until it is listed here or excluded, and the declaration is re-derived (mkt_stage.py --declare)."
     },
     {
       "id": "mutation-sweep-job",
@@ -1042,7 +1042,7 @@
     },
     {
       "path": "docs/memory/MEMORY.md",
-      "reason": "the raw index links the decision-5 excluded files (build-shipped-corpus.py drops those lines from its built copy, which is not a tracked file the stager can ship); recall-llm.memory_files() never reads it as an entry (backlog #697)"
+      "reason": "the raw index links the decision-5 excluded files; build-shipped-corpus.py builds a filtered copy that links none, and that copy is not a tracked file, so the stager cannot ship it; recall-llm.memory_files() never reads the index as an entry (backlog #697; whether an index ships is backlog #707)"
     }
   ]
 }

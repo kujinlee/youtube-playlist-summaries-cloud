@@ -2182,8 +2182,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "            found += decision5_gaps(files if plugin else",
-        "            found += [] if plugin else decision5_gaps(files if plugin else"
+        "            shipped = files if plugin else {",
+        "            shipped = set() if plugin else {"
       ]
     ],
     "expect": "CLI: a plugin package that installs a group-C file is red, rc 1, and names it"
@@ -2193,8 +2193,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "else {f for c in decl[\"components\"].values() for f in c[\"files\"]},",
-        "else set(),"
+        "else {f for c in decl[\"components\"].values() for f in c[\"files\"]}\n",
+        "else set()\n"
       ]
     ],
     "expect": "CLI: a reusable-workflow package whose file carries a group-C source's bytes is red, rc 1"
@@ -2205,9 +2205,97 @@
     "edits": [
       [
         "        raise CannotRun(f\"decision 5 cannot be read: {e}\") from e",
-        "        return {}, {}"
+        "        return {}, {}, (lambda p: \"\")"
       ]
     ],
     "expect": "CLI: no decision-5 table in the repository is CANNOT RUN, rc 2 — never `0 gaps`"
+  },
+  {
+    "name": "backlog #697 r1 X2: the CONTENT clause never runs — a raw group-D source with one line added passes",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            found += decision5_gaps(shipped, d5, root) + decision5_quotes(shipped, root)\n",
+        "            found += decision5_gaps(shipped, d5, root)\n"
+      ]
+    ],
+    "expect": "X2: a raw group-D source with ONE line added, shipped as its paraphrase, is red — the builder's own quote check reads its CONTENT, not its bytes"
+  },
+  {
+    "name": "backlog #697 r1 X2: a builder `--check` that is neither PASS nor a readable FAIL is read as `0 gaps`",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        raise CannotRun(f\"{why}: {(r.stderr.strip() or (lines[-1] if lines else 'no output'))[:200]}\")\n",
+        "        return []\n"
+      ]
+    ],
+    "expect": "X2: the builder's `--check` CANNOT RUN (a group-D source with no quote) is CANNOT RUN, rc 2 — never `0 gaps`"
+  },
+  {
+    "name": "backlog #697 r1 X2: a builder traceback is not recognised as one",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if \"Traceback\" in r.stderr:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "X2: a builder `--check` that dies in a traceback is CANNOT RUN, rc 2 — its rc 1 is not read as gaps"
+  },
+  {
+    "name": "backlog #697 r1 X2: a FAIL whose hit lines were not all read gives fewer gaps than the builder found",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if parsed != stated:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "X2: a builder FAIL whose hit lines cannot all be read is CANNOT RUN, rc 2 — never fewer gaps than it found"
+  },
+  {
+    "name": "backlog #697 r1 M2: a builder lacking a name raises AttributeError — a traceback, not CANNOT RUN",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    except (OSError, ImportError, AttributeError, SyntaxError) as e:\n",
+        "    except (OSError, ImportError, SyntaxError) as e:\n"
+      ]
+    ],
+    "expect": "M2: a corpus builder with no `groups` is CANNOT RUN, rc 2 — never a traceback"
+  },
+  {
+    "name": "backlog #697 r1 M2: an absent builder raises FileNotFoundError — a traceback, not CANNOT RUN",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    except (OSError, ImportError,",
+        "    except (ImportError,"
+      ]
+    ],
+    "expect": "M2: no corpus builder at all is CANNOT RUN, rc 2"
+  },
+  {
+    "name": "backlog #697 r1 M3: the RAW hash replaces the canonical one — a CRLF, trailing-space copy of a source passes",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "b.groups, b._canon_sha, b.SRC,",
+        "b.groups, b._sha, b.SRC,"
+      ]
+    ],
+    "expect": "M3: a CRLF, trailing-space copy of a group-A source under ANOTHER name is a gap — the match is canonical"
+  },
+  {
+    "name": "backlog #697 r1: every shipped file is quote-checked, not only the corpus directories' files",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " and source_path(f).startswith(CORPUS_DIRS))",
+        ")"
+      ]
+    ],
+    "expect": "X2, direct: only a file under a corpus directory is quote-checked — the same raw D text outside one is not"
   }
 ]

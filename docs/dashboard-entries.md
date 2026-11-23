@@ -21379,8 +21379,10 @@ printed and passed, rc 1 and 2 fail. Live run: rc 3, the D1 checkpoint fired ove
 The recall package no longer installs the memory files you excluded for the marketplace. It used to list every memory
 file, including the 16 you excluded and the six whose quotes you asked to have paraphrased, in their original form.
 Now it installs the kept files and the six paraphrased versions, and the package checker refuses any package that
-would ship an excluded file or an unparaphrased one. The memory index file no longer ships either, because it links
-the excluded files. Nothing is published before your stop at plan Task 21.
+would ship an excluded file or an unparaphrased one. The memory index file no longer ships either: the tracked one
+links the excluded files, and the filtered one the corpus builder makes is not a tracked file, so packaging cannot
+ship it. Whether an index ships, and how the files reach the folder recall reads, is filed as backlog #707 for your
+stop at plan Task 21. Nothing is published before then.
 <!--tech-->
 Backlog #697, branch `backlog-697`. `docs/marketplace/components.json`: `memory-corpus` lists 179 files (173 kept
 `docs/memory/` files plus the 6 paraphrases in `docs/marketplace/shipped-corpus/`); 23 new exact exclusions (16 A–C,
@@ -21388,5 +21390,8 @@ Backlog #697, branch `backlog-697`. `docs/marketplace/components.json`: `memory-
 `check-shipping-sets.py --closure` gains `decision5`/`decision5_gaps`, which parse decision 5 with
 `build-shipped-corpus.py`'s own `groups`/`_canon_sha` (loaded, not copied). A gap is a file named for an A–C file, or
 one whose canonical bytes equal an A–D source, in plugin and reusable-workflow packages; an unreadable table is
-CANNOT RUN. Self-test 140 -> 148, 6 mutations (195 -> 201), all red on their named case in a full clone. Edge pin
+CANNOT RUN. Round-1 fold: `--closure` also runs `build-shipped-corpus.py --check` over the corpus files each package
+ships (copied flat), so an unparaphrased D quote is a gap; a nonzero rc, a traceback or unreadable output is CANNOT
+RUN, as is a builder missing `groups`/`_canon_sha`. Self-test 140 -> 160 (149 before the fold), 14 mutations
+(195 -> 209), all red on their named case in a full clone. Edge pin
 361 -> 362 (`check-shipping-sets.py` -> `build-shipped-corpus.py`).
