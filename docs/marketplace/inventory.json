@@ -2,61 +2,148 @@
   "schema": 1,
   "scan": "docs/marketplace/scan-2026-11-17.json",
   "scan_measured_at": "637950d2d159740a9c2885dc13ef531051951c89",
-  "written_by": {"effort-2": "plan Task 17", "effort-1": "plan Task 18"},
-  "recall": {"a": false, "b": "unanswered"},
+  "written_by": {
+    "effort-2": "plan Task 17",
+    "effort-1": "plan Task 18",
+    "effort-3": "plan Task 20"
+  },
+  "recall": {
+    "a": false,
+    "b": "unanswered"
+  },
   "rows": [
     {
       "id": "check-plan-code",
       "effort": 2,
-      "roles": ["entry-point"],
+      "roles": [
+        "entry-point"
+      ],
       "phase": "later",
       "verdict": "DON'T-SHIP",
       "grade": "argued",
       "scenario": null,
-      "rests_on": [{"kind": "spec", "section": "3", "heading": "Effort (2) — development velocity"}, {"kind": "spec", "section": "2c"}],
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "3",
+          "heading": "Effort (2) — development velocity"
+        },
+        {
+          "kind": "spec",
+          "section": "2c"
+        }
+      ],
       "harvest": "practice",
       "practice_entry": "22. A kill that attributes to nothing is a pass — the same output, two diseases, on the other side",
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "fail", "C4": "fail", "C5": "pass"},
-      "cost": {"public_bar_hours": 80.0, "next_project_hours": 16.0, "grade": "argued"},
-      "route": {"kind": "practice", "cost_hours": 2.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "fail",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 80.0,
+        "next_project_hours": 16.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "practice",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
       "notes": "This IS the mutation engine (8,690 lines): manifest-driven mutations, kill attribution by parsing each guard's --self-test output, the cost-balanced shard partition (sweep_shard / sweep_partition) and the import-closure selection (select_manifests). Spec 2c reads C3 against GitHub Actions plus an ARBITRARY mutation engine, so shipping this engine as the CI layer's dependency is the C3 failure the spec names; the plan expects DON'T-SHIP with a practice harvest. C3 fail, argued from spec 2c (line 152: depending on our engine is a C3 failure, and this component IS the engine) and from HARNESS_TREE (line 471), the allow-list of this repo's directories every mutation run stages (scripts, supabase, docs, node_modules/typescript); the scan emitted NO finding for HARNESS_TREE (a scan bound). Ground (spec 5 rule 1, amended 2026-11-22 by the owner, option A): the scope decision of spec 3 Effort (2) (line 363: the mutation engine itself, check-plan-code.py --mutate and scripts/mutations/, is the expected DON'T-SHIP) and spec 2c's reading of C3 for a CI piece (line 152). No scan finding is named as a ground, because none bears on this verdict: check-plan-code:2:1 (line 2494) is detector 2's `unread` kind, one of ten loads the reader could not resolve, which check-publishability.py calls an unjudged coupling, shown and never counted as none; it is not evidence of a repo path; :6:3 bears on the C2 PASS below; and these are self-test internals that do not bear on a stranger's run: :4:1 and :4:2 (lines 8162, 8165, the self-test's _copy_run writing and running a copy of this file) and :6:1 (line 3995, the self-test saving and restoring PC495_STATE, a variable that same test sets for its fake suite). C2 pass, argued: :6:3 reads GITHUB_ACTIONS, which GitHub Actions provides, and no Supabase/Gemini/Fly edge was emitted. C4 fail, argued: every mutation is a hand-written manifest anchored to one of THIS repo's guards, so a stranger's repository has nothing for it to mutate. Practice harvest: section 22 (kill attribution through parsed output) exists; section 10 (a surviving mutation first asks whether the guard can fire) is a second candidate. Practices with NO heading yet (left for Task 20, not claimed here): cost-balanced sharding with a loud round-robin fallback; selecting suites by import closure. Costs: public bar = make it engine-agnostic (a manifest format any repo can author, no repo-path constants, a documented record schema); next project = copy it and re-anchor manifests to that project's guards."
     },
     {
       "id": "mutation-sweep-job",
       "effort": 2,
-      "roles": ["entry-point"],
+      "roles": [
+        "entry-point"
+      ],
       "phase": "later",
       "verdict": "NEEDS-WORK",
       "grade": "argued",
       "scenario": null,
-      "rests_on": [{"kind": "finding", "ids": ["mutation-sweep-job:2:106", "mutation-sweep-job:2:107", "mutation-sweep-job:2:108"]}],
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "mutation-sweep-job:2:106",
+            "mutation-sweep-job:2:107",
+            "mutation-sweep-job:2:108"
+          ]
+        }
+      ],
       "harvest": "none",
       "practice_entry": null,
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "fail", "C4": "fail", "C5": "pass"},
-      "cost": {"public_bar_hours": 16.0, "next_project_hours": 5.0, "grade": "argued"},
-      "route": {"kind": "portable-core", "channel": "reusable-workflow", "uses": "<owner>/<repo>/.github/workflows/mutation-sweep.yml@<tag>", "cost_hours": 12.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "fail",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 16.0,
+        "next_project_hours": 5.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "portable-core",
+        "channel": "reusable-workflow",
+        "uses": "<owner>/<repo>/.github/workflows/mutation-sweep.yml@<tag>",
+        "cost_hours": 12.0,
+        "grade": "argued"
+      },
       "notes": "Pieces (a) matrix sharding and (c) the scheduled full sweep live here: the mutation-sweep job (.github/workflows/ci.yml line 1117) is a 38-shard matrix (max-parallel 12 on the schedule), the nightly cron is '30 8 * * *', and the mutation-sweep-complete step runs scripts/sweep-red-alert.py. C3 fail, argued from the three scan findings inside the sweep's jobs (mutation-sweep runs from ci.yml line 1117 to 1532, mutation-sweep-complete from line 1533): :2:106 (line 1432, outside-set scripts/check-python-pin.py), :2:107 (line 1515, cwd-relative check-plan-code --mutate) and :2:108 (line 1628, cwd-relative sweep-red-alert.py) call this repo's scripts by repo-relative path; a `uses:` caller's checkout has none of them. C2 pass, argued: the sweep steps need only GitHub Actions, Python and git. C4 fail, argued (spec 2c: C4 stays argued, no experiment): there is no reusable-workflow file to put on a `uses:` line yet. Bound: this component is the WHOLE ci.yml, so 105 of its 108 scan findings (every one before line 1117) are steps of the verify job and do not bear on the sweep; only 3 of 108 are at line 1117 or later. Route: extract the job into a reusable workflow with `on: workflow_call` whose inputs name the caller's mutation command, shard count and schedule-driven budget; the engine becomes an input, which is what spec 2c's C3 asks. harvest none: no portable-practices heading covers sharding or the scheduled sweep (a candidate for Task 20). Engine comparison for pieces (a) and (c): the top-level engine_comparison list."
     },
     {
       "id": "sweep-red-alert",
       "effort": 2,
-      "roles": ["library"],
+      "roles": [
+        "library"
+      ],
       "phase": "later",
       "verdict": "NEEDS-WORK",
       "grade": "argued",
       "scenario": "mutation-sweep-job: the mutation-sweep-complete step (ci.yml line 1628)",
-      "rests_on": [{"kind": "finding", "ids": ["sweep-red-alert:4:1"]}],
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "sweep-red-alert:4:1"
+          ]
+        }
+      ],
       "harvest": "none",
       "practice_entry": null,
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "fail", "C4": "fail", "C5": "pass"},
-      "cost": {"public_bar_hours": 6.0, "next_project_hours": 2.0, "grade": "argued"},
-      "route": {"kind": "portable-core", "channel": "reusable-workflow", "uses": "<owner>/<repo>/.github/workflows/mutation-sweep.yml@<tag>", "cost_hours": 3.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "fail",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 6.0,
+        "next_project_hours": 2.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "portable-core",
+        "channel": "reusable-workflow",
+        "uses": "<owner>/<repo>/.github/workflows/mutation-sweep.yml@<tag>",
+        "cost_hours": 3.0,
+        "grade": "argued"
+      },
       "notes": "Piece (c)'s alert: reads every shard's record and opens or comments on a `sweep-red` (and `sweep-flaky`) issue, never closing one. At runtime (main, line 197, and its helpers) it needs only the standard library and `gh` through subprocess (line 189); it loads neither the engine nor coverage_verdict. C3 fail, argued from the record contract: RECORD_SCHEMA = 1 (line 58) is the schema check-plan-code.shard_record writes (check-plan-code.py line 2988), and record_problem (line 88) accepts exactly the five keys of RECORD_KEYS, so the runtime reader is bound to our engine's record format; and the shipped file's --self-test cannot run without the engine. Ground (spec 5 rule 1): sweep-red-alert:4:1 (line 332), _writer(), the self-test's importlib load of check-plan-code.py (called at line 441), which is the self-test's dependency on the engine and so grounds the second reason; the record-contract reason is argued from the lines above, on which the scan emitted no finding (the scan emitted none on the runtime path). Two other findings are inside _self_test_body (lines 339 to 592) and are NOT grounds, because resolving either would change neither reason: :2:1 (line 496) runs the alert step's run block, read from this repo's ci.yml, against a fake gh, and :6:1 (line 471) is the self-test's git, building a throwaway repository. C2 pass, argued: at runtime the only external program is `gh`, authenticated by the Actions token, which a GitHub runner has; git (:6:1) is used only by the self-test. Route, re-priced because no engine load happens at runtime: ship inside the same reusable workflow, publish RECORD_SCHEMA and the five keys as the documented record contract that any engine's wrapper writes, and replace the self-test's engine-written records (_writer) with literal fixture records. harvest none: no heading for the scheduled-sweep alert pattern exists."
     },
     {
       "id": "coverage-verdict",
       "effort": 2,
-      "roles": ["library"],
+      "roles": [
+        "library"
+      ],
       "phase": "later",
       "verdict": "SHIP",
       "grade": "argued",
@@ -64,138 +151,1695 @@
       "rests_on": [],
       "harvest": "none",
       "practice_entry": null,
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "pass", "C4": "pass", "C5": "pass"},
-      "cost": {"public_bar_hours": 3.0, "next_project_hours": 1.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "pass",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 3.0,
+        "next_project_hours": 1.0,
+        "grade": "argued"
+      },
       "route": null,
       "notes": "The scan emitted NOTHING for this component (0 findings, 4 mentions, the mentions being comments and docstrings naming check-plan-code). It is the coverage verdict TYPE (Measured, NotMeasured, not_measured_reason), not a parser: it imports only sys, dataclasses and __future__ (lines 68 to 71) and reads no engine output. The dependency runs one way: check-plan-code imports it (check-plan-code.py lines 104 to 109, 'this file imports it and never the reverse'), and that is its only runtime importer; sweep-red-alert's import (line 442) is inside its _self_test_body (lines 339 to 592), which the ci.yml step does not run. C3 pass, argued: a stdlib-only module depends on no part of this repo. C2 pass, argued: no service. C4 pass, argued (library, spec 4): its only importer is the argued engine, whose C4 fail is attributed to the manifests anchored to this repo's guards, not to code in this library, so the failure is not inherited. Verdict SHIP, grade argued, re-judged at the round 3 fold on the owner's decision of 2026-11-22 (coverage_verdict is NOT part of the mutation engine spec 3 Effort (2) rules out; Phase 6 review architecture-review-2026-11-22-marketplace-inventory-rows): all five criteria pass, and the verdict follows them. It is not an orphan: spec 4's orphan row is for a library 'imported by **no** entry-point', and check-plan-code imports it. The spec 4 row that applies (line 498) reads 'imported only by entry-points that are themselves `argued`', with the rule 'the library is **`argued`** — not `inherited` (there is no measured scenario to inherit) and not `none` (something was established)'; it sets the grade and says nothing against SHIP. Bundle: the ci-layer package (shipping-sets.json, channel reusable-workflow), whose component list already names it, beside the engine that imports it. Scope, recorded as the phase and not as the verdict: no shipped unit loads it until an engine that imports it ships, so its phase is later. As a SHIP row it needs no ground (spec 5 rule 1) and records no route (D10). Harvest none: the lesson it embodies (a verdict type with no tally on the unmeasured branch, so a consumer cannot read it wrongly) has no portable-practices heading yet, a candidate for Task 20."
     },
     {
       "id": "mutation-manifests",
       "effort": 2,
-      "roles": ["data"],
+      "roles": [
+        "data"
+      ],
       "phase": "later",
       "verdict": "DON'T-SHIP",
       "grade": "argued",
       "scenario": null,
-      "rests_on": [{"kind": "spec", "section": "3", "heading": "Effort (2) — development velocity"}, {"kind": "c5"}],
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "3",
+          "heading": "Effort (2) — development velocity"
+        },
+        {
+          "kind": "c5"
+        }
+      ],
       "harvest": "practice",
       "practice_entry": "10. A surviving mutation does not mean \"add a test\" — first ask whether the guard can FIRE",
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "fail", "C4": "struck", "C5": "unanswered"},
-      "cost": {"public_bar_hours": 40.0, "next_project_hours": 10.0, "grade": "argued"},
-      "route": {"kind": "practice", "cost_hours": 1.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "fail",
+        "C4": "struck",
+        "C5": "unanswered"
+      },
+      "cost": {
+        "public_bar_hours": 40.0,
+        "next_project_hours": 10.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "practice",
+        "cost_hours": 1.0,
+        "grade": "argued"
+      },
       "notes": "scripts/mutations/ (106 files: 105 manifests and expected_mutations.py): each manifest names a mutation of one of THIS repo's guards and the case that must kill it, so its content is meaningless outside this repo (C3 fail, argued). Measured at the round 3 fold over scripts/mutations/*.json: the 105 manifests hold 6,292 mutations against 105 distinct target files, all 105 present in this repository, and 78 of the 105 are outside every package in shipping-sets.json (the other 27 are the files a components.json component maps). The scan emitted NOTHING for this component (0 findings, 180 mentions, all mention candidates such as the literal supabase/ in a mutation's text), so no scan finding is a ground. Ground (spec 5 rule 1, amended 2026-11-22 by the owner, option A): (ii) the scope decision of spec 3 Effort (2) (line 363: scripts/mutations/ is part of the mutation engine itself, the expected DON'T-SHIP), and (iv) C5 unanswered, which alone forbids SHIP (spec 4 line 461). Data row: C4 struck (spec 4). C5 unanswered, by the one rule both data rows use: a data row's C5 is pass only when a content review covers it (spec 4; spec 7 item 11), and the only content review done covered docs/memory/, so neither these manifests nor velocity-docs has one. What carries to a stranger is the practice the manifests embody (section 10), not the files; the manifest FORMAT would be part of the engine-agnostic schema in check-plan-code's public-bar cost."
     },
     {
       "id": "velocity-docs",
       "effort": 2,
-      "roles": ["data"],
+      "roles": [
+        "data"
+      ],
       "phase": "later",
       "verdict": "DON'T-SHIP",
       "grade": "argued",
       "scenario": null,
-      "rests_on": [{"kind": "finding", "ids": ["velocity-docs:2:1", "velocity-docs:4:1"]}],
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "velocity-docs:2:1",
+            "velocity-docs:4:1"
+          ]
+        }
+      ],
       "harvest": "none",
       "practice_entry": null,
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "fail", "C4": "struck", "C5": "unanswered"},
-      "cost": {"public_bar_hours": 6.0, "next_project_hours": 2.0, "grade": "argued"},
-      "route": {"kind": "practice", "cost_hours": 2.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "fail",
+        "C4": "struck",
+        "C5": "unanswered"
+      },
+      "cost": {
+        "public_bar_hours": 6.0,
+        "next_project_hours": 2.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "practice",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
       "notes": "The two RECONSTRUCTED velocity documents and docs/velocity-evidence-2026-09-24.md are this repo's history of how the sweep got fast. C3 fail, argued: velocity-docs:2:1 is a cwd-relative scripts/check-plan-code.py and velocity-docs:4:1 a doc-path into docs/reviews/, neither of which ships. C4 struck (data). C5 unanswered, by the one rule both data rows use: a data row's C5 is pass only when a content review covers it (spec 4; spec 7 item 11), and the only content review done covered docs/memory/; these documents (this project's own measurements and history) have none, and neither has mutation-manifests. route practice with harvest none: the lessons would have to be written as a portable-practices entry first (spec 4c: a practice not written is harvest none); a candidate for Task 20."
     },
     {
       "id": "recall-llm",
       "effort": 1,
-      "roles": ["entry-point"],
+      "roles": [
+        "entry-point"
+      ],
       "phase": "later",
       "verdict": "NEEDS-WORK",
       "grade": "argued",
       "scenario": null,
-      "rests_on": [{"kind": "spec", "section": "3", "heading": "Effort (1) — recall"}],
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "3",
+          "heading": "Effort (1) — recall"
+        }
+      ],
       "harvest": "none",
       "practice_entry": null,
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "fail", "C4": "fail", "C5": "pass"},
-      "cost": {"public_bar_hours": 24.0, "next_project_hours": 8.0, "grade": "argued"},
-      "route": {"kind": "decouple-config", "cost_hours": 8.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "fail",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 24.0,
+        "next_project_hours": 8.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 8.0,
+        "grade": "argued"
+      },
       "notes": "Phase later, not 1: recall.a is false (a measured silent no-op on an empty corpus, experiment-tier-a.md 'Recall with an empty corpus', 2026-11-22) and recall.b is unanswered (Human step H1, never decided here); spec 2c D11 puts recall in phase 1 only if both hold. The semantic matcher. Ground: spec 3 Effort (1) (the corpus row's cell: recall-llm.memory_dir() returns None in a clone, so a stranger gets the corpus as documents and no working recall). The probe measured exactly that, in an install: --arm exits 6 'no memory directory for this project' (recall-llm.py:417 memory_dir resolves ~/.claude/projects/<slug of ROOT>/memory, and ROOT, recall-llm.py:120, is the INSTALL directory, not the stranger's project). C3 fail, argued: the plan sentinel and the cache are keyed to ROOT too (recall-llm.py:121-122), and the only writer of that sentinel, scripts/begin-plan.py, is not in the recall package, so nothing a stranger installs can arm a plan. C4 fail, argued from the same probe: every installed path ends in rc 2 or rc 6 and no model call is reached. Grade argued, not measured: tier A has no sidecar entry for this component (the probe is a Task 18 record, not a tier-A scenario). C2 pass: recall-llm:6:1 (line 923, the claude executable) and :6:2 (line 1291, HOME, read by the self-test) name a host tool and a variable a stranger has; neither is project infrastructure, so neither is a ground. Route: key the sentinel, cache and memory directory to the stranger's project (CLAUDE_PROJECT_DIR or a config file) and ship an arming command."
     },
     {
       "id": "hook-surface-recall",
       "effort": 1,
-      "roles": ["entry-point"],
+      "roles": [
+        "entry-point"
+      ],
       "phase": "later",
       "verdict": "NEEDS-WORK",
       "grade": "argued",
       "scenario": null,
-      "rests_on": [{"kind": "finding", "ids": ["hook-surface-recall:7:1", "hook-surface-recall:2:1"]}],
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "hook-surface-recall:7:1",
+            "hook-surface-recall:2:1"
+          ]
+        }
+      ],
       "harvest": "none",
       "practice_entry": null,
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "fail", "C4": "fail", "C5": "pass"},
-      "cost": {"public_bar_hours": 6.0, "next_project_hours": 2.0, "grade": "argued"},
-      "route": {"kind": "decouple-config", "cost_hours": 3.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "fail",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 6.0,
+        "next_project_hours": 2.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 3.0,
+        "grade": "argued"
+      },
       "notes": "Phase later, not 1: recall.a is false (a measured silent no-op on an empty corpus, experiment-tier-a.md 'Recall with an empty corpus', 2026-11-22) and recall.b is unanswered (Human step H1, never decided here); spec 2c D11 puts recall in phase 1 only if both hold. The caller of recall-llm. hook-surface-recall:7:1: the script is registered only in this repository's .claude/settings.json (line 118, via run-hook.sh); the staged plugin.json declares no hooks, so an install never runs it (C4 fail, argued). hook-surface-recall:2:1 (line 82): its rc-3 message tells the reader to run the cwd-relative `python3 scripts/recall-llm.py --arm`, a path that does not exist in the stranger's project; the probe quoted that very message from the armed simulation (C3 fail, argued; the scan's own fix is ${CLAUDE_PLUGIN_ROOT}/scripts/recall-llm.py). The primary probe run did not measure this hook: its allow-list lacked `dirname`, so the hook resolved REPO_ROOT=/ and exited at line 61 before reaching the matcher. Only the supplementary run (dirname allowed) measured it, and that run is what recall.a = false rests on. The missing `dirname` is a gap in the probe's allow-list, not in a stranger's host (every host has it), and not a ground here. Route: declare the hook in plugin.json and resolve the matcher through CLAUDE_PLUGIN_ROOT."
     },
     {
       "id": "check-surface-recall",
       "effort": 1,
-      "roles": ["entry-point", "library"],
+      "roles": [
+        "entry-point",
+        "library"
+      ],
       "phase": "later",
       "verdict": "DON'T-SHIP",
       "grade": "argued",
       "scenario": null,
-      "rests_on": [{"kind": "finding", "ids": ["check-surface-recall:7:1"]}],
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "check-surface-recall:7:1"
+          ]
+        }
+      ],
       "harvest": "none",
       "practice_entry": null,
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "pass", "C4": "fail", "C5": "pass"},
-      "cost": {"public_bar_hours": 6.0, "next_project_hours": 2.0, "grade": "argued"},
-      "route": {"kind": "template-repository", "cost_hours": 4.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 6.0,
+        "next_project_hours": 2.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "template-repository",
+        "cost_hours": 4.0,
+        "grade": "argued"
+      },
       "notes": "Phase later, not 1: recall.a is false (a measured silent no-op on an empty corpus, experiment-tier-a.md 'Recall with an empty corpus', 2026-11-22) and recall.b is unanswered (Human step H1, never decided here); spec 2c D11 puts recall in phase 1 only if both hold. A maintainer's guard over the hook's rc-to-message contract, not something a stranger's session runs. check-surface-recall:7:1: nothing registers it in an install; here only CI runs it (ci.yml), and a plugin carries no CI, so in the package it is code nobody executes (C4 fail, argued). Shipping it means shipping the CI that calls it, which is the template-repository route. Not grounds: :4:1-:4:3 name check-rc-contract and check-ratchet-contract, which ship in the same package; :2:1-:2:22 are detector 2's unread kind on the self-test's render() calls; :6:1 is PYTHONDONTWRITEBYTECODE, set and restored by the self-test. Spec 3 labels this component 'the lexical matcher and its guard'; on disk it is the guard only (a stale label, reported)."
     },
     {
       "id": "check-rc-contract",
       "effort": 1,
-      "roles": ["library"],
+      "roles": [
+        "library"
+      ],
       "phase": "later",
       "verdict": "DON'T-SHIP",
       "grade": "argued",
       "scenario": null,
-      "rests_on": [{"kind": "spec", "section": "3", "heading": "Effort (1) — recall"}, {"kind": "spec", "section": "4"}],
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "3",
+          "heading": "Effort (1) — recall"
+        },
+        {
+          "kind": "spec",
+          "section": "4"
+        }
+      ],
       "harvest": "none",
       "practice_entry": null,
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "pass", "C4": "fail", "C5": "pass"},
-      "cost": {"public_bar_hours": 2.0, "next_project_hours": 1.0, "grade": "argued"},
-      "route": {"kind": "template-repository", "cost_hours": 1.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 1.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "template-repository",
+        "cost_hours": 1.0,
+        "grade": "argued"
+      },
       "notes": "Phase later, not 1: recall.a is false (a measured silent no-op on an empty corpus, experiment-tier-a.md 'Recall with an empty corpus', 2026-11-22) and recall.b is unanswered (Human step H1, never decided here); spec 2c D11 puts recall in phase 1 only if both hold. In the recall package only because check-surface-recall reads it at runtime (check-surface-recall.py:322). Spec 3 Effort (1) names four recall components and this is not one of them; it is import closure. Spec 4's library table: a library imported only by argued entry-points is argued and inherits their C4, and its one package importer, check-surface-recall, is the DON'T-SHIP row above (C4 fail). It therefore travels with that guard by the same template-repository route or not at all. Its own scan findings (:2:1, the self-test running a bash hook at line 296; :6:1) bear on no criterion here and are not grounds."
     },
     {
       "id": "check-ratchet-contract",
       "effort": 1,
-      "roles": ["library"],
+      "roles": [
+        "library"
+      ],
       "phase": "later",
       "verdict": "DON'T-SHIP",
       "grade": "argued",
       "scenario": null,
-      "rests_on": [{"kind": "spec", "section": "3", "heading": "Effort (1) — recall"}, {"kind": "spec", "section": "4"}],
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "3",
+          "heading": "Effort (1) — recall"
+        },
+        {
+          "kind": "spec",
+          "section": "4"
+        }
+      ],
       "harvest": "none",
       "practice_entry": null,
-      "criteria": {"C1": "pass", "C2": "pass", "C3": "pass", "C4": "fail", "C5": "pass"},
-      "cost": {"public_bar_hours": 2.0, "next_project_hours": 1.0, "grade": "argued"},
-      "route": {"kind": "template-repository", "cost_hours": 1.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 1.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "template-repository",
+        "cost_hours": 1.0,
+        "grade": "argued"
+      },
       "notes": "Phase later, not 1: recall.a is false (a measured silent no-op on an empty corpus, experiment-tier-a.md 'Recall with an empty corpus', 2026-11-22) and recall.b is unanswered (Human step H1, never decided here); spec 2c D11 puts recall in phase 1 only if both hold. In the recall package only because check-surface-recall's SELF-TEST loads it (check-surface-recall.py:630). Spec 3 Effort (1) does not name it among the four recall components; it is import closure. Spec 4's library table: imported only by an argued entry-point, so argued, inheriting that importer's C4 fail (the DON'T-SHIP check-surface-recall row). Route: with that guard, in a template repository. The scan emitted no finding for it."
     },
     {
       "id": "memory-corpus",
       "effort": 1,
-      "roles": ["data"],
+      "roles": [
+        "data"
+      ],
       "phase": "later",
       "verdict": "NEEDS-WORK",
       "grade": "argued",
       "scenario": null,
-      "rests_on": [{"kind": "c5"}, {"kind": "finding", "ids": ["memory-corpus:1:1", "memory-corpus:1:2", "memory-corpus:1:3", "memory-corpus:1:4", "memory-corpus:2:1", "memory-corpus:2:2", "memory-corpus:2:3", "memory-corpus:2:4", "memory-corpus:2:5", "memory-corpus:2:6", "memory-corpus:2:7", "memory-corpus:2:8", "memory-corpus:2:9", "memory-corpus:2:10", "memory-corpus:2:11", "memory-corpus:2:12", "memory-corpus:2:13", "memory-corpus:2:14", "memory-corpus:2:15", "memory-corpus:2:16", "memory-corpus:2:17", "memory-corpus:4:2", "memory-corpus:5:1"]}],
+      "rests_on": [
+        {
+          "kind": "c5"
+        },
+        {
+          "kind": "finding",
+          "ids": [
+            "memory-corpus:1:1",
+            "memory-corpus:1:2",
+            "memory-corpus:1:3",
+            "memory-corpus:1:4",
+            "memory-corpus:2:1",
+            "memory-corpus:2:2",
+            "memory-corpus:2:3",
+            "memory-corpus:2:4",
+            "memory-corpus:2:5",
+            "memory-corpus:2:6",
+            "memory-corpus:2:7",
+            "memory-corpus:2:8",
+            "memory-corpus:2:9",
+            "memory-corpus:2:10",
+            "memory-corpus:2:11",
+            "memory-corpus:2:12",
+            "memory-corpus:2:13",
+            "memory-corpus:2:14",
+            "memory-corpus:2:15",
+            "memory-corpus:2:16",
+            "memory-corpus:2:17",
+            "memory-corpus:4:2",
+            "memory-corpus:5:1"
+          ]
+        }
+      ],
       "harvest": "none",
       "practice_entry": null,
-      "criteria": {"C1": "pass", "C2": "fail", "C3": "fail", "C4": "struck", "C5": "unanswered"},
-      "cost": {"public_bar_hours": 6.0, "next_project_hours": 2.0, "grade": "argued"},
-      "route": {"kind": "portable-core", "cost_hours": 2.0, "grade": "argued"},
+      "criteria": {
+        "C1": "pass",
+        "C2": "fail",
+        "C3": "fail",
+        "C4": "struck",
+        "C5": "unanswered"
+      },
+      "cost": {
+        "public_bar_hours": 6.0,
+        "next_project_hours": 2.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "portable-core",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
       "notes": "Phase later, not 1: recall.a is false (a measured silent no-op on an empty corpus, measured by the supplementary run, the only one whose hook reached the matcher: experiment-tier-a.md 'Recall with an empty corpus', 2026-11-22) and recall.b is unanswered (Human step H1, never decided here); spec 2c D11 puts recall in phase 1 only if both hold. C5: unanswered — blocked on the content review (Human step H1; the c5 ground). The recall package in shipping-sets.json installs the RAW docs/memory/ (196 files, MEMORY.md included), groups A-C of decision-5-suspect-files.md and the unparaphrased group D among them. C2 fail, argued: memory-corpus:1:1-1:4 name this project's hosts and services (a browser launch and the deployed URL in launch-roadmap-state.md, the Gemini prerequisite in reservation-release-slice-state.md) and :5:1 requires this project's /dev-login skill (local-manual-test-env.md). C3 fail, argued: :2:1-2:17 are commands naming scripts outside the package (check-ci-watched, gen-backlog-page, check-merge-ready, regen-pages and others) and :4:2 names docs/goal-threads.md. Not a ground: :4:1 names PushNotification, a Claude Code tool a stranger has. Route (portable core): ship the corpus BUILT by scripts/build-shipped-corpus.py, which drops the 16 group A-C files (and with them :1:1-1:4, :2:3, :2:4, :2:8, :5:1) and paraphrases group D's quotes; the kept-file :2:x and :4:2 remain C3 work. The package still lists the raw docs/memory/ files, not the built corpus: backlog #697 repoints it before Task 21. The build and both of its checks pass. Plan Task 18 says C5 moves off unanswered 'only when the build and both checks pass': a necessary condition, not a sufficient one, and the same task holds this row at 'C5: unanswered — blocked on the content review' until H1 lands. There is no conflict: C5 stays unanswered until H1."
+    },
+    {
+      "id": "skill-brief",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-skill-brief"
+        },
+        {
+          "kind": "finding",
+          "ids": [
+            "skill-brief:1:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "fail",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 10.0,
+        "next_project_hours": 3.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 8.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by tier A scenario A-skill-brief (experiment-tier-a.md coverage matrix): no page; pass conditions 1, 2 and 3 fail, because the skill looked for scripts/brief-compose.py CWD-relative, in the seeded repository, and did not find it (suite defect S3); tier B reproduced it in a real repository (the skill 'was written for a different repo'). C4 fail, measured. C2 fail on skill-brief:1:1 (SKILL.md:69, `flyctl releases --app youtube-playlist-summaries`: this project's Fly app, which spec 4 C2 names). C3 pass: skill-brief:4:1, :4:3, :4:4 (docs/roadmap-to-launch.md, docs/backlog.md) are host-project conventions a stranger lacks, a C4 matter, not files of this repository the package fails to ship; :4:2 (TaskList) is a harness tool; :5:1/:5:2 (the artifact-design skill) was not measured either way and is not a ground; :7:1 (needs-registration) is not a ground, the skill was invoked in both tiers. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the route moves the ground-truth block's sources (:1:1, :4:1, :4:3, :4:4) into a config file the stranger fills, and the delivery invocations to ${CLAUDE_PLUGIN_ROOT} (the contract row's route); the tray bootstrap is priced in the brief-compose row, not here."
+    },
+    {
+      "id": "skill-explain-diff",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-skill-explain-diff"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-skill-explain-diff: the page was written and served by the package's explainer-serve.py (HTTP 200) but carries NO Ask tray, so pass condition 1 fails (C4 fail, measured); conditions 2 and 3 are argued (no seeded facts; the server ran from the staged marketplace, isolation note I2). Tier B: written but not served, no tray. The named defect is S2 (the tray cannot be bootstrapped), whose code is in brief-compose; this skill's own text has no finding but :7:1 (needs-registration), not a ground since the skill was invoked. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: once brief-compose ships its tray (priced there), the work left here is the delivery invocations through ${CLAUDE_PLUGIN_ROOT} and one tier-A re-run."
+    },
+    {
+      "id": "skill-explain-findings",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-skill-explain-findings"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 3.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 3.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-skill-explain-findings: no page; pass conditions 1 and 3 fail because `../shared/explainer-delivery.md` (SKILL.md:132) did not resolve from the skill's working directory (suite defect S3). The file ships; its resolution fails, so this is C4 (fail, measured), not C3. skill-explain-findings:5:1 (artifact-design) was not measured either way and is not a ground; :7:1 is not a ground (the skill was invoked). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: resolve the shared contract through ${CLAUDE_PLUGIN_ROOT}, inherit the contract row's fix and S2's, re-run the scenario."
+    },
+    {
+      "id": "skill-explain-topic",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-skill-explain-topic"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-skill-explain-topic: the page file was written to ~/explainers but NOT served and has no Ask tray, because brief-compose.py refuses without a tray source page (S2); pass conditions 1 and 3 fail (C4 fail, measured). Tier B: fragment written, not composed, not served. The only scan finding, :7:1, is not a ground (the skill was invoked). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the same as explain-diff — the S2 fix is priced in brief-compose; here the delivery paths and one re-run."
+    },
+    {
+      "id": "skill-dashboard",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-skill-dashboard"
+        },
+        {
+          "kind": "finding",
+          "ids": [
+            "skill-dashboard:2:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 6.0,
+        "next_project_hours": 1.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 6.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-skill-dashboard: no entry and no page; pass conditions 1 and 3 fail. The skill runs `python3 scripts/regen-pages.py --page dashboard` CWD-relative (skill-dashboard:2:1, SKILL.md:76; S3) and expects the HOST's docs/dashboard-entries.md and docs/anchors.md, stopping rather than creating them (S4). C4 fail, measured. C3 pass: those are host conventions, not unshipped files of this repository. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :2:1 (${CLAUDE_PLUGIN_ROOT}) and S4 (create the entry store and an empty anchors registry on first use), then the regen-pages and gen-dashboard fixes it calls into (priced in their rows)."
+    },
+    {
+      "id": "brief-compose",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-script-brief-compose"
+        }
+      ],
+      "harvest": "practice",
+      "practice_entry": "28. A component that copies itself from an existing instance cannot bootstrap — a fresh install has none, and its documented recovery must be RUN, not read",
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 8.0,
+        "next_project_hours": 1.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 8.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-script-brief-compose: rc 1 `no explainer directory at <world>/home/explainers`; with the directory present it refuses because no page has an Ask tray (brief-compose.py:798). Pass conditions 1, 3 and 4 fail: 4(a) it documents a recovery (`run /explain-diff once first`) and 4(b) following it was observed to fail, because explain-diff then produced a page with no tray. This is suite defect S2, and it alone fails condition 1 for every page skill (tier A headline); tier B reproduced it (0 of 5 pages had a tray). C4 fail, measured. No scan finding: the scan cannot see a bootstrap circularity, so the ground is the experiment alone. Harvested as practice 28. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: ship the tray as a packaged asset read from the package's own location, compose without a source page, and replace the 4(a) advice; its tray-extraction self-test cases need re-pinning."
+    },
+    {
+      "id": "explainer-serve",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-script-explainer-serve"
+        },
+        {
+          "kind": "finding",
+          "ids": [
+            "explainer-serve:4:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "fail",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 3.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 3.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-script-explainer-serve: its useful operation completed (condition 3 pass: start, pidfile = listener, GET / 200, POST /questions 200 recorded). Condition 1 fails because the page served had no Ask tray — S2, whose code is brief-compose's, so the C4 fail here is inherited from S2, not a defect in this server. Its OWN named defect is explainer-serve:4:1 (line 3214): a --self-test case reads <package>/docs/explainers/work-lines-archive.html, a file of this repository the package does not ship, so the shipped self-test cannot pass in an install (C3 fail, argued from the code). :6:1 and :6:3 (EXPLAINER_SERVE_ROOT, EXPLAINER_SERVE_COPY) are the server's own documented knobs. Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :4:1 (a packaged fixture for the case); the condition-1 failure goes with brief-compose's route."
+    },
+    {
+      "id": "regen-pages",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-script-regen-pages-all"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 6.0,
+        "next_project_hours": 1.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 6.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-script-regen-pages-all: rc 2 `CANNOT RUN — git cannot name this repository's common directory from <install dir>` — it locates the project from its own install path, ROOT = SCRIPTS.parent (regen-pages.py:123), not the user's (suite defect S1). Condition 3 fails; C4 fail, measured. regen-pages:6:1 (line 163, git) is where it fails, but git itself is a host tool, so it is not cited; Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: locate the project from CLAUDE_PROJECT_DIR or the caller's working directory, keep package files on the script's own path, and make docs/goal-threads.md (THREADS_REL, line 125) optional."
+    },
+    {
+      "id": "gen-dashboard",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-script-gen-dashboard"
+        },
+        {
+          "kind": "finding",
+          "ids": [
+            "gen-dashboard:3:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 8.0,
+        "next_project_hours": 1.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 8.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-script-gen-dashboard: rc 1, it reads <install dir>/docs/backlog.md (S1; ROOT gen-dashboard.py:21, STORE_DEFAULT :28), then brief-compose refuses (S2). Conditions 3 and 4 fail: it documents a recovery (`Run /explain-diff once to produce one, then re-run`) and following it was observed to fail. C4 fail, measured; gen-dashboard:3:1 (no user documentation) bears on the same criterion: a stranger has nothing to recover from. :6:2 (gh, line 526) needs a GitHub CLI a stranger may not have; not measured, not a ground. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes S1 (project root from the caller), adds the user doc (:3:1) and corrected recovery advice; S2 is brief-compose's route."
+    },
+    {
+      "id": "gen-goals-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-script-gen-goals-page"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 6.0,
+        "next_project_hours": 1.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 6.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-script-gen-goals-page: rc 2 `CANNOT RUN — docs/anchors.md or scripts/gen-backlog-page.py is missing` (gen-goals-page.py:1336), looked up beside the install (ROOT, line 59), not in the project (S1). Condition 3 fails; C4 fail, measured. gen-goals-page:4:1/:4:2 name check-goal-status.py beside the script, which ships, and :4:3/:4:4 are self-test fixture paths; none is a ground. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: project root from the caller for docs/ reads, package root for its siblings; the two library rows it imports (check-goal-status, check-anchors) carry the same fix."
+    },
+    {
+      "id": "gen-features-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-script-gen-features-page"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 5.0,
+        "next_project_hours": 1.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 5.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-script-gen-features-page: rc 2 `CANNOT RUN — <install dir>/docs/features.md is missing` (gen-features-page.py:747; ROOT/DOCS lines 66-67; S1). Condition 3 fails; C4 fail, measured. Its only scan finding, :6:1 (git), is a host tool, not a ground. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: project root from the caller; check-features (its library) carries the same fix."
+    },
+    {
+      "id": "gen-backlog-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-script-gen-backlog-page"
+        },
+        {
+          "kind": "finding",
+          "ids": [
+            "gen-backlog-page:4:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 8.0,
+        "next_project_hours": 2.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 8.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-script-gen-backlog-page: rc 1, FileNotFoundError on <install dir>/docs/backlog.md although the seeded repository HAS docs/backlog.md — gen-backlog-page:4:1 is the line (BACKLOG = REPO / \"docs/backlog.md\", gen-backlog-page.py:88; S1). Condition 3 fails; C4 fail, measured. :4:2/:4:3 read the same file's git history from REPO. The page also parses this repository's backlog grammar, which a stranger's docs/backlog.md need not follow (argued, not measured). Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :4:1-:4:3 (project root from the caller); the grammar question is not priced."
+    },
+    {
+      "id": "goal-tree",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "experiment",
+          "scenario": "A-script-goal-tree-print"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 10.0,
+        "next_project_hours": 2.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 10.0,
+        "grade": "argued"
+      },
+      "notes": "Measured by A-script-goal-tree-print: rc 2 `CANNOT RUN — … git rev-parse --git-common-dir gave no usable path`, run against the install directory (ROOT = SCRIPTS.parent, goal-tree.py:119; S1). Condition 3 fails; C4 fail, measured. Beyond S1 it reads this repository's coordination files (docs/goal-threads.md, line 120; the in-flight ledger through session-state), conventions a stranger lacks (argued). goal-tree:2:1-:2:4 are detector-2 `unread` findings in a sibling loader and the self-test; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: project root from the caller, and the coordination files optional; 6,929 lines, so the larger estimate."
+    },
+    {
+      "id": "ask-answerer",
+      "effort": 3,
+      "roles": [
+        "entry-point",
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "argued",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "ask-answerer:6:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 4.0,
+        "next_project_hours": 1.0,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 4.0,
+        "grade": "argued"
+      },
+      "notes": "Exercised by A-script-ask-answerer-status, but only `--status` ran (rc 0); answering a question (a model call) was NOT run, so no pass condition is `fail` and the useful operation is argued: grade argued (spec 6: a component may not be graded measured on a run that did not happen). As a library its only importer, explainer-serve, failed on S2, attributed elsewhere, which contributes nothing (spec 4). Named defect, argued from the code: repo_facts runs ask-answerer:6:1 (`git -C <repo>`, ask_answerer.py:517) on a repo that defaults to REPO = SCRIPTS.parent (lines 90, 718), the install directory, so an answer would be stamped with the package's commit, not the user's (the S1 shape; C4 fail, argued). Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the repo from the caller, then one --once run in a stranger world to measure it."
+    },
+    {
+      "id": "hook-regen-backlog-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "argued",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "hook-regen-backlog-page:7:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
+      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-backlog-page:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; depends on the hook-dispatcher row's fix."
+    },
+    {
+      "id": "hook-regen-dashboard",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "argued",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "hook-regen-dashboard:7:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
+      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-dashboard:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; depends on the hook-dispatcher row's fix."
+    },
+    {
+      "id": "hook-regen-features-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "argued",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "hook-regen-features-page:7:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
+      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-features-page:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; depends on the hook-dispatcher row's fix."
+    },
+    {
+      "id": "hook-regen-goals-page",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "argued",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "hook-regen-goals-page:7:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
+      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-goals-page:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; depends on the hook-dispatcher row's fix."
+    },
+    {
+      "id": "hook-regen-pages",
+      "effort": 3,
+      "roles": [
+        "entry-point"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "argued",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "hook-regen-pages:7:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
+      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-pages:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; depends on the hook-dispatcher row's fix."
+    },
+    {
+      "id": "contract-explainer-delivery",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "measured",
+      "scenario": "skill-brief: A-skill-brief, failed on this contract's CWD-relative invocations",
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "contract-explainer-delivery:2:1",
+            "contract-explainer-delivery:2:2",
+            "contract-explainer-delivery:2:3",
+            "contract-explainer-delivery:2:4",
+            "contract-explainer-delivery:2:5",
+            "contract-explainer-delivery:2:6"
+          ]
+        }
+      ],
+      "harvest": "practice",
+      "practice_entry": "27. A shipped package has two roots — its own files resolve from `${CLAUDE_PLUGIN_ROOT}`, the user's files from the user's project — and one ROOT for both breaks one of them",
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 3.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 3.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by the five page skills, all exercised and all failing. Attribution (spec 4, all importers fail): skill-brief's failure traces to code in THIS library — the invocation it could not resolve, `python3 scripts/brief-compose.py`, is contract-explainer-delivery:2:1 (explainer-delivery.md:166), so it is graded measured with that defect named (a judgment: the skill could equally be read as the defect's owner). All six :2 findings are the same CWD-relative shape (:2:3-:2:6 are ask_answerer.py invocations); spec 4 records the known fix, ${CLAUDE_PLUGIN_ROOT}/scripts/…, and measured that the suite uses it nowhere (still true: only check-publishability.py names it). The files ship; the resolution fails, so C4 fail, not C3. :4:1/:4:2 (TaskList, TaskStop) are harness tools. Scenario named as the entry point whose failure reached it. Harvested as practice 27. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :2:1-:2:6 (six invocations to ${CLAUDE_PLUGIN_ROOT}), with the canon guard check-explainer-delivery.py updated in step."
+    },
+    {
+      "id": "contract-handoff-path",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "DON'T-SHIP",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "pass",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "practice",
+        "cost_hours": 1.0,
+        "grade": "argued"
+      },
+      "notes": "No importer in this package: the only readers of .agents/skills/shared/handoff-path.md are the handoff skill, the handoff guard and this repository's hooks, none of which is a comprehensibility component. Spec 4's inheritance table: imported by no entry-point → grade none, and 'an orphan library is also a scope question: ask why it is shipping at all'. DON'T-SHIP in this package, argued from that rule (a judgment: it would be NEEDS-WORK only with a named defect, and it has none; it has no consumer). No scan findings. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis: the cheapest route publishes its rule (a handoff is written where the reader reads it) as prose; shipping it with its consumer is the alternative, not priced."
+    },
+    {
+      "id": "contract-corpus-search",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "DON'T-SHIP",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "pass",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "practice",
+        "cost_hours": 1.0,
+        "grade": "argued"
+      },
+      "notes": "No importer in this package: .agents/skills/shared/corpus-search.md is read by the handoff skill and handoff-path.md, neither a comprehensibility entry point. Spec 4: imported by no entry-point → grade none, and an orphan is a scope question; DON'T-SHIP in this package (the same judgment as contract-handoff-path). No scan findings. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis: publish its search method as prose."
+    },
+    {
+      "id": "page-chrome",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        },
+        {
+          "kind": "spec",
+          "section": "4b"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "pass",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 1.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "portable-core",
+        "cost_hours": 1.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by gen-features-page, goal-tree, gen-goals-page, brief-compose, gen-dashboard, gen-backlog-page and explainer-serve: every one exercised and failing, each on a defect attributed to its own code (S1) or to brief-compose's tray (S2), none to this module. Spec 4 (all importers fail, attributed elsewhere): grade none, no measured scenario to inherit, so the C4 its role inherits (spec 4) cannot be established until an importer passes. Spec 4b admits NEEDS-WORK for 'no way to assess it' where that is true after the role rules are applied; that is the named defect, and it is a limit of this run, not a code defect (no own S1 shape: its only __file__ use is in the self-test, line 1617). A judgment call. Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis: no code change; one importer scenario re-run once an importer's route lands."
+    },
+    {
+      "id": "page-markup",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        },
+        {
+          "kind": "spec",
+          "section": "4b"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "pass",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 1.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "portable-core",
+        "cost_hours": 1.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by gen-features-page, gen-goals-page, gen-dashboard, explainer-serve, goal-tree, gen-backlog-page and the check-dashboard-entry library: every exercised importer failed on a defect attributed elsewhere (S1, S2). Spec 4: grade none; spec 4b: NEEDS-WORK for 'no way to assess it' after the role rules (the same judgment as page-chrome). Its REPO is set by its caller (line 645), not from its own path. page-markup:6:1 (git remote, line 615) is a host tool. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis: no code change; one importer re-run."
+    },
+    {
+      "id": "session-state",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 4.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 4.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by goal-tree and regen-pages, both exercised and failing on S1 in their own code (spec 4: attributed elsewhere → grade none). Named defect, argued from the code, with no scan finding: the S1 shape — REPO_ROOT = Path(__file__).resolve().parent.parent (session-state.py:91) is main()'s default root (line 1990), and it reads .claude/inflight.jsonl (LEDGER_REL, line 92) there (C4 fail, argued). The rests_on ground is spec 4's table, which leaves it no scenario to SHIP on. session-state:2:1-:2:8 and :6:1/:6:2 are all in the self-test. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the root from the caller, the ledger optional."
+    },
+    {
+      "id": "agent-watchdog",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "agent-watchdog:4:1"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "fail",
+        "C4": "pass",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "portable-core",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by goal-tree (exercised, failed on S1 in its own code: spec 4 → grade none). Not in the tier-A population (the sidecar has no entry for it; it joined the map after Task 14). Named defect: agent-watchdog:4:1 (line 432) — its --self-test opens check-agent-long-call.py beside itself, a file of this repository that no package ships (C3 fail, argued); the next case (line 437) reads ../docs/process-checklists.md the same way, with no scan finding. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :4:1 and the line-437 read by moving both constants into the module (its portable core)."
+    },
+    {
+      "id": "gen-work-lines",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 3.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 3.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by goal-tree (exercised, failed on S1 in its own code: spec 4 → grade none). Named defect, argued from the code: ROOT = Path(__file__).resolve().parent.parent (gen-work-lines.py:65), with PLAN_DIR = ROOT/.claude/plans (line 66), and gen-work-lines:6:1 runs `git -C <root> worktree list` (line 236) — the S1 shape (C4 fail, argued). git is a host tool, so :6:1 is not cited as the ground; spec 4's table is. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the root from the caller."
+    },
+    {
+      "id": "check-dashboard-entry",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "check-dashboard-entry:4:2"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 4.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 4.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by gen-dashboard (exercised, failed on S1/S2 in its own code and brief-compose's: spec 4 → grade none). Named defect: check-dashboard-entry:4:2 (line 1327), store = ROOT / \"docs/dashboard-entries.md\" with ROOT from its own path (line 18) — the S1 shape and the S4 host convention together (C4 fail, argued); :4:1/:4:3 read the same file through git. Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :4:1-:4:3 (store from the caller's project, created on first use)."
+    },
+    {
+      "id": "check-goal-status",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by gen-goals-page (exercised, failed on S1 at gen-goals-page.py:1336, its own code: spec 4 → grade none). No scan findings. Named defect, argued from the code: REPO = Path(__file__).resolve().parent.parent (check-goal-status.py:78), the S1 shape (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the root from the caller."
+    },
+    {
+      "id": "check-features",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 3.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 3.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by gen-features-page (exercised, failed on S1 at gen-features-page.py:747, its own code: spec 4 → grade none). No scan findings (the scan's doc-path detector did not emit these). Named defect, argued from the code: FEATURES, ANCHORS_MD and BACKLOG are REPO/docs/… with REPO from its own path (check-features.py:282-285), the S1 shape (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the root from the caller."
+    },
+    {
+      "id": "check-docs",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "finding",
+          "ids": [
+            "check-docs:4:1",
+            "check-docs:4:2",
+            "check-docs:4:3"
+          ]
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 2.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "portable-core",
+        "cost_hours": 2.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by gen-backlog-page (exercised, failed on S1 in its own code) and the check-anchors library (not exercised): spec 4 → grade none. It is this repository's documentation-integrity guard; its importers load it for one rule (CELL_SPLIT, gen-backlog-page.py:96). Named defect: check-docs:4:1-:4:3 (lines 368, 477, 534), ROOT / \"docs/backlog.md\" with ROOT from its own path (line 42) — S1 and a host convention (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the portable core is the cell-split rule its importers use; shipping that alone removes :4:1-:4:3 from the package."
+    },
+    {
+      "id": "check-anchors",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 3.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 3.0,
+        "grade": "argued"
+      },
+      "notes": "Imported by gen-goals-page and gen-backlog-page (both exercised, failing on S1 in their own code) and the check-goal-status library: spec 4 → grade none. No scan findings. Named defect, argued from the code: ROOT = Path(__file__).resolve().parent.parent and DOCS = ROOT/\"docs\" (check-anchors.py:51-52), the S1 shape, reading docs/anchors.md from the install (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the root from the caller."
+    },
+    {
+      "id": "fixture-git",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "none",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        },
+        {
+          "kind": "spec",
+          "section": "4b"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "pass",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 1.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "portable-core",
+        "cost_hours": 1.0,
+        "grade": "argued"
+      },
+      "notes": "The self-test git-isolation helper, imported by every script in the package (for its --self-test) and shared with recall and ci-layer. Every exercised importer failed on a defect attributed elsewhere (S1, S2): spec 4 → grade none; spec 4b: NEEDS-WORK for 'no way to assess it' after the role rules (the same judgment as page-chrome). No own defect found. fixture-git:2:1-:2:6 and :6:1-:6:9 are its own cases and its environment allow-list (PATH, LANG, TMPDIR, HOME, …), which is what it is for; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis: no code change; measured once an importer's self-test is run in an install."
+    },
+    {
+      "id": "hook-dispatcher",
+      "effort": 3,
+      "roles": [
+        "library"
+      ],
+      "phase": "1",
+      "verdict": "NEEDS-WORK",
+      "grade": "argued",
+      "scenario": null,
+      "rests_on": [
+        {
+          "kind": "spec",
+          "section": "4"
+        }
+      ],
+      "harvest": "none",
+      "practice_entry": null,
+      "criteria": {
+        "C1": "pass",
+        "C2": "pass",
+        "C3": "pass",
+        "C4": "fail",
+        "C5": "pass"
+      },
+      "cost": {
+        "public_bar_hours": 3.0,
+        "next_project_hours": 0.5,
+        "grade": "argued"
+      },
+      "route": {
+        "kind": "decouple-config",
+        "cost_hours": 3.0,
+        "grade": "argued"
+      },
+      "notes": "Imported only by the five regen hooks, none exercised: spec 4 (importers only argued) → grade argued. No scan findings. Named defect, argued from the code: run-hook.sh resolves the hook it runs as \"$root/.claude/hooks/$name\" (run-hook.sh:127), where $root is the checkout containing the caller's working directory (or CLAUDE_PROJECT_DIR) — the USER's project, which in a plugin install does not hold the package's hooks. That is the resolution defect spec 4 describes (a path resolved against the caller instead of the package; fix ${CLAUDE_PLUGIN_ROOT}), hence the spec-4 ground (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: resolve package hooks from ${CLAUDE_PLUGIN_ROOT}, keeping the main-checkout rule (backlog #513) for this repository's own usage hooks."
     }
   ],
   "engine_comparison": {
@@ -206,27 +1850,119 @@
       "c": "ci.yml cron '30 8 * * *' runs the full sweep; sweep-red-alert.py opens or comments on a sweep-red issue."
     },
     "rows": [
-      {"piece": "a", "engine": "Stryker", "status": "fetched", "source": "https://stryker-mutator.io/docs/stryker-js/parallel-workers/", "capability": "Parallelism is a `concurrency` count of worker processes on one machine; sharding one run across CI jobs is not documented in the fetched pages."},
-      {"piece": "a", "engine": "mutmut", "status": "fetched", "source": "https://mutmut.readthedocs.io/en/latest/", "capability": "Runs mutants in parallel worker processes on one machine; sharding across jobs is not documented in the fetched pages."},
-      {"piece": "a", "engine": "PIT", "status": "fetched", "source": "https://pitest.org/quickstart/maven/", "capability": "A `threads` option on one machine; sharding across jobs is not documented in the fetched pages."},
-      {"piece": "a", "engine": "cargo-mutants", "status": "fetched", "source": "https://mutants.rs/shards.html", "capability": "`--shard k/n` splits mutants across independent jobs, assigned by contiguous slice (the default) or round-robin with `--sharding`, with no coordination between shards; the page gives a GitHub Actions matrix example and says the CI system launches the shards and collects their results. Ours differs in partitioning by estimated cost rather than by count."},
-      {"piece": "b", "engine": "Stryker", "status": "fetched", "source": "https://stryker-mutator.io/docs/stryker-js/incremental/", "capability": "StrykerJS `--incremental` reuses results from reports/stryker-incremental.json and re-tests mutants in changed mutated or test files, using a git-like diff and the mutation coverage per test its dry run records; the page says it will not detect changes in files other than mutated files and test files. Selection is of MUTANTS by file diff, with tests chosen per mutant by observed coverage, not of suites by import closure."},
-      {"piece": "b", "engine": "Stryker", "status": "fetched", "source": "https://stryker-mutator.io/docs/stryker-net/configuration/", "capability": "Stryker.NET `since` uses git information to test only code changes since the given target and reports only on mutants within the changed code; for a changed test file, all mutants covered by tests in that file are seen as changed. `with-baseline` saves the report so a partial run still yields a full report."},
-      {"piece": "b", "engine": "mutmut", "status": "fetched", "source": "https://mutmut.readthedocs.io/en/latest/", "capability": "Between runs it re-tests only mutants in functions whose source changed, and can be limited by name globs or `only_mutate`; it 'knows which tests to execute' from a stats run of the suite, counting a test as relevant for a function only if the stack depth is below a limit (`max_stack_depth`), which is test selection by runtime-observed reach per function; a git-diff or import-closure selection is not documented in the fetched pages."},
-      {"piece": "b", "engine": "PIT", "status": "fetched", "source": "https://pitest.org/quickstart/incremental_analysis/", "capability": "Experimental incremental analysis via history files reuses a result when the class under test and the killing test are unchanged, tracking only its strongest dependencies (superclasses, outer classes); import-closure selection of suites is not documented in the fetched pages."},
-      {"piece": "b", "engine": "PIT", "status": "fetched", "source": "https://pitest.org/quickstart/maven/", "capability": "Under 'Integrating pitest into pull requests', the example `-DextraFeatures=\"+GIT(from[HEAD~1]), +arcmutate_history(...)\"` is said to 'activate arcmutate's git integration and history implementations', and Arcmutate 'provides pull request integration and other advanced features'; the page does not explain what +GIT selects, and does not say the feature moved from PIT."},
-      {"piece": "b", "engine": "cargo-mutants", "status": "fetched", "source": "https://mutants.rs/in-diff.html", "capability": "`--in-diff` tests only mutants overlapping changed regions of a diff and ignores test-code changes; the page says it is not a substitute for a full test run."},
-      {"piece": "b", "engine": "cargo-mutants", "status": "fetched", "source": "https://mutants.rs/iterate.html", "capability": "`--iterate` skips mutants caught in a previous run, described as a heuristic."},
-      {"piece": "c", "engine": "Stryker", "status": "fetched", "source": "https://stryker-mutator.io/docs/stryker-net/stryker-in-pipeline/", "capability": "Pipeline use is a break threshold (`--break-at`) that fails the pipeline below a mutation score, and a dashboard baseline for pull requests (`--with-baseline`, `--dashboard-api-key`, `\"provider\": \"Dashboard\"`) that tests only mutations changed against a target such as master; sending a report to the dashboard is documented on https://stryker-mutator.io/docs/General/dashboard/ ('Send your first report directly from Stryker'); a scheduled sweep or filing an issue is not documented in the fetched pages."},
-      {"piece": "c", "engine": "mutmut", "status": "fetched", "source": "https://github.com/boxed/mutmut", "capability": "Offers `export-cicd-stats` and a badge; a scheduled sweep or filing an issue is not documented in the fetched pages."},
-      {"piece": "c", "engine": "PIT", "status": "fetched", "source": "https://pitest.org/quickstart/commandline/", "capability": "A `mutationThreshold` fails the build; a scheduled sweep or filing an issue is not documented in the fetched pages."},
-      {"piece": "c", "engine": "cargo-mutants", "status": "fetched", "source": "https://mutants.rs/ci.html", "capability": "Shows one workflow, on pushes to main and on path-filtered pull requests, whose single job runs a full `cargo mutants -vV --in-place` and emits GitHub annotations; a diff-focused PR check is only linked (pr-diff.html, not fetched, so no claim rests on it); a cron schedule or filing an issue is not documented in the fetched pages."}
+      {
+        "piece": "a",
+        "engine": "Stryker",
+        "status": "fetched",
+        "source": "https://stryker-mutator.io/docs/stryker-js/parallel-workers/",
+        "capability": "Parallelism is a `concurrency` count of worker processes on one machine; sharding one run across CI jobs is not documented in the fetched pages."
+      },
+      {
+        "piece": "a",
+        "engine": "mutmut",
+        "status": "fetched",
+        "source": "https://mutmut.readthedocs.io/en/latest/",
+        "capability": "Runs mutants in parallel worker processes on one machine; sharding across jobs is not documented in the fetched pages."
+      },
+      {
+        "piece": "a",
+        "engine": "PIT",
+        "status": "fetched",
+        "source": "https://pitest.org/quickstart/maven/",
+        "capability": "A `threads` option on one machine; sharding across jobs is not documented in the fetched pages."
+      },
+      {
+        "piece": "a",
+        "engine": "cargo-mutants",
+        "status": "fetched",
+        "source": "https://mutants.rs/shards.html",
+        "capability": "`--shard k/n` splits mutants across independent jobs, assigned by contiguous slice (the default) or round-robin with `--sharding`, with no coordination between shards; the page gives a GitHub Actions matrix example and says the CI system launches the shards and collects their results. Ours differs in partitioning by estimated cost rather than by count."
+      },
+      {
+        "piece": "b",
+        "engine": "Stryker",
+        "status": "fetched",
+        "source": "https://stryker-mutator.io/docs/stryker-js/incremental/",
+        "capability": "StrykerJS `--incremental` reuses results from reports/stryker-incremental.json and re-tests mutants in changed mutated or test files, using a git-like diff and the mutation coverage per test its dry run records; the page says it will not detect changes in files other than mutated files and test files. Selection is of MUTANTS by file diff, with tests chosen per mutant by observed coverage, not of suites by import closure."
+      },
+      {
+        "piece": "b",
+        "engine": "Stryker",
+        "status": "fetched",
+        "source": "https://stryker-mutator.io/docs/stryker-net/configuration/",
+        "capability": "Stryker.NET `since` uses git information to test only code changes since the given target and reports only on mutants within the changed code; for a changed test file, all mutants covered by tests in that file are seen as changed. `with-baseline` saves the report so a partial run still yields a full report."
+      },
+      {
+        "piece": "b",
+        "engine": "mutmut",
+        "status": "fetched",
+        "source": "https://mutmut.readthedocs.io/en/latest/",
+        "capability": "Between runs it re-tests only mutants in functions whose source changed, and can be limited by name globs or `only_mutate`; it 'knows which tests to execute' from a stats run of the suite, counting a test as relevant for a function only if the stack depth is below a limit (`max_stack_depth`), which is test selection by runtime-observed reach per function; a git-diff or import-closure selection is not documented in the fetched pages."
+      },
+      {
+        "piece": "b",
+        "engine": "PIT",
+        "status": "fetched",
+        "source": "https://pitest.org/quickstart/incremental_analysis/",
+        "capability": "Experimental incremental analysis via history files reuses a result when the class under test and the killing test are unchanged, tracking only its strongest dependencies (superclasses, outer classes); import-closure selection of suites is not documented in the fetched pages."
+      },
+      {
+        "piece": "b",
+        "engine": "PIT",
+        "status": "fetched",
+        "source": "https://pitest.org/quickstart/maven/",
+        "capability": "Under 'Integrating pitest into pull requests', the example `-DextraFeatures=\"+GIT(from[HEAD~1]), +arcmutate_history(...)\"` is said to 'activate arcmutate's git integration and history implementations', and Arcmutate 'provides pull request integration and other advanced features'; the page does not explain what +GIT selects, and does not say the feature moved from PIT."
+      },
+      {
+        "piece": "b",
+        "engine": "cargo-mutants",
+        "status": "fetched",
+        "source": "https://mutants.rs/in-diff.html",
+        "capability": "`--in-diff` tests only mutants overlapping changed regions of a diff and ignores test-code changes; the page says it is not a substitute for a full test run."
+      },
+      {
+        "piece": "b",
+        "engine": "cargo-mutants",
+        "status": "fetched",
+        "source": "https://mutants.rs/iterate.html",
+        "capability": "`--iterate` skips mutants caught in a previous run, described as a heuristic."
+      },
+      {
+        "piece": "c",
+        "engine": "Stryker",
+        "status": "fetched",
+        "source": "https://stryker-mutator.io/docs/stryker-net/stryker-in-pipeline/",
+        "capability": "Pipeline use is a break threshold (`--break-at`) that fails the pipeline below a mutation score, and a dashboard baseline for pull requests (`--with-baseline`, `--dashboard-api-key`, `\"provider\": \"Dashboard\"`) that tests only mutations changed against a target such as master; sending a report to the dashboard is documented on https://stryker-mutator.io/docs/General/dashboard/ ('Send your first report directly from Stryker'); a scheduled sweep or filing an issue is not documented in the fetched pages."
+      },
+      {
+        "piece": "c",
+        "engine": "mutmut",
+        "status": "fetched",
+        "source": "https://github.com/boxed/mutmut",
+        "capability": "Offers `export-cicd-stats` and a badge; a scheduled sweep or filing an issue is not documented in the fetched pages."
+      },
+      {
+        "piece": "c",
+        "engine": "PIT",
+        "status": "fetched",
+        "source": "https://pitest.org/quickstart/commandline/",
+        "capability": "A `mutationThreshold` fails the build; a scheduled sweep or filing an issue is not documented in the fetched pages."
+      },
+      {
+        "piece": "c",
+        "engine": "cargo-mutants",
+        "status": "fetched",
+        "source": "https://mutants.rs/ci.html",
+        "capability": "Shows one workflow, on pushes to main and on path-filtered pull requests, whose single job runs a full `cargo mutants -vV --in-place` and emits GitHub annotations; a diff-focused PR check is only linked (pr-diff.html, not fetched, so no claim rests on it); a cron schedule or filing an issue is not documented in the fetched pages."
+      }
     ],
     "conclusions": [
       "a: in the fetched pages, only cargo-mutants documents sharding one run across CI jobs (https://mutants.rs/shards.html); its assignment is by count (slice or round-robin, each shard the same number of mutants +/-1), ours by estimated cost. This is an absence in the pages listed, not across each engine's whole documentation.",
       "b: in the fetched pages, all four document selecting MUTANTS by what changed (file, function, class or diff region), and mutmut (stack-depth-bounded test relevance per function, https://mutmut.readthedocs.io/en/latest/) and Stryker (mutation coverage per test, https://stryker-mutator.io/docs/stryker-js/incremental/) choose the tests run per mutant by runtime-observed coverage, the nearest equivalent to our observed-reach piece, which is not in the components map; none of the fetched pages documents selecting test SUITES by the import closure of a change.",
       "c: none of the fetched pages documents a scheduled full sweep that files an issue; cargo-mutants' full run on push to main (https://mutants.rs/ci.html) is the nearest. This is an absence in the pages listed, not across each engine's whole documentation."
     ],
-    "not_fetched": ["https://stryker-mutator.io/docs/stryker-net/ returned 404; no claim rests on it."]
+    "not_fetched": [
+      "https://stryker-mutator.io/docs/stryker-net/ returned 404; no claim rests on it."
+    ]
   }
 }
