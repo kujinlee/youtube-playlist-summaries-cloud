@@ -21380,3 +21380,10 @@ run mixing a joined and a split boundary is found; master's link-reduced reading
 source quote; whitespace-only stderr is CANNOT RUN; a closed `<details>` body is unshown text. Self-test 51 -> 63
 cases (18 disguises, 918 plants); mutations 51 -> 61. Over 3,492 benign Markdown files the letters-only view added 0
 hits.
+PR #620 round-3 fold: what is hidden is read off a stack of open elements closed as a browser closes them (an end tag
+closes everything opened inside its own, a block start tag an open `<p>`, an `<li>` an open `<li>`), not a counter
+that one unclosed `<details>` or `<span hidden>` left hiding the rest of the file; the closed-`<details>` rule is a
+fourth reading of its own, so the older readings keep their texts; the letters-only view is NFKD-normalised
+(full-width and mathematical letters), not NFKC, which would lose a decomposed accent; a source quote holding hidden
+text now tells the readings apart. Self-test 63 -> 73 cases; mutations 61 -> 74. Over 3,500 Markdown files the
+letters-only view added 0 (file, fragment) hits to the word views' 1,003.

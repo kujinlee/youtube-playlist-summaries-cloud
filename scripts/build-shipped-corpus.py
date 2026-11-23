@@ -2,7 +2,7 @@
 """Build the memory corpus a stranger receives, and check the built output (marketplace-inventory plan, Task 18,
 step "Build the shipped corpus"; the owner's answer to walkthrough decision 5).
 
-    python3 scripts/build-shipped-corpus.py --self-test  # 63 cases
+    python3 scripts/build-shipped-corpus.py --self-test  # 73 cases
     python3 scripts/build-shipped-corpus.py --out DIR      # build into DIR, then run both checks on DIR
     python3 scripts/build-shipped-corpus.py --check DIR    # both checks on an already-built DIR
 
@@ -26,14 +26,18 @@ The two checks read the BUILT OUTPUT, never the transform:
      model of links it replaces). A BOUNDARY IS READ BOTH WAYS: where the layout cannot settle whether two pieces
      of text join (an image inside a word, an invisible format character, a block tag missing from the list, text
      a browser never shows), a TIGHT reading joins them (Unicode format characters deleted, an image's alt text and
-     every inline tag joined, the text of <style>, <script>, <template> and `hidden` elements and the body of a
-     closed <details> dropped) and a LOOSE reading separates them (every tag and image a break). Since one run can
-     mix both (`ne<em>v</em>er<center>pay`), every view is ALSO searched LETTERS-ONLY: casefolded, every character
-     that is not a letter or digit deleted, a run's letters searched as a substring, so no boundary is left to read
-     either way. Every view only ADDS hits: the three readings, each with its URLs dropped too (a quote split by bare
+     every inline tag joined, the text of <style>, <script>, <template> and `hidden` elements dropped), a LOOSE
+     reading separates them (every tag and image a break), and a COLLAPSED reading is the tight one with the body of
+     a closed <details> dropped too. What is hidden is read off a STACK of open elements closed as a browser closes
+     them (an end tag closes every element opened inside its own, a block start tag closes an open <p>), never a
+     counter (round 3 of PR #620: `<div><span hidden>x</div>` hid the rest of the file). Since one run can
+     mix both (`ne<em>v</em>er<center>pay`), every view is ALSO searched LETTERS-ONLY: compatibility-decomposed
+     (NFKD: a full-width or mathematical letter is its plain letter), casefolded, every character that is not a letter
+     or digit deleted, a run's letters searched as a substring, so no boundary is left to read
+     either way. Every view only ADDS hits: the four readings, each with its URLs dropped too (a quote split by bare
      URLs), the raw bytes, plain, with format characters deleted (text a renderer hides) and LINK-REDUCED as master
      read them (a `[text](url)` or `[text][ref]` reduced to its text by regex). A source quote is fragmented in each
-     of the three readings, in its plain Markdown and link-reduced too. A source D file with no quote found in it is
+     of the four readings, in its plain Markdown and link-reduced too. A source D file with no quote found in it is
      CANNOT RUN, not a pass (its quotes would go unsearched).
   2. no excluded file is present anywhere in the output tree — by name, or by content (an output file whose
      CANONICAL bytes equal an excluded source file's, under any name: line endings unified, trailing whitespace
@@ -43,7 +47,8 @@ rc 0 = built/checked and both checks pass; 1 = a check FAILED (each hit is named
 RUN): a group count other than 6/4/6/6, a listed file missing from the source, a D file with no paraphrase or a
 stale one, an `--out` that is not absent or empty, a non-`.md` entry in the source, a D file with no quote found, or
 a renderer that could not run or cannot be trusted (node or the markdown-it bundle absent, node failing, anything
-written to its stderr, output that is not UTF-8, the wrong shape back, or a known probe snippet, sent with every
+written to its stderr — any warning node prints from its environment included, such as a
+`NODE_EXTRA_CA_CERTS` naming a missing file, so such a run is CANNOT RUN BY DESIGN — output that is not UTF-8, the wrong shape back, or a known probe snippet, sent with every
 call, not rendered exactly as pinned).
 
 What this cannot see: a paraphrase that keeps an owner's words in a form the normaliser does not undo (a reworded
@@ -51,14 +56,17 @@ sentence, a reused run of fewer than six words from a longer quote, a fragment u
 joined differently), a word spelled with look-alike letters from another script (a Cyrillic `а` for a Latin
 `a`: homoglyphs are not folded, so such a run is a miss), a run a reader sees only through a renderer OTHER than CommonMark (an Obsidian `[[note|alias]]`
 shows only its alias, a GFM table or footnote may lay words out differently) or only through styling (CSS that hides
-or reorders text), a renderer built to render the known probe correctly and nothing else (the probe proves the
+or reorders text), a repair a browser's tree builder makes that the stack does not model (an end tag the
+browser ignores across an open special element, as in `<span hidden><div></span>`; a self-closing non-void tag the
+browser opens, `<span hidden/>`; adoption-agency and foster-parenting moves), a renderer built to render the known probe correctly and nothing else (the probe proves the
 renderer ran, not that it rendered every other text honestly), an excluded file's content in the output when it differs by more than line
 endings and trailing whitespace (edited, or concatenated into another file), and private content that is not a
 quote. Words are matched as a substring of the normalised text, so a run inside longer words (`repay attention`)
 is a hit too, and so is a run whose letters appear in a row across other word breaks, or a run the link-reduced
 reading forms by deleting a look-alike link's visible words (`never [pay](extra words) attention`): false alarms,
-never misses. Measured 2026-11-23 over the 3,492 Markdown files under `docs/` and the repo root, the letters-only
-view added 0 hits to the word views' 294 (708 fragments, the shortest 12 letters), so it carries no minimum length. Dangling `[[links]]` from kept files to excluded ones are left as they are.
+never misses. Measured 2026-11-23 (PR #620 round 3, the code as it stands here) over the 3,500 Markdown files under
+`docs/` and the repo root, the letters-only view added 0 (file, fragment) hits to the word views' 1,003 (708
+fragments, the shortest 12 letters), so it carries no minimum length. Dangling `[[links]]` from kept files to excluded ones are left as they are.
 """
 from __future__ import annotations
 
@@ -177,7 +185,7 @@ def render(docs: list[str], inline: list[tuple[int, str]]) -> tuple[list[str], l
 
 
 class _Visible(HTMLParser):
-    """The text of rendered HTML as a reader sees it laid out, in one of three READINGS (`mode`), because where a word
+    """The text of rendered HTML as a reader sees it laid out, in one of four READINGS (`mode`), because where a word
     boundary falls is not settled by the renderer alone (round 1 X1/C1/C2 of PR #620) — so a boundary is read both
     ways, each reading an add-only view:
       * `read`: a BLOCK tag or `<br>` is a break between words, an inline tag (`<em>`, `<a>`, `<code>` …) is not —
@@ -185,76 +193,108 @@ class _Visible(HTMLParser):
       * `tight`: every boundary that can JOIN does — an image's alt text joins the text around it (`ne![ver](x)`
         reads `never`), inline tags join, and (in `views`) an invisible format character is deleted;
       * `loose`: every tag boundary, inline or block, listed or not (`<center>`, `<legend>`), and every image
-        SEPARATES words.
-    `tight` and `loose` also drop text a browser never shows: inside `<script>`, `<style>`, `<template>`, or an
-    element carrying `hidden` (round 1 C3), and the body of a CLOSED `<details>` — its `<summary>` is shown, and an
-    `open` one shows all (round 2 X4); `read` keeps it."""
+        SEPARATES words;
+      * `collapsed`: `tight`, and the body of a CLOSED `<details>` dropped too — only its first `<summary>` child is
+        shown, and an `open` one shows all (round 2 X4; a reading of its own since round 3 F1, so `tight` and `loose`
+        read as they did before it).
+    All but `read` drop text a browser never shows: inside `<script>`, `<style>`, `<template>`, or an element carrying
+    `hidden` (round 1 C3); `read` keeps it.
+
+    WHAT IS HIDDEN IS READ OFF A STACK OF OPEN ELEMENTS (round 3 F1/F2), closed as the browser's tree builder closes
+    them, never off a counter: an end tag closes the nearest open element of its tag and every element opened inside
+    it (so `<div><span hidden>x</div>` ends the hiding at `</div>`), an end tag that matches no open element closes
+    nothing, a block start tag closes an open `<p>` and an `<li>` (`<dd>`, `<dt>`) an open one, with everything
+    inside them; a void or self-closing tag is never pushed. Text is hidden while any open element hides it."""
     BLOCK = frozenset("address article aside blockquote br dd details dialog div dl dt fieldset figcaption figure "
                       "footer form h1 h2 h3 h4 h5 h6 header hr li main nav ol p pre section summary table tbody td "
                       "tfoot th thead tr ul".split())
     UNSHOWN = frozenset("script style template".split())
     VOID = frozenset("area base br col embed hr img input link meta source track wbr".split())
+    # The start tags that close an open <p> (the HTML tree builder's list; `table` only outside quirks mode, so not
+    # here), the elements that bound the <p> search ("button scope"), and the ones that end the <li>/<dd>/<dt> search.
+    CLOSES_P = frozenset("address article aside blockquote center details dialog dir div dl dd dt fieldset "
+                         "figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup hr li listing main menu nav "
+                         "ol p plaintext pre search section summary ul xmp".split())
+    P_SCOPE = frozenset("applet button caption html marquee object table td template th".split())
+    LIST_STOP = (BLOCK | P_SCOPE | frozenset("center dir hgroup menu".split())) - frozenset("address div p".split())
+    LIST_ITEMS = {"li": frozenset(["li"]), "dd": frozenset(["dd", "dt"]), "dt": frozenset(["dd", "dt"])}
 
     def __init__(self, mode):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.mode = mode
-        self.hiding: tuple[str, int] | None = None     # (the unshown element's tag, its nesting depth)
-        self.details: list[bool] = []                   # each enclosing <details>: is it `open`?
-        self.summary: list[int] = []                    # each enclosing <summary>: its <details> depth
+        self.stack: list[dict] = []     # each open element: its tag, and whether it hides what is inside it
 
-    def _shown(self):
-        """Whether text here is shown by every enclosing `<details>`: an open one shows all, a closed one only its own
-        `<summary>` (so the innermost may be closed while we are in its summary)."""
-        d = self.details
-        own = len(d) - 1 if self.summary and self.summary[-1] == len(d) else len(d)
-        return all(d[:own])
+    def _hidden(self, stack=None):
+        """Whether text inside `stack` (the open elements, outermost first) is hidden: an open element hides it, or a
+        closed `<details>` does and we are not inside its first `<summary>` child."""
+        stack = self.stack if stack is None else stack
+        for i, f in enumerate(stack):
+            if f["hide"] or (f["shut"] and not (i + 1 < len(stack) and stack[i + 1]["summary"])):
+                return True
+        return False
 
     def _breaks(self, tag):
         """Whether a tag boundary is a break between words: a block tag in every reading, any tag in `loose`."""
         return tag in self.BLOCK or self.mode == "loose"
 
-    def handle_starttag(self, tag, attrs):
+    def _close_to(self, tags, stop):
+        """Close the nearest open element whose tag is in `tags`, with everything opened inside it — unless an
+        element in `stop` is nearer."""
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i]["tag"] in tags:
+                del self.stack[i:]
+                return
+            if self.stack[i]["tag"] in stop:
+                return
+
+    def handle_starttag(self, tag, attrs, void=False):
         a = dict(attrs)
-        if self.hiding:
-            if tag == self.hiding[0] and tag not in self.VOID:
-                self.hiding = (tag, self.hiding[1] + 1)
+        if tag in self.LIST_ITEMS:
+            self._close_to(self.LIST_ITEMS[tag], self.LIST_STOP)
+        if tag in self.CLOSES_P:
+            self._close_to({"p"}, self.P_SCOPE)
+        hides = self.mode != "read" and (tag in self.UNSHOWN or "hidden" in a)
+        if void or tag in self.VOID:
+            if not hides and not self._hidden():
+                if self._breaks(tag):
+                    self.parts.append(" ")
+                if tag == "img":
+                    alt = a.get("alt") or ""
+                    self.parts.append(alt if self.mode in ("tight", "collapsed") else " " + alt + " ")
             return
-        if self.mode != "read" and (tag in self.UNSHOWN or "hidden" in a):
-            if tag not in self.VOID:
-                self.hiding = (tag, 1)
-            return
-        if self._breaks(tag):
+        top = self.stack[-1] if self.stack else None
+        f = {"tag": tag, "hide": hides, "shut": self.mode == "collapsed" and tag == "details" and "open" not in a,
+             "summary": False, "summaries": 0}
+        if self.mode == "collapsed" and tag == "summary" and top:
+            f["summary"] = top["summaries"] == 0
+            top["summaries"] += 1
+        self.stack.append(f)
+        if not self._hidden() and self._breaks(tag):
             self.parts.append(" ")
-        if self.mode != "read" and tag == "details":
-            self.details.append("open" in a)
-        elif self.mode != "read" and tag == "summary" and self.details:
-            self.summary.append(len(self.details))
-        elif tag == "img" and self._shown():
-            alt = a.get("alt") or ""
-            self.parts.append(alt if self.mode == "tight" else " " + alt + " ")
+
+    def handle_startendtag(self, tag, attrs):
+        """A self-closing tag (`<img … />`, `<br/>`): never pushed, its boundary a break on both sides as before."""
+        self.handle_starttag(tag, attrs, void=True)
+        if not self._hidden() and self._breaks(tag):
+            self.parts.append(" ")
 
     def handle_endtag(self, tag):
-        if self.hiding:
-            if tag == self.hiding[0]:
-                self.hiding = (tag, self.hiding[1] - 1) if self.hiding[1] > 1 else None
-            return
-        if tag == "details" and self.details:
-            self.details.pop()
-            while self.summary and self.summary[-1] > len(self.details):
-                self.summary.pop()
-        elif tag == "summary" and self.summary and self.summary[-1] == len(self.details):
-            self.summary.pop()
-        if self._breaks(tag):
+        shown = not self._hidden()
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i]["tag"] == tag:
+                shown = not self._hidden(self.stack[:i + 1])
+                del self.stack[i:]
+                break
+        if shown and self._breaks(tag):
             self.parts.append(" ")
 
     def handle_data(self, data):
-        if not self.hiding and self._shown():
+        if not self._hidden():
             self.parts.append(data)
 
-
 def visible(html: str, mode: str = "read") -> str:
-    """The VISIBLE text of rendered HTML in one reading (`_Visible`: `read`, `tight` or `loose`)."""
+    """The VISIBLE text of rendered HTML in one reading (`_Visible`: `read`, `tight`, `loose` or `collapsed`)."""
     p = _Visible(mode)
     p.feed(html)
     p.close()
@@ -276,15 +316,23 @@ def norm(text: str) -> str:
 
 
 def readings(html: str) -> list[str]:
-    """Rendered HTML's text in each reading a reader may see: `read`, `tight` (format characters deleted too) and
-    `loose` — a boundary the renderer cannot settle is read BOTH ways (round 1 X1/C1/C2 of PR #620)."""
-    return [visible(html), unformat(visible(html, "tight")), visible(html, "loose")]
+    """Rendered HTML's text in each reading a reader may see: `read`, `tight` (format characters deleted too),
+    `loose` — a boundary the renderer cannot settle is read BOTH ways (round 1 X1/C1/C2 of PR #620) — and
+    `collapsed` (format characters deleted too), `tight` with a closed `<details>` body dropped: ADDED beside the
+    others at round 3 (F1), never edited into one, so every reading only adds hits."""
+    return [visible(html), unformat(visible(html, "tight")), visible(html, "loose"),
+            unformat(visible(html, "collapsed"))]
 
 
 def quote_texts(quote: str, html: str) -> list[str]:
     """The texts a SOURCE quote is fragmented in: its rendered `readings`, its raw Markdown, and the raw Markdown
     LINK-REDUCED, as master read it (round 2 X2 of PR #620)."""
     return readings(html) + [quote, delink(quote)]
+
+
+def quote_windows(quote: str, html: str) -> set[str]:
+    """Every six-word run (or short fragment) of one SOURCE quote, rendered as `html`, in each of its `quote_texts`."""
+    return {s for t in quote_texts(quote, html) for f in fragments(t) for s in windows(f)}
 
 
 def texts(raw: str, html: str) -> list[str]:
@@ -304,8 +352,10 @@ def views(raw: str, html: str) -> tuple[set[str], set[str]]:
     ⚠ THE WORD VIEWS ARE NOW SUBSUMED AT THE RUN LEVEL, kept because a view is add-only. Deleting characters keeps a
     substring a substring, so a run found among the words of one text is found among its letters too; and the tight
     and loose readings differ mostly in where they put spaces, which the letters view deletes. So no run-level case
-    can tell several readings apart any more (round 2's mutation sweep: eight of them survived every run case).
-    Which texts are searched is pinned instead by two INVENTORY cases, one for `texts` and one for `quote_texts`."""
+    tells `tight` from `loose` (round 2's mutation sweep: eight such mutations survived every run case), and they are
+    pinned instead by two INVENTORY cases, one for `texts` and one for `quote_texts`. ⟳ Round 3 F3 narrowed this:
+    `read`, raw and plain all KEEP hidden text and the other readings drop it, so a SOURCE quote holding hidden text
+    tells them apart at the run level, and a case does."""
     ts = texts(raw, html)
     return {norm(t) for t in ts}, {letters_only(t) for t in ts}
 
@@ -318,11 +368,15 @@ def delink(text: str) -> str:
 
 
 def letters_only(text: str) -> str:
-    """The LETTERS-ONLY reading (round 2 X1 of PR #620): `text` casefolded, with every character that is not a letter
-    or a digit deleted — format characters, whitespace, punctuation. No word boundary is left, so a run whose
-    boundaries mix joins and splits (`ne<em>v</em>er<center>pay`) reads the same as the plain run: one view covers
-    every combination of boundary readings, where one view per combination would be exponential."""
-    return "".join(c for c in text.casefold() if c.isalnum())
+    """The LETTERS-ONLY reading (round 2 X1 of PR #620): `text` compatibility-DECOMPOSED (NFKD) and casefolded, with
+    every character that is not a letter or a digit deleted — format characters, whitespace, punctuation, and the
+    combining marks the decomposition splits off. No word boundary is left, so a run whose boundaries mix joins and
+    splits (`ne<em>v</em>er<center>pay`) reads the same as the plain run: one view covers every combination of
+    boundary readings, where one view per combination would be exponential. NFKD (round 3 F4) reads a full-width or
+    mathematical letter as its plain letter; NFKC would too, but it COMPOSES a decomposed `e` + U+0301 into `é`,
+    which the marks-dropped reading read as `e` before it, so it would lose a hit. Every group-D fragment is
+    unchanged by both (a case asserts it), so only the output side moves."""
+    return "".join(c for c in unicodedata.normalize("NFKD", text).casefold() if c.isalnum())
 
 
 def fragments(quote: str) -> list[str]:
@@ -406,8 +460,7 @@ def check(root: Path, out: Path) -> tuple[int, list[str]]:
     for n, q_n in zip(g["D"], qs):
         # each quote as RENDERED, in every reading, PLAIN, its link destinations' words in place (round 1 X4), and
         # LINK-REDUCED (round 2 X2): the two views master read, kept so a refusal it made is not lost
-        mine = {s for q, h in zip(q_n, shown) for t in quote_texts(q, h) for f in fragments(t)
-                for s in windows(f)}
+        mine = {s for q, h in zip(q_n, shown) for s in quote_windows(q, h)}
         shown = shown[len(q_n):]
         report.append(f"  {n}: {len(q_n)} quotes")
         if not mine:
@@ -644,7 +697,7 @@ def _self_test_body() -> int:
     # boundaries is found ────────────────────────────────────────────────────────────────────────────────────
     case("a letters-only text is casefolded, with format characters, whitespace and punctuation deleted",
          lambda: (letters_only("I al-most, NE\u200bver\n pay!"), letters_only("Straße \u00b7 Ü-2026!")),
-         ("ialmostneverpay", "strasseü2026"))
+         ("ialmostneverpay", "strasseu2026"))
     case("a run whose boundaries mix a join and a split fails check 1 (letters-only view)",
          lambda: hit("I [almost](https://x) ne<em>v</em>er<center>pay attention to</center>\n"), d6hit)
     case("a format character beside an inline tag in a run that also splits at a tag fails check 1 (letters-only view)",
@@ -659,13 +712,49 @@ def _self_test_body() -> int:
                   hit("I [almost](https://x) never <details><summary></summary>![zz](x.png)</details> pay attention "
                       "to\n")), (d6hit,) * 2)
     case("a closed <details> nested in an open one hides its own body only, and its close ends the hiding",
-         lambda: norm(visible("<details open>a<details><summary>s</summary>b</details>c</details>d", "tight")),
+         lambda: norm(visible("<details open>a<details><summary>s</summary>b</details>c</details>d", "collapsed")),
          "a s c d")
     case("an OPEN <details> shows its body, and a closed one its summary, so either breaks the run and passes check 1",
          lambda: (hit("I [almost](https://x) never <details open><summary></summary>shown words</details> pay "
                       "attention to\n"),
                   hit("I [almost](https://x) never <details><summary>zz</summary>hidden words</details> pay "
                       "attention to\n")), ((0, []),) * 2)
+    case("a closed <details> shows only its FIRST <summary> CHILD: a second one, or one nested deeper, is its body, "
+         "unshown, and does not break a run, so it fails check 1 (round 3)",
+         lambda: (hit("I [almost](https://x) never <details><summary></summary><summary>zz</summary></details> pay "
+                      "attention to\n"),
+                  hit("I [almost](https://x) never <details><div><summary>zz</summary></div></details> pay "
+                      "attention to\n")), (d6hit,) * 2)
+
+    # ── round 3 of PR #620 F1/F2: a STACK of open elements, closed as the browser closes them, so an element left
+    # open inside a container ends at the container's end tag instead of hiding the rest of the file ─────────────
+    case("an unclosed <details> inside a blockquote, a list item or a <div> is closed by its container's end tag, so "
+         "the run after it fails check 1 (round 3 F1)",
+         lambda: tuple(hit(f"{t}\n\nI almost never <span hidden>zq</span> pay attention to\n") for t in (
+             "> <details>", "- <details>", "<div><details></div>")), (d6hit,) * 3)
+    case("an unclosed hidden element inside a <div> is closed by its </div>, written in capitals or past a stray "
+         "close tag too, so the run after it fails check 1 (round 3 F2)",
+         lambda: tuple(hit(f"{t}\n\nI almost never <span hidden>zq</span> pay attention to\n") for t in (
+             "<div><span hidden>x</div>", "<DIV><span hidden>x</DIV>", "<div><span hidden>x</em></div>")),
+         (d6hit,) * 3)
+    case("a block start tag closes an open <p>, and an <li> an open <li>, with everything opened inside them, so "
+         "the run after it fails check 1 (round 3)",
+         lambda: (hit("<p><span hidden>x<div>I almost never <span hidden>zq</span> pay attention to</div>\n"),
+                  hit("<ul><li><span hidden>x<li>I almost never <span hidden>zq</span> pay attention to</ul>\n"),
+                  hit("<ul><li><div><span hidden>x<li>I almost never <span hidden>zq</span> pay attention to</ul>\n")),
+         (d6hit,) * 3)
+    case("ADJACENT NEGATIVES: a block start tag inside a <button> does not close the <p> outside it, nor an <li> "
+         "inside a <blockquote> the <li> outside it, so the hidden text they hold stays hidden",
+         lambda: (norm(visible("<p>a<button><span hidden>b<div>c</div></span>d</button>e</p>", "tight")),
+                  norm(visible("<ul><li>a<blockquote><span hidden>b<li>c</li></span>d</blockquote>e</ul>", "tight"))),
+         ("ade", "a d e"))
+    case("ADJACENT NEGATIVES: text a browser really hides stays hidden — past a close tag that closes nothing open, "
+         "inside a hidden element's own nested tag, and after a hidden void element — and text it shows breaks a run",
+         lambda: (norm(visible("<div>a<span hidden>b<em>c</em>d</span>e</div>f<span hidden>g</div>h<span hidden>"
+                               "<b>x</b>y</span>z", "tight")),
+                  norm(visible("i<br hidden>j<img hidden alt=\"k\">l", "tight")),
+                  hit("I almost never <div><span hidden>x</div>zq pay attention to\n")),
+         ("ae f", "ijl", (0, [])))
 
     # ── round 1 of PR #620: a boundary the renderer cannot settle is read BOTH ways (X1, C1, C2), and text a
     # browser never shows is dropped in one more view (C3) ─────────────────────────────────────────────────────
@@ -694,20 +783,23 @@ def _self_test_body() -> int:
 
     # ── round 2 of PR #620: which texts are searched, pinned directly, because the letters-only view subsumes the
     # run-level cases that used to tell the readings apart (see `views`) ────────────────────────────────────────
-    case("an output file is searched in nine texts: three readings, each with URLs dropped, and the raw bytes as they "
-         "are, with format characters deleted, and link-reduced",
-         lambda: (texts("a\u200bb [c](https://u) d", "<p>a\u200bb c<em>d</em>e https://u f</p>"),
+    case("an output file is searched in eleven texts: four readings, each with URLs dropped, and the raw bytes as "
+         "they are, with format characters deleted, and link-reduced",
+         lambda: (texts("a​b [c](https://u) d",
+                        "<p>a​b c<em>d</em>e https://u f</p><details><summary>s</summary>t</details>"),
                   texts("x http://v y", "<p>x</p>")),
-         ([" a\u200bb cde https://u f ", " ab cde https://u f ", " a\u200bb c d e https://u f ",
-           " a\u200bb cde   f ", " ab cde   f ", " a\u200bb c d e   f ",
-           "a\u200bb [c](https://u) d", "ab [c](https://u) d", "a\u200bb c d"],
-          [" x "] * 6 + ["x http://v y", "x http://v y", "x   y"]))
-    case("a source quote is fragmented in five texts: three readings, its raw Markdown, and that link-reduced",
+         ([" a​b cde https://u f   s t ", " ab cde https://u f   s t ", " a​b c d e https://u f   s t ",
+           " ab cde https://u f  s ",
+           " a​b cde   f   s t ", " ab cde   f   s t ", " a​b c d e   f   s t ", " ab cde   f  s ",
+           "a​b [c](https://u) d", "ab [c](https://u) d", "a​b c d"],
+          [" x "] * 8 + ["x http://v y", "x http://v y", "x   y"]))
+    case("a source quote is fragmented in six texts: four readings, its raw Markdown, and that link-reduced",
          lambda: (quote_texts("a![b](x.png)c [d](https://u) e",
-                              '<p>a<img src="x.png" alt="b" />c <a href="https://u">d</a> e</p>'),
+                              '<p>a<img src="x.png" alt="b" />c <a href="https://u">d</a> e<details>t</details></p>'),
                   quote_texts("[y](z)", "<p>y</p>")),
-         ([" a b c d e ", " abc d e ", " a  b  c  d  e ", "a![b](x.png)c [d](https://u) e", "a!bc d e"],
-          [" y "] * 3 + ["[y](z)", "y"]))
+         ([" a b c d e t  ", " abc d e t  ", " a  b  c  d  e t  ", " abc d e ", "a![b](x.png)c [d](https://u) e",
+           "a!bc d e"],
+          [" y "] * 4 + ["[y](z)", "y"]))
 
     def tight_source_quote():
         root = world("tightquote", d={**d_text, "d6.md": 'Rule six: *"I almost ne![ver](x.png) pay attention to it"*\n'})
@@ -718,6 +810,41 @@ def _self_test_body() -> int:
         return rc, sorted({ln.split(":")[0] for ln in lines if ln.startswith("QUOTE")})
     case("a SOURCE quote is read in every reading too: an image inside a word in it joins, so its run fails check 1",
          tight_source_quote, (1, ["QUOTE FROM d6.md IN kept.md"]))
+
+    def hidden_source_quote():
+        root = world("hiddenquote", d={**d_text, "d6.md": 'Rule six: *"I almost never <span hidden>zz</span> pay '
+                                       'attention to it"*\n'})
+        out = base / "hiddenquote-out"
+        shutil.copytree(base / "good-out", out)
+        (out / "kept.md").write_text("I almost never pay attention to it.\n")
+        rc, lines = check(root, out)
+        return rc, sorted({ln.split(":")[0] for ln in lines if ln.startswith("QUOTE")})
+    case("a SOURCE quote holding hidden text is read in the readings that drop it, so the run a reader sees fails "
+         "check 1 (round 3 F3: raw, plain and `read` all keep the hidden word)",
+         hidden_source_quote, (1, ["QUOTE FROM d6.md IN kept.md"]))
+
+    def nfk_invariant():
+        g = groups((REPO / DECISION).read_text())
+        srcs = [(REPO / SRC / n).read_text() for n in g["D"]]
+        qs = [(i, q) for i, t in enumerate(srcs) for q in quotes(t)]
+        shown = render(srcs, qs)[1]
+        ws = {s for (_, q), h in zip(qs, shown) for s in quote_windows(q, h)}
+        return (len(ws) > 0, all(unicodedata.normalize(f, s) == s for s in ws for f in ("NFKC", "NFKD")))
+    case("every real group-D fragment is unchanged by compatibility normalisation, so normalising the letters view "
+         "changes the output side only (round 3 F4; no fragment is printed)", nfk_invariant, (True, True))
+    case("a source quote's windows are its six-word runs in every reading of ITS OWN rendering: a long quote yields "
+         "two runs, and one holding hidden text yields the run with and without the hidden word (round 3 F3)",
+         lambda: (sorted(quote_windows("one two three four five six seven",
+                                       "<p>one two three four five six seven</p>")),
+                  sorted(quote_windows("alpha beta gamma delta epsilon zeta",
+                                       "<p>alpha beta <span hidden>gamma</span> delta epsilon zeta</p>"))),
+         (["one two three four five six", "two three four five six seven"],
+          ["alpha beta delta epsilon zeta", "alpha beta gamma delta epsilon zeta"]))
+    case("a run spelt in full-width or mathematical-bold letters fails check 1, and so does one with a decomposed "
+         "accent (letters-only view, compatibility-decomposed; round 3 F4)",
+         lambda: tuple(hit(f"I almost {w} pay attention to\n") for w in (
+             "ｎｅｖｅｒ", "".join(unicodedata.lookup(f"MATHEMATICAL BOLD SMALL {c}")
+                                                         for c in "NEVER"), "néver")), (d6hit,) * 3)
 
     def plain_source_quote():
         root = world("plainquote", d={**d_text, "d6.md": 'Rule six: *"see [aside](https://example.com) before you '

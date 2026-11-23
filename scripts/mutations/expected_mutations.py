@@ -2534,7 +2534,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ PR #620 round-2 fold: 61 — the letters-only view (r2 X1: searched, whitespace deleted), master's link-reduced
     # reading (r2 X2: the output's, the regex's reduction, the source quote's), anything on stderr (r2 X3), and a
     # closed <details> (r2 X4: read as closed, its summary shown, an image's alt in it hidden, its close ends it).
-    "scripts/build-shipped-corpus.py": 61,
+    "scripts/build-shipped-corpus.py": 74,
     # 2026-11-22, marketplace-inventory plan Task 19: the inventory guard, pinned in the commit that creates it. One
     # entry per load-bearing clause: the checkpoint (population, ratio, majority, the two CANNOT RUNs), every
     # row_errors rule (backlog #696 a, c and f among them), every inventory-level rule, the exit-code ranking,
