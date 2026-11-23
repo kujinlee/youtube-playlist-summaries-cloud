@@ -21292,3 +21292,202 @@ the unfollowed name at its binding's level (1) and `report` keeps only `level ==
 (`scripts/check-publishability.py` `_install_root_uses.report`). Option 1 is r4 Claude's proposal; option 2 is §6's
 (a0) direction of `docs/reviews/architecture-review-2026-11-21-publishability-install-root.md`. The older misses are
 backlog #692. The PR is not merged until this is answered.
+
+## 2026-11-21
+The publishability scan's check for instructions in Markdown (telling a reader to run or read something) got the
+architecture review it skipped when it merged after two rounds where each fix opened a new hole. The review found two
+separate problems in one function. How the check reads a block of text can be redesigned once; it recommends that,
+and measured that it catches 4 real dependencies the check misses today without losing any. Whether a sentence is a
+real instruction or a prohibition cannot be made exact; there the review says to stop patching and remove a filter, so
+the check errs toward reporting. Nothing changed in the code yet.
+
+Nothing waits on you for this.
+<!--tech-->
+Backlog #680 part (1). `docs/reviews/architecture-review-2026-11-21-publishability-detector4.md` (Fable): candidate F,
+corpus 57 rows EXACT 44 / MISS 7 / FALSE 6 vs HEAD 32 / 22 / 3; live 302 → 306 (4 gained on
+`.agents/skills/brief/SKILL.md:62`, 0 lost); coordinator re-ran HEAD's self-test (105/105) and the live count (302).
+
+## 2026-11-21
+The redesigned reading of Markdown instructions was built and then refuted by its first review: it silently stopped
+reporting real dependencies the old check found (a list nested under another, and a line starting with `#` that is not
+a heading, which cost three dependencies in a real spec). The review had decided in advance what happens then, so
+there was no second attempt: the old check is kept, with only its negation filter removed, which can only ever add a
+report. The scan is back at its 302 findings. The four dependencies the redesign would have caught are filed.
+
+Nothing waits on you for this.
+<!--tech-->
+Backlog #680 PR #614. Build F (c5afc7c0) refuted at r1 (Codex B1 `first_sibling`, Claude B1 `#`-led heading), both
+FAILS IF 1 caused by the build; §6 fallback N: 49c3f923's walkers, `NEGATES` deleted, r3 negation case flipped, its
+mutation re-aimed at a planted filter; self-test 105/105, rescan 46 components / 302. Coordinator:
+`docs/reviews/coordinator/phase6-detector4-r1-coordinator.md`. F's misses filed as backlog #693.
+
+## 2026-11-21
+The merge check now stops a pull request that is ready by every other gate when its review rounds show the pattern
+that should have called an architecture review: two rounds in a row where fixing one problem caused a new one in the
+same part of the code. It lets the request through when an architecture review is part of it. If the last two round
+records cannot be read, it stops and asks a person to read them rather than guessing. Run over recent history, it
+would have stopped the pull request that started this (PR #600) and not the one that fixed it (PR #614).
+
+Nothing waits on you for this.
+<!--tech-->
+Backlog #680 part (2), branch `merge-ready-thrash-hold`. `scripts/check-merge-ready.py` `thrash_gate` / `thrash_holds`
+(hold reason 5), rule imported from `scripts/check-review-decision.py` (`thrashing_component`; new `parse_round` shared
+with `parse_header`). Base rate over 41 coordinator-touching master commits: 8 HOLD (5 armed, 3 cannot-judge), 0
+CANNOT RUN (12 before the r1 fold: coordinator-dir architecture reviews now count, a lone round no longer HOLDs;
+unchanged by the r2 fold: a second `findings:` key or a field set twice in a finding is unreadable, and an
+architecture review counts only if it exists at HEAD; unchanged by the r3 fold: a round is clean only as a literal
+`findings: []` with nothing under it, any other shape must parse as many items as it has `- ` lines, a near-miss field
+name, a `<<` key or a ` #` in a judged value is unreadable, and only an added or modified non-empty architecture review
+clears the HOLD; backlog #695 filed). Self-tests check-merge-ready 467/467, check-review-decision 130/130; mutations
+check-merge-ready 188 -> 214, check-review-decision 30 -> 33.
+
+## 2026-11-22
+The marketplace inventory has its first rows: the six pieces of the CI mutation sweep, graded for whether a stranger's
+project could use them. The mutation engine itself is not worth shipping. A stranger's CI should be able to plug in
+any mutation tool, and every one of our mutations is written against this repository's own checks. What carries over
+is a lesson already written up as a portable practice. The nightly sweep job and its red-sweep alert could ship
+together as one reusable GitHub workflow once they stop calling our engine and read a published record format. The
+small verdict-type library passes every test and is graded shippable later, inside the same CI package as the engine
+that uses it. Each sweep feature is
+compared with four well-known mutation tools, using pages of those tools' own documentation. In the pages fetched,
+only one tool documents splitting a run across CI machines, none chooses test suites by what a change imports, and
+none describes a nightly sweep that opens an issue. All six grades are argued, not measured.
+
+You decided (2026-11-22) what a "not shippable" grade must point to. It now names its reason from four kinds: a
+problem the scan found in that same piece, a section of the spec, a failed install test, or a content review not yet
+done. Borrowing another piece's problem, which went wrong three review rounds running, is now refused. You also
+ruled that the verdict-type library is not part of the mutation engine, so it can ship. Nothing else waits on you
+for this.
+<!--tech-->
+Marketplace slice F, plan Task 17, branch `marketplace-task17`. New `docs/marketplace/inventory.json`: 6 effort (2)
+rows (check-plan-code and mutation-manifests DON'T-SHIP with harvest practice §22/§10, velocity-docs DON'T-SHIP with
+harvest none; mutation-sweep-job and sweep-red-alert NEEDS-WORK with a portable-core reusable-workflow route;
+coverage-verdict SHIP, bundle ci-layer), all phase later and grade argued. Owner decision 2026-11-22 (option A, Phase 6
+review architecture-review-2026-11-22-marketplace-inventory-rows): spec §5 rule 1 amended so a non-SHIP row's
+`rests_on` names its ground from four kinds (finding of its OWN component, spec section/decision, failed experiment
+scenario, c5), each resolved against its owner file; plan Task 19 reworded to match (not built). Round 3 fold:
+check-plan-code rests on spec §3 Effort (2) + §2c, mutation-manifests on spec §3 Effort (2) + c5 (78 of 105 manifest
+target files outside every package, re-measured), the other three on their own scan findings; the transitive
+check-plan-code:2:1 cite is gone.
+engine_comparison has 15 entries, 0 unverified; absences are scoped to the fetched pages. Review round 1 fold:
+coverage-verdict re-argued (stdlib-only type module, imported at runtime only by check-plan-code), sweep-red-alert's
+C3 re-argued from RECORD_SCHEMA, self-test cites relabelled. No `recall` key yet (Task 18 adds it).
+
+## 2026-11-22
+The memory notes a stranger would receive can now be built without the files you excluded, and with your quoted words
+reworded. A check reads the built copy and confirms none of your original quotes and none of the 16 excluded files are
+in it. Whether those notes ship at all still waits on your content review, so they stay not shippable for now. The
+recall tool was tried with no notes to recall from: it did nothing, silently, so it is not part of the first release.
+<!--tech-->
+Marketplace slice F, plan Task 18, branch `marketplace-task18`. `docs/marketplace/inventory.json`: 6 effort (1) rows
+(recall-llm, hook-surface-recall, memory-corpus NEEDS-WORK; check-surface-recall, check-rc-contract,
+check-ratchet-contract DON'T-SHIP), all phase later, each `rests_on` typed per amended spec §5 rule 1; memory-corpus
+holds `C5: unanswered` on the c5 ground. Top-level `"recall": {"a": false, "b": "unanswered"}`; probe recorded in
+`docs/marketplace/experiment-tier-a.md` "Recall with an empty corpus" (run_isolated; armed `--arm` rc 6 CANNOT RUN, no
+memory directory; unarmed rc 2; the hook measured by the supplementary run only). New
+`scripts/build-shipped-corpus.py` (`--out`/`--check`/`--self-test`, 31 cases, 27 mutations in
+`scripts/mutations/build-shipped-corpus.json`, all red in a full clone; quotes compared as WORDS, so a changed
+punctuation or a Markdown link around each word no longer hides one, and each text is read both with links reduced and plain, so text that only looks like a link cannot hide one either; a D file with no quote is CANNOT RUN; an excluded
+file's content under another name fails, also with its line endings or trailing whitespace changed) and the 6 group-D paraphrases in `docs/marketplace/shipped-corpus/` (rule figures outside the owner's quotes
+kept) with `sources.json` (sha256 of each source). Real build: 180 files, check PASS over 708 derived quote fragments
+and 16 excluded names. Backlog #697 filed: the recall package still lists the raw `docs/memory/`.
+
+## 2026-11-22
+The marketplace inventory now has a checker. It refuses a row whose verdict has no grade, whose reason does not point
+at something real (a scan finding of its own component, a spec section or decision, a failed install scenario, or the
+unanswered content review), or whose next step is not one of the spec's four routes. It also computes the stop
+signal you approved: if publishing to the public bar costs at least three times what the next project would pay for
+more than half of the first-release rows, it stops for you. Today it reports the inventory incomplete: 34 components
+still have no row (the comprehensibility effort, plan Task 20), and the 12 rows written so far pass every rule.
+<!--tech-->
+Marketplace slice F, plan Task 19, branch `marketplace-task19`. New `scripts/check-inventory.py`: `row_errors`
+(24 rules, tagged `[rule]`, incl. backlog #696 (a) `ROUTE_KINDS` = decouple-config, template-repository,
+portable-core, practice; (c) `practice_entry` matched exactly against a `## ` heading of docs/portable-practices.md;
+(f) empty finding ids / spec section, heading or decision refused), `inventory_errors` (missing, duplicate,
+phase1-package, package-shipping, scan), the plan's `checkpoint_fires` embedded as written, `render` (verdict and
+grade in one cell), `--render`, exit codes in rank order: inputs unreadable 2, any error 1 (checkpoint not computed), checkpoint CANNOT RUN 2, fired 3, else 0. Self-test 149 cases;
+61 mutations in `scripts/mutations/check-inventory.json`, all red in a full clone. CI runs `--self-test` only; the
+live run joins in Task 20. Live run: rc 1, 34 `[missing]` effort (3) components, 0 errors on the 12 existing rows.
+Backlog #696: (a), (c), (f) resolved; (d), (e) open. check-shipping-sets edge pin 358 -> 360.
+
+## 2026-11-22
+The marketplace inventory is complete: all 46 components have a row, and the checker passes every one. The 34
+comprehensibility components came out as 32 needing work and 2 not to ship (two shared instruction files that nothing
+in the package reads). None can ship yet, and the reason is measured: when a stranger installed the package, its
+scripts looked for the user's files in the package's own folder, and no page could get its question box, because
+that box is copied from a page that already has one. With every row in, the checker's stop signal fired: for most of
+the first-release rows, reaching the public bar costs at least three times what the next project would pay. That is
+your stop (Human step H4) before anything is published. Two lessons from it were written up as portable practices
+27 and 28.
+<!--tech-->
+Marketplace slice F, plan Task 20, branch `marketplace-task20`. `docs/marketplace/inventory.json`: 34 effort (3) rows
+(32 NEEDS-WORK, 2 DON'T-SHIP; grades 14 measured, 7 argued, 13 none), `written_by` effort-3 = plan Task 20. The 13
+exercised entry points with a failing tier-A condition rest on their own `experiment` ground; contract-explainer-delivery
+is graded measured through skill-brief's failure on its :2:1 invocation; libraries whose importers all failed on
+defects attributed elsewhere are graded none (spec §4). contract-handoff-path and contract-corpus-search: no importer
+in the package, DON'T-SHIP on spec §4's orphan rule. page-chrome, page-markup, fixture-git: NEEDS-WORK on spec §4b's
+"no way to assess it". New `docs/portable-practices.md` §27 (two roots, `${CLAUDE_PLUGIN_ROOT}`; spec §4 item 9b) and
+§28 (a copy-from-an-instance component cannot bootstrap; S2). `ci.yml` gains the live `check-inventory.py` step: rc 3
+printed and passed, rc 1 and 2 fail. Live run: rc 3, the D1 checkpoint fired over 34 phase-1 rows.
+## 2026-11-23
+The check that keeps the owner's quoted words out of the memory files a stranger receives now reads each file the way
+a reader sees it, rendered as Markdown, instead of guessing at Markdown with patterns. Four review rounds had each
+found a way to hide a quote from the old guesses; the last was a line mixing a real link with text that only looks
+like one. Every real quote, hidden twelve different ways, is now caught; 42 of those disguises got past the old check.
+<!--tech-->
+Backlog #698, branch `backlog-698`. `scripts/build-shipped-corpus.py --check` renders each source D file and each
+output file with markdown-it's `commonmark` preset (`node_modules/markdown-it/dist/markdown-it.min.js`, already a
+prod dependency, called through `node -e`; node or the bundle absent, a non-zero exit, or no HTML per input is CANNOT
+RUN, rc 2). Quotes are rendered inline in their own file's reference definitions. An output file is searched in its
+rendered text (block tags and `<br>` separate words, inline tags do not, an image is its alt), plus two views that
+only add hits: that text with URLs dropped, and the raw bytes. Self-test 31 -> 41 cases (a 612-plant corpus: 51 real
+quotes x 12 disguises); mutations 27 -> 34 (4 regex-view mutations removed, 11 added). `check-plan-code.py`
+HARNESS_TREE stages `node_modules/markdown-it`. Real build: 180 files, PASS. Row 697 (recall package) untouched.
+PR #620 round-1 fold: a boundary is read both ways — a tight reading (Unicode Cf deleted, an image's alt and every
+inline tag joined, `<style>`/`<script>`/`<template>`/`hidden` text dropped) and a loose one (every tag breaks), each
+with URLs dropped, plus the raw bytes with Cf deleted; a source quote is fragmented in all three readings and plain.
+Every renderer call carries a pinned probe; stderr, non-UTF-8 output or a wrong probe is CANNOT RUN. Self-test 41 ->
+51 cases (17 disguises, 867 plants); mutations 34 -> 51. `check-canonical-source.py` stages `node_modules/markdown-it/`
+(the cause of CI's `verify` and `mutation-sweep (3)` reds on 0fb65173).
+PR #620 round-2 fold: every view is also searched letters-only (casefolded, all but letters and digits deleted), so a
+run mixing a joined and a split boundary is found; master's link-reduced reading is restored on the output and the
+source quote; whitespace-only stderr is CANNOT RUN; a closed `<details>` body is unshown text. Self-test 51 -> 63
+cases (18 disguises, 918 plants); mutations 51 -> 61. Over 3,492 benign Markdown files the letters-only view added 0
+hits.
+PR #620 round-3 fold: what is hidden is read off a stack of open elements closed as a browser closes them (an end tag
+closes everything opened inside its own, a block start tag an open `<p>`, an `<li>` an open `<li>`), not a counter
+that one unclosed `<details>` or `<span hidden>` left hiding the rest of the file; the closed-`<details>` rule is a
+fourth reading of its own, so the older readings keep their texts; the letters-only view is NFKD-normalised
+(full-width and mathematical letters), not NFKC, which would lose a decomposed accent; a source quote holding hidden
+text now tells the readings apart. Self-test 63 -> 73 cases; mutations 61 -> 74. Over 3,500 Markdown files the
+letters-only view added 0 (file, fragment) hits to the word views' 1,003.
+
+## 2026-11-23
+The recall package no longer installs the memory files you excluded for the marketplace. It used to list every memory
+file, including the 16 you excluded and the six whose quotes you asked to have paraphrased, in their original form.
+Now it installs the kept files and the six paraphrased versions, and the package checker refuses any package that
+would ship an excluded file or an unparaphrased one. The memory index file no longer ships either: the tracked one
+links the excluded files, and the filtered one the corpus builder makes is not a tracked file, so packaging cannot
+ship it. Whether an index ships, and how the files reach the folder recall reads, is filed as backlog #707 for your
+stop at plan Task 21. Nothing is published before then.
+<!--tech-->
+Backlog #697, branch `backlog-697`. `docs/marketplace/components.json`: `memory-corpus` lists 179 files (173 kept
+`docs/memory/` files plus the 6 paraphrases in `docs/marketplace/shipped-corpus/`); 23 new exact exclusions (16 A–C,
+6 raw D, `MEMORY.md`). `shipping-sets.json` re-derived by `mkt_stage.py --declare` (recall memory-corpus 196 -> 179).
+`check-shipping-sets.py --closure` gains `decision5`/`decision5_gaps`, which parse decision 5 with
+`build-shipped-corpus.py`'s own `groups`/`_canon_sha` (loaded, not copied). A gap is a file named for an A–C file, or
+one whose canonical bytes equal an A–D source, in plugin and reusable-workflow packages; an unreadable table is
+CANNOT RUN. Round-1 fold: `--closure` also runs `build-shipped-corpus.py --check` over the corpus files each package
+ships (copied flat), so an unparaphrased D quote is a gap; a nonzero rc, a traceback or unreadable output is CANNOT
+RUN, as is a builder missing `groups`/`_canon_sha`. Self-test 140 -> 160 (149 before the fold), 14 mutations
+(195 -> 209), all red on their named case in a full clone. Edge pin
+361 -> 362 (`check-shipping-sets.py` -> `build-shipped-corpus.py`).
+Round-2 fold (review r2 X4, X5): the quote check reads EVERY file every package ships, whatever its path (the
+corpus-directory filter is gone; a declared file the repository lacks is skipped, its absence being the other
+clauses' gap), and a builder run that exits 0 is read through its exact clean-run output, taken from
+`build-shipped-corpus.py`'s `check()`: empty stderr, any number of `<source>: <n> quotes` lines, the (after PR #620) CommonMark-rendering
+`checked <n> output files ...` line with the number of files copied, then exactly its PASS line. Anything else is
+CANNOT RUN. X4's measurement found one real unparaphrased owner quote shipping in comprehensibility (a code
+comment); paraphrased. The real tree is `0 gaps`. Self-test 160 -> 170, mutations 209 -> 215 (7 new, 1 retired with
+the filter), the 7 new and the 13 earlier decision-5 ones red on their named case in a full clone. Edge pin unmoved.
+Priced 13.0 -> 17.0 s.

@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 119 cases
+    python3 scripts/check-review-decision.py --self-test  # 130 cases
 
 WHY THIS EXISTS
 ---------------
@@ -456,17 +456,45 @@ def decide(rounds: list[dict], scope: str, tree_reviewed: bool) -> tuple[str, st
 FINDING_RE = re.compile(r"\{([^}]*)\}")
 
 
-def parse_header(text: str) -> dict:
-    """The ```yaml block after a round document's title.
-
-    ⛔ RAISES on a missing or malformed header. It must never return an empty round:
-    an empty round reads as "no findings", which reads as convergence — a silent pass
-    over a document nobody could read. "Cannot run" is a failure, never a pass.
-    """
+def header_body(text: str) -> str:
+    """The body of the ```yaml block after a round document's title. RAISES when there is none."""
     m = re.search(r"```yaml\n(.*?)```", text, re.S)
     if not m:
         raise ValueError("no ```yaml header block")
-    body = m.group(1)
+    return m.group(1)
+
+
+def parse_round(text: str) -> dict:
+    """`{"round", "findings"}` read from a round document's header, UNVALIDATED — THE ONE YAML READER.
+
+    ⟳ 2026-11-21, backlog #680 (2): split out of `parse_header` so `check-merge-ready.py` can read a
+    round's findings WITHOUT this script's field validation. That gate asks only whether the last two
+    rounds thrashed, and validation refused 92 of 181 subjects (`disposition: narrowed`, `severity:
+    Major`, no `findings:` key) — PR #600's own `hse-slice-d` among them. Both callers share THIS parse;
+    a second YAML reader is the shape this repository has measured drifting most.
+
+    RAISES on no block, no `round:` line, or findings items that did not all parse (parity: a lost
+    item is a lost finding, which would read as "no thrashing"). A header with no `findings:` key
+    parses to NO findings here, with `findings_key` False; `parse_header` refuses it, and so does
+    `check-merge-ready` (PR #600's r4 had no key and recorded its fix-induced MAJOR only in prose).
+    `findings_inline` is the text after the FIRST `findings:` key on its own line, stripped (None with
+    no key). ⚠ Items are read only under a BARE `findings:` line, so an inline value — `[a, b]`,
+    `[{...}]`, even a trailing `# comment` — parses to NO findings; this layer reports the text and
+    does not judge it (r1 X1/C1, #680 (2)). `check-merge-ready` reads any value but `[]` as unreadable.
+    ⟳ r2 X1 (Codex): `findings_keys` counts EVERY `findings:` key — only the first is read, so a second
+    one's items are silently unread — and `findings_dup_fields` names each field set twice in one item
+    (`_scalarise` keeps the LAST value, so `fix_induced: true, fix_induced: false` reads as false). Both
+    reported, not judged; `check-merge-ready` reads a count other than 1, or any duplicate, as unreadable.
+    ⟳ r3 C1/C2/C3 (Claude): the key is now found by its NORMALISED name (`KEY0`, `_norm_key`): `findings :`,
+    `"findings":` and `'findings':` count in `findings_keys` and the first one's value is `findings_inline`.
+    Under it, to the next COLUMN-0 key, `findings_rest` counts the non-blank, non-comment lines and
+    `findings_dashes` those that begin `- ` at ANY indentation (an unindented sequence is valid YAML; the
+    item readers stop at the first unindented line and miss it). `findings_fields` names every field
+    spelling the parsed items carry, raw. All reported, never judged; `parse_header` strips them all, so
+    its output is unchanged, and the ITEM readers are untouched — `check-merge-ready` makes clean a
+    POSITIVE form from these fields instead of inferring it from zero parsed items.
+    """
+    body = header_body(text)
     rm = re.search(r"^round:\s*(\d+)\s*$", body, re.M)
     if not rm:
         raise ValueError("header has no `round:` line")
@@ -474,8 +502,9 @@ def parse_header(text: str) -> dict:
     # `halves.claude: "GAP: ... {disabled}"` count as a finding — a false CANNOT RUN from
     # ordinary human gap prose. Braces outside `findings:` are prose.
     _span = _findings_span(body)
-    findings = [_scalarise(fm.group(1).split(",")) for fm in FINDING_RE.finditer(_span)]
-    findings += _block_findings(body)
+    _flow = [fm.group(1).split(",") for fm in FINDING_RE.finditer(_span)]
+    _items = _flow + _block_items(body)
+    findings = [_scalarise(p) for p in _flow] + _block_findings(body)
 
     # ⛔ PARITY, NOT BEST EFFORT. r1 Blocking (Codex): the parser read only `{...}` flow
     # mappings, so an ordinary block-style item parsed to ZERO findings — and an empty
@@ -486,6 +515,56 @@ def parse_header(text: str) -> dict:
     # whole body refused a legitimate header whose `halves.claude` was a block scalar
     # containing a bullet — a false CANNOT RUN, and a guard that refuses valid input is a
     # guard that gets switched off.
+    declared = len(re.findall(r"^\s*-\s", _findings_span(body), re.M))
+    if declared != len(findings):
+        raise ValueError(f"header declares {declared} finding item(s) but "
+                         f"{len(findings)} parsed — refusing to guess")
+    names = [[p.split(":", 1)[0].strip() for p in item if ":" in p] for item in _items]
+    # ⟳ r3 C1/C2 (#680 (2)): the key is found by its NORMALISED name — `findings :`, `"findings":` and
+    # `'findings':` are the same YAML key — and the span under it runs to the next COLUMN-0 KEY, not to the
+    # first unindented line (an unindented `- ` sequence is valid YAML and belongs to the key above it).
+    lines = body.split("\n")
+    keys = [(i, m) for i, m in enumerate(map(KEY0.match, lines)) if m]
+    fk = [(i, m) for i, m in keys if _norm_key(m["k"]) == "findings"]
+    under = []
+    if fk:
+        i0 = fk[0][0]
+        under = lines[i0 + 1:next((i for i, _m in keys if i > i0), len(lines))]
+    under = [l for l in under if l.strip() and not l.lstrip().startswith("#")]
+    return {"round": int(rm.group(1)), "findings": findings, "findings_key": bool(fk),
+            "findings_inline": fk[0][1]["v"].strip() if fk else None,
+            "findings_keys": len(fk),
+            "findings_rest": len(under),
+            "findings_dashes": sum(1 for l in under if re.match(r"^[ \t]*-(?:[ \t]|$)", l)),
+            "findings_fields": sorted({k for ks in names for k in ks}),
+            "findings_dup_fields": sorted({k for ks in names for k in ks if ks.count(k) > 1})}
+
+
+# A COLUMN-0 mapping key in a round header: quoted, or bare and not a comment, a sequence dash or a flow
+# bracket. `v` is the text after the colon (#680 (2) r3).
+KEY0 = re.compile(r"""^(?P<k>"[^"\n]*"|'[^'\n]*'|[^\s#\-\[\]{}'"][^:\n]*?)[ \t]*:(?P<v>(?:[ \t].*)?)$""")
+
+
+def _norm_key(k: str) -> str:
+    """A key with its quotes and surrounding whitespace removed — how YAML names it (#680 (2) r3 C2)."""
+    return k.strip().strip("\"'").strip()
+
+
+def parse_header(text: str) -> dict:
+    """The ```yaml block after a round document's title: `parse_round`, then VALIDATED.
+
+    ⛔ RAISES on a missing or malformed header. It must never return an empty round:
+    an empty round reads as "no findings", which reads as convergence — a silent pass
+    over a document nobody could read. "Cannot run" is a failure, never a pass.
+    """
+    head = parse_round(text)
+    del head["findings_key"]                        # this layer answers it below, by refusing
+    del head["findings_inline"]                     # check-merge-ready's question, not this layer's
+    del head["findings_keys"]                       # ...as are these two (#680 (2) r2 X1): stripped, so
+    del head["findings_dup_fields"]                 # this layer's output is unchanged
+    for k in ("findings_rest", "findings_dashes", "findings_fields"):   # ...and r3's three (#680 (2) r3)
+        del head[k]
+    body = header_body(text)
     # ⛔ r3 Blocking (Codex): `_findings_span` returns "" when the key is ABSENT, so
     # declared == 0 == len(findings) and nothing validated — a header with no `findings:`
     # key at all passed as a CLEAN ROUND. r1's B1 for the third time, through a third
@@ -493,13 +572,8 @@ def parse_header(text: str) -> dict:
     if not re.search(r"^findings:", body, re.M):
         raise ValueError("header has no `findings:` key — an absent list is not an "
                          "empty round; write `findings:` explicitly to claim zero")
-    declared = len(re.findall(r"^\s*-\s", _findings_span(body), re.M))
-    if declared != len(findings):
-        raise ValueError(f"header declares {declared} finding item(s) but "
-                         f"{len(findings)} parsed — refusing to guess")
-    for f in findings:
+    for f in head["findings"]:
         _validate(f)
-    head = {"round": int(rm.group(1)), "findings": findings}
     for key, allowed in ROUND_REQUIRED.items():
         mm = re.search(rf"^{key}:\s*(\S+)\s*$", body, re.M)
         if not mm:
@@ -589,12 +663,18 @@ def _block_findings(body: str) -> list[dict]:
           - id: H1
             severity: High
     """
+    return [f for f in map(_scalarise, _block_items(body)) if f]
+
+
+def _block_items(body: str) -> list[list[str]]:
+    """`_block_findings`' items as their raw `k: v` lines, before `_scalarise` keeps each field's LAST
+    value — so `parse_round` can see a field set twice (#680 (2) r2 X1)."""
     lines = body.split("\n")
     try:
         start = next(i for i, l in enumerate(lines) if re.match(r"^findings:\s*$", l))
     except StopIteration:
         return []
-    out: list[dict] = []
+    out: list[list[str]] = []
     cur: list[str] = []
     for line in lines[start + 1:]:
         if not line.strip():
@@ -604,7 +684,7 @@ def _block_findings(body: str) -> list[dict]:
         m = re.match(r"^\s*-\s*(.*)$", line)
         if m:
             if cur:
-                out.append(_scalarise(cur))
+                out.append(cur)
             cur = [m.group(1)] if m.group(1).strip() else []
             if cur and cur[0].startswith("{"):        # a flow mapping; already handled
                 cur = []
@@ -612,8 +692,8 @@ def _block_findings(body: str) -> list[dict]:
         elif cur is not None and ":" in line:
             cur.append(line.strip())
     if cur:
-        out.append(_scalarise(cur))
-    return [f for f in out if f]
+        out.append(cur)
+    return out
 
 
 def rounds_for(subject: str) -> list[dict]:
@@ -1193,6 +1273,48 @@ def _self_test_body() -> int:
              "    - connector disabled\nfindings:\n  - {id: L1, severity: Low,"
              " aim: instrument, fix_induced: false, component: c, disposition: filed}\n```"
          )["findings"]), 1)
+
+    # ── backlog #680 (2), r2 X1 (Codex): a SECOND `findings:` key, or a field named twice in one item, was
+    # silently dropped — only the first key is read, and an item keeps its LAST value. `parse_round` reports
+    # both, unjudged; check-merge-ready refuses them. `parse_header` strips both, so its output is unchanged.
+    _dup = ("```yaml\nround: 4\nfixes_nontrivial: false\nfindings:\nfindings:\n  - {id: X, severity: Low, aim:"
+            " instrument, fix_induced: true, component: c, disposition: fixed}\n```")
+    case("#680 r2 X1: parse_round COUNTS every `findings:` key — a second one is reported, never dropped",
+         _try(lambda: parse_round(_dup)["findings_keys"]), 2)
+    case("#680 r2 X1: ...and one key counts one",
+         _try(lambda: parse_round(_dup.replace("findings:\nfindings:", "findings:"))["findings_keys"]), 1)
+    _df = ("```yaml\nround: 4\nfixes_nontrivial: false\nfindings:\n  - {id: X, severity: Low, aim: instrument,"
+           " fix_induced: true, component: c, fix_induced: false, disposition: fixed}\n  - id: Y\n"
+           "    component: d\n    component: e\n    severity: Low\n```")
+    case("#680 r2 X1: parse_round names a field set twice in one item, flow and block alike",
+         _try(lambda: parse_round(_df)["findings_dup_fields"]), ["component", "fix_induced"])
+    case("#680 r2 X1: ...and parse_header's output carries neither new field",
+         _try(lambda: sorted(parse_header(_dup.replace("findings:\nfindings:", "findings:")))),
+         ["findings", "fixes_nontrivial", "round"])
+
+    # ── backlog #680 (2), r3 C1/C2/C3: the SHAPE under the findings key, so check-merge-ready can require a
+    # POSITIVE clean form instead of inferring "clean" from zero parsed items. Reported, never judged here.
+    _hd = "```yaml\nround: 4\nfixes_nontrivial: false\n"
+    _fi = "{id: X, severity: Low, aim: instrument, fix_induced: true, component: c, disposition: fixed}"
+    case("#680 r3 C2: parse_round counts a key that NORMALISES to `findings` — spaced, double- and single-quoted",
+         _try(lambda: parse_round(_hd + f"findings: []\nfindings :\n  - {_fi}\n\"findings\":\n'findings': []\n```")
+              ["findings_keys"]), 4)
+    case("#680 r3 C2: ...and the inline value is read after the ONE key, whatever its spelling",
+         _try(lambda: parse_round(_hd + "\"findings\" : []  # none\n```")["findings_inline"]), "[]  # none")
+    _sh = lambda b: _try(lambda: (lambda r: (r["findings_rest"], r["findings_dashes"], len(r["findings"])))(
+        parse_round(_hd + b + "verdict: x\n```")))
+    case("#680 r3 C1: an UNINDENTED `- ` item under a bare key is counted as a dash line, though not parsed",
+         _sh(f"findings:\n- {_fi}\n"), (1, 1, 0))
+    case("#680 r3 C1: `findings: []` with an indented item under it reports the line under it",
+         _sh(f"findings: []\n  - {_fi}\n"), (1, 1, 0))
+    case("#680 r3 C1: ...and `findings: []` then blank and comment lines reports nothing under it",
+         _sh("findings: []\n\n# nothing\n  # still nothing\n"), (0, 0, 0))
+    case("#680 r3 C1: an indented block item: two lines under the key, one dash, one parsed item",
+         _sh("findings:\n  - id: X\n    fix_induced: true\n"), (2, 1, 1))
+    case("#680 r3 C3: parse_round names every field spelling the items carry, raw",
+         _try(lambda: parse_round(_hd + "findings:\n  - {id: X, \"fix_induced\": true, fix-induced: x}\n"
+                                  "  - {<<: *b}\n```")["findings_fields"]),
+         ['"fix_induced"', "<<", "fix-induced", "id"])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

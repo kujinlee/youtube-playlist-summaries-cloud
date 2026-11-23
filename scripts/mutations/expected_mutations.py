@@ -1116,7 +1116,11 @@ EXPECTED_MUTATIONS = {
     # literals and the suite stayed 111/111 while the reader was told the opposite.
     # ⟳ 2026-10-24, backlog #318: 28 -> 30 — `refuted` is in the vocabulary AND answers a finding;
     #   two #329 anchors re-pointed onto the new `ANSWERED` constant, nothing retired.
-    "scripts/check-review-decision.py": 30,
+    # ⟳ 2026-11-21, backlog #680 (2) r2 X1: 30 -> 32 — `parse_round` COUNTS every `findings:` key (1) and
+    #   NAMES a field set twice in one finding (1); nothing retired, nothing re-pointed.
+    # ⟳ 2026-11-21, backlog #680 (2) r3 C2: 32 -> 33 — `parse_round` finds the findings key by its NORMALISED
+    #   name (1); nothing retired; ONE RE-BOUND — r2 X1's key-count anchor, onto `len(fk)`.
+    "scripts/check-review-decision.py": 33,
     # ⟳ 2026-10-23: check-decision-scheme 86 -> 106. Trigger 3 changed its question (route
     # collapse -> a lost bet whose next route was never logged) and the `missed-escalation`
     # acknowledgment row joined. TWO entries RETIRED WITH THEIR SUBJECT — the collapse floor and
@@ -2091,7 +2095,25 @@ EXPECTED_MUTATIONS = {
     # = 181 + 6, none retired, none re-bound. A stdlib-named HEAD `scripts/` name is refused (module, package, not
     # over-broad) (3), the group kill (1), the bounded post-kill wait (1), and the duplicate-key refusal (1). The NaN
     # refusal is deleted: the schema check already refuses every non-int, so its only observable was a message.
-    "scripts/check-merge-ready.py": 188,
+    # ⟳ 2026-11-21, backlog #680 part (2): 188 -> 197 = 188 + 9, none retired. The thrashing HOLD: dropped from
+    # hold_reasons (1), not passed by main (1), an armed component unreported (1), an architecture review in range
+    # ignored (1), an unimportable rule swallowed in thrash_gate (1) and in main (1), an unparseable round skipped (1),
+    # an absent `findings:` key read as clean (1), and the first two rounds judged instead of the last two (1).
+    # ⟳ r1 fold: 197 -> 203 = 197 + 6, none retired, none re-bound. An inline `findings:` value read as clean (1)
+    # and `[] # comment` refused (1) (X1/C1); a coordinator-dir architecture review ignored (1) (C2); a lone
+    # unreadable round HOLDing (1) and a readable round with no fix-induced finding not ruling thrashing out (1)
+    # (C3); any parse_round exception read as an unreadable doc (1) (C4).
+    # ⟳ r2 fold: 203 -> 207 = 203 + 4, none retired; one RE-BOUND (#680 (b)'s anchor, onto the new HEAD clause). A second `findings:` key read as readable (1)
+    # and a field set twice in one finding read as readable (1) (X1); an architecture review not required to
+    # exist at HEAD (1), and thrash_gate passing the range instead of the HEAD tree as what exists there (1) (X2).
+    # ⟳ r3 fold: 207 -> 214 = 207 + 8 - 1. Clean is the POSITIVE form `[]` with nothing under it (1); every `- `
+    # line under a bare key must be a parsed item (1), and a bare key with none is unreadable (1) (C1); a near-miss
+    # field name (1) and a `<<` merge key (1) are unreadable (C3); a ` #` comment in component/fix_induced (1) (C4);
+    # an R/C entry (1) and an empty blob (1) clear nothing (C5). ONE RETIRED WITH ITS SUBJECT: r2 X2's
+    # `frozenset(tree)` argument is gone — `counted` replaced it, and a deletion is excluded structurally (no
+    # `new` path). THREE RE-BOUND: #680 (b) and r2 X2's first onto `f in counted`, r1 X1's onto `if not clean and
+    # inline != ""`.
+    "scripts/check-merge-ready.py": 214,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -2492,6 +2514,41 @@ EXPECTED_MUTATIONS = {
     # creates it (5): fixed dates, the correctly-empty flag, the non-empty-out refusal, known-facts beside the
     # repository, the full git log. +2 at the r1 fold (Claude CM3): two typed facts drifting from their committed file.
     "scripts/mkt_seed_repo.py": 11,
+    # 2026-11-22, marketplace-inventory plan Task 18: the shipped-corpus build, pinned in the commit that creates it.
+    # One entry per group-table rule (first row, sizes), per build rule (exclusion, paraphrase, index filter, stale
+    # source, missing paraphrase, non-empty out), per quote rule (per paragraph, blockquote, ellipsis, six-word runs,
+    # emphasis), and per check rule (no quotes, empty output, excluded name, nested output, a hit fails).
+    # ⟳ round-1 fold: 20 — punctuation normalised as words (r1 X1/C1) and an excluded file's content under another
+    # name (r1 C5); the no-quotes entry now mutates the per-file CANNOT RUN (r1 C2).
+    # ⟳ round-2 fold: 25 — a Markdown link reduced to its text and a bare URL dropped (r2 X1), and the canonical
+    # excluded-content hash: per-line trailing whitespace, trailing blank lines, the excluded side canonical (r2 X2).
+    # ⟳ round-3 fold: 27 — the plain view dropped from the output side, and from the quote side (r3 C1).
+    # ⟳ 2026-11-23 backlog #698: 34 — the regex link model's 4 entries removed with it (link reduction, bare URL, the
+    # two plain-view ones); 11 added for the CommonMark renderer: each of the three views, block vs inline tags (both
+    # directions), image alt, the quote's file env, the quote fragmented as rendered, the output offset in the render
+    # batch, and the renderer's two CANNOT RUNs (could not run, no HTML per input).
+    # ⟳ PR #620 round-1 fold: 51 — a boundary read both ways (r1 X1/C1/C2: the tight reading's alt join and Cf
+    # deletion, the raw Cf view, the loose reading's every-tag break, each reading searched, a source quote in every
+    # reading), unshown text dropped (r1 C3: four clauses), the quote's plain view back (r1 X4), the known probe and
+    # stderr (r1 X2), and output that is not UTF-8 (r1 X3/C4).
+    # ⟳ PR #620 round-2 fold: 61 — the letters-only view (r2 X1: searched, whitespace deleted), master's link-reduced
+    # reading (r2 X2: the output's, the regex's reduction, the source quote's), anything on stderr (r2 X3), and a
+    # closed <details> (r2 X4: read as closed, its summary shown, an image's alt in it hidden, its close ends it).
+    "scripts/build-shipped-corpus.py": 74,
+    # 2026-11-22, marketplace-inventory plan Task 19: the inventory guard, pinned in the commit that creates it. One
+    # entry per load-bearing clause: the checkpoint (population, ratio, majority, the two CANNOT RUNs), every
+    # row_errors rule (backlog #696 a, c and f among them), every inventory-level rule, the exit-code ranking,
+    # the input loader and render's one verdict-and-grade cell. Each verified red by hand in a full clone.
+    # ⟳ r1 fold: 98 — the row shape pass, field by field. ⟳ r2 fold: 124 — the integer past the float range
+    # (CODEX X1), every input field a rule reads (CODEX X2's class check), JSON nested too deep, non-UTF-8 text.
+    # ⟳ Phase 6 fold (2026-11-22): 136 — the 25 `_check_inputs`/reader entries re-anchored on FILE_SHAPES leaves,
+    # plus one per new rule: depth, repeated key, `_one_of` by type, the three vocabularies, two reference rules,
+    # the net's rc, backslashreplace, and both readers' UTF-8 decode.
+    # ⟳ r4 fold (2026-11-22): 144 — the FILE_SHAPES leaves r4 CODEX found missing: pass_conditions EXACTLY "1".."5"
+    # (any keys, the closed check), recall.a and recall.b (each undeclared, each of any type), and scan (undeclared,
+    # of any type). Three entries re-anchored on the new declarations. A mutation of the key list itself is NOT
+    # attributable: every clean fixture case goes red with it, so it was measured caught and left out.
+    "scripts/check-inventory.py": 144,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out
@@ -2526,7 +2583,16 @@ EXPECTED_MUTATIONS = {
     # ⟳ hse slice C redesign r1 fold: 186 + 9 = 195 — `-c` listed and `-m` read as a module load (XM1), `_unread`
     # listing its line, the call-form module outcome check (record, directory, no file: XM2), the outcome invariant,
     # and a default read in its def's own scope, a class body included (Cm1). 2 anchors re-bound; none retired.
-    "scripts/check-shipping-sets.py": 195,
+    # ⟳ 2026-11-23 backlog #697 r1 fold: 201 + 8 = 209 — decision 5's CONTENT clause (the builder's own `--check`
+    # run over the corpus files a package ships: skipped, every file checked not only the corpus directories', an
+    # unreadable run, a traceback, unread hit lines: X2), a builder that cannot be loaded (a missing name, no file:
+    # M2), and the canonical hash at the call site (M3).
+    # 3 anchors re-bound (the plugin and reusable-workflow skips, the unreadable-table return); none retired.
+    # ⟳ 2026-11-23 backlog #697 r2 fold: 209 - 1 + 7 = 215 — every shipped file is quote-checked (the filter coming
+    # back; a declared file the repository lacks: X4) and the builder's exact success contract (stderr, the exact PASS
+    # line, the count line, its file count, every other line: X5). Retired 1: r1's "not only the corpus directories"
+    # mutation, whose anchor (the filter) is gone.
+    "scripts/check-shipping-sets.py": 215,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.

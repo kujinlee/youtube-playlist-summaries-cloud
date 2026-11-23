@@ -117,12 +117,12 @@
     ]
   },
   {
-    "name": "one prefix leaves STAGEABLE_PREFIXES, which the IDENTITY case catches — the duplicate of HARNESS_TREE is a ratchet only while something fails when the two drift (r6 CLAUDE M3) ⟳ RE-BOUND backlog #658: the tuple now closes after `.githooks/`, the file entry having moved to STAGEABLE_FILES",
+    "name": "one prefix leaves STAGEABLE_PREFIXES, which the IDENTITY case catches — the duplicate of HARNESS_TREE is a ratchet only while something fails when the two drift (r6 CLAUDE M3) ⟳ RE-BOUND backlog #658: the tuple now closes after `.githooks/`, the file entry having moved to STAGEABLE_FILES ⟳ RE-BOUND PR #620 round 2: the line now opens with `node_modules/markdown-it/`",
     "file": "scripts/check-canonical-source.py",
     "edits": [
       [
-        "                      \".claude/hooks/\", \".github/workflows/\", \".agents/skills/\",\n                      \".githooks/\")\n",
-        "                      \".claude/hooks/\", \".github/workflows/\",\n                      \".githooks/\")\n"
+        "                      \"node_modules/markdown-it/\", \".claude/hooks/\", \".github/workflows/\", \".agents/skills/\",\n                      \".githooks/\")\n",
+        "                      \"node_modules/markdown-it/\", \".claude/hooks/\", \".github/workflows/\",\n                      \".githooks/\")\n"
       ]
     ],
     "expect": [

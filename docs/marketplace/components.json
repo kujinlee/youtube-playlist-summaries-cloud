@@ -498,8 +498,187 @@
       "phase": "1-if-feasible",
       "package": "recall",
       "files": [
-        "docs/memory/"
-      ]
+        "docs/memory/a-blocking-question-while-afk-costs-the-whole-night.md",
+        "docs/memory/a-bound-enumerates-what-is-witnessed.md",
+        "docs/memory/a-case-can-pass-for-an-ambient-reason.md",
+        "docs/memory/a-check-result-is-not-the-claim.md",
+        "docs/memory/a-class-fix-needs-an-independent-copy-and-an-identity-case.md",
+        "docs/memory/a-convention-catches-what-you-read.md",
+        "docs/memory/a-costbenefit-finding-expires-when-the-denominator-moves.md",
+        "docs/memory/a-declaration-is-not-the-act.md",
+        "docs/memory/a-document-inside-the-corpus-it-measures.md",
+        "docs/memory/a-fence-wrong-both-ways-asks-the-wrong-credential.md",
+        "docs/memory/a-filed-finding-s-proposed-fix-is-a-hypothesis.md",
+        "docs/memory/a-forced-choice-test-cannot-fail.md",
+        "docs/memory/a-framing-widened-to-fit-is-no-longer-a-claim.md",
+        "docs/memory/a-gate-can-be-blocked-on-a-decision-not-work.md",
+        "docs/memory/a-gates-channel-can-be-weaker-than-the-gate.md",
+        "docs/memory/a-guard-can-mandate-the-duplication-it-audits.md",
+        "docs/memory/a-guards-evidence-path-is-a-namespace-with-no-allocator.md",
+        "docs/memory/a-hang-is-not-a-diagnosis.md",
+        "docs/memory/a-harness-cannot-read-a-cause-from-a-childs-text.md",
+        "docs/memory/a-measurement-is-only-as-good-as-its-corpus.md",
+        "docs/memory/a-mechanical-edit-damages-what-it-preserves.md",
+        "docs/memory/a-mechanism-can-be-silently-overridden.md",
+        "docs/memory/a-mocked-boundary-tests-the-contract-you-imagined.md",
+        "docs/memory/a-mutation-anchor-is-unbound-by-any-edit-nearby.md",
+        "docs/memory/a-mutation-loses-its-binding.md",
+        "docs/memory/a-positional-read-needs-a-verified-shape.md",
+        "docs/memory/a-privilege-is-not-a-capability.md",
+        "docs/memory/a-rebase-is-one-command-that-completes-or-aborts.md",
+        "docs/memory/a-report-format-is-a-contract.md",
+        "docs/memory/a-retreat-you-author-for-yourself-is-not-a-gate.md",
+        "docs/memory/a-retrospective-number-needs-provenance.md",
+        "docs/memory/a-reviewer-told-findings-are-filed-files-them.md",
+        "docs/memory/a-second-implementation-of-one-rule-drifts.md",
+        "docs/memory/a-sever-substitutes-todays-value.md",
+        "docs/memory/a-shim-can-fail-in-both-directions.md",
+        "docs/memory/a-side-job-gets-a-name-first.md",
+        "docs/memory/a-signal-needs-its-base-rate.md",
+        "docs/memory/a-stacked-pr-dies-with-its-base-branch.md",
+        "docs/memory/a-stated-bound-outlives-its-hole.md",
+        "docs/memory/a-sweeping-conclusion-that-ends-the-work-early.md",
+        "docs/memory/a-test-that-cannot-fail.md",
+        "docs/memory/a-title-is-scanned-not-read.md",
+        "docs/memory/a-tool-whose-mode-replays-must-be-called-with-the-mode-that-reads.md",
+        "docs/memory/a-usage-limit-stop-needs-a-wake-at-reset.md",
+        "docs/memory/a-vendored-line-number-has-no-owner.md",
+        "docs/memory/a-waiting-line-must-measure-age.md",
+        "docs/memory/a-waiver-hold-is-paid-for-with-a-review.md",
+        "docs/memory/after-fixing-search-for-the-class.md",
+        "docs/memory/agent-blocking-call-over-5-min-rewrites-its-cache.md",
+        "docs/memory/agent-tool-restriction-has-no-owner.md",
+        "docs/memory/always-choose-subagent-driven-execution.md",
+        "docs/memory/an-escalation-has-no-closer.md",
+        "docs/memory/an-inference-stated-as-measured.md",
+        "docs/memory/an-instrument-that-edits-the-repo-corrupts-its-peers.md",
+        "docs/memory/arch-review-153-workflow-readers.md",
+        "docs/memory/ask-an-agent-to-refute-not-confirm.md",
+        "docs/memory/assert-the-emitted-artifact-parses.md",
+        "docs/memory/assert-the-property-not-the-mechanism.md",
+        "docs/memory/backlog-110-parser-completeness-merged.md",
+        "docs/memory/backlog-154-dash-scalar-ready-331.md",
+        "docs/memory/backlog-191-semantic-recall-replicated.md",
+        "docs/memory/backlog-edit-needs-gen-backlog-page-selftest.md",
+        "docs/memory/backlog-md-stays-markdown.md",
+        "docs/memory/behavior-follows-the-budget-situation.md",
+        "docs/memory/blob-addressing-spec-state.md",
+        "docs/memory/cannot-die-may-mean-a-second-clause.md",
+        "docs/memory/check-the-assumption-not-just-the-code.md",
+        "docs/memory/chrome-bar-reachable-378-merged.md",
+        "docs/memory/closing-table-r7-r8-merged-327.md",
+        "docs/memory/cloud-dig-deeper-frontend-state.md",
+        "docs/memory/cloud-dig-serving-branch-state.md",
+        "docs/memory/cloud-summary-pdf-slice-state.md",
+        "docs/memory/concurrent-agents-go-wrong.md",
+        "docs/memory/cost-is-not-the-objective-improvement-is.md",
+        "docs/memory/coverage-verdict-union-91-merged.md",
+        "docs/memory/dashboard-ask-choices-merged.md",
+        "docs/memory/defaults-i-decide-myself.md",
+        "docs/memory/defined-not-derived-constants.md",
+        "docs/memory/detached-dig-retention-decision.md",
+        "docs/memory/discover-the-target-and-read-it-back-uncached.md",
+        "docs/memory/document-approval-is-interactive.md",
+        "docs/memory/dual-review-is-the-process-not-a-request.md",
+        "docs/memory/dual-review-what-it-catches.md",
+        "docs/memory/exercise-the-producer-at-two-distinct-inputs.md",
+        "docs/memory/explainer-pages-lead-with-diagrams.md",
+        "docs/memory/extract-and-run-a-plans-code.md",
+        "docs/memory/fable-limit-resets-are-manual.md",
+        "docs/memory/feedback-agree-before-filing.md",
+        "docs/memory/feedback-flag-transitional-choices.md",
+        "docs/memory/first-can-mean-first-before-shipping.md",
+        "docs/memory/fixing-a-premise-is-not-covering-the-branch.md",
+        "docs/memory/frontend-subproject-design-state.md",
+        "docs/memory/gates-detect-defects-not-design.md",
+        "docs/memory/gh-two-remotes-footgun.md",
+        "docs/memory/guard-classification-shape-vs-sequence.md",
+        "docs/memory/guard-coverage-scope-merged.md",
+        "docs/memory/guard-operands-from-one-closure.md",
+        "docs/memory/hardcode-only-what-fails-loudly.md",
+        "docs/memory/i-propose-goal-names-the-owner-picks.md",
+        "docs/memory/inline-renderer-seam-merged.md",
+        "docs/memory/instruction-is-not-isolation.md",
+        "docs/memory/integration-suite-does-not-apply-migrations.md",
+        "docs/memory/it-already-exists-under-a-name-i-didnt-search.md",
+        "docs/memory/lease-sweep-merged-318.md",
+        "docs/memory/link-contrast-slice-merged.md",
+        "docs/memory/m4-superseded-trail.md",
+        "docs/memory/main-drivable-cost-is-per-call-site.md",
+        "docs/memory/may-free-port-7391.md",
+        "docs/memory/measure-the-population-the-code-actually-sees.md",
+        "docs/memory/memory-files-are-audited-weekly.md",
+        "docs/memory/merge-ready-slice-merged-324.md",
+        "docs/memory/mutation-manifest-retarget-merged.md",
+        "docs/memory/name-and-define-every-reference.md",
+        "docs/memory/never-close-with-a-promise.md",
+        "docs/memory/no-command-approval-ceremony.md",
+        "docs/memory/no-question-watch-while-owner-afk.md",
+        "docs/memory/nothing-needs-you-must-read-the-dashboard.md",
+        "docs/memory/one-rule-one-place.md",
+        "docs/memory/page-chrome-seam-merged.md",
+        "docs/memory/parallel-branches-append-to-one-log.md",
+        "docs/memory/parallel-threads-need-a-thread-map.md",
+        "docs/memory/peer-sites-merged-pr-313.md",
+        "docs/memory/pin-python-317-merged.md",
+        "docs/memory/position-column-is-not-vestigial.md",
+        "docs/memory/postgrest-abort-returns-not-throws.md",
+        "docs/memory/print-selection-cards-in-chat.md",
+        "docs/memory/project-has-two-deliverables.md",
+        "docs/memory/proving-a-negative-by-interception-cannot-terminate.md",
+        "docs/memory/push-from-a-worktree-needs-an-explicit-refspec.md",
+        "docs/memory/push-is-mine-merging-is-theirs.md",
+        "docs/memory/push-to-ci-as-soon-as-ready.md",
+        "docs/memory/putting-a-choice-to-the-user.md",
+        "docs/memory/quote-the-code-dont-characterise-it.md",
+        "docs/memory/recall-fold-360-merged.md",
+        "docs/memory/reservation-guards-spending-not-recording.md",
+        "docs/memory/restart-docker-dont-record-cannot-run.md",
+        "docs/memory/retire-plan-mode-merged.md",
+        "docs/memory/review-convergence-is-not-the-final-tree-gate.md",
+        "docs/memory/review-rounds-capped-at-r3.md",
+        "docs/memory/run-pr-only-gates-before-push.md",
+        "docs/memory/running-codex.md",
+        "docs/memory/schema-gates-in-ci-merged.md",
+        "docs/memory/schema-gates-required-137-merged.md",
+        "docs/memory/scoped-mutation-run-in-four-seconds.md",
+        "docs/memory/seed-manifest-122-merged.md",
+        "docs/memory/selection-card-guard-built.md",
+        "docs/memory/separate-the-rule-from-the-fetch.md",
+        "docs/memory/serial-coherence-slice-state.md",
+        "docs/memory/serve-path-bounding-merged.md",
+        "docs/memory/show-a-waiting-signal-not-prose.md",
+        "docs/memory/split-295-src-root-merged.md",
+        "docs/memory/stage-1d-merged-followups.md",
+        "docs/memory/stage-1f-a-design-state.md",
+        "docs/memory/stage-1f-b-design-state.md",
+        "docs/memory/stage-1f-c-design-state.md",
+        "docs/memory/stage-1g-design-state.md",
+        "docs/memory/stage-2-batch-autonomy-plan.md",
+        "docs/memory/stage3-cloud-sync-branch-state.md",
+        "docs/memory/stopping-rule-defect-class-shift.md",
+        "docs/memory/summary-section-timestamp-guarantee-state.md",
+        "docs/memory/terminal-selection-dead-under-fullscreen-tui.md",
+        "docs/memory/test-harness-can-launder-failures.md",
+        "docs/memory/the-answer-may-only-exist-in-the-transcript.md",
+        "docs/memory/the-apparatus-outgrew-its-subject.md",
+        "docs/memory/the-control-refuted-the-premise.md",
+        "docs/memory/true-about-the-name-silent-about-the-layer.md",
+        "docs/memory/unit-coverage-does-not-compose.md",
+        "docs/memory/unsatisfiable-ordering-is-the-tell.md",
+        "docs/memory/usage-is-cache-rewrites-of-parked-agents.md",
+        "docs/memory/waiting-lines-carry-a-timestamp.md",
+        "docs/memory/wake-on-visit-merged-322.md",
+        "docs/memory/what-mutation-testing-proves.md",
+        "docs/memory/worker-vs-sync-fencing-gap.md",
+        "docs/marketplace/shipped-corpus/a-budget-stop-is-soft-with-a-reserve.md",
+        "docs/marketplace/shipped-corpus/how-to-shape-a-message-to-me.md",
+        "docs/marketplace/shipped-corpus/owner-decisions-1113-marketplace-ff-392.md",
+        "docs/marketplace/shipped-corpus/owner-priority-order-1102.md",
+        "docs/marketplace/shipped-corpus/route-agents-by-task-model.md",
+        "docs/marketplace/shipped-corpus/the-user-does-not-follow-in-real-time.md"
+      ],
+      "notes": "backlog #697: the SHIPPED corpus of walkthrough decision 5 (docs/marketplace/decision-5-suspect-files.md), listed file by file because a directory entry cannot leave a file out: every tracked docs/memory/ file except the 16 of groups A-C, the 6 of group D and MEMORY.md (each an exclusion below), plus each D file's paraphrase from docs/marketplace/shipped-corpus/. It is build-shipped-corpus.py's output less MEMORY.md: the tracked raw index links the excluded files, and the builder's filtered index (which links none) is not a tracked file, so mkt_stage.py, which stages tracked files at their repository paths, cannot ship it (backlog #707, decided at plan Task 21). The six paraphrases install at docs/marketplace/shipped-corpus/, outside docs/memory/ (backlog #707). check-shipping-sets.py --closure refuses any package that ships a file named for an A-C file or carrying an A-D source's bytes, and runs build-shipped-corpus.py --check over the corpus files a package ships, so no group-D quote ships unparaphrased. A memory file added later is a --map gap until it is listed here or excluded, and the declaration is re-derived (mkt_stage.py --declare)."
     },
     {
       "id": "mutation-sweep-job",
@@ -772,6 +951,98 @@
     {
       "path": "scripts/install-git-hooks.sh",
       "reason": "governance: loaded by path or run from an excluded governance script (review r1 CB1: the reader now counts a sibling loaded by path), never reached from a package entry-point"
+    },
+    {
+      "path": "docs/memory/access-tiers-vision.md",
+      "reason": "walkthrough decision 5, group B: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/anchor-name-and-stable-id-handoff.md",
+      "reason": "walkthrough decision 5, group A: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/anon-execute-is-the-default-not-a-decision.md",
+      "reason": "walkthrough decision 5, group A: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/cost-per-video-analysis.md",
+      "reason": "walkthrough decision 5, group B: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/launch-roadmap-state.md",
+      "reason": "walkthrough decision 5, group A: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/local-cloud-validation-run.md",
+      "reason": "walkthrough decision 5, group C: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/local-manual-test-env.md",
+      "reason": "walkthrough decision 5, group C: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/memwatch-watchdog-fseventsd.md",
+      "reason": "walkthrough decision 5, group C: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/mutation-harness-home-redirect-state.md",
+      "reason": "walkthrough decision 5, group C: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/playlist-sidebar-ux-branch-state.md",
+      "reason": "walkthrough decision 5, group B: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/process-conventions.md",
+      "reason": "walkthrough decision 5, group C: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/reservation-release-slice-state.md",
+      "reason": "walkthrough decision 5, group B: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/rls-denial-is-indistinguishable-from-absence.md",
+      "reason": "walkthrough decision 5, group A: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/slice-history.md",
+      "reason": "walkthrough decision 5, group A: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/staging-supabase-project.md",
+      "reason": "walkthrough decision 5, group A: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/stranger-token-h2-done.md",
+      "reason": "walkthrough decision 5, group C: EXCLUDED from the shipped corpus (docs/marketplace/decision-5-suspect-files.md; backlog #697)"
+    },
+    {
+      "path": "docs/memory/a-budget-stop-is-soft-with-a-reserve.md",
+      "reason": "walkthrough decision 5, group D: the owner's quotes ship only PARAPHRASED, as docs/marketplace/shipped-corpus/a-budget-stop-is-soft-with-a-reserve.md in memory-corpus; the raw source never ships (backlog #697)"
+    },
+    {
+      "path": "docs/memory/how-to-shape-a-message-to-me.md",
+      "reason": "walkthrough decision 5, group D: the owner's quotes ship only PARAPHRASED, as docs/marketplace/shipped-corpus/how-to-shape-a-message-to-me.md in memory-corpus; the raw source never ships (backlog #697)"
+    },
+    {
+      "path": "docs/memory/owner-decisions-1113-marketplace-ff-392.md",
+      "reason": "walkthrough decision 5, group D: the owner's quotes ship only PARAPHRASED, as docs/marketplace/shipped-corpus/owner-decisions-1113-marketplace-ff-392.md in memory-corpus; the raw source never ships (backlog #697)"
+    },
+    {
+      "path": "docs/memory/owner-priority-order-1102.md",
+      "reason": "walkthrough decision 5, group D: the owner's quotes ship only PARAPHRASED, as docs/marketplace/shipped-corpus/owner-priority-order-1102.md in memory-corpus; the raw source never ships (backlog #697)"
+    },
+    {
+      "path": "docs/memory/route-agents-by-task-model.md",
+      "reason": "walkthrough decision 5, group D: the owner's quotes ship only PARAPHRASED, as docs/marketplace/shipped-corpus/route-agents-by-task-model.md in memory-corpus; the raw source never ships (backlog #697)"
+    },
+    {
+      "path": "docs/memory/the-user-does-not-follow-in-real-time.md",
+      "reason": "walkthrough decision 5, group D: the owner's quotes ship only PARAPHRASED, as docs/marketplace/shipped-corpus/the-user-does-not-follow-in-real-time.md in memory-corpus; the raw source never ships (backlog #697)"
+    },
+    {
+      "path": "docs/memory/MEMORY.md",
+      "reason": "the raw index links the decision-5 excluded files; build-shipped-corpus.py builds a filtered copy that links none, and that copy is not a tracked file, so the stager cannot ship it; recall-llm.memory_files() never reads the index as an entry (backlog #697; whether an index ships is backlog #707)"
     }
   ]
 }

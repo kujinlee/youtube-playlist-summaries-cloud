@@ -838,7 +838,7 @@ cargo-mutants **from each project's own documentation, fetched in this task**; a
 written `unverified`. The mutation engine itself is expected `DON'T-SHIP` with `harvest: practice` candidates.
 Grade: `argued` for all (spec §2b).
 
-- [ ] **Steps:** read scan → fetch the four engines' docs → write rows → `python3 scripts/check-inventory.py`
+- [x] **Steps:** read scan → fetch the four engines' docs → write rows → `python3 scripts/check-inventory.py`
   (after Task 19 exists; until then, validate the rows parse) → commit.
 
 **FAILS IF:** a row's comparison sentence names an engine capability with no fetched source and is not marked
@@ -891,6 +891,10 @@ the BUILT OUTPUT**, not the transform's code: (1) it searches the output tree fo
 DERIVED at check time from the source files, never typed into the check. A check that finds no quotes to look for in the
 SOURCE D files is a failure (CANNOT RUN), not a pass. The corpus row's C5 moves off `unanswered` only when the build and
 both checks pass.
+⟳ 2026-11-23 (backlog #697): the `recall` package INSTALLS this corpus — `components.json`'s `memory-corpus` lists
+the kept `docs/memory/` files and the six paraphrases in `docs/marketplace/shipped-corpus/` one by one (the 16 A–C
+files, the six raw D files and `MEMORY.md` are exclusions), and `check-shipping-sets.py --closure` refuses any package
+that ships a file named for an A–C file or carrying an A–D source's bytes. `MEMORY.md` does not ship.
 
 **FAILS IF:** the probe ran with any path under this repository's `docs/memory/` in its `RunRecord.opened`; or a
 recall row has `phase: "1"` while `recall.a` is not `true` or `recall.b` is not `"pass"`; or any inventory row has
@@ -903,8 +907,10 @@ recall row has `phase: "1"` while `recall.a` is not `true` or `recall.b` is not 
 
 **Interfaces:**
 - Consumes: `inventory.json` rows written by Tasks 17-18 (and 20); `components.json` (Task 5);
-  `shipping-sets.json` (Task 6); the latest `scan-<date>.json` (Task 12); `experiment-tier-a.json` (Task 14).
-- Produces: `checkpoint_fires(rows: list[dict]) -> bool`; `row_errors(row: dict, scan: dict) -> list[str]`;
+  `shipping-sets.json` (Task 6); the latest `scan-<date>.json` (Task 12); `experiment-tier-a.json` (Task 14);
+  the spec file, which owns the `spec` ground kind (§5 rule 1).
+- Produces: `checkpoint_fires(rows: list[dict]) -> bool`;
+  `row_errors(row: dict, scan: dict, spec_text: str, sidecar: dict) -> list[str]`;
   `render(rows) -> str` (Markdown, verdict and grade in ONE table cell); CLI rc 0 clean, 1 row errors,
   2 CANNOT RUN, **3 CHECKPOINT** (the D1 checkpoint fired: stop and go to Human step H4).
 
@@ -913,7 +919,7 @@ Row schema (one per component in `components.json`; a missing component is an er
 ```json
 {"id": "brief", "effort": 3, "roles": ["entry-point"], "phase": "1",
  "verdict": "NEEDS-WORK", "grade": "measured", "scenario": "tier-A scripted: brief-compose page",
- "cites": ["brief:4:1", "brief:2:1"], "harvest": "none", "practice_entry": null,
+ "rests_on": [{"kind": "finding", "ids": ["brief:4:1", "brief:2:1"]}], "harvest": "none", "practice_entry": null,
  "criteria": {"C1": "pass", "C2": "pass", "C3": "fail", "C4": "fail", "C5": "pass"},
  "cost": {"public_bar_hours": 6.0, "next_project_hours": 2.0, "grade": "argued"},
  "route": {"kind": "decouple-config", "cost_hours": 4.0, "grade": "argued"}}
@@ -935,12 +941,20 @@ has no shipping set", per component, not only per package); **a row whose `phase
 row at `"1"` unless the inventory's `recall.a` is `true` and `recall.b` is `"pass"`** (§2c D11's "only if"; Task
 18 resolves the map's `"1-if-feasible"`, ⟳ r2 CLAUDE M3);
 **`next_project_hours` ≤ 0** (the ratio is undefined; ⟳ r1 CLAUDE m2); an `inherited` grade with no
-`scenario` (§4b); a non-ship verdict with no `cites`, or citing an id the scan did not emit (§5 rule 1); a non-ship
+`scenario` (§4b); a non-ship verdict with an empty `rests_on`, or an entry whose `kind` is not one of the four, or
+an entry that does not resolve against the file owning its kind (§5 rule 1, amended 2026-11-22 by the owner,
+option A): a `finding` id absent from the scan's `findings` for **the row's OWN component** (a mention
+candidate's id, or another component's finding, is refused, which is what stops a borrowed cite), a `spec`
+`section`/`heading` or `decision` the spec does not have, an `experiment` scenario that is not this component's
+entry in `experiment-tier-a.json` or has no pass condition `fail`, a `c5` entry on a row whose C5 is not
+`unanswered`; and a row with C2 or C3 `fail` at grade `measured` and no `finding` entry. The self-test carries
+the borrowed-id case and one failing case per kind. The guard checks that a ground RESOLVES, not that it bears; a non-ship
 row with no `route` (§9 D10); a `practice` harvest with no `practice_entry` naming a heading that exists in
 `docs/portable-practices.md` (§4c); a `data` row with a C4 value other than `"struck"` (§4); the memory-corpus row
 with a ship verdict while its `C5` is `unanswered` (§7 item 11); a `measured` grade on an effort (1) or (2) row
 (§2b); a cost with either estimate missing (§2b). And at the inventory level: no phase-1 package named, or a phase-1
 package with no entry in `shipping-sets.json` (§9 D11).
+⟳ r1 fold (CLAUDE C4): a library's `scenario` names its entry-point by the convention `<entry-point id>: <description>` (the component id before the first `:`), and that entry-point must be in the library's own package (§4: C4 is inherited from the entry-point that uses the library); a scenario that names none, or one from another package, is refused.
 
 The checkpoint, exactly as spec §2c states it (embedded because the threshold arithmetic is what the owner decided;
 it is run as written below). ⟳ r1 CODEX 2 / CLAUDE m3: the r0 function counted every `"1-if-feasible"` row, so
@@ -1003,7 +1017,15 @@ assert _raises([_row("1", 0, 0)])
 A `next_project_hours` of 0 is a row error (the ratio is undefined), never an automatic fire; the function also
 refuses it, so the order of the two checks cannot turn it into a fire.
 
-**Exit codes rank, and the order is the rule (⟳ r1 CLAUDE m2):** inputs unreadable or absent → **2**; else any
+**Exit codes rank, and the order is the rule (⟳ r1 CLAUDE m2):** **Inputs are read by one bounded reader and one
+walker.** `_read_json` returns a value that is UTF-8, free of NaN/Infinity and repeated keys, and at most `MAX_DEPTH`
+deep; `FILE_SHAPES` declares, per input file, every field a rule reads, and `_violations` is the only code that
+checks one. A field a rule compares with a literal is declared `_one_of` its vocabulary. A rule relating two places
+lives in `_reference_errors`. Any failure of these is **rc 2**. No message prints an input value except through
+`_show`. `main` is a net: an unanticipated exception is rc 2 with `INTERNAL ERROR`, never Python's exit 1. **Adding a
+rule that reads a new input field means adding that field to `FILE_SHAPES` in the same commit; a hand-written
+`isinstance` check in `load` is a defect.** (⟳ Phase 6 review 2026-11-22,
+`docs/reviews/architecture-review-2026-11-22-check-inventory-inputs.md` §5.6.) Else any
 row error → **1**, and the checkpoint is NOT computed (a fire over rows with errors is not evidence); else
 `checkpoint_fires` raising (no phase-1 rows — the only way left; inventory-level `row_errors` already refuses "no
 phase-1 package named") → **2**; else fired → **3**; else
@@ -1016,6 +1038,23 @@ phase-1 package named") → **2**; else fired → **3**; else
   naming a failing one), the checkpoint
   asserts above, `rows with an error AND a crossed threshold exit 1, not 3`, `render puts verdict and grade in one
   cell`, `a component in the map with no row is an error`. Red → implement → green → W1-W8 → commit.
+- [ ] **Input cases (⟳ Phase 6 review §5.3)**, each with its adjacent negative:
+
+  | Case | Negative beside it |
+  |---|---|
+  | a component whose `package` names no package is rc 2 | the same map with the package present |
+  | two components with one id is rc 2 (identical, and differing in effort) | distinct ids |
+  | channel `Plugin` is rc 2 | `plugin` |
+  | a map component `phase` of `2` is rc 2 (coordinator addition: the review's corpus case P9 was rc 0) | `1-if-feasible` |
+  | pass condition `FAIL` is rc 2; `failed` is rc 2 | `fail` is rc 1 `[ship-experiment]`; all `pass` is rc 0 |
+  | a repeated key in an object is rc 2 (in `components.json` and in `inventory.json`) | the key once |
+  | nesting of 33 is rc 2 | 32 is read |
+  | a lone surrogate in a row id prints escaped, with the row's rc | — |
+  | an ASCII-only stdout: a `[shape]` error and `--render` print, no traceback | — |
+  | a UTF-8 non-ASCII inventory is read under `LC_ALL=C` | — |
+  | an exception inside `_main` is rc 2 and prints `INTERNAL ERROR` | no `CANNOT RUN: ` prefix on that line |
+  | `CHANNELS` equals `check-shipping-sets.CHANNELS`, by import | — |
+  | **the fuzz**: every node of every fixture input replaced by each of 12 values, deleted, duplicated; no exception escapes `main` and no output contains `INTERNAL ERROR` | the same fuzz against a reader with the surrogate handling removed reports a crash (this is the mutation) |
 - [ ] **CI caller — `--self-test` ONLY in this task (⟳ r1 CODEX 6).** The live inventory is necessarily incomplete
   here (Tasks 17-18 wrote effort (2)/(1) rows; effort (3) rows come in Task 20), and a missing component is rc 1,
   so enabling the live run now would put CI red by construction. The live caller is added in **Task 20**, in the

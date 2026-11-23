@@ -849,9 +849,25 @@ wholesale, which confuses **a mention** with **a dependency**:
    invocation, a documented prerequisite, or a runtime configuration read. Mention candidates are
    **reported separately** from dependency findings.
    ⛔ **AND "NEVER ALONE DECIDES A VERDICT" IS MADE ENFORCEABLE, NOT ADVISED (r2 CLAUDE M8).** Every
-   non-`SHIP` verdict **cites the dependency-finding ids it rests on**, and the scan **refuses to
-   emit a dependency-finding id for a mention candidate.** Then the rule has a falsifier: a non-`SHIP`
-   verdict citing no id, or citing a mention candidate's id, is a defect in the inventory.
+   non-`SHIP` verdict **names the ground it rests on**, as one or more `rests_on` entries of the four
+   kinds below, and the scan **refuses to emit a dependency-finding id for a mention candidate.** Then
+   the rule has a falsifier: a non-`SHIP` verdict with no ground, a ground that does not resolve
+   against the file that owns its kind, a `finding` ground naming a mention candidate's id or another
+   component's finding, or a C2 or C3 `fail` graded `measured` with no `finding` ground, is a defect in
+   the inventory.
+
+   | Kind | Entry in `inventory.json` | Resolved against | A defect when |
+   |---|---|---|---|
+   | (i) `finding` | `{"kind": "finding", "ids": ["<id>", …]}` | the scan file | an id is not in the scan's `findings` for **this row's own component** |
+   | (ii) `spec` | `{"kind": "spec", "section": "<n>", "heading": "<### text>"}` (`heading` optional), or `{"kind": "spec", "decision": "D<n>"}` | this spec | no `## <n>.` heading; no such `###` heading under it; no decision `D<n>` in §2 or §2b |
+   | (iii) `experiment` | `{"kind": "experiment", "scenario": "<scenario id>"}` | the experiment sidecar | no such scenario; it does not name this component; none of its pass conditions is `fail` |
+   | (iv) `c5` | `{"kind": "c5"}` | the row's own `criteria` | the row's C5 is not `unanswered` |
+
+   A ground that resolves can still fail to bear on the verdict; that stays the reviewer's judgement.
+   ⟳ **Amended 2026-11-22 by the owner (option A, Phase 6 review
+   architecture-review-2026-11-22-marketplace-inventory-rows).** The earlier sentence required every
+   non-`SHIP` verdict to cite a scan finding id, which a verdict resting on a scope decision, the C5
+   veto or a failed experiment cannot do honestly.
    ⚠ **A configuration read counts as a prerequisite only when the component FAILS OR DEGRADES
    without it (r2 CLAUDE M7)** — i.e. there is no default, or the default leads to an error path. A
    read with a working default is a **mention candidate**, not a dependency. Without that rule

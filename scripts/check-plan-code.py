@@ -484,6 +484,11 @@ HARNESS_TREE = (
     # typescript. That oracle refuses to fall back — DELIBERATELY, `:177` — so 20 of its 32 cases
     # report CANNOT RUN without this. 23 MB; the whole of `node_modules` would be 504 MB.
     "node_modules/typescript",
+    # ⟳ 2026-11-23, backlog #698: `build-shipped-corpus` renders every text it checks with markdown-it's
+    # self-contained bundle (`dist/markdown-it.min.js`) and REFUSES to run without it (CANNOT RUN, never a
+    # regex fallback), so without this entry every case that calls `check` goes red and the control with it.
+    # 1.6 MB, the package only: the bundle carries its own dependencies.
+    "node_modules/markdown-it",
     # ⟳ 2026-09-10, backlog #110 r3 finding L-4. `gen-backlog-page`'s suite reads the awk program
     # out of `.claude/hooks/regen-backlog-page.sh` and RUNS it — that hook is the channel the
     # warning reaches a human through, and it is shell with no `--self-test` of its own. Without
@@ -5533,6 +5538,8 @@ def _self_test_body() -> int:
                                       # ⟳ PR #440 r2: the bounded reader, a LIBRARY, added with its manifest.
                                       "scripts/bounded_read.py",
                                       "scripts/brief-compose.py",
+                                      # 2026-11-22, marketplace-inventory Task 18: a tool.
+                                      "scripts/build-shipped-corpus.py",
                                       # backlog #455: the subagent long-call hook, with its manifest.
                                       # backlog #457: the subagent large-read hook, with its manifest.
                                       "scripts/check-agent-large-read.py",
@@ -5572,6 +5579,8 @@ def _self_test_body() -> int:
                                       "scripts/check-hook-commands.py",
                                       # the idle-stop guard (owner 2026-11-16), with its manifest.
                                       "scripts/check-idle-stop.py",
+                                      # 2026-11-22, marketplace-inventory Task 19: the inventory guard.
+                                      "scripts/check-inventory.py",
                                       "scripts/check-live-schema.py",
                                       # ⟳ 2026-10-02: ADR-0014's rule D2 arrives with its
                                       # manifest in the same commit.

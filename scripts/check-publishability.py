@@ -358,14 +358,13 @@ def _introduced(lines, at: int) -> bool:
             and not LIST_ITEM.match(lines[start - 1]):  # an earlier list ends the paragraph (review r3)
         start -= 1
     para = " ".join(lines[start:i + 1])
-    return any(not re.search(NEGATES, para[max(0, m.start() - 24):m.start()], re.I)
-               for m in re.finditer(LEAD_VERBS, para, re.I))
+    # No negation filter (Phase 6 review 2026-11-21, detector 4): whether "never use:" is an instruction is a prose
+    # floor, so the rule errs toward a finding; a filter after the verb test could only ever silence one.
+    return bool(re.search(LEAD_VERBS, para, re.I))
 
 
 # The imperatives an introducing paragraph must hold: INSTRUCTS' verbs, and "stop" (a procedure that halts work).
 LEAD_VERBS = r"\b(?:read|load|open|run|edit|update|consult|follow|source|use|call|invoke|stop)\b"
-# A verb a few words after one of these is no imperative ("tools that we never use:", review r3).
-NEGATES = r"\b(?:never|not|no)\b|n't\b"
 # A line of a section's body that tells the reader to act on the section's subject: a lead verb, or one that
 # writes to it, OPENING the line (a list mark, a quote, a ⛔/⚠ and bold allowed before it).
 ACTS = re.compile(r"\s*(?:[-*>]\s+)*(?:[⛔⚠]\S*\s*)?(?:\*\*)?(?:" + LEAD_VERBS + r"|\b(?:append|write|add)\b)", re.I)
@@ -2089,11 +2088,11 @@ def _self_test_body() -> int:
     case("r3: an `or` of operands that are all None is no working fallback",
          lambda: [(f["line"], f["kind"]) for f in found(w_r3, {"t": ["scripts/tok3.py"]}, "t", 6) if f["kind"] == "config"],
          [(2, "config")])
-    case("r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, "
-         "introduces nothing",
+    case("r3: blank lines between items keep the list; an imperative above an earlier list introduces nothing; "
+         "a negated verb still introduces (Phase 6: no negation filter)",
          lambda: items(w_r3, {"x": [".agents/skills/x/SKILL.md"]}, "x"),
-         ([(4, "tool-name", "TaskList"), (6, "tool-name", "TaskCreate")],
-          [(10, "tool-name", "TaskCreate"), (15, "tool-name", "TaskList")]))
+         ([(4, "tool-name", "TaskList"), (6, "tool-name", "TaskCreate"), (10, "tool-name", "TaskCreate")],
+          [(15, "tool-name", "TaskList")]))
 
     # --- Task 16: what the install experiment hit and the scan scored clean ----------------------------------
     gen_like = ('"""Gen.\n\n    python3 scripts/gen.py --self-test\n"""\n'

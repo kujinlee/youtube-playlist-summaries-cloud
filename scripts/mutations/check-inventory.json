@@ -1,0 +1,1589 @@
+[
+ {
+  "name": "a 1-if-feasible row counts in the checkpoint population",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return _fires([r for r in rows if r[\"phase\"] == \"1\"])",
+    "return _fires([r for r in rows if r[\"phase\"] in (\"1\", \"1-if-feasible\")])"
+   ]
+  ],
+  "expect": "stray 1-if-feasible rows are never counted"
+ },
+ {
+  "name": "exactly half fires",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return 2 * len(over) > len(pop)",
+    "return 2 * len(over) >= len(pop)"
+   ]
+  ],
+  "expect": "one of two at 3x is not MORE than half"
+ },
+ {
+  "name": "exactly 3x does not count",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    ">= 3 * r[\"cost\"][\"next_project_hours\"]]",
+    "> 3 * r[\"cost\"][\"next_project_hours\"]]"
+   ]
+  ],
+  "expect": "two of three phase-1 rows at exactly 3x fire"
+ },
+ {
+  "name": "an empty phase 1 reads as did-not-fire",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "raise ValueError(\"CANNOT RUN: no phase-1 rows\")",
+    "return False"
+   ]
+  ],
+  "expect": "an empty phase 1 raises, never `did not fire`"
+ },
+ {
+  "name": "next_project_hours 0 is counted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not r[\"cost\"][\"next_project_hours\"] > 0:",
+    "if False:"
+   ]
+  ],
+  "expect": "next_project_hours 0 raises, never fires"
+ },
+ {
+  "name": "a null grade is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"grade\", _in(GRADES),",
+    "(\"grade\", lambda v: v is None or _in(GRADES)(v),"
+   ]
+  ],
+  "expect": "a SHIP row with no grade is an error"
+ },
+ {
+  "name": "an unknown verdict is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"verdict\", _in(VERDICTS),",
+    "(\"verdict\", lambda v: isinstance(v, str),"
+   ]
+  ],
+  "expect": "a verdict outside the vocabulary is an error"
+ },
+ {
+  "name": "a row may relabel its roles",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif row.get(\"effort\") != comp.get(\"effort\") or list(roles) != list(comp.get(\"roles\") or []):",
+    "elif row.get(\"effort\") != comp.get(\"effort\"):"
+   ]
+  ],
+  "expect": "a row whose roles differ from the map is an error (a relabelled data row escapes no rule)"
+ },
+ {
+  "name": "a row may relabel its effort",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif row.get(\"effort\") != comp.get(\"effort\") or list(roles)",
+    "elif list(roles)"
+   ]
+  ],
+  "expect": "a row whose effort differs from the map is an error"
+ },
+ {
+  "name": "a row outside the map is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "err(\"map\", \"no component with this id in components.json\")",
+    "pass"
+   ]
+  ],
+  "expect": "a row for a component not in the map is an error"
+ },
+ {
+  "name": "the experiment rule ignores the channel",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "ctx.channels.get(package) == \"plugin\":",
+    "True:"
+   ]
+  ],
+  "expect": "a SHIP entry-point in a non-plugin package is outside the experiment rule"
+ },
+ {
+  "name": "an unexercised entry backs a SHIP",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "entry.get(\"exercised\") is True and ",
+    ""
+   ]
+  ],
+  "expect": "a SHIP row whose tier-A entry is exercised: false is an error"
+ },
+ {
+  "name": "a failed operation backs a SHIP",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "entry.get(\"operation_ok\") is True and bool(pcs)",
+    "bool(pcs)"
+   ]
+  ],
+  "expect": "a SHIP entry-point whose operation_ok is false is an error"
+ },
+ {
+  "name": "an entry with no pass conditions backs a SHIP",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "operation_ok\") is True and bool(pcs)",
+    "operation_ok\") is True"
+   ]
+  ],
+  "expect": "a SHIP entry-point whose entry has no pass conditions is an error"
+ },
+ {
+  "name": "a CANNOT RUN pass condition backs a SHIP",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "v in (\"fail\", \"CANNOT RUN\")",
+    "v == \"fail\""
+   ]
+  ],
+  "expect": "a SHIP entry-point with a pass condition `CANNOT RUN` is an error"
+ },
+ {
+  "name": "a SHIP entry-point needs no entry of its own",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not _backs(sidecar.get(rid)):",
+    "if False:"
+   ]
+  ],
+  "expect": "a SHIP entry-point with no tier-A entry is an error"
+ },
+ {
+  "name": "a library's named entry-point is not checked",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif not _backs(sidecar.get(named)):",
+    "elif False:"
+   ]
+  ],
+  "expect": "the same SHIP library row naming a failing entry-point is an error"
+ },
+ {
+  "name": "a library may name a library",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return head if comp and \"entry-point\" in (comp.get(\"roles\") or []) else None",
+    "return head if comp else None"
+   ]
+  ],
+  "expect": "a SHIP library whose scenario names a library with a passing entry, not an entry-point, is an error"
+ },
+ {
+  "name": "a phase-1 row may sit outside its shipping set",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if phase == \"1\" and comp is not None and rid not in ctx.shipping.get(package, set()):",
+    "if False:"
+   ]
+  ],
+  "expect": "a phase-1 row absent from its package's shipping set is an error"
+ },
+ {
+  "name": "an unknown phase is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"phase\", _in(PHASES),",
+    "(\"phase\", lambda v: isinstance(v, str),"
+   ]
+  ],
+  "expect": "a row at the map's 1-if-feasible label is an error"
+ },
+ {
+  "name": "recall.b is not consulted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "recall.get(\"a\") is True and recall.get(\"b\") == \"pass\"",
+    "recall.get(\"a\") is True"
+   ]
+  ],
+  "expect": "a recall row at phase 1 with recall.a true and recall.b unanswered is an error"
+ },
+ {
+  "name": "a truthy recall.a passes",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(recall.get(\"a\") is True and",
+    "(recall.get(\"a\") and"
+   ]
+  ],
+  "expect": "a recall row at phase 1 with recall.a the string \"true\" is an error"
+ },
+ {
+  "name": "next_project_hours 0 is a valid cost",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not nxt > 0:",
+    "if not nxt >= 0:"
+   ]
+  ],
+  "expect": "next_project_hours of 0 is an error"
+ },
+ {
+  "name": "a string cost is a number",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_finite(v.get(\"public_bar_hours\")) and v[\"public_bar_hours\"] > 0",
+    "v.get(\"public_bar_hours\") is not None and v[\"public_bar_hours\"] > 0"
+   ]
+  ],
+  "expect": "a cost estimate that is not a number is an error"
+ },
+ {
+  "name": "an inherited grade needs no scenario",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if grade == \"inherited\" and not row.get(\"scenario\"):",
+    "if False:"
+   ]
+  ],
+  "expect": "an inherited grade with no scenario is an error"
+ },
+ {
+  "name": "an empty rests_on is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not grounds and not ship:",
+    "if False:"
+   ]
+  ],
+  "expect": "a non-SHIP row with an empty rests_on is an error"
+ },
+ {
+  "name": "an unknown ground kind is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if kind not in GROUND_KINDS:",
+    "if kind is None:"
+   ]
+  ],
+  "expect": "a ground of an unknown kind is an error"
+ },
+ {
+  "name": "a finding ground with empty ids is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(ids, list) or not ids:",
+    "if not isinstance(ids, list):"
+   ]
+  ],
+  "expect": "a finding ground with empty ids is an error"
+ },
+ {
+  "name": "a borrowed finding id resolves",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "own = {f.get(\"id\") for f in ((scan.get(rid) or {}).get(\"findings\") or [])}",
+    "own = {f.get(\"id\") for c in scan.values() for f in ((c or {}).get(\"findings\") or [])}"
+   ]
+  ],
+  "expect": "a borrowed finding id from another component is an error"
+ },
+ {
+  "name": "a decision anywhere in the spec resolves",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if any(line.startswith(f\"| **{d}** |\") for line in table)",
+    "if any(line.startswith(f\"| **{d}** |\") for line in spec_lines)"
+   ]
+  ],
+  "expect": "a decision only in §2c is an error"
+ },
+ {
+  "name": "a heading prefix resolves",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "line.rstrip() == f\"### {g['heading']}\"",
+    "line.startswith(f\"### {g['heading']}\")"
+   ]
+  ],
+  "expect": "a spec heading that is only a prefix of a real one is an error"
+ },
+ {
+  "name": "a section runs past the next section",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "            if later.startswith(\"## \"):",
+    "            if False:"
+   ]
+  ],
+  "expect": "section 2 does not reach a heading under section 2b"
+ },
+ {
+  "name": "an empty section is a missing section",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(sec, str) or not sec.strip():",
+    "if not isinstance(sec, str):"
+   ]
+  ],
+  "expect": "a spec ground with an empty section is an error"
+ },
+ {
+  "name": "an empty heading is a missing heading",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if \"heading\" in g and (not isinstance(g[\"heading\"], str) or not g[\"heading\"].strip()):",
+    "if False:"
+   ]
+  ],
+  "expect": "a spec ground with an empty heading is an error"
+ },
+ {
+  "name": "an empty decision is a missing decision",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(d, str) or not d.strip():",
+    "if not isinstance(d, str):"
+   ]
+  ],
+  "expect": "a spec ground with an empty decision is an error"
+ },
+ {
+  "name": "an experiment ground with no scenario matches a None entry",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(scen, str) or not scen.strip():",
+    "if False:"
+   ]
+  ],
+  "expect": "an experiment ground with no scenario on a component whose entry has none is still an error"
+ },
+ {
+  "name": "another component's scenario resolves",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if entry.get(\"scenario\") != scen:",
+    "if False:"
+   ]
+  ],
+  "expect": "another component's experiment scenario is an error"
+ },
+ {
+  "name": "a scenario with no fail resolves",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif \"fail\" not in (entry.get(\"pass_conditions\") or {}).values():",
+    "elif False:"
+   ]
+  ],
+  "expect": "this component's scenario with no pass condition `fail` is an error"
+ },
+ {
+  "name": "a c5 ground resolves whatever C5 is",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if criteria.get(\"C5\") != \"unanswered\":",
+    "if False:"
+   ]
+  ],
+  "expect": "a c5 ground while C5 is pass is an error"
+ },
+ {
+  "name": "C2 fail is not checked for a finding ground",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "\"fail\" in (criteria.get(\"C2\"), criteria.get(\"C3\"))",
+    "criteria.get(\"C3\") == \"fail\""
+   ]
+  ],
+  "expect": "C2 fail graded measured with no finding ground is an error"
+ },
+ {
+  "name": "a finding ground does not satisfy the measured rule",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and not any(isinstance(g, dict) and g.get(\"kind\") == \"finding\" for g in grounds)):",
+    "):"
+   ]
+  ],
+  "expect": "the same C3 fail graded measured with a finding ground is clean"
+ },
+ {
+  "name": "a non-SHIP row needs no route",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not row[\"route\"] and not ship:",
+    "if False:"
+   ]
+  ],
+  "expect": "a non-SHIP row with no route is an error"
+ },
+ {
+  "name": "an unknown route kind is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_in(ROUTE_KINDS)(v.get(\"kind\"))",
+    "v.get(\"kind\") is not None"
+   ]
+  ],
+  "expect": "a route kind outside the vocabulary is an error"
+ },
+ {
+  "name": "a practice entry without its number matches",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "row.get(\"practice_entry\") not in ctx.practice_headings:",
+    "not any(h.endswith(str(row.get(\"practice_entry\"))) for h in ctx.practice_headings):"
+   ]
+  ],
+  "expect": "a practice_entry without its number is an error"
+ },
+ {
+  "name": "a data row's C4 is not checked",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if \"data\" in roles and criteria.get(\"C4\") != \"struck\":",
+    "if False:"
+   ]
+  ],
+  "expect": "a data row with C4 pass is an error"
+ },
+ {
+  "name": "the corpus rule ignores C5",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if rid == \"memory-corpus\" and ship and criteria.get(\"C5\") == \"unanswered\":",
+    "if rid == \"memory-corpus\" and ship:"
+   ]
+  ],
+  "expect": "the memory-corpus row SHIP with C5 pass is clean"
+ },
+ {
+  "name": "the corpus rule covers every data row",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if rid == \"memory-corpus\" and ship and",
+    "if ship and"
+   ]
+  ],
+  "expect": "another data row SHIP while its C5 is unanswered is not the corpus rule"
+ },
+ {
+  "name": "an effort (2) row may be measured",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if grade == \"measured\" and row.get(\"effort\") in (1, 2):",
+    "if grade == \"measured\" and row.get(\"effort\") in (1,):"
+   ]
+  ],
+  "expect": "a measured grade on an effort (2) row is an error"
+ },
+ {
+  "name": "a component with no row is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if cid not in ids:",
+    "        if False:"
+   ]
+  ],
+  "expect": "a component in the map with no row is an error"
+ },
+ {
+  "name": "a duplicate row is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "ids.count(i) > 1",
+    "ids.count(i) > 2"
+   ]
+  ],
+  "expect": "two rows for one component is an error"
+ },
+ {
+  "name": "no phase-1 package is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    if not phase1:",
+    "    if False:"
+   ]
+  ],
+  "expect": "no phase-1 package in the map is an error"
+ },
+ {
+  "name": "a phase-1 package with no set is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if pkg not in ctx.shipping:",
+    "if False:"
+   ]
+  ],
+  "expect": "a phase-1 package with no shipping-sets entry is an error"
+ },
+ {
+  "name": "a stale scan is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if latest_scan is not None and inventory.get(\"scan\") != latest_scan:",
+    "if False:"
+   ]
+  ],
+  "expect": "an inventory naming a scan other than the latest is an error"
+ },
+ {
+  "name": "the oldest scan is read",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "f\"{MKT}/{scans[-1].name}\"",
+    "f\"{MKT}/{scans[0].name}\""
+   ]
+  ],
+  "expect": "the latest scan is the one read, and an inventory naming an older one exits 1"
+ },
+ {
+  "name": "the checkpoint is computed over rows with errors",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    if errors:\n",
+    "    if errors and False:\n"
+   ]
+  ],
+  "expect": "rows with an error AND a crossed threshold exit 1, not 3"
+ },
+ {
+  "name": "a checkpoint that cannot run exits 0",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "print(f\"{e}. Treat the D1 checkpoint as NOT RUN.\", file=status)\n        return 2",
+    "print(f\"{e}. Treat the D1 checkpoint as NOT RUN.\", file=status)\n        return 0"
+   ]
+  ],
+  "expect": "a clean inventory with no phase-1 rows exits 2"
+ },
+ {
+  "name": "a fired checkpoint exits 0",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "Stop: Human step H4.\", file=status)\n        return 3",
+    "Stop: Human step H4.\", file=status)\n        return 0"
+   ]
+  ],
+  "expect": "a clean inventory over the threshold exits 3"
+ },
+ {
+  "name": "an absent input crashes",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "except (OSError, ValueError) as e:\n        raise CannotRun(f\"{path} is unreadable ({type(e).__name__}: {e})\")",
+    "except ValueError as e:\n        raise CannotRun(f\"{path} is unreadable ({type(e).__name__}: {e})\")"
+   ]
+  ],
+  "expect": "an absent inventory.json exits 2, CANNOT RUN"
+ },
+ {
+  "name": "no scan file crashes",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    if not scans:",
+    "    if False:"
+   ]
+  ],
+  "expect": "no scan file exits 2, CANNOT RUN"
+ },
+ {
+  "name": "render splits verdict and grade",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_cell(f\"{r.get('verdict')} · {r.get('grade')}\"),",
+    "_cell(r.get('verdict')), _cell(r.get('grade')),"
+   ]
+  ],
+  "expect": "render puts verdict and grade in one cell"
+ },
+ {
+  "name": "render leaves a pipe unescaped",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "str(v).replace(\"|\", \"\\\\|\")",
+    "str(v)"
+   ]
+  ],
+  "expect": "render escapes a pipe inside a cell"
+ },
+ {
+  "name": "a grade outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_in(GRADES), f\"one of {', '.join(GRADES)} (§4b",
+    "lambda v: isinstance(v, str), f\"one of {', '.join(GRADES)} (§4b"
+   ]
+  ],
+  "expect": "a grade outside the vocabulary is an error"
+ },
+ {
+  "name": "a malformed row is handed to the rules",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    if shape:\n        rid =",
+    "    if False:\n        rid ="
+   ]
+  ],
+  "expect": "a data row with no criteria reports ONLY [shape] (the rules never see a malformed row)"
+ },
+ {
+  "name": "a non-object row reaches the field loop",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    if not isinstance(row, dict):\n        return [f\"a row that is",
+    "    if False:\n        return [f\"a row that is"
+   ]
+  ],
+  "expect": "a row that is not an object is a shape error, never a traceback"
+ },
+ {
+  "name": "a malformed row is named by a placeholder",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "rid = row[\"id\"] if isinstance(row, dict)",
+    "rid = \"?\" if isinstance(row, dict)"
+   ]
+  ],
+  "expect": "a shape error names the row by its id"
+ },
+ {
+  "name": "a non-object row is named `row`",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "ROW_SCHEMA[0][1](row.get(\"id\")) else \"?\"",
+    "ROW_SCHEMA[0][1](row.get(\"id\")) else \"row\""
+   ]
+  ],
+  "expect": "a non-object row is named `?`"
+ },
+ {
+  "name": "a missing key is not reported",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if key not in row:\n            out.append",
+    "        if False:\n            out.append"
+   ]
+  ],
+  "expect": "a row with no effort is a shape error"
+ },
+ {
+  "name": "a blank id is an id",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "lambda v: isinstance(v, str) and bool(v.strip()), \"a non-empty string\"",
+    "lambda v: isinstance(v, str), \"a non-empty string\""
+   ]
+  ],
+  "expect": "a row whose id is empty is a shape error"
+ },
+ {
+  "name": "a boolean effort is an integer",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "isinstance(v, int) and not isinstance(v, bool), \"an integer\"",
+    "isinstance(v, int), \"an integer\""
+   ]
+  ],
+  "expect": "an effort that is a boolean is a shape error"
+ },
+ {
+  "name": "a string effort passes the shape",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"effort\", lambda v: isinstance(v, int) and",
+    "(\"effort\", lambda v: True and"
+   ]
+  ],
+  "expect": "an effort that is a string is a shape error"
+ },
+ {
+  "name": "an empty roles list is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "isinstance(v, list) and bool(v) and all(_in(ROLES)(x) for x in v)",
+    "isinstance(v, list) and all(_in(ROLES)(x) for x in v)"
+   ]
+  ],
+  "expect": "an empty roles list is a shape error"
+ },
+ {
+  "name": "a role outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "all(_in(ROLES)(x) for x in v)",
+    "True"
+   ]
+  ],
+  "expect": "a role outside the vocabulary is a shape error"
+ },
+ {
+  "name": "any scenario is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"scenario\", _str_or_null,",
+    "(\"scenario\", lambda v: True,"
+   ]
+  ],
+  "expect": "a scenario that is a list is a shape error"
+ },
+ {
+  "name": "any practice_entry is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"practice_entry\", _str_or_null,",
+    "(\"practice_entry\", lambda v: True,"
+   ]
+  ],
+  "expect": "a practice_entry that is a list is a shape error, never a traceback"
+ },
+ {
+  "name": "a rests_on string is a list",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"rests_on\", lambda v: isinstance(v, list), \"a list\")",
+    "(\"rests_on\", lambda v: True, \"a list\")"
+   ]
+  ],
+  "expect": "a rests_on that is a string is a shape error"
+ },
+ {
+  "name": "a harvest outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(\"harvest\", _in(HARVESTS),",
+    "(\"harvest\", lambda v: isinstance(v, str),"
+   ]
+  ],
+  "expect": "a harvest outside practice/none is a shape error"
+ },
+ {
+  "name": "criteria may omit a key",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "set(v) == set(CRITERIA)",
+    "set(v) <= set(CRITERIA)"
+   ]
+  ],
+  "expect": "criteria missing C5 is a shape error (the memory-corpus SHIP cannot skip its content review)"
+ },
+ {
+  "name": "criteria may carry an extra key",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "isinstance(v, dict) and set(v) == set(CRITERIA)",
+    "isinstance(v, dict) and set(v) >= set(CRITERIA)"
+   ]
+  ],
+  "expect": "criteria with a key outside C1-C5 is a shape error"
+ },
+ {
+  "name": "a criterion value outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and all(_in(CRITERION_VALUES)(x) for x in v.values()))",
+    "and True)"
+   ]
+  ],
+  "expect": "a criterion value outside the vocabulary is a shape error"
+ },
+ {
+  "name": "NaN and infinity are finite",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return isinstance(v, float) and math.isfinite(v)",
+    "return isinstance(v, float)"
+   ]
+  ],
+  "expect": "a NaN next_project_hours is a shape error"
+ },
+ {
+  "name": "an infinite public bar is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and _finite(v.get(\"public_bar_hours\"))",
+    "and _num(v.get(\"public_bar_hours\"))"
+   ]
+  ],
+  "expect": "an infinite public_bar_hours is a shape error"
+ },
+ {
+  "name": "a public bar of 0 is positive",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "v[\"public_bar_hours\"] > 0",
+    "v[\"public_bar_hours\"] >= 0"
+   ]
+  ],
+  "expect": "a public_bar_hours of 0 is a shape error"
+ },
+ {
+  "name": "an infinite next-project estimate is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and _finite(v.get(\"next_project_hours\"))",
+    "and _num(v.get(\"next_project_hours\"))"
+   ]
+  ],
+  "expect": "an infinite next_project_hours is a shape error (it would suppress the checkpoint)"
+ },
+ {
+  "name": "a cost not an object reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return (isinstance(v, dict) and _finite(v.get(\"public_bar_hours\"))",
+    "return (_finite(v.get(\"public_bar_hours\"))"
+   ]
+  ],
+  "expect": "a cost that is not an object is a shape error"
+ },
+ {
+  "name": "a cost grade outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and _finite(v.get(\"next_project_hours\")) and _in(GRADES)(v.get(\"grade\"))",
+    "and _finite(v.get(\"next_project_hours\"))"
+   ]
+  ],
+  "expect": "a cost grade outside the vocabulary is a shape error"
+ },
+ {
+  "name": "a route not an object reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return v is None or (isinstance(v, dict) and _in(ROUTE_KINDS)",
+    "return v is None or (_in(ROUTE_KINDS)"
+   ]
+  ],
+  "expect": "a route that is a bare string is an error"
+ },
+ {
+  "name": "an infinite route cost is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "and _finite(v.get(\"cost_hours\")) and v[\"cost_hours\"] > 0",
+    "and _num(v.get(\"cost_hours\")) and v[\"cost_hours\"] > 0"
+   ]
+  ],
+  "expect": "an infinite route cost_hours is a shape error"
+ },
+ {
+  "name": "a route cost of 0 is positive",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "v[\"cost_hours\"] > 0",
+    "v[\"cost_hours\"] >= 0"
+   ]
+  ],
+  "expect": "a route cost_hours of 0 is a shape error"
+ },
+ {
+  "name": "a route grade outside the vocabulary is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "v[\"cost_hours\"] > 0 and _in(GRADES)(v.get(\"grade\"))",
+    "v[\"cost_hours\"] > 0"
+   ]
+  ],
+  "expect": "a route grade outside the vocabulary is a shape error"
+ },
+ {
+  "name": "the JSON constants are numbers",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "parse_constant=_refuse_constant,\n                         object_pairs_hook",
+    "object_pairs_hook"
+   ]
+  ],
+  "expect": "an inventory.json holding the JSON constant NaN exits 2, CANNOT RUN"
+ },
+ {
+  "name": "a scan missing a component is read as no findings",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if c[\"id\"] not in scan[\"components\"]:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "a scan with no entry for one component in the map exits 2, CANNOT RUN, naming it"
+ },
+ {
+  "name": "an empty scan is read as no findings",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if c[\"id\"] not in scan[\"components\"]:",
+    "        if False:"
+   ]
+  ],
+  "expect": "an empty scan exits 2, CANNOT RUN"
+ },
+ {
+  "name": "a findings object is a list",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_obj(findings=_list_of(_obj(id=_STR)))",
+    "_obj(findings=_ANY)"
+   ]
+  ],
+  "expect": "a scan entry whose findings is an object, not a list, exits 2, CANNOT RUN"
+ },
+ {
+  "name": "a non-object finding is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "findings=_list_of(_obj(id=_STR))",
+    "findings=_list_of(_ANY)"
+   ]
+  ],
+  "expect": "a scan entry whose findings holds a non-object exits 2, CANNOT RUN"
+ },
+ {
+  "name": "a library may name another package's entry-point",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "elif ctx.components[named].get(\"package\") != package:",
+    "elif False:"
+   ]
+  ],
+  "expect": "a SHIP library naming a passing entry-point of ANOTHER package is an error"
+ },
+ {
+  "name": "an object finding id reaches the set lookup",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if not isinstance(fid, str) or fid not in own:",
+    "if fid not in own:"
+   ]
+  ],
+  "expect": "a finding id that is an object is an error, never a traceback (r1 fold, CLAUDE C3)"
+ },
+ {
+  "name": "inventory_errors reads .get on a non-object row",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "ids = [r.get(\"id\") if isinstance(r, dict) else None for r in rows]",
+    "ids = [r.get(\"id\") for r in rows]"
+   ]
+  ],
+  "expect": "a non-object row is no inventory error, never a traceback (row_errors names it)"
+ },
+ {
+  "name": "inventory_errors hashes an unhashable id",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "{i for i in ids if isinstance(i, str) and ids.count(i) > 1}",
+    "{i for i in ids if ids.count(i) > 1}"
+   ]
+  ],
+  "expect": "two rows sharing an unhashable id are no inventory error, never a traceback (row_errors names them)"
+ },
+ {
+  "name": "an integer past the float range reaches math.isfinite",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return abs(v) <= sys.float_info.max",
+    "return math.isfinite(v)"
+   ]
+  ],
+  "expect": "a cost.public_bar_hours of 10**400 is a shape error, never an OverflowError"
+ },
+ {
+  "name": "an integer is never finite",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if isinstance(v, int) and not isinstance(v, bool):\n        return abs",
+    "if isinstance(v, bool):\n        return abs"
+   ]
+  ],
+  "expect": "a cost.public_bar_hours of 10**300 (an integer a float holds) is no shape error"
+ },
+ {
+  "name": "a non-object component reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "components=_list_of(_obj(id=_ID, effort=_INT, roles=_list_of(_STR), phase=_one_of(*MAP_PHASES),\n                                 package=_STR))),",
+    "components=_list_of(_ANY)),"
+   ]
+  ],
+  "expect": "a component that is not an object exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a component id of any type is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_obj(id=_ID,",
+    "_obj(id=_ANY,"
+   ]
+  ],
+  "expect": "a component id that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a blank component id is an id",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "def _is_id(v):\n    return isinstance(v, str) and bool(v.strip())",
+    "def _is_id(v):\n    return isinstance(v, str)"
+   ]
+  ],
+  "expect": "a component id that is blank, with a scan entry under that blank id exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a string component effort is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "effort=_INT,",
+    "effort=_ANY,"
+   ]
+  ],
+  "expect": "a component effort that is a string exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a boolean component effort is an integer",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_INT = _is(\"an integer\", lambda v: isinstance(v, int) and not isinstance(v, bool))",
+    "_INT = _is(\"an integer\", lambda v: isinstance(v, int))"
+   ]
+  ],
+  "expect": "a component effort that is a boolean exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "component roles of any type reach iteration",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "roles=_list_of(_STR)",
+    "roles=_ANY"
+   ]
+  ],
+  "expect": "component roles that are a boolean exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-string role is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_list_of(_STR), phase=",
+    "_list_of(_ANY), phase="
+   ]
+  ],
+  "expect": "component roles holding a non-string exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a component phase of any type is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "phase=_one_of(*MAP_PHASES),\n",
+    "phase=_ANY,\n"
+   ]
+  ],
+  "expect": "a component phase that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "an unhashable component package reaches the package set",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "package=_STR))),",
+    "package=_ANY))),"
+   ]
+  ],
+  "expect": "a component package that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-object map package reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "packages=_map_of(_obj(channel=_one_of(*CHANNELS))),",
+    "packages=_map_of(_ANY),"
+   ]
+  ],
+  "expect": "a map package that is not an object exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a map package channel of any type is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "channel=_one_of(*CHANNELS)",
+    "channel=_ANY"
+   ]
+  ],
+  "expect": "a map package channel that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-object shipping-set package reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "\"shipping-sets.json\": _obj(packages=_map_of(_obj(components=_map_of(_ANY)))),",
+    "\"shipping-sets.json\": _obj(packages=_map_of(_ANY)),"
+   ]
+  ],
+  "expect": "a shipping-set package that is not an object exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a shipping-set components of any type reaches set()",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "components=_map_of(_ANY)",
+    "components=_ANY"
+   ]
+  ],
+  "expect": "a shipping-set package whose components is a boolean exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-object scan entry outside the map is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_map_of(_obj(findings=_list_of(_obj(id=_STR))))",
+    "_map_of(_ANY)"
+   ]
+  ],
+  "expect": "a scan entry outside the map that is not an object exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-string finding id reaches the id set (CODEX X2)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_obj(id=_STR)",
+    "_obj(id=_ANY)"
+   ]
+  ],
+  "expect": "a scan finding whose id is a list (CODEX X2) exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-object sidecar entry reaches .get",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "\"experiment-tier-a.json\": _obj(components=_map_of(_obj(",
+    "\"experiment-tier-a.json\": _obj(components=_map_of(_ANY) or _map_of(_obj("
+   ]
+  ],
+  "expect": "a sidecar entry that is not an object exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-boolean exercised is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "exercised=_BOOL",
+    "exercised=_ANY"
+   ]
+  ],
+  "expect": "a sidecar exercised that is a string exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a missing operation_ok is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "operation_ok=_BOOL, ",
+    ""
+   ]
+  ],
+  "expect": "a sidecar operation_ok that is missing exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a sidecar scenario of any type is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "scenario=_null_or(_STR)",
+    "scenario=_ANY"
+   ]
+  ],
+  "expect": "a sidecar scenario that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "non-object pass_conditions reach .values",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "pass_conditions=_exactly(",
+    "pass_conditions=_ANY or _exactly("
+   ]
+  ],
+  "expect": "sidecar pass_conditions that are a boolean exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-string pass condition is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "PASS_CONDITIONS, _one_of(*PASS_VALUES)",
+    "PASS_CONDITIONS, _ANY"
+   ]
+  ],
+  "expect": "sidecar pass_conditions holding a non-string exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a non-object recall is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "recall=_obj(a=",
+    "recall=_ANY or _obj(a="
+   ]
+  ],
+  "expect": "an inventory recall that is a list exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "JSON nested too deep reaches a RecursionError",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    except RecursionError as e:",
+    "    except ZeroDivisionError as e:"
+   ]
+  ],
+  "expect": "an inventory.json nested 200000 deep exits 2, CANNOT RUN, never a RecursionError"
+ },
+ {
+  "name": "a spec that is not UTF-8 reaches a UnicodeDecodeError",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "    except (OSError, ValueError) as e:\n        raise CannotRun(f\"{path} is unreadable ({type(e).__name__})\")",
+    "    except OSError as e:\n        raise CannotRun(f\"{path} is unreadable ({type(e).__name__})\")"
+   ]
+  ],
+  "expect": "a 2026-10-15-marketplace-inventory-design.md that is not UTF-8 exits 2, CANNOT RUN, never a UnicodeDecodeError"
+ },
+ {
+  "name": "the depth bound is removed",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "if depth > MAX_DEPTH:",
+    "if False:"
+   ]
+  ],
+  "expect": "an inventory.json nested 33 deep is refused"
+ },
+ {
+  "name": "a repeated JSON key is kept silently (no _unique_keys)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "object_pairs_hook=_unique_keys)",
+    ")"
+   ]
+  ],
+  "expect": "a repeated key in one object of components.json is rc 2 (Python would keep the last, silently)"
+ },
+ {
+  "name": "_one_of matches by value only",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "lambda v: any(type(v) is type(m) and v == m for m in vocab)",
+    "lambda v: any(v == m for m in vocab)"
+   ]
+  ],
+  "expect": "_one_of matches by TYPE: True is not 1, 1.0 is not 1, 1 is 1"
+ },
+ {
+  "name": "a map channel is any string (no CHANNELS vocabulary)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "(channel=_one_of(*CHANNELS))",
+    "(channel=_STR)"
+   ]
+  ],
+  "expect": "a map channel `Plugin` is rc 2 (it would skip the SHIP rule)"
+ },
+ {
+  "name": "a pass condition is any string (no PASS_VALUES vocabulary)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_one_of(*PASS_VALUES)",
+    "_STR"
+   ]
+  ],
+  "expect": "a pass condition `FAIL` is rc 2 (it would back a SHIP)"
+ },
+ {
+  "name": "a map phase is any string (no MAP_PHASES vocabulary)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "phase=_one_of(*MAP_PHASES)",
+    "phase=_STR"
+   ]
+  ],
+  "expect": "a map phase `2` is rc 2, naming the phase"
+ },
+ {
+  "name": "two components with one id are accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if c[\"id\"] in seen:",
+    "        if False:"
+   ]
+  ],
+  "expect": "two components with one id (identical) is rc 2, naming it"
+ },
+ {
+  "name": "a component package that `packages` lacks is accepted",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "        if c[\"package\"] not in cmap[\"packages\"]:",
+    "        if False:"
+   ]
+  ],
+  "expect": "a component whose package names no package is rc 2, naming it"
+ },
+ {
+  "name": "the net returns 1 (Python's own exit, a false verdict)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "survived its case through the net).\n        return 2",
+    "survived its case through the net).\n        return 1"
+   ]
+  ],
+  "expect": "an exception inside _main is rc 2 with INTERNAL ERROR, and no line starts `CANNOT RUN: `"
+ },
+ {
+  "name": "output is not total (no backslashreplace)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "stream.reconfigure(errors=\"backslashreplace\")",
+    "pass"
+   ]
+  ],
+  "expect": [
+   "the fuzz: over 2000 edits of the fixture inputs, no exception escapes main and none reaches the net",
+   "a lone surrogate in a row id prints escaped, with the row's rc (1), never a traceback"
+  ]
+ },
+ {
+  "name": "the JSON reader decodes with the locale's encoding",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "doc = json.loads(path.read_bytes().decode(\"utf-8\")",
+    "doc = json.loads(path.read_text()"
+   ]
+  ],
+  "expect": "a UTF-8 non-ASCII inventory is read under LC_ALL=C (the reader decodes UTF-8, never the locale's)"
+ },
+ {
+  "name": "the text reader decodes with the locale's encoding",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "return path.read_bytes().decode(\"utf-8\")",
+    "return path.read_text()"
+   ]
+  ],
+  "expect": "a UTF-8 non-ASCII inventory is read under LC_ALL=C (the reader decodes UTF-8, never the locale's)"
+ },
+ {
+  "name": "sidecar pass_conditions of any keys (one condition backs a SHIP)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_exactly(**dict.fromkeys(PASS_CONDITIONS, _one_of(*PASS_VALUES)))",
+    "_map_of(_one_of(*PASS_VALUES))"
+   ]
+  ],
+  "expect": "sidecar pass_conditions with only condition 1 (r4 CODEX X1) exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a closed object accepts a key it may not have",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "            if kind == \"closed\":\n",
+    "            if False:\n"
+   ]
+  ],
+  "expect": "sidecar pass_conditions with an extra condition 6 exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "recall.a of any type",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "a=_one_of(*RECALL_A)",
+    "a=_ANY"
+   ]
+  ],
+  "expect": "an inventory recall.a that is a list (r4 CODEX X2) exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "recall.a is not declared",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "recall=_obj(a=_one_of(*RECALL_A), b=",
+    "recall=_obj(b="
+   ]
+  ],
+  "expect": "an inventory recall with no a exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "recall.b of any type",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "b=_one_of(*RECALL_B)",
+    "b=_ANY"
+   ]
+  ],
+  "expect": "an inventory recall.b that is an object (r4 CODEX X2) exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "recall.b is not declared",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    ", b=_one_of(*RECALL_B))",
+    ")"
+   ]
+  ],
+  "expect": "an inventory recall with no b exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "an inventory with no scan is a row error, not an input refusal",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_obj(scan=_STR, ",
+    "_obj("
+   ]
+  ],
+  "expect": "an inventory with no scan (r4 CODEX X2) exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "an inventory scan of any type",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "scan=_STR",
+    "scan=_ANY"
+   ]
+  ],
+  "expect": "an inventory scan that is a list exits 2, CANNOT RUN, never a traceback"
+ }
+]

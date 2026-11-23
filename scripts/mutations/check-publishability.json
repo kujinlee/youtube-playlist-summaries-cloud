@@ -1687,8 +1687,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "    return any(not re.search(NEGATES, para",
-    "    return True or any(not re.search(NEGATES, para"
+    "    return bool(re.search(LEAD_VERBS, para",
+    "    return True or bool(re.search(LEAD_VERBS, para"
    ]
   ],
   "expect": "r2: a list item or an untagged block introduced by an imperative ending in a colon is a finding; a list under a label is a mention"
@@ -1713,7 +1713,7 @@
     "            while False:  # a blank"
    ]
   ],
-  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
+  "expect": "r3: blank lines between items keep the list; an imperative above an earlier list introduces nothing; a negated verb still introduces (Phase 6: no negation filter)"
  },
  {
   "name": "detector 4: an earlier list does not end the introducing paragraph",
@@ -1724,18 +1724,18 @@
     "            and True:  # an earlier"
    ]
   ],
-  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
+  "expect": "r3: blank lines between items keep the list; an imperative above an earlier list introduces nothing; a negated verb still introduces (Phase 6: no negation filter)"
  },
  {
-  "name": "detector 4: a negated verb still introduces a list",
+  "name": "detector 4: a negation filter silences a negated verb's list",
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "NEGATES = r\"\\b(?:never|not|no)\\b|n't\\b\"",
-    "NEGATES = r\"(?!)\""
+    "    return bool(re.search(LEAD_VERBS, para, re.I))",
+    "    return bool(re.search(LEAD_VERBS, para, re.I)) and \"never\" not in para"
    ]
   ],
-  "expect": "r3: blank lines between items keep the list; a negated verb, or an imperative above an earlier list, introduces nothing"
+  "expect": "r3: blank lines between items keep the list; an imperative above an earlier list introduces nothing; a negated verb still introduces (Phase 6: no negation filter)"
  },
  {
   "name": "detector 2: install-root findings are never emitted",
