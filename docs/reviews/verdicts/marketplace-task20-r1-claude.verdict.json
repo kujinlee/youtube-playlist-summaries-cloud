@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/marketplace-task20-r1-claude.md": "100644 011e4cd96f2390bf7d2f8f2a0f3693ec45ebcb2e",
+    "docs/reviews/codex/marketplace-task20-r1-codex.md": "100644 39b98fa76007fb89c438ee03cf20cd9d541d75cd",
+    "docs/reviews/verdicts/marketplace-task20-r1-codex.verdict.json": "100644 92d2625cbde83df6e6f1616be9d6821939c4a965"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "3719d9e1dd3adf246394eacd18f976f6e85f6b22",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/task20/r1-prompt.md",
+  "reason": "claude half filed: 17082 chars, names 3719d9e1dd3a",
+  "refused": false,
+  "review": "marketplace-task20-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/mkt-task20",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

@@ -926,10 +926,20 @@ jobs:
         run: python3 scripts/build-shipped-corpus.py --self-test
 
       # The marketplace inventory guard (marketplace-inventory plan, Task 19): row_errors, the D1 checkpoint and
-      # render, over fixture worlds. --self-test ONLY: the live run joins CI in Task 20, with the completed rows
-      # (until then every effort-3 component without a row is rc 1 by construction).
+      # render, over fixture worlds. The live run is the next step (Task 20).
       - name: check-inventory self-test
         run: python3 scripts/check-inventory.py --self-test
+
+      # The live inventory (marketplace-inventory plan, Task 20): every component in docs/marketplace/components.json
+      # has a row that meets the row contract. rc 3 is the D1 checkpoint firing — a STOP for the owner (Human step H4),
+      # printed, and NOT a CI failure. Only rc 1 (an inventory error) and rc 2 (CANNOT RUN) fail the job.
+      - name: check-inventory (live)
+        run: |
+          set +e
+          python3 scripts/check-inventory.py
+          rc=$?
+          if [ "$rc" -eq 3 ]; then echo "::warning::check-inventory rc 3: the D1 checkpoint fired (owner's stop, not a CI failure)"; exit 0; fi
+          exit "$rc"
 
       # The component map's completeness check (marketplace-inventory plan, Task 5): every supporting
       # artifact is in a component or a reasoned exclusion, and no glob exclusion hides a file a

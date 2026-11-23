@@ -77,8 +77,9 @@ The guard checks that a ground RESOLVES, not that it bears on the verdict; that 
 Guard classification (check-guard-coverage's vocabulary): SHAPE — every rule asks whether a row is well-formed and
 referentially sound against files read at one moment; none asks who got there first.
 
-Caller: the `check-inventory self-test` step of .github/workflows/ci.yml runs `--self-test` ONLY. The live run joins
-CI in plan Task 20, in the commit that completes the rows (until then a missing component is rc 1 by construction).
+Callers: two steps of .github/workflows/ci.yml. `check-inventory self-test` runs `--self-test`; `check-inventory
+(live)` (plan Task 20) runs the live check and passes rc 3, the D1 checkpoint (an owner's stop, printed as a
+::warning:: annotation), failing the job only on rc 1 or rc 2.
 """
 from __future__ import annotations
 

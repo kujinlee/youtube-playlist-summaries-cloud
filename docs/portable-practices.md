@@ -1336,3 +1336,92 @@ that, and so is every test that asserts how many things are in a directory.
 runs over — the rule can be right and the population wrong. This is about *what kind of value* an
 assertion may pin at all, and it bites even when the population is exactly correct. **Two concerns,
 two entries.**
+
+## 27. A shipped package has two roots — its own files resolve from `${CLAUDE_PLUGIN_ROOT}`, the user's files from the user's project — and one ROOT for both breaks one of them
+
+**Harvested by the marketplace inventory (plan Task 20, spec §4 item 9b's `harvest: practice`), from
+two install experiments of this repository's comprehensibility package in a stranger's world.** The
+spec stated the first half; the experiments measured the second.
+
+### The measured runs that produced it
+
+`docs/marketplace/experiment-tier-a.md` (a seeded repository, 2026-11-19) and
+`experiment-tier-b.md` (a real third-party repository, the same night) installed the package as a
+marketplace plugin and ran each component. Two defects account for every failure to FIND a file:
+S3 for the three page skills that produced no page, S1 for 6 of the 7 script failures (the seventh,
+and both pages produced without an Ask tray, are S2, §28's; `experiment-tier-a.md`, summary). They
+are the **same mistake made in opposite directions**:
+
+| defect | what was resolved against the wrong root | measured |
+|---|---|---|
+| **S3** — a skill names a package file CWD-relative | the PACKAGE's own file (`scripts/brief-compose.py`, `../shared/explainer-delivery.md`, `scripts/regen-pages.py`) looked up in the USER's working directory | `brief`, `explain-findings`, `dashboard`: no page at all |
+| **S1** — a script finds "the project" from its own path (`ROOT = Path(__file__).resolve().parent.parent`) | the USER's file (`docs/backlog.md`, `docs/features.md`, the git common directory) looked up in the PACKAGE's install directory | 6 of the 9 scripts exercised; tier B reproduced all 6 with the same rc and message |
+
+⛔ **The control is in the S1 row.** Run from inside the seeded repository, which HAS
+`docs/backlog.md`, `gen-backlog-page.py` still raised `FileNotFoundError` on
+`<install dir>/docs/backlog.md`. The file was present; the root was wrong.
+
+Neither defect was visible in this repository, for one reason: **here the package directory and the
+project directory are the same directory**, so one `ROOT` names both and every lookup succeeds.
+
+### The distinction that makes this actionable
+
+| what is being found | resolve it from | in Claude Code |
+|---|---|---|
+| a file the package SHIPS (its scripts, contracts, templates) | the package's install location | `${CLAUDE_PLUGIN_ROOT}/…` in skills and `hooks.json`; `Path(__file__)` in a script |
+| a file the USER owns (their docs, their git repository) | the user's project | the caller's working directory, or `CLAUDE_PROJECT_DIR` |
+
+⚠ **This remedy column is ARGUED, not measured.** No fix was run in either experiment: it is the
+convention the two public plugins below use, and the experiments measured only the failure.
+
+⚠ **Renaming the directory does not fix either one.** `openai/codex-plugin-cc` and
+`Yeachan-Heo/oh-my-claudecode` both keep a directory named `scripts/` and both use
+`${CLAUDE_PLUGIN_ROOT}` (spec §4); the name was never the collision, the resolution was.
+
+### How to apply
+
+1. **Name the root of every path a shipped component opens**: package or project. A variable called
+   `ROOT` that serves both is the defect, whichever way it currently points.
+2. **Test in a world where the two differ** — install the package somewhere that is not the project.
+   A test run inside the source repository cannot fail this way, because there the two roots coincide.
+3. **Grep for the convention before shipping.** At the time of the experiments this suite used
+   `${CLAUDE_PLUGIN_ROOT}` in no skill, contract or hook; only the publishability guard named it.
+
+⚠ **NOT THE SAME AS §28.** This entry is about *where* a file is looked up. §28 is about a file that
+does not exist anywhere yet on a fresh install, whichever root is searched.
+
+## 28. A component that copies itself from an existing instance cannot bootstrap — a fresh install has none, and its documented recovery must be RUN, not read
+
+**Harvested by the marketplace inventory (plan Task 20), from suite defect S2 of the install
+experiments.**
+
+### The measured run that produced it
+
+`scripts/brief-compose.py` builds every explainer page, and it gets the page's Ask tray (the box a
+reader types a question into) by **copying it from a page that already has one**. In this
+repository there are always such pages, so it always worked. In a stranger's install:
+
+| run | outcome |
+|---|---|
+| tier A, `brief-compose` scripted | rc 1; with the directory present, it refuses: no page contains an Ask tray |
+| tier A, `explain-diff` / `explain-topic` | a page was written (and for `explain-diff` served) **with no tray** |
+| tier B, the five page skills in a real repository | **0 of 5** pages had a tray |
+
+⛔ **The recovery was documented, and was wrong.** Both `brief-compose` and `gen-dashboard` print
+*run /explain-diff once first* — and `explain-diff` goes through `brief-compose`, so it produces a page
+without a tray, which cannot seed the next one. The spec's pass condition 4 splits recovery into (a)
+*documented* and (b) *works*; both components passed (a) and **failed (b)**, observed by following the
+advice in the experiment.
+
+### How to apply
+
+1. **Ask of every "copy it from an existing X": what happens when there are zero X?** If the answer is
+   "refuse", the component cannot work on a first install, however correct its refusal is.
+2. **Ship the seed as an asset of the package** (read from the package's own root, §27), and make the
+   copy-from-an-instance path an optimisation, not the only path.
+3. **Run the recovery advice in a fresh world before publishing it.** Advice that names another
+   command is only true if that command does not depend on the thing that is missing.
+
+⚠ **NOT THE SAME AS §27**, although both were invisible in the source repository for the same reason —
+it is never a fresh install. §27 finds an existing file in the wrong place; this one needs a file that
+exists nowhere yet.
