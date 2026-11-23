@@ -2533,7 +2533,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ Phase 6 fold (2026-11-22): 136 — the 25 `_check_inputs`/reader entries re-anchored on FILE_SHAPES leaves,
     # plus one per new rule: depth, repeated key, `_one_of` by type, the three vocabularies, two reference rules,
     # the net's rc, backslashreplace, and both readers' UTF-8 decode.
-    "scripts/check-inventory.py": 136,
+    # ⟳ r4 fold (2026-11-22): 145 — the FILE_SHAPES leaves r4 CODEX found missing: pass_conditions EXACTLY "1".."5"
+    # (any keys, the closed check, the key list), recall.a and recall.b (each undeclared, each of any type), and
+    # scan (undeclared, of any type). Three entries re-anchored on the new declarations.
+    "scripts/check-inventory.py": 145,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out

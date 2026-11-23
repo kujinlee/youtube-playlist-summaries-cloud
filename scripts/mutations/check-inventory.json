@@ -1313,8 +1313,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "pass_conditions=_map_of(_one_of(*PASS_VALUES))",
-    "pass_conditions=_ANY"
+    "pass_conditions=_exactly(",
+    "pass_conditions=_ANY or _exactly("
    ]
   ],
   "expect": "sidecar pass_conditions that are a boolean exits 2, CANNOT RUN, never a traceback"
@@ -1324,8 +1324,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "_map_of(_one_of(*PASS_VALUES))",
-    "_map_of(_ANY)"
+    "PASS_CONDITIONS, _one_of(*PASS_VALUES)",
+    "PASS_CONDITIONS, _ANY"
    ]
   ],
   "expect": "sidecar pass_conditions holding a non-string exits 2, CANNOT RUN, never a traceback"
@@ -1335,8 +1335,8 @@
   "file": "scripts/check-inventory.py",
   "edits": [
    [
-    "recall=_obj()",
-    "recall=_ANY"
+    "recall=_obj(a=",
+    "recall=_ANY or _obj(a="
    ]
   ],
   "expect": "an inventory recall that is a list exits 2, CANNOT RUN, never a traceback"
@@ -1497,5 +1497,104 @@
    ]
   ],
   "expect": "a UTF-8 non-ASCII inventory is read under LC_ALL=C (the reader decodes UTF-8, never the locale's)"
+ },
+ {
+  "name": "sidecar pass_conditions of any keys (one condition backs a SHIP)",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_exactly(**dict.fromkeys(PASS_CONDITIONS, _one_of(*PASS_VALUES)))",
+    "_map_of(_one_of(*PASS_VALUES))"
+   ]
+  ],
+  "expect": "sidecar pass_conditions with only condition 1 (r4 CODEX X1) exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "a closed object accepts a key it may not have",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "            if kind == \"closed\":\n",
+    "            if False:\n"
+   ]
+  ],
+  "expect": "sidecar pass_conditions with an extra condition 6 exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "the pass-condition keys stop short of 5",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "PASS_CONDITIONS = (\"1\", \"2\", \"3\", \"4\", \"5\")",
+    "PASS_CONDITIONS = (\"1\", \"2\", \"3\", \"4\")"
+   ]
+  ],
+  "expect": "sidecar pass_conditions with no condition 5 exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "recall.a of any type",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "a=_one_of(*RECALL_A)",
+    "a=_ANY"
+   ]
+  ],
+  "expect": "an inventory recall.a that is a list (r4 CODEX X2) exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "recall.a is not declared",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "recall=_obj(a=_one_of(*RECALL_A), b=",
+    "recall=_obj(b="
+   ]
+  ],
+  "expect": "an inventory recall with no a exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "recall.b of any type",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "b=_one_of(*RECALL_B)",
+    "b=_ANY"
+   ]
+  ],
+  "expect": "an inventory recall.b that is an object (r4 CODEX X2) exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "recall.b is not declared",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    ", b=_one_of(*RECALL_B))",
+    ")"
+   ]
+  ],
+  "expect": "an inventory recall with no b exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "an inventory with no scan is a row error, not an input refusal",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "_obj(scan=_STR, ",
+    "_obj("
+   ]
+  ],
+  "expect": "an inventory with no scan (r4 CODEX X2) exits 2, CANNOT RUN, never a traceback"
+ },
+ {
+  "name": "an inventory scan of any type",
+  "file": "scripts/check-inventory.py",
+  "edits": [
+   [
+    "scan=_STR",
+    "scan=_ANY"
+   ]
+  ],
+  "expect": "an inventory scan that is a list exits 2, CANNOT RUN, never a traceback"
  }
 ]

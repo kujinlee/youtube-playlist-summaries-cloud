@@ -4,7 +4,7 @@
     python3 scripts/check-inventory.py              # the live inventory under this repository
     python3 scripts/check-inventory.py --render     # the same checks; on rc 0 or 3, the Markdown view on stdout
     python3 scripts/check-inventory.py --root DIR   # another tree (the self-test's fixture worlds)
-    python3 scripts/check-inventory.py --self-test  # 296 cases
+    python3 scripts/check-inventory.py --self-test  # 311 cases
 
 It reads `docs/marketplace/inventory.json`, `components.json`, `shipping-sets.json`, the LATEST `scan-<date>.json`
 (by name), `experiment-tier-a.json`, the spec (which owns the `spec` ground kind, §5 rule 1) and
@@ -486,6 +486,9 @@ def _read_text(path):
 CHANNELS = ("plugin", "reusable-workflow")                  # check-shipping-sets.py's CHANNELS (it owns the map)
 MAP_PHASES = ("1", "1-if-feasible", "later")                # check-shipping-sets.py's PHASES (the map's own)
 PASS_VALUES = ("pass", "fail", "argued", "CANNOT RUN")      # plan Task 14 Step 6
+PASS_CONDITIONS = ("1", "2", "3", "4", "5")                 # plan Task 14 Step 6: exactly these keys (r4 CODEX X1)
+RECALL_A = (True, False, "CANNOT RUN")                      # plan Task 18: the inventory's recall.a (r4 CODEX X2)
+RECALL_B = ("pass", "fail", "unanswered")                   # plan Task 18: the inventory's recall.b (r4 CODEX X2)
 
 
 def _is_id(v):
@@ -500,7 +503,7 @@ def _show(v):
     return text if len(text) <= 60 else text[:57] + "..."
 
 
-# A SHAPE is (kind, what it must be, argument). Five kinds, and `_violations` is the only code that reads one.
+# A SHAPE is (kind, what it must be, argument). Six kinds, and `_violations` is the only code that reads one.
 def _is(want, test):
     return ("is", want, test)
 
@@ -528,6 +531,11 @@ def _obj(**fields):
     return ("obj", "an object with " + ", ".join(fields), fields)
 
 
+def _exactly(**fields):
+    """`_obj`, CLOSED: a key outside `fields` is a violation too (r4 CODEX X1: a record of conditions "1".."5")."""
+    return ("closed", "an object with exactly " + ", ".join(fields), fields)
+
+
 _ANY = _is("any value", lambda v: True)
 _STR = _is("a string", lambda v: isinstance(v, str))
 _ID = _is("a non-empty string", _is_id)
@@ -545,8 +553,8 @@ FILE_SHAPES = {
     "scan-<date>.json": _obj(components=_map_of(_obj(findings=_list_of(_obj(id=_STR))))),
     "experiment-tier-a.json": _obj(components=_map_of(_obj(
         exercised=_BOOL, operation_ok=_BOOL, scenario=_null_or(_STR),
-        pass_conditions=_map_of(_one_of(*PASS_VALUES))))),
-    "inventory.json": _obj(recall=_obj(), rows=_list_of(_ANY)),
+        pass_conditions=_exactly(**dict.fromkeys(PASS_CONDITIONS, _one_of(*PASS_VALUES)))))),
+    "inventory.json": _obj(scan=_STR, recall=_obj(a=_one_of(*RECALL_A), b=_one_of(*RECALL_B)), rows=_list_of(_ANY)),
 }
 
 
@@ -573,7 +581,7 @@ def _violations(shape, v, at):
         else:
             for k, x in v.items():
                 yield from _violations(arg, x, f"{at}[{_show(k)}]")
-    elif kind == "obj":
+    elif kind in ("obj", "closed"):
         if not isinstance(v, dict):
             yield at, f"is {_show(v)}, not {want}"
         else:
@@ -582,6 +590,10 @@ def _violations(shape, v, at):
                     yield f"{at}.{k}", f"is missing; it must be {s[1]}"
                 else:
                     yield from _violations(s, v[k], f"{at}.{k}")
+            if kind == "closed":
+                for k in v:
+                    if k not in arg:
+                        yield f"{at}[{_show(k)}]", f"is a key it may not have; it must be {want}"
     else:
         raise AssertionError(f"no such shape kind: {kind}")
 
@@ -778,10 +790,11 @@ def _self_test_body():
             "lib": {"findings": []}, "dat": {"findings": []}}
     sidecar = {
         "ep": {"exercised": True, "scenario": "A-ep", "operation_ok": True,
-               "pass_conditions": {"1": "pass", "2": "argued", "3": "pass"}},
+               "pass_conditions": {"1": "pass", "2": "argued", "3": "pass", "4": "pass", "5": "pass"}},
         "ep2": {"exercised": True, "scenario": "A-ep2", "operation_ok": False,
-                "pass_conditions": {"1": "fail", "2": "pass"}},
-        "lib": {"exercised": False, "scenario": None, "operation_ok": False, "pass_conditions": {"1": "argued"}},
+                "pass_conditions": {"1": "fail", "2": "pass", "3": "pass", "4": "pass", "5": "pass"}},
+        "lib": {"exercised": False, "scenario": None, "operation_ok": False,
+                "pass_conditions": dict.fromkeys(("1", "2", "3", "4", "5"), "argued")},
     }
     spec = "\n".join([
         "# Spec", "## 2. Decisions of record", "| **D1** | Audience |", "| **D2** | Decomposition |",
@@ -1443,6 +1456,24 @@ def _self_test_body():
          at("components", "ep", "pass_conditions", "1", value=1)),
         ("an inventory recall that is a list", "inventory.json", at("recall", value=[True])),
         ("an inventory with no recall", "inventory.json", at("recall", drop=True)),
+        # r4 fold (CODEX X1): the plan's Task 14 record has EXACTLY the conditions "1".."5" (plan line 774); a
+        # condition left out is unrecorded, never "not failed", so it cannot back a SHIP.
+        ("sidecar pass_conditions with only condition 1 (r4 CODEX X1)", "experiment-tier-a.json",
+         at("components", "ep", "pass_conditions", value={"1": "pass"})),
+        ("sidecar pass_conditions with no condition 5", "experiment-tier-a.json",
+         at("components", "ep", "pass_conditions", "5", drop=True)),
+        ("sidecar pass_conditions with an extra condition 6", "experiment-tier-a.json",
+         at("components", "ep", "pass_conditions", "6", value="pass")),
+        # r4 fold (CODEX X2): recall.a, recall.b and scan are read by rules, so they are declared, with the plan's
+        # Task 18 vocabularies for the two recall answers.
+        ("an inventory recall.a that is a list (r4 CODEX X2)", "inventory.json", at("recall", "a", value=[])),
+        ("an inventory recall.a of 1, not true", "inventory.json", at("recall", "a", value=1)),
+        ("an inventory recall with no a", "inventory.json", at("recall", "a", drop=True)),
+        ("an inventory recall.b that is an object (r4 CODEX X2)", "inventory.json", at("recall", "b", value={})),
+        ("an inventory recall.b `Pass`", "inventory.json", at("recall", "b", value="Pass")),
+        ("an inventory recall with no b", "inventory.json", at("recall", "b", drop=True)),
+        ("an inventory with no scan (r4 CODEX X2)", "inventory.json", at("scan", drop=True)),
+        ("an inventory scan that is a list", "inventory.json", at("scan", value=[])),
     )
     for i, (what, fname, fn, *more) in enumerate(bad_inputs):
         case(f"{what} exits 2, CANNOT RUN, never a traceback",
@@ -1460,6 +1491,12 @@ def _self_test_body():
         ("sidecar pass_conditions of another string", "experiment-tier-a.json",
          at("components", "ep2", "pass_conditions", "1", value="argued"), 0),
         ("an inventory recall with other answers", "inventory.json", at("recall", value={"a": True, "b": "pass"}), 0),
+        ("sidecar pass_conditions with all five conditions of other values", "experiment-tier-a.json",
+         at("components", "ep2", "pass_conditions", value=dict.fromkeys(("1", "2", "3", "4", "5"), "argued")), 0),
+        ("an inventory recall.a of CANNOT RUN", "inventory.json", at("recall", "a", value="CANNOT RUN"), 0),
+        ("an inventory recall.b of fail", "inventory.json", at("recall", "b", value="fail"), 0),
+        ("an inventory scan naming another scan file", "inventory.json",
+         at("scan", value="docs/marketplace/scan-2026-02-02.json"), 1),
     )
     for i, (what, fname, fn, rc) in enumerate(good_inputs):
         case(f"{what} is readable input (exit {rc}, no CANNOT RUN)",
@@ -1538,7 +1575,8 @@ def _self_test_body():
          (1, "", True))
     case("...all pass conditions `pass` is rc 0",
          lambda: said("voc-pc-pass", "experiment-tier-a.json",
-                      at("components", "ep", "pass_conditions", value={"1": "pass", "2": "pass"}))[:2], (0, ""))
+                      at("components", "ep", "pass_conditions",
+                         value=dict.fromkeys(("1", "2", "3", "4", "5"), "pass")))[:2], (0, ""))
     case("_one_of matches by TYPE: True is not 1, 1.0 is not 1, 1 is 1",
          lambda: [bool(list(_violations(_one_of(1), v, ""))) for v in (True, 1.0, 1)],
          [True, True, False])
