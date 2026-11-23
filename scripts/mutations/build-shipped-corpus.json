@@ -268,8 +268,8 @@
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "    return {norm(t), norm(URL.sub(\" \", t)), norm(raw)}",
-    "    return {norm(t), norm(raw)}"
+    "norm(URL.sub(\" \", t)), norm(raw)}",
+    "norm(raw)}"
    ]
   ],
   "expect": "a quote with each word wrapped in a Markdown link, or split by bare URLs, fails check 1 (rendered, URLs dropped)"
@@ -279,8 +279,8 @@
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "    return {norm(t), norm(URL.sub(\" \", t)), norm(raw)}",
-    "    return {norm(t), norm(URL.sub(\" \", t))}"
+    "norm(t), norm(URL.sub(\" \", t)), norm(raw)}",
+    "norm(t), norm(URL.sub(\" \", t))}"
    ]
   ],
   "expect": "a quote in text a renderer hides (a comment, an unused reference definition's title) fails check 1 (raw bytes)"
@@ -305,12 +305,12 @@
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "    def handle_starttag(self, tag, attrs):\n        if tag in self.BLOCK:",
-    "    def handle_starttag(self, tag, attrs):\n        if True:"
+    "        if tag in self.BLOCK:\n            self.parts.append(\" \")\n        if tag == \"img\":",
+    "        if True:\n            self.parts.append(\" \")\n        if tag == \"img\":"
    ],
    [
-    "    def handle_endtag(self, tag):\n        if tag in self.BLOCK:",
-    "    def handle_endtag(self, tag):\n        if True:"
+    "        if tag in self.BLOCK:\n            self.parts.append(\" \")\n\n    def handle_data",
+    "        if True:\n            self.parts.append(\" \")\n\n    def handle_data"
    ]
   ],
   "expect": "an inline tag inside a word does not split it, so emphasis mid-word fails check 1"
