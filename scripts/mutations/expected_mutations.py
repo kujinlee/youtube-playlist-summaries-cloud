@@ -2572,7 +2572,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ hse slice C redesign r1 fold: 186 + 9 = 195 — `-c` listed and `-m` read as a module load (XM1), `_unread`
     # listing its line, the call-form module outcome check (record, directory, no file: XM2), the outcome invariant,
     # and a default read in its def's own scope, a class body included (Cm1). 2 anchors re-bound; none retired.
-    "scripts/check-shipping-sets.py": 195,
+    "scripts/check-shipping-sets.py": 201,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.

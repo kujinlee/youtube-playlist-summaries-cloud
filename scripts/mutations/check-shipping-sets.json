@@ -2143,5 +2143,71 @@
       ]
     ],
     "expect": "Redesign r1 Cm1: a default parameter is read in the scope that DEFINES the function (an enclosing function, a class body), never at module scope"
+  },
+  {
+    "name": "backlog #697: the NAME clause never fires — a group A–C file shipped under its own name passes",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if name in excluded:\n",
+        "        if False and name in excluded:\n"
+      ]
+    ],
+    "expect": "decision 5: an installed file NAMED for a group A–C file is a gap, whatever its bytes"
+  },
+  {
+    "name": "backlog #697: the BYTES clause never fires — a raw decision-5 source under another name passes",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if hit:\n",
+        "        if False and hit:\n"
+      ]
+    ],
+    "expect": "decision 5: a raw group-D source shipped under ANOTHER name is a gap — its bytes are the source's"
+  },
+  {
+    "name": "backlog #697: group D joins the excluded NAMES — its paraphrase, shipped under the D file's name, is refused",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    return {n: k for k in \"ABC\" for n in g[k]}, sources",
+        "    return {n: k for k in \"ABCD\" for n in g[k]}, sources"
+      ]
+    ],
+    "expect": "decision 5: a group-D PARAPHRASE (the D file's name, other bytes) and an unlisted memory file are not gaps"
+  },
+  {
+    "name": "backlog #697: a plugin package's installed files are never checked against decision 5",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            found += decision5_gaps(files if plugin else",
+        "            found += [] if plugin else decision5_gaps(files if plugin else"
+      ]
+    ],
+    "expect": "CLI: a plugin package that installs a group-C file is red, rc 1, and names it"
+  },
+  {
+    "name": "backlog #697: a reusable-workflow package's files are never checked against decision 5",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            found += decision5_gaps(files if plugin else",
+        "            found += [] if not plugin else decision5_gaps(files if plugin else"
+      ]
+    ],
+    "expect": "CLI: a reusable-workflow package whose file carries a group-C source's bytes is red, rc 1"
+  },
+  {
+    "name": "backlog #697: an unreadable decision-5 table is read as an empty one — `0 gaps` instead of CANNOT RUN",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        raise CannotRun(f\"decision 5 cannot be read: {e}\") from e",
+        "        return {}, {}"
+      ]
+    ],
+    "expect": "CLI: no decision-5 table in the repository is CANNOT RUN, rc 2 — never `0 gaps`"
   }
 ]

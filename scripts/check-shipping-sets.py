@@ -2,7 +2,7 @@
 """The component map, checked for completeness against what is on disk (marketplace-inventory plan, Task 5;
 spec §3: "every supporting artifact maps to a component, to a package, or to a written exclusion").
 
-    python3 scripts/check-shipping-sets.py --self-test  # 140 cases
+    python3 scripts/check-shipping-sets.py --self-test  # 148 cases
     python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
     python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json [MAP]
 
@@ -164,7 +164,9 @@ from __future__ import annotations
 import ast
 import contextlib
 import fnmatch
+import functools
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -993,6 +995,55 @@ def closure_gaps(decl: dict, reached: set[str], repo: Path = REPO) -> list[str]:
     return out
 
 
+CORPUS_BUILDER = "build-shipped-corpus.py"
+
+
+@functools.lru_cache(maxsize=None)
+def _corpus_builder():
+    """`build-shipped-corpus.py`, loaded as a module (its hyphenated name cannot be imported): decision 5's table is
+    parsed by ITS `groups` and a file canonicalised by ITS `_canon_sha` — one rule, one place."""
+    spec = importlib.util.spec_from_file_location("build_shipped_corpus",
+                                                  Path(__file__).resolve().parent / CORPUS_BUILDER)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def decision5(root: Path) -> tuple[dict, dict]:
+    """Decision 5 as `--closure` applies it (backlog #697): `(excluded, sources)` — each group A–C file name -> its
+    letter, and the CANONICAL hash of each A–C and D source in `docs/memory/` -> `(path, letter)`. A table or a
+    source it cannot read is CANNOT RUN: a closure that skipped the rule would pass a package shipping them."""
+    b = _corpus_builder()
+    try:
+        g = b.groups((root / b.DECISION).read_text())
+        sources = {b._canon_sha(root / b.SRC / n): (f"{b.SRC}/{n}", k) for k in "ABCD" for n in g[k]}
+    except (OSError, b.CannotRun) as e:
+        raise CannotRun(f"decision 5 cannot be read: {e}") from e
+    return {n: k for k in "ABC" for n in g[k]}, sources
+
+
+def decision5_gaps(files, d5: tuple[dict, dict], root: Path) -> list[str]:
+    """A shipped file decision 5 keeps out (backlog #697's Fails-if): one NAMED for a group A–C file, wherever it
+    lands, and one whose canonical bytes are an A–C or D source's, under any name — a D file ships only as its
+    paraphrase. Each file is read at its repository source, which is what `materialize` copies.
+    ⚠ BOUND: a D paraphrase that has gone STALE, and a quote kept in a reworded file, are `build-shipped-corpus.py`'s
+    checks (`--out` / `--check`), not this one; a source edited by more than whitespace is not matched by bytes."""
+    excluded, sources = d5
+    out = []
+    for f in sorted(files):
+        if f == PLUGIN_META:
+            continue
+        name = f.rsplit("/", 1)[-1]
+        if name in excluded:
+            out.append(f"gap: decision-5: {f} — named for {name}, which decision 5 EXCLUDES (group {excluded[name]})")
+        src = root / source_path(f)
+        hit = sources.get(_corpus_builder()._canon_sha(src)) if src.is_file() else None
+        if hit:
+            out.append(f"gap: decision-5: {f} — its bytes are {hit[0]}'s (group {hit[1]}), a decision-5 source "
+                       "shipped raw")
+    return out
+
+
 def check_declaration(name: str, decl: dict) -> None:
     """An entry of `shipping-sets.json` keeps its own arithmetic, whatever its channel (review r2 Xm6), and a
     plugin's components name only files it installs — or it is refused."""
@@ -1103,6 +1154,7 @@ def closure_main(sets: Path, map_path: Path, root: Path) -> int:
     try:
         packages = load_declaration(sets)
         m = load_map(map_path, root)
+        d5 = decision5(root)
         for name in sorted(set(packages) | set(m.packages)):
             if name not in packages:
                 gaps += 1
@@ -1129,6 +1181,8 @@ def closure_main(sets: Path, map_path: Path, root: Path) -> int:
                 with tempfile.TemporaryDirectory() as t:
                     reached = closure(materialize(name, {"installed_files": sorted(files)}, root, Path(t)), root)
                 found += closure_gaps(decl, reached - omitted, root)
+            found += decision5_gaps(files if plugin else {f for c in decl["components"].values() for f in c["files"]},
+                                    d5, root)
             gaps += len(found)
             lines += [f"{name}: {g}" for g in found]
             if plugin:
@@ -1487,6 +1541,29 @@ def _self_test_body() -> int:
                                                                               "expected_count": 1}}))),
          "REFUSED: q: component 'a' names b.py, which is not in installed_files")
 
+    d5_letters = {"A": ["a1.md", "a2.md", "a3.md", "a4.md", "a5.md", "a6.md"], "B": ["b1.md", "b2.md", "b3.md", "b4.md"],
+                  "C": ["c1.md", "c2.md", "c3.md", "c4.md", "c5.md", "c6.md"],
+                  "D": ["d1.md", "d2.md", "d3.md", "d4.md", "d5.md", "d6.md"]}
+
+    def d5_root(root: Path | None = None) -> Path:
+        """`root` with a decision-5 table and its 22 source files, each with bytes no other fixture file has."""
+        root = root or tree({})
+        if (root / "docs/marketplace/decision-5-suspect-files.md").exists():
+            return root
+        table = "\n".join(f"| {k} | why | " + ", ".join(f"`{n}`" for n in v) + " |" for k, v in d5_letters.items())
+        (root / "docs/marketplace").mkdir(parents=True, exist_ok=True)
+        (root / "docs/marketplace/decision-5-suspect-files.md").write_text(f"| # | Why | Files |\n|---|---|---|\n{table}\n")
+        for n in (n for v in d5_letters.values() for n in v):
+            (root / "docs/memory").mkdir(parents=True, exist_ok=True)
+            (root / "docs/memory" / n).write_text(f"decision-5 fixture source {n}\n")
+        return root
+
+    def d5_with(files: dict) -> Path:
+        r = d5_root()
+        for rel, text in files.items():
+            (r / rel).parent.mkdir(parents=True, exist_ok=True)
+            (r / rel).write_text(text)
+        return r
     def clo(*argv, root):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -1498,6 +1575,7 @@ def _self_test_body() -> int:
         a components.json that says exactly what the declaration says, for the cases that are not about the two
         disagreeing. `pair()` below writes a map of its own."""
         (root / "sets.json").write_text(json.dumps({"measured_at": "x", "packages": packages}))
+        d5_root(root)       # backlog #697: `--closure` reads decision 5's table and its sources from the root
         if with_map:
             (root / "components.json").write_text(json.dumps({
                 "measured_at": "x", "packages": {n: {"channel": d["channel"]} for n, d in packages.items()},
@@ -2195,6 +2273,51 @@ def _self_test_body() -> int:
              world({".agents/skills/a/SKILL.md": "", ".agents/skills/b/SKILL.md": ""}))),
          "CANNOT RUN: .agents/skills/b/SKILL.md is tracked, and it is not a file on disk")
 
+    # ---- decision 5 (backlog #697): no package ships a file decision 5 keeps out ----------------------------------
+    case("decision 5: an installed file NAMED for a group A–C file is a gap, whatever its bytes",
+         lambda: (lambda r: decision5_gaps(["notes/b2.md"], decision5(r), r))(d5_with({"notes/b2.md": "reworded\n"})),
+         ["gap: decision-5: notes/b2.md — named for b2.md, which decision 5 EXCLUDES (group B)"])
+    case("decision 5: a raw group-D source shipped under ANOTHER name is a gap — its bytes are the source's",
+         lambda: (lambda r: decision5_gaps(["notes/kept.md"], decision5(r), r))(
+             d5_with({"notes/kept.md": "decision-5 fixture source d4.md\n"})),
+         ["gap: decision-5: notes/kept.md — its bytes are docs/memory/d4.md's (group D), a decision-5 source "
+          "shipped raw"])
+    case("decision 5: a group-A source shipped under its own name is both gaps (name and bytes)",
+         lambda: (lambda r: decision5_gaps(["docs/memory/a3.md"], decision5(r), r))(d5_root()),
+         ["gap: decision-5: docs/memory/a3.md — named for a3.md, which decision 5 EXCLUDES (group A)",
+          "gap: decision-5: docs/memory/a3.md — its bytes are docs/memory/a3.md's (group A), a decision-5 source "
+          "shipped raw"])
+    case("decision 5: a group-D PARAPHRASE (the D file's name, other bytes) and an unlisted memory file are not gaps",
+         lambda: (lambda r: decision5_gaps(["docs/marketplace/shipped-corpus/d1.md", "docs/memory/lesson.md",
+                                            PLUGIN_META], decision5(r), r))(
+             d5_with({"docs/marketplace/shipped-corpus/d1.md": "the essence only\n",
+                      "docs/memory/lesson.md": "a lesson\n"})),
+         [])
+    d5_cli = d5_with({".agents/skills/b/SKILL.md": "b\n", "scripts/w.yml": "decision-5 fixture source c5.md\n"})
+    case("CLI: a plugin package that installs a group-C file is red, rc 1, and names it",
+         lambda: clo("--closure", sets_file(d5_cli, {"recall": decl_of(["skills/b/SKILL.md", "docs/memory/c2.md"])}),
+                     root=d5_cli),
+         (1, ["recall: gap: decision-5: docs/memory/c2.md — named for c2.md, which decision 5 EXCLUDES (group C)",
+              "recall: gap: decision-5: docs/memory/c2.md — its bytes are docs/memory/c2.md's (group C), a decision-5 "
+              "source shipped raw",
+              "recall: 0 cwd-relative hand-off(s), 0 external read(s)", "2 gaps"], ""))
+    case("CLI: a reusable-workflow package whose file carries a group-C source's bytes is red, rc 1",
+         lambda: clo("--closure", sets_file(d5_cli, {"wf": {"channel": "reusable-workflow", "components": {
+             "job": {"files": ["scripts/w.yml"], "expected_count": 1}}}}), root=d5_cli),
+         (1, ["wf: gap: decision-5: scripts/w.yml — its bytes are docs/memory/c5.md's (group C), a decision-5 source "
+              "shipped raw",
+              "wf: SKIPPED — reusable-workflow channel, no installed tree", "1 gaps"], ""))
+    def d5_missing():
+        r = tree({".agents/skills/b/SKILL.md": "b\n"})
+        sets = sets_file(r, {"pkg": decl_of(["skills/b/SKILL.md"])})
+        (r / "docs/marketplace/decision-5-suspect-files.md").unlink()
+        rc, out, err = clo("--closure", sets, root=r)
+        return rc, out, err[:39]
+    case("CLI: no decision-5 table in the repository is CANNOT RUN, rc 2 — never `0 gaps`",
+         d5_missing, (2, [], "CANNOT RUN: decision 5 cannot be read: "))
+    case("decision 5, the identity case: the REAL table names 16 excluded files and 22 sources",
+         lambda: (lambda d: (len(d[0]), len(d[1])))(decision5(REPO)), (16, 22))
+
     real = json.loads((REPO / "docs/marketplace/shipping-sets.json").read_text())["packages"]
 
     def real_gaps(pkg: str, drop: str) -> list:
@@ -2271,6 +2394,9 @@ def _self_test_body() -> int:
         # ⟳ 2026-11-22 Task 19's Phase 6 fold: 360 + 1 = 361 / 534138f22f780cb0. Its one gained line, diffed by hand
         # (sorted, `comm -3`) against cc211b78's `git archive`: `check-inventory.py` -> `check-shipping-sets.py` (the
         # self-test's CHANNELS/PHASES equality, by import). Lost: 0.
+        # ⟳ 2026-11-23 backlog #697 (decision 5 in `--closure`): 361 + 1 = 362 / d47bd22a1db012b6. Its one gained line,
+        # diffed by hand (sorted, `comm -3`) against d0db35d3's `git archive`: `check-shipping-sets.py` ->
+        # `build-shipped-corpus.py` (`_corpus_builder`: decision 5's table and canonical hash, by load). Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2282,7 +2408,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (361, "534138f22f780cb0", []))
+             (362, "d47bd22a1db012b6", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
