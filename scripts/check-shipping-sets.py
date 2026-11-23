@@ -1054,7 +1054,7 @@ HIT_RES = (re.compile(r"^(QUOTE FROM \S+) IN (.+?): "), re.compile(r"^(EXCLUDED 
 # run — its `report` (one `  <D source>: <n> quotes` line per group-D source, then the `checked ...` count line), then
 # its PASS line. Taken from that symbol; a change there is a CANNOT RUN here until these follow it.
 CLEAN_SOURCE_RE = re.compile(r"^  \S.*: \d+ quotes$")
-CLEAN_COUNT_RE = re.compile(r"^checked (\d+) output files for \d+ quote fragments and \d+ excluded names$")
+CLEAN_COUNT_RE = re.compile(r"^checked (\d+) output files, each rendered as CommonMark, for \d+ quote fragments and \d+ excluded names$")
 PASS_LINE = "PASS: no group-D quote and no excluded file in the output"
 
 
@@ -1658,6 +1658,10 @@ def _self_test_body() -> int:
             (root / "docs/memory" / n).write_text(d5_src(n))
         (root / "scripts").mkdir(parents=True, exist_ok=True)
         (root / "scripts" / CORPUS_BUILDER).write_bytes((REPO / "scripts" / CORPUS_BUILDER).read_bytes())
+        # The builder resolves its CommonMark renderer from ITS OWN checkout (backlog #698), which for this copy is
+        # the fixture root: lend it this checkout's `node_modules`, or every fixture's quote check is CANNOT RUN.
+        if (REPO / "node_modules").is_dir() and not (root / "node_modules").exists():
+            (root / "node_modules").symlink_to(REPO / "node_modules", target_is_directory=True)
         return root
 
     def d5_with(files: dict) -> Path:

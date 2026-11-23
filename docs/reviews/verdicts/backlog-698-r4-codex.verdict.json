@@ -1,0 +1,34 @@
+{
+  "attempts": [
+    "  gpt-6.2-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.2-astra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.1-terra: ok \u2014 2481 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "bbf85d98d1f9379512182775158c59761b77f6d0",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/bl698/r4/codex.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "loosening_answers": {
+    "0e4ccb90eeb2": "not a loosening",
+    "169c08d5f317": "not a loosening",
+    "250c739c54f2": "not a loosening",
+    "3e58e77f52b1": "not a loosening",
+    "73d42d6fc6cc": "not a loosening",
+    "8c08951f5d7e": "not a loosening",
+    "ca964ae7f0eb": "not a loosening",
+    "de62ef368291": "not a loosening",
+    "ed4660bb0eb7": "not a loosening",
+    "eeaff0d7f286": "not a loosening"
+  },
+  "model": "gpt-6.1-terra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/bl698/r4/brief.md",
+  "reason": "2481 chars",
+  "refused": false,
+  "review": "backlog-698-r4-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/bl698"
+}

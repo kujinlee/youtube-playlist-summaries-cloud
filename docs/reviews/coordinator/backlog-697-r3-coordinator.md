@@ -35,3 +35,22 @@ REVIEW GAP: codex — alternation (round 3)
 ## Thrashing watch
 
 **Not thrashing.** The only fix-induced finding (F3) is in docs, not closure-guard. Neither closure-guard finding was caused by the round-2 fold. The redesign bet is WON, and the decision-log row records it as stopped at round 3.
+
+## After the round: merging master (PR #620, backlog #698) — a semantic conflict, fixed in the merge
+
+PR #620 changed the builder's clean output and the way it resolves its renderer. **Both broke this branch's contract in the fail-closed direction.**
+
+**1. The count line changed.** It now reads `checked N output files, each rendered as CommonMark, for …`.
+- The exact contract read the real tree's genuine PASS as CANNOT RUN.
+- `CLEAN_COUNT_RE` now matches that exact text.
+
+**2. The renderer moved.** The builder resolves `node_modules/markdown-it` from its OWN checkout, and for the self-test's copied builder that is the fixture root.
+- So 36 of the 170 cases read CANNOT RUN.
+- `d5_root` now links this checkout's `node_modules` into the fixture root.
+
+**After the merge:**
+- `--self-test` passes 170/170, and the real tree's `--closure` gives 0 gaps.
+- All 6572 mutation edits are still anchored.
+- In CI, `--closure` runs in the job that ran `npm ci` first.
+
+**Not reviewed by a half.** The change is in the test fixture and one regex literal. From round 4, findings are filed unless they are a BLOCKER (§0 Q4c), and CI's selected mutation shards run this script's manifest on the PR.

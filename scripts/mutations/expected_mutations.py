@@ -2523,7 +2523,18 @@ EXPECTED_MUTATIONS = {
     # ⟳ round-2 fold: 25 — a Markdown link reduced to its text and a bare URL dropped (r2 X1), and the canonical
     # excluded-content hash: per-line trailing whitespace, trailing blank lines, the excluded side canonical (r2 X2).
     # ⟳ round-3 fold: 27 — the plain view dropped from the output side, and from the quote side (r3 C1).
-    "scripts/build-shipped-corpus.py": 27,
+    # ⟳ 2026-11-23 backlog #698: 34 — the regex link model's 4 entries removed with it (link reduction, bare URL, the
+    # two plain-view ones); 11 added for the CommonMark renderer: each of the three views, block vs inline tags (both
+    # directions), image alt, the quote's file env, the quote fragmented as rendered, the output offset in the render
+    # batch, and the renderer's two CANNOT RUNs (could not run, no HTML per input).
+    # ⟳ PR #620 round-1 fold: 51 — a boundary read both ways (r1 X1/C1/C2: the tight reading's alt join and Cf
+    # deletion, the raw Cf view, the loose reading's every-tag break, each reading searched, a source quote in every
+    # reading), unshown text dropped (r1 C3: four clauses), the quote's plain view back (r1 X4), the known probe and
+    # stderr (r1 X2), and output that is not UTF-8 (r1 X3/C4).
+    # ⟳ PR #620 round-2 fold: 61 — the letters-only view (r2 X1: searched, whitespace deleted), master's link-reduced
+    # reading (r2 X2: the output's, the regex's reduction, the source quote's), anything on stderr (r2 X3), and a
+    # closed <details> (r2 X4: read as closed, its summary shown, an image's alt in it hidden, its close ends it).
+    "scripts/build-shipped-corpus.py": 74,
     # 2026-11-22, marketplace-inventory plan Task 19: the inventory guard, pinned in the commit that creates it. One
     # entry per load-bearing clause: the checkpoint (population, ratio, majority, the two CANNOT RUNs), every
     # row_errors rule (backlog #696 a, c and f among them), every inventory-level rule, the exit-code ranking,

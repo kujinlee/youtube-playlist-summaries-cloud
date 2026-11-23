@@ -132,7 +132,7 @@
   "expect": "a quote reused in part, with its other words changed, fails check 1 on a six-word run"
  },
  {
-  "name": "markdown emphasis is not normalised away",
+  "name": "markdown emphasis is not normalised away by norm (backlog #698: the renderer strips it from the rendered views, so this pins the raw view's)",
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
@@ -140,7 +140,7 @@
     "re.sub(r\"[^\\w*]+\", \" \", text.lower())"
    ]
   ],
-  "expect": "a source quote in a kept output file fails check 1, through emphasis, case and line breaks"
+  "expect": "the words of a quote with its punctuation changed still match, apostrophes of either kind included"
  },
  {
   "name": "a D file with no quote found is a pass",
@@ -220,28 +220,6 @@
   "expect": "an excluded file's content in the output under another name fails check 2"
  },
  {
-  "name": "a Markdown link is not reduced to its text (its destination splits the quoted words)",
-  "file": "scripts/build-shipped-corpus.py",
-  "edits": [
-   [
-    "    text = re.sub(r\"\\[([^\\]\\n]*)\\](?:\\([^)\\n]*\\)|\\[[^\\]\\n]*\\])\", r\"\\1\", text)",
-    "    pass"
-   ]
-  ],
-  "expect": "a quote with each word wrapped in a Markdown link, or split by bare URLs, fails check 1 (links reduced to text)"
- },
- {
-  "name": "a bare URL is not dropped (it splits the quoted words)",
-  "file": "scripts/build-shipped-corpus.py",
-  "edits": [
-   [
-    "    text = re.sub(r\"(?:https?|ftp)://\\S+|www\\.\\S+\", \" \", text)",
-    "    pass"
-   ]
-  ],
-  "expect": "a quote with each word wrapped in a Markdown link, or split by bare URLs, fails check 1 (links reduced to text)"
- },
- {
   "name": "trailing whitespace is kept per line in the canonical hash",
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
@@ -275,25 +253,564 @@
   "expect": "an excluded file's content in the output under another name fails check 2"
  },
  {
-  "name": "an output file is searched only in its link-reduced view (the plain view dropped)",
+  "name": "backlog #698: no RENDERED reading of an output file is searched (only its raw bytes)",
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "        bodies = {norm(raw, links) for links in VIEWS}",
-    "        bodies = {norm(raw, True)}"
+    "    ts = readings(html)\n",
+    "    ts = []\n"
    ]
   ],
-  "expect": "a quote inside text that only LOOKS like a link, or glued to a URL, fails check 1 (the plain view is searched too)"
+  "expect": "a run glued to an autolink on one side and split by a link destination in the raw text fails check 1 (the rendered view alone holds it)"
  },
  {
-  "name": "a source quote is fragmented only in its link-reduced view (the plain view dropped)",
+  "name": "backlog #698: the URL-dropped view of the rendered text is not searched ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named",
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "    for links in VIEWS:\n        for p in re.split(",
-    "    for links in (True,):\n        for p in re.split("
+    "    return ts + [URL.sub(\" \", t) for t in ts] + [raw,",
+    "    return ts + [raw,"
    ]
   ],
-  "expect": "a SOURCE quote holding text that only looks like a link is searched in its plain view too, and fails check 1"
+  "expect": "an output file is searched in eleven texts: four readings, each with URLs dropped, and the raw bytes as they are, with format characters deleted, and link-reduced"
+ },
+ {
+  "name": "backlog #698: the raw bytes of an output file are not searched (text a renderer hides) ⟳ RE-BOUND PR #620 round 2: the link-reduced raw view also holds a comment, so it dies on a destination",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "[raw, unformat(raw), delink(raw)]",
+    "[delink(raw)]"
+   ]
+  ],
+  "expect": "a quote in a link's DESTINATION, which the rendered and link-reduced readings both drop, fails check 1 (raw bytes)"
+ },
+ {
+  "name": "backlog #698: a block tag does not separate the words on either side of it (only `loose` breaks)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "return tag in self.BLOCK or self.mode == \"loose\"",
+    "return self.mode == \"loose\""
+   ]
+  ],
+  "expect": "each reading lays out one HTML its own way: `read` breaks at block tags and spaces an image, `tight` joins an image and drops unshown text, `loose` breaks at every tag"
+ },
+ {
+  "name": "backlog #698: every tag separates words, inline ones too (a word with emphasis inside it is split) ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "tag in self.BLOCK or self.mode == \"loose\"",
+    "True"
+   ]
+  ],
+  "expect": "each reading lays out one HTML its own way: `read` breaks at block tags and spaces an image, `tight` joins an image and drops unshown text, `loose` breaks at every tag"
+ },
+ {
+  "name": "backlog #698: an image's alt text is not read ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "            alt = a.get(\"alt\") or \"\"",
+    "            alt = \"\""
+   ]
+  ],
+  "expect": "each reading lays out one HTML its own way: `read` breaks at block tags and spaces an image, `tight` joins an image and drops unshown text, `loose` breaks at every tag"
+ },
+ {
+  "name": "backlog #698: a quote is rendered without its source file's reference definitions",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "md.renderInline(t, envs[i])",
+    "md.renderInline(t, {})"
+   ]
+  ],
+  "expect": "a source quote is read as RENDERED: a link in it, inline or by reference to its file's definitions, is its text"
+ },
+ {
+  "name": "backlog #698: a source quote is fragmented in its raw Markdown, not as rendered ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named ⟳ RE-ATTRIBUTED PR #620 round 3 F3: a source quote holding hidden text tells it apart at the run level",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    return readings(html) + [quote, delink(quote)]",
+    "    return [quote, delink(quote)]"
+   ]
+  ],
+  "expect": "a SOURCE quote holding hidden text is read in the readings that drop it, so the run a reader sees fails check 1 (round 3 F3: raw, plain and `read` all keep the hidden word)"
+ },
+ {
+  "name": "backlog #698: an output file is searched in the wrong rendering (the sources' offset not skipped)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "zip(files, raws, html[len(sources):])",
+    "zip(files, raws, html)"
+   ]
+  ],
+  "expect": "round 4's line, a REAL link beside text that only looks like one, fails check 1 (its rendered text holds the run)"
+ },
+ {
+  "name": "backlog #698: a renderer that could not run renders every input as empty (a pass)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        raise CannotRun(f\"the CommonMark renderer could not run ({NODE}): {e}\") from e",
+    "        return [\"\"] * len(docs), [\"\"] * len(inline)"
+   ]
+  ],
+  "expect": "a renderer that cannot run is CANNOT RUN, never a pass: node absent, the bundle absent, node failing, or no HTML back"
+ },
+ {
+  "name": "backlog #698: the renderer's output is not checked for one HTML string per input",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    if not ok:\n        raise CannotRun",
+    "    if False:\n        raise CannotRun"
+   ]
+  ],
+  "expect": "a renderer that cannot run is CANNOT RUN, never a pass: node absent, the bundle absent, node failing, or no HTML back"
+ },
+ {
+  "name": "PR #620 r1 X1: an image's alt text is spaced in the tight reading too (it never joins a word) ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "alt if self.mode in (\"tight\", \"collapsed\") else \" \" + alt + \" \"",
+    "\" \" + alt + \" \""
+   ]
+  ],
+  "expect": "each reading lays out one HTML its own way: `read` breaks at block tags and spaces an image, `tight` joins an image and drops unshown text, `loose` breaks at every tag"
+ },
+ {
+  "name": "PR #620 r1 X1: no tight reading is searched ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "unformat(visible(html, \"tight\")), ",
+    ""
+   ]
+  ],
+  "expect": "an output file is searched in eleven texts: four readings, each with URLs dropped, and the raw bytes as they are, with format characters deleted, and link-reduced"
+ },
+ {
+  "name": "PR #620 r1 C1: the tight reading keeps invisible format characters (they split a word) ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "unformat(visible(html, \"tight\"))",
+    "visible(html, \"tight\")"
+   ]
+  ],
+  "expect": "an output file is searched in eleven texts: four readings, each with URLs dropped, and the raw bytes as they are, with format characters deleted, and link-reduced"
+ },
+ {
+  "name": "PR #620 r1 C1: the raw bytes are not also read with format characters deleted ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "unformat(raw), delink(raw)]",
+    "delink(raw)]"
+   ]
+  ],
+  "expect": "an output file is searched in eleven texts: four readings, each with URLs dropped, and the raw bytes as they are, with format characters deleted, and link-reduced"
+ },
+ {
+  "name": "PR #620 r1 C1: a format character is not deleted (the Cf test inverted) ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "unicodedata.category(c) != \"Cf\"",
+    "unicodedata.category(c) == \"Cf\""
+   ]
+  ],
+  "expect": "an output file is searched in eleven texts: four readings, each with URLs dropped, and the raw bytes as they are, with format characters deleted, and link-reduced"
+ },
+ {
+  "name": "PR #620 r1 C2: the loose reading breaks only at the listed block tags ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    " or self.mode == \"loose\"",
+    ""
+   ]
+  ],
+  "expect": "each reading lays out one HTML its own way: `read` breaks at block tags and spaces an image, `tight` joins an image and drops unshown text, `loose` breaks at every tag"
+ },
+ {
+  "name": "PR #620 r1 C2: no loose reading is searched ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    ", visible(html, \"loose\"),\n",
+    ",\n"
+   ]
+  ],
+  "expect": "an output file is searched in eleven texts: four readings, each with URLs dropped, and the raw bytes as they are, with format characters deleted, and link-reduced"
+ },
+ {
+  "name": "PR #620 r1 C3: text inside an unshown element is kept in every reading",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if not self._hidden():\n            self.parts.append(data)",
+    "        if True:\n            self.parts.append(data)"
+   ]
+  ],
+  "expect": "text a browser never shows (style, script, template, a hidden element, one nesting its own tag) does not break a run, so it fails check 1"
+ },
+ {
+  "name": "PR #620 r1 C3: script, style and template are not unshown (only `hidden` is)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "tag in self.UNSHOWN or \"hidden\" in a",
+    "\"hidden\" in a"
+   ]
+  ],
+  "expect": "text a browser never shows (style, script, template, a hidden element, one nesting its own tag) does not break a run, so it fails check 1"
+ },
+ {
+  "name": "PR #620 r1 C3: an element carrying `hidden` is not unshown",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    " or \"hidden\" in a)",
+    ")"
+   ]
+  ],
+  "expect": "text a browser never shows (style, script, template, a hidden element, one nesting its own tag) does not break a run, so it fails check 1"
+ },
+ {
+  "name": "PR #620 r1 C3: an unshown element's own tag nested inside it is not counted (its first close ends the hiding) ⟳ RE-BOUND PR #620 round 3: the stack of open elements replaced the counter — an end tag now closes the OUTERMOST open element of its tag",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        for i in range(len(self.stack) - 1, -1, -1):\n            if self.stack[i][\"tag\"] == tag:",
+    "        for i in range(len(self.stack)):\n            if self.stack[i][\"tag\"] == tag:"
+   ]
+  ],
+  "expect": "text a browser never shows (style, script, template, a hidden element, one nesting its own tag) does not break a run, so it fails check 1"
+ },
+ {
+  "name": "PR #620 r1 C3: an unshown element ends at its first close however deeply its tag nests ⟳ RE-BOUND PR #620 round 3: the stack of open elements replaced the counter — an end tag now closes every open element",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "                del self.stack[i:]\n                break",
+    "                del self.stack[:]\n                break"
+   ]
+  ],
+  "expect": "text a browser never shows (style, script, template, a hidden element, one nesting its own tag) does not break a run, so it fails check 1"
+ },
+ {
+  "name": "PR #620 r1 X4: a source quote is not also read plain",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "+ [quote, delink(quote)]",
+    "+ [delink(quote)]"
+   ]
+  ],
+  "expect": "a source quote is ALSO read plain, its link destination's words in place, and that run fails check 1 (round 1 X4: the view master had)"
+ },
+ {
+  "name": "PR #620 r1 X1: a source quote is read only in the `read` reading (and plain) ⟳ RE-ATTRIBUTED PR #620 round 2: the letters-only view subsumes the run-level case it named ⟳ RE-ATTRIBUTED PR #620 round 3 F3: a source quote holding hidden text tells it apart at the run level",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "readings(html) + [quote",
+    "[visible(html)] + [quote"
+   ]
+  ],
+  "expect": "a SOURCE quote holding hidden text is read in the readings that drop it, so the run a reader sees fails check 1 (round 3 F3: raw, plain and `read` all keep the hidden word)"
+ },
+ {
+  "name": "PR #620 r1 X2: the known probe's rendering is not checked",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    if (html[-1], inl[-1]) != _PROBE_HTML:",
+    "    if False:"
+   ]
+  ],
+  "expect": "a renderer that returns well-shaped but WRONG output is CANNOT RUN: empty strings, or plausible strings (its input echoed), fail the known probe (round 1 X2)"
+ },
+ {
+  "name": "PR #620 r1 X2: a renderer's stderr is not checked",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    if r.stderr:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a renderer that writes to stderr, though its output is right, is CANNOT RUN (round 1 X2)"
+ },
+ {
+  "name": "PR #620 r1 X3/C4: output that is not UTF-8 is not caught (a traceback, rc 1)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    except UnicodeDecodeError as e:",
+    "    except ZeroDivisionError as e:"
+   ]
+  ],
+  "expect": "a renderer whose output is not UTF-8 is CANNOT RUN, never a traceback (round 1 X3/C4)"
+ },
+ {
+  "name": "PR #620 r2 X1: the letters-only view is not searched",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "            if any(f in body for body in bodies) or any(spelt[f] in body for body in bare):",
+    "            if any(f in body for body in bodies):"
+   ]
+  ],
+  "expect": "a run whose boundaries mix a join and a split fails check 1 (letters-only view)"
+ },
+ {
+  "name": "PR #620 r2 X1: the letters-only reading keeps whitespace",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "if c.isalnum())",
+    "if c.isalnum() or c.isspace())"
+   ]
+  ],
+  "expect": "a letters-only text is casefolded, with format characters, whitespace and punctuation deleted"
+ },
+ {
+  "name": "PR #620 r2 X2: the output is not read link-reduced",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    return ts + [URL.sub(\" \", t) for t in ts] + [raw, unformat(raw), delink(raw)]",
+    "    return ts + [URL.sub(\" \", t) for t in ts] + [raw, unformat(raw)]"
+   ]
+  ],
+  "expect": "master's link-reduced reading of the output refuses a run its links' destinations and titles split, a look-alike link's words included (a false alarm, never a miss)"
+ },
+ {
+  "name": "PR #620 r2 X2: the link-reduced reading reduces no link (only bare URLs are dropped)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    return URL.sub(\" \", LINK.sub(r\"\\1\", text))",
+    "    return URL.sub(\" \", text)"
+   ]
+  ],
+  "expect": "master's link-reduced reading of the output refuses a run its links' destinations and titles split, a look-alike link's words included (a false alarm, never a miss)"
+ },
+ {
+  "name": "PR #620 r2 X2: a source quote is not read link-reduced",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "[quote, delink(quote)]\n",
+    "[quote]\n"
+   ]
+  ],
+  "expect": "a SOURCE quote is also read link-reduced, as master read it, and that run fails check 1 (round 2 X2)"
+ },
+ {
+  "name": "PR #620 r2 X3: whitespace on stderr is accepted (stripped first)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    if r.stderr:\n        raise",
+    "    if r.stderr.strip():\n        raise"
+   ]
+  ],
+  "expect": "a renderer that writes only whitespace to stderr is CANNOT RUN too: anything on stderr (round 2 X3)"
+ },
+ {
+  "name": "PR #620 r2 X4: a closed <details> is read as open ⟳ RE-BOUND PR #620 round 3: the stack of open elements replaced the counter",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "\"shut\": self.mode == \"collapsed\" and tag == \"details\" and \"open\" not in a",
+    "\"shut\": False"
+   ]
+  ],
+  "expect": "the body of a closed <details>, its text or an image's alt, is unshown and does not break a run, so it fails check 1"
+ },
+ {
+  "name": "PR #620 r2 X4: a closed <details> hides its <summary> too ⟳ RE-BOUND PR #620 round 3: the stack of open elements replaced the counter",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "f[\"summary\"] = top[\"summaries\"] == 0",
+    "f[\"summary\"] = False"
+   ]
+  ],
+  "expect": "an OPEN <details> shows its body, and a closed one its summary, so either breaks the run and passes check 1"
+ },
+ {
+  "name": "PR #620 r2 X4: an image's alt inside a closed <details> is shown ⟳ RE-BOUND PR #620 round 3: the stack of open elements replaced the counter",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "            if not hides and not self._hidden():\n",
+    "            if not hides:\n"
+   ]
+  ],
+  "expect": "the body of a closed <details>, its text or an image's alt, is unshown and does not break a run, so it fails check 1"
+ },
+ {
+  "name": "PR #620 r2 X4: a <details> close does not end its hiding ⟳ RE-BOUND PR #620 round 3: the stack of open elements replaced the counter",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "            if self.stack[i][\"tag\"] == tag:\n                shown",
+    "            if self.stack[i][\"tag\"] == tag != \"details\":\n                shown"
+   ]
+  ],
+  "expect": "a closed <details> nested in an open one hides its own body only, and its close ends the hiding"
+ },
+ {
+  "name": "PR #620 r3 F2: an end tag closes only the TOP open element, and only when its tag matches (the counter's model)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        shown = not self._hidden()\n        for i in range(len(self.stack) - 1, -1, -1):",
+    "        shown = not self._hidden()\n        for i in range(len(self.stack) - 1, max(len(self.stack) - 2, -1), -1):"
+   ]
+  ],
+  "expect": "an unclosed hidden element inside a <div> is closed by its </div>, written in capitals or past a stray close tag too, so the run after it fails check 1 (round 3 F2)"
+ },
+ {
+  "name": "PR #620 r3 F2: an end tag that matches no open element closes every one",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if shown and self._breaks(tag):",
+    "        else:\n            del self.stack[:]\n        if shown and self._breaks(tag):"
+   ]
+  ],
+  "expect": "ADJACENT NEGATIVES: text a browser really hides stays hidden — past a close tag that closes nothing open, inside a hidden element's own nested tag, and after a hidden void element — and text it shows breaks a run"
+ },
+ {
+  "name": "PR #620 r3 F1: a void element is pushed (its end tag never comes, so it stays open)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if void or tag in self.VOID:",
+    "        if void:"
+   ]
+  ],
+  "expect": "ADJACENT NEGATIVES: text a browser really hides stays hidden — past a close tag that closes nothing open, inside a hidden element's own nested tag, and after a hidden void element — and text it shows breaks a run"
+ },
+ {
+  "name": "PR #620 r3 F1: a block start tag does not close an open <p>",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if tag in self.CLOSES_P:",
+    "        if False:"
+   ]
+  ],
+  "expect": "a block start tag closes an open <p>, and an <li> an open <li>, with everything opened inside them, so the run after it fails check 1 (round 3)"
+ },
+ {
+  "name": "PR #620 r3 F1: an <li> does not close an open <li>",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        if tag in self.LIST_ITEMS:",
+    "        if False:"
+   ]
+  ],
+  "expect": "a block start tag closes an open <p>, and an <li> an open <li>, with everything opened inside them, so the run after it fails check 1 (round 3)"
+ },
+ {
+  "name": "PR #620 r3 F1: an <li> start closes an open <li> however it is nested (no stop element)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "            self._close_to(self.LIST_ITEMS[tag], self.LIST_STOP)",
+    "            self._close_to(self.LIST_ITEMS[tag], frozenset())"
+   ]
+  ],
+  "expect": "ADJACENT NEGATIVES: a block start tag inside a <button> does not close the <p> outside it, nor an <li> inside a <blockquote> the <li> outside it, so the hidden text they hold stays hidden"
+ },
+ {
+  "name": "PR #620 r3 F1: a <div> stops an <li> start's search for an open <li>",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    LIST_STOP = (BLOCK | P_SCOPE | frozenset(\"center dir hgroup menu\".split())) - frozenset(\"address div p\".split())",
+    "    LIST_STOP = (BLOCK | P_SCOPE | frozenset(\"center dir hgroup menu\".split())) - frozenset(\"address p\".split())"
+   ]
+  ],
+  "expect": "a block start tag closes an open <p>, and an <li> an open <li>, with everything opened inside them, so the run after it fails check 1 (round 3)"
+ },
+ {
+  "name": "PR #620 r3 F1: a block start tag closes an open <p> across a <button> (no button scope)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "            self._close_to({\"p\"}, self.P_SCOPE)",
+    "            self._close_to({\"p\"}, frozenset())"
+   ]
+  ],
+  "expect": "ADJACENT NEGATIVES: a block start tag inside a <button> does not close the <p> outside it, nor an <li> inside a <blockquote> the <li> outside it, so the hidden text they hold stays hidden"
+ },
+ {
+  "name": "PR #620 r3 F1: every <summary> child of a closed <details> is shown, not only the first",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "            top[\"summaries\"] += 1",
+    "            top[\"summaries\"] += 0"
+   ]
+  ],
+  "expect": "a closed <details> shows only its FIRST <summary> CHILD: a second one, or one nested deeper, is its body, unshown, and does not break a run, so it fails check 1 (round 3)"
+ },
+ {
+  "name": "PR #620 r3 F1: no collapsed reading is searched (tight drops a closed <details> body again only as a reading of its own)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    ",\n            unformat(visible(html, \"collapsed\"))]",
+    "]"
+   ]
+  ],
+  "expect": "the body of a closed <details>, its text or an image's alt, is unshown and does not break a run, so it fails check 1"
+ },
+ {
+  "name": "PR #620 r3: a self-closing tag's boundary is a break before it only (its closing side dropped)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "self.handle_starttag(tag, attrs, void=True)\n        if not self._hidden()",
+    "self.handle_starttag(tag, attrs, void=True)\n        if False and not self._hidden()"
+   ]
+  ],
+  "expect": "a source quote is fragmented in six texts: four readings, its raw Markdown, and that link-reduced"
+ },
+ {
+  "name": "PR #620 r3 F4: the letters-only view is not compatibility-normalised (a full-width letter is not its plain letter)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "unicodedata.normalize(\"NFKD\", text).casefold()",
+    "text.casefold()"
+   ]
+  ],
+  "expect": "a run spelt in full-width or mathematical-bold letters fails check 1, and so does one with a decomposed accent (letters-only view, compatibility-decomposed; round 3 F4)"
+ },
+ {
+  "name": "PR #620 r3 F4: the letters-only view is compatibility-COMPOSED (NFKC), which composes a decomposed accent into one letter",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "unicodedata.normalize(\"NFKD\", text)",
+    "unicodedata.normalize(\"NFKC\", text)"
+   ]
+  ],
+  "expect": "a run spelt in full-width or mathematical-bold letters fails check 1, and so does one with a decomposed accent (letters-only view, compatibility-decomposed; round 3 F4)"
  }
 ]
