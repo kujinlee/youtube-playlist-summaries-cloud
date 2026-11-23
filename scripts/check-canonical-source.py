@@ -224,7 +224,7 @@ CANONS: list[dict] = [
             #
             # ⛔⛔ `CONTEXT.md` ALSO CARRIES THESE TOKENS AND IS DELIBERATELY *NOT* DECLARED HERE.
             # A declared citing site must EXIST, and `check-plan-code.py`'s `HARNESS_TREE` stages
-            # `scripts`, `supabase`, `docs`, `node_modules/typescript`, `.claude/hooks`,
+            # `scripts`, `supabase`, `docs`, `node_modules/typescript`, `node_modules/markdown-it`, `.claude/hooks`,
             # `.github/workflows`, `.agents/skills`, `.githooks` and the one file
             # `.claude/settings.json` — **no repo-root files**. So declaring a
             # root file here makes `audit()` report *"declared a citing site but does not exist"*
@@ -284,7 +284,7 @@ ROOT_GLOBS = ("*.md",)
 # which is the one shape in which a duplicate is a ratchet rather than this repo's most-measured
 # defect (`a-class-fix-needs-an-independent-copy-and-an-identity-case`).
 STAGEABLE_PREFIXES = ("scripts/", "supabase/", "docs/", "node_modules/typescript/",
-                      ".claude/hooks/", ".github/workflows/", ".agents/skills/",
+                      "node_modules/markdown-it/", ".claude/hooks/", ".github/workflows/", ".agents/skills/",
                       ".githooks/")
 # ⛔ THE FILES `HARNESS_TREE` STAGES — matched by EQUALITY, never `startswith` (backlog #658). As a
 # prefix, `.claude/settings.json` let `.claude/settings.json.bak` count as staged. ⚠ This copy is the

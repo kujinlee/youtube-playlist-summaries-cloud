@@ -21374,3 +21374,35 @@ in the package, DON'T-SHIP on spec §4's orphan rule. page-chrome, page-markup, 
 "no way to assess it". New `docs/portable-practices.md` §27 (two roots, `${CLAUDE_PLUGIN_ROOT}`; spec §4 item 9b) and
 §28 (a copy-from-an-instance component cannot bootstrap; S2). `ci.yml` gains the live `check-inventory.py` step: rc 3
 printed and passed, rc 1 and 2 fail. Live run: rc 3, the D1 checkpoint fired over 34 phase-1 rows.
+## 2026-11-23
+The check that keeps the owner's quoted words out of the memory files a stranger receives now reads each file the way
+a reader sees it, rendered as Markdown, instead of guessing at Markdown with patterns. Four review rounds had each
+found a way to hide a quote from the old guesses; the last was a line mixing a real link with text that only looks
+like one. Every real quote, hidden twelve different ways, is now caught; 42 of those disguises got past the old check.
+<!--tech-->
+Backlog #698, branch `backlog-698`. `scripts/build-shipped-corpus.py --check` renders each source D file and each
+output file with markdown-it's `commonmark` preset (`node_modules/markdown-it/dist/markdown-it.min.js`, already a
+prod dependency, called through `node -e`; node or the bundle absent, a non-zero exit, or no HTML per input is CANNOT
+RUN, rc 2). Quotes are rendered inline in their own file's reference definitions. An output file is searched in its
+rendered text (block tags and `<br>` separate words, inline tags do not, an image is its alt), plus two views that
+only add hits: that text with URLs dropped, and the raw bytes. Self-test 31 -> 41 cases (a 612-plant corpus: 51 real
+quotes x 12 disguises); mutations 27 -> 34 (4 regex-view mutations removed, 11 added). `check-plan-code.py`
+HARNESS_TREE stages `node_modules/markdown-it`. Real build: 180 files, PASS. Row 697 (recall package) untouched.
+PR #620 round-1 fold: a boundary is read both ways — a tight reading (Unicode Cf deleted, an image's alt and every
+inline tag joined, `<style>`/`<script>`/`<template>`/`hidden` text dropped) and a loose one (every tag breaks), each
+with URLs dropped, plus the raw bytes with Cf deleted; a source quote is fragmented in all three readings and plain.
+Every renderer call carries a pinned probe; stderr, non-UTF-8 output or a wrong probe is CANNOT RUN. Self-test 41 ->
+51 cases (17 disguises, 867 plants); mutations 34 -> 51. `check-canonical-source.py` stages `node_modules/markdown-it/`
+(the cause of CI's `verify` and `mutation-sweep (3)` reds on 0fb65173).
+PR #620 round-2 fold: every view is also searched letters-only (casefolded, all but letters and digits deleted), so a
+run mixing a joined and a split boundary is found; master's link-reduced reading is restored on the output and the
+source quote; whitespace-only stderr is CANNOT RUN; a closed `<details>` body is unshown text. Self-test 51 -> 63
+cases (18 disguises, 918 plants); mutations 51 -> 61. Over 3,492 benign Markdown files the letters-only view added 0
+hits.
+PR #620 round-3 fold: what is hidden is read off a stack of open elements closed as a browser closes them (an end tag
+closes everything opened inside its own, a block start tag an open `<p>`, an `<li>` an open `<li>`), not a counter
+that one unclosed `<details>` or `<span hidden>` left hiding the rest of the file; the closed-`<details>` rule is a
+fourth reading of its own, so the older readings keep their texts; the letters-only view is NFKD-normalised
+(full-width and mathematical letters), not NFKC, which would lose a decomposed accent; a source quote holding hidden
+text now tells the readings apart. Self-test 63 -> 73 cases; mutations 61 -> 74. Over 3,500 Markdown files the
+letters-only view added 0 (file, fragment) hits to the word views' 1,003.
