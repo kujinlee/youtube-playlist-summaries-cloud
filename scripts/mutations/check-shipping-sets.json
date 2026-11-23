@@ -2193,8 +2193,8 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "            found += decision5_gaps(files if plugin else",
-        "            found += [] if not plugin else decision5_gaps(files if plugin else"
+        "else {f for c in decl[\"components\"].values() for f in c[\"files\"]},",
+        "else set(),"
       ]
     ],
     "expect": "CLI: a reusable-workflow package whose file carries a group-C source's bytes is red, rc 1"
