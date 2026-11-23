@@ -21369,3 +21369,9 @@ rendered text (block tags and `<br>` separate words, inline tags do not, an imag
 only add hits: that text with URLs dropped, and the raw bytes. Self-test 31 -> 41 cases (a 612-plant corpus: 51 real
 quotes x 12 disguises); mutations 27 -> 34 (4 regex-view mutations removed, 11 added). `check-plan-code.py`
 HARNESS_TREE stages `node_modules/markdown-it`. Real build: 180 files, PASS. Row 697 (recall package) untouched.
+PR #620 round-1 fold: a boundary is read both ways — a tight reading (Unicode Cf deleted, an image's alt and every
+inline tag joined, `<style>`/`<script>`/`<template>`/`hidden` text dropped) and a loose one (every tag breaks), each
+with URLs dropped, plus the raw bytes with Cf deleted; a source quote is fragmented in all three readings and plain.
+Every renderer call carries a pinned probe; stderr, non-UTF-8 output or a wrong probe is CANNOT RUN. Self-test 41 ->
+51 cases (17 disguises, 867 plants); mutations 34 -> 51. `check-canonical-source.py` stages `node_modules/markdown-it/`
+(the cause of CI's `verify` and `mutation-sweep (3)` reds on 0fb65173).

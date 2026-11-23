@@ -2527,7 +2527,11 @@ EXPECTED_MUTATIONS = {
     # two plain-view ones); 11 added for the CommonMark renderer: each of the three views, block vs inline tags (both
     # directions), image alt, the quote's file env, the quote fragmented as rendered, the output offset in the render
     # batch, and the renderer's two CANNOT RUNs (could not run, no HTML per input).
-    "scripts/build-shipped-corpus.py": 34,
+    # ⟳ PR #620 round-1 fold: 51 — a boundary read both ways (r1 X1/C1/C2: the tight reading's alt join and Cf
+    # deletion, the raw Cf view, the loose reading's every-tag break, each reading searched, a source quote in every
+    # reading), unshown text dropped (r1 C3: four clauses), the quote's plain view back (r1 X4), the known probe and
+    # stderr (r1 X2), and output that is not UTF-8 (r1 X3/C4).
+    "scripts/build-shipped-corpus.py": 51,
     # 2026-11-22, marketplace-inventory plan Task 19: the inventory guard, pinned in the commit that creates it. One
     # entry per load-bearing clause: the checkpoint (population, ratio, majority, the two CANNOT RUNs), every
     # row_errors rule (backlog #696 a, c and f among them), every inventory-level rule, the exit-code ranking,

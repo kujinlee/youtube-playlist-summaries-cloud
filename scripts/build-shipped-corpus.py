@@ -2,7 +2,7 @@
 """Build the memory corpus a stranger receives, and check the built output (marketplace-inventory plan, Task 18,
 step "Build the shipped corpus"; the owner's answer to walkthrough decision 5).
 
-    python3 scripts/build-shipped-corpus.py --self-test  # 41 cases
+    python3 scripts/build-shipped-corpus.py --self-test  # 51 cases
     python3 scripts/build-shipped-corpus.py --out DIR      # build into DIR, then run both checks on DIR
     python3 scripts/build-shipped-corpus.py --check DIR    # both checks on an already-built DIR
 
@@ -21,11 +21,16 @@ The two checks read the BUILT OUTPUT, never the transform:
      words inside a longer one — is searched for as WORDS: every run of punctuation and whitespace is one space, and
      case is folded. An output file is searched in its RENDERED text: rendered as a CommonMark document by markdown-it
      (`node_modules/markdown-it`, a repo dependency), and read as laid out — a block tag or `<br>` separates words,
-     an inline tag does not, an image is its alt text. That one view holds every run of words a reader sees, however
-     real and look-alike links are mixed around it (backlog #698: rounds 1–4 of PR #617 each found a way past the
-     regex model of links it replaces). Two more views only ADD hits: that text with each URL dropped (a quote split
-     by bare URLs), and the raw bytes (text a renderer hides). A source D file with no quote found in it is CANNOT
-     RUN, not a pass (its quotes would go unsearched).
+     an inline tag does not, an image is its alt text. That holds every run of words a reader sees, however real
+     and look-alike links are mixed around it (backlog #698: rounds 1–4 of PR #617 each found a way past the regex
+     model of links it replaces). A BOUNDARY IS READ BOTH WAYS: where the layout cannot settle whether two pieces
+     of text join (an image inside a word, an invisible format character, a block tag missing from the list, text
+     a browser never shows), a TIGHT reading joins them (Unicode format characters deleted, an image's alt text and
+     every inline tag joined, the text of <style>, <script>, <template> and `hidden` elements dropped) and a LOOSE
+     reading separates them (every tag and image a break). Every view only ADDS hits: the three readings, each with
+     its URLs dropped too (a quote split by bare URLs), and the raw bytes, plain and with format characters deleted
+     (text a renderer hides). A source quote is fragmented in each of the three readings and in its plain Markdown
+     too. A source D file with no quote found in it is CANNOT RUN, not a pass (its quotes would go unsearched).
   2. no excluded file is present anywhere in the output tree — by name, or by content (an output file whose
      CANONICAL bytes equal an excluded source file's, under any name: line endings unified, trailing whitespace
      dropped from each line, trailing blank lines dropped, on both sides).
@@ -33,11 +38,14 @@ The two checks read the BUILT OUTPUT, never the transform:
 rc 0 = built/checked and both checks pass; 1 = a check FAILED (each hit is named); 2 = CANNOT RUN (treat as NOT
 RUN): a group count other than 6/4/6/6, a listed file missing from the source, a D file with no paraphrase or a
 stale one, an `--out` that is not absent or empty, a non-`.md` entry in the source, a D file with no quote found, or
-a renderer that could not run (node or the markdown-it bundle absent, node failing, or no HTML back).
+a renderer that could not run or cannot be trusted (node or the markdown-it bundle absent, node failing, anything
+written to its stderr, output that is not UTF-8, the wrong shape back, or a known probe snippet, sent with every
+call, not rendered exactly as pinned).
 
 What this cannot see: a paraphrase that keeps an owner's words in a form the normaliser does not undo (a reworded
 sentence, a reused run of fewer than six words from a longer quote, a fragment under three words, a word split or
-joined differently), a run a reader sees only through a renderer OTHER than CommonMark (an Obsidian `[[note|alias]]`
+joined differently), a word spelled with look-alike letters from another script (a Cyrillic `а` for a Latin
+`a`: homoglyphs are not folded, so such a run is a miss), a run a reader sees only through a renderer OTHER than CommonMark (an Obsidian `[[note|alias]]`
 shows only its alias, a GFM table or footnote may lay words out differently) or only through styling (CSS that hides
 or reorders text), an excluded file's content in the output when it differs by more than line
 endings and trailing whitespace (edited, or concatenated into another file), and private content that is not a
@@ -53,6 +61,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -79,6 +88,13 @@ const docs = req.docs.map(t => { const env = {}; const h = md.render(t, env); en
 const inline = req.inline.map(([i, t]) => md.renderInline(t, envs[i]));
 process.stdout.write(JSON.stringify({docs, inline}));
 """
+# THE KNOWN PROBE (round 1 X2 of PR #620): appended to every render call, a document and an inline text (resolved in
+# the document's reference definitions) whose HTML is pinned here. A renderer that returns well-shaped but wrong
+# output — empty strings, its input echoed — cannot return these exactly, so the run is CANNOT RUN, never a pass.
+_PROBE_DOC = "Probe *one* `two` [three][r] fo&shy;ur <b>five</b>\n\n[r]: https://p.example\n"
+_PROBE_INLINE = "[six][r] ![seven](s.png)"
+_PROBE_HTML = ('<p>Probe <em>one</em> <code>two</code> <a href="https://p.example">three</a> fo\u00adur <b>five</b></p>\n',
+               '<a href="https://p.example">six</a> <img src="s.png" alt="seven" />')
 
 
 class CannotRun(Exception):
@@ -116,61 +132,108 @@ def quotes(text: str) -> list[str]:
 def render(docs: list[str], inline: list[tuple[int, str]]) -> tuple[list[str], list[str]]:
     """Each of `docs` rendered to HTML as a whole CommonMark document, and each `(i, text)` of `inline` rendered as
     inline Markdown in the reference definitions of `docs[i]` — by markdown-it, one node process for the lot. Node
-    absent, the bundle absent, a non-zero exit, or output that is not one HTML string per input is CANNOT RUN: a
-    renderer that did not run has rendered nothing, and nothing searched is not a pass (backlog #698)."""
+    absent, the bundle absent, a non-zero exit, anything on stderr, output that is not UTF-8, output that is not one
+    HTML string per input, or a KNOWN PROBE (`_PROBE_DOC`, `_PROBE_INLINE`) not rendered exactly is CANNOT RUN: a
+    renderer that did not run, or ran wrong, has rendered nothing to search, and nothing searched is not a pass
+    (backlog #698; round 1 X2/X3 of PR #620)."""
     bundle = REPO / MARKDOWN_IT
     if not bundle.is_file():
         raise CannotRun(f"the CommonMark renderer {MARKDOWN_IT} is absent (run `npm ci`)")
+    req = {"docs": docs + [_PROBE_DOC], "inline": inline + [(len(docs), _PROBE_INLINE)]}
     try:
-        r = subprocess.run([NODE, "-e", _RENDER_JS, str(bundle)], input=json.dumps({"docs": docs, "inline": inline}),
-                           capture_output=True, text=True, timeout=120)
+        r = subprocess.run([NODE, "-e", _RENDER_JS, str(bundle)], input=json.dumps(req),
+                           capture_output=True, encoding="utf-8", timeout=120)
+    except UnicodeDecodeError as e:
+        raise CannotRun(f"the CommonMark renderer's output is not UTF-8: {e}") from e
     except (OSError, subprocess.TimeoutExpired) as e:
         raise CannotRun(f"the CommonMark renderer could not run ({NODE}): {e}") from e
     if r.returncode != 0:
         raise CannotRun(f"the CommonMark renderer exited {r.returncode}: {r.stderr.strip()[-300:]}")
+    if r.stderr.strip():
+        raise CannotRun(f"the CommonMark renderer wrote to stderr: {r.stderr.strip()[-300:]}")
     try:
         got = json.loads(r.stdout)
         html, inl = got["docs"], got["inline"]
-        ok = (len(html), len(inl)) == (len(docs), len(inline)) and all(isinstance(h, str) for h in html + inl)
+        ok = ((len(html), len(inl)) == (len(req["docs"]), len(req["inline"]))
+              and all(isinstance(h, str) for h in html + inl))
     except (ValueError, KeyError, TypeError):
         ok = False
     if not ok:
         raise CannotRun(f"the CommonMark renderer returned no HTML per input: {r.stdout[:200]!r}")
-    return html, inl
+    if (html[-1], inl[-1]) != _PROBE_HTML:
+        raise CannotRun(f"the CommonMark renderer did not render its known probe exactly: {(html[-1], inl[-1])!r}")
+    return html[:-1], inl[:-1]
 
 
 class _Visible(HTMLParser):
-    """The text of rendered HTML as a reader sees it laid out: a BLOCK tag or `<br>` is a break between words, an
-    inline tag (`<em>`, `<a>`, `<code>` …) is not — `con<em>clu</em>sion` reads as one word — an image is its alt
-    text, and a comment is not text."""
+    """The text of rendered HTML as a reader sees it laid out, in one of three READINGS (`mode`), because where a word
+    boundary falls is not settled by the renderer alone (round 1 X1/C1/C2 of PR #620) — so a boundary is read both
+    ways, each reading an add-only view:
+      * `read`: a BLOCK tag or `<br>` is a break between words, an inline tag (`<em>`, `<a>`, `<code>` …) is not —
+        `con<em>clu</em>sion` reads as one word — an image is its alt text, spaced, and a comment is not text;
+      * `tight`: every boundary that can JOIN does — an image's alt text joins the text around it (`ne![ver](x)`
+        reads `never`), inline tags join, and (in `views`) an invisible format character is deleted;
+      * `loose`: every tag boundary, inline or block, listed or not (`<center>`, `<legend>`), and every image
+        SEPARATES words.
+    `tight` and `loose` also drop text a browser never shows: inside `<script>`, `<style>`, `<template>`, or an
+    element carrying `hidden` (round 1 C3); `read` keeps it."""
     BLOCK = frozenset("address article aside blockquote br dd details dialog div dl dt fieldset figcaption figure "
                       "footer form h1 h2 h3 h4 h5 h6 header hr li main nav ol p pre section summary table tbody td "
                       "tfoot th thead tr ul".split())
+    UNSHOWN = frozenset("script style template".split())
+    VOID = frozenset("area base br col embed hr img input link meta source track wbr".split())
 
-    def __init__(self):
+    def __init__(self, mode):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
+        self.mode = mode
+        self.hiding: tuple[str, int] | None = None     # (the unshown element's tag, its nesting depth)
+
+    def _breaks(self, tag):
+        """Whether a tag boundary is a break between words: a block tag in every reading, any tag in `loose`."""
+        return tag in self.BLOCK or self.mode == "loose"
 
     def handle_starttag(self, tag, attrs):
-        if tag in self.BLOCK:
+        a = dict(attrs)
+        if self.hiding:
+            if tag == self.hiding[0] and tag not in self.VOID:
+                self.hiding = (tag, self.hiding[1] + 1)
+            return
+        if self.mode != "read" and (tag in self.UNSHOWN or "hidden" in a):
+            if tag not in self.VOID:
+                self.hiding = (tag, 1)
+            return
+        if self._breaks(tag):
             self.parts.append(" ")
         if tag == "img":
-            self.parts.append(" " + (dict(attrs).get("alt") or "") + " ")
+            alt = a.get("alt") or ""
+            self.parts.append(alt if self.mode == "tight" else " " + alt + " ")
 
     def handle_endtag(self, tag):
-        if tag in self.BLOCK:
+        if self.hiding:
+            if tag == self.hiding[0]:
+                self.hiding = (tag, self.hiding[1] - 1) if self.hiding[1] > 1 else None
+            return
+        if self._breaks(tag):
             self.parts.append(" ")
 
     def handle_data(self, data):
-        self.parts.append(data)
+        if not self.hiding:
+            self.parts.append(data)
 
 
-def visible(html: str) -> str:
-    """The VISIBLE text of rendered HTML (`_Visible`)."""
-    p = _Visible()
+def visible(html: str, mode: str = "read") -> str:
+    """The VISIBLE text of rendered HTML in one reading (`_Visible`: `read`, `tight` or `loose`)."""
+    p = _Visible(mode)
     p.feed(html)
     p.close()
     return "".join(p.parts)
+
+
+def unformat(text: str) -> str:
+    """`text` with every invisible FORMAT character (Unicode category Cf: a soft hyphen, a zero-width space or joiner,
+    a word joiner …) deleted, so a word holding one reads as the one word a reader sees (round 1 C1)."""
+    return "".join(c for c in text if unicodedata.category(c) != "Cf")
 
 
 def norm(text: str) -> str:
@@ -181,13 +244,20 @@ def norm(text: str) -> str:
     return " ".join(re.sub(r"[\W_]+", " ", text.lower()).split())
 
 
+def readings(html: str) -> list[str]:
+    """Rendered HTML's text in each reading a reader may see: `read`, `tight` (format characters deleted too) and
+    `loose` — a boundary the renderer cannot settle is read BOTH ways (round 1 X1/C1/C2 of PR #620)."""
+    return [visible(html), unformat(visible(html, "tight")), visible(html, "loose")]
+
+
 def views(raw: str, html: str) -> set[str]:
-    """The texts an output file is searched in, each normalised. The RENDERED text (`visible(html)`) is the view that
-    holds every run of words a reader sees, whatever mix of real and look-alike links surrounds them; the other two
-    only ADD hits: the rendered text with each URL dropped (a quote split by bare URLs, round 2 X1), and the raw
-    bytes (text a renderer hides: a comment, a link destination, an unused reference definition)."""
-    t = visible(html)
-    return {norm(t), norm(URL.sub(" ", t)), norm(raw)}
+    """The texts an output file is searched in, each normalised. The RENDERED text, in each of its `readings`, holds
+    every run of words a reader sees, whatever mix of real and look-alike links surrounds them; every view only ADDS
+    hits: each reading, the same with each URL dropped (a quote split by bare URLs, round 2 X1), and the raw bytes,
+    as they are and with format characters deleted (text a renderer hides: a comment, a link destination, an unused
+    reference definition)."""
+    ts = readings(html)
+    return {norm(t) for t in ts} | {norm(URL.sub(" ", t)) for t in ts} | {norm(raw), norm(unformat(raw))}
 
 
 def fragments(quote: str) -> list[str]:
@@ -269,7 +339,9 @@ def check(root: Path, out: Path) -> tuple[int, list[str]]:
     frags: dict[str, str] = {}
     unread = []
     for n, q_n in zip(g["D"], qs):
-        mine = {s for q, h in zip(q_n, shown) for f in fragments(visible(h)) for s in windows(f)}
+        # each quote as RENDERED, in every reading, and PLAIN, its link destinations' words in place (round 1 X4:
+        # the view master read, kept so a refusal it made is not lost)
+        mine = {s for q, h in zip(q_n, shown) for t in readings(h) + [q] for f in fragments(t) for s in windows(f)}
         shown = shown[len(q_n):]
         report.append(f"  {n}: {len(q_n)} quotes")
         if not mine:
@@ -480,6 +552,52 @@ def _self_test_body() -> int:
              "I almost never [pay](no real) attention to\n",
              "I almost never [pay][not really] attention to\n")), ((0, []),) * 4)
 
+    # ── round 1 of PR #620: a boundary the renderer cannot settle is read BOTH ways (X1, C1, C2), and text a
+    # browser never shows is dropped in one more view (C3) ─────────────────────────────────────────────────────
+    case("an image inside a word joins it (its alt text is inline text), so the run fails check 1 (tight view)",
+         lambda: hit("I [almost](https://x) ne![ver](x.png) pay attention to\n"), d6hit)
+    case("an invisible format character inside a word does not split it, in any of five spellings or in text a "
+         "renderer hides, so the run fails check 1 (tight view)",
+         lambda: tuple(hit(f"I almost ne{c}ver pay attention to\n") for c in (
+             "&shy;", "\u00ad", "&#8203;", "\u200d", "&#x2060;")) + (
+             hit("<!-- I almost ne\u00adver pay attention to -->\n"),), (d6hit,) * 6)
+    case("a block tag missing from the hand list still separates words, so the run fails check 1 (loose view)",
+         lambda: (hit("I almost never<center>pay attention to</center>\n"),
+                  hit("I almost <legend>never</legend>pay attention to\n")), (d6hit, d6hit))
+    case("text a browser never shows (style, script, template, a hidden element, one nesting its own tag) does not "
+         "break a run, so it fails "
+         "check 1",
+         lambda: tuple(hit(f"I almost never {t} pay attention to\n") for t in (
+             "<style>zz</style>", "<script>zz</script>", "<template>zz</template>", "<span hidden>zz</span>",
+             "<span hidden><span>a</span>zz</span>")), (d6hit,) * 5)
+
+    case("each reading lays out one HTML its own way: `read` breaks at block tags and spaces an image, `tight` joins an "
+         "image and drops unshown text, `loose` breaks at every tag",
+         lambda: tuple(norm(visible('<p>a<em>b</em>c</p><div>d</div>e<br>f<img alt="g" />h <span hidden>i</span>', m))
+                       for m in ("read", "tight", "loose")),
+         ("abc d e f g h i", "abc d e fgh", "a b c d e f g h"))
+
+    def tight_source_quote():
+        root = world("tightquote", d={**d_text, "d6.md": 'Rule six: *"I almost ne![ver](x.png) pay attention to it"*\n'})
+        out = base / "tightquote-out"
+        shutil.copytree(base / "good-out", out)
+        (out / "kept.md").write_text("I almost never pay attention to it.\n")
+        rc, lines = check(root, out)
+        return rc, sorted({ln.split(":")[0] for ln in lines if ln.startswith("QUOTE")})
+    case("a SOURCE quote is read in every reading too: an image inside a word in it joins, so its run fails check 1",
+         tight_source_quote, (1, ["QUOTE FROM d6.md IN kept.md"]))
+
+    def plain_source_quote():
+        root = world("plainquote", d={**d_text, "d6.md": 'Rule six: *"see [aside](https://example.com) before you '
+                                      'merge anything"*\n'})
+        out = base / "plainquote-out"
+        shutil.copytree(base / "good-out", out)
+        (out / "kept.md").write_text("They said: see aside https example com before you merge anything.\n")
+        rc, lines = check(root, out)
+        return rc, sorted({ln.split(":")[0] for ln in lines if ln.startswith("QUOTE")})
+    case("a source quote is ALSO read plain, its link destination's words in place, and that run fails check 1 "
+         "(round 1 X4: the view master had)", plain_source_quote, (1, ["QUOTE FROM d6.md IN kept.md"]))
+
     def rendered_quotes():
         root = world("refquote", d={**d_text, "d6.md": 'Rule six: *"see [the docs][r] before you merge anything"* and '
                                     '*"read [the plan](https://x/y) before you merge it"*\n\n[r]: https://x\n'})
@@ -509,27 +627,56 @@ def _self_test_body() -> int:
           "CANNOT RUN: the CommonMark renderer exited 1",
           "CANNOT RUN: the CommonMark renderer returned no HTML per input"))
 
+    def fake_node(name, body):
+        f = base / f"fake-node-{name}"
+        f.write_text(body)
+        f.chmod(0o755)
+        return str(f)
+    real_node = shutil.which(NODE) or NODE
+    empty = fake_node("empty", f"#!{sys.executable}\nimport json, sys\nr = json.load(sys.stdin)\n"
+                               "print(json.dumps({'docs': [''] * len(r['docs']), 'inline': [''] * len(r['inline'])}))\n")
+    echo = fake_node("echo", f"#!{sys.executable}\nimport html, json, sys\nr = json.load(sys.stdin)\n"
+                             "print(json.dumps({'docs': ['<p>' + html.escape(t) + '</p>' for t in r['docs']],\n"
+                             "                  'inline': [html.escape(t) for _, t in r['inline']]}))\n")
+    noisy = fake_node("noisy", f"#!/bin/sh\n\"{real_node}\" \"$@\"\necho 'renderer error' >&2\n")
+    badutf = fake_node("badutf", "#!/bin/sh\ncat >/dev/null\nprintf '\\377\\376{'\n")
+    case("a renderer that returns well-shaped but WRONG output is CANNOT RUN: empty strings, or plausible strings "
+         "(its input echoed), fail the known probe (round 1 X2)",
+         lambda: (renderer(node=empty), renderer(node=echo)),
+         ("CANNOT RUN: the CommonMark renderer did not render its known probe exactly",) * 2)
+    case("a renderer that writes to stderr, though its output is right, is CANNOT RUN (round 1 X2)",
+         lambda: renderer(node=noisy), "CANNOT RUN: the CommonMark renderer wrote to stderr")
+    case("a renderer whose output is not UTF-8 is CANNOT RUN, never a traceback (round 1 X3/C4)",
+         lambda: renderer(node=badutf), "CANNOT RUN: the CommonMark renderer's output is not UTF-8")
+
     def disguises(v):
-        """Twelve ways to show a reader a quote's words: round 1's punctuation, round 2's links and bare URLs, round
-        3's look-alike links and glued URL, round 4's mix, and the layout of rendered HTML."""
+        """Seventeen ways to show a reader a quote's words: round 1's punctuation, round 2's links and bare URLs,
+        round 3's look-alike links and glued URL, round 4's mix, the layout of rendered HTML, and PR #620 round 1's
+        boundaries read both ways (an image inside a word, a soft hyphen and a zero-width space inside one, a block
+        tag the hand list lacks) and text a browser never shows between two words."""
         w = norm(v).split()
         j = " ".join(w)
         mixed = (f"[{w[0]}](https://example.com) {w[1]} [{w[2]}]({' '.join(w[3:])})" if len(w) >= 5
                  else f"[{w[0]}](https://example.com) [{w[1]}]({' '.join(w[2:])} x)")
         i = max(range(len(w)), key=lambda k: len(w[k]))
         emph = w[:i] + [w[i][0] + "*" + w[i][1:] + "*"] + w[i + 1:] if len(w[i]) > 1 else w
+
+        def inword(mark):               # the longest word with `mark(rest)` after its first letter
+            return " ".join(w[:i] + [w[i][0] + mark(w[i][1:])] + w[i + 1:]) if len(w[i]) > 1 else j
+        head, tail = " ".join(w[:2]), " ".join(w[2:])
         return [j, "\u201c" + ", ".join(w) + "!\u201d", re.sub(r"[^\w\s]+", "; ", v),
                 " ".join(f"[{x}](https://x)" for x in w), " https://x/a?b=c ".join(w),
                 f"Context [note]({j}) here.", f"Context [aside][{j}] here.", f"see <https://x>{j}", mixed,
                 f"<div>{' '.join(w[:2])}</div><div>{' '.join(w[2:])}</div>", f"{' '.join(w[:2])}<br>{' '.join(w[2:])}",
-                " ".join(emph)]
+                " ".join(emph), inword(lambda r: f"![{r}](x.png)"), inword(lambda r: "&shy;" + r),
+                inword(lambda r: "\u200b" + r), f"{head}<center>{tail}</center>", f"{head} <span hidden>zz</span> {tail}"]
 
     def real_corpus():
         """THE PLANT CORPUS (backlog #698): every quote of the REAL group-D sources, in each of `disguises`, one per
         output file, checked against the real sources in one run. A plant not hit by its own source's quote is named
-        by its file (never by its words). The counts are DERIVED, not pinned (51 quotes, 612 plants on 2026-11-23), so
+        by its file (never by its words). The counts are DERIVED, not pinned (51 quotes, 867 plants on 2026-11-23), so
         an edit to a memory file never reddens an unrelated PR: it asserts every D file gave a quote, every quote all
-        twelve disguises, and every plant a hit."""
+        seventeen disguises, and every plant a hit."""
         g = groups((REPO / DECISION).read_text())
         srcs = [(REPO / SRC / n).read_text() for n in g["D"]]
         qs = [(i, q) for i, t in enumerate(srcs) for q in quotes(t)]
@@ -543,9 +690,9 @@ def _self_test_body() -> int:
                 planted_by[f"q{k:03d}-{d:02d}.md"] = g["D"][i]
         rc, lines = check(REPO, out)
         caught = {(m.group(2), m.group(1)) for m in (re.match(r"QUOTE FROM (\S+) IN (\S+):", ln) for ln in lines) if m}
-        return (rc, {i for i, _ in qs} == set(range(len(srcs))), len(planted_by) == 12 * len(qs),
+        return (rc, {i for i, _ in qs} == set(range(len(srcs))), len(planted_by) == 17 * len(qs),
                 sorted(f for f, n in planted_by.items() if (f, n) not in caught))
-    case("THE PLANT CORPUS: every real group-D quote, each in 12 disguises, every plant fails check 1",
+    case("THE PLANT CORPUS: every real group-D quote, each in 17 disguises, every plant fails check 1",
          real_corpus, (1, True, True, []))
     case("an excluded file's content in the output under another name fails check 2",
          lambda: planted("renamed.md", "excluded b2.md\n"), (1, ["EXCLUDED CONTENT PRESENT"]))
