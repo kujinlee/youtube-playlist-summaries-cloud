@@ -938,7 +938,7 @@ jobs:
           set +e
           python3 scripts/check-inventory.py
           rc=$?
-          if [ "$rc" -eq 3 ]; then echo "check-inventory rc 3: the D1 checkpoint fired (owner's stop, not a CI failure)"; exit 0; fi
+          if [ "$rc" -eq 3 ]; then echo "::warning::check-inventory rc 3: the D1 checkpoint fired (owner's stop, not a CI failure)"; exit 0; fi
           exit "$rc"
 
       # The component map's completeness check (marketplace-inventory plan, Task 5): every supporting

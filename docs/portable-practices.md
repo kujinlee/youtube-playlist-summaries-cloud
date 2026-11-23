@@ -1347,7 +1347,9 @@ spec stated the first half; the experiments measured the second.
 
 `docs/marketplace/experiment-tier-a.md` (a seeded repository, 2026-11-19) and
 `experiment-tier-b.md` (a real third-party repository, the same night) installed the package as a
-marketplace plugin and ran each component. Two defects account for every script failure, and they
+marketplace plugin and ran each component. Two defects account for every failure to FIND a file:
+S3 for the three page skills that produced no page, S1 for 6 of the 7 script failures (the seventh,
+and both pages produced without an Ask tray, are S2, §28's; `experiment-tier-a.md`, summary). They
 are the **same mistake made in opposite directions**:
 
 | defect | what was resolved against the wrong root | measured |
@@ -1368,6 +1370,9 @@ project directory are the same directory**, so one `ROOT` names both and every l
 |---|---|---|
 | a file the package SHIPS (its scripts, contracts, templates) | the package's install location | `${CLAUDE_PLUGIN_ROOT}/…` in skills and `hooks.json`; `Path(__file__)` in a script |
 | a file the USER owns (their docs, their git repository) | the user's project | the caller's working directory, or `CLAUDE_PROJECT_DIR` |
+
+⚠ **This remedy column is ARGUED, not measured.** No fix was run in either experiment: it is the
+convention the two public plugins below use, and the experiments measured only the failure.
 
 ⚠ **Renaming the directory does not fix either one.** `openai/codex-plugin-cc` and
 `Yeachan-Heo/oh-my-claudecode` both keep a directory named `scripts/` and both use

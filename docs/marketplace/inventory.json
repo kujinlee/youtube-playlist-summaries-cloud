@@ -26,7 +26,7 @@
         {
           "kind": "spec",
           "section": "3",
-          "heading": "Effort (2) — development velocity"
+          "heading": "Effort (2) \u2014 development velocity"
         },
         {
           "kind": "spec",
@@ -34,7 +34,7 @@
         }
       ],
       "harvest": "practice",
-      "practice_entry": "22. A kill that attributes to nothing is a pass — the same output, two diseases, on the other side",
+      "practice_entry": "22. A kill that attributes to nothing is a pass \u2014 the same output, two diseases, on the other side",
       "criteria": {
         "C1": "pass",
         "C2": "pass",
@@ -164,7 +164,7 @@
         "grade": "argued"
       },
       "route": null,
-      "notes": "The scan emitted NOTHING for this component (0 findings, 4 mentions, the mentions being comments and docstrings naming check-plan-code). It is the coverage verdict TYPE (Measured, NotMeasured, not_measured_reason), not a parser: it imports only sys, dataclasses and __future__ (lines 68 to 71) and reads no engine output. The dependency runs one way: check-plan-code imports it (check-plan-code.py lines 104 to 109, 'this file imports it and never the reverse'), and that is its only runtime importer; sweep-red-alert's import (line 442) is inside its _self_test_body (lines 339 to 592), which the ci.yml step does not run. C3 pass, argued: a stdlib-only module depends on no part of this repo. C2 pass, argued: no service. C4 pass, argued (library, spec 4): its only importer is the argued engine, whose C4 fail is attributed to the manifests anchored to this repo's guards, not to code in this library, so the failure is not inherited. Verdict SHIP, grade argued, re-judged at the round 3 fold on the owner's decision of 2026-11-22 (coverage_verdict is NOT part of the mutation engine spec 3 Effort (2) rules out; Phase 6 review architecture-review-2026-11-22-marketplace-inventory-rows): all five criteria pass, and the verdict follows them. It is not an orphan: spec 4's orphan row is for a library 'imported by **no** entry-point', and check-plan-code imports it. The spec 4 row that applies (line 498) reads 'imported only by entry-points that are themselves `argued`', with the rule 'the library is **`argued`** — not `inherited` (there is no measured scenario to inherit) and not `none` (something was established)'; it sets the grade and says nothing against SHIP. Bundle: the ci-layer package (shipping-sets.json, channel reusable-workflow), whose component list already names it, beside the engine that imports it. Scope, recorded as the phase and not as the verdict: no shipped unit loads it until an engine that imports it ships, so its phase is later. As a SHIP row it needs no ground (spec 5 rule 1) and records no route (D10). Harvest none: the lesson it embodies (a verdict type with no tally on the unmeasured branch, so a consumer cannot read it wrongly) has no portable-practices heading yet, a candidate for Task 20."
+      "notes": "The scan emitted NOTHING for this component (0 findings, 4 mentions, the mentions being comments and docstrings naming check-plan-code). It is the coverage verdict TYPE (Measured, NotMeasured, not_measured_reason), not a parser: it imports only sys, dataclasses and __future__ (lines 68 to 71) and reads no engine output. The dependency runs one way: check-plan-code imports it (check-plan-code.py lines 104 to 109, 'this file imports it and never the reverse'), and that is its only runtime importer; sweep-red-alert's import (line 442) is inside its _self_test_body (lines 339 to 592), which the ci.yml step does not run. C3 pass, argued: a stdlib-only module depends on no part of this repo. C2 pass, argued: no service. C4 pass, argued (library, spec 4): its only importer is the argued engine, whose C4 fail is attributed to the manifests anchored to this repo's guards, not to code in this library, so the failure is not inherited. Verdict SHIP, grade argued, re-judged at the round 3 fold on the owner's decision of 2026-11-22 (coverage_verdict is NOT part of the mutation engine spec 3 Effort (2) rules out; Phase 6 review architecture-review-2026-11-22-marketplace-inventory-rows): all five criteria pass, and the verdict follows them. It is not an orphan: spec 4's orphan row is for a library 'imported by **no** entry-point', and check-plan-code imports it. The spec 4 row that applies (line 498) reads 'imported only by entry-points that are themselves `argued`', with the rule 'the library is **`argued`** \u2014 not `inherited` (there is no measured scenario to inherit) and not `none` (something was established)'; it sets the grade and says nothing against SHIP. Bundle: the ci-layer package (shipping-sets.json, channel reusable-workflow), whose component list already names it, beside the engine that imports it. Scope, recorded as the phase and not as the verdict: no shipped unit loads it until an engine that imports it ships, so its phase is later. As a SHIP row it needs no ground (spec 5 rule 1) and records no route (D10). Harvest none: the lesson it embodies (a verdict type with no tally on the unmeasured branch, so a consumer cannot read it wrongly) has no portable-practices heading yet, a candidate for Task 20."
     },
     {
       "id": "mutation-manifests",
@@ -180,14 +180,14 @@
         {
           "kind": "spec",
           "section": "3",
-          "heading": "Effort (2) — development velocity"
+          "heading": "Effort (2) \u2014 development velocity"
         },
         {
           "kind": "c5"
         }
       ],
       "harvest": "practice",
-      "practice_entry": "10. A surviving mutation does not mean \"add a test\" — first ask whether the guard can FIRE",
+      "practice_entry": "10. A surviving mutation does not mean \"add a test\" \u2014 first ask whether the guard can FIRE",
       "criteria": {
         "C1": "pass",
         "C2": "pass",
@@ -261,7 +261,7 @@
         {
           "kind": "spec",
           "section": "3",
-          "heading": "Effort (1) — recall"
+          "heading": "Effort (1) \u2014 recall"
         }
       ],
       "harvest": "none",
@@ -379,7 +379,7 @@
         {
           "kind": "spec",
           "section": "3",
-          "heading": "Effort (1) — recall"
+          "heading": "Effort (1) \u2014 recall"
         },
         {
           "kind": "spec",
@@ -421,7 +421,7 @@
         {
           "kind": "spec",
           "section": "3",
-          "heading": "Effort (1) — recall"
+          "heading": "Effort (1) \u2014 recall"
         },
         {
           "kind": "spec",
@@ -511,7 +511,7 @@
         "cost_hours": 2.0,
         "grade": "argued"
       },
-      "notes": "Phase later, not 1: recall.a is false (a measured silent no-op on an empty corpus, measured by the supplementary run, the only one whose hook reached the matcher: experiment-tier-a.md 'Recall with an empty corpus', 2026-11-22) and recall.b is unanswered (Human step H1, never decided here); spec 2c D11 puts recall in phase 1 only if both hold. C5: unanswered — blocked on the content review (Human step H1; the c5 ground). The recall package in shipping-sets.json installs the RAW docs/memory/ (196 files, MEMORY.md included), groups A-C of decision-5-suspect-files.md and the unparaphrased group D among them. C2 fail, argued: memory-corpus:1:1-1:4 name this project's hosts and services (a browser launch and the deployed URL in launch-roadmap-state.md, the Gemini prerequisite in reservation-release-slice-state.md) and :5:1 requires this project's /dev-login skill (local-manual-test-env.md). C3 fail, argued: :2:1-2:17 are commands naming scripts outside the package (check-ci-watched, gen-backlog-page, check-merge-ready, regen-pages and others) and :4:2 names docs/goal-threads.md. Not a ground: :4:1 names PushNotification, a Claude Code tool a stranger has. Route (portable core): ship the corpus BUILT by scripts/build-shipped-corpus.py, which drops the 16 group A-C files (and with them :1:1-1:4, :2:3, :2:4, :2:8, :5:1) and paraphrases group D's quotes; the kept-file :2:x and :4:2 remain C3 work. The package still lists the raw docs/memory/ files, not the built corpus: backlog #697 repoints it before Task 21. The build and both of its checks pass. Plan Task 18 says C5 moves off unanswered 'only when the build and both checks pass': a necessary condition, not a sufficient one, and the same task holds this row at 'C5: unanswered — blocked on the content review' until H1 lands. There is no conflict: C5 stays unanswered until H1."
+      "notes": "Phase later, not 1: recall.a is false (a measured silent no-op on an empty corpus, measured by the supplementary run, the only one whose hook reached the matcher: experiment-tier-a.md 'Recall with an empty corpus', 2026-11-22) and recall.b is unanswered (Human step H1, never decided here); spec 2c D11 puts recall in phase 1 only if both hold. C5: unanswered \u2014 blocked on the content review (Human step H1; the c5 ground). The recall package in shipping-sets.json installs the RAW docs/memory/ (196 files, MEMORY.md included), groups A-C of decision-5-suspect-files.md and the unparaphrased group D among them. C2 fail, argued: memory-corpus:1:1-1:4 name this project's hosts and services (a browser launch and the deployed URL in launch-roadmap-state.md, the Gemini prerequisite in reservation-release-slice-state.md) and :5:1 requires this project's /dev-login skill (local-manual-test-env.md). C3 fail, argued: :2:1-2:17 are commands naming scripts outside the package (check-ci-watched, gen-backlog-page, check-merge-ready, regen-pages and others) and :4:2 names docs/goal-threads.md. Not a ground: :4:1 names PushNotification, a Claude Code tool a stranger has. Route (portable core): ship the corpus BUILT by scripts/build-shipped-corpus.py, which drops the 16 group A-C files (and with them :1:1-1:4, :2:3, :2:4, :2:8, :5:1) and paraphrases group D's quotes; the kept-file :2:x and :4:2 remain C3 work. The package still lists the raw docs/memory/ files, not the built corpus: backlog #697 repoints it before Task 21. The build and both of its checks pass. Plan Task 18 says C5 moves off unanswered 'only when the build and both checks pass': a necessary condition, not a sufficient one, and the same task holds this row at 'C5: unanswered \u2014 blocked on the content review' until H1 lands. There is no conflict: C5 stays unanswered until H1."
     },
     {
       "id": "skill-brief",
@@ -550,11 +550,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 8.0,
+        "kind": "template-repository",
+        "cost_hours": 7.0,
         "grade": "argued"
       },
-      "notes": "Measured by tier A scenario A-skill-brief (experiment-tier-a.md coverage matrix): no page; pass conditions 1, 2 and 3 fail, because the skill looked for scripts/brief-compose.py CWD-relative, in the seeded repository, and did not find it (suite defect S3); tier B reproduced it in a real repository (the skill 'was written for a different repo'). C4 fail, measured. C2 fail on skill-brief:1:1 (SKILL.md:69, `flyctl releases --app youtube-playlist-summaries`: this project's Fly app, which spec 4 C2 names). C3 pass: skill-brief:4:1, :4:3, :4:4 (docs/roadmap-to-launch.md, docs/backlog.md) are host-project conventions a stranger lacks, a C4 matter, not files of this repository the package fails to ship; :4:2 (TaskList) is a harness tool; :5:1/:5:2 (the artifact-design skill) was not measured either way and is not a ground; :7:1 (needs-registration) is not a ground, the skill was invoked in both tiers. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the route moves the ground-truth block's sources (:1:1, :4:1, :4:3, :4:4) into a config file the stranger fills, and the delivery invocations to ${CLAUDE_PLUGIN_ROOT} (the contract row's route); the tray bootstrap is priced in the brief-compose row, not here."
+      "notes": "Measured by tier A scenario A-skill-brief (experiment-tier-a.md coverage matrix): no page; pass conditions 1, 2 and 3 fail, because the skill looked for scripts/brief-compose.py CWD-relative, in the seeded repository, and did not find it (suite defect S3); tier B did not reproduce it: there brief found brief-compose.py and was refused on S2 (experiment-tier-b.md:39), and both tiers' path behaviour is the staging's, not a stranger's (experiment-tier-a.md, isolation note I2), so this S3 failure is a single tier-A observation. C4 fail, measured. C2 fail on skill-brief:1:1 (SKILL.md:69, `flyctl releases --app youtube-playlist-summaries`: this project's Fly app, which spec 4 C2 names). C3 pass: skill-brief:4:1, :4:3, :4:4 (docs/roadmap-to-launch.md, docs/backlog.md) are host-project conventions a stranger lacks, a C4 matter, not files of this repository the package fails to ship; :4:2 (TaskList) is a harness tool; :5:1/:5:2 (the artifact-design skill) was not measured either way and is not a ground; :7:1 (needs-registration) is not a ground, the skill was invoked in both tiers. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): the ground-truth block's sources (:1:1, :4:1, :4:3, :4:4) move into a config file the stranger fills. The delivery invocations are priced in contract-explainer-delivery's row and the tray bootstrap in brief-compose's, both at 0 h here. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config 8 h: the same move of those values into a config file, a genuine setting; template-repository 7 h: 3 h (next_project's edit of the ground-truth block, which the stranger makes in their own copy; S3 does not bite there) plus the template repository itself, priced ONCE here at 4 h (one repository holding the package's files and empty project files: docs/backlog.md, the dashboard store, the hook registrations; with review); S2 still bites, priced in brief-compose; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: the ground-truth block is the skill; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 7 h."
     },
     {
       "id": "skill-explain-diff",
@@ -582,16 +582,16 @@
         "C5": "pass"
       },
       "cost": {
-        "public_bar_hours": 2.0,
+        "public_bar_hours": 1.0,
         "next_project_hours": 0.5,
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 2.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Measured by A-skill-explain-diff: the page was written and served by the package's explainer-serve.py (HTTP 200) but carries NO Ask tray, so pass condition 1 fails (C4 fail, measured); conditions 2 and 3 are argued (no seeded facts; the server ran from the staged marketplace, isolation note I2). Tier B: written but not served, no tray. The named defect is S2 (the tray cannot be bootstrapped), whose code is in brief-compose; this skill's own text has no finding but :7:1 (needs-registration), not a ground since the skill was invoked. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: once brief-compose ships its tray (priced there), the work left here is the delivery invocations through ${CLAUDE_PLUGIN_ROOT} and one tier-A re-run."
+      "notes": "Measured by A-skill-explain-diff: the page was written and served by the package's explainer-serve.py (HTTP 200) but carries NO Ask tray, so pass condition 1 fails (C4 fail, measured); conditions 2 and 3 are argued (no seeded facts; the server ran from the staged marketplace, isolation note I2). Tier B: written but not served, no tray. The named defect is S2 (the tray cannot be bootstrapped), whose code is in brief-compose; this skill's own text has no finding but :7:1 (needs-registration), not a ground since the skill was invoked. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): one tier-A re-run (1 h, the price page-chrome's row gave a re-run at r0). The delivery invocations are priced in contract-explainer-delivery's row and the S2 tray in brief-compose's, both at 0 h here (round 1 C9: this row priced them again at r0, 2 h). The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so the delivery invocations resolve as they do here; S2 still bites, priced in brief-compose; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "skill-explain-findings",
@@ -624,11 +624,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 3.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Measured by A-skill-explain-findings: no page; pass conditions 1 and 3 fail because `../shared/explainer-delivery.md` (SKILL.md:132) did not resolve from the skill's working directory (suite defect S3). The file ships; its resolution fails, so this is C4 (fail, measured), not C3. skill-explain-findings:5:1 (artifact-design) was not measured either way and is not a ground; :7:1 is not a ground (the skill was invoked). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: resolve the shared contract through ${CLAUDE_PLUGIN_ROOT}, inherit the contract row's fix and S2's, re-run the scenario."
+      "notes": "Measured by A-skill-explain-findings: no page; pass conditions 1 and 3 fail because `../shared/explainer-delivery.md` (SKILL.md:132) did not resolve from the skill's working directory (suite defect S3). The file ships; its resolution fails, so this is C4 (fail, measured), not C3. skill-explain-findings:5:1 (artifact-design) was not measured either way and is not a ground; :7:1 is not a ground (the skill was invoked). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): its own S3 reference (SKILL.md:132, ../shared/explainer-delivery.md) through ${CLAUDE_PLUGIN_ROOT}, and one re-run. The contract's six invocations (contract-explainer-delivery) and S2 (brief-compose) are priced in their rows, at 0 h here. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so its contract reference resolves as it does here (S3 does not bite); S2 still bites, priced in brief-compose; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "skill-explain-topic",
@@ -656,16 +656,16 @@
         "C5": "pass"
       },
       "cost": {
-        "public_bar_hours": 2.0,
+        "public_bar_hours": 1.0,
         "next_project_hours": 0.5,
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 2.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Measured by A-skill-explain-topic: the page file was written to ~/explainers but NOT served and has no Ask tray, because brief-compose.py refuses without a tray source page (S2); pass conditions 1 and 3 fail (C4 fail, measured). Tier B: fragment written, not composed, not served. The only scan finding, :7:1, is not a ground (the skill was invoked). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the same as explain-diff — the S2 fix is priced in brief-compose; here the delivery paths and one re-run."
+      "notes": "Measured by A-skill-explain-topic: the page file was written to ~/explainers but NOT served and has no Ask tray, because brief-compose.py refuses without a tray source page (S2); pass conditions 1 and 3 fail (C4 fail, measured). Tier B: fragment written, not composed, not served. The only scan finding, :7:1, is not a ground (the skill was invoked). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): one tier-A re-run (1 h, the price page-chrome's row gave a re-run at r0). The delivery invocations are priced in contract-explainer-delivery's row and the S2 tray in brief-compose's, both at 0 h here (round 1 C9: this row priced them again at r0, 2 h). The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so the delivery invocations resolve as they do here; S2 still bites, priced in brief-compose; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "skill-dashboard",
@@ -704,11 +704,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 6.0,
+        "kind": "template-repository",
+        "cost_hours": 1.0,
         "grade": "argued"
       },
-      "notes": "Measured by A-skill-dashboard: no entry and no page; pass conditions 1 and 3 fail. The skill runs `python3 scripts/regen-pages.py --page dashboard` CWD-relative (skill-dashboard:2:1, SKILL.md:76; S3) and expects the HOST's docs/dashboard-entries.md and docs/anchors.md, stopping rather than creating them (S4). C4 fail, measured. C3 pass: those are host conventions, not unshipped files of this repository. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :2:1 (${CLAUDE_PLUGIN_ROOT}) and S4 (create the entry store and an empty anchors registry on first use), then the regen-pages and gen-dashboard fixes it calls into (priced in their rows)."
+      "notes": "Measured by A-skill-dashboard: no entry and no page; pass conditions 1 and 3 fail. The skill runs `python3 scripts/regen-pages.py --page dashboard` CWD-relative (skill-dashboard:2:1, SKILL.md:76; S3) and expects the HOST's docs/dashboard-entries.md and docs/anchors.md, stopping rather than creating them (S4). C4 fail, measured. C3 pass: those are host conventions, not unshipped files of this repository. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :2:1 (${CLAUDE_PLUGIN_ROOT}) and S4 (create the entry store and an empty anchors registry on first use); the regen-pages and gen-dashboard fixes it calls into are priced in their rows. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: :2:1 is path resolution (spec 4 rejected a configurable path) and S4 is a store created on first use, not a setting; template-repository 1 h: the files live in the stranger's own repository, the next_project reasoning, so S3 does not bite, and the template ships the entry store and an empty anchors registry, so S4 does not either; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 1 h."
     },
     {
       "id": "brief-compose",
@@ -727,7 +727,7 @@
         }
       ],
       "harvest": "practice",
-      "practice_entry": "28. A component that copies itself from an existing instance cannot bootstrap — a fresh install has none, and its documented recovery must be RUN, not read",
+      "practice_entry": "28. A component that copies itself from an existing instance cannot bootstrap \u2014 a fresh install has none, and its documented recovery must be RUN, not read",
       "criteria": {
         "C1": "pass",
         "C2": "pass",
@@ -741,11 +741,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 8.0,
+        "kind": "practice",
+        "cost_hours": 0.25,
         "grade": "argued"
       },
-      "notes": "Measured by A-script-brief-compose: rc 1 `no explainer directory at <world>/home/explainers`; with the directory present it refuses because no page has an Ask tray (brief-compose.py:798). Pass conditions 1, 3 and 4 fail: 4(a) it documents a recovery (`run /explain-diff once first`) and 4(b) following it was observed to fail, because explain-diff then produced a page with no tray. This is suite defect S2, and it alone fails condition 1 for every page skill (tier A headline); tier B reproduced it (0 of 5 pages had a tray). C4 fail, measured. No scan finding: the scan cannot see a bootstrap circularity, so the ground is the experiment alone. Harvested as practice 28. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: ship the tray as a packaged asset read from the package's own location, compose without a source page, and replace the 4(a) advice; its tray-extraction self-test cases need re-pinning."
+      "notes": "Measured by A-script-brief-compose: rc 1 `no explainer directory at <world>/home/explainers`; with the directory present it refuses because no page has an Ask tray (brief-compose.py:798). Pass conditions 1, 3 and 4 fail: 4(a) it documents a recovery (`run /explain-diff once first`) and 4(b) following it was observed to fail, because explain-diff then produced a page with no tray. This is suite defect S2, and it alone fails condition 1 for every page skill (tier A headline); tier B reproduced it (0 of 5 pages had a tray). C4 fail, measured. No scan finding: the scan cannot see a bootstrap circularity, so the ground is the experiment alone. Harvested as practice 28. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): ship the tray as a packaged asset read from the package's own location, compose without a source page, and replace the 4(a) advice; its tray-extraction self-test cases need re-pinning. This row owns S2's price for every page component. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: the defect is a bootstrap (no page to copy a tray from), not a project value; template-repository about 8 h, no cheaper: a template does not remove S2, since a stranger's ~/explainers holds no tray page whichever channel installed the package; portable-core does not apply: the tray composition is the component; practice 0.25 h: practice 28 is written in this commit, so only publishing it with portable-practices.md is left; 0.25 h is the record's floor for work already done or priced in another row: the guard refuses 0 h ([shape]: a positive cost). Cheapest: practice, 0.25 h (the code's own price is the 8 h public bar)."
     },
     {
       "id": "explainer-serve",
@@ -784,11 +784,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 3.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Measured by A-script-explainer-serve: its useful operation completed (condition 3 pass: start, pidfile = listener, GET / 200, POST /questions 200 recorded). Condition 1 fails because the page served had no Ask tray — S2, whose code is brief-compose's, so the C4 fail here is inherited from S2, not a defect in this server. Its OWN named defect is explainer-serve:4:1 (line 3214): a --self-test case reads <package>/docs/explainers/work-lines-archive.html, a file of this repository the package does not ship, so the shipped self-test cannot pass in an install (C3 fail, argued from the code). :6:1 and :6:3 (EXPLAINER_SERVE_ROOT, EXPLAINER_SERVE_COPY) are the server's own documented knobs. Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :4:1 (a packaged fixture for the case); the condition-1 failure goes with brief-compose's route."
+      "notes": "Measured by A-script-explainer-serve: its useful operation completed (condition 3 pass: start, pidfile = listener, GET / 200, POST /questions 200 recorded). Condition 1 fails because the page served had no Ask tray \u2014 S2, whose code is brief-compose's, so the C4 fail here is inherited from S2, not a defect in this server. Its OWN named defect is explainer-serve:4:1 (line 3214): a --self-test case reads <package>/docs/explainers/work-lines-archive.html, a file of this repository the package does not ship, so the shipped self-test cannot pass in an install (C3 fail, argued from the code). :6:1 and :6:3 (EXPLAINER_SERVE_ROOT, EXPLAINER_SERVE_COPY) are the server's own documented knobs. Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :4:1 (a packaged fixture for the case); the condition-1 failure goes with brief-compose's route. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: :4:1 is an unshipped fixture file, not a value; template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so the template carries work-lines-archive.html with the package, removing :4:1; condition 1 still goes with brief-compose's S2; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core 1 h: ship it without the self-test case that reads the unshipped file; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "regen-pages",
@@ -821,11 +821,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 6.0,
+        "kind": "template-repository",
+        "cost_hours": 1.0,
         "grade": "argued"
       },
-      "notes": "Measured by A-script-regen-pages-all: rc 2 `CANNOT RUN — git cannot name this repository's common directory from <install dir>` — it locates the project from its own install path, ROOT = SCRIPTS.parent (regen-pages.py:123), not the user's (suite defect S1). Condition 3 fails; C4 fail, measured. regen-pages:6:1 (line 163, git) is where it fails, but git itself is a host tool, so it is not cited; Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: locate the project from CLAUDE_PROJECT_DIR or the caller's working directory, keep package files on the script's own path, and make docs/goal-threads.md (THREADS_REL, line 125) optional."
+      "notes": "Measured by A-script-regen-pages-all: rc 2 `CANNOT RUN \u2014 git cannot name this repository's common directory from <install dir>` \u2014 it locates the project from its own install path, ROOT = SCRIPTS.parent (regen-pages.py:123), not the user's (suite defect S1). Condition 3 fails; C4 fail, measured. regen-pages:6:1 (line 163, git) is where it fails, but git itself is a host tool, so it is not cited; Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): locate the project from CLAUDE_PROJECT_DIR or the caller's working directory, keep package files on the script's own path, and make docs/goal-threads.md (THREADS_REL, line 125) optional. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); an optional file is not a setting either; template-repository 1 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite, and the template ships an empty docs/goal-threads.md; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 1 h."
     },
     {
       "id": "gen-dashboard",
@@ -864,11 +864,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 8.0,
+        "kind": "template-repository",
+        "cost_hours": 4.0,
         "grade": "argued"
       },
-      "notes": "Measured by A-script-gen-dashboard: rc 1, it reads <install dir>/docs/backlog.md (S1; ROOT gen-dashboard.py:21, STORE_DEFAULT :28), then brief-compose refuses (S2). Conditions 3 and 4 fail: it documents a recovery (`Run /explain-diff once to produce one, then re-run`) and following it was observed to fail. C4 fail, measured; gen-dashboard:3:1 (no user documentation) bears on the same criterion: a stranger has nothing to recover from. :6:2 (gh, line 526) needs a GitHub CLI a stranger may not have; not measured, not a ground. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes S1 (project root from the caller), adds the user doc (:3:1) and corrected recovery advice; S2 is brief-compose's route."
+      "notes": "Measured by A-script-gen-dashboard: rc 1, it reads <install dir>/docs/backlog.md (S1; ROOT gen-dashboard.py:21, STORE_DEFAULT :28), then brief-compose refuses (S2). Conditions 3 and 4 fail: it documents a recovery (`Run /explain-diff once to produce one, then re-run`) and following it was observed to fail. C4 fail, measured; gen-dashboard:3:1 (no user documentation) bears on the same criterion: a stranger has nothing to recover from. :6:2 (gh, line 526) needs a GitHub CLI a stranger may not have; not measured, not a ground. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes S1 (project root from the caller), adds the user doc (:3:1) and corrected recovery advice; S2 is brief-compose's route. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 4 h: 1 h (next_project; S1 does not bite in the stranger's own repository) plus the user doc (:3:1) and corrected recovery advice a stranger still needs, about 3 h (a split the r0 basis did not price); S2 is brief-compose's; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 4 h."
     },
     {
       "id": "gen-goals-page",
@@ -901,11 +901,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 6.0,
+        "kind": "template-repository",
+        "cost_hours": 1.0,
         "grade": "argued"
       },
-      "notes": "Measured by A-script-gen-goals-page: rc 2 `CANNOT RUN — docs/anchors.md or scripts/gen-backlog-page.py is missing` (gen-goals-page.py:1336), looked up beside the install (ROOT, line 59), not in the project (S1). Condition 3 fails; C4 fail, measured. gen-goals-page:4:1/:4:2 name check-goal-status.py beside the script, which ships, and :4:3/:4:4 are self-test fixture paths; none is a ground. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: project root from the caller for docs/ reads, package root for its siblings; the two library rows it imports (check-goal-status, check-anchors) carry the same fix."
+      "notes": "Measured by A-script-gen-goals-page: rc 2 `CANNOT RUN \u2014 docs/anchors.md or scripts/gen-backlog-page.py is missing` (gen-goals-page.py:1336), looked up beside the install (ROOT, line 59), not in the project (S1). Condition 3 fails; C4 fail, measured. gen-goals-page:4:1/:4:2 name check-goal-status.py beside the script, which ships, and :4:3/:4:4 are self-test fixture paths; none is a ground. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): project root from the caller for docs/ reads, package root for its siblings; the two library rows it imports (check-goal-status, check-anchors) carry the same fix. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 1 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 1 h."
     },
     {
       "id": "gen-features-page",
@@ -938,11 +938,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 5.0,
+        "kind": "template-repository",
+        "cost_hours": 1.0,
         "grade": "argued"
       },
-      "notes": "Measured by A-script-gen-features-page: rc 2 `CANNOT RUN — <install dir>/docs/features.md is missing` (gen-features-page.py:747; ROOT/DOCS lines 66-67; S1). Condition 3 fails; C4 fail, measured. Its only scan finding, :6:1 (git), is a host tool, not a ground. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: project root from the caller; check-features (its library) carries the same fix."
+      "notes": "Measured by A-script-gen-features-page: rc 2 `CANNOT RUN \u2014 <install dir>/docs/features.md is missing` (gen-features-page.py:747; ROOT/DOCS lines 66-67; S1). Condition 3 fails; C4 fail, measured. Its only scan finding, :6:1 (git), is a host tool, not a ground. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): project root from the caller; check-features (its library) carries the same fix. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 1 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 1 h."
     },
     {
       "id": "gen-backlog-page",
@@ -981,11 +981,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 8.0,
+        "kind": "template-repository",
+        "cost_hours": 2.0,
         "grade": "argued"
       },
-      "notes": "Measured by A-script-gen-backlog-page: rc 1, FileNotFoundError on <install dir>/docs/backlog.md although the seeded repository HAS docs/backlog.md — gen-backlog-page:4:1 is the line (BACKLOG = REPO / \"docs/backlog.md\", gen-backlog-page.py:88; S1). Condition 3 fails; C4 fail, measured. :4:2/:4:3 read the same file's git history from REPO. The page also parses this repository's backlog grammar, which a stranger's docs/backlog.md need not follow (argued, not measured). Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :4:1-:4:3 (project root from the caller); the grammar question is not priced."
+      "notes": "Measured by A-script-gen-backlog-page: rc 1, FileNotFoundError on <install dir>/docs/backlog.md although the seeded repository HAS docs/backlog.md \u2014 gen-backlog-page:4:1 is the line (BACKLOG = REPO / \"docs/backlog.md\", gen-backlog-page.py:88; S1). Condition 3 fails; C4 fail, measured. :4:2/:4:3 read the same file's git history from REPO. The page also parses this repository's backlog grammar, which a stranger's docs/backlog.md need not follow (argued, not measured). Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :4:1-:4:3 (project root from the caller); the grammar question is not priced. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 2 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite, and a template's docs/backlog.md starts in this grammar, so the grammar question does not arise; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 2 h."
     },
     {
       "id": "goal-tree",
@@ -1018,11 +1018,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 10.0,
+        "kind": "template-repository",
+        "cost_hours": 2.0,
         "grade": "argued"
       },
-      "notes": "Measured by A-script-goal-tree-print: rc 2 `CANNOT RUN — … git rev-parse --git-common-dir gave no usable path`, run against the install directory (ROOT = SCRIPTS.parent, goal-tree.py:119; S1). Condition 3 fails; C4 fail, measured. Beyond S1 it reads this repository's coordination files (docs/goal-threads.md, line 120; the in-flight ledger through session-state), conventions a stranger lacks (argued). goal-tree:2:1-:2:4 are detector-2 `unread` findings in a sibling loader and the self-test; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: project root from the caller, and the coordination files optional; 6,929 lines, so the larger estimate."
+      "notes": "Measured by A-script-goal-tree-print: rc 2 `CANNOT RUN \u2014 \u2026 git rev-parse --git-common-dir gave no usable path`, run against the install directory (ROOT = SCRIPTS.parent, goal-tree.py:119; S1). Condition 3 fails; C4 fail, measured. Beyond S1 it reads this repository's coordination files (docs/goal-threads.md, line 120; the in-flight ledger through session-state), conventions a stranger lacks (argued). goal-tree:2:1-:2:4 are detector-2 `unread` findings in a sibling loader and the self-test; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): project root from the caller, and the coordination files optional; 6,929 lines, so the larger estimate. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); an optional file is not a setting either; template-repository 2 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite, and the coordination files ship empty; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 2 h."
     },
     {
       "id": "ask-answerer",
@@ -1058,11 +1058,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 4.0,
+        "kind": "template-repository",
+        "cost_hours": 1.0,
         "grade": "argued"
       },
-      "notes": "Exercised by A-script-ask-answerer-status, but only `--status` ran (rc 0); answering a question (a model call) was NOT run, so no pass condition is `fail` and the useful operation is argued: grade argued (spec 6: a component may not be graded measured on a run that did not happen). As a library its only importer, explainer-serve, failed on S2, attributed elsewhere, which contributes nothing (spec 4). Named defect, argued from the code: repo_facts runs ask-answerer:6:1 (`git -C <repo>`, ask_answerer.py:517) on a repo that defaults to REPO = SCRIPTS.parent (lines 90, 718), the install directory, so an answer would be stamped with the package's commit, not the user's (the S1 shape; C4 fail, argued). Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the repo from the caller, then one --once run in a stranger world to measure it."
+      "notes": "Exercised by A-script-ask-answerer-status, but only `--status` ran (rc 0); answering a question (a model call) was NOT run, so no pass condition is `fail` and the useful operation is argued: grade argued (spec 6: a component may not be graded measured on a run that did not happen). As a library its only importer, explainer-serve, failed on S2, attributed elsewhere, which contributes nothing (spec 4). Named defect, argued from the code: repo_facts runs ask-answerer:6:1 (`git -C <repo>`, ask_answerer.py:517) on a repo that defaults to REPO = SCRIPTS.parent (lines 90, 718), the install directory, so an answer would be stamped with the package's commit, not the user's (the S1 shape; C4 fail, argued). Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): the repo from the caller, then one --once run in a stranger world to measure it. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 1 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite; the --once run is still owed; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 1 h."
     },
     {
       "id": "hook-regen-backlog-page",
@@ -1097,11 +1097,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 2.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-backlog-page:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; depends on the hook-dispatcher row's fix."
+      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-backlog-page:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; this row owns that file's price for all five regen hooks; depends on the hook-dispatcher row's fix. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: a hook registration is not a setting; template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so the template carries .claude/settings.json registering the hook, so S5 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "hook-regen-dashboard",
@@ -1131,16 +1131,16 @@
         "C5": "pass"
       },
       "cost": {
-        "public_bar_hours": 2.0,
+        "public_bar_hours": 0.5,
         "next_project_hours": 0.5,
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 2.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-dashboard:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; depends on the hook-dispatcher row's fix."
+      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-dashboard:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :7:1 with this hook's one entry in the package's hooks/hooks.json, 0.5 h, the same work as next_project's one registration; the file itself is priced in hook-regen-backlog-page's row at 0 h here (round 1 C9: each of the five priced it at 2 h at r0); depends on the hook-dispatcher row's fix. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: a hook registration is not a setting; template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so the template carries .claude/settings.json registering the hook, so S5 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "hook-regen-features-page",
@@ -1170,16 +1170,16 @@
         "C5": "pass"
       },
       "cost": {
-        "public_bar_hours": 2.0,
+        "public_bar_hours": 0.5,
         "next_project_hours": 0.5,
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 2.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-features-page:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; depends on the hook-dispatcher row's fix."
+      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-features-page:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :7:1 with this hook's one entry in the package's hooks/hooks.json, 0.5 h, the same work as next_project's one registration; the file itself is priced in hook-regen-backlog-page's row at 0 h here (round 1 C9: each of the five priced it at 2 h at r0); depends on the hook-dispatcher row's fix. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: a hook registration is not a setting; template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so the template carries .claude/settings.json registering the hook, so S5 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "hook-regen-goals-page",
@@ -1209,16 +1209,16 @@
         "C5": "pass"
       },
       "cost": {
-        "public_bar_hours": 2.0,
+        "public_bar_hours": 0.5,
         "next_project_hours": 0.5,
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 2.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-goals-page:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; depends on the hook-dispatcher row's fix."
+      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-goals-page:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :7:1 with this hook's one entry in the package's hooks/hooks.json, 0.5 h, the same work as next_project's one registration; the file itself is priced in hook-regen-backlog-page's row at 0 h here (round 1 C9: each of the five priced it at 2 h at r0); depends on the hook-dispatcher row's fix. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: a hook registration is not a setting; template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so the template carries .claude/settings.json registering the hook, so S5 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "hook-regen-pages",
@@ -1248,16 +1248,16 @@
         "C5": "pass"
       },
       "cost": {
-        "public_bar_hours": 2.0,
+        "public_bar_hours": 0.5,
         "next_project_hours": 0.5,
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 2.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-pages:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; depends on the hook-dispatcher row's fix."
+      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-pages:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :7:1 with this hook's one entry in the package's hooks/hooks.json, 0.5 h, the same work as next_project's one registration; the file itself is priced in hook-regen-backlog-page's row at 0 h here (round 1 C9: each of the five priced it at 2 h at r0); depends on the hook-dispatcher row's fix. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: a hook registration is not a setting; template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so the template carries .claude/settings.json registering the hook, so S5 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "contract-explainer-delivery",
@@ -1283,7 +1283,7 @@
         }
       ],
       "harvest": "practice",
-      "practice_entry": "27. A shipped package has two roots — its own files resolve from `${CLAUDE_PLUGIN_ROOT}`, the user's files from the user's project — and one ROOT for both breaks one of them",
+      "practice_entry": "27. A shipped package has two roots \u2014 its own files resolve from `${CLAUDE_PLUGIN_ROOT}`, the user's files from the user's project \u2014 and one ROOT for both breaks one of them",
       "criteria": {
         "C1": "pass",
         "C2": "pass",
@@ -1297,11 +1297,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 3.0,
+        "kind": "practice",
+        "cost_hours": 0.25,
         "grade": "argued"
       },
-      "notes": "Imported by the five page skills, all exercised and all failing. Attribution (spec 4, all importers fail): skill-brief's failure traces to code in THIS library — the invocation it could not resolve, `python3 scripts/brief-compose.py`, is contract-explainer-delivery:2:1 (explainer-delivery.md:166), so it is graded measured with that defect named (a judgment: the skill could equally be read as the defect's owner). All six :2 findings are the same CWD-relative shape (:2:3-:2:6 are ask_answerer.py invocations); spec 4 records the known fix, ${CLAUDE_PLUGIN_ROOT}/scripts/…, and measured that the suite uses it nowhere (still true: only check-publishability.py names it). The files ship; the resolution fails, so C4 fail, not C3. :4:1/:4:2 (TaskList, TaskStop) are harness tools. Scenario named as the entry point whose failure reached it. Harvested as practice 27. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :2:1-:2:6 (six invocations to ${CLAUDE_PLUGIN_ROOT}), with the canon guard check-explainer-delivery.py updated in step."
+      "notes": "Imported by the five page skills, all exercised and all failing. Attribution (spec 4, all importers fail): skill-brief's failure traces to code in THIS library \u2014 the invocation it could not resolve, `python3 scripts/brief-compose.py`, is contract-explainer-delivery:2:1 (explainer-delivery.md:166), so it is graded measured with that defect named (a judgment: the skill could equally be read as the defect's owner; and that failure is a single tier-A observation, whose path behaviour is the staging's, not a stranger's, isolation note I2). All six :2 findings are the same CWD-relative shape (:2:3-:2:6 are ask_answerer.py invocations); spec 4 records the known fix, ${CLAUDE_PLUGIN_ROOT}/scripts/\u2026, and measured that the suite uses it nowhere (still true: only check-publishability.py names it). The files ship; the resolution fails, so C4 fail, not C3. :4:1/:4:2 (TaskList, TaskStop) are harness tools. Scenario named as the entry point whose failure reached it. Harvested as practice 27. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :2:1-:2:6 (six invocations to ${CLAUDE_PLUGIN_ROOT}), with the canon guard check-explainer-delivery.py updated in step. This row owns that price for all five page skills. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so the invocations resolve from the repository root as they do here; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice 0.25 h: practice 27 is written in this commit, so only publishing it is left; 0.25 h is the record's floor for work already done or priced in another row: the guard refuses 0 h ([shape]: a positive cost). Cheapest: practice, 0.25 h (as code it travels with its consumers' template route at 0.5 h)."
     },
     {
       "id": "contract-handoff-path",
@@ -1325,7 +1325,7 @@
         "C1": "pass",
         "C2": "pass",
         "C3": "pass",
-        "C4": "pass",
+        "C4": "unanswered",
         "C5": "pass"
       },
       "cost": {
@@ -1338,7 +1338,7 @@
         "cost_hours": 1.0,
         "grade": "argued"
       },
-      "notes": "No importer in this package: the only readers of .agents/skills/shared/handoff-path.md are the handoff skill, the handoff guard and this repository's hooks, none of which is a comprehensibility component. Spec 4's inheritance table: imported by no entry-point → grade none, and 'an orphan library is also a scope question: ask why it is shipping at all'. DON'T-SHIP in this package, argued from that rule (a judgment: it would be NEEDS-WORK only with a named defect, and it has none; it has no consumer). No scan findings. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis: the cheapest route publishes its rule (a handoff is written where the reader reads it) as prose; shipping it with its consumer is the alternative, not priced."
+      "notes": "No importer in this package: the only readers of .agents/skills/shared/handoff-path.md are the handoff skill, the handoff guard and this repository's hooks, none of which is a comprehensibility component. Spec 4's inheritance table: imported by no entry-point \u2192 grade none, and 'an orphan library is also a scope question: ask why it is shipping at all'. DON'T-SHIP in this package, argued from that rule (a judgment: it would be NEEDS-WORK only with a named defect, and it has none; it has no consumer). No scan findings. C4 unanswered: with no importer nothing established it (spec 4b's none; round 1 C4 corrected a pass). It is still listed in shipping-sets.json's comprehensibility set: that file is Task 5's, the scan's measured input, and check-inventory's [shipping-set] rule refuses a phase-1 row absent from it. A DON'T-SHIP component does not ship, so it leaves the comprehensibility shipping set at Task 22, which produces the phase-1 subset and its shipping set (spec D11); round 1 C5. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis (public bar): the cheapest route publishes its rule (a handoff is written where the reader reads it) as prose; shipping it with its consumer is the alternative, not priced. Routes compared (D10, all argued): decouple-config does not apply: it holds no project value; template-repository does not apply: its consumers (the handoff skill and its guard) are not in this package; portable-core does not apply: the whole file is the rule; practice 1 h: publish the rule as prose (not yet written, so harvest stays none). Cheapest: practice, 1 h."
     },
     {
       "id": "contract-corpus-search",
@@ -1362,7 +1362,7 @@
         "C1": "pass",
         "C2": "pass",
         "C3": "pass",
-        "C4": "pass",
+        "C4": "unanswered",
         "C5": "pass"
       },
       "cost": {
@@ -1375,7 +1375,7 @@
         "cost_hours": 1.0,
         "grade": "argued"
       },
-      "notes": "No importer in this package: .agents/skills/shared/corpus-search.md is read by the handoff skill and handoff-path.md, neither a comprehensibility entry point. Spec 4: imported by no entry-point → grade none, and an orphan is a scope question; DON'T-SHIP in this package (the same judgment as contract-handoff-path). No scan findings. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis: publish its search method as prose."
+      "notes": "No importer in this package: .agents/skills/shared/corpus-search.md is read by the handoff skill and handoff-path.md, neither a comprehensibility entry point. Spec 4: imported by no entry-point \u2192 grade none, and an orphan is a scope question; DON'T-SHIP in this package (the same judgment as contract-handoff-path). No scan findings. C4 unanswered: with no importer nothing established it (spec 4b's none; round 1 C4 corrected a pass). It is still listed in shipping-sets.json's comprehensibility set: that file is Task 5's, the scan's measured input, and check-inventory's [shipping-set] rule refuses a phase-1 row absent from it. A DON'T-SHIP component does not ship, so it leaves the comprehensibility shipping set at Task 22, which produces the phase-1 subset and its shipping set (spec D11); round 1 C5. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis (public bar): publish its search method as prose. Routes compared (D10, all argued): decouple-config does not apply: it holds no project value; template-repository does not apply: its consumers (the handoff skill) are not in this package; portable-core does not apply: the whole file is the rule; practice 1 h: publish the rule as prose (not yet written, so harvest stays none). Cheapest: practice, 1 h."
     },
     {
       "id": "page-chrome",
@@ -1403,20 +1403,20 @@
         "C1": "pass",
         "C2": "pass",
         "C3": "pass",
-        "C4": "pass",
+        "C4": "unanswered",
         "C5": "pass"
       },
       "cost": {
-        "public_bar_hours": 1.0,
-        "next_project_hours": 0.5,
+        "public_bar_hours": 0.25,
+        "next_project_hours": 0.25,
         "grade": "argued"
       },
       "route": {
-        "kind": "portable-core",
-        "cost_hours": 1.0,
+        "kind": "template-repository",
+        "cost_hours": 0.25,
         "grade": "argued"
       },
-      "notes": "Imported by gen-features-page, goal-tree, gen-goals-page, brief-compose, gen-dashboard, gen-backlog-page and explainer-serve: every one exercised and failing, each on a defect attributed to its own code (S1) or to brief-compose's tray (S2), none to this module. Spec 4 (all importers fail, attributed elsewhere): grade none, no measured scenario to inherit, so the C4 its role inherits (spec 4) cannot be established until an importer passes. Spec 4b admits NEEDS-WORK for 'no way to assess it' where that is true after the role rules are applied; that is the named defect, and it is a limit of this run, not a code defect (no own S1 shape: its only __file__ use is in the self-test, line 1617). A judgment call. Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis: no code change; one importer scenario re-run once an importer's route lands."
+      "notes": "Imported by gen-features-page, goal-tree, gen-goals-page, brief-compose, gen-dashboard, gen-backlog-page and explainer-serve: every one exercised and failing, each on a defect attributed to its own code (S1) or to brief-compose's tray (S2), none to this module. Spec 4 (all importers fail, attributed elsewhere): grade none, no measured scenario to inherit, so C4 is unanswered. No defect is named in this module (no own S1 shape: its only __file__ use is in the self-test, line 1617). Re-judged in Task 20 round 1 (X1): this is spec 4b's 'we have not assessed it yet', not 'this cannot be assessed by this method', since an importer scenario that passes would assess it; so the row names NO code defect. It stays NEEDS-WORK only because no other verdict is open: SHIP would be spec 9's first falsifier (a library no passing scenario reached; check-inventory's [ship-experiment]), and DON'T-SHIP has no reason. Task 22 files it with page-markup and fixture-git as ONE work item, 're-run an importer scenario once an importer's route lands', not as a defect of this file (round 1 C6). Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis (public bar): none of its own: no defect to fix, and the importer re-run that would assess it is each importer's own verification, priced in that importer's row (round 1 X1 dropped the r0 re-run price). 0.25 h is the record's floor for work already done or priced in another row: the guard refuses 0 h ([shape]: a positive cost). Routes compared (D10, all argued): decouple-config does not apply: no project value; template-repository 0.25 h: it has no route of its own and travels with its importers, whose cheapest route is template-repository; 0.25 h is the record's floor for work already done or priced in another row: the guard refuses 0 h ([shape]: a positive cost); portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.25 h."
     },
     {
       "id": "page-markup",
@@ -1444,20 +1444,20 @@
         "C1": "pass",
         "C2": "pass",
         "C3": "pass",
-        "C4": "pass",
+        "C4": "unanswered",
         "C5": "pass"
       },
       "cost": {
-        "public_bar_hours": 1.0,
-        "next_project_hours": 0.5,
+        "public_bar_hours": 0.25,
+        "next_project_hours": 0.25,
         "grade": "argued"
       },
       "route": {
-        "kind": "portable-core",
-        "cost_hours": 1.0,
+        "kind": "template-repository",
+        "cost_hours": 0.25,
         "grade": "argued"
       },
-      "notes": "Imported by gen-features-page, gen-goals-page, gen-dashboard, explainer-serve, goal-tree, gen-backlog-page and the check-dashboard-entry library: every exercised importer failed on a defect attributed elsewhere (S1, S2). Spec 4: grade none; spec 4b: NEEDS-WORK for 'no way to assess it' after the role rules (the same judgment as page-chrome). Its REPO is set by its caller (line 645), not from its own path. page-markup:6:1 (git remote, line 615) is a host tool. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis: no code change; one importer re-run."
+      "notes": "Imported by gen-features-page, gen-goals-page, gen-dashboard, explainer-serve, goal-tree, gen-backlog-page and the check-dashboard-entry library: every exercised importer failed on a defect attributed elsewhere (S1, S2). Spec 4: grade none, so C4 is unanswered; no defect is named in this module. Re-judged in Task 20 round 1 (X1): this is spec 4b's 'we have not assessed it yet', not 'this cannot be assessed by this method', since an importer scenario that passes would assess it; so the row names NO code defect. It stays NEEDS-WORK only because no other verdict is open: SHIP would be spec 9's first falsifier (a library no passing scenario reached; check-inventory's [ship-experiment]), and DON'T-SHIP has no reason. Task 22 files it with page-chrome and fixture-git as ONE work item, 're-run an importer scenario once an importer's route lands', not as a defect of this file (round 1 C6). Its REPO is set by its caller (line 645), not from its own path. page-markup:6:1 (git remote, line 615) is a host tool. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis (public bar): none of its own: no defect to fix, and the importer re-run that would assess it is each importer's own verification, priced in that importer's row (round 1 X1 dropped the r0 re-run price). 0.25 h is the record's floor for work already done or priced in another row: the guard refuses 0 h ([shape]: a positive cost). Routes compared (D10, all argued): decouple-config does not apply: no project value; template-repository 0.25 h: it has no route of its own and travels with its importers, whose cheapest route is template-repository; 0.25 h is the record's floor for work already done or priced in another row: the guard refuses 0 h ([shape]: a positive cost); portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.25 h."
     },
     {
       "id": "session-state",
@@ -1467,8 +1467,8 @@
       ],
       "phase": "1",
       "verdict": "NEEDS-WORK",
-      "grade": "none",
-      "scenario": null,
+      "grade": "measured",
+      "scenario": "goal-tree: A-script-goal-tree-print, failed in main_checkout/_common_dir (session-state.py:799)",
       "rests_on": [
         {
           "kind": "spec",
@@ -1490,11 +1490,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 4.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Imported by goal-tree and regen-pages, both exercised and failing on S1 in their own code (spec 4: attributed elsewhere → grade none). Named defect, argued from the code, with no scan finding: the S1 shape — REPO_ROOT = Path(__file__).resolve().parent.parent (session-state.py:91) is main()'s default root (line 1990), and it reads .claude/inflight.jsonl (LEDGER_REL, line 92) there (C4 fail, argued). The rests_on ground is spec 4's table, which leaves it no scenario to SHIP on. session-state:2:1-:2:8 and :6:1/:6:2 are all in the self-test. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the root from the caller, the ledger optional."
+      "notes": "Imported by goal-tree and regen-pages, both exercised and failing. goal-tree's measured failure (experiment-tier-a.md:82, rc 2 'git rev-parse --git-common-dir gave no usable path') is raised in THIS library, at session-state.py:799 (_common_dir), the only place that message is produced, reached through main_checkout from goal-tree.py:1542. Spec 4's all-importers-fail row: a failure whose trace reaches the library makes it measured, with that defect named (a judgment: the root it was handed originates in goal-tree's ROOT = SCRIPTS.parent, goal-tree.py:119). regen-pages's failure is its own (regen-pages.py:224, main_of) and contributes nothing here. Re-graded from none in Task 20 round 1 (C3). Named defect, with no scan finding: the S1 shape \u2014 REPO_ROOT = Path(__file__).resolve().parent.parent (session-state.py:91) is main()'s default root (line 1990), and it reads .claude/inflight.jsonl (LEDGER_REL, line 92) there (C4 fail, measured through goal-tree's run). The rests_on ground is spec 4's table; the scenario names the importer run whose trace reached it (its own sidecar entry is unexercised, so it cannot be an experiment ground). session-state:2:1-:2:8 and :6:1/:6:2 are all in the self-test. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): the root from the caller, the ledger optional. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); an optional ledger is not a setting either; template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so REPO_ROOT is the stranger's repository and an empty ledger ships; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "agent-watchdog",
@@ -1520,7 +1520,7 @@
         "C1": "pass",
         "C2": "pass",
         "C3": "fail",
-        "C4": "pass",
+        "C4": "unanswered",
         "C5": "pass"
       },
       "cost": {
@@ -1529,11 +1529,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "portable-core",
-        "cost_hours": 2.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Imported by goal-tree (exercised, failed on S1 in its own code: spec 4 → grade none). Not in the tier-A population (the sidecar has no entry for it; it joined the map after Task 14). Named defect: agent-watchdog:4:1 (line 432) — its --self-test opens check-agent-long-call.py beside itself, a file of this repository that no package ships (C3 fail, argued); the next case (line 437) reads ../docs/process-checklists.md the same way, with no scan finding. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :4:1 and the line-437 read by moving both constants into the module (its portable core)."
+      "notes": "Imported by goal-tree (exercised, failed on S1 in its own code: spec 4 \u2192 grade none, so C4 is unanswered; round 1 C4 corrected a pass nothing established). Not in the tier-A population (the sidecar has no entry for it; it joined the map after Task 14). Named defect: agent-watchdog:4:1 (line 432) \u2014 its --self-test opens check-agent-long-call.py beside itself, a file of this repository that no package ships (C3 fail, argued); the next case (line 437) reads ../docs/process-checklists.md the same way, with no scan finding. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :4:1 and the line-437 read by moving both constants into the module. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: the two constants are this module's, not the user's settings; template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so the template carries check-agent-long-call.py and docs/process-checklists.md, so :4:1 and the line-437 read resolve; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core 2 h: the same move of both constants into the module, leaving the two files behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "gen-work-lines",
@@ -1566,11 +1566,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 3.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Imported by goal-tree (exercised, failed on S1 in its own code: spec 4 → grade none). Named defect, argued from the code: ROOT = Path(__file__).resolve().parent.parent (gen-work-lines.py:65), with PLAN_DIR = ROOT/.claude/plans (line 66), and gen-work-lines:6:1 runs `git -C <root> worktree list` (line 236) — the S1 shape (C4 fail, argued). git is a host tool, so :6:1 is not cited as the ground; spec 4's table is. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the root from the caller."
+      "notes": "Imported by goal-tree (exercised, failed on S1 in its own code: spec 4 \u2192 grade none). Named defect, argued from the code: ROOT = Path(__file__).resolve().parent.parent (gen-work-lines.py:65), with PLAN_DIR = ROOT/.claude/plans (line 66), and gen-work-lines:6:1 runs `git -C <root> worktree list` (line 236) \u2014 the S1 shape (C4 fail, argued). git is a host tool, so :6:1 is not cited as the ground; spec 4's table is. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): the root from the caller. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "check-dashboard-entry",
@@ -1605,11 +1605,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 4.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Imported by gen-dashboard (exercised, failed on S1/S2 in its own code and brief-compose's: spec 4 → grade none). Named defect: check-dashboard-entry:4:2 (line 1327), store = ROOT / \"docs/dashboard-entries.md\" with ROOT from its own path (line 18) — the S1 shape and the S4 host convention together (C4 fail, argued); :4:1/:4:3 read the same file through git. Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: removes :4:1-:4:3 (store from the caller's project, created on first use)."
+      "notes": "Imported by gen-dashboard (exercised, failed on S1/S2 in its own code and brief-compose's: spec 4 \u2192 grade none). Named defect: check-dashboard-entry:4:2 (line 1327), store = ROOT / \"docs/dashboard-entries.md\" with ROOT from its own path (line 18) \u2014 the S1 shape and the S4 host convention together (C4 fail, argued); :4:1/:4:3 read the same file through git. Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :4:1-:4:3 (store from the caller's project, created on first use). The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite and the template ships the store; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "check-goal-status",
@@ -1642,11 +1642,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 2.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Imported by gen-goals-page (exercised, failed on S1 at gen-goals-page.py:1336, its own code: spec 4 → grade none). No scan findings. Named defect, argued from the code: REPO = Path(__file__).resolve().parent.parent (check-goal-status.py:78), the S1 shape (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the root from the caller."
+      "notes": "Imported by gen-goals-page (exercised, failed on S1 at gen-goals-page.py:1336, its own code: spec 4 \u2192 grade none). No scan findings. Named defect, argued from the code: REPO = Path(__file__).resolve().parent.parent (check-goal-status.py:78), the S1 shape (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): the root from the caller. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "check-features",
@@ -1679,11 +1679,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 3.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Imported by gen-features-page (exercised, failed on S1 at gen-features-page.py:747, its own code: spec 4 → grade none). No scan findings (the scan's doc-path detector did not emit these). Named defect, argued from the code: FEATURES, ANCHORS_MD and BACKLOG are REPO/docs/… with REPO from its own path (check-features.py:282-285), the S1 shape (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the root from the caller."
+      "notes": "Imported by gen-features-page (exercised, failed on S1 at gen-features-page.py:747, its own code: spec 4 \u2192 grade none). No scan findings (the scan's doc-path detector did not emit these). Named defect, argued from the code: FEATURES, ANCHORS_MD and BACKLOG are REPO/docs/\u2026 with REPO from its own path (check-features.py:282-285), the S1 shape (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): the root from the caller. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "check-docs",
@@ -1720,11 +1720,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "portable-core",
-        "cost_hours": 2.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Imported by gen-backlog-page (exercised, failed on S1 in its own code) and the check-anchors library (not exercised): spec 4 → grade none. It is this repository's documentation-integrity guard; its importers load it for one rule (CELL_SPLIT, gen-backlog-page.py:96). Named defect: check-docs:4:1-:4:3 (lines 368, 477, 534), ROOT / \"docs/backlog.md\" with ROOT from its own path (line 42) — S1 and a host convention (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the portable core is the cell-split rule its importers use; shipping that alone removes :4:1-:4:3 from the package."
+      "notes": "Imported by gen-backlog-page (exercised, failed on S1 in its own code) and the check-anchors library (not exercised): spec 4 \u2192 grade none. It is this repository's documentation-integrity guard; its importers load it for one rule (CELL_SPLIT, gen-backlog-page.py:96). Named defect: check-docs:4:1-:4:3 (lines 368, 477, 534), ROOT / \"docs/backlog.md\" with ROOT from its own path (line 42) \u2014 S1 and a host convention (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): the portable core is the cell-split rule its importers use; shipping that alone removes :4:1-:4:3 from the package. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so ROOT is the stranger's repository, and the template ships docs/backlog.md; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core 2 h: the cell-split rule alone, leaving the documentation guard behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "check-anchors",
@@ -1757,11 +1757,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 3.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Imported by gen-goals-page and gen-backlog-page (both exercised, failing on S1 in their own code) and the check-goal-status library: spec 4 → grade none. No scan findings. Named defect, argued from the code: ROOT = Path(__file__).resolve().parent.parent and DOCS = ROOT/\"docs\" (check-anchors.py:51-52), the S1 shape, reading docs/anchors.md from the install (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: the root from the caller."
+      "notes": "Imported by gen-goals-page and gen-backlog-page (both exercised, failing on S1 in their own code) and the check-goal-status library: spec 4 \u2192 grade none. No scan findings. Named defect, argued from the code: ROOT = Path(__file__).resolve().parent.parent and DOCS = ROOT/\"docs\" (check-anchors.py:51-52), the S1 shape, reading docs/anchors.md from the install (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): the root from the caller. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so S1 does not bite; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     },
     {
       "id": "fixture-git",
@@ -1789,20 +1789,20 @@
         "C1": "pass",
         "C2": "pass",
         "C3": "pass",
-        "C4": "pass",
+        "C4": "unanswered",
         "C5": "pass"
       },
       "cost": {
-        "public_bar_hours": 1.0,
-        "next_project_hours": 0.5,
+        "public_bar_hours": 0.25,
+        "next_project_hours": 0.25,
         "grade": "argued"
       },
       "route": {
-        "kind": "portable-core",
-        "cost_hours": 1.0,
+        "kind": "template-repository",
+        "cost_hours": 0.25,
         "grade": "argued"
       },
-      "notes": "The self-test git-isolation helper, imported by every script in the package (for its --self-test) and shared with recall and ci-layer. Every exercised importer failed on a defect attributed elsewhere (S1, S2): spec 4 → grade none; spec 4b: NEEDS-WORK for 'no way to assess it' after the role rules (the same judgment as page-chrome). No own defect found. fixture-git:2:1-:2:6 and :6:1-:6:9 are its own cases and its environment allow-list (PATH, LANG, TMPDIR, HOME, …), which is what it is for; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis: no code change; measured once an importer's self-test is run in an install."
+      "notes": "The self-test git-isolation helper, imported by every script in the package (for its --self-test) and shared with recall and ci-layer. Every exercised importer failed on a defect attributed elsewhere (S1, S2): spec 4 \u2192 grade none, so C4 is unanswered. No own defect found. Re-judged in Task 20 round 1 (X1): this is spec 4b's 'we have not assessed it yet', not 'this cannot be assessed by this method', since an importer scenario that passes would assess it; so the row names NO code defect. It stays NEEDS-WORK only because no other verdict is open: SHIP would be spec 9's first falsifier (a library no passing scenario reached; check-inventory's [ship-experiment]), and DON'T-SHIP has no reason. Task 22 files it with page-chrome and page-markup as ONE work item, 're-run an importer scenario once an importer's route lands', not as a defect of this file (round 1 C6). fixture-git:2:1-:2:6 and :6:1-:6:9 are its own cases and its environment allow-list (PATH, LANG, TMPDIR, HOME, \u2026), which is what it is for; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. Basis (public bar): none of its own: no defect to fix, and the importer re-run that would assess it is each importer's own verification, priced in that importer's row (round 1 X1 dropped the r0 re-run price). 0.25 h is the record's floor for work already done or priced in another row: the guard refuses 0 h ([shape]: a positive cost). Routes compared (D10, all argued): decouple-config does not apply: no project value; template-repository 0.25 h: it has no route of its own and travels with its importers, whose cheapest route is template-repository; 0.25 h is the record's floor for work already done or priced in another row: the guard refuses 0 h ([shape]: a positive cost); portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.25 h."
     },
     {
       "id": "hook-dispatcher",
@@ -1835,11 +1835,11 @@
         "grade": "argued"
       },
       "route": {
-        "kind": "decouple-config",
-        "cost_hours": 3.0,
+        "kind": "template-repository",
+        "cost_hours": 0.5,
         "grade": "argued"
       },
-      "notes": "Imported only by the five regen hooks, none exercised: spec 4 (importers only argued) → grade argued. No scan findings. Named defect, argued from the code: run-hook.sh resolves the hook it runs as \"$root/.claude/hooks/$name\" (run-hook.sh:127), where $root is the checkout containing the caller's working directory (or CLAUDE_PROJECT_DIR) — the USER's project, which in a plugin install does not hold the package's hooks. That is the resolution defect spec 4 describes (a path resolved against the caller instead of the package; fix ${CLAUDE_PLUGIN_ROOT}), hence the spec-4 ground (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis: resolve package hooks from ${CLAUDE_PLUGIN_ROOT}, keeping the main-checkout rule (backlog #513) for this repository's own usage hooks."
+      "notes": "Imported only by the five regen hooks, none exercised: spec 4 (importers only argued) \u2192 grade argued. No scan findings. Named defect, argued from the code: run-hook.sh resolves the hook it runs as \"$root/.claude/hooks/$name\" (run-hook.sh:127), where $root is the checkout containing the caller's working directory (or CLAUDE_PROJECT_DIR) \u2014 the USER's project, which in a plugin install does not hold the package's hooks. That is the resolution defect spec 4 describes (a path resolved against the caller instead of the package; fix ${CLAUDE_PLUGIN_ROOT}), hence the spec-4 ground (C4 fail, argued). Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): resolve package hooks from ${CLAUDE_PLUGIN_ROOT}, keeping the main-checkout rule (backlog #513) for this repository's own usage hooks. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 0.5 h: the files live in the stranger's own repository, the next_project reasoning, so $root/.claude/hooks/ IS the template repository's, so run-hook.sh:127 resolves; the template repository itself is priced once, in skill-brief's row; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 0.5 h."
     }
   ],
   "engine_comparison": {
