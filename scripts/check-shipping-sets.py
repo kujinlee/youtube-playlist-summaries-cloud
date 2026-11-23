@@ -2,7 +2,7 @@
 """The component map, checked for completeness against what is on disk (marketplace-inventory plan, Task 5;
 spec §3: "every supporting artifact maps to a component, to a package, or to a written exclusion").
 
-    python3 scripts/check-shipping-sets.py --self-test  # 140 cases
+    python3 scripts/check-shipping-sets.py --self-test  # 170 cases
     python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
     python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json [MAP]
 
@@ -164,7 +164,9 @@ from __future__ import annotations
 import ast
 import contextlib
 import fnmatch
+import functools
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -993,6 +995,148 @@ def closure_gaps(decl: dict, reached: set[str], repo: Path = REPO) -> list[str]:
     return out
 
 
+CORPUS_BUILDER = "build-shipped-corpus.py"
+CHECK_TIMEOUT = 120
+
+
+@functools.lru_cache(maxsize=None)
+def _corpus_builder(path: Path = Path(__file__).resolve().parent / CORPUS_BUILDER):
+    """`build-shipped-corpus.py`, loaded as a module (its hyphenated name cannot be imported): decision 5's table is
+    parsed by ITS `groups` and a file canonicalised by ITS `_canon_sha` — one rule, one place. `decision5` passes
+    the ROOT's copy, so a fixture world is read by the builder it holds."""
+    spec = importlib.util.spec_from_file_location("build_shipped_corpus", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def decision5(root: Path) -> tuple[dict, dict, object]:
+    """Decision 5 as `--closure` applies it (backlog #697): `(excluded, sources, canon)` — each group A–C file name
+    -> its letter, the CANONICAL hash of each A–C and D source in `docs/memory/` -> `(path, letter)`, and the
+    builder's `_canon_sha`. A table or a source it cannot read is CANNOT RUN: a closure that skipped the rule would
+    pass a package shipping them. So is a builder that cannot be loaded, or lacks a name read here (review r1 M2):
+    a moved name is CANNOT RUN, never a traceback whose rc 1 reads as gaps."""
+    try:
+        b = _corpus_builder(root / "scripts" / CORPUS_BUILDER)
+        groups, canon, src, decision, cannot = b.groups, b._canon_sha, b.SRC, b.DECISION, b.CannotRun
+    except (OSError, ImportError, AttributeError, SyntaxError) as e:
+        raise CannotRun(f"decision 5 cannot be read: {CORPUS_BUILDER} cannot be loaded: {e}") from e
+    try:
+        g = groups((root / decision).read_text())
+        sources = {canon(root / src / n): (f"{src}/{n}", k) for k in "ABCD" for n in g[k]}
+    except (OSError, cannot) as e:
+        raise CannotRun(f"decision 5 cannot be read: {e}") from e
+    return {n: k for k in "ABC" for n in g[k]}, sources, canon
+
+
+def decision5_gaps(files, d5: tuple[dict, dict, object], root: Path) -> list[str]:
+    """A shipped file decision 5 keeps out (backlog #697's Fails-if): one NAMED for a group A–C file, wherever it
+    lands, and one whose canonical bytes are an A–C or D source's, under any name — a D file ships only as its
+    paraphrase. Each file is read at its repository source, which is what `materialize` copies.
+    ⚠ BOUND: a source edited by more than whitespace is not matched by bytes; `decision5_quotes` reads content."""
+    excluded, sources, canon = d5
+    out = []
+    for f in sorted(set(files) - {PLUGIN_META}):   # its own form: `materialize`'s skip is a mutation anchor
+        name = f.rsplit("/", 1)[-1]
+        if name in excluded:
+            out.append(f"gap: decision-5: {f} — named for {name}, which decision 5 EXCLUDES (group {excluded[name]})")
+        src = root / source_path(f)
+        hit = sources.get(canon(src)) if src.is_file() else None
+        if hit:
+            out.append(f"gap: decision-5: {f} — its bytes are {hit[0]}'s (group {hit[1]}), a decision-5 source "
+                       "shipped raw")
+    return out
+
+
+HIT_RES = (re.compile(r"^(QUOTE FROM \S+) IN (.+?): "), re.compile(r"^(EXCLUDED FILE PRESENT): (.+)$"),
+           re.compile(r"^(EXCLUDED CONTENT PRESENT): (.+) is (\S+)$"))
+# The builder's success contract (review r2 X5): EXACTLY what `build-shipped-corpus.py`'s `check()` prints on a clean
+# run — its `report` (one `  <D source>: <n> quotes` line per group-D source, then the `checked ...` count line), then
+# its PASS line. Taken from that symbol; a change there is a CANNOT RUN here until these follow it.
+CLEAN_SOURCE_RE = re.compile(r"^  \S.*: \d+ quotes$")
+CLEAN_COUNT_RE = re.compile(r"^checked (\d+) output files, each rendered as CommonMark, for \d+ quote fragments and \d+ excluded names$")
+PASS_LINE = "PASS: no group-D quote and no excluded file in the output"
+
+
+def _not_clean(lines: list[str], stderr: str, copied: int) -> str:
+    """'' when a builder run that exited 0 printed exactly its clean-run output (`CLEAN_SOURCE_RE`, `CLEAN_COUNT_RE`,
+    `PASS_LINE`) over the `copied` files and nothing on stderr; otherwise which clause it broke. The output itself
+    is never echoed: a line the builder did not mean to print may carry a quote."""
+    if stderr.strip():
+        return "it wrote to stderr"
+    if not lines or lines[-1] != PASS_LINE:
+        return "its last line is not the PASS line"
+    count = CLEAN_COUNT_RE.match(lines[-2]) if len(lines) >= 2 else None
+    if not count:
+        return "the line before the PASS line is not its count line"
+    if int(count.group(1)) != copied:
+        return f"it says it checked {count.group(1)} file(s), and {copied} were copied"
+    for i, ln in enumerate(lines[:-2], 1):
+        if not CLEAN_SOURCE_RE.match(ln):
+            return f"stdout line {i} is not one it prints on a clean run"
+    return ""
+
+
+def decision5_quotes(files, root: Path) -> list[str]:
+    """Decision 5's CONTENT rule (review r1 X2): no group-D quote ships unparaphrased. EVERY file a package ships,
+    whatever its path (review r2 X4: an owner quote rode in a script's comment), is copied, flat by basename, into a
+    scratch directory, and the builder's OWN `--check` is run over it, as a subprocess, through its CLI — one rule,
+    one place. Each hit it names is a gap, with the quote itself left out (the corpus's quotes are private; only the
+    source is named). A run that is neither the builder's exact clean PASS (rc 0, `_not_clean` empty: review r2 X5)
+    nor a readable FAIL (rc 1, every hit line parsed, the count it states) is CANNOT RUN — a nonzero rc, a
+    traceback, a timeout, stderr on a PASS or any line a clean run does not print is never `0 gaps`.
+    ⚠ BOUND: a paraphrase gone STALE against its source is the builder's `--out` check (`sources.json`), not
+    `--check`'s, so not this one's; and the builder's own bounds apply (its docstring, *What this cannot see*)."""
+    # A declared file the repository does not hold ships nothing to quote: its absence is the other clauses' gap
+    # (`materialize` is CANNOT RUN over a plugin's, `agreement` a gap over a reusable workflow's), never hidden here.
+    corpus = sorted(f for f in files if f != PLUGIN_META and (root / source_path(f)).is_file())
+    if not corpus:
+        return []
+    builder = root / "scripts" / CORPUS_BUILDER
+    with tempfile.TemporaryDirectory() as t:
+        where: dict[str, str] = {}
+        for i, f in enumerate(corpus):
+            name = f.rsplit("/", 1)[-1]
+            rel = name if name not in where else f"dup-{i}/{name}"   # two files, one basename: both are checked
+            (Path(t) / rel).parent.mkdir(parents=True, exist_ok=True)
+            try:
+                (Path(t) / rel).write_bytes((root / source_path(f)).read_bytes())
+            except OSError as e:
+                raise CannotRun(f"decision 5's quote check: cannot copy {f}: {e}") from e
+            where[rel] = f
+        try:
+            r = subprocess.run([sys.executable, str(builder), "--check", t], capture_output=True, text=True,
+                               timeout=CHECK_TIMEOUT)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise CannotRun(f"decision 5's quote check: {CORPUS_BUILDER} --check did not run: {e}") from e
+    lines = r.stdout.splitlines()
+    why = f"decision 5's quote check: {CORPUS_BUILDER} --check exited {r.returncode}"
+    if "Traceback" in r.stderr:
+        raise CannotRun(f"{why} with a traceback: {r.stderr.strip().splitlines()[-1]}")
+    if r.returncode == 0:
+        if bad := _not_clean(lines, r.stderr, len(where)):
+            raise CannotRun(f"{why}, and its output is not the builder's clean PASS: {bad}")
+        return []
+    if r.returncode != 1 or not lines or not re.match(r"^FAIL: \d+ hit\(s\)$", lines[-1]):
+        raise CannotRun(f"{why}: {(r.stderr.strip() or (lines[-1] if lines else 'no output'))[:200]}")
+    stated = int(lines[-1].split()[1])
+    out, parsed = [], 0
+    for ln in lines:
+        m = next((m for rx in HIT_RES if (m := rx.match(ln))), None)
+        if not m:
+            continue
+        parsed += 1
+        if m.group(2) not in where:
+            raise CannotRun(f"{why}: it names {m.group(2)!r}, which was not copied")
+        g = f"gap: decision-5: {where[m.group(2)]} — {CORPUS_BUILDER} --check: {m.group(1)}" + (
+            f" ({m.group(3)})" if m.re is HIT_RES[2] else "")
+        if g not in out:
+            out.append(g)
+    if parsed != stated:
+        raise CannotRun(f"{why}: it states {stated} hit(s), and {parsed} hit line(s) could be read")
+    return out
+
+
 def check_declaration(name: str, decl: dict) -> None:
     """An entry of `shipping-sets.json` keeps its own arithmetic, whatever its channel (review r2 Xm6), and a
     plugin's components name only files it installs — or it is refused."""
@@ -1103,6 +1247,7 @@ def closure_main(sets: Path, map_path: Path, root: Path) -> int:
     try:
         packages = load_declaration(sets)
         m = load_map(map_path, root)
+        d5 = decision5(root)
         for name in sorted(set(packages) | set(m.packages)):
             if name not in packages:
                 gaps += 1
@@ -1129,6 +1274,8 @@ def closure_main(sets: Path, map_path: Path, root: Path) -> int:
                 with tempfile.TemporaryDirectory() as t:
                     reached = closure(materialize(name, {"installed_files": sorted(files)}, root, Path(t)), root)
                 found += closure_gaps(decl, reached - omitted, root)
+            shipped = files if plugin else {f for c in decl["components"].values() for f in c["files"]}
+            found += decision5_gaps(shipped, d5, root) + decision5_quotes(shipped, root)
             gaps += len(found)
             lines += [f"{name}: {g}" for g in found]
             if plugin:
@@ -1487,6 +1634,42 @@ def _self_test_body() -> int:
                                                                               "expected_count": 1}}))),
          "REFUSED: q: component 'a' names b.py, which is not in installed_files")
 
+    d5_letters = {"A": ["a1.md", "a2.md", "a3.md", "a4.md", "a5.md", "a6.md"], "B": ["b1.md", "b2.md", "b3.md", "b4.md"],
+                  "C": ["c1.md", "c2.md", "c3.md", "c4.md", "c5.md", "c6.md"],
+                  "D": ["d1.md", "d2.md", "d3.md", "d4.md", "d5.md", "d6.md"]}
+
+    def d5_src(n: str) -> str:
+        """A decision-5 source's fixture text: an A–C file's bytes no other fixture file has, and a D file that also
+        carries one owner quote of its own (the builder's `--check` is CANNOT RUN over a D source with none)."""
+        return (f'decision-5 fixture source {n}: *"the owner said rule {n[:2]} in these very words"*\n'
+                if n.startswith("d") else f"decision-5 fixture source {n}\n")
+
+    def d5_root(root: Path | None = None) -> Path:
+        """`root` with a decision-5 table, its 22 source files, and a copy of the corpus builder at
+        `scripts/` (backlog #697 r1: `--closure` loads the builder, and runs its `--check`, from the root)."""
+        root = root or tree({})
+        if (root / "docs/marketplace/decision-5-suspect-files.md").exists():
+            return root
+        table = "\n".join(f"| {k} | why | " + ", ".join(f"`{n}`" for n in v) + " |" for k, v in d5_letters.items())
+        (root / "docs/marketplace").mkdir(parents=True, exist_ok=True)
+        (root / "docs/marketplace/decision-5-suspect-files.md").write_text(f"| # | Why | Files |\n|---|---|---|\n{table}\n")
+        for n in (n for v in d5_letters.values() for n in v):
+            (root / "docs/memory").mkdir(parents=True, exist_ok=True)
+            (root / "docs/memory" / n).write_text(d5_src(n))
+        (root / "scripts").mkdir(parents=True, exist_ok=True)
+        (root / "scripts" / CORPUS_BUILDER).write_bytes((REPO / "scripts" / CORPUS_BUILDER).read_bytes())
+        # The builder resolves its CommonMark renderer from ITS OWN checkout (backlog #698), which for this copy is
+        # the fixture root: lend it this checkout's `node_modules`, or every fixture's quote check is CANNOT RUN.
+        if (REPO / "node_modules").is_dir() and not (root / "node_modules").exists():
+            (root / "node_modules").symlink_to(REPO / "node_modules", target_is_directory=True)
+        return root
+
+    def d5_with(files: dict) -> Path:
+        r = d5_root()
+        for rel, text in files.items():
+            (r / rel).parent.mkdir(parents=True, exist_ok=True)
+            (r / rel).write_text(text)
+        return r
     def clo(*argv, root):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -1498,6 +1681,7 @@ def _self_test_body() -> int:
         a components.json that says exactly what the declaration says, for the cases that are not about the two
         disagreeing. `pair()` below writes a map of its own."""
         (root / "sets.json").write_text(json.dumps({"measured_at": "x", "packages": packages}))
+        d5_root(root)       # backlog #697: `--closure` reads decision 5's table and its sources from the root
         if with_map:
             (root / "components.json").write_text(json.dumps({
                 "measured_at": "x", "packages": {n: {"channel": d["channel"]} for n, d in packages.items()},
@@ -2195,7 +2379,172 @@ def _self_test_body() -> int:
              world({".agents/skills/a/SKILL.md": "", ".agents/skills/b/SKILL.md": ""}))),
          "CANNOT RUN: .agents/skills/b/SKILL.md is tracked, and it is not a file on disk")
 
+    # ---- decision 5 (backlog #697): no package ships a file decision 5 keeps out ----------------------------------
+    case("decision 5: an installed file NAMED for a group A–C file is a gap, whatever its bytes",
+         lambda: (lambda r: decision5_gaps(["notes/b2.md"], decision5(r), r))(d5_with({"notes/b2.md": "reworded\n"})),
+         ["gap: decision-5: notes/b2.md — named for b2.md, which decision 5 EXCLUDES (group B)"])
+    case("decision 5: a raw group-D source shipped under ANOTHER name is a gap — its bytes are the source's",
+         lambda: (lambda r: decision5_gaps(["notes/kept.md"], decision5(r), r))(
+             d5_with({"notes/kept.md": d5_src("d4.md")})),
+         ["gap: decision-5: notes/kept.md — its bytes are docs/memory/d4.md's (group D), a decision-5 source "
+          "shipped raw"])
+    case("decision 5: a group-A source shipped under its own name is both gaps (name and bytes)",
+         lambda: (lambda r: decision5_gaps(["docs/memory/a3.md"], decision5(r), r))(d5_root()),
+         ["gap: decision-5: docs/memory/a3.md — named for a3.md, which decision 5 EXCLUDES (group A)",
+          "gap: decision-5: docs/memory/a3.md — its bytes are docs/memory/a3.md's (group A), a decision-5 source "
+          "shipped raw"])
+    case("decision 5: a group-D PARAPHRASE (the D file's name, other bytes) and an unlisted memory file are not gaps",
+         lambda: (lambda r: decision5_gaps(["docs/marketplace/shipped-corpus/d1.md", "docs/memory/lesson.md",
+                                            PLUGIN_META], decision5(r), r))(
+             d5_with({"docs/marketplace/shipped-corpus/d1.md": "the essence only\n",
+                      "docs/memory/lesson.md": "a lesson\n"})),
+         [])
+    d5_cli = d5_with({".agents/skills/b/SKILL.md": "b\n", "scripts/w.yml": "decision-5 fixture source c5.md\n"})
+    case("CLI: a plugin package that installs a group-C file is red, rc 1, and names it",
+         lambda: clo("--closure", sets_file(d5_cli, {"recall": decl_of(["skills/b/SKILL.md", "docs/memory/c2.md"])}),
+                     root=d5_cli),
+         (1, ["recall: gap: decision-5: docs/memory/c2.md — named for c2.md, which decision 5 EXCLUDES (group C)",
+              "recall: gap: decision-5: docs/memory/c2.md — its bytes are docs/memory/c2.md's (group C), a decision-5 "
+              "source shipped raw",
+              "recall: gap: decision-5: docs/memory/c2.md — build-shipped-corpus.py --check: EXCLUDED FILE PRESENT",
+              "recall: 0 cwd-relative hand-off(s), 0 external read(s)", "3 gaps"], ""))
+    # Red by the bytes clause, and (review r2 X4: every shipped file is read) by the builder's own check too.
+    case("CLI: a reusable-workflow package whose file carries a group-C source's bytes is red, rc 1",
+         lambda: clo("--closure", sets_file(d5_cli, {"wf": {"channel": "reusable-workflow", "components": {
+             "job": {"files": ["scripts/w.yml"], "expected_count": 1}}}}), root=d5_cli),
+         (1, ["wf: gap: decision-5: scripts/w.yml — its bytes are docs/memory/c5.md's (group C), a decision-5 source "
+              "shipped raw",
+              "wf: gap: decision-5: scripts/w.yml — build-shipped-corpus.py --check: EXCLUDED CONTENT PRESENT (c5.md)",
+              "wf: SKIPPED — reusable-workflow channel, no installed tree", "2 gaps"], ""))
+    def d5_missing():
+        r = tree({".agents/skills/b/SKILL.md": "b\n"})
+        sets = sets_file(r, {"pkg": decl_of(["skills/b/SKILL.md"])})
+        (r / "docs/marketplace/decision-5-suspect-files.md").unlink()
+        rc, out, err = clo("--closure", sets, root=r)
+        return rc, out, err[:39]
+    case("CLI: no decision-5 table in the repository is CANNOT RUN, rc 2 — never `0 gaps`",
+         d5_missing, (2, [], "CANNOT RUN: decision 5 cannot be read: "))
+    case("decision 5, the identity case: the REAL table names 16 excluded files and 22 sources",
+         lambda: (lambda d: (len(d[0]), len(d[1])))(decision5(REPO)), (16, 22))
+
+    # ---- decision 5, round 1 (backlog #697): CONTENT through the builder's own `--check`, and every load is guarded
+    def d5_ship(files: dict, decl_files: list, builder=None, unlink=(), pkg="recall", parts=3) -> tuple:
+        """`--closure` over a plugin `pkg` that installs `decl_files`, in a decision-5 world holding `files`;
+        `builder` replaces the root's corpus builder with that text, and each of `unlink` is removed. Of stderr,
+        the first `parts` `: `-separated parts are kept."""
+        r = d5_with({".agents/skills/b/SKILL.md": "b\n", **files})
+        sets = sets_file(r, {pkg: decl_of(["skills/b/SKILL.md"] + decl_files)})
+        if builder is not None:
+            (r / "scripts" / CORPUS_BUILDER).write_text(builder)
+        for rel in unlink:
+            (r / rel).unlink()
+        rc, out, err = clo("--closure", sets, root=r)
+        return rc, [ln for ln in out if "decision-5" in ln] + out[-1:], ": ".join(err.split(": ")[:parts])
+    para = "docs/marketplace/shipped-corpus/d1.md"
+    case("X2: a raw group-D source with ONE line added, shipped as its paraphrase, is red — the builder's own quote "
+         "check reads its CONTENT, not its bytes",
+         lambda: d5_ship({para: "description: a lesson\n" + d5_src("d1.md")}, [para]),
+         (1, [f"recall: gap: decision-5: {para} — build-shipped-corpus.py --check: QUOTE FROM d1.md", "1 gaps"], ""))
+    case("X2, adjacent: the same file as a true paraphrase (the rule, in other words) is `0 gaps`, rc 0",
+         lambda: d5_ship({para: "description: a lesson\nThe rule, said another way.\n"}, [para]),
+         (0, ["0 gaps"], ""))
+    case("X2: the builder's `--check` CANNOT RUN (a group-D source with no quote) is CANNOT RUN, rc 2 — never `0 gaps`",
+         lambda: d5_ship({para: "The rule, said another way.\n", "docs/memory/d2.md": "no quote here\n"}, [para]),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 2"))
+    builder_src = (REPO / "scripts" / CORPUS_BUILDER).read_text()
+    case("X2: a builder `--check` that dies in a traceback is CANNOT RUN, rc 2 — its rc 1 is not read as gaps",
+         lambda: d5_ship({para: "The rule, said another way.\n"}, [para],
+                         builder=builder_src.replace('\nif __name__ == "__main__":', "\ndef check(root, out):\n"
+                                                     "    raise RuntimeError('boom')\n\n\nif __name__ == '__main__':")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 1 with a traceback"))
+    case("X2: a builder FAIL whose hit lines cannot all be read is CANNOT RUN, rc 2 — never fewer gaps than it found",
+         lambda: d5_ship({para: "The rule, said another way.\n"}, [para],
+                         builder=builder_src.replace('\nif __name__ == "__main__":', "\ndef check(root, out):\n"
+                                                     "    return 1, ['A NEW KIND OF HIT: d1.md', 'FAIL: 1 hit(s)']\n"
+                                                     "\n\nif __name__ == '__main__':")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 1"))
+    case("M2: a corpus builder with no `groups` is CANNOT RUN, rc 2 — never a traceback",
+         lambda: d5_ship({}, [], builder=builder_src.replace("def groups(", "def groups_renamed(")),
+         (2, [], "CANNOT RUN: decision 5 cannot be read: build-shipped-corpus.py cannot be loaded"))
+    case("M2: a corpus builder with no `_canon_sha` is CANNOT RUN, rc 2",
+         lambda: d5_ship({}, [], builder=builder_src.replace("def _canon_sha(", "def _canon_sha_renamed(")),
+         (2, [], "CANNOT RUN: decision 5 cannot be read: build-shipped-corpus.py cannot be loaded"))
+    case("M2: no corpus builder at all is CANNOT RUN, rc 2",
+         lambda: d5_ship({}, [], unlink=[f"scripts/{CORPUS_BUILDER}"]),
+         (2, [], "CANNOT RUN: decision 5 cannot be read: build-shipped-corpus.py cannot be loaded"))
+    case("M3: a CRLF, trailing-space copy of a group-A source under ANOTHER name is a gap — the match is canonical",
+         lambda: (lambda r: decision5_gaps(["notes/kept.md"], decision5(r), r))(
+             d5_with({"notes/kept.md": d5_src("a2.md").replace("\n", "  \r\n")})),
+         ["gap: decision-5: notes/kept.md — its bytes are docs/memory/a2.md's (group A), a decision-5 source "
+          "shipped raw"])
+    # ---- decision 5, round 2 (backlog #697): EVERY shipped file is quote-checked (X4), and a run is read through
+    # the builder's exact success contract (X5) -------------------------------------------------------------------
+    case("X4, direct: every shipped file is quote-checked, whatever its path — the raw D text outside a corpus "
+         "directory is a gap too",
+         lambda: (lambda r: decision5_quotes(["notes/d1.md", para], r))(
+             d5_with({"notes/d1.md": d5_src("d1.md"), para: "x\n" + d5_src("d1.md")})),
+         [f"gap: decision-5: {para} — build-shipped-corpus.py --check: QUOTE FROM d1.md",
+          "gap: decision-5: notes/d1.md — build-shipped-corpus.py --check: QUOTE FROM d1.md"])
+    case("X4: a group-D source with ONE line added, shipped as `notes/test.md` OUTSIDE the corpus directories, is red",
+         lambda: d5_ship({"notes/test.md": "description: a lesson\n" + d5_src("d1.md")}, ["notes/test.md"]),
+         (1, ["recall: gap: decision-5: notes/test.md — build-shipped-corpus.py --check: QUOTE FROM d1.md", "1 gaps"], ""))
+    case("X4: the same file shipped by a package OTHER than recall is red — the rule is every package's",
+         lambda: d5_ship({"notes/test.md": "description: a lesson\n" + d5_src("d1.md")}, ["notes/test.md"],
+                         pkg="comprehensibility"),
+         (1, ["comprehensibility: gap: decision-5: notes/test.md — build-shipped-corpus.py --check: QUOTE FROM d1.md",
+              "1 gaps"], ""))
+    case("X4, adjacent: a file outside the corpus directories that quotes nothing is `0 gaps`, rc 0",
+         lambda: d5_ship({"notes/test.md": "description: a lesson\nThe rule, said another way.\n"}, ["notes/test.md"]),
+         (0, ["0 gaps"], ""))
+
+    def tampered(edit: str) -> str:
+        """The root's builder, its `check` renamed `_real_check` and wrapped: the wrapper runs the REAL check and
+        then applies `edit` (Python statements over `rc` and `lines`), so each case below differs from a genuine
+        clean run by exactly the one thing its name says."""
+        return builder_src.replace("\ndef check(root", "\ndef _real_check(root").replace(
+            '\nif __name__ == "__main__":',
+            "\ndef check(root, out):\n    rc, lines = _real_check(root, out)\n"
+            + "".join(f"    {ln}\n" for ln in edit.splitlines()) + "    return rc, lines\n\n\nif __name__ == '__main__':")
+    clean_ship = ({para: "The rule, said another way.\n"}, [para])
+    case("X5, the control: a builder wrapped to change NOTHING is still the builder's clean PASS — `0 gaps`, rc 0",
+         lambda: d5_ship(*clean_ship, builder=tampered("pass")), (0, ["0 gaps"], ""))
+    case("X5: rc 0 with a message on stderr, then the PASS line, is CANNOT RUN, rc 2 — stderr must be empty",
+         lambda: d5_ship(*clean_ship, parts=4,
+                         builder=tampered("import sys\nprint('error: the check was skipped', file=sys.stderr)")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: it wrote to stderr"))
+    case("X5: rc 0 with a garbage line before the PASS line is CANNOT RUN, rc 2 — every line must be one it prints",
+         lambda: d5_ship(*clean_ship, parts=4, builder=tampered("lines = ['garbage'] + lines")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: stdout line 1 is not one it prints on a clean run"))
+    case("X5: rc 0 with a `PASS:` line of different text is CANNOT RUN, rc 2 — the final line is EXACTLY the PASS line",
+         lambda: d5_ship(*clean_ship, parts=4, builder=tampered("lines = lines[:-1] + ['PASS: ok']")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: its last line is not the PASS line"))
+    case("X5: rc 0 whose count line says it checked a DIFFERENT number of files than were copied is CANNOT RUN",
+         lambda: d5_ship(*clean_ship, parts=4, builder=tampered(
+             "import re\nlines[-2] = re.sub(r'^checked (\\d+)', lambda m: f'checked {int(m.group(1)) + 1}', lines[-2])")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: it says it checked 3 file(s), and 2 were copied"))
+    case("X5: rc 0 with no count line at all (only the per-source lines and PASS) is CANNOT RUN, rc 2",
+         lambda: d5_ship(*clean_ship, parts=4, builder=tampered("lines = lines[:-2] + lines[-1:]")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: the line before the PASS line is not its count line"))
+    case("X5: rc 0 with only a fabricated `PASS:` line is CANNOT RUN, rc 2",
+         lambda: d5_ship(*clean_ship, parts=4, builder=tampered(f"lines = [{PASS_LINE!r}]")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: the line before the PASS line is not its count line"))
+    case("X2 over the REAL repository: every file the real recall declaration installs passes the builder's quote "
+         "check",
+         lambda: decision5_quotes(json.loads((REPO / "docs/marketplace/shipping-sets.json").read_text())
+                                  ["packages"]["recall"]["installed_files"], REPO), [])
+
     real = json.loads((REPO / "docs/marketplace/shipping-sets.json").read_text())["packages"]
+    case("decision 5 over the REAL repository: every A–C source is two gaps (name, bytes), and the real recall "
+         "declaration's installed files are none",
+         lambda: (lambda d5: (len(decision5_gaps([f"docs/memory/{n}" for n in d5[0]], d5, REPO)),
+                              decision5_gaps(real["recall"]["installed_files"], d5, REPO)))(decision5(REPO)),
+         (32, []))
 
     def real_gaps(pkg: str, drop: str) -> list:
         d = json.loads(json.dumps(real[pkg]))
@@ -2271,6 +2620,9 @@ def _self_test_body() -> int:
         # ⟳ 2026-11-22 Task 19's Phase 6 fold: 360 + 1 = 361 / 534138f22f780cb0. Its one gained line, diffed by hand
         # (sorted, `comm -3`) against cc211b78's `git archive`: `check-inventory.py` -> `check-shipping-sets.py` (the
         # self-test's CHANNELS/PHASES equality, by import). Lost: 0.
+        # ⟳ 2026-11-23 backlog #697 (decision 5 in `--closure`): 361 + 1 = 362 / d47bd22a1db012b6. Its one gained line,
+        # diffed by hand (sorted, `comm -3`) against d0db35d3's `git archive`: `check-shipping-sets.py` ->
+        # `build-shipped-corpus.py` (`_corpus_builder`: decision 5's table and canonical hash, by load). Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2282,7 +2634,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (361, "534138f22f780cb0", []))
+             (362, "d47bd22a1db012b6", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

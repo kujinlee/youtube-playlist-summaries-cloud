@@ -21406,3 +21406,33 @@ fourth reading of its own, so the older readings keep their texts; the letters-o
 (full-width and mathematical letters), not NFKC, which would lose a decomposed accent; a source quote holding hidden
 text now tells the readings apart. Self-test 63 -> 73 cases; mutations 61 -> 74. Over 3,500 Markdown files the
 letters-only view added 0 (file, fragment) hits to the word views' 1,003.
+
+## 2026-11-23
+The recall package no longer installs the memory files you excluded for the marketplace. It used to list every memory
+file, including the 16 you excluded and the six whose quotes you asked to have paraphrased, in their original form.
+Now it installs the kept files and the six paraphrased versions, and the package checker refuses any package that
+would ship an excluded file or an unparaphrased one. The memory index file no longer ships either: the tracked one
+links the excluded files, and the filtered one the corpus builder makes is not a tracked file, so packaging cannot
+ship it. Whether an index ships, and how the files reach the folder recall reads, is filed as backlog #707 for your
+stop at plan Task 21. Nothing is published before then.
+<!--tech-->
+Backlog #697, branch `backlog-697`. `docs/marketplace/components.json`: `memory-corpus` lists 179 files (173 kept
+`docs/memory/` files plus the 6 paraphrases in `docs/marketplace/shipped-corpus/`); 23 new exact exclusions (16 A–C,
+6 raw D, `MEMORY.md`). `shipping-sets.json` re-derived by `mkt_stage.py --declare` (recall memory-corpus 196 -> 179).
+`check-shipping-sets.py --closure` gains `decision5`/`decision5_gaps`, which parse decision 5 with
+`build-shipped-corpus.py`'s own `groups`/`_canon_sha` (loaded, not copied). A gap is a file named for an A–C file, or
+one whose canonical bytes equal an A–D source, in plugin and reusable-workflow packages; an unreadable table is
+CANNOT RUN. Round-1 fold: `--closure` also runs `build-shipped-corpus.py --check` over the corpus files each package
+ships (copied flat), so an unparaphrased D quote is a gap; a nonzero rc, a traceback or unreadable output is CANNOT
+RUN, as is a builder missing `groups`/`_canon_sha`. Self-test 140 -> 160 (149 before the fold), 14 mutations
+(195 -> 209), all red on their named case in a full clone. Edge pin
+361 -> 362 (`check-shipping-sets.py` -> `build-shipped-corpus.py`).
+Round-2 fold (review r2 X4, X5): the quote check reads EVERY file every package ships, whatever its path (the
+corpus-directory filter is gone; a declared file the repository lacks is skipped, its absence being the other
+clauses' gap), and a builder run that exits 0 is read through its exact clean-run output, taken from
+`build-shipped-corpus.py`'s `check()`: empty stderr, any number of `<source>: <n> quotes` lines, the (after PR #620) CommonMark-rendering
+`checked <n> output files ...` line with the number of files copied, then exactly its PASS line. Anything else is
+CANNOT RUN. X4's measurement found one real unparaphrased owner quote shipping in comprehensibility (a code
+comment); paraphrased. The real tree is `0 gaps`. Self-test 160 -> 170, mutations 209 -> 215 (7 new, 1 retired with
+the filter), the 7 new and the 13 earlier decision-5 ones red on their named case in a full clone. Edge pin unmoved.
+Priced 13.0 -> 17.0 s.

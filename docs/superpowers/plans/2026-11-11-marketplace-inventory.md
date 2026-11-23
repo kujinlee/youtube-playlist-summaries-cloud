@@ -891,6 +891,10 @@ the BUILT OUTPUT**, not the transform's code: (1) it searches the output tree fo
 DERIVED at check time from the source files, never typed into the check. A check that finds no quotes to look for in the
 SOURCE D files is a failure (CANNOT RUN), not a pass. The corpus row's C5 moves off `unanswered` only when the build and
 both checks pass.
+⟳ 2026-11-23 (backlog #697): the `recall` package INSTALLS this corpus — `components.json`'s `memory-corpus` lists
+the kept `docs/memory/` files and the six paraphrases in `docs/marketplace/shipped-corpus/` one by one (the 16 A–C
+files, the six raw D files and `MEMORY.md` are exclusions), and `check-shipping-sets.py --closure` refuses any package
+that ships a file named for an A–C file or carrying an A–D source's bytes. `MEMORY.md` does not ship.
 
 **FAILS IF:** the probe ran with any path under this repository's `docs/memory/` in its `RunRecord.opened`; or a
 recall row has `phase: "1"` while `recall.a` is not `true` or `recall.b` is not `"pass"`; or any inventory row has

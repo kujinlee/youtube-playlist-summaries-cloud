@@ -835,8 +835,8 @@ def md(text: str) -> str:
 
 # ─── body layout: the SAME words, laid out for a human (owner, 2026-11-02) ──────────────────────
 #
-# Asked for 2026-11-02: *"without changing current wording, can we just show it for proper human
-# reading (line break, indenting etc)"*. A row's body is one line in `docs/backlog.md` — median
+# Asked for 2026-11-02 (paraphrased): keep every word of a row as it is, and only lay it out for a
+# human reader, with line breaks and indentation. A row's body is one line in `docs/backlog.md` — median
 # 1,588 characters, p90 about 4,000 — and it rendered as one paragraph.
 #
 # `layout_body` takes what `md` RENDERED and only INSERTS block tags at cut points; it never

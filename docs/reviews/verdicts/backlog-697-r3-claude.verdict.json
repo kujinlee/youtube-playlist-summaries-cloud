@@ -1,0 +1,25 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/backlog.md": "100644 db326b502afb0efd10ca79e69e018d0886694fa2",
+    "docs/dashboard-entries.md": "100644 5c9a4a0e8ec967c0d37b89de87078d6e152d222a",
+    "docs/reviews/claude/backlog-697-r3-claude.md": "100644 9142c6b53b8cd7449c79e5fe9a2faa5e167abe62",
+    "docs/reviews/coordinator/backlog-697-r3-coordinator.md": "100644 1dbee4cca865b0707efcc1bc9acc3d4fa570f1f4",
+    "docs/reviews/decision-scheme/decision-log.jsonl": "100644 2a00c7c0963f3ebe628be1701182f386d4292394"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "36a031129191c414a9ba452f58775601b7712159",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/bl697/r3/brief.md",
+  "reason": "claude half filed: 10109 chars, names 36a031129191",
+  "refused": false,
+  "review": "backlog-697-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/bl697",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

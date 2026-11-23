@@ -2583,7 +2583,16 @@ EXPECTED_MUTATIONS = {
     # ⟳ hse slice C redesign r1 fold: 186 + 9 = 195 — `-c` listed and `-m` read as a module load (XM1), `_unread`
     # listing its line, the call-form module outcome check (record, directory, no file: XM2), the outcome invariant,
     # and a default read in its def's own scope, a class body included (Cm1). 2 anchors re-bound; none retired.
-    "scripts/check-shipping-sets.py": 195,
+    # ⟳ 2026-11-23 backlog #697 r1 fold: 201 + 8 = 209 — decision 5's CONTENT clause (the builder's own `--check`
+    # run over the corpus files a package ships: skipped, every file checked not only the corpus directories', an
+    # unreadable run, a traceback, unread hit lines: X2), a builder that cannot be loaded (a missing name, no file:
+    # M2), and the canonical hash at the call site (M3).
+    # 3 anchors re-bound (the plugin and reusable-workflow skips, the unreadable-table return); none retired.
+    # ⟳ 2026-11-23 backlog #697 r2 fold: 209 - 1 + 7 = 215 — every shipped file is quote-checked (the filter coming
+    # back; a declared file the repository lacks: X4) and the builder's exact success contract (stderr, the exact PASS
+    # line, the count line, its file count, every other line: X5). Retired 1: r1's "not only the corpus directories"
+    # mutation, whose anchor (the filter) is gone.
+    "scripts/check-shipping-sets.py": 215,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.
