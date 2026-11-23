@@ -75,7 +75,7 @@ seeded facts`, hence `argued`. Unexercised components are `argued` throughout (s
 | `explainer-serve` | yes | A-script-explainer-serve | yes | fail | argued | pass | pass | pass | all three serve conditions held (start `serving <world HOME>/explainers`, pidfile 44052 = listener 44052, GET / 200 with sentinel); GET page 200; POST /questions 200 and recorded in the world's questions.md. Condition 1 FAILS: the page served was the experiment's own sentinel, with no Ask tray, so no page a reader can ask a question INSIDE was served — the endpoint answering a POST is not that (S2) |
 | `ask-answerer` | yes | A-script-ask-answerer-status | no | argued | argued | argued | pass | pass | `--status` rc 0 named the world's folder and caps; `--once` (answering a question = a model call) NOT run, so the useful operation is argued. `operation_ok` is `no` because the useful operation was NOT RUN, not because it failed (the sidecar's field is a bool) |
 | `regen-pages` | yes | A-script-regen-pages-all | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — git cannot name this repository's common directory from <install dir>`: it locates the repo from its OWN install path, not the user's CWD |
-| `gen-dashboard` | yes | A-script-gen-dashboard | no | argued | argued | fail | fail | pass | rc 1: reads <install dir>/docs/backlog.md (absent), then brief-compose refuses (no tray page) |
+| `gen-dashboard` | yes | A-script-gen-dashboard | no | argued | argued | fail | fail | pass | rc 1: reads <install dir>/docs/backlog.md (absent) through `gen-backlog-page` (`gen-dashboard.py:3495-3498` loads it and calls `publish_rows(ROOT)`; the finding is `gen-backlog-page:2:3`), then brief-compose refuses (no tray page) |
 | `gen-goals-page` | yes | A-script-gen-goals-page | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — docs/anchors.md or scripts/gen-backlog-page.py is missing` (looked up beside the install, not in the repo) |
 | `gen-features-page` | yes | A-script-gen-features-page | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — <install dir>/docs/features.md is missing` |
 | `gen-backlog-page` | yes | A-script-gen-backlog-page | no | argued | argued | fail | pass | pass | rc 1 traceback FileNotFoundError <install dir>/docs/backlog.md — the seeded repo HAS docs/backlog.md; the script reads beside itself |
@@ -152,13 +152,90 @@ half at all.
 
 ### Scan defects (the scan or its readers)
 
-- **Scan prediction for each failure (plan Step 5): NOT RUN.** `ScanReport` (Task 8, slice D, PR #600) is not merged,
-  so no finding id can be named. Feeds Task 16, which needs slice D.
+**Scan defects (plan Task 16): S1 and S3 — both closed by a scan commit.** The experiment's failures were held
+against the scan (Task 16, 2026-11-21). "Scan-clean" is read PER FAILURE: a component is scan-clean for a failure
+when the scan held no dependency finding naming that failure's cause (read literally — no finding at all — only
+`brief-compose` was clean, which would have hidden every other failure). Before: `scan-2026-11-17.json`; after:
+`scan-2026-11-21.json` (measured at `2f4b59ce`, the round 2 fold commit: its scanner over its own tree).
+
+| Failure | Components it hit | The scan before Task 16 | Now | Closed by |
+|---|---|---|---|---|
+| S1 (project located from the install path) | `regen-pages`, `goal-tree`, `gen-backlog-page`, `gen-features-page`, `gen-goals-page`, `gen-dashboard` | no finding naming the cause (`gen-backlog-page:4` named the `docs/backlog.md` path only as a doc-path) | detector 2 `install-root`: `regen-pages:2:1`, `goal-tree:2:5`, `gen-backlog-page:2:3`, `gen-features-page:2:9`, `gen-goals-page:2:4`, `gen-dashboard:2:4` and the rest of each component's `install-root` rows | **case added (red→green)**: three `S1:` self-test cases; round 1 added four more (the `..` climb, Python's scopes, the inert uses) |
+| S3 (package files named CWD-relative) | `skill-brief`, `skill-explain-findings`, `skill-dashboard` | `skill-dashboard:2:1` (`scripts/regen-pages.py`) only; the `Follow ../shared/explainer-delivery.md` line was no finding on any skill | detector 2 `cwd-relative` with the plugin-root fix: `skill-brief:2:1`, `skill-explain-findings:2:1`, `skill-dashboard:2:2` (and `skill-explain-diff:2:1`, `skill-explain-topic:2:1`, which carry the same line) | **case added (red→green)**: one `S3:` self-test case |
+| S2 (the Ask tray cannot be bootstrapped) | `brief-compose`, `gen-dashboard`, `skill-explain-diff`, `skill-explain-topic`, `explainer-serve` condition 1 | none | none | **limit recorded**: L1 below |
+| S4 (the host's conventions assumed) | `skill-dashboard` | mentions only (`docs/dashboard-entries.md`, `docs/anchors.md`) | `skill-dashboard:4:1` (`docs/dashboard-entries.md` at `:28`, the path that opens the `## The store` section); `docs/anchors.md` (`:14`) still a mention | **case added (red→green)**: one `S4 (r1 M1):` case; the rest is limit L2 below |
+| `brief-compose` refuses without `~/explainers` | `brief-compose` | none | `brief-compose:6:1` (detector 6 `home-path` `~/explainers`, at `:789`) | **case added (red→green)**: one `L3 (r1 B1):` case |
+| S5 (hooks not registered) | the 5 `hook-regen-*` | `hook-regen-*:7:1` `needs-registration` | the same | not scan-clean: predicted |
+
+RED, recorded: with the two new detector clauses disabled on a scratch copy and the four cases kept, the self-test
+reported `95/98 self-test cases passed` — the three cases then present (two `S1:`, one `S3:`) each `[FAIL] … got []`.
+GREEN after the fix: `109/109`. The fourth case (`S1: ...judged in INSTALLED coordinates`) was added after the fix;
+its mutation (the depth taken from the source path) goes red against it. Round 1 fold (`3db9d353`): seven cases written
+first, then the code — 100/105 red at the first run (the sixth, `S3 (r1 m6)`, passed on its first run: the shared
+dedup already existed, so it is a regression lock); GREEN `116/116`. Against the previous scan, the fold removed
+seven false findings (a comparison, a `print`, `relative_to` ×2, `REPO.is_dir()`, a file-wide name binding, the
+`_sp.run = _real` restore) and added eight (among them `brief-compose:6:1`, `skill-dashboard:4:1`, and
+`check-docs` reads that a disagreeing name had masked). Round 2 fold (`2f4b59ce`, both Codex r2 MAJORs caused by
+the round 1 fold): five cases written first, four RED (`117/121`; the compared-and-printed negative passed and is
+a lock); GREEN `121/121`. The live scan is unchanged: 365 findings, none gained or lost — no shipped file hands a
+file-derived root through an f-string, `relpath`, `joinpath` or a multi-level `nonlocal`, so the fixture cases
+are the only witnesses of the new rule.
+
+**The scan defects list** — each entry closed by a scan commit or a named limit:
+
+- S1 — closed by the scan commit of Task 16 (detector 2 `install-root`).
+- S3 — closed by the scan commit of Task 16 (detector 2, Markdown read/follow references).
+- `~/explainers` — closed by the round 1 fold (detector 6 `home-path`, `brief-compose:6:1`).
+- S4 — `docs/dashboard-entries.md` closed by the round 1 fold (detector 4 section openers, `skill-dashboard:4:1`);
+  the rest by limit L2. S2 — closed by limit L1.
 - `check-shipping-sets.py`'s edge reader reports `scripts/mkt_seed_repo.py -> scripts/check-docs.py`, from the
   self-test's interpreter argv `[sys.executable, str(Path(a.repo) / "scripts/check-docs.py")]`, which runs the SEEDED
   repository's own file: the reader drops the base (`Path(a.repo)`) by design and resolves the rest from this
   repository's root — an over-report (found while re-pinning its Phase 6 case in this branch; cause located at the
   round 1 fold: removing that argv removes the edge, while rewording the `source` label does not). Filed as backlog #675.
+  **Outside Task 16's population and still OPEN:** it is an over-report by the shipping-set reader, not an experiment
+  failure on a scan-clean component, so it is neither closed by a scan commit nor a limit here.
+
+### Limits of the scan (what it cannot express — each a named limit, not a defect it could repair)
+
+- **L1 — bootstrap circularity (S2).** A precondition on runtime state that only the package's own earlier output
+  creates (a page that already has an Ask tray). The scan reads files, not the state a first run starts from; a
+  refusal guarded by `if no page has a tray` is the same code whether a tray page exists or not.
+- **L2 — host conventions cited in prose (S4).** `docs/anchors.md` (`.agents/skills/dashboard/SKILL.md:14`) is a
+  citation: named in description, in none of the INSTRUCTS / REQUIRES shapes, and opening no section whose body acts,
+  so it is a mention. Making every named `docs/` path a dependency would be positional matching (spec rule 1). (Round
+  1 M1 narrowed this limit: `docs/dashboard-entries.md` opens a section that says to append to it, now a finding.)
+- **L3 — dropped at the round 1 fold (B1).** It said the scan could not decide that `~/explainers`' absence is fatal;
+  it can — the guard `if not ROOT.is_dir(): … sys.exit(1)` is the decision. Detector 6 `home-path` now reports a
+  path below HOME whose absence a guard turns into a failure (`raise`, a non-zero exit or return) — spec rule 1's
+  r2 CLAUDE M7 test (the component fails without it); a guard that exits 0 is a working default, not reported.
+- **L4 — model adherence.** Whether a model follows a skill's delivery loop (tier B: `explain-diff` wrote its page and
+  skipped serving it, where tier A's run served it) is not a property of the files.
+- **L5 — what detector 2's `install-root` does NOT see** (Phase 6 rule, the MENTION WALK of
+  `docs/reviews/architecture-review-2026-11-21-publishability-install-root.md` §4): every mention of a file-anchored
+  value is walked upward through ONE decoder whose default is USE, so an unlisted use is reported, never hidden. It
+  does NOT name the path a root reaches through a call of the program's own function (reported where it is passed or
+  returned), or a part held in anything but a literal or a name bound to one string literal everywhere. **A name
+  reused anywhere in its file is not followed** — a second function's local, a parameter, a `global`/`nonlocal`
+  rebinding, a loop or `with` target: its root is reported AT THE BINDING, as `.`, and the paths built from it later
+  are not named — coarser, never silent (e.g. `check-plan-code:2` at `:6355`). The only silencers are inert uses (a
+  comparison, `print`, `relative_to`/`samefile`, a `relpath` start that is itself file-anchored, an existence test of
+  the root itself), a part that leaves the tree, a level ABOVE the install depth, a part named below it (the
+  script's own payload, `HERE / "data.json"`), and a shipped target. **A stop BELOW the install depth at a bare
+  directory or the file itself is `install-root-unjudged`** (target none, one per line, none beside a judged line;
+  owner, 2026-11-23, option 1): the walk could not follow it to the root — a reused own-folder name, a climb by
+  rebinding, `from os.path import dirname`, `os.pardir`, `split()[0]`, an aliased `Path`, `joinpath(x).parent`, or
+  an unrecognised use such as `with_name` or `sys.path.insert` — so it is shown to be read, not judged (33 rows in
+  the rescan at `f57ef1cb`). Still silent (backlog #692 m1): a root whose only reads in its file are inert, exported
+  to an importer. It
+  judges paths in a self-test's fixture strings like any other (e.g. `recall-llm:2:6`, `.claude/plans/p.md`, and
+  `check-surface-recall:2` `.claude/hooks/does-not-exist.sh` at `:519`), an over-report, not a miss.
+- **L6 — a package file named in descriptive prose (round 1 M2).** `scripts/check-dashboard-entry.py`
+  (`.agents/skills/dashboard/SKILL.md:21`) and `.claude/hooks/regen-dashboard.sh` (`:88`) are shipped, named bare,
+  and were reported absent by tier B's `dashboard` session. They sit in neither an invocation, a read/follow line, an
+  INSTRUCTS nor a REQUIRES shape, so they are mentions under spec rule 1 (behavioural, not positional): judging
+  every named package path would be the positional rule. The skill's other CWD-relative lines (`skill-dashboard:2:1`,
+  `2:2`) are findings.
 
 ### Isolation and unobservable accesses
 

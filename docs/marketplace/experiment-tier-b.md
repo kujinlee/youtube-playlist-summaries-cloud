@@ -84,4 +84,30 @@ followed by the world's own `--stop`; no listener remained before the restart.
 
 - The 5 hooks (no `bash` on the allow-list; no `hooks/hooks.json` in the package) — as tier A.
 - `ask_answerer --once` (a model call per question) — as tier A.
-- The scan's prediction of each failure — `ScanReport` (slice D, PR #600) unmerged; Task 16.
+
+## Scan defects (plan Task 16)
+
+Held against the scan on 2026-11-21 (`scan-2026-11-21.json`, measured at `2f4b59ce`, the round 2 fold commit), "scan-clean" read per
+failure as in tier A's record (→ *Scan defects (the scan or its readers)*): a component is scan-clean for a failure
+when no dependency finding named that failure's cause.
+
+| Failure here | Components | Same cause as | Mapped to |
+|---|---|---|---|
+| scripted rc 2 / rc 1 (`gen-goals-page`, `gen-features-page`, `gen-backlog-page`, `goal-tree`, `regen-pages`) | the 5 scripts | tier A S1 | **case added (red→green)**: detector 2 `install-root` (`gen-goals-page:2:4`, `gen-features-page:2:9`, `gen-backlog-page:2:3`, `goal-tree:2:5`, `regen-pages:2:1`) |
+| `explain-findings`: "this repo has no `scripts/brief-compose.py`" | `skill-explain-findings` | tier A S3 | **case added (red→green)**: `skill-explain-findings:2:1` (cwd-relative, plugin-root fix) |
+| `brief-compose` rc 1 (no `~/explainers`) | `brief-compose` | tier A | **case added (red→green)** at the round 1 fold: `brief-compose:6:1` (detector 6 `home-path`) |
+| `gen-dashboard` rc 1, `brief` and `explain-topic` refused or not composed (no Ask-tray page) | `gen-dashboard`, `skill-brief`, `skill-explain-topic`, `brief-compose` | tier A S2 | **limit recorded**: tier A L1 |
+| `dashboard` refused: host files absent — `docs/dashboard-entries.md`, `docs/anchors.md` | `skill-dashboard` | tier A S4 | **case added (red→green)** for `docs/dashboard-entries.md` (`skill-dashboard:4:1`, round 1 M1); `docs/anchors.md` is **limit recorded**: tier A L2 |
+| `dashboard` refused: package file absent — `scripts/regen-pages.py` | `skill-dashboard` | tier A S3 | **predicted**: `skill-dashboard:2:1` |
+| `dashboard` refused: package files absent — `scripts/check-dashboard-entry.py` (SKILL.md `:21`), `.claude/hooks/regen-dashboard.sh` (`:88`) | `skill-dashboard` | tier A S3's cause, named in description | **limit recorded**: tier A L6 (round 1 M2) |
+| `explain-diff` page written, not served (the model skipped the delivery loop) | `skill-explain-diff` | new in tier B | **limit recorded**: tier A L4 (model adherence) |
+| `explain-diff` page had no Ask tray | `skill-explain-diff` | tier A S2 | **limit recorded**: tier A L1 (round 1 m5) |
+| `brief` written for a different repo (no roadmap, backlog or reviews) | `skill-brief` | tier A S4's kind | **predicted**: `skill-brief:4:1` (`docs/roadmap-to-launch.md`), `skill-brief:4:3` (`docs/backlog.md`) (round 1 m5) |
+
+**The scan defects list** — each entry closed by a scan commit or a named limit:
+
+- S1 — closed by the scan commit of Task 16 (detector 2 `install-root`).
+- S3 — closed by the scan commit of Task 16 (detector 2, Markdown read/follow references).
+- `~/explainers` — closed by the round 1 fold (detector 6 `home-path`). S4's `docs/dashboard-entries.md` — closed by
+  the round 1 fold (detector 4 section openers).
+- S2, the rest of S4, model adherence, package files named in prose — closed by tier A's limits L1, L2, L4, L6.

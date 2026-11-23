@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/marketplace-task16-r1-claude.md": "100644 d243ffa791d9cc4ce59f8c939f8b75651feac7d9",
+    "docs/reviews/codex/marketplace-task16-r1-codex.md": "100644 c38ca227e5f1d5fd2bdcf9f775caaeb8cddc92c0",
+    "docs/reviews/verdicts/marketplace-task16-r1-codex.verdict.json": "100644 f5f3c3e3d0544d4117ad1be5882b1019ac1eebaa"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "07664d06afc825aef36df9e8a7dceb9522a8ded4",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 11654 chars, names 07664d06afc8",
+  "refused": false,
+  "review": "marketplace-task16-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/marketplace-task16",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

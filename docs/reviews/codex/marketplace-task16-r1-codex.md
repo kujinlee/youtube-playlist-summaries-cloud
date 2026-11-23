@@ -1,0 +1,9 @@
+<!-- codex-review: model=gpt-6.1-terra -->
+
+- **MAJOR — [scripts/check-publishability.py:459](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/marketplace-task16/scripts/check-publishability.py:459):** The new rule collects bindings across the entire AST without respecting scope or reassignment. The resulting scan reports `check-plan-code:2` at [check-plan-code.py:3446](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/marketplace-task16/scripts/check-plan-code.py:3446), `_sp.run = _real`, as an install-root project dependency. That line restores a subprocess function in a self-test; it does not use an install path. Because findings are deduplicated by target and retain the first line, an unrelated use can also obscure a later genuine use.
+
+- **MINOR — [scripts/check-publishability.py:483](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/marketplace-task16/scripts/check-publishability.py:483):** The rule reports every use of the root as handing it on as the project, including comparisons and path arithmetic. For example, `gen-dashboard:2:2` points to [gen-dashboard.py:33](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/marketplace-task16/scripts/gen-dashboard.py:33), where `STORE_DEFAULT.relative_to(ROOT)` computes a relative string. The actual root-anchored store is a real dependency, but the `.` finding and its location misdescribe that operation.
+
+The self-test passed **109/109**. A fresh scan produced identical component results to the committed JSON; its `measured_at` differs because the fresh scan records HEAD `07664d06`, while the committed scan explicitly records base `75f2c581`. I found no experiment failure omitted from both a case and a stated limit.
+
+VERDICT: NOT CONVERGED

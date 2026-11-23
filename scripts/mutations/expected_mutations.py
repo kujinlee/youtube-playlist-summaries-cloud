@@ -2659,5 +2659,18 @@ EXPECTED_MUTATIONS = {
     # block, the imperative the introduction must hold); five anchors rebound in place.
     # ⟳ review r3 fold (2026-11-17): 154 → 158 — +1 an `or` of None operands, +3 detector 4 (blank lines inside a
     # list, an earlier list ends the introduction, a negated verb); three anchors rebound in place.
-    "scripts/check-publishability.py": 158,
+    # ⟳ Task 16 (2026-11-21): 158 → 175 — +12 detector 2 install-root (the call site, installed coordinates, the
+    # .parent / parents[k] / dirname levels, the join and its literal names, the shipped filter, the depth, the
+    # binding and inner-path skips), +5 the Markdown read/follow references (the clause, the verb, ../ resolution,
+    # docs/ left to detector 4, one finding per target per line). Experiment failures S1 and S3.
+    # ⟳ Task 16 review r1 fold (2026-11-21): 175 → 226 — four anchors rebound in place (the name lookup, the
+    # placed depth, the longer-path and binding skips); +51: detector 2 scopes (function/lambda/comprehension/class,
+    # parameters, global/nonlocal, except-as, import, def, annotation, disagreeing stores, the provisional memo),
+    # the `..` climb and absolute part, the inert uses (comparison, f-string, str(), print/relpath, relative_to
+    # either side, existence tests of the root only), the class-body and globals() bindings, `x.resolve()`;
+    # detector 6 home-path guards (B1: the guard, raise/exit/return, the existence forms, every HOME producer, the
+    # first-store rule); detector 4 section openers (M1: the exact span, the heading, the body bound, the acting
+    # verbs); the invocation/read shared dedup (m6). ⟳ 2026-11-23 option 1 (owner): 228 -> 232 — a stop below the
+    # install depth is NOT JUDGED (dropped / a named part / beside a judged line / emitted under the judged kind).
+    "scripts/check-publishability.py": 232,
 }

@@ -697,8 +697,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "                    seen.add(target)\n",
-    "                    pass\n"
+    "                    seen.add(target)\n                    out.append(_located(",
+    "                    out.append(_located("
    ]
   ],
   "expect": "an invocation of a file outside every package is outside-set"
@@ -708,8 +708,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "                    elif channel == \"plugin\":\n",
-    "                    elif False:\n"
+    "    if channel == \"plugin\":\n        return {**row, \"kind\": \"cwd-relative\", \"fix\"",
+    "    if False:\n        return {**row, \"kind\": \"cwd-relative\", \"fix\""
    ]
   ],
   "expect": "an invocation of a file the package ships is cwd-relative, the plugin-root fix named in installed coordinates; one already rooted at a variable is no finding"
@@ -774,8 +774,8 @@
   "file": "scripts/check-publishability.py",
   "edits": [
    [
-    "                    if target not in shipped:\n",
-    "                    if False:\n"
+    "    if target not in shipped:\n        return {**row, \"kind\": \"outside-set\"}",
+    "    if False:\n        return {**row, \"kind\": \"outside-set\"}"
    ]
   ],
   "expect": "an invocation of a file outside every package is outside-set"
@@ -1736,5 +1736,819 @@
    ]
   ],
   "expect": "r3: blank lines between items keep the list; an imperative above an earlier list introduces nothing; a negated verb still introduces (Phase 6: no negation filter)"
+ },
+ {
+  "name": "detector 2: install-root findings are never emitted",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            for n, target in _install_root_uses(tree, parent, len(here.parts), held):",
+    "            for n, target in []:"
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2: install-root depth is the SOURCE path, not the installed one",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            here = Path(SS.installed_path(rel) if channel == \"plugin\" else rel)",
+    "            here = Path(rel)"
+   ]
+  ],
+  "expect": "S1: ...judged in INSTALLED coordinates: a skill's script three levels below the plugin root reaches it with parents[2], and the skill's own installed file below it is shipped"
+ },
+ {
+  "name": "detector 2: Markdown read/follow references are never judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                if rel.endswith(\".md\") and SS.READ_LINE_RE.search(text):",
+    "                if False:"
+   ]
+  ],
+  "expect": "S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a docs/ path are no finding"
+ },
+ {
+  "name": "detector 2: a path in prose that is no read/follow instruction is judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    " and SS.READ_LINE_RE.search(text):",
+    ":"
+   ]
+  ],
+  "expect": "S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a docs/ path are no finding"
+ },
+ {
+  "name": "detector 2: a ./ or ../ read reference is not resolved against its file",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                                                  if tok.startswith((\"./\", \"../\")) else tok)",
+    "                                                  if False else tok)"
+   ]
+  ],
+  "expect": "S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a docs/ path are no finding"
+ },
+ {
+  "name": "detector 2: a docs/ read reference is judged by detector 2 too",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                        if target.startswith((\"..\", \"/\", \"docs/\")) or target in seen:",
+    "                        if target.startswith((\"..\", \"/\")) or target in seen:"
+   ]
+  ],
+  "expect": "S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a docs/ path are no finding"
+ },
+ {
+  "name": "detector 2: one read target written twice on a line is two findings",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"docs/\")) or target in seen:\n                            continue                 # above the tree",
+    "\"docs/\")):\n                            continue                 # above the tree"
+   ]
+  ],
+  "expect": "S3: a skill told to read or follow a shipped file by a relative or repository path is cwd-relative with the plugin-root fix; an unshipped one is outside-set; prose that is no instruction, a rooted path and a docs/ path are no finding"
+ },
+ {
+  "name": "detector 2: a `..` part is dropped, not climbed",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        level, segs = level + 1, segs[1:]",
+    "        level, segs = level, segs[1:]"
+   ]
+  ],
+  "expect": "S1 (r1 M3): a `..` part climbs a level, in a join and after a `/`; a `..` that returns to the file's own directory or climbs past the root is no finding; an annotated binding is a binding"
+ },
+ {
+  "name": "detector 2: str() is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "           \"str\", ",
+    "           "
+   ]
+  ],
+  "expect": "S1 (r1 m3, Codex MINOR): a comparison, an f-string or print, relative_to and an existence test of the root itself do not use the root as the project; the git call does, and so does a test of a path below it"
+ },
+ {
+  "name": "detector 6: no home-path guard is judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                if isinstance(node, ast.If) and _fails(node.body):",
+    "                if False:"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: a raise is no failure",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if isinstance(st, ast.Raise):\n            return True",
+    "        if False:\n            return True"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: exit(0) is a failure",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            if not (isinstance(code, ast.Constant) and code.value in (0, None)):",
+    "            if True:"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: a non-zero return is no failure",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "type(st.value.value) is int \\\n                and st.value.value != 0:",
+    "type(st.value.value) is int \\\n                and False:"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: `not P.exists()` is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if isinstance(call.func, ast.Attribute) and call.func.attr in EXISTS and not call.args:",
+    "    if False:"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: `not os.path.exists(P)` is not read",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if _dotted(call.func) in EXISTS_CALLS and len(call.args) == 1:",
+    "    if False:"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: a home path's default branch is not followed",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return _home(node.body, homes, consts) or _home(node.orelse, homes, consts)",
+    "        return None"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: an `or` is not followed",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return next((h for v in node.values if (h := _home(v, homes, consts))), None)",
+    "        return None"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: a `/` below HOME is not followed",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return f\"{got}/{part}\" if got and part is not None else None",
+    "        return None"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: Path.home() is not a home path",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if name in (\"Path.home\", \"pathlib.Path.home\") and not args:\n        return \"~\"",
+    "    if False:\n        return \"~\""
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: expanduser('~/x') is not a home path",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            return lit.rstrip(\"/\")\n        return _home(args[0], homes, consts) if name",
+    "            return None\n        return _home(args[0], homes, consts) if name"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: Path(home) does not pass through",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return _home(args[0], homes, consts) if name != \"os.path.expanduser\" else None",
+    "        return None"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: os.path.join below HOME is not followed",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return \"/\".join([got] + parts) if got and None not in parts else None",
+    "        return None"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: Path('~/x').expanduser() is not a home path",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            return lit.rstrip(\"/\") if lit and (lit == \"~\" or lit.startswith(\"~/\")) else None\n        if node.func.attr in SAME_PATH:",
+    "            return None\n        if node.func.attr in SAME_PATH:"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: resolve() below HOME does not pass through",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if node.func.attr in SAME_PATH:\n            return _home(inner, homes, consts)",
+    "        if False:\n            return _home(inner, homes, consts)"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 6: a home name needs every store to agree",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    homes = _Bound(scopes, lambda e: _home(e, homes, consts), every=False)",
+    "    homes = _Bound(scopes, lambda e: _home(e, homes, consts), every=True)"
+   ]
+  ],
+  "expect": "L3 (r1 B1): a guard that turns the absence of a path below HOME into an error is a home-path prerequisite, through a name and its `x if c else y` default; a guard that falls back or exits 0 is none"
+ },
+ {
+  "name": "detector 4: a section's opening path is not judged",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if _heads_section(lines, line, tok):\n        return \"prerequisite\"",
+    "    if False:\n        return \"prerequisite\""
+   ]
+  ],
+  "expect": "S4 (r1 M1): a docs/ path that OPENS a section whose body instructs is a prerequisite; a later line, a section with no instruction, a span that holds more than the path and a path in description are mentions"
+ },
+ {
+  "name": "detector 4: a span holding more than the path opens a section",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if not re.match(r\"\\s*`\" + tok + \"`\", lines[line - 1], re.I):",
+    "    if not re.match(r\"\\s*`[^`]*\" + tok, lines[line - 1], re.I):"
+   ]
+  ],
+  "expect": "S4 (r1 M1): a docs/ path that OPENS a section whose body instructs is a prerequisite; a later line, a section with no instruction, a span that holds more than the path and a path in description are mentions"
+ },
+ {
+  "name": "detector 4: any line opens a section",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if not HEADING.match(above):\n        return False",
+    "    if False:\n        return False"
+   ]
+  ],
+  "expect": "S4 (r1 M1): a docs/ path that OPENS a section whose body instructs is a prerequisite; a later line, a section with no instruction, a span that holds more than the path and a path in description are mentions"
+ },
+ {
+  "name": "detector 4: a section's body runs past the next heading",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if HEADING.match(ln):\n            return False\n        if ACTS",
+    "        if False:\n            return False\n        if ACTS"
+   ]
+  ],
+  "expect": "S4 (r1 M1): a docs/ path that OPENS a section whose body instructs is a prerequisite; a later line, a section with no instruction, a span that holds more than the path and a path in description are mentions"
+ },
+ {
+  "name": "detector 4: a section's body never acts",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if ACTS.match(ln):\n            return True",
+    "        if False:\n            return True"
+   ]
+  ],
+  "expect": "S4 (r1 M1): a docs/ path that OPENS a section whose body instructs is a prerequisite; a later line, a section with no instruction, a span that holds more than the path and a path in description are mentions"
+ },
+ {
+  "name": "detector 4: a ⛔ before the verb hides it",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(?:[⛔⚠]\\S*\\s*)?(?:\\*\\*)?(?:\" + LEAD_VERBS",
+    "(?:\\*\\*)?(?:\" + LEAD_VERBS"
+   ]
+  ],
+  "expect": "S4 (r1 M1): a docs/ path that OPENS a section whose body instructs is a prerequisite; a later line, a section with no instruction, a span that holds more than the path and a path in description are mentions"
+ },
+ {
+  "name": "detector 4: append is no action",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\" + LEAD_VERBS + r\"|\\b(?:append|write|add)\\b)\", re.I)",
+    "\" + LEAD_VERBS + r\")\", re.I)"
+   ]
+  ],
+  "expect": "S4 (r1 M1): a docs/ path that OPENS a section whose body instructs is a prerequisite; a later line, a section with no instruction, a span that holds more than the path and a path in description are mentions"
+ },
+ {
+  "name": "detector 2: an invocation and a read of one target on a line are two findings",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "SS.READ_LINE_RE.search(text):\n                    for tok",
+    "SS.READ_LINE_RE.search(text) and not seen.clear():\n                    for tok"
+   ]
+  ],
+  "expect": "S3 (r1 m6): an invocation and a read of the SAME target on one line are one finding"
+ },
+ {
+  "name": "detector 2: os.fspath() is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    ", \"os.fspath\"}",
+    "}"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
+ },
+ {
+  "name": "detector 2 walk: a part starting with `/` does not leave the tree",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if any(p.startswith(\"/\") for p in got[1]):\n        return None\n",
+    "    if False:\n        return None\n"
+   ]
+  ],
+  "expect": "S1 (r1 M3): a `..` part climbs a level, in a join and after a `/`; a `..` that returns to the file's own directory or climbs past the root is no finding; an annotated binding is a binding"
+ },
+ {
+  "name": "detector 2 walk: `.parent` does not climb",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            return derive(up, (\"..\",))\n",
+    "            return derive(up)\n"
+   ]
+  ],
+  "expect": "S1 (r1 M3): a `..` part climbs a level, in a join and after a `/`; a `..` that returns to the file's own directory or climbs past the root is no finding; an annotated binding is a binding"
+ },
+ {
+  "name": "detector 2 walk: `.parents[k]` climbs k levels, not k + 1",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(\"..\",) * (above.slice.value + 1))",
+    "(\"..\",) * above.slice.value)"
+   ]
+  ],
+  "expect": "S1: ...the root reached through a name bound to its directory, os.path.dirname twice, and parents[1]"
+ },
+ {
+  "name": "detector 2 walk: resolve()/absolute() is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if call is not None and up.attr in SAME_PATH and not call.args:\n            return derive(call)\n",
+    "        if call is not None and up.attr in SAME_PATH and not call.args:\n            return use\n"
+   ]
+  ],
+  "expect": "P6 corpus: p6 unused export — bound, never read here: another module imports it"
+ },
+ {
+  "name": "detector 2 walk: joinpath is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if call is not None and up.attr == \"joinpath\":\n            more = tuple(literal(a) for a in call.args)\n            return derive(call, more) if None not in more and not call.keywords else use\n",
+    "        if call is not None and up.attr == \"joinpath\":\n            more = tuple(literal(a) for a in call.args)\n            return use\n"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a path derived through an f-string (bound and joined), joinpath and os.fspath is judged where it stops deriving; a root passed through an UNLISTED wrapper is reported, not hidden"
+ },
+ {
+  "name": "detector 2 walk: relative_to and an existence test of the root are not inert",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if call is not None and (up.attr in RELATIVE or (up.attr in EXISTS and not parts)):\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "S1 (r1 m3, Codex MINOR): a comparison, an f-string or print, relative_to and an existence test of the root itself do not use the root as the project; the git call does, and so does a test of a path below it"
+ },
+ {
+  "name": "detector 2 walk: an existence test of a path BELOW the root is inert too",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(up.attr in EXISTS and not parts)",
+    "(up.attr in EXISTS)"
+   ]
+  ],
+  "expect": "S1 (r1 m3, Codex MINOR): a comparison, an f-string or print, relative_to and an existence test of the root itself do not use the root as the project; the git call does, and so does a test of a path below it"
+ },
+ {
+  "name": "detector 2 walk: a `/` join is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return derive(up, (part,)) if part is not None else use\n",
+    "        return use\n"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a path derived through an f-string (bound and joined), joinpath and os.fspath is judged where it stops deriving; a root passed through an UNLISTED wrapper is reported, not hidden"
+ },
+ {
+  "name": "detector 2 walk: a comparison hands the root on",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if isinstance(up, ast.Compare):\n        return INERT, None, None\n",
+    "    if False:\n        return INERT, None, None\n"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
+ },
+ {
+  "name": "detector 2 walk: a `//` f-string tail is not joined",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            return derive(js, (rest[0].value.lstrip(\"/\"),))",
+    "            return DERIVE, js, value"
+   ]
+  ],
+  "expect": "P6 corpus: r3-m2 // tail"
+ },
+ {
+  "name": "detector 2 walk: an f-string piece goes silent (it no longer carries the path)",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return DERIVE, js, value                                 #",
+    "        return INERT, None, None                                 #"
+   ]
+  ],
+  "expect": "S1 (r2 X1, Codex MAJOR): the root handed on through an f-string is install-root"
+ },
+ {
+  "name": "detector 2 role: print and a relative_to method hand the path on",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if name in INERT_ANY or (isinstance(call.func, ast.Attribute) and call.func.attr in RELATIVE):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
+ },
+ {
+  "name": "detector 2 role: a keyword finds no row",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "f == name and k is not None and k == arg.arg",
+    "False"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
+ },
+ {
+  "name": "detector 2 role: a position after a `*` argument is known",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    if any(isinstance(a, ast.Starred) for a in call.args[:pos + 1]):\n        return USE\n",
+    "    if False:\n        return USE\n"
+   ]
+  ],
+  "expect": "P6: the walk's other exits — a position after a `*` argument is unknown (USE); relpath with a start that is not file-anchored hands the path on, and one with no start derives it; a name bound to one string literal is a literal part; a name rebound from ITSELF (`R = R.resolve()`) is followed"
+ },
+ {
+  "name": "detector 2 role: a FILE_OF call is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if role == SAME and only:\n            return derive(call)\n",
+    "        if role == SAME and only:\n            return use\n"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a path derived through an f-string (bound and joined), joinpath and os.fspath is judged where it stops deriving; a root passed through an UNLISTED wrapper is reported, not hidden"
+ },
+ {
+  "name": "detector 2 role: dirname does not climb",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if role == UP and only:\n            return derive(call, (\"..\",))\n",
+    "        if role == UP and only:\n            return derive(call)\n"
+   ]
+  ],
+  "expect": "P6: dirname(p=...) climbs like dirname(...); a root exported (bound, never read in its file) is reported at its binding; and the check-plan-code.py shape (one name bound to the root twice and tuple-unpacked once in one function) is reported at its first binding"
+ },
+ {
+  "name": "detector 2 role: os.path.join is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if role == JOIN:\n            more = tuple(literal(a) for a in call.args[1:])\n            return derive(call, more) if None not in more and not call.keywords else use\n",
+    "        if role == JOIN:\n            more = tuple(literal(a) for a in call.args[1:])\n            return use\n"
+   ]
+  ],
+  "expect": "S1 (r1 M3): a `..` part climbs a level, in a join and after a `/`; a `..` that returns to the file's own directory or climbs past the root is no finding; an annotated binding is a binding"
+ },
+ {
+  "name": "detector 2 role: relpath with no start is not a derivation",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                return derive(call) if only else use\n",
+    "                return use\n"
+   ]
+  ],
+  "expect": "P6: the walk's other exits — a position after a `*` argument is unknown (USE); relpath with a start that is not file-anchored hands the path on, and one with no start derives it; a name bound to one string literal is a literal part; a name rebound from ITSELF (`R = R.resolve()`) is followed"
+ },
+ {
+  "name": "detector 2 role: relpath against ANY start is inert",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            return (INERT, None, None) if anchored(start) else use\n",
+    "            return INERT, None, None\n"
+   ]
+  ],
+  "expect": "P6: the walk's other exits — a position after a `*` argument is unknown (USE); relpath with a start that is not file-anchored hands the path on, and one with no start derives it; a name bound to one string literal is a literal part; a name rebound from ITSELF (`R = R.resolve()`) is followed"
+ },
+ {
+  "name": "detector 2 role: relpath's start and an existence test hand the path on",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if role == INERT or (role == EXISTS_ROOT and not parts):\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
+ },
+ {
+  "name": "detector 2 role: an existence test of a path BELOW the root is inert too",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "(role == EXISTS_ROOT and not parts)",
+    "(role == EXISTS_ROOT)"
+   ]
+  ],
+  "expect": "P6: an os.path existence test of a path BELOW the root uses it; a class body's binding is not followed (a method's bare name is the module's); an imported name is not followed"
+ },
+ {
+  "name": "detector 2 role: a keyword row is dropped from the table (positional only)",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "    (\"os.path.dirname\", (0, \"p\")): UP,",
+    "    (\"os.path.dirname\", (0, None)): UP,"
+   ]
+  ],
+  "expect": "P6 (r3 M1): each keyword row of the role table answers the same spelt positionally and by keyword"
+ },
+ {
+  "name": "detector 2 walk: a one-name assignment is not a binding (no name is followed)",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            return BIND, up, value\n",
+    "            return use\n"
+   ]
+  ],
+  "expect": "P6 (replaces r1 m2, r1 m2 global/nonlocal and r2 X2): a root whose name is rebound ANYWHERE in the file — a second function's local, a shadowing parameter, a `global` or `nonlocal` rebinding — is not followed: it is reported where it is bound, as `.`; a name bound once is followed to its use, and so is one restored by a `globals()[...]` store (a string, not a name: the use is still reported, at its own target)"
+ },
+ {
+  "name": "detector 2 walk: a class body's field default is a binding",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "isinstance(targets[0], ast.Name) and not _in_class(up, parent):",
+    "isinstance(targets[0], ast.Name):"
+   ]
+  ],
+  "expect": "P6: an os.path existence test of a path BELOW the root uses it; a class body's binding is not followed (a method's bare name is the module's); an imported name is not followed"
+ },
+ {
+  "name": "detector 2 census: a non-assignment store does not deny the name",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            else:\n                denied.add(node.id)\n",
+    "            else:\n                pass\n"
+   ]
+  ],
+  "expect": "P6 (r3 m3): a root bound by a chained assignment is reported there, a name or an expression; and a name AUGMENTED after its binding is not followed"
+ },
+ {
+  "name": "detector 2 census: a star import is ignored",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            if node.name == \"*\":\n                return {}\n",
+    "            if False:\n                return {}\n"
+   ]
+  ],
+  "expect": "P6 corpus: p6 star import — a star import may rebind any name"
+ },
+ {
+  "name": "detector 2 census: an imported name is not denied",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            denied.add((node.asname or node.name).split(\".\")[0])\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": "P6: an os.path existence test of a path BELOW the root uses it; a class body's binding is not followed (a method's bare name is the module's); an imported name is not followed"
+ },
+ {
+  "name": "detector 2 census: a `global`/`nonlocal`/parameter name is not denied",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            denied.update(v for v in (value if isinstance(value, list) else [value]) if isinstance(v, str))\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": "P6 (replaces r1 m2, r1 m2 global/nonlocal and r2 X2): a root whose name is rebound ANYWHERE in the file — a second function's local, a shadowing parameter, a `global` or `nonlocal` rebinding — is not followed: it is reported where it is bound, as `.`; a name bound once is followed to its use, and so is one restored by a `globals()[...]` store (a string, not a name: the use is still reported, at its own target)"
+ },
+ {
+  "name": "detector 2 walk: a name bound to one string literal is not a literal part",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        return consts.get(e.id) if isinstance(e, ast.Name) and isinstance(e.ctx, ast.Load) else None\n",
+    "        return None\n"
+   ]
+  ],
+  "expect": "P6: the walk's other exits — a position after a `*` argument is unknown (USE); relpath with a start that is not file-anchored hands the path on, and one with no start derives it; a name bound to one string literal is a literal part; a name rebound from ITSELF (`R = R.resolve()`) is followed"
+ },
+ {
+  "name": "detector 2 walk: a file-anchored relpath start is not recognised",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                if value is not None:\n                    return True\n",
+    "                if value is not None:\n                    return False\n"
+   ]
+  ],
+  "expect": "S1 (r2 X1): a root only compared, only printed (an f-string, str(), os.fspath()) and only measured against by relpath's start, positional or `start=`, is no finding"
+ },
+ {
+  "name": "detector 2 fixpoint: a name rebound from itself is never followed",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "                v = v0 if agreed(name, binds(ends({**alias, name: v0}))) == v0 else None\n",
+    "                v = None\n"
+   ]
+  ],
+  "expect": "P6: the walk's other exits — a position after a `*` argument is unknown (USE); relpath with a start that is not file-anchored hands the path on, and one with no start derives it; a name bound to one string literal is a literal part; a name rebound from ITSELF (`R = R.resolve()`) is followed"
+ },
+ {
+  "name": "detector 2 report: a followed name never read in its file is silent",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "            and any(id(n) not in inside for n in loads.get(name, ()))\n",
+    "            and True\n"
+   ]
+  ],
+  "expect": "P6 corpus: p6 unused export — bound, never read here: another module imports it"
+ },
+ {
+  "name": "detector 2 report: an unfollowed binding is silent",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if not quiet:                        #",
+    "        if False:                        #"
+   ]
+  ],
+  "expect": "P6 (replaces r1 m2, r1 m2 global/nonlocal and r2 X2): a root whose name is rebound ANYWHERE in the file — a second function's local, a shadowing parameter, a `global` or `nonlocal` rebinding — is not followed: it is reported where it is bound, as `.`; a name bound once is followed to its use, and so is one restored by a `globals()[...]` store (a string, not a name: the use is still reported, at its own target)"
+ },
+ {
+  "name": "detector 2 report: a level above the install depth is reported",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if level == depth and (target == \".\" or not held(target)):\n",
+    "        if level >= depth and (target == \".\" or not held(target)):\n"
+   ]
+  ],
+  "expect": "S1 (r1 M3): a `..` part climbs a level, in a join and after a `/`; a `..` that returns to the file's own directory or climbs past the root is no finding; an annotated binding is a binding"
+ },
+ {
+  "name": "detector 2 report: a USE is not reported",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "        if kind == USE:\n            report(node, value)\n",
+    "        if False:\n            report(node, value)\n"
+   ]
+  ],
+  "expect": "S1 (r2 X1, Codex MAJOR): the root handed on through an f-string is install-root"
+ },
+ {
+  "name": "detector 2 report: the LAST line of a target is reported, not the first",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "min(first.get(target, node.lineno), node.lineno)",
+    "node.lineno"
+   ]
+  ],
+  "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2 report: a stop below the install depth is dropped (option 1 undone)",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "unjudged.add(node.lineno)",
+    "pass"
+   ]
+  ],
+  "expect": "Option 1 (r4 B1): an own-folder name reused anywhere is not followed, and a root built from it later is reported NOT JUDGED where the folder is bound — a reassignment in a function, and a parameter default"
+ },
+ {
+  "name": "detector 2 report: a part NAMED below the install depth is NOT JUDGED too",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "elif level < depth and target == \".\":",
+    "elif level < depth:"
+   ]
+  ],
+  "expect": "Option 1 controls: a path NAMED below the file's folder (held), an inert use of the folder, a followed folder climbed to the root, and a root that is printed AND used are judged as before — no NOT JUDGED"
+ },
+ {
+  "name": "detector 2 report: a line already judged also carries a NOT JUDGED row",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for n in unjudged - judged]",
+    "for n in unjudged]"
+   ]
+  ],
+  "expect": "P6 corpus: r3-M2 argv f-string"
+ },
+ {
+  "name": "detector 2 scan: a NOT JUDGED stop is emitted as a judged install-root",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"install-root\" if target else \"install-root-unjudged\"",
+    "\"install-root\""
+   ]
+  ],
+  "expect": "Option 1: the scan emits a NOT JUDGED stop as kind `install-root-unjudged` with no target, one per line (a sibling by `with_name` is a derivation the table does not decode)"
  }
 ]

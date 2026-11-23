@@ -21239,6 +21239,61 @@ r3's two MINORs filed as backlog #690. backlog #630 ✅: owner card A (11-21 09:
 `docs/optimization-register.md`. `docs/goal-threads.md`: lines for backlog #689 and backlog #685.
 
 ## 2026-11-21
+The marketplace publishability scan now catches the two install failures it had missed. When the comprehensibility
+package was installed into a stranger's repository, six of its scripts looked for the project beside their own
+installed copy instead of in the user's repository, and several skills told the reader to follow a package file by a
+relative path that did not resolve. The scan scored both clean; it now reports each one, with the fix for the skills.
+After the first review round it also reports the missing home-directory folder that one script refuses to run
+without, and the store file a skill tells the reader to append to, and it no longer flags harmless uses such as a
+comparison or a print. After the second round it also catches a script that passes its own install folder on
+through a formatted string or a relative-path call, which the first round's fix had hidden. After the third round showed each fix opening a new hole in the same rule, an architecture review replaced the rule: every use of the install folder is now reported unless it is one of a short list of harmless uses, so a form nobody thought of shows up as a finding instead of staying hidden. The failures it still cannot see from the files (the Ask tray that only an earlier page can
+supply, a host convention cited in passing, package files named only in description, and whether a model follows
+the delivery steps) are written down as named limits in both experiment records. Plan Task 16; nothing waits on you.
+<!--tech-->
+Branch `marketplace-task16`. `scripts/check-publishability.py` detector 2 gains `install-root`
+(`_install_root_uses`: a path built from `__file__` whose `.parent` / `parents[k]` / `os.path.dirname` depth reaches
+the file's INSTALLED root, joined with literals, reported where it names a path the package does not ship or hands
+the root on as `.`) and judges Markdown read/follow lines (`SS.READ_LINE_RE` + `SS.READ_PATH_RE`, `../` resolved
+against the file; `docs/` left to detector 4) through the shared `_located` row. Self-test 105 → 109; RED first on a
+scratch copy with both clauses disabled (95/98, the three new cases `got []`). Rescan
+`docs/marketplace/scan-2026-11-21.json` (46 components, 0 CANNOT RUN). Mutations 158 → 175, three anchors rebound
+in place; the 17 new and 3 rebound each run red against their named case on a scratch copy. Records: a scan-defects
+table and list in `experiment-tier-a.md` and `experiment-tier-b.md`, limits L1–L5. Backlog #675 (a shipping-set
+over-report) stays open, outside this population. Round 1 fold (`3db9d353`): names are looked up in Python's scope
+(`_Scopes`, `_Bound`: followed only when every store agrees), a `..` part climbs a level, inert uses are skipped
+(`_inert`), class-body and `globals()` bindings (`_rebinds`); detector 6 `home-path` (`_homes`, `_absent_home`,
+`_fails`) closes L3; detector 4 section openers (`_heads_section`) narrow L2; new limit L6 (package files named in
+prose). Self-test 109 → 116, mutations 175 → 226 (4 rebound, 51 new, each red on its named case on a scratch
+copy); rescan measured at `3db9d353`. Round 2 fold (`2f4b59ce`, both Codex MAJORs caused by the r1 fold, route
+`redesign`): derivations (f-string, `str`, `os.fspath`, `relpath` without a root start, `joinpath`) are path forms in
+`_from_file`, so `_inert` judges only the terminal use and an unlisted one is reported; `nonlocal` resolves to the
+nearest enclosing function binding the name (`_Scopes._nonlocal`). Self-test 116 → 121, mutations 226 → 237 (4
+replaced, 11 new, each red on its named case on a scratch copy; the 59 existing detector-2 mutations re-run red);
+rescan at `2f4b59ce`, 365 findings, none gained or lost. Phase 6 build (r2-r3 THRASHING, `docs/reviews/architecture-review-2026-11-21-publishability-install-root.md` §4, route `split`): `_from_file`, `_fstring_path`, `_inert`, `_rebinds` and detector 2's use of `_Scopes` are deleted; one mention walk with one decoder `_step` (default USE), one call table `ROLES` keyed `(callee, (position, keyword))`, and a file-wide census (`_census`): a name reused anywhere is reported at its binding as `.`. Every r1-r3 input is a `P6 corpus:` case (22 red at `b79d4bad`). Self-test 121 → 174, mutations 237 → 228 (45 removed: 29 anchors deleted, 16 `_Scopes`/`_literal` survivors now reachable only from detector 6, backlog #691; 36 new, each red on its named case on a scratch copy). Rescan +2 findings (`check-plan-code:6355` `.`, `check-surface-recall:519` a fixture path), the rest line moves.
+
+## 2026-11-21 [needs-you]
+The publishability scan's check for scripts that treat the folder above their installed copy as the project was
+rebuilt from an architecture review, after two rounds in which every fix opened a new hole. The rebuild fixed all 11
+known misses and found a real one nobody had seen. But the review round after it found a new miss that the rebuild
+itself caused: when a script's own-folder name is reused anywhere in the file, a project path built from it is no
+longer reported. The review decided in advance that a miss like this means no more patching by me, and that the
+choice goes to you. Four other misses turned up too; each was already there before the rebuild, so they are filed
+for later.
+
+**Decide:** How should the scan treat a path it stops following before it reaches the installed copy's top folder?
+- report it as "not judged", so every such stop is a finding — fixes the new miss and the four older ones, at the cost of extra findings I have not counted yet; I count them before merging [recommended]
+- report only the reused-name case the rebuild broke, as the review's fallback names — fixes the new miss, and the four older ones stay filed
+- keep the rebuild as it is, state the new miss as a known limit, and merge
+<!--tech-->
+PR #613 (Marketplace Task 16), round 4: `docs/reviews/coordinator/marketplace-task16-r4-coordinator.md`. B1 verified
+on fresh `git show` copies: `SCRIPT_DIR = Path(__file__).resolve().parent; REPO = SCRIPT_DIR.parent;
+def main(argv): SCRIPT_DIR = ...; cwd=REPO` → `[(7, '.')]` at b79d4bad, `[]` at 7f54a324. Cause: the census reports
+the unfollowed name at its binding's level (1) and `report` keeps only `level == depth`
+(`scripts/check-publishability.py` `_install_root_uses.report`). Option 1 is r4 Claude's proposal; option 2 is §6's
+(a0) direction of `docs/reviews/architecture-review-2026-11-21-publishability-install-root.md`. The older misses are
+backlog #692. The PR is not merged until this is answered.
+
+## 2026-11-21
 The publishability scan's check for instructions in Markdown (telling a reader to run or read something) got the
 architecture review it skipped when it merged after two rounds where each fix opened a new hole. The review found two
 separate problems in one function. How the check reads a block of text can be redesigned once; it recommends that,
@@ -21436,3 +21491,27 @@ CANNOT RUN. X4's measurement found one real unparaphrased owner quote shipping i
 comment); paraphrased. The real tree is `0 gaps`. Self-test 160 -> 170, mutations 209 -> 215 (7 new, 1 retired with
 the filter), the 7 new and the 13 earlier decision-5 ones red on their named case in a full clone. Edge pin unmoved.
 Priced 13.0 -> 17.0 s.
+
+## 2026-11-23 [resolved: 2026-11-21/3]
+You chose option 1 for the publishability scan: when it stops following a path before reaching the installed copy's
+top folder, it now says so as a "not judged" finding instead of staying silent. That fixes the miss the rebuild
+caused and three of the four older ones. The fourth (a top folder that its own file only prints, meant for another
+file to import) stays open, because fixing it would undo an earlier ruling that a printed folder is not a finding.
+I counted the cost: findings rose from 362 to 395, and all 33 new ones are "not judged", spread over 16 scripts.
+
+Nothing waits on you for this.
+<!--tech-->
+PR #613 (Marketplace Task 16), owner 11-23 11:07 option 1. `_install_root_uses` reports a USE or an unsilenced
+binding that stops BELOW the install depth with no literal part (target `.`) as `(line, None)`; the scan emits it
+as kind `install-root-unjudged` (target null, one per line, none beside a line already judged). A part named
+below the file's folder (`HERE / "data.json"`) stays silent. Closes r4 B1 and backlog #692 X1, M1, M2; #692 m1
+stays open (an inert-only read silences an exported root; fixing it contradicts the r2-X1 `P6 corpus` cases).
+Self-test 174 -> 180 (6 cases, red before the change), mutations 228 -> 232 (each red on its named case in a full
+scratch clone). Rescan at `f57ef1cb`: 362 -> 395 (before = this branch after merging master, a67b6843), 0 lost,
++33 `install-root-unjudged`; per component: check-plan-code 6, ask-answerer 5, goal-tree 4, brief-compose,
+explainer-serve, gen-backlog-page, gen-dashboard and gen-features-page 2 each, agent-watchdog, check-features,
+check-ratchet-contract, gen-goals-page, gen-work-lines, regen-pages, session-state and sweep-red-alert 1 each. No
+component changed status. Merging master brought in the inventory (scan-2026-11-17); it now names
+scan-2026-11-21: cited ids re-mapped by file, kind, target and text (mutation-sweep-job 2:106-108 -> 2:109-111;
+memory-corpus :2:5-17 -> :2:3-14, and 8 ids that the backlog #697 built corpus no longer produces dropped; its C2
+fail is NOT re-judged). The tier A/B experiment docs' cited ids were re-mapped the same way.
