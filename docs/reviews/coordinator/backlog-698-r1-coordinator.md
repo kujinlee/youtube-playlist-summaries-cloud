@@ -60,11 +60,23 @@ A six-word run in either view is a hit. The fold states the rule in *What this c
   - Claude's 2 unlisted block tags.
 
   Each case goes red on 0fb65173 first. Add matching disguises to the plant corpus, and add a mutation per new clause.
+
+  **Fixed in 067cd9e7.** `readings()` adds a tight reading (Cf deleted, alt and inline tags joined) and a loose one (every tag breaks); the raw bytes are also read Cf-deleted, and a source quote is fragmented in every reading. The block list is unchanged. Cases: an image inside a word, invisible format characters (6 spellings), unlisted block tags (`center`, `legend`), each reading's layout, a source quote read in every reading; 5 new disguises (867 plants). The adjacent negatives still pass; the real build passes `--check`.
 - **X2 (MAJOR): a renderer that returns well-shaped but wrong output passes. ACCEPT.** Shape checks cannot prove the renderer worked. **Fix:** every renderer call carries a KNOWN PROBE, a fixed Markdown snippet whose rendered text is pinned, and the run is CANNOT RUN (rc 2) unless the probe comes back exactly. Non-empty stderr from node is also rc 2. Add Codex's substitute-node cases (an empty document; plausible strings with stderr noise) as self-test cases.
+
+  **Fixed in 067cd9e7.** A pinned probe rides every renderer call; a mismatch or non-empty stderr is rc 2. Cases: a renderer returning empty strings or its input echoed fails the probe; real output plus stderr noise is CANNOT RUN.
 - **X3 (MINOR) = C4 (MINOR): non-UTF-8 output crashes. ACCEPT.** Pass `encoding="utf-8"` instead of locale `text=True`, and catch decode errors as CANNOT RUN rc 2.
+
+  **Fixed in 067cd9e7.** Case: a renderer whose output is not UTF-8 is CANNOT RUN.
 - **X4 (MINOR): the source quote's plain view was dropped, a loosening. ACCEPT.** Restore it as an additional, add-only source-fragment view, so master's refusal of Codex's case returns.
+
+  **Fixed in 067cd9e7.** Case: Codex's `see [aside](https://example.com) before you merge anything` fails check 1 again.
 - **C3 (MINOR): text a browser never shows breaks a run.** That is text inside `<style>`, `<script>`, `<template>` or a `hidden` element. ACCEPT: add an add-only view that drops that text. The loose view can carry it.
+
+  **Fixed in 067cd9e7.** The tight reading drops that text (nesting counted). Case: style, script, template, a `hidden` span and a nested one.
 - **C5 (NIT): look-alike letters pass. ACCEPT.** Name homoglyphs in *What this cannot see*.
+
+  **Fixed in 067cd9e7.** *What this cannot see* names look-alike letters; the docstring states "a boundary is read both ways".
 
 ## Round topology
 
