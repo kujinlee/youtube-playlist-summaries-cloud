@@ -50,13 +50,18 @@ The existing views stay, because they are add-only.
 - **X1 (MAJOR): mixed boundaries in one run pass. ACCEPT; fix with the letters-only view above.**
   - Cases: Codex's `I [almost](https://x) ne<em>v</em>er<center>pay attention to`, plus a format character beside an inline tag (Codex's second probe).
   - Each case goes red on 5745b83f first. Add a plant-corpus disguise that mixes boundaries, and a mutation per new clause.
+  - **Fixed in 25162fcc.**
 - **X2 (MAJOR): master's link-reduced view was dropped, a loosening. ACCEPT.**
   - Restore master's link-reduced reading, link destinations and titles removed, as add-only views on BOTH sides: the source quote and the output.
   - Cases: Codex's `[I](https://x) [almost](https://x) never [pay](extra words) attention to`, which must refuse as master does, and its source-quote twin.
   - The fold checks the six LOOSENING-CHECK lines that name this, and says in its report that each now reads "not a loosening".
+  - **Fixed in 25162fcc.**
 - **X3 (MINOR, fix-induced): whitespace-only stderr is accepted. ACCEPT.** Test `r.stderr` itself, not `.strip()`, and add a whitespace-only case.
+  - **Fixed in 25162fcc.**
 - **X4 (MINOR): a closed `<details>` body can split a visible run. ACCEPT.** In the hidden-text view, drop a closed `<details>` element's body and keep its `<summary>`. An `open` attribute keeps the body. Add a case.
+  - **Fixed in 25162fcc.**
 - **The substitute-node limit:** add one line to *What this cannot see*: a renderer built to answer the probe correctly and nothing else defeats the probe.
+  - **Fixed in 25162fcc.**
 
 ## Thrashing watch
 
