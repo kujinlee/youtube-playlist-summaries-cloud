@@ -2670,6 +2670,7 @@ EXPECTED_MUTATIONS = {
     # either side, existence tests of the root only), the class-body and globals() bindings, `x.resolve()`;
     # detector 6 home-path guards (B1: the guard, raise/exit/return, the existence forms, every HOME producer, the
     # first-store rule); detector 4 section openers (M1: the exact span, the heading, the body bound, the acting
-    # verbs); the invocation/read shared dedup (m6).
-    "scripts/check-publishability.py": 228,
+    # verbs); the invocation/read shared dedup (m6). ⟳ 2026-11-23 option 1 (owner): 228 -> 232 — a stop below the
+    # install depth is NOT JUDGED (dropped / a named part / beside a judged line / emitted under the judged kind).
+    "scripts/check-publishability.py": 232,
 }

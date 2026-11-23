@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 174 cases
+    python3 scripts/check-publishability.py --self-test  # 180 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -37,7 +37,9 @@ way, a `./` or `../` path against the file's own directory (a `docs/` path stays
 (`_install_root_uses`) is a script that takes the directory its own file is installed below for the PROJECT: a
 path built below it that the package does not ship, or the root itself handed on (`.`), the cause of a generator
 that read and wrote the plugin cache instead of the user's repository — found by THE MENTION WALK, whose one decoder
-`_step` makes USE the default. A detector-2 finding also holds its `target`.
+`_step` makes USE the default. `install-root-unjudged` (target None, one per line) is where that walk STOPPED below
+the install depth at a bare directory or the file itself — it cannot say whether the root is reached, so it says
+so, never silence (owner, 2026-11-23, option 1). A detector-2 finding also holds its `target`.
 
 DETECTOR 3, self-test and user documentation (`_self_test_and_docs`): `no-self-test` and `no-user-doc`, asked of
 the Python of an entry point or a library; a library owes no usage block.
@@ -576,8 +578,9 @@ def _placed(got) -> tuple[int, str] | None:
 # Every MENTION of a file-anchored value — the `__file__` name, or a load of a FOLLOWED name — is walked UPWARD.
 # At each parent ONE function, `_step`, answers exactly one of DERIVE (the parent is a path value again: walk on),
 # BIND (a one-name assignment), INERT, LEFT (a part that starts with `/` left the tree) or USE. USE IS THE DEFAULT:
-# a parent `_step` does not name hands the path on. A finding is silenced only by INERT, LEFT, a level that is not
-# the install depth, or a held target — four closed, local tests. Following a name may move a finding's line or
+# a parent `_step` does not name hands the path on. A finding is silenced only by INERT, LEFT, a level ABOVE the
+# install depth, a held target, or a part named below the depth — closed, local tests. A stop BELOW the depth at a
+# bare directory or the file is NOT JUDGED (target None), never silent (owner 2026-11-23, option 1). Following a name may move a finding's line or
 # sharpen its target; it can never remove one: a BIND whose name is not followed is reported AT THE BINDING, and
 # so is a followed name never read in its file (an exported root). DIRECTION: a false negative publishes a broken
 # component, a false positive costs one reading.
@@ -720,7 +723,7 @@ def _census(tree, parent: dict) -> dict:
     return {n: a for n, a in assigns.items() if n not in denied and n != "__file__"}
 
 
-def _install_root_uses(tree, parent: dict, depth: int, held) -> list[tuple[int, str]]:
+def _install_root_uses(tree, parent: dict, depth: int, held) -> list[tuple[int, str | None]]:
     """`(line, target)` for each use of the file's own INSTALL ROOT (the directory `depth` levels above it, in
     installed coordinates) as the project: a path below it that the package does not ship (`held` is false), or
     the root itself handed on (a `cwd=`, a `git -C`, an argument, a default) — by THE MENTION WALK. One per target,
@@ -730,7 +733,11 @@ def _install_root_uses(tree, parent: dict, depth: int, held) -> list[tuple[int, 
     binding. BOUND: a name reused anywhere in the file is not followed, so its root is reported where it is bound,
     as `.`, and the paths built from it later are not named — coarser, never silent. Only literal parts are joined
     (a name bound to one string literal everywhere included); a root reached through a call of the program's own
-    function is reported where it is passed or returned."""
+    function is reported where it is passed or returned. NOT JUDGED (owner 2026-11-23, option 1; review r4 B1,
+    backlog #692): a USE, or an unsilenced binding, that stops BELOW the install depth at a bare directory or the
+    file itself (no literal part named) is `(line, None)` — the walk could not follow it to the root, so it is
+    shown, never dropped; a line already reported judged carries no NOT JUDGED row. A part NAMED below the file's
+    folder (`HERE / "data.json"`) is the script's own payload and stays silent."""
     bound = _census(tree, parent)
     consts = {n: a[0].value.value for n, a in bound.items()
               if all(isinstance(x.value, ast.Constant) and isinstance(x.value.value, str) for x in a)
@@ -764,19 +771,19 @@ def _install_root_uses(tree, parent: dict, depth: int, held) -> list[tuple[int, 
 
         out = []
         for name in ["__file__", *alias]:
-            for node in loads.get(name, ()):
-                value = mention(node)
+            for start in loads.get(name, ()):
+                node, value = start, mention(start)
                 while True:
                     kind, at, got = _step(node, value, parent, literal, anchored)
                     if kind != DERIVE:
                         break
                     node, value = at, got
-                out.append((kind, node, value, at))
+                out.append((kind, node, value, at, start))
         return out
 
     def binds(found: list) -> dict:
         out = {}
-        for kind, node, value, at in found:
+        for kind, node, value, at, _ in found:
             if kind == BIND:
                 out.setdefault(at, set()).add(value)
         return out
@@ -802,17 +809,19 @@ def _install_root_uses(tree, parent: dict, depth: int, held) -> list[tuple[int, 
             break
         alias.update(new)
 
-    first = {}
+    first, unjudged = {}, set()
 
     def report(node, value):
         level, parts = value
         target = "/".join(parts) or "."
         if level == depth and (target == "." or not held(target)):
             first[target] = min(first.get(target, node.lineno), node.lineno)
+        elif level < depth and target == ".":  # Option 1: a bare folder or the file, below the root: NOT JUDGED
+            unjudged.add(node.lineno)
 
     found = ends(alias)
     got = binds(found)
-    for kind, node, value, at in found:
+    for kind, node, value, at, _ in found:
         if kind == USE:
             report(node, value)
     for a, values in got.items():
@@ -823,7 +832,9 @@ def _install_root_uses(tree, parent: dict, depth: int, held) -> list[tuple[int, 
         if not quiet:                        # not followed, or never read here: the binding is the use
             for v in values:
                 report(a.value, v)
-    return sorted((n, t) for t, n in first.items())
+    judged = set(first.values())             # a line already reported judged needs no NOT JUDGED beside it
+    return sorted([(n, t) for t, n in first.items()] + [(n, None) for n in unjudged - judged],
+                  key=lambda r: (r[0], r[1] or ""))
 
 
 def _invocations(files: list, base: Path, shipped: set, channel: str) -> list:
@@ -856,7 +867,7 @@ def _invocations(files: list, base: Path, shipped: set, channel: str) -> list:
             here = Path(SS.installed_path(rel) if channel == "plugin" else rel)
             for n, target in _install_root_uses(tree, parent, len(here.parts), held):
                 out.append({"detector": 2, "file": rel, "line": n, "text": lines[n - 1].strip(),
-                            "kind": "install-root", "target": target})
+                            "kind": "install-root" if target else "install-root-unjudged", "target": target})
             invoked = {os.path.normpath(n.value) for n in ast.walk(tree) if isinstance(n, ast.Constant)
                        and isinstance(n.value, str) and _python_use(n, parent) == "invocation"}
             edges, unread = SS.python_loads(rel, f.read_text())
@@ -1235,7 +1246,7 @@ def _with_ids(cid: str, findings: list) -> list:
     never passes through here: it has no id, so no verdict can cite one."""
     done, count = [], {}
     for f in sorted(findings, key=lambda f: (f["detector"], f["file"], f["line"], f["kind"],
-                                             f.get("term") or f.get("target", ""))):
+                                             f.get("term") or f.get("target") or "")):
         count[f["detector"]] = count.get(f["detector"], 0) + 1
         done.append({"id": f"{cid}:{f['detector']}:{count[f['detector']]}", **f})
     return done
@@ -2503,6 +2514,58 @@ def _self_test_body() -> int:
                                   'def f():\n    import R\n    return R\n'
                                   'R = pathlib.Path(__file__).parent.parent\nopen(R / "docs/i.md")\n')],
          [[(5, "x")], [(6, ".")], [(8, ".")]])
+    # --- Option 1 (owner, 2026-11-23; review r4 B1 + backlog #692): a stop BELOW the install depth at a bare
+    # directory or the file itself is NOT JUDGED — reported as `(line, None)`, never dropped. Each r4 input is a case.
+    U = None
+    case("Option 1 (r4 B1): an own-folder name reused anywhere is not followed, and a root built from it later is "
+         "reported NOT JUDGED where the folder is bound — a reassignment in a function, and a parameter default",
+         lambda: [p6(b) for b in (
+             "SCRIPT_DIR = pathlib.Path(__file__).resolve().parent\nREPO = SCRIPT_DIR.parent\ndef main(argv):\n"
+             "    SCRIPT_DIR = pathlib.Path(argv[0]).parent\n    subprocess.run(['git', 'status'], cwd=REPO)\n",
+             "SCRIPT_DIR = pathlib.Path(__file__).resolve().parent\nREPO = SCRIPT_DIR.parent\n"
+             "def load(SCRIPT_DIR=SCRIPT_DIR):\n    return SCRIPT_DIR\nsubprocess.run(['git', 'status'], cwd=REPO)\n")],
+         [[(5, U)], [(5, U)]])
+    case("Option 1 (backlog #692 X1): a non-literal joinpath stops the walk one level up; the use is NOT JUDGED",
+         lambda: p6("x = os.getenv('SUBDIR', '.')\nos.chdir(pathlib.Path(__file__).parent.joinpath(x).parent)\n"),
+         [(6, U)])
+    case("Option 1 (backlog #692 M1): a climb by rebinding — dirname twice into one name, a loop of `.parent`, "
+         "a for-target reusing the folder's name — is NOT JUDGED at the first binding",
+         lambda: [p6(b) for b in (
+             "root = os.path.dirname(os.path.abspath(__file__))\nroot = os.path.dirname(root)\n"
+             "subprocess.run(['git'], cwd=root)\n",
+             "p = pathlib.Path(__file__).resolve()\nfor _ in range(2):\n    p = p.parent\n"
+             "subprocess.run(['git'], cwd=p)\n",
+             "H = pathlib.Path(__file__).parent\nfor H in []:\n    pass\nR = H / '..'\n"
+             "subprocess.run(['git'], cwd=R)\n")],
+         [[(5, U)], [(5, U)], [(5, U)]])
+    case("Option 1 (backlog #692 M2): a climb through a call the table does not decode — a from-import, an "
+         "aliased module, os.pardir, split()[0], an aliased Path — is NOT JUDGED where the walk stops",
+         lambda: [p6(b) for b in (
+             "from os.path import dirname, abspath\nR = dirname(dirname(abspath(__file__)))\n"
+             "subprocess.run(['git'], cwd=R)\n",
+             "import os.path as osp\nR = osp.dirname(osp.dirname(osp.abspath(__file__)))\n"
+             "subprocess.run(['git'], cwd=R)\n",
+             "R = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))\n"
+             "subprocess.run(['git'], cwd=R)\n",
+             "R = os.path.split(os.path.split(os.path.abspath(__file__))[0])[0]\nsubprocess.run(['git'], cwd=R)\n",
+             "from pathlib import Path as P\nR = P(__file__).resolve().parents[1]\nsubprocess.run(['git'], cwd=R)\n")],
+         [[(6, U)], [(6, U)], [(5, U)], [(5, U)], [(6, U)]])
+    case("Option 1 controls: a path NAMED below the file's folder (held), an inert use of the folder, a followed "
+         "folder climbed to the root, and a root that is printed AND used are judged as before — no NOT JUDGED",
+         lambda: [p6(b) for b in (
+             "open(HERE / 'data.json')\n",
+             "print(pathlib.Path(__file__).parent)\nok = HERE == pathlib.Path.cwd()\n",
+             "SCRIPT_DIR = pathlib.Path(__file__).resolve().parent\nREPO = SCRIPT_DIR.parent\n"
+             "subprocess.run(['git', 'status'], cwd=REPO)\n",
+             "subprocess.run([sys.executable, str(HERE / 'tool.py')])\n",
+             "R = pathlib.Path(__file__).resolve().parents[1]\nprint(R)\nopen(R / 'docs/x.md')\n")],
+         [[], [], [(7, ".")], [], [(7, "docs/x.md")]])
+    case("Option 1: the scan emits a NOT JUDGED stop as kind `install-root-unjudged` with no target, one per line "
+         "(a sibling by `with_name` is a derivation the table does not decode)",
+         lambda: [(f["line"], f["target"]) for f in found(w_16, {"gen": ["scripts/gen.py"], "tool": ["scripts/tool.py"]},
+                                                          "gen", 2) if f["kind"] == "install-root-unjudged"],
+         [(12, None)])
+
     # ⛔ THE ROLE TABLE'S INVARIANT (review r3 M1): every row that names a parameter by a keyword gives the SAME
     # answer spelt positionally and by that keyword. Driven in a context that USES the call's result (`os.chdir`),
     # where a JOIN's "any keyword: USE" agrees with its positional answer. The literal list is an independent

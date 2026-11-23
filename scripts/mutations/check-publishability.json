@@ -2506,5 +2506,49 @@
    ]
   ],
   "expect": "S1: a script that takes its OWN install root for the project is install-root at each path below it the package does not ship, and where it hands the root on; a shipped path, a sibling and the script's own directory are no finding"
+ },
+ {
+  "name": "detector 2 report: a stop below the install depth is dropped (option 1 undone)",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "unjudged.add(node.lineno)",
+    "pass"
+   ]
+  ],
+  "expect": "Option 1 (r4 B1): an own-folder name reused anywhere is not followed, and a root built from it later is reported NOT JUDGED where the folder is bound — a reassignment in a function, and a parameter default"
+ },
+ {
+  "name": "detector 2 report: a part NAMED below the install depth is NOT JUDGED too",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "elif level < depth and target == \".\":",
+    "elif level < depth:"
+   ]
+  ],
+  "expect": "Option 1 controls: a path NAMED below the file's folder (held), an inert use of the folder, a followed folder climbed to the root, and a root that is printed AND used are judged as before — no NOT JUDGED"
+ },
+ {
+  "name": "detector 2 report: a line already judged also carries a NOT JUDGED row",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "for n in unjudged - judged]",
+    "for n in unjudged]"
+   ]
+  ],
+  "expect": "P6 corpus: r3-M2 argv f-string"
+ },
+ {
+  "name": "detector 2 scan: a NOT JUDGED stop is emitted as a judged install-root",
+  "file": "scripts/check-publishability.py",
+  "edits": [
+   [
+    "\"install-root\" if target else \"install-root-unjudged\"",
+    "\"install-root\""
+   ]
+  ],
+  "expect": "Option 1: the scan emits a NOT JUDGED stop as kind `install-root-unjudged` with no target, one per line (a sibling by `with_name` is a derivation the table does not decode)"
  }
 ]
