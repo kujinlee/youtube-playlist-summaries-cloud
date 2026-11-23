@@ -34,13 +34,19 @@ REVIEW GAP: codex — alternation
   - The cause: round 2 changed the tight and loose readings in place, which broke the add-only rule.
   - Fix: give `_Visible` a stack of open elements, so a container's end tag closes every element opened inside it, as the browser does.
   - Case: the reviewer's reproducer, refused as it was on a0af8a4e, red on 7cf29bb4 first.
+  - **Fixed in 85e4c989.**
 - **F2 (MINOR): the same runaway with `hidden` or an unshown element, e.g. `<div><span hidden>x</div>`. ACCEPT.** The element stack closes it. Add a case.
+  - **Fixed in 85e4c989.**
 - **F3 (MINOR, fix-induced): two re-attributed mutations are not equivalent.** They are "source quote fragmented in raw Markdown" and "source quote read only in `read`". ACCEPT.
   - Add a case with hidden text inside a source quote, and point those two mutations at it.
   - Narrow the `views` docstring's "no run-level case can tell the readings apart".
+  - **Fixed in 85e4c989.**
 - **F4 (MINOR): full-width and mathematical-bold letters are missed. ACCEPT.** Apply NFKC normalisation in `letters_only`, first checking that every group-D fragment is unchanged by it. Add a case.
+  - **Fixed in 85e4c989.** It uses NFKD, not NFKC: NFKC composes a decomposed accent and would lose that hit, which breaks add-only. A case asserts both forms leave every group-D fragment unchanged.
 - **N1:** give the "294" figure its unit, or replace it with the measured 1,002 (file, fragment) hits over 3,498 files.
+  - **Fixed in 85e4c989.**
 - **N2:** add one line to the rc-2 list: any warning node prints from its environment makes the run CANNOT RUN, by design.
+  - **Fixed in 85e4c989.**
 
 ## Thrashing watch
 
