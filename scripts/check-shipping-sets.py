@@ -2,7 +2,7 @@
 """The component map, checked for completeness against what is on disk (marketplace-inventory plan, Task 5;
 spec §3: "every supporting artifact maps to a component, to a package, or to a written exclusion").
 
-    python3 scripts/check-shipping-sets.py --self-test  # 148 cases
+    python3 scripts/check-shipping-sets.py --self-test  # 149 cases
     python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
     python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json [MAP]
 
@@ -2319,6 +2319,11 @@ def _self_test_body() -> int:
          lambda: (lambda d: (len(d[0]), len(d[1])))(decision5(REPO)), (16, 22))
 
     real = json.loads((REPO / "docs/marketplace/shipping-sets.json").read_text())["packages"]
+    case("decision 5 over the REAL repository: every A–C source is two gaps (name, bytes), and the real recall "
+         "declaration's installed files are none",
+         lambda: (lambda d5: (len(decision5_gaps([f"docs/memory/{n}" for n in d5[0]], d5, REPO)),
+                              decision5_gaps(real["recall"]["installed_files"], d5, REPO)))(decision5(REPO)),
+         (32, []))
 
     def real_gaps(pkg: str, drop: str) -> list:
         d = json.loads(json.dumps(real[pkg]))
