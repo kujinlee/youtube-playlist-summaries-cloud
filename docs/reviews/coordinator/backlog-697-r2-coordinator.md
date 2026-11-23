@@ -46,6 +46,7 @@ The redesign removes both choices.
     - The same file shipped by a package other than recall is red.
     - The real tree stays at 0 gaps.
   - The docstring's BOUND about outside-directory files is deleted, because it is no longer true.
+  - **Fixed in 45847ecf.**
 - **X5 (MAJOR, fix-induced) — ACCEPT. Read the builder through an exact success contract.**
   - A PASS requires all three:
     - rc 0;
@@ -58,5 +59,14 @@ The redesign removes both choices.
     - rc 0, a garbage line, then `PASS:`;
     - rc 0, a `PASS:` line with different text.
   - A mutation per clause.
+  - **Fixed in 45847ecf.**
 
 Round 3 alternates to the Claude half. From round 4, findings are FILED unless a BLOCKER (`review-method.md` §0 Q4c).
+
+## The fold's measurement (X4)
+
+Over every file every package ships, the check found **1 hit**: `scripts/gen-backlog-page.py`, a code comment in the comprehensibility package that quotes the owner's 2026-11-02 request word for word. That is one of group D's quotes.
+
+**This is a true positive, not a false alarm.** An owner quote was shipping unparaphrased, which is exactly what decision 5 forbids. The round-1 fold's directory filter hid it.
+
+**Decision (coordinator, 11-23 07:32):** paraphrase the comment. The rule stays whole, and the check gets no allowlist.
