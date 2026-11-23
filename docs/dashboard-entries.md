@@ -21355,6 +21355,25 @@ grade in one cell), `--render`, exit codes in rank order: inputs unreadable 2, a
 live run joins in Task 20. Live run: rc 1, 34 `[missing]` effort (3) components, 0 errors on the 12 existing rows.
 Backlog #696: (a), (c), (f) resolved; (d), (e) open. check-shipping-sets edge pin 358 -> 360.
 
+## 2026-11-22
+The marketplace inventory is complete: all 46 components have a row, and the checker passes every one. The 34
+comprehensibility components came out as 32 needing work and 2 not to ship (two shared instruction files that nothing
+in the package reads). None can ship yet, and the reason is measured: when a stranger installed the package, its
+scripts looked for the user's files in the package's own folder, and no page could get its question box, because
+that box is copied from a page that already has one. With every row in, the checker's stop signal fired: for most of
+the first-release rows, reaching the public bar costs at least three times what the next project would pay. That is
+your stop (Human step H4) before anything is published. Two lessons from it were written up as portable practices
+27 and 28.
+<!--tech-->
+Marketplace slice F, plan Task 20, branch `marketplace-task20`. `docs/marketplace/inventory.json`: 34 effort (3) rows
+(32 NEEDS-WORK, 2 DON'T-SHIP; grades 14 measured, 7 argued, 13 none), `written_by` effort-3 = plan Task 20. The 13
+exercised entry points with a failing tier-A condition rest on their own `experiment` ground; contract-explainer-delivery
+is graded measured through skill-brief's failure on its :2:1 invocation; libraries whose importers all failed on
+defects attributed elsewhere are graded none (spec §4). contract-handoff-path and contract-corpus-search: no importer
+in the package, DON'T-SHIP on spec §4's orphan rule. page-chrome, page-markup, fixture-git: NEEDS-WORK on spec §4b's
+"no way to assess it". New `docs/portable-practices.md` §27 (two roots, `${CLAUDE_PLUGIN_ROOT}`; spec §4 item 9b) and
+§28 (a copy-from-an-instance component cannot bootstrap; S2). `ci.yml` gains the live `check-inventory.py` step: rc 3
+printed and passed, rc 1 and 2 fail. Live run: rc 3, the D1 checkpoint fired over 34 phase-1 rows.
 ## 2026-11-23
 The check that keeps the owner's quoted words out of the memory files a stranger receives now reads each file the way
 a reader sees it, rendered as Markdown, instead of guessing at Markdown with patterns. Four review rounds had each
