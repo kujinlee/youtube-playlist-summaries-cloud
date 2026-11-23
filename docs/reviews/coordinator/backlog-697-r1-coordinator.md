@@ -43,6 +43,7 @@ I traced this myself, and the finding has two parts.
 - File a backlog row: "the recall package ships no filtered index, and its install layout does not reach recall-llm's memory directory", with Task 21 as its trigger.
 - The owner sees that row at Task 21, which is their stop anyway.
 - Building a committed copy of the corpus here would duplicate 173 files that go stale on every memory edit. That is a dev-speed cost I will not buy without the owner.
+- **Fixed in ee50df85.** The reason is corrected in `components.json` and the dashboard entry; filed as backlog #707.
 
 ## Dispositions
 
@@ -52,12 +53,17 @@ I traced this myself, and the finding has two parts.
   - Fix: `--closure` runs the builder's OWN quote check over the files the recall package ships. Copy them flat by basename into a scratch dir and call `build-shipped-corpus.py --check DIR` as a subprocess. That is one rule in one place, through the script's CLI, which PR #620 keeps stable, and never its internals.
   - A nonzero rc or unreadable output from that call means CANNOT RUN, never `0 gaps`.
   - Case: X2's constructed input (a D source plus one frontmatter line), red on aac34e33 first, plus the adjacent paraphrase that passes.
+  - **Fixed in ee50df85.**
 - **X3 (MINOR):** the `inventory.json` recall row (~line 514) still says 196 raw files and that backlog #697 is to come. ACCEPT: rewrite it to the new declaration, keeping the separate portability and content-review status.
+  - **Fixed in ee50df85.**
 - **M2 (MINOR):** if `groups` or `_canon_sha` moves, or the builder is removed, `--closure` raises a traceback (rc 1) instead of CANNOT RUN (rc 2). ACCEPT. PR #620 is rewriting that file now.
   - Move the load inside the `try`, and catch `ImportError`/`AttributeError`/`OSError`.
   - Add a case with a builder stub missing a name.
+  - **Fixed in ee50df85.**
 - **M3 (MINOR):** a mutation replacing `_canon_sha` with `_sha` at the `decision5_gaps` call sites survives. ACCEPT: add a case shipping a CRLF and trailing-whitespace copy of an A–C source, plus that mutation.
+  - **Fixed in ee50df85.**
 - **N1 (NIT):** the dashboard entry says "140 -> 148", but the suite prints 149. ACCEPT: derive the count from the run.
+  - **Fixed in ee50df85.**
 
 Round 2 alternates to ONE half. Codex runs it, because it reported the MAJOR (`review-method.md` → *Round topology*).
 
