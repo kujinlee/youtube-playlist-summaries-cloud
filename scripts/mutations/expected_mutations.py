@@ -2577,7 +2577,11 @@ EXPECTED_MUTATIONS = {
     # unreadable run, a traceback, unread hit lines: X2), a builder that cannot be loaded (a missing name, no file:
     # M2), and the canonical hash at the call site (M3).
     # 3 anchors re-bound (the plugin and reusable-workflow skips, the unreadable-table return); none retired.
-    "scripts/check-shipping-sets.py": 209,
+    # ⟳ 2026-11-23 backlog #697 r2 fold: 209 - 1 + 7 = 215 — every shipped file is quote-checked (the filter coming
+    # back; a declared file the repository lacks: X4) and the builder's exact success contract (stderr, the exact PASS
+    # line, the count line, its file count, every other line: X5). Retired 1: r1's "not only the corpus directories"
+    # mutation, whose anchor (the filter) is gone.
+    "scripts/check-shipping-sets.py": 215,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.

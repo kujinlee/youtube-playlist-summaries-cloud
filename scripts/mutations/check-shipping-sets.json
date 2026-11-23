@@ -2288,14 +2288,80 @@
     "expect": "M3: a CRLF, trailing-space copy of a group-A source under ANOTHER name is a gap — the match is canonical"
   },
   {
-    "name": "backlog #697 r1: every shipped file is quote-checked, not only the corpus directories' files",
+    "name": "backlog #697 r2 X4: the corpus-directory filter comes back — a group-D quote shipped outside them passes",
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        " and source_path(f).startswith(CORPUS_DIRS))",
-        ")"
+        "    corpus = sorted(f for f in files if f != PLUGIN_META and (root / source_path(f)).is_file())\n",
+        "    corpus = sorted(f for f in files if f != PLUGIN_META and (root / source_path(f)).is_file()\n                    and f.startswith((\"docs/memory/\", \"docs/marketplace/shipped-corpus/\")))\n"
       ]
     ],
-    "expect": "X2, direct: only a file under a corpus directory is quote-checked — the same raw D text outside one is not"
+    "expect": "X4: a group-D source with ONE line added, shipped as `notes/test.md` OUTSIDE the corpus directories, is red"
+  },
+  {
+    "name": "backlog #697 r2 X4: a declared file the repository lacks is copied — CANNOT RUN hides the declaration's own gap",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        " and (root / source_path(f)).is_file())\n",
+        ")\n"
+      ]
+    ],
+    "expect": "CM2: a reusable-workflow entry that carries installed_files was installed (plan Task 6) → a gap; and one whose files differ from the map's is a gap"
+  },
+  {
+    "name": "backlog #697 r2 X5: stderr on a PASS is ignored",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if stderr.strip():\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "X5: rc 0 with a message on stderr, then the PASS line, is CANNOT RUN, rc 2 — stderr must be empty"
+  },
+  {
+    "name": "backlog #697 r2 X5: any final line beginning `PASS:` is read as the PASS line",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if not lines or lines[-1] != PASS_LINE:\n",
+        "    if not lines or not lines[-1].startswith(\"PASS:\"):\n"
+      ]
+    ],
+    "expect": "X5: rc 0 with a `PASS:` line of different text is CANNOT RUN, rc 2 — the final line is EXACTLY the PASS line"
+  },
+  {
+    "name": "backlog #697 r2 X5: a run with no count line before its PASS line is read as clean",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if not count:\n        return \"the line before the PASS line is not its count line\"\n",
+        "    if not count:\n        return \"\"\n"
+      ]
+    ],
+    "expect": "X5: rc 0 with no count line at all (only the per-source lines and PASS) is CANNOT RUN, rc 2"
+  },
+  {
+    "name": "backlog #697 r2 X5: a count line naming a different number of files than were copied is read as clean",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if int(count.group(1)) != copied:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "X5: rc 0 whose count line says it checked a DIFFERENT number of files than were copied is CANNOT RUN"
+  },
+  {
+    "name": "backlog #697 r2 X5: a stdout line a clean run never prints is accepted before the count line",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "        if not CLEAN_SOURCE_RE.match(ln):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "X5: rc 0 with a garbage line before the PASS line is CANNOT RUN, rc 2 — every line must be one it prints"
   }
 ]

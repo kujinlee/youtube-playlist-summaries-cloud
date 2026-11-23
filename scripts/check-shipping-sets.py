@@ -2,7 +2,7 @@
 """The component map, checked for completeness against what is on disk (marketplace-inventory plan, Task 5;
 spec §3: "every supporting artifact maps to a component, to a package, or to a written exclusion").
 
-    python3 scripts/check-shipping-sets.py --self-test  # 160 cases
+    python3 scripts/check-shipping-sets.py --self-test  # 170 cases
     python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
     python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json [MAP]
 
@@ -996,7 +996,6 @@ def closure_gaps(decl: dict, reached: set[str], repo: Path = REPO) -> list[str]:
 
 
 CORPUS_BUILDER = "build-shipped-corpus.py"
-CORPUS_DIRS = ("docs/memory/", "docs/marketplace/shipped-corpus/")   # where the shipped corpus's files come from
 CHECK_TIMEOUT = 120
 
 
@@ -1051,19 +1050,46 @@ def decision5_gaps(files, d5: tuple[dict, dict, object], root: Path) -> list[str
 
 HIT_RES = (re.compile(r"^(QUOTE FROM \S+) IN (.+?): "), re.compile(r"^(EXCLUDED FILE PRESENT): (.+)$"),
            re.compile(r"^(EXCLUDED CONTENT PRESENT): (.+) is (\S+)$"))
+# The builder's success contract (review r2 X5): EXACTLY what `build-shipped-corpus.py`'s `check()` prints on a clean
+# run — its `report` (one `  <D source>: <n> quotes` line per group-D source, then the `checked ...` count line), then
+# its PASS line. Taken from that symbol; a change there is a CANNOT RUN here until these follow it.
+CLEAN_SOURCE_RE = re.compile(r"^  \S.*: \d+ quotes$")
+CLEAN_COUNT_RE = re.compile(r"^checked (\d+) output files for \d+ quote fragments and \d+ excluded names$")
+PASS_LINE = "PASS: no group-D quote and no excluded file in the output"
+
+
+def _not_clean(lines: list[str], stderr: str, copied: int) -> str:
+    """'' when a builder run that exited 0 printed exactly its clean-run output (`CLEAN_SOURCE_RE`, `CLEAN_COUNT_RE`,
+    `PASS_LINE`) over the `copied` files and nothing on stderr; otherwise which clause it broke. The output itself
+    is never echoed: a line the builder did not mean to print may carry a quote."""
+    if stderr.strip():
+        return "it wrote to stderr"
+    if not lines or lines[-1] != PASS_LINE:
+        return "its last line is not the PASS line"
+    count = CLEAN_COUNT_RE.match(lines[-2]) if len(lines) >= 2 else None
+    if not count:
+        return "the line before the PASS line is not its count line"
+    if int(count.group(1)) != copied:
+        return f"it says it checked {count.group(1)} file(s), and {copied} were copied"
+    for i, ln in enumerate(lines[:-2], 1):
+        if not CLEAN_SOURCE_RE.match(ln):
+            return f"stdout line {i} is not one it prints on a clean run"
+    return ""
 
 
 def decision5_quotes(files, root: Path) -> list[str]:
-    """Decision 5's CONTENT rule (review r1 X2): no group-D quote ships unparaphrased. The files a package ships
-    from the corpus directories (CORPUS_DIRS) are copied, flat by basename, into a scratch directory, and the
-    builder's OWN `--check` is run over it, as a subprocess, through its CLI — one rule, one place. Each hit it
-    names is a gap, with the quote itself left out (the corpus's quotes are private; only the source is named).
-    A run that is not a clean PASS (rc 0, last line `PASS:`) or a readable FAIL (rc 1, every hit line parsed, the
-    count it states) is CANNOT RUN — a nonzero rc, a traceback, a timeout or unreadable output is never `0 gaps`.
-    ⚠ BOUND: a file shipped from OUTSIDE the corpus directories is not quote-checked (the bytes and name clauses
-    still read it); a paraphrase gone STALE against its source is the builder's `--out` check (`sources.json`), not
+    """Decision 5's CONTENT rule (review r1 X2): no group-D quote ships unparaphrased. EVERY file a package ships,
+    whatever its path (review r2 X4: an owner quote rode in a script's comment), is copied, flat by basename, into a
+    scratch directory, and the builder's OWN `--check` is run over it, as a subprocess, through its CLI — one rule,
+    one place. Each hit it names is a gap, with the quote itself left out (the corpus's quotes are private; only the
+    source is named). A run that is neither the builder's exact clean PASS (rc 0, `_not_clean` empty: review r2 X5)
+    nor a readable FAIL (rc 1, every hit line parsed, the count it states) is CANNOT RUN — a nonzero rc, a
+    traceback, a timeout, stderr on a PASS or any line a clean run does not print is never `0 gaps`.
+    ⚠ BOUND: a paraphrase gone STALE against its source is the builder's `--out` check (`sources.json`), not
     `--check`'s, so not this one's; and the builder's own bounds apply (its docstring, *What this cannot see*)."""
-    corpus = sorted(f for f in files if f != PLUGIN_META and source_path(f).startswith(CORPUS_DIRS))
+    # A declared file the repository does not hold ships nothing to quote: its absence is the other clauses' gap
+    # (`materialize` is CANNOT RUN over a plugin's, `agreement` a gap over a reusable workflow's), never hidden here.
+    corpus = sorted(f for f in files if f != PLUGIN_META and (root / source_path(f)).is_file())
     if not corpus:
         return []
     builder = root / "scripts" / CORPUS_BUILDER
@@ -1087,7 +1113,9 @@ def decision5_quotes(files, root: Path) -> list[str]:
     why = f"decision 5's quote check: {CORPUS_BUILDER} --check exited {r.returncode}"
     if "Traceback" in r.stderr:
         raise CannotRun(f"{why} with a traceback: {r.stderr.strip().splitlines()[-1]}")
-    if r.returncode == 0 and lines and lines[-1].startswith("PASS:"):
+    if r.returncode == 0:
+        if bad := _not_clean(lines, r.stderr, len(where)):
+            raise CannotRun(f"{why}, and its output is not the builder's clean PASS: {bad}")
         return []
     if r.returncode != 1 or not lines or not re.match(r"^FAIL: \d+ hit\(s\)$", lines[-1]):
         raise CannotRun(f"{why}: {(r.stderr.strip() or (lines[-1] if lines else 'no output'))[:200]}")
@@ -2376,12 +2404,14 @@ def _self_test_body() -> int:
               "source shipped raw",
               "recall: gap: decision-5: docs/memory/c2.md — build-shipped-corpus.py --check: EXCLUDED FILE PRESENT",
               "recall: 0 cwd-relative hand-off(s), 0 external read(s)", "3 gaps"], ""))
+    # Red by the bytes clause, and (review r2 X4: every shipped file is read) by the builder's own check too.
     case("CLI: a reusable-workflow package whose file carries a group-C source's bytes is red, rc 1",
          lambda: clo("--closure", sets_file(d5_cli, {"wf": {"channel": "reusable-workflow", "components": {
              "job": {"files": ["scripts/w.yml"], "expected_count": 1}}}}), root=d5_cli),
          (1, ["wf: gap: decision-5: scripts/w.yml — its bytes are docs/memory/c5.md's (group C), a decision-5 source "
               "shipped raw",
-              "wf: SKIPPED — reusable-workflow channel, no installed tree", "1 gaps"], ""))
+              "wf: gap: decision-5: scripts/w.yml — build-shipped-corpus.py --check: EXCLUDED CONTENT PRESENT (c5.md)",
+              "wf: SKIPPED — reusable-workflow channel, no installed tree", "2 gaps"], ""))
     def d5_missing():
         r = tree({".agents/skills/b/SKILL.md": "b\n"})
         sets = sets_file(r, {"pkg": decl_of(["skills/b/SKILL.md"])})
@@ -2394,17 +2424,18 @@ def _self_test_body() -> int:
          lambda: (lambda d: (len(d[0]), len(d[1])))(decision5(REPO)), (16, 22))
 
     # ---- decision 5, round 1 (backlog #697): CONTENT through the builder's own `--check`, and every load is guarded
-    def d5_ship(files: dict, decl_files: list, builder=None, unlink=()) -> tuple:
-        """`--closure` over a plugin `recall` that installs `decl_files`, in a decision-5 world holding `files`;
-        `builder` replaces the root's corpus builder with that text, and each of `unlink` is removed."""
+    def d5_ship(files: dict, decl_files: list, builder=None, unlink=(), pkg="recall", parts=3) -> tuple:
+        """`--closure` over a plugin `pkg` that installs `decl_files`, in a decision-5 world holding `files`;
+        `builder` replaces the root's corpus builder with that text, and each of `unlink` is removed. Of stderr,
+        the first `parts` `: `-separated parts are kept."""
         r = d5_with({".agents/skills/b/SKILL.md": "b\n", **files})
-        sets = sets_file(r, {"recall": decl_of(["skills/b/SKILL.md"] + decl_files)})
+        sets = sets_file(r, {pkg: decl_of(["skills/b/SKILL.md"] + decl_files)})
         if builder is not None:
             (r / "scripts" / CORPUS_BUILDER).write_text(builder)
         for rel in unlink:
             (r / rel).unlink()
         rc, out, err = clo("--closure", sets, root=r)
-        return rc, [ln for ln in out if "decision-5" in ln] + out[-1:], ": ".join(err.split(": ")[:3])
+        return rc, [ln for ln in out if "decision-5" in ln] + out[-1:], ": ".join(err.split(": ")[:parts])
     para = "docs/marketplace/shipped-corpus/d1.md"
     case("X2: a raw group-D source with ONE line added, shipped as its paraphrase, is red — the builder's own quote "
          "check reads its CONTENT, not its bytes",
@@ -2442,11 +2473,65 @@ def _self_test_body() -> int:
              d5_with({"notes/kept.md": d5_src("a2.md").replace("\n", "  \r\n")})),
          ["gap: decision-5: notes/kept.md — its bytes are docs/memory/a2.md's (group A), a decision-5 source "
           "shipped raw"])
-    case("X2, direct: only a file under a corpus directory is quote-checked — the same raw D text outside one is not",
+    # ---- decision 5, round 2 (backlog #697): EVERY shipped file is quote-checked (X4), and a run is read through
+    # the builder's exact success contract (X5) -------------------------------------------------------------------
+    case("X4, direct: every shipped file is quote-checked, whatever its path — the raw D text outside a corpus "
+         "directory is a gap too",
          lambda: (lambda r: decision5_quotes(["notes/d1.md", para], r))(
              d5_with({"notes/d1.md": d5_src("d1.md"), para: "x\n" + d5_src("d1.md")})),
-         [f"gap: decision-5: {para} — build-shipped-corpus.py --check: QUOTE FROM d1.md"])
-    case("X2 over the REAL repository: the real recall declaration's corpus files pass the builder's quote check",
+         [f"gap: decision-5: {para} — build-shipped-corpus.py --check: QUOTE FROM d1.md",
+          "gap: decision-5: notes/d1.md — build-shipped-corpus.py --check: QUOTE FROM d1.md"])
+    case("X4: a group-D source with ONE line added, shipped as `notes/test.md` OUTSIDE the corpus directories, is red",
+         lambda: d5_ship({"notes/test.md": "description: a lesson\n" + d5_src("d1.md")}, ["notes/test.md"]),
+         (1, ["recall: gap: decision-5: notes/test.md — build-shipped-corpus.py --check: QUOTE FROM d1.md", "1 gaps"], ""))
+    case("X4: the same file shipped by a package OTHER than recall is red — the rule is every package's",
+         lambda: d5_ship({"notes/test.md": "description: a lesson\n" + d5_src("d1.md")}, ["notes/test.md"],
+                         pkg="comprehensibility"),
+         (1, ["comprehensibility: gap: decision-5: notes/test.md — build-shipped-corpus.py --check: QUOTE FROM d1.md",
+              "1 gaps"], ""))
+    case("X4, adjacent: a file outside the corpus directories that quotes nothing is `0 gaps`, rc 0",
+         lambda: d5_ship({"notes/test.md": "description: a lesson\nThe rule, said another way.\n"}, ["notes/test.md"]),
+         (0, ["0 gaps"], ""))
+
+    def tampered(edit: str) -> str:
+        """The root's builder, its `check` renamed `_real_check` and wrapped: the wrapper runs the REAL check and
+        then applies `edit` (Python statements over `rc` and `lines`), so each case below differs from a genuine
+        clean run by exactly the one thing its name says."""
+        return builder_src.replace("\ndef check(root", "\ndef _real_check(root").replace(
+            '\nif __name__ == "__main__":',
+            "\ndef check(root, out):\n    rc, lines = _real_check(root, out)\n"
+            + "".join(f"    {ln}\n" for ln in edit.splitlines()) + "    return rc, lines\n\n\nif __name__ == '__main__':")
+    clean_ship = ({para: "The rule, said another way.\n"}, [para])
+    case("X5, the control: a builder wrapped to change NOTHING is still the builder's clean PASS — `0 gaps`, rc 0",
+         lambda: d5_ship(*clean_ship, builder=tampered("pass")), (0, ["0 gaps"], ""))
+    case("X5: rc 0 with a message on stderr, then the PASS line, is CANNOT RUN, rc 2 — stderr must be empty",
+         lambda: d5_ship(*clean_ship, parts=4,
+                         builder=tampered("import sys\nprint('error: the check was skipped', file=sys.stderr)")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: it wrote to stderr"))
+    case("X5: rc 0 with a garbage line before the PASS line is CANNOT RUN, rc 2 — every line must be one it prints",
+         lambda: d5_ship(*clean_ship, parts=4, builder=tampered("lines = ['garbage'] + lines")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: stdout line 1 is not one it prints on a clean run"))
+    case("X5: rc 0 with a `PASS:` line of different text is CANNOT RUN, rc 2 — the final line is EXACTLY the PASS line",
+         lambda: d5_ship(*clean_ship, parts=4, builder=tampered("lines = lines[:-1] + ['PASS: ok']")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: its last line is not the PASS line"))
+    case("X5: rc 0 whose count line says it checked a DIFFERENT number of files than were copied is CANNOT RUN",
+         lambda: d5_ship(*clean_ship, parts=4, builder=tampered(
+             "import re\nlines[-2] = re.sub(r'^checked (\\d+)', lambda m: f'checked {int(m.group(1)) + 1}', lines[-2])")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: it says it checked 3 file(s), and 2 were copied"))
+    case("X5: rc 0 with no count line at all (only the per-source lines and PASS) is CANNOT RUN, rc 2",
+         lambda: d5_ship(*clean_ship, parts=4, builder=tampered("lines = lines[:-2] + lines[-1:]")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: the line before the PASS line is not its count line"))
+    case("X5: rc 0 with only a fabricated `PASS:` line is CANNOT RUN, rc 2",
+         lambda: d5_ship(*clean_ship, parts=4, builder=tampered(f"lines = [{PASS_LINE!r}]")),
+         (2, [], "CANNOT RUN: decision 5's quote check: build-shipped-corpus.py --check exited 0, and its output is not "
+          "the builder's clean PASS: the line before the PASS line is not its count line"))
+    case("X2 over the REAL repository: every file the real recall declaration installs passes the builder's quote "
+         "check",
          lambda: decision5_quotes(json.loads((REPO / "docs/marketplace/shipping-sets.json").read_text())
                                   ["packages"]["recall"]["installed_files"], REPO), [])
 

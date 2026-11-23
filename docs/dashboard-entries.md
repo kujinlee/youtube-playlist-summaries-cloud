@@ -21395,3 +21395,12 @@ ships (copied flat), so an unparaphrased D quote is a gap; a nonzero rc, a trace
 RUN, as is a builder missing `groups`/`_canon_sha`. Self-test 140 -> 160 (149 before the fold), 14 mutations
 (195 -> 209), all red on their named case in a full clone. Edge pin
 361 -> 362 (`check-shipping-sets.py` -> `build-shipped-corpus.py`).
+Round-2 fold (review r2 X4, X5): the quote check reads EVERY file every package ships, whatever its path (the
+corpus-directory filter is gone; a declared file the repository lacks is skipped, its absence being the other
+clauses' gap), and a builder run that exits 0 is read through its exact clean-run output, taken from
+`build-shipped-corpus.py`'s `check()`: empty stderr, one `<source>: <n> quotes` line per group-D source, the
+`checked <n> output files ...` line with the number of files copied, then exactly its PASS line. Anything else is
+CANNOT RUN. X4's measurement found one real unparaphrased owner quote shipping in comprehensibility (a code
+comment); paraphrased. The real tree is `0 gaps`. Self-test 160 -> 170, mutations 209 -> 215 (7 new, 1 retired with
+the filter), the 7 new and the 13 earlier decision-5 ones red on their named case in a full clone. Edge pin unmoved.
+Priced 13.0 -> 17.0 s.
