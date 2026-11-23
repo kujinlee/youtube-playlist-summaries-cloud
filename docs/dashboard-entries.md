@@ -21374,3 +21374,19 @@ in the package, DON'T-SHIP on spec §4's orphan rule. page-chrome, page-markup, 
 "no way to assess it". New `docs/portable-practices.md` §27 (two roots, `${CLAUDE_PLUGIN_ROOT}`; spec §4 item 9b) and
 §28 (a copy-from-an-instance component cannot bootstrap; S2). `ci.yml` gains the live `check-inventory.py` step: rc 3
 printed and passed, rc 1 and 2 fail. Live run: rc 3, the D1 checkpoint fired over 34 phase-1 rows.
+
+## 2026-11-23
+The recall package no longer installs the memory files you excluded for the marketplace. It used to list every memory
+file, including the 16 you excluded and the six whose quotes you asked to have paraphrased, in their original form.
+Now it installs the kept files and the six paraphrased versions, and the package checker refuses any package that
+would ship an excluded file or an unparaphrased one. The memory index file no longer ships either, because it links
+the excluded files. Nothing is published before your stop at plan Task 21.
+<!--tech-->
+Backlog #697, branch `backlog-697`. `docs/marketplace/components.json`: `memory-corpus` lists 179 files (173 kept
+`docs/memory/` files plus the 6 paraphrases in `docs/marketplace/shipped-corpus/`); 23 new exact exclusions (16 A–C,
+6 raw D, `MEMORY.md`). `shipping-sets.json` re-derived by `mkt_stage.py --declare` (recall memory-corpus 196 -> 179).
+`check-shipping-sets.py --closure` gains `decision5`/`decision5_gaps`, which parse decision 5 with
+`build-shipped-corpus.py`'s own `groups`/`_canon_sha` (loaded, not copied). A gap is a file named for an A–C file, or
+one whose canonical bytes equal an A–D source, in plugin and reusable-workflow packages; an unreadable table is
+CANNOT RUN. Self-test 140 -> 148, 6 mutations (195 -> 201), all red on their named case in a full clone. Edge pin
+361 -> 362 (`check-shipping-sets.py` -> `build-shipped-corpus.py`).
