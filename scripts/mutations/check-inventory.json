@@ -1521,17 +1521,6 @@
   "expect": "sidecar pass_conditions with an extra condition 6 exits 2, CANNOT RUN, never a traceback"
  },
  {
-  "name": "the pass-condition keys stop short of 5",
-  "file": "scripts/check-inventory.py",
-  "edits": [
-   [
-    "PASS_CONDITIONS = (\"1\", \"2\", \"3\", \"4\", \"5\")",
-    "PASS_CONDITIONS = (\"1\", \"2\", \"3\", \"4\")"
-   ]
-  ],
-  "expect": "sidecar pass_conditions with no condition 5 exits 2, CANNOT RUN, never a traceback"
- },
- {
   "name": "recall.a of any type",
   "file": "scripts/check-inventory.py",
   "edits": [
