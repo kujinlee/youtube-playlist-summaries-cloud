@@ -21398,7 +21398,7 @@ RUN, as is a builder missing `groups`/`_canon_sha`. Self-test 140 -> 160 (149 be
 Round-2 fold (review r2 X4, X5): the quote check reads EVERY file every package ships, whatever its path (the
 corpus-directory filter is gone; a declared file the repository lacks is skipped, its absence being the other
 clauses' gap), and a builder run that exits 0 is read through its exact clean-run output, taken from
-`build-shipped-corpus.py`'s `check()`: empty stderr, one `<source>: <n> quotes` line per group-D source, the
+`build-shipped-corpus.py`'s `check()`: empty stderr, any number of `<source>: <n> quotes` lines, the
 `checked <n> output files ...` line with the number of files copied, then exactly its PASS line. Anything else is
 CANNOT RUN. X4's measurement found one real unparaphrased owner quote shipping in comprehensibility (a code
 comment); paraphrased. The real tree is `0 gaps`. Self-test 160 -> 170, mutations 209 -> 215 (7 new, 1 retired with
