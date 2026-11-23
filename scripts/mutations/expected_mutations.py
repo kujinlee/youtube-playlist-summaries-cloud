@@ -2524,6 +2524,20 @@ EXPECTED_MUTATIONS = {
     # excluded-content hash: per-line trailing whitespace, trailing blank lines, the excluded side canonical (r2 X2).
     # ⟳ round-3 fold: 27 — the plain view dropped from the output side, and from the quote side (r3 C1).
     "scripts/build-shipped-corpus.py": 27,
+    # 2026-11-22, marketplace-inventory plan Task 19: the inventory guard, pinned in the commit that creates it. One
+    # entry per load-bearing clause: the checkpoint (population, ratio, majority, the two CANNOT RUNs), every
+    # row_errors rule (backlog #696 a, c and f among them), every inventory-level rule, the exit-code ranking,
+    # the input loader and render's one verdict-and-grade cell. Each verified red by hand in a full clone.
+    # ⟳ r1 fold: 98 — the row shape pass, field by field. ⟳ r2 fold: 124 — the integer past the float range
+    # (CODEX X1), every input field a rule reads (CODEX X2's class check), JSON nested too deep, non-UTF-8 text.
+    # ⟳ Phase 6 fold (2026-11-22): 136 — the 25 `_check_inputs`/reader entries re-anchored on FILE_SHAPES leaves,
+    # plus one per new rule: depth, repeated key, `_one_of` by type, the three vocabularies, two reference rules,
+    # the net's rc, backslashreplace, and both readers' UTF-8 decode.
+    # ⟳ r4 fold (2026-11-22): 144 — the FILE_SHAPES leaves r4 CODEX found missing: pass_conditions EXACTLY "1".."5"
+    # (any keys, the closed check), recall.a and recall.b (each undeclared, each of any type), and scan (undeclared,
+    # of any type). Three entries re-anchored on the new declarations. A mutation of the key list itself is NOT
+    # attributable: every clean fixture case goes red with it, so it was measured caught and left out.
+    "scripts/check-inventory.py": 144,
     # ⟳ 2026-11-15, marketplace-inventory plan Task 3: the staging tool, pinned in the commit that creates it. One
     # entry per refusal in `plan` and its helpers (declared-path shape, absent, outside, dangling, cycle, kind, the
     # .agents/skills and .claude-plugin rules, empty, collision), per `stage` refusal and write rule (names, out

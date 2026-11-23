@@ -950,6 +950,7 @@ row with no `route` (§9 D10); a `practice` harvest with no `practice_entry` nam
 with a ship verdict while its `C5` is `unanswered` (§7 item 11); a `measured` grade on an effort (1) or (2) row
 (§2b); a cost with either estimate missing (§2b). And at the inventory level: no phase-1 package named, or a phase-1
 package with no entry in `shipping-sets.json` (§9 D11).
+⟳ r1 fold (CLAUDE C4): a library's `scenario` names its entry-point by the convention `<entry-point id>: <description>` (the component id before the first `:`), and that entry-point must be in the library's own package (§4: C4 is inherited from the entry-point that uses the library); a scenario that names none, or one from another package, is refused.
 
 The checkpoint, exactly as spec §2c states it (embedded because the threshold arithmetic is what the owner decided;
 it is run as written below). ⟳ r1 CODEX 2 / CLAUDE m3: the r0 function counted every `"1-if-feasible"` row, so
@@ -1012,7 +1013,15 @@ assert _raises([_row("1", 0, 0)])
 A `next_project_hours` of 0 is a row error (the ratio is undefined), never an automatic fire; the function also
 refuses it, so the order of the two checks cannot turn it into a fire.
 
-**Exit codes rank, and the order is the rule (⟳ r1 CLAUDE m2):** inputs unreadable or absent → **2**; else any
+**Exit codes rank, and the order is the rule (⟳ r1 CLAUDE m2):** **Inputs are read by one bounded reader and one
+walker.** `_read_json` returns a value that is UTF-8, free of NaN/Infinity and repeated keys, and at most `MAX_DEPTH`
+deep; `FILE_SHAPES` declares, per input file, every field a rule reads, and `_violations` is the only code that
+checks one. A field a rule compares with a literal is declared `_one_of` its vocabulary. A rule relating two places
+lives in `_reference_errors`. Any failure of these is **rc 2**. No message prints an input value except through
+`_show`. `main` is a net: an unanticipated exception is rc 2 with `INTERNAL ERROR`, never Python's exit 1. **Adding a
+rule that reads a new input field means adding that field to `FILE_SHAPES` in the same commit; a hand-written
+`isinstance` check in `load` is a defect.** (⟳ Phase 6 review 2026-11-22,
+`docs/reviews/architecture-review-2026-11-22-check-inventory-inputs.md` §5.6.) Else any
 row error → **1**, and the checkpoint is NOT computed (a fire over rows with errors is not evidence); else
 `checkpoint_fires` raising (no phase-1 rows — the only way left; inventory-level `row_errors` already refuses "no
 phase-1 package named") → **2**; else fired → **3**; else
@@ -1025,6 +1034,23 @@ phase-1 package named") → **2**; else fired → **3**; else
   naming a failing one), the checkpoint
   asserts above, `rows with an error AND a crossed threshold exit 1, not 3`, `render puts verdict and grade in one
   cell`, `a component in the map with no row is an error`. Red → implement → green → W1-W8 → commit.
+- [ ] **Input cases (⟳ Phase 6 review §5.3)**, each with its adjacent negative:
+
+  | Case | Negative beside it |
+  |---|---|
+  | a component whose `package` names no package is rc 2 | the same map with the package present |
+  | two components with one id is rc 2 (identical, and differing in effort) | distinct ids |
+  | channel `Plugin` is rc 2 | `plugin` |
+  | a map component `phase` of `2` is rc 2 (coordinator addition: the review's corpus case P9 was rc 0) | `1-if-feasible` |
+  | pass condition `FAIL` is rc 2; `failed` is rc 2 | `fail` is rc 1 `[ship-experiment]`; all `pass` is rc 0 |
+  | a repeated key in an object is rc 2 (in `components.json` and in `inventory.json`) | the key once |
+  | nesting of 33 is rc 2 | 32 is read |
+  | a lone surrogate in a row id prints escaped, with the row's rc | — |
+  | an ASCII-only stdout: a `[shape]` error and `--render` print, no traceback | — |
+  | a UTF-8 non-ASCII inventory is read under `LC_ALL=C` | — |
+  | an exception inside `_main` is rc 2 and prints `INTERNAL ERROR` | no `CANNOT RUN: ` prefix on that line |
+  | `CHANNELS` equals `check-shipping-sets.CHANNELS`, by import | — |
+  | **the fuzz**: every node of every fixture input replaced by each of 12 values, deleted, duplicated; no exception escapes `main` and no output contains `INTERNAL ERROR` | the same fuzz against a reader with the surrogate handling removed reports a crash (this is the mutation) |
 - [ ] **CI caller — `--self-test` ONLY in this task (⟳ r1 CODEX 6).** The live inventory is necessarily incomplete
   here (Tasks 17-18 wrote effort (2)/(1) rows; effort (3) rows come in Task 20), and a missing component is rc 1,
   so enabling the live run now would put CI red by construction. The live caller is added in **Task 20**, in the

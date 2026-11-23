@@ -228,3 +228,4 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #644 · one piece of work has one name: goal, anchor, feature node and ledger id agree, and a check keeps them agreeing
 - fix · PR #616 · plan Task 17: the CI layer's six inventory rows, each naming the ground its verdict rests on (spec §5 rule 1 as amended 11-22); compared with four mutation tools' own docs
 - fix · PR #617 · plan Task 18: the recall effort's six inventory rows, the empty-corpus probe, and the shipped memory corpus built from the content review with its two output checks
+- fix · PR #618 · plan Task 19: the inventory checker: every row's grade, ground and route resolved against the file that owns it, and the D1 checkpoint computed only over an inventory with no errors

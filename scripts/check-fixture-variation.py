@@ -345,6 +345,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # marketplace-inventory plan Task 18 (2026-11-22): the shipped-corpus build. DERIVED by running `analyse()` on the
     # delivered source: 8 keys. ⟳ round-1 fold: 9 — `norm.text` is examined since `norm` gained its own case.
     # ⟳ round-3 fold: 10 — `norm.links`, the plain view beside the link-reduced one (r3 C1).
+    # marketplace-inventory plan Task 19 (2026-11-22): the inventory guard. DERIVED by running `analyse()` on the
+    # delivered source: 11 keys.
+    "check-inventory.py": ("checkpoint_fires.rows", "inventory_errors.ctx", "inventory_errors.inventory",
+                           "inventory_errors.latest_scan", "main.argv", "render.rows", "row_errors.ctx",
+                           "row_errors.row", "row_errors.scan", "row_errors.sidecar", "row_errors.spec_text"),
     "build-shipped-corpus.py": ("build.out", "build.root", "check.out", "check.root", "fragments.quote",
                                 "groups.decision_text", "norm.links", "norm.text", "quotes.text", "windows.fragment"),
     "mkt_isolate.py": ("build_world.allow", "build_world.root", "explainer_port.env", "main.argv", "preflight.port",

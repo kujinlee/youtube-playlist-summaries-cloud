@@ -925,6 +925,12 @@ jobs:
       - name: build-shipped-corpus self-test
         run: python3 scripts/build-shipped-corpus.py --self-test
 
+      # The marketplace inventory guard (marketplace-inventory plan, Task 19): row_errors, the D1 checkpoint and
+      # render, over fixture worlds. --self-test ONLY: the live run joins CI in Task 20, with the completed rows
+      # (until then every effort-3 component without a row is rc 1 by construction).
+      - name: check-inventory self-test
+        run: python3 scripts/check-inventory.py --self-test
+
       # The component map's completeness check (marketplace-inventory plan, Task 5): every supporting
       # artifact is in a component or a reasoned exclusion, and no glob exclusion hides a file a
       # package executes. The map is checked against the tree this run checked out.
