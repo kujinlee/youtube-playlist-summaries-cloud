@@ -184,7 +184,7 @@ table.comp td:first-child{white-space:nowrap}
 
 <main class="ex-body">
 <h1>Publishable components: cost by dependency closure, and the order to publish them</h1>
-<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-11-23 11:31 · dcfd44cb</time></span></div></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-11-23 12:12 · dcfd44cb</time></span></div></div>
 <div class="ex-decision-count" role="status">✍ <b>4</b> decisions on this page · <b>4</b> remaining · <b>0</b> answered · next: <a href="#ex-decision-1">Q1 — DECISION 1</a></div>
 <p class="reading"><b>Reading chosen:</b> this page is the <b>steering document</b> for the marketplace's next phase. It covers every component in the inventory (46 rows, of which 34 are phase 1) and, for each one:
 <ul><li>what it costs to publish, both on its own and together with everything it drags in (its <b>dependency closure</b>);</li>
@@ -322,6 +322,7 @@ It then proposes the order in which to publish them. <b>As of</b> master <code>d
 <h2>5. Every component</h2>
 <p><b>How to read the table:</b></p>
 <ul>
+<li><b>Verdicts</b> (SHIP / NEEDS-WORK / DON'T-SHIP) and criteria C1–C5 are defined in <code>docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>; this page only reads them.</li>
 <li><b>Sort order:</b> phase-1 components in wave order, then the "later" ones.</li>
 <li><b>Hours:</b> the own and closure-today hours are measured sums of argued estimates. The "after cuts" column assumes cuts A–D.</li>
 <li><b>Failing criteria:</b>
