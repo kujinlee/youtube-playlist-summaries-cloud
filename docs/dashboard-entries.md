@@ -21375,3 +21375,8 @@ with URLs dropped, plus the raw bytes with Cf deleted; a source quote is fragmen
 Every renderer call carries a pinned probe; stderr, non-UTF-8 output or a wrong probe is CANNOT RUN. Self-test 41 ->
 51 cases (17 disguises, 867 plants); mutations 34 -> 51. `check-canonical-source.py` stages `node_modules/markdown-it/`
 (the cause of CI's `verify` and `mutation-sweep (3)` reds on 0fb65173).
+PR #620 round-2 fold: every view is also searched letters-only (casefolded, all but letters and digits deleted), so a
+run mixing a joined and a split boundary is found; master's link-reduced reading is restored on the output and the
+source quote; whitespace-only stderr is CANNOT RUN; a closed `<details>` body is unshown text. Self-test 51 -> 63
+cases (18 disguises, 918 plants); mutations 51 -> 61. Over 3,492 benign Markdown files the letters-only view added 0
+hits.

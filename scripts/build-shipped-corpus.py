@@ -2,7 +2,7 @@
 """Build the memory corpus a stranger receives, and check the built output (marketplace-inventory plan, Task 18,
 step "Build the shipped corpus"; the owner's answer to walkthrough decision 5).
 
-    python3 scripts/build-shipped-corpus.py --self-test  # 51 cases
+    python3 scripts/build-shipped-corpus.py --self-test  # 63 cases
     python3 scripts/build-shipped-corpus.py --out DIR      # build into DIR, then run both checks on DIR
     python3 scripts/build-shipped-corpus.py --check DIR    # both checks on an already-built DIR
 
@@ -26,11 +26,15 @@ The two checks read the BUILT OUTPUT, never the transform:
      model of links it replaces). A BOUNDARY IS READ BOTH WAYS: where the layout cannot settle whether two pieces
      of text join (an image inside a word, an invisible format character, a block tag missing from the list, text
      a browser never shows), a TIGHT reading joins them (Unicode format characters deleted, an image's alt text and
-     every inline tag joined, the text of <style>, <script>, <template> and `hidden` elements dropped) and a LOOSE
-     reading separates them (every tag and image a break). Every view only ADDS hits: the three readings, each with
-     its URLs dropped too (a quote split by bare URLs), and the raw bytes, plain and with format characters deleted
-     (text a renderer hides). A source quote is fragmented in each of the three readings and in its plain Markdown
-     too. A source D file with no quote found in it is CANNOT RUN, not a pass (its quotes would go unsearched).
+     every inline tag joined, the text of <style>, <script>, <template> and `hidden` elements and the body of a
+     closed <details> dropped) and a LOOSE reading separates them (every tag and image a break). Since one run can
+     mix both (`ne<em>v</em>er<center>pay`), every view is ALSO searched LETTERS-ONLY: casefolded, every character
+     that is not a letter or digit deleted, a run's letters searched as a substring, so no boundary is left to read
+     either way. Every view only ADDS hits: the three readings, each with its URLs dropped too (a quote split by bare
+     URLs), the raw bytes, plain, with format characters deleted (text a renderer hides) and LINK-REDUCED as master
+     read them (a `[text](url)` or `[text][ref]` reduced to its text by regex). A source quote is fragmented in each
+     of the three readings, in its plain Markdown and link-reduced too. A source D file with no quote found in it is
+     CANNOT RUN, not a pass (its quotes would go unsearched).
   2. no excluded file is present anywhere in the output tree — by name, or by content (an output file whose
      CANONICAL bytes equal an excluded source file's, under any name: line endings unified, trailing whitespace
      dropped from each line, trailing blank lines dropped, on both sides).
@@ -47,10 +51,14 @@ sentence, a reused run of fewer than six words from a longer quote, a fragment u
 joined differently), a word spelled with look-alike letters from another script (a Cyrillic `а` for a Latin
 `a`: homoglyphs are not folded, so such a run is a miss), a run a reader sees only through a renderer OTHER than CommonMark (an Obsidian `[[note|alias]]`
 shows only its alias, a GFM table or footnote may lay words out differently) or only through styling (CSS that hides
-or reorders text), an excluded file's content in the output when it differs by more than line
+or reorders text), a renderer built to render the known probe correctly and nothing else (the probe proves the
+renderer ran, not that it rendered every other text honestly), an excluded file's content in the output when it differs by more than line
 endings and trailing whitespace (edited, or concatenated into another file), and private content that is not a
 quote. Words are matched as a substring of the normalised text, so a run inside longer words (`repay attention`)
-is a hit too: a false alarm, never a miss. Dangling `[[links]]` from kept files to excluded ones are left as they are.
+is a hit too, and so is a run whose letters appear in a row across other word breaks, or a run the link-reduced
+reading forms by deleting a look-alike link's visible words (`never [pay](extra words) attention`): false alarms,
+never misses. Measured 2026-11-23 over the 3,492 Markdown files under `docs/` and the repo root, the letters-only
+view added 0 hits to the word views' 294 (708 fragments, the shortest 12 letters), so it carries no minimum length. Dangling `[[links]]` from kept files to excluded ones are left as they are.
 """
 from __future__ import annotations
 
@@ -78,6 +86,9 @@ REPO = Path(__file__).resolve().parent.parent
 NODE = "node"
 MARKDOWN_IT = "node_modules/markdown-it/dist/markdown-it.min.js"
 URL = re.compile(r"(?:https?|ftp)://\S+|www\.\S+")
+# MASTER'S LINK-REDUCED READING (round 2 X2 of PR #620), restored add-only: `[text](url)` and `[text][ref]` reduced
+# to their text by regex, whatever CommonMark makes of them, so a look-alike link's words are deleted too.
+LINK = re.compile(r"\[([^\]\n]*)\](?:\([^)\n]*\)|\[[^\]\n]*\])")
 # Each Markdown text is rendered whole (its reference definitions collected in `env`), and each quote inline in the
 # env of the source file it came from, so a quote's `[text][ref]` resolves as a reader of that file sees it.
 _RENDER_JS = r"""
@@ -149,7 +160,7 @@ def render(docs: list[str], inline: list[tuple[int, str]]) -> tuple[list[str], l
         raise CannotRun(f"the CommonMark renderer could not run ({NODE}): {e}") from e
     if r.returncode != 0:
         raise CannotRun(f"the CommonMark renderer exited {r.returncode}: {r.stderr.strip()[-300:]}")
-    if r.stderr.strip():
+    if r.stderr:
         raise CannotRun(f"the CommonMark renderer wrote to stderr: {r.stderr.strip()[-300:]}")
     try:
         got = json.loads(r.stdout)
@@ -176,7 +187,8 @@ class _Visible(HTMLParser):
       * `loose`: every tag boundary, inline or block, listed or not (`<center>`, `<legend>`), and every image
         SEPARATES words.
     `tight` and `loose` also drop text a browser never shows: inside `<script>`, `<style>`, `<template>`, or an
-    element carrying `hidden` (round 1 C3); `read` keeps it."""
+    element carrying `hidden` (round 1 C3), and the body of a CLOSED `<details>` — its `<summary>` is shown, and an
+    `open` one shows all (round 2 X4); `read` keeps it."""
     BLOCK = frozenset("address article aside blockquote br dd details dialog div dl dt fieldset figcaption figure "
                       "footer form h1 h2 h3 h4 h5 h6 header hr li main nav ol p pre section summary table tbody td "
                       "tfoot th thead tr ul".split())
@@ -188,6 +200,15 @@ class _Visible(HTMLParser):
         self.parts: list[str] = []
         self.mode = mode
         self.hiding: tuple[str, int] | None = None     # (the unshown element's tag, its nesting depth)
+        self.details: list[bool] = []                   # each enclosing <details>: is it `open`?
+        self.summary: list[int] = []                    # each enclosing <summary>: its <details> depth
+
+    def _shown(self):
+        """Whether text here is shown by every enclosing `<details>`: an open one shows all, a closed one only its own
+        `<summary>` (so the innermost may be closed while we are in its summary)."""
+        d = self.details
+        own = len(d) - 1 if self.summary and self.summary[-1] == len(d) else len(d)
+        return all(d[:own])
 
     def _breaks(self, tag):
         """Whether a tag boundary is a break between words: a block tag in every reading, any tag in `loose`."""
@@ -205,7 +226,11 @@ class _Visible(HTMLParser):
             return
         if self._breaks(tag):
             self.parts.append(" ")
-        if tag == "img":
+        if self.mode != "read" and tag == "details":
+            self.details.append("open" in a)
+        elif self.mode != "read" and tag == "summary" and self.details:
+            self.summary.append(len(self.details))
+        elif tag == "img" and self._shown():
             alt = a.get("alt") or ""
             self.parts.append(alt if self.mode == "tight" else " " + alt + " ")
 
@@ -214,11 +239,17 @@ class _Visible(HTMLParser):
             if tag == self.hiding[0]:
                 self.hiding = (tag, self.hiding[1] - 1) if self.hiding[1] > 1 else None
             return
+        if tag == "details" and self.details:
+            self.details.pop()
+            while self.summary and self.summary[-1] > len(self.details):
+                self.summary.pop()
+        elif tag == "summary" and self.summary and self.summary[-1] == len(self.details):
+            self.summary.pop()
         if self._breaks(tag):
             self.parts.append(" ")
 
     def handle_data(self, data):
-        if not self.hiding:
+        if not self.hiding and self._shown():
             self.parts.append(data)
 
 
@@ -250,14 +281,48 @@ def readings(html: str) -> list[str]:
     return [visible(html), unformat(visible(html, "tight")), visible(html, "loose")]
 
 
-def views(raw: str, html: str) -> set[str]:
-    """The texts an output file is searched in, each normalised. The RENDERED text, in each of its `readings`, holds
-    every run of words a reader sees, whatever mix of real and look-alike links surrounds them; every view only ADDS
-    hits: each reading, the same with each URL dropped (a quote split by bare URLs, round 2 X1), and the raw bytes,
-    as they are and with format characters deleted (text a renderer hides: a comment, a link destination, an unused
-    reference definition)."""
+def quote_texts(quote: str, html: str) -> list[str]:
+    """The texts a SOURCE quote is fragmented in: its rendered `readings`, its raw Markdown, and the raw Markdown
+    LINK-REDUCED, as master read it (round 2 X2 of PR #620)."""
+    return readings(html) + [quote, delink(quote)]
+
+
+def texts(raw: str, html: str) -> list[str]:
+    """The texts an output file is searched in, before normalising. The RENDERED text, in each of its `readings`,
+    holds every run of words a reader sees, whatever mix of real and look-alike links surrounds them; every view only
+    ADDS hits: each reading, the same with each URL dropped (a quote split by bare URLs, round 2 X1 of PR #617), the
+    raw bytes, as they are and with format characters deleted (text a renderer hides: a comment, a link destination,
+    an unused reference definition), and the raw bytes LINK-REDUCED, as master read them (round 2 X2 of PR #620)."""
     ts = readings(html)
-    return {norm(t) for t in ts} | {norm(URL.sub(" ", t)) for t in ts} | {norm(raw), norm(unformat(raw))}
+    return ts + [URL.sub(" ", t) for t in ts] + [raw, unformat(raw), delink(raw)]
+
+
+def views(raw: str, html: str) -> tuple[set[str], set[str]]:
+    """Each of `texts` read two ways: as WORDS (`norm`), searched for a run's words, and LETTERS-ONLY
+    (`letters_only`), searched for a run's letters (round 2 X1 of PR #620).
+
+    ⚠ THE WORD VIEWS ARE NOW SUBSUMED AT THE RUN LEVEL, kept because a view is add-only. Deleting characters keeps a
+    substring a substring, so a run found among the words of one text is found among its letters too; and the tight
+    and loose readings differ mostly in where they put spaces, which the letters view deletes. So no run-level case
+    can tell several readings apart any more (round 2's mutation sweep: eight of them survived every run case).
+    Which texts are searched is pinned instead by two INVENTORY cases, one for `texts` and one for `quote_texts`."""
+    ts = texts(raw, html)
+    return {norm(t) for t in ts}, {letters_only(t) for t in ts}
+
+
+def delink(text: str) -> str:
+    """MASTER'S LINK-REDUCED READING (round 2 X2 of PR #620): every `[text](dest "title")` and `[text][ref]` reduced
+    to its text, then every bare URL dropped. It reads Markdown by regex, so it also reduces a bracket or parenthesis
+    a reader SEES as text, deleting visible words: an add-only view, its extra refusals false alarms, never misses."""
+    return URL.sub(" ", LINK.sub(r"\1", text))
+
+
+def letters_only(text: str) -> str:
+    """The LETTERS-ONLY reading (round 2 X1 of PR #620): `text` casefolded, with every character that is not a letter
+    or a digit deleted — format characters, whitespace, punctuation. No word boundary is left, so a run whose
+    boundaries mix joins and splits (`ne<em>v</em>er<center>pay`) reads the same as the plain run: one view covers
+    every combination of boundary readings, where one view per combination would be exponential."""
+    return "".join(c for c in text.casefold() if c.isalnum())
 
 
 def fragments(quote: str) -> list[str]:
@@ -339,9 +404,10 @@ def check(root: Path, out: Path) -> tuple[int, list[str]]:
     frags: dict[str, str] = {}
     unread = []
     for n, q_n in zip(g["D"], qs):
-        # each quote as RENDERED, in every reading, and PLAIN, its link destinations' words in place (round 1 X4:
-        # the view master read, kept so a refusal it made is not lost)
-        mine = {s for q, h in zip(q_n, shown) for t in readings(h) + [q] for f in fragments(t) for s in windows(f)}
+        # each quote as RENDERED, in every reading, PLAIN, its link destinations' words in place (round 1 X4), and
+        # LINK-REDUCED (round 2 X2): the two views master read, kept so a refusal it made is not lost
+        mine = {s for q, h in zip(q_n, shown) for t in quote_texts(q, h) for f in fragments(t)
+                for s in windows(f)}
         shown = shown[len(q_n):]
         report.append(f"  {n}: {len(q_n)} quotes")
         if not mine:
@@ -356,10 +422,11 @@ def check(root: Path, out: Path) -> tuple[int, list[str]]:
             hits.append(f"EXCLUDED FILE PRESENT: {p.relative_to(out)}")
         elif _canon_sha(p) in gone:
             hits.append(f"EXCLUDED CONTENT PRESENT: {p.relative_to(out)} is {gone[_canon_sha(p)]}")
+    spelt = {f: letters_only(f) for f in frags}
     for p, raw, h in zip(files, raws, html[len(sources):]):
-        bodies = views(raw, h)
+        bodies, bare = views(raw, h)
         for f, n in frags.items():
-            if any(f in body for body in bodies):
+            if any(f in body for body in bodies) or any(spelt[f] in body for body in bare):
                 hits.append(f"QUOTE FROM {n} IN {p.relative_to(out)}: {f[:80]!r}")
     report.append(f"checked {len(files)} output files, each rendered as CommonMark, for {len(frags)} quote fragments "
                   f"and {len(excluded)} excluded names")
@@ -544,13 +611,61 @@ def _self_test_body() -> int:
     case("a quote in text a renderer hides (a comment, an unused reference definition's title) fails check 1 (raw bytes)",
          lambda: (hit("<!-- I almost never pay attention to -->\n"),
                   hit('[x]: /y "I almost never pay attention to"\n')), (d6hit, d6hit))
-    case("ADJACENT NEGATIVES: real links whose visible text does not complete a six-word run, and look-alike links "
-         "whose visible words break the run, pass check 1",
+    case("a quote in a link's DESTINATION, which the rendered and link-reduced readings both drop, fails check 1 "
+         "(raw bytes)", lambda: hit("see [this](I-almost-never-pay-attention-to)\n"), d6hit)
+    case("ADJACENT NEGATIVES: real links whose visible text does not complete a six-word run, and words that break "
+         "the run however its boundaries are read, pass check 1",
          lambda: tuple(hit(t) for t in (
              "I [almost](https://example.com) never [pay](https://example.com) no attention to\n",
              "I almost never [pay](https://example.com/attention-to) them\n",
-             "I almost never [pay](no real) attention to\n",
-             "I almost never [pay][not really] attention to\n")), ((0, []),) * 4)
+             "I almost never paid attention to\n",
+             "I almost <em>never</em> pay no<center>attention to</center>\n")), ((0, []),) * 4)
+    # ── round 2 of PR #620 X2: master's LINK-REDUCED reading, restored add-only on both sides. It reduces a
+    # look-alike link to its text too, deleting visible words, so it refuses some lines a reader sees no run in: a
+    # false alarm, never a miss — the refusals master made are kept rather than lost ─────────────────────────
+    case("master's link-reduced reading of the output refuses a run its links' destinations and titles split, a "
+         "look-alike link's words included (a false alarm, never a miss)",
+         lambda: (hit("[I](https://x) [almost](https://x) never [pay](extra words) attention to\n"),
+                  hit("I almost never [pay](no real) attention to\n"),
+                  hit("I almost never [pay][not really] attention to\n")), (d6hit,) * 3)
+
+    def delinked_source_quote():
+        root = world("delinkquote", d={**d_text, "d6.md": 'Rule six: *"always [ship](extra words) the release notes '
+                                       'on friday"*\n'})
+        out = base / "delinkquote-out"
+        shutil.copytree(base / "good-out", out)
+        (out / "kept.md").write_text("Always ship the release notes on friday.\n")
+        rc, lines = check(root, out)
+        return rc, sorted({ln.split(":")[0] for ln in lines if ln.startswith("QUOTE")})
+    case("a SOURCE quote is also read link-reduced, as master read it, and that run fails check 1 (round 2 X2)",
+         delinked_source_quote, (1, ["QUOTE FROM d6.md IN kept.md"]))
+
+    # ── round 2 of PR #620 X1: the LETTERS-ONLY view, where no boundary exists, so a run mixing joined and split
+    # boundaries is found ────────────────────────────────────────────────────────────────────────────────────
+    case("a letters-only text is casefolded, with format characters, whitespace and punctuation deleted",
+         lambda: (letters_only("I al-most, NE\u200bver\n pay!"), letters_only("Straße \u00b7 Ü-2026!")),
+         ("ialmostneverpay", "strasseü2026"))
+    case("a run whose boundaries mix a join and a split fails check 1 (letters-only view)",
+         lambda: hit("I [almost](https://x) ne<em>v</em>er<center>pay attention to</center>\n"), d6hit)
+    case("a format character beside an inline tag in a run that also splits at a tag fails check 1 (letters-only view)",
+         lambda: (hit("I [almost](https://x) ne<em>\u200bv</em>er<center>pay attention to</center>\n"),
+                  hit("I [almost](https://x) ne\u00ad<em>v</em>er<center>pay attention to</center>\n")), (d6hit,) * 2)
+
+    # ── round 2 of PR #620 X4: a closed <details> shows its <summary> only ──────────────────────────────────
+    case("the body of a closed <details>, its text or an image's alt, is unshown and does not break a run, so it "
+         "fails check 1",
+         lambda: (hit("I [almost](https://x) never <details><summary></summary>hidden words</details> pay attention "
+                      "to\n"),
+                  hit("I [almost](https://x) never <details><summary></summary>![zz](x.png)</details> pay attention "
+                      "to\n")), (d6hit,) * 2)
+    case("a closed <details> nested in an open one hides its own body only, and its close ends the hiding",
+         lambda: norm(visible("<details open>a<details><summary>s</summary>b</details>c</details>d", "tight")),
+         "a s c d")
+    case("an OPEN <details> shows its body, and a closed one its summary, so either breaks the run and passes check 1",
+         lambda: (hit("I [almost](https://x) never <details open><summary></summary>shown words</details> pay "
+                      "attention to\n"),
+                  hit("I [almost](https://x) never <details><summary>zz</summary>hidden words</details> pay "
+                      "attention to\n")), ((0, []),) * 2)
 
     # ── round 1 of PR #620: a boundary the renderer cannot settle is read BOTH ways (X1, C1, C2), and text a
     # browser never shows is dropped in one more view (C3) ─────────────────────────────────────────────────────
@@ -576,6 +691,23 @@ def _self_test_body() -> int:
          lambda: tuple(norm(visible('<p>a<em>b</em>c</p><div>d</div>e<br>f<img alt="g" />h <span hidden>i</span>', m))
                        for m in ("read", "tight", "loose")),
          ("abc d e f g h i", "abc d e fgh", "a b c d e f g h"))
+
+    # ── round 2 of PR #620: which texts are searched, pinned directly, because the letters-only view subsumes the
+    # run-level cases that used to tell the readings apart (see `views`) ────────────────────────────────────────
+    case("an output file is searched in nine texts: three readings, each with URLs dropped, and the raw bytes as they "
+         "are, with format characters deleted, and link-reduced",
+         lambda: (texts("a\u200bb [c](https://u) d", "<p>a\u200bb c<em>d</em>e https://u f</p>"),
+                  texts("x http://v y", "<p>x</p>")),
+         ([" a\u200bb cde https://u f ", " ab cde https://u f ", " a\u200bb c d e https://u f ",
+           " a\u200bb cde   f ", " ab cde   f ", " a\u200bb c d e   f ",
+           "a\u200bb [c](https://u) d", "ab [c](https://u) d", "a\u200bb c d"],
+          [" x "] * 6 + ["x http://v y", "x http://v y", "x   y"]))
+    case("a source quote is fragmented in five texts: three readings, its raw Markdown, and that link-reduced",
+         lambda: (quote_texts("a![b](x.png)c [d](https://u) e",
+                              '<p>a<img src="x.png" alt="b" />c <a href="https://u">d</a> e</p>'),
+                  quote_texts("[y](z)", "<p>y</p>")),
+         ([" a b c d e ", " abc d e ", " a  b  c  d  e ", "a![b](x.png)c [d](https://u) e", "a!bc d e"],
+          [" y "] * 3 + ["[y](z)", "y"]))
 
     def tight_source_quote():
         root = world("tightquote", d={**d_text, "d6.md": 'Rule six: *"I almost ne![ver](x.png) pay attention to it"*\n'})
@@ -646,14 +778,18 @@ def _self_test_body() -> int:
          ("CANNOT RUN: the CommonMark renderer did not render its known probe exactly",) * 2)
     case("a renderer that writes to stderr, though its output is right, is CANNOT RUN (round 1 X2)",
          lambda: renderer(node=noisy), "CANNOT RUN: the CommonMark renderer wrote to stderr")
+    blank = fake_node("blank", f"#!/bin/sh\n\"{real_node}\" \"$@\"\nprintf ' \\n' >&2\n")
+    case("a renderer that writes only whitespace to stderr is CANNOT RUN too: anything on stderr (round 2 X3)",
+         lambda: renderer(node=blank), "CANNOT RUN: the CommonMark renderer wrote to stderr")
     case("a renderer whose output is not UTF-8 is CANNOT RUN, never a traceback (round 1 X3/C4)",
          lambda: renderer(node=badutf), "CANNOT RUN: the CommonMark renderer's output is not UTF-8")
 
     def disguises(v):
-        """Seventeen ways to show a reader a quote's words: round 1's punctuation, round 2's links and bare URLs,
+        """Eighteen ways to show a reader a quote's words: round 1's punctuation, round 2's links and bare URLs,
         round 3's look-alike links and glued URL, round 4's mix, the layout of rendered HTML, and PR #620 round 1's
         boundaries read both ways (an image inside a word, a soft hyphen and a zero-width space inside one, a block
-        tag the hand list lacks) and text a browser never shows between two words."""
+        tag the hand list lacks) and text a browser never shows between two words, and PR #620 round 2's run that
+        mixes a joined boundary and a split one behind a real link."""
         w = norm(v).split()
         j = " ".join(w)
         mixed = (f"[{w[0]}](https://example.com) {w[1]} [{w[2]}]({' '.join(w[3:])})" if len(w) >= 5
@@ -664,19 +800,29 @@ def _self_test_body() -> int:
         def inword(mark):               # the longest word with `mark(rest)` after its first letter
             return " ".join(w[:i] + [w[i][0] + mark(w[i][1:])] + w[i + 1:]) if len(w[i]) > 1 else j
         head, tail = " ".join(w[:2]), " ".join(w[2:])
+
+        def mixed_boundary():           # round 2 X1: a join (an inline tag in a word) and a split (a block tag the
+            t = list(w)                 # list lacks, unspaced) in ONE run, behind a real link
+            if len(w[i]) > 2:
+                t[i] = f"{w[i][0]}<em>{w[i][1]}</em>{w[i][2:]}"
+            cut = i if i + 1 < len(w) else i - 1
+            k = 0 if i != 0 else len(w) - 1
+            t[k] = f"[{t[k]}](https://x)"
+            return " ".join(t[:cut + 1]) + "<center>" + " ".join(t[cut + 1:]) + "</center>"
         return [j, "\u201c" + ", ".join(w) + "!\u201d", re.sub(r"[^\w\s]+", "; ", v),
                 " ".join(f"[{x}](https://x)" for x in w), " https://x/a?b=c ".join(w),
                 f"Context [note]({j}) here.", f"Context [aside][{j}] here.", f"see <https://x>{j}", mixed,
                 f"<div>{' '.join(w[:2])}</div><div>{' '.join(w[2:])}</div>", f"{' '.join(w[:2])}<br>{' '.join(w[2:])}",
                 " ".join(emph), inword(lambda r: f"![{r}](x.png)"), inword(lambda r: "&shy;" + r),
-                inword(lambda r: "\u200b" + r), f"{head}<center>{tail}</center>", f"{head} <span hidden>zz</span> {tail}"]
+                inword(lambda r: "\u200b" + r), f"{head}<center>{tail}</center>", f"{head} <span hidden>zz</span> {tail}",
+                mixed_boundary()]
 
     def real_corpus():
         """THE PLANT CORPUS (backlog #698): every quote of the REAL group-D sources, in each of `disguises`, one per
         output file, checked against the real sources in one run. A plant not hit by its own source's quote is named
-        by its file (never by its words). The counts are DERIVED, not pinned (51 quotes, 867 plants on 2026-11-23), so
+        by its file (never by its words). The counts are DERIVED, not pinned (51 quotes, 918 plants on 2026-11-23), so
         an edit to a memory file never reddens an unrelated PR: it asserts every D file gave a quote, every quote all
-        seventeen disguises, and every plant a hit."""
+        eighteen disguises, and every plant a hit."""
         g = groups((REPO / DECISION).read_text())
         srcs = [(REPO / SRC / n).read_text() for n in g["D"]]
         qs = [(i, q) for i, t in enumerate(srcs) for q in quotes(t)]
@@ -690,9 +836,9 @@ def _self_test_body() -> int:
                 planted_by[f"q{k:03d}-{d:02d}.md"] = g["D"][i]
         rc, lines = check(REPO, out)
         caught = {(m.group(2), m.group(1)) for m in (re.match(r"QUOTE FROM (\S+) IN (\S+):", ln) for ln in lines) if m}
-        return (rc, {i for i, _ in qs} == set(range(len(srcs))), len(planted_by) == 17 * len(qs),
+        return (rc, {i for i, _ in qs} == set(range(len(srcs))), len(planted_by) == 18 * len(qs),
                 sorted(f for f, n in planted_by.items() if (f, n) not in caught))
-    case("THE PLANT CORPUS: every real group-D quote, each in 17 disguises, every plant fails check 1",
+    case("THE PLANT CORPUS: every real group-D quote, each in 18 disguises, every plant fails check 1",
          real_corpus, (1, True, True, []))
     case("an excluded file's content in the output under another name fails check 2",
          lambda: planted("renamed.md", "excluded b2.md\n"), (1, ["EXCLUDED CONTENT PRESENT"]))
