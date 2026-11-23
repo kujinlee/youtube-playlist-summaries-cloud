@@ -132,7 +132,7 @@
   "expect": "a quote reused in part, with its other words changed, fails check 1 on a six-word run"
  },
  {
-  "name": "markdown emphasis is not normalised away",
+  "name": "markdown emphasis is not normalised away by norm (backlog #698: the renderer strips it from the rendered views, so this pins the raw view's)",
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
@@ -140,7 +140,7 @@
     "re.sub(r\"[^\\w*]+\", \" \", text.lower())"
    ]
   ],
-  "expect": "a source quote in a kept output file fails check 1, through emphasis, case and line breaks"
+  "expect": "the words of a quote with its punctuation changed still match, apostrophes of either kind included"
  },
  {
   "name": "a D file with no quote found is a pass",
