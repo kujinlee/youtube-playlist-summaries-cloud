@@ -75,7 +75,7 @@ seeded facts`, hence `argued`. Unexercised components are `argued` throughout (s
 | `explainer-serve` | yes | A-script-explainer-serve | yes | fail | argued | pass | pass | pass | all three serve conditions held (start `serving <world HOME>/explainers`, pidfile 44052 = listener 44052, GET / 200 with sentinel); GET page 200; POST /questions 200 and recorded in the world's questions.md. Condition 1 FAILS: the page served was the experiment's own sentinel, with no Ask tray, so no page a reader can ask a question INSIDE was served — the endpoint answering a POST is not that (S2) |
 | `ask-answerer` | yes | A-script-ask-answerer-status | no | argued | argued | argued | pass | pass | `--status` rc 0 named the world's folder and caps; `--once` (answering a question = a model call) NOT run, so the useful operation is argued. `operation_ok` is `no` because the useful operation was NOT RUN, not because it failed (the sidecar's field is a bool) |
 | `regen-pages` | yes | A-script-regen-pages-all | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — git cannot name this repository's common directory from <install dir>`: it locates the repo from its OWN install path, not the user's CWD |
-| `gen-dashboard` | yes | A-script-gen-dashboard | no | argued | argued | fail | fail | pass | rc 1: reads <install dir>/docs/backlog.md (absent) through `gen-backlog-page` (`gen-dashboard.py:3495-3498` loads it and calls `publish_rows(ROOT)`; the finding is `gen-backlog-page:2:2`), then brief-compose refuses (no tray page) |
+| `gen-dashboard` | yes | A-script-gen-dashboard | no | argued | argued | fail | fail | pass | rc 1: reads <install dir>/docs/backlog.md (absent) through `gen-backlog-page` (`gen-dashboard.py:3495-3498` loads it and calls `publish_rows(ROOT)`; the finding is `gen-backlog-page:2:3`), then brief-compose refuses (no tray page) |
 | `gen-goals-page` | yes | A-script-gen-goals-page | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — docs/anchors.md or scripts/gen-backlog-page.py is missing` (looked up beside the install, not in the repo) |
 | `gen-features-page` | yes | A-script-gen-features-page | no | argued | argued | fail | pass | pass | rc 2 `CANNOT RUN — <install dir>/docs/features.md is missing` |
 | `gen-backlog-page` | yes | A-script-gen-backlog-page | no | argued | argued | fail | pass | pass | rc 1 traceback FileNotFoundError <install dir>/docs/backlog.md — the seeded repo HAS docs/backlog.md; the script reads beside itself |
@@ -160,7 +160,7 @@ when the scan held no dependency finding naming that failure's cause (read liter
 
 | Failure | Components it hit | The scan before Task 16 | Now | Closed by |
 |---|---|---|---|---|
-| S1 (project located from the install path) | `regen-pages`, `goal-tree`, `gen-backlog-page`, `gen-features-page`, `gen-goals-page`, `gen-dashboard` | no finding naming the cause (`gen-backlog-page:4` named the `docs/backlog.md` path only as a doc-path) | detector 2 `install-root`: `regen-pages:2:1`, `goal-tree:2:3`, `gen-backlog-page:2:2`, `gen-features-page:2:7`, `gen-goals-page:2:3`, `gen-dashboard:2:2` and the rest of each component's `install-root` rows | **case added (red→green)**: three `S1:` self-test cases; round 1 added four more (the `..` climb, Python's scopes, the inert uses) |
+| S1 (project located from the install path) | `regen-pages`, `goal-tree`, `gen-backlog-page`, `gen-features-page`, `gen-goals-page`, `gen-dashboard` | no finding naming the cause (`gen-backlog-page:4` named the `docs/backlog.md` path only as a doc-path) | detector 2 `install-root`: `regen-pages:2:1`, `goal-tree:2:5`, `gen-backlog-page:2:3`, `gen-features-page:2:9`, `gen-goals-page:2:4`, `gen-dashboard:2:4` and the rest of each component's `install-root` rows | **case added (red→green)**: three `S1:` self-test cases; round 1 added four more (the `..` climb, Python's scopes, the inert uses) |
 | S3 (package files named CWD-relative) | `skill-brief`, `skill-explain-findings`, `skill-dashboard` | `skill-dashboard:2:1` (`scripts/regen-pages.py`) only; the `Follow ../shared/explainer-delivery.md` line was no finding on any skill | detector 2 `cwd-relative` with the plugin-root fix: `skill-brief:2:1`, `skill-explain-findings:2:1`, `skill-dashboard:2:2` (and `skill-explain-diff:2:1`, `skill-explain-topic:2:1`, which carry the same line) | **case added (red→green)**: one `S3:` self-test case |
 | S2 (the Ask tray cannot be bootstrapped) | `brief-compose`, `gen-dashboard`, `skill-explain-diff`, `skill-explain-topic`, `explainer-serve` condition 1 | none | none | **limit recorded**: L1 below |
 | S4 (the host's conventions assumed) | `skill-dashboard` | mentions only (`docs/dashboard-entries.md`, `docs/anchors.md`) | `skill-dashboard:4:1` (`docs/dashboard-entries.md` at `:28`, the path that opens the `## The store` section); `docs/anchors.md` (`:14`) still a mention | **case added (red→green)**: one `S4 (r1 M1):` case; the rest is limit L2 below |
@@ -220,7 +220,14 @@ are the only witnesses of the new rule.
   rebinding, a loop or `with` target: its root is reported AT THE BINDING, as `.`, and the paths built from it later
   are not named — coarser, never silent (e.g. `check-plan-code:2` at `:6355`). The only silencers are inert uses (a
   comparison, `print`, `relative_to`/`samefile`, a `relpath` start that is itself file-anchored, an existence test of
-  the root itself), a part that leaves the tree, a level that is not the install depth, and a shipped target. It
+  the root itself), a part that leaves the tree, a level ABOVE the install depth, a part named below it (the
+  script's own payload, `HERE / "data.json"`), and a shipped target. **A stop BELOW the install depth at a bare
+  directory or the file itself is `install-root-unjudged`** (target none, one per line, none beside a judged line;
+  owner, 2026-11-23, option 1): the walk could not follow it to the root — a reused own-folder name, a climb by
+  rebinding, `from os.path import dirname`, `os.pardir`, `split()[0]`, an aliased `Path`, `joinpath(x).parent`, or
+  an unrecognised use such as `with_name` or `sys.path.insert` — so it is shown to be read, not judged (33 rows in
+  the rescan at `f57ef1cb`). Still silent (backlog #692 m1): a root whose only reads in its file are inert, exported
+  to an importer. It
   judges paths in a self-test's fixture strings like any other (e.g. `recall-llm:2:6`, `.claude/plans/p.md`, and
   `check-surface-recall:2` `.claude/hooks/does-not-exist.sh` at `:519`), an over-report, not a miss.
 - **L6 — a package file named in descriptive prose (round 1 M2).** `scripts/check-dashboard-entry.py`

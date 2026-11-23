@@ -21491,3 +21491,27 @@ CANNOT RUN. X4's measurement found one real unparaphrased owner quote shipping i
 comment); paraphrased. The real tree is `0 gaps`. Self-test 160 -> 170, mutations 209 -> 215 (7 new, 1 retired with
 the filter), the 7 new and the 13 earlier decision-5 ones red on their named case in a full clone. Edge pin unmoved.
 Priced 13.0 -> 17.0 s.
+
+## 2026-11-23 [resolved: 2026-11-21/3]
+You chose option 1 for the publishability scan: when it stops following a path before reaching the installed copy's
+top folder, it now says so as a "not judged" finding instead of staying silent. That fixes the miss the rebuild
+caused and three of the four older ones. The fourth (a top folder that its own file only prints, meant for another
+file to import) stays open, because fixing it would undo an earlier ruling that a printed folder is not a finding.
+I counted the cost: findings rose from 362 to 395, and all 33 new ones are "not judged", spread over 16 scripts.
+
+Nothing waits on you for this.
+<!--tech-->
+PR #613 (Marketplace Task 16), owner 11-23 11:07 option 1. `_install_root_uses` reports a USE or an unsilenced
+binding that stops BELOW the install depth with no literal part (target `.`) as `(line, None)`; the scan emits it
+as kind `install-root-unjudged` (target null, one per line, none beside a line already judged). A part named
+below the file's folder (`HERE / "data.json"`) stays silent. Closes r4 B1 and backlog #692 X1, M1, M2; #692 m1
+stays open (an inert-only read silences an exported root; fixing it contradicts the r2-X1 `P6 corpus` cases).
+Self-test 174 -> 180 (6 cases, red before the change), mutations 228 -> 232 (each red on its named case in a full
+scratch clone). Rescan at `f57ef1cb`: 362 -> 395 (before = this branch after merging master, a67b6843), 0 lost,
++33 `install-root-unjudged`; per component: check-plan-code 6, ask-answerer 5, goal-tree 4, brief-compose,
+explainer-serve, gen-backlog-page, gen-dashboard and gen-features-page 2 each, agent-watchdog, check-features,
+check-ratchet-contract, gen-goals-page, gen-work-lines, regen-pages, session-state and sweep-red-alert 1 each. No
+component changed status. Merging master brought in the inventory (scan-2026-11-17); it now names
+scan-2026-11-21: cited ids re-mapped by file, kind, target and text (mutation-sweep-job 2:106-108 -> 2:109-111;
+memory-corpus :2:5-17 -> :2:3-14, and 8 ids that the backlog #697 built corpus no longer produces dropped; its C2
+fail is NOT re-judged). The tier A/B experiment docs' cited ids were re-mapped the same way.

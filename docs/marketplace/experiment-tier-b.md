@@ -93,7 +93,7 @@ when no dependency finding named that failure's cause.
 
 | Failure here | Components | Same cause as | Mapped to |
 |---|---|---|---|
-| scripted rc 2 / rc 1 (`gen-goals-page`, `gen-features-page`, `gen-backlog-page`, `goal-tree`, `regen-pages`) | the 5 scripts | tier A S1 | **case added (red→green)**: detector 2 `install-root` (`gen-goals-page:2:3`, `gen-features-page:2:7`, `gen-backlog-page:2:2`, `goal-tree:2:3`, `regen-pages:2:1`) |
+| scripted rc 2 / rc 1 (`gen-goals-page`, `gen-features-page`, `gen-backlog-page`, `goal-tree`, `regen-pages`) | the 5 scripts | tier A S1 | **case added (red→green)**: detector 2 `install-root` (`gen-goals-page:2:4`, `gen-features-page:2:9`, `gen-backlog-page:2:3`, `goal-tree:2:5`, `regen-pages:2:1`) |
 | `explain-findings`: "this repo has no `scripts/brief-compose.py`" | `skill-explain-findings` | tier A S3 | **case added (red→green)**: `skill-explain-findings:2:1` (cwd-relative, plugin-root fix) |
 | `brief-compose` rc 1 (no `~/explainers`) | `brief-compose` | tier A | **case added (red→green)** at the round 1 fold: `brief-compose:6:1` (detector 6 `home-path`) |
 | `gen-dashboard` rc 1, `brief` and `explain-topic` refused or not composed (no Ask-tray page) | `gen-dashboard`, `skill-brief`, `skill-explain-topic`, `brief-compose` | tier A S2 | **limit recorded**: tier A L1 |
