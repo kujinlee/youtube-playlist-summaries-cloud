@@ -220,28 +220,6 @@
   "expect": "an excluded file's content in the output under another name fails check 2"
  },
  {
-  "name": "a Markdown link is not reduced to its text (its destination splits the quoted words)",
-  "file": "scripts/build-shipped-corpus.py",
-  "edits": [
-   [
-    "    text = re.sub(r\"\\[([^\\]\\n]*)\\](?:\\([^)\\n]*\\)|\\[[^\\]\\n]*\\])\", r\"\\1\", text)",
-    "    pass"
-   ]
-  ],
-  "expect": "a quote with each word wrapped in a Markdown link, or split by bare URLs, fails check 1 (links reduced to text)"
- },
- {
-  "name": "a bare URL is not dropped (it splits the quoted words)",
-  "file": "scripts/build-shipped-corpus.py",
-  "edits": [
-   [
-    "    text = re.sub(r\"(?:https?|ftp)://\\S+|www\\.\\S+\", \" \", text)",
-    "    pass"
-   ]
-  ],
-  "expect": "a quote with each word wrapped in a Markdown link, or split by bare URLs, fails check 1 (links reduced to text)"
- },
- {
   "name": "trailing whitespace is kept per line in the canonical hash",
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
@@ -275,25 +253,132 @@
   "expect": "an excluded file's content in the output under another name fails check 2"
  },
  {
-  "name": "an output file is searched only in its link-reduced view (the plain view dropped)",
+  "name": "backlog #698: an output file is not searched in its RENDERED text (only URL-dropped and raw)",
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "        bodies = {norm(raw, links) for links in VIEWS}",
-    "        bodies = {norm(raw, True)}"
+    "    return {norm(t), norm(URL.sub(\" \", t)), norm(raw)}",
+    "    return {norm(URL.sub(\" \", t)), norm(raw)}"
    ]
   ],
-  "expect": "a quote inside text that only LOOKS like a link, or glued to a URL, fails check 1 (the plain view is searched too)"
+  "expect": "a run glued to an autolink on one side and split by a link destination in the raw text fails check 1 (the rendered view alone holds it)"
  },
  {
-  "name": "a source quote is fragmented only in its link-reduced view (the plain view dropped)",
+  "name": "backlog #698: the URL-dropped view of the rendered text is not searched",
   "file": "scripts/build-shipped-corpus.py",
   "edits": [
    [
-    "    for links in VIEWS:\n        for p in re.split(",
-    "    for links in (True,):\n        for p in re.split("
+    "    return {norm(t), norm(URL.sub(\" \", t)), norm(raw)}",
+    "    return {norm(t), norm(raw)}"
    ]
   ],
-  "expect": "a SOURCE quote holding text that only looks like a link is searched in its plain view too, and fails check 1"
+  "expect": "a quote with each word wrapped in a Markdown link, or split by bare URLs, fails check 1 (rendered, URLs dropped)"
+ },
+ {
+  "name": "backlog #698: the raw bytes of an output file are not searched (text a renderer hides)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    return {norm(t), norm(URL.sub(\" \", t)), norm(raw)}",
+    "    return {norm(t), norm(URL.sub(\" \", t))}"
+   ]
+  ],
+  "expect": "a quote in text a renderer hides (a comment, an unused reference definition's title) fails check 1 (raw bytes)"
+ },
+ {
+  "name": "backlog #698: a block tag does not separate the words on either side of it",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    def handle_starttag(self, tag, attrs):\n        if tag in self.BLOCK:",
+    "    def handle_starttag(self, tag, attrs):\n        if False:"
+   ],
+   [
+    "    def handle_endtag(self, tag):\n        if tag in self.BLOCK:",
+    "    def handle_endtag(self, tag):\n        if False:"
+   ]
+  ],
+  "expect": "a block tag or a line break between two words separates them, in raw HTML too, and fails check 1"
+ },
+ {
+  "name": "backlog #698: every tag separates words, inline ones too (a word with emphasis inside it is split)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    def handle_starttag(self, tag, attrs):\n        if tag in self.BLOCK:",
+    "    def handle_starttag(self, tag, attrs):\n        if True:"
+   ],
+   [
+    "    def handle_endtag(self, tag):\n        if tag in self.BLOCK:",
+    "    def handle_endtag(self, tag):\n        if True:"
+   ]
+  ],
+  "expect": "an inline tag inside a word does not split it, so emphasis mid-word fails check 1"
+ },
+ {
+  "name": "backlog #698: an image's alt text is not read",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "            self.parts.append(\" \" + (dict(attrs).get(\"alt\") or \"\") + \" \")",
+    "            pass"
+   ]
+  ],
+  "expect": "an image's alt text is read where the image stands, and fails check 1"
+ },
+ {
+  "name": "backlog #698: a quote is rendered without its source file's reference definitions",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "md.renderInline(t, envs[i])",
+    "md.renderInline(t, {})"
+   ]
+  ],
+  "expect": "a source quote is read as RENDERED: a link in it, inline or by reference to its file's definitions, is its text"
+ },
+ {
+  "name": "backlog #698: a source quote is fragmented in its raw Markdown, not as rendered",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "for f in fragments(visible(h)) for s in windows(f)}",
+    "for f in fragments(q) for s in windows(f)}"
+   ]
+  ],
+  "expect": "a source quote is read as RENDERED: a link in it, inline or by reference to its file's definitions, is its text"
+ },
+ {
+  "name": "backlog #698: an output file is searched in the wrong rendering (the sources' offset not skipped)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "zip(files, raws, html[len(sources):])",
+    "zip(files, raws, html)"
+   ]
+  ],
+  "expect": "round 4's line, a REAL link beside text that only looks like one, fails check 1 (its rendered text holds the run)"
+ },
+ {
+  "name": "backlog #698: a renderer that could not run renders every input as empty (a pass)",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "        raise CannotRun(f\"the CommonMark renderer could not run ({NODE}): {e}\") from e",
+    "        return [\"\"] * len(docs), [\"\"] * len(inline)"
+   ]
+  ],
+  "expect": "a renderer that cannot run is CANNOT RUN, never a pass: node absent, the bundle absent, node failing, or no HTML back"
+ },
+ {
+  "name": "backlog #698: the renderer's output is not checked for one HTML string per input",
+  "file": "scripts/build-shipped-corpus.py",
+  "edits": [
+   [
+    "    if not ok:\n        raise CannotRun",
+    "    if False:\n        raise CannotRun"
+   ]
+  ],
+  "expect": "a renderer that cannot run is CANNOT RUN, never a pass: node absent, the bundle absent, node failing, or no HTML back"
  }
 ]

@@ -21354,3 +21354,18 @@ grade in one cell), `--render`, exit codes in rank order: inputs unreadable 2, a
 61 mutations in `scripts/mutations/check-inventory.json`, all red in a full clone. CI runs `--self-test` only; the
 live run joins in Task 20. Live run: rc 1, 34 `[missing]` effort (3) components, 0 errors on the 12 existing rows.
 Backlog #696: (a), (c), (f) resolved; (d), (e) open. check-shipping-sets edge pin 358 -> 360.
+
+## 2026-11-23
+The check that keeps the owner's quoted words out of the memory files a stranger receives now reads each file the way
+a reader sees it, rendered as Markdown, instead of guessing at Markdown with patterns. Four review rounds had each
+found a way to hide a quote from the old guesses; the last was a line mixing a real link with text that only looks
+like one. Every real quote, hidden twelve different ways, is now caught; 42 of those disguises got past the old check.
+<!--tech-->
+Backlog #698, branch `backlog-698`. `scripts/build-shipped-corpus.py --check` renders each source D file and each
+output file with markdown-it's `commonmark` preset (`node_modules/markdown-it/dist/markdown-it.min.js`, already a
+prod dependency, called through `node -e`; node or the bundle absent, a non-zero exit, or no HTML per input is CANNOT
+RUN, rc 2). Quotes are rendered inline in their own file's reference definitions. An output file is searched in its
+rendered text (block tags and `<br>` separate words, inline tags do not, an image is its alt), plus two views that
+only add hits: that text with URLs dropped, and the raw bytes. Self-test 31 -> 41 cases (a 612-plant corpus: 51 real
+quotes x 12 disguises); mutations 27 -> 34 (4 regex-view mutations removed, 11 added). `check-plan-code.py`
+HARNESS_TREE stages `node_modules/markdown-it`. Real build: 180 files, PASS. Row 697 (recall package) untouched.
