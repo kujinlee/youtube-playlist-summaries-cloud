@@ -1712,7 +1712,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-24, goal node tree S1 Task 1: 32 -> 37 — the node grammar, one per clause: the
     # four-digit `adrs:` entry, the skipped-level refusal, `slug:` only under a trunk, the `done:`
     # time group, and a node's parent as the NEAREST shallower node.
-    "scripts/check-features.py": 37,
+    # ⟳ 2026-11-24, goal node tree S1 Task 2: 37 -> 47 — G6's was-equals-current and former-twice
+    # clauses, the three id-collision pairs and the pair-not-prefix rule, `resolve` returning its
+    # input, the anchored-document fragment, `adrs` kept out of the absent count, and the summary's
+    # stateless count.
+    "scripts/check-features.py": 47,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed

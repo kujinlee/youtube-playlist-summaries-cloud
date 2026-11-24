@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 66 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 83 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -191,16 +191,16 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
     return nodes, problems
 
 
-def check_nodes(nodes: list[Node]) -> list[str]:
+def check_nodes(nodes: list[Node], anchored: frozenset[str] = frozenset()) -> list[str]:
+    """The per-node rules. `anchored` is the set of slugs some document's `Anchor:` header names
+    (passed empty until the header reader lives in one place — plan choice C10). Uniqueness is
+    `slug_problems` (G6), not this function."""
     problems: list[str] = []
-    seen: dict[str, int] = {}
     for n in nodes:
         where = f"features.md:{n.line}: `{n.slug}`"
-        if n.slug in seen:
-            problems.append(f"{where} is a duplicate of the node on line {seen[n.slug]}")
-        seen[n.slug] = n.line
-        if n.state not in ("built", "absent"):
-            problems.append(f"{where} has state {n.state!r}; expected `built` or `absent`")
+        # `state:` is OPTIONAL (spec §2.2): omitted means the node is a name only — an aim.
+        if n.state not in (None, "built", "absent"):
+            problems.append(f"{where} has state {n.state!r}; expected `built`, `absent`, or no `state:` line")
         if not n.purpose:
             problems.append(f"{where} has no `for:` line — every node says what it is for")
         else:
@@ -208,20 +208,83 @@ def check_nodes(nodes: list[Node]) -> list[str]:
             if hit:
                 problems.append(f"{where} prose contains the status token {hit.group(0)!r}. A node "
                                 f"says what it is FOR; where it stands is what the links are for")
-        fragments = len(n.areas) + len(n.anchors)
+        # ⛔ THE TWO COUNTS ARE DIFFERENT SETS (plan Task 2, r1 F2). Any of these is evidence a
+        # `built` node exists; only an AREA — a backlog row, shipped work — contradicts an absence.
+        # An ADR or a document describes a gap and may sit under an `absent` node.
+        fragments = len(n.areas) + len(n.adrs) + len(n.anchors) + (n.slug in anchored)
         if n.state == "built" and fragments == 0:
-            problems.append(f"{where} is `built` but names no fragment — add an `anchors:` or "
-                            f"`areas:` line, or set `state: absent` with an `expected-because:`")
+            problems.append(f"{where} is `built` but names no fragment — add an `areas:`, `adrs:` or "
+                            f"`anchors:` line, anchor a document to it, or set `state: absent` with an "
+                            f"`expected-because:`")
         if n.state == "built" and n.expected_because:
             problems.append(f"{where} is `built` but carries an `expected-because:` — that line is "
                             f"the argument for an ABSENCE. Remove it, or set `state: absent`")
         if n.state == "absent":
             if not n.expected_because:
                 problems.append(f"{where} is `absent` but has no `expected-because:` line")
-            if fragments:
-                problems.append(f"{where} is `absent` but names {fragments} fragment(s) — flip it to `built`")
+            if n.areas:
+                problems.append(f"{where} is `absent` but claims {len(n.areas)} area(s) — flip it to `built`")
     return problems
 
+
+def current_slugs(nodes: list[Node]) -> set[str]:
+    return {n.slug for n in nodes}
+
+
+def resolve(nodes: list[Node], slug: str) -> str | None:
+    """The CURRENT slug for a current or former slug, else None. ⛔ For READING history only (spec
+    §2.4): a check of a NEW value asks "is this a current slug", never "does this resolve"."""
+    for n in nodes:
+        if slug == n.slug or slug in n.was:
+            return n.slug
+    return None
+
+
+def slug_problems(nodes: list[Node]) -> list[str]:
+    """G6: a slug occurs once across every current slug and every `was:` entry, and no two nodes'
+    page ids can meet. A `was:` entry that occurs once and is no current slug is a rename — PASSES."""
+    problems: list[str] = []
+    first: dict[str, Node] = {}
+    for n in nodes:
+        if n.slug in first:
+            problems.append(f"features.md:{n.line}: `{n.slug}` is a duplicate of the node on line "
+                            f"{first[n.slug].line} — two nodes share one slug")
+        else:
+            first[n.slug] = n
+    current = set(first)
+    former: dict[str, list[Node]] = {}
+    for n in nodes:
+        for w in n.was:
+            former.setdefault(w, []).append(n)
+            if w in current:
+                problems.append(f"features.md:{n.line}: `{n.slug}` lists `{w}` in `was:`, which is also a "
+                                f"current slug (line {first[w].line}) — a retired name is never re-allocated")
+    for w, owners in former.items():
+        if len(owners) > 1:
+            problems.append(f"`{w}` is listed as a former slug {len(owners)} times, by: "
+                            f"{', '.join(f'`{o.slug}` (line {o.line})' for o in owners)} — one rename, one record")
+    # ⛔ PAGE IDS MAY NOT MEET (plan Task 2, r2 Codex Major). The views give a slug `s` the ids
+    # `goal-s`, `s`, `f-s`, `g-s` and `goal-<w>` per former slug `w`; two nodes can share one only as
+    # these PAIRS. A PREFIX ban is wrong: the live node `goal-tree` has no partner.
+    for n in nodes:
+        if n.slug.startswith("f-") and n.slug[2:] in current:
+            problems.append(f"features.md:{n.line}: `{n.slug}` equals the f- id of the node `{n.slug[2:]}` "
+                            f"(line {first[n.slug[2:]].line}) — on /features the two would share an id")
+        if n.slug.startswith("goal-") and n.slug[5:] in current:
+            problems.append(f"features.md:{n.line}: `{n.slug}` equals the goal- id of the node "
+                            f"`{n.slug[5:]}` (line {first[n.slug[5:]].line}) — the two would share an id")
+        if n.slug.startswith("goal-") and n.slug[5:] in former:
+            problems.append(f"features.md:{n.line}: `{n.slug}` equals the goal- id of the former slug "
+                            f"`{n.slug[5:]}` (`was:` of `{former[n.slug[5:]][0].slug}`) — its old links "
+                            f"would land on the wrong node")
+    return problems
+
+
+def summary_line(nodes: list[Node]) -> str:
+    """The node half of `main`'s OK line. A stateless node is a name only — never counted absent."""
+    built = sum(1 for n in nodes if n.state == "built")
+    absent = sum(1 for n in nodes if n.state == "absent")
+    return f"{len(nodes)} nodes ({built} built, {absent} absent, {len(nodes) - built - absent} stateless)"
 
 _TAGS = None
 
@@ -374,15 +437,16 @@ def main() -> int:
         return 2
     problems += area_problems
     problems += kind_problems(BACKLOG.read_text(), declared)
-    problems += check_nodes(nodes)
+    # `anchored` stays empty until S2 Task 7, when the header reader lives in one place (plan C10).
+    problems += check_nodes(nodes, frozenset())
+    problems += slug_problems(nodes)
     problems += check_cross(nodes, declared, None if not areas else areas)
     if problems:
         print(f"FAILED — {len(problems)} feature-map problem(s):", file=sys.stderr)
         for p in problems:
             print(f"  ✗ {p}", file=sys.stderr)
         return 1
-    built = sum(1 for n in nodes if n.state == "built")
-    print(f"feature map: {len(nodes)} nodes ({built} built, {len(nodes) - built} declared absent); "
+    print(f"feature map: {summary_line(nodes)}; "
           f"{len(declared)} anchors and {len(areas)} backlog areas all claimed exactly once")
     return 0
 
@@ -430,8 +494,10 @@ expected-because: standard for a hosted multi-tenant service.
     built_empty = TREE.replace("anchors: cloud-publishing\n", "")
     check("a built node with no fragment fails",
           any("no fragment" in p for p in check_nodes(parse_features(built_empty)[0])), True)
+    # ⟳ goal node tree Task 2: the `absent` arm counts AREAS only (an ADR or a document may describe a
+    # gap), so the fragment that contradicts an absence is an `areas:` line.
     absent_frag = TREE.replace("expected-because: standard for a hosted multi-tenant service.\n",
-                               "expected-because: standard for a hosted multi-tenant service.\nanchors: cloud-publishing\n")
+                               "expected-because: standard for a hosted multi-tenant service.\nareas: (product)\n")
     check("an absent node WITH a fragment fails",
           any("flip it to `built`" in p for p in check_nodes(parse_features(absent_frag)[0])), True)
     absent_noreason = TREE.replace("expected-because: standard for a hosted multi-tenant service.\n", "")
@@ -445,8 +511,9 @@ expected-because: standard for a hosted multi-tenant service.
     check("a built node carrying expected-because fails",
           any("that line is" in p for p in check_nodes(parse_features(built_reason)[0])), True)
     dupe = TREE + "\n### summarise-a-video\nstate: built\nfor: A second one.\nanchors: cloud-sync\n"
+    # ⟳ goal node tree Task 2: uniqueness moved from `check_nodes` to `slug_problems` (G6).
     check("a duplicate slug fails",
-          any("duplicate" in p for p in check_nodes(parse_features(dupe)[0])), True)
+          any("duplicate" in p for p in slug_problems(parse_features(dupe)[0])), True)
     wrapped = TREE.replace("for: Turns one video's transcript into a summary a person reads.\n",
                            "for: Turns one video's transcript\n  into a summary. Currently broken, see #322.\n")
     wnodes, wproblems = parse_features(wrapped)
@@ -478,10 +545,10 @@ expected-because: standard for a hosted multi-tenant service.
     # `anchors:` blanks it. The second case is the half that matters — refusing the duplicate is
     # worth nothing if the value that survives is still the empty one.
     ABSENT_WHY = "expected-because: standard for a hosted multi-tenant service.\n"
-    dup_anchors = TREE.replace(ABSENT_WHY, ABSENT_WHY + "anchors: cloud-publishing\nanchors:\n")
+    dup_anchors = TREE.replace(ABSENT_WHY, ABSENT_WHY + "areas: (product)\nareas:\n")
     dnodes, dproblems = parse_features(dup_anchors)
     check("a duplicate field is REFUSED, not applied last-write-wins",
-          any("repeats the field `anchors`" in p for p in dproblems), True)
+          any("repeats the field `areas`" in p for p in dproblems), True)
     check("the FIRST value stands, so a blanking duplicate cannot hide the fragment it contradicts",
           any("flip it to `built`" in p for p in check_nodes(dnodes)), True)
     check("`now` is no longer a banned word", STATUS_TOKENS.search("Shows what runs now") is None, True)
@@ -685,6 +752,84 @@ expected-because: standard for a hosted multi-tenant service.
           [any(f"repeats the field `{k}`" in p for p in _one(f"### x\nfor: A thing.\n{k}: {v}\n{k}: {v}\n")[1])
            for k, v in (("was", "old-x"), ("adrs", "0001"), ("done", '2026-11-23 21:20 "w"'))],
           [True, True, True])
+
+    # ── NODE RULES — goal node tree, Task 2 (spec §2.2, §2.4, G6) ──────────────────────────────
+    def _nodes(body: str) -> list[Node]:
+        return parse_features("# Feature map\n## PRODUCT\n" + body)[0]
+
+    check("rules: a stateless node needs no fragment",
+          [check_nodes(_nodes(b)) for b in ("### x\nfor: A name only.\n", "### y\nfor: Another aim.\nareas: (y)\n")],
+          [[], []])
+    check("rules: adrs is a fragment",
+          [check_nodes(_nodes(f"### x\nstate: built\nfor: A thing.\nadrs: {a}\n")) for a in ("0003", "0010, 0016")],
+          [[], []])
+    _bare = "### {s}\nstate: built\nfor: A thing.\n"
+    check("rules: an anchored document is a fragment",
+          [check_nodes(_nodes(_bare.format(s=s)), frozenset({s, "other"})) for s in ("x", "y")]
+          + [any("no fragment" in p for p in check_nodes(_nodes(_bare.format(s="x")), frozenset({"y"})))],
+          [[], [], True])
+    check("rules: built with no fragment is refused",
+          [any("no fragment" in p for p in check_nodes(_nodes(_bare.format(s=s)))) for s in ("x", "y")],
+          [True, True])
+    # ⛔ G6 — AN INDEPENDENT LITERAL LIST of the three failing shapes and the passing one, each at two
+    # pairs, so the class is exercised by a copy `slug_problems` does not read, and a constant cannot
+    # pass. The marker is the clause's own words, so severing one clause reddens only its own case.
+    _G6 = (
+        ("G6: two nodes may not share a slug", "two nodes share", (
+            "### a\nfor: A.\n### a\nfor: A again.\n", "### b\nfor: B.\n#### b\nfor: B again.\n")),
+        ("G6: a was entry may not equal a current slug", "is also a current slug", (
+            "### a\nfor: A.\nwas: b\n### b\nfor: B.\n", "### c\nfor: C.\nwas: old, d\n### d\nfor: D.\n")),
+        ("G6: a former slug listed twice is refused", "is listed as a former slug", (
+            "### a\nfor: A.\nwas: old, old\n", "### a\nfor: A.\nwas: old\n### b\nfor: B.\nwas: old\n")),
+        ("G6: a rename passes", None, (
+            "### a\nfor: A.\nwas: old-a\n", "### b\nfor: B.\nwas: old-b, older-b\n### c\nfor: C.\nwas: old-c\n")),
+    )
+    for _name, _marker, _trees in _G6:
+        _got = [slug_problems(_nodes(t)) for t in _trees]
+        check(_name, [(any(_marker in p for p in g) if _marker else g) for g in _got],
+              [True, True] if _marker else [[], []])
+    _IDS = (
+        ("G6: a slug equal to another's f- id is refused", "f- id", (
+            ("### x\nfor: X.\n### f-x\nfor: F.\n", ("`x`", "`f-x`")),
+            ("### f-y\nfor: F.\n### y\nfor: Y.\n", ("`y`", "`f-y`")))),
+        ("G6: a slug equal to another's goal- id is refused", "goal- id of the node", (
+            ("### x\nfor: X.\n### goal-x\nfor: G.\n", ("`x`", "`goal-x`")),
+            ("### goal-y\nfor: G.\n### y\nfor: Y.\n", ("`y`", "`goal-y`")))),
+        ("G6: a slug equal to a former slug's goal- id is refused", "goal- id of the former slug", (
+            ("### a\nfor: A.\nwas: x\n### goal-x\nfor: G.\n", ("`x`", "`goal-x`")),
+            ("### goal-y\nfor: G.\n### b\nfor: B.\nwas: y\n", ("`y`", "`goal-y`")))),
+    )
+    for _name, _marker, _pairs in _IDS:
+        check(_name, [any(_marker in p and all(w in p for w in _want) for p in slug_problems(_nodes(t)))
+                      for t, _want in _pairs], [True, True])
+    check("G6: a goal- slug with no partner passes",
+          [slug_problems(_nodes(t)) for t in ("### goal-tree\nfor: G.\n### other\nfor: O.\n",
+                                              "### goal-x\nfor: G.\n### y\nfor: Y.\nwas: z\n")]
+          + [any(m in " ".join(slug_problems(_live)) for m in ("f- id", "goal- id"))],
+          [[], [], False])
+    _rn = _nodes("### a\nfor: A.\nwas: old-a, older-a\n### b\nfor: B.\nwas: old-b\n")
+    _rm = _nodes("### c\nfor: C.\nwas: old-c\n")
+    check("resolve: current, former and unknown",
+          ([resolve(_rn, "a"), resolve(_rn, "b"), resolve(_rn, "old-a"), resolve(_rn, "older-a"),
+            resolve(_rn, "old-b"), resolve(_rn, "nope"), resolve(_rm, "old-c"), resolve(_rm, "old-a")],
+           current_slugs(_rn), current_slugs(_rm)),
+          (["a", "b", "a", "a", "b", None, "c", None], {"a", "b"}, {"c"}))
+    _ABS = "### {s}\nstate: absent\nfor: A gap.\nexpected-because: standard.\n"
+    check("rules: absent may carry adrs",
+          [check_nodes(_nodes(_ABS.format(s="x") + f"adrs: {a}\n")) for a in ("0015", "0001, 0002")],
+          [[], []])
+    check("rules: absent may carry an anchored document",
+          [check_nodes(_nodes(_ABS.format(s=s)), frozenset({s})) for s in ("x", "harness-ships-elsewhere")],
+          [[], []])
+    check("rules: absent with an area is refused",
+          [[p for p in check_nodes(_nodes(_ABS.format(s="x") + a)) if "flip it to `built`" in p] for a in
+           ("areas: (x)\n", "areas: (x), (y)\nadrs: 0015\n")],
+          [["features.md:3: `x` is `absent` but claims 1 area(s) — flip it to `built`"],
+           ["features.md:3: `x` is `absent` but claims 2 area(s) — flip it to `built`"]])
+    check("summary: a stateless node is not counted absent",
+          [summary_line(_nodes("### a\nstate: built\nfor: A.\nareas: (a)\n" + _ABS.format(s="b") + "### c\nfor: C.\n")),
+           summary_line(_nodes("### a\nfor: A.\n### b\nfor: B.\n" + _ABS.format(s="c")))],
+          ["3 nodes (1 built, 1 absent, 1 stateless)", "3 nodes (0 built, 1 absent, 2 stateless)"])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
