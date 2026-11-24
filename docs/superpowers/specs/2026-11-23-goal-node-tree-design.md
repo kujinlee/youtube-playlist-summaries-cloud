@@ -3,7 +3,7 @@
 > **Anchor:** `status-visibility` — **ADR:** 0010, 0016
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** 🟠 needs-you — drafted 2026-11-23 from the owner's decisions of 2026-11-23 16:02–16:38; review rounds 1, 2 and 3 FOLDED (`docs/reviews/coordinator/goal-node-tree-spec-r1-coordinator.md`, `-r2-coordinator.md`, `-r3-coordinator.md`); round 3 CONVERGED; the migration (§5.1) redesigned by `docs/reviews/architecture-review-2026-11-23-goal-node-tree-migration.md`; NOT walked through. The owner decides every ✍ row of §4 and every question of §6.
+**Status:** ✅ approved — the owner walked every ✍ row of §4 and every question of §6 on 2026-11-23 21:03–21:22 (`docs/explainers/2026-11-23-brief-goal-node-tree-spec-walkthrough.html`) and approved "with your answers"; each answer is the recommendation or proposal this spec already carries, so no design text changed (§6.1 lists them). Drafted 2026-11-23 from the owner's decisions of 16:02–16:38; review rounds 1, 2 and 3 FOLDED (`docs/reviews/coordinator/goal-node-tree-spec-r1-coordinator.md`, `-r2-coordinator.md`, `-r3-coordinator.md`); round 3 CONVERGED; the migration (§5.1) redesigned by `docs/reviews/architecture-review-2026-11-23-goal-node-tree-migration.md`.
 
 Why this anchor: the three pages this spec re-bases (`/goals`, `/features`, `/goal-tree`) are the pages
 of `status-visibility`, and the document it amends
@@ -597,6 +597,41 @@ the table keeps Q10 last so earlier references stay valid):
 | Q12 | A backlog row with several area tags (27 rows, 23 open): which node is its primary? Today it shows under the claimant of EACH tag and has no primary | **Its `epic:` parent if it has one, else the node claiming its first tag**; the others show it as shared and do not count it (G7's second clause). Alternative: an explicit primary marker in the tag cell |
 | Q13 | The `state:` of new nodes: `cloud-publishing` and `serve-money-guard` are given `built` by the author; `memory-hygiene` and `dashboard-decisions` get none | **None on all four until you say `built`**: an aim with no state shows its gaps, and `built` on a node the author did not verify would repeat "built hides open gaps". Alternative: `built` on the two anchors, as the draft had |
 | Q10 | ADR-0010 is still `proposed`. ADR-0016 supersedes part of a decision that was never formally accepted. Accept ADR-0010 first? | **Yes** — its check has shipped and passes (`check-anchors.py`, 15 registered, floor 22 held), which is its own stated acceptance condition |
+
+### 6.1 The owner's answers — walkthrough of 2026-11-23
+
+Recorded from the walkthrough page's decision cards (each click arrives in `~/explainers/questions.md`). "Yes" accepts the row as §4 proposes it; "Recommended (…)" takes the recommendation quoted.
+
+| Row or question | Answer | When (PST) |
+|---|---|---|
+| 4.1 | Yes | 11-23 21:03 |
+| 4.3 | Yes | 11-23 21:22 |
+| 4.18 | Yes | 11-23 21:06 |
+| 4.24 | Yes | 11-23 21:22 |
+| 4.25 | Yes | 11-23 21:22 |
+| 4.26 | Recommended (put it under the trunk, beside dev-speed and token-usage) | 11-23 21:10 |
+| 4.27 | Recommended (a child) | 11-23 21:10 |
+| 4.30 | Recommended (merge) | 11-23 21:10 |
+| 4.33 | Recommended (merge) | 11-23 21:10 |
+| 4.36 | Recommended (yes) | 11-23 21:22 |
+| 4.37 | Recommended (yes, as a consequence of 4.36) | 11-23 21:20 |
+| 4.38 | Recommended (yes) | 11-23 21:20 |
+| 4.41 | Recommended (new child, name kept) | 11-23 21:20 |
+| 4.42 | Recommended (yes, as a consequence of 4.36) | 11-23 21:20 |
+| Q1 | Recommended (no) | 11-23 21:20 |
+| Q2 | Recommended (they stay) | 11-23 21:20 |
+| Q3 | Recommended (one dated, quoted PRIORITY line) | 11-23 21:20 |
+| Q4 | Recommended (history) | 11-23 21:20 |
+| Q5 | Recommended (yes, but as a follow-up backlog row, not in this work) | 11-23 21:20 |
+| Q6 | Recommended (arm every node that has an anchored document, minus a short named list of exemptions) | 11-23 21:20 |
+| Q7 | Recommended (yes, in S5) | 11-23 21:20 |
+| Q8 | Recommended (leave both as they are) | 11-23 21:20 |
+| Q9 | Recommended (show it) | 11-23 21:20 |
+| Q10 | Recommended (yes) | 11-23 21:20 |
+| Q11 | Recommended (a proposed: <date-time> field on a node) | 11-23 21:20 |
+| Q12 | Recommended (its epic: parent if it has one, otherwise the node that claims its first tag) | 11-23 21:20 |
+| Q13 | Recommended (no state on all four until you say built) | 11-23 21:20 |
+| APPROVE | Recommended (approve with your answers) | 11-23 21:20 |
 
 ## 7. What was measured, and what was inferred
 
