@@ -21517,6 +21517,21 @@ memory-corpus :2:5-17 -> :2:3-14, and 8 ids that the backlog #697 built corpus n
 fail is NOT re-judged). The tier A/B experiment docs' cited ids were re-mapped the same way.
 
 ## 2026-11-23
+The features page now opens with a tree of every feature — group, feature, sub-feature — and each
+line says how many backlog gaps are still open against it, by severity. The same count sits next to
+every "built" badge, so a built feature with 24 open gaps no longer reads as finished. The cards are
+folded; clicking a line in the tree opens its card.
+<!--tech-->
+`scripts/gen-features-page.py`: `render_index`, `gap_label`/`open_gaps`/`split_closed` (one counting
+rule shared by the Known-gaps band, the card heading and the index), cards as folded `<details>`,
+`OPEN_HASH_JS` opens the card a hash names (load, hashchange, re-click of the current hash). Each line
+counts its own node only — no subtree subtotal, since a two-tag row sits under two nodes. Review r1:
+one id function (`frag_id`) for link and card, safe for any name; the hash handler is RUN under
+`node` against a stub DOM, one case per behaviour; the counts are read back from the rendered band.
+Review r2: card ids carry a reserved `f-` prefix (`page_markup.feature_id`, also what
+`key_link("feature")` targets), so a node named like a chrome control cannot share its id; the band's
+rows are compared by id and severity against hand-written expected sets (`row_disagreements`).
+Self-test 19 → 41; mutation pin 16 → 43 (page_markup 79 → 80).
 As you asked, three explainer skills you no longer use are gone: `brief`, `explain-diff` and `explain-findings`.
 They are off the list of things the marketplace would ship, and their folders are removed from the repo. The reminder
 that suggested an explainer whenever a PR was opened is retired too. `explain-topic` is now the one explainer skill,

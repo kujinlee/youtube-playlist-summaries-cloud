@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/features-tree-index-r1-claude.md": "100644 b45824eeb935209af582d3ebe5bee3e2296deefa",
+    "docs/reviews/codex/features-tree-index-r1-codex.md": "100644 55f1f564ba40d6b27f115da7a58e846b433e6e57",
+    "docs/reviews/verdicts/features-tree-index-r1-codex.verdict.json": "100644 f2a5b523e4bf9edc13097f5073e62c9d30b0bdfe"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "96d8f2e8c9b7d99759ec5cf8f57b1e17f8048122",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "Claude half r1 of PR #624 features-tree-index",
+  "reason": "claude half filed: 7919 chars, names 96d8f2e8c9b7",
+  "refused": false,
+  "review": "features-tree-index-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/features-tree",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

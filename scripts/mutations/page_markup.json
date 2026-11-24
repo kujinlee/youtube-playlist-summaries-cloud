@@ -964,5 +964,16 @@
   "expect": [
    "subset: a <p> outside an <object> is not in button scope, so a <div> in it closes nothing"
   ]
+ },
+ {
+  "name": "a feature key's link drops the card-id prefix, so it names no card on /features",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        return f\"/features#{feature_id(key)}\" if SLUG.fullmatch(key) else None",
+    "        return f\"/features#{key}\" if SLUG.fullmatch(key) else None"
+   ]
+  ],
+  "expect": "key_link: feature"
  }
 ]
