@@ -184,7 +184,7 @@ table.comp td:first-child{white-space:nowrap}
 
 <main class="ex-body">
 <h1>Publishable components: cost by dependency closure, and the order to publish them</h1>
-<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-11-23 12:12 · dcfd44cb</time></span></div></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-11-23 17:56 · 0f09b78a · uncommitted changes</time></span></div></div>
 <div class="ex-decision-count" role="status">✍ <b>4</b> decisions on this page · <b>4</b> remaining · <b>0</b> answered · next: <a href="#ex-decision-1">Q1 — DECISION 1</a></div>
 <p class="reading"><b>Reading chosen:</b> this page is the <b>steering document</b> for the marketplace's next phase. It covers every component in the inventory (46 rows, of which 34 are phase 1) and, for each one:
 <ul><li>what it costs to publish, both on its own and together with everything it drags in (its <b>dependency closure</b>);</li>
@@ -257,6 +257,31 @@ It then proposes the order in which to publish them. <b>As of</b> master <code>d
 <tr><td>C</td><td>goal-tree → gen-dashboard, gen-backlog-page</td><td>The goal tree's NEEDS-YOU block reads the dashboard's asks and the backlog's NEEDS-OWNER rows. Each becomes optional when the file is absent.</td><td>goal-tree's closure falls from 9.75 h to 5.25 h</td></tr>
 <tr><td>D</td><td>gen-features-page → its regen hook</td><td>Self-test only (<code>gen-features-page.py:704</code> checks the hook exists)</td><td>The features page stops pulling in the whole auto-regen stack</td></tr>
 </table>
+
+<div class="answered" style="border-left:4px solid #2a7;background:rgba(40,160,110,.07);padding:.8rem 1rem;margin:1rem 0;border-radius:4px">
+<p><b>Q (11-23 17:49): "the soft edges are required and you suggest 'soft edges are cut' — so, how is this achieved?"</b></p>
+<p><b>Short answer: a cut removes no feature. Each edge is required <i>by the closure check</i>, not by the explain skill's job.</b> The closure check follows every import and every file a script names. It cannot tell "I need this to work" from "I mention this so I can offer more if it is there". A soft edge is the second kind. A cut turns it from <i>must be installed</i> into <i>used if installed</i>, or it moves a small shared piece to a file both sides already load. The code stays. Only the dependency arrow changes.</p>
+<svg viewBox="0 0 640 150" role="img" aria-label="Before and after cut A" style="max-width:100%;height:auto">
+<text x="10" y="18" font-size="13" font-weight="700" fill="currentColor">Before cut A</text>
+<rect x="10" y="28" width="150" height="34" rx="6" fill="none" stroke="currentColor"/><text x="85" y="50" font-size="12" text-anchor="middle" fill="currentColor">explainer-serve</text>
+<line x1="160" y1="45" x2="250" y2="45" stroke="#d33" stroke-width="2.5"/><text x="205" y="38" font-size="11" text-anchor="middle" fill="#d33">must exist</text>
+<rect x="250" y="28" width="210" height="34" rx="6" fill="none" stroke="currentColor"/><text x="355" y="50" font-size="12" text-anchor="middle" fill="currentColor">5 page generators (+18 more)</text>
+<text x="10" y="94" font-size="13" font-weight="700" fill="currentColor">After cut A</text>
+<rect x="10" y="104" width="150" height="34" rx="6" fill="none" stroke="currentColor"/><text x="85" y="126" font-size="12" text-anchor="middle" fill="currentColor">explainer-serve</text>
+<line x1="160" y1="121" x2="250" y2="121" stroke="#2a7" stroke-width="2.5" stroke-dasharray="6 4"/><text x="205" y="114" font-size="11" text-anchor="middle" fill="#2a7">if installed</text>
+<rect x="250" y="104" width="210" height="34" rx="6" fill="none" stroke="currentColor" stroke-dasharray="4 3"/><text x="355" y="126" font-size="12" text-anchor="middle" fill="currentColor">generators the user has</text>
+<text x="470" y="126" font-size="11" fill="currentColor">missing → "not installed"</text>
+</svg>
+<p><b>Each cut, and why it is safe:</b></p>
+<ul>
+<li><b>A — the Refresh route table.</b> <code>REGENERABLE</code> (<code>scripts/explainer-serve.py:223</code>) is a five-entry dict: <i>"if the reader presses Refresh on the dashboard, run gen-dashboard.py"</i>. An explain page has no Refresh button of that kind. It is composed once and served as is. So a user who installs only explain-topic never takes those routes. Today the server still names the five scripts, so the closure check makes them ship. After the cut, the server filters the table to scripts that exist on disk, and a press on a missing one answers "not installed" instead of crashing. In <b>our</b> repo all five exist, so nothing changes here.</li>
+<li><b>B — one formula.</b> <code>brief-compose.py:606–616</code> loads all of <code>gen-dashboard.py</code> only to call <code>contrast_ratio</code>, the WCAG contrast formula, a few lines long. Move it into <code>page_chrome.py</code>, which both files already import. The formula still runs, and brief-compose no longer needs the dashboard.</li>
+<li><b>C — the goal tree's NEEDS-YOU box.</b> It reads the dashboard's open asks and the backlog's NEEDS-OWNER rows. If those files are absent, the box says "no dashboard installed" for that source instead of failing. With both installed, which is us, it is unchanged.</li>
+<li><b>D — a self-test line.</b> <code>gen-features-page.py:704</code> checks only that the regen hook exists. That is a test about <i>our</i> setup, not something the page needs to render. The check becomes "if the hook is installed, it is wired correctly".</li>
+</ul>
+<p><b>What a user loses:</b> nothing they installed. They lose only the links into parts they did not install, and those come back when they install them (waves 2–6). <b>What we lose:</b> nothing. Every cut is a no-op when everything is present.</p>
+<p><b>Why the page said "cut":</b> the word is graph language, for removing an edge from the dependency graph. "Make optional" would have been clearer. ⚠ <b>Argued, not built:</b> I read each line cited above on <code>origin/master</code> today (A and B quoted, C and D from the inventory's citations), but none of the four cuts has been written or tested yet. That is why section 6 asks you to price them as wave 1's first calibration point.</p>
+</div>
 
 <h2>3. The proposed queue: seven waves, ordered by what each one adds</h2>
 <figure><svg viewBox="0 0 860 354" role="img" aria-label="Publish waves, cumulative hours">
