@@ -11,12 +11,12 @@
   "expect": "a node's purpose is rendered"
  },
  {
-  "name": "the state chip stops saying `not built`, so an absence renders as jargon",
+  "name": "the shared state badge stops saying `not built`, so an absence renders as jargon on the card AND its index line",
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "             f'{\"not built\" if absent else \"built\"}</span>',",
-    "             f'{\"absent\" if absent else \"built\"}</span>',"
+    "            f'{\"not built\" if absent else \"built\"}</span>')",
+    "            f'{\"absent\" if absent else \"built\"}</span>')"
    ]
   ],
   "expect": "an absent node is marked"
@@ -174,5 +174,126 @@
    ]
   ],
   "expect": "a key in a linked row's text is not a second <a> inside the row's link"
+ },
+ {
+  "name": "a closed backlog row is counted as an open gap, so a finished row inflates `N gaps`",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    return [e for e in entries if not (isinstance(e, dict) and e.get(\"closed\"))], closed",
+    "    return list(entries), closed"
+   ]
+  ],
+  "expect": "the gap summary counts OPEN rows by severity, in the backlog's severity order"
+ },
+ {
+  "name": "the severity breakdown ignores the backlog's order, so 🟢 can lead 🔴",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "                                                   key=lambda kv: rank.get(kv[0], len(rank))))",
+    "                                                   key=lambda kv: -rank.get(kv[0], len(rank))))"
+   ]
+  ],
+  "expect": "the gap summary counts OPEN rows by severity, in the backlog's severity order"
+ },
+ {
+  "name": "the index line counts every backlog row, closed ones too, so it disagrees with the card",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    gaps = open_gaps(fragments.get(n.slug) or {})",
+    "    gaps = list((fragments.get(n.slug) or {}).get(\"backlog\") or [])"
+   ]
+  ],
+  "expect": "a node's index line and card heading carry the same gap count, with gaps and without"
+ },
+ {
+  "name": "the card heading loses its gap summary, so `built` reads as finished again",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "             gaps_html(n, fragments, order),\n             f'<span class=\"meta\">",
+    "             f'<span class=\"meta\">"
+   ]
+  ],
+  "expect": "a node's index line and card heading carry the same gap count, with gaps and without"
+ },
+ {
+  "name": "the index flattens a `####` node to the top level, losing the hierarchy",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "                out.append(\"<ul>\" + \"\".join(f\"<li>{line(k)}</li>\" for k in kids) + \"</ul>\")",
+    "                out.append(\"\".join(f\"</li><li>{line(k)}\" for k in kids))"
+   ]
+  ],
+  "expect": "the index lists every node in file order, a `####` nested one list deeper than its `###`"
+ },
+ {
+  "name": "the page stops rendering the index, so the tree is invisible again",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    body: list[str] = [render_index(nodes, fragments, order)]",
+    "    body: list[str] = []"
+   ]
+  ],
+  "expect": "the index is rendered before the first card"
+ },
+ {
+  "name": "every card renders OPEN, so the page is as long as before",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    parts = [f'<details class=\"node{\" absent\" if absent else \"\"}\" id=\"{esc(n.slug)}\">',",
+    "    parts = [f'<details class=\"node{\" absent\" if absent else \"\"}\" id=\"{esc(n.slug)}\" open>',"
+   ]
+  ],
+  "expect": "every card is a <details>, and every one is FOLDED"
+ },
+ {
+  "name": "the hash handler finds the card and leaves it folded",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    el.open = true;",
+    "    el.open = false;"
+   ]
+  ],
+  "expect": "the page carries the script that opens the card a hash names, on load and on hashchange"
+ },
+ {
+  "name": "the page stops emitting the hash handler",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "<script>{OPEN_HASH_JS}</script>\n",
+    ""
+   ]
+  ],
+  "expect": "the page carries the script that opens the card a hash names, on load and on hashchange"
+ },
+ {
+  "name": "collect stops carrying each row's severity glyph, so every gap counts as `·`",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "            \"sev\": glyphs.get(r[\"sev\"], \"·\"),\n",
+    ""
+   ]
+  ],
+  "expect": "over the REAL tree, every index line's count is the card's own open-row count, by severity"
+ },
+ {
+  "name": "the index omits a node's gap summary",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "                f'{gaps_html(n, fragments, order)}')",
+    "                '')"
+   ]
+  ],
+  "expect": "a node's index line and card heading carry the same gap count, with gaps and without"
  }
 ]

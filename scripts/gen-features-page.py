@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 19 cases
+    python3 scripts/gen-features-page.py --self-test  # 29 cases
 
 WHY THIS EXISTS
 ---------------
@@ -107,6 +107,13 @@ def sev_glyphs(severity: dict[str, str]) -> dict[str, str]:
     """
     return {"none": "·"} | {name: glyph for glyph, name in severity.items()}
 
+
+def sev_order() -> list[str]:
+    """The glyphs in the backlog page's own severity order (🔴 🟠 🟡 🟢 …), then the no-marker `·`.
+    Read from `gen-backlog-page.SEVERITY`, never written here, for the reason `sev_glyphs` gives."""
+    sev = backlog_page().SEVERITY
+    return list(sev) + [sev_glyphs(sev)["none"]]
+
 # Words that carry no identity, so a subject sharing one with a slug says nothing. `job-queue-and-
 # worker-lifecycle` shares "and" with half the log.
 STOPWORDS = frozenset(
@@ -193,6 +200,139 @@ def group_tree(nodes: list[Node]) -> list[tuple[str, list[tuple[Node, list[Node]
         else:
             here.append((n, []))
     return trunks
+
+
+def split_closed(entries: list) -> tuple[list, list]:
+    """(open, closed) of one band's entries, in order. PURE.
+
+    ⛔ THE ONE RULE FOR "IS THIS A GAP". The card's Known-gaps band, its heading count and the index
+    line all read it, so the three cannot disagree about which rows are open (owner, 2026-11-23:
+    a `built` node with 24 open rows read as finished, because nothing counted them).
+    """
+    closed = [e for e in entries if isinstance(e, dict) and e.get("closed")]
+    return [e for e in entries if not (isinstance(e, dict) and e.get("closed"))], closed
+
+
+def open_gaps(fragment: dict) -> list:
+    """One node's OPEN backlog rows — exactly the rows its card lists as Known gaps. PURE."""
+    return split_closed(list(fragment.get("backlog") or []))[0]
+
+
+def gap_label(gaps: list, order: list[str]) -> str:
+    """`4 gaps (1🟠 2🟡 1🟢)`, `1 gap (1🟢)`, `0 gaps`. PURE.
+
+    Severities appear in `order` (the backlog page's own severity order, `sev_order`); a glyph not
+    in it is shown last rather than dropped, so a count never loses a row. A plain-string fragment
+    carries no severity and counts as `·`, the backlog's no-marker glyph.
+    """
+    if not gaps:
+        return "0 gaps"
+    counts: dict[str, int] = {}
+    for e in gaps:
+        g = e.get("sev", "·") if isinstance(e, dict) else "·"
+        counts[g] = counts.get(g, 0) + 1
+    rank = {g: i for i, g in enumerate(order)}
+    parts = " ".join(f"{c}{g}" for g, c in sorted(counts.items(),
+                                                   key=lambda kv: rank.get(kv[0], len(rank))))
+    return f"{len(gaps)} gap{'' if len(gaps) == 1 else 's'} ({parts})"
+
+
+def state_html(n: Node) -> str:
+    """The state badge, shared by the card heading and its index line — one wording, one place."""
+    absent = n.state == "absent"
+    return (f'<span class="state {"notbuilt" if absent else "built"}">'
+            f'{"not built" if absent else "built"}</span>')
+
+
+def gaps_html(n: Node, fragments: dict, order: list[str]) -> str:
+    gaps = open_gaps(fragments.get(n.slug) or {})
+    return f'<span class="gaps{" open" if gaps else ""}">{esc(gap_label(gaps, order))}</span>'
+
+
+def render_index(nodes: list[Node], fragments: dict, order: list[str]) -> str:
+    """The tree index: group -> `###` -> `####`, in file order, one linked line per node. PURE.
+
+    ⚠ EACH LINE COUNTS ITS OWN NODE'S GAPS ONLY — no subtotal over a parent's children. A row
+    carrying two tags lands under BOTH nodes (backlog #381), so summing a subtree's lines would count
+    such a row twice; a de-duplicated subtotal is a second counting rule, and this page keeps one.
+    """
+    def line(n: Node) -> str:
+        return (f'<a href="#{esc(n.slug)}">{esc(n.slug)}</a> {state_html(n)} '
+                f'{gaps_html(n, fragments, order)}')
+
+    out = ['<nav class="tindex" aria-label="Feature tree">',
+           '<p class="ilab">Feature tree · each line counts its own node’s open gaps · '
+           'select a line to open its card</p>']
+    for trunk, entries in group_tree(nodes):
+        out.append(f'<div class="igroup"><span class="iname">{esc(trunk)}</span><ul>')
+        for node, kids in entries:
+            out.append(f"<li>{line(node)}")
+            if kids:
+                out.append("<ul>" + "".join(f"<li>{line(k)}</li>" for k in kids) + "</ul>")
+            out.append("</li>")
+        out.append("</ul></div>")
+    out.append("</nav>")
+    return "\n".join(out)
+
+
+def index_shape(index_html: str) -> list[tuple[int, str]]:
+    """[(list depth, slug)] of every index link, in document order. PURE — the self-test's reader
+    of the index, through the same subset tokenizer the page is checked with."""
+    depth, out = 0, []
+    for t in page_markup.page_tokens(index_html)[0]:
+        if t.kind == "start" and t.tag == "ul":
+            depth += 1
+        elif t.kind == "end" and t.tag == "ul":
+            depth -= 1
+        elif t.kind == "start" and t.tag == "a":
+            href = dict(t.attrs).get("href") or ""
+            if href.startswith("#"):
+                out.append((depth, href[1:]))
+    return out
+
+
+# Opens the folded card a hash names. Fragment navigation scrolls TO a closed `<details>` but never
+# opens it, so without this an index link lands on a one-line summary. Runs on load (a shared link)
+# and on hashchange (an index click); re-clicking the CURRENT hash fires no hashchange, so index
+# clicks are handled directly too.
+OPEN_HASH_JS = """
+(function () {
+  function openFrom(hash) {
+    var id = decodeURIComponent((hash || "").replace(/^#/, ""));
+    var el = id && document.getElementById(id);
+    if (!el || el.tagName !== "DETAILS") return;
+    el.open = true;
+    el.scrollIntoView({block: "start"});
+  }
+  window.addEventListener("hashchange", function () { openFrom(location.hash); });
+  document.addEventListener("click", function (ev) {
+    var a = ev.target.closest && ev.target.closest('.tindex a[href^="#"]');
+    if (a && a.getAttribute("href") === location.hash) openFrom(location.hash);
+  });
+  openFrom(location.hash);
+})();
+"""
+
+
+def scripts_parse(page: str) -> list[str]:
+    """`node --check` over every inline `<script>`: [] when all parse. No `node` is CANNOT RUN,
+    reported as a problem — never an empty list, which would read as a pass."""
+    import shutil
+    node = shutil.which("node")
+    bodies = re.findall(r"<script>(.*?)</script>", page, re.S)
+    if not node:
+        return ["CANNOT RUN: no `node` on PATH — the inline scripts were NOT checked"]
+    if not bodies:
+        return ["no inline <script> found — nothing was checked"]
+    problems = []
+    with tempfile.TemporaryDirectory() as td:
+        for i, b in enumerate(bodies):
+            f = pathlib.Path(td) / f"s{i}.js"
+            f.write_text(b)
+            r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True, timeout=60)
+            if r.returncode != 0:
+                problems.append(f"script {i}: {(r.stderr or r.stdout).strip()[:200]}")
+    return problems
 
 
 # ---------------------------------------------------------------- collection (reads the tree)
@@ -306,6 +446,7 @@ def collect(nodes: list[Node]) -> tuple[dict[str, dict], dict]:
                      + (f" (was {r['was']})" if r["was"] else "")
                      + f" {r['title']}",
             "href": page_markup.key_link("backlog", r["num"]),
+            "sev": glyphs.get(r["sev"], "·"),
             "closed": r["closed"],
         } for r in mine]
 
@@ -364,6 +505,31 @@ CSS = """
   .node{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--structure);
         border-radius:3px;padding:1.1rem 1.25rem;display:flex;flex-direction:column;gap:.85rem}
   .node.absent{border-left-color:var(--pending)}
+  .tindex{background:var(--card);border:1px solid var(--rule);border-radius:3px;
+          padding:1rem 1.25rem;display:flex;flex-direction:column;gap:.7rem}
+  .ilab{font-family:var(--mono);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;
+        color:var(--ink-faint)}
+  .igroup{display:flex;flex-direction:column;gap:.25rem}
+  .iname{font-family:var(--mono);font-size:.74rem;letter-spacing:.14em;text-transform:uppercase;
+         color:var(--ink-soft);font-weight:600}
+  .tindex ul{list-style:none;margin:0;padding-left:1.1rem;display:flex;flex-direction:column;
+             gap:.15rem}
+  .tindex ul ul{border-left:1px solid var(--rule);margin:.15rem 0 .1rem .3rem;padding-left:.9rem}
+  .tindex li{font-size:.86rem;line-height:1.5;overflow-wrap:anywhere}
+  .tindex li > a{font-family:var(--mono);font-weight:600;color:var(--structure);
+                 text-decoration:none;margin-right:.35rem}
+  .tindex li > a:hover{text-decoration:underline}
+  .tindex .state{font-size:.62rem;padding:.05rem .35rem;margin-right:.35rem}
+  .gaps{font-family:var(--mono);font-size:.74rem;color:var(--ink-faint);white-space:nowrap}
+  .gaps.open{color:var(--pending)}
+  details.node > summary{cursor:pointer;list-style:none}
+  details.node > summary::-webkit-details-marker{display:none}
+  details.node > summary::before{content:"▸";color:var(--ink-faint);font-size:.8rem;
+                                 margin-right:-.4rem}
+  details.node[open] > summary::before{content:"▾"}
+  details.node:not([open]){padding-top:.7rem;padding-bottom:.7rem}
+  details.node{display:block}
+  details.node > summary ~ *{margin-top:.85rem}
   .kids{display:flex;flex-direction:column;gap:.8rem;margin-left:1.5rem;margin-top:.8rem}
   .kids .node{border-left-width:2px}
   .nhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:.6rem 1rem}
@@ -411,8 +577,7 @@ def render_fragments(f: dict) -> list[str]:
             continue
         # Known gaps: a CLOSED row is not a gap, so it is counted and collapsed rather than
         # dropped — dropping it would make a node with twenty closed rows look untouched.
-        closed = [e for e in entries if isinstance(e, dict) and e.get("closed")]
-        entries = [e for e in entries if not (isinstance(e, dict) and e.get("closed"))]
+        entries, closed = split_closed(entries)
         cap = GAP_CAP if key == "backlog" else REVIEW_CAP if key == "reviews" else CHANGE_CAP
         shown, extra = entries[:cap], entries[cap:]
         if not shown and not closed:
@@ -440,17 +605,19 @@ def render_fragments(f: dict) -> list[str]:
     return parts
 
 
-def render_node(n: Node, fragments: dict) -> str:
+def render_node(n: Node, fragments: dict, order: list[str]) -> str:
+    """One card, FOLDED: the heading (slug, state, open gaps by severity) is the `<summary>`, so a
+    folded card still says whether `built` means finished. The index's links open it (OPEN_HASH_JS)."""
     absent = n.state == "absent"
     f = fragments.get(n.slug) or {}
     n_frag = sum(len(f.get(k) or []) for k, _ in SECTIONS)
-    parts = [f'<article class="node{" absent" if absent else ""}" id="{esc(n.slug)}">',
-             '<div class="nhead">',
+    parts = [f'<details class="node{" absent" if absent else ""}" id="{esc(n.slug)}">',
+             '<summary class="nhead">',
              f'<span class="slug">{esc(n.slug)}</span>',
-             f'<span class="state {"notbuilt" if absent else "built"}">'
-             f'{"not built" if absent else "built"}</span>',
+             state_html(n),
+             gaps_html(n, fragments, order),
              f'<span class="meta">{n_frag} fragment(s)</span>',
-             "</div>",
+             "</summary>",
              f'<p class="purpose">{inline_md(n.purpose)}</p>']
     if absent:
         # ⛔ THE HALF OF THIS PAGE THAT THE FIRST DESIGN COULD NOT SHOW. A necessary feature that
@@ -471,7 +638,7 @@ def render_node(n: Node, fragments: dict) -> str:
             # state — but the page must not render it as a blank card either.
             parts.append('<span class="absent-note">Built, but this page could derive no '
                          "fragment — check-features.py should have refused this node.</span>")
-    parts.append("</article>")
+    parts.append("</details>")
     return "\n".join(parts)
 
 
@@ -487,15 +654,16 @@ def render(nodes: list[Node], fragments: dict, built_at: str = "",
     built_at = built_at or _dt.datetime.now().isoformat(timespec="minutes")
     notes = notes or {}
     built = sum(1 for n in nodes if n.state == "built")
-    body: list[str] = []
+    order = sev_order()
+    body: list[str] = [render_index(nodes, fragments, order)]
     for trunk, entries in group_tree(nodes):
         body.append('<section class="trunk">'
                     f'<h2 class="tname">{esc(trunk)}</h2>')
         for node, kids in entries:
-            body.append(render_node(node, fragments))
+            body.append(render_node(node, fragments, order))
             if kids:
                 body.append('<div class="kids">')
-                body.extend(render_node(k, fragments) for k in kids)
+                body.extend(render_node(k, fragments, order) for k in kids)
                 body.append("</div>")
         body.append("</section>")
 
@@ -517,7 +685,7 @@ def render(nodes: list[Node], fragments: dict, built_at: str = "",
   <div class="eyebrow">Derived from docs/features.md · nothing here is a second copy</div>
   <h1>Features</h1>
   {page_chrome.chrome_bar("features", generated_at)}
-  <p class="standfirst">One card per node of the feature tree.
+  <p class="standfirst">One folded card per node of the feature tree, indexed below.
     <strong>{len(nodes)}</strong> nodes, <strong>{built}</strong> built,
     <strong>{absence_line(nodes)}</strong>. A node says what it is <em>for</em>; everything
     beneath it — gaps, decisions, specs, reviews, changes — is derived from declarations those
@@ -548,6 +716,7 @@ def render(nodes: list[Node], fragments: dict, built_at: str = "",
 </footer>
 </div>
 <script>{page_chrome.chrome_script()}</script>
+<script>{OPEN_HASH_JS}</script>
 """
 
 
@@ -686,6 +855,65 @@ def _self_test_body() -> int:
     check("the page's backlog band lists exactly the rows match_rows places, for every node",
           (_band_mismatch(_real_nodes, collect(_real_nodes)[0]),
            _band_mismatch(tagged, collect(tagged)[0])), ([], []))
+
+    # ── THE TREE INDEX, THE GAP SUMMARY AND THE FOLD (owner, 2026-11-23) ──────────────────────
+    # "the features page is very long and it doesn't show feature list and hierarchical relationship
+    # of features" and "'explanation-on-demand' still has many open backlogs, while the feature is in
+    # 'Built' state". Three answers: an index first, a gap count beside every state badge, and every
+    # card folded.
+    _order = sev_order()
+    _g = lambda num, glyph, closed=False: {"label": f"#{num} {glyph} t", "sev": glyph,
+                                            "href": f"/backlog-table#i{num}", "closed": closed}
+    _frag = {"job-queue": {"backlog": [_g(1, "🟡"), _g(2, "🟢"), _g(3, "🟠"), _g(4, "🟡"),
+                                       _g(5, "🔴", closed=True)]}}
+    check("the gap summary counts OPEN rows by severity, in the backlog's severity order",
+          (gap_label(open_gaps(_frag["job-queue"]), _order), gap_label([], _order),
+           gap_label([_g(9, "🟢")], _order)),
+          ("4 gaps (1🟠 2🟡 1🟢)", "0 gaps", "1 gap (1🟢)"))
+    _tree = render(nested + nodes, _frag)
+    _ix_at, _card_at = _tree.find('class="tindex"'), _tree.find('<details class="node')
+    check("the index is rendered before the first card",
+          (_ix_at != -1, _card_at != -1, -1 < _ix_at < _card_at), (True, True, True))
+    _ix = render_index(nested + nodes, _frag, _order)
+    check("the index lists every node in file order, a `####` nested one list deeper than its `###`",
+          index_shape(_ix),
+          [(1, "job-queue"), (2, "wake-on-visit"), (1, "wake-on-visit"), (1, "dig-job-recovery")])
+    # ⛔ ONE COUNTING RULE: the index line and the card heading both read `open_gaps` — a node WITH
+    # gaps (one closed row excluded) and a node WITHOUT.
+    _line = lambda slug: re.search(rf'href="#{slug}">(.*?)(?:</li>|<ul>)', _ix, re.S).group(1)
+    _head = lambda slug: re.search(rf'id="{slug}">\s*<summary.*?</summary>', _tree, re.S).group(0)
+    check("a node's index line and card heading carry the same gap count, with gaps and without",
+          ("4 gaps (1🟠 2🟡 1🟢)" in _line("job-queue"), "4 gaps (1🟠 2🟡 1🟢)" in _head("job-queue"),
+           "0 gaps" in _line("dig-job-recovery"), "0 gaps" in _head("dig-job-recovery")),
+          (True, True, True, True))
+    check("the index line carries the node's state, as the card says it",
+          ("built" in _line("job-queue"), "not built" in _line("dig-job-recovery")), (True, True))
+    # ⛔ OVER THE REAL TREE: every node's index count is the card's own open-row count.
+    _rfrag = collect(_real_nodes)[0]
+    _rix = render_index(_real_nodes, _rfrag, _order)
+    _bad = [n.slug for n in _real_nodes
+            if gap_label(open_gaps(_rfrag[n.slug]), _order)
+            not in re.search(rf'href="#{n.slug}">(.*?)(?:</li>|<ul>)', _rix, re.S).group(1)]
+    # ...and each counted row's severity is the one its own Known-gaps line shows (`#N <glyph> …`).
+    _sevless = [e["label"] for n in _real_nodes for e in open_gaps(_rfrag[n.slug])
+                if e["label"].split()[1] != e.get("sev")]
+    check("over the REAL tree, every index line's count is the card's own open-row count, by severity",
+          (len(_real_nodes) > 30, _bad, _sevless[:3]), (True, [], []))
+    _cards = re.findall(r"<details class=\"node[^\"]*\"[^>]*>", _tree)
+    check("every card is a <details>, and every one is FOLDED",
+          (len(_cards), [c for c in _cards if " open" in c]), (len(nested + nodes), []))
+    check("every index link targets a card's id",
+          sorted(set(re.findall(r'href="#([a-z0-9-]+)"', _ix)))
+          == sorted(set(re.findall(r'<details class="node[^"]*" id="([a-z0-9-]+)"', _tree))), True)
+    # The hash-opens-card behaviour, by its markup: a hash naming a folded card OPENS it, on load
+    # and on every later hash change (a `<details>` is not opened by fragment navigation itself).
+    check("the page carries the script that opens the card a hash names, on load and on hashchange",
+          (OPEN_HASH_JS in _tree, "hashchange" in OPEN_HASH_JS, ".open = true" in OPEN_HASH_JS),
+          (True, True, True))
+    # ⛔ THE EMITTED ARTIFACT PARSES — the HTML is in the supported subset, the script is a program.
+    _js = scripts_parse(_tree)
+    check("the emitted page is in the supported HTML subset and every inline script parses",
+          (page_markup.subset_problems(_tree), _js), ([], []))
 
     # ── THE REGEN HOOK ──────────────────────────────────────────────────────────────────────────
     # ⭐ Code review r1 (Codex), Low. `.claude/hooks/regen-features-page.sh` is the ONLY thing that
