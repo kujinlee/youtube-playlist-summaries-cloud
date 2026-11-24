@@ -21581,3 +21581,20 @@ Phase 6 armed on thrashing (component `migration-slices`, rounds 2 and 3):
 `origin/master`; a merge rebuilds every page). Round 3 fold:
 `docs/reviews/coordinator/goal-node-tree-spec-r3-coordinator.md` (6 Minor: 6 fixed, 0 rejected, 0 to the
 owner). Filed backlog #710 (hand-kept edit-hook source lists).
+
+## 2026-11-24
+The first building block of the one goal-and-feature tree is in: the feature list can now hold nodes
+at any depth, a node without a built/absent mark, renamed names, and a "done" mark that must match
+something you actually said. The features page draws the deeper tree, and a feature that no backlog
+tag can reach now says so ("claims no area — gaps not counted") instead of showing "0 gaps", which read
+as "nothing open". Four features show that today. Nothing new is waiting for you.
+<!--tech-->
+Node-tree plan (`docs/superpowers/plans/2026-11-24-goal-node-tree.md`) slice S1, Tasks 1–4, branch
+`goal-node-tree-s1`. `scripts/check-features.py` (`fa4aded9`, `d4aafa40`, `a21b0679`): fields `adrs`,
+`was`, `done`, `proposed`, a trunk `slug:`, node depths `###`–`######` with a skipped level refused,
+optional `state`, the built/absent fragment rules, G6 slug and page-id uniqueness, `resolve`, and G9 (a
+`done:` line must equal a request recorded under its node in `docs/goal-threads.md`; an unreadable file
+is CANNOT RUN). `scripts/goal-tree.py` reads its goal and request patterns from `check-features`.
+`scripts/gen-features-page.py` (`36fe244c`): recursive `group_tree`, trunk nodes linked and carded, no
+badge on a stateless node, `inherits_area`. Self-tests: check-features 54 → 90, gen-features-page
+41 → 48. Mutations: check-features 32 → 51, gen-features-page 43 → 53. `docs/features.md` is unchanged.
