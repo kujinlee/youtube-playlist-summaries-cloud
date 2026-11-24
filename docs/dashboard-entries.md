@@ -21581,3 +21581,14 @@ Phase 6 armed on thrashing (component `migration-slices`, rounds 2 and 3):
 `origin/master`; a merge rebuilds every page). Round 3 fold:
 `docs/reviews/coordinator/goal-node-tree-spec-r3-coordinator.md` (6 Minor: 6 fixed, 0 rejected, 0 to the
 owner). Filed backlog #710 (hand-kept edit-hook source lists).
+
+## 2026-11-24
+Decision cards on an explainer page now have buttons, as you asked: ★ Recommended (when the card has a
+recommendation), Yes, No and Other…. A click sends your answer to the session the same way the Ask box
+does, and the card says "sent" until the session records it and the page is rebuilt. You used them for
+the 28 node-tree decisions and the 4 publishable-components ones last night.
+<!--tech-->
+`DECISION_JS` in `scripts/brief-compose.py`, emitted only while a decision is open; POSTs the tray's
+three-line shape (`**<label> — DECISION n of N**`, quote, `Q: ANSWER: <a>`) to `/questions`; remembered
+per browser in localStorage; from `file://` it copies to the clipboard. Self-test 226 → 234 (the script
+run under node). `explainer-delivery.md` §3a documents it.
