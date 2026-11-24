@@ -550,7 +550,10 @@ EXPECTED_MUTATIONS = {
     # `group_tree`/`render_index` (none deleted); +10: both recursions' depth bound, the orphan,
     # the trunk's link and card, the stateless badge and note, the no-area sentence, and inheritance
     # (an ancestor's area, and the walk past the parent).
-    "scripts/gen-features-page.py": 53,
+    # ⟳ 2026-11-24, goal node tree S1 review r1: 53 -> 54 — a slugged trunk keyed by its display
+    # text (Codex High 1 = Claude F1). Three entries were REBOUND onto the rewritten `group_tree` (the
+    # orphan, and the two `####` nesting ones, which had named its deleted `entries` local).
+    "scripts/gen-features-page.py": 54,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -1722,7 +1725,10 @@ EXPECTED_MUTATIONS = {
     # stateless count.
     # ⟳ 2026-11-24, goal node tree S1 Task 3: 47 -> 51 — G9's words comparison, time comparison, the
     # under-that-node restriction, and the lazy read of the threads file.
-    "scripts/check-features.py": 51,
+    # ⟳ 2026-11-24, goal node tree S1 review r1: 51 -> 57 — the current-slug grammar, the stateless
+    # `expected-because:` refusal, and four on G9's CANNOT RUN arm: its `return 2`, `main`'s call
+    # site, the undecodable read, and the no-`## GOAL` file.
+    "scripts/check-features.py": 57,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed

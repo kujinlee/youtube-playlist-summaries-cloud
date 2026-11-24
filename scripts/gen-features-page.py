@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 48 cases
+    python3 scripts/gen-features-page.py --self-test  # 50 cases
 
 WHY THIS EXISTS
 ---------------
@@ -191,23 +191,28 @@ def group_tree(nodes: list[Node]) -> list[tuple[str, Node | None, list]]:
     because a node the page silently dropped is the one failure this whole page exists to remove.
     A trunk that carries a `slug:` is a level-2 node; it is the entry's second element, and the nodes
     under it are its children.
+
+    ⛔ A SLUGGED TRUNK IS KEYED BY ITS NODE, NOT ITS DISPLAY TEXT (S1 r1, Codex High 1 = Claude F1).
+    Keyed by the heading text, a second `## T` carrying `slug: b` overwrote the first's node `a`, which
+    then had no card and no index line. Spec §2.2: the slug is the name, unique across the tree; the
+    heading is display. So each level-2 node opens its OWN group, and only the PARENTLESS nodes of a
+    slugless trunk (which have no node to hang under) are grouped by heading text, as before.
     """
     trunks: list[list] = []
-    by_trunk: dict[str, list] = {}
+    slugless: dict[str, list] = {}
     slots: dict[tuple[str, str], list] = {}
     for n in nodes:
-        if n.trunk not in by_trunk:
-            by_trunk[n.trunk] = [n.trunk, None, []]
-            trunks.append(by_trunk[n.trunk])
-        entry = by_trunk[n.trunk]
-        entries = entry[2]
         if n.level == 2:
-            entry[1] = n
-            slots[(n.trunk, n.slug)] = entries
+            entry = [n.trunk, n, []]
+            trunks.append(entry)
+            slots.setdefault((n.trunk, n.slug), entry[2])
             continue
         here = slots.get((n.trunk, n.parent)) if n.parent else None
         if here is None:
-            here = entries
+            if n.trunk not in slugless:
+                slugless[n.trunk] = [n.trunk, None, []]
+                trunks.append(slugless[n.trunk])
+            here = slugless[n.trunk][2]
         kids: list = []
         here.append((n, kids))
         slots.setdefault((n.trunk, n.slug), kids)
@@ -1011,6 +1016,23 @@ def _self_test_body() -> int:
                   problems=["features.md:1: a problem"], generated_at="2001-01-01 00:00 · abc1234")
     check("no node is rendered twice",
           (html.count("id=\"f-wake-on-visit\""), deep.count("id=\"f-wake-on-visit\"")), (1, 1))
+    # ⛔ S1 r1 (Codex High 1 = Claude F1): a trunk's DISPLAY text is not its identity — its slug is
+    # (spec §2.2). Two `## ` sections sharing a heading, both slugged, and slugless-then-slugged: every
+    # node gets exactly one card and one index line, and each slugged trunk heads its own group.
+    _twin = ("## T\nslug: a\nfor: A.\n### c1\nfor: C.\n## T\nslug: b\nfor: B.\n### c2\nfor: D.\n",
+             "## T\n### c1\nfor: C.\n## T\nslug: b\nfor: B.\n### c2\nfor: D.\n")
+    _twin_got = []
+    for _src in _twin:
+        _tn = parse_features(_src)[0]
+        _tp = render(_tn, {}, built_at="2001-01-01T00:00")
+        _tix = render_index(_tn, {}, sev_order())
+        _twin_got.append(([(_tp.count(f'id="{frag_id(n.slug)}"'), _tix.count(f'href="#{frag_id(n.slug)}"'))
+                           for n in _tn],
+                          [(name, t.slug if t else None, [e[0].slug for e in es]) for name, t, es in group_tree(_tn)]))
+    check("two trunks sharing a display name keep every node",
+          (_twin_got, group_tree([])),
+          ([([(1, 1)] * 4, [("T", "a", ["c1"]), ("T", "b", ["c2"])]),
+            ([(1, 1)] * 3, [("T", None, ["c1"]), ("T", "b", ["c2"])])], []))
 
     # ⛔ THE CASE THE REVIEW ASKED FOR COULD NOT BE WRITTEN, AND THAT IS THE PROOF THE FIX WORKED.
     # Round 1 asked for a case asserting every value of `gen-backlog-page.SEVERITY` appears as a
@@ -1142,6 +1164,14 @@ def _self_test_body() -> int:
                 if e["label"].split()[1] != e.get("sev")]
     check("over the REAL tree, every index line's count is the card's own open-row count, by severity",
           (len(_real_nodes) > 30, _bad, _sevless[:3]), (True, [], []))
+    # ⛔ S1 r1 (Claude F6): the case above derives WHICH nodes carry the sentence through
+    # `inherits_area`, the predicate under test. This one reads the rendered index and compares it to an
+    # INDEPENDENT LITERAL — the 4 live nodes that claim and inherit no area, measured at S1. ⚠ A tree
+    # edit that gives one an area, or adds a fifth, is meant to redden this; update the literal by hand.
+    check("over the REAL tree, the nodes that claim no area are exactly these four",
+          sorted(n.slug for n in _real_nodes
+                 if NO_AREA in _found(re.search(rf'href="#{frag_id(n.slug)}">(.*?)(?:</li>|<ul>)', _rix, re.S), 1)),
+          ["cloud-sync", "serve-path-bounding", "share-and-download", "shared-dig-deeper"])
     _cards = re.findall(r"<details class=\"node[^\"]*\"[^>]*>", _tree)
     check("every card is a <details>, and every one is FOLDED",
           (len(_cards), [c for c in _cards if " open" in c]), (len(nested + nodes), []))

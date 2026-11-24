@@ -1,0 +1,35 @@
+{
+  "attempts": [
+    "  gpt-6.2-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.2-astra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.1-terra: ok \u2014 2545 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "2f8c8d9df414f275188bad41a162d6f51c430cfb",
+  "intrusions": [],
+  "loosening_answers": {
+    "1772e62bc392": "finding",
+    "3c433a4ee523": "not a loosening",
+    "4372736ccef4": "not a loosening",
+    "58d7a82212f7": "not a loosening",
+    "5b1f3022099c": "not a loosening",
+    "63eb21da8cb3": "not a loosening",
+    "7acb5cec0b67": "not a loosening",
+    "85de8969926d": "not a loosening",
+    "9a6218192351": "finding",
+    "bfad4ea759d8": "finding",
+    "c5f9105b20f3": "finding",
+    "f0cee815b9a8": "not a loosening",
+    "f7017655a633": "not a loosening"
+  },
+  "model": "gpt-6.1-terra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/review-s1-r1.md",
+  "reason": "2545 chars",
+  "refused": false,
+  "review": "goal-node-tree-s1-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/node-tree-s1"
+}

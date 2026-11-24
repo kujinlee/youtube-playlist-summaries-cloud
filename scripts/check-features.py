@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 90 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 94 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -29,8 +29,12 @@ FIELD = re.compile(rf"^({'|'.join(FIELD_NAMES)}):\s*(.*)$")
 # `adrs:` and `was:` are BARE comma lists (plan choice C1), read into tuples; each entry is checked
 # against its own shape, so `adrs: (0001, 0005)` is refused entry by entry — parentheses belong to the
 # `(area)` tag of `areas:`, never to a list grammar.
+# ⛔ ONE SLUG GRAMMAR (spec §2.2: "lowercase words joined by `-`"), read by `was:` entries AND by every
+# CURRENT slug in `check_nodes` (S1 r1, Codex High 2 = Claude F2) — a current name is never held to a
+# weaker grammar than a former one, or it could not be renamed later.
+SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 ENTRY_SHAPE = {"adrs": (re.compile(r"^\d{4}$"), "four digits, e.g. `0005`"),
-               "was": (re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$"), "a slug: lowercase words joined by `-`")}
+               "was": (SLUG, "a slug: lowercase words joined by `-`")}
 TUPLE_FIELDS = ("adrs", "was")
 # `done:` is the owner's recorded decision, dated like a request (spec §2.2, G9); `proposed:` the moment
 # a name was proposed (spec §2.7). Both single-line.
@@ -198,6 +202,9 @@ def check_nodes(nodes: list[Node], anchored: frozenset[str] = frozenset()) -> li
     problems: list[str] = []
     for n in nodes:
         where = f"features.md:{n.line}: `{n.slug}`"
+        if not SLUG.match(n.slug):
+            problems.append(f"{where} is not a slug — a node's name (its heading text, or a trunk's `slug:` "
+                            f"value) is lowercase words joined by `-`, the grammar a `was:` entry is held to")
         # `state:` is OPTIONAL (spec §2.2): omitted means the node is a name only — an aim.
         if n.state not in (None, "built", "absent"):
             problems.append(f"{where} has state {n.state!r}; expected `built`, `absent`, or no `state:` line")
@@ -218,6 +225,10 @@ def check_nodes(nodes: list[Node], anchored: frozenset[str] = frozenset()) -> li
                             f"`expected-because:`")
         if n.state == "built" and n.expected_because:
             problems.append(f"{where} is `built` but carries an `expected-because:` — that line is "
+                            f"the argument for an ABSENCE. Remove it, or set `state: absent`")
+        # S1 r1 (Claude F3): the line is never rendered off an `absent` node, so it would sit unseen.
+        if n.state is None and n.expected_because:
+            problems.append(f"{where} has no `state:` but carries an `expected-because:` — that line is "
                             f"the argument for an ABSENCE. Remove it, or set `state: absent`")
         if n.state == "absent":
             if not n.expected_because:
@@ -493,9 +504,9 @@ def main() -> int:
     problems += check_cross(nodes, declared, None if not areas else areas)
     try:
         # The threads file is read only when a node carries `done:` — the guard is `done_problems`'.
-        problems += done_problems(nodes, lambda: requests_by_goal(GOAL_THREADS.read_text()))
-    except OSError as e:
-        print(f"CANNOT RUN — a node carries `done:` and {GOAL_THREADS} cannot be read ({type(e).__name__}), "
+        problems += done_problems(nodes, lambda: read_threads(GOAL_THREADS))
+    except ThreadsUnreadable as e:
+        print(f"CANNOT RUN — a node carries `done:` and {GOAL_THREADS} {e}, "
               f"so G9 cannot be checked. Treat this as NOT RUN.", file=sys.stderr)
         return 2
     if problems:
@@ -506,6 +517,24 @@ def main() -> int:
     print(f"feature map: {summary_line(nodes)}; "
           f"{len(declared)} anchors and {len(areas)} backlog areas all claimed exactly once")
     return 0
+
+
+class ThreadsUnreadable(Exception):
+    """`docs/goal-threads.md` gave nothing G9 can compare against — CANNOT RUN, never FAILED."""
+
+
+def read_threads(path: pathlib.Path) -> dict[str, list[tuple[str, str]]]:
+    """`requests_by_goal` over the threads file, or `ThreadsUnreadable` when it cannot be read, is not
+    UTF-8 (S1 r1, Codex Medium 3), or holds no `## GOAL` heading (S1 r1, Claude F4: a parse that found
+    nothing must not accuse a `done:` line of citing a request that is in fact recorded)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise ThreadsUnreadable(f"cannot be read ({type(e).__name__})") from e
+    table = requests_by_goal(text)
+    if not table:
+        raise ThreadsUnreadable("holds no `## GOAL` heading, so a parse of it found nothing")
+    return table
 
 
 def _self_test() -> int:
@@ -887,6 +916,24 @@ expected-because: standard for a hosted multi-tenant service.
           [summary_line(_nodes("### a\nstate: built\nfor: A.\nareas: (a)\n" + _ABS.format(s="b") + "### c\nfor: C.\n")),
            summary_line(_nodes("### a\nfor: A.\n### b\nfor: B.\n" + _ABS.format(s="c")))],
           ["3 nodes (1 built, 1 absent, 1 stateless)", "3 nodes (0 built, 1 absent, 2 stateless)"])
+    # ⛔ S1 r1 (Codex High 2 = Claude F2): a CURRENT slug is held to the grammar a `was:` entry is.
+    # AN INDEPENDENT LITERAL LIST, both sources (a trunk's `slug:` line and a `###` heading), each
+    # failing shape at least twice, so a constant or a check of one source alone cannot pass.
+    _NOT_SLUGS = ("## T\nslug: Not A Slug\nfor: P.\n", "## T\nslug:\nfor: P.\n", "## T\nslug: Upper-case\nfor: P.\n",
+                  "## T\n### Foo Bar\nfor: X.\n", "## T\n### Upper-case\nfor: X.\n", "## T\n### trailing-\nfor: X.\n",
+                  "## T\n### under_score\nfor: X.\n")
+    _SLUGS = ("## T\nslug: product\nfor: P.\n", "## T\n### a-b-1\nfor: X.\n", "## T\n### x\nfor: X.\n")
+    check("rules: every current slug follows the slug grammar",
+          ([any("is not a slug" in p for p in check_nodes(parse_features("# F\n" + t)[0])) for t in _NOT_SLUGS],
+           [check_nodes(parse_features("# F\n" + t)[0]) for t in _SLUGS],
+           [p for p in check_nodes(_live) if "is not a slug" in p]),
+          ([True] * len(_NOT_SLUGS), [[]] * len(_SLUGS), []))
+    # ⛔ S1 r1 (Claude F3): `expected-because:` argues for an ABSENCE; a stateless node claims none.
+    check("rules: a stateless node may not carry expected-because",
+          [any("no `state:`" in p and "expected-because" in p for p in check_nodes(_nodes(b))) for b in
+           ("### x\nfor: X.\nexpected-because: e.\n", "### y\nfor: Y.\nareas: (y)\nexpected-because: f.\n")]
+          + [check_nodes(_nodes(_ABS.format(s="z")))],
+          [True, True, []])
 
     # ── G9 — `done:` cites a recorded request (goal node tree Task 3, spec §2.5) ───────────────
     _THREADS = ("# Goal threads\nprose above the first goal\n\n## GOAL ship-it\n"
@@ -924,13 +971,18 @@ expected-because: standard for a hosted multi-tenant service.
     import contextlib, io, tempfile
     _g = globals()
     _saved = {k: _g[k] for k in ("FEATURES", "GOAL_THREADS")}
-    _codes = []
-    with tempfile.TemporaryDirectory() as _td:
-        _f = pathlib.Path(_td) / "features.md"
-        for _missing in ("goal-threads.md", "nested/goal-threads.md"):
+    def _drive(threads: bytes | None, name: str = "goal-threads.md"):
+        """`main` over the real tree plus one `done:` line, with the threads file holding `threads`
+        (None: absent). Returns (exit code, whether stderr said CANNOT RUN)."""
+        _g = globals()      # bound HERE: check-main-drivable reads a rebind in the function that calls main
+        with tempfile.TemporaryDirectory() as _td:
+            _f = pathlib.Path(_td) / "features.md"
             _f.write_text(FEATURES.read_text().replace(
                 "\nstate: built\n", '\nstate: built\ndone: 2026-11-01 09:00 "ship the thing"\n', 1))
-            _g["FEATURES"], _g["GOAL_THREADS"] = _f, pathlib.Path(_td) / _missing
+            _t = pathlib.Path(_td) / name
+            if threads is not None:
+                _t.write_bytes(threads)
+            _g["FEATURES"], _g["GOAL_THREADS"] = _f, _t
             _err = io.StringIO()
             try:
                 with contextlib.redirect_stderr(_err), contextlib.redirect_stdout(io.StringIO()):
@@ -939,8 +991,18 @@ expected-because: standard for a hosted multi-tenant service.
                 _rc = type(e).__name__
             finally:
                 _g.update(_saved)
-            _codes.append((_rc, "CANNOT RUN" in _err.getvalue()))
-    check("G9: an unreadable threads file is CANNOT RUN", _codes, [(2, True), (2, True)])
+            return (_rc, "CANNOT RUN" in _err.getvalue())
+    check("G9: an unreadable threads file is CANNOT RUN",
+          [_drive(None), _drive(None, "nested/goal-threads.md")], [(2, True), (2, True)])
+    # ⛔ S1 r1 (Codex Medium 3): bytes that are not UTF-8 are a read failure, not a crash.
+    check("G9: an undecodable threads file is CANNOT RUN",
+          [_drive(b"\xff"), _drive(b"## GOAL ship-it\n> 2026-11-01 09:00 \"ship \xfe\"\n")], [(2, True), (2, True)])
+    # ⛔ S1 r1 (Claude F4): a file that reads but holds no `## GOAL` heading is a parse that found
+    # nothing — CANNOT RUN, never "copy the request line exactly" about a request that IS recorded.
+    check("G9: a threads file with no goal heading is CANNOT RUN",
+          [_drive(b""), _drive(b"# Goal threads\n## Notes\n> 2026-11-01 09:00 \"ship the thing\"\n"),
+           _drive(b"## GOAL ship-it\n> 2026-11-01 09:00 \"a different request\"\n")],
+          [(2, True), (2, True), (1, False)])
     def _never():
         raise AssertionError("the threads file was read although no node carries `done:`")
     def _safe(f):

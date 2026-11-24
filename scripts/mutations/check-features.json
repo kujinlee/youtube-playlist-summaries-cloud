@@ -566,5 +566,71 @@
       ]
     ],
     "expect": "G9: no done line needs no threads file"
+  },
+  {
+    "name": "S1 r1: a current slug is not held to the slug grammar, so `Not A Slug` and an empty slug pass",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if not SLUG.match(n.slug):\n            problems.append(f\"{where} is not a slug",
+        "        if False:\n            problems.append(f\"{where} is not a slug"
+      ]
+    ],
+    "expect": "rules: every current slug follows the slug grammar"
+  },
+  {
+    "name": "S1 r1: a stateless node may carry an expected-because: nobody sees",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if n.state is None and n.expected_because:",
+        "        if False:"
+      ]
+    ],
+    "expect": "rules: a stateless node may not carry expected-because"
+  },
+  {
+    "name": "G9: an unreadable threads file prints CANNOT RUN and then PASSES (fail-open)",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "so G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        return 2",
+        "so G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        pass"
+      ]
+    ],
+    "expect": "G9: an unreadable threads file is CANNOT RUN"
+  },
+  {
+    "name": "G9: main reads the threads file raw, so a missing one crashes instead of CANNOT RUN (call site)",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "done_problems(nodes, lambda: read_threads(GOAL_THREADS))",
+        "done_problems(nodes, lambda: requests_by_goal(GOAL_THREADS.read_text()))"
+      ]
+    ],
+    "expect": "G9: an unreadable threads file is CANNOT RUN"
+  },
+  {
+    "name": "G9: bytes that are not UTF-8 crash the check instead of CANNOT RUN",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    except (OSError, UnicodeDecodeError) as e:",
+        "    except OSError as e:"
+      ]
+    ],
+    "expect": "G9: an undecodable threads file is CANNOT RUN"
+  },
+  {
+    "name": "G9: a threads file with no `## GOAL` heading FAILS every done: line instead of CANNOT RUN",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    if not table:\n        raise ThreadsUnreadable",
+        "    if False:\n        raise ThreadsUnreadable"
+      ]
+    ],
+    "expect": "G9: a threads file with no goal heading is CANNOT RUN"
   }
 ]

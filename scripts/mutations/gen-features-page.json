@@ -82,7 +82,7 @@
   "edits": [
    [
     "        here.append((n, kids))\n        slots.setdefault",
-    "        here.append((n, kids))\n        if here is not entries:\n            entries.append((n, []))\n        slots.setdefault"
+    "        here.append((n, kids))\n        if n.level > 3:\n            trunks[-1][2].append((n, []))\n        slots.setdefault"
    ]
   ],
   "expect": "no node is rendered twice"
@@ -93,7 +93,7 @@
   "edits": [
    [
     "        kids: list = []\n        here.append((n, kids))",
-    "        kids: list = []\n        if here is entries:\n            here.append((n, kids))"
+    "        kids: list = []\n        if n.level <= 3:\n            here.append((n, kids))"
    ]
   ],
   "expect": "no node is rendered twice"
@@ -499,8 +499,8 @@
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "        if here is None:\n            here = entries\n",
-    "        if here is None:\n            continue\n"
+    "            here = slugless[n.trunk][2]\n",
+    "            continue\n"
    ]
   ],
   "expect": "index: an orphan level is kept"
@@ -581,5 +581,16 @@
    ]
   ],
   "expect": "index: an inherited area still counts"
+ },
+ {
+  "name": "S1 r1: a slugged trunk is keyed by its display text, so a second `## T` overwrites the first's node",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "            entry = [n.trunk, n, []]\n            trunks.append(entry)\n",
+    "            entry = next((t for t in trunks if t[0] == n.trunk), None)\n            if entry is None:\n                entry = [n.trunk, None, []]\n                trunks.append(entry)\n            entry[1] = n\n"
+   ]
+  ],
+  "expect": "two trunks sharing a display name keep every node"
  }
 ]
