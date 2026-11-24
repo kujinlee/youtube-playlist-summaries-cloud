@@ -1209,20 +1209,7 @@
       ]
     ],
     "expect": [
-      "buttons: a reload shows 'sent' only on the decision answered — not its identical twin, nor one differing only after character 400, moved (r2)"
-    ]
-  },
-  {
-    "name": "decision buttons r2: identical decisions are no longer told apart by occurrence",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "      tag.exKey = n > 1 ? b + ':' + n : b;",
-        "      tag.exKey = b;"
-      ]
-    ],
-    "expect": [
-      "buttons: a reload shows 'sent' only on the decision answered — not its identical twin, nor one differing only after character 400, moved (r2)"
+      "buttons: a reload shows 'sent' only on the decision answered — not another unlabelled one, nor one differing only after character 400, moved (r2)"
     ]
   },
   {
@@ -1252,19 +1239,6 @@
     ]
   },
   {
-    "name": "decision buttons r3: occurrences are counted over OPEN decisions only again (Claude F1)",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "querySelectorAll('.ex-decision'), function(tag){\n    key(tag);",
-        "querySelectorAll('.ex-decision-open'), function(tag){\n    key(tag);"
-      ]
-    ],
-    "expect": [
-      "buttons: recording one of two identical decisions does not hand its 'sent' to the other (r3)"
-    ]
-  },
-  {
     "name": "decision buttons r3: a done tag's ANSWERED tail is left in its base key (Claude F1)",
     "file": "scripts/brief-compose.py",
     "edits": [
@@ -1274,7 +1248,7 @@
       ]
     ],
     "expect": [
-      "buttons: recording one of two identical decisions does not hand its 'sent' to the other (r3)"
+      "buttons: a decision done at load forgets its key; re-opened, it offers the buttons (r3)"
     ]
   },
   {
@@ -1301,6 +1275,58 @@
     ],
     "expect": [
       "buttons: `change` offers the buttons again and keeps the answer sent; a reload still shows it (r3)"
+    ]
+  },
+  {
+    "name": "decision buttons r4: two identical decisions are no longer refused (Codex BLOCKER)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if base in seen:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "decision twins: two identical decisions are REFUSED, naming both; a distinct label or question is accepted (r4)"
+    ]
+  },
+  {
+    "name": "decision buttons r4: a <button>'s text is read into the question again",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            if entry[0] == \"button\":\n                return\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "decision twins: two identical decisions are REFUSED, naming both; a distinct label or question is accepted (r4)"
+    ]
+  },
+  {
+    "name": "decision buttons r4: an occurrence suffix is put back on the key",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if (!tag.exKey) tag.exKey = baseKey(tag);",
+        "    if (!tag.exKey) tag.exKey = baseKey(tag) + ':1';"
+      ]
+    ],
+    "expect": [
+      "buttons: on a page with no twins each card's key is its BASE key — label less ordinal + question hash, done tag included, no occurrence suffix (r4)"
+    ]
+  },
+  {
+    "name": "decision buttons r4: the pick script ships only while a decision is open again (Codex Minor)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if decisions:\n        body += f\"\\n<script>{DECISION_JS}</script>\"",
+        "    if _remaining:\n        body += f\"\\n<script>{DECISION_JS}</script>\""
+      ]
+    ],
+    "expect": [
+      "buttons: the pick script ships with any decision, all answered included, and not with none (r4)"
     ]
   }
 ]

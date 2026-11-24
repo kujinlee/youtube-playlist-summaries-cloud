@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 250 cases
+    python3 scripts/brief-compose.py --self-test  # 251 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
@@ -65,7 +65,7 @@ import datetime as _dt
 import os
 import pathlib
 import re
-from html import escape as html_escape
+from html import escape as html_escape, unescape as html_unescape
 from html.parser import HTMLParser
 import sys
 import tempfile
@@ -1215,7 +1215,7 @@ DECISION_CSS = """
 # remembered per browser and keyed by the decision itself, so a reload does not offer it twice and a
 # renumbered page shows it on no other card. ⟳ r1 (Claude F1): the Ask answerer SKIPS such an entry
 # (`ask_answerer.is_decision_answer`) — a click is never a paid question. Opened from a file (no server),
-# it copies the line to the clipboard instead, as the tray does. Emitted ONLY on a page with an open decision.
+# it copies the line to the clipboard instead, as the tray does. Emitted on any page with a decision (r4).
 DECISION_JS = r"""
 (function(){
   var LIVE = /^https?:$/.test(location.protocol);
@@ -1243,23 +1243,20 @@ DECISION_JS = r"""
   function questionOf(tag){ return norm(textOf(tag.parentNode, tag)); }
   // ⟳ r1 (Codex 1, Claude F2): keyed by WHICH decision it is (page, the label without its ordinal, a
   // hash of the question), never by `ex-decision-<n>`, so a renumbered page cannot show one card's
-  // answer on another. ⟳ r2 (Codex 1): the hash is of the FULL question (it was cut at 400), and two
-  // decisions with the same label and question are told apart by their occurrence among THAT pair —
-  // never by the global position, which r1 removed. Computed ONCE, before anything else edits the page.
+  // answer on another. ⟳ r2 (Codex 1): the hash is of the FULL question (it was cut at 400).
+  // ⟳ r4 (Codex BLOCKER): two decisions with the same label and question are REFUSED at compose time
+  // (`render_decisions`), so this key is unique on a page — the occurrence suffix r2 and r3 patched is
+  // gone. Computed ONCE, before anything else edits the page.
   // ⟳ r3 (Claude F1): a DONE tag's label is the open one plus `— ANSWERED: <value>`; that tail goes first,
-  // so a decision has ONE base key whether it is open or done.
+  // so a decision has ONE key whether it is open or done — which is what lets the load forget it.
   function baseKey(tag){
     var l = labelOf(tag);
     if (done(tag)) l = l.replace(/^([\s\S]*?DECISION \d+ of \d+) — ANSWERED: [\s\S]*$/, '$1');
     return 'ex-pick:' + DOC + ':' + l.replace(/\s*(—\s*)?DECISION \d+ of \d+$/, '')
       + ':' + hash(questionOf(tag));
   }
-  var SEEN = {};
   function key(tag){
-    if (!tag.exKey) {
-      var b = baseKey(tag), n = SEEN[b] = (SEEN[b] || 0) + 1;
-      tag.exKey = n > 1 ? b + ':' + n : b;
-    }
+    if (!tag.exKey) tag.exKey = baseKey(tag);
     return tag.exKey;
   }
   function load(tag){ try { return localStorage.getItem(key(tag)); } catch (e) { return null; } }
@@ -1355,9 +1352,9 @@ DECISION_JS = r"""
       inp.focus();
     }));
   }
-  // ⟳ r3 (Claude F1, F2): occurrences are counted over EVERY decision, done ones included, so recording one
-  // twin does not hand its key to the next; and a decision that is done at load has its key forgotten — the
-  // session recorded it, so the browser's "sent" is spent, and a later re-opening starts clean.
+  // ⟳ r3 (Claude F2): a decision that is done at load has its key forgotten — the session recorded it, so
+  // the browser's "sent" is spent, and a later re-opening starts clean. ⟳ r4 (Codex Minor): the script is
+  // emitted on an ALL-DONE page too, so this runs there. Every key is computed here, before any box exists.
   Array.prototype.forEach.call(document.querySelectorAll('.ex-decision'), function(tag){
     key(tag);
     if (done(tag)) forget(tag);
@@ -1418,7 +1415,10 @@ class _DecisionScan(HTMLParser):
         super().__init__(convert_charrefs=False)
         self.found: list[tuple[tuple[int, int], str, str, str, str | None]] = []
         self.ids: set[str] = set()
-        # [tag, hides, collapsed (a non-summary child of a <details>), a <summary> already seen]
+        # ⟳ r4: the TEXT of each marked element, in `found` order — the question its card's key hashes.
+        self.texts: list[list[str]] = []
+        # [tag, hides, collapsed (a non-summary child of a <details>), a <summary> already seen,
+        #  the `texts` index of a marked element or None]
         self._stack: list[list] = []
         self._plaintext = False
 
@@ -1452,7 +1452,7 @@ class _DecisionScan(HTMLParser):
             elif tag in _DECISION_REFUSE_FOREIGN:
                 refusal = _foreign_refusal(tag)
             else:
-                for anc, anc_hides, anc_collapsed, _ in self._stack:
+                for anc, anc_hides, anc_collapsed, _, _ in self._stack:
                     if anc in _DECISION_REFUSE_FOREIGN:
                         refusal = _foreign_refusal(anc)
                         break
@@ -1467,10 +1467,30 @@ class _DecisionScan(HTMLParser):
                         break
             self.found.append((self.getpos(), text, (value or "").strip(),
                                (label or "").strip(), refusal))
+            self.texts.append([])
+        mark = len(self.texts) - 1 if DECISION_ATTR in names else None
         if tag == "plaintext":
             self._plaintext = True
         elif tag not in _DECISION_VOID:
-            self._stack.append([tag, hides, collapsed, False])
+            self._stack.append([tag, hides, collapsed, False, mark])
+
+    def _text(self, data: str) -> None:
+        """Text reaches every open marked element with no `<button>` between it and the text —
+        what the card's script reads as the question (`textOf` drops a BUTTON at any depth)."""
+        for entry in reversed(self._stack):
+            if entry[0] == "button":
+                return
+            if entry[4] is not None:
+                self.texts[entry[4]].append(data)
+
+    def handle_data(self, data: str) -> None:
+        self._text(data)
+
+    def handle_entityref(self, name: str) -> None:
+        self._text(html_unescape(f"&{name};"))
+
+    def handle_charref(self, name: str) -> None:
+        self._text(html_unescape(f"&#{name};"))
 
     def _close_p(self) -> None:
         """Close an open `<p>` the way HTML does when a `_P_CLOSERS` tag starts."""
@@ -1526,6 +1546,23 @@ def render_decisions(markup: str) -> tuple[str, int, int]:
         raise SystemExit(f"brief-compose: CANNOT RUN — the fragment already uses id/name "
                          f"{', '.join(taken)}, which a decision tag needs; the counter's link would "
                          "go to the fragment's element. Rename it. Treat as NOT RENDERED.")
+    # ⟳ r4 (Codex BLOCKER; r2 C1, r3 F1 and r4 were all about twins): TWO IDENTICAL DECISIONS ARE REFUSED.
+    # A card's sent state is keyed by its label (less the ordinal) and its full question — and so is the
+    # session's reading of questions.md, which cannot tell which of two identical sections an answer is
+    # for. Telling twins apart by occurrence order was patched three times and broke a fourth way (remove
+    # one, and the other inherits its "sent"), so a twin is an AUTHORING ERROR, not a case to support.
+    seen: dict[tuple[str, str], int] = {}
+    for n, ((line, _col), text, _a, label, _r) in enumerate(scan.found, 1):
+        base = (" ".join(label.split()), " ".join("".join(scan.texts[n - 1]).split()))
+        if base in seen:
+            m = seen[base]
+            (mline, _), mtext = scan.found[m - 1][0], scan.found[m - 1][1]
+            raise SystemExit(f"brief-compose: CANNOT RUN — decisions {m} and {n} of {total} ({mtext} at "
+                             f"line {mline}, {text} at line {line}) are IDENTICAL — the same label and "
+                             "the same question — so neither the page's sent state nor the session "
+                             "reading questions.md can tell their answers apart. Give one a distinct "
+                             f"{DECISION_LABEL_ATTR}. No page was written; treat as NOT RENDERED.")
+        seen[base] = n
     # `getpos()` counts lines by "\n" only, so the offsets are rebuilt the same way —
     # `splitlines` would also split on characters the parser does not.
     starts = [0] + [i + 1 for i, ch in enumerate(markup) if ch == "\n"]
@@ -1654,8 +1691,10 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # ⚠ The SCRIPT stays at the end of `body`, after the bar in document order, which is
     # what it needs — it queries the slot when it runs.
     body = page_chrome.place_bar(body, chrome_bar) + "\n" + chrome_js
-    # The Yes/No/Other buttons, only while a decision is open (DECISION_JS above).
-    if _remaining:
+    # The Yes/No/Other buttons, on any page with a decision (DECISION_JS above). ⟳ r4 (Codex Minor): an
+    # ALL-DONE page carries it too — it offers no buttons there, but its load forgets each done decision's
+    # sent state, so a decision re-opened later does not come back showing an old "sent".
+    if decisions:
         body += f"\n<script>{DECISION_JS}</script>"
     # ⭐ THE TRAY REGION IS DELIMITED AT BOTH ENDS (backlog #106). `extract_tray` reads back
     # exactly what is written between these two comments, so a recompose cannot re-lift the
@@ -3171,12 +3210,13 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
          -1 < _dd3.find("</h1>") < _dd3.find("ex-decision-count\"") < _dd3.find("intro")
          < _dd3.find("DECISION 1 of 3"))
     _dcss = globals().get("DECISION_CSS", "")
-    # ── THE YES / NO / OTHER BUTTONS (owner 11-23 21:00) ── emitted while a decision is OPEN, never
-    # on an all-answered page or a page with none; the script must PARSE, and RUN: under node, against
+    # ── THE YES / NO / OTHER BUTTONS (owner 11-23 21:00) ── emitted on any page with a decision, an
+    # all-answered one included (r4), never on a page with none; the script must PARSE, and RUN: under node, against
     # a stub DOM, a click on Yes must POST the tray's three-line shape with the tag's own label.
     _js_tag = f"<script>{DECISION_JS}</script>"
-    case("buttons: the pick script ships with an open decision, not with all answered or none",
-         _js_tag in _dd3 and _js_tag not in _dd2 and _js_tag not in doc)
+    # ⟳ r4 (Codex Minor): on an ALL-DONE page too, or its forget-at-load never runs.
+    case("buttons: the pick script ships with any decision, all answered included, and not with none (r4)",
+         _js_tag in _dd3 and _js_tag in _dd2 and _js_tag not in doc)
     import shutil as _sh, subprocess as _sp, json as _js, tempfile as _tf
     _node = _sh.which("node")
     if not _node:
@@ -3291,11 +3331,12 @@ const out = {};
   // S5 — opened from a file: nothing is POSTed.
   const f = page('file:', [el('p', '', [tag('X — DECISION 1 of 1', 1), 'File?'])], {});
   f.click(f.boxes[0], 'Yes'); await tick(); out.s5_posts = f.posts.length;
-  // S6 (r2, Codex 1+2) — the tray runs too. Two unlabelled decisions with ONE question; two whose
-  // questions differ only after character 400; a heading decision. Answer the first of each, reload.
+  // S6 (r2, Codex 1+2) — the tray runs too. Two unlabelled decisions; two whose questions differ only
+  // after character 400; a heading decision. Answer the first of each, reload. (⟳ r4: decisions 1 and 2
+  // were identical twins; twins are now refused at compose time, so 2 asks its own question.)
   const long = 'L' + 'x'.repeat(420);
   const s6 = () => [el('p', '', [tag('DECISION 1 of 5', 1), 'Same?']),
-    el('p', '', [tag('DECISION 2 of 5', 2), 'Same?']),
+    el('p', '', [tag('DECISION 2 of 5', 2), 'Same too?']),
     el('p', '', [tag('DECISION 3 of 5', 3), long + 'A']),
     el('p', '', [tag('DECISION 4 of 5', 4), long + 'B']),
     el('h2', '', [tag('H — DECISION 5 of 5', 5), 'Heading q?'])];
@@ -3308,19 +3349,14 @@ const out = {};
   const s6r = s6(); [s6r[2], s6r[3]] = [s6r[3], s6r[2]];
   const g2 = page('http:', s6r, s6store, 0, true);
   out.s6_reload = g2.boxes.map(b => g2.labels(b)[0]);
-  // S7 (r3, Claude F1) — identical twins A then B; the session records A and recomposes. Unlabelled twins with
-  // only A answered, and labelled twins with BOTH answered (A yes, B no): B must keep B's own state.
-  const tw = (label, aDone) => [
-    el('p', '', [aDone ? doneTag(label + 'DECISION 1 of 2', 1, 'yes') : tag(label + 'DECISION 1 of 2', 1), 'Same?']),
-    el('p', '', [tag(label + 'DECISION 2 of 2', 2), 'Same?'])];
-  const s7a = {}, h = page('http:', tw('', false), s7a);
-  h.click(h.boxes[0], 'Yes'); await tick(); await tick();
-  const h2 = page('http:', tw('', true), s7a);
-  out.s7_only_a = h2.boxes.map(h2.labels);
-  const s7b = {}, k = page('http:', tw('D9 — ', false), s7b);
-  k.click(k.boxes[0], 'Yes'); k.click(k.boxes[1], 'No'); await tick(); await tick();
-  const k2 = page('http:', tw('D9 — ', true), s7b);
-  out.s7_both = k2.boxes.map(k2.labels); out.s7_both_store = Object.values(s7b);
+  // S7 (r4, Codex BLOCKER) — a page with NO twins (twins are refused at compose time): one question under
+  // two labels, and a done decision. Each card's key is its BASE key — no occurrence suffix of any kind.
+  const s7 = {}, h = page('http:', [el('p', '', [tag('D9 — DECISION 1 of 3', 1), ' Ship? ']),
+    el('p', '', [tag('DECISION 2 of 3', 2), 'Ship?']),
+    el('p', '', [doneTag('D9 — DECISION 3 of 3', 3, 'no'), 'Later?'])], s7);
+  out.s7_tag_keys = h.body.querySelectorAll('.ex-decision').map(t => t.exKey);
+  h.click(h.boxes[0], 'Yes'); h.click(h.boxes[1], 'No'); await tick(); await tick();
+  out.s7_store = s7;
   // S8 (r3, Claude F2) — answered, recorded (done at load), then RE-OPENED with the same label and question.
   const s8 = {}, rq = done => [el('p', '', [done ? doneTag('R — DECISION 1 of 1', 1, 'yes') : tag('R — DECISION 1 of 1', 1), 'Approve?'])];
   const m = page('http:', rq(false), s8); m.click(m.boxes[0], 'Yes'); await tick(); await tick();
@@ -3366,9 +3402,9 @@ const out = {};
         # r2 (Codex 3): AFTER is the heading's next element sibling, not merely "outside it".
         case("buttons: a heading decision's box is the heading's NEXT element sibling (r2)",
              _o.get("s1_box3_next") is True)
-        # r2 (Codex 1): the full question is hashed, and identical questions are told apart.
+        # r2 (Codex 1): the full question is hashed.
         _sent6 = "✓ sent: yes — the page updates when the session records it"
-        case("buttons: a reload shows 'sent' only on the decision answered — not its identical twin, "
+        case("buttons: a reload shows 'sent' only on the decision answered — not another unlabelled one, "
              "nor one differing only after character 400, moved (r2)",
              (_o.get("s6_reload") or [None] * 5)[:4] == [_sent6, "✔ Yes", "✔ Yes", _sent6]
              and len(_o.get("s6_keys") or []) == 3)
@@ -3405,11 +3441,18 @@ const out = {};
              _o.get("s2_changed") == _std and len(_o.get("s2_store") or {}) == 3
              and [v for k, v in _o["s2_store"].items() if k.startswith("ex-pick:page.html:4.1:")] == ["yes"]
              and _o.get("s2_reload") == [_std, [_sent1, "change"]])
-        # r3 (Claude F1): occurrences are counted over done tags too, and a done tag's ANSWERED tail is stripped.
-        case("buttons: recording one of two identical decisions does not hand its 'sent' to the other (r3)",
-             _o.get("s7_only_a") == [_std]
-             and _o.get("s7_both") == [[_sent1.replace("yes", "no"), "change"]]
-             and _o.get("s7_both_store") == ["no"])
+        # ⟳ r4 (Codex BLOCKER): twins are refused at compose time, so a card's key is exactly its base key —
+        # page, label less the ordinal, FNV-1a of the full question — computed here independently of the script.
+        def _fnv(t: str) -> str:
+            h, b = 2166136261, t.encode("utf-16-le")          # JS `charCodeAt` reads UTF-16 code units
+            for i in range(0, len(b), 2):
+                h = ((h ^ (b[i] | b[i + 1] << 8)) * 16777619) & 0xFFFFFFFF
+            return format(h, "x")
+        _k7 = ["ex-pick:page.html:D9:" + _fnv("Ship?"), "ex-pick:page.html::" + _fnv("Ship?"),
+               "ex-pick:page.html:D9:" + _fnv("Later?")]
+        case("buttons: on a page with no twins each card's key is its BASE key — label less ordinal + "
+             "question hash, done tag included, no occurrence suffix (r4)",
+             _o.get("s7_tag_keys") == _k7 and _o.get("s7_store") == {_k7[0]: "yes", _k7[1]: "no"})
         # r3 (Claude F2): a decision done at load has its key forgotten, so re-opening it starts clean.
         case("buttons: a decision done at load forgets its key; re-opened, it offers the buttons (r3)",
              _o.get("s8_sent") == 1 and _o.get("s8_after_done") == 0 and _o.get("s8_reopened") == [_std])
@@ -3425,6 +3468,24 @@ const out = {};
              _o.get("s4_ime_posts") == 0
              and _o.get("s4_posts") == ["**O — DECISION 1 of 1**\n   > Other?\n   Q: ANSWER: later"])
         case("buttons: opened from a file, nothing is POSTed", _o.get("s5_posts") == 0)
+    # ⟳ r4 (Codex BLOCKER — the third round on twin keys): two decisions with the same label and the same
+    # question are REFUSED, naming both; a distinct label, or a different question, is accepted. The
+    # question is the element's TEXT as a browser reads it: entities decoded, whitespace folded, a
+    # <button>'s text left out.
+    def _twin(frag: str) -> str:
+        try:
+            render_decisions(frag)
+        except SystemExit as e:
+            return str(e)
+        return ""
+    _tw = _twin('<h1>x</h1><p data-decision>Ship &amp; tell?</p><p>mid</p>'
+                '<p data-decision>Ship  &  tell?<button>ask</button></p>')
+    case("decision twins: two identical decisions are REFUSED, naming both; a distinct label or question is accepted (r4)",
+         "CANNOT RUN" in _tw and "decisions 1 and 2 of 2" in _tw and "IDENTICAL" in _tw
+         and DECISION_LABEL_ATTR in _tw and "line 1" in _tw
+         and _twin('<h1>x</h1><p data-decision>Ship?</p><p data-decision data-decision-label="D2">Ship?</p>') == ""
+         and _twin('<h1>x</h1><p data-decision>Ship?</p><p data-decision>Ship now?</p>') == ""
+         and _twin('<h1>x</h1><p data-decision="yes">Ship?</p><p data-decision>Ship?</p>') != "")
     _err = re.search(r"\.ex-pick-err\s*\{([^}]*)\}", _dcss)
     case("buttons: the error line takes its colours from the decision tokens, no literal colour (r1 F6)",
          _err is not None and "#" not in _err.group(1) and "var(--decide)" in _err.group(1)

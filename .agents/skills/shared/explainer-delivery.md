@@ -236,7 +236,9 @@ element that asks it; the composer does the rest:
   as its section and `Q: ANSWER: <yes|no|text>` — record it as the attribute's value and recompose. A click alone
   answers nothing. The card says *sent* — remembered in the browser per page, label and question, so a recompose
   that renumbers the cards keeps it on the right one — with a *change* button that sends a new answer; the newest
-  `ANSWER:` for a decision wins. ⛔ The Ask answerer (§6b) never runs a click as a question
+  `ANSWER:` for a decision wins. **Decisions in one fragment must be distinct** — two with the same label and the
+  same question are REFUSED at compose time (PR #628 r4), since neither the card nor the session reading `questions.md`
+  could tell their answers apart; give one its own `data-decision-label`. ⛔ The Ask answerer (§6b) never runs a click as a question
   (`is_decision_answer` in `ask_answerer.py`), so recording it is always the session's job.
 - **Never type a number.** `n`, `N`, and the counter under the title are all derived by `brief-compose.py`
   (`render_decisions`) from one parse of the fragment. While any is open the counter reads total · remaining ·
