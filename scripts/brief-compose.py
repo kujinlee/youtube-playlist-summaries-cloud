@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 248 cases
+    python3 scripts/brief-compose.py --self-test  # 250 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
@@ -1227,6 +1227,7 @@ DECISION_JS = r"""
   }
   // ⟳ r1 (Codex 3): the label is ONE line, or the three-line shape breaks.
   function labelOf(tag){ return norm(tag.textContent).replace(/^\S+\s+\S+\s+/, ''); }
+  function done(tag){ return tag.classList.contains('ex-decision-done'); }
   // ⟳ r2 (Codex 2): the question is the host's text with the tag and EVERY control removed — our
   // `.ex-pick`, the tray's `.askbtn` (appended to h2/h3 AFTER this script ran) and any button — at any
   // depth, so a heading reads the same at load and at click and the quote never ends in "ask".
@@ -1245,8 +1246,12 @@ DECISION_JS = r"""
   // answer on another. ⟳ r2 (Codex 1): the hash is of the FULL question (it was cut at 400), and two
   // decisions with the same label and question are told apart by their occurrence among THAT pair —
   // never by the global position, which r1 removed. Computed ONCE, before anything else edits the page.
+  // ⟳ r3 (Claude F1): a DONE tag's label is the open one plus `— ANSWERED: <value>`; that tail goes first,
+  // so a decision has ONE base key whether it is open or done.
   function baseKey(tag){
-    return 'ex-pick:' + DOC + ':' + labelOf(tag).replace(/\s*(—\s*)?DECISION \d+ of \d+$/, '')
+    var l = labelOf(tag);
+    if (done(tag)) l = l.replace(/^([\s\S]*?DECISION \d+ of \d+) — ANSWERED: [\s\S]*$/, '$1');
+    return 'ex-pick:' + DOC + ':' + l.replace(/\s*(—\s*)?DECISION \d+ of \d+$/, '')
       + ':' + hash(questionOf(tag));
   }
   var SEEN = {};
@@ -1268,14 +1273,16 @@ DECISION_JS = r"""
     box.exBusy = on;
     Array.prototype.forEach.call(box.querySelectorAll('button, input'), function(c){ c.disabled = on; });
   }
-  // ⟳ r1 (Claude F2): "sent" is not final — `change` offers the buttons again.
-  function sent(tag, box, answer, remembered){
+  // ⟳ r1 (Claude F2): "sent" is not final — `change` offers the buttons again. ⟳ r3 (Claude F4): it does NOT
+  // forget what was sent — that answer IS in questions.md until a new one replaces it (`save` on the next send),
+  // so an abandoned `change` or a reload still shows it.
+  function sent(tag, box, answer){
     box.innerHTML = '';
     var s = document.createElement('span');
     s.className = 'ex-pick-sent';
     s.textContent = '✓ sent: ' + answer + ' — the page updates when the session records it';
     box.appendChild(s);
-    box.appendChild(button('change', function(){ if (remembered) forget(tag); offer(tag, box); }));
+    box.appendChild(button('change', function(){ offer(tag, box); }));
   }
   function fail(box, msg){
     var e = box.querySelector('.ex-pick-err') || document.createElement('span');
@@ -1286,7 +1293,7 @@ DECISION_JS = r"""
     var body = '**' + labelOf(tag) + '**\n   > ' + questionOf(tag).slice(0, 400) + '\n   Q: ANSWER: ' + answer;
     if (!LIVE){
       if (navigator.clipboard) navigator.clipboard.writeText(body).then(function(){
-        sent(tag, box, answer + ' (copied — paste it into the session)', false); }, function(){
+        sent(tag, box, answer + ' (copied — paste it into the session)'); }, function(){
         fail(box, '⚠ could not copy'); });
       else fail(box, '⚠ no server and no clipboard — type the answer in the session');
       return;
@@ -1295,7 +1302,7 @@ DECISION_JS = r"""
     fetch('/questions', { method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ doc: DOC, text: body }) }).then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      busy(box, false); save(tag, answer); sent(tag, box, answer, true);
+      busy(box, false); save(tag, answer); sent(tag, box, answer);
     }).catch(function(e){ busy(box, false); fail(box, '⚠ send failed (' + e.message + ')'); });
   }
   // The page's own recommendation (owner 11-23 21:08), from the next `.rec` after the tag's element and
@@ -1348,6 +1355,13 @@ DECISION_JS = r"""
       inp.focus();
     }));
   }
+  // ⟳ r3 (Claude F1, F2): occurrences are counted over EVERY decision, done ones included, so recording one
+  // twin does not hand its key to the next; and a decision that is done at load has its key forgotten — the
+  // session recorded it, so the browser's "sent" is spent, and a later re-opening starts clean.
+  Array.prototype.forEach.call(document.querySelectorAll('.ex-decision'), function(tag){
+    key(tag);
+    if (done(tag)) forget(tag);
+  });
   Array.prototype.forEach.call(document.querySelectorAll('.ex-decision-open'), function(tag){
     var host = tag.parentNode;
     var box = document.createElement('span'); box.className = 'ex-pick';
@@ -1357,7 +1371,7 @@ DECISION_JS = r"""
     if (/^H[1-6]$/.test(host.tagName || '')) host.parentNode.insertBefore(box, host.nextSibling);
     else host.insertBefore(box, tag.nextSibling);
     var prior = load(tag);
-    if (prior) sent(tag, box, prior, true); else offer(tag, box);
+    if (prior) sent(tag, box, prior); else offer(tag, box);
   });
 })();
 """
@@ -3200,6 +3214,9 @@ function el(tag, cls, kids){
 const out_missing = [];
 function tag(label, n){ const t = el('span', 'ex-decision ex-decision-open', ['\u{1F7E8} ✍ ' + label]);
   t.id = 'ex-decision-' + n; return t; }
+// ⟳ r3: an ANSWERED tag, as `render_decisions` writes it: `🟩 ✍ <name> — ANSWERED: <value>`.
+function doneTag(label, n, ans){ const t = el('span', 'ex-decision ex-decision-done', ['\u{1F7E9} ✍ ' + label + ' — ANSWERED: ' + ans]);
+  t.id = 'ex-decision-' + n; return t; }
 // ⟳ r2 (Codex 2): the tray's heading loop, as every committed tray has it ("Hover-a-heading → ask
 // button": createElement('button'), className 'askbtn', textContent 'ask', h.appendChild(b)) less its
 // styles and listeners. It runs AFTER the pick script, as the composed page orders them.
@@ -3251,6 +3268,10 @@ const out = {};
   out.s2_labels = b.boxes.map(b.labels);
   b.click(b.boxes[1], 'change');
   out.s2_changed = b.labels(b.boxes[1]); out.s2_store = Object.assign({}, store);
+  // ⟳ r3 (Claude F4): `change` abandoned, then a reload — the answer sent is still shown.
+  const b2 = page('http:', [el('p', '', [tag('DECISION 1 of 2', 1), 'Brand new?']),
+                            el('p', '', [tag('4.1 — DECISION 2 of 2', 2), ' Keep  it? '])], store);
+  out.s2_reload = b2.boxes.map(b2.labels);
   // S3 — the server says 400: nothing remembered, the buttons usable again.
   const s3store = {};
   const c = page('http:', [el('p', '', [tag('E \u2014 DECISION 1 of 1', 1), 'Fail?'])], s3store, 400);
@@ -3287,6 +3308,25 @@ const out = {};
   const s6r = s6(); [s6r[2], s6r[3]] = [s6r[3], s6r[2]];
   const g2 = page('http:', s6r, s6store, 0, true);
   out.s6_reload = g2.boxes.map(b => g2.labels(b)[0]);
+  // S7 (r3, Claude F1) — identical twins A then B; the session records A and recomposes. Unlabelled twins with
+  // only A answered, and labelled twins with BOTH answered (A yes, B no): B must keep B's own state.
+  const tw = (label, aDone) => [
+    el('p', '', [aDone ? doneTag(label + 'DECISION 1 of 2', 1, 'yes') : tag(label + 'DECISION 1 of 2', 1), 'Same?']),
+    el('p', '', [tag(label + 'DECISION 2 of 2', 2), 'Same?'])];
+  const s7a = {}, h = page('http:', tw('', false), s7a);
+  h.click(h.boxes[0], 'Yes'); await tick(); await tick();
+  const h2 = page('http:', tw('', true), s7a);
+  out.s7_only_a = h2.boxes.map(h2.labels);
+  const s7b = {}, k = page('http:', tw('D9 — ', false), s7b);
+  k.click(k.boxes[0], 'Yes'); k.click(k.boxes[1], 'No'); await tick(); await tick();
+  const k2 = page('http:', tw('D9 — ', true), s7b);
+  out.s7_both = k2.boxes.map(k2.labels); out.s7_both_store = Object.values(s7b);
+  // S8 (r3, Claude F2) — answered, recorded (done at load), then RE-OPENED with the same label and question.
+  const s8 = {}, rq = done => [el('p', '', [done ? doneTag('R — DECISION 1 of 1', 1, 'yes') : tag('R — DECISION 1 of 1', 1), 'Approve?'])];
+  const m = page('http:', rq(false), s8); m.click(m.boxes[0], 'Yes'); await tick(); await tick();
+  out.s8_sent = Object.keys(s8).length;
+  page('http:', rq(true), s8); out.s8_after_done = Object.keys(s8).length;
+  const m3 = page('http:', rq(false), s8); out.s8_reopened = m3.boxes.map(m3.labels);
 })().catch(e => { out.error = String(e); }).then(() => { out.missing = out_missing; console.log(JSON.stringify(out)); });
 """
         with _tf.TemporaryDirectory() as _td:
@@ -3301,6 +3341,7 @@ const out = {};
                 _o = None
         _o = _o or {}
         _std = ["✔ Yes", "✖ No", "✎ Other…"]
+        _sent1 = "✓ sent: yes — the page updates when the session records it"
         _posts1 = [x["body"]["text"] for x in _o.get("s1_posts", [])]
         case("buttons: the harness ran every click it meant to (no button it looked for was missing)",
              bool(_o) and _o.get("missing") == [] and "error" not in _o)
@@ -3359,9 +3400,19 @@ const out = {};
              and any(k.startswith("ex-pick:page.html::") for k in _st1))       # an unlabelled tag: no ordinal
         case("buttons: a recomposed page shows 'sent' on the SAME decision, renumbered — not on the new decision 1",
              _o.get("s2_labels") == [_std, ["✓ sent: yes — the page updates when the session records it", "change"]])
-        case("buttons: `change` forgets the answer and offers the buttons again",
-             _o.get("s2_changed") == _std and len(_o.get("s2_store") or {}) == 2
-             and not any(k.startswith("ex-pick:page.html:4.1:") for k in _o["s2_store"]))
+        # ⟳ r3 (Claude F4): `change` no longer forgets — what was sent is in questions.md until replaced.
+        case("buttons: `change` offers the buttons again and keeps the answer sent; a reload still shows it (r3)",
+             _o.get("s2_changed") == _std and len(_o.get("s2_store") or {}) == 3
+             and [v for k, v in _o["s2_store"].items() if k.startswith("ex-pick:page.html:4.1:")] == ["yes"]
+             and _o.get("s2_reload") == [_std, [_sent1, "change"]])
+        # r3 (Claude F1): occurrences are counted over done tags too, and a done tag's ANSWERED tail is stripped.
+        case("buttons: recording one of two identical decisions does not hand its 'sent' to the other (r3)",
+             _o.get("s7_only_a") == [_std]
+             and _o.get("s7_both") == [[_sent1.replace("yes", "no"), "change"]]
+             and _o.get("s7_both_store") == ["no"])
+        # r3 (Claude F2): a decision done at load has its key forgotten, so re-opening it starts clean.
+        case("buttons: a decision done at load forgets its key; re-opened, it offers the buttons (r3)",
+             _o.get("s8_sent") == 1 and _o.get("s8_after_done") == 0 and _o.get("s8_reopened") == [_std])
         # r1 (Claude F4 #4): a 4xx is NOT remembered, and the card stays usable.
         case("buttons: a failed send (HTTP 400) is not remembered; the buttons come back enabled",
              _o.get("s3_posts") == 1 and _o.get("s3_saved") == []

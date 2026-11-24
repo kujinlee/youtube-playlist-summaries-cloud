@@ -639,7 +639,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-24, PR #628 (decision buttons) review round 2: 94 -> 98 — the sent-state key's full-
     # question hash and its occurrence disambiguator, the question excluding the tray's ask button,
     # and a heading decision's box placed AFTER the heading (Codex r2 findings 1-3).
-    "scripts/brief-compose.py": 98,
+    # ⟳ 2026-11-24, PR #628 review round 3: 98 -> 102 — occurrences counted over done tags too, a done tag's
+    # ANSWERED tail stripped from its key, a done decision's key forgotten at load, `change` not forgetting
+    # (Claude r3 F1, F2, F4).
+    "scripts/brief-compose.py": 102,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -1555,7 +1558,10 @@ EXPECTED_MUTATIONS = {
     # reader relies on: the claim marker, the caps (both directions of each), Read as the only tool, the suite
     # never starting a real binary, escaping, where an answer may land, what may be replaced, an instruction
     # going to the inbox, the start-up skip, dead-claim recovery, and each panel state.
-    "scripts/ask_answerer.py": 52,
+    # ⟳ 2026-11-24, PR #628 review round 3 (Claude F3): 52 -> 57 — a decision card's click kept out of the paid
+    # answerer: `pending()`'s filter, the page panel's, the anchored section shape, the `ANSWER: ` prefix, and
+    # --status's skipped list.
+    "scripts/ask_answerer.py": 57,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a

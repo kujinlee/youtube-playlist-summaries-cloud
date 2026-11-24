@@ -8,16 +8,16 @@ halves:
   codex: ran
   claude: ran
 findings:
-  - {id: C1, severity: Major, aim: deliverable, fix_induced: false, component: sent-state, disposition: fixed}
-  - {id: C2, severity: Major, aim: deliverable, fix_induced: false, component: recommendation, disposition: fixed}
-  - {id: C3, severity: Major, aim: deliverable, fix_induced: false, component: post-shape, disposition: fixed}
-  - {id: Cm1, severity: Minor, aim: deliverable, fix_induced: false, component: cases, disposition: fixed}
-  - {id: F1, severity: Major, aim: deliverable, fix_induced: false, component: answerer, disposition: fixed}
-  - {id: F2, severity: Major, aim: deliverable, fix_induced: false, component: sent-state, disposition: fixed}
-  - {id: F3, severity: Minor, aim: deliverable, fix_induced: false, component: recommendation, disposition: fixed}
-  - {id: F4, severity: Minor, aim: deliverable, fix_induced: false, component: cases, disposition: fixed}
-  - {id: F5, severity: Minor, aim: deliverable, fix_induced: false, component: placement, disposition: fixed}
-  - {id: F6, severity: Minor, aim: deliverable, fix_induced: false, component: interaction, disposition: fixed}
+  - {id: C1, severity: High, aim: deliverable, fix_induced: false, component: sent-state, disposition: fixed}
+  - {id: C2, severity: High, aim: deliverable, fix_induced: false, component: recommendation, disposition: fixed}
+  - {id: C3, severity: High, aim: deliverable, fix_induced: false, component: post-shape, disposition: fixed}
+  - {id: Cm1, severity: Medium, aim: deliverable, fix_induced: false, component: cases, disposition: fixed}
+  - {id: F1, severity: High, aim: deliverable, fix_induced: false, component: answerer, disposition: fixed}
+  - {id: F2, severity: High, aim: deliverable, fix_induced: false, component: sent-state, disposition: fixed}
+  - {id: F3, severity: Medium, aim: deliverable, fix_induced: false, component: recommendation, disposition: fixed}
+  - {id: F4, severity: Medium, aim: deliverable, fix_induced: false, component: cases, disposition: fixed}
+  - {id: F5, severity: Medium, aim: deliverable, fix_induced: false, component: placement, disposition: fixed}
+  - {id: F6, severity: Medium, aim: deliverable, fix_induced: false, component: interaction, disposition: fixed}
 ```
 
 Codex (`docs/reviews/codex/decision-buttons-r1-codex.md`: 3 Major, 1 Minor) and Claude

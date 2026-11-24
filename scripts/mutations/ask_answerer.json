@@ -570,5 +570,60 @@
       ]
     ],
     "expect": "r3: an answer whose run reported no usage says so on the page — never a measured-looking 0 tokens"
+  },
+  {
+    "name": "PR #628 r1: pending() hands a decision card's click to the paid answerer again",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "if q.id not in st and not is_decision_answer(q)]",
+        "if q.id not in st]"
+      ]
+    ],
+    "expect": "decision answer: a card click is not run or shown waiting; an ANSWER: elsewhere, or a question under a tagged heading, still is"
+  },
+  {
+    "name": "PR #628 r1: the page panel shows a decision card's click as a waiting question again",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "        if is_decision_answer(q):           # a decision answer is the session's, never shown \"waiting\"\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "decision answer: a card click is not run or shown waiting; an ANSWER: elsewhere, or a question under a tagged heading, still is"
+  },
+  {
+    "name": "PR #628 r1: a section that merely CONTAINS `DECISION n of N` reads as a decision card's",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "_DECISION_SECTION = re.compile(r\"(?:^|\\s)DECISION \\d+ of \\d+$\")",
+        "_DECISION_SECTION = re.compile(r\"DECISION \\d+ of \\d+\")"
+      ]
+    ],
+    "expect": "decision answer: a card click is not run or shown waiting; an ANSWER: elsewhere, or a question under a tagged heading, still is"
+  },
+  {
+    "name": "PR #628 r1: a question under a tagged heading, without `ANSWER: `, is skipped as a decision answer",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "    return q.text.startswith(\"ANSWER: \") and _DECISION_SECTION.search",
+        "    return _DECISION_SECTION.search"
+      ]
+    ],
+    "expect": "decision answer: a card click is not run or shown waiting; an ANSWER: elsewhere, or a question under a tagged heading, still is"
+  },
+  {
+    "name": "PR #628 r3: --status lists a skipped decision answer as a question to answer",
+    "file": "scripts/ask_answerer.py",
+    "edits": [
+      [
+        "== \"skipped\" and not is_decision_answer(q)]",
+        "== \"skipped\"]"
+      ]
+    ],
+    "expect": "r3 (#628): --status lists a skipped question but never a skipped decision answer"
   }
 ]

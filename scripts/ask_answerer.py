@@ -11,7 +11,7 @@ by a headless agent that is not the main session.
     python3 scripts/ask_answerer.py --answered ID  # ...and says it has answered it in the page
     python3 scripts/ask_answerer.py --retry ID     # make a failed or skipped question eligible again
     python3 scripts/ask_answerer.py --inbox        # instructions readers typed: print the unread, mark them read
-    python3 scripts/ask_answerer.py --self-test    # 124 cases; never runs the real `claude`
+    python3 scripts/ask_answerer.py --self-test    # 125 cases; never runs the real `claude`
 
 THE LOOP. `explainer-serve.py` appends every POSTed question to `<root>/questions.md`. The watcher stats that
 file once a second (no model call: an idle watcher costs no tokens) and, for each question the ledger has no
@@ -2137,6 +2137,16 @@ sys.exit(mode.get("rc", 0))
               ("skipped  1 asked" in text and off.id in text, claim(r, off.id, "answerer"),
                claim(r, off.id, "session"), state(r, off.id).get("by"), claim(r, off.id, "session")),
               (True, False, True, "session", False))
+        # PR #628 r3 (Claude F3): a decision card's click asked while the answerer was off is skipped like any
+        # question, and --status must not list it as one a session should answer — it is the session's to RECORD.
+        r = mk()
+        offq = ask(r, "asked while the answerer was off")
+        offd = ask(r, "ANSWER: yes", section="4.1 — DECISION 1 of 28", quote="Keep it?", at="2026-11-13 09:00:01")
+        watch(r, CAPS, DEPS, once=True)
+        text = status_text(r, CAPS)
+        check("r3 (#628): --status lists a skipped question but never a skipped decision answer",
+              (state(r, offd.id).get("status"), "skipped  1 asked" in text, offq.id in text, offd.id in text),
+              ("skipped", True, True, False))
 
         r = mk()
         watch(r, CAPS, DEPS, once=True)

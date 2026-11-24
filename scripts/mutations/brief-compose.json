@@ -1250,5 +1250,57 @@
     "expect": [
       "buttons: a heading decision's box is the heading's NEXT element sibling (r2)"
     ]
+  },
+  {
+    "name": "decision buttons r3: occurrences are counted over OPEN decisions only again (Claude F1)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "querySelectorAll('.ex-decision'), function(tag){\n    key(tag);",
+        "querySelectorAll('.ex-decision-open'), function(tag){\n    key(tag);"
+      ]
+    ],
+    "expect": [
+      "buttons: recording one of two identical decisions does not hand its 'sent' to the other (r3)"
+    ]
+  },
+  {
+    "name": "decision buttons r3: a done tag's ANSWERED tail is left in its base key (Claude F1)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if (done(tag)) l = l.replace(",
+        "    if (false) l = l.replace("
+      ]
+    ],
+    "expect": [
+      "buttons: recording one of two identical decisions does not hand its 'sent' to the other (r3)"
+    ]
+  },
+  {
+    "name": "decision buttons r3: a decision done at load keeps its stored key (Claude F2)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if (done(tag)) forget(tag);\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "buttons: a decision done at load forgets its key; re-opened, it offers the buttons (r3)"
+    ]
+  },
+  {
+    "name": "decision buttons r3: `change` forgets the answer sent again (Claude F4)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "button('change', function(){ offer(tag, box); })",
+        "button('change', function(){ forget(tag); offer(tag, box); })"
+      ]
+    ],
+    "expect": [
+      "buttons: `change` offers the buttons again and keeps the answer sent; a reload still shows it (r3)"
+    ]
   }
 ]

@@ -8,9 +8,9 @@ halves:
   codex: ran
   claude: gap
 findings:
-  - {id: C1, severity: Major, aim: deliverable, fix_induced: false, component: sent-state, disposition: fixed}
-  - {id: C2, severity: Major, aim: deliverable, fix_induced: true, component: sent-state, disposition: fixed}
-  - {id: Cm1, severity: Minor, aim: deliverable, fix_induced: false, component: cases, disposition: fixed}
+  - {id: C1, severity: High, aim: deliverable, fix_induced: false, component: sent-state, disposition: fixed}
+  - {id: C2, severity: High, aim: deliverable, fix_induced: true, component: sent-state, disposition: fixed}
+  - {id: Cm1, severity: Medium, aim: deliverable, fix_induced: false, component: cases, disposition: fixed}
 ```
 
 REVIEW GAP: claude — alternation (round 2 is the Codex half; the Claude half reviews round 3)
