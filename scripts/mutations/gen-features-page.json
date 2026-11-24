@@ -405,5 +405,71 @@
    ]
   ],
   "expect": "the gap summary counts OPEN rows by severity, in the backlog's severity order"
+ },
+ {
+  "name": "a card id loses its reserved prefix, so a node named `chrome-theme` shares the chrome button's id",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    return page_markup.feature_id(\"\".join(c if c in _ID_SAFE else f\"_{ord(c):x}_\" for c in name))",
+    "    return \"\".join(c if c in _ID_SAFE else f\"_{ord(c):x}_\" for c in name)"
+   ]
+  ],
+  "expect": "a node named like a chrome control: every id on the page is unique, and its link opens its card"
+ },
+ {
+  "name": "the stub DOM keeps the LAST element of a shared id, so a duplicated id would pass the run",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    if (!Object.prototype.hasOwnProperty.call(els, id))\n",
+    ""
+   ]
+  ],
+  "expect": "a node named like a chrome control: every id on the page is unique, and its link opens its card"
+ },
+ {
+  "name": "the row comparator compares severities only, so a swapped row id agrees",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "got != {\"open\": list(want[\"open\"]), \"closed\": list(want[\"closed\"])}",
+    "[g for _, g in got[\"open\"]] != [g for _, g in want[\"open\"]]"
+   ]
+  ],
+  "expect": "every card's rendered band lists exactly the rows written out for it, by id and severity"
+ },
+ {
+  "name": "the band reader drops the closed rows",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "            \"closed\": [glyph_of(r) for closed, r in rows if closed]}",
+    "            \"closed\": []}"
+   ]
+  ],
+  "expect": "every card's rendered band lists exactly the rows written out for it, by id and severity"
+ },
+ {
+  "name": "an id two cards share is not reported by the row comparator",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    bad = {html_lib.unescape(i) for i in ids if ids.count(i) > 1}",
+    "    bad = set()"
+   ]
+  ],
+  "expect": "every card's rendered band lists exactly the rows written out for it, by id and severity"
+ },
+ {
+  "name": "a card on one side only of the row comparison is skipped instead of reported",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        if got is None or want is None or got != ",
+    "        if got is not None and want is not None and got != "
+   ]
+  ],
+  "expect": "every card's rendered band lists exactly the rows written out for it, by id and severity"
  }
 ]

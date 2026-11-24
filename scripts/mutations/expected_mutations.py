@@ -543,7 +543,10 @@ EXPECTED_MUTATIONS = {
     # bypassing `match_rows` at its CALL SITE.
     # ⟳ 2026-11-03, backlog #470 review round 1: 15 -> 16. a linked row's text keeps its keys as text,
     # so no `<a>` nests in the row's `<a>` (+1).
-    "scripts/gen-features-page.py": 37,
+    # ⟳ 2026-11-23, PR #624 (features tree index), rounds 1-2: 16 -> 43. Round 1 +21 (ids, the hash
+    # handler RUN, gap counts read back from the markup); round 2 +6: a card id's reserved prefix
+    # and the stub's first-wins id rule (R2-1), and the band rows compared by identity (R2-2, four).
+    "scripts/gen-features-page.py": 43,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -659,7 +662,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-03, backlog #470 review round 3: 72 -> 79. A URL ending in half a reference (F1, +2), no link
     # of any kind inside a link's text (F2 and its property, +2), the whole p-closer set, HTML whitespace
     # and the button-scope list (F3, +3). The table-text anchor rebound to `x.strip(ASCII_WHITESPACE)`.
-    "scripts/page_markup.py": 79,
+    # ⟳ 2026-11-23, PR #624 review round 2: 79 -> 80. `key_link("feature")` targets the prefixed
+    # card id (`feature_id`), so a feature link names the card and never the page chrome (+1).
+    "scripts/page_markup.py": 80,
     # ⟳ 2026-11-03, backlog #470: the key-link guard gets its manifest in the commit that creates it.
     # ⟳ 2026-11-03, backlog #470 review round 1: 16 -> 30. rule 2 read from the syntax tree (self-test
     # BODIES only, docstrings, `+` chains, unparseable files); rule 1 through the shared tokenizer; rules

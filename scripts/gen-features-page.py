@@ -259,9 +259,11 @@ def frag_id(name: str) -> str:
     A node's name is free heading text. Any character outside `[A-Za-z0-9-]` — `_` included —
     becomes `_<hex>_`, so the map is injective, and the result is made only of characters a browser
     does not percent-encode: `location.hash` equals the link's href exactly, and the handler needs
-    no decoding (which threw on a malformed escape — review r1, Codex M1 / Claude m3).
+    no decoding (which threw on a malformed escape — review r1, Codex M1 / Claude m3). The result
+    carries `page_markup.feature_id`'s reserved prefix, which no chrome id does, so a node named
+    `chrome-theme` cannot share the chrome button's id (review r2, Codex R2-1).
     """
-    return "".join(c if c in _ID_SAFE else f"_{ord(c):x}_" for c in name)
+    return page_markup.feature_id("".join(c if c in _ID_SAFE else f"_{ord(c):x}_" for c in name))
 
 
 def render_index(nodes: list[Node], fragments: dict, order: list[str]) -> str:
@@ -362,8 +364,10 @@ const src = fs.readFileSync(process.argv[2], "utf8");
 const out = {};
 for (const s of JSON.parse(fs.readFileSync(process.argv[3], "utf8"))) {
   const els = {}, on = {window: {}, document: {}};
+  // `els` is in document order and the FIRST element with an id wins, as `getElementById`'s does.
   for (const [id, tag] of s.els)
-    els[id] = {tagName: tag, open: false, scrolled: 0, scrollIntoView() { this.scrolled++; }};
+    if (!Object.prototype.hasOwnProperty.call(els, id))
+      els[id] = {tagName: tag, open: false, scrolled: 0, scrollIntoView() { this.scrolled++; }};
   const add = (where) => (t, f) => { (on[where][t] = on[where][t] || []).push(f); };
   const location = {hash: s.hash};
   const ctx = {location, window: {addEventListener: add("window")},
@@ -438,8 +442,27 @@ def rendered_gap_counts(page: str, order: list[str]) -> dict[str, dict]:
         out[html_lib.unescape(cid)] = {
             "heading": summary(html_lib.unescape(head.group(1)) if head else None),
             "index": summary(html_lib.unescape(line.group(1)) if line else None),
-            "rows": [glyph_of(r) for closed, r in rows if not closed]}
+            "rows": [glyph_of(r) for closed, r in rows if not closed],
+            "closed": [glyph_of(r) for closed, r in rows if closed]}
     return out
+
+
+def row_disagreements(page: str, order: list[str], expected: dict[str, dict]) -> list[str]:
+    """Card ids whose RENDERED band rows differ from `expected` (review r2, Codex R2-2), sorted.
+
+    `expected` is {card id: {"open": [(key, glyph)], "closed": [(key, glyph)]}}, written out by the
+    caller — the identities, not just the severity totals `gap_disagreements` compares, so a band
+    listing `#999 🟡` where `#2 🟡` belongs disagrees. A card on one side only disagrees, and so does
+    an id two cards share (the reader would keep only one of them)."""
+    ids = re.findall(r'<details class="node[^"]*" id="([^"]*)"', page)
+    seen = rendered_gap_counts(page, order)
+    bad = {html_lib.unescape(i) for i in ids if ids.count(i) > 1}
+    for cid in set(seen) | set(expected):
+        got = ({"open": seen[cid]["rows"], "closed": seen[cid]["closed"]} if cid in seen else None)
+        want = expected.get(cid)
+        if got is None or want is None or got != {"open": list(want["open"]), "closed": list(want["closed"])}:
+            bad.add(cid)
+    return sorted(bad)
 
 
 def gap_disagreements(page: str, order: list[str]) -> list[str]:
@@ -918,7 +941,7 @@ def _self_test_body() -> int:
     deep = render(nested, {}, built_at="2001-01-01T00:00", notes={"git": False, "prs_read": 0},
                   problems=["features.md:1: a problem"], generated_at="2001-01-01 00:00 · abc1234")
     check("no node is rendered twice",
-          (html.count("id=\"wake-on-visit\""), deep.count("id=\"wake-on-visit\"")), (1, 1))
+          (html.count("id=\"f-wake-on-visit\""), deep.count("id=\"f-wake-on-visit\"")), (1, 1))
 
     # ⛔ THE CASE THE REVIEW ASKED FOR COULD NOT BE WRITTEN, AND THAT IS THE PROOF THE FIX WORKED.
     # Round 1 asked for a case asserting every value of `gen-backlog-page.SEVERITY` appears as a
@@ -1014,17 +1037,17 @@ def _self_test_body() -> int:
     _ix = render_index(nested + nodes, _frag, _order)
     check("the index lists every node in file order, a `####` nested one list deeper than its `###`",
           (index_shape(_ix), index_shape(render_index(nodes, _frag, _order))),
-          ([(1, "job-queue"), (2, "wake-on-visit"), (1, "wake-on-visit"), (1, "dig-job-recovery")],
-           [(1, n.slug) for n in nodes]))
+          ([(1, "f-job-queue"), (2, "f-wake-on-visit"), (1, "f-wake-on-visit"), (1, "f-dig-job-recovery")],
+           [(1, f"f-{n.slug}") for n in nodes]))
     # The index reads the severity order it is GIVEN, not a constant of its own.
     check("the index line orders severities as the order it is passed says",
-          "4 gaps (1🟢 2🟡 1🟠)" in re.search(r'href="#job-queue">(.*?)(?:</li>|<ul>)',
+          "4 gaps (1🟢 2🟡 1🟠)" in re.search(r'href="#f-job-queue">(.*?)(?:</li>|<ul>)',
                                              render_index(nested + nodes, _frag, _order[::-1]),
                                              re.S).group(1), True)
     # ⛔ ONE COUNTING RULE: the index line and the card heading both read `open_gaps` — a node WITH
     # gaps (one closed row excluded) and a node WITHOUT.
-    _line = lambda slug: re.search(rf'href="#{slug}">(.*?)(?:</li>|<ul>)', _ix, re.S).group(1)
-    _head = lambda slug: re.search(rf'id="{slug}"[^>]*>\s*<summary.*?</summary>', _tree, re.S).group(0)
+    _line = lambda slug: re.search(rf'href="#{frag_id(slug)}">(.*?)(?:</li>|<ul>)', _ix, re.S).group(1)
+    _head = lambda slug: re.search(rf'id="{frag_id(slug)}"[^>]*>\s*<summary.*?</summary>', _tree, re.S).group(0)
     check("a node's index line and card heading carry the same gap count, with gaps and without",
           ("4 gaps (1🟠 2🟡 1🟢)" in _line("job-queue"), "4 gaps (1🟠 2🟡 1🟢)" in _head("job-queue"),
            "0 gaps" in _line("dig-job-recovery"), "0 gaps" in _head("dig-job-recovery")),
@@ -1036,7 +1059,7 @@ def _self_test_body() -> int:
     _rix = render_index(_real_nodes, _rfrag, _order)
     _bad = [n.slug for n in _real_nodes
             if gap_label(open_gaps(_rfrag[n.slug]), _order)
-            not in re.search(rf'href="#{n.slug}">(.*?)(?:</li>|<ul>)', _rix, re.S).group(1)]
+            not in re.search(rf'href="#{frag_id(n.slug)}">(.*?)(?:</li>|<ul>)', _rix, re.S).group(1)]
     # ...and each counted row's severity is the one its own Known-gaps line shows (`#N <glyph> …`).
     _sevless = [e["label"] for n in _real_nodes for e in open_gaps(_rfrag[n.slug])
                 if e["label"].split()[1] != e.get("sev")]
@@ -1102,27 +1125,94 @@ def _self_test_body() -> int:
            [len(_odd_run[h]["open"]) == 1 and _odd_run[h]["err"] is None for h in _odd_hrefs]),
           (len(_odd_names), len(_odd_names), len(_odd_names), [], [True] * len(_odd_names)))
 
+    # ⛔ A CARD ID NEVER COLLIDES WITH PAGE CHROME (review r2, Codex R2-1). A node may be NAMED like
+    # a chrome control; `getElementById` returns the FIRST element with an id — the chrome's, which
+    # comes first — so that node's index link would open nothing. Every id on the page is read back
+    # through the page tokenizer, and the handler is RUN against all of them in document order.
+    _cn_names = ["chrome-theme", "schemer", "chrome-refresh", "chrome-refresh-say"]
+    _cn, _ = parse_features("## CHROME\n" + "".join(
+        f"### {nm}\nstate: built\nfor: Named like a chrome control.\n" for nm in _cn_names))
+    _ids_of = lambda page: [(dict(t.attrs)["id"], t.tag.upper()) for t in page_markup.page_tokens(page)[0]
+                            if t.kind == "start" and dict(t.attrs).get("id")]
+    _cn_ids = _ids_of(render(_cn, {}))
+    _cn_hrefs = re.findall(r'<a href="(#[^"]*)"', render_index(_cn, {}, _order))
+    _cn_run = run_hash_script(_page_js[0] if _page_js else "", [
+        {"name": h, "hash": "", "els": [list(x) for x in _cn_ids],
+         "steps": [{"hash": html_lib.unescape(h), "fire": "hashchange"}]} for h in _cn_hrefs])
+    _ids_only = [i for i, _ in _cn_ids]
+    # The stub's first-wins rule is itself observed: a `<p>` before a `<details>` of the same id
+    # opens nothing, as in a browser — without it, the duplicate above would pass the RUN half.
+    _dup = run_hash_script(_page_js[0] if _page_js else "",
+                           [{"name": "dup", "hash": "#a", "els": [["a", "P"], ["a", "DETAILS"]]}])
+    check("a node named like a chrome control: every id on the page is unique, and its link opens its card",
+          (sorted({i for i in _ids_only if _ids_only.count(i) > 1}), len(_cn_hrefs),
+           _cn_run if isinstance(_cn_run, str) else
+           [_cn_run[h]["open"] == [html_lib.unescape(h[1:])] for h in _cn_hrefs],
+           _dup if isinstance(_dup, str) else _dup["dup"]["open"]),
+          ([], len(_cn_names), [True] * len(_cn_names), []))
+    # ...and the reservation itself: no id a card-less page carries (chrome, every one of them) starts
+    # with the card prefix, and a feature key's cross-page link (`key_link`) names the card's own id.
+    check("no chrome id carries the card-id prefix, and key_link('feature') targets the card's id",
+          (_caught(lambda: [i for i, _ in _ids_of(render([], {}))
+                            if i.startswith(page_markup.FEATURE_ID_PREFIX)]),
+           len(_ids_of(render([], {}))) > 0,
+           [n.slug for n in _real_nodes
+            if page_markup.key_link("feature", n.slug) != f"/features#{frag_id(n.slug)}"]),
+          ([], True, []))
+
     # ⛔ THE COUNTS AGAINST THE RENDERED BAND (review r1, Codex M2): a card's heading and its index
     # line must equal the OPEN rows its own Known-gaps band LISTS, read back from the page markup
     # by `rendered_gap_counts` — never from `open_gaps`/`gap_label`, the code under test. Fixture:
     # rows past GAP_CAP, closed rows, a plain-string row, and a row shared by two nodes (two tags).
+    # ⟳ Review r2 (Codex R2-2): the band's rows are compared by IDENTITY — key and severity, open and
+    # closed, in order — against EXPECTED SETS WRITTEN OUT BY HAND below, never derived from the
+    # fixture by the code under test. Severities are literals, so the fixture does not lean on
+    # `sev_order` either. 13 open rows exceed GAP_CAP (10), so #20–#22, #90 and #100 are the capped
+    # ones behind "more"; #100 is the row shared by two nodes; #91, #92 and #94 are closed.
     _shared = _g(100, "🟠")
-    _many = {"job-queue": {"backlog": [_g(10 + i, _order[i % 4]) for i in range(GAP_CAP + 3)]
-                           + ["#90 a plain row", _shared, _g(91, "🔴", closed=True),
-                              _g(92, "🟢", closed=True)]},
+    _sev13 = ["🔴", "🟠", "🟡", "🟢", "🟠", "🟡", "🟡", "🔴", "🟢", "🟠", "🟡", "🟢", "🔴"]
+    _many_rows = ([_g(10 + i, g) for i, g in enumerate(_sev13)]
+                  + ["#90 a plain row", _shared, _g(91, "🔴", closed=True), _g(92, "🟢", closed=True)])
+    _many = {"job-queue": {"backlog": _many_rows},
              "wake-on-visit": {"backlog": [_shared, _g(93, "🟡"), _g(94, "🟠", closed=True)]}}
-    _many_page = render(nested + nodes, _many)
-    _many_seen = rendered_gap_counts(_many_page, _order)
+    _many_nodes = nested + [n for n in nodes if n.slug != "wake-on-visit"]   # one card per id
+    _many_page = render(_many_nodes, _many)
+    _expected_rows = {
+        "f-job-queue": {"open": [("#10", "🔴"), ("#11", "🟠"), ("#12", "🟡"), ("#13", "🟢"),
+                                 ("#14", "🟠"), ("#15", "🟡"), ("#16", "🟡"), ("#17", "🔴"),
+                                 ("#18", "🟢"), ("#19", "🟠"), ("#20", "🟡"), ("#21", "🟢"),
+                                 ("#22", "🔴"), ("#90", "·"), ("#100", "🟠")],
+                        "closed": [("#91", "🔴"), ("#92", "🟢")]},
+        "f-wake-on-visit": {"open": [("#100", "🟠"), ("#93", "🟡")], "closed": [("#94", "🟠")]},
+        "f-dig-job-recovery": {"open": [], "closed": []}}
+    # Controls: ONE row's id swapped (#11 -> #999, same severity — the totals still agree, which is
+    # exactly what the old comparator could not see), and ONE closed row rendered open.
+    _swapped = {**_many, "job-queue": {"backlog": [_g(999, "🟠") if isinstance(e, dict) and
+                                                   e["label"].startswith("#11 ") else e
+                                                   for e in _many_rows]}}
+    _reopened = {**_many, "wake-on-visit": {"backlog": [_shared, _g(93, "🟡"), _g(94, "🟠")]}}
+    check("every card's rendered band lists exactly the rows written out for it, by id and severity",
+          (_caught(lambda: row_disagreements(_many_page, _order, _expected_rows)),
+           _caught(lambda: row_disagreements(render(_many_nodes, _swapped), _order, _expected_rows)),
+           gap_disagreements(render(_many_nodes, _swapped), _order),
+           _caught(lambda: row_disagreements(render(_many_nodes, _reopened), _order, _expected_rows)),
+           # a card the expectation does not name, or names but the page lacks, disagrees too
+           _caught(lambda: row_disagreements(_many_page, _order,
+                                             {k: v for k, v in _expected_rows.items()
+                                              if k != "f-dig-job-recovery"} | {"f-gone": {"open": [], "closed": []}})),
+           # ...and an id two cards share (the nested fixture renders wake-on-visit twice, alike)
+           _caught(lambda: row_disagreements(render(nested + nodes, _many), _order, _expected_rows))),
+          ([], ["f-job-queue"], [], ["f-wake-on-visit"], ["f-dig-job-recovery", "f-gone"],
+           ["f-wake-on-visit"]))
     check("every card's heading and index line count exactly the open rows its rendered band lists",
           (gap_disagreements(_many_page, _order),
-           len(_many_seen["job-queue"]["rows"]), len(_many_seen["wake-on-visit"]["rows"]),
            gap_disagreements(render(_real_nodes, _rfrag), _order),
            # the comparator can say no: read under an empty order, every severity disagrees
            gap_disagreements(_many_page, []),
            # the reader itself, on a second page and a second order: a glyph outside it reads `·`
-           rendered_gap_counts(_tree, _order)["job-queue"]["rows"],
-           rendered_gap_counts(_tree, _order[1:2])["job-queue"]["rows"]),
-          ([], GAP_CAP + 5, 2, [], ["job-queue", "wake-on-visit"],
+           rendered_gap_counts(_tree, _order)["f-job-queue"]["rows"],
+           rendered_gap_counts(_tree, _order[1:2])["f-job-queue"]["rows"]),
+          ([], [], ["f-job-queue", "f-wake-on-visit"],
            [("#1", "🟡"), ("#2", "🟢"), ("#3", "🟠"), ("#4", "🟡")],
            [("#1", "·"), ("#2", "·"), ("#3", "🟠"), ("#4", "·")]))
     # ⛔ THE EMITTED ARTIFACT PARSES — the HTML is in the supported subset, the script is a program.
