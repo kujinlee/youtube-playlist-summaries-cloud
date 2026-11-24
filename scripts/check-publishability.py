@@ -2,7 +2,7 @@
 """The publishability scan (marketplace-inventory plan, Tasks 8-12; spec §5): for every component of the map,
 what in its shipping set couples it to this repository.
 
-    python3 scripts/check-publishability.py --self-test  # 180 cases
+    python3 scripts/check-publishability.py --self-test  # 177 cases
     python3 scripts/check-publishability.py [--map P] [--sets P] [--out P]
 
 It EVALUATES and never repairs: no file of a component is written. One line per component is printed, then a
@@ -2582,7 +2582,7 @@ def _self_test_body() -> int:
            ("os.path.relpath", 1, "start")], []))
 
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
-        print("NOT RUN under the mutation harness: 10 live-tree cases (CI's ordinary step runs them)")
+        print("NOT RUN under the mutation harness: 7 live-tree cases (CI's ordinary step runs them)")
     else:
         live_vocab = derive_vocabulary(REPO)
         case("the derived vocabulary on the live tree contains an element EQUAL to supabase, gemini and fly, and "
@@ -2610,17 +2610,6 @@ def _self_test_body() -> int:
         case("the live tree: page_chrome.py, a library, has no detector-3 finding",
              lambda: [f for f in live["page-chrome"]["findings"] if f["detector"] == 3],
              [])
-        case("the live brief/SKILL.md is the fixture copy: a difference is reported here, never absorbed",
-             lambda: (REPO / B).read_text() == brief,
-             True)
-        case("the live tree: skill-brief's detector-4 names are the nine and the two extras",
-             lambda: sorted({(r["kind"], r["term"]) for k in ("findings", "mentions")
-                             for r in live["skill-brief"][k] if r["detector"] == 4}),
-             sorted(NINE + [("guard-name", "check-selftest-counts"), ("doc-path", "docs/dev-process.md")]))
-        case("the live tree: brief and explain-findings require artifact-design",
-             lambda: [sorted({f["term"] for f in live[c]["findings"] if f["detector"] == 5})
-                      for c in ("skill-brief", "skill-explain-findings")],
-             [["artifact-design"], ["artifact-design"]])
         case("the live tree: gen-dashboard.py's gh call is an executable finding",
              lambda: [(f["kind"], f["term"]) for f in live["gen-dashboard"]["findings"]
                       if f["detector"] == 6 and f["term"] == "gh"],

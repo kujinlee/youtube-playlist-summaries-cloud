@@ -1,0 +1,24 @@
+{
+  "attempts": [
+    "  gpt-6.2-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.2-astra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.1-terra: ok \u2014 1677 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "b5047031c6ea239ce21bd713ece34c8ebf6f0e0a",
+  "intrusions": [],
+  "loosening_answers": {
+    "5fff3b91a665": "not a loosening",
+    "f3a4b617b3fa": "not a loosening"
+  },
+  "model": "gpt-6.1-terra",
+  "prompt": "/var/folders/tg/tmf6bl6s2n95zxh08fqgwv6w0000gn/T//de-r1-prompt.md",
+  "reason": "1677 chars",
+  "refused": false,
+  "review": "drop-explain-skills-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/drop-explain"
+}

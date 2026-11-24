@@ -1,6 +1,6 @@
 ---
 name: explain-topic
-description: Build a self-contained HTML page explaining a topic, concept, mechanism or open question, served locally so the reader can ask questions back and get answers in the page. Use when the user asks to understand how something works, says "explain X to me", "I want to understand X", "teach me X", asks for an interactive page about a subject, or types /explain-topic. Not for a code change (use explain-diff), the status of work (use brief), or findings needing a file/don't-file verdict (use explain-findings).
+description: Build a self-contained HTML page explaining a topic, concept, mechanism or open question, served locally so the reader can ask questions back and get answers in the page. Use when the user asks to understand how something works, says "explain X to me", "I want to understand X", "teach me X", asks for an interactive page about a subject, or types /explain-topic.
 ---
 
 # Explain Topic
@@ -25,12 +25,9 @@ Do not cite the baseline as evidence the guidance is load-bearing. It is not.
 
 ## Which skill
 
-| The subject is | Use |
-|---|---|
-| A concept, mechanism, question, "how does X work" | **this skill** |
-| A code change, branch, or PR | `explain-diff` |
-| Where a piece of work stands | `brief` |
-| Findings needing a file / don't-file verdict | `explain-findings` |
+This is the one explainer skill. A code change, the state of a body of work, or a set of findings
+waiting on a file / don't-file verdict is a subject like any other: pin it per §1. (The owner retired
+`explain-diff`, `brief` and `explain-findings` on 2026-11-23 — unused since August.)
 
 ## 1. Pin the subject before researching
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PostToolUse hook — regenerate the features view whenever one of its SOURCES is written.
 #
-# WHY A HOOK AND NOT A SKILL. `/explain-diff`, `/brief` and `/explain-findings` are composers: you
+# WHY A HOOK AND NOT A SKILL. `/explain-topic` is a composer (and `/explain-diff`, `/brief`, `/explain-findings` were, until 2026-11-23): you
 # invoke them about a subject you name, and their bodies are instructions for judgement. This page
 # has no subject and no judgement — every field except one `for:` sentence per node is derived
 # (see `scripts/gen-features-page.py`'s own docstring). A skill here would be a wrapper whose

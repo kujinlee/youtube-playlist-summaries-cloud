@@ -21517,6 +21517,44 @@ memory-corpus :2:5-17 -> :2:3-14, and 8 ids that the backlog #697 built corpus n
 fail is NOT re-judged). The tier A/B experiment docs' cited ids were re-mapped the same way.
 
 ## 2026-11-23
+The features page now opens with a tree of every feature — group, feature, sub-feature — and each
+line says how many backlog gaps are still open against it, by severity. The same count sits next to
+every "built" badge, so a built feature with 24 open gaps no longer reads as finished. The cards are
+folded; clicking a line in the tree opens its card.
+<!--tech-->
+`scripts/gen-features-page.py`: `render_index`, `gap_label`/`open_gaps`/`split_closed` (one counting
+rule shared by the Known-gaps band, the card heading and the index), cards as folded `<details>`,
+`OPEN_HASH_JS` opens the card a hash names (load, hashchange, re-click of the current hash). Each line
+counts its own node only — no subtree subtotal, since a two-tag row sits under two nodes. Review r1:
+one id function (`frag_id`) for link and card, safe for any name; the hash handler is RUN under
+`node` against a stub DOM, one case per behaviour; the counts are read back from the rendered band.
+Review r2: card ids carry a reserved `f-` prefix (`page_markup.feature_id`, also what
+`key_link("feature")` targets), so a node named like a chrome control cannot share its id; the band's
+rows are compared by id and severity against hand-written expected sets (`row_disagreements`).
+Self-test 19 → 41; mutation pin 16 → 43 (page_markup 79 → 80).
+
+## 2026-11-23
+As you asked, three explainer skills you no longer use are gone: `brief`, `explain-diff` and `explain-findings`.
+They are off the list of things the marketplace would ship, and their folders are removed from the repo. The reminder
+that suggested an explainer whenever a PR was opened is retired too. `explain-topic` is now the one explainer skill,
+and `dashboard` still builds its page. The shared page builder (`brief-compose.py`) stays, because both still use
+it. I filed its rename as a backlog row, so page names stop all saying "brief".
+
+Nothing waits on you for this.
+<!--tech-->
+Owner 11-23 20:01 ("drop all three and retire the hook"), then 20:06 ("remove them from repo too"). Removed:
+`.agents/skills/{brief,explain-diff,explain-findings}/` and their `.claude/skills/` links, `.claude/hooks/suggest-explainer.sh`
+and its PreToolUse registration in `.claude/settings.json` (backups in the session scratchpad). Marketplace data: the
+three components leave `components.json` (46 -> 43), the comprehensibility package's `installed_files` and components in
+`shipping-sets.json`, and the three rows in `inventory.json` (46 -> 43 rows; the D1 checkpoint still fires, rc 3, a CI
+warning as before). `check-publishability --self-test` 180 -> 177: the three live-tree cases that read
+`skill-brief`/`skill-explain-findings` are gone, and the fixture case of the same name stays. `check-explainer-delivery`'s
+`PAGE_SKILLS` is now explain-topic and dashboard. The routing tables in explain-topic, dashboard and
+shared/explainer-delivery.md are reworded, and `brief-compose.py`'s two "run /explain-diff" messages now name
+/explain-topic. Backlog #713 filed (composer rename + page naming by kind). Historical review, explainer and scan
+documents still name the skills. They are records, and stay as written.
+
+## 2026-11-23
 The goal tree page builds again. One line in the goal list named the wrong pull request, so the
 same piece of work appeared twice under one goal and the page refused to render; that line now names
 the right one. The design for merging goals and features into one tree finished its first review
@@ -21534,6 +21572,7 @@ read a retired file, which edits rebuild which page). The plan no longer depends
 retired name is checked by searching the whole repository, and the design adds no new page-rebuild
 trigger at all, because pages are always built from the merged code. Nothing new is waiting for you;
 the 3 earlier questions in its walkthrough still are.
+You approved it at 21:22, with all 28 answers taken as recommended or yes; they are written into the spec (§6.1). The plan is next.
 <!--tech-->
 Phase 6 armed on thrashing (component `migration-slices`, rounds 2 and 3):
 `docs/reviews/architecture-review-2026-11-23-goal-node-tree-migration.md`. Spec §5.1 S2 is gated by two

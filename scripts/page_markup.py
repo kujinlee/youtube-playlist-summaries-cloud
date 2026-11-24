@@ -170,6 +170,16 @@ def goal_id(slug: str) -> str:
     return f"g-{slug}"
 
 
+FEATURE_ID_PREFIX = "f-"
+
+
+def feature_id(name: str) -> str:
+    """The features page's element id for a node card, from its already id-safe name. Prefixed, like
+    `goal_id`, so a node NAMED like a chrome control (`chrome-theme`) can never share its id — the
+    chrome comes first and `getElementById` returns it (review r2 of PR #624, Codex R2-1)."""
+    return f"{FEATURE_ID_PREFIX}{name}"
+
+
 def thread_id(key: str) -> str:
     """The goal tree's element id for a thread key (`backlog-5`, `pr-20`). ONE rule for the id the
     tree EMITS and the fragment `key_link("thread", …)` LINKS to, so the two cannot disagree."""
@@ -192,7 +202,7 @@ def key_link(kind: str, key, repo: str | None = None) -> str | None:
     if kind == "goal":
         return f"/goals#{goal_id(key)}" if SLUG.fullmatch(key) else None
     if kind == "feature":
-        return f"/features#{key}" if SLUG.fullmatch(key) else None
+        return f"/features#{feature_id(key)}" if SLUG.fullmatch(key) else None
     if kind == "dashboard":
         return f"/dashboard#{key}" if ENTRY_SLUG.fullmatch(key) else None
     if kind == "thread":
@@ -976,7 +986,7 @@ def _self_test_body() -> int:
     case("key_link: PR with a repo", key_link("PR", 20, "o/r"), "https://github.com/o/r/pull/20")
     case("key_link: a PR with NO repo is no link, never a guessed URL", key_link("PR", 20, None), None)
     case("key_link: goal", key_link("goal", "status-visibility"), "/goals#g-status-visibility")
-    case("key_link: feature", key_link("feature", "wake-on-visit"), "/features#wake-on-visit")
+    case("key_link: feature", key_link("feature", "wake-on-visit"), "/features#f-wake-on-visit")
     case("key_link: dashboard entry slug", key_link("dashboard", "2026-10-01-1"), "/dashboard#2026-10-01-1")
     case("key_link: thread", key_link("thread", "pr-20"), "/goal-tree#t-pr-20")
     case("thread_id: the id is the key, prefixed", thread_id("pr-3"), "t-pr-3")

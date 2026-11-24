@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: Record what changed in this repo as a dated dashboard entry, and regenerate the project dashboard page. Use when work has landed that a person who was away would need to know about, when a decision starts waiting on the human, when one stops waiting, or when the user types /dashboard or asks to update the dashboard. Not for explaining a code change (use explain-diff), the state of one body of work (use brief), or findings needing a file/don't-file verdict (use explain-findings).
+description: Record what changed in this repo as a dated dashboard entry, and regenerate the project dashboard page. Use when work has landed that a person who was away would need to know about, when a decision starts waiting on the human, when one stops waiting, or when the user types /dashboard or asks to update the dashboard. Not for explaining a topic, a code change or where work stands (use explain-topic).
 ---
 
 # Dashboard
