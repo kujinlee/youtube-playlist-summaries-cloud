@@ -64,7 +64,7 @@ views last (S4). A renamed slug is recorded in `was:` and read back through one 
 | W2 | one manifest entry per new guard clause | `scripts/mutations/<stem>.json`, keys `name`, `file`, `edits`, `expect`; `expect` is the exact case name the mutation must redden |
 | W3 | `EXPECTED_MUTATIONS` | `scripts/mutations/expected_mutations.py`, the script's entry set to the manifest's new length |
 | W4 | anchors that the edit unbound | `python3 scripts/check-plan-code.py --mutate . --only scripts/<name>.py` — every entry red via its named case, none `cannot apply` |
-| W5 | `EXAMINED_KEYS` | `scripts/check-fixture-variation.py`, re-derived by its `analyse()` when a self-test fixture gains or loses a key |
+| W5 | `EXAMINED_KEYS` | `scripts/check-fixture-variation.py`, re-derived by its `analyse()` when a self-test fixture gains or loses a key — IN THE SAME TASK AND COMMIT as the edit, never a later one: CI runs `python3 scripts/check-fixture-variation.py`, which reports an examined key whose function is gone (r1 Codex Major, Tasks 8/10). Known pins at this plan's base: `gen-goals-page.py` → `parse_registry.text` (Task 8); `check-features.py` → `check_cross.anchors_declared` (Task 7); `check-anchors.py` → `audit.*` (Task 6, when `audit` gains `nodes`) |
 | W6 | `scripts/check-selftest-counts.py --changed` and `scripts/check-ratchet-contract.py` | run; both exit 0 |
 
 ### The task cycle
@@ -148,8 +148,11 @@ Spec: §2.2, §2.4, §2.5 (G6, G9), §5.1 S1 row. No name in `docs/features.md` 
   in signature, returning trunk nodes as well when a trunk carries a `slug:` line
 
 Grammar decisions this task fixes (see *Choices the spec left open*, C1–C3):
-- `adrs:` and `was:` are list fields in today's parenthesised form — `adrs: (0001, 0005)`,
-  `was: (dev-speed-first, harness-speed)`. An `adrs:` entry is four digits; a `was:` entry is a slug.
+- `adrs:` and `was:` are BARE comma lists, the form `anchors:` uses today and `parse_features` already
+  splits (`value.split(",")`, each entry stripped) — `adrs: 0001, 0005`, `was: dev-speed-first, harness-speed`
+  (spec §5.1). No parenthesis is stripped: in `areas: (cloud/frontend)` the parentheses belong to the backlog
+  `(area)` TAG, not to a list grammar. An `adrs:` entry is four digits; a `was:` entry is a slug; an entry
+  carrying a `(` or `)` is refused as malformed.
 - `done: YYYY-MM-DD HH:MM "<words>"` and `proposed: YYYY-MM-DD HH:MM` are single-line fields.
 - A trunk stays a `## ` heading with its display text. A column-0 `slug: <slug>` line directly under it makes
   it a node at level 2, which then needs a `for:` line like any node. `slug:` anywhere else is refused.
@@ -161,8 +164,8 @@ Grammar decisions this task fixes (see *Choices the spec left open*, C1–C3):
 
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
-| 1 | list field parsed | `adrs: (0001, 0005)` | `Node.adrs == ("0001", "0005")` |
-| 2 | malformed ADR number | `adrs: (1, 0005)` | a problem naming the line and the entry |
+| 1 | list field parsed | `adrs: 0001, 0005` and, in the same case, `was: a, b` | `Node.adrs == ("0001", "0005")`, `Node.was == ("a", "b")` |
+| 2 | malformed ADR number | `adrs: 1, 0005`; and `adrs: (0001, 0005)` | a problem naming the line and the entry, for each (the parenthesised form is NOT a list grammar) |
 | 3 | state omitted | a node with `for:` and no `state:` | `state is None`, no problem from the parser |
 | 4 | `done:` well-formed | `done: 2026-11-23 21:20 "it is finished"` | `done == ("2026-11-23 21:20", "it is finished")` |
 | 5 | `done:` malformed | no time, or no quoted sentence | a problem quoting the required form |
@@ -174,7 +177,8 @@ Grammar decisions this task fixes (see *Choices the spec left open*, C1–C3):
 | 11 | `slug:` under a node heading | `### x` then `slug: y` | a problem: only a trunk takes a slug line |
 | 12 | duplicate new field | two `was:` lines on one node | the existing duplicate-field refusal fires |
 
-- [ ] **Step 1:** add cases `grammar: adrs list`, `grammar: adrs entry must be four digits`,
+- [ ] **Step 1:** add cases `grammar: adrs and was are bare comma lists`, `grammar: adrs entry must be four digits`
+  (its loop includes `(0001` and `0005)`),
   `grammar: state may be omitted`, `grammar: done parses when and words`, `grammar: done needs a time and a quote`,
   `grammar: proposed parses`, `grammar: depth five and six carry a parent`, `grammar: a skipped level is refused`,
   `grammar: a trunk slug makes a level-2 node`, `grammar: a slugless trunk yields no node`,
@@ -199,7 +203,8 @@ Grammar decisions this task fixes (see *Choices the spec left open*, C1–C3):
 
 **Interfaces:**
 - Consumes: `Node` (Task 1)
-- Produces: `current_slugs(nodes: list[Node]) -> set[str]`;
+- Produces: `summary_line(nodes: list[Node]) -> str` (built, absent and stateless counted separately);
+  `current_slugs(nodes: list[Node]) -> set[str]`;
   `resolve(nodes: list[Node], slug: str) -> str | None` (the current slug for a current or former slug, else
   `None` — for READING history only); `slug_problems(nodes: list[Node]) -> list[str]` (G6);
   `check_nodes(nodes: list[Node], anchored: frozenset[str] = frozenset()) -> list[str]`, where `anchored` is the
@@ -210,32 +215,47 @@ Grammar decisions this task fixes (see *Choices the spec left open*, C1–C3):
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
 | 1 | stateless node | no `state:`, no fragment | no problem |
-| 2 | `built` with `adrs:` only | `state: built`, `adrs: (0003)` | no problem |
+| 2 | `built` with `adrs:` only | `state: built`, `adrs: 0003` | no problem |
 | 3 | `built` with an anchored document only | slug in `anchored` | no problem |
 | 4 | `built` with nothing | no areas, adrs, anchors, not in `anchored` | the existing no-fragment problem |
 | 5 | G6: two nodes share a slug | — | a problem naming both lines |
-| 6 | G6: a `was:` entry equals a current slug | node `a` has `was: (b)` and a node `b` exists | a problem |
+| 6 | G6: a `was:` entry equals a current slug | node `a` has `was: b` and a node `b` exists | a problem |
 | 7 | G6: one former slug listed twice | in one list, and in two lists | a problem in each shape |
 | 8 | G6: a `was:` entry that occurs once | the rename case | PASSES |
 | 9 | `resolve` of a current slug | — | itself |
 | 10 | `resolve` of a former slug | — | the node's current slug |
 | 11 | `resolve` of an unknown slug | — | `None` |
 | 12 | `absent` still needs `expected-because:` | — | unchanged |
+| 13 | `absent` with an `adrs:` line | `state: absent`, `adrs: 0015` (the live `harness-ships-elsewhere` after Task 5) | no problem — only `areas` contradict `absent` |
+| 14 | `absent` with an anchored document | slug in `anchored` (the live `harness-ships-elsewhere` after Task 7: three documents) | no problem |
+| 15 | `absent` with an area | `state: absent`, `areas: (x)` | the existing "flip it to `built`" problem, counting AREAS only |
+| 16 | the summary line | one built, one absent, one stateless node | `(1 built, 1 absent, 1 stateless)` — a stateless node is never counted as absent |
+
+**The two fragment counts are different sets (r1 F2).** The `built` arm counts `areas` + `adrs` + anchors +
+anchored documents: any one of them is evidence the node exists. The `absent` arm counts `areas` ONLY: a
+backlog row is shipped work, which contradicts an absence; an ADR or a spec describes a gap and may sit under
+an absent node (spec §4 row 4.45 keeps `harness-ships-elsewhere` absent while giving it `adrs: 0015`).
 
 - [ ] **Step 1:** cases `rules: a stateless node needs no fragment`, `rules: adrs is a fragment`,
   `rules: an anchored document is a fragment`, `rules: built with no fragment is refused`,
   `G6: two nodes may not share a slug`, `G6: a was entry may not equal a current slug`,
   `G6: a former slug listed twice is refused`, `G6: a rename passes`,
-  `resolve: current, former and unknown`. The G6 cases loop an independent literal list of the three failing
+  `resolve: current, former and unknown`, `rules: absent may carry adrs`,
+  `rules: absent may carry an anchored document`, `rules: absent with an area is refused`,
+  `summary: a stateless node is not counted absent` (the summary is built by a pure `summary_line(nodes)`
+  that `main` prints, so the case reads the same function). The G6 cases loop an independent literal list of the three failing
   shapes plus the passing one, so the class is exercised by a copy the code does not read.
 - [ ] **Step 2:** red. **Step 3:** implement; `main` calls `slug_problems` and passes `frozenset()` for
   `anchored` (the live wiring is Task 7, when the header reader exists in one place). **Step 4:** green.
 - [ ] **Step 5:** mutations: each of the three G6 clauses severed singly (each reddens only its own case —
   the identity check that the cases are not interchangeable); `resolve` returning the input for a former
-  slug; the `anchored` term dropped from the fragment rule. Then W1–W6.
+  slug; the `anchored` term dropped from the fragment rule; `adrs` added to the `absent` arm's count
+  (reddens `rules: absent may carry adrs`); the `absent` count in `summary_line` computed as
+  `len(nodes) - built` again (reddens `summary: a stateless node is not counted absent`). Then W1–W6.
 - [ ] **Step 6:** commit.
 
-**FAILS IF:** a tree holding `was: (x)` on one node and a node named `x` passes `python3 scripts/check-features.py`.
+**FAILS IF:** a tree holding `was: x` on one node and a node named `x` passes `python3 scripts/check-features.py`;
+or a tree holding `state: absent` with `adrs: 0015` and an `expected-because:` fails it.
 
 ### Task 3: G9 — `done:` cites a recorded request
 
@@ -263,16 +283,21 @@ A `done:` line passes when its (when, words) pair equals a request under a `## G
 | 3 | time differs | — | a problem |
 | 4 | the request sits under ANOTHER node | — | a problem |
 | 5 | the request sits under a heading that is a `was:` slug of the node | — | no problem |
-| 6 | `docs/goal-threads.md` cannot be read | file absent | `CANNOT RUN`, exit 2 — never a pass |
+| 6 | `docs/goal-threads.md` cannot be read AND some node carries `done:` | file absent | `CANNOT RUN`, exit 2 — never a pass |
 | 7 | no node carries `done:` | today's file | no problem; the summary line is unchanged |
+| 8 | no node carries `done:` and there is no threads file | a self-test world without it | no problem, and the file is never opened — the read is lazy (r1 F5), so `gen-features-page.py`, which loads this module, needs no threads file in its worlds |
 
 - [ ] **Step 1:** cases `G9: done equals a request under its node`, `G9: one changed character is refused`,
   `G9: a different time is refused`, `G9: a request under another node does not count`,
-  `G9: a request under a former slug counts`, `G9: an unreadable threads file is CANNOT RUN`.
+  `G9: a request under a former slug counts`, `G9: an unreadable threads file is CANNOT RUN`,
+  `G9: no done line needs no threads file` (its world has no `docs/goal-threads.md`; it passes a reader that
+  raises if called, so a mutation that reads eagerly goes red).
 - [ ] **Step 2:** red. **Step 3:** implement; move the two patterns and alias them in `scripts/goal-tree.py`.
+  `main` reads `docs/goal-threads.md` only when `any(n.done for n in nodes)`.
 - [ ] **Step 4:** both self-tests green: `python3 scripts/check-features.py --self-test` and
   `python3 scripts/goal-tree.py --self-test`.
-- [ ] **Step 5:** mutations: the words comparison; the time comparison; the under-that-node restriction. In
+- [ ] **Step 5:** mutations: the words comparison; the time comparison; the under-that-node restriction; the
+  `any(n.done …)` guard on the read removed (reddens `G9: no done line needs no threads file`). In
   `scripts/mutations/goal-tree.json` no entry is added; W4 confirms none lost its anchor. Then W1–W6 for both.
 - [ ] **Step 6:** commit.
 
@@ -344,10 +369,10 @@ is still read until Task 7), so the tree and the registry agree at every commit.
 
 | Row | Edit |
 |---|---|
-| 4.3 | new `####` node `cloud-publishing` under `summarise-a-playlist`; `for:` is the registry's sentence; `adrs: (0001, 0005)`; NO `state:` (Q13) |
-| 4.18 | new `####` node `serve-money-guard` under `spend-control`; `for:` is the registry's sentence; `adrs: (0008)`; NO `state:` (Q13) |
+| 4.3 | new `####` node `cloud-publishing` under `summarise-a-playlist`; `for:` is the registry's sentence; `adrs: 0001, 0005`; NO `state:` (Q13) |
+| 4.18 | new `####` node `serve-money-guard` under `spend-control`; `for:` is the registry's sentence; `adrs: 0008`; NO `state:` (Q13) |
 | 4.10, 4.12, 4.19, 4.20, 4.43, 4.45 | `adrs:` added: `share-and-download` 0003; `cloud-sync` 0002; `stable-blob-addressing` 0006, 0007; `cloud-blob-key-encoding` 0009; `review-decides-itself` 0014; `harness-ships-elsewhere` 0015 |
-| 4.24 | the `harness-speed` heading is RENAMED to `dev-speed` and lifted from `####` to `###` under DEV INFRASTRUCTURE; `was: (dev-speed-first, harness-speed)`; `for:` is the registry's sentence for `dev-speed-first`; its `state:` line is removed; `areas: (tooling/speed)` stays |
+| 4.24 | the `harness-speed` block (heading plus its field lines) is MOVED, not re-levelled in place: cut from among `guard-and-gate-harness`'s `####` children and pasted as a `###` block after the last of them (`guard-soundness`) ends, still under DEV INFRASTRUCTURE; heading renamed to `dev-speed`; `was: dev-speed-first, harness-speed`; `for:` is the registry's sentence for `dev-speed-first`; its `state:` line is removed; `areas: (tooling/speed)` stays. A `###` left where the `####` stood would re-parent the five siblings below it (`review-process`, `mutation-and-test-quality`, `hooks-and-session-continuity`, `backlog-and-page-tooling`, `guard-soundness`) with every gate green (r1 F3) |
 
 Before writing the `adrs:` lines, read the registry table in `docs/anchors.md` and copy each ADR column
 from it; the list above is the spec's and the registry is the source. Any anchor whose ADR column is not in
@@ -357,7 +382,7 @@ the list above is added the same way.
 
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
-| 1 | an `adrs:` number with no file | `adrs: (9999)` | a problem naming the node and the number |
+| 1 | an `adrs:` number with no file | `adrs: 9999` | a problem naming the node and the number |
 | 2 | every ADR number has a file | the live tree | no problem |
 | 3 | `harness-speed` kept beside `dev-speed` | both a heading and a `was:` entry | G6 refuses (Task 2's case, now reachable on live data) |
 
@@ -372,6 +397,17 @@ the list above is added the same way.
 **FAILS IF:** some ADR number in the registry table of `docs/anchors.md` appears on no node's `adrs:` line.
 Check: `grep -o '[0-9]\{4\}' docs/anchors.md | sort -u` against
 `grep '^adrs:' docs/features.md | grep -o '[0-9]\{4\}' | sort -u`, restricted to the registry's table rows.
+Or `python3 scripts/check-features.py` is red after the edit (the `absent` node `harness-ships-elsewhere` now
+carries `adrs: 0015`; Task 2's behaviour 13 is what keeps it green — r1 F2). Or the parent diff below prints
+anything but `dev-speed`'s own line and the three NEW nodes' lines:
+
+```
+pairs() { python3 -c 'import importlib.util as u,sys; s=u.spec_from_file_location("cf","scripts/check-features.py"); m=u.module_from_spec(s); s.loader.exec_module(m); [print(n.slug, n.parent) for n in m.parse_features(sys.stdin.read())[0]]'; }
+diff <(git show origin/master:docs/features.md | pairs | sort) <(pairs < docs/features.md | sort)
+```
+
+(`parse_features` returns `(nodes, problems)` today. The slice's own parser reads BOTH texts, so both sides
+carry Task 1's `parent`; `harness-speed`'s old pair appears on the `<` side only.)
 
 ### Task 6: `check-anchors.py` reads the tree — G1 over specs, plans and ADRs; G3
 
@@ -444,6 +480,8 @@ document. ADR files are read for G1 only — never required to carry a header, n
 - Modify: `scripts/gen-features-page.py` (`collect`, `anchor_documents`; `anchor_adrs`, `ANCHOR_ROW` removed;
   the declared input list), `scripts/mutations/gen-features-page.json`
 - Modify: `docs/features.md` (every `anchors:` line removed; the preamble's account of the registry rewritten)
+- Modify: `scripts/check-fixture-variation.py` — `check_cross.anchors_declared` (and any other key whose
+  parameter this task removes) out of `EXAMINED_KEYS` in this commit (W5), with its manifest (W4)
 
 **Interfaces:**
 - Consumes: `anchored_slugs` (Task 6), `node_slugs` (Task 6), `Node.adrs`
@@ -458,7 +496,7 @@ document. ADR files are read for G1 only — never required to carry a header, n
 | 1 | an `anchors:` line in the tree | — | refused as an unknown field, the message naming `adrs:` and the `Anchor:` header as what replaced it |
 | 2 | a `built` node whose only fragment is an anchored document | `share-and-download` on the live tree | passes through `main` (the call site, not only `check_nodes`) |
 | 3 | the same node when its documents are absent | fixture without the document | the no-fragment problem |
-| 4 | a node's ADR links on `/features` | `adrs: (0003)` | the ADR section lists ADR-0003 with its file's title |
+| 4 | a node's ADR links on `/features` | `adrs: 0003` | the ADR section lists ADR-0003 with its file's title |
 | 5 | a node's documents on `/features` | a spec anchored to the node | listed under the node — and under no other |
 | 6 | the summary line | — | counts nodes and backlog areas; no anchor count |
 | 7 | `docs/anchors.md` absent | fixture without it | both scripts run; neither reads it |
@@ -486,6 +524,10 @@ document. ADR files are read for G1 only — never required to carry a header, n
 **Files:**
 - Modify: `scripts/gen-goals-page.py` (`collect`, `render_goal`, `build`; `REGISTRY_ROW`, `parse_registry`
   removed), `scripts/mutations/gen-goals-page.json`
+- Modify: `scripts/check-fixture-variation.py` — the `parse_registry.text` entry under `gen-goals-page.py` in
+  `EXAMINED_KEYS` is removed IN THIS COMMIT, re-derived by `analyse()` (W5), with its manifest
+  `scripts/mutations/check-fixture-variation.json` re-anchored (W4). Leaving it to Task 10 would put
+  `python3 scripts/check-fixture-variation.py` red between the two commits.
 
 **Interfaces:**
 - Consumes: `parse_features`, `Node.adrs`, `Node.purpose`; `anchored_slugs` (Task 6)
@@ -509,12 +551,16 @@ tree, in Task 19. Here it changes only where its names, sentences and ADRs come 
   `cards: a bare node has none yet`, `cards: a document anchored to no node refuses the build`,
   `band: the ROOTS relation still renders`.
 - [ ] **Step 2:** red. **Step 3:** implement. **Step 4:** green;
-  `python3 scripts/regen-pages.py --page goals` builds.
+  the page builds FROM THIS CHECKOUT: `python3 scripts/gen-goals-page.py --out "$(mktemp -d)/goals.html"`
+  exits 0, and `python3 scripts/check-page-links.py --build --ci` exits 0 (it runs the checkout's own
+  generators). Never `regen-pages.py --page`: its `fresh` builds from `origin/master`, so an unmerged
+  generator is not what it runs (r1 Codex Major).
 - [ ] **Step 5:** mutations: the `goal_nodes` filter's two terms, severed singly; the refusal. Then W1–W6.
 - [ ] **Step 6:** commit.
 
-**FAILS IF:** the set of card slugs on the built page differs from
-{nodes with an anchored document} ∪ {nodes with `adrs:`}, each side computed from the tree and the documents.
+**FAILS IF:** the set of card slugs on the page `python3 scripts/gen-goals-page.py --out` builds from this
+checkout differs from {nodes with an anchored document} ∪ {nodes with `adrs:`}, each side computed from the
+tree and the documents.
 
 ### Task 9: The armed set is derived (G4)
 
@@ -553,7 +599,8 @@ tree, in Task 19. Here it changes only where its names, sentences and ADRs come 
 **Files:**
 - Modify: `scripts/explainer-serve.py` (`PAGE_SOURCES["features"]` → `docs/features.md`, `docs/backlog.md`;
   the comment's "three whole files"), `scripts/mutations/explainer-serve.json`
-- Modify: `scripts/check-fixture-variation.py` (the `parse_registry.text` entry), `scripts/mutations/check-fixture-variation.json`
+- Verify (no edit): `scripts/check-fixture-variation.py` no longer holds `parse_registry.text` — Task 8 removed
+  it with the function it pins; if any other registry-named key remains, it is removed here with its manifest
 - Modify: `scripts/check-publishability.py` (the self-test fixtures that spell the registry's path take
   another file name, the asserted tuples following), `scripts/mutations/check-publishability.json`
 - Modify: `.claude/hooks/regen-goals-page.sh`, `.claude/hooks/regen-features-page.sh` (the `case` arm and
@@ -601,20 +648,28 @@ tree, in Task 19. Here it changes only where its names, sentences and ADRs come 
 
   A printed line is a reader nobody listed: fix it in this task, with its manifest. Stage the deletion first —
   `git grep` reads the index and the working tree, so an unstaged deletion still counts as present.
-- [ ] **Step 3:** run the retired-slug search and classify every line it prints as a `was:` entry, a quote,
-  or history; a STRUCTURED use is a defect:
+- [ ] **Step 3:** run the retired-slug search and classify every line it prints into one of FIVE classes; any
+  other STRUCTURED use is a defect:
 
   ```
   for s in dev-speed-first harness-speed; do git grep -n -F -- "$s" -- . ':!docs/reviews'; done
   ```
 
-  After this slice `dev-speed-first` is still the `## GOAL` heading in `docs/goal-threads.md` (it moves in
-  Task 13; no guard reads it before S3) and the fixture in `scripts/goal-tree.py`'s self-test.
+  1. a `was:` entry in `docs/features.md`;
+  2. a quoted request line (`> YYYY-MM-DD HH:MM "…"`) in `docs/goal-threads.md`;
+  3. history (the paths *Global Constraints* names);
+  4. a self-test fixture (`scripts/goal-tree.py`'s);
+  5. **the S2 exception, exactly one line:** `## GOAL dev-speed-first` in `docs/goal-threads.md`. It is a
+     structured use and is ALLOWED here only because S3 owns it — Task 13 re-points it and Task 16's search
+     has no such exception. Check it is the only one:
+     `git grep -n -E '^## GOAL (dev-speed-first|harness-speed)$' -- docs/goal-threads.md` prints exactly one
+     line, the `dev-speed-first` heading (r1 Codex Minor).
 - [ ] **Step 4:** every `python3 scripts/check-*` step of `.github/workflows/ci.yml`, taken from the file;
   `python3 scripts/explainer-serve.py --self-test`; the page build of *Global Constraints*.
 - [ ] **Step 5:** commit; the *Before every push* list; mark the pull request ready.
 
-**FAILS IF:** either command of Step 2 prints a line; or an `Anchor:` in a spec, plan or ADR does not resolve
+**FAILS IF:** either command of Step 2 prints a line; or Step 3 prints a line outside its five classes, or
+class 5 holds more than its one line; or an `Anchor:` in a spec, plan or ADR does not resolve
 (`python3 scripts/check-anchors.py`); or `python3 scripts/explainer-serve.py --self-test` is red.
 
 ---
@@ -655,10 +710,10 @@ Edits, each from the spec's §4 row; every NEW purpose sentence is copied from �
 | Row | Edit |
 |---|---|
 | 4.1, 4.13, 4.23 | under each `## ` heading a `slug:` line (`product`, `platform`, `dev-infrastructure`) and the row's `for:` sentence; no `state:` |
-| 4.25 | new `###` node `token-usage`; `was: (token-usage-first)`; no `state:`, no area |
+| 4.25 | new `###` node `token-usage`; `was: token-usage-first`; no `state:`, no area |
 | 4.26, 4.27 | new `###` node `memory-recall`, and `####` node `memory-hygiene` beneath it; no `state:`, no area |
-| 4.30 | `guard-and-gate-harness` gains `was: (guard-harness-audit)` |
-| 4.33 | `hooks-and-session-continuity` gains `was: (compaction-guards)` |
+| 4.30 | `guard-and-gate-harness` gains `was: guard-harness-audit` |
+| 4.33 | `hooks-and-session-continuity` gains `was: compaction-guards` |
 | 4.36, 4.37, 4.42 | new `###` node `comprehensibility-suite` with `areas: (comprehensibility)`, no `state:`; `status-visibility` and `explanation-on-demand` move beneath it to `####`; `status-visibility` loses the `comprehensibility` area |
 | 4.38–4.41 | `feature-map`, `goal-tree`, `work-lines` move to `#####` under `status-visibility`; new `#####` node `dashboard-decisions` beside them, no `state:` |
 | 4.39 | `goal-tree`'s `for:` loses its localhost URL (C6) |
@@ -671,7 +726,14 @@ Edits, each from the spec's §4 row; every NEW purpose sentence is copied from �
   fragment rule through its anchored documents alone — the path Task 7 wired.
 - [ ] **Step 4:** commit.
 
-**FAILS IF:** the node count is not 45; or a `for:` sentence the spec marks NEW differs from the spec's text;
+Every insertion and every re-levelling is a MOVE of whole blocks, as in Task 5 (r1 F3): a `###` inserted
+above a run of `####` blocks adopts them. Before Step 1, save the `(slug, parent)` pairs with Task 5's
+`pairs` function; after the edits, diff them. The ONLY changed pairs allowed are the ones the table above
+names: the eight new nodes, `status-visibility` and `explanation-on-demand` (under `comprehensibility-suite`),
+`feature-map`, `goal-tree`, `work-lines` (under `status-visibility`), and every level-3 node under a trunk
+that gains a `slug:` (its parent goes from `None` to the trunk's slug).
+
+**FAILS IF:** the parent diff shows a pair outside that list; or the node count is not 45; or a `for:` sentence the spec marks NEW differs from the spec's text;
 or `grep -c -E '^state:' docs/features.md` is not 45 minus the 11 stateless nodes (the three trunks,
 `dev-speed`, `token-usage`, `memory-recall`, `memory-hygiene`, `comprehensibility-suite`,
 `dashboard-decisions`, `cloud-publishing`, `serve-money-guard` — C4).
@@ -829,35 +891,48 @@ exits 0 in a checkout of this branch (run it against a scratch root, not the liv
 ### Task 16: `batch-ci.py` — a union policy for `docs/features.md`
 
 **Files:**
-- Modify: `scripts/batch-ci.py` (`UNION_FILES`; `resolve_hunk` and `postcondition` only if the `blocks` policy
-  does not already hold for this file's shape), `scripts/mutations/batch-ci.json`
+- Modify: `scripts/batch-ci.py` (`UNION_FILES` only; the comment above it gains the `docs/features.md` line),
+  `scripts/mutations/batch-ci.json`
 
 **Interfaces:**
 - Consumes: `UNION_FILES`, `resolve_hunk`, `resolve_text`, `postcondition`
 - Produces: `UNION_FILES["docs/features.md"] = "blocks"` (C7)
 
-A node is a heading plus its field lines, and nodes are separated by blank lines — the shape the `blocks`
-policy already unions for `docs/goal-threads.md`. The whole-file `postcondition` stays the judge.
+A node is a heading plus its field lines, separated by blank lines. The `blocks` policy is ADDITIONS ONLY
+(`resolve_hunk`, via `_added`, refuses a hunk in which either side edited or deleted a base line), splits added
+lines into blocks only at `## ` headings (`_blocks`), and the whole-file `postcondition` judges every merge
+step, clean or conflicted. This task adopts that policy AS IT IS (C7) and states its consequences for this
+file instead of wishing them away (r1 Codex Major): a node added on each side unions; an edit of a field line
+inside a conflicting hunk is refused and the pull request is EJECTED to run alone; an identical addition on
+both sides fails `postcondition` P1 and ejects (the bound its docstring names). Neither `resolve_hunk` nor
+`postcondition` is changed. If a case below cannot be met without changing one, STOP and notify: a change
+to either is a coordinated change to both, for every `blocks` file, and is not this task's.
 
 **Enumerated Behaviors**
 
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
-| 1 | two branches each add a node under one parent | conflicting hunk | both nodes kept, each with its own fields, ours first |
-| 2 | both add the SAME node | identical block | it lands once |
-| 3 | one branch edits a field of an existing node, the other adds a node | — | both changes kept |
-| 4 | both edit the same field line differently | — | REFUSED: the pull request is ejected, not guessed |
+| 1 | two branches each add a node under one parent | conflicting hunk, through `resolve_text("docs/features.md", …)` | both nodes kept, each with its own fields, ours first; `postcondition` returns `[]` |
+| 2 | both add the SAME node | identical block | `postcondition` reports P1: EJECTED (the existing bound) — never a silent double |
+| 3a | one branch edits a field of an existing node far from the other's added node | git merges it cleanly; `postcondition` over the whole file | `[]`: both changes kept |
+| 3b | one branch edits a field line INSIDE the hunk where the other adds a node | conflicting hunk | `Refuse`: ejected, not guessed |
+| 4 | both edit the same field line differently | — | `Refuse`: ejected |
 | 5 | a base line is missing from the result | — | `postcondition` reports it |
 | 6 | the merged file is then parsed | result of 1 | `parse_features` returns no problem and both slugs |
+| 7 | path dispatch | the conflicted text of 1, through `resolve_text` with the path `docs/features.md`, and the same text with the path `docs/other.md` | resolved for the first; `Refuse` ("not an append-only file") for the second |
 
 - [ ] **Step 1:** cases `features union: two added nodes keep their own fields`,
-  `features union: the same node lands once`, `features union: an edit and an addition both survive`,
-  `features union: two edits of one field are refused`, `features union: a lost base line is a violation`,
-  `features union: the result parses as a tree`.
-- [ ] **Step 2:** red. **Step 3:** add the entry; change the resolver only if a case stays red, and then for
-  every `blocks` file, with their cases re-run. **Step 4:** green.
-- [ ] **Step 5:** mutations: the `UNION_FILES` entry removed; if the resolver changed, one per new clause.
-  Then W1–W6.
+  `features union: the same node added twice ejects`, `features union: a distant edit and an addition both survive`,
+  `features union: an edit inside the hunk is refused`, `features union: two edits of one field are refused`,
+  `features union: a lost base line is a violation`, `features union: the result parses as a tree`,
+  `features union: dispatch is by path`. Every case that resolves a conflict calls `resolve_text` with the path
+  `docs/features.md` — never `resolve_hunk("blocks", …)` directly — so the policy is reached the way `merge`
+  reaches it.
+- [ ] **Step 2:** red (every case that calls `resolve_text` fails while the entry is absent: it refuses the path).
+  **Step 3:** add the entry. **Step 4:** green; the existing `blocks:` and `PC` cases unchanged.
+- [ ] **Step 5:** mutation: the `UNION_FILES["docs/features.md"]` entry removed — `expect` is
+  `features union: dispatch is by path` (the case that reaches the policy only through `resolve_text`'s path
+  lookup). Then W1–W6.
 - [ ] **Step 6:** commit; the retired-slug search below; the dashboard entry; *Before every push*.
 
   ```
@@ -888,8 +963,15 @@ removing them is not this plan's work.
 - Consumes: `goal_id`, `feature_id`, `SLUG`, `key_link`
 - Produces: `NODE_VIEWS = ("goals", "features", "goal-tree")`; `node_id(slug: str) -> str` returning
   `goal-<slug>`; `key_link("node", slug, view="goals" | "features" | "goal-tree") -> str | None`;
-  `second_ids(view: str, slug: str, was: tuple[str, ...] = ()) -> list[str]` — the view's old id for the slug
-  (`goal_id` on `/goals`, `feature_id` on `/features`, none on `/goal-tree`) and `node_id` of each former slug
+  `second_ids(view: str, slug: str, was: tuple[str, ...] = ()) -> list[str]` — the view's old ids for the slug
+  (`goal_id` on `/goals`; on `/features` BOTH the bare `<slug>` that spec §3.5 requires and the `feature_id`
+  `f-<slug>` the code emits today; none on `/goal-tree`) and `node_id` of each former slug
+
+The bare `<slug>` id is the approved spec's (§3.5) and is kept although today's code emits `f-<slug>` (C8):
+keeping both satisfies the spec and every link the code has written. `frag_id` took the `f-` prefix so that a
+node named like a chrome control (`chrome-theme`) cannot share that control's id; a bare id reopens that
+collision for one release, so `second_ids` returns NO bare id for a slug that equals a chrome id on the page
+(`page_chrome`'s ids), and Task 18's build refuses a duplicate through `check-page-links.py:duplicate_ids`.
 
 The kinds `goal` and `feature` keep working until Task 21 removes them, so each page moves in its own task.
 
@@ -901,24 +983,28 @@ The kinds `goal` and `feature` keep working until Task 21 removes them, so each 
 | 2 | an unknown view | — | raises `ValueError` |
 | 3 | `view` omitted for a node | — | raises `ValueError` |
 | 4 | a key that is not a slug | `"Dev Speed"` | `None` |
-| 5 | second ids | `/features`, slug with two former slugs | the old `f-` id and two `goal-<was>` ids, no duplicates |
+| 5 | second ids | `/features`, slug with two former slugs | the bare `<slug>`, the old `f-<slug>` and two `goal-<was>` ids, no duplicates |
+| 6 | a slug equal to a chrome id | `/features`, slug `chrome-theme` | no bare id; `f-chrome-theme` and the `goal-` id only |
 
 - [ ] **Step 1:** cases `key_link: a node on each view`, `key_link: an unknown view raises`,
-  `key_link: a node needs a view`, `key_link: a non-slug yields no link`, `second_ids: old id and former slugs`.
+  `key_link: a node needs a view`, `key_link: a non-slug yields no link`,
+  `second_ids: bare, f- and former slugs` (two slugs, so a constant list cannot pass),
+  `second_ids: no bare id on a chrome collision`.
 - [ ] **Step 2:** red. **Step 3:** implement. **Step 4:** green. **Step 5:** mutations: the view membership
-  test; the id prefix; the former-slug loop. Then W1–W6. **Step 6:** commit.
+  test; the id prefix; the former-slug loop; the bare id dropped (reddens `second_ids: bare, f- and former
+  slugs`); the chrome-collision filter dropped. Then W1–W6. **Step 6:** commit.
 
 **FAILS IF:** `node_id("x")` and the id `scripts/goal-tree.py` emits for a goal section disagree
 (the case of Task 20 holds them equal).
 
-### Task 18: `/features` — the shared id, two-way links, primary counts (G7)
+### Task 18: `/features` — the shared id, primary counts (G7)
 
 **Files:**
 - Modify: `scripts/gen-features-page.py` (`frag_id`, `render_index`, `render_node`, `match_rows`,
   `gaps_html`, `gap_disagreements`, `rendered_gap_counts`), `scripts/mutations/gen-features-page.json`
 
 **Interfaces:**
-- Consumes: `node_id`, `key_link("node", …)`, `second_ids` (Task 17); `Node.parent`; `nearest_claim`,
+- Consumes: `node_id`, `second_ids` (Task 17); `Node.parent`; `nearest_claim`,
   `cell_tags` and the `epic:` reader in `scripts/gen-backlog-page.py`
 - Produces: `primary_node(row: dict, nodes) -> str` — the row's `epic:` parent when it has one, else the node
   claiming its FIRST area tag (spec §6 Q12); `match_rows(nodes, rows) -> dict[str, dict[str, list]]` with
@@ -935,18 +1021,24 @@ The kinds `goal` and `feature` keep working until Task 21 removes them, so each 
 | 4 | a parent's total | a row primary under a child and shared under another child | counted once in the parent |
 | 5 | G7 second clause | the sum of primary open counts over all nodes | equals the number of distinct open rows; a build where it does not REFUSES |
 | 6 | the card's id | — | `goal-<slug>`; an empty element carries each second id |
-| 7 | the heading's links | — | two links, to the same id on `/goals` and `/goal-tree`, both from `key_link` |
-| 8 | a former slug | `#goal-harness-speed` | lands on `dev-speed`'s card |
+| 7 | a former slug | `#goal-harness-speed` | lands on `dev-speed`'s card |
+| 8 | a bare old fragment | `#dev-speed`, `#f-dev-speed` | both land on `dev-speed`'s card (spec §3.5: bare `<slug>` is kept) |
 
 - [ ] **Step 1:** cases `primary: one tag`, `primary: the first tag's claimant`, `primary: epic wins over tags`,
   `G7: a shared row adds nothing to its second node`, `G7: a parent counts distinct rows`,
   `G7: primary counts sum to the distinct open rows` (two fixtures in one case, differing by one shared row),
-  `G7: a double count refuses the build`, `ids: goal-<slug> with the old id kept`,
-  `links: each heading links the other two views`, `ids: a former slug lands on its node`.
+  `G7: a double count refuses the build`, `ids: goal-<slug> with the old ids kept` (asserts the bare `<slug>`
+  AND the `f-<slug>` second ids, at two slugs), `ids: a former slug lands on its node`.
+  NO cross-view link is emitted in this task: `/goals` has no `goal-<slug>` card for every node until Task 19,
+  and CI's `check-page-links.py --build --ci` runs `dangling` over the built pages, so a link added here
+  would land nowhere until then (r1 Codex BLOCKER). The heading links are Task 21's.
 - [ ] **Step 2:** red. **Step 3:** implement. **Step 4:** green;
-  `python3 scripts/regen-pages.py --page features` builds and `python3 scripts/check-page-links.py` exits 0.
+  `python3 scripts/gen-features-page.py --out "$(mktemp -d)/features.html"` exits 0 and
+  `python3 scripts/check-page-links.py --build --ci` exits 0 — both run this checkout's generators, never
+  `regen-pages.py`, which builds `origin/master`.
 - [ ] **Step 5:** mutations: the `epic:` precedence; the first-tag choice (`[0]` → `[-1]`); the shared rows
-  added into the count; the distinct set replaced by a sum; the second-id emission. Then W1–W6.
+  added into the count; the distinct set replaced by a sum; the second-id emission; the bare-slug second id
+  dropped from `second_ids`' `/features` arm (reddens `ids: goal-<slug> with the old ids kept`). Then W1–W6.
 - [ ] **Step 6:** commit.
 
 **FAILS IF:** on the built page, the sum of the per-node primary open counts differs from
@@ -959,7 +1051,7 @@ the number of open rows `python3 scripts/gen-backlog-page.py` reads from `docs/b
   `scripts/mutations/gen-goals-page.json`
 
 **Interfaces:**
-- Consumes: `requests_by_goal` (Task 3), `resolve`, `node_id`, `key_link("node", …)`, `second_ids`;
+- Consumes: `requests_by_goal` (Task 3), `resolve`, `node_id`, `second_ids`;
   `Node.done`, `Node.was`, `Node.parent`
 - Produces: `goal_nodes(nodes, anchored) -> list[Node]` now returning EVERY node in tree order;
   `is_bare(node, anchored, requests) -> bool` (no document, no ADR, no request)
@@ -969,20 +1061,22 @@ the number of open rows `python3 scripts/gen-backlog-page.py` reads from `docs/b
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
 | 1 | every node has a card | the live tree | 45 cards, nested as the tree |
-| 2 | a bare node | no document, ADR or request | ONE line: name, purpose, the two links |
+| 2 | a bare node | no document, ADR or request | ONE line: name and purpose (its two links arrive in Task 21) |
 | 3 | a node with requests | under its heading in `docs/goal-threads.md` | each request shown with its time, words byte-identical |
 | 4 | a request under a former heading | history fixture | shown under the current node |
 | 5 | a request copied under two goals | — | shown on each (accepted repetition, spec §2.2) |
 | 6 | `done:` | — | shown with its date and words |
 | 7 | `was:` | — | former names listed |
-| 8 | activity and open-gap counts | — | NOT shown; the card links to `/features` and `/goal-tree` |
+| 8 | activity and open-gap counts | — | NOT shown (the links that replace them are Task 21's) |
 | 9 | ids | — | `goal-<slug>`, with the old `g-<slug>` kept as a second id |
 
 - [ ] **Step 1:** cases `cards: every node, nested`, `cards: a bare node is one line`,
   `requests: shown verbatim under their node`, `requests: a former heading resolves`,
   `requests: a copied request shows on each node`, `done and was are shown`,
   `cards carry no counts`, `ids: goal-<slug> with g-<slug> kept`.
-- [ ] **Step 2:** red. **Step 3:** implement. **Step 4:** green; `python3 scripts/regen-pages.py --page goals`.
+- [ ] **Step 2:** red. **Step 3:** implement. **Step 4:** green;
+  `python3 scripts/gen-goals-page.py --out "$(mktemp -d)/goals.html"` and
+  `python3 scripts/check-page-links.py --build --ci`, both from this checkout.
 - [ ] **Step 5:** mutations: the `is_bare` terms severed singly; the `resolve` of a request's heading; the
   second id. Then W1–W6. **Step 6:** commit.
 
@@ -996,8 +1090,7 @@ the number of open rows `python3 scripts/gen-backlog-page.py` reads from `docs/b
 - Modify: `docs/goal-threads.md` (the `PRIORITY` line, in the preamble)
 
 **Interfaces:**
-- Consumes: `priority_order` (Task 13), `resolve_snapshot` (Task 14), `node_id`, `key_link("node", …)`,
-  `second_ids` (Task 17)
+- Consumes: `priority_order` (Task 13), `resolve_snapshot` (Task 14), `node_id`, `second_ids` (Task 17)
 - Produces: `shared_refs(goals: list[dict]) -> dict[str, list[dict]]` (node slug → the threads that name it in
   `also`, each with its primary); `goal_totals(goal: dict) -> dict` counting DISTINCT refs
 
@@ -1014,16 +1107,15 @@ exact sentence cannot be found, STOP and notify — the plan does not supply one
 | 2 | counts under an `also` node | — | unchanged by the shared thread |
 | 3 | one ref on two lines under one goal's subtree | — | counted once (G7) |
 | 4 | a history entry under a former slug | — | drawn under the current node, with "then: `<old>`" once |
-| 5 | a node with no thread, ledger entry or request | — | listed by name only |
+| 5 | a node with no thread, ledger entry or request | — | listed by name only, carrying its `node_id` (Task 21's links land on it) |
 | 6 | section id | — | `node_id(slug)`; each former slug has a second id, so `#goal-dev-speed-first` lands on `dev-speed` |
-| 7 | heading links | — | to the same id on `/goals` and `/features` |
-| 8 | `PRIORITY` present | — | first line of the agenda: date, words, the order as links; identical in `--print` and on the page |
-| 9 | `PRIORITY` absent | — | the agenda as today; no empty line |
-| 10 | a node with `done:` and an open thread | — | SHOWN, flagged on the agenda (spec §6 Q9) |
+| 7 | `PRIORITY` present | — | first line of the agenda: date, words, the order as links; identical in `--print` and on the page |
+| 8 | `PRIORITY` absent | — | the agenda as today; no empty line |
+| 9 | a node with `done:` and an open thread | — | SHOWN, flagged on the agenda (spec §6 Q9) |
 
 - [ ] **Step 1:** cases `also: one reference line under each other node`, `also: adds nothing to that node's counts`,
   `G7: a ref on two lines counts once`, `history: then: the old name, once`, `a quiet node is listed by name`,
-  `ids: the section id is node_id`, `ids: a former slug lands on its node`, `links: the other two views`,
+  `ids: the section id is node_id`, `ids: a former slug lands on its node`, `ids: a quiet node has its id`,
   `agenda: PRIORITY leads, same words in print and page`, `agenda: no PRIORITY, no line`,
   `agenda: a done node with an open thread is flagged`.
 - [ ] **Step 2:** red. **Step 3:** implement; add the line to `docs/goal-threads.md`. **Step 4:** green;
@@ -1033,14 +1125,21 @@ exact sentence cannot be found, STOP and notify — the plan does not supply one
 
 **FAILS IF:** `python3 scripts/goal-tree.py --print` and the built page disagree on the PRIORITY line's text.
 
-### Task 21: G8 — one id, one link function; the old kinds removed
+### Task 21: Two-way links on all three views; G8 — one id, one link function; the old kinds removed
 
 **Files:**
 - Modify: `scripts/check-page-links.py` (`check_sources`, `check_pages`, `fragment_targets`, `dangling`),
   `scripts/mutations/check-page-links.json`
 - Modify: `scripts/page_markup.py` (the `goal` and `feature` kinds of `key_link` removed),
   `scripts/mutations/page_markup.json`
+- Modify: `scripts/gen-features-page.py`, `scripts/gen-goals-page.py`, `scripts/goal-tree.py` — each node's
+  heading gains its two links to the other views, built by `key_link("node", slug, view=…)`; each with its manifest
 - Modify: every remaining caller of the two kinds, each with its manifest
+
+The links land HERE, after Tasks 18–20 gave every node its `node_id` on all three pages, so no commit holds a
+link whose target is not yet built (r1 Codex BLOCKER: CI's `check-page-links.py --build --ci` runs `dangling`
+over the built `/goals` and `/features`; `/goal-tree` is not built in CI, so its links are checked by the local
+`--build` of Step 4).
 
 **Interfaces:**
 - Consumes: `node_id`, `NODE_VIEWS`, `second_ids`, `key_link("node", …)`
@@ -1057,16 +1156,22 @@ exact sentence cannot be found, STOP and notify — the plan does not supply one
 | 4 | a fragment that lands nowhere | — | fails, as today |
 | 5 | a slug with two `goal-` elements on one page | — | fails (`duplicate_ids`) |
 | 6 | `key_link("goal", …)` | — | raises: unknown kind |
+| 7 | heading links, each of the three pages | — | two links per node, to the same `goal-<slug>` id on the other two views, both from `key_link`; each lands |
+| 8 | a bare node on `/goals` | — | its one line carries the two links |
 
 - [ ] **Step 1:** cases `G8: a node element must carry goal-<slug>`, `G8: a hand-built node href is refused`,
   `G8: the old fragments still land`, `G8: a dangling node fragment fails`,
   `G8: one goal- id per slug per page`; in `scripts/page_markup.py`, `key_link: goal and feature are gone`
-  (replacing the two cases that assert the old hrefs).
+  (replacing the two cases that assert the old hrefs); in each of the three generators,
+  `links: each heading links the other two views` (asserts both hrefs at two slugs, and that each parses).
 - [ ] **Step 2:** red. **Step 3:** implement; find the remaining callers with
   `git grep -n -E 'key_link\("(goal|feature)"' -- scripts .agents .claude` and move each.
-- [ ] **Step 4:** green: both self-tests, `python3 scripts/check-page-links.py`, and all three pages rebuilt.
+- [ ] **Step 4:** green: the five self-tests; `python3 scripts/check-page-links.py --sources`;
+  `python3 scripts/check-page-links.py --build --ci` (the CI gate); and the local `--build`, which also builds
+  `/goal-tree` — all from this checkout's generators, never `regen-pages.py`.
 - [ ] **Step 5:** mutations: the id comparison; the source scan's node-href pattern; the per-page loop over
-  `NODE_VIEWS`. Then W1–W6. **Step 6:** commit; the dashboard entry; *Before every push*.
+  `NODE_VIEWS`; in each generator, one view's link dropped from the heading (reddens that generator's
+  `links:` case). Then W1–W6. **Step 6:** commit; the dashboard entry; *Before every push*.
 
 **FAILS IF:** `git grep -n -E 'key_link\("(goal|feature)"' -- scripts .agents .claude` prints a line; or
 `python3 scripts/check-page-links.py` reports a fragment that does not land on the regenerated pages.
@@ -1129,14 +1234,14 @@ Each is a mechanical reading, not a new decision; a reviewer who disagrees raise
 
 | # | The spec says | This plan does |
 |---|---|---|
-| C1 | "`was:` — optional list of former slugs" and writes it as `was: dev-speed-first, harness-speed` (§5.1) | list fields keep today's parenthesised form: `was: (dev-speed-first, harness-speed)`, `adrs: (0001, 0005)` — one list grammar, the one `areas:` uses |
+| C1 | "`was:` — optional list of former slugs" and writes it as `was: dev-speed-first, harness-speed` (§5.1) | `was:` and `adrs:` are bare comma lists — `was: dev-speed-first, harness-speed`, `adrs: 0001, 0005` — the one list grammar `parse_features` has (`anchors:` uses it); the parentheses of `areas:` belong to each `(area)` tag and are not a list form (r1 F1) |
 | C2 | "a trunk is a node with a slug" (§2.2); "an added slug line, not a rename" (§5.1 S3) | the `## ` heading keeps its display text; a `slug:` field line beneath it makes it a node (Task 1) |
 | C3 | "heading depth `##` to `######`" and "§4 needs five levels on one branch" | `######` is accepted and unused; a skipped level is refused |
 | C4 | §4.4 counts "Nodes with no `state:` — 9", while §6 Q13's answer is "no state on all four until you say built" | 11 stateless nodes: the nine plus `cloud-publishing` and `serve-money-guard` (§6.1 governs) |
 | C5 | S2: "`gen-goals-page.py` … read the tree"; §3.1: "It becomes a card per node" | S2 keeps today's card set, derived as nodes with a document or an `adrs:` line (Task 8); the card per node arrives with the views in S4 (Task 19) |
 | C6 | row 4.39: `goal-tree`'s purpose is "unchanged, minus its URL" — no slice is named | Task 12 (S3), with the other §4 data edits of that branch |
-| C7 | "`batch-ci.py` gains a conflict resolver for `docs/features.md`" — no policy is named | the existing `blocks` policy, the one `docs/goal-threads.md` uses (Task 16) |
-| C8 | G8 and §3.5 call today's feature id "bare `<slug>`" | the code emits `f-<slug>` (`feature_id` in `scripts/page_markup.py`); the second id kept on `/features` is the one the code emits |
+| C7 | "`batch-ci.py` gains a conflict resolver for `docs/features.md`" — no policy is named | the existing `blocks` policy, unchanged — additions union; an in-hunk edit or an identical addition EJECTS the pull request to run alone (Task 16; r1 Codex Major) |
+| C8 | G8 and §3.5 call today's feature id "bare `<slug>`" | the code emits `f-<slug>` (`feature_id` in `scripts/page_markup.py`); `/features` keeps BOTH as second ids — the bare `<slug>` the approved spec requires and the `f-<slug>` the code has emitted — except no bare id where it would equal a chrome id (Task 17; r1 Codex Major) |
 | C9 | S1's row lists two scripts, and G9 reads request lines whose grammar `scripts/goal-tree.py` owns | the two patterns MOVE to `scripts/check-features.py` and `scripts/goal-tree.py` aliases them in S1 (Task 3) — a third script touched by two lines, in place of a second copy of a grammar |
 | C10 | S1: "A `built` node's fragment may be … an anchored document" | the RULE lands in S1 (`check_nodes` takes the set); the live set is passed in S2 Task 7, once `anchored_slugs` exists in `scripts/check-anchors.py` — S1 has no node that needs it |
 | C11 | §3.2: "A node that claims no area and inherits none" | "inherits" is read as: some ancestor node claims an area (Task 4) |
@@ -1155,6 +1260,10 @@ Each is a mechanical reading, not a new decision; a reviewer who disagrees raise
   (backlog #710, spec §5.1.1).
 - **Ordering inside S2.** Task 5 adds data while the registry is still read; Task 6 moves the header guard to
   the tree and re-points the two documents in the same commit; Task 7 removes `anchors:` from both scripts
-  that share `Node`; Task 11 deletes the file last. Each commit is green on its own.
+  that share `Node`; Task 8 drops `parse_registry` and its `EXAMINED_KEYS` pin in one commit; Task 11 deletes
+  the file last. Each commit is green on its own.
+- **Ordering inside S4 (r1).** Tasks 18–20 give each page its `node_id` and second ids and emit NO cross-view
+  link; Task 21 adds every heading's two links once all three pages carry the targets. Page checks run this
+  checkout's generators (`gen-*-page.py --out`, `check-page-links.py --build --ci`), never `regen-pages.py`.
 - **Counts typed in this plan** (48 and 18 search lines, 144 threads, the nine per-goal counts) were measured
   at `2ea4a5e8` with the commands printed beside them, and each task re-measures at its own base.
