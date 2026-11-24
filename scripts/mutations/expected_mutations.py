@@ -546,7 +546,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-23, PR #624 (features tree index), rounds 1-2: 16 -> 43. Round 1 +21 (ids, the hash
     # handler RUN, gap counts read back from the markup); round 2 +6: a card id's reserved prefix
     # and the stub's first-wins id rule (R2-1), and the band rows compared by identity (R2-2, four).
-    "scripts/gen-features-page.py": 43,
+    # ⟳ 2026-11-24, node-tree plan Task 4: 43 -> 53. Five index mutations REBOUND to the recursive
+    # `group_tree`/`render_index` (none deleted); +10: both recursions' depth bound, the orphan,
+    # the trunk's link and card, the stateless badge and note, the no-area sentence, and inheritance
+    # (an ancestor's area, and the walk past the parent).
+    "scripts/gen-features-page.py": 53,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could

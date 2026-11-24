@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 41 cases
+    python3 scripts/gen-features-page.py --self-test  # 48 cases
 
 WHY THIS EXISTS
 ---------------
@@ -182,25 +182,60 @@ def absence_line(nodes: list[Node]) -> str:
     return f"{n} declared absence" + ("" if n == 1 else "s")
 
 
-def group_tree(nodes: list[Node]) -> list[tuple[str, list[tuple[Node, list[Node]]]]]:
-    """[(trunk, [(node, children)])] in file order. PURE.
+def group_tree(nodes: list[Node]) -> list[tuple[str, Node | None, list]]:
+    """[(trunk name, the trunk's own node or None, [(node, children)])] in file order. PURE.
 
-    A `####` node hangs off the nearest preceding `###`. One with no parent — level 4 first under a
-    trunk — becomes a top-level entry rather than disappearing, because a node the page silently
-    dropped is the one failure this whole page exists to remove.
+    Recursive to any depth through `Node.parent`: a node hangs under the node its parent link names,
+    and `children` has the same `(node, children)` shape all the way down. A node with no parent —
+    a level-4 first under a slugless trunk — becomes a top-level entry rather than disappearing,
+    because a node the page silently dropped is the one failure this whole page exists to remove.
+    A trunk that carries a `slug:` is a level-2 node; it is the entry's second element, and the nodes
+    under it are its children.
     """
-    trunks: list[tuple[str, list[tuple[Node, list[Node]]]]] = []
-    by_trunk: dict[str, list[tuple[Node, list[Node]]]] = {}
+    trunks: list[list] = []
+    by_trunk: dict[str, list] = {}
+    slots: dict[tuple[str, str], list] = {}
     for n in nodes:
         if n.trunk not in by_trunk:
-            by_trunk[n.trunk] = []
-            trunks.append((n.trunk, by_trunk[n.trunk]))
-        here = by_trunk[n.trunk]
-        if n.level >= 4 and here:
-            here[-1][1].append(n)
-        else:
-            here.append((n, []))
-    return trunks
+            by_trunk[n.trunk] = [n.trunk, None, []]
+            trunks.append(by_trunk[n.trunk])
+        entry = by_trunk[n.trunk]
+        entries = entry[2]
+        if n.level == 2:
+            entry[1] = n
+            slots[(n.trunk, n.slug)] = entries
+            continue
+        here = slots.get((n.trunk, n.parent)) if n.parent else None
+        if here is None:
+            here = entries
+        kids: list = []
+        here.append((n, kids))
+        slots.setdefault((n.trunk, n.slug), kids)
+    return [(name, tnode, entries) for name, tnode, entries in trunks]
+
+
+def by_slug(nodes: list[Node]) -> dict[str, Node]:
+    """Each slug's FIRST node. PURE. (Two nodes sharing a slug are check-features' refusal.)"""
+    out: dict[str, Node] = {}
+    for n in nodes:
+        out.setdefault(n.slug, n)
+    return out
+
+
+def inherits_area(node: Node, by_slug: dict[str, Node]) -> bool:
+    """True when some ANCESTOR of `node` claims an area (plan C11). PURE.
+
+    A node's own `areas:` do not count here — this is the inheritance half of "claims no area and
+    inherits none" (spec §3.2). The walk stops at a repeated slug, so a malformed tree cannot loop.
+    """
+    seen: set[str] = set()
+    p = by_slug.get(node.parent) if node.parent else None
+    while p is not None and p.slug not in seen:
+        if p.areas:
+            return True
+        seen.add(p.slug)
+        p = by_slug.get(p.parent) if p.parent else None
+    return False
 
 
 def split_closed(entries: list) -> tuple[list, list]:
@@ -239,13 +274,24 @@ def gap_label(gaps: list, order: list[str]) -> str:
 
 
 def state_html(n: Node) -> str:
-    """The state badge, shared by the card heading and its index line — one wording, one place."""
+    """The state badge, shared by the card heading and its index line — one wording, one place.
+    A node with no `state:` (a goal, a trunk) shows NO badge: "" (spec §3.2)."""
+    if n.state is None:
+        return ""
     absent = n.state == "absent"
     return (f'<span class="state {"notbuilt" if absent else "built"}">'
             f'{"not built" if absent else "built"}</span>')
 
 
-def gaps_html(n: Node, fragments: dict, order: list[str]) -> str:
+NO_AREA = "claims no area — gaps not counted"
+
+
+def gaps_html(n: Node, fragments: dict, order: list[str], nodes_by_slug: dict[str, Node]) -> str:
+    """The open-gap count. ⛔ A node that claims no area and inherits none says so (spec §3.2): no
+    backlog row can land under it, so "0 gaps" would read as "nothing open" — the misreading the
+    count was added to end."""
+    if not n.areas and not inherits_area(n, nodes_by_slug):
+        return f'<span class="gaps none">{esc(NO_AREA)}</span>'
     gaps = open_gaps(fragments.get(n.slug) or {})
     return f'<span class="gaps{" open" if gaps else ""}">{esc(gap_label(gaps, order))}</span>'
 
@@ -273,19 +319,31 @@ def render_index(nodes: list[Node], fragments: dict, order: list[str]) -> str:
     carrying two tags lands under BOTH nodes (backlog #381), so summing a subtree's lines would count
     such a row twice; a de-duplicated subtotal is a second counting rule, and this page keeps one.
     """
+    slugs = by_slug(nodes)
+
     def line(n: Node) -> str:
-        return (f'<a href="#{esc(frag_id(n.slug))}">{esc(n.slug)}</a> {state_html(n)} '
-                f'{gaps_html(n, fragments, order)}')
+        return " ".join(p for p in (f'<a href="#{esc(frag_id(n.slug))}">{esc(n.slug)}</a>', state_html(n),
+                                    gaps_html(n, fragments, order, slugs)) if p)
+
+    def nest(entries: list) -> str:
+        # One nested list on ONE line — exactly today's `####` markup, recursed.
+        return "<ul>" + "".join(f"<li>{line(k)}{nest(kk) if kk else ''}</li>" for k, kk in entries) + "</ul>"
+
+    def trunk_name(name: str, tnode: Node | None) -> str:
+        if tnode is None:
+            return esc(name)
+        return " ".join(p for p in (f'<a href="#{esc(frag_id(tnode.slug))}">{esc(name)}</a>',
+                                    state_html(tnode), gaps_html(tnode, fragments, order, slugs)) if p)
 
     out = ['<nav class="tindex" aria-label="Feature tree">',
            '<p class="ilab">Feature tree · each line counts its own node’s open gaps · '
            'select a line to open its card</p>']
-    for trunk, entries in group_tree(nodes):
-        out.append(f'<div class="igroup"><span class="iname">{esc(trunk)}</span><ul>')
+    for trunk, tnode, entries in group_tree(nodes):
+        out.append(f'<div class="igroup"><span class="iname">{trunk_name(trunk, tnode)}</span><ul>')
         for node, kids in entries:
             out.append(f"<li>{line(node)}")
             if kids:
-                out.append("<ul>" + "".join(f"<li>{line(k)}</li>" for k in kids) + "</ul>")
+                out.append(nest(kids))
             out.append("</li>")
         out.append("</ul></div>")
     out.append("</nav>")
@@ -420,6 +478,10 @@ def rendered_gap_counts(page: str, order: list[str]) -> dict[str, dict]:
     def summary(text: str | None) -> dict | None:
         if text is None:
             return None
+        if text == "claims no area — gaps not counted":
+            # An area-less node can hold no row, so its sentence is an EMPTY count: a band that
+            # still lists open rows under it disagrees. A literal, not `NO_AREA` — no shared code.
+            return {}
         m = re.match(r"(\d+) gaps?(?: \((.*)\))?$", text)
         if not m:
             return {"unparsed": text}
@@ -753,7 +815,7 @@ def render_fragments(f: dict) -> list[str]:
     return parts
 
 
-def render_node(n: Node, fragments: dict, order: list[str]) -> str:
+def render_node(n: Node, fragments: dict, order: list[str], nodes_by_slug: dict[str, Node]) -> str:
     """One card, FOLDED: the heading (slug, state, open gaps by severity) is the `<summary>`, so a
     folded card still says whether `built` means finished. The index's links open it (OPEN_HASH_JS)."""
     absent = n.state == "absent"
@@ -763,7 +825,7 @@ def render_node(n: Node, fragments: dict, order: list[str]) -> str:
              '<summary class="nhead">',
              f'<span class="slug">{esc(n.slug)}</span>',
              state_html(n),
-             gaps_html(n, fragments, order),
+             gaps_html(n, fragments, order, nodes_by_slug),
              f'<span class="meta">{n_frag} fragment(s)</span>',
              "</summary>",
              f'<p class="purpose">{inline_md(n.purpose)}</p>']
@@ -781,7 +843,7 @@ def render_node(n: Node, fragments: dict, order: list[str]) -> str:
         body = render_fragments(f)
         if body:
             parts.extend(body)
-        else:
+        elif n.state == "built":
             # A `built` node with nothing under it is a check-features.py failure, not a display
             # state — but the page must not render it as a blank card either.
             parts.append('<span class="absent-note">Built, but this page could derive no '
@@ -806,15 +868,22 @@ def render(nodes: list[Node], fragments: dict, built_at: str = "",
     # The index sits ABOVE the build note, so a phone's first screen carries the tree (review r1 m4).
     index_html = render_index(nodes, fragments, order)
     body: list[str] = []
-    for trunk, entries in group_tree(nodes):
-        body.append('<section class="trunk">'
-                    f'<h2 class="tname">{esc(trunk)}</h2>')
+    slugs = by_slug(nodes)
+
+    def cards(entries: list) -> None:
         for node, kids in entries:
-            body.append(render_node(node, fragments, order))
+            body.append(render_node(node, fragments, order, slugs))
             if kids:
                 body.append('<div class="kids">')
-                body.extend(render_node(k, fragments, order) for k in kids)
+                cards(kids)
                 body.append("</div>")
+
+    for trunk, tnode, entries in group_tree(nodes):
+        body.append('<section class="trunk">'
+                    f'<h2 class="tname">{esc(trunk)}</h2>')
+        if tnode is not None:
+            body.append(render_node(tnode, fragments, order, slugs))
+        cards(entries)
         body.append("</section>")
 
     warn = ""
@@ -1053,15 +1122,20 @@ def _self_test_body() -> int:
     _head = lambda slug: _found(re.search(rf'id="{frag_id(slug)}"[^>]*>\s*<summary.*?</summary>', _tree, re.S), 0)
     check("a node's index line and card heading carry the same gap count, with gaps and without",
           ("4 gaps (1🟠 2🟡 1🟢)" in _line("job-queue"), "4 gaps (1🟠 2🟡 1🟢)" in _head("job-queue"),
-           "0 gaps" in _line("dig-job-recovery"), "0 gaps" in _head("dig-job-recovery")),
+           # ⟳ node-tree Task 4: the gapless node is `wake-on-visit`, which INHERITS job-queue's
+           # area — `dig-job-recovery` claims none, so it now says "claims no area" (spec §3.2).
+           "0 gaps" in _line("wake-on-visit"), "0 gaps" in _head("wake-on-visit")),
           (True, True, True, True))
     check("the index line carries the node's state, as the card says it",
           ("built" in _line("job-queue"), "not built" in _line("dig-job-recovery")), (True, True))
     # ⛔ OVER THE REAL TREE: every node's index count is the card's own open-row count.
     _rfrag = collect(_real_nodes)[0]
     _rix = render_index(_real_nodes, _rfrag, _order)
+    _rby = by_slug(_real_nodes)
+    # ⟳ node-tree Task 4: a real node that claims and inherits no area carries the sentence instead.
     _bad = [n.slug for n in _real_nodes
-            if gap_label(open_gaps(_rfrag[n.slug]), _order)
+            if (gap_label(open_gaps(_rfrag[n.slug]), _order) if n.areas or inherits_area(n, _rby)
+                else "claims no area — gaps not counted")
             not in _found(re.search(rf'href="#{frag_id(n.slug)}">(.*?)(?:</li>|<ul>)', _rix, re.S), 1)]
     # ...and each counted row's severity is the one its own Known-gaps line shows (`#N <glyph> …`).
     _sevless = [e["label"] for n in _real_nodes for e in open_gaps(_rfrag[n.slug])
@@ -1074,6 +1148,117 @@ def _self_test_body() -> int:
     check("every index link targets a card's id",
           sorted(set(re.findall(r'href="#([a-z0-9-]+)"', _ix)))
           == sorted(set(re.findall(r'<details class="node[^"]*" id="([a-z0-9-]+)"', _tree))), True)
+
+    # ── ANY DEPTH, TRUNK NODES, STATELESS AND AREA-LESS NODES (node-tree plan Task 4) ───────────
+    # Every case that asserts HTML also asserts it PARSES: `html.parser` reads it, and every
+    # `<ul>`/`<li>`/`<div>`/`<details>` it opens is closed in order (a recursion that forgets a close
+    # tag renders, and nests everything after it one level too deep).
+    from html.parser import HTMLParser as _HP
+
+    class _Balance(_HP):
+        _PAIRED = {"ul", "li", "div", "nav", "section", "details", "summary"}
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.stack: list[str] = []
+            self.bad = False
+
+        def handle_starttag(self, tag, attrs) -> None:
+            if tag in self._PAIRED:
+                self.stack.append(tag)
+
+        def handle_endtag(self, tag) -> None:
+            if tag in self._PAIRED and (not self.stack or self.stack.pop() != tag):
+                self.bad = True
+
+    def _parses(markup: str) -> bool:
+        p = _Balance()
+        p.feed(markup)
+        p.close()
+        return not p.bad and not p.stack and "<ul" in markup
+
+    # The literal is the BASE's rendering (master 561379e6) of this fixture, captured before the
+    # rework: two slugless trunks, `###` and `####`, every node counted. Byte-for-byte.
+    _two, _ = parse_features(
+        "## PLATFORM\n### job-queue\nstate: built\nfor: Q.\nareas: (worker)\n"
+        "#### wake-on-visit\nstate: absent\nfor: W.\nexpected-because: e.\n"
+        "### jobs-ui\nstate: built\nfor: J.\nareas: (ui)\n"
+        "## DEV\n### harness\nstate: built\nfor: H.\nareas: (tooling)\n")
+    _two_ix = render_index(_two, {"job-queue": {"backlog": [_g(1, "🟡"), _g(2, "🟠")]},
+                                  "harness": {"backlog": [_g(3, "🟢")]}}, _order)
+    check("index: today's two levels render unchanged",
+          (_two_ix, _parses(_two_ix)),
+          ('<nav class="tindex" aria-label="Feature tree">\n<p class="ilab">Feature tree · each line '
+           'counts its own node’s open gaps · select a line to open its card</p>\n<div class="igroup">'
+           '<span class="iname">PLATFORM</span><ul>\n<li><a href="#f-job-queue">job-queue</a> '
+           '<span class="state built">built</span> <span class="gaps open">2 gaps (1🟠 1🟡)</span>\n'
+           '<ul><li><a href="#f-wake-on-visit">wake-on-visit</a> <span class="state notbuilt">not '
+           'built</span> <span class="gaps">0 gaps</span></li></ul>\n</li>\n<li><a href="#f-jobs-ui">'
+           'jobs-ui</a> <span class="state built">built</span> <span class="gaps">0 gaps</span>\n'
+           '</li>\n</ul></div>\n<div class="igroup"><span class="iname">DEV</span><ul>\n<li><a href='
+           '"#f-harness">harness</a> <span class="state built">built</span> <span class="gaps open">'
+           '1 gap (1🟢)</span>\n</li>\n</ul></div>\n</nav>', True))
+
+    _five, _ = parse_features(
+        "## DEEP\nslug: deep\nfor: The trunk.\n"
+        "### l3\nstate: built\nfor: Three.\nareas: (worker)\n#### l4\nstate: built\nfor: Four.\n"
+        "##### l5\nstate: built\nfor: Five.\n###### l6\nstate: built\nfor: Six.\n"
+        "#### m4\nstate: built\nfor: Back up.\n### n3\nstate: built\nfor: Sibling.\nareas: (ui)\n")
+    _five_ix, _five_page = render_index(_five, {}, _order), render(_five, {})
+    check("index: five levels nest in file order",
+          (index_shape(_five_ix), [_five_page.count(f'id="f-{s}"') for s in ("l3", "l4", "l5", "l6", "m4")],
+           _parses(_five_ix), _parses(_five_page)),
+          ([(0, "f-deep"), (1, "f-l3"), (2, "f-l4"), (3, "f-l5"), (4, "f-l6"), (2, "f-m4"), (1, "f-n3")],
+           [1, 1, 1, 1, 1], True, True))
+
+    _orph, _ = parse_features("## LOOSE\n#### orphan\nstate: built\nfor: First, and deep.\n"
+                              "areas: (worker)\n### after\nstate: built\nfor: After.\nareas: (ui)\n")
+    _orph_ix, _orph_page = render_index(_orph, {}, _order), render(_orph, {})
+    check("index: an orphan level is kept",
+          (index_shape(_orph_ix), _orph_page.count('id="f-orphan"'), _parses(_orph_ix), _parses(_orph_page)),
+          ([(1, "f-orphan"), (1, "f-after")], 1, True, True))
+
+    _trk, _ = parse_features("## PRODUCT\nslug: product\nfor: What the product does.\nareas: (ui)\n"
+                             "### viewer\nstate: built\nfor: Shows a summary.\n")
+    _trk_ix, _trk_page = render_index(_trk, {}, _order), render(_trk, {})
+    check("index: a trunk node is linked and carded",
+          ('<span class="iname"><a href="#f-product">PRODUCT</a>' in _trk_ix,
+           _trk_page.count('id="f-product"'),
+           -1 < _trk_page.find('<h2 class="tname">PRODUCT</h2>') < _trk_page.find('id="f-product"')
+           < _trk_page.find('id="f-viewer"'),
+           _parses(_trk_ix), _parses(_trk_page)),
+          (True, 1, True, True, True))
+
+    # `quiet` has no fragment at all: a stateless node may be bare, and is not "should have been refused".
+    _sl, _ = parse_features("## GOALS\n### speed\nfor: Faster work.\nareas: (worker)\n"
+                            "### quiet\nfor: Nothing under it yet.\nareas: (ui)\n")
+    _sl_frag = {"speed": {"backlog": [_g(7, "🟢")]}}
+    _sl_ix, _sl_page = render_index(_sl, _sl_frag, _order), render(_sl, _sl_frag)
+    _sl_head = _found(re.search(r'id="f-speed"[^>]*>\s*<summary.*?</summary>', _sl_page, re.S), 0)
+    check("index: a stateless node shows no badge",
+          ('class="state' in _sl_ix, "1 gap (1🟢)" in _sl_ix, 'class="state' in _sl_head,
+           "1 gap (1🟢)" in _sl_head, "Built, but" in _sl_page, _parses(_sl_ix), _parses(_sl_page)),
+          (False, True, False, True, False, True, True))
+
+    _na, _ = parse_features("## GOALS\n### recall\nstate: built\nfor: Finds the right memory.\n"
+                            "anchors: memory-recall\n")
+    _na_ix, _na_page = render_index(_na, {}, _order), render(_na, {})
+    _na_head = _found(re.search(r'id="f-recall"[^>]*>\s*<summary.*?</summary>', _na_page, re.S), 0)
+    check("index: a node claiming and inheriting no area says so",
+          ("claims no area — gaps not counted" in _na_ix, "0 gaps" in _na_ix,
+           "claims no area — gaps not counted" in _na_head, "0 gaps" in _na_head,
+           _parses(_na_ix), _parses(_na_page)),
+          (True, False, True, False, True, True))
+
+    _inh, _ = parse_features("## GOALS\n### parent\nstate: built\nfor: P.\nareas: (worker)\n"
+                             "#### child\nstate: built\nfor: C.\n##### grandchild\nstate: built\nfor: G.\n")
+    _inh_by = by_slug(_inh)
+    _inh_ix = render_index(_inh, {}, _order)
+    check("index: an inherited area still counts",
+          (inherits_area(_inh_by["child"], _inh_by), inherits_area(_inh_by["grandchild"], _inh_by),
+           inherits_area(_inh_by["parent"], _inh_by), inherits_area(_inh_by["child"], {}),
+           "claims no area" in _inh_ix, _inh_ix.count("0 gaps"), _parses(_inh_ix)),
+          (True, True, False, False, False, 3, True))
     # ⛔ THE HASH HANDLER, RUN (review r1: Claude M1, Codex M3). The script the PAGE carries is
     # executed against a stub DOM (`run_hash_script`); each behaviour is its own case, so removing
     # any one clause — the load call, the hashchange listener, the re-click handler, the DETAILS

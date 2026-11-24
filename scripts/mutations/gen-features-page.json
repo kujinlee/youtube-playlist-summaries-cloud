@@ -81,8 +81,8 @@
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "            here[-1][1].append(n)",
-    "            here[-1][1].append(n)\n            here.append((n, []))"
+    "        here.append((n, kids))\n        slots.setdefault",
+    "        here.append((n, kids))\n        if here is not entries:\n            entries.append((n, []))\n        slots.setdefault"
    ]
   ],
   "expect": "no node is rendered twice"
@@ -92,8 +92,8 @@
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "        if n.level >= 4 and here:\n            here[-1][1].append(n)",
-    "        if n.level >= 4 and here:\n            pass"
+    "        kids: list = []\n        here.append((n, kids))",
+    "        kids: list = []\n        if here is entries:\n            here.append((n, kids))"
    ]
   ],
   "expect": "no node is rendered twice"
@@ -213,7 +213,7 @@
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "             gaps_html(n, fragments, order),\n             f'<span class=\"meta\">",
+    "             gaps_html(n, fragments, order, nodes_by_slug),\n             f'<span class=\"meta\">",
     "             f'<span class=\"meta\">"
    ]
   ],
@@ -224,8 +224,8 @@
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "                out.append(\"<ul>\" + \"\".join(f\"<li>{line(k)}</li>\" for k in kids) + \"</ul>\")",
-    "                out.append(\"\".join(f\"</li><li>{line(k)}\" for k in kids))"
+    "                out.append(nest(kids))",
+    "                out.append(\"\".join(f\"</li><li>{line(k)}\" for k, _ in kids))"
    ]
   ],
   "expect": "the index lists every node in file order, a `####` nested one list deeper than its `###`"
@@ -290,8 +290,8 @@
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "                f'{gaps_html(n, fragments, order)}')",
-    "                '')"
+    "                                    gaps_html(n, fragments, order, slugs)) if p)\n\n    def nest",
+    "                                    \"\") if p)\n\n    def nest"
    ]
   ],
   "expect": "a node's index line and card heading carry the same gap count, with gaps and without"
@@ -471,5 +471,115 @@
    ]
   ],
   "expect": "every card's rendered band lists exactly the rows written out for it, by id and severity"
+ },
+ {
+  "name": "the index's recursion stops at two levels again, so a `#####` node vanishes from the tree",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "{nest(kk) if kk else ''}</li>",
+    "</li>"
+   ]
+  ],
+  "expect": "index: five levels nest in file order"
+ },
+ {
+  "name": "the cards' recursion stops at two levels again, so a `#####` node has no card",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "                cards(kids)\n",
+    "                body.extend(render_node(k, fragments, order, slugs) for k, _ in kids)\n"
+   ]
+  ],
+  "expect": "index: five levels nest in file order"
+ },
+ {
+  "name": "an orphan node (no parent link) is dropped instead of kept at the top level",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        if here is None:\n            here = entries\n",
+    "        if here is None:\n            continue\n"
+   ]
+  ],
+  "expect": "index: an orphan level is kept"
+ },
+ {
+  "name": "a trunk's node is no longer linked from the index, so the trunk's card is unreachable from the tree",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        if tnode is None:\n            return esc(name)",
+    "        if True:\n            return esc(name)"
+   ]
+  ],
+  "expect": "index: a trunk node is linked and carded"
+ },
+ {
+  "name": "a trunk's node gets no card, so its index link points at nothing",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        if tnode is not None:\n            body.append(render_node(tnode, fragments, order, slugs))\n",
+    ""
+   ]
+  ],
+  "expect": "index: a trunk node is linked and carded"
+ },
+ {
+  "name": "a stateless node gets a state badge again, so a goal reads `built`",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    if n.state is None:\n        return \"\"\n",
+    ""
+   ]
+  ],
+  "expect": "index: a stateless node shows no badge"
+ },
+ {
+  "name": "a stateless node with no fragment is told it should have been refused, as a `built` one is",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        elif n.state == \"built\":",
+    "        else:"
+   ]
+  ],
+  "expect": "index: a stateless node shows no badge"
+ },
+ {
+  "name": "a node claiming and inheriting no area shows `0 gaps` again, which reads as nothing open",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    if not n.areas and not inherits_area(n, nodes_by_slug):",
+    "    if False:"
+   ]
+  ],
+  "expect": "index: a node claiming and inheriting no area says so"
+ },
+ {
+  "name": "an ancestor's area stops counting, so an inheriting node is told it claims no area",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        if p.areas:\n            return True",
+    "        if False:\n            return True"
+   ]
+  ],
+  "expect": "index: an inherited area still counts"
+ },
+ {
+  "name": "the inheritance walk stops at the parent, so a grandparent's area is not inherited",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        p = by_slug.get(p.parent) if p.parent else None\n    return False",
+    "        p = None\n    return False"
+   ]
+  ],
+  "expect": "index: an inherited area still counts"
  }
 ]
