@@ -137,8 +137,6 @@ OPEN_LIMIT = 100
 ALL_LIMIT = 300
 MERGED_DEPTH = 500
 
-GOAL_RE = re.compile(r"^## GOAL ([a-z0-9]+(?:-[a-z0-9]+)*)$")
-REQUEST_RE = re.compile(r'^> (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) "(.+)"$')
 THREAD_RE = re.compile(r"^- (\S+) · (.+?) · (.+?)(?: · waits on (.+))?$")
 REFS_RE = re.compile(r"(?:backlog|PR) #\d+(?:, (?:backlog|PR) #\d+)*")
 REF_RE = page_markup.KEY_REF      # one key grammar, owned by the link function
@@ -244,6 +242,12 @@ def _sibling(name: str):
 
 # backlog #406: path -> module, and only inside `_sibling_sweep()`. None means every call imports afresh.
 _SIBLING_MEMO: dict | None = None
+
+# ⛔ goal node tree Task 3: the `## GOAL` heading and the request-line grammar live in `check-features.py`
+# (G9 reads them there to check a `done:` line). These are ALIASES — one rule, one place, never a copy.
+_CHECK_FEATURES = _sibling("check-features")
+GOAL_RE = _CHECK_FEATURES.GOAL_HEADING
+REQUEST_RE = _CHECK_FEATURES.REQUEST
 
 
 @contextlib.contextmanager

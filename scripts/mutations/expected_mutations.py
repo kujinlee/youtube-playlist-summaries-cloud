@@ -1716,7 +1716,9 @@ EXPECTED_MUTATIONS = {
     # clauses, the three id-collision pairs and the pair-not-prefix rule, `resolve` returning its
     # input, the anchored-document fragment, `adrs` kept out of the absent count, and the summary's
     # stateless count.
-    "scripts/check-features.py": 47,
+    # ⟳ 2026-11-24, goal node tree S1 Task 3: 47 -> 51 — G9's words comparison, time comparison, the
+    # under-that-node restriction, and the lazy read of the threads file.
+    "scripts/check-features.py": 51,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed

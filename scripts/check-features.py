@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 83 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 90 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -286,6 +286,55 @@ def summary_line(nodes: list[Node]) -> str:
     absent = sum(1 for n in nodes if n.state == "absent")
     return f"{len(nodes)} nodes ({built} built, {absent} absent, {len(nodes) - built - absent} stateless)"
 
+
+# ⛔ THE REQUEST GRAMMAR LIVES HERE, ONCE (goal node tree Task 3). `goal-tree.py`'s `GOAL_RE` and
+# `REQUEST_RE` are aliases of these two, read through its `_sibling`, never a second copy.
+GOAL_HEADING = re.compile(r"^## GOAL ([a-z0-9]+(?:-[a-z0-9]+)*)$")
+REQUEST = re.compile(r'^> (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) "(.+)"$')
+
+
+def requests_by_goal(text: str) -> dict[str, list[tuple[str, str]]]:
+    """`docs/goal-threads.md`'s request lines, by the slug of the `## GOAL` heading they sit under, in
+    file order. Any other `## ` heading ends a goal. Validating that file is `goal-tree.py`'s job."""
+    out: dict[str, list[tuple[str, str]]] = {}
+    cur = None
+    for raw in text.split("\n"):
+        line = raw.rstrip()
+        if line.startswith("## "):
+            m = GOAL_HEADING.match(line)
+            cur = m.group(1) if m else None
+            if cur is not None:
+                out.setdefault(cur, [])
+            continue
+        m = REQUEST.match(line) if cur is not None else None
+        if m:
+            out[cur].append((m.group(1), m.group(2)))
+    return out
+
+
+def done_problems(nodes: list[Node], requests) -> list[str]:
+    """G9: a `done:` line's (when, words) equals a request under a `## GOAL` heading whose slug
+    `resolve`s to that node — so a request filed under a former slug still counts.
+
+    `requests` is a zero-argument READER returning `requests_by_goal(...)`. ⛔ It is called only when
+    some node carries `done:` (r1 F5): `gen-features-page.py` loads this module, and its worlds have no
+    threads file. A reader that cannot read raises; `main` turns that into CANNOT RUN."""
+    if not any(n.done for n in nodes):
+        return []
+    table = requests()
+    problems: list[str] = []
+    for n in nodes:
+        if n.done is None:
+            continue
+        when, words = n.done
+        cited = [r for heading, rs in table.items() if resolve(nodes, heading) == n.slug for r in rs]
+        if not any(r[0] == when and r[1] == words for r in cited):
+            problems.append(f"features.md:{n.line}: `{n.slug}` is marked done at {when} citing \"{words}\", "
+                            f"but docs/goal-threads.md records no such request under a `## GOAL` heading "
+                            f"naming this node — copy the request line exactly, time and words")
+    return problems
+
+
 _TAGS = None
 
 
@@ -416,6 +465,7 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 FEATURES = REPO / "docs" / "features.md"
 ANCHORS_MD = REPO / "docs" / "anchors.md"
 BACKLOG = REPO / "docs" / "backlog.md"
+GOAL_THREADS = REPO / "docs" / "goal-threads.md"
 
 
 def main() -> int:
@@ -441,6 +491,13 @@ def main() -> int:
     problems += check_nodes(nodes, frozenset())
     problems += slug_problems(nodes)
     problems += check_cross(nodes, declared, None if not areas else areas)
+    try:
+        # The threads file is read only when a node carries `done:` — the guard is `done_problems`'.
+        problems += done_problems(nodes, lambda: requests_by_goal(GOAL_THREADS.read_text()))
+    except OSError as e:
+        print(f"CANNOT RUN — a node carries `done:` and {GOAL_THREADS} cannot be read ({type(e).__name__}), "
+              f"so G9 cannot be checked. Treat this as NOT RUN.", file=sys.stderr)
+        return 2
     if problems:
         print(f"FAILED — {len(problems)} feature-map problem(s):", file=sys.stderr)
         for p in problems:
@@ -830,6 +887,71 @@ expected-because: standard for a hosted multi-tenant service.
           [summary_line(_nodes("### a\nstate: built\nfor: A.\nareas: (a)\n" + _ABS.format(s="b") + "### c\nfor: C.\n")),
            summary_line(_nodes("### a\nfor: A.\n### b\nfor: B.\n" + _ABS.format(s="c")))],
           ["3 nodes (1 built, 1 absent, 1 stateless)", "3 nodes (0 built, 1 absent, 2 stateless)"])
+
+    # ── G9 — `done:` cites a recorded request (goal node tree Task 3, spec §2.5) ───────────────
+    _THREADS = ("# Goal threads\nprose above the first goal\n\n## GOAL ship-it\n"
+                '> 2026-11-01 09:00 "ship the thing"\n- t1 · fix · a thread\n\n'
+                "## GOAL other-aim\n"
+                '> 2026-11-02 10:00 "another request"\n\n'
+                "## GOAL old-name\n"
+                '> 2026-11-03 11:00 "asked under the old name"\n')
+    _req = requests_by_goal(_THREADS)
+    _DONE = ("### ship-it\nfor: S.\ndone: {d}\n### other-aim\nfor: O.\n"
+             "### renamed\nfor: R.\nwas: old-name\ndone: {r}\n")
+    def _dp(d: str, r: str = '2026-11-03 11:00 "asked under the old name"'):
+        return done_problems(_nodes(_DONE.format(d=d, r=r)), lambda: _req)
+    check("G9: done equals a request under its node",
+          (_dp('2026-11-01 09:00 "ship the thing"'), _req.get("ship-it"), sorted(_req),
+           requests_by_goal('> 2026-01-01 00:00 "above"\n## GOAL a\n> 2026-01-02 00:00 "q"\n'
+                            '## Notes\n> 2026-01-03 00:00 "not a goal\'s"\n')),
+          ([], [("2026-11-01 09:00", "ship the thing")], ["old-name", "other-aim", "ship-it"],
+           {"a": [("2026-01-02 00:00", "q")]}))
+    check("G9: one changed character is refused",
+          [any("`ship-it`" in p and "goal-threads.md" in p for p in _dp(d)) for d in
+           ('2026-11-01 09:00 "ship the thinG"', '2026-11-01 09:00 "ship the thing."')], [True, True])
+    check("G9: a different time is refused",
+          [any("`ship-it`" in p for p in _dp(d)) for d in
+           ('2026-11-01 09:01 "ship the thing"', '2026-11-02 09:00 "ship the thing"')], [True, True])
+    check("G9: a request under another node does not count",
+          [any("`ship-it`" in p for p in _dp(d)) for d in
+           ('2026-11-02 10:00 "another request"', '2026-11-03 11:00 "asked under the old name"')], [True, True])
+    check("G9: a request under a former slug counts",
+          [_dp('2026-11-01 09:00 "ship the thing"'),
+           any("`renamed`" in p for p in _dp('2026-11-01 09:00 "ship the thing"', '2026-11-01 09:00 "ship the thing"'))],
+          [[], True])
+    # Behaviour 6 through the REAL `main`: its paths pointed at a world whose features carry a `done:` line
+    # and whose threads file does not exist. Exit 2 and a CANNOT RUN line — never a pass.
+    import contextlib, io, tempfile
+    _g = globals()
+    _saved = {k: _g[k] for k in ("FEATURES", "GOAL_THREADS")}
+    _codes = []
+    with tempfile.TemporaryDirectory() as _td:
+        _f = pathlib.Path(_td) / "features.md"
+        for _missing in ("goal-threads.md", "nested/goal-threads.md"):
+            _f.write_text(FEATURES.read_text().replace(
+                "\nstate: built\n", '\nstate: built\ndone: 2026-11-01 09:00 "ship the thing"\n', 1))
+            _g["FEATURES"], _g["GOAL_THREADS"] = _f, pathlib.Path(_td) / _missing
+            _err = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(_err), contextlib.redirect_stdout(io.StringIO()):
+                    _rc = main()
+            except Exception as e:      # an uncaught read error is a crash, not CANNOT RUN
+                _rc = type(e).__name__
+            finally:
+                _g.update(_saved)
+            _codes.append((_rc, "CANNOT RUN" in _err.getvalue()))
+    check("G9: an unreadable threads file is CANNOT RUN", _codes, [(2, True), (2, True)])
+    def _never():
+        raise AssertionError("the threads file was read although no node carries `done:`")
+    def _safe(f):
+        try:
+            return f()
+        except Exception as e:
+            return type(e).__name__
+    check("G9: no done line needs no threads file",
+          [_safe(lambda: done_problems(_nodes("### a\nfor: A.\n### b\nstate: built\nfor: B.\nareas: (b)\n"), _never)),
+           _safe(lambda: done_problems(_live, _never))],
+          [[], []])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

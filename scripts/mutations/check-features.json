@@ -522,5 +522,49 @@
       ]
     ],
     "expect": "G6: a goal- slug with no partner passes"
+  },
+  {
+    "name": "G9: a done: line matches a request on its time alone, so changed words pass",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if not any(r[0] == when and r[1] == words for r in cited):",
+        "        if not any(r[0] == when for r in cited):"
+      ]
+    ],
+    "expect": "G9: one changed character is refused"
+  },
+  {
+    "name": "G9: a done: line matches a request on its words alone, so a different time passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "any(r[0] == when and r[1] == words",
+        "any(r[1] == words"
+      ]
+    ],
+    "expect": "G9: a different time is refused"
+  },
+  {
+    "name": "G9: a request under ANY goal heading counts, not only one naming the node",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "for heading, rs in table.items() if resolve(nodes, heading) == n.slug for r in rs]",
+        "for heading, rs in table.items() for r in rs]"
+      ]
+    ],
+    "expect": "G9: a request under another node does not count"
+  },
+  {
+    "name": "G9: the threads file is read even when no node carries done:, so every page world needs one",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    if not any(n.done for n in nodes):\n        return []\n    table = requests()",
+        "    table = requests()"
+      ]
+    ],
+    "expect": "G9: no done line needs no threads file"
   }
 ]
