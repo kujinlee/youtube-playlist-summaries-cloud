@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 95 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 96 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
