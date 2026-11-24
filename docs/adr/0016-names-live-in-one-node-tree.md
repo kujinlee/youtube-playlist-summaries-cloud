@@ -1,6 +1,6 @@
 ---
 status: proposed 2026-11-23 — accepted when the slice that deletes `docs/anchors.md` merges with
-  every gate green. Supersedes PART of ADR-0010 (where the names live; that a name never changes).
+  every gate green. Supersedes PART of ADR-0010 (where the names live; that a name never changes; that the backlog has no second mechanism).
   ADR-0010's other decisions stand. ⚠ PROPOSED IS NOT IMPLEMENTED: at the time of writing
   `docs/anchors.md` is still the registry and `scripts/check-anchors.py` still reads it.
 ---
@@ -13,7 +13,7 @@ status: proposed 2026-11-23 — accepted when the slice that deletes `docs/ancho
 **2026-11-23.** The owner asked what the difference is between a goal on the goals page, a goal on
 the goal-tree page and a feature on the features page, and settled that there is none: each is a NAME,
 with a purpose sentence, under which documents, activity and bugs are linked. The design is
-`docs/superpowers/specs/2026-11-23-goal-node-tree-design.md`; this record holds the two decisions in
+`docs/superpowers/specs/2026-11-23-goal-node-tree-design.md`; this record holds the three decisions in
 it that change an earlier ADR.
 
 ## What ADR-0010 decided, and what is kept
@@ -50,7 +50,20 @@ provided the node lists the former slug in a `was:` field, and
   subject — resolves to its node;
 - a slug is unique across current AND former slugs, so a retired name is never given a new meaning.
 
-The list stays append-only in the sense that mattered: no name is ever lost or reused.
+The list stays append-only in the sense that mattered: no name is ever lost or reused. A QUOTE —
+an owner request line, the words of a `done:` mark — is history too: it is never rewritten to follow
+a rename, and is not checked for former slugs.
+
+**3. The backlog's membership edge is `epic:`; ADR-0010's "no second backlog mechanism" is
+superseded.**
+
+ADR-0010 (*Scope*) said the backlog gets no header and no new column, because `ROOTS`/`DEPENDS`
+already tied rows to anchors and a second mechanism would duplicate it. Backlog #394 (the owner's
+decision R4) has since added an `epic: <slug>` parent to backlog rows, validated against the registry
+by `gen-backlog-page.parent_errors`; 2 rows carry one today. The two are different relations, so they
+do not duplicate each other: `epic:` says which node a row BELONGS to (membership, one parent);
+`ROOTS`/`DEPENDS` says how a row is ORDERED against a root's work (survives / blocked-by /
+dissolved-by). This ADR records that supersession; both keep naming nodes only.
 
 ## Considered options
 
@@ -66,9 +79,14 @@ The list stays append-only in the sense that mattered: no name is ever lost or r
 
 ## What makes the check FAIL
 
-- an `Anchor:`, a `## GOAL` heading, a thread's `also`, a backlog `epic:` parent or a slug constant
-  in a script that is not a current node slug;
-- a former slug in any of those;
+- an `Anchor:` in any spec, plan or ADR (`docs/superpowers/specs`, `docs/superpowers/plans`,
+  `docs/adr`), of ANY date, that is not a current node slug — the cutoff date decides only whether a
+  header is required;
+- a `## GOAL` heading, a thread's `also`, a `PRIORITY` slug, a `goal:<slug>` answer key, a backlog
+  `epic:` parent, a `ROOTS` key or `DEPENDS` root, a new ledger `--goal`/`--also`, or a slug constant
+  in a script, that is not a current node slug;
+- a former slug in any of those (a check of a NEW value asks "is it current", never "does it
+  resolve");
 - a slug that appears twice among current and former slugs;
 - `docs/anchors.md` existing after this ADR is accepted.
 
