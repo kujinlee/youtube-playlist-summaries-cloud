@@ -643,5 +643,16 @@
       ]
     ],
     "expect": "rules: an EMPTY expected-because is still the field"
+  },
+  {
+    "name": "S1 r3: the merged rule's message tests state by truthiness, so a bare state: is reported as having no state:",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            held = f\"is `{n.state}`\" if n.state is not None else \"has no `state:`\"\n",
+        "            held = f\"is `{n.state}`\" if n.state else \"has no `state:`\"\n"
+      ]
+    ],
+    "expect": "rules: a BARE state: is not reported as a missing state:"
   }
 ]

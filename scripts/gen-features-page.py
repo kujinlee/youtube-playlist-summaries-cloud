@@ -201,8 +201,9 @@ def group_tree(nodes: list[Node]) -> list[tuple[str, Node | None, list]]:
     ("a trunk is a node with a slug", spec §2.2), so two `## T` sections have nothing in common but
     display text. Merged, `T a / U b / T c` rendered a, c, b. A PARENTLESS node joins the group just
     before it only when that group is the same slugless section still running; otherwise it opens a
-    new one, so the page keeps file order. (Two ADJACENT slugless `## T` sections stay one group —
-    nothing marks the boundary between them, and merging adjacent groups moves nothing.)
+    new one, so the page keeps file order. (Two slugless `## T` sections with no NODE-BEARING trunk
+    between them stay one group — an empty `## U` in between opens no group (S1 r3, Claude F3).
+    Nothing marks the boundary, neither heading carries an id, and the merge moves no node.)
     """
     trunks: list[list] = []
     slots: dict[tuple[str, str], list] = {}
@@ -1043,6 +1044,8 @@ def _self_test_body() -> int:
     # section opens its own group, slugless or slugged in between, and a slugless `## T` after a slugged
     # one does not join the slugged trunk's children. CONTROL: one slugless trunk with
     # two nodes stays ONE group, so a fix that opened a group per node would also go red.
+    # ⛔ S1 r3 (Claude F1): the order is READ through `index_shape`, never `str.index` on the HTML — a
+    # dropped node then FAILS this case instead of raising and aborting every case after it.
     _order = ("## T\n### a\nfor: A.\n## U\n### b\nfor: B.\n## T\n### c\nfor: C.\n",
               "## T\n### a\nfor: A.\n## U\nslug: u\nfor: U.\n### b\nfor: B.\n## T\n### c\nfor: C.\n",
               "## T\nslug: t\nfor: T.\n### a\nfor: A.\n## T\n### b\nfor: B.\n",
@@ -1051,10 +1054,10 @@ def _self_test_body() -> int:
     for _src in _order:
         _on = parse_features(_src)[0]
         _oix = render_index(_on, {}, sev_order())
+        _deep = {frag_id(n.slug): n.slug for n in _on if n.level > 2}
         _order_got.append(([(name, t.slug if t else None, [e[0].slug for e in es])
                             for name, t, es in group_tree(_on)],
-                           sorted((n.slug for n in _on if n.level > 2),
-                                  key=lambda s: _oix.index(f'href="#{frag_id(s)}"'))))
+                           [_deep[f] for _, f in index_shape(_oix) if f in _deep]))
     check("slugless trunks keep file order",
           _order_got,
           [([("T", None, ["a"]), ("U", None, ["b"]), ("T", None, ["c"])], ["a", "b", "c"]),
@@ -1458,9 +1461,10 @@ def _self_test_body() -> int:
            # the comparator can say no: read under an empty order, every severity disagrees
            gap_disagreements(_many_page, []),
            # the reader itself, on a second page and a second order: a glyph outside it reads `·`
-           rendered_gap_counts(_tree, _order)["f-job-queue"]["rows"],
-           rendered_gap_counts(_tree, _order[1:2])["f-job-queue"]["rows"],
-           rendered_gap_counts(_many_page, _order)["f-wake-on-visit"]["closed"]),
+           # (read with `.get`, S1 r3 class search after Claude F1: a dropped card FAILS, never raises)
+           rendered_gap_counts(_tree, _order).get("f-job-queue", {}).get("rows"),
+           rendered_gap_counts(_tree, _order[1:2]).get("f-job-queue", {}).get("rows"),
+           rendered_gap_counts(_many_page, _order).get("f-wake-on-visit", {}).get("closed")),
           ([], [], ["f-job-queue", "f-wake-on-visit"],
            [("#1", "🟡"), ("#2", "🟢"), ("#3", "🟠"), ("#4", "🟡")],
            [("#1", "·"), ("#2", "·"), ("#3", "🟠"), ("#4", "·")], [("#94", "🟠")]))

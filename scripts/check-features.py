@@ -230,7 +230,7 @@ def check_nodes(nodes: list[Node], anchored: frozenset[str] = frozenset()) -> li
         # (S1 r2, Codex Low). One rule over PRESENCE (`is not None`) leaves no per-state copy to
         # forget, and no value that reads as the field being absent.
         if n.expected_because is not None and n.state != "absent":
-            held = f"is `{n.state}`" if n.state else "has no `state:`"
+            held = f"is `{n.state}`" if n.state is not None else "has no `state:`"
             problems.append(f"{where} {held} but carries an `expected-because:` — that line is "
                             f"the argument for an ABSENCE. Remove it, or set `state: absent`")
         if n.state == "absent":
@@ -947,6 +947,16 @@ expected-because: standard for a hosted multi-tenant service.
             "### y\nstate: built\nfor: Y.\nareas: (y)\nexpected-because:\n",
             "### x\nfor: X.\n", "### y\nstate: built\nfor: Y.\nareas: (y)\n")],
           [True, True, False, False])
+    # ⛔ S1 r3 (Claude F2): a BARE `state:` parses to "", and the merged rule's message tested it by
+    # TRUTHINESS, so the node drew two contradicting messages — `has state ''` from the state check,
+    # then "has no `state:`" here, with the line right there in the file. EXACTLY ONE message
+    # mentions `state:` being absent, and only for the node that truly has no `state:` line (CONTROL:
+    # without it, a fix that dropped the "has no `state:`" wording entirely would also pass).
+    _bare = check_nodes(_nodes("### x\nstate:\nfor: X.\nexpected-because: e.\n"))
+    check("rules: a BARE state: is not reported as a missing state:",
+          (sum("has no `state:`" in p for p in _bare), sum("expected-because" in p for p in _bare),
+           sum("has no `state:`" in p for p in check_nodes(_nodes("### x\nfor: X.\nexpected-because: e.\n")))),
+          (0, 1, 1))
 
     # ── G9 — `done:` cites a recorded request (goal node tree Task 3, spec §2.5) ───────────────
     _THREADS = ("# Goal threads\nprose above the first goal\n\n## GOAL ship-it\n"

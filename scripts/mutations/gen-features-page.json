@@ -636,5 +636,16 @@
    ]
   ],
   "expect": "slugless trunks keep file order"
+ },
+ {
+  "name": "S1 r3: every parentless node is dropped (the pre-r2 orphan mutant) — the suite must FAIL the orphan case, not crash before it",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "                trunks.append([n.trunk, None, []])\n            here = trunks[-1][2]\n",
+    "                trunks.append([n.trunk, None, []])\n            continue\n"
+   ]
+  ],
+  "expect": "index: an orphan level is kept"
  }
 ]

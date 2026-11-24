@@ -557,7 +557,10 @@ EXPECTED_MUTATIONS = {
     # Medium): merged by heading text again, a slugless trunk joining a slugged one of the same text,
     # the trunk-text clause dropped, and the control (a group per parentless node). The orphan entry
     # was REBOUND onto the rewritten `here =` line (not in the +4).
-    "scripts/gen-features-page.py": 58,
+    # ⟳ 2026-11-24, goal node tree S1 review r3: 58 -> 59 — the plain `continue` orphan mutant is
+    # back (Claude F1): it crashed the suite on a `str.index` before the orphan case ran; read through
+    # `index_shape`, the case now FAILS and the mutant is attributed. The narrow r2 entry stays.
+    "scripts/gen-features-page.py": 59,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -1736,7 +1739,9 @@ EXPECTED_MUTATIONS = {
     # truthiness, letting an EMPTY field pass (Codex Low). The two per-state refusals were MERGED into
     # one presence rule; the `built` and stateless entries were REBOUND onto it, each exempting only
     # its own state (not in the +1).
-    "scripts/check-features.py": 58,
+    # ⟳ 2026-11-24, goal node tree S1 review r3: 58 -> 59 — the merged rule's message back to a
+    # truthiness test of `state`, reporting a bare `state:` as "has no `state:`" (Claude F2).
+    "scripts/check-features.py": 59,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
