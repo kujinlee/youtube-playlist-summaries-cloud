@@ -11,11 +11,12 @@ by a headless agent that is not the main session.
     python3 scripts/ask_answerer.py --answered ID  # ...and says it has answered it in the page
     python3 scripts/ask_answerer.py --retry ID     # make a failed or skipped question eligible again
     python3 scripts/ask_answerer.py --inbox        # instructions readers typed: print the unread, mark them read
-    python3 scripts/ask_answerer.py --self-test    # 123 cases; never runs the real `claude`
+    python3 scripts/ask_answerer.py --self-test    # 127 cases; never runs the real `claude`
 
 THE LOOP. `explainer-serve.py` appends every POSTed question to `<root>/questions.md`. The watcher stats that
 file once a second (no model call: an idle watcher costs no tokens) and, for each question the ledger has no
-record of, in file order, one at a time:
+record of, in file order, one at a time — never a decision card's click (`is_decision_answer`: its section ends
+`DECISION n of N` and its text starts `ANSWER: `), which is the session's to record, not a question:
 
   1. CLAIMS it — one `claimed` line in `<root>/.ask/ledger.jsonl`, appended under an exclusive lock after
      re-reading the ledger. One claim per question, whoever asks first: the watcher or a live session
@@ -157,6 +158,18 @@ def parse_questions(text: str) -> list[Question]:
         section, quote, question = split_body(body)
         out.append(Question(qid, m.group(1), m.group(2).strip(), section, quote, question))
     return out
+
+
+# A click on a decision card's buttons (`DECISION_JS` in brief-compose.py) POSTs the tray's shape with the tag's
+# label as its section — it always ends `DECISION n of N` — and `ANSWER: ` as the question. ⛔ It is the SESSION's
+# to record as the decision's value (explainer-delivery §3a), never a question for a paid run (PR #628 r1, Claude F1:
+# 28 clicks were 28 `claude -p` runs and 28 blocks at the end of the fragment).
+_DECISION_SECTION = re.compile(r"(?:^|\s)DECISION \d+ of \d+$")
+
+
+def is_decision_answer(q: Question) -> bool:
+    """PURE. True for a decision card's answer: its section ENDS `DECISION n of N` and its text starts `ANSWER: `."""
+    return q.text.startswith("ANSWER: ") and _DECISION_SECTION.search(q.section.strip()) is not None
 
 
 def read_questions(root: pathlib.Path) -> list[Question]:
@@ -969,9 +982,9 @@ def recover_stale(root: pathlib.Path) -> int:
 
 
 def pending(root: pathlib.Path) -> list[Question]:
-    """The questions with NO ledger state, in file order."""
+    """The questions with NO ledger state, in file order — never a decision card's answer (`is_decision_answer`)."""
     st = fold(read_ledger(root)[0])
-    return [q for q in read_questions(root) if q.id not in st]
+    return [q for q in read_questions(root) if q.id not in st and not is_decision_answer(q)]
 
 
 def process_new(root: pathlib.Path, caps: Caps, deps: Deps) -> list[tuple[str, str]]:
@@ -1064,6 +1077,8 @@ def page_items(root: pathlib.Path, rel: str) -> list[dict]:
     items, seen = [], set()
     for q in read_questions(root):
         if page_name(q.doc) != rel:
+            continue
+        if is_decision_answer(q):           # a decision answer is the session's, never shown "waiting"
             continue
         seen.add(q.id)
         s = st.get(q.id)
@@ -1186,7 +1201,8 @@ def status_text(root: pathlib.Path, caps: Caps) -> str:
             lines.append(f"  ⚠ FAILED {qid}  {s.get('doc', '')}  {str(s.get('reason', ''))[:160]}")
         elif s.get("status") == "answered" and s.get("by") != "session" and not s.get("written"):
             lines.append(f"  answered, NOT in the page file  {qid}  {s.get('doc', '')}  {str(s.get('where', ''))[:120]}")
-    skipped = [q for q in read_questions(root) if st.get(q.id, {}).get("status") == "skipped"]
+    skipped = [q for q in read_questions(root)
+               if st.get(q.id, {}).get("status") == "skipped" and not is_decision_answer(q)]
     if skipped:
         lines.append(f"  skipped  {len(skipped)} asked while no answerer ran: NOT answered here. A session "
                      "answers one after `--claim ID`; `--retry ID` hands one to the answerer. The newest:")
@@ -1994,6 +2010,33 @@ sys.exit(mode.get("rc", 0))
         check("--once answers what is waiting and exits; it does not skip it",
               (watch(r, CAPS, DEPS, once=True), state(r, late.id).get("status"), len(calls()) - n0), (0, "answered", 1))
 
+        # PR #628 r1 (Claude F1): a decision card's click is never a paid question — not run, not shown waiting.
+        r = mk()
+        watch(r, CAPS, DEPS, once=True)
+        dq = ask(r, "ANSWER: yes", section="4.1 — DECISION 1 of 28", quote="Keep it?")
+        du = ask(r, "ANSWER: recommended (new child)", section="DECISION 2 of 3", at="2026-11-13 09:00:01")
+        tq = ask(r, "ANSWER: is this a decision?", section="Why it broke", at="2026-11-13 09:00:02")
+        mid = ask(r, "ANSWER: no", section="DECISION 1 of 2 then more", at="2026-11-13 09:00:03")
+        hq = ask(r, "why is this one open?", section="Keep it? 🟨 ✍ 4.2 — DECISION 2 of 28", at="2026-11-13 09:00:04")
+        n0 = len(calls())
+        watch(r, CAPS, DEPS, once=True)
+        check("decision answer: a card click is not run or shown waiting; an ANSWER: elsewhere, or a question under a tagged heading, still is",
+              ([is_decision_answer(q) for q in (dq, du, tq, mid, hq)], len(calls()) - n0,
+               state(r, dq.id), state(r, du.id), state(r, tq.id).get("status"), state(r, hq.id).get("status"),
+               [i["id"] for i in page_items(r, "p.html") if i["id"] in (dq.id, du.id)]),
+              ([True, True, False, False, False], 3, {}, {}, "answered", "answered", []))
+        check("is_decision_answer reads the question it is given: a card's ANSWER is one, a question under a tagged heading is not",
+              (is_decision_answer(dq), is_decision_answer(hq)), (True, False))
+        r, r2 = mk(), mk()
+        watch(r, CAPS, DEPS, once=True)
+        watch(r2, CAPS, DEPS, once=True)
+        on_p = ask(r, "asked on p", doc="p.html")
+        on_q = ask(r, "asked on q", doc="q.html", at="2026-11-13 09:00:01")
+        other = ask(r2, "asked on p in another root", doc="p.html", at="2026-11-13 09:00:02")
+        check("page_items lists only the page it is given, from the root it is given",
+              ([i["id"] for i in page_items(r, "p.html")], [i["id"] for i in page_items(r, "q.html")],
+               [i["id"] for i in page_items(r2, "p.html")]),
+              ([on_p.id], [on_q.id], [other.id]))
         r = mk()
         watch(r, CAPS, DEPS, once=True)
         x1, x2 = ask(r, "FIRST-ASKED"), ask(r, "SECOND-ASKED", at="2026-11-13 09:00:01")
@@ -2106,6 +2149,16 @@ sys.exit(mode.get("rc", 0))
               ("skipped  1 asked" in text and off.id in text, claim(r, off.id, "answerer"),
                claim(r, off.id, "session"), state(r, off.id).get("by"), claim(r, off.id, "session")),
               (True, False, True, "session", False))
+        # PR #628 r3 (Claude F3): a decision card's click asked while the answerer was off is skipped like any
+        # question, and --status must not list it as one a session should answer — it is the session's to RECORD.
+        r = mk()
+        offq = ask(r, "asked while the answerer was off")
+        offd = ask(r, "ANSWER: yes", section="4.1 — DECISION 1 of 28", quote="Keep it?", at="2026-11-13 09:00:01")
+        watch(r, CAPS, DEPS, once=True)
+        text = status_text(r, CAPS)
+        check("r3 (#628): --status lists a skipped question but never a skipped decision answer",
+              (state(r, offd.id).get("status"), "skipped  1 asked" in text, offq.id in text, offd.id in text),
+              ("skipped", True, True, False))
 
         r = mk()
         watch(r, CAPS, DEPS, once=True)
