@@ -972,7 +972,10 @@ meanings:
 - `postcondition(…, "tree")` runs every existing clause exactly as for `blocks` (P4 keeps `SECTION`: at the
   text level the trunks are this file's sections), then P8 over the FULL four texts, not the prefix-cut ones:
   1. `_tree_map` of the result reports a problem → `P8 the merged tree does not parse: <problem>`. A line the
-     parser refuses is a line no attribute holds, so its placement cannot be judged; it ejects.
+     parser refuses is a line no attribute holds, so its placement cannot be judged; it ejects. The same holds
+     for the INPUTS: a problem in the map of base, ours or theirs → `P8 the <side> tree does not parse:
+     <problem>`, an ejection, never `CannotRun` — the line is data the merge cannot judge, exactly as in the
+     result, and `CannotRun` is kept for the instrument failing (below), not for a text it reads (r4 Codex Minor).
   2. for every `(slug, attribute)` key of the four maps (a missing key reads as `None`, so a node added or
      removed is the same rule): `_merge3(base, ours, theirs)`. Both sides changed it to different values →
      `P8 both sides changed <slug>.<attribute>`. Else the wanted value is the one side's that differs from the
@@ -1013,7 +1016,7 @@ fails P1 and ejects.
 | 10 | one side re-parents base nodes on purpose | theirs inserts `### B` above the base `#### a1`, ours adds an unrelated node under another trunk | `[]`: `a1` follows theirs |
 | 11 | both sides re-parent one base node differently | ours inserts `### B`, theirs `### C`, each directly above the base `#### a1`; the result holds `B`, `C`, `a1` in that order | `P8 both sides changed a1.parent` |
 | 12 | a field line under another node's heading | one hunk at the end of base `#### a1`'s block: theirs adds the field line `adrs: 0003` to `a1`, ours adds a new `#### o` node; `resolve_text` puts ours first, so `adrs: 0003` lands under `#### o` | P8 names `a1.adrs` and `o.adrs` under `tree` (EJECTED — the resolver is not taught to place it; an ejection is the safe cost); the SAME four texts under `blocks` return `[]` (the policy scope, and the old blind spot, in one case) |
-| 13 | the result holds a line the parser refuses | ours adds a node with a wrapped prose line under its `for:`; theirs adds a clean node elsewhere; a clean merge | `P8 the merged tree does not parse`. Second input in the same case: ours' node without the prose line — `[]` |
+| 13 | the result holds a line the parser refuses | ours adds a node with a wrapped prose line under its `for:`; theirs adds a clean node elsewhere; a clean merge | `P8 the merged tree does not parse`. Second input in the same case: ours' node without the prose line — `[]`. Third input: the BASE holds the prose line and ours deletes it, so the result parses — `P8 the base tree does not parse` (an input is judged, not only the result; P3 also names the deleted base line, and the case asserts P8's reason, not the clause list) |
 | 14 | the parser cannot be loaded | `FEATURES_PARSER` pointed at a file that does not exist | `CannotRun`, for a `tree` text; a `blocks` text with the same setting still returns its verdict |
 
 Behaviours 1, 6, 8 (both inputs), 9 (both), 10, 11 and 12 were run against a stand-in for P8 in the Phase 6
@@ -1030,7 +1033,7 @@ review (§5) and gave the verdicts above.
   never `clauses(got) == ["P8"]` alone: with the both-sides refusal severed the wanted value falls to ours'
   and P8 still fires with the OTHER message, so a clause-only check lets that mutation live — r3 F1),
   `tree P8: a field line keeps its node`, `tree P8: a result the parser refuses ejects` (asserts
-  `named(got, "P8", "does not parse")`), `tree P8: a parser that cannot load is CANNOT RUN` (it swaps
+  `named(got, "P8", "does not parse")`; its third input asserts `named(got, "P8", "base tree does not parse")`), `tree P8: a parser that cannot load is CANNOT RUN` (it swaps
   `FEATURES_PARSER` and clears the loaded module, and restores both in a `finally`, the shape of the existing
   case `R2-F2: a selector that cannot run BISECTS and says so …`). Every case that resolves a conflict calls
   `resolve_text` with the path `docs/features.md` — never `resolve_hunk("tree", …)` directly — so the policy
