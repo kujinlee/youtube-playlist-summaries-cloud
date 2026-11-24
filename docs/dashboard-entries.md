@@ -21553,3 +21553,31 @@ warning as before). `check-publishability --self-test` 180 -> 177: the three liv
 shared/explainer-delivery.md are reworded, and `brief-compose.py`'s two "run /explain-diff" messages now name
 /explain-topic. Backlog #713 filed (composer rename + page naming by kind). Historical review, explainer and scan
 documents still name the skills. They are records, and stay as written.
+
+## 2026-11-23
+The goal tree page builds again. One line in the goal list named the wrong pull request, so the
+same piece of work appeared twice under one goal and the page refused to render; that line now names
+the right one. The design for merging goals and features into one tree finished its first review
+round: 26 findings fixed, and 3 new questions are waiting for you in its walkthrough.
+<!--tech-->
+`docs/goal-threads.md:229` named PR #376 (the marketplace-inventory spec, already on line 226) for plan
+Task 16, which merged as PR #613 (`36deefc9`). `goal-tree.py --snapshot --page` went from rc 1
+`MALFORMED` to rc 0. Round 1 fold: `docs/reviews/coordinator/goal-node-tree-spec-r1-coordinator.md`
+(29 findings: 26 fixed, 0 rejected, 3 to the owner as spec §6 Q11–Q13). Not converged; round 2 owed.
+
+## 2026-11-23
+The design for merging goals and features into one tree got a structural repair to its migration plan.
+Three review rounds in a row had each found something missing from a hand-written list (which files
+read a retired file, which edits rebuild which page). The plan no longer depends on those lists: a
+retired name is checked by searching the whole repository, and the design adds no new page-rebuild
+trigger at all, because pages are always built from the merged code. Nothing new is waiting for you;
+the 3 earlier questions in its walkthrough still are.
+You approved it at 21:22, with all 28 answers taken as recommended or yes; they are written into the spec (§6.1). The plan is next.
+<!--tech-->
+Phase 6 armed on thrashing (component `migration-slices`, rounds 2 and 3):
+`docs/reviews/architecture-review-2026-11-23-goal-node-tree-migration.md`. Spec §5.1 S2 is gated by two
+`git grep` searches minus a history set (48 lines in 19 files and 18 lines in 5 files at `256c7b4f`);
+§5.1.1's trigger inventory and dispatcher test are deleted (backlog #408: pages build from
+`origin/master`; a merge rebuilds every page). Round 3 fold:
+`docs/reviews/coordinator/goal-node-tree-spec-r3-coordinator.md` (6 Minor: 6 fixed, 0 rejected, 0 to the
+owner). Filed backlog #710 (hand-kept edit-hook source lists).
