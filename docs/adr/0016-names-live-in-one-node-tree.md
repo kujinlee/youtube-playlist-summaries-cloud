@@ -81,13 +81,15 @@ dissolved-by). This ADR records that supersession; both keep naming nodes only.
 
 - an `Anchor:` in any spec, plan or ADR (`docs/superpowers/specs`, `docs/superpowers/plans`,
   `docs/adr`), of ANY date, that is not a current node slug — the cutoff date decides only whether a
-  header is required;
+  header is required; an ADR is read up to its first `## ` heading, since its header sits below the
+  title and status block, past the 10 lines read for a spec or plan;
 - a `## GOAL` heading, a thread's `also`, a `PRIORITY` slug, a `goal:<slug>` answer key, a backlog
   `epic:` parent, a `ROOTS` key or `DEPENDS` root, a new ledger `--goal`/`--also`, or a slug constant
   in a script, that is not a current node slug;
 - a former slug in any of those (a check of a NEW value asks "is it current", never "does it
   resolve");
-- a slug that appears twice among current and former slugs;
+- a slug that appears twice among current and former slugs (a former slug listed once and held by
+  no node passes — that is a rename);
 - `docs/anchors.md` existing after this ADR is accepted.
 
 ## Consequences
@@ -96,7 +98,7 @@ dissolved-by). This ADR records that supersession; both keep naming nodes only.
   of anchors; most nodes are features with no spec and need none.
 - History is never rewritten to follow a rename. The logs that hold old slugs are git-ignored and
   differ per checkout, so they could not be; they are resolved when read.
-- "Anchor" remains the header keyword on 63 documents and now means "the node this document belongs
+- "Anchor" remains the header keyword on 64 specs and plans and 6 ADRs and now means "the node this document belongs
   to". `CONTEXT.md` uses the word for a mutation anchor; the design's question Q7 settles the entry.
 - The feature-hub spec's one-way edge (a node NAMES its anchors) has nothing left to point at and is
   removed with the `anchors:` field.
