@@ -21515,3 +21515,15 @@ component changed status. Merging master brought in the inventory (scan-2026-11-
 scan-2026-11-21: cited ids re-mapped by file, kind, target and text (mutation-sweep-job 2:106-108 -> 2:109-111;
 memory-corpus :2:5-17 -> :2:3-14, and 8 ids that the backlog #697 built corpus no longer produces dropped; its C2
 fail is NOT re-judged). The tier A/B experiment docs' cited ids were re-mapped the same way.
+
+## 2026-11-23
+The features page now opens with a tree of every feature — group, feature, sub-feature — and each
+line says how many backlog gaps are still open against it, by severity. The same count sits next to
+every "built" badge, so a built feature with 24 open gaps no longer reads as finished. The cards are
+folded; clicking a line in the tree opens its card.
+<!--tech-->
+`scripts/gen-features-page.py`: `render_index`, `gap_label`/`open_gaps`/`split_closed` (one counting
+rule shared by the Known-gaps band, the card heading and the index), cards as folded `<details>`,
+`OPEN_HASH_JS` opens the card a hash names (load, hashchange, re-click of the current hash). Each line
+counts its own node only — no subtree subtotal, since a two-tag row sits under two nodes. Self-test
+19 → 29; mutation pin 16 → 27.
