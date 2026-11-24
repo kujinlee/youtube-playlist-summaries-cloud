@@ -520,7 +520,8 @@ CSS = """
                  text-decoration:none;margin-right:.35rem}
   .tindex li > a:hover{text-decoration:underline}
   .tindex .state{font-size:.62rem;padding:.05rem .35rem;margin-right:.35rem}
-  .gaps{font-family:var(--mono);font-size:.74rem;color:var(--ink-faint);white-space:nowrap}
+  .gaps{font-family:var(--ui);font-size:.8rem;color:var(--ink-faint);white-space:nowrap;
+        font-variant-numeric:tabular-nums;letter-spacing:.14em}
   .gaps.open{color:var(--pending)}
   details.node > summary{cursor:pointer;list-style:none}
   details.node > summary::-webkit-details-marker{display:none}
@@ -881,7 +882,7 @@ def _self_test_body() -> int:
     # ⛔ ONE COUNTING RULE: the index line and the card heading both read `open_gaps` — a node WITH
     # gaps (one closed row excluded) and a node WITHOUT.
     _line = lambda slug: re.search(rf'href="#{slug}">(.*?)(?:</li>|<ul>)', _ix, re.S).group(1)
-    _head = lambda slug: re.search(rf'id="{slug}">\s*<summary.*?</summary>', _tree, re.S).group(0)
+    _head = lambda slug: re.search(rf'id="{slug}"[^>]*>\s*<summary.*?</summary>', _tree, re.S).group(0)
     check("a node's index line and card heading carry the same gap count, with gaps and without",
           ("4 gaps (1🟠 2🟡 1🟢)" in _line("job-queue"), "4 gaps (1🟠 2🟡 1🟢)" in _head("job-queue"),
            "0 gaps" in _line("dig-job-recovery"), "0 gaps" in _head("dig-job-recovery")),
