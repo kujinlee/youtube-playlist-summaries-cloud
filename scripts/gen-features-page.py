@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 38 cases
+    python3 scripts/gen-features-page.py --self-test  # 41 cases
 
 WHY THIS EXISTS
 ---------------
@@ -1204,9 +1204,11 @@ def _self_test_body() -> int:
                                              {k: v for k, v in _expected_rows.items()
                                               if k != "f-dig-job-recovery"} | {"f-gone": {"open": [], "closed": []}})),
            # ...and an id two cards share (the nested fixture renders wake-on-visit twice, alike)
-           _caught(lambda: row_disagreements(render(nested + nodes, _many), _order, _expected_rows))),
+           _caught(lambda: row_disagreements(render(nested + nodes, _many), _order, _expected_rows)),
+           # the order is READ: under 🟠 alone, every other glyph reads `·`, so two cards disagree
+           _caught(lambda: row_disagreements(_many_page, _order[1:2], _expected_rows))),
           ([], ["f-job-queue"], [], ["f-wake-on-visit"], ["f-dig-job-recovery", "f-gone"],
-           ["f-wake-on-visit"]))
+           ["f-wake-on-visit"], ["f-job-queue", "f-wake-on-visit"]))
     check("every card's heading and index line count exactly the open rows its rendered band lists",
           (gap_disagreements(_many_page, _order),
            gap_disagreements(render(_real_nodes, _rfrag), _order),
@@ -1214,10 +1216,11 @@ def _self_test_body() -> int:
            gap_disagreements(_many_page, []),
            # the reader itself, on a second page and a second order: a glyph outside it reads `·`
            rendered_gap_counts(_tree, _order)["f-job-queue"]["rows"],
-           rendered_gap_counts(_tree, _order[1:2])["f-job-queue"]["rows"]),
+           rendered_gap_counts(_tree, _order[1:2])["f-job-queue"]["rows"],
+           rendered_gap_counts(_many_page, _order)["f-wake-on-visit"]["closed"]),
           ([], [], ["f-job-queue", "f-wake-on-visit"],
            [("#1", "🟡"), ("#2", "🟢"), ("#3", "🟠"), ("#4", "🟡")],
-           [("#1", "·"), ("#2", "·"), ("#3", "🟠"), ("#4", "·")]))
+           [("#1", "·"), ("#2", "·"), ("#3", "🟠"), ("#4", "·")], [("#94", "🟠")]))
     # ⛔ THE EMITTED ARTIFACT PARSES — the HTML is in the supported subset, the script is a program.
     _js = scripts_parse(_tree)
     check("the emitted page is in the supported HTML subset and every inline script parses",
