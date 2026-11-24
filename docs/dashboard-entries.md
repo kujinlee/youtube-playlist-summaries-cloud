@@ -21532,6 +21532,8 @@ Review r2: card ids carry a reserved `f-` prefix (`page_markup.feature_id`, also
 `key_link("feature")` targets), so a node named like a chrome control cannot share its id; the band's
 rows are compared by id and severity against hand-written expected sets (`row_disagreements`).
 Self-test 19 → 41; mutation pin 16 → 43 (page_markup 79 → 80).
+
+## 2026-11-23
 As you asked, three explainer skills you no longer use are gone: `brief`, `explain-diff` and `explain-findings`.
 They are off the list of things the marketplace would ship, and their folders are removed from the repo. The reminder
 that suggested an explainer whenever a PR was opened is retired too. `explain-topic` is now the one explainer skill,
