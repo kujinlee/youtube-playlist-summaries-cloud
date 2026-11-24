@@ -21515,3 +21515,14 @@ component changed status. Merging master brought in the inventory (scan-2026-11-
 scan-2026-11-21: cited ids re-mapped by file, kind, target and text (mutation-sweep-job 2:106-108 -> 2:109-111;
 memory-corpus :2:5-17 -> :2:3-14, and 8 ids that the backlog #697 built corpus no longer produces dropped; its C2
 fail is NOT re-judged). The tier A/B experiment docs' cited ids were re-mapped the same way.
+
+## 2026-11-23
+The goal tree page builds again. One line in the goal list named the wrong pull request, so the
+same piece of work appeared twice under one goal and the page refused to render; that line now names
+the right one. The design for merging goals and features into one tree finished its first review
+round: 26 findings fixed, and 3 new questions are waiting for you in its walkthrough.
+<!--tech-->
+`docs/goal-threads.md:229` named PR #376 (the marketplace-inventory spec, already on line 226) for plan
+Task 16, which merged as PR #613 (`36deefc9`). `goal-tree.py --snapshot --page` went from rc 1
+`MALFORMED` to rc 0. Round 1 fold: `docs/reviews/coordinator/goal-node-tree-spec-r1-coordinator.md`
+(29 findings: 26 fixed, 0 rejected, 3 to the owner as spec §6 Q11–Q13). Not converged; round 2 owed.
