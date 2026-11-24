@@ -234,7 +234,10 @@ element that asks it; the composer does the rest:
 - **The owner answers by clicking** (owner, 2026-11-23 21:00): each OPEN tag carries ★ Recommended (when the card has a `.rec` line; owner 21:08) / ✔ Yes / ✖ No / ✎ Other…
   (`DECISION_JS` in `brief-compose.py`). A click arrives in `questions.md` like a tray question, with the tag's label
   as its section and `Q: ANSWER: <yes|no|text>` — record it as the attribute's value and recompose. A click alone
-  answers nothing; the card says *sent* until the page is recomposed.
+  answers nothing. The card says *sent* — remembered in the browser per page, label and question, so a recompose
+  that renumbers the cards keeps it on the right one — with a *change* button that sends a new answer; the newest
+  `ANSWER:` for a decision wins. ⛔ The Ask answerer (§6b) never runs a click as a question
+  (`is_decision_answer` in `ask_answerer.py`), so recording it is always the session's job.
 - **Never type a number.** `n`, `N`, and the counter under the title are all derived by `brief-compose.py`
   (`render_decisions`) from one parse of the fragment. While any is open the counter reads total · remaining ·
   answered with a link to the first open one; once none is open it reads `N decisions on this page · 0
@@ -284,6 +287,8 @@ one additionally if a shareable read-only URL is wanted, but the served page is 
 monitor reports is the ANSWERER's, not yours.** Do not answer it from the event: the event carries no
 question id, and the answerer has usually claimed it within a second. The page's *Ask* panel shows what
 happened; a NOT ANSWERED line there, and `--status`, give the id that `--claim ID` and `--retry ID` take.
+**The one exception is a decision card's click** (`Q: ANSWER: …` under a `… DECISION n of N` section, §3a): the
+answerer skips it, so it is always YOURS to record and recompose.
 
 After starting the server, open a persistent monitor on the questions file:
 

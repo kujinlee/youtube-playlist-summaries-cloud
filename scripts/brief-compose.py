@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 234 cases
+    python3 scripts/brief-compose.py --self-test  # 245 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
@@ -1195,10 +1195,12 @@ DECISION_CSS = """
   .ex-pick button { font: inherit; padding: .05em .7em; border-radius: 4px; cursor: pointer;
          border: 1px solid var(--decide-br); background: transparent; color: inherit; }
   .ex-pick button:hover { background: var(--decide-bg); color: var(--decide); }
+  .ex-pick button:disabled { opacity: .55; cursor: progress; }
   .ex-pick input { font: inherit; padding: .05em .4em; min-width: 16em; }
   .ex-pick .ex-pick-sent { padding: .05em .6em; border: 1px solid var(--decided-br);
          border-radius: 4px; background: var(--decided-bg); color: var(--decided); }
-  .ex-pick .ex-pick-err { color: #c0392b; }
+  .ex-pick .ex-pick-err { padding: .05em .6em; border: 1px dashed var(--decide-br); border-radius: 4px;
+         background: var(--decide-bg); color: var(--decide); }
   .ex-decision-count a { color: inherit; }
 """
 
@@ -1209,89 +1211,137 @@ DECISION_CSS = """
 # the SAME three-line shape the Ask tray's `compose()` sends (section, quote, Q:), so the session's
 # question watcher needs no change: the section line is the tag's own text, the Q: line is
 # `ANSWER: yes|no|<text>`. ⚠ A click does NOT answer the decision — the session sets `data-decision`
-# and recomposes (explainer-delivery §3a); until then the card says "sent", remembered per browser so a
-# reload does not offer the same decision twice. Opened from a file (no server), it copies the line to
-# the clipboard instead, as the tray does. Emitted ONLY on a page with an open decision.
+# and recomposes (explainer-delivery §3a); until then the card says "sent" (with `change` to send again),
+# remembered per browser and keyed by the decision itself, so a reload does not offer it twice and a
+# renumbered page shows it on no other card. ⟳ r1 (Claude F1): the Ask answerer SKIPS such an entry
+# (`ask_answerer.is_decision_answer`) — a click is never a paid question. Opened from a file (no server),
+# it copies the line to the clipboard instead, as the tray does. Emitted ONLY on a page with an open decision.
 DECISION_JS = r"""
 (function(){
   var LIVE = /^https?:$/.test(location.protocol);
   var DOC = location.pathname.replace(/^\//, '') || 'latest';
-  function key(id){ return 'ex-pick:' + DOC + ':' + id; }
-  function load(id){ try { return localStorage.getItem(key(id)); } catch (e) { return null; } }
-  function save(id, v){ try { localStorage.setItem(key(id), v); } catch (e) {} }
+  function norm(t){ return String(t || '').replace(/\s+/g, ' ').trim(); }
+  function hash(t){
+    for (var h = 2166136261, i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16);
+  }
+  // ⟳ r1 (Codex 3): the label is ONE line, or the three-line shape breaks.
+  function labelOf(tag){ return norm(tag.textContent).replace(/^\S+\s+\S+\s+/, ''); }
   function questionOf(tag){
-    var el = tag.parentNode, out = '';
-    Array.prototype.forEach.call(el.childNodes, function(n){
+    var out = '';
+    Array.prototype.forEach.call(tag.parentNode.childNodes, function(n){
       if (n === tag || (n.nodeType === 1 && n.classList.contains('ex-pick'))) return;
       out += n.textContent;
     });
-    return out.replace(/\s+/g, ' ').trim().slice(0, 400);
+    return norm(out).slice(0, 400);
   }
-  function sent(box, answer){
+  // ⟳ r1 (Codex 1, Claude F2): keyed by WHICH decision it is (page, the label without its ordinal, a
+  // hash of the question), never by `ex-decision-<n>`, so a renumbered page cannot show one card's
+  // answer on another.
+  function key(tag){
+    return 'ex-pick:' + DOC + ':' + labelOf(tag).replace(/\s*(—\s*)?DECISION \d+ of \d+$/, '')
+      + ':' + hash(questionOf(tag));
+  }
+  function load(tag){ try { return localStorage.getItem(key(tag)); } catch (e) { return null; } }
+  function save(tag, v){ try { localStorage.setItem(key(tag), v); } catch (e) {} }
+  function forget(tag){ try { localStorage.removeItem(key(tag)); } catch (e) {} }
+  function button(text, fn){
+    var b = document.createElement('button'); b.type = 'button'; b.textContent = text;
+    b.addEventListener('click', fn); return b;
+  }
+  function busy(box, on){
+    box.exBusy = on;
+    Array.prototype.forEach.call(box.querySelectorAll('button, input'), function(c){ c.disabled = on; });
+  }
+  // ⟳ r1 (Claude F2): "sent" is not final — `change` offers the buttons again.
+  function sent(tag, box, answer, remembered){
     box.innerHTML = '';
     var s = document.createElement('span');
     s.className = 'ex-pick-sent';
-    s.textContent = '\u2713 sent: ' + answer + ' \u2014 the page updates when the session records it';
+    s.textContent = '✓ sent: ' + answer + ' — the page updates when the session records it';
     box.appendChild(s);
+    box.appendChild(button('change', function(){ if (remembered) forget(tag); offer(tag, box); }));
   }
   function fail(box, msg){
     var e = box.querySelector('.ex-pick-err') || document.createElement('span');
     e.className = 'ex-pick-err'; e.textContent = msg; box.appendChild(e);
   }
   function send(tag, box, answer){
-    var label = tag.textContent.replace(/^\S+\s+\S+\s+/, '').trim();
-    var body = '**' + label + '**\n   > ' + questionOf(tag) + '\n   Q: ANSWER: ' + answer;
+    if (box.exBusy) return;                  // ⟳ r1 (Claude F6): a double click sends ONE entry
+    var body = '**' + labelOf(tag) + '**\n   > ' + questionOf(tag) + '\n   Q: ANSWER: ' + answer;
     if (!LIVE){
       if (navigator.clipboard) navigator.clipboard.writeText(body).then(function(){
-        sent(box, answer + ' (copied \u2014 paste it into the session)'); }, function(){
-        fail(box, ' could not copy'); });
-      else fail(box, ' no server and no clipboard \u2014 type the answer in the session');
+        sent(tag, box, answer + ' (copied — paste it into the session)', false); }, function(){
+        fail(box, '⚠ could not copy'); });
+      else fail(box, '⚠ no server and no clipboard — type the answer in the session');
       return;
     }
+    busy(box, true);
     fetch('/questions', { method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ doc: DOC, text: body }) }).then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      save(tag.id, answer); sent(box, answer);
-    }).catch(function(e){ fail(box, ' send failed (' + e.message + ')'); });
+      busy(box, false); save(tag, answer); sent(tag, box, answer, true);
+    }).catch(function(e){ busy(box, false); fail(box, '⚠ send failed (' + e.message + ')'); });
   }
-  // The page's own recommendation (owner 11-23 21:08): the bold lead of the next `.rec` sibling
-  // after the tag's paragraph, before the next decision. None found = no Recommended button.
-  function recOf(tag){
-    for (var s = tag.parentNode.nextElementSibling; s; s = s.nextElementSibling) {
+  // The page's own recommendation (owner 11-23 21:08), from the next `.rec` after the tag's element and
+  // before the next decision. ⟳ r1 (Codex 2, Claude F3): the bold is used only when it OPENS the
+  // paragraph; otherwise the text, less a `Recommend:` / `Recommended:` lead, up to its first sentence end.
+  var LEAD = /^\s*Recommend(?:ed|ation)?\b\s*:?\s*/i;
+  function opening(s){
+    for (var i = 0; i < s.childNodes.length; i++) {
+      var n = s.childNodes[i];
+      if (n.nodeType === 8) continue;
+      if (n.nodeType === 3) { if (n.textContent.replace(LEAD, '').trim() === '') continue; return null; }
+      return (n.nodeType === 1 && /^(B|STRONG)$/.test(n.tagName)) ? n : null;
+    }
+    return null;
+  }
+  function recOf(host){
+    for (var s = host.nextElementSibling; s; s = s.nextElementSibling) {
       if (s.querySelector && s.querySelector('.ex-decision')) return '';
       if (s.classList && s.classList.contains('rec')) {
-        var b = s.querySelector('b') || s;
-        return b.textContent.replace(/\s+/g, ' ').replace(/^\s*Recommended:?\s*/i, '')
-          .replace(/[.\s]+$/, '').slice(0, 200);
+        var b = opening(s), t = b ? norm(b.textContent).replace(LEAD, '') : '';
+        if (!t) {
+          t = norm(s.textContent).replace(LEAD, '');
+          var m = t.match(/^[\s\S]*?[.!?](?=\s|$)/);
+          if (m) t = m[0];
+        }
+        return t.replace(/[.!?\s]+$/, '').slice(0, 200);
       }
     }
     return '';
   }
-  function button(text, fn){
-    var b = document.createElement('button'); b.type = 'button'; b.textContent = text;
-    b.addEventListener('click', fn); return b;
-  }
-  Array.prototype.forEach.call(document.querySelectorAll('.ex-decision-open'), function(tag){
-    var box = document.createElement('span'); box.className = 'ex-pick';
-    tag.parentNode.insertBefore(box, tag.nextSibling);
-    var prior = load(tag.id);
-    if (prior) { sent(box, prior); return; }
-    var rec = recOf(tag);
-    if (rec) box.appendChild(button('\u2605 Recommended: ' + (rec.length > 40 ? rec.slice(0, 40) + '\u2026' : rec),
+  function offer(tag, box){
+    box.innerHTML = '';
+    var rec = recOf(box.exHost);
+    if (rec) box.appendChild(button('★ Recommended: ' + (rec.length > 40 ? rec.slice(0, 40) + '…' : rec),
       function(){ send(tag, box, 'recommended (' + rec + ')'); }));
-    box.appendChild(button('\u2714 Yes', function(){ send(tag, box, 'yes'); }));
-    box.appendChild(button('\u2716 No', function(){ send(tag, box, 'no'); }));
-    box.appendChild(button('\u270E Other\u2026', function(){
+    box.appendChild(button('✔ Yes', function(){ send(tag, box, 'yes'); }));
+    box.appendChild(button('✖ No', function(){ send(tag, box, 'no'); }));
+    box.appendChild(button('✎ Other…', function(){
       box.innerHTML = '';
       var inp = document.createElement('input'); inp.type = 'text';
       inp.placeholder = 'your answer, then Enter';
       inp.addEventListener('keydown', function(e){
-        if (e.key === 'Enter' && inp.value.trim()) send(tag, box, inp.value.trim());
+        // ⟳ r1 (Claude F6): the Enter that commits an IME composition is not a send.
+        if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229 && inp.value.trim())
+          send(tag, box, inp.value.trim());
       });
       box.appendChild(inp);
       box.appendChild(button('Send', function(){ if (inp.value.trim()) send(tag, box, inp.value.trim()); }));
+      box.appendChild(button('Cancel', function(){ offer(tag, box); }));
       inp.focus();
     }));
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.ex-decision-open'), function(tag){
+    var host = tag.parentNode;
+    var box = document.createElement('span'); box.className = 'ex-pick';
+    // ⟳ r1 (Claude F5): on a heading the box goes AFTER it, so the tray's heading text never reads the buttons.
+    box.exHost = host;
+    if (/^H[1-6]$/.test(host.tagName || '')) host.parentNode.insertBefore(box, host.nextSibling);
+    else host.insertBefore(box, tag.nextSibling);
+    var prior = load(tag);
+    if (prior) sent(tag, box, prior, true); else offer(tag, box);
   });
 })();
 """
@@ -3104,35 +3154,100 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     else:
         _harness = r"""
 const vm = require('vm'); const src = require('fs').readFileSync(process.argv[2], 'utf8');
-function run(protocol, label, rec){
-  const posts = [], store = {};
-  function el(tag){ const e = {tagName: tag, children: [], handlers: {}, textContent: '', id: '',
-    className: '', classList: {contains: c => (e.className || '').split(' ').includes(c)},
-    appendChild(c){ e.children.push(c); return c; },
-    addEventListener(t, f){ e.handlers[t] = f; }, querySelector(){ return null; }, focus(){} };
-    Object.defineProperty(e, 'innerHTML', {set(){ e.children = []; }, get(){ return ''; }});
-    return e; }
-  const p = el('p'); const tag = el('span'); tag.id = 'ex-decision-1';
-  tag.textContent = '\u{1F7E8} ✍ ' + label; tag.className = 'ex-decision ex-decision-open';
-  tag.nodeType = 1; tag.parentNode = p; const txt = {nodeType: 3, textContent: ' Keep  it? '};
-  p.childNodes = [tag, txt]; let box = null;
-  p.insertBefore = (b) => { box = b; };
-  if (rec) { const r = el('p'); r.className = 'rec'; const bb = el('b'); bb.textContent = rec;
-    r.querySelector = q => q === 'b' ? bb : null; p.nextElementSibling = r; }
+// A small LIVE DOM (r1, Claude F4): childNodes, siblings and textContent are computed from one tree,
+// so the box the script inserts IS in its paragraph and a stale-stub pass is not possible.
+function txt(t){ return {nodeType: 3, parentNode: null, textContent: String(t)}; }
+function sib(n, elOnly){ const p = n.parentNode; if (!p) return null; const k = p.childNodes;
+  for (let i = k.indexOf(n) + 1; i < k.length; i++) if (!elOnly || k[i].nodeType === 1) return k[i];
+  return null; }
+function match(n, sel){ return sel[0] === '.' ? n.classList.contains(sel.slice(1)) : n.tagName === sel.toUpperCase(); }
+function el(tag, cls, kids){
+  const e = {nodeType: 1, tagName: tag.toUpperCase(), childNodes: [], parentNode: null, handlers: {},
+    id: '', className: cls || '', disabled: false, value: '', type: '', placeholder: '',
+    get classList(){ return {contains: c => e.className.split(/\s+/).includes(c)}; },
+    get textContent(){ return e.childNodes.map(n => n.textContent).join(''); },
+    set textContent(v){ e.childNodes.forEach(n => { n.parentNode = null; }); e.childNodes = []; if (v !== '') e.appendChild(txt(v)); },
+    set innerHTML(v){ e.childNodes.forEach(n => { n.parentNode = null; }); e.childNodes = []; },
+    get innerHTML(){ return ''; },
+    get nextSibling(){ return sib(e, false); }, get nextElementSibling(){ return sib(e, true); },
+    appendChild(c){ return e.insertBefore(c, null); },
+    insertBefore(c, ref){ if (c.parentNode) { const k = c.parentNode.childNodes; k.splice(k.indexOf(c), 1); }
+      const i = ref ? e.childNodes.indexOf(ref) : -1;
+      if (i < 0) e.childNodes.push(c); else e.childNodes.splice(i, 0, c); c.parentNode = e; return c; },
+    addEventListener(t, f){ e.handlers[t] = f; }, focus(){},
+    querySelectorAll(sel){ const out = [], ms = sel.split(',').map(x => x.trim());
+      (function walk(n){ n.childNodes.forEach(k => { if (k.nodeType === 1) { if (ms.some(m => match(k, m))) out.push(k); walk(k); } }); })(e);
+      return out; },
+    querySelector(sel){ return e.querySelectorAll(sel)[0] || null; }};
+  (kids || []).forEach(k => e.appendChild(typeof k === 'string' ? txt(k) : k));
+  return e; }
+const out_missing = [];
+function tag(label, n){ const t = el('span', 'ex-decision ex-decision-open', ['\u{1F7E8} ✍ ' + label]);
+  t.id = 'ex-decision-' + n; return t; }
+function page(protocol, kids, store, status){
+  const posts = [], body = el('body', '', kids);
   const ctx = {location: {protocol, pathname: '/page.html'},
-    document: {querySelectorAll: () => [tag], createElement: el},
-    localStorage: {getItem: k => store[k] || null, setItem: (k, v) => { store[k] = v; }},
-    navigator: {}, fetch: (u, o) => { posts.push({u, body: JSON.parse(o.body)});
-      return Promise.resolve({ok: true}); }, Promise, JSON};
+    document: {querySelectorAll: s => body.querySelectorAll(s), createElement: t => el(t)},
+    localStorage: {getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); },
+      removeItem: k => { delete store[k]; }},
+    navigator: {}, Promise, JSON, Math,
+    fetch: (u, o) => { posts.push({u, body: JSON.parse(o.body)});
+      return Promise.resolve(status ? {ok: false, status} : {ok: true}); }};
   vm.runInNewContext(src, ctx);
-  const labels = box.children.map(b => b.textContent);
-  box.children[0].handlers.click();
-  return new Promise(r => setTimeout(() => r({labels, posts, store,
-    after: box.children.map(c => c.textContent)}), 0));
+  const boxes = body.querySelectorAll('.ex-pick');
+  const labels = b => b.childNodes.map(c => c.tagName === 'INPUT' ? '<input>' : c.textContent);
+  const click = (b, text) => { const x = b.childNodes.find(c => c.textContent.endsWith(text)); if (x) x.handlers.click(); else out_missing.push(text); };
+  return {posts, body, boxes, labels, click};
 }
-Promise.all([run('http:', '4.1 — DECISION 1 of 28'), run('http:', 'D7 — DECISION 3 of 5'),
-             run('file:', 'X — DECISION 1 of 1'),
-             run('http:', '4.2 — DECISION 2 of 28', 'Recommended:  new child.')]).then(r => console.log(JSON.stringify(r)));
+const tick = () => new Promise(r => setTimeout(r, 0));
+const key = (n, ev) => (n && n.handlers.keydown) ? n.handlers.keydown(ev) : out_missing.push('keydown');
+const out = {};
+(async () => {
+  const store = {};
+  // S1 — four decisions on ONE page: bare siblings, a bold lead, a heading, two unbolded `.rec`s.
+  const h3 = el('h3', '', [tag('Q1\n  choice — DECISION 3 of 4', 3), 'Head?']);
+  const a = page('http:', [
+    el('p', '', [tag('4.1 — DECISION 1 of 4', 1), ' Keep  it? ']),
+    el('p', '', [tag('D7 — DECISION 2 of 4', 2), ' Ship\n it?']),
+    el('p', 'rec', [el('b', '', ['Recommended:  new child.']), ' Because it is.']),
+    h3,
+    el('p', 'rec', ['Recommend: yes. It puts your four ', el('b', '', ['named']), ' features first, at 13.25 h.']),
+    el('p', '', [tag('DECISION 4 of 4', 4), 'Deadline?']),
+    el('p', 'rec', ['Recommend: yes, because ', el('b', '', ['the deadline']), ' matters.'])], store);
+  out.s1_labels = a.boxes.map(a.labels);
+  out.s1_heading_text = h3.textContent;
+  out.s1_box3_parent = a.boxes[2].parentNode.tagName;
+  a.click(a.boxes[0], 'Yes'); out.s1_busy = a.boxes[0].childNodes.filter(c => c.tagName === 'BUTTON').map(c => c.disabled);
+  a.click(a.boxes[0], 'Yes');                         // a double click
+  a.click(a.boxes[2], 'Yes'); a.click(a.boxes[3], 'deadline matters');
+  await tick(); await tick();
+  out.s1_posts = a.posts; out.s1_after = a.labels(a.boxes[0]); out.s1_store = Object.assign({}, store);
+  // S2 — the SAME browser, the page recomposed: a new decision 1 above the one answered.
+  const b = page('http:', [el('p', '', [tag('DECISION 1 of 2', 1), 'Brand new?']),
+                           el('p', '', [tag('4.1 — DECISION 2 of 2', 2), ' Keep  it? '])], store);
+  out.s2_labels = b.boxes.map(b.labels);
+  b.click(b.boxes[1], 'change');
+  out.s2_changed = b.labels(b.boxes[1]); out.s2_store = Object.assign({}, store);
+  // S3 — the server says 400: nothing remembered, the buttons usable again.
+  const s3store = {};
+  const c = page('http:', [el('p', '', [tag('E \u2014 DECISION 1 of 1', 1), 'Fail?'])], s3store, 400);
+  c.click(c.boxes[0], 'Yes'); await tick(); await tick();
+  out.s3_labels = c.labels(c.boxes[0]); out.s3_disabled = c.boxes[0].childNodes.map(x => x.disabled);
+  out.s3_posts = c.posts.length; out.s3_saved = Object.keys(s3store);
+  // S4 — Other…: an IME Enter is not a send; Cancel comes back; Enter sends the trimmed text.
+  const d = page('http:', [el('p', '', [tag('O — DECISION 1 of 1', 1), 'Other?'])], {});
+  d.click(d.boxes[0], 'Other…'); out.s4_other = d.labels(d.boxes[0]);
+  const inp = d.boxes[0].childNodes[0]; inp.value = 'maybe';
+  key(inp, {key: 'Enter', isComposing: true, keyCode: 229}); await tick();
+  out.s4_ime_posts = d.posts.length;
+  d.click(d.boxes[0], 'Cancel'); out.s4_cancel = d.labels(d.boxes[0]);
+  d.click(d.boxes[0], 'Other…'); const inp2 = d.boxes[0].childNodes[0]; inp2.value = '  later  ';
+  key(inp2, {key: 'Enter', isComposing: false, keyCode: 13}); await tick(); await tick();
+  out.s4_posts = d.posts.map(p => p.body.text);
+  // S5 — opened from a file: nothing is POSTed.
+  const f = page('file:', [el('p', '', [tag('X — DECISION 1 of 1', 1), 'File?'])], {});
+  f.click(f.boxes[0], 'Yes'); await tick(); out.s5_posts = f.posts.length;
+})().catch(e => { out.error = String(e); }).then(() => { out.missing = out_missing; console.log(JSON.stringify(out)); });
 """
         with _tf.TemporaryDirectory() as _td:
             _src = pathlib.Path(_td) / "pick.js"; _src.write_text(DECISION_JS)
@@ -3141,28 +3256,74 @@ Promise.all([run('http:', '4.1 — DECISION 1 of 28'), run('http:', 'D7 — DECI
             case("buttons: the pick script parses (node --check)", _chk.returncode == 0)
             _out = _sp.run([_node, str(_h), str(_src)], capture_output=True, text=True, timeout=60)
             try:
-                _a, _b, _f, _r = _js.loads(_out.stdout)
+                _o = _js.loads(_out.stdout)
             except ValueError:
-                _a = _b = _f = _r = None
-            case("buttons: an open card offers Yes, No and Other",
-                 _a is not None and [x.split(" ")[-1] for x in _a["labels"]] == ["Yes", "No", "Other…"])
-            case("buttons: Yes POSTs the tray's three-line shape, labelled by THAT tag (two tags)",
-                 _a is not None and _b is not None
-                 and [x["u"] for x in _a["posts"]] == ["/questions"]
-                 and _a["posts"][0]["body"] == {"doc": "page.html", "text":
-                     "**4.1 — DECISION 1 of 28**\n   > Keep it?\n   Q: ANSWER: yes"}
-                 and _b["posts"][0]["body"]["text"].startswith("**D7 — DECISION 3 of 5**\n"))
-            case("buttons: after a send the card says sent and remembers it per page",
-                 _a is not None and _a["store"] == {"ex-pick:page.html:ex-decision-1": "yes"}
-                 and len(_a["after"]) == 1 and _a["after"][0].startswith("✓ sent: yes"))
-            case("buttons: a card with a Recommended line offers it FIRST and sends its text",
-                 _r is not None and _r["labels"][0] == "★ Recommended: new child"
-                 and _r["labels"][1:] == ["✔ Yes", "✖ No", "✎ Other…"]
-                 and _r["posts"][0]["body"]["text"].endswith("Q: ANSWER: recommended (new child)"))
-            case("buttons: no Recommended line, no Recommended button",
-                 _a is not None and not any("Recommended" in x for x in _a["labels"]))
-            case("buttons: opened from a file, nothing is POSTed",
-                 _f is not None and _f["posts"] == [])
+                _o = None
+        _o = _o or {}
+        _std = ["✔ Yes", "✖ No", "✎ Other…"]
+        _posts1 = [x["body"]["text"] for x in _o.get("s1_posts", [])]
+        case("buttons: the harness ran every click it meant to (no button it looked for was missing)",
+             bool(_o) and _o.get("missing") == [] and "error" not in _o)
+        case("buttons: an open card offers Yes, No and Other",
+             (_o.get("s1_labels") or [None])[0] == _std)
+        # r1 (Claude F4 #1): decision 1 has no `.rec`, decision 2 does — 1 must not borrow 2's.
+        case("buttons: a card with no `.rec` before the NEXT decision offers no Recommended button",
+             len(_o.get("s1_labels") or []) == 4 and _o["s1_labels"][0] == _std
+             and _o["s1_labels"][1][0].startswith("★ Recommended"))
+        # r1 (Claude F4 #2): the box IS in the paragraph's live childNodes; the quote must not read it.
+        case("buttons: Yes POSTs the tray's three-line shape, labelled by THAT tag, quote without the buttons",
+             [x["u"] for x in _o.get("s1_posts", [])] == ["/questions"] * 3
+             and _o["s1_posts"][0]["body"] == {"doc": "page.html", "text":
+                 "**4.1 — DECISION 1 of 4**\n   > Keep it?\n   Q: ANSWER: yes"})
+        # r1 (Codex 3): a label with a newline is ONE section line.
+        case("buttons: a multi-line label is sent as ONE section line",
+             len(_posts1) == 3 and _posts1[1] == "**Q1 choice — DECISION 3 of 4**\n   > Head?\n   Q: ANSWER: yes")
+        # r1 (Claude F5): on a heading the box is placed after it, never inside it.
+        case("buttons: a heading decision's buttons sit AFTER the heading, outside its text",
+             _o.get("s1_box3_parent") == "BODY" and "Head?" in _o.get("s1_heading_text", "")
+             and not any(w in _o.get("s1_heading_text", "") for w in ("Recommended", "Yes", "Other")))
+        # r1 (Codex 2, Claude F3): a bold lead only when it OPENS the paragraph; else the first sentence.
+        case("buttons: Recommended = an opening bold lead, else the first sentence, less a Recommend(ed): lead",
+             len(_o.get("s1_labels") or []) == 4
+             and _o["s1_labels"][1][0] == "★ Recommended: new child"
+             and _o["s1_labels"][2][0] == "★ Recommended: yes"
+             and _o["s1_labels"][3][0] == "★ Recommended: yes, because the deadline matters"
+             and len(_posts1) == 3
+             and _posts1[2].endswith("Q: ANSWER: recommended (yes, because the deadline matters)"))
+        # r1 (Claude F6): a double click is ONE entry, and the buttons are disabled while it is in flight.
+        case("buttons: a double click sends ONE entry; the buttons are disabled while it is in flight",
+             _posts1.count("**4.1 — DECISION 1 of 4**\n   > Keep it?\n   Q: ANSWER: yes") == 1
+             and _o.get("s1_busy") == [True, True, True])
+        case("buttons: after a send the card says sent, with `change`",
+             _o.get("s1_after") == ["✓ sent: yes — the page updates when the session records it", "change"])
+        # r1 (Codex 1, Claude F2, Claude F4 #3): keyed by the decision, not its ordinal.
+        _st1 = _o.get("s1_store") or {}
+        case("buttons: the sent state is keyed by page + label + question hash, never `ex-decision-<n>`",
+             len(_st1) == 3 and all(k.startswith("ex-pick:page.html:") and "ex-decision" not in k
+                                    and "DECISION" not in k for k in _st1)
+             and any(k.startswith("ex-pick:page.html:4.1:") for k in _st1)
+             and any(k.startswith("ex-pick:page.html::") for k in _st1))       # an unlabelled tag: no ordinal
+        case("buttons: a recomposed page shows 'sent' on the SAME decision, renumbered — not on the new decision 1",
+             _o.get("s2_labels") == [_std, ["✓ sent: yes — the page updates when the session records it", "change"]])
+        case("buttons: `change` forgets the answer and offers the buttons again",
+             _o.get("s2_changed") == _std and len(_o.get("s2_store") or {}) == 2
+             and not any(k.startswith("ex-pick:page.html:4.1:") for k in _o["s2_store"]))
+        # r1 (Claude F4 #4): a 4xx is NOT remembered, and the card stays usable.
+        case("buttons: a failed send (HTTP 400) is not remembered; the buttons come back enabled",
+             _o.get("s3_posts") == 1 and _o.get("s3_saved") == []
+             and _o.get("s3_labels") == _std + ["⚠ send failed (HTTP 400)"]
+             and _o.get("s3_disabled") == [False] * 4)
+        # r1 (Claude F6): Other… has a Cancel; an IME-composing Enter is not a send.
+        case("buttons: Other… offers Send and Cancel; Cancel restores the buttons",
+             _o.get("s4_other") == ["<input>", "Send", "Cancel"] and _o.get("s4_cancel") == _std)
+        case("buttons: an Enter that commits an IME composition sends nothing; a plain Enter sends the trimmed text",
+             _o.get("s4_ime_posts") == 0
+             and _o.get("s4_posts") == ["**O — DECISION 1 of 1**\n   > Other?\n   Q: ANSWER: later"])
+        case("buttons: opened from a file, nothing is POSTed", _o.get("s5_posts") == 0)
+    _err = re.search(r"\.ex-pick-err\s*\{([^}]*)\}", _dcss)
+    case("buttons: the error line takes its colours from the decision tokens, no literal colour (r1 F6)",
+         _err is not None and "#" not in _err.group(1) and "var(--decide)" in _err.group(1)
+         and "var(--decide-bg)" in _err.group(1))
     case("603: the decision stylesheet ships only with a decision",
          _dcss.strip() != "" and _dcss.strip() in _dd3 and _dcss.strip() not in doc
          and "ex-decision" not in doc)
