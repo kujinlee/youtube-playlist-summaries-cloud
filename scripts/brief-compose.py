@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 251 cases
+    python3 scripts/brief-compose.py --self-test  # 255 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
@@ -1355,18 +1355,35 @@ DECISION_JS = r"""
   // ⟳ r3 (Claude F2): a decision that is done at load has its key forgotten — the session recorded it, so
   // the browser's "sent" is spent, and a later re-opening starts clean. ⟳ r4 (Codex Minor): the script is
   // emitted on an ALL-DONE page too, so this runs there. Every key is computed here, before any box exists.
-  Array.prototype.forEach.call(document.querySelectorAll('.ex-decision'), function(tag){
-    key(tag);
+  // ⟳ r5 (Claude F1, BLOCKER): THE PAGE IS THE AUTHORITY ON ITS OWN KEYS. The compose-time twin refusal
+  // re-derives this script's question from the source and can disagree with the DOM (an omitted `</li>`,
+  // `</td>`, `</dd>`, an entity, ...), so it is only the early warning. Here every key is counted first; a key
+  // on two or more tags gets NO buttons and never reads its stored state (a done tag still forgets its key,
+  // as r3 has it: the session recorded it), and each such card, open or done, shows why.
+  var all = document.querySelectorAll('.ex-decision'), byKey = {};
+  Array.prototype.forEach.call(all, function(tag){
+    var k = key(tag); (byKey.hasOwnProperty(k) ? byKey[k] : (byKey[k] = [])).push(tag);
+  });
+  function twinsOf(tag){ var g = byKey[key(tag)]; return g.length > 1 ? g : null; }
+  function twinMsg(g){
+    var ns = g.map(function(t){ var m = /^ex-decision-(\d+)$/.exec(t.id || ''); return m ? m[1] : '?'; });
+    return '⚠ decisions ' + ns.slice(0, -1).join(', ') + ' and ' + ns[ns.length - 1]
+      + ' are identical (the same label and question), so this card has no buttons'
+      + ' — give one a distinct data-decision-label';
+  }
+  Array.prototype.forEach.call(all, function(tag){
     if (done(tag)) forget(tag);
   });
-  Array.prototype.forEach.call(document.querySelectorAll('.ex-decision-open'), function(tag){
+  Array.prototype.forEach.call(all, function(tag){
+    var twins = twinsOf(tag);
+    if (done(tag) && !twins) return;
     var host = tag.parentNode;
     var box = document.createElement('span'); box.className = 'ex-pick';
     // ⟳ r1 (Claude F5): on a heading the box goes AFTER it, so the tray's heading text never reads the buttons.
     box.exHost = host;
-    key(tag);
     if (/^H[1-6]$/.test(host.tagName || '')) host.parentNode.insertBefore(box, host.nextSibling);
     else host.insertBefore(box, tag.nextSibling);
+    if (twins) { fail(box, twinMsg(twins)); return; }
     var prior = load(tag);
     if (prior) sent(tag, box, prior); else offer(tag, box);
   });
@@ -1381,6 +1398,25 @@ _DETAILS_REFUSAL = ("it is in a <details> outside its <summary>, which is collap
 def _foreign_refusal(tag: str) -> str:
     return (f"it is on or inside a <{tag}>, foreign content whose visibility this check does not "
             f"model — move the mark outside the <{tag}>")
+
+
+# ⟳ r5 (Claude F1): what JS `\s` matches, exactly — the set `norm` in DECISION_JS folds and trims. Python's
+# `str.split()` differs (it folds U+001C–U+001F and U+0085, and not U+FEFF), so a twin could pass the refusal.
+_JS_WS = re.compile("[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+")
+
+
+def _js_norm(text: str) -> str:
+    """`norm(t)` in DECISION_JS: every JS-whitespace run is one space, trimmed. PURE."""
+    return _JS_WS.sub(" ", text).strip(" ")
+
+
+# ⟳ r5 (Claude F1): an element `textOf` leaves out of the question, by class (classList splits on ASCII
+# whitespace) — and a <template>, whose content is not in the DOM's childNodes.
+_QUESTION_SKIP_CLASSES = frozenset({"askbtn", "ex-pick"})
+_QUESTION_SKIP_TAGS = frozenset({
+    "button",    # `textOf` drops a BUTTON at any depth
+    "template",  # a <template>'s content is not in its childNodes
+})
 
 
 class _DecisionScan(HTMLParser):
@@ -1418,7 +1454,7 @@ class _DecisionScan(HTMLParser):
         # ⟳ r4: the TEXT of each marked element, in `found` order — the question its card's key hashes.
         self.texts: list[list[str]] = []
         # [tag, hides, collapsed (a non-summary child of a <details>), a <summary> already seen,
-        #  the `texts` index of a marked element or None]
+        #  the `texts` index of a marked element or None, its text is left out of a question (r5)]
         self._stack: list[list] = []
         self._plaintext = False
 
@@ -1452,7 +1488,7 @@ class _DecisionScan(HTMLParser):
             elif tag in _DECISION_REFUSE_FOREIGN:
                 refusal = _foreign_refusal(tag)
             else:
-                for anc, anc_hides, anc_collapsed, _, _ in self._stack:
+                for anc, anc_hides, anc_collapsed, *_ in self._stack:
                     if anc in _DECISION_REFUSE_FOREIGN:
                         refusal = _foreign_refusal(anc)
                         break
@@ -1472,13 +1508,16 @@ class _DecisionScan(HTMLParser):
         if tag == "plaintext":
             self._plaintext = True
         elif tag not in _DECISION_VOID:
-            self._stack.append([tag, hides, collapsed, False, mark])
+            classes = set(re.split(r"[\t\n\f\r ]+", next((v for k, v in attrs if k == "class"), None) or ""))
+            skip = tag in _QUESTION_SKIP_TAGS or bool(classes & _QUESTION_SKIP_CLASSES)
+            self._stack.append([tag, hides, collapsed, False, mark, skip])
 
     def _text(self, data: str) -> None:
-        """Text reaches every open marked element with no `<button>` between it and the text —
-        what the card's script reads as the question (`textOf` drops a BUTTON at any depth)."""
+        """Text reaches every open marked element with no left-out element between it and the text —
+        what the card's script reads as the question (`textOf` drops a BUTTON, an `.askbtn` or `.ex-pick`
+        at any depth; a <template>'s content is not a child, r5)."""
         for entry in reversed(self._stack):
-            if entry[0] == "button":
+            if entry[5]:
                 return
             if entry[4] is not None:
                 self.texts[entry[4]].append(data)
@@ -1553,7 +1592,7 @@ def render_decisions(markup: str) -> tuple[str, int, int]:
     # one, and the other inherits its "sent"), so a twin is an AUTHORING ERROR, not a case to support.
     seen: dict[tuple[str, str], int] = {}
     for n, ((line, _col), text, _a, label, _r) in enumerate(scan.found, 1):
-        base = (" ".join(label.split()), " ".join("".join(scan.texts[n - 1]).split()))
+        base = (_js_norm(label), _js_norm("".join(scan.texts[n - 1])))
         if base in seen:
             m = seen[base]
             (mline, _), mtext = scan.found[m - 1][0], scan.found[m - 1][1]
@@ -3363,6 +3402,27 @@ const out = {};
   out.s8_sent = Object.keys(s8).length;
   page('http:', rq(true), s8); out.s8_after_done = Object.keys(s8).length;
   const m3 = page('http:', rq(false), s8); out.s8_reopened = m3.boxes.map(m3.labels);
+  // S9 (r5, Claude F1 BLOCKER) — the omitted-`</li>` pair, as a BROWSER builds it: `<ul><li data-decision>Ship?<li>x</ul>`
+  // and `<ul><li data-decision>Ship?</li></ul>`. The compose-time scan does not refuse it (case below), and to the
+  // browser the two ARE one decision. Decision 1 alone was answered first, in this browser; then the twin page loads.
+  const li = (n, of, q, extra) => el('ul', '', [el('li', '', [tag('DECISION ' + n + ' of ' + of, n), q])].concat(extra || []));
+  const s9 = {}, one = page('http:', [li(1, 1, 'Ship?')], s9);
+  one.click(one.boxes[0], 'Yes'); await tick(); await tick();
+  out.s9_seeded = Object.assign({}, s9);
+  const tw = page('http:', [li(1, 2, 'Ship?', [el('li', '', ['x'])]), li(2, 2, 'Ship?')], s9);
+  await tick();
+  out.s9_keys = tw.body.querySelectorAll('.ex-decision').map(t => t.exKey);
+  out.s9_labels = tw.boxes.map(tw.labels); out.s9_posts = tw.posts.length; out.s9_store = Object.assign({}, s9);
+  out.s9_buttons = tw.body.querySelectorAll('button').length;
+  // S9b — an OPEN tag whose key a DONE tag shares (refused at compose time too): both cards show why, no buttons.
+  const s9b = {}, od = page('http:', [el('p', '', [doneTag('DECISION 1 of 2', 1, 'yes'), 'Ship?']),
+    el('p', '', [tag('DECISION 2 of 2', 2), 'Ship?'])], s9b);
+  out.s9b_labels = od.boxes.map(od.labels); out.s9b_buttons = od.body.querySelectorAll('button').length;
+  // S10 (r5) — the SAME shape with two DISTINCT questions still works: buttons, one POST, "sent" on that card only.
+  const s10 = {}, ds = () => [li(1, 2, 'Ship?', [el('li', '', ['x'])]), li(2, 2, 'Ship now?')];
+  const dp = page('http:', ds(), s10); out.s10_labels = dp.boxes.map(dp.labels);
+  dp.click(dp.boxes[0], 'Yes'); await tick(); await tick(); out.s10_posts = dp.posts.length;
+  const dp2 = page('http:', ds(), s10); out.s10_reload = dp2.boxes.map(dp2.labels);
 })().catch(e => { out.error = String(e); }).then(() => { out.missing = out_missing; console.log(JSON.stringify(out)); });
 """
         with _tf.TemporaryDirectory() as _td:
@@ -3468,6 +3528,21 @@ const out = {};
              _o.get("s4_ime_posts") == 0
              and _o.get("s4_posts") == ["**O — DECISION 1 of 1**\n   > Other?\n   Q: ANSWER: later"])
         case("buttons: opened from a file, nothing is POSTed", _o.get("s5_posts") == 0)
+        # ⟳ r5 (Claude F1, BLOCKER): the PAGE is the authority on its own keys. Two tags with one key — here the
+        # omitted-`</li>` pair the compose-time scan lets through — get NO buttons, NO restored "sent" (decision 1's
+        # stored answer is never read onto either), and an error line naming both and the fix.
+        _dup = ("⚠ decisions 1 and 2 are identical (the same label and question), so this card has no buttons "
+                f"— give one a distinct {DECISION_LABEL_ATTR}")
+        case("buttons: two tags with ONE key (the omitted-</li> pair) get no buttons, no restored 'sent', and an "
+             "error line naming both — the page is the authority on its own keys (r5)",
+             len(_o.get("s9_seeded") or {}) == 1 and len(set(_o.get("s9_keys") or [1, 2])) == 1
+             and _o.get("s9_labels") == [[_dup], [_dup]] and _o.get("s9_buttons") == 0
+             and _o.get("s9_posts") == 0 and _o.get("s9_store") == _o.get("s9_seeded"))
+        case("buttons: a DONE tag and an OPEN tag with one key both show the error line, and neither has buttons (r5)",
+             _o.get("s9b_labels") == [[_dup], [_dup]] and _o.get("s9b_buttons") == 0)
+        case("buttons: the same shape with two DISTINCT questions still offers buttons and keeps 'sent' on its own card (r5)",
+             _o.get("s10_labels") == [_std, _std] and _o.get("s10_posts") == 1
+             and _o.get("s10_reload") == [[_sent1, "change"], _std])
     # ⟳ r4 (Codex BLOCKER — the third round on twin keys): two decisions with the same label and the same
     # question are REFUSED, naming both; a distinct label, or a different question, is accepted. The
     # question is the element's TEXT as a browser reads it: entities decoded, whitespace folded, a
@@ -3486,6 +3561,21 @@ const out = {};
          and _twin('<h1>x</h1><p data-decision>Ship?</p><p data-decision data-decision-label="D2">Ship?</p>') == ""
          and _twin('<h1>x</h1><p data-decision>Ship?</p><p data-decision>Ship now?</p>') == ""
          and _twin('<h1>x</h1><p data-decision="yes">Ship?</p><p data-decision>Ship?</p>') != "")
+    # ⟳ r5 (Claude F1): the scan is the EARLY warning (the browser's duplicate check is the guarantee), and it
+    # reads the question as `textOf`/`norm` do where that is cheap — JS `\s` folds U+FEFF and not U+001C; an
+    # element with class `askbtn`/`ex-pick` and a <template>'s content are not in the text. Adjacent negatives:
+    # a class that merely CONTAINS `askbtn`, and U+001C, are NOT folded, so those pairs are distinct.
+    _r5_twins = ('<h1>x</h1><p data-decision>Ship﻿now?</p><p data-decision>Ship now?</p>',
+                 '<h1>x</h1><p data-decision data-decision-label="A﻿B">Q?</p>'
+                 '<p data-decision data-decision-label="A B">Q?</p>',
+                 '<h1>x</h1><p data-decision>Ship?<span class="askbtn"><b>z</b></span></p><p data-decision>Ship?</p>',
+                 '<h1>x</h1><p data-decision>Ship?<span class="x\tex-pick">z</span></p><p data-decision>Ship?</p>',
+                 '<h1>x</h1><p data-decision>Ship?<template>z</template></p><p data-decision>Ship?</p>')
+    _r5_distinct = ('<h1>x</h1><p data-decision>Ship?<span class="askbtnx">z</span></p><p data-decision>Ship?</p>',
+                    '<h1>x</h1><p data-decision>Ship\x1cnow?</p><p data-decision>Ship now?</p>')
+    case("decision twins r5: the scan folds U+FEFF and leaves out .askbtn/.ex-pick and <template> as the "
+         "browser does, so those twins are REFUSED; a near-miss class and U+001C stay distinct",
+         all("IDENTICAL" in _twin(f) for f in _r5_twins) and all(_twin(f) == "" for f in _r5_distinct))
     _err = re.search(r"\.ex-pick-err\s*\{([^}]*)\}", _dcss)
     case("buttons: the error line takes its colours from the decision tokens, no literal colour (r1 F6)",
          _err is not None and "#" not in _err.group(1) and "var(--decide)" in _err.group(1)

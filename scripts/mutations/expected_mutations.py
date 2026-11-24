@@ -645,7 +645,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-24, PR #628 review round 4: 102 -> 104 — twins are REFUSED at compose time, so the two
     # mutations on the occurrence suffix are retired (-2) and four added: the refusal, a <button>'s text
     # in the question, a suffix put back on the key, the script on an all-done page (Codex r4 BLOCKER, Minor).
-    "scripts/brief-compose.py": 104,
+    # ⟳ 2026-11-24, PR #628 review round 5: 104 -> 110 — the page checks its own keys for duplicates (the
+    # check removed; a duplicate card still given buttons; a done duplicate shown no error) and the scan reads
+    # the question as the browser does (U+FEFF, .askbtn/.ex-pick, <template>) (Claude r5 F1 BLOCKER).
+    "scripts/brief-compose.py": 110,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch

@@ -1295,7 +1295,7 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "            if entry[0] == \"button\":\n                return\n",
+        "    \"button\",    # `textOf` drops a BUTTON at any depth\n",
         ""
       ]
     ],
@@ -1327,6 +1327,84 @@
     ],
     "expect": [
       "buttons: the pick script ships with any decision, all answered included, and not with none (r4)"
+    ]
+  },
+  {
+    "name": "decision buttons r5: the page's own duplicate-key check is removed (Claude F1 BLOCKER)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "function twinsOf(tag){ var g = byKey[key(tag)]; return g.length > 1 ? g : null; }",
+        "function twinsOf(tag){ return null; }"
+      ]
+    ],
+    "expect": [
+      "buttons: two tags with ONE key (the omitted-</li> pair) get no buttons, no restored 'sent', and an error line naming both — the page is the authority on its own keys (r5)"
+    ]
+  },
+  {
+    "name": "decision buttons r5: a duplicate-key card shows the error but is still given buttons and its stored state",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if (twins) { fail(box, twinMsg(twins)); return; }",
+        "    if (twins) fail(box, twinMsg(twins));"
+      ]
+    ],
+    "expect": [
+      "buttons: two tags with ONE key (the omitted-</li> pair) get no buttons, no restored 'sent', and an error line naming both — the page is the authority on its own keys (r5)"
+    ]
+  },
+  {
+    "name": "decision buttons r5: a DONE duplicate-key tag gets no error line",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if (done(tag) && !twins) return;",
+        "    if (done(tag)) return;"
+      ]
+    ],
+    "expect": [
+      "buttons: a DONE tag and an OPEN tag with one key both show the error line, and neither has buttons (r5)"
+    ]
+  },
+  {
+    "name": "decision buttons r5: the scan stops folding U+FEFF as whitespace",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "\\u205f\\u3000\\ufeff]+\")",
+        "\\u205f\\u3000]+\")"
+      ]
+    ],
+    "expect": [
+      "decision twins r5: the scan folds U+FEFF and leaves out .askbtn/.ex-pick and <template> as the browser does, so those twins are REFUSED; a near-miss class and U+001C stay distinct"
+    ]
+  },
+  {
+    "name": "decision buttons r5: the scan reads an .askbtn / .ex-pick element into the question",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "skip = tag in _QUESTION_SKIP_TAGS or bool(classes & _QUESTION_SKIP_CLASSES)",
+        "skip = tag in _QUESTION_SKIP_TAGS"
+      ]
+    ],
+    "expect": [
+      "decision twins r5: the scan folds U+FEFF and leaves out .askbtn/.ex-pick and <template> as the browser does, so those twins are REFUSED; a near-miss class and U+001C stay distinct"
+    ]
+  },
+  {
+    "name": "decision buttons r5: the scan reads a <template>'s content into the question",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    \"template\",  # a <template>'s content is not in its childNodes\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "decision twins r5: the scan folds U+FEFF and leaves out .askbtn/.ex-pick and <template> as the browser does, so those twins are REFUSED; a near-miss class and U+001C stay distinct"
     ]
   }
 ]
