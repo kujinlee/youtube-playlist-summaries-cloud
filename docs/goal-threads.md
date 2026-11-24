@@ -219,6 +219,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-13 16:22 "if memory file contains more information than necessary, will it harm the performance or doesn't matter much"
 > 2026-11-13 16:25 "Rewrite the file I just edited so the current rule comes first. -> not just that file. I would audit all other memory files. And make such audit to be done periodically (weekly or monthly?)"
 - fix · PR #585 · one-time audit: every memory file opens with its current rule; the always-loaded index 24,843 → 21,888 characters
+- fix · backlog #714 · why memory recall (matching) missed a rule it held: measure first, then pick the lever
 
 ## GOAL harness-ships-elsewhere
 > 2026-11-10 08:25 "last night I reviewed http://127.0.0.1:7391/2026-10-15-brief-marketplace-inventory-walkthrough.html let's add this initiative to current focus."
@@ -230,3 +231,4 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · PR #616 · plan Task 17: the CI layer's six inventory rows, each naming the ground its verdict rests on (spec §5 rule 1 as amended 11-22); compared with four mutation tools' own docs
 - fix · PR #617 · plan Task 18: the recall effort's six inventory rows, the empty-corpus probe, and the shipped memory corpus built from the content review with its two output checks
 - fix · PR #618 · plan Task 19: the inventory checker: every row's grade, ground and route resolved against the file that owns it, and the D1 checkpoint computed only over an inventory with no errors
+- fix · backlog #697, PR #621 · the recall package installs the shipped memory corpus, not the raw docs/memory/
