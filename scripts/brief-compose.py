@@ -787,7 +787,7 @@ def find_source(explicit: str | None, root: pathlib.Path | None = None,
             raise SystemExit(f"brief-compose: --source has no Ask tray: {p}")
         return p
     if not root.is_dir():
-        raise SystemExit(f"brief-compose: no explainer directory at {root} — run /explain-diff once first")
+        raise SystemExit(f"brief-compose: no explainer directory at {root} — run /explain-topic once first")
     skip = exclude.resolve() if exclude else None
     for p in sorted(root.glob("*.html"), key=lambda f: f.stat().st_mtime, reverse=True):
         if skip and p.resolve() == skip:
@@ -796,7 +796,7 @@ def find_source(explicit: str | None, root: pathlib.Path | None = None,
             return p
     raise SystemExit(
         f"brief-compose: no page in {root} contains an Ask tray. "
-        "Run /explain-diff once to produce one, then re-run. Refusing to write a brief without it."
+        "Run /explain-topic once to produce one, then re-run. Refusing to write a brief without it."
     )
 
 

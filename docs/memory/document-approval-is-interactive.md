@@ -25,7 +25,7 @@ paragraph 40, so the only available action is "yes".
 - ⛔ **Never close a spec or plan with a bare approval request.** Build the page first, hand over the
   URL, and let the gate be the conversation that happens on it.
 - Use the page-producing machinery that already exists — `.agents/skills/shared/explainer-delivery.md`
-  is the one delivery loop (`explain-topic`, `brief`, `explain-diff`, `explain-findings` all cite it).
+  is the one delivery loop (`explain-topic` and `dashboard` cite it; `brief`, `explain-diff`, `explain-findings` did until their removal 2026-11-23).
   ⚠ **§5b — execute and verify the page — is the PARENT's job and is not delegable.**
 - The page must carry the things a reader would otherwise have to take on trust: what approving
   commits them to, what it does NOT commit them to, the decisions the document makes, and the places

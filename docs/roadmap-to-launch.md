@@ -1376,7 +1376,8 @@ thing that is **not** a gate has no activation path. Reviews:
 **The founding premise is UNMEASURED** — PR #67 being 39 commits over 7 rounds shows the model was
 absent, not that the absence cost anything — so the experiment is the attempt to measure it.
 
-- [ ] **Judge explain-diff in the next general skill prune — it does not get its own deadline.**
+- [x] **Judge explain-diff in the next general skill prune — it does not get its own deadline.**
+      ✅ **Judged 2026-11-23 by the owner: dropped** (with brief and explain-findings; explain-topic took over). The skill directory is removed (PR #627); the history below stands as recorded.
       `scripts/skill-usage-audit.py` already sweeps every session transcript to answer *"which skills do
       I actually use, so unused ones can be trimmed"*; that is the mechanism, and one skill does not get
       a second. Keep explain-diff only if an explainer has produced: a boundary nobody had written down,

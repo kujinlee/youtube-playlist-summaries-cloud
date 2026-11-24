@@ -1,0 +1,33 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/hooks/regen-features-page.sh": "100755 260298a3c6f9bb05fad5e121f99ac8d8f1a471ac",
+    ".claude/hooks/regen-goals-page.sh": "100755 f74ec4a8a4095e380a054b972c674304f715ae54",
+    "docs/dashboard-entries.md": "100644 c01f1019793a4d8595eb0052a8a5759140631e50",
+    "docs/marketplace/components.json": "100644 21440a4caa78acfc719c6c39351634be91f803fe",
+    "docs/marketplace/inventory.json": "100644 d6b992b60d4799e6a5775569fa247f284009c76e",
+    "docs/memory/document-approval-is-interactive.md": "100644 1a1ed93159fa003afaf17764192199574523c0a9",
+    "docs/memory/explainer-pages-lead-with-diagrams.md": "100644 d5a5ba4943d01bab09a2aab482b79b98ffb67ead",
+    "docs/reviews/claude/drop-explain-skills-r1-claude.md": "100644 fee0254a449a0acba50bab77b51ac12177f61282",
+    "docs/reviews/codex/drop-explain-skills-r1-codex.md": "100644 34ed12a59835470a5730bfd0f97d28b6f55e92c1",
+    "docs/reviews/verdicts/drop-explain-skills-r1-codex.verdict.json": "100644 19f2fd25f29a26496c1def6706b1304b95734b2d",
+    "docs/roadmap-to-launch.md": "100644 0560ebfa44baf92bb8f3a8881c977bef05b3e3bd",
+    "scripts/check-publishability.py": "100644 4e458940d0ecd83339079da8899d0029340487a4",
+    "scripts/mkt_seed_repo.py": "100644 edf94db629871354f72529481ec58c0405240a4f"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "b5047031c6ea239ce21bd713ece34c8ebf6f0e0a",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 8060 chars, names b5047031c6ea",
+  "refused": false,
+  "review": "drop-explain-skills-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/drop-explain",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
