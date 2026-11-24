@@ -21528,4 +21528,4 @@ rule shared by the Known-gaps band, the card heading and the index), cards as fo
 counts its own node only — no subtree subtotal, since a two-tag row sits under two nodes. Review r1:
 one id function (`frag_id`) for link and card, safe for any name; the hash handler is RUN under
 `node` against a stub DOM, one case per behaviour; the counts are read back from the rendered band.
-Self-test 19 → 37; mutation pin 16 → 37.
+Self-test 19 → 38; mutation pin 16 → 37.

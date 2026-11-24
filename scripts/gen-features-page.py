@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 31 cases
+    python3 scripts/gen-features-page.py --self-test  # 38 cases
 
 WHY THIS EXISTS
 ---------------
@@ -1057,6 +1057,10 @@ def _self_test_body() -> int:
         {"name": "missing", "hash": "#nope", "els": _two},
         {"name": "malformed", "hash": "#%E0%A4%A", "els": _two}])
     _obs = (lambda k: _run if isinstance(_run, str) else _run.get(k))
+    # ...and the stub can say NO: a script that opens nothing is observed opening nothing.
+    _none = run_hash_script("void 0;", [{"name": "load", "hash": "#a", "els": _two}])
+    check("the stub DOM observes a failure: a script that opens nothing leaves card a folded",
+          _none if isinstance(_none, str) else _none["load"], {"err": None, "open": [], "scrolled": []})
     check("the page's hash handler, RUN: a link loaded with #a opens card a and scrolls it into view",
           _obs("load"), {"err": None, "open": ["a"], "scrolled": ["a"]})
     check("the page's hash handler, RUN: a later hash change to #b opens card b",
@@ -1104,8 +1108,15 @@ def _self_test_body() -> int:
     check("every card's heading and index line count exactly the open rows its rendered band lists",
           (gap_disagreements(_many_page, _order),
            len(_many_seen["job-queue"]["rows"]), len(_many_seen["wake-on-visit"]["rows"]),
-           gap_disagreements(render(_real_nodes, _rfrag), _order)),
-          ([], GAP_CAP + 5, 2, []))
+           gap_disagreements(render(_real_nodes, _rfrag), _order),
+           # the comparator can say no: read under an empty order, every severity disagrees
+           gap_disagreements(_many_page, []),
+           # the reader itself, on a second page and a second order: a glyph outside it reads `·`
+           rendered_gap_counts(_tree, _order)["job-queue"]["rows"],
+           rendered_gap_counts(_tree, _order[1:2])["job-queue"]["rows"]),
+          ([], GAP_CAP + 5, 2, [], ["job-queue", "wake-on-visit"],
+           [("#1", "🟡"), ("#2", "🟢"), ("#3", "🟠"), ("#4", "🟡")],
+           [("#1", "·"), ("#2", "·"), ("#3", "🟠"), ("#4", "·")]))
     # ⛔ THE EMITTED ARTIFACT PARSES — the HTML is in the supported subset, the script is a program.
     _js = scripts_parse(_tree)
     check("the emitted page is in the supported HTML subset and every inline script parses",
