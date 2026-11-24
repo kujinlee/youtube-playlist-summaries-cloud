@@ -92,7 +92,7 @@ Inputs the spec implies and no slice's guard reaches by itself. Each has a case 
 4. **Two pull requests each adding a node under one parent, batched.** The union must keep both nodes whole;
    a field line of one must never land under the other's heading, and no node may change parent unless one
    side moved it. Owner: Task 16, cases `features union: two added nodes keep their own fields`,
-   `tree P4: a field line keeps its node heading` and `tree P8: a clean merge that re-parents a node ejects`.
+   `tree P8: a field line keeps its node` and `tree P8: a clean merge that re-parents a node ejects`.
 5. **A node with no state and no area.** It must say "claims no area — gaps not counted", never show an empty
    count (spec §3.2). Owner: Task 4, case `index: a node claiming and inheriting no area says so`.
 
@@ -122,7 +122,7 @@ Inputs the spec implies and no slice's guard reaches by itself. Each has a case 
 | `.claude/hooks/regen-goals-page.sh`, `.claude/hooks/regen-features-page.sh` | S2 | drop the registry trigger |
 | `scripts/goal-tree.py` | S1 (two aliases) S3 S4 | goals are nodes; `also`; history through `resolve`; the agenda's PRIORITY line |
 | `scripts/session-state.py` | S3 | `--also`; G5 |
-| `scripts/batch-ci.py` | S3 | a `tree` union policy for `docs/features.md` (resolution as `blocks`; postcondition P8) |
+| `scripts/batch-ci.py` | S3 | a `tree` union policy for `docs/features.md` (resolution as `blocks`; postcondition P8, which compares what `parse_features` reads — no heading reader of its own) |
 | `scripts/page_markup.py`, `scripts/check-page-links.py` | S4 | one node id, one node link kind; G8 |
 | `docs/features.md` | S2 S3 | the 45 nodes |
 | `docs/goal-threads.md` | S3 S4 | threads and requests under node headings; the PRIORITY line |
@@ -939,44 +939,58 @@ request is numbered after every requested goal, in tree order. The same-goal dup
 **FAILS IF:** `python3 scripts/session-state.py --add x "w" "d" --goal dev-speed-first --thread "fix · PR #1 · x" --after none`
 exits 0 in a checkout of this branch (run it against a scratch root, not the live ledger).
 
-### Task 16: `batch-ci.py` — a `tree` union policy for `docs/features.md`
+### Task 16: `batch-ci.py` — a `tree` union policy for `docs/features.md`, judged by the tree's own parser
 
 **Files:**
 - Modify: `scripts/batch-ci.py` (`UNION_FILES` and the comment above it; `resolve_hunk`'s policy dispatch;
-  `postcondition` — the P4 home for `tree`, and a new clause P8; a new pure `_parents`),
+  `postcondition` — a new clause P8 for `tree`; new `FEATURES_PARSER`, `_features`, `_tree_map`, `_merge3`),
   `scripts/mutations/batch-ci.json`
 
 **Interfaces:**
-- Consumes: `UNION_FILES`, `resolve_hunk`, `resolve_text`, `postcondition`, `_homes`, `_match`, `SECTION`
-- Produces: `UNION_FILES["docs/features.md"] = "tree"` (C7); `NODE_HEADING = re.compile(r"^#{1,6} ")`;
-  `_parents(lines: list[str], ident: list) -> list` — for each line, the IDENTITY of the nearest preceding
-  heading line with FEWER `#` when the line is itself a heading, else `None`; PURE
+- Consumes: `UNION_FILES`, `resolve_hunk`, `resolve_text`, `postcondition`, `CannotRun`, `_selector` (the
+  loading pattern only); `parse_features` and `Node` from `scripts/check-features.py`, with `Node.parent`
+  (S1, Task 1)
+- Produces: `UNION_FILES["docs/features.md"] = "tree"` (C7); `FEATURES_PARSER = "check-features.py"`;
+  `_features()` — that script loaded once from beside this file, as `_selector` loads its sibling;
+  `_tree_map(text, parse) -> tuple[dict, list[str]]` — `{(slug, attribute): value}` for every attribute of
+  every node (`dataclasses.asdict`) except `line`, and the parser's problems plus one for a slug met twice;
+  `_merge3(b, o, t) -> tuple[object, bool]` — the value a three-way merge gives, and whether both sides
+  changed it differently. Both PURE
 
-**Why not `blocks` as it is (r2 Codex Major).** `SECTION` matches `#` and `##` only, and P4 ("every line sits
-under the very heading INSTANCE it sits under in the side it came from") reads its homes through `SECTION`. For
-`docs/features.md` the trunks are the only sections, so a merge that lands a `###` above a run of `####` nodes
-re-parents them with P4 satisfied — and git does that CLEANLY, with no conflict hunk for `resolve_hunk` to see,
-when one branch adds a `###` and the other adds a `####` below it (`_union_violation` then runs `postcondition`
-over the clean result, which is the only place it can be caught). Equally, a field line that lands under a
-different `###`/`####` heading of the same trunk keeps its `##` home and passes P4. The file's hierarchy is its
-meaning, so its union needs a postcondition that reads that hierarchy. This changes `batch-ci.py`, our own
-script, beyond the one entry (C7, revised in r2).
+**The design (Phase 6, `docs/reviews/coordinator/architecture-review-2026-11-24-batch-ci-tree.md`).**
+`docs/features.md` is a tree whose meaning is each node's parent and fields, and ONE parser reads that:
+`parse_features`. The r2 design gave `batch-ci.py` its own reader of headings (a second heading pattern and
+a parent rule); that is a second copy of the node grammar, and it is withdrawn. `batch-ci.py` has no heading
+pattern for this file and no parent rule. It asks the parser what each of the four texts MEANS and compares
+meanings:
 
-**The policy `tree`** is `blocks` for RESOLUTION and `blocks` plus two stricter reads for the POSTCONDITION:
-- `resolve_hunk("tree", …)` takes the `blocks` arm unchanged (`if policy in ("blocks", "tree")`) — additions
-  only, ours first, an edited base line `Refuse`d by `_added`.
-- `postcondition(…, "tree")`: every existing clause, except that P4's homes come from `_homes` with
-  `NODE_HEADING` in place of `SECTION` — so a field line must stay under its own node's heading instance — and
-  a new clause **P8: every heading keeps its parent.** For each heading line of the result with an identity,
-  its `_parents` identity in the result must equal: for a line one side ADDED, its parent in that side; for a
-  BASE line, its parent in the base, unless exactly one side changed it, in which case that side's (a
-  deliberate re-parenting by one branch survives, as P4 lets a re-sectioning survive); both sides changing it
-  is refused (`P8 both sides re-parented a node`). A violation reads
-  `P8 a node's parent changed and neither side made that change: <heading>`.
-- The prefix cut stays on `SECTION`: it ends at the last `##` of the shared prefix, so every heading after the
-  cut has its parent at or after the cut, and every line after it its node heading — no P4 or P8 verdict
-  depends on a dropped line. `blocks` and its two files are untouched: P8 and the `NODE_HEADING` home apply to
-  `tree` only (the existing `blocks:` and `PC` cases are the witness).
+> **P8 (`tree` only): the merged tree is the three-way merge of the three trees, attribute by attribute.**
+
+- `resolve_hunk("tree", …)` takes the `blocks` arm unchanged (`if policy in ("blocks", "tree")`): additions
+  only, ours first, an edited base line `Refuse`d by `_added`. The resolver only PROPOSES, as it does for
+  every union file (`docs/reviews/architecture-review-2026-11-07-batch-ci-docs-union.md`).
+- `postcondition(…, "tree")` runs every existing clause exactly as for `blocks` (P4 keeps `SECTION`: at the
+  text level the trunks are this file's sections), then P8 over the FULL four texts, not the prefix-cut ones:
+  1. `_tree_map` of the result reports a problem → `P8 the merged tree does not parse: <problem>`. A line the
+     parser refuses is a line no attribute holds, so its placement cannot be judged; it ejects.
+  2. for every `(slug, attribute)` key of the four maps (a missing key reads as `None`, so a node added or
+     removed is the same rule): `_merge3(base, ours, theirs)`. Both sides changed it to different values →
+     `P8 both sides changed <slug>.<attribute>`. Else the wanted value is the one side's that differs from the
+     base (or the base's when neither does), and a result that differs →
+     `P8 <slug>.<attribute> is <result>, and the sides make it <wanted>`.
+- `parent` is one attribute among the others, so a re-parenting, a field line under another node's heading,
+  a lost field and a doubled node are ONE comparison. A parent changed by exactly one side follows that side.
+- The parser cannot be loaded (`_features()` raises) → `CannotRun`, which `_checked` already turns into an
+  aborted merge and a CANNOT RUN exit. Never a pass.
+- `FEATURES_PARSER` holds the file name as a quoted literal, which is what makes the sweep selector pick
+  this script's manifest when `scripts/check-features.py` changes (measured in the Phase 6 review, §5).
+- `blocks`, `rows`, `records` and their files are untouched: P8 runs under `policy == "tree"` only.
+
+**Bounds, stated.** The order of siblings and of a node's field lines is in no attribute, so P8 does not
+judge it (P1 still fixes the order of theirs' additions). A future `Node` attribute that records a position,
+as `line` does, would make every clean merge eject until it is excluded beside `line` — loud, and in the safe
+direction. The parser is this checkout's: a pull request that extends the grammar is ejected by step 1 until
+the grammar has merged. Each bound costs an ejection, never a wrong tree.
 
 Consequences, unchanged from `blocks`: a node added on each side unions; an edit of a field line inside a
 conflicting hunk is refused and the pull request is EJECTED to run alone; an identical addition on both sides
@@ -988,52 +1002,67 @@ fails P1 and ejects.
 |---|---|---|---|
 | 1 | two branches each add a node under one parent | conflicting hunk, through `resolve_text("docs/features.md", …)` | both nodes kept, each with its own fields, ours first; `postcondition(…, "tree")` returns `[]` |
 | 2 | both add the SAME node | identical block | P1: EJECTED (the existing bound) — never a silent double |
-| 3a | one branch edits a field of an existing node far from the other's added node | a clean merge; `postcondition` over the whole file | `[]`: both changes kept |
+| 3a | one branch edits a field of an existing node far from the other's added node | a clean merge; `postcondition` over the whole file | `[]`: both changes kept, though every node below the addition changed its `line` |
 | 3b | one branch edits a field line INSIDE the hunk where the other adds a node | conflicting hunk | `Refuse`: ejected, not guessed |
 | 4 | both edit the same field line differently | — | `Refuse`: ejected |
 | 5 | a base line is missing from the result | — | P3 reports it |
-| 6 | the merged file is then parsed | result of 1 | `parse_features` returns no problem and both slugs |
+| 6 | the two sides edit DIFFERENT fields of one node | ours changes its `state:` line, theirs its `adrs:` line, an unchanged line between them; `git merge-file` merges cleanly | `[]`: the merge is per attribute, not per node |
 | 7 | path dispatch | the conflicted text of 1, through `resolve_text` with the path `docs/features.md`, and the same text with the path `docs/other.md` | resolved for the first; `Refuse` ("not an append-only file") for the second |
-| 8 | a clean merge re-parents a node neither side moved | base `### A`, `#### a1`, `#### a2`, each with field lines; theirs inserts `### B` between `a1` and `a2` (re-parenting `a2` on purpose); ours appends `#### a3` after `a2`. The edits are separated by `a2`'s lines, so `git merge-file` merges cleanly (the case builds the result with it) | P8 names `#### a3` (now under `B`; ours put it under `A`); `a2` follows theirs and is not named. Second input in the same case: ours inserts `#### a3` between `A`'s field lines and `a1` instead — `[]` |
-| 9 | a conflicting hunk whose union re-parents | ours adds `### B`, theirs adds `#### a2`, in one hunk under `### A` | `resolve_text` puts `a2` after `B`; P8 ejects it. Reversed sides (ours `#### a2`, theirs `### B`) return `[]` |
+| 8 | a clean merge re-parents a node neither side moved | base `### A`, `#### a1`, `#### a2`, each with field lines; theirs inserts `### B` between `a1` and `a2` (re-parenting `a2` on purpose); ours appends `#### a3` after `a2`. The edits are separated by `a2`'s lines, so `git merge-file` merges cleanly (the case builds the result with it) | P8 names `a3.parent` (`B` in the result; ours made it `A`); `a2` follows theirs and is not named. Second input in the same case: ours inserts `#### a3` between `A`'s field lines and `a1` instead — `[]` |
+| 9 | a conflicting hunk whose union re-parents | ours adds `### B`, theirs adds `#### a2`, in one hunk under `### A` | `resolve_text` puts `a2` after `B`; P8 names `a2.parent` and ejects. Reversed sides (ours `#### a2`, theirs `### B`) return `[]` |
 | 10 | one side re-parents base nodes on purpose | theirs inserts `### B` above the base `#### a1`, ours adds an unrelated node under another trunk | `[]`: `a1` follows theirs |
-| 11 | both sides re-parent one base node differently | ours inserts `### B`, theirs `### C`, each directly above the base `#### a1` | P8: both sides re-parented a node |
-| 12 | a field line under another node's heading | one hunk at the end of base `#### a1`'s block: theirs adds the field line `adrs: 0003` to `a1`, ours adds a new `#### o` node; `resolve_text` puts ours first, so `adrs: 0003` lands under `#### o` | P4 names that line under `tree` (EJECTED — the resolver is not taught to place it; an ejection is the safe cost); the SAME four texts under `blocks` return `[]` (the policy scope, and the old blind spot, in one case) |
+| 11 | both sides re-parent one base node differently | ours inserts `### B`, theirs `### C`, each directly above the base `#### a1`; the result holds `B`, `C`, `a1` in that order | `P8 both sides changed a1.parent` |
+| 12 | a field line under another node's heading | one hunk at the end of base `#### a1`'s block: theirs adds the field line `adrs: 0003` to `a1`, ours adds a new `#### o` node; `resolve_text` puts ours first, so `adrs: 0003` lands under `#### o` | P8 names `a1.adrs` and `o.adrs` under `tree` (EJECTED — the resolver is not taught to place it; an ejection is the safe cost); the SAME four texts under `blocks` return `[]` (the policy scope, and the old blind spot, in one case) |
+| 13 | the result holds a line the parser refuses | ours adds a node with a wrapped prose line under its `for:`; theirs adds a clean node elsewhere; a clean merge | `P8 the merged tree does not parse`. Second input in the same case: ours' node without the prose line — `[]` |
+| 14 | the parser cannot be loaded | `FEATURES_PARSER` pointed at a file that does not exist | `CannotRun`, for a `tree` text; a `blocks` text with the same setting still returns its verdict |
+
+Behaviours 1, 6, 8 (both inputs), 9 (both), 10, 11 and 12 were run against a stand-in for P8 in the Phase 6
+review (§5) and gave the verdicts above.
 
 - [ ] **Step 1:** cases `features union: two added nodes keep their own fields`,
   `features union: the same node added twice ejects`, `features union: a distant edit and an addition both survive`,
   `features union: an edit inside the hunk is refused`, `features union: two edits of one field are refused`,
-  `features union: a lost base line is a violation`, `features union: the result parses as a tree`,
+  `features union: a lost base line is a violation`,
+  `features union: edits of two fields of one node both survive`,
   `features union: dispatch is by path`, `tree P8: a clean merge that re-parents a node ejects`,
   `tree P8: a union that re-parents a node ejects`, `tree P8: a one-sided re-parenting survives`,
   `tree P8: both sides re-parenting one node is refused` (asserts the REASON, `named(got, "P8", "both sides")`,
-  never `clauses(got) == ["P8"]` alone: with the both-sides refusal severed, `expect` falls to ours' parent and
-  P8 still fires with the OTHER message, so a clause-only check lets that mutation live — r3 F1),
-  `tree P4: a field line keeps its node heading`. Every
-  case that resolves a conflict calls `resolve_text` with the path `docs/features.md` — never
-  `resolve_hunk("tree", …)` directly — so the policy is reached the way `merge` reaches it. The case
+  never `clauses(got) == ["P8"]` alone: with the both-sides refusal severed the wanted value falls to ours'
+  and P8 still fires with the OTHER message, so a clause-only check lets that mutation live — r3 F1),
+  `tree P8: a field line keeps its node`, `tree P8: a result the parser refuses ejects` (asserts
+  `named(got, "P8", "does not parse")`), `tree P8: a parser that cannot load is CANNOT RUN` (it swaps
+  `FEATURES_PARSER` and clears the loaded module, and restores both in a `finally`, the shape of the existing
+  case `R2-F2: a selector that cannot run BISECTS and says so …`). Every case that resolves a conflict calls
+  `resolve_text` with the path `docs/features.md` — never `resolve_hunk("tree", …)` directly — so the policy
+  is reached the way `merge` reaches it, and every case reaches P8 through `postcondition(…, "tree")` with the
+  real parser, never through `_tree_map` with a fake one. The case
   `the policies: …` that lists `UNION_FILES` gains `("docs/features.md", "tree")`. KEEP its label unchanged:
   it is the `expect` of the mutation `C4: the goal threads are unioned as records` in
   `scripts/mutations/batch-ci.json`; a reworded label must be written into that `expect` in the same commit
   (r3 F3).
-- [ ] **Step 2:** red, except ONE case (every case that calls `resolve_text` fails while the entry is absent: it
-  refuses the path; the `tree P…` cases that expect a P8 or P4 verdict fail while `postcondition` has no P8 and
-  no `NODE_HEADING` home). GREEN before Step 3: `tree P8: a one-sided re-parenting survives` (behaviour 10) — a
-  clean merge goes straight to `postcondition`, which treats an unknown policy as `blocks` (only
-  `policy == "rows"` branches), and `SECTION` homes give `[]`. The `[]` second inputs of behaviours 8 and 9 are
-  green too, inside cases their first input reddens. These controls are proven by their mutations (the "base
-  parent always" mutation reddens behaviour 10), not by Step 2 (r3 F2).
-  **Step 3:** implement `NODE_HEADING`, `_parents`, the `tree` arm of `resolve_hunk`, P4's home choice and P8;
-  add the entry; extend `postcondition`'s docstring with P8 and the `tree` home. **Step 4:** green; the existing
-  `blocks:` and `PC` cases unchanged.
+- [ ] **Step 2:** red, with named exceptions. Every case that calls `resolve_text` fails while the entry is
+  absent (it refuses the path); every case that expects a P8 verdict or a `CannotRun` fails while
+  `postcondition` has no P8. GREEN before Step 3, because today's `postcondition` treats an unknown policy as
+  `blocks` (only `policy == "rows"` branches) and these go straight to it expecting `[]`:
+  `tree P8: a one-sided re-parenting survives` (behaviour 10),
+  `features union: a distant edit and an addition both survive` (3a) and
+  `features union: edits of two fields of one node both survive` (6). The `[]` second inputs of behaviours 8,
+  9 and 13 are green too, inside cases their first input reddens. These controls are proven by their
+  mutations in Step 5, not by Step 2 (r3 F2).
+  **Step 3:** implement `FEATURES_PARSER`, `_features`, `_tree_map`, `_merge3`, the `tree` arm of
+  `resolve_hunk` and P8; add the entry; extend `postcondition`'s docstring with P8 and the comment above
+  `UNION_FILES` with the `tree` policy, saying that this file's entry is kept for its JUDGE (a clean merge can
+  re-parent a node), not for its conflict count. **Step 4:** green; the existing `blocks:` and `PC` cases unchanged.
 - [ ] **Step 5:** mutations: the `UNION_FILES["docs/features.md"]` entry removed — `expect` is
   `features union: dispatch is by path` (the case that reaches the policy only through `resolve_text`'s path
-  lookup); `"tree"` dropped from `resolve_hunk`'s `blocks` arm (the same case); P8's comparison severed
-  (`tree P8: a clean merge that re-parents a node ejects`); P8's one-side-follows rule replaced by "base parent
-  always" (`tree P8: a one-sided re-parenting survives`); P8's both-sides refusal severed
-  (`tree P8: both sides re-parenting one node is refused`); `_parents`' "fewer `#`" replaced by "any heading"
-  (`tree P8: a union that re-parents a node ejects`); P4's `tree` home reverted to `SECTION`
-  (`tree P4: a field line keeps its node heading`). Then W1–W6.
+  lookup); `"tree"` dropped from `resolve_hunk`'s `blocks` arm (the same case); P8's result comparison
+  severed (`tree P8: a clean merge that re-parents a node ejects`); `_merge3`'s wanted value replaced by
+  "the base's always" (`tree P8: a one-sided re-parenting survives`); `_merge3`'s both-sides test severed
+  (`tree P8: both sides re-parenting one node is refused`); the exclusion of `line` in `_tree_map` removed
+  (`features union: a distant edit and an addition both survive`); the parser's problems dropped from
+  `_tree_map` (`tree P8: a result the parser refuses ejects`); P8's `policy == "tree"` test replaced by
+  always (`tree P8: a field line keeps its node`, whose `blocks` half must stay `[]`); `_features`' failure
+  swallowed to an empty module (`tree P8: a parser that cannot load is CANNOT RUN`). Then W1–W6.
 - [ ] **Step 6:** commit; the retired-slug search below; the dashboard entry; *Before every push*.
 
   ```
@@ -1350,7 +1379,7 @@ Each is a mechanical reading, not a new decision; a reviewer who disagrees raise
 | C4 | §4.4 counts "Nodes with no `state:` — 9", while §6 Q13's answer is "no state on all four until you say built" | 11 stateless nodes: the nine plus `cloud-publishing` and `serve-money-guard` (§6.1 governs) |
 | C5 | S2: "`gen-goals-page.py` … read the tree"; §3.1: "It becomes a card per node" | S2 keeps today's card set, derived as nodes with a document or an `adrs:` line (Task 8); the card per node arrives with the views in S4 (Task 19) |
 | C6 | row 4.39: `goal-tree`'s purpose is "unchanged, minus its URL" — no slice is named | Task 12 (S3), with the other §4 data edits of that branch |
-| C7 | "`batch-ci.py` gains a conflict resolver for `docs/features.md`" — no policy is named | a new policy `tree`: the `blocks` RESOLUTION unchanged (additions union; an in-hunk edit or an identical addition EJECTS the pull request to run alone — r1 Codex Major), with a stricter POSTCONDITION — P4 homes at any heading level and a clause P8, every heading keeps its parent unless exactly one side moved it — because `SECTION` sees only `#`/`##` and a clean merge can re-parent nodes (Task 16; r2 Codex Major). `blocks` itself is unchanged |
+| C7 | "`batch-ci.py` gains a conflict resolver for `docs/features.md`" — no policy is named | a new policy `tree`: the `blocks` RESOLUTION unchanged (additions union; an in-hunk edit or an identical addition EJECTS the pull request to run alone — r1 Codex Major), with one added POSTCONDITION clause, P8: the merged tree is the three-way merge of the three trees, attribute by attribute, as `parse_features` reads them — so a node keeps its parent and its fields unless exactly one side changed them. `batch-ci.py` holds no heading pattern and no parent rule for this file (Task 16). The r2 form of this choice, a second heading reader inside `batch-ci.py`, was withdrawn by the Phase 6 review `docs/reviews/coordinator/architecture-review-2026-11-24-batch-ci-tree.md`. `blocks` itself is unchanged |
 | C8 | G8 and §3.5 call today's feature id "bare `<slug>`" | the code emits `f-<slug>` (`feature_id` in `scripts/page_markup.py`); `/features` keeps BOTH as second ids — the bare `<slug>` the approved spec requires and the `f-<slug>` the code has emitted — except no bare id where it would equal a chrome id (Task 17; r1 Codex Major). Two nodes whose ids would meet (`x` with `f-x`; `x`, or a former `x`, with `goal-x`) are refused by G6, never resolved by dropping an id (Task 2; r2 Codex Major) |
 | C9 | S1's row lists two scripts, and G9 reads request lines whose grammar `scripts/goal-tree.py` owns | the two patterns MOVE to `scripts/check-features.py` and `scripts/goal-tree.py` aliases them in S1 (Task 3) — a third script touched by two lines, in place of a second copy of a grammar |
 | C10 | S1: "A `built` node's fragment may be … an anchored document" | the RULE lands in S1 (`check_nodes` takes the set); the live set is passed in S2 Task 7, once `anchored_slugs` exists in `scripts/check-anchors.py` — S1 has no node that needs it |
