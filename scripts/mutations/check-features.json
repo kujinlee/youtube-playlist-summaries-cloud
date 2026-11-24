@@ -106,8 +106,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "        if n.state == \"built\" and n.expected_because:",
-        "        if False:"
+        "and n.state != \"absent\":",
+        "and n.state not in (\"absent\", \"built\"):"
       ]
     ],
     "expect": "a built node carrying expected-because fails"
@@ -583,8 +583,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "        if n.state is None and n.expected_because:",
-        "        if False:"
+        "if n.expected_because is not None and n.state",
+        "if n.expected_because is not None and n.state is not None and n.state"
       ]
     ],
     "expect": "rules: a stateless node may not carry expected-because"
@@ -632,5 +632,16 @@
       ]
     ],
     "expect": "G9: a threads file with no goal heading is CANNOT RUN"
+  },
+  {
+    "name": "S1 r2: the refusal tests truthiness, so an EMPTY expected-because: passes on a stateless or built node",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if n.expected_because is not None and n.state",
+        "        if n.expected_because and n.state"
+      ]
+    ],
+    "expect": "rules: an EMPTY expected-because is still the field"
   }
 ]

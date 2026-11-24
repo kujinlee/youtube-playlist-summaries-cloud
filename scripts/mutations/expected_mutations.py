@@ -553,7 +553,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-24, goal node tree S1 review r1: 53 -> 54 — a slugged trunk keyed by its display
     # text (Codex High 1 = Claude F1). Three entries were REBOUND onto the rewritten `group_tree` (the
     # orphan, and the two `####` nesting ones, which had named its deleted `entries` local).
-    "scripts/gen-features-page.py": 54,
+    # ⟳ 2026-11-24, goal node tree S1 review r2: 54 -> 58 — slugless trunks keep file order (Codex
+    # Medium): merged by heading text again, a slugless trunk joining a slugged one of the same text,
+    # the trunk-text clause dropped, and the control (a group per parentless node). The orphan entry
+    # was REBOUND onto the rewritten `here =` line (not in the +4).
+    "scripts/gen-features-page.py": 58,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -1728,7 +1732,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-24, goal node tree S1 review r1: 51 -> 57 — the current-slug grammar, the stateless
     # `expected-because:` refusal, and four on G9's CANNOT RUN arm: its `return 2`, `main`'s call
     # site, the undecodable read, and the no-`## GOAL` file.
-    "scripts/check-features.py": 57,
+    # ⟳ 2026-11-24, goal node tree S1 review r2: 57 -> 58 — the `expected-because:` refusal back to
+    # truthiness, letting an EMPTY field pass (Codex Low). The two per-state refusals were MERGED into
+    # one presence rule; the `built` and stateless entries were REBOUND onto it, each exempting only
+    # its own state (not in the +1).
+    "scripts/check-features.py": 58,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed

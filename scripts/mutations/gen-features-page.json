@@ -499,8 +499,8 @@
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "            here = slugless[n.trunk][2]\n",
-    "            continue\n"
+    "            here = trunks[-1][2]\n",
+    "            here = trunks[-1][2] if n.level == 3 else []\n"
    ]
   ],
   "expect": "index: an orphan level is kept"
@@ -592,5 +592,49 @@
    ]
   ],
   "expect": "two trunks sharing a display name keep every node"
+ },
+ {
+  "name": "S1 r2: slugless trunks merged by heading text again, so `T a / U b / T c` renders a, c, b",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "            if not trunks or trunks[-1][1] is not None or trunks[-1][0] != n.trunk:\n                trunks.append([n.trunk, None, []])\n            here = trunks[-1][2]\n",
+    "            _s = next((t for t in trunks if t[1] is None and t[0] == n.trunk), None)\n            if _s is None:\n                _s = [n.trunk, None, []]\n                trunks.append(_s)\n            here = _s[2]\n"
+   ]
+  ],
+  "expect": "slugless trunks keep file order"
+ },
+ {
+  "name": "S1 r2: a slugless `## T` after a slugged `## T` joins the slugged trunk's children",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "trunks[-1][1] is not None or ",
+    ""
+   ]
+  ],
+  "expect": "slugless trunks keep file order"
+ },
+ {
+  "name": "S1 r2: a parentless node joins the previous slugless group whatever its trunk",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    " or trunks[-1][0] != n.trunk:",
+    ":"
+   ]
+  ],
+  "expect": "slugless trunks keep file order"
+ },
+ {
+  "name": "S1 r2 control: every parentless node opens its own group, splitting one trunk",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "if not trunks or trunks[-1][1] is not None or trunks[-1][0] != n.trunk:",
+    "if True:"
+   ]
+  ],
+  "expect": "slugless trunks keep file order"
  }
 ]

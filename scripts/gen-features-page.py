@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 50 cases
+    python3 scripts/gen-features-page.py --self-test  # 51 cases
 
 WHY THIS EXISTS
 ---------------
@@ -195,11 +195,16 @@ def group_tree(nodes: list[Node]) -> list[tuple[str, Node | None, list]]:
     ⛔ A SLUGGED TRUNK IS KEYED BY ITS NODE, NOT ITS DISPLAY TEXT (S1 r1, Codex High 1 = Claude F1).
     Keyed by the heading text, a second `## T` carrying `slug: b` overwrote the first's node `a`, which
     then had no card and no index line. Spec §2.2: the slug is the name, unique across the tree; the
-    heading is display. So each level-2 node opens its OWN group, and only the PARENTLESS nodes of a
-    slugless trunk (which have no node to hang under) are grouped by heading text, as before.
+    heading is display. So each level-2 node opens its OWN group.
+
+    ⛔ AND A SLUGLESS TRUNK IS NOT MERGED BY ITS TEXT EITHER (S1 r2, Codex Medium). It is no node
+    ("a trunk is a node with a slug", spec §2.2), so two `## T` sections have nothing in common but
+    display text. Merged, `T a / U b / T c` rendered a, c, b. A PARENTLESS node joins the group just
+    before it only when that group is the same slugless section still running; otherwise it opens a
+    new one, so the page keeps file order. (Two ADJACENT slugless `## T` sections stay one group —
+    nothing marks the boundary between them, and merging adjacent groups moves nothing.)
     """
     trunks: list[list] = []
-    slugless: dict[str, list] = {}
     slots: dict[tuple[str, str], list] = {}
     for n in nodes:
         if n.level == 2:
@@ -209,10 +214,9 @@ def group_tree(nodes: list[Node]) -> list[tuple[str, Node | None, list]]:
             continue
         here = slots.get((n.trunk, n.parent)) if n.parent else None
         if here is None:
-            if n.trunk not in slugless:
-                slugless[n.trunk] = [n.trunk, None, []]
-                trunks.append(slugless[n.trunk])
-            here = slugless[n.trunk][2]
+            if not trunks or trunks[-1][1] is not None or trunks[-1][0] != n.trunk:
+                trunks.append([n.trunk, None, []])
+            here = trunks[-1][2]
         kids: list = []
         here.append((n, kids))
         slots.setdefault((n.trunk, n.slug), kids)
@@ -1033,6 +1037,30 @@ def _self_test_body() -> int:
           (_twin_got, group_tree([])),
           ([([(1, 1)] * 4, [("T", "a", ["c1"]), ("T", "b", ["c2"])]),
             ([(1, 1)] * 3, [("T", None, ["c1"]), ("T", "b", ["c2"])])], []))
+    # ⛔ S1 r2 (Codex Medium): a SLUGLESS trunk is no node (spec §2.2, "a trunk is a node with a
+    # slug"), so it has no identity to merge two `## T` sections under. Grouped by heading text, the
+    # third section's `c` was pulled up beside `a`, ahead of `b`: the page left file order. Each `## `
+    # section opens its own group, slugless or slugged in between, and a slugless `## T` after a slugged
+    # one does not join the slugged trunk's children. CONTROL: one slugless trunk with
+    # two nodes stays ONE group, so a fix that opened a group per node would also go red.
+    _order = ("## T\n### a\nfor: A.\n## U\n### b\nfor: B.\n## T\n### c\nfor: C.\n",
+              "## T\n### a\nfor: A.\n## U\nslug: u\nfor: U.\n### b\nfor: B.\n## T\n### c\nfor: C.\n",
+              "## T\nslug: t\nfor: T.\n### a\nfor: A.\n## T\n### b\nfor: B.\n",
+              "## T\n### a\nfor: A.\n### b\nfor: B.\n")
+    _order_got = []
+    for _src in _order:
+        _on = parse_features(_src)[0]
+        _oix = render_index(_on, {}, sev_order())
+        _order_got.append(([(name, t.slug if t else None, [e[0].slug for e in es])
+                            for name, t, es in group_tree(_on)],
+                           sorted((n.slug for n in _on if n.level > 2),
+                                  key=lambda s: _oix.index(f'href="#{frag_id(s)}"'))))
+    check("slugless trunks keep file order",
+          _order_got,
+          [([("T", None, ["a"]), ("U", None, ["b"]), ("T", None, ["c"])], ["a", "b", "c"]),
+           ([("T", None, ["a"]), ("U", "u", ["b"]), ("T", None, ["c"])], ["a", "b", "c"]),
+           ([("T", "t", ["a"]), ("T", None, ["b"])], ["a", "b"]),
+           ([("T", None, ["a", "b"])], ["a", "b"])])
 
     # ⛔ THE CASE THE REVIEW ASKED FOR COULD NOT BE WRITTEN, AND THAT IS THE PROOF THE FIX WORKED.
     # Round 1 asked for a case asserting every value of `gen-backlog-page.SEVERITY` appears as a

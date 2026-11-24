@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 94 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 95 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -223,12 +223,15 @@ def check_nodes(nodes: list[Node], anchored: frozenset[str] = frozenset()) -> li
             problems.append(f"{where} is `built` but names no fragment — add an `areas:`, `adrs:` or "
                             f"`anchors:` line, anchor a document to it, or set `state: absent` with an "
                             f"`expected-because:`")
-        if n.state == "built" and n.expected_because:
-            problems.append(f"{where} is `built` but carries an `expected-because:` — that line is "
-                            f"the argument for an ABSENCE. Remove it, or set `state: absent`")
-        # S1 r1 (Claude F3): the line is never rendered off an `absent` node, so it would sit unseen.
-        if n.state is None and n.expected_because:
-            problems.append(f"{where} has no `state:` but carries an `expected-because:` — that line is "
+        # ⛔ ONE RULE FOR WHERE `expected-because:` MAY SIT: on an `absent` node, and nowhere else.
+        # It was two refusals, one per state (`built`, then stateless in S1 r1, Claude F3 — the line
+        # is never rendered off an `absent` node, so it would sit unseen), and the copies were each
+        # written as a TRUTHINESS test, so a bare `expected-because:` (parsed to "") passed both
+        # (S1 r2, Codex Low). One rule over PRESENCE (`is not None`) leaves no per-state copy to
+        # forget, and no value that reads as the field being absent.
+        if n.expected_because is not None and n.state != "absent":
+            held = f"is `{n.state}`" if n.state else "has no `state:`"
+            problems.append(f"{where} {held} but carries an `expected-because:` — that line is "
                             f"the argument for an ABSENCE. Remove it, or set `state: absent`")
         if n.state == "absent":
             if not n.expected_because:
@@ -934,6 +937,16 @@ expected-because: standard for a hosted multi-tenant service.
            ("### x\nfor: X.\nexpected-because: e.\n", "### y\nfor: Y.\nareas: (y)\nexpected-because: f.\n")]
           + [check_nodes(_nodes(_ABS.format(s="z")))],
           [True, True, []])
+    # ⛔ S1 r2 (Codex Low): the refusal is of the FIELD, not of a non-empty value. A bare
+    # `expected-because:` parses to "" and passed both the stateless and the `built` refusal, which
+    # tested truthiness; the line was invisible on the page too. CONTROL: the same nodes without the
+    # line pass, so a fix that refused every stateless or built node would also go red.
+    check("rules: an EMPTY expected-because is still the field",
+          [any("expected-because" in p for p in check_nodes(_nodes(b))) for b in
+           ("### x\nfor: X.\nexpected-because:\n",
+            "### y\nstate: built\nfor: Y.\nareas: (y)\nexpected-because:\n",
+            "### x\nfor: X.\n", "### y\nstate: built\nfor: Y.\nareas: (y)\n")],
+          [True, True, False, False])
 
     # ── G9 — `done:` cites a recorded request (goal node tree Task 3, spec §2.5) ───────────────
     _THREADS = ("# Goal threads\nprose above the first goal\n\n## GOAL ship-it\n"
