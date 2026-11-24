@@ -188,10 +188,7 @@
     "scripts/page_markup.py",
     "scripts/regen-pages.py",
     "scripts/session-state.py",
-    "skills/brief/SKILL.md",
     "skills/dashboard/SKILL.md",
-    "skills/explain-diff/SKILL.md",
-    "skills/explain-findings/SKILL.md",
     "skills/explain-topic/SKILL.md",
     "skills/shared/corpus-search.md",
     "skills/shared/explainer-delivery.md",
@@ -372,27 +369,9 @@
      ],
      "expected_count": 1
     },
-    "skill-brief": {
-     "files": [
-      "skills/brief/SKILL.md"
-     ],
-     "expected_count": 1
-    },
     "skill-dashboard": {
      "files": [
       "skills/dashboard/SKILL.md"
-     ],
-     "expected_count": 1
-    },
-    "skill-explain-diff": {
-     "files": [
-      "skills/explain-diff/SKILL.md"
-     ],
-     "expected_count": 1
-    },
-    "skill-explain-findings": {
-     "files": [
-      "skills/explain-findings/SKILL.md"
      ],
      "expected_count": 1
     },
