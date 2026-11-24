@@ -231,6 +231,10 @@ element that asks it; the composer does the rest:
 | `<p data-decision data-decision-label="D7">…</p>` | the tag leads with `D7 — DECISION n of N` |
 
 - **Answering = setting the attribute's value to the answer, then recomposing** (§3's rule — same commit).
+- **The owner answers by clicking** (owner, 2026-11-23 21:00): each OPEN tag carries ★ Recommended (when the card has a `.rec` line; owner 21:08) / ✔ Yes / ✖ No / ✎ Other…
+  (`DECISION_JS` in `brief-compose.py`). A click arrives in `questions.md` like a tray question, with the tag's label
+  as its section and `Q: ANSWER: <yes|no|text>` — record it as the attribute's value and recompose. A click alone
+  answers nothing; the card says *sent* until the page is recomposed.
 - **Never type a number.** `n`, `N`, and the counter under the title are all derived by `brief-compose.py`
   (`render_decisions`) from one parse of the fragment. While any is open the counter reads total · remaining ·
   answered with a link to the first open one; once none is open it reads `N decisions on this page · 0

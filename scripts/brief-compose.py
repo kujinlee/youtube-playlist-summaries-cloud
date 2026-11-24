@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 226 cases
+    python3 scripts/brief-compose.py --self-test  # 234 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
@@ -1190,7 +1190,110 @@ DECISION_CSS = """
          font: 600 .92rem/1.5 var(--sans); text-transform: none; }
   .ex-decision-count.all-done { border-color: var(--decided-br); background: var(--decided-bg);
          color: var(--decided); }
+  .ex-pick { display: inline-flex; gap: .35em; margin: 0 .5em .3em 0; vertical-align: baseline;
+         font: 600 .78rem/1.5 var(--sans); text-transform: none; }
+  .ex-pick button { font: inherit; padding: .05em .7em; border-radius: 4px; cursor: pointer;
+         border: 1px solid var(--decide-br); background: transparent; color: inherit; }
+  .ex-pick button:hover { background: var(--decide-bg); color: var(--decide); }
+  .ex-pick input { font: inherit; padding: .05em .4em; min-width: 16em; }
+  .ex-pick .ex-pick-sent { padding: .05em .6em; border: 1px solid var(--decided-br);
+         border-radius: 4px; background: var(--decided-bg); color: var(--decided); }
+  .ex-pick .ex-pick-err { color: #c0392b; }
   .ex-decision-count a { color: inherit; }
+"""
+
+
+# ⟳ 2026-11-23 21:00, the owner: "there are so many. Can you modify the cards so that I can select yes
+# or not within each cards?" — a 28-decision walkthrough answered by typing labels into the Ask box was
+# the friction. Each OPEN tag gets Yes / No / Other… beside it. A click POSTs to the SAME endpoint and in
+# the SAME three-line shape the Ask tray's `compose()` sends (section, quote, Q:), so the session's
+# question watcher needs no change: the section line is the tag's own text, the Q: line is
+# `ANSWER: yes|no|<text>`. ⚠ A click does NOT answer the decision — the session sets `data-decision`
+# and recomposes (explainer-delivery §3a); until then the card says "sent", remembered per browser so a
+# reload does not offer the same decision twice. Opened from a file (no server), it copies the line to
+# the clipboard instead, as the tray does. Emitted ONLY on a page with an open decision.
+DECISION_JS = r"""
+(function(){
+  var LIVE = /^https?:$/.test(location.protocol);
+  var DOC = location.pathname.replace(/^\//, '') || 'latest';
+  function key(id){ return 'ex-pick:' + DOC + ':' + id; }
+  function load(id){ try { return localStorage.getItem(key(id)); } catch (e) { return null; } }
+  function save(id, v){ try { localStorage.setItem(key(id), v); } catch (e) {} }
+  function questionOf(tag){
+    var el = tag.parentNode, out = '';
+    Array.prototype.forEach.call(el.childNodes, function(n){
+      if (n === tag || (n.nodeType === 1 && n.classList.contains('ex-pick'))) return;
+      out += n.textContent;
+    });
+    return out.replace(/\s+/g, ' ').trim().slice(0, 400);
+  }
+  function sent(box, answer){
+    box.innerHTML = '';
+    var s = document.createElement('span');
+    s.className = 'ex-pick-sent';
+    s.textContent = '\u2713 sent: ' + answer + ' \u2014 the page updates when the session records it';
+    box.appendChild(s);
+  }
+  function fail(box, msg){
+    var e = box.querySelector('.ex-pick-err') || document.createElement('span');
+    e.className = 'ex-pick-err'; e.textContent = msg; box.appendChild(e);
+  }
+  function send(tag, box, answer){
+    var label = tag.textContent.replace(/^\S+\s+\S+\s+/, '').trim();
+    var body = '**' + label + '**\n   > ' + questionOf(tag) + '\n   Q: ANSWER: ' + answer;
+    if (!LIVE){
+      if (navigator.clipboard) navigator.clipboard.writeText(body).then(function(){
+        sent(box, answer + ' (copied \u2014 paste it into the session)'); }, function(){
+        fail(box, ' could not copy'); });
+      else fail(box, ' no server and no clipboard \u2014 type the answer in the session');
+      return;
+    }
+    fetch('/questions', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: DOC, text: body }) }).then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      save(tag.id, answer); sent(box, answer);
+    }).catch(function(e){ fail(box, ' send failed (' + e.message + ')'); });
+  }
+  // The page's own recommendation (owner 11-23 21:08): the bold lead of the next `.rec` sibling
+  // after the tag's paragraph, before the next decision. None found = no Recommended button.
+  function recOf(tag){
+    for (var s = tag.parentNode.nextElementSibling; s; s = s.nextElementSibling) {
+      if (s.querySelector && s.querySelector('.ex-decision')) return '';
+      if (s.classList && s.classList.contains('rec')) {
+        var b = s.querySelector('b') || s;
+        return b.textContent.replace(/\s+/g, ' ').replace(/^\s*Recommended:?\s*/i, '')
+          .replace(/[.\s]+$/, '').slice(0, 200);
+      }
+    }
+    return '';
+  }
+  function button(text, fn){
+    var b = document.createElement('button'); b.type = 'button'; b.textContent = text;
+    b.addEventListener('click', fn); return b;
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.ex-decision-open'), function(tag){
+    var box = document.createElement('span'); box.className = 'ex-pick';
+    tag.parentNode.insertBefore(box, tag.nextSibling);
+    var prior = load(tag.id);
+    if (prior) { sent(box, prior); return; }
+    var rec = recOf(tag);
+    if (rec) box.appendChild(button('\u2605 Recommended: ' + (rec.length > 40 ? rec.slice(0, 40) + '\u2026' : rec),
+      function(){ send(tag, box, 'recommended (' + rec + ')'); }));
+    box.appendChild(button('\u2714 Yes', function(){ send(tag, box, 'yes'); }));
+    box.appendChild(button('\u2716 No', function(){ send(tag, box, 'no'); }));
+    box.appendChild(button('\u270E Other\u2026', function(){
+      box.innerHTML = '';
+      var inp = document.createElement('input'); inp.type = 'text';
+      inp.placeholder = 'your answer, then Enter';
+      inp.addEventListener('keydown', function(e){
+        if (e.key === 'Enter' && inp.value.trim()) send(tag, box, inp.value.trim());
+      });
+      box.appendChild(inp);
+      box.appendChild(button('Send', function(){ if (inp.value.trim()) send(tag, box, inp.value.trim()); }));
+      inp.focus();
+    }));
+  });
+})();
 """
 
 
@@ -1471,6 +1574,9 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # ⚠ The SCRIPT stays at the end of `body`, after the bar in document order, which is
     # what it needs — it queries the slot when it runs.
     body = page_chrome.place_bar(body, chrome_bar) + "\n" + chrome_js
+    # The Yes/No/Other buttons, only while a decision is open (DECISION_JS above).
+    if _remaining:
+        body += f"\n<script>{DECISION_JS}</script>"
     # ⭐ THE TRAY REGION IS DELIMITED AT BOTH ENDS (backlog #106). `extract_tray` reads back
     # exactly what is written between these two comments, so a recompose cannot re-lift the
     # fragment's own `#tray …` overrides — which is what `head` legitimately contains, and
@@ -2985,6 +3091,78 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
          -1 < _dd3.find("</h1>") < _dd3.find("ex-decision-count\"") < _dd3.find("intro")
          < _dd3.find("DECISION 1 of 3"))
     _dcss = globals().get("DECISION_CSS", "")
+    # ── THE YES / NO / OTHER BUTTONS (owner 11-23 21:00) ── emitted while a decision is OPEN, never
+    # on an all-answered page or a page with none; the script must PARSE, and RUN: under node, against
+    # a stub DOM, a click on Yes must POST the tray's three-line shape with the tag's own label.
+    _js_tag = f"<script>{DECISION_JS}</script>"
+    case("buttons: the pick script ships with an open decision, not with all answered or none",
+         _js_tag in _dd3 and _js_tag not in _dd2 and _js_tag not in doc)
+    import shutil as _sh, subprocess as _sp, json as _js, tempfile as _tf
+    _node = _sh.which("node")
+    if not _node:
+        case("buttons: CANNOT RUN — no `node` on PATH, the pick script was NOT run", False)
+    else:
+        _harness = r"""
+const vm = require('vm'); const src = require('fs').readFileSync(process.argv[2], 'utf8');
+function run(protocol, label, rec){
+  const posts = [], store = {};
+  function el(tag){ const e = {tagName: tag, children: [], handlers: {}, textContent: '', id: '',
+    className: '', classList: {contains: c => (e.className || '').split(' ').includes(c)},
+    appendChild(c){ e.children.push(c); return c; },
+    addEventListener(t, f){ e.handlers[t] = f; }, querySelector(){ return null; }, focus(){} };
+    Object.defineProperty(e, 'innerHTML', {set(){ e.children = []; }, get(){ return ''; }});
+    return e; }
+  const p = el('p'); const tag = el('span'); tag.id = 'ex-decision-1';
+  tag.textContent = '\u{1F7E8} ✍ ' + label; tag.className = 'ex-decision ex-decision-open';
+  tag.nodeType = 1; tag.parentNode = p; const txt = {nodeType: 3, textContent: ' Keep  it? '};
+  p.childNodes = [tag, txt]; let box = null;
+  p.insertBefore = (b) => { box = b; };
+  if (rec) { const r = el('p'); r.className = 'rec'; const bb = el('b'); bb.textContent = rec;
+    r.querySelector = q => q === 'b' ? bb : null; p.nextElementSibling = r; }
+  const ctx = {location: {protocol, pathname: '/page.html'},
+    document: {querySelectorAll: () => [tag], createElement: el},
+    localStorage: {getItem: k => store[k] || null, setItem: (k, v) => { store[k] = v; }},
+    navigator: {}, fetch: (u, o) => { posts.push({u, body: JSON.parse(o.body)});
+      return Promise.resolve({ok: true}); }, Promise, JSON};
+  vm.runInNewContext(src, ctx);
+  const labels = box.children.map(b => b.textContent);
+  box.children[0].handlers.click();
+  return new Promise(r => setTimeout(() => r({labels, posts, store,
+    after: box.children.map(c => c.textContent)}), 0));
+}
+Promise.all([run('http:', '4.1 — DECISION 1 of 28'), run('http:', 'D7 — DECISION 3 of 5'),
+             run('file:', 'X — DECISION 1 of 1'),
+             run('http:', '4.2 — DECISION 2 of 28', 'Recommended:  new child.')]).then(r => console.log(JSON.stringify(r)));
+"""
+        with _tf.TemporaryDirectory() as _td:
+            _src = pathlib.Path(_td) / "pick.js"; _src.write_text(DECISION_JS)
+            _h = pathlib.Path(_td) / "h.js"; _h.write_text(_harness)
+            _chk = _sp.run([_node, "--check", str(_src)], capture_output=True, text=True, timeout=60)
+            case("buttons: the pick script parses (node --check)", _chk.returncode == 0)
+            _out = _sp.run([_node, str(_h), str(_src)], capture_output=True, text=True, timeout=60)
+            try:
+                _a, _b, _f, _r = _js.loads(_out.stdout)
+            except ValueError:
+                _a = _b = _f = _r = None
+            case("buttons: an open card offers Yes, No and Other",
+                 _a is not None and [x.split(" ")[-1] for x in _a["labels"]] == ["Yes", "No", "Other…"])
+            case("buttons: Yes POSTs the tray's three-line shape, labelled by THAT tag (two tags)",
+                 _a is not None and _b is not None
+                 and [x["u"] for x in _a["posts"]] == ["/questions"]
+                 and _a["posts"][0]["body"] == {"doc": "page.html", "text":
+                     "**4.1 — DECISION 1 of 28**\n   > Keep it?\n   Q: ANSWER: yes"}
+                 and _b["posts"][0]["body"]["text"].startswith("**D7 — DECISION 3 of 5**\n"))
+            case("buttons: after a send the card says sent and remembers it per page",
+                 _a is not None and _a["store"] == {"ex-pick:page.html:ex-decision-1": "yes"}
+                 and len(_a["after"]) == 1 and _a["after"][0].startswith("✓ sent: yes"))
+            case("buttons: a card with a Recommended line offers it FIRST and sends its text",
+                 _r is not None and _r["labels"][0] == "★ Recommended: new child"
+                 and _r["labels"][1:] == ["✔ Yes", "✖ No", "✎ Other…"]
+                 and _r["posts"][0]["body"]["text"].endswith("Q: ANSWER: recommended (new child)"))
+            case("buttons: no Recommended line, no Recommended button",
+                 _a is not None and not any("Recommended" in x for x in _a["labels"]))
+            case("buttons: opened from a file, nothing is POSTed",
+                 _f is not None and _f["posts"] == [])
     case("603: the decision stylesheet ships only with a decision",
          _dcss.strip() != "" and _dcss.strip() in _dd3 and _dcss.strip() not in doc
          and "ex-decision" not in doc)
