@@ -1198,5 +1198,57 @@
     "expect": [
       "603 r3: a decision on or inside <svg>/<math> is REFUSED, and a hidden p stays open across them"
     ]
+  },
+  {
+    "name": "decision buttons r2: the key hashes the question cut at 400 characters again",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "  function questionOf(tag){ return norm(textOf(tag.parentNode, tag)); }",
+        "  function questionOf(tag){ return norm(textOf(tag.parentNode, tag)).slice(0, 400); }"
+      ]
+    ],
+    "expect": [
+      "buttons: a reload shows 'sent' only on the decision answered — not its identical twin, nor one differing only after character 400, moved (r2)"
+    ]
+  },
+  {
+    "name": "decision buttons r2: identical decisions are no longer told apart by occurrence",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "      tag.exKey = n > 1 ? b + ':' + n : b;",
+        "      tag.exKey = b;"
+      ]
+    ],
+    "expect": [
+      "buttons: a reload shows 'sent' only on the decision answered — not its identical twin, nor one differing only after character 400, moved (r2)"
+    ]
+  },
+  {
+    "name": "decision buttons r2: the question reads the tray's ask button again",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "n.tagName === 'BUTTON' || n.classList.contains('ex-pick')\n        || n.classList.contains('askbtn')",
+        "n.classList.contains('ex-pick')"
+      ]
+    ],
+    "expect": [
+      "buttons: with the tray run, a heading decision is 'sent' after reload and its quote has no 'ask' (r2)"
+    ]
+  },
+  {
+    "name": "decision buttons r2: a heading decision's box goes BEFORE the heading",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "host.parentNode.insertBefore(box, host.nextSibling);",
+        "host.parentNode.insertBefore(box, host);"
+      ]
+    ],
+    "expect": [
+      "buttons: a heading decision's box is the heading's NEXT element sibling (r2)"
+    ]
   }
 ]

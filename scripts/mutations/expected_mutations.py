@@ -636,7 +636,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-11, backlog #603 review round 3: 86 -> 94 — the r3 Claude survivors pinned (the
     # formatting check's `hidden`, `object` as a p scope stop, `li`/`hr`/`h2` closing a p) and the
     # SVG/MathML refusal (on, inside, and `svg`/`math` as p scope stops).
-    "scripts/brief-compose.py": 94,
+    # ⟳ 2026-11-24, PR #628 (decision buttons) review round 2: 94 -> 98 — the sent-state key's full-
+    # question hash and its occurrence disambiguator, the question excluding the tray's ask button,
+    # and a heading decision's box placed AFTER the heading (Codex r2 findings 1-3).
+    "scripts/brief-compose.py": 98,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch

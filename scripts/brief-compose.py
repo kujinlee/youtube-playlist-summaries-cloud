@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 245 cases
+    python3 scripts/brief-compose.py --self-test  # 248 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
@@ -1227,20 +1227,35 @@ DECISION_JS = r"""
   }
   // ⟳ r1 (Codex 3): the label is ONE line, or the three-line shape breaks.
   function labelOf(tag){ return norm(tag.textContent).replace(/^\S+\s+\S+\s+/, ''); }
-  function questionOf(tag){
+  // ⟳ r2 (Codex 2): the question is the host's text with the tag and EVERY control removed — our
+  // `.ex-pick`, the tray's `.askbtn` (appended to h2/h3 AFTER this script ran) and any button — at any
+  // depth, so a heading reads the same at load and at click and the quote never ends in "ask".
+  function textOf(n, tag){
+    if (n === tag) return '';
+    if (n.nodeType === 3) return n.textContent;
+    if (n.nodeType !== 1 || n.tagName === 'BUTTON' || n.classList.contains('ex-pick')
+        || n.classList.contains('askbtn')) return '';
     var out = '';
-    Array.prototype.forEach.call(tag.parentNode.childNodes, function(n){
-      if (n === tag || (n.nodeType === 1 && n.classList.contains('ex-pick'))) return;
-      out += n.textContent;
-    });
-    return norm(out).slice(0, 400);
+    Array.prototype.forEach.call(n.childNodes, function(c){ out += textOf(c, tag); });
+    return out;
   }
+  function questionOf(tag){ return norm(textOf(tag.parentNode, tag)); }
   // ⟳ r1 (Codex 1, Claude F2): keyed by WHICH decision it is (page, the label without its ordinal, a
   // hash of the question), never by `ex-decision-<n>`, so a renumbered page cannot show one card's
-  // answer on another.
-  function key(tag){
+  // answer on another. ⟳ r2 (Codex 1): the hash is of the FULL question (it was cut at 400), and two
+  // decisions with the same label and question are told apart by their occurrence among THAT pair —
+  // never by the global position, which r1 removed. Computed ONCE, before anything else edits the page.
+  function baseKey(tag){
     return 'ex-pick:' + DOC + ':' + labelOf(tag).replace(/\s*(—\s*)?DECISION \d+ of \d+$/, '')
       + ':' + hash(questionOf(tag));
+  }
+  var SEEN = {};
+  function key(tag){
+    if (!tag.exKey) {
+      var b = baseKey(tag), n = SEEN[b] = (SEEN[b] || 0) + 1;
+      tag.exKey = n > 1 ? b + ':' + n : b;
+    }
+    return tag.exKey;
   }
   function load(tag){ try { return localStorage.getItem(key(tag)); } catch (e) { return null; } }
   function save(tag, v){ try { localStorage.setItem(key(tag), v); } catch (e) {} }
@@ -1268,7 +1283,7 @@ DECISION_JS = r"""
   }
   function send(tag, box, answer){
     if (box.exBusy) return;                  // ⟳ r1 (Claude F6): a double click sends ONE entry
-    var body = '**' + labelOf(tag) + '**\n   > ' + questionOf(tag) + '\n   Q: ANSWER: ' + answer;
+    var body = '**' + labelOf(tag) + '**\n   > ' + questionOf(tag).slice(0, 400) + '\n   Q: ANSWER: ' + answer;
     if (!LIVE){
       if (navigator.clipboard) navigator.clipboard.writeText(body).then(function(){
         sent(tag, box, answer + ' (copied — paste it into the session)', false); }, function(){
@@ -1338,6 +1353,7 @@ DECISION_JS = r"""
     var box = document.createElement('span'); box.className = 'ex-pick';
     // ⟳ r1 (Claude F5): on a heading the box goes AFTER it, so the tray's heading text never reads the buttons.
     box.exHost = host;
+    key(tag);
     if (/^H[1-6]$/.test(host.tagName || '')) host.parentNode.insertBefore(box, host.nextSibling);
     else host.insertBefore(box, tag.nextSibling);
     var prior = load(tag);
@@ -3184,7 +3200,12 @@ function el(tag, cls, kids){
 const out_missing = [];
 function tag(label, n){ const t = el('span', 'ex-decision ex-decision-open', ['\u{1F7E8} ✍ ' + label]);
   t.id = 'ex-decision-' + n; return t; }
-function page(protocol, kids, store, status){
+// ⟳ r2 (Codex 2): the tray's heading loop, as every committed tray has it ("Hover-a-heading → ask
+// button": createElement('button'), className 'askbtn', textContent 'ask', h.appendChild(b)) less its
+// styles and listeners. It runs AFTER the pick script, as the composed page orders them.
+function trayHeadings(body){ body.querySelectorAll('h2, h3').forEach(h => {
+  const b = el('button', 'askbtn'); b.type = 'button'; b.textContent = 'ask'; h.appendChild(b); }); }
+function page(protocol, kids, store, status, tray){
   const posts = [], body = el('body', '', kids);
   const ctx = {location: {protocol, pathname: '/page.html'},
     document: {querySelectorAll: s => body.querySelectorAll(s), createElement: t => el(t)},
@@ -3194,6 +3215,7 @@ function page(protocol, kids, store, status){
     fetch: (u, o) => { posts.push({u, body: JSON.parse(o.body)});
       return Promise.resolve(status ? {ok: false, status} : {ok: true}); }};
   vm.runInNewContext(src, ctx);
+  if (tray) trayHeadings(body);
   const boxes = body.querySelectorAll('.ex-pick');
   const labels = b => b.childNodes.map(c => c.tagName === 'INPUT' ? '<input>' : c.textContent);
   const click = (b, text) => { const x = b.childNodes.find(c => c.textContent.endsWith(text)); if (x) x.handlers.click(); else out_missing.push(text); };
@@ -3217,6 +3239,7 @@ const out = {};
   out.s1_labels = a.boxes.map(a.labels);
   out.s1_heading_text = h3.textContent;
   out.s1_box3_parent = a.boxes[2].parentNode.tagName;
+  out.s1_box3_next = h3.nextElementSibling === a.boxes[2];
   a.click(a.boxes[0], 'Yes'); out.s1_busy = a.boxes[0].childNodes.filter(c => c.tagName === 'BUTTON').map(c => c.disabled);
   a.click(a.boxes[0], 'Yes');                         // a double click
   a.click(a.boxes[2], 'Yes'); a.click(a.boxes[3], 'deadline matters');
@@ -3247,6 +3270,23 @@ const out = {};
   // S5 — opened from a file: nothing is POSTed.
   const f = page('file:', [el('p', '', [tag('X — DECISION 1 of 1', 1), 'File?'])], {});
   f.click(f.boxes[0], 'Yes'); await tick(); out.s5_posts = f.posts.length;
+  // S6 (r2, Codex 1+2) — the tray runs too. Two unlabelled decisions with ONE question; two whose
+  // questions differ only after character 400; a heading decision. Answer the first of each, reload.
+  const long = 'L' + 'x'.repeat(420);
+  const s6 = () => [el('p', '', [tag('DECISION 1 of 5', 1), 'Same?']),
+    el('p', '', [tag('DECISION 2 of 5', 2), 'Same?']),
+    el('p', '', [tag('DECISION 3 of 5', 3), long + 'A']),
+    el('p', '', [tag('DECISION 4 of 5', 4), long + 'B']),
+    el('h2', '', [tag('H — DECISION 5 of 5', 5), 'Heading q?'])];
+  const s6store = {};
+  const g = page('http:', s6(), s6store, 0, true);
+  g.click(g.boxes[0], 'Yes'); g.click(g.boxes[2], 'Yes'); g.click(g.boxes[4], 'Yes');
+  await tick(); await tick();
+  out.s6_posts = g.posts.map(p => p.body.text); out.s6_keys = Object.keys(s6store);
+  // The reload is a RECOMPOSE that swapped 3 and 4: only the full-question hash keeps A's answer on A.
+  const s6r = s6(); [s6r[2], s6r[3]] = [s6r[3], s6r[2]];
+  const g2 = page('http:', s6r, s6store, 0, true);
+  out.s6_reload = g2.boxes.map(b => g2.labels(b)[0]);
 })().catch(e => { out.error = String(e); }).then(() => { out.missing = out_missing; console.log(JSON.stringify(out)); });
 """
         with _tf.TemporaryDirectory() as _td:
@@ -3282,6 +3322,20 @@ const out = {};
         case("buttons: a heading decision's buttons sit AFTER the heading, outside its text",
              _o.get("s1_box3_parent") == "BODY" and "Head?" in _o.get("s1_heading_text", "")
              and not any(w in _o.get("s1_heading_text", "") for w in ("Recommended", "Yes", "Other")))
+        # r2 (Codex 3): AFTER is the heading's next element sibling, not merely "outside it".
+        case("buttons: a heading decision's box is the heading's NEXT element sibling (r2)",
+             _o.get("s1_box3_next") is True)
+        # r2 (Codex 1): the full question is hashed, and identical questions are told apart.
+        _sent6 = "✓ sent: yes — the page updates when the session records it"
+        case("buttons: a reload shows 'sent' only on the decision answered — not its identical twin, "
+             "nor one differing only after character 400, moved (r2)",
+             (_o.get("s6_reload") or [None] * 5)[:4] == [_sent6, "✔ Yes", "✔ Yes", _sent6]
+             and len(_o.get("s6_keys") or []) == 3)
+        # r2 (Codex 2): a heading decision's key is the same at load and at click, with the tray run.
+        case("buttons: with the tray run, a heading decision is 'sent' after reload and its quote has no 'ask' (r2)",
+             (_o.get("s6_reload") or [None] * 5)[4:] == [_sent6]
+             and len(_o.get("s6_posts") or []) == 3
+             and _o["s6_posts"][2] == "**H — DECISION 5 of 5**\n   > Heading q?\n   Q: ANSWER: yes")
         # r1 (Codex 2, Claude F3): a bold lead only when it OPENS the paragraph; else the first sentence.
         case("buttons: Recommended = an opening bold lead, else the first sentence, less a Recommend(ed): lead",
              len(_o.get("s1_labels") or []) == 4
