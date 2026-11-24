@@ -70,8 +70,8 @@
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "  <p class=\"built\"><strong>Built {esc(built_at)}.</strong>",
-    "  <p class=\"built\"><strong>{esc(built_at)}.</strong>"
+    "<p class=\"built\"><strong>Built {esc(built_at)}.</strong>",
+    "<p class=\"built\"><strong>{esc(built_at)}.</strong>"
    ]
   ],
   "expect": "the build time is rendered"
@@ -235,8 +235,8 @@
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "    body: list[str] = [render_index(nodes, fragments, order)]",
-    "    body: list[str] = []"
+    "    index_html = render_index(nodes, fragments, order)",
+    "    index_html = \"\""
    ]
   ],
   "expect": "the index is rendered before the first card"
@@ -246,8 +246,8 @@
   "file": "scripts/gen-features-page.py",
   "edits": [
    [
-    "    parts = [f'<details class=\"node{\" absent\" if absent else \"\"}\" id=\"{esc(n.slug)}\">',",
-    "    parts = [f'<details class=\"node{\" absent\" if absent else \"\"}\" id=\"{esc(n.slug)}\" open>',"
+    "    parts = [f'<details class=\"node{\" absent\" if absent else \"\"}\" id=\"{esc(frag_id(n.slug))}\">',",
+    "    parts = [f'<details class=\"node{\" absent\" if absent else \"\"}\" id=\"{esc(frag_id(n.slug))}\" open>',"
    ]
   ],
   "expect": "every card is a <details>, and every one is FOLDED"
@@ -261,7 +261,7 @@
     "    el.open = false;"
    ]
   ],
-  "expect": "the page carries the script that opens the card a hash names, on load and on hashchange"
+  "expect": "the page's hash handler, RUN: a link loaded with #a opens card a and scrolls it into view"
  },
  {
   "name": "the page stops emitting the hash handler",
@@ -272,7 +272,7 @@
     ""
    ]
   ],
-  "expect": "the page carries the script that opens the card a hash names, on load and on hashchange"
+  "expect": "the page's hash handler, RUN: a link loaded with #a opens card a and scrolls it into view"
  },
  {
   "name": "collect stops carrying each row's severity glyph, so every gap counts as `·`",
@@ -295,5 +295,115 @@
    ]
   ],
   "expect": "a node's index line and card heading carry the same gap count, with gaps and without"
+ },
+ {
+  "name": "the hash handler never runs on load, so a shared link lands on a folded card",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "  openFrom(location.hash);\n})();",
+    "})();"
+   ]
+  ],
+  "expect": "the page's hash handler, RUN: a link loaded with #a opens card a and scrolls it into view"
+ },
+ {
+  "name": "the hash handler stops listening for hashchange, so an index click on a NEW line opens nothing",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "  window.addEventListener(\"hashchange\", function () { openFrom(location.hash); });\n",
+    ""
+   ]
+  ],
+  "expect": "the page's hash handler, RUN: a later hash change to #b opens card b"
+ },
+ {
+  "name": "the re-click handler is gone, so clicking the current line's link again leaves its card folded",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    if (a && a.getAttribute(\"href\") === location.hash) openFrom(location.hash);",
+    "    a = a;"
+   ]
+  ],
+  "expect": "the page's hash handler, RUN: re-clicking the CURRENT hash's link reopens a re-folded card"
+ },
+ {
+  "name": "the DETAILS guard is inverted, so only a non-card element would ever open",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "if (!el || el.tagName !== \"DETAILS\") return;",
+    "if (!el || el.tagName === \"DETAILS\") return;"
+   ]
+  ],
+  "expect": "the page's hash handler, RUN: a hash naming a non-<details> element opens nothing"
+ },
+ {
+  "name": "the opened card is not scrolled into view",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "    el.scrollIntoView({block: \"start\"});\n",
+    ""
+   ]
+  ],
+  "expect": "the page's hash handler, RUN: a link loaded with #a opens card a and scrolls it into view"
+ },
+ {
+  "name": "the card's id stops reading frag_id, so an odd name's link names no card",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "\" id=\"{esc(frag_id(n.slug))}\">',",
+    "\" id=\"{esc(n.slug)}\">',"
+   ]
+  ],
+  "expect": "every node name, however odd, gets a distinct id its index link opens when RUN"
+ },
+ {
+  "name": "frag_id leaves `_` unencoded, so two distinct names can share one id",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "_ID_SAFE = frozenset(\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-\")",
+    "_ID_SAFE = frozenset(\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_\")"
+   ]
+  ],
+  "expect": "every node name, however odd, gets a distinct id its index link opens when RUN"
+ },
+ {
+  "name": "the Known-gaps band drops its first open row, so the card lists fewer gaps than its heading counts",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        for e in shown:\n",
+    "        for e in shown[1:]:\n"
+   ]
+  ],
+  "expect": "every card's heading and index line count exactly the open rows its rendered band lists"
+ },
+ {
+  "name": "a plain-string row counts under a wrong glyph instead of `·`",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        g = e.get(\"sev\", \"·\") if isinstance(e, dict) else \"·\"",
+    "        g = e.get(\"sev\", \"·\") if isinstance(e, dict) else \"?\""
+   ]
+  ],
+  "expect": "the gap summary counts OPEN rows by severity, in the backlog's severity order"
+ },
+ {
+  "name": "a glyph outside the severity order raises instead of being shown last",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "key=lambda kv: rank.get(kv[0], len(rank))))",
+    "key=lambda kv: rank[kv[0]]))"
+   ]
+  ],
+  "expect": "the gap summary counts OPEN rows by severity, in the backlog's severity order"
  }
 ]

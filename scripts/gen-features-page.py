@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import html as html_lib
 import importlib.util
 import pathlib
 import re
@@ -249,6 +250,20 @@ def gaps_html(n: Node, fragments: dict, order: list[str]) -> str:
     return f'<span class="gaps{" open" if gaps else ""}">{esc(gap_label(gaps, order))}</span>'
 
 
+_ID_SAFE = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+
+
+def frag_id(name: str) -> str:
+    """⛔ THE ONE ID OF A NODE: its card's `id` and its index link's fragment both read it. PURE.
+
+    A node's name is free heading text. Any character outside `[A-Za-z0-9-]` — `_` included —
+    becomes `_<hex>_`, so the map is injective, and the result is made only of characters a browser
+    does not percent-encode: `location.hash` equals the link's href exactly, and the handler needs
+    no decoding (which threw on a malformed escape — review r1, Codex M1 / Claude m3).
+    """
+    return "".join(c if c in _ID_SAFE else f"_{ord(c):x}_" for c in name)
+
+
 def render_index(nodes: list[Node], fragments: dict, order: list[str]) -> str:
     """The tree index: group -> `###` -> `####`, in file order, one linked line per node. PURE.
 
@@ -257,7 +272,7 @@ def render_index(nodes: list[Node], fragments: dict, order: list[str]) -> str:
     such a row twice; a de-duplicated subtotal is a second counting rule, and this page keeps one.
     """
     def line(n: Node) -> str:
-        return (f'<a href="#{esc(n.slug)}">{esc(n.slug)}</a> {state_html(n)} '
+        return (f'<a href="#{esc(frag_id(n.slug))}">{esc(n.slug)}</a> {state_html(n)} '
                 f'{gaps_html(n, fragments, order)}')
 
     out = ['<nav class="tindex" aria-label="Feature tree">',
@@ -294,11 +309,12 @@ def index_shape(index_html: str) -> list[tuple[int, str]]:
 # Opens the folded card a hash names. Fragment navigation scrolls TO a closed `<details>` but never
 # opens it, so without this an index link lands on a one-line summary. Runs on load (a shared link)
 # and on hashchange (an index click); re-clicking the CURRENT hash fires no hashchange, so index
-# clicks are handled directly too.
+# clicks are handled directly too. Ids come from `frag_id`, so a hash is compared and looked up
+# verbatim — nothing is decoded, and a malformed escape simply names no card.
 OPEN_HASH_JS = """
 (function () {
   function openFrom(hash) {
-    var id = decodeURIComponent((hash || "").replace(/^#/, ""));
+    var id = (hash || "").replace(/^#/, "");
     var el = id && document.getElementById(id);
     if (!el || el.tagName !== "DETAILS") return;
     el.open = true;
@@ -333,6 +349,110 @@ def scripts_parse(page: str) -> list[str]:
             if r.returncode != 0:
                 problems.append(f"script {i}: {(r.stderr or r.stdout).strip()[:200]}")
     return problems
+
+
+# The self-test's DOM stand-in for OPEN_HASH_JS (review r1: Claude M1, Codex M3). The script is RUN,
+# under `node` in a fresh `vm` context per scenario, against a stub window/document/location whose
+# listeners are captured and fired — so a case observes what the script DOES, not which tokens it
+# contains. Each scenario: `hash` at load, `els` [[id, tagName]], `steps` applied in order
+# ({"fold": id} | {"hash": h, "fire": "hashchange"} | {"fire": "click", "href": h}).
+_HASH_DRIVER = r"""
+const fs = require("fs"), vm = require("vm");
+const src = fs.readFileSync(process.argv[2], "utf8");
+const out = {};
+for (const s of JSON.parse(fs.readFileSync(process.argv[3], "utf8"))) {
+  const els = {}, on = {window: {}, document: {}};
+  for (const [id, tag] of s.els)
+    els[id] = {tagName: tag, open: false, scrolled: 0, scrollIntoView() { this.scrolled++; }};
+  const add = (where) => (t, f) => { (on[where][t] = on[where][t] || []).push(f); };
+  const location = {hash: s.hash};
+  const ctx = {location, window: {addEventListener: add("window")},
+               document: {addEventListener: add("document"),
+                          getElementById: (id) => Object.prototype.hasOwnProperty.call(els, id) ? els[id] : null}};
+  let err = null;
+  try {
+    vm.runInNewContext(src, ctx);
+    for (const st of s.steps || []) {
+      if (st.fold) els[st.fold].open = false;
+      if (st.hash !== undefined) location.hash = st.hash;
+      if (st.fire === "hashchange") (on.window.hashchange || []).forEach((f) => f({}));
+      if (st.fire === "click") {
+        const a = {getAttribute: (n) => (n === "href" ? st.href : null)};
+        const target = {closest: (sel) => (sel.indexOf(".tindex") !== -1 ? a : null)};
+        (on.document.click || []).forEach((f) => f({target}));
+      }
+    }
+  } catch (e) { err = String(e); }
+  const ids = Object.keys(els).sort();
+  out[s.name] = {err, open: ids.filter((k) => els[k].open), scrolled: ids.filter((k) => els[k].scrolled)};
+}
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def run_hash_script(js: str, scenarios: list[dict]) -> dict | str:
+    """{scenario name: {err, open, scrolled}} from RUNNING `js` per scenario; a str is CANNOT RUN."""
+    import json
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return "CANNOT RUN: no `node` on PATH — the hash handler was NOT run"
+    with tempfile.TemporaryDirectory() as td:
+        d, s, sc = (pathlib.Path(td) / n for n in ("drive.js", "page.js", "scen.json"))
+        d.write_text(_HASH_DRIVER)
+        s.write_text(js)
+        sc.write_text(json.dumps(scenarios))
+        r = subprocess.run([node, str(d), str(s), str(sc)], capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        return f"CANNOT RUN: the driver failed: {(r.stderr or r.stdout).strip()[:200]}"
+    return json.loads(r.stdout)
+
+
+def rendered_gap_counts(page: str, order: list[str]) -> dict[str, dict]:
+    """Per card id: what its RENDERED markup says, read back from the HTML alone (review r1, Codex
+    M2) — `heading` and `index` are the {glyph: n} the gap summaries print, `rows` the open rows its
+    Known-gaps band lists as [(key, glyph)]. Shares no code with `open_gaps` / `gap_label`, so a
+    band that drops, duplicates or miscounts a row disagrees with the summaries beside it."""
+    def summary(text: str | None) -> dict | None:
+        if text is None:
+            return None
+        m = re.match(r"(\d+) gaps?(?: \((.*)\))?$", text)
+        if not m:
+            return {"unparsed": text}
+        got = {g: int(c) for c, g in re.findall(r"(\d+)(\S+)", m.group(2) or "")}
+        return got if sum(got.values()) == int(m.group(1)) else {"total≠parts": text}
+
+    def glyph_of(row_html: str) -> tuple[str, str]:
+        words = re.sub(r"<[^>]+>", "", row_html).split()
+        return (words[0] if words else "",
+                words[1] if len(words) > 1 and words[1] in order else "·")
+
+    out: dict[str, dict] = {}
+    for chunk in page.split('<details class="node')[1:]:
+        cid = re.match(r'[^"]*" id="([^"]*)"', chunk).group(1)
+        head = re.search(r'<summary class="nhead">.*?<span class="gaps[^"]*">([^<]*)</span>', chunk, re.S)
+        band = re.search(r'<span class="blab">Known gaps</span>(.*?)(?:<div class="band">|$)', chunk, re.S)
+        rows = re.findall(r'<div class="frag( closed)?">(.*?)</div>', band.group(1), re.S) if band else []
+        line = re.search(rf'<a href="#{re.escape(cid)}">[^<]*</a>.*?<span class="gaps[^"]*">([^<]*)</span>',
+                         page, re.S)
+        out[html_lib.unescape(cid)] = {
+            "heading": summary(html_lib.unescape(head.group(1)) if head else None),
+            "index": summary(html_lib.unescape(line.group(1)) if line else None),
+            "rows": [glyph_of(r) for closed, r in rows if not closed]}
+    return out
+
+
+def gap_disagreements(page: str, order: list[str]) -> list[str]:
+    """Card ids whose heading or index summary disagrees with the open rows its own band lists."""
+    bad = []
+    for cid, c in rendered_gap_counts(page, order).items():
+        listed: dict[str, int] = {}
+        for _, g in c["rows"]:
+            listed[g] = listed.get(g, 0) + 1
+        keys = [k for k, _ in c["rows"]]
+        if c["heading"] != listed or c["index"] != listed or len(keys) != len(set(keys)):
+            bad.append(cid)
+    return bad
 
 
 # ---------------------------------------------------------------- collection (reads the tree)
@@ -525,9 +645,11 @@ CSS = """
   .gaps.open{color:var(--pending)}
   details.node > summary{cursor:pointer;list-style:none}
   details.node > summary::-webkit-details-marker{display:none}
-  details.node > summary::before{content:"▸";color:var(--ink-faint);font-size:.8rem;
-                                 margin-right:-.4rem}
-  details.node[open] > summary::before{content:"▾"}
+  /* The fold marker hangs off the SLUG, not the wrapping summary, so it wraps with the slug
+     instead of standing alone on its own line at 390px (review r1 m5). */
+  details.node > summary .slug::before{content:"▸";color:var(--ink-faint);font-size:.8rem;
+                                       margin-right:.45rem;font-weight:400}
+  details.node[open] > summary .slug::before{content:"▾"}
   details.node:not([open]){padding-top:.7rem;padding-bottom:.7rem}
   details.node{display:block}
   details.node > summary ~ *{margin-top:.85rem}
@@ -597,10 +719,12 @@ def render_fragments(f: dict) -> list[str]:
             if closed:
                 bits.append(f"{len(closed)} closed")
             parts.append(f'<details class="more"><summary>{" · ".join(bits)}</summary>')
-            for e in extra + closed:
+            # A closed row is MARKED as closed, so the markup alone says which listed rows are
+            # gaps — the self-test reads the counts back from it (`rendered_gap_counts`).
+            for e, cls in [(e, "frag") for e in extra] + [(e, "frag closed") for e in closed]:
                 text, href = fragment_parts(e)
                 body = f'<a href="{esc(href)}">{inline_unlinked(text)}</a>' if href else inline_md(text)
-                parts.append(f'<div class="frag">{body}</div>')
+                parts.append(f'<div class="{cls}">{body}</div>')
             parts.append("</details>")
         parts.append("</div>")
     return parts
@@ -612,7 +736,7 @@ def render_node(n: Node, fragments: dict, order: list[str]) -> str:
     absent = n.state == "absent"
     f = fragments.get(n.slug) or {}
     n_frag = sum(len(f.get(k) or []) for k, _ in SECTIONS)
-    parts = [f'<details class="node{" absent" if absent else ""}" id="{esc(n.slug)}">',
+    parts = [f'<details class="node{" absent" if absent else ""}" id="{esc(frag_id(n.slug))}">',
              '<summary class="nhead">',
              f'<span class="slug">{esc(n.slug)}</span>',
              state_html(n),
@@ -656,7 +780,9 @@ def render(nodes: list[Node], fragments: dict, built_at: str = "",
     notes = notes or {}
     built = sum(1 for n in nodes if n.state == "built")
     order = sev_order()
-    body: list[str] = [render_index(nodes, fragments, order)]
+    # The index sits ABOVE the build note, so a phone's first screen carries the tree (review r1 m4).
+    index_html = render_index(nodes, fragments, order)
+    body: list[str] = []
     for trunk, entries in group_tree(nodes):
         body.append('<section class="trunk">'
                     f'<h2 class="tname">{esc(trunk)}</h2>')
@@ -692,12 +818,13 @@ def render(nodes: list[Node], fragments: dict, built_at: str = "",
     beneath it — gaps, decisions, specs, reviews, changes — is derived from declarations those
     fragments already carry.</p>
   {warn}{git_note}
-  <p class="built"><strong>Built {esc(built_at)}.</strong> Five of this page's six sources are
+</header>
+{index_html}
+<p class="built"><strong>Built {esc(built_at)}.</strong> Five of this page's six sources are
     files, and the regen hook rebuilds it when one changes. The sixth is <code>git log</code>,
     which no file-watcher can see: merging a PR changes what <em>Recent changes</em> should say and
     fires no hook. That section — and only that one — can lag; this timestamp is how you tell.
     {esc(str(notes.get("prs_read", 0)))} PR subjects were read at that moment.</p>
-</header>
 {"".join(body)}
 <footer>
   <p class="legend"><strong>Two of the six sources are keyword matches, and are lower bounds.</strong>
@@ -869,8 +996,10 @@ def _self_test_body() -> int:
                                        _g(5, "🔴", closed=True)]}}
     check("the gap summary counts OPEN rows by severity, in the backlog's severity order",
           (gap_label(open_gaps(_frag["job-queue"]), _order), gap_label([], _order),
-           gap_label([_g(9, "🟢")], _order), gap_label(open_gaps(_frag["job-queue"]), _order[::-1])),
-          ("4 gaps (1🟠 2🟡 1🟢)", "0 gaps", "1 gap (1🟢)", "4 gaps (1🟢 2🟡 1🟠)"))
+           gap_label([_g(9, "🟢")], _order), gap_label(open_gaps(_frag["job-queue"]), _order[::-1]),
+           # review r1 m2: a plain-string row counts as `·`; a glyph outside `order` is shown LAST.
+           gap_label(["plain", {"sev": "🔶"}, _g(1, "🟡")], _order)),
+          ("4 gaps (1🟠 2🟡 1🟢)", "0 gaps", "1 gap (1🟢)", "4 gaps (1🟢 2🟡 1🟠)", "3 gaps (1🟡 1· 1🔶)"))
     _tree = render(nested + nodes, _frag)
     _ix_at, _card_at = _tree.find('class="tindex"'), _tree.find('<details class="node')
     check("the index is rendered before the first card",
@@ -912,11 +1041,71 @@ def _self_test_body() -> int:
     check("every index link targets a card's id",
           sorted(set(re.findall(r'href="#([a-z0-9-]+)"', _ix)))
           == sorted(set(re.findall(r'<details class="node[^"]*" id="([a-z0-9-]+)"', _tree))), True)
-    # The hash-opens-card behaviour, by its markup: a hash naming a folded card OPENS it, on load
-    # and on every later hash change (a `<details>` is not opened by fragment navigation itself).
-    check("the page carries the script that opens the card a hash names, on load and on hashchange",
-          (OPEN_HASH_JS in _tree, "hashchange" in OPEN_HASH_JS, ".open = true" in OPEN_HASH_JS),
-          (True, True, True))
+    # ⛔ THE HASH HANDLER, RUN (review r1: Claude M1, Codex M3). The script the PAGE carries is
+    # executed against a stub DOM (`run_hash_script`); each behaviour is its own case, so removing
+    # any one clause — the load call, the hashchange listener, the re-click handler, the DETAILS
+    # guard, the scroll — reds the case that names it. A missing `node` is CANNOT RUN, never a pass.
+    _page_js = [b for b in re.findall(r"<script>(.*?)</script>", _tree, re.S) 
+                if b.strip() != page_chrome.chrome_script().strip()]
+    _two = [["a", "DETAILS"], ["b", "DETAILS"]]
+    _run = run_hash_script(_page_js[0] if _page_js else "", [
+        {"name": "load", "hash": "#a", "els": _two},
+        {"name": "change", "hash": "", "els": _two, "steps": [{"hash": "#b", "fire": "hashchange"}]},
+        {"name": "reclick", "hash": "#a", "els": _two,
+         "steps": [{"fold": "a"}, {"fire": "click", "href": "#a"}]},
+        {"name": "notdetails", "hash": "#p", "els": [["p", "P"], ["a", "DETAILS"]]},
+        {"name": "missing", "hash": "#nope", "els": _two},
+        {"name": "malformed", "hash": "#%E0%A4%A", "els": _two}])
+    _obs = (lambda k: _run if isinstance(_run, str) else _run.get(k))
+    check("the page's hash handler, RUN: a link loaded with #a opens card a and scrolls it into view",
+          _obs("load"), {"err": None, "open": ["a"], "scrolled": ["a"]})
+    check("the page's hash handler, RUN: a later hash change to #b opens card b",
+          _obs("change"), {"err": None, "open": ["b"], "scrolled": ["b"]})
+    check("the page's hash handler, RUN: re-clicking the CURRENT hash's link reopens a re-folded card",
+          _obs("reclick"), {"err": None, "open": ["a"], "scrolled": ["a"]})
+    check("the page's hash handler, RUN: a hash naming a non-<details> element opens nothing",
+          _obs("notdetails"), {"err": None, "open": [], "scrolled": []})
+    check("the page's hash handler, RUN: a hash naming no element, or a malformed escape, throws nothing",
+          (_obs("missing"), _obs("malformed")),
+          ({"err": None, "open": [], "scrolled": []}, {"err": None, "open": [], "scrolled": []}))
+
+    # ⛔ ONE ID PER NODE, SAFE FOR ANY NAME (review r1, Codex M1). A heading is free text, so a
+    # name may carry `#`, `?`, `%`, a space, `&`, non-ASCII. Every index link must name its OWN card,
+    # no two cards may share an id, and the handler — RUN — must open the card each link names.
+    _odd_names = ["100% complete", "a#b", "q?x", "s p", "a&b", "café", "a_b", "a_5f_b", "a-b"]
+    _odd, _ = parse_features("## ODD\n" + "".join(
+        f"### {nm}\nstate: built\nfor: Odd name.\n" for nm in _odd_names))
+    _odd_page = render(_odd, {})
+    _odd_ids = re.findall(r'<details class="node[^"]*" id="([^"]*)"', _odd_page)
+    _odd_hrefs = re.findall(r'<a href="(#[^"]*)"', render_index(_odd, {}, _order))
+    _odd_run = run_hash_script(_page_js[0] if _page_js else "", [
+        {"name": h, "hash": "", "els": [[html_lib.unescape(i), "DETAILS"] for i in _odd_ids],
+         "steps": [{"hash": html_lib.unescape(h), "fire": "hashchange"}]} for h in _odd_hrefs])
+    # The stub sets `location.hash` verbatim; a browser percent-encodes a space, `%` or non-ASCII
+    # first, so an href that matched only verbatim would still miss. Hence the character class.
+    check("every node name, however odd, gets a distinct id its index link opens when RUN",
+          (len(_odd_ids), len(set(_odd_ids)), len(_odd_hrefs),
+           [h for h in _odd_hrefs if not re.fullmatch(r"#[A-Za-z0-9_-]+", h)],
+           _odd_run if isinstance(_odd_run, str) else
+           [len(_odd_run[h]["open"]) == 1 and _odd_run[h]["err"] is None for h in _odd_hrefs]),
+          (len(_odd_names), len(_odd_names), len(_odd_names), [], [True] * len(_odd_names)))
+
+    # ⛔ THE COUNTS AGAINST THE RENDERED BAND (review r1, Codex M2): a card's heading and its index
+    # line must equal the OPEN rows its own Known-gaps band LISTS, read back from the page markup
+    # by `rendered_gap_counts` — never from `open_gaps`/`gap_label`, the code under test. Fixture:
+    # rows past GAP_CAP, closed rows, a plain-string row, and a row shared by two nodes (two tags).
+    _shared = _g(100, "🟠")
+    _many = {"job-queue": {"backlog": [_g(10 + i, _order[i % 4]) for i in range(GAP_CAP + 3)]
+                           + ["#90 a plain row", _shared, _g(91, "🔴", closed=True),
+                              _g(92, "🟢", closed=True)]},
+             "wake-on-visit": {"backlog": [_shared, _g(93, "🟡"), _g(94, "🟠", closed=True)]}}
+    _many_page = render(nested + nodes, _many)
+    _many_seen = rendered_gap_counts(_many_page, _order)
+    check("every card's heading and index line count exactly the open rows its rendered band lists",
+          (gap_disagreements(_many_page, _order),
+           len(_many_seen["job-queue"]["rows"]), len(_many_seen["wake-on-visit"]["rows"]),
+           gap_disagreements(render(_real_nodes, _rfrag), _order)),
+          ([], GAP_CAP + 5, 2, []))
     # ⛔ THE EMITTED ARTIFACT PARSES — the HTML is in the supported subset, the script is a program.
     _js = scripts_parse(_tree)
     check("the emitted page is in the supported HTML subset and every inline script parses",

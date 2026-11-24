@@ -21525,5 +21525,7 @@ folded; clicking a line in the tree opens its card.
 `scripts/gen-features-page.py`: `render_index`, `gap_label`/`open_gaps`/`split_closed` (one counting
 rule shared by the Known-gaps band, the card heading and the index), cards as folded `<details>`,
 `OPEN_HASH_JS` opens the card a hash names (load, hashchange, re-click of the current hash). Each line
-counts its own node only — no subtree subtotal, since a two-tag row sits under two nodes. Self-test
-19 → 29; mutation pin 16 → 27.
+counts its own node only — no subtree subtotal, since a two-tag row sits under two nodes. Review r1:
+one id function (`frag_id`) for link and card, safe for any name; the hash handler is RUN under
+`node` against a stub DOM, one case per behaviour; the counts are read back from the rendered band.
+Self-test 19 → 37; mutation pin 16 → 37.
