@@ -1019,6 +1019,9 @@ def _self_test_body() -> int:
             return f()
         except Exception as e:  # noqa: BLE001 — reported as the case's observed value, never swallowed
             return f"raised {type(e).__name__}: {e}"
+    # A lookup that finds nothing reads as "", so a mutation that moves an id reds the cases that
+    # read it and the run CONTINUES to the case its manifest names (an AttributeError stopped it).
+    _found = lambda m, i: m.group(i) if m else ""
     _g = lambda num, glyph, closed=False: {"label": f"#{num} {glyph} t", "sev": glyph,
                                             "href": f"/backlog-table#i{num}", "closed": closed}
     _frag = {"job-queue": {"backlog": [_g(1, "🟡"), _g(2, "🟢"), _g(3, "🟠"), _g(4, "🟡"),
@@ -1041,13 +1044,13 @@ def _self_test_body() -> int:
            [(1, f"f-{n.slug}") for n in nodes]))
     # The index reads the severity order it is GIVEN, not a constant of its own.
     check("the index line orders severities as the order it is passed says",
-          "4 gaps (1🟢 2🟡 1🟠)" in re.search(r'href="#f-job-queue">(.*?)(?:</li>|<ul>)',
-                                             render_index(nested + nodes, _frag, _order[::-1]),
-                                             re.S).group(1), True)
+          "4 gaps (1🟢 2🟡 1🟠)" in _found(re.search(r'href="#f-job-queue">(.*?)(?:</li>|<ul>)',
+                                                    render_index(nested + nodes, _frag, _order[::-1]),
+                                                    re.S), 1), True)
     # ⛔ ONE COUNTING RULE: the index line and the card heading both read `open_gaps` — a node WITH
     # gaps (one closed row excluded) and a node WITHOUT.
-    _line = lambda slug: re.search(rf'href="#{frag_id(slug)}">(.*?)(?:</li>|<ul>)', _ix, re.S).group(1)
-    _head = lambda slug: re.search(rf'id="{frag_id(slug)}"[^>]*>\s*<summary.*?</summary>', _tree, re.S).group(0)
+    _line = lambda slug: _found(re.search(rf'href="#{frag_id(slug)}">(.*?)(?:</li>|<ul>)', _ix, re.S), 1)
+    _head = lambda slug: _found(re.search(rf'id="{frag_id(slug)}"[^>]*>\s*<summary.*?</summary>', _tree, re.S), 0)
     check("a node's index line and card heading carry the same gap count, with gaps and without",
           ("4 gaps (1🟠 2🟡 1🟢)" in _line("job-queue"), "4 gaps (1🟠 2🟡 1🟢)" in _head("job-queue"),
            "0 gaps" in _line("dig-job-recovery"), "0 gaps" in _head("dig-job-recovery")),
@@ -1059,7 +1062,7 @@ def _self_test_body() -> int:
     _rix = render_index(_real_nodes, _rfrag, _order)
     _bad = [n.slug for n in _real_nodes
             if gap_label(open_gaps(_rfrag[n.slug]), _order)
-            not in re.search(rf'href="#{frag_id(n.slug)}">(.*?)(?:</li>|<ul>)', _rix, re.S).group(1)]
+            not in _found(re.search(rf'href="#{frag_id(n.slug)}">(.*?)(?:</li>|<ul>)', _rix, re.S), 1)]
     # ...and each counted row's severity is the one its own Known-gaps line shows (`#N <glyph> …`).
     _sevless = [e["label"] for n in _real_nodes for e in open_gaps(_rfrag[n.slug])
                 if e["label"].split()[1] != e.get("sev")]
