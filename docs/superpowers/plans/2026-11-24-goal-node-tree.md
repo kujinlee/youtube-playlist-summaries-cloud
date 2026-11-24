@@ -90,8 +90,9 @@ Inputs the spec implies and no slice's guard reaches by itself. Each has a case 
 3. **An ADR with no `## ` heading, or a header past any fixed window.** Reading "up to the first `## `"
    must mean the whole file when there is none. Owner: Task 6, case `G1: an ADR with no ## heading is read whole`.
 4. **Two pull requests each adding a node under one parent, batched.** The union must keep both nodes whole;
-   a field line of one must never land under the other's heading. Owner: Task 16, case
-   `features union: two added nodes keep their own fields`.
+   a field line of one must never land under the other's heading, and no node may change parent unless one
+   side moved it. Owner: Task 16, cases `features union: two added nodes keep their own fields`,
+   `tree P4: a field line keeps its node heading` and `tree P8: a clean merge that re-parents a node ejects`.
 5. **A node with no state and no area.** It must say "claims no area — gaps not counted", never show an empty
    count (spec §3.2). Owner: Task 4, case `index: a node claiming and inheriting no area says so`.
 
@@ -121,7 +122,7 @@ Inputs the spec implies and no slice's guard reaches by itself. Each has a case 
 | `.claude/hooks/regen-goals-page.sh`, `.claude/hooks/regen-features-page.sh` | S2 | drop the registry trigger |
 | `scripts/goal-tree.py` | S1 (two aliases) S3 S4 | goals are nodes; `also`; history through `resolve`; the agenda's PRIORITY line |
 | `scripts/session-state.py` | S3 | `--also`; G5 |
-| `scripts/batch-ci.py` | S3 | a union policy for `docs/features.md` |
+| `scripts/batch-ci.py` | S3 | a `tree` union policy for `docs/features.md` (resolution as `blocks`; postcondition P8) |
 | `scripts/page_markup.py`, `scripts/check-page-links.py` | S4 | one node id, one node link kind; G8 |
 | `docs/features.md` | S2 S3 | the 45 nodes |
 | `docs/goal-threads.md` | S3 S4 | threads and requests under node headings; the PRIORITY line |
@@ -230,6 +231,20 @@ Grammar decisions this task fixes (see *Choices the spec left open*, C1–C3):
 | 14 | `absent` with an anchored document | slug in `anchored` (the live `harness-ships-elsewhere` after Task 7: three documents) | no problem |
 | 15 | `absent` with an area | `state: absent`, `areas: (x)` | the existing "flip it to `built`" problem, counting AREAS only |
 | 16 | the summary line | one built, one absent, one stateless node | `(1 built, 1 absent, 1 stateless)` — a stateless node is never counted as absent |
+| 17 | G6: a slug that is another node's `f-` id | nodes `x` and `f-x` | a problem naming both: on `/features` the bare id of `f-x` equals the `f-<slug>` id of `x` (Task 17) |
+| 18 | G6: a slug that is another node's `goal-` id | nodes `x` and `goal-x` | a problem naming both: the bare id of `goal-x` equals `x`'s primary `goal-x` |
+| 19 | G6: a slug that is a former slug's `goal-` id | node `a` with `was: x`, and a node `goal-x` | a problem: the bare id of `goal-x` equals `a`'s second id `goal-x` |
+| 20 | G6: a `goal-` slug with no partner | the live `goal-tree`, no node or `was:` entry `tree` | PASSES — the rule is on PAIRS, never on a prefix |
+
+**No two nodes' page ids may meet (r2 Codex Major).** `/features` gives a slug `s` the ids `goal-s`, `s`,
+`f-s` and `goal-<w>` for each former slug `w` (Task 17); `/goals` and `/goal-tree` give `goal-s`, `g-s` and
+`goal-<w>`. Two different nodes can share an id only when one slug is `f-` + another current slug, or `goal-` +
+another current or former slug (every other pairing differs in its prefix, and a former slug equal to a current
+one is already G6 behaviour 6). `slug_problems` refuses exactly those pairs, so the views never have to drop
+an id. A PREFIX ban is wrong: the live node `goal-tree` begins with `goal-` and has no partner. Verified at
+this plan's base: no slug in `docs/features.md`, no `## GOAL` name in `docs/goal-threads.md` and no registry
+row of `docs/anchors.md` is `f-` or `goal-` plus another of them, and none of the slugs or `was:` entries
+Tasks 5 and 12 add makes one.
 
 **The two fragment counts are different sets (r1 F2).** The `built` arm counts `areas` + `adrs` + anchors +
 anchored documents: any one of them is evidence the node exists. The `absent` arm counts `areas` ONLY: a
@@ -240,6 +255,9 @@ an absent node (spec §4 row 4.45 keeps `harness-ships-elsewhere` absent while g
   `rules: an anchored document is a fragment`, `rules: built with no fragment is refused`,
   `G6: two nodes may not share a slug`, `G6: a was entry may not equal a current slug`,
   `G6: a former slug listed twice is refused`, `G6: a rename passes`,
+  `G6: a slug equal to another's f- id is refused`, `G6: a slug equal to another's goal- id is refused`,
+  `G6: a slug equal to a former slug's goal- id is refused`, `G6: a goal- slug with no partner passes`
+  (each of the three refusals at two pairs, `x`/`f-x` and `y`/`f-y`, so a constant cannot pass),
   `resolve: current, former and unknown`, `rules: absent may carry adrs`,
   `rules: absent may carry an anchored document`, `rules: absent with an area is refused`,
   `summary: a stateless node is not counted absent` (the summary is built by a pure `summary_line(nodes)`
@@ -251,11 +269,14 @@ an absent node (spec §4 row 4.45 keeps `harness-ships-elsewhere` absent while g
   the identity check that the cases are not interchangeable); `resolve` returning the input for a former
   slug; the `anchored` term dropped from the fragment rule; `adrs` added to the `absent` arm's count
   (reddens `rules: absent may carry adrs`); the `absent` count in `summary_line` computed as
-  `len(nodes) - built` again (reddens `summary: a stateless node is not counted absent`). Then W1–W6.
+  `len(nodes) - built` again (reddens `summary: a stateless node is not counted absent`); each of the three
+  id-collision clauses severed singly (each reddens only its own case); the pair test replaced by a prefix test
+  (reddens `G6: a goal- slug with no partner passes`). Then W1–W6.
 - [ ] **Step 6:** commit.
 
 **FAILS IF:** a tree holding `was: x` on one node and a node named `x` passes `python3 scripts/check-features.py`;
-or a tree holding `state: absent` with `adrs: 0015` and an `expected-because:` fails it.
+or a tree holding `state: absent` with `adrs: 0015` and an `expected-because:` fails it; or a tree holding the
+nodes `x` and `f-x` (or `x` and `goal-x`) passes it; or the live tree, with its `goal-tree` node, fails it.
 
 ### Task 3: G9 — `done:` cites a recorded request
 
@@ -399,15 +420,28 @@ Check: `grep -o '[0-9]\{4\}' docs/anchors.md | sort -u` against
 `grep '^adrs:' docs/features.md | grep -o '[0-9]\{4\}' | sort -u`, restricted to the registry's table rows.
 Or `python3 scripts/check-features.py` is red after the edit (the `absent` node `harness-ships-elsewhere` now
 carries `adrs: 0015`; Task 2's behaviour 13 is what keeps it green — r1 F2). Or the parent diff below prints
-anything but `dev-speed`'s own line and the three NEW nodes' lines:
+anything but EXACTLY these four lines (r2 Codex Minor — the rename removes a pair as well as adding one):
 
 ```
 pairs() { python3 -c 'import importlib.util as u,sys; s=u.spec_from_file_location("cf","scripts/check-features.py"); m=u.module_from_spec(s); s.loader.exec_module(m); [print(n.slug, n.parent) for n in m.parse_features(sys.stdin.read())[0]]'; }
-diff <(git show origin/master:docs/features.md | pairs | sort) <(pairs < docs/features.md | sort)
+diff <(git show origin/master:docs/features.md | pairs | sort) <(pairs < docs/features.md | sort) | grep '^[<>]'
 ```
 
+```
+< harness-speed guard-and-gate-harness
+> cloud-publishing summarise-a-playlist
+> dev-speed None
+> serve-money-guard spend-control
+```
+
+Removed: one pair, `harness-speed`'s (the slug is renamed, so the old pair goes). Added: three pairs — the two
+new nodes and `dev-speed` (a `###` under the slugless DEV INFRASTRUCTURE trunk, so its parent is `None` until
+Task 12 gives the trunk a slug). Changed: NONE — a changed parent shows as a `<` line and a `>` line for the
+same slug, and no slug may appear on both sides; one there is a re-parented node (for example one of the five
+siblings, had `harness-speed` been re-levelled in place). The `grep` drops `diff`'s hunk headers.
+
 (`parse_features` returns `(nodes, problems)` today. The slice's own parser reads BOTH texts, so both sides
-carry Task 1's `parent`; `harness-speed`'s old pair appears on the `<` side only.)
+carry Task 1's `parent`.)
 
 ### Task 6: `check-anchors.py` reads the tree — G1 over specs, plans and ADRs; G3
 
@@ -730,8 +764,20 @@ Every insertion and every re-levelling is a MOVE of whole blocks, as in Task 5 (
 above a run of `####` blocks adopts them. Before Step 1, save the `(slug, parent)` pairs with Task 5's
 `pairs` function; after the edits, diff them. The ONLY changed pairs allowed are the ones the table above
 names: the eight new nodes, `status-visibility` and `explanation-on-demand` (under `comprehensibility-suite`),
-`feature-map`, `goal-tree`, `work-lines` (under `status-visibility`), and every level-3 node under a trunk
+and every level-3 node under a trunk
 that gains a `slug:` (its parent goes from `None` to the trunk's slug).
+
+The exact expected diff, in Task 5's form (`… | grep '^[<>]'`), so the pass condition can be met (r2 Codex
+Minor): REMOVED — none (this task renames no slug; `token-usage-first`, `guard-harness-audit` and
+`compaction-guards` were never node slugs, they enter as `was:` entries only). ADDED — one `>` line per new
+node: the three trunks with parent `None`; `token-usage`, `memory-recall`, `comprehensibility-suite` with parent
+`dev-infrastructure`; `memory-hygiene memory-recall`; `dashboard-decisions status-visibility`. CHANGED — a `<`
+and a `>` line for the same slug, and only: `status-visibility` and `explanation-on-demand` (`None` →
+`comprehensibility-suite`); every other `###` under a trunk, `dev-speed` included (`None` → the trunk's slug).
+UNCHANGED, so printing nothing although they move to `#####`: `feature-map`, `goal-tree`, `work-lines` (their
+parent is still `status-visibility`), and every `####` whose `###` parent stays. Before Step 1, write the
+expected `<`/`>` lines into a file, derived from this paragraph and the pre-edit `pairs` output, and `diff` it
+against the actual: any difference fails.
 
 **FAILS IF:** the parent diff shows a pair outside that list; or the node count is not 45; or a `for:` sentence the spec marks NEW differs from the spec's text;
 or `grep -c -E '^state:' docs/features.md` is not 45 minus the 11 stateless nodes (the three trunks,
@@ -888,51 +934,90 @@ request is numbered after every requested goal, in tree order. The same-goal dup
 **FAILS IF:** `python3 scripts/session-state.py --add x "w" "d" --goal dev-speed-first --thread "fix · PR #1 · x" --after none`
 exits 0 in a checkout of this branch (run it against a scratch root, not the live ledger).
 
-### Task 16: `batch-ci.py` — a union policy for `docs/features.md`
+### Task 16: `batch-ci.py` — a `tree` union policy for `docs/features.md`
 
 **Files:**
-- Modify: `scripts/batch-ci.py` (`UNION_FILES` only; the comment above it gains the `docs/features.md` line),
+- Modify: `scripts/batch-ci.py` (`UNION_FILES` and the comment above it; `resolve_hunk`'s policy dispatch;
+  `postcondition` — the P4 home for `tree`, and a new clause P8; a new pure `_parents`),
   `scripts/mutations/batch-ci.json`
 
 **Interfaces:**
-- Consumes: `UNION_FILES`, `resolve_hunk`, `resolve_text`, `postcondition`
-- Produces: `UNION_FILES["docs/features.md"] = "blocks"` (C7)
+- Consumes: `UNION_FILES`, `resolve_hunk`, `resolve_text`, `postcondition`, `_homes`, `_match`, `SECTION`
+- Produces: `UNION_FILES["docs/features.md"] = "tree"` (C7); `NODE_HEADING = re.compile(r"^#{1,6} ")`;
+  `_parents(lines: list[str], ident: list) -> list` — for each line, the IDENTITY of the nearest preceding
+  heading line with FEWER `#` when the line is itself a heading, else `None`; PURE
 
-A node is a heading plus its field lines, separated by blank lines. The `blocks` policy is ADDITIONS ONLY
-(`resolve_hunk`, via `_added`, refuses a hunk in which either side edited or deleted a base line), splits added
-lines into blocks only at `## ` headings (`_blocks`), and the whole-file `postcondition` judges every merge
-step, clean or conflicted. This task adopts that policy AS IT IS (C7) and states its consequences for this
-file instead of wishing them away (r1 Codex Major): a node added on each side unions; an edit of a field line
-inside a conflicting hunk is refused and the pull request is EJECTED to run alone; an identical addition on
-both sides fails `postcondition` P1 and ejects (the bound its docstring names). Neither `resolve_hunk` nor
-`postcondition` is changed. If a case below cannot be met without changing one, STOP and notify: a change
-to either is a coordinated change to both, for every `blocks` file, and is not this task's.
+**Why not `blocks` as it is (r2 Codex Major).** `SECTION` matches `#` and `##` only, and P4 ("every line sits
+under the very heading INSTANCE it sits under in the side it came from") reads its homes through `SECTION`. For
+`docs/features.md` the trunks are the only sections, so a merge that lands a `###` above a run of `####` nodes
+re-parents them with P4 satisfied — and git does that CLEANLY, with no conflict hunk for `resolve_hunk` to see,
+when one branch adds a `###` and the other adds a `####` below it (`_union_violation` then runs `postcondition`
+over the clean result, which is the only place it can be caught). Equally, a field line that lands under a
+different `###`/`####` heading of the same trunk keeps its `##` home and passes P4. The file's hierarchy is its
+meaning, so its union needs a postcondition that reads that hierarchy. This changes `batch-ci.py`, our own
+script, beyond the one entry (C7, revised in r2).
+
+**The policy `tree`** is `blocks` for RESOLUTION and `blocks` plus two stricter reads for the POSTCONDITION:
+- `resolve_hunk("tree", …)` takes the `blocks` arm unchanged (`if policy in ("blocks", "tree")`) — additions
+  only, ours first, an edited base line `Refuse`d by `_added`.
+- `postcondition(…, "tree")`: every existing clause, except that P4's homes come from `_homes` with
+  `NODE_HEADING` in place of `SECTION` — so a field line must stay under its own node's heading instance — and
+  a new clause **P8: every heading keeps its parent.** For each heading line of the result with an identity,
+  its `_parents` identity in the result must equal: for a line one side ADDED, its parent in that side; for a
+  BASE line, its parent in the base, unless exactly one side changed it, in which case that side's (a
+  deliberate re-parenting by one branch survives, as P4 lets a re-sectioning survive); both sides changing it
+  is refused (`P8 both sides re-parented a node`). A violation reads
+  `P8 a node's parent changed and neither side made that change: <heading>`.
+- The prefix cut stays on `SECTION`: it ends at the last `##` of the shared prefix, so every heading after the
+  cut has its parent at or after the cut, and every line after it its node heading — no P4 or P8 verdict
+  depends on a dropped line. `blocks` and its two files are untouched: P8 and the `NODE_HEADING` home apply to
+  `tree` only (the existing `blocks:` and `PC` cases are the witness).
+
+Consequences, unchanged from `blocks`: a node added on each side unions; an edit of a field line inside a
+conflicting hunk is refused and the pull request is EJECTED to run alone; an identical addition on both sides
+fails P1 and ejects.
 
 **Enumerated Behaviors**
 
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
-| 1 | two branches each add a node under one parent | conflicting hunk, through `resolve_text("docs/features.md", …)` | both nodes kept, each with its own fields, ours first; `postcondition` returns `[]` |
-| 2 | both add the SAME node | identical block | `postcondition` reports P1: EJECTED (the existing bound) — never a silent double |
-| 3a | one branch edits a field of an existing node far from the other's added node | git merges it cleanly; `postcondition` over the whole file | `[]`: both changes kept |
+| 1 | two branches each add a node under one parent | conflicting hunk, through `resolve_text("docs/features.md", …)` | both nodes kept, each with its own fields, ours first; `postcondition(…, "tree")` returns `[]` |
+| 2 | both add the SAME node | identical block | P1: EJECTED (the existing bound) — never a silent double |
+| 3a | one branch edits a field of an existing node far from the other's added node | a clean merge; `postcondition` over the whole file | `[]`: both changes kept |
 | 3b | one branch edits a field line INSIDE the hunk where the other adds a node | conflicting hunk | `Refuse`: ejected, not guessed |
 | 4 | both edit the same field line differently | — | `Refuse`: ejected |
-| 5 | a base line is missing from the result | — | `postcondition` reports it |
+| 5 | a base line is missing from the result | — | P3 reports it |
 | 6 | the merged file is then parsed | result of 1 | `parse_features` returns no problem and both slugs |
 | 7 | path dispatch | the conflicted text of 1, through `resolve_text` with the path `docs/features.md`, and the same text with the path `docs/other.md` | resolved for the first; `Refuse` ("not an append-only file") for the second |
+| 8 | a clean merge re-parents a node neither side moved | base `### A`, `#### a1`, `#### a2`, each with field lines; theirs inserts `### B` between `a1` and `a2` (re-parenting `a2` on purpose); ours appends `#### a3` after `a2`. The edits are separated by `a2`'s lines, so `git merge-file` merges cleanly (the case builds the result with it) | P8 names `#### a3` (now under `B`; ours put it under `A`); `a2` follows theirs and is not named. Second input in the same case: ours inserts `#### a3` between `A`'s field lines and `a1` instead — `[]` |
+| 9 | a conflicting hunk whose union re-parents | ours adds `### B`, theirs adds `#### a2`, in one hunk under `### A` | `resolve_text` puts `a2` after `B`; P8 ejects it. Reversed sides (ours `#### a2`, theirs `### B`) return `[]` |
+| 10 | one side re-parents base nodes on purpose | theirs inserts `### B` above the base `#### a1`, ours adds an unrelated node under another trunk | `[]`: `a1` follows theirs |
+| 11 | both sides re-parent one base node differently | ours inserts `### B`, theirs `### C`, each directly above the base `#### a1` | P8: both sides re-parented a node |
+| 12 | a field line under another node's heading | one hunk at the end of base `#### a1`'s block: theirs adds the field line `adrs: 0003` to `a1`, ours adds a new `#### o` node; `resolve_text` puts ours first, so `adrs: 0003` lands under `#### o` | P4 names that line under `tree` (EJECTED — the resolver is not taught to place it; an ejection is the safe cost); the SAME four texts under `blocks` return `[]` (the policy scope, and the old blind spot, in one case) |
 
 - [ ] **Step 1:** cases `features union: two added nodes keep their own fields`,
   `features union: the same node added twice ejects`, `features union: a distant edit and an addition both survive`,
   `features union: an edit inside the hunk is refused`, `features union: two edits of one field are refused`,
   `features union: a lost base line is a violation`, `features union: the result parses as a tree`,
-  `features union: dispatch is by path`. Every case that resolves a conflict calls `resolve_text` with the path
-  `docs/features.md` — never `resolve_hunk("blocks", …)` directly — so the policy is reached the way `merge`
-  reaches it.
-- [ ] **Step 2:** red (every case that calls `resolve_text` fails while the entry is absent: it refuses the path).
-  **Step 3:** add the entry. **Step 4:** green; the existing `blocks:` and `PC` cases unchanged.
-- [ ] **Step 5:** mutation: the `UNION_FILES["docs/features.md"]` entry removed — `expect` is
+  `features union: dispatch is by path`, `tree P8: a clean merge that re-parents a node ejects`,
+  `tree P8: a union that re-parents a node ejects`, `tree P8: a one-sided re-parenting survives`,
+  `tree P8: both sides re-parenting one node is refused`, `tree P4: a field line keeps its node heading`. Every
+  case that resolves a conflict calls `resolve_text` with the path `docs/features.md` — never
+  `resolve_hunk("tree", …)` directly — so the policy is reached the way `merge` reaches it. The case
+  `the policies: …` that lists `UNION_FILES` gains `("docs/features.md", "tree")`.
+- [ ] **Step 2:** red (every case that calls `resolve_text` fails while the entry is absent: it refuses the path;
+  every `tree P…` case fails while `postcondition` knows no `tree`).
+  **Step 3:** implement `NODE_HEADING`, `_parents`, the `tree` arm of `resolve_hunk`, P4's home choice and P8;
+  add the entry; extend `postcondition`'s docstring with P8 and the `tree` home. **Step 4:** green; the existing
+  `blocks:` and `PC` cases unchanged.
+- [ ] **Step 5:** mutations: the `UNION_FILES["docs/features.md"]` entry removed — `expect` is
   `features union: dispatch is by path` (the case that reaches the policy only through `resolve_text`'s path
-  lookup). Then W1–W6.
+  lookup); `"tree"` dropped from `resolve_hunk`'s `blocks` arm (the same case); P8's comparison severed
+  (`tree P8: a clean merge that re-parents a node ejects`); P8's one-side-follows rule replaced by "base parent
+  always" (`tree P8: a one-sided re-parenting survives`); P8's both-sides refusal severed
+  (`tree P8: both sides re-parenting one node is refused`); `_parents`' "fewer `#`" replaced by "any heading"
+  (`tree P8: a union that re-parents a node ejects`); P4's `tree` home reverted to `SECTION`
+  (`tree P4: a field line keeps its node heading`). Then W1–W6.
 - [ ] **Step 6:** commit; the retired-slug search below; the dashboard entry; *Before every push*.
 
   ```
@@ -972,6 +1057,9 @@ keeping both satisfies the spec and every link the code has written. `frag_id` t
 node named like a chrome control (`chrome-theme`) cannot share that control's id; a bare id reopens that
 collision for one release, so `second_ids` returns NO bare id for a slug that equals a chrome id on the page
 (`page_chrome`'s ids), and Task 18's build refuses a duplicate through `check-page-links.py:duplicate_ids`.
+Two NODES cannot share an id: G6 (Task 2, behaviours 17–19) refuses every slug pair that would, so
+`second_ids` drops nothing for a node-to-node collision (r2 Codex Major). Task 18 adds the build-level case
+`ids: no two nodes share an id` over a tree whose slugs come close without colliding (`x`, `fx`, `goal-tree`).
 
 The kinds `goal` and `feature` keep working until Task 21 removes them, so each page moves in its own task.
 
@@ -1023,12 +1111,14 @@ The kinds `goal` and `feature` keep working until Task 21 removes them, so each 
 | 6 | the card's id | — | `goal-<slug>`; an empty element carries each second id |
 | 7 | a former slug | `#goal-harness-speed` | lands on `dev-speed`'s card |
 | 8 | a bare old fragment | `#dev-speed`, `#f-dev-speed` | both land on `dev-speed`'s card (spec §3.5: bare `<slug>` is kept) |
+| 9 | near-colliding slugs | a tree with `x`, `fx`, `goal-tree` (no `tree`), `a` with `was: y` | the built page has no duplicate id (`check-page-links.py:duplicate_ids` over it returns nothing) — G6 refuses the true collisions before a page is built (Task 2) |
 
 - [ ] **Step 1:** cases `primary: one tag`, `primary: the first tag's claimant`, `primary: epic wins over tags`,
   `G7: a shared row adds nothing to its second node`, `G7: a parent counts distinct rows`,
   `G7: primary counts sum to the distinct open rows` (two fixtures in one case, differing by one shared row),
   `G7: a double count refuses the build`, `ids: goal-<slug> with the old ids kept` (asserts the bare `<slug>`
-  AND the `f-<slug>` second ids, at two slugs), `ids: a former slug lands on its node`.
+  AND the `f-<slug>` second ids, at two slugs), `ids: a former slug lands on its node`,
+  `ids: no two nodes share an id`.
   NO cross-view link is emitted in this task: `/goals` has no `goal-<slug>` card for every node until Task 19,
   and CI's `check-page-links.py --build --ci` runs `dangling` over the built pages, so a link added here
   would land nowhere until then (r1 Codex BLOCKER). The heading links are Task 21's.
@@ -1240,8 +1330,8 @@ Each is a mechanical reading, not a new decision; a reviewer who disagrees raise
 | C4 | §4.4 counts "Nodes with no `state:` — 9", while §6 Q13's answer is "no state on all four until you say built" | 11 stateless nodes: the nine plus `cloud-publishing` and `serve-money-guard` (§6.1 governs) |
 | C5 | S2: "`gen-goals-page.py` … read the tree"; §3.1: "It becomes a card per node" | S2 keeps today's card set, derived as nodes with a document or an `adrs:` line (Task 8); the card per node arrives with the views in S4 (Task 19) |
 | C6 | row 4.39: `goal-tree`'s purpose is "unchanged, minus its URL" — no slice is named | Task 12 (S3), with the other §4 data edits of that branch |
-| C7 | "`batch-ci.py` gains a conflict resolver for `docs/features.md`" — no policy is named | the existing `blocks` policy, unchanged — additions union; an in-hunk edit or an identical addition EJECTS the pull request to run alone (Task 16; r1 Codex Major) |
-| C8 | G8 and §3.5 call today's feature id "bare `<slug>`" | the code emits `f-<slug>` (`feature_id` in `scripts/page_markup.py`); `/features` keeps BOTH as second ids — the bare `<slug>` the approved spec requires and the `f-<slug>` the code has emitted — except no bare id where it would equal a chrome id (Task 17; r1 Codex Major) |
+| C7 | "`batch-ci.py` gains a conflict resolver for `docs/features.md`" — no policy is named | a new policy `tree`: the `blocks` RESOLUTION unchanged (additions union; an in-hunk edit or an identical addition EJECTS the pull request to run alone — r1 Codex Major), with a stricter POSTCONDITION — P4 homes at any heading level and a clause P8, every heading keeps its parent unless exactly one side moved it — because `SECTION` sees only `#`/`##` and a clean merge can re-parent nodes (Task 16; r2 Codex Major). `blocks` itself is unchanged |
+| C8 | G8 and §3.5 call today's feature id "bare `<slug>`" | the code emits `f-<slug>` (`feature_id` in `scripts/page_markup.py`); `/features` keeps BOTH as second ids — the bare `<slug>` the approved spec requires and the `f-<slug>` the code has emitted — except no bare id where it would equal a chrome id (Task 17; r1 Codex Major). Two nodes whose ids would meet (`x` with `f-x`; `x`, or a former `x`, with `goal-x`) are refused by G6, never resolved by dropping an id (Task 2; r2 Codex Major) |
 | C9 | S1's row lists two scripts, and G9 reads request lines whose grammar `scripts/goal-tree.py` owns | the two patterns MOVE to `scripts/check-features.py` and `scripts/goal-tree.py` aliases them in S1 (Task 3) — a third script touched by two lines, in place of a second copy of a grammar |
 | C10 | S1: "A `built` node's fragment may be … an anchored document" | the RULE lands in S1 (`check_nodes` takes the set); the live set is passed in S2 Task 7, once `anchored_slugs` exists in `scripts/check-anchors.py` — S1 has no node that needs it |
 | C11 | §3.2: "A node that claims no area and inherits none" | "inherits" is read as: some ancestor node claims an area (Task 4) |
