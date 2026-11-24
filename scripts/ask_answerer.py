@@ -11,7 +11,7 @@ by a headless agent that is not the main session.
     python3 scripts/ask_answerer.py --answered ID  # ...and says it has answered it in the page
     python3 scripts/ask_answerer.py --retry ID     # make a failed or skipped question eligible again
     python3 scripts/ask_answerer.py --inbox        # instructions readers typed: print the unread, mark them read
-    python3 scripts/ask_answerer.py --self-test    # 125 cases; never runs the real `claude`
+    python3 scripts/ask_answerer.py --self-test    # 127 cases; never runs the real `claude`
 
 THE LOOP. `explainer-serve.py` appends every POSTed question to `<root>/questions.md`. The watcher stats that
 file once a second (no model call: an idle watcher costs no tokens) and, for each question the ledger has no
@@ -2025,6 +2025,18 @@ sys.exit(mode.get("rc", 0))
                state(r, dq.id), state(r, du.id), state(r, tq.id).get("status"), state(r, hq.id).get("status"),
                [i["id"] for i in page_items(r, "p.html") if i["id"] in (dq.id, du.id)]),
               ([True, True, False, False, False], 3, {}, {}, "answered", "answered", []))
+        check("is_decision_answer reads the question it is given: a card's ANSWER is one, a question under a tagged heading is not",
+              (is_decision_answer(dq), is_decision_answer(hq)), (True, False))
+        r, r2 = mk(), mk()
+        watch(r, CAPS, DEPS, once=True)
+        watch(r2, CAPS, DEPS, once=True)
+        on_p = ask(r, "asked on p", doc="p.html")
+        on_q = ask(r, "asked on q", doc="q.html", at="2026-11-13 09:00:01")
+        other = ask(r2, "asked on p in another root", doc="p.html", at="2026-11-13 09:00:02")
+        check("page_items lists only the page it is given, from the root it is given",
+              ([i["id"] for i in page_items(r, "p.html")], [i["id"] for i in page_items(r, "q.html")],
+               [i["id"] for i in page_items(r2, "p.html")]),
+              ([on_p.id], [on_q.id], [other.id]))
         r = mk()
         watch(r, CAPS, DEPS, once=True)
         x1, x2 = ask(r, "FIRST-ASKED"), ask(r, "SECOND-ASKED", at="2026-11-13 09:00:01")
