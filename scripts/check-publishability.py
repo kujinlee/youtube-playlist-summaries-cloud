@@ -2582,7 +2582,7 @@ def _self_test_body() -> int:
            ("os.path.relpath", 1, "start")], []))
 
     if os.environ.get("PLAN_CODE_MUTATION_RUN") == "1":
-        print("NOT RUN under the mutation harness: 10 live-tree cases (CI's ordinary step runs them)")
+        print("NOT RUN under the mutation harness: 7 live-tree cases (CI's ordinary step runs them)")
     else:
         live_vocab = derive_vocabulary(REPO)
         case("the derived vocabulary on the live tree contains an element EQUAL to supabase, gemini and fly, and "

@@ -11,7 +11,7 @@ GIT_AUTHOR_DATE / GIT_COMMITTER_DATE, host git config off through `fixture_git.e
 line, and NO `.claude/` — and writes `out/known-facts.json` BESIDE it (never inside, so the repository's own
 `git status` stays clean). `out` must be absent or empty: anything else is CANNOT RUN (rc 2).
 
-The known facts are `brief`'s ground-truth items (`.agents/skills/brief/SKILL.md` → *Step 1 — establish ground
+The known facts are `brief`'s ground-truth items (the removed `brief` skill, frozen at `scripts/fixtures/check-publishability/brief-SKILL-2f5e3f3d.md` → *Step 1 — establish ground
 truth*): 12 CHOSEN items, each with the answer THIS repository gives. Not one per command or file that step names:
 `git diff --stat <boundary>..HEAD`, `docs/reviews/` and `docs/superpowers/` have no item, and the three absent ratchets
 share one (`ratchets-absent`). An item whose seeded

@@ -1,5 +1,5 @@
 {
-  "measured_at": "f0527646 + review r1 fold (2026-11-16): 45 components — effort 3: 33, effort 2: 6, effort 1: 6; replaces spec §3's lower bound of 24 ⟳ 2026-11-23: 42 — the owner dropped skill-brief, skill-explain-diff, skill-explain-findings from the deliverables (unused since 08-24; skills stay installed here)",
+  "measured_at": "f0527646 + review r1 fold (2026-11-16): 45 components — effort 3: 33, effort 2: 6, effort 1: 6; replaces spec §3's lower bound of 24 ⟳ 2026-11-23: 43 (46 on master before the drop) — the owner dropped skill-brief, skill-explain-diff, skill-explain-findings from the deliverables (unused since explain-topic took over; removed from the repo the same day)",
   "packages": {
     "comprehensibility": {
       "channel": "plugin"

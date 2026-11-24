@@ -15,7 +15,7 @@ Earlier the same day the prose-only chat explanation of the same design was "con
 **Why:** the owner skims; a flow or a decision rule drawn as boxes and arrows is understood at a glance, while
 the same content in paragraphs has to be read and reconstructed.
 
-**How to apply:** for every page from explain-topic / explain-diff / brief / explain-findings, ask "is there a
+**How to apply:** for every explain-topic page, ask "is there a
 flow, a before/after, a decision rule or a structure here?" — if yes, draw it as inline SVG (colour tokens, both
 themes) before writing prose about it. Prose explains *why*; the diagram carries *what connects to what*.
 Use the house colours from CONTEXT.md "The common look" (gold headings) — never an invented accent

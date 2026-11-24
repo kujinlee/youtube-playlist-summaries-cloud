@@ -21528,7 +21528,7 @@ Nothing waits on you for this.
 Owner 11-23 20:01 ("drop all three and retire the hook"), then 20:06 ("remove them from repo too"). Removed:
 `.agents/skills/{brief,explain-diff,explain-findings}/` and their `.claude/skills/` links, `.claude/hooks/suggest-explainer.sh`
 and its PreToolUse registration in `.claude/settings.json` (backups in the session scratchpad). Marketplace data: the
-three components leave `components.json` (45 -> 42), the comprehensibility package's `installed_files` and components in
+three components leave `components.json` (46 -> 43), the comprehensibility package's `installed_files` and components in
 `shipping-sets.json`, and the three rows in `inventory.json` (46 -> 43 rows; the D1 checkpoint still fires, rc 3, a CI
 warning as before). `check-publishability --self-test` 180 -> 177: the three live-tree cases that read
 `skill-brief`/`skill-explain-findings` are gone, and the fixture case of the same name stays. `check-explainer-delivery`'s
