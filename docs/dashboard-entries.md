@@ -21515,3 +21515,24 @@ component changed status. Merging master brought in the inventory (scan-2026-11-
 scan-2026-11-21: cited ids re-mapped by file, kind, target and text (mutation-sweep-job 2:106-108 -> 2:109-111;
 memory-corpus :2:5-17 -> :2:3-14, and 8 ids that the backlog #697 built corpus no longer produces dropped; its C2
 fail is NOT re-judged). The tier A/B experiment docs' cited ids were re-mapped the same way.
+
+## 2026-11-23
+As you asked, three explainer skills you no longer use are gone: `brief`, `explain-diff` and `explain-findings`.
+They are off the list of things the marketplace would ship, and their folders are removed from the repo. The reminder
+that suggested an explainer whenever a PR was opened is retired too. `explain-topic` is now the one explainer skill,
+and `dashboard` still builds its page. The shared page builder (`brief-compose.py`) stays, because both still use
+it. I filed its rename as a backlog row, so page names stop all saying "brief".
+
+Nothing waits on you for this.
+<!--tech-->
+Owner 11-23 20:01 ("drop all three and retire the hook"), then 20:06 ("remove them from repo too"). Removed:
+`.agents/skills/{brief,explain-diff,explain-findings}/` and their `.claude/skills/` links, `.claude/hooks/suggest-explainer.sh`
+and its PreToolUse registration in `.claude/settings.json` (backups in the session scratchpad). Marketplace data: the
+three components leave `components.json` (45 -> 42), the comprehensibility package's `installed_files` and components in
+`shipping-sets.json`, and the three rows in `inventory.json` (46 -> 43 rows; the D1 checkpoint still fires, rc 3, a CI
+warning as before). `check-publishability --self-test` 180 -> 177: the three live-tree cases that read
+`skill-brief`/`skill-explain-findings` are gone, and the fixture case of the same name stays. `check-explainer-delivery`'s
+`PAGE_SKILLS` is now explain-topic and dashboard. The routing tables in explain-topic, dashboard and
+shared/explainer-delivery.md are reworded, and `brief-compose.py`'s two "run /explain-diff" messages now name
+/explain-topic. Backlog #713 filed (composer rename + page naming by kind). Historical review, explainer and scan
+documents still name the skills. They are records, and stay as written.

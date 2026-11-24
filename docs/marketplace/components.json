@@ -1,5 +1,5 @@
 {
-  "measured_at": "f0527646 + review r1 fold (2026-11-16): 45 components — effort 3: 33, effort 2: 6, effort 1: 6; replaces spec §3's lower bound of 24",
+  "measured_at": "f0527646 + review r1 fold (2026-11-16): 45 components — effort 3: 33, effort 2: 6, effort 1: 6; replaces spec §3's lower bound of 24 ⟳ 2026-11-23: 42 — the owner dropped skill-brief, skill-explain-diff, skill-explain-findings from the deliverables (unused since 08-24; skills stay installed here)",
   "packages": {
     "comprehensibility": {
       "channel": "plugin"
@@ -12,42 +12,6 @@
     }
   },
   "components": [
-    {
-      "id": "skill-brief",
-      "effort": 3,
-      "roles": [
-        "entry-point"
-      ],
-      "phase": "1",
-      "package": "comprehensibility",
-      "files": [
-        ".agents/skills/brief/"
-      ]
-    },
-    {
-      "id": "skill-explain-diff",
-      "effort": 3,
-      "roles": [
-        "entry-point"
-      ],
-      "phase": "1",
-      "package": "comprehensibility",
-      "files": [
-        ".agents/skills/explain-diff/"
-      ]
-    },
-    {
-      "id": "skill-explain-findings",
-      "effort": 3,
-      "roles": [
-        "entry-point"
-      ],
-      "phase": "1",
-      "package": "comprehensibility",
-      "files": [
-        ".agents/skills/explain-findings/"
-      ]
-    },
     {
       "id": "skill-explain-topic",
       "effort": 3,

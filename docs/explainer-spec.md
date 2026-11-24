@@ -4,7 +4,11 @@
 dual adversarial review rounds removed everything a spec would have specified. The filename keeps
 "spec" only because the four review documents cite it; a third rename would dangle them for no gain.
 
-**Status: the skill exists and is in use.** This note records why it is the shape it is, and what would
+**Status: RETIRED 2026-11-23 by the owner** (unused since `explain-topic` took over), with `brief`,
+`explain-findings` and the `suggest-explainer.sh` reminder. The skill and the hook are removed from the repo; this note
+is kept as the record of why it was the shape it was.
+
+~~**Status: the skill exists and is in use.**~~ This note records why it is the shape it is, and what would
 retire it.
 
 ---

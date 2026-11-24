@@ -71,12 +71,9 @@ Installed via `npx skills@latest add mattpocock/skills` — lives in `.agents/sk
 
 | Name | Invoke | Trigger | Description |
 |---|---|---|---|
-| **brief** | `brief` | `auto + /slash` | Build a one-page visual briefing on where a piece of work stands right now — state, evidence, and any decision waiting on the human. |
 | **caveman** | `caveman` | `auto + /slash` | Ultra-compressed communication mode. Cuts token usage ~75% by dropping filler, articles, and pleasantries while keeping full technical accuracy. |
 | **dashboard** | `dashboard` | `auto + /slash` | Record what changed in this repo as a dated dashboard entry, and regenerate the project dashboard page. |
 | **diagnose** | `diagnose` | `auto + /slash` | Disciplined diagnosis loop for hard bugs and performance regressions. Reproduce → minimise → hypothesise → instrument → fix → regression-test. |
-| **explain-diff** | `explain-diff` | `auto + /slash` | Build a rich, self-contained HTML explanation of a code change, branch, or PR — aimed at behaviour and decisions rather than a line-by-line walkthroug… |
-| **explain-findings** | `explain-findings` | `auto + /slash` | Use when findings, defects, review results or open questions need a file / don't-file / severity decision from a human — including "should this be a b… |
 | **explain-topic** | `explain-topic` | `auto + /slash` | Build a self-contained HTML page explaining a topic, concept, mechanism or open question, served locally so the reader can ask questions back and get… |
 | **grill-me** | `grill-me` | `auto + /slash` | Interview the user relentlessly about a plan or design until reaching shared understanding, resolving each branch of the decision tree. |
 | **grill-with-docs** | `grill-with-docs` | `auto + /slash` | Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (CONTEXT. |
