@@ -10,7 +10,7 @@ halves:
 findings:
   - {id: F1, severity: Medium, aim: instrument, fix_induced: true, component: tree-grouping, disposition: fixed}
   - {id: F2, severity: Low, aim: deliverable, fix_induced: true, component: node-rules, disposition: fixed}
-  - {id: F3, severity: Low, aim: docs, fix_induced: true, component: tree-grouping, disposition: fixed}
+  - {id: F3, severity: Low, aim: deliverable, fix_induced: true, component: tree-grouping, disposition: fixed}
 ```
 
 REVIEW GAP: codex — alternation (round 3 is the Claude half; the Codex half reviewed round 2)
