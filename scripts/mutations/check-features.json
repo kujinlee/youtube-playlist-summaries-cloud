@@ -4,8 +4,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "            trunk = line[3:].strip(); continue",
-        "            trunk = \"\"; continue"
+        "            trunk = line[3:].strip(); branch = []; under_trunk = True; continue",
+        "            trunk = \"\"; branch = []; under_trunk = True; continue"
       ]
     ],
     "expect": "trunk is carried down"
@@ -77,15 +77,18 @@
     "expect": "`now` is no longer a banned word"
   },
   {
-    "name": "a repeated node slug stops being reported as a duplicate",
+    "name": "a repeated node slug stops being reported as a duplicate (G6, two nodes share a slug — the clause moved to `slug_problems`)",
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "        if n.slug in seen:",
+        "        if n.slug in first:",
         "        if False:"
       ]
     ],
-    "expect": "a duplicate slug fails"
+    "expect": [
+      "a duplicate slug fails",
+      "G6: two nodes may not share a slug"
+    ]
   },
   {
     "name": "a built node with no fragment stops failing",
@@ -103,8 +106,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "        if n.state == \"built\" and n.expected_because:",
-        "        if False:"
+        "and n.state != \"absent\":",
+        "and n.state not in (\"absent\", \"built\"):"
       ]
     ],
     "expect": "a built node carrying expected-because fails"
@@ -125,8 +128,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "            if fragments:\n                problems.append(f\"{where} is `absent` but names {fragments} fragment(s) — flip it to `built`\")",
-        "            if False:\n                problems.append(f\"{where} is `absent` but names {fragments} fragment(s) — flip it to `built`\")"
+        "            if n.areas:\n                problems.append(f\"{where} is `absent` but claims",
+        "            if False:\n                problems.append(f\"{where} is `absent` but claims"
       ]
     ],
     "expect": "an absent node WITH a fragment fails"
@@ -354,5 +357,302 @@
     "expect": [
       "#394: a row with NO kind is a WARNING, not a failure"
     ]
+  },
+  {
+    "name": "an adrs: entry of any shape is accepted, so `adrs: 1` and `adrs: (0001, 0005)` pass",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "\"adrs\": (re.compile(r\"^\\d{4}$\")",
+        "\"adrs\": (re.compile(r\"^.+$\")"
+      ]
+    ],
+    "expect": "grammar: adrs entry must be four digits"
+  },
+  {
+    "name": "a heading that skips a level is no longer refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if branch and level > branch[-1].level + 1:",
+        "            if False:"
+      ]
+    ],
+    "expect": "grammar: a skipped level is refused"
+  },
+  {
+    "name": "a slug: line is taken anywhere, so a node heading can be given a second name",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if not taken:",
+        "            if False:"
+      ]
+    ],
+    "expect": "grammar: slug under a node is refused"
+  },
+  {
+    "name": "the done: pattern's time group becomes optional, so a date with no time passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "DONE_FIELD = re.compile(r'^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}) \"(.+)\"$')",
+        "DONE_FIELD = re.compile(r'^(\\d{4}-\\d{2}-\\d{2}(?: \\d{2}:\\d{2})?) \"(.+)\"$')"
+      ]
+    ],
+    "expect": "grammar: done needs a time and a quote"
+  },
+  {
+    "name": "a node's parent is the branch ROOT, not the nearest shallower node, so a level-5 node hangs under its grandparent",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "                        parent=branch[-1].slug if branch else None)",
+        "                        parent=branch[0].slug if branch else None)"
+      ]
+    ],
+    "expect": "grammar: depth five and six carry a parent"
+  },
+  {
+    "name": "G6: a was: entry equal to a current slug is no longer refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if w in current:",
+        "            if False:"
+      ]
+    ],
+    "expect": "G6: a was entry may not equal a current slug"
+  },
+  {
+    "name": "G6: one former slug listed twice is no longer refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    for w, owners in former.items():\n        if len(owners) > 1:",
+        "    for w, owners in former.items():\n        if False:"
+      ]
+    ],
+    "expect": "G6: a former slug listed twice is refused"
+  },
+  {
+    "name": "resolve returns its input for a former slug instead of the node's current slug",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if slug == n.slug or slug in n.was:\n            return n.slug",
+        "        if slug == n.slug or slug in n.was:\n            return slug"
+      ]
+    ],
+    "expect": "resolve: current, former and unknown"
+  },
+  {
+    "name": "an anchored document stops counting as a built node's fragment",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "len(n.anchors) + (n.slug in anchored)",
+        "len(n.anchors)"
+      ]
+    ],
+    "expect": "rules: an anchored document is a fragment"
+  },
+  {
+    "name": "an adrs: line counts against an absence, so an absent node describing its gap in an ADR is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if n.areas:\n                problems.append(f\"{where} is `absent` but claims {len(n.areas)} area(s)",
+        "            if n.areas or n.adrs:\n                problems.append(f\"{where} is `absent` but claims {len(n.areas)} area(s)"
+      ]
+    ],
+    "expect": "rules: absent may carry adrs"
+  },
+  {
+    "name": "the summary's absent count is everything not built again, so a stateless node reads as absent",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    absent = sum(1 for n in nodes if n.state == \"absent\")",
+        "    absent = len(nodes) - built"
+      ]
+    ],
+    "expect": "summary: a stateless node is not counted absent"
+  },
+  {
+    "name": "G6: a slug equal to another node's f- id is no longer refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if n.slug.startswith(\"f-\") and n.slug[2:] in current:",
+        "        if False:"
+      ]
+    ],
+    "expect": "G6: a slug equal to another's f- id is refused"
+  },
+  {
+    "name": "G6: a slug equal to another node's goal- id is no longer refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if n.slug.startswith(\"goal-\") and n.slug[5:] in current:",
+        "        if False:"
+      ]
+    ],
+    "expect": "G6: a slug equal to another's goal- id is refused"
+  },
+  {
+    "name": "G6: a slug equal to a former slug's goal- id is no longer refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if n.slug.startswith(\"goal-\") and n.slug[5:] in former:",
+        "        if False:"
+      ]
+    ],
+    "expect": "G6: a slug equal to a former slug's goal- id is refused"
+  },
+  {
+    "name": "the id-collision PAIR test becomes a PREFIX ban, so the live `goal-tree` node is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if n.slug.startswith(\"goal-\") and n.slug[5:] in current:\n            problems.append(f\"features.md:{n.line}: `{n.slug}` equals the goal- id of the node \"\n                            f\"`{n.slug[5:]}` (line {first[n.slug[5:]].line})",
+        "        if n.slug.startswith(\"goal-\"):\n            problems.append(f\"features.md:{n.line}: `{n.slug}` equals the goal- id of the node \"\n                            f\"`{n.slug[5:]}` (line {first.get(n.slug[5:], n).line})"
+      ]
+    ],
+    "expect": "G6: a goal- slug with no partner passes"
+  },
+  {
+    "name": "G9: a done: line matches a request on its time alone, so changed words pass",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if not any(r[0] == when and r[1] == words for r in cited):",
+        "        if not any(r[0] == when for r in cited):"
+      ]
+    ],
+    "expect": "G9: one changed character is refused"
+  },
+  {
+    "name": "G9: a done: line matches a request on its words alone, so a different time passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "any(r[0] == when and r[1] == words",
+        "any(r[1] == words"
+      ]
+    ],
+    "expect": "G9: a different time is refused"
+  },
+  {
+    "name": "G9: a request under ANY goal heading counts, not only one naming the node",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "for heading, rs in table.items() if resolve(nodes, heading) == n.slug for r in rs]",
+        "for heading, rs in table.items() for r in rs]"
+      ]
+    ],
+    "expect": "G9: a request under another node does not count"
+  },
+  {
+    "name": "G9: the threads file is read even when no node carries done:, so every page world needs one",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    if not any(n.done for n in nodes):\n        return []\n    table = requests()",
+        "    table = requests()"
+      ]
+    ],
+    "expect": "G9: no done line needs no threads file"
+  },
+  {
+    "name": "S1 r1: a current slug is not held to the slug grammar, so `Not A Slug` and an empty slug pass",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if not SLUG.match(n.slug):\n            problems.append(f\"{where} is not a slug",
+        "        if False:\n            problems.append(f\"{where} is not a slug"
+      ]
+    ],
+    "expect": "rules: every current slug follows the slug grammar"
+  },
+  {
+    "name": "S1 r1: a stateless node may carry an expected-because: nobody sees",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "if n.expected_because is not None and n.state",
+        "if n.expected_because is not None and n.state is not None and n.state"
+      ]
+    ],
+    "expect": "rules: a stateless node may not carry expected-because"
+  },
+  {
+    "name": "G9: an unreadable threads file prints CANNOT RUN and then PASSES (fail-open)",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "so G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        return 2",
+        "so G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        pass"
+      ]
+    ],
+    "expect": "G9: an unreadable threads file is CANNOT RUN"
+  },
+  {
+    "name": "G9: main reads the threads file raw, so a missing one crashes instead of CANNOT RUN (call site)",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "done_problems(nodes, lambda: read_threads(GOAL_THREADS))",
+        "done_problems(nodes, lambda: requests_by_goal(GOAL_THREADS.read_text()))"
+      ]
+    ],
+    "expect": "G9: an unreadable threads file is CANNOT RUN"
+  },
+  {
+    "name": "G9: bytes that are not UTF-8 crash the check instead of CANNOT RUN",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    except (OSError, UnicodeDecodeError) as e:",
+        "    except OSError as e:"
+      ]
+    ],
+    "expect": "G9: an undecodable threads file is CANNOT RUN"
+  },
+  {
+    "name": "G9: a threads file with no `## GOAL` heading FAILS every done: line instead of CANNOT RUN",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    if not table:\n        raise ThreadsUnreadable",
+        "    if False:\n        raise ThreadsUnreadable"
+      ]
+    ],
+    "expect": "G9: a threads file with no goal heading is CANNOT RUN"
+  },
+  {
+    "name": "S1 r2: the refusal tests truthiness, so an EMPTY expected-because: passes on a stateless or built node",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if n.expected_because is not None and n.state",
+        "        if n.expected_because and n.state"
+      ]
+    ],
+    "expect": "rules: an EMPTY expected-because is still the field"
+  },
+  {
+    "name": "S1 r3: the merged rule's message tests state by truthiness, so a bare state: is reported as having no state:",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            held = f\"is `{n.state}`\" if n.state is not None else \"has no `state:`\"\n",
+        "            held = f\"is `{n.state}`\" if n.state else \"has no `state:`\"\n"
+      ]
+    ],
+    "expect": "rules: a BARE state: is not reported as a missing state:"
   }
 ]

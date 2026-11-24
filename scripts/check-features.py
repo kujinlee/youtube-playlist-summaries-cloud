@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 54 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 96 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -16,26 +16,48 @@ STATUS_TOKENS = re.compile(
 )
 # ONE owner for the field names: the matcher and the error message that teaches the grammar are
 # both derived from this tuple, so a sixth field cannot be added to one and missing from the other.
-FIELD_NAMES = ("state", "for", "areas", "anchors", "expected-because")
+# ⟳ goal node tree, Task 1 (spec §2.2): `adrs`, `was`, `done`, `proposed` and `slug` added. `slug`
+# is a field ONLY directly under a `## ` trunk, where it makes the trunk a node (plan choice C2).
+FIELD_NAMES = ("state", "for", "areas", "anchors", "expected-because", "adrs", "was", "done", "proposed", "slug")
 # ⚠ ONE OWNER, because this fact is read in two places that must not disagree: the comma-split in
 # `parse_features` and the duplicate-field REMEDY. Code review r3 (Codex) caught the message
 # telling an author to write `state: built, absent` — advice that is right for a list field and
 # produces a second, different error for a scalar one. An instruction that does not work costs
 # the author a round to discover.
-LIST_FIELDS = ("areas", "anchors")
+LIST_FIELDS = ("areas", "anchors", "adrs", "was")
 FIELD = re.compile(rf"^({'|'.join(FIELD_NAMES)}):\s*(.*)$")
+# `adrs:` and `was:` are BARE comma lists (plan choice C1), read into tuples; each entry is checked
+# against its own shape, so `adrs: (0001, 0005)` is refused entry by entry — parentheses belong to the
+# `(area)` tag of `areas:`, never to a list grammar.
+# ⛔ ONE SLUG GRAMMAR (spec §2.2: "lowercase words joined by `-`"), read by `was:` entries AND by every
+# CURRENT slug in `check_nodes` (S1 r1, Codex High 2 = Claude F2) — a current name is never held to a
+# weaker grammar than a former one, or it could not be renamed later.
+SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+ENTRY_SHAPE = {"adrs": (re.compile(r"^\d{4}$"), "four digits, e.g. `0005`"),
+               "was": (SLUG, "a slug: lowercase words joined by `-`")}
+TUPLE_FIELDS = ("adrs", "was")
+# `done:` is the owner's recorded decision, dated like a request (spec §2.2, G9); `proposed:` the moment
+# a name was proposed (spec §2.7). Both single-line.
+DONE_FORM = 'done: YYYY-MM-DD HH:MM "<the owner\'s words>"'
+DONE_FIELD = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) "(.+)"$')
+PROPOSED_FIELD = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")
 
 @dataclass
 class Node:
     slug: str
     level: int
     trunk: str
-    state: str = ""
+    state: str | None = None
     purpose: str = ""
     areas: list[str] = field(default_factory=list)
     anchors: list[str] = field(default_factory=list)
     expected_because: str | None = None
     line: int = 0
+    parent: str | None = None
+    adrs: tuple[str, ...] = ()
+    was: tuple[str, ...] = ()
+    done: tuple[str, str] | None = None
+    proposed: str | None = None
 
 
 def parse_features(text: str) -> tuple[list[Node], list[str]]:
@@ -43,18 +65,49 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
     problems: list[str] = []
     trunk = ""
     seen_fields: set[str] = set()
+    # The open branch of the current trunk, shallowest first: a node's parent is the nearest entry of a
+    # SMALLER level (spec §2.2; the trunk's own node, level 2, when the trunk carries a slug).
+    branch: list[Node] = []
+    # True from a `## ` heading until its first non-blank line: the one place a `slug:` line is taken.
+    under_trunk = False
     for i, raw in enumerate(text.split("\n"), 1):
         line = raw.rstrip()
         if line.startswith("## ") and not line.startswith("###"):
-            trunk = line[3:].strip(); continue
+            trunk = line[3:].strip(); branch = []; under_trunk = True; continue
         if line.startswith("###"):
+            under_trunk = False
             level = len(line) - len(line.lstrip("#"))
             slug = line.lstrip("#").strip()
             if not trunk:
                 problems.append(f"features.md:{i}: node `{slug}` sits outside any trunk")
-            nodes.append(Node(slug=slug, level=level, trunk=trunk, line=i))
+            if level > 6:
+                problems.append(f"features.md:{i}: node `{slug}` is {level} levels deep — a node "
+                                f"heading is `###` to `######`")
+            # ⛔ A SKIPPED LEVEL IS REFUSED (plan choice C3): `#####` directly under `###` would make
+            # the deeper node a grandchild of nothing. A first node deeper than `###` under a SLUGLESS
+            # trunk has no preceding node to skip from, and stays a top-level entry (today's rule).
+            if branch and level > branch[-1].level + 1:
+                problems.append(f"features.md:{i}: node `{slug}` (level {level}) skips a level under "
+                                f"`{branch[-1].slug}` (level {branch[-1].level}) — each heading is one "
+                                f"`#` deeper than its parent's")
+            while branch and branch[-1].level >= level:
+                branch.pop()
+            node = Node(slug=slug, level=level, trunk=trunk, line=i,
+                        parent=branch[-1].slug if branch else None)
+            nodes.append(node); branch.append(node)
             seen_fields = set(); continue
         m = FIELD.match(line)
+        if m and m.group(1) == "slug":
+            taken, under_trunk = bool(under_trunk and trunk), False
+            if not taken:
+                problems.append(f"features.md:{i}: a `slug:` line here is refused — only a trunk takes "
+                                f"a slug line, written directly under its `## ` heading")
+                continue
+            node = Node(slug=m.group(2).strip(), level=2, trunk=trunk, line=i)
+            nodes.append(node); branch = [node]
+            seen_fields = set(); continue
+        if line.strip():
+            under_trunk = False
         if not m:
             # ⭐ A WRAPPED `for:` LINE MUST NOT BE SILENTLY DROPPED (review r1 High 8). Continuation
             # text used to fail FIELD and get skipped, so `for: …\n  Currently broken, see #322.`
@@ -105,6 +158,27 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
         if key == "state": n.state = value
         elif key == "for": n.purpose = value
         elif key == "expected-because": n.expected_because = value
+        elif key == "done":
+            dm = DONE_FIELD.match(value)
+            if dm:
+                n.done = (dm.group(1), dm.group(2))
+            else:
+                problems.append(f"features.md:{i}: `{n.slug}` has a malformed `done:` line — the form is "
+                                f"`{DONE_FORM}`: a date, a time, and the owner's words in double quotes")
+        elif key == "proposed":
+            if PROPOSED_FIELD.match(value):
+                n.proposed = value
+            else:
+                problems.append(f"features.md:{i}: `{n.slug}` has a malformed `proposed:` line — the "
+                                f"form is `proposed: YYYY-MM-DD HH:MM`")
+        elif key in TUPLE_FIELDS:
+            entries = [a.strip() for a in value.split(",") if a.strip()]
+            pattern, shape = ENTRY_SHAPE[key]
+            for e in entries:
+                if not pattern.match(e):
+                    problems.append(f"features.md:{i}: `{n.slug}` has the `{key}:` entry `{e}`, which is "
+                                    f"not {shape}. `{key}:` is a bare comma list, with no parentheses")
+            setattr(n, key, tuple(e for e in entries if pattern.match(e)))
         elif key in LIST_FIELDS:
             # ⚠ `setattr` TAKES A NAME `Node` DOES NOT HAVE, SILENTLY — code review r3 (Claude), Low.
             # A dataclass without `__slots__` accepts `setattr(n, "expected-because", …)`, writes a
@@ -121,16 +195,19 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
     return nodes, problems
 
 
-def check_nodes(nodes: list[Node]) -> list[str]:
+def check_nodes(nodes: list[Node], anchored: frozenset[str] = frozenset()) -> list[str]:
+    """The per-node rules. `anchored` is the set of slugs some document's `Anchor:` header names
+    (passed empty until the header reader lives in one place — plan choice C10). Uniqueness is
+    `slug_problems` (G6), not this function."""
     problems: list[str] = []
-    seen: dict[str, int] = {}
     for n in nodes:
         where = f"features.md:{n.line}: `{n.slug}`"
-        if n.slug in seen:
-            problems.append(f"{where} is a duplicate of the node on line {seen[n.slug]}")
-        seen[n.slug] = n.line
-        if n.state not in ("built", "absent"):
-            problems.append(f"{where} has state {n.state!r}; expected `built` or `absent`")
+        if not SLUG.match(n.slug):
+            problems.append(f"{where} is not a slug — a node's name (its heading text, or a trunk's `slug:` "
+                            f"value) is lowercase words joined by `-`, the grammar a `was:` entry is held to")
+        # `state:` is OPTIONAL (spec §2.2): omitted means the node is a name only — an aim.
+        if n.state not in (None, "built", "absent"):
+            problems.append(f"{where} has state {n.state!r}; expected `built`, `absent`, or no `state:` line")
         if not n.purpose:
             problems.append(f"{where} has no `for:` line — every node says what it is for")
         else:
@@ -138,18 +215,137 @@ def check_nodes(nodes: list[Node]) -> list[str]:
             if hit:
                 problems.append(f"{where} prose contains the status token {hit.group(0)!r}. A node "
                                 f"says what it is FOR; where it stands is what the links are for")
-        fragments = len(n.areas) + len(n.anchors)
+        # ⛔ THE TWO COUNTS ARE DIFFERENT SETS (plan Task 2, r1 F2). Any of these is evidence a
+        # `built` node exists; only an AREA — a backlog row, shipped work — contradicts an absence.
+        # An ADR or a document describes a gap and may sit under an `absent` node.
+        fragments = len(n.areas) + len(n.adrs) + len(n.anchors) + (n.slug in anchored)
         if n.state == "built" and fragments == 0:
-            problems.append(f"{where} is `built` but names no fragment — add an `anchors:` or "
-                            f"`areas:` line, or set `state: absent` with an `expected-because:`")
-        if n.state == "built" and n.expected_because:
-            problems.append(f"{where} is `built` but carries an `expected-because:` — that line is "
+            problems.append(f"{where} is `built` but names no fragment — add an `areas:`, `adrs:` or "
+                            f"`anchors:` line, anchor a document to it, or set `state: absent` with an "
+                            f"`expected-because:`")
+        # ⛔ ONE RULE FOR WHERE `expected-because:` MAY SIT: on an `absent` node, and nowhere else.
+        # It was two refusals, one per state (`built`, then stateless in S1 r1, Claude F3 — the line
+        # is never rendered off an `absent` node, so it would sit unseen), and the copies were each
+        # written as a TRUTHINESS test, so a bare `expected-because:` (parsed to "") passed both
+        # (S1 r2, Codex Low). One rule over PRESENCE (`is not None`) leaves no per-state copy to
+        # forget, and no value that reads as the field being absent.
+        if n.expected_because is not None and n.state != "absent":
+            held = f"is `{n.state}`" if n.state is not None else "has no `state:`"
+            problems.append(f"{where} {held} but carries an `expected-because:` — that line is "
                             f"the argument for an ABSENCE. Remove it, or set `state: absent`")
         if n.state == "absent":
             if not n.expected_because:
                 problems.append(f"{where} is `absent` but has no `expected-because:` line")
-            if fragments:
-                problems.append(f"{where} is `absent` but names {fragments} fragment(s) — flip it to `built`")
+            if n.areas:
+                problems.append(f"{where} is `absent` but claims {len(n.areas)} area(s) — flip it to `built`")
+    return problems
+
+
+def current_slugs(nodes: list[Node]) -> set[str]:
+    return {n.slug for n in nodes}
+
+
+def resolve(nodes: list[Node], slug: str) -> str | None:
+    """The CURRENT slug for a current or former slug, else None. ⛔ For READING history only (spec
+    §2.4): a check of a NEW value asks "is this a current slug", never "does this resolve"."""
+    for n in nodes:
+        if slug == n.slug or slug in n.was:
+            return n.slug
+    return None
+
+
+def slug_problems(nodes: list[Node]) -> list[str]:
+    """G6: a slug occurs once across every current slug and every `was:` entry, and no two nodes'
+    page ids can meet. A `was:` entry that occurs once and is no current slug is a rename — PASSES."""
+    problems: list[str] = []
+    first: dict[str, Node] = {}
+    for n in nodes:
+        if n.slug in first:
+            problems.append(f"features.md:{n.line}: `{n.slug}` is a duplicate of the node on line "
+                            f"{first[n.slug].line} — two nodes share one slug")
+        else:
+            first[n.slug] = n
+    current = set(first)
+    former: dict[str, list[Node]] = {}
+    for n in nodes:
+        for w in n.was:
+            former.setdefault(w, []).append(n)
+            if w in current:
+                problems.append(f"features.md:{n.line}: `{n.slug}` lists `{w}` in `was:`, which is also a "
+                                f"current slug (line {first[w].line}) — a retired name is never re-allocated")
+    for w, owners in former.items():
+        if len(owners) > 1:
+            problems.append(f"`{w}` is listed as a former slug {len(owners)} times, by: "
+                            f"{', '.join(f'`{o.slug}` (line {o.line})' for o in owners)} — one rename, one record")
+    # ⛔ PAGE IDS MAY NOT MEET (plan Task 2, r2 Codex Major). The views give a slug `s` the ids
+    # `goal-s`, `s`, `f-s`, `g-s` and `goal-<w>` per former slug `w`; two nodes can share one only as
+    # these PAIRS. A PREFIX ban is wrong: the live node `goal-tree` has no partner.
+    for n in nodes:
+        if n.slug.startswith("f-") and n.slug[2:] in current:
+            problems.append(f"features.md:{n.line}: `{n.slug}` equals the f- id of the node `{n.slug[2:]}` "
+                            f"(line {first[n.slug[2:]].line}) — on /features the two would share an id")
+        if n.slug.startswith("goal-") and n.slug[5:] in current:
+            problems.append(f"features.md:{n.line}: `{n.slug}` equals the goal- id of the node "
+                            f"`{n.slug[5:]}` (line {first[n.slug[5:]].line}) — the two would share an id")
+        if n.slug.startswith("goal-") and n.slug[5:] in former:
+            problems.append(f"features.md:{n.line}: `{n.slug}` equals the goal- id of the former slug "
+                            f"`{n.slug[5:]}` (`was:` of `{former[n.slug[5:]][0].slug}`) — its old links "
+                            f"would land on the wrong node")
+    return problems
+
+
+def summary_line(nodes: list[Node]) -> str:
+    """The node half of `main`'s OK line. A stateless node is a name only — never counted absent."""
+    built = sum(1 for n in nodes if n.state == "built")
+    absent = sum(1 for n in nodes if n.state == "absent")
+    return f"{len(nodes)} nodes ({built} built, {absent} absent, {len(nodes) - built - absent} stateless)"
+
+
+# ⛔ THE REQUEST GRAMMAR LIVES HERE, ONCE (goal node tree Task 3). `goal-tree.py`'s `GOAL_RE` and
+# `REQUEST_RE` are aliases of these two, read through its `_sibling`, never a second copy.
+GOAL_HEADING = re.compile(r"^## GOAL ([a-z0-9]+(?:-[a-z0-9]+)*)$")
+REQUEST = re.compile(r'^> (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) "(.+)"$')
+
+
+def requests_by_goal(text: str) -> dict[str, list[tuple[str, str]]]:
+    """`docs/goal-threads.md`'s request lines, by the slug of the `## GOAL` heading they sit under, in
+    file order. Any other `## ` heading ends a goal. Validating that file is `goal-tree.py`'s job."""
+    out: dict[str, list[tuple[str, str]]] = {}
+    cur = None
+    for raw in text.split("\n"):
+        line = raw.rstrip()
+        if line.startswith("## "):
+            m = GOAL_HEADING.match(line)
+            cur = m.group(1) if m else None
+            if cur is not None:
+                out.setdefault(cur, [])
+            continue
+        m = REQUEST.match(line) if cur is not None else None
+        if m:
+            out[cur].append((m.group(1), m.group(2)))
+    return out
+
+
+def done_problems(nodes: list[Node], requests) -> list[str]:
+    """G9: a `done:` line's (when, words) equals a request under a `## GOAL` heading whose slug
+    `resolve`s to that node — so a request filed under a former slug still counts.
+
+    `requests` is a zero-argument READER returning `requests_by_goal(...)`. ⛔ It is called only when
+    some node carries `done:` (r1 F5): `gen-features-page.py` loads this module, and its worlds have no
+    threads file. A reader that cannot read raises; `main` turns that into CANNOT RUN."""
+    if not any(n.done for n in nodes):
+        return []
+    table = requests()
+    problems: list[str] = []
+    for n in nodes:
+        if n.done is None:
+            continue
+        when, words = n.done
+        cited = [r for heading, rs in table.items() if resolve(nodes, heading) == n.slug for r in rs]
+        if not any(r[0] == when and r[1] == words for r in cited):
+            problems.append(f"features.md:{n.line}: `{n.slug}` is marked done at {when} citing \"{words}\", "
+                            f"but docs/goal-threads.md records no such request under a `## GOAL` heading "
+                            f"naming this node — copy the request line exactly, time and words")
     return problems
 
 
@@ -283,6 +479,7 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 FEATURES = REPO / "docs" / "features.md"
 ANCHORS_MD = REPO / "docs" / "anchors.md"
 BACKLOG = REPO / "docs" / "backlog.md"
+GOAL_THREADS = REPO / "docs" / "goal-threads.md"
 
 
 def main() -> int:
@@ -304,17 +501,43 @@ def main() -> int:
         return 2
     problems += area_problems
     problems += kind_problems(BACKLOG.read_text(), declared)
-    problems += check_nodes(nodes)
+    # `anchored` stays empty until S2 Task 7, when the header reader lives in one place (plan C10).
+    problems += check_nodes(nodes, frozenset())
+    problems += slug_problems(nodes)
     problems += check_cross(nodes, declared, None if not areas else areas)
+    try:
+        # The threads file is read only when a node carries `done:` — the guard is `done_problems`'.
+        problems += done_problems(nodes, lambda: read_threads(GOAL_THREADS))
+    except ThreadsUnreadable as e:
+        print(f"CANNOT RUN — a node carries `done:` and {GOAL_THREADS} {e}, "
+              f"so G9 cannot be checked. Treat this as NOT RUN.", file=sys.stderr)
+        return 2
     if problems:
         print(f"FAILED — {len(problems)} feature-map problem(s):", file=sys.stderr)
         for p in problems:
             print(f"  ✗ {p}", file=sys.stderr)
         return 1
-    built = sum(1 for n in nodes if n.state == "built")
-    print(f"feature map: {len(nodes)} nodes ({built} built, {len(nodes) - built} declared absent); "
+    print(f"feature map: {summary_line(nodes)}; "
           f"{len(declared)} anchors and {len(areas)} backlog areas all claimed exactly once")
     return 0
+
+
+class ThreadsUnreadable(Exception):
+    """`docs/goal-threads.md` gave nothing G9 can compare against — CANNOT RUN, never FAILED."""
+
+
+def read_threads(path: pathlib.Path) -> dict[str, list[tuple[str, str]]]:
+    """`requests_by_goal` over the threads file, or `ThreadsUnreadable` when it cannot be read, is not
+    UTF-8 (S1 r1, Codex Medium 3), or holds no `## GOAL` heading (S1 r1, Claude F4: a parse that found
+    nothing must not accuse a `done:` line of citing a request that is in fact recorded)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise ThreadsUnreadable(f"cannot be read ({type(e).__name__})") from e
+    table = requests_by_goal(text)
+    if not table:
+        raise ThreadsUnreadable("holds no `## GOAL` heading, so a parse of it found nothing")
+    return table
 
 
 def _self_test() -> int:
@@ -360,8 +583,10 @@ expected-because: standard for a hosted multi-tenant service.
     built_empty = TREE.replace("anchors: cloud-publishing\n", "")
     check("a built node with no fragment fails",
           any("no fragment" in p for p in check_nodes(parse_features(built_empty)[0])), True)
+    # ⟳ goal node tree Task 2: the `absent` arm counts AREAS only (an ADR or a document may describe a
+    # gap), so the fragment that contradicts an absence is an `areas:` line.
     absent_frag = TREE.replace("expected-because: standard for a hosted multi-tenant service.\n",
-                               "expected-because: standard for a hosted multi-tenant service.\nanchors: cloud-publishing\n")
+                               "expected-because: standard for a hosted multi-tenant service.\nareas: (product)\n")
     check("an absent node WITH a fragment fails",
           any("flip it to `built`" in p for p in check_nodes(parse_features(absent_frag)[0])), True)
     absent_noreason = TREE.replace("expected-because: standard for a hosted multi-tenant service.\n", "")
@@ -375,8 +600,9 @@ expected-because: standard for a hosted multi-tenant service.
     check("a built node carrying expected-because fails",
           any("that line is" in p for p in check_nodes(parse_features(built_reason)[0])), True)
     dupe = TREE + "\n### summarise-a-video\nstate: built\nfor: A second one.\nanchors: cloud-sync\n"
+    # ⟳ goal node tree Task 2: uniqueness moved from `check_nodes` to `slug_problems` (G6).
     check("a duplicate slug fails",
-          any("duplicate" in p for p in check_nodes(parse_features(dupe)[0])), True)
+          any("duplicate" in p for p in slug_problems(parse_features(dupe)[0])), True)
     wrapped = TREE.replace("for: Turns one video's transcript into a summary a person reads.\n",
                            "for: Turns one video's transcript\n  into a summary. Currently broken, see #322.\n")
     wnodes, wproblems = parse_features(wrapped)
@@ -408,10 +634,10 @@ expected-because: standard for a hosted multi-tenant service.
     # `anchors:` blanks it. The second case is the half that matters — refusing the duplicate is
     # worth nothing if the value that survives is still the empty one.
     ABSENT_WHY = "expected-because: standard for a hosted multi-tenant service.\n"
-    dup_anchors = TREE.replace(ABSENT_WHY, ABSENT_WHY + "anchors: cloud-publishing\nanchors:\n")
+    dup_anchors = TREE.replace(ABSENT_WHY, ABSENT_WHY + "areas: (product)\nareas:\n")
     dnodes, dproblems = parse_features(dup_anchors)
     check("a duplicate field is REFUSED, not applied last-write-wins",
-          any("repeats the field `anchors`" in p for p in dproblems), True)
+          any("repeats the field `areas`" in p for p in dproblems), True)
     check("the FIRST value stands, so a blanking duplicate cannot hide the fragment it contradicts",
           any("flip it to `built`" in p for p in check_nodes(dnodes)), True)
     check("`now` is no longer a banned word", STATUS_TOKENS.search("Shows what runs now") is None, True)
@@ -550,6 +776,267 @@ expected-because: standard for a hosted multi-tenant service.
     check("a refused line states the GRAMMAR an author needs, not only the rationale",
           all(s in parse_features("# Feature map\n## PRODUCT\n### x\n state: built\n")[1][0]
               for s in ("COLUMN 0", "no space before the colon", "expected-because")), True)
+
+    # ── THE NODE GRAMMAR — goal node tree, Task 1 (spec §2.2) ───────────────────────────────────
+    def _one(body: str, trunk: str = "## PRODUCT\n") -> tuple[list[Node], list[str]]:
+        return parse_features("# Feature map\n" + trunk + body)
+
+    _lists = [_one(f"### x\nfor: A thing.\nadrs: {a}\nwas: {w}\n") for a, w in
+              (("0001, 0005", "a, b"), ("0012", "c"))]
+    check("grammar: adrs and was are bare comma lists",
+          [(ns[0].adrs, ns[0].was, ps) for ns, ps in _lists],
+          [(("0001", "0005"), ("a", "b"), []), (("0012",), ("c",), [])])
+    _bad_adrs = ("1", "(0001", "0005)", "00012", "abcd")
+    check("grammar: adrs entry must be four digits",
+          [any("features.md:5" in p and f"`{b}`" in p for p in _one(f"### x\nfor: A thing.\nadrs: 0003, {b}\n")[1])
+           for b in _bad_adrs] + [_one("### x\nfor: A thing.\nadrs: 0003, 0004\n")[1] == []],
+          [True] * len(_bad_adrs) + [True])
+    _ns, _ps = _one("### x\nfor: A thing.\n")
+    check("grammar: state may be omitted", (_ns[0].state, _ps), (None, []))
+    check("grammar: done parses when and words",
+          [_one(f'### x\nfor: A thing.\ndone: {d}\n')[0][0].done for d in
+           ('2026-11-23 21:20 "it is finished"', '2025-01-02 03:04 "another, longer sentence."')],
+          [("2026-11-23 21:20", "it is finished"), ("2025-01-02 03:04", "another, longer sentence.")])
+    _bad_done = ('2026-11-23 "it is finished"', '2026-11-23 21:20 it is finished', '2026-11-23 21:20',
+                 '21:20 "it is finished"', '2026-11-23 2120 "it is finished"')
+    check("grammar: done needs a time and a quote",
+          [(_one(f"### x\nfor: A thing.\ndone: {d}\n")[0][0].done,
+            any('YYYY-MM-DD HH:MM "' in p for p in _one(f"### x\nfor: A thing.\ndone: {d}\n")[1]))
+           for d in _bad_done],
+          [(None, True)] * len(_bad_done))
+    check("grammar: proposed parses",
+          [_one(f"### x\nfor: A thing.\nproposed: {p}\n")[0][0].proposed for p in ("2026-11-24 09:30", "2024-02-29 23:59")]
+          + [bool(_one("### x\nfor: A thing.\nproposed: 2026-11-24\n")[1])],
+          ["2026-11-24 09:30", "2024-02-29 23:59", True])
+    _deep, _dp = _one("### a\nfor: A.\n#### b\nfor: B.\n##### c\nfor: C.\n###### d\nfor: D.\n"
+                      "### e\nfor: E.\n#### f\nfor: F.\n##### g\nfor: G.\n")
+    check("grammar: depth five and six carry a parent",
+          ([(n.slug, n.level, n.parent) for n in _deep], _dp),
+          ([("a", 3, None), ("b", 4, "a"), ("c", 5, "b"), ("d", 6, "c"),
+            ("e", 3, None), ("f", 4, "e"), ("g", 5, "f")], []))
+    check("grammar: a skipped level is refused",
+          [any("`a`" in p and "`b`" in p and "skips" in p for p in _one(src)[1]) for src in
+           ("### a\nfor: A.\n##### b\nfor: B.\n", "### z\nfor: Z.\n#### a\nfor: A.\n###### b\nfor: B.\n")],
+          [True, True])
+    _tr, _tp = parse_features("# Feature map\n## PRODUCT\n\nslug: product\nfor: What the product does.\n"
+                              "### c\nfor: C.\n#### d\nfor: D.\n"
+                              "## PLATFORM\nslug: platform\nfor: What it runs on.\n### e\nfor: E.\n")
+    check("grammar: a trunk slug makes a level-2 node",
+          ([(n.slug, n.level, n.trunk, n.parent) for n in _tr], _tp),
+          ([("product", 2, "PRODUCT", None), ("c", 3, "PRODUCT", "product"), ("d", 4, "PRODUCT", "c"),
+            ("platform", 2, "PLATFORM", None), ("e", 3, "PLATFORM", "platform")], []))
+    _live_text = FEATURES.read_text()
+    _live, _lp = parse_features(_live_text)
+    _headings = [l for l in _live_text.split("\n") if re.match(r"^#{3,6} ", l)]
+    check("grammar: a slugless trunk yields no node",
+          (len(_live), [n for n in _live if n.level == 2], [n.slug for n in _live if n.level == 3 and n.parent],
+           len(_one("### a\nfor: A.\n#### b\nfor: B.\n")[0]), _one("### a\nfor: A.\n#### b\nfor: B.\n")[0][0].parent),
+          (len(_headings), [], [], 2, None))
+    check("grammar: slug under a node is refused",
+          [any("only a trunk" in p for p in parse_features(src)[1]) for src in
+           ("# F\n## PRODUCT\n### x\nfor: X.\nslug: y\n",
+            "# F\n## PRODUCT\nslug: product\nfor: P.\nslug: again\n")],
+          [True, True])
+    check("grammar: a duplicate was line is refused",
+          [any(f"repeats the field `{k}`" in p for p in _one(f"### x\nfor: A thing.\n{k}: {v}\n{k}: {v}\n")[1])
+           for k, v in (("was", "old-x"), ("adrs", "0001"), ("done", '2026-11-23 21:20 "w"'))],
+          [True, True, True])
+
+    # ── NODE RULES — goal node tree, Task 2 (spec §2.2, §2.4, G6) ──────────────────────────────
+    def _nodes(body: str) -> list[Node]:
+        return parse_features("# Feature map\n## PRODUCT\n" + body)[0]
+
+    check("rules: a stateless node needs no fragment",
+          [check_nodes(_nodes(b)) for b in ("### x\nfor: A name only.\n", "### y\nfor: Another aim.\nareas: (y)\n")],
+          [[], []])
+    check("rules: adrs is a fragment",
+          [check_nodes(_nodes(f"### x\nstate: built\nfor: A thing.\nadrs: {a}\n")) for a in ("0003", "0010, 0016")],
+          [[], []])
+    _bare = "### {s}\nstate: built\nfor: A thing.\n"
+    check("rules: an anchored document is a fragment",
+          [check_nodes(_nodes(_bare.format(s=s)), frozenset({s, "other"})) for s in ("x", "y")]
+          + [any("no fragment" in p for p in check_nodes(_nodes(_bare.format(s="x")), frozenset({"y"})))],
+          [[], [], True])
+    check("rules: built with no fragment is refused",
+          [any("no fragment" in p for p in check_nodes(_nodes(_bare.format(s=s)))) for s in ("x", "y")],
+          [True, True])
+    # ⛔ G6 — AN INDEPENDENT LITERAL LIST of the three failing shapes and the passing one, each at two
+    # pairs, so the class is exercised by a copy `slug_problems` does not read, and a constant cannot
+    # pass. The marker is the clause's own words, so severing one clause reddens only its own case.
+    _G6 = (
+        ("G6: two nodes may not share a slug", "two nodes share", (
+            "### a\nfor: A.\n### a\nfor: A again.\n", "### b\nfor: B.\n#### b\nfor: B again.\n")),
+        ("G6: a was entry may not equal a current slug", "is also a current slug", (
+            "### a\nfor: A.\nwas: b\n### b\nfor: B.\n", "### c\nfor: C.\nwas: old, d\n### d\nfor: D.\n")),
+        ("G6: a former slug listed twice is refused", "is listed as a former slug", (
+            "### a\nfor: A.\nwas: old, old\n", "### a\nfor: A.\nwas: old\n### b\nfor: B.\nwas: old\n")),
+        ("G6: a rename passes", None, (
+            "### a\nfor: A.\nwas: old-a\n", "### b\nfor: B.\nwas: old-b, older-b\n### c\nfor: C.\nwas: old-c\n")),
+    )
+    for _name, _marker, _trees in _G6:
+        _got = [slug_problems(_nodes(t)) for t in _trees]
+        check(_name, [(any(_marker in p for p in g) if _marker else g) for g in _got],
+              [True, True] if _marker else [[], []])
+    _IDS = (
+        ("G6: a slug equal to another's f- id is refused", "f- id", (
+            ("### x\nfor: X.\n### f-x\nfor: F.\n", ("`x`", "`f-x`")),
+            ("### f-y\nfor: F.\n### y\nfor: Y.\n", ("`y`", "`f-y`")))),
+        ("G6: a slug equal to another's goal- id is refused", "goal- id of the node", (
+            ("### x\nfor: X.\n### goal-x\nfor: G.\n", ("`x`", "`goal-x`")),
+            ("### goal-y\nfor: G.\n### y\nfor: Y.\n", ("`y`", "`goal-y`")))),
+        ("G6: a slug equal to a former slug's goal- id is refused", "goal- id of the former slug", (
+            ("### a\nfor: A.\nwas: x\n### goal-x\nfor: G.\n", ("`x`", "`goal-x`")),
+            ("### goal-y\nfor: G.\n### b\nfor: B.\nwas: y\n", ("`y`", "`goal-y`")))),
+    )
+    for _name, _marker, _pairs in _IDS:
+        check(_name, [any(_marker in p and all(w in p for w in _want) for p in slug_problems(_nodes(t)))
+                      for t, _want in _pairs], [True, True])
+    check("G6: a goal- slug with no partner passes",
+          [slug_problems(_nodes(t)) for t in ("### goal-tree\nfor: G.\n### other\nfor: O.\n",
+                                              "### goal-x\nfor: G.\n### y\nfor: Y.\nwas: z\n")]
+          + [any(m in " ".join(slug_problems(_live)) for m in ("f- id", "goal- id"))],
+          [[], [], False])
+    _rn = _nodes("### a\nfor: A.\nwas: old-a, older-a\n### b\nfor: B.\nwas: old-b\n")
+    _rm = _nodes("### c\nfor: C.\nwas: old-c\n")
+    check("resolve: current, former and unknown",
+          ([resolve(_rn, "a"), resolve(_rn, "b"), resolve(_rn, "old-a"), resolve(_rn, "older-a"),
+            resolve(_rn, "old-b"), resolve(_rn, "nope"), resolve(_rm, "old-c"), resolve(_rm, "old-a")],
+           current_slugs(_rn), current_slugs(_rm)),
+          (["a", "b", "a", "a", "b", None, "c", None], {"a", "b"}, {"c"}))
+    _ABS = "### {s}\nstate: absent\nfor: A gap.\nexpected-because: standard.\n"
+    check("rules: absent may carry adrs",
+          [check_nodes(_nodes(_ABS.format(s="x") + f"adrs: {a}\n")) for a in ("0015", "0001, 0002")],
+          [[], []])
+    check("rules: absent may carry an anchored document",
+          [check_nodes(_nodes(_ABS.format(s=s)), frozenset({s})) for s in ("x", "harness-ships-elsewhere")],
+          [[], []])
+    check("rules: absent with an area is refused",
+          [[p for p in check_nodes(_nodes(_ABS.format(s="x") + a)) if "flip it to `built`" in p] for a in
+           ("areas: (x)\n", "areas: (x), (y)\nadrs: 0015\n")],
+          [["features.md:3: `x` is `absent` but claims 1 area(s) — flip it to `built`"],
+           ["features.md:3: `x` is `absent` but claims 2 area(s) — flip it to `built`"]])
+    check("summary: a stateless node is not counted absent",
+          [summary_line(_nodes("### a\nstate: built\nfor: A.\nareas: (a)\n" + _ABS.format(s="b") + "### c\nfor: C.\n")),
+           summary_line(_nodes("### a\nfor: A.\n### b\nfor: B.\n" + _ABS.format(s="c")))],
+          ["3 nodes (1 built, 1 absent, 1 stateless)", "3 nodes (0 built, 1 absent, 2 stateless)"])
+    # ⛔ S1 r1 (Codex High 2 = Claude F2): a CURRENT slug is held to the grammar a `was:` entry is.
+    # AN INDEPENDENT LITERAL LIST, both sources (a trunk's `slug:` line and a `###` heading), each
+    # failing shape at least twice, so a constant or a check of one source alone cannot pass.
+    _NOT_SLUGS = ("## T\nslug: Not A Slug\nfor: P.\n", "## T\nslug:\nfor: P.\n", "## T\nslug: Upper-case\nfor: P.\n",
+                  "## T\n### Foo Bar\nfor: X.\n", "## T\n### Upper-case\nfor: X.\n", "## T\n### trailing-\nfor: X.\n",
+                  "## T\n### under_score\nfor: X.\n")
+    _SLUGS = ("## T\nslug: product\nfor: P.\n", "## T\n### a-b-1\nfor: X.\n", "## T\n### x\nfor: X.\n")
+    check("rules: every current slug follows the slug grammar",
+          ([any("is not a slug" in p for p in check_nodes(parse_features("# F\n" + t)[0])) for t in _NOT_SLUGS],
+           [check_nodes(parse_features("# F\n" + t)[0]) for t in _SLUGS],
+           [p for p in check_nodes(_live) if "is not a slug" in p]),
+          ([True] * len(_NOT_SLUGS), [[]] * len(_SLUGS), []))
+    # ⛔ S1 r1 (Claude F3): `expected-because:` argues for an ABSENCE; a stateless node claims none.
+    check("rules: a stateless node may not carry expected-because",
+          [any("no `state:`" in p and "expected-because" in p for p in check_nodes(_nodes(b))) for b in
+           ("### x\nfor: X.\nexpected-because: e.\n", "### y\nfor: Y.\nareas: (y)\nexpected-because: f.\n")]
+          + [check_nodes(_nodes(_ABS.format(s="z")))],
+          [True, True, []])
+    # ⛔ S1 r2 (Codex Low): the refusal is of the FIELD, not of a non-empty value. A bare
+    # `expected-because:` parses to "" and passed both the stateless and the `built` refusal, which
+    # tested truthiness; the line was invisible on the page too. CONTROL: the same nodes without the
+    # line pass, so a fix that refused every stateless or built node would also go red.
+    check("rules: an EMPTY expected-because is still the field",
+          [any("expected-because" in p for p in check_nodes(_nodes(b))) for b in
+           ("### x\nfor: X.\nexpected-because:\n",
+            "### y\nstate: built\nfor: Y.\nareas: (y)\nexpected-because:\n",
+            "### x\nfor: X.\n", "### y\nstate: built\nfor: Y.\nareas: (y)\n")],
+          [True, True, False, False])
+    # ⛔ S1 r3 (Claude F2): a BARE `state:` parses to "", and the merged rule's message tested it by
+    # TRUTHINESS, so the node drew two contradicting messages — `has state ''` from the state check,
+    # then "has no `state:`" here, with the line right there in the file. EXACTLY ONE message
+    # mentions `state:` being absent, and only for the node that truly has no `state:` line (CONTROL:
+    # without it, a fix that dropped the "has no `state:`" wording entirely would also pass).
+    _bare = check_nodes(_nodes("### x\nstate:\nfor: X.\nexpected-because: e.\n"))
+    check("rules: a BARE state: is not reported as a missing state:",
+          (sum("has no `state:`" in p for p in _bare), sum("expected-because" in p for p in _bare),
+           sum("has no `state:`" in p for p in check_nodes(_nodes("### x\nfor: X.\nexpected-because: e.\n")))),
+          (0, 1, 1))
+
+    # ── G9 — `done:` cites a recorded request (goal node tree Task 3, spec §2.5) ───────────────
+    _THREADS = ("# Goal threads\nprose above the first goal\n\n## GOAL ship-it\n"
+                '> 2026-11-01 09:00 "ship the thing"\n- t1 · fix · a thread\n\n'
+                "## GOAL other-aim\n"
+                '> 2026-11-02 10:00 "another request"\n\n'
+                "## GOAL old-name\n"
+                '> 2026-11-03 11:00 "asked under the old name"\n')
+    _req = requests_by_goal(_THREADS)
+    _DONE = ("### ship-it\nfor: S.\ndone: {d}\n### other-aim\nfor: O.\n"
+             "### renamed\nfor: R.\nwas: old-name\ndone: {r}\n")
+    def _dp(d: str, r: str = '2026-11-03 11:00 "asked under the old name"'):
+        return done_problems(_nodes(_DONE.format(d=d, r=r)), lambda: _req)
+    check("G9: done equals a request under its node",
+          (_dp('2026-11-01 09:00 "ship the thing"'), _req.get("ship-it"), sorted(_req),
+           requests_by_goal('> 2026-01-01 00:00 "above"\n## GOAL a\n> 2026-01-02 00:00 "q"\n'
+                            '## Notes\n> 2026-01-03 00:00 "not a goal\'s"\n')),
+          ([], [("2026-11-01 09:00", "ship the thing")], ["old-name", "other-aim", "ship-it"],
+           {"a": [("2026-01-02 00:00", "q")]}))
+    check("G9: one changed character is refused",
+          [any("`ship-it`" in p and "goal-threads.md" in p for p in _dp(d)) for d in
+           ('2026-11-01 09:00 "ship the thinG"', '2026-11-01 09:00 "ship the thing."')], [True, True])
+    check("G9: a different time is refused",
+          [any("`ship-it`" in p for p in _dp(d)) for d in
+           ('2026-11-01 09:01 "ship the thing"', '2026-11-02 09:00 "ship the thing"')], [True, True])
+    check("G9: a request under another node does not count",
+          [any("`ship-it`" in p for p in _dp(d)) for d in
+           ('2026-11-02 10:00 "another request"', '2026-11-03 11:00 "asked under the old name"')], [True, True])
+    check("G9: a request under a former slug counts",
+          [_dp('2026-11-01 09:00 "ship the thing"'),
+           any("`renamed`" in p for p in _dp('2026-11-01 09:00 "ship the thing"', '2026-11-01 09:00 "ship the thing"'))],
+          [[], True])
+    # Behaviour 6 through the REAL `main`: its paths pointed at a world whose features carry a `done:` line
+    # and whose threads file does not exist. Exit 2 and a CANNOT RUN line — never a pass.
+    import contextlib, io, tempfile
+    _g = globals()
+    _saved = {k: _g[k] for k in ("FEATURES", "GOAL_THREADS")}
+    def _drive(threads: bytes | None, name: str = "goal-threads.md"):
+        """`main` over the real tree plus one `done:` line, with the threads file holding `threads`
+        (None: absent). Returns (exit code, whether stderr said CANNOT RUN)."""
+        _g = globals()      # bound HERE: check-main-drivable reads a rebind in the function that calls main
+        with tempfile.TemporaryDirectory() as _td:
+            _f = pathlib.Path(_td) / "features.md"
+            _f.write_text(FEATURES.read_text().replace(
+                "\nstate: built\n", '\nstate: built\ndone: 2026-11-01 09:00 "ship the thing"\n', 1))
+            _t = pathlib.Path(_td) / name
+            if threads is not None:
+                _t.write_bytes(threads)
+            _g["FEATURES"], _g["GOAL_THREADS"] = _f, _t
+            _err = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(_err), contextlib.redirect_stdout(io.StringIO()):
+                    _rc = main()
+            except Exception as e:      # an uncaught read error is a crash, not CANNOT RUN
+                _rc = type(e).__name__
+            finally:
+                _g.update(_saved)
+            return (_rc, "CANNOT RUN" in _err.getvalue())
+    check("G9: an unreadable threads file is CANNOT RUN",
+          [_drive(None), _drive(None, "nested/goal-threads.md")], [(2, True), (2, True)])
+    # ⛔ S1 r1 (Codex Medium 3): bytes that are not UTF-8 are a read failure, not a crash.
+    check("G9: an undecodable threads file is CANNOT RUN",
+          [_drive(b"\xff"), _drive(b"## GOAL ship-it\n> 2026-11-01 09:00 \"ship \xfe\"\n")], [(2, True), (2, True)])
+    # ⛔ S1 r1 (Claude F4): a file that reads but holds no `## GOAL` heading is a parse that found
+    # nothing — CANNOT RUN, never "copy the request line exactly" about a request that IS recorded.
+    check("G9: a threads file with no goal heading is CANNOT RUN",
+          [_drive(b""), _drive(b"# Goal threads\n## Notes\n> 2026-11-01 09:00 \"ship the thing\"\n"),
+           _drive(b"## GOAL ship-it\n> 2026-11-01 09:00 \"a different request\"\n")],
+          [(2, True), (2, True), (1, False)])
+    def _never():
+        raise AssertionError("the threads file was read although no node carries `done:`")
+    def _safe(f):
+        try:
+            return f()
+        except Exception as e:
+            return type(e).__name__
+    check("G9: no done line needs no threads file",
+          [_safe(lambda: done_problems(_nodes("### a\nfor: A.\n### b\nstate: built\nfor: B.\nareas: (b)\n"), _never)),
+           _safe(lambda: done_problems(_live, _never))],
+          [[], []])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

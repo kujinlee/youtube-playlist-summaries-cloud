@@ -2623,6 +2623,9 @@ def _self_test_body() -> int:
         # ⟳ 2026-11-23 backlog #697 (decision 5 in `--closure`): 361 + 1 = 362 / d47bd22a1db012b6. Its one gained line,
         # diffed by hand (sorted, `comm -3`) against d0db35d3's `git archive`: `check-shipping-sets.py` ->
         # `build-shipped-corpus.py` (`_corpus_builder`: decision 5's table and canonical hash, by load). Lost: 0.
+        # ⟳ 2026-11-24 node-tree plan S1 Task 3 (plan choice C9): 362 + 1 = 363 / d67a2be07817bb75. Its one gained line,
+        # diffed by hand (sorted, `comm -3`) against 561379e6's `git archive`: `goal-tree.py` -> `check-features.py`
+        # (GOAL_RE and REQUEST_RE, by load). Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2634,7 +2637,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (362, "d47bd22a1db012b6", []))
+             (363, "d67a2be07817bb75", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

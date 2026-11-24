@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/goal-node-tree-s1-r3-claude.md": "100644 fe292d0492cff67771d1c9aae57e8f1a58e5179d"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "0e8247e0509c7689e8040565880cb22d49e0bf7c",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "S1 r3 adversarial Claude half: refute the r2 fold (group_tree file order, expected-because presence rule, mutations, fix-induced)",
+  "reason": "claude half filed: 6827 chars, names 0e8247e0509c",
+  "refused": false,
+  "review": "goal-node-tree-s1-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/node-tree-s1",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

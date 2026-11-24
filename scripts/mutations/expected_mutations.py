@@ -546,7 +546,21 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-23, PR #624 (features tree index), rounds 1-2: 16 -> 43. Round 1 +21 (ids, the hash
     # handler RUN, gap counts read back from the markup); round 2 +6: a card id's reserved prefix
     # and the stub's first-wins id rule (R2-1), and the band rows compared by identity (R2-2, four).
-    "scripts/gen-features-page.py": 43,
+    # ⟳ 2026-11-24, node-tree plan Task 4: 43 -> 53. Five index mutations REBOUND to the recursive
+    # `group_tree`/`render_index` (none deleted); +10: both recursions' depth bound, the orphan,
+    # the trunk's link and card, the stateless badge and note, the no-area sentence, and inheritance
+    # (an ancestor's area, and the walk past the parent).
+    # ⟳ 2026-11-24, goal node tree S1 review r1: 53 -> 54 — a slugged trunk keyed by its display
+    # text (Codex High 1 = Claude F1). Three entries were REBOUND onto the rewritten `group_tree` (the
+    # orphan, and the two `####` nesting ones, which had named its deleted `entries` local).
+    # ⟳ 2026-11-24, goal node tree S1 review r2: 54 -> 58 — slugless trunks keep file order (Codex
+    # Medium): merged by heading text again, a slugless trunk joining a slugged one of the same text,
+    # the trunk-text clause dropped, and the control (a group per parentless node). The orphan entry
+    # was REBOUND onto the rewritten `here =` line (not in the +4).
+    # ⟳ 2026-11-24, goal node tree S1 review r3: 58 -> 59 — the plain `continue` orphan mutant is
+    # back (Claude F1): it crashed the suite on a `str.index` before the orphan case ran; read through
+    # `index_shape`, the case now FAILS and the mutant is attributed. The narrow r2 entry stays.
+    "scripts/gen-features-page.py": 59,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -1724,7 +1738,25 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-27, backlog #381 r3 — 28 -> 30: the parser's unread lines ignored, and `unread=` no
     # longer handed to it (Codex X1 = Claude C1, a decorated row number dropped from the gate).
     # ⟳ 2026-10-28, backlog #394: 30 -> 32 — a bad parent fails the gate; a missing kind is warned.
-    "scripts/check-features.py": 32,
+    # ⟳ 2026-11-24, goal node tree S1 Task 1: 32 -> 37 — the node grammar, one per clause: the
+    # four-digit `adrs:` entry, the skipped-level refusal, `slug:` only under a trunk, the `done:`
+    # time group, and a node's parent as the NEAREST shallower node.
+    # ⟳ 2026-11-24, goal node tree S1 Task 2: 37 -> 47 — G6's was-equals-current and former-twice
+    # clauses, the three id-collision pairs and the pair-not-prefix rule, `resolve` returning its
+    # input, the anchored-document fragment, `adrs` kept out of the absent count, and the summary's
+    # stateless count.
+    # ⟳ 2026-11-24, goal node tree S1 Task 3: 47 -> 51 — G9's words comparison, time comparison, the
+    # under-that-node restriction, and the lazy read of the threads file.
+    # ⟳ 2026-11-24, goal node tree S1 review r1: 51 -> 57 — the current-slug grammar, the stateless
+    # `expected-because:` refusal, and four on G9's CANNOT RUN arm: its `return 2`, `main`'s call
+    # site, the undecodable read, and the no-`## GOAL` file.
+    # ⟳ 2026-11-24, goal node tree S1 review r2: 57 -> 58 — the `expected-because:` refusal back to
+    # truthiness, letting an EMPTY field pass (Codex Low). The two per-state refusals were MERGED into
+    # one presence rule; the `built` and stateless entries were REBOUND onto it, each exempting only
+    # its own state (not in the +1).
+    # ⟳ 2026-11-24, goal node tree S1 review r3: 58 -> 59 — the merged rule's message back to a
+    # truthiness test of `state`, reporting a bare `state:` as "has no `state:`" (Claude F2).
+    "scripts/check-features.py": 59,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
