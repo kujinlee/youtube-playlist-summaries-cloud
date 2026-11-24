@@ -90,7 +90,9 @@ dissolved-by). This ADR records that supersession; both keep naming nodes only.
   resolve");
 - a slug that appears twice among current and former slugs (a former slug listed once and held by
   no node passes — that is a rename);
-- `docs/anchors.md` existing after this ADR is accepted.
+- `docs/anchors.md` existing after this ADR is accepted, or any living file still naming it: the
+  whole-tree search in the spec's §5.1 (slice S2) prints a line. The search reads the tree, not a list
+  of readers.
 
 ## Consequences
 

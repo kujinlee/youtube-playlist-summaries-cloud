@@ -3,7 +3,7 @@
 > **Anchor:** `status-visibility` — **ADR:** 0010, 0016
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** 🟠 needs-you — drafted 2026-11-23 from the owner's decisions of 2026-11-23 16:02–16:38; review rounds 1 and 2 FOLDED (`docs/reviews/coordinator/goal-node-tree-spec-r1-coordinator.md`, `-r2-coordinator.md`), NOT converged, NOT walked through. The owner decides every ✍ row of §4 and every question of §6.
+**Status:** 🟠 needs-you — drafted 2026-11-23 from the owner's decisions of 2026-11-23 16:02–16:38; review rounds 1, 2 and 3 FOLDED (`docs/reviews/coordinator/goal-node-tree-spec-r1-coordinator.md`, `-r2-coordinator.md`, `-r3-coordinator.md`); round 3 CONVERGED; the migration (§5.1) redesigned by `docs/reviews/architecture-review-2026-11-23-goal-node-tree-migration.md`; NOT walked through. The owner decides every ✍ row of §4 and every question of §6.
 
 Why this anchor: the three pages this spec re-bases (`/goals`, `/features`, `/goal-tree`) are the pages
 of `status-visibility`, and the document it amends
@@ -498,51 +498,58 @@ reworks `render_index` and that pin; starting S1 first would make D8 redo its gr
 | Slice | What changes | Scripts and files touched (each script a two-file edit with its mutation manifest) |
 |---|---|---|
 | S1 — the tree can hold everything | `parse_features` accepts `adrs:`, `was:`, `done:`, `proposed:` (if §6 Q11 says so), an optional `state:`, heading depths 2–6 and a slug on a trunk; `resolve()`; G6, G9. No name moves. A `built` node's fragment may be `areas:`, `adrs:` OR an anchored document (§2.2), so S2 can drop `anchors:` | `check-features.py`; `gen-features-page.py` (`group_tree` / `render_index` assume two levels, `scripts/gen-features-page.py:184-195`; the 27-entry pin) |
-| S2 — the registry folds in | the 15 anchors' ADR columns become `adrs:`; `cloud-publishing` and `serve-money-guard` become nodes; the 4.24 node `dev-speed` is made HERE by RENAMING the `harness-speed` heading and lifting it to the trunk (`was: dev-speed-first, harness-speed`) — never as a new node beside it, which G6 refuses (`harness-speed` would be a current slug and a `was:` entry at once) and the 2 observed-reach documents' `Anchor: dev-speed-first` re-point to it — otherwise they fail G1 in this slice (only the TREE side of 4.24; the `## GOAL dev-speed-first` heading moves in S3, and no guard reads it before S3); `anchors:` is removed and documents attach by node slug, and with it `check_cross`'s three anchor rules (`scripts/check-features.py:249-253`, `:271-273`, `:276-278`: names an anchor not in the registry, claimed by several nodes, claimed by none) and its read of `ANCHORS_MD` (`:284`, `:289`, `:297`), which would otherwise fail on the deleted file — found in review r2's same-class search; `check-anchors.py` reads the tree for G1 (now including `docs/adr`, any date) and G3, and drops the claimed-by-a-document rule; `gen-goals-page.py` and `gen-features-page.py` read the tree; `ARMED_ANCHORS` is derived (G4); `docs/anchors.md` is deleted and every reader below updated; ADR-0016 moves from proposed to accepted | scripts: `check-anchors.py`, `check-features.py`, `gen-goals-page.py`, `gen-features-page.py` (`:286` `anchor_adrs`, `:312` `n.anchors`, `:745` input list), `check-goal-status.py`, `gen-backlog-page.py` (`:4370-4375` `parse_registry`, `:1306` `parent_errors` message), `explainer-serve.py` (`:257` `PAGE_SOURCES["features"]`; its self-test asserts each source is a real file), `regen-pages.py`, `check-fixture-variation.py` (`:1452` names `parse_registry.text`), `check-publishability.py` (self-test fixtures `:2127`, `:2153`). Hooks: `regen-goals-page.sh` (`:36`) and `regen-features-page.sh` (`:61`) drop `docs/anchors.md`; `regen-goals-page.sh` gains `docs/features.md` (`regen-features-page.sh` has it, `:60`) — the trigger table below. Prose that names the registry: `docs/dev-process.md`, `docs/portable-practices.md`, `docs/process-checklists.md`, `docs/roadmap-to-launch.md`, `docs/adr/README.md`, `docs/features.md` preamble, `.agents/skills/dashboard/SKILL.md`, `docs/memory/anchor-name-and-stable-id-handoff.md`, the two `docs/marketplace/experiment-tier-*.md`. Left as history: `docs/marketplace/scan-*.json`, `inventory.json` notes, `docs/superpowers/`, `docs/explainers/`, `docs/reviews/`, `docs/dashboard-entries.md` |
-| S3 — goals become nodes, with the remaining renames | the goal-only names enter the tree per §4; the other `was:` renames; `docs/goal-threads.md` `## GOAL` headings re-pointed and merged (request lines untouched, §2.4); the `also` field; `--also`; G2 (including `goal:<slug>` answer keys), G5; `resolve()` reads history; `batch-ci.py` gains a conflict resolver for `docs/features.md`, where new names now land (it has one for `goal-threads.md`, `scripts/batch-ci.py:95-101`); `goal-tree.py` reads the tree from this slice (`resolve()`, the node set), so `pages_for` routes a `docs/features.md` edit to `goal-tree` and `PAGE_SOURCES["goal-tree"]` gains `docs/features.md` HERE, not in S4 | `goal-tree.py`, `session-state.py`, `check-features.py`, `batch-ci.py`, `regen-pages.py`, `explainer-serve.py` |
-| S4 — the views | id `goal-<slug>` on three pages with the old ids kept as second ids; one `key_link` node kind with `view`; two-way links; `/goals` renders the tree and the requests; G7, G8; the agenda's PRIORITY line; page sources follow the new derivations — `PAGE_SOURCES["goals"]` gains `docs/features.md` and `docs/goal-threads.md`, and the `/goals` hook `regen-goals-page.sh` (`:35-42`) gains `docs/goal-threads.md`, because `/goals` now derives requests from it (review r2: S4 had routed it through `pages_for` instead, which would have split one page's edit triggers over two dispatchers) | `page_markup.py`, `gen-goals-page.py`, `gen-features-page.py`, `goal-tree.py`, `explainer-serve.py`, `.claude/hooks/regen-goals-page.sh`, `check-page-links.py` |
+| S2 — the registry folds in | the 15 anchors' ADR columns become `adrs:`; `cloud-publishing` and `serve-money-guard` become nodes; the 4.24 node `dev-speed` is made HERE by RENAMING the `harness-speed` heading and lifting it to the trunk (`was: dev-speed-first, harness-speed`) — never as a new node beside it, which G6 refuses (`harness-speed` would be a current slug and a `was:` entry at once) and the 2 observed-reach documents' `Anchor: dev-speed-first` re-point to it — otherwise they fail G1 in this slice (only the TREE side of 4.24; the `## GOAL dev-speed-first` heading moves in S3, and no guard reads it before S3); `anchors:` is removed and documents attach by node slug, and with it `check_cross`'s three anchor rules (`scripts/check-features.py:249-253`, `:271-273`, `:276-278`: names an anchor not in the registry, claimed by several nodes, claimed by none) and its read of `ANCHORS_MD` (`:284`, `:289`, `:297`), which would otherwise fail on the deleted file — found in review r2's same-class search; `check-anchors.py` reads the tree for G1 (now including `docs/adr`, any date) and G3, and drops the claimed-by-a-document rule; `gen-goals-page.py` and `gen-features-page.py` read the tree; `ARMED_ANCHORS` is derived (G4); `docs/anchors.md` is deleted — the gate on its readers is the whole-tree search in the S2 FAILS IF below, NOT the list in the next cell; every former consumer of the registry's slug set takes the tree's CURRENT slugs instead (G3): the backlog `epic:` parent check (`check-features.py` `kind_problems`, `gen-backlog-page.py` `parent_errors` and the page build that refuses on it), the summary count, and the self-test messages that name the registry; ADR-0016 moves from proposed to accepted | **Found at draft time — a lead for the plan, NOT exhaustive and NOT the gate** (the plan re-runs the S2 search at its own base). Scripts: `check-anchors.py`, `check-features.py`, `gen-goals-page.py`, `gen-features-page.py` (`:286` `anchor_adrs`, `:312` `n.anchors`, `:745` input list), `check-goal-status.py`, `gen-backlog-page.py` (`:4370-4375` `parse_registry`, `:1306` `parent_errors` message), `explainer-serve.py` (`:257` `PAGE_SOURCES["features"]`; its self-test asserts each source is a real file), `check-fixture-variation.py` (`:1452` names `parse_registry.text`), `check-publishability.py` (self-test fixtures `:2127`, `:2153`). Hooks: `regen-goals-page.sh` (`:36`) and `regen-features-page.sh` (`:61`, and its comments) drop `docs/anchors.md`; no hook gains a source (§5.1.1). Prose that names the registry: `docs/dev-process.md`, `docs/portable-practices.md`, `docs/process-checklists.md`, `docs/roadmap-to-launch.md`, `docs/adr/README.md`, `docs/features.md` preamble, `.agents/skills/dashboard/SKILL.md`, `docs/memory/anchor-name-and-stable-id-handoff.md`, the two `docs/marketplace/experiment-tier-*.md`. **The history set**, left as written and excluded from the S2 search: `docs/reviews/`, `docs/superpowers/`, `docs/explainers/`, `docs/dashboard-entries.md`, `docs/backlog.md` (row bodies are dated filings; 9 rows name the registry), `docs/marketplace/*.json` (scan files and `inventory.json` notes), and ADR-0016 itself, which records the retirement |
+| S3 — goals become nodes, with the remaining renames | the goal-only names enter the tree per §4; the other `was:` renames; `docs/goal-threads.md` `## GOAL` headings re-pointed and merged (request lines untouched, §2.4); the `also` field; `--also`; G2 (including `goal:<slug>` answer keys), G5; `resolve()` reads history; `batch-ci.py` gains a conflict resolver for `docs/features.md`, where new names now land (it has one for `goal-threads.md`, `scripts/batch-ci.py:95-101`); `goal-tree.py` reads the tree from this slice (`resolve()`, the node set) — no trigger changes with it (§5.1.1); the three trunk headings get their slugs `product`, `platform` and `dev-infrastructure` HERE, where the goal `product` lands on its trunk (✍ row 4.1; an added slug line, not a rename, since no old name exists). S2's lift of `dev-speed` "to the trunk" needs no trunk slug: a node's parent is its heading position (`parse_features`, `scripts/check-features.py:41`) | `goal-tree.py`, `session-state.py`, `check-features.py`, `batch-ci.py` |
+| S4 — the views | id `goal-<slug>` on three pages with the old ids kept as second ids; one `key_link` node kind with `view`; two-way links; `/goals` renders the tree and the requests; G7, G8; the agenda's PRIORITY line; `/goals` now derives requests from `docs/goal-threads.md`, and no trigger changes with it: that edit reaches the page when it merges (§5.1.1) | `page_markup.py`, `gen-goals-page.py`, `gen-features-page.py`, `goal-tree.py`, `check-page-links.py` |
 | S5 — vocabulary | `CONTEXT.md` gains "node"; the comprehensibility-suite spec's §4 goal-facet registry is re-pointed; backlog #644 and backlog #472 are closed as dissolved | documents only |
 
 Per-slice FAILS IF, beyond the guards each slice adds:
 
 - **every slice:** `python3 scripts/goal-tree.py --snapshot --page --out <file>` (the page build, not
   `--print`) exits non-zero, or any check in `.github/workflows/ci.yml` is red.
-- **S2:** an `Anchor:` in a spec, plan or ADR does not resolve; any file in the S2 reader list still
-  names `docs/anchors.md` outside the history set; `explainer-serve.py --self-test` is red.
-- **S2, S3 and S4:** an edit to a source in the trigger table below does not rebuild every page that
-  derives from it, or rebuilds one page twice. Tested at BOTH dispatchers, since a `pages_for` case
-  cannot see a shell `case` list: each `regen-*-page.sh` is run in a temporary copy whose
-  `scripts/regen-pages.py` is a stub recording its `--page` argument, fed one PostToolUse payload per
-  source; `pages_for` gets one case per source; and one case feeds the same payloads to both and fails
-  if any (source, page) pair is dispatched by neither or by both.
+- **S2:** an `Anchor:` in a spec, plan or ADR does not resolve; `explainer-serve.py --self-test` is
+  red; or EITHER search below prints a line. The search reads the whole tracked tree minus the history
+  set of the S2 row — it does not read a list of readers, so a reader nobody listed still fails it:
 
-#### 5.1.1 What rebuilds each page — every trigger, measured
+  ```
+  H="':!docs/reviews' ':!docs/superpowers' ':!docs/explainers' ':!docs/dashboard-entries.md' \
+     ':!docs/backlog.md' ':!docs/marketplace/*.json' ':!docs/adr/0016-names-live-in-one-node-tree.md'"
+  eval git grep -n -F -- 'anchors.md' -- . $H
+  eval git grep -n -E -- "'parse_registry|registry_anchors|ANCHORS_MD|anchor_slugs'" -- . $H
+  ```
 
-Found by reading `.claude/settings.json`'s `PostToolUse` / `PostToolUseFailure` hooks, each hook's
-`case` list, `regen-pages.pages_for` (`scripts/regen-pages.py:594`), `explainer-serve.py`'s
-`PAGE_SOURCES` (`:243-265`) and Refresh path (`:2158`), and `git grep` for every caller of
-`regen-pages.py` or a page generator. Rule kept by this design: **each page has ONE edit
-dispatcher** — `/goals` and `/features` their own hook, `/goal-tree` `pages_for` (it has no hook of its own).
+  Measured at `256c7b4f`: 48 lines in 19 files, and 18 lines in 5 files — the work S2 owes, so neither
+  search is vacuous. The token is `anchors.md`, not `docs/anchors.md`, because three readers build the
+  path as `DOCS / "anchors.md"`. Bound: a reader that spells the name another way (a concatenated or
+  configured path) is not printed; none exists today.
+- **A slice that retires any other name** (a renamed slug in S2 or S3) is gated the same way for
+  STRUCTURED uses by G1–G5, which read every source of §2.5.1; prose uses are history (§2.4, §5.2).
 
-| Trigger | Fires on | Rebuilds | After this design |
-|---|---|---|---|
-| `.claude/hooks/regen-goals-page.sh` (PostToolUse `Edit\|Write`), `case` at `:35-42` | `docs/anchors.md`, `docs/adr/*.md`, specs, plans, `scripts/gen-backlog-page.py` | `/goals` | S2: `docs/anchors.md` → `docs/features.md`. S4: + `docs/goal-threads.md` |
-| `.claude/hooks/regen-features-page.sh` (PostToolUse `Edit\|Write`), `case` at `:59-67` | `docs/features.md`, `docs/anchors.md`, `docs/backlog.md`, ADRs, specs, plans, `docs/reviews/*` | `/features` | S2: − `docs/anchors.md` |
-| `.claude/hooks/regen-pages.sh` → `regen-pages.py --hook` → `pages_for` (PostToolUse `Bash` and `Edit\|Write`; PostToolUseFailure `Bash`, `gh pr merge*`) | a command containing `gh pr merge` | every page | unchanged |
-| the same | an edit of `docs/goal-threads.md` | `/goal-tree` | S3: + an edit of `docs/features.md` → `/goal-tree` |
-| `explainer-serve.py` Refresh press (`:2158`, `regen-pages.py --page <key>`) | the reader, any page | that page | unchanged — source-independent |
-| `explainer-serve.py` `/_stale` banner, `PAGE_SOURCES` | `goals`: `docs/roadmap-to-launch.md`; `features`: `docs/features.md`, `docs/anchors.md`, `docs/backlog.md`; `goal-tree`: `docs/goal-threads.md`, `docs/goal-tree-answers.json` | nothing — a banner asking for Refresh | S2: `features` − `docs/anchors.md`, `goals` + `docs/features.md`. S3: `goal-tree` + `docs/features.md`. S4: `goals` + `docs/goal-threads.md` |
-| `scripts/regen-pages.sh` (`regen-pages.py --all`); `.claude/commands/goal-tree.md:12` (`--page goal-tree`) | by hand | every page; `/goal-tree` | unchanged |
+#### 5.1.1 What rebuilds each page — the design adds no trigger
 
-⚠ Not this design's, recorded as found: `PAGE_SOURCES["goals"]` names `docs/roadmap-to-launch.md`, which
-`gen-goals-page.py` does not read (its only reads are `docs/anchors.md`, `docs/adr/`, specs and plans,
-`:435-459`); the sources it does read light no banner. The design adds the two new sources and does not
-remove that entry.
+Review rounds 1–3 each found a page trigger or a reader that a hand-kept list had missed; the
+architecture review `docs/reviews/architecture-review-2026-11-23-goal-node-tree-migration.md` replaced
+both lists. For triggers, the measured rule is that none is owed:
+
+- **Every page is built from a fresh `origin/master`, never from the checkout that was edited**
+  (backlog #408; `scripts/regen-pages.py`, `fresh()` at `:431`, "the ONE way a page is built"). An edit
+  hook therefore cannot show the edit that fired it — each says so ("the page shows MASTER, not the edit
+  that fired this hook", `.claude/hooks/regen-goals-page.sh`).
+- **A merge rebuilds every page, whatever was edited**: `pages_for` (`scripts/regen-pages.py:594`)
+  returns every key of `explainer-serve.REGENERABLE` after a command containing `gh pr merge`.
+- So when S2, S3 or S4 makes a page read a new file, an edit of that file reaches the page when it
+  merges, by the trigger that exists. No hook, `pages_for` route or `PAGE_SOURCES` entry is added. The
+  only trigger edits are REMOVALS of `docs/anchors.md` in S2, and the S2 search forces them.
+
+Not covered, and not this design's (backlog #710): the hooks' `case` lists and `PAGE_SOURCES` remain
+hand-kept copies of what each generator reads; the `/_stale` banner will name fewer files than a page
+reads, as it already does; a merge made outside this session rebuilds nothing until a hook fires or
+Refresh is pressed.
 
 S2 and S3 are the two that change names; they are separate so that a red gate names one cause.
-Mutation manifests exist for every script named above (`scripts/mutations/<name>.json`, checked in review r2 for all
-15 scripts the table names — the earlier "14" was a miscount); the `.claude/hooks/regen-goals-page.sh` edit is a
-shell file with no manifest, and is covered by the dispatcher test above instead; a DRAFT pull request at each slice's start runs the selected sweep.
+Every script a slice edits is a two-file edit with its mutation manifest (`scripts/mutations/<name>.json`);
+the two hooks S2 edits are shell files with no manifest, and their edit is the removal the S2 search checks.
+A DRAFT pull request at each slice's start runs the selected sweep.
 
 ### 5.2 How history keeps resolving
 
