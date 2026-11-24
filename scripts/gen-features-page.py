@@ -990,6 +990,12 @@ def _self_test_body() -> int:
     # 'Built' state". Three answers: an index first, a gap count beside every state badge, and every
     # card folded.
     _order = sev_order()
+
+    def _caught(f):
+        try:
+            return f()
+        except Exception as e:  # noqa: BLE001 — reported as the case's observed value, never swallowed
+            return f"raised {type(e).__name__}: {e}"
     _g = lambda num, glyph, closed=False: {"label": f"#{num} {glyph} t", "sev": glyph,
                                             "href": f"/backlog-table#i{num}", "closed": closed}
     _frag = {"job-queue": {"backlog": [_g(1, "🟡"), _g(2, "🟢"), _g(3, "🟠"), _g(4, "🟡"),
@@ -997,8 +1003,9 @@ def _self_test_body() -> int:
     check("the gap summary counts OPEN rows by severity, in the backlog's severity order",
           (gap_label(open_gaps(_frag["job-queue"]), _order), gap_label([], _order),
            gap_label([_g(9, "🟢")], _order), gap_label(open_gaps(_frag["job-queue"]), _order[::-1]),
-           # review r1 m2: a plain-string row counts as `·`; a glyph outside `order` is shown LAST.
-           gap_label(["plain", {"sev": "🔶"}, _g(1, "🟡")], _order)),
+           # review r1 m2: a plain-string row counts as `·`; a glyph outside `order` is shown LAST
+           # (a raise is caught, so a red here is a `[FAIL]` line the mutation harness can read).
+           _caught(lambda: gap_label(["plain", {"sev": "🔶"}, _g(1, "🟡")], _order))),
           ("4 gaps (1🟠 2🟡 1🟢)", "0 gaps", "1 gap (1🟢)", "4 gaps (1🟢 2🟡 1🟠)", "3 gaps (1🟡 1· 1🔶)"))
     _tree = render(nested + nodes, _frag)
     _ix_at, _card_at = _tree.find('class="tindex"'), _tree.find('<details class="node')
@@ -1076,7 +1083,8 @@ def _self_test_body() -> int:
     # ⛔ ONE ID PER NODE, SAFE FOR ANY NAME (review r1, Codex M1). A heading is free text, so a
     # name may carry `#`, `?`, `%`, a space, `&`, non-ASCII. Every index link must name its OWN card,
     # no two cards may share an id, and the handler — RUN — must open the card each link names.
-    _odd_names = ["100% complete", "a#b", "q?x", "s p", "a&b", "café", "a_b", "a_5f_b", "a-b"]
+    # `s p` and `s_20_p` are the collision pair an encoding that left `_` bare would merge.
+    _odd_names = ["100% complete", "a#b", "q?x", "s p", "s_20_p", "a&b", "café", "a_b", "a-b"]
     _odd, _ = parse_features("## ODD\n" + "".join(
         f"### {nm}\nstate: built\nfor: Odd name.\n" for nm in _odd_names))
     _odd_page = render(_odd, {})
