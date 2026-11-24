@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 29 cases
+    python3 scripts/gen-features-page.py --self-test  # 31 cases
 
 WHY THIS EXISTS
 ---------------
@@ -869,16 +869,22 @@ def _self_test_body() -> int:
                                        _g(5, "🔴", closed=True)]}}
     check("the gap summary counts OPEN rows by severity, in the backlog's severity order",
           (gap_label(open_gaps(_frag["job-queue"]), _order), gap_label([], _order),
-           gap_label([_g(9, "🟢")], _order)),
-          ("4 gaps (1🟠 2🟡 1🟢)", "0 gaps", "1 gap (1🟢)"))
+           gap_label([_g(9, "🟢")], _order), gap_label(open_gaps(_frag["job-queue"]), _order[::-1])),
+          ("4 gaps (1🟠 2🟡 1🟢)", "0 gaps", "1 gap (1🟢)", "4 gaps (1🟢 2🟡 1🟠)"))
     _tree = render(nested + nodes, _frag)
     _ix_at, _card_at = _tree.find('class="tindex"'), _tree.find('<details class="node')
     check("the index is rendered before the first card",
           (_ix_at != -1, _card_at != -1, -1 < _ix_at < _card_at), (True, True, True))
     _ix = render_index(nested + nodes, _frag, _order)
     check("the index lists every node in file order, a `####` nested one list deeper than its `###`",
-          index_shape(_ix),
-          [(1, "job-queue"), (2, "wake-on-visit"), (1, "wake-on-visit"), (1, "dig-job-recovery")])
+          (index_shape(_ix), index_shape(render_index(nodes, _frag, _order))),
+          ([(1, "job-queue"), (2, "wake-on-visit"), (1, "wake-on-visit"), (1, "dig-job-recovery")],
+           [(1, n.slug) for n in nodes]))
+    # The index reads the severity order it is GIVEN, not a constant of its own.
+    check("the index line orders severities as the order it is passed says",
+          "4 gaps (1🟢 2🟡 1🟠)" in re.search(r'href="#job-queue">(.*?)(?:</li>|<ul>)',
+                                             render_index(nested + nodes, _frag, _order[::-1]),
+                                             re.S).group(1), True)
     # ⛔ ONE COUNTING RULE: the index line and the card heading both read `open_gaps` — a node WITH
     # gaps (one closed row excluded) and a node WITHOUT.
     _line = lambda slug: re.search(rf'href="#{slug}">(.*?)(?:</li>|<ul>)', _ix, re.S).group(1)
@@ -915,6 +921,11 @@ def _self_test_body() -> int:
     _js = scripts_parse(_tree)
     check("the emitted page is in the supported HTML subset and every inline script parses",
           (page_markup.subset_problems(_tree), _js), ([], []))
+    # ...and the parse check can say no: a script that is not a program, and a page with none.
+    _bad_js = scripts_parse("<p>x</p><script>function (</script>")
+    check("the script check reports a script that does not parse, and a page with no script",
+          (len(_bad_js), _bad_js[0][:9] if _bad_js else "", scripts_parse("<p>x</p>")[0][:9]),
+          (1, "script 0:", "no inline"))
 
     # ── THE REGEN HOOK ──────────────────────────────────────────────────────────────────────────
     # ⭐ Code review r1 (Codex), Low. `.claude/hooks/regen-features-page.sh` is the ONLY thing that
