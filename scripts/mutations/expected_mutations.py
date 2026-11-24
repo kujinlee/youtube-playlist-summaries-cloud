@@ -543,7 +543,7 @@ EXPECTED_MUTATIONS = {
     # bypassing `match_rows` at its CALL SITE.
     # ⟳ 2026-11-03, backlog #470 review round 1: 15 -> 16. a linked row's text keeps its keys as text,
     # so no `<a>` nests in the row's `<a>` (+1).
-    "scripts/gen-features-page.py": 16,
+    "scripts/gen-features-page.py": 27,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
