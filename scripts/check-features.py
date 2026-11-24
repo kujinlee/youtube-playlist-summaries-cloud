@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 54 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 66 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -16,26 +16,44 @@ STATUS_TOKENS = re.compile(
 )
 # ONE owner for the field names: the matcher and the error message that teaches the grammar are
 # both derived from this tuple, so a sixth field cannot be added to one and missing from the other.
-FIELD_NAMES = ("state", "for", "areas", "anchors", "expected-because")
+# ⟳ goal node tree, Task 1 (spec §2.2): `adrs`, `was`, `done`, `proposed` and `slug` added. `slug`
+# is a field ONLY directly under a `## ` trunk, where it makes the trunk a node (plan choice C2).
+FIELD_NAMES = ("state", "for", "areas", "anchors", "expected-because", "adrs", "was", "done", "proposed", "slug")
 # ⚠ ONE OWNER, because this fact is read in two places that must not disagree: the comma-split in
 # `parse_features` and the duplicate-field REMEDY. Code review r3 (Codex) caught the message
 # telling an author to write `state: built, absent` — advice that is right for a list field and
 # produces a second, different error for a scalar one. An instruction that does not work costs
 # the author a round to discover.
-LIST_FIELDS = ("areas", "anchors")
+LIST_FIELDS = ("areas", "anchors", "adrs", "was")
 FIELD = re.compile(rf"^({'|'.join(FIELD_NAMES)}):\s*(.*)$")
+# `adrs:` and `was:` are BARE comma lists (plan choice C1), read into tuples; each entry is checked
+# against its own shape, so `adrs: (0001, 0005)` is refused entry by entry — parentheses belong to the
+# `(area)` tag of `areas:`, never to a list grammar.
+ENTRY_SHAPE = {"adrs": (re.compile(r"^\d{4}$"), "four digits, e.g. `0005`"),
+               "was": (re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$"), "a slug: lowercase words joined by `-`")}
+TUPLE_FIELDS = ("adrs", "was")
+# `done:` is the owner's recorded decision, dated like a request (spec §2.2, G9); `proposed:` the moment
+# a name was proposed (spec §2.7). Both single-line.
+DONE_FORM = 'done: YYYY-MM-DD HH:MM "<the owner\'s words>"'
+DONE_FIELD = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) "(.+)"$')
+PROPOSED_FIELD = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")
 
 @dataclass
 class Node:
     slug: str
     level: int
     trunk: str
-    state: str = ""
+    state: str | None = None
     purpose: str = ""
     areas: list[str] = field(default_factory=list)
     anchors: list[str] = field(default_factory=list)
     expected_because: str | None = None
     line: int = 0
+    parent: str | None = None
+    adrs: tuple[str, ...] = ()
+    was: tuple[str, ...] = ()
+    done: tuple[str, str] | None = None
+    proposed: str | None = None
 
 
 def parse_features(text: str) -> tuple[list[Node], list[str]]:
@@ -43,18 +61,49 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
     problems: list[str] = []
     trunk = ""
     seen_fields: set[str] = set()
+    # The open branch of the current trunk, shallowest first: a node's parent is the nearest entry of a
+    # SMALLER level (spec §2.2; the trunk's own node, level 2, when the trunk carries a slug).
+    branch: list[Node] = []
+    # True from a `## ` heading until its first non-blank line: the one place a `slug:` line is taken.
+    under_trunk = False
     for i, raw in enumerate(text.split("\n"), 1):
         line = raw.rstrip()
         if line.startswith("## ") and not line.startswith("###"):
-            trunk = line[3:].strip(); continue
+            trunk = line[3:].strip(); branch = []; under_trunk = True; continue
         if line.startswith("###"):
+            under_trunk = False
             level = len(line) - len(line.lstrip("#"))
             slug = line.lstrip("#").strip()
             if not trunk:
                 problems.append(f"features.md:{i}: node `{slug}` sits outside any trunk")
-            nodes.append(Node(slug=slug, level=level, trunk=trunk, line=i))
+            if level > 6:
+                problems.append(f"features.md:{i}: node `{slug}` is {level} levels deep — a node "
+                                f"heading is `###` to `######`")
+            # ⛔ A SKIPPED LEVEL IS REFUSED (plan choice C3): `#####` directly under `###` would make
+            # the deeper node a grandchild of nothing. A first node deeper than `###` under a SLUGLESS
+            # trunk has no preceding node to skip from, and stays a top-level entry (today's rule).
+            if branch and level > branch[-1].level + 1:
+                problems.append(f"features.md:{i}: node `{slug}` (level {level}) skips a level under "
+                                f"`{branch[-1].slug}` (level {branch[-1].level}) — each heading is one "
+                                f"`#` deeper than its parent's")
+            while branch and branch[-1].level >= level:
+                branch.pop()
+            node = Node(slug=slug, level=level, trunk=trunk, line=i,
+                        parent=branch[-1].slug if branch else None)
+            nodes.append(node); branch.append(node)
             seen_fields = set(); continue
         m = FIELD.match(line)
+        if m and m.group(1) == "slug":
+            taken, under_trunk = bool(under_trunk and trunk), False
+            if not taken:
+                problems.append(f"features.md:{i}: a `slug:` line here is refused — only a trunk takes "
+                                f"a slug line, written directly under its `## ` heading")
+                continue
+            node = Node(slug=m.group(2).strip(), level=2, trunk=trunk, line=i)
+            nodes.append(node); branch = [node]
+            seen_fields = set(); continue
+        if line.strip():
+            under_trunk = False
         if not m:
             # ⭐ A WRAPPED `for:` LINE MUST NOT BE SILENTLY DROPPED (review r1 High 8). Continuation
             # text used to fail FIELD and get skipped, so `for: …\n  Currently broken, see #322.`
@@ -105,6 +154,27 @@ def parse_features(text: str) -> tuple[list[Node], list[str]]:
         if key == "state": n.state = value
         elif key == "for": n.purpose = value
         elif key == "expected-because": n.expected_because = value
+        elif key == "done":
+            dm = DONE_FIELD.match(value)
+            if dm:
+                n.done = (dm.group(1), dm.group(2))
+            else:
+                problems.append(f"features.md:{i}: `{n.slug}` has a malformed `done:` line — the form is "
+                                f"`{DONE_FORM}`: a date, a time, and the owner's words in double quotes")
+        elif key == "proposed":
+            if PROPOSED_FIELD.match(value):
+                n.proposed = value
+            else:
+                problems.append(f"features.md:{i}: `{n.slug}` has a malformed `proposed:` line — the "
+                                f"form is `proposed: YYYY-MM-DD HH:MM`")
+        elif key in TUPLE_FIELDS:
+            entries = [a.strip() for a in value.split(",") if a.strip()]
+            pattern, shape = ENTRY_SHAPE[key]
+            for e in entries:
+                if not pattern.match(e):
+                    problems.append(f"features.md:{i}: `{n.slug}` has the `{key}:` entry `{e}`, which is "
+                                    f"not {shape}. `{key}:` is a bare comma list, with no parentheses")
+            setattr(n, key, tuple(e for e in entries if pattern.match(e)))
         elif key in LIST_FIELDS:
             # ⚠ `setattr` TAKES A NAME `Node` DOES NOT HAVE, SILENTLY — code review r3 (Claude), Low.
             # A dataclass without `__slots__` accepts `setattr(n, "expected-because", …)`, writes a
@@ -550,6 +620,71 @@ expected-because: standard for a hosted multi-tenant service.
     check("a refused line states the GRAMMAR an author needs, not only the rationale",
           all(s in parse_features("# Feature map\n## PRODUCT\n### x\n state: built\n")[1][0]
               for s in ("COLUMN 0", "no space before the colon", "expected-because")), True)
+
+    # ── THE NODE GRAMMAR — goal node tree, Task 1 (spec §2.2) ───────────────────────────────────
+    def _one(body: str, trunk: str = "## PRODUCT\n") -> tuple[list[Node], list[str]]:
+        return parse_features("# Feature map\n" + trunk + body)
+
+    _lists = [_one(f"### x\nfor: A thing.\nadrs: {a}\nwas: {w}\n") for a, w in
+              (("0001, 0005", "a, b"), ("0012", "c"))]
+    check("grammar: adrs and was are bare comma lists",
+          [(ns[0].adrs, ns[0].was, ps) for ns, ps in _lists],
+          [(("0001", "0005"), ("a", "b"), []), (("0012",), ("c",), [])])
+    _bad_adrs = ("1", "(0001", "0005)", "00012", "abcd")
+    check("grammar: adrs entry must be four digits",
+          [any("features.md:5" in p and f"`{b}`" in p for p in _one(f"### x\nfor: A thing.\nadrs: 0003, {b}\n")[1])
+           for b in _bad_adrs] + [_one("### x\nfor: A thing.\nadrs: 0003, 0004\n")[1] == []],
+          [True] * len(_bad_adrs) + [True])
+    _ns, _ps = _one("### x\nfor: A thing.\n")
+    check("grammar: state may be omitted", (_ns[0].state, _ps), (None, []))
+    check("grammar: done parses when and words",
+          [_one(f'### x\nfor: A thing.\ndone: {d}\n')[0][0].done for d in
+           ('2026-11-23 21:20 "it is finished"', '2025-01-02 03:04 "another, longer sentence."')],
+          [("2026-11-23 21:20", "it is finished"), ("2025-01-02 03:04", "another, longer sentence.")])
+    _bad_done = ('2026-11-23 "it is finished"', '2026-11-23 21:20 it is finished', '2026-11-23 21:20',
+                 '21:20 "it is finished"', '2026-11-23 2120 "it is finished"')
+    check("grammar: done needs a time and a quote",
+          [(_one(f"### x\nfor: A thing.\ndone: {d}\n")[0][0].done,
+            any('YYYY-MM-DD HH:MM "' in p for p in _one(f"### x\nfor: A thing.\ndone: {d}\n")[1]))
+           for d in _bad_done],
+          [(None, True)] * len(_bad_done))
+    check("grammar: proposed parses",
+          [_one(f"### x\nfor: A thing.\nproposed: {p}\n")[0][0].proposed for p in ("2026-11-24 09:30", "2024-02-29 23:59")]
+          + [bool(_one("### x\nfor: A thing.\nproposed: 2026-11-24\n")[1])],
+          ["2026-11-24 09:30", "2024-02-29 23:59", True])
+    _deep, _dp = _one("### a\nfor: A.\n#### b\nfor: B.\n##### c\nfor: C.\n###### d\nfor: D.\n"
+                      "### e\nfor: E.\n#### f\nfor: F.\n##### g\nfor: G.\n")
+    check("grammar: depth five and six carry a parent",
+          ([(n.slug, n.level, n.parent) for n in _deep], _dp),
+          ([("a", 3, None), ("b", 4, "a"), ("c", 5, "b"), ("d", 6, "c"),
+            ("e", 3, None), ("f", 4, "e"), ("g", 5, "f")], []))
+    check("grammar: a skipped level is refused",
+          [any("`a`" in p and "`b`" in p and "skips" in p for p in _one(src)[1]) for src in
+           ("### a\nfor: A.\n##### b\nfor: B.\n", "### z\nfor: Z.\n#### a\nfor: A.\n###### b\nfor: B.\n")],
+          [True, True])
+    _tr, _tp = parse_features("# Feature map\n## PRODUCT\n\nslug: product\nfor: What the product does.\n"
+                              "### c\nfor: C.\n#### d\nfor: D.\n"
+                              "## PLATFORM\nslug: platform\nfor: What it runs on.\n### e\nfor: E.\n")
+    check("grammar: a trunk slug makes a level-2 node",
+          ([(n.slug, n.level, n.trunk, n.parent) for n in _tr], _tp),
+          ([("product", 2, "PRODUCT", None), ("c", 3, "PRODUCT", "product"), ("d", 4, "PRODUCT", "c"),
+            ("platform", 2, "PLATFORM", None), ("e", 3, "PLATFORM", "platform")], []))
+    _live_text = FEATURES.read_text()
+    _live, _lp = parse_features(_live_text)
+    _headings = [l for l in _live_text.split("\n") if re.match(r"^#{3,6} ", l)]
+    check("grammar: a slugless trunk yields no node",
+          (len(_live), [n for n in _live if n.level == 2], [n.slug for n in _live if n.level == 3 and n.parent],
+           len(_one("### a\nfor: A.\n#### b\nfor: B.\n")[0]), _one("### a\nfor: A.\n#### b\nfor: B.\n")[0][0].parent),
+          (len(_headings), [], [], 2, None))
+    check("grammar: slug under a node is refused",
+          [any("only a trunk" in p for p in parse_features(src)[1]) for src in
+           ("# F\n## PRODUCT\n### x\nfor: X.\nslug: y\n",
+            "# F\n## PRODUCT\nslug: product\nfor: P.\nslug: again\n")],
+          [True, True])
+    check("grammar: a duplicate was line is refused",
+          [any(f"repeats the field `{k}`" in p for p in _one(f"### x\nfor: A thing.\n{k}: {v}\n{k}: {v}\n")[1])
+           for k, v in (("was", "old-x"), ("adrs", "0001"), ("done", '2026-11-23 21:20 "w"'))],
+          [True, True, True])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

@@ -1709,7 +1709,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-27, backlog #381 r3 — 28 -> 30: the parser's unread lines ignored, and `unread=` no
     # longer handed to it (Codex X1 = Claude C1, a decorated row number dropped from the gate).
     # ⟳ 2026-10-28, backlog #394: 30 -> 32 — a bad parent fails the gate; a missing kind is warned.
-    "scripts/check-features.py": 32,
+    # ⟳ 2026-11-24, goal node tree S1 Task 1: 32 -> 37 — the node grammar, one per clause: the
+    # four-digit `adrs:` entry, the skipped-level refusal, `slug:` only under a trunk, the `done:`
+    # time group, and a node's parent as the NEAREST shallower node.
+    "scripts/check-features.py": 37,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed

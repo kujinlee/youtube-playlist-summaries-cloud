@@ -4,8 +4,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "            trunk = line[3:].strip(); continue",
-        "            trunk = \"\"; continue"
+        "            trunk = line[3:].strip(); branch = []; under_trunk = True; continue",
+        "            trunk = \"\"; branch = []; under_trunk = True; continue"
       ]
     ],
     "expect": "trunk is carried down"
@@ -354,5 +354,60 @@
     "expect": [
       "#394: a row with NO kind is a WARNING, not a failure"
     ]
+  },
+  {
+    "name": "an adrs: entry of any shape is accepted, so `adrs: 1` and `adrs: (0001, 0005)` pass",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "\"adrs\": (re.compile(r\"^\\d{4}$\")",
+        "\"adrs\": (re.compile(r\"^.+$\")"
+      ]
+    ],
+    "expect": "grammar: adrs entry must be four digits"
+  },
+  {
+    "name": "a heading that skips a level is no longer refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if branch and level > branch[-1].level + 1:",
+        "            if False:"
+      ]
+    ],
+    "expect": "grammar: a skipped level is refused"
+  },
+  {
+    "name": "a slug: line is taken anywhere, so a node heading can be given a second name",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if not taken:",
+        "            if False:"
+      ]
+    ],
+    "expect": "grammar: slug under a node is refused"
+  },
+  {
+    "name": "the done: pattern's time group becomes optional, so a date with no time passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "DONE_FIELD = re.compile(r'^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}) \"(.+)\"$')",
+        "DONE_FIELD = re.compile(r'^(\\d{4}-\\d{2}-\\d{2}(?: \\d{2}:\\d{2})?) \"(.+)\"$')"
+      ]
+    ],
+    "expect": "grammar: done needs a time and a quote"
+  },
+  {
+    "name": "a node's parent is the branch ROOT, not the nearest shallower node, so a level-5 node hangs under its grandparent",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "                        parent=branch[-1].slug if branch else None)",
+        "                        parent=branch[0].slug if branch else None)"
+      ]
+    ],
+    "expect": "grammar: depth five and six carry a parent"
   }
 ]
