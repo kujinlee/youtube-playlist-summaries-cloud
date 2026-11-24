@@ -237,8 +237,8 @@ Grammar decisions this task fixes (see *Choices the spec left open*, C1–C3):
 | 20 | G6: a `goal-` slug with no partner | the live `goal-tree`, no node or `was:` entry `tree` | PASSES — the rule is on PAIRS, never on a prefix |
 
 **No two nodes' page ids may meet (r2 Codex Major).** `/features` gives a slug `s` the ids `goal-s`, `s`,
-`f-s` and `goal-<w>` for each former slug `w` (Task 17); `/goals` and `/goal-tree` give `goal-s`, `g-s` and
-`goal-<w>`. Two different nodes can share an id only when one slug is `f-` + another current slug, or `goal-` +
+`f-s` and `goal-<w>` for each former slug `w` (Task 17); `/goals` gives `goal-s`, `g-s` and `goal-<w>`; `/goal-tree`
+gives `goal-s` and `goal-<w>` (`second_ids` returns no old id of its own there — Task 17; r3 F6). Two different nodes can share an id only when one slug is `f-` + another current slug, or `goal-` +
 another current or former slug (every other pairing differs in its prefix, and a former slug equal to a current
 one is already G6 behaviour 6). `slug_problems` refuses exactly those pairs, so the views never have to drop
 an id. A PREFIX ban is wrong: the live node `goal-tree` begins with `goal-` and has no partner. Verified at
@@ -424,8 +424,12 @@ anything but EXACTLY these four lines (r2 Codex Minor — the rename removes a p
 
 ```
 pairs() { python3 -c 'import importlib.util as u,sys; s=u.spec_from_file_location("cf","scripts/check-features.py"); m=u.module_from_spec(s); s.loader.exec_module(m); [print(n.slug, n.parent) for n in m.parse_features(sys.stdin.read())[0]]'; }
-diff <(git show origin/master:docs/features.md | pairs | sort) <(pairs < docs/features.md | sort) | grep '^[<>]'
+diff <(git show "$(git merge-base HEAD origin/master)":docs/features.md | pairs | sort) <(pairs < docs/features.md | sort) | grep '^[<>]'
 ```
+
+The left side is the slice's BASE (`git merge-base HEAD origin/master`), never `origin/master` itself: a pull
+request that touches `docs/features.md` after the cut moves `origin/master` and would add lines this task did
+not cause (r3 F5).
 
 ```
 < harness-speed guard-and-gate-harness
@@ -762,7 +766,8 @@ Edits, each from the spec's §4 row; every NEW purpose sentence is copied from �
 
 Every insertion and every re-levelling is a MOVE of whole blocks, as in Task 5 (r1 F3): a `###` inserted
 above a run of `####` blocks adopts them. Before Step 1, save the `(slug, parent)` pairs with Task 5's
-`pairs` function; after the edits, diff them. The ONLY changed pairs allowed are the ones the table above
+`pairs` function, read at the slice's base (`git show "$(git merge-base HEAD origin/master)":docs/features.md`,
+never `origin/master`, which moves — r3 F5); after the edits, diff them. The ONLY changed pairs allowed are the ones the table above
 names: the eight new nodes, `status-visibility` and `explanation-on-demand` (under `comprehensibility-suite`),
 and every level-3 node under a trunk
 that gains a `slug:` (its parent goes from `None` to the trunk's slug).
@@ -1001,12 +1006,23 @@ fails P1 and ejects.
   `features union: a lost base line is a violation`, `features union: the result parses as a tree`,
   `features union: dispatch is by path`, `tree P8: a clean merge that re-parents a node ejects`,
   `tree P8: a union that re-parents a node ejects`, `tree P8: a one-sided re-parenting survives`,
-  `tree P8: both sides re-parenting one node is refused`, `tree P4: a field line keeps its node heading`. Every
+  `tree P8: both sides re-parenting one node is refused` (asserts the REASON, `named(got, "P8", "both sides")`,
+  never `clauses(got) == ["P8"]` alone: with the both-sides refusal severed, `expect` falls to ours' parent and
+  P8 still fires with the OTHER message, so a clause-only check lets that mutation live — r3 F1),
+  `tree P4: a field line keeps its node heading`. Every
   case that resolves a conflict calls `resolve_text` with the path `docs/features.md` — never
   `resolve_hunk("tree", …)` directly — so the policy is reached the way `merge` reaches it. The case
-  `the policies: …` that lists `UNION_FILES` gains `("docs/features.md", "tree")`.
-- [ ] **Step 2:** red (every case that calls `resolve_text` fails while the entry is absent: it refuses the path;
-  every `tree P…` case fails while `postcondition` knows no `tree`).
+  `the policies: …` that lists `UNION_FILES` gains `("docs/features.md", "tree")`. KEEP its label unchanged:
+  it is the `expect` of the mutation `C4: the goal threads are unioned as records` in
+  `scripts/mutations/batch-ci.json`; a reworded label must be written into that `expect` in the same commit
+  (r3 F3).
+- [ ] **Step 2:** red, except ONE case (every case that calls `resolve_text` fails while the entry is absent: it
+  refuses the path; the `tree P…` cases that expect a P8 or P4 verdict fail while `postcondition` has no P8 and
+  no `NODE_HEADING` home). GREEN before Step 3: `tree P8: a one-sided re-parenting survives` (behaviour 10) — a
+  clean merge goes straight to `postcondition`, which treats an unknown policy as `blocks` (only
+  `policy == "rows"` branches), and `SECTION` homes give `[]`. The `[]` second inputs of behaviours 8 and 9 are
+  green too, inside cases their first input reddens. These controls are proven by their mutations (the "base
+  parent always" mutation reddens behaviour 10), not by Step 2 (r3 F2).
   **Step 3:** implement `NODE_HEADING`, `_parents`, the `tree` arm of `resolve_hunk`, P4's home choice and P8;
   add the entry; extend `postcondition`'s docstring with P8 and the `tree` home. **Step 4:** green; the existing
   `blocks:` and `PC` cases unchanged.
@@ -1059,7 +1075,8 @@ collision for one release, so `second_ids` returns NO bare id for a slug that eq
 (`page_chrome`'s ids), and Task 18's build refuses a duplicate through `check-page-links.py:duplicate_ids`.
 Two NODES cannot share an id: G6 (Task 2, behaviours 17–19) refuses every slug pair that would, so
 `second_ids` drops nothing for a node-to-node collision (r2 Codex Major). Task 18 adds the build-level case
-`ids: no two nodes share an id` over a tree whose slugs come close without colliding (`x`, `fx`, `goal-tree`).
+`ids: no two nodes share an id` over two trees: one whose slugs come close without colliding (`x`, `fx`,
+`goal-tree`), and one holding true colliding pairs (r3 F4).
 
 The kinds `goal` and `feature` keep working until Task 21 removes them, so each page moves in its own task.
 
@@ -1111,14 +1128,14 @@ The kinds `goal` and `feature` keep working until Task 21 removes them, so each 
 | 6 | the card's id | — | `goal-<slug>`; an empty element carries each second id |
 | 7 | a former slug | `#goal-harness-speed` | lands on `dev-speed`'s card |
 | 8 | a bare old fragment | `#dev-speed`, `#f-dev-speed` | both land on `dev-speed`'s card (spec §3.5: bare `<slug>` is kept) |
-| 9 | near-colliding slugs | a tree with `x`, `fx`, `goal-tree` (no `tree`), `a` with `was: y` | the built page has no duplicate id (`check-page-links.py:duplicate_ids` over it returns nothing) — G6 refuses the true collisions before a page is built (Task 2) |
+| 9 | node ids collide only where G6 refuses | two trees in ONE case. Near-miss: `x`, `fx`, `goal-tree` (no `tree`), `a` with `was: y`. Colliding: `x` with `f-x`, and `a` with `was: y` beside a node `goal-y` | near-miss: `check-page-links.py:duplicate_ids` over the rendered page returns nothing AND `slug_problems` returns nothing. Colliding: the page still renders (it shows problems in a banner, never refuses on them), `duplicate_ids` names `f-x` and `goal-y`, and `slug_problems` over the same nodes names both pairs — every duplicate the page can carry is a pair G6 refuses (Task 2) |
 
 - [ ] **Step 1:** cases `primary: one tag`, `primary: the first tag's claimant`, `primary: epic wins over tags`,
   `G7: a shared row adds nothing to its second node`, `G7: a parent counts distinct rows`,
   `G7: primary counts sum to the distinct open rows` (two fixtures in one case, differing by one shared row),
   `G7: a double count refuses the build`, `ids: goal-<slug> with the old ids kept` (asserts the bare `<slug>`
   AND the `f-<slug>` second ids, at two slugs), `ids: a former slug lands on its node`,
-  `ids: no two nodes share an id`.
+  `ids: no two nodes share an id` (behaviour 9, both trees).
   NO cross-view link is emitted in this task: `/goals` has no `goal-<slug>` card for every node until Task 19,
   and CI's `check-page-links.py --build --ci` runs `dangling` over the built pages, so a link added here
   would land nowhere until then (r1 Codex BLOCKER). The heading links are Task 21's.
@@ -1128,7 +1145,10 @@ The kinds `goal` and `feature` keep working until Task 21 removes them, so each 
   `regen-pages.py`, which builds `origin/master`.
 - [ ] **Step 5:** mutations: the `epic:` precedence; the first-tag choice (`[0]` → `[-1]`); the shared rows
   added into the count; the distinct set replaced by a sum; the second-id emission; the bare-slug second id
-  dropped from `second_ids`' `/features` arm (reddens `ids: goal-<slug> with the old ids kept`). Then W1–W6.
+  dropped from `second_ids`' `/features` arm (reddens `ids: goal-<slug> with the old ids kept`); G6's
+  `f-` + current-slug pair dropped from `slug_problems` (reddens `ids: no two nodes share an id` — its colliding
+  tree's `f-x` duplicate is then named by no G6 problem); G6's `goal-` + former-slug pair dropped (reddens the
+  same case through `goal-y`) — r3 F4. Then W1–W6.
 - [ ] **Step 6:** commit.
 
 **FAILS IF:** on the built page, the sum of the per-node primary open counts differs from
