@@ -3505,9 +3505,14 @@ const out = {};
             _src = pathlib.Path(_td) / "pick.js"; _src.write_text(DECISION_JS)
             _h = pathlib.Path(_td) / "h.js"; _h.write_text(_harness)
             # The tags S11 clicks are the ones `render_decisions` writes — their attributes, unescaped, as a browser reads them.
-            _cm = render_decisions('<h1>x</h1><p data-decision data-decision-label="D1" data-decision-options='
-                                   '"A — accept |  B — keep &quot;old&quot; file" data-decision-rec="A —  accept">Pick?</p>'
-                                   '<p data-decision data-decision-options="x|y">Which?</p>')[0]
+            # A refusal here must fail the `choices:` cases, not end the whole suite (a mutation that
+            # unfolds the list makes the folded rec unlisted, so `_choices` refuses this very fixture).
+            try:
+                _cm = render_decisions('<h1>x</h1><p data-decision data-decision-label="D1" data-decision-options='
+                                       '"A — accept |  B — keep &quot;old&quot; file" data-decision-rec="A —  accept">Pick?</p>'
+                                       '<p data-decision data-decision-options="x|y">Which?</p>')[0]
+            except SystemExit:
+                _cm = ""
             _attrs = [{k: html_unescape(v) for k, v in re.findall(r'(data-ex-[a-z]+)="([^"]*)"', m)}
                       for m in re.findall(r'<span class="ex-decision ex-decision-open"[^>]*>', _cm)]
             _cj = pathlib.Path(_td) / "composed.json"; _cj.write_text(_js.dumps(_attrs))
