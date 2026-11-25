@@ -1965,7 +1965,7 @@ EXPECTED_MUTATIONS = {
     # hook mode naming the marker, statically (1).
     # ⟳ r2 fold: +4 — the child adapter's gh and git timeouts (Codex A, B), and the self-test step only directly under
     # `steps:` (matrix data; a nested list item). Merged with the context floor's 75: 75 + 14 = 89.
-    "scripts/compaction-state.py": 89,
+    "scripts/compaction-state.py": 91,  # 89 -> 91 (dashboard-retire S1 Task 4: pending_asks stops calling read_asks, an asks problem counts as zero)
     # backlog #440 (2026-11-01): the PreCompact boundary hook — the ceiling, idle and block order, the three
     # mid-work signals' detectors, W's precedence and fail-open, the snapshot chained only on ALLOW, the log path.
     # ⟳ r1 fold: +13 — the sentinel's `paused:`/`session:`, the ceiling's clamp under the model limit, a completed
