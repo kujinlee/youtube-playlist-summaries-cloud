@@ -993,5 +993,31 @@
       ]
     ],
     "expect": "⭐ r3 Phase 6: only the FIRST status mark is state — a later ✅ with a capitalised FIXED/CLOSED/DONE/MERGED is history and the row reads OPEN (a reopened row, a finished half, an owed tick, an oldest-first closure)"
+  },
+  {
+    "name": "node_slugs accepts former slugs as well, so an epic naming a was: slug passes",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return mod.current_slugs(nodes)",
+        "    return mod.current_slugs(nodes) | {w for n in nodes for w in n.was}"
+      ]
+    ],
+    "expect": [
+      "parent_errors: an epic naming a former slug is refused"
+    ]
+  },
+  {
+    "name": "node_slugs returns an empty vocabulary for an unreadable tree instead of raising",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if problems or not nodes:\n        raise ValueError",
+        "    if False:\n        raise ValueError"
+      ]
+    ],
+    "expect": [
+      "node_slugs: a tree with a grammar problem or no node RAISES, never an empty vocabulary"
+    ]
   }
 ]

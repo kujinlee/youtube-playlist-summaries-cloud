@@ -2626,6 +2626,11 @@ def _self_test_body() -> int:
         # ⟳ 2026-11-24 node-tree plan S1 Task 3 (plan choice C9): 362 + 1 = 363 / d67a2be07817bb75. Its one gained line,
         # diffed by hand (sorted, `comm -3`) against 561379e6's `git archive`: `goal-tree.py` -> `check-features.py`
         # (GOAL_RE and REQUEST_RE, by load). Lost: 0.
+        # ⟳ 2026-11-24 node-tree plan S2 Task 6 (the anchor vocabulary moves to the tree): 363 - 1 + 2 = 364 /
+        # 09084b7374e7a7ac, diffed by hand (sorted, `comm -3`) against f5fa9011's `git archive`, which reproduces 363 /
+        # d67a2be07817bb75. Lost: `gen-backlog-page.py` -> `check-anchors.py` (`registry_anchors`, retired). Gained:
+        # `gen-backlog-page.py` -> `check-features.py` (`node_slugs`, by load) and `check-anchors.py` ->
+        # `check-features.py` (`parse_features` and `current_slugs`, by load).
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2637,7 +2642,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (363, "d67a2be07817bb75", []))
+             (364, "09084b7374e7a7ac", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

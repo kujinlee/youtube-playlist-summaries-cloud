@@ -704,7 +704,7 @@ expected-because: standard for a hosted multi-tenant service.
                                 "| 2 | y | f | S | (w) | o |"), {"feature-map"})
     check("⛔ #394: a parent naming a missing row or an unregistered anchor FAILS the gate",
           _kp, ["backlog.md row 1: `part of: backlog #9` names a row that does not exist",
-                "backlog.md row 1: `epic: nope` is not an anchor in docs/anchors.md"])
+                "backlog.md row 1: `epic: nope` is not a node in docs/features.md"])
     check("#394: a row with NO kind is a WARNING, not a failure", "row 2 declares no kind" in _warn.getvalue(), True)
     with _cl.redirect_stderr(_io.StringIO()) as _quiet:
         _ok = kind_problems(_bl("| 3 | x ⟦kind: story · epic: feature-map⟧ | f | S | (w) | o |",

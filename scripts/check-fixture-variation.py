@@ -1490,6 +1490,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 EXEMPT: dict[str, str] = {
     # backlog #625 (2026-11-13): ask_answerer.py — two PURE functions each driven by ONE table loop. This scan
     # compares argument EXPRESSIONS, so a loop variable reads as one value; the ROWS vary.
+    # goal node tree Task 6 (2026-11-24): check-anchors.py — each case builds its OWN tree under `tmp`, bound to
+    # one name; this scan compares argument EXPRESSIONS, so a reassigned name reads as one value.
+    "check-anchors.py:anchored_slugs.docs": "every case binds a freshly built tree to `d` (a spec, a plan and an ADR naming one slug; an ADR with no header), and the two expected maps differ; guarded by the manifest entry that drops docs/adr from the directories read, which dies via the case naming it",
+    "check-anchors.py:read_tree.path": "one table loop of 4 files (missing, malformed, no node, a good tree), only the last readable; guarded by the manifest entry that reads a malformed tree as a vocabulary, which dies via the case naming it",
     "ask_answerer.py:page_name.doc": "one table loop of 13 rows (a page, a slug, a query string, a path that leaves the folder, the state folder, a fragment, an encoded slash); guarded by the manifest entry that drops the containment test, which dies via the case naming it",
     "ask_answerer.py:parse_reply.text": "one table loop of 6 rows (instruction, question, a KIND line in the wrong case, the label inside a sentence, an unknown kind, a KIND line alone); guarded by the manifest entry that reads every reply as a question, which dies via the case naming it",
     # backlog #495 r1 (2026-11-11): check-plan-code.py's re-run snapshot is threaded through run_mutations' OWN

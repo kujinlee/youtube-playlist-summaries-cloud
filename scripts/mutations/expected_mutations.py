@@ -105,7 +105,7 @@ EXPECTED_MUTATIONS = {
     # comment below correctly says `18 -> 18`. ⚠ The executable count is right; the audit trail
     # was wrong, in the one number this round was asked to verify. Corrected, not raised.
     "scripts/check-claim-propagation.py": 18,
-    "scripts/check-anchors.py": 5,
+    "scripts/check-anchors.py": 12,
     "scripts/check-arch-findings.py": 5,
     # ⟳ 2026-09-22, the third warning class: 8 -> 22. THREE of the eight are not about the new
     # branch's rules at all but about it being WIRED and LABELLED — `run_decide` ceasing to count
@@ -593,7 +593,7 @@ EXPECTED_MUTATIONS = {
     # the clause removed, read in any case, and without its word boundary (+3).
     # ⟳ 2026-11-20, agenda-row-state r3 (Phase 6, backlog-closed-rule): 84 -> 82. The r2 closing-word clause is
     # REVERTED with its three entries (-3); only the FIRST status mark is state — the last mark read instead (+1).
-    "scripts/gen-backlog-page.py": 82,
+    "scripts/gen-backlog-page.py": 84,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
