@@ -21635,3 +21635,19 @@ Node-tree plan (`docs/superpowers/plans/2026-11-24-goal-node-tree.md`) slice S2,
 `scripts/check-goal-status.py` derives its armed set (`armed`, minus `UNARMED`, stale exemptions fail);
 `PAGE_SOURCES["features"]`, the publishability fixture and both regen hooks no longer name the registry;
 `docs/anchors.md` deleted. Phase 6 edge pin in `scripts/check-shipping-sets.py` 363 → 368.
+The usage-pace guard now tells the session it did not run in two places where it used to fail
+quietly: when the session's folder has been deleted, and when the session is in a copied project tree
+with no git history. Before, those ended with nothing on the channel the session reads, so a missing
+budget check looked the same as a clean one. The second finding on the same backlog row (#688), about a
+worktree whose git pointer is hand-edited to name another repository, stays filed: the one fix tried
+made 12 test cases red, by stopping the guard running inside submodules, a narrower fix is a
+candidate not yet measured, and the threat it guards against has not appeared. Nothing new is waiting for you.
+<!--tech-->
+Backlog #688 X2, branch `usage-hook-r4-findings`. `.claude/hooks/run-hook.sh`: `usage_not_run` is
+defined before the walk, and both pre-root exits (`cannot read the cwd`; `no checkout contains … and
+CLAUDE_PROJECT_DIR is unset`) route a `usage-pace-*` name through it (exit 0, the fixed JSON line); every
+other hook stays exit 1. `scripts/check-run-hook.py`: five world cases (an exported tree entered at its
+root, whose launcher is a symlink to main's so mutants reach it; a cwd deleted before the launch, via a
+new `vanish` launch flag), six with the r1 fold's GONE_PROMPT, labelled PREROOT, and mutants pr688a–pr688d. Self-test 163 → 175 rows (the docstring said 163; the r1 fold adds GONE_PROMPT and a `launch(vanish=True/False)` pair, which `check-fixture-variation.py` required). X1: the one
+prototype pin tried, to `CLAUDE_PROJECT_DIR`'s common dir, made 12 world cases red, 8 from RUN to NOT RUN; the
+r1 review's `git -C <main> worktree list` membership check is recorded in row 688 as a candidate, NOT RUN over the suite.
