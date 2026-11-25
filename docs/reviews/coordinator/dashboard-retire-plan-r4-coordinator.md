@@ -10,8 +10,8 @@ halves:
   codex: ran
   claude: gap
 findings:
-  - {id: XB1, severity: Critical, aim: deliverable, fix_induced: true, component: cutover, disposition: fixed}
-  - {id: XB2, severity: Critical, aim: deliverable, fix_induced: true, component: cutover, disposition: fixed}
+  - {id: XB1, severity: Blocking, aim: deliverable, fix_induced: true, component: cutover, disposition: fixed}
+  - {id: XB2, severity: Blocking, aim: deliverable, fix_induced: true, component: cutover, disposition: fixed}
 ```
 
 Subject: `docs/superpowers/plans/2026-11-24-dashboard-retire.md` at `ec39c705` (reviewed); the fold is the

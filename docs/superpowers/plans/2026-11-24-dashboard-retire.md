@@ -94,7 +94,7 @@ Five inputs the spec implies and no gate row names. Each has a case in the task 
 
 | Finding | Decision | Task | Test |
 |---|---|---|---|
-| r6 Claude **M1** — L1's cutover window is the normal case | BUILD all three parts. (1) `LEGACY_STORE_BLOB` beside `LEGACY_STORE_SHA256`; L1 prints `git diff <BLOB> <HEAD's blob>` and `git cat-file blob <BLOB> > docs/dashboard-entries.md`. (2) `LEGACY_STORE_BASE_BLOB` — master's store as S2 last merged it — and `check-ask-store.py --cutover-check origin/master`, run immediately before the squash. (3) a post-merge step merges master into every open PR | 12, 13 | 12.3–12.8; 13's listing command and its falsifier |
+| r6 Claude **M1** — L1's cutover window is the normal case | BUILD all three parts. (1) `LEGACY_STORE_BLOB` beside `LEGACY_STORE_SHA256`; L1 prints `git diff <BLOB> <HEAD's blob>` and `git cat-file blob <BLOB> > docs/dashboard-entries.md`. (2) `LEGACY_STORE_BASE_BLOB` — master's store as S2 last merged it — and `check-ask-store.py --cutover-check origin/master`, run immediately before the squash. (3) a post-merge step merges master into every open PR whose diff still edits the store | 12, 13 | 12.3–12.8; 13's listing command and its falsifier |
 | r6 Claude **m1** — `.gitkeep` and F1 | BUILD. F1 considers only base names matching the name rule; a non-empty `.gitkeep` is a PROBLEM in `read_asks`, so A1 and the goal tree both refuse it | 1, 2 | 1.4; 2.5, 2.6 |
 | r6 Claude **m2** — the `## Answer` match is not exact | BUILD. The Global-constraints rule, in one function `answered(text)`; the skill teaches the exact line | 1, 11 | 1.6–1.9; Task 11's grep |
 | r6 Claude **m3** — A1 "HEAD's tree" vs `read_asks(dir)` | PICKED: **A1 lists `git ls-tree --name-only HEAD docs/asks/` and passes those names to `read_asks`.** File content is read from the working tree, which in CI equals HEAD. Stated in A1's docstring and `--help` | 2 | 2.9–2.11 |
@@ -738,8 +738,9 @@ command prints nothing.
   runs in the mutation harness's staged tree. It has NO base half: `LEGACY_STORE_BASE_BLOB` is master's
   store at pin time, which after S2's squash master no longer holds, so any self-test reading of it would go
   red on master from S2 until Task 16 deletes the constant. That pin is checked where its subject exists —
-  Step 10's `--cutover-check origin/master` and Task 13 Step 1's `--cutover-check "$SQ^1"`, each of which
-  returns 1 on a base blob other than the store it reads (12.8, 12.12).
+  Step 6's and Step 10's `--cutover-check origin/master`, which return 1 on a base blob other than the
+  store they read (12.8, 12.12). After the squash that pin has no subject left on master; what holds from
+  then on is L1 over master's tip (Task 13 Step 1).
   **Step 2: Run** the self-test (FAIL, 12.11 among the names).
 - [ ] **Step 3: Implement** `legacy_store_problem`, `cutover_problem` and `main`, with the three constants
   set to a placeholder that 12.11 refuses (`"UNPINNED"`). Run: 12.1–12.10 and 12.12–12.16 PASS, 12.11 FAIL.
@@ -794,70 +795,77 @@ python3 scripts/check-ask-store.py --cutover-check origin/master
 
   Expected: rc 0. On rc 1 a PR merged an entry after the pin: return to Step 4 and re-pin all three.
   ⚠ **This check is early, not sufficient (r1 Codex M2):** master can move between it and the squash, and
-  `--match-head-commit` pins the PR head, not the base. The binding check is Task 13 Step 1, which reads the
-  squash commit's own first parent — the exact store the squash was built on — so no window is left.
+  `--match-head-commit` pins the PR head, not the base. The binding check is Task 13 Step 1: push-mode
+  L1 over master's tip after the squash. A store that moved inside the window leaves the squash's own store
+  different from the pinned bytes, so L1 is red on it — no window is left, and no commit has to be found.
 
 **FAILS IF (L1):** the store at HEAD differs from the pinned bytes, or is missing, and the step is green —
-on a pull request or on a push to master. **FAILS IF (M1 part 2):** the squash commit's first parent holds a store
-blob other than `LEGACY_STORE_BASE_BLOB` and Task 13 Step 1's `--cutover-check <squash>^1` returns 0
-(behavior 12.12 is that check on a fixture).
+on a pull request or on a push to master. **FAILS IF (M1 part 2):** master's store moved between the pin and the
+squash and Task 13 Step 1 — push-mode L1 over `origin/master` — returns 0 (behavior 12.10 is that check on a
+fixture; 12.12 holds Step 10's early check to the revision it is given).
 
 ### Task 13: the post-merge cutover (M1 part 3) — the coordinator's, outward-facing
 
 No file changes. Run once, right after S2's squash lands. The code it runs is Task 12's, tested there.
 
-- [ ] **Step 1: Check the store the squash was actually built on (r1 Codex M2).**
+⛔ **The shape rule for this task** (Phase 6 review,
+`docs/reviews/architecture-review-2026-11-24-dashboard-retire-cutover.md`): this task has no builder, no PR
+and no case, so nothing checks its text before it runs once, on master. So every command below is ONE call
+of a tested entry point of `check-ask-store.py`, run in ONE shell call, and that call's own exit status is
+the answer. No shell variable is carried from one step to the next (the coordinator's shell calls share no
+state), no step identifies the squash commit, and no step builds or removes a worktree. **A step that needs
+more than that is code for the gate file, with a case and a mutation — never more shell here.**
+
+- [ ] **Step 1: L1 over master's tip — the binding check for M1 part 2.**
 
 ```bash
-git fetch origin master
-PR=<S2's PR number>   # the PR Task 12 Step 10's coordinator squashed — the plan's own handle, not a title
-SQ=$(gh pr view "$PR" --json state,mergeCommit -q 'select(.state=="MERGED") | .mergeCommit.oid') \
-  && test -n "$SQ" \
-  && git merge-base --is-ancestor "$SQ" origin/master \
-  && test "$(git rev-list --parents -n1 "$SQ" | wc -w)" -eq 2 \
-  && git cat-file -e "$SQ:scripts/check-ask-store.py" \
-  && T="$(mktemp -d)/sq" && git worktree add -q --detach "$T" "$SQ" \
-  && (cd "$T" && python3 scripts/check-ask-store.py --cutover-check "$SQ^1"); rc=$?
-echo "rc=$rc"; test "$rc" -eq 0   # Expected: rc=0 — the LAST command carries the status (r4 Codex B1)
+cd <S2's worktree> && git fetch origin master && git checkout -q --detach origin/master && python3 scripts/check-ask-store.py
 ```
 
-  The worktree `$T` is KEPT: Steps 1b and 3 run the gate from it (r4 Codex B2), and Step 3 removes it.
+  Expected: rc 0. This is push-mode L1, the path 12.10 drives; it reads the committed store at
+  HEAD, never the working tree. It asks about master's STATE, not about the squash's parent: if master's
+  store moved between Task 12 Step 10 and the squash, the squash's own store is the pinned bytes plus the
+  stray entry, so L1 is red on it (measured 2026-11-24 on a fixture repo: master unchanged → squash store =
+  the pin; an entry appended on master before the squash → squash store ≠ the pin, the diff is that entry).
+  It also sees an entry that lands AFTER the squash, which a check of the squash's parent passes (same
+  fixture). Any clean worktree of this repository serves: the checkout puts the merged gate file in it.
+  Not a pass: rc 2 with `can't open file` means `origin/master` has no gate file — S2 is not merged; a
+  failed `fetch` or `checkout` stops the chain non-zero (controls run 2026-11-24 on a scratch clone: script
+  absent → 2; failed fetch → 128; the placeholder left unfilled → 2).
+  On rc 1, L1's message prints the stray text and the restore command. Repair, in a PR of its own: in this
+  same checkout run `python3 scripts/gen-dashboard.py --assert-no-open-asks` (the store at HEAD is the
+  stray one); re-ask each id it names as a file in `docs/asks/`; restore the store with L1's printed
+  `git cat-file blob <LEGACY_STORE_BLOB> > docs/dashboard-entries.md`. The pins stay: the frozen bytes are
+  S2's, and the stray entry is what is removed.
+- [ ] **Step 2: List every open PR that still carries a store edit.**
 
-  The squash is found by the PR that made it (r2 Codex M2: a `git log --grep` on a title the plan never
-  sets finds nothing, or an older commit), and its identity is checked before its parent is read: merged,
-  on `origin/master`, one parent (a squash, not a merge commit), the gate file in its tree. The check runs
-  from a detached worktree AT the squash (r3 Claude m4): in the main checkout before a fast-forward the
-  script does not exist yet, and piping `git show "$SQ:…"` into `python3 -` does not work — the gate's
-  `ROOT` is `Path(__file__).resolve().parent.parent`, and under `-` that is the cwd's PARENT (measured
-  2026-11-24), so its git calls would read the wrong directory. Run from the repository's main checkout,
-  so `git worktree add` shares its objects. Every link is
-  `&&`, so a failed `gh` call, an unmerged PR (the `select` prints nothing) or a wrong commit stops the chain
-  non-zero — never a pass. Controls, run 2026-11-24: the `-q` filter prints nothing on `"state":"OPEN"`;
-  the parent count refuses a two-parent merge commit and accepts squash `7a6ffa00`. Expected: rc 0. On rc 1 a PR merged a store edit inside the window: master's push-mode `ask store` step is
-  red on the squash (L1 sees the stray bytes), and the stray entry may hold an ask NEEDS YOU no longer reads.
-  Repair, in a PR of its own: `git show "$SQ^1:docs/dashboard-entries.md" > "$TMPDIR/s.md"` and
-  `python3 scripts/gen-dashboard.py --assert-no-open-asks --store "$TMPDIR/s.md"`; re-ask each id it names as
-  a file in `docs/asks/`; restore the store with L1's printed `git cat-file blob <LEGACY_STORE_BLOB> >
-  docs/dashboard-entries.md`. The pins stay: the frozen bytes are S2's, and the stray entry is what is removed.
-- [ ] **Step 1b: List every open PR that still carries a store edit.**
-  `(cd "$T" && python3 scripts/check-ask-store.py --list-store-prs); rc=$?; echo "rc=$rc"; test "$rc" -eq 0`
-  — from the squash worktree, never the main checkout: before its fast-forward the renamed script is absent
-  there and the call returns 2 (r4 Codex B2, measured on a copy of today's checkout). Task 12's
-  `store_edit_prs`: `--limit` set, every `gh` failure CANNOT RUN. rc 2 is NOT a clean list — fix the cause and re-run.
-- [ ] **Step 2: For each listed PR**, in its worktree: merge master (`git merge --no-edit origin/master`),
+```bash
+cd <S2's worktree> && python3 scripts/check-ask-store.py --list-store-prs
+```
+
+  The checkout Step 1 left, which holds the merged script. Task 12's `store_edit_prs`: `--limit` set, every
+  `gh` failure CANNOT RUN. rc 0 with one line per PR, or no line. rc 2 is NOT a clean list — fix the cause
+  and re-run.
+- [ ] **Step 3: For each listed PR**, in its worktree: merge master (`git merge --no-edit origin/master`),
   restore the store (`git checkout origin/master -- docs/dashboard-entries.md`), re-ask any question its
   dropped entry held as a file in `docs/asks/`, commit, push. Its CI now runs under L1.
-- [ ] **Step 3: Re-run Step 1b**, then remove the worktree: `git worktree remove --force "$T"`. Expected: rc 0, no line.
-- [ ] **Step 4: Confirm master's own run:** the `check-ask-store self-test` step (r3 Claude M2: the step a
-  base half of 12.11 would have turned red) and the `ask store (push)` step of the CI run on S2's merge commit are
-  green.
+- [ ] **Step 4: Re-run Step 2's command.** Expected: rc 0, no line.
+- [ ] **Step 5: Confirm master's own CI:** in the newest COMPLETED `CI` run on `master` at or after the
+  squash, the `check-ask-store self-test` step (r3 Claude M2: the step a base half of 12.11 would have
+  turned red) and the `ask store (push)` step are green. Not necessarily the run on the squash commit
+  itself: a pending master run is replaced by a later push's (the `concurrency` comment in `ci.yml`), and
+  L1 reads state, so a later run answers the same question.
 
-**FAILS IF:** Step 1 returns 0 while the squash's first parent holds another store blob; Step 3 prints any PR
-or returns 2; or a later push to master turns `ask store (push)` red (then the repair
-is 12.7's command, taken from the step's own output, in a PR of its own).
-**Test:** 12.12 is Step 1's check on a fixture; 12.13–12.16 are Step 1b's listing (a PR past gh's default
-page, a full page, a failed list, a failed diff); 12.7 is Step 2's repair — a branch carrying an appended
-entry is red under L1, and the printed command makes it green.
+**FAILS IF:** Step 1 returns 0 while the store at `origin/master` differs from the pinned bytes; Step 4
+prints any PR or returns 2; or a later push to master turns `ask store (push)` red (then the repair is
+12.7's command, taken from the step's own output, in a PR of its own).
+**Test:** 12.10 is Step 1's check on a fixture (mutations "push mode skips L1" and "L1 compares nothing");
+12.13–12.16 are Step 2's listing (a PR past gh's default page, a full page, a failed list, a failed diff);
+12.7 is Step 3's repair — a branch carrying an appended entry is red under L1, and the printed command
+makes it green.
+**FAILS IF (the shape rule):** a review of this task finds a defect in shell written here. Then the task is
+not patched again: its steps become one entry point of the gate file with its own cases (the review's
+*SPLIT* route).
 
 ---
 
