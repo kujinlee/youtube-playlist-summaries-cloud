@@ -33,7 +33,6 @@ print(d.get('tool_input', {}).get('file_path', '') or '')
 # Every input the page derives from. A source added to gen-goals-page.py and forgotten here is the
 # failure mode; the docstring's derivation list is the checklist.
 case "$FILE_PATH" in
-  */docs/anchors.md|docs/anchors.md) ;;
   */docs/adr/*.md|docs/adr/*.md) ;;
   */docs/superpowers/specs/*.md|docs/superpowers/specs/*.md) ;;
   */docs/superpowers/plans/*.md|docs/superpowers/plans/*.md) ;;

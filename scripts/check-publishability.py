@@ -2124,7 +2124,7 @@ def _self_test_body() -> int:
                  'ROOT = SCRIPTS.parent\n'
                  'subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--git-common-dir"])\n'
                  'UP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n'
-                 'open(os.path.join(UP, "docs", "anchors.md"))\n'
+                 'open(os.path.join(UP, "docs", "nodes.md"))\n'
                  'READS = [pathlib.Path(__file__).parents[1] / "docs/backlog.md", "--self-test"]\n')
     skill_md = ("# S\n"
                 "**Follow `../shared/d.md`** for the delivery.\n"
@@ -2150,7 +2150,7 @@ def _self_test_body() -> int:
          [(14, "."), (15, "docs/features.md"), (17, "docs/store.md")])
     case("S1: ...the root reached through a name bound to its directory, os.path.dirname twice, and parents[1]",
          lambda: rooted("tree"),
-         [(10, "."), (12, "docs/anchors.md"), (13, "docs/backlog.md")])
+         [(10, "."), (12, "docs/nodes.md"), (13, "docs/backlog.md")])
     case("S1: ...judged in INSTALLED coordinates: a skill's script three levels below the plugin root reaches "
          "it with parents[2], and the skill's own installed file below it is shipped",
          lambda: [(f["line"], f["target"]) for f in found(w_16, {"s": [".agents/skills/s/run.py",
