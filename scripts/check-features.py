@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 96 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 98 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -294,6 +294,19 @@ def slug_problems(nodes: list[Node]) -> list[str]:
     return problems
 
 
+def adr_problems(nodes: list[Node], known: set[str]) -> list[str]:
+    """Every `adrs:` number is the number of a file under `docs/adr/` (goal node tree Task 5). `known`
+    is the set of four-digit numbers those files carry; the shape of an entry is `parse_features`'."""
+    return [f"features.md:{n.line}: `{n.slug}` names ADR {a} in `adrs:`, but docs/adr/ holds no "
+            f"`{a}-*.md` — a node may cite only a decision that is recorded"
+            for n in nodes for a in n.adrs if a not in known]
+
+
+def adr_numbers(adr_dir: pathlib.Path) -> set[str]:
+    """The four-digit numbers of the ADR files in `adr_dir` (`NNNN-<title>.md`)."""
+    return {p.name[:4] for p in adr_dir.glob("[0-9][0-9][0-9][0-9]-*.md")}
+
+
 def summary_line(nodes: list[Node]) -> str:
     """The node half of `main`'s OK line. A stateless node is a name only — never counted absent."""
     built = sum(1 for n in nodes if n.state == "built")
@@ -480,6 +493,7 @@ FEATURES = REPO / "docs" / "features.md"
 ANCHORS_MD = REPO / "docs" / "anchors.md"
 BACKLOG = REPO / "docs" / "backlog.md"
 GOAL_THREADS = REPO / "docs" / "goal-threads.md"
+ADR_DIR = REPO / "docs" / "adr"
 
 
 def main() -> int:
@@ -504,6 +518,12 @@ def main() -> int:
     # `anchored` stays empty until S2 Task 7, when the header reader lives in one place (plan C10).
     problems += check_nodes(nodes, frozenset())
     problems += slug_problems(nodes)
+    known_adrs = adr_numbers(ADR_DIR)
+    if any(n.adrs for n in nodes) and not known_adrs:
+        print(f"CANNOT RUN — a node carries `adrs:` and {ADR_DIR} holds no `NNNN-*.md` file, so no "
+              f"ADR number can be checked. Treat this as NOT RUN.", file=sys.stderr)
+        return 2
+    problems += adr_problems(nodes, known_adrs)
     problems += check_cross(nodes, declared, None if not areas else areas)
     try:
         # The threads file is read only when a node carries `done:` — the guard is `done_problems`'.
@@ -1037,6 +1057,19 @@ expected-because: standard for a hosted multi-tenant service.
           [_safe(lambda: done_problems(_nodes("### a\nfor: A.\n### b\nstate: built\nfor: B.\nareas: (b)\n"), _never)),
            _safe(lambda: done_problems(_live, _never))],
           [[], []])
+
+    # ── adrs: every number is a file (goal node tree Task 5) ────────────────────────────────────
+    _ADR = "### a\nfor: A.\nadrs: {a}\n### b\nfor: B.\nadrs: {b}\n"
+    check("adrs: a number with no file is refused",
+          [[("`a`" in p, "9999" in p) for p in adr_problems(_nodes(_ADR.format(a="9999", b="0001")), {"0001"})],
+           adr_problems(_nodes(_ADR.format(a="0001", b="0002")), {"0001", "0002"})],
+          [[(True, True)], []])
+    check("adrs: two nodes, one bad number, names only that one",
+          [[("`b`" in p, "`a`" in p, "0007" in p) for p in
+            adr_problems(_nodes(_ADR.format(a="0003, 0005", b="0005, 0007")), {"0003", "0005"})],
+           [("`a`" in p, "0004" in p) for p in
+            adr_problems(_nodes(_ADR.format(a="0004", b="0003")), {"0003", "0005"})]],
+          [[(True, False, True)], [(True, True)]])
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

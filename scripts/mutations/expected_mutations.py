@@ -1756,7 +1756,7 @@ EXPECTED_MUTATIONS = {
     # its own state (not in the +1).
     # ⟳ 2026-11-24, goal node tree S1 review r3: 58 -> 59 — the merged rule's message back to a
     # truthiness test of `state`, reporting a bare `state:` as "has no `state:`" (Claude F2).
-    "scripts/check-features.py": 59,
+    "scripts/check-features.py": 60,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed

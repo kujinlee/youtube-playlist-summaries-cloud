@@ -654,5 +654,16 @@
       ]
     ],
     "expect": "rules: a BARE state: is not reported as a missing state:"
+  },
+  {
+    "name": "adr_problems stops testing membership, so an adrs: number with no file passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "for n in nodes for a in n.adrs if a not in known]",
+        "for n in nodes for a in n.adrs if False]"
+      ]
+    ],
+    "expect": "adrs: a number with no file is refused"
   }
 ]

@@ -24,6 +24,10 @@ for: Turns every video in a YouTube playlist into a summary a person can read.
 anchors: cloud-publishing
 areas: (product)
 
+#### cloud-publishing
+for: Summaries are produced and published by a hosted service, not only by a local vault.
+adrs: 0001, 0005
+
 #### ingest-a-playlist
 state: built
 for: Brings a playlist's videos, titles and transcripts into the library so they can be summarised.
@@ -59,6 +63,7 @@ areas: (cloud/quality)
 state: built
 for: Lets a summary be read by someone without an account, and taken away as a PDF or an HTML document.
 anchors: share-and-download
+adrs: 0003
 
 #### shared-dig-deeper
 state: absent
@@ -69,6 +74,7 @@ expected-because: the share route renders with `dig: false` (app/s/[token]/route
 state: built
 for: Keeps one video's summary coherent between a person's local vault and the hosted copy.
 anchors: cloud-sync
+adrs: 0002
 
 ## PLATFORM
 
@@ -93,16 +99,22 @@ for: Keeps one generation paid for once, and the total spend under a ceiling the
 anchors: serve-money-guard
 areas: (cloud/money)
 
+#### serve-money-guard
+for: Serving a summary cannot spend money twice, and the protection is enforced rather than accidental.
+adrs: 0008
+
 ### stable-blob-addressing
 state: built
 for: Gives a stored artifact an address that survives a title change and a re-summarisation.
 anchors: stable-blob-addressing
+adrs: 0006, 0007
 areas: (product / addressing)
 
 #### cloud-blob-key-encoding
 state: built
 for: Lets a video titled in any language be stored in and served from cloud storage.
 anchors: cloud-blob-key-encoding
+adrs: 0009
 
 ### concurrency-safety
 state: built
@@ -133,11 +145,6 @@ for: Gives the rules this project works by a mechanical enforcer, instead of a r
 anchors: dev-speed-first
 areas: (tooling)
 
-#### harness-speed
-state: built
-for: Keeps the build-and-check loop fast and cheap — CI wall-clock, the mutation sweep's cost, batched CI runs, and the token usage agents spend.
-areas: (tooling/speed)
-
 #### review-process
 state: built
 for: Runs the dual adversarial review loop and records its rounds, verdicts and merge holds as evidence a machine can read.
@@ -162,6 +169,11 @@ areas: (tooling/pages)
 state: built
 for: Makes each guard check what it claims to — no false green, no copy of a rule that drifts, no gate that can be walked past.
 areas: (tooling/guards)
+
+### dev-speed
+was: dev-speed-first, harness-speed
+for: A change gets its verdict as fast as the evidence allows, with mutation coverage identical.
+areas: (tooling/speed)
 
 ### status-visibility
 state: built
@@ -195,6 +207,7 @@ areas: (comprehensibility/explainers)
 state: built
 for: Lets a review loop choose its own next step from recorded evidence rather than from recall.
 anchors: review-decides-itself
+adrs: 0014
 areas: (process)
 
 ### process-harness
@@ -206,4 +219,5 @@ areas: (process / deliverable #2)
 #### harness-ships-elsewhere
 state: absent
 for: Lets someone who has never seen this repository install the harness and use it in their own.
+adrs: 0015
 expected-because: the harness is written down but has never been installed anywhere else. Its own coupling measurement puts 9 repo-specific items in `brief/SKILL.md`'s ground-truth command list alone — 4 bare guard names, 4 document paths and 1 tool name, belonging to this repo's process rather than to any plugin — so a component can read as project-independent and still be unusable. (Corrected 2026-10-16 by the marketplace-inventory round-1 review: the literal `scripts/check-*` does not occur in that file, and 5 of the 9 are neither paths nor file invocations, so a path-and-invocation scan cannot see them.)
