@@ -159,6 +159,7 @@ pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--rule);bor
 <div class="decision" id="ok-2" data-short="one file per ask"><p data-decision data-decision-label="§2">Is section 2 — one file per ask, answer in the same file — right?</p>
 <p class="rec"><b>Recommended: yes.</b> It is the architecture review's option (b), and it ended the thrashing.</p></div>
 
+<div class="answer"><b>Your question (18:39), answered:</b> agreed: a card should offer the decision's own choices, with Other for anything else, the way a selection card does, and generic Yes/No only when the question really is yes-or-no. That is a change to the page composer (<code>brief-compose.py</code>), not to this spec, so it is being built now as its own small PR: a card can declare its options, gets one button per option with the recommended one starred, plus ✎ Other…. When it lands, this page will be rebuilt with per-choice buttons. Your section answers so far stay valid.</div>
 <h2>3. Three slices, and the gates that hold them</h2>
 <p>The code that reads asks today lives inside the two scripts being retired, so deleting them first would empty NEEDS YOU. The order is forced: <b>open the new store, then cut over, then delete the page.</b> Each slice is its own PR.</p>
 <figure>
