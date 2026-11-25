@@ -2,7 +2,7 @@
 """Every living spec and plan says whether it is alive — and the goals page renders it.
 
     python3 scripts/check-goal-status.py              # enforce for the armed nodes
-    python3 scripts/check-goal-status.py --self-test  # 38 cases
+    python3 scripts/check-goal-status.py --self-test  # 40 cases
 
 WHY THIS EXISTS, AND IT IS A DEFECT THE OWNER FOUND BY READING THE PAGE
 ----------------------------------------------------------------------
@@ -112,6 +112,19 @@ def armed(anchored: dict[str, list[str]], unarmed: tuple[str, ...] = UNARMED) ->
     return tuple(sorted(slug for slug in anchored if slug not in unarmed))
 
 
+def misnamed_anchors(anchored: dict[str, list[str]], nodes: list) -> list[str]:
+    """One line per document whose `Anchor:` names no current, settled node, worded by
+    `check-anchors.name_problem` (its owner). Without this a mistyped slug was ARMED and the
+    document was told to declare a Status, when the defect is the name (r1 MINOR-2)."""
+    ca = _check_anchors()
+    out = []
+    for slug in sorted(anchored):
+        problem = ca.name_problem(nodes, slug)
+        if problem is not None:
+            out.extend(f"  ✗ {rel}: {problem} — fix the `Anchor:` slug" for rel in anchored[slug])
+    return out
+
+
 def stale_exemptions(unarmed: tuple[str, ...], slugs: set[str]) -> list[str]:
     """PURE. One line per `UNARMED` entry that names no current node slug."""
     return [f"  ✗ `{u}` is in UNARMED but is no current node slug of docs/features.md — a stale "
@@ -134,7 +147,8 @@ STATES = {
 ALIVE_WORDS = ("current", "needs-you")
 
 STATUS_LINE = re.compile(r"^\*\*Status:\*\*\s*(.+)$", re.M)
-ANCHOR_LINE = re.compile(r"\*\*Anchor:\*\*\s*`([^`]+)`")
+# The `Anchor:` slug is NOT read here: `check-anchors.parse_header` is its one reader (r1 MINOR-4).
+# This window bounds the STATUS search only.
 HEAD_LINES = 18
 
 
@@ -194,6 +208,7 @@ def living_documents(repo: Path | None = None) -> list[dict]:
     indistinguishable from a clean result, which this repository treats as a failure.
     """
     root = (repo or REPO) / "docs"
+    parse_header = _check_anchors().parse_header
     out = []
     for sub in SUBDIRS:
         d = root / sub
@@ -204,11 +219,9 @@ def living_documents(repo: Path | None = None) -> list[dict]:
                 text = f.read_text(errors="replace")
             except OSError as exc:
                 raise ValueError(f"{f} could not be read: {exc}") from exc
-            head = "\n".join(text.splitlines()[:HEAD_LINES])
-            am = ANCHOR_LINE.search(head)
             state, why = parse_status(text)
             out.append({"rel": f"docs/{sub}/{f.name}", "name": f.name,
-                        "anchor": am.group(1) if am else None,
+                        "anchor": parse_header(text)[0],
                         "state": state, "why": why})
     return out
 
@@ -270,7 +283,7 @@ def verdict(docs: list[dict], armed: tuple[str, ...]) -> tuple[int, list[str]]:
 
 
 def main(argv: list[str], *, repo: Path | None = None,
-         armed: tuple[str, ...] | None = None) -> int:
+         armed_override: tuple[str, ...] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Every living spec and plan says whether it is alive.")
     ap.add_argument("--self-test", action="store_true")
@@ -285,7 +298,7 @@ def main(argv: list[str], *, repo: Path | None = None,
     if not docs:
         print("CANNOT RUN — no spec or plan documents were found, so nothing was checked.")
         return 2
-    if armed is None:
+    if armed_override is None:
         ca = _check_anchors()
         root = (repo or REPO) / "docs"
         try:
@@ -298,9 +311,15 @@ def main(argv: list[str], *, repo: Path | None = None,
             print("FAILED — an exemption outlived its node:")
             print("\n".join(stale))
             return 1
-        armed_set = globals()["armed"](ca.anchored_slugs(root))
+        anchored = ca.anchored_slugs(root)
+        misnamed = misnamed_anchors(anchored, nodes)
+        if misnamed:
+            print("FAILED — a document names no current node:")
+            print("\n".join(misnamed))
+            return 1
+        armed_set = armed(anchored)
     else:
-        armed_set = armed
+        armed_set = armed_override
     rc, lines = verdict(docs, armed_set)
     print("\n".join(lines))
     return rc
@@ -362,6 +381,36 @@ def _self_test_body() -> int:
             _tf.TemporaryDirectory() as _gs:
         _two = (_g4_main(_g4_world(_ga, _live, "alpha")), _g4_main(_g4_world(_gb, _live, "beta")))
         _stale = _g4_main(_g4_world(_gs, ("alpha", "harness-ships-elsewhere"), "alpha"))
+    # ⛔ r1 MINOR-2: a MISTYPED slug is a naming defect, not a missing status. Before the fold it
+    # was armed, its document declared a state, and this exited 0 — only check-anchors caught it.
+    with _tf.TemporaryDirectory() as _gm:
+        import contextlib as _cl
+        import io as _io
+        _mout = _io.StringIO()
+        with _cl.redirect_stdout(_mout):
+            _mrc = main([], repo=_g4_world(_gm, _live, "no-such-node"))
+    case("armed: a slug that is no node FAILS with the naming advice, not a status request",
+         (_mrc, "docs/superpowers/specs/2026-01-01-g4.md: `no-such-node` is not a node"
+                in _mout.getvalue(), "armed anchors:" in _mout.getvalue()),
+         (1, True, False))
+    # ⛔ r1 MINOR-4: ONE header reader. A bare (non-blockquote) `**Anchor:**` line and one below
+    # check-anchors' window are no anchor to check-anchors, so they must be none here either —
+    # the deleted local regex read both as `alpha`, arming a slug check-anchors never saw.
+    with _tf.TemporaryDirectory() as _gr, _tf.TemporaryDirectory() as _gr2:
+        _rr, _rr2 = Path(_gr), Path(_gr2)
+        _sp = _rr / "docs" / "superpowers" / "specs"
+        _sp.mkdir(parents=True)
+        (_sp / "2026-01-01-a.md").write_text("# A\n\n> **Anchor:** `alpha` — **ADR:** none\n")
+        (_sp / "2026-01-01-b.md").write_text("# B\n\n**Anchor:** `alpha` — **ADR:** none\n")
+        (_sp / "2026-01-01-c.md").write_text(
+            "# C\n" + "\n" * 11 + "> **Anchor:** `alpha` — **ADR:** none\n")
+        (_rr2 / "docs" / "superpowers" / "plans").mkdir(parents=True)
+        (_rr2 / "docs" / "superpowers" / "plans" / "2026-01-01-d.md").write_text(
+            "# D\n\n> **Anchor:** `beta` — **ADR:** 0001\n")
+        case("living_documents reads the anchor with check-anchors' reader, so the two agree",
+             ([d["anchor"] for d in living_documents(_rr)],
+              [d["anchor"] for d in living_documents(_rr2)]),
+             (["alpha", None, None], ["beta"]))
     case("armed: two trees give two sets", _two,
          ((0, ["armed anchors: alpha"]), (0, ["armed anchors: beta"])))
     case("armed: a stale exemption fails",
@@ -475,18 +524,18 @@ def _self_test_body() -> int:
         (_r / "docs" / "superpowers" / "specs").mkdir(parents=True)
         (_r / "docs" / "superpowers" / "plans").mkdir(parents=True)
         (_r / "docs" / "superpowers" / "specs" / "2026-01-01-x-design.md").write_text(
-            "# X\n\n> **Anchor:** `armed-anchor`\n\n**Status:** ✅ shipped\n")
+            "# X\n\n> **Anchor:** `armed-anchor` — **ADR:** none\n\n**Status:** ✅ shipped\n")
         case("main() exits 0 over a world whose armed document declares a state",
-             main([], repo=_r, armed=("armed-anchor",)), 0)
+             main([], repo=_r, armed_override=("armed-anchor",)), 0)
         (_r / "docs" / "superpowers" / "plans" / "2026-01-01-x.md").write_text(
-            "# X plan\n\n> **Anchor:** `armed-anchor`\n\nno status\n")
+            "# X plan\n\n> **Anchor:** `armed-anchor` — **ADR:** none\n\nno status\n")
         case("...and exits 1 once an armed document declares nothing",
-             main([], repo=_r, armed=("armed-anchor",)), 1)
+             main([], repo=_r, armed_override=("armed-anchor",)), 1)
         case("...and 0 again when that anchor is not armed, over the SAME tree",
-             main([], repo=_r, armed=("other",)), 0)
+             main([], repo=_r, armed_override=("other",)), 0)
     with _tf.TemporaryDirectory() as _d2:
         case("an empty tree is CANNOT RUN (2), never a pass — nothing was checked",
-             main([], repo=Path(_d2), armed=("armed-anchor",)), 2)
+             main([], repo=Path(_d2), armed_override=("armed-anchor",)), 2)
     # ⛔ AN UNREADABLE DOCUMENT IS CANNOT RUN, NOT AN ABSENT STATUS. Silence there would be
     # indistinguishable from a clean result, which is this repository's loudest rule.
     with _tf.TemporaryDirectory() as _d3:
@@ -497,13 +546,13 @@ def _self_test_body() -> int:
         # "no documents" branch — the right code for the wrong reason, so the case passed with
         # the read-failure path deleted.
         (_r3 / "docs" / "superpowers" / "specs" / "2026-01-01-ok-design.md").write_text(
-            "# OK\n\n> **Anchor:** `armed-anchor`\n\n**Status:** ✅ shipped\n")
+            "# OK\n\n> **Anchor:** `armed-anchor` — **ADR:** none\n\n**Status:** ✅ shipped\n")
         _bad = _r3 / "docs" / "superpowers" / "specs" / "2026-01-01-y-design.md"
-        _bad.write_text("# Y\n\n> **Anchor:** `armed-anchor`\n\n**Status:** ✅ shipped\n")
+        _bad.write_text("# Y\n\n> **Anchor:** `armed-anchor` — **ADR:** none\n\n**Status:** ✅ shipped\n")
         _bad.chmod(0o000)
         try:
             case("an UNREADABLE document is CANNOT RUN (2), never an absent status",
-                 main([], repo=_r3, armed=("armed-anchor",)), 2)
+                 main([], repo=_r3, armed_override=("armed-anchor",)), 2)
         finally:
             _bad.chmod(0o644)
 

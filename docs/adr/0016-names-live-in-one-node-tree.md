@@ -1,5 +1,5 @@
 ---
-status: accepted 2026-11-24 — by the node-tree plan's slice S2 pull request (branch `goal-node-tree-s2`), which
+status: accepted 2026-11-24 — by PR #637 (the node-tree plan's slice S2, branch `goal-node-tree-s2`), which
   deletes `docs/anchors.md`; proposed 2026-11-23. Supersedes PART of ADR-0010 (where the names live; that a name never
   changes; that the backlog has no second mechanism). ADR-0010's other decisions stand. The names now live in
   `docs/features.md`, read by `scripts/check-features.py`; `scripts/check-anchors.py` resolves every `Anchor:` against it.

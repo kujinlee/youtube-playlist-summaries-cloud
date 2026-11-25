@@ -1203,7 +1203,9 @@ EXPECTED_MUTATIONS = {
     "scripts/check-decision-scheme.py": 129,
     # ⟳ 2026-11-24, goal node tree Task 9: 7 -> 10. The armed set is DERIVED: the subtraction of
     # UNARMED, the stale-exemption report, and main deriving rather than naming the set (+3).
-    "scripts/check-goal-status.py": 10,
+    # ⟳ 2026-11-24, PR #637 r1 fold: 10 -> 12. A misnamed anchor fails with naming advice, and
+    #   the anchor is read by check-anchors' parser rather than a local regex (+2).
+    "scripts/check-goal-status.py": 12,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
     # because a workflow-level filter is what made the `schema-gates` check unrequireable. TWO

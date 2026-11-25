@@ -447,7 +447,7 @@ def goal_nodes(nodes: list, anchored) -> list:
     """The nodes that get a card IN THIS SLICE: those a document's `Anchor:` header names, or that
     carry an `adrs:` line — in tree order (plan choice C5). PURE.
 
-    ⚠ Deliberately the registry's set by another route (measured at Task 8: the same 15, with
+    ⚠ Deliberately the retired anchor file's set by another route (measured at Task 8: the same 15, with
     the dev-speed node under its current name, its old one in `was:`). A card per node, laid out as the tree, is Task 19."""
     return [n for n in nodes if n.slug in anchored or n.adrs]
 
@@ -466,8 +466,8 @@ def collect(docs: pathlib.Path, gen_text: str, nodes: list) -> list[dict]:
         raise SystemExit("gen-goals-page: a document's `Anchor:` header names no current node of "
                          "docs/features.md — " + "; ".join(
                              f"`{slug}` in {', '.join(rels)}" for slug, rels in sorted(unknown.items())))
-    registry = [{"slug": n.slug, "adrs": n.adrs, "goal": n.purpose} for n in goal_nodes(nodes, anchored)]
-    if not registry:
+    goal_rows = [{"slug": n.slug, "adrs": n.adrs, "goal": n.purpose} for n in goal_nodes(nodes, anchored)]
+    if not goal_rows:
         raise SystemExit("gen-goals-page: no node of docs/features.md has a document or an ADR — "
                          "nothing to render")
 
@@ -480,11 +480,11 @@ def collect(docs: pathlib.Path, gen_text: str, nodes: list) -> list[dict]:
     # Not merely unused: a ROOTS key outside the goal nodes means the backlog graph and the
     # tree have drifted apart, which `check-anchors.py` G3 also enforces. This page would
     # silently render an empty backlog band instead, so it says so.
-    stray = sorted(roots - {r['slug'] for r in registry})
+    stray = sorted(roots - {r['slug'] for r in goal_rows})
 
-    by_anchor: dict[str, list] = {r["slug"]: [] for r in registry}
+    by_anchor: dict[str, list] = {r["slug"]: [] for r in goal_rows}
     # Loaded ONCE here rather than per document: it executes a module, and this generator runs
-    # from a hook on every write to any spec, plan, ADR or the registry.
+    # from a hook on every write to any spec, plan or ADR.
     _status_of = _load_status_parser()
     adr_dir = f"docs/{ca.ADR_SUB}/"
     for slug, rels in anchored.items():
@@ -513,7 +513,7 @@ def collect(docs: pathlib.Path, gen_text: str, nodes: list) -> list[dict]:
     # ⚠ MEASURED COST. This is NOT "double last_touched". `last_touched` is `git log -1`;
     # this is `git log --follow` over full history plus one `git show` per unique sha.
     # Measured 2026-09-11: build 2.4s -> 9.7s, about 4.5x, on a hook that fires on every
-    # write to any spec, plan, ADR or the registry.
+    # write to any spec, plan or ADR.
     hist_cache: dict[str, list[dict] | None] = {}
 
     def history(rel: str):
@@ -523,7 +523,7 @@ def collect(docs: pathlib.Path, gen_text: str, nodes: list) -> list[dict]:
         return hist_cache[rel]
 
     out = []
-    for r in registry:
+    for r in goal_rows:
         ds = sorted(by_anchor[r["slug"]], key=lambda d: d["dated"], reverse=True)
         spine = next((d for d in ds if d["milestones"]), None)
         out.append({

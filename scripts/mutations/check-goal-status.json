@@ -121,12 +121,38 @@
     "file": "scripts/check-goal-status.py",
     "edits": [
       [
-        "        armed_set = globals()[\"armed\"](ca.anchored_slugs(root))",
+        "        armed_set = armed(anchored)",
         "        armed_set = (\"alpha\",)"
       ]
     ],
     "expect": [
       "armed: two trees give two sets"
+    ]
+  },
+  {
+    "name": "a document naming no current node is armed again, so a typo is told to declare a Status instead of fixing its name",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "        if misnamed:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "armed: a slug that is no node FAILS with the naming advice, not a status request"
+    ]
+  },
+  {
+    "name": "living_documents reads the anchor with its own loose regex again, so it arms slugs check-anchors never saw",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "                        \"anchor\": parse_header(text)[0],",
+        "                        \"anchor\": next(iter(re.findall(r\"\\*\\*Anchor:\\*\\*\\s*`([^`]+)`\", text)), None),"
+      ]
+    ],
+    "expect": [
+      "living_documents reads the anchor with check-anchors' reader, so the two agree"
     ]
   }
 ]

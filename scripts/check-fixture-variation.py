@@ -745,7 +745,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # re-enters the suite); everything else is varied by a case.
     "check-goal-status.py": (
         "main.argv",
-        "main.armed",
+        "main.armed_override",
         "main.repo",
         "parse_status.text",
         "verdict.armed",
