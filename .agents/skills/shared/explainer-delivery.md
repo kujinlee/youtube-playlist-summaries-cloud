@@ -229,10 +229,15 @@ element that asks it; the composer does the rest:
 | `<p data-decision>Keep the stranger audience?</p>` | yellow `🟨 ✍ DECISION n of N` tag as the element's FIRST child, before the question text — OPEN |
 | `<p data-decision="Yes — owner, 11-11">Keep the stranger audience?</p>` | green `🟩 ✍ DECISION n of N — ANSWERED: Yes — owner, 11-11` |
 | `<p data-decision data-decision-label="D7">…</p>` | the tag leads with `D7 — DECISION n of N` |
+| `<p data-decision data-decision-options="A — accept\|B — keep old file" data-decision-rec="A — accept">…</p>` | the card offers one button per choice (`★ A — accept`, `B — keep old file`) and ✎ Other… — no Yes / No |
 
 - **Answering = setting the attribute's value to the answer, then recomposing** (§3's rule — same commit).
 - **The owner answers by clicking** (owner, 2026-11-23 21:00): each OPEN tag carries ★ Recommended (when the card has a `.rec` line; owner 21:08) / ✔ Yes / ✖ No / ✎ Other…
-  (`DECISION_JS` in `brief-compose.py`). A click arrives in `questions.md` like a tray question, with the tag's label
+  (`DECISION_JS` in `brief-compose.py`). **When the decision's answers are not yes / no, DECLARE them** (owner,
+  2026-11-24 18:39; backlog #727): `data-decision-options` lists the choices, `|`-separated, and the optional
+  `data-decision-rec` names the recommended one (★); the card then shows one button per choice plus ✎ Other…,
+  ignores any `.rec` line, and a click sends `Q: ANSWER: <the choice's text>`. A list of fewer than two, an empty or
+  duplicate choice, or a rec not in the list is REFUSED at compose time (`_choices`). A click arrives in `questions.md` like a tray question, with the tag's label
   as its section and `Q: ANSWER: <yes|no|text>` — record it as the attribute's value and recompose. A click alone
   answers nothing. The card says *sent* — remembered in the browser per page, label and question, so a recompose
   that renumbers the cards keeps it on the right one — with a *change* button that sends a new answer; the newest

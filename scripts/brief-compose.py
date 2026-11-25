@@ -1104,6 +1104,18 @@ DECISION_ATTR = "data-decision"
 # with `data-decision-label`, and the tag LEADS with that label. Without it, "DECISION 5" on a page
 # that says "D5" throughout reads as the wrong decision.
 DECISION_LABEL_ATTR = "data-decision-label"
+# ⟳ 2026-11-24 18:39, the owner: "user should have buttons for each available choices or [other] button for
+# other opinion. Current [yes], [no] buttons may or may not applicable depends on decision choices." A mark
+# may DECLARE its choices, `|`-separated, and which one the page recommends:
+#     <p data-decision data-decision-options="A — accept|B — keep old file" data-decision-rec="A — accept">…</p>
+# The card then offers ONE button per option (the recommended one marked ★) plus ✎ Other…, and no generic
+# Yes / No; a click sends `Q: ANSWER: <option text>`. Without options the card is as before. An options list
+# with fewer than two entries, an empty or duplicate entry, or a rec that is not one of them (or a rec with no
+# options) is REFUSED at compose time — `_choices`. The validated list reaches the script on the TAG
+# (`data-ex-options` / `data-ex-rec`), written only when options are declared, so a page without any composes
+# byte-identical to before.
+DECISION_OPTIONS_ATTR = "data-decision-options"
+DECISION_REC_ATTR = "data-decision-rec"
 # ⟳ r1 (Codex 2, Claude F6): the ids are NAMESPACED (`ex-`, like every class this script owns), and
 # a fragment that already uses one is REFUSED — a namespace makes a collision unlikely, the refusal
 # makes it impossible. `getElementById` returns the FIRST match, so a collision sends "next" to the
@@ -1330,13 +1342,25 @@ DECISION_JS = r"""
     }
     return '';
   }
+  // ⟳ 2026-11-24 (owner): a mark that DECLARES its choices gets one button per choice, the recommended one
+  // marked ★, and no Yes / No — `render_decisions` validated the list and wrote it on the tag.
+  function offerChoices(tag, box, opts){
+    var rec = tag.getAttribute('data-ex-rec') || '';
+    opts.forEach(function(o){
+      box.appendChild(button((o === rec ? '★ ' : '') + o, function(){ send(tag, box, o); }));
+    });
+  }
   function offer(tag, box){
     box.innerHTML = '';
-    var rec = recOf(box.exHost);
-    if (rec) box.appendChild(button('★ Recommended: ' + (rec.length > 40 ? rec.slice(0, 40) + '…' : rec),
-      function(){ send(tag, box, 'recommended (' + rec + ')'); }));
-    box.appendChild(button('✔ Yes', function(){ send(tag, box, 'yes'); }));
-    box.appendChild(button('✖ No', function(){ send(tag, box, 'no'); }));
+    var declared = tag.getAttribute('data-ex-options');
+    if (declared) offerChoices(tag, box, declared.split('|'));
+    else {
+      var rec = recOf(box.exHost);
+      if (rec) box.appendChild(button('★ Recommended: ' + (rec.length > 40 ? rec.slice(0, 40) + '…' : rec),
+        function(){ send(tag, box, 'recommended (' + rec + ')'); }));
+      box.appendChild(button('✔ Yes', function(){ send(tag, box, 'yes'); }));
+      box.appendChild(button('✖ No', function(){ send(tag, box, 'no'); }));
+    }
     box.appendChild(button('✎ Other…', function(){
       box.innerHTML = '';
       var inp = document.createElement('input'); inp.type = 'text';
@@ -1453,6 +1477,9 @@ class _DecisionScan(HTMLParser):
         self.ids: set[str] = set()
         # ⟳ r4: the TEXT of each marked element, in `found` order — the question its card's key hashes.
         self.texts: list[list[str]] = []
+        # The raw `data-decision-options` / `data-decision-rec` of each marked element (None = absent), in
+        # `found` order — validated by `_choices`.
+        self.choices: list[tuple[str | None, str | None]] = []
         # [tag, hides, collapsed (a non-summary child of a <details>), a <summary> already seen,
         #  the `texts` index of a marked element or None, its text is left out of a question (r5)]
         self._stack: list[list] = []
@@ -1504,6 +1531,8 @@ class _DecisionScan(HTMLParser):
             self.found.append((self.getpos(), text, (value or "").strip(),
                                (label or "").strip(), refusal))
             self.texts.append([])
+            self.choices.append((next((v for k, v in attrs if k == DECISION_OPTIONS_ATTR), None),
+                                 next((v for k, v in attrs if k == DECISION_REC_ATTR), None)))
         mark = len(self.texts) - 1 if DECISION_ATTR in names else None
         if tag == "plaintext":
             self._plaintext = True
@@ -1563,6 +1592,35 @@ def _decision_offset(markup: str, starts: list[int], pos: tuple[int, int], text:
     return at
 
 
+def _choices(n: int, total: int, text: str, line: int, options: str | None,
+             rec: str | None) -> tuple[list[str], str]:
+    """A decision's declared choices, whitespace folded as the card's script reads them. PURE.
+
+    ([], "") when none are declared. CANNOT RUN (SystemExit) for fewer than two, an empty or duplicate
+    entry, a rec that is not one of them, or a rec with no options.
+    """
+    where = f"decision {n} of {total} ({text} at line {line})"
+    tail = " No page was written; treat as NOT RENDERED."
+    if options is None:
+        if rec is not None:
+            raise SystemExit(f"brief-compose: CANNOT RUN — {where} has {DECISION_REC_ATTR} but no "
+                             f"{DECISION_OPTIONS_ATTR}; there is nothing for it to recommend.{tail}")
+        return [], ""
+    opts = [_js_norm(o) for o in options.split("|")]
+    if len(opts) < 2 or "" in opts:
+        raise SystemExit(f"brief-compose: CANNOT RUN — {where} declares {DECISION_OPTIONS_ATTR}="
+                         f"{options!r}: it needs at least two non-empty `|`-separated choices.{tail}")
+    dups = sorted({o for o in opts if opts.count(o) > 1})
+    if dups:
+        raise SystemExit(f"brief-compose: CANNOT RUN — {where} lists the choice {dups[0]!r} more than "
+                         f"once in {DECISION_OPTIONS_ATTR}; a click could not say which was meant.{tail}")
+    want = _js_norm(rec) if rec is not None else ""
+    if rec is not None and want not in opts:
+        raise SystemExit(f"brief-compose: CANNOT RUN — {where} recommends {rec!r}, which is not one of "
+                         f"its {DECISION_OPTIONS_ATTR} {opts!r}.{tail}")
+    return opts, want
+
+
 def render_decisions(markup: str) -> tuple[str, int, int]:
     """Tag each `data-decision` element and put the counter under the title. PURE.
 
@@ -1602,6 +1660,8 @@ def render_decisions(markup: str) -> tuple[str, int, int]:
                              "reading questions.md can tell their answers apart. Give one a distinct "
                              f"{DECISION_LABEL_ATTR}. No page was written; treat as NOT RENDERED.")
         seen[base] = n
+    choices = [_choices(n, total, text, line, *scan.choices[n - 1])
+               for n, ((line, _col), text, _a, _l, _r) in enumerate(scan.found, 1)]
     # `getpos()` counts lines by "\n" only, so the offsets are rebuilt the same way —
     # `splitlines` would also split on characters the parser does not.
     starts = [0] + [i + 1 for i, ch in enumerate(markup) if ch == "\n"]
@@ -1613,7 +1673,10 @@ def render_decisions(markup: str) -> tuple[str, int, int]:
             tag = (f'<span class="ex-decision ex-decision-done" id="{DECISION_ID.format(n=n)}">'
                    f"🟩 ✍ {name} — ANSWERED: {html_escape(answer)}</span>")
         else:
-            tag = (f'<span class="ex-decision ex-decision-open" id="{DECISION_ID.format(n=n)}">'
+            opts, rec = choices[n - 1]
+            extra = (f' data-ex-options="{html_escape("|".join(opts))}"' if opts else "") + (
+                f' data-ex-rec="{html_escape(rec)}"' if rec else "")
+            tag = (f'<span class="ex-decision ex-decision-open" id="{DECISION_ID.format(n=n)}"{extra}>'
                    f"🟨 ✍ {name}</span>")
         edits[at + len(text)] = tag
     for at in sorted(edits, reverse=True):
@@ -3272,7 +3335,8 @@ function sib(n, elOnly){ const p = n.parentNode; if (!p) return null; const k = 
 function match(n, sel){ return sel[0] === '.' ? n.classList.contains(sel.slice(1)) : n.tagName === sel.toUpperCase(); }
 function el(tag, cls, kids){
   const e = {nodeType: 1, tagName: tag.toUpperCase(), childNodes: [], parentNode: null, handlers: {},
-    id: '', className: cls || '', disabled: false, value: '', type: '', placeholder: '',
+    id: '', className: cls || '', disabled: false, value: '', type: '', placeholder: '', attrs: {},
+    getAttribute(a){ return Object.prototype.hasOwnProperty.call(e.attrs, a) ? e.attrs[a] : null; },
     get classList(){ return {contains: c => e.className.split(/\s+/).includes(c)}; },
     get textContent(){ return e.childNodes.map(n => n.textContent).join(''); },
     set textContent(v){ e.childNodes.forEach(n => { n.parentNode = null; }); e.childNodes = []; if (v !== '') e.appendChild(txt(v)); },
@@ -3291,8 +3355,10 @@ function el(tag, cls, kids){
   (kids || []).forEach(k => e.appendChild(typeof k === 'string' ? txt(k) : k));
   return e; }
 const out_missing = [];
-function tag(label, n){ const t = el('span', 'ex-decision ex-decision-open', ['\u{1F7E8} ✍ ' + label]);
-  t.id = 'ex-decision-' + n; return t; }
+// ⟳ 11-24: the attributes `render_decisions` wrote on its option-declaring tags, read from ITS output (argv[3]).
+const composed = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
+function tag(label, n, attrs){ const t = el('span', 'ex-decision ex-decision-open', ['\u{1F7E8} ✍ ' + label]);
+  t.id = 'ex-decision-' + n; Object.assign(t.attrs, attrs || {}); return t; }
 // ⟳ r3: an ANSWERED tag, as `render_decisions` writes it: `🟩 ✍ <name> — ANSWERED: <value>`.
 function doneTag(label, n, ans){ const t = el('span', 'ex-decision ex-decision-done', ['\u{1F7E9} ✍ ' + label + ' — ANSWERED: ' + ans]);
   t.id = 'ex-decision-' + n; return t; }
@@ -3423,14 +3489,31 @@ const out = {};
   const dp = page('http:', ds(), s10); out.s10_labels = dp.boxes.map(dp.labels);
   dp.click(dp.boxes[0], 'Yes'); await tick(); await tick(); out.s10_posts = dp.posts.length;
   const dp2 = page('http:', ds(), s10); out.s10_reload = dp2.boxes.map(dp2.labels);
+  // S11 (11-24, owner) — DECLARED choices, with the attributes the composer wrote: one button per choice (★ on
+  // the rec), Other…, no Yes/No, and the `.rec` beside it is NOT read. A click sends the choice's own text.
+  const s11 = {}, ch = () => [el('p', '', [tag('D1 — DECISION 1 of 2', 1, composed[0]), 'Pick?']),
+    el('p', 'rec', ['Recommend: yes.']),
+    el('p', '', [tag('DECISION 2 of 2', 2, composed[1]), 'Which?'])];
+  const cp = page('http:', ch(), s11); out.s11_labels = cp.boxes.map(cp.labels);
+  cp.click(cp.boxes[0], 'file'); await tick(); await tick();
+  out.s11_posts = cp.posts.map(p => p.body.text); out.s11_after = cp.labels(cp.boxes[0]);
+  cp.click(cp.boxes[0], 'change'); out.s11_changed = cp.labels(cp.boxes[0]);
+  cp.click(cp.boxes[1], 'Other…'); cp.click(cp.boxes[1], 'Cancel'); out.s11_cancel = cp.labels(cp.boxes[1]);
 })().catch(e => { out.error = String(e); }).then(() => { out.missing = out_missing; console.log(JSON.stringify(out)); });
 """
         with _tf.TemporaryDirectory() as _td:
             _src = pathlib.Path(_td) / "pick.js"; _src.write_text(DECISION_JS)
             _h = pathlib.Path(_td) / "h.js"; _h.write_text(_harness)
+            # The tags S11 clicks are the ones `render_decisions` writes — their attributes, unescaped, as a browser reads them.
+            _cm = render_decisions('<h1>x</h1><p data-decision data-decision-label="D1" data-decision-options='
+                                   '"A — accept |  B — keep &quot;old&quot; file" data-decision-rec="A —  accept">Pick?</p>'
+                                   '<p data-decision data-decision-options="x|y">Which?</p>')[0]
+            _attrs = [{k: html_unescape(v) for k, v in re.findall(r'(data-ex-[a-z]+)="([^"]*)"', m)}
+                      for m in re.findall(r'<span class="ex-decision ex-decision-open"[^>]*>', _cm)]
+            _cj = pathlib.Path(_td) / "composed.json"; _cj.write_text(_js.dumps(_attrs))
             _chk = _sp.run([_node, "--check", str(_src)], capture_output=True, text=True, timeout=60)
             case("buttons: the pick script parses (node --check)", _chk.returncode == 0)
-            _out = _sp.run([_node, str(_h), str(_src)], capture_output=True, text=True, timeout=60)
+            _out = _sp.run([_node, str(_h), str(_src), str(_cj)], capture_output=True, text=True, timeout=60)
             try:
                 _o = _js.loads(_out.stdout)
             except ValueError:
@@ -3543,6 +3626,46 @@ const out = {};
         case("buttons: the same shape with two DISTINCT questions still offers buttons and keeps 'sent' on its own card (r5)",
              _o.get("s10_labels") == [_std, _std] and _o.get("s10_posts") == 1
              and _o.get("s10_reload") == [[_sent1, "change"], _std])
+        # ⟳ 11-24 (owner): declared choices replace Yes / No; the composer's own attributes drive the card.
+        _cho = ["★ A — accept", 'B — keep "old" file', "✎ Other…"]
+        case("choices: the composer writes the validated, whitespace-folded list on the tag; the rec on the first only",
+             _attrs == [{"data-ex-options": 'A — accept|B — keep "old" file', "data-ex-rec": "A — accept"},
+                        {"data-ex-options": "x|y"}])
+        case("choices: a card that declares choices offers one button per choice, ★ on the rec, Other… — and no "
+             "Yes, No, or `.rec`-derived Recommended",
+             _o.get("s11_labels") == [_cho, ["x", "y", "✎ Other…"]])
+        case("choices: a click sends `Q: ANSWER: <the choice's text>` in the tray's three-line shape",
+             _o.get("s11_posts") == ['**D1 — DECISION 1 of 2**\n   > Pick?\n   Q: ANSWER: B — keep "old" file']
+             and _o.get("s11_after") == ['✓ sent: B — keep "old" file — the page updates when the session records it',
+                                         "change"])
+        case("choices: `change` and Other… → Cancel come back to the CHOICES, not to Yes / No",
+             _o.get("s11_changed") == _cho and _o.get("s11_cancel") == ["x", "y", "✎ Other…"])
+    # ⟳ 11-24 (owner): a malformed choice list is REFUSED at compose time, naming the decision.
+    def _cr(frag: str) -> str:
+        try:
+            render_decisions("<h1>x</h1><p>a</p>" + frag)
+        except SystemExit as e:
+            return str(e)
+        return ""
+    _bad = {"one": '<p data-decision data-decision-options="A only">Q?</p>',
+            "empty": '<p data-decision data-decision-options="A| ">Q?</p>',
+            "dup": '<p data-decision data-decision-options="A|B| A ">Q?</p>',
+            "rec": '<p data-decision data-decision-options="A|B" data-decision-rec="C">Q?</p>',
+            "orphan": '<p data-decision data-decision-rec="A">Q?</p>'}
+    _why = {k: _cr(v) for k, v in _bad.items()}
+    case("choices: fewer than two, an empty entry, a duplicate, a rec not listed, a rec with no options — each REFUSED",
+         all("CANNOT RUN" in m and "decision 1 of 1" in m and "NOT RENDERED" in m for m in _why.values())
+         and "at least two" in _why["one"] and "at least two" in _why["empty"] and "more than once" in _why["dup"]
+         and "not one of" in _why["rec"] and "nothing for it to recommend" in _why["orphan"]
+         and _cr('<p data-decision data-decision-options="A|B" data-decision-rec="B">Q?</p>') == "")
+    # IDENTITY: no options → the tag is exactly the pre-11-24 literal; with options, removing the four attributes
+    # gives byte-for-byte the page composed without them.
+    _plain = render_decisions("<h1>x</h1><p data-decision>Q?</p>")[0]
+    _with = render_decisions('<h1>x</h1><p data-decision data-decision-options="A|B" data-decision-rec="A">Q?</p>')[0]
+    case("choices: without options the tag is unchanged (identity); with them, only the declared attributes differ",
+         '<p data-decision><span class="ex-decision ex-decision-open" id="ex-decision-1">🟨 ✍ DECISION 1 of 1</span>Q?</p>'
+         in _plain and "data-ex-" not in _plain
+         and re.sub(r' data-(ex-options|ex-rec|decision-options|decision-rec)="[^"]*"', "", _with) == _plain)
     # ⟳ r4 (Codex BLOCKER — the third round on twin keys): two decisions with the same label and the same
     # question are REFUSED, naming both; a distinct label, or a different question, is accepted. The
     # question is the element's TEXT as a browser reads it: entities decoded, whitespace folded, a

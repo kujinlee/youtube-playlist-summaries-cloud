@@ -1406,5 +1406,96 @@
     "expect": [
       "decision twins r5: the scan folds U+FEFF and leaves out .askbtn/.ex-pick and <template> as the browser does, so those twins are REFUSED; a near-miss class and U+001C stay distinct"
     ]
+  },
+  {
+    "name": "decision choices: a card ignores its declared choices and offers Yes / No",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if (declared) offerChoices(tag, box, declared.split('|'));",
+        "    if (false) offerChoices(tag, box, declared.split('|'));"
+      ]
+    ],
+    "expect": [
+      "choices: a card that declares choices offers one button per choice, ★ on the rec, Other… — and no Yes, No, or `.rec`-derived Recommended"
+    ]
+  },
+  {
+    "name": "decision choices: the recommended choice is not marked",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "button((o === rec ? '★ ' : '') + o,",
+        "button(o,"
+      ]
+    ],
+    "expect": [
+      "choices: a card that declares choices offers one button per choice, ★ on the rec, Other… — and no Yes, No, or `.rec`-derived Recommended"
+    ]
+  },
+  {
+    "name": "decision choices: the tag never carries the validated list",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "id=\"{DECISION_ID.format(n=n)}\"{extra}>'",
+        "id=\"{DECISION_ID.format(n=n)}\">'"
+      ]
+    ],
+    "expect": [
+      "choices: the composer writes the validated, whitespace-folded list on the tag; the rec on the first only"
+    ]
+  },
+  {
+    "name": "decision choices: the list is not whitespace-folded",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    opts = [_js_norm(o) for o in options.split(\"|\")]\n",
+        "    opts = options.split(\"|\")\n"
+      ]
+    ],
+    "expect": [
+      "choices: the composer writes the validated, whitespace-folded list on the tag; the rec on the first only"
+    ]
+  },
+  {
+    "name": "decision choices: a duplicate choice is accepted",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if dups:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "choices: fewer than two, an empty entry, a duplicate, a rec not listed, a rec with no options — each REFUSED"
+    ]
+  },
+  {
+    "name": "decision choices: a rec that is not a listed choice is accepted",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if rec is not None and want not in opts:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "choices: fewer than two, an empty entry, a duplicate, a rec not listed, a rec with no options — each REFUSED"
+    ]
+  },
+  {
+    "name": "decision choices: a single-choice list is accepted",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if len(opts) < 2 or \"\" in opts:\n",
+        "    if \"\" in opts:\n"
+      ]
+    ],
+    "expect": [
+      "choices: fewer than two, an empty entry, a duplicate, a rec not listed, a rec with no options — each REFUSED"
+    ]
   }
 ]

@@ -21619,3 +21619,13 @@ model. Folds stay on Opus because a tie does not justify twice the price. Nothin
 Register row 23 (`docs/optimization-register.md`) gains the SAME-TASK CONTROL line; backlog #630's Status
 cell records it. Subject: node-tree S1 r2 fold from `5a9725b0`; Opus arm `0e8247e0`, Fable arm `d77ce6bd`
 (never pushed). Fix-induced: Opus 1 Low, Fable 0; test gaps: Opus 3 Low, Fable 1 Medium.
+
+## 2026-11-24
+A decision card can now offer the decision's own choices, as you asked: when a page lists them, the card
+shows one button per choice, with the recommended one starred, plus Other… for anything else, and no
+Yes / No. A card whose page lists no choices still shows Yes / No as before.
+<!--tech-->
+Backlog #727. `scripts/brief-compose.py`: `data-decision-options="A|B"` and optional `data-decision-rec`
+on the mark; `_choices` refuses fewer than two, an empty or duplicate entry, or an unlisted rec (CANNOT
+RUN); the tag carries the list as `data-ex-options` / `data-ex-rec` for `DECISION_JS`. Self-test
+255 → 261, mutations 110 → 117. `explainer-delivery.md` §3a documents it.
