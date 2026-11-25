@@ -8,8 +8,9 @@
 ⟳ **Phase 6 fold (2026-11-24):** rounds 2–4 THRASHED on how an answer identifies its ask, and the architecture review
 (`docs/reviews/architecture-review-2026-11-24-ask-store.md`) removed the class instead of gating it: **one file per ask in
 `docs/asks/`, the answer written into the same file; the old store frozen whole** (§2.3). r3's keys, K2, K3, K9, K10 and K11
-are gone (`docs/reviews/coordinator/dashboard-retire-spec-r4-phase6-coordinator.md`). Owed next: round 1 again on the
-changed sections, then the owner's approval walkthrough. Nothing here is built.
+are gone (`docs/reviews/coordinator/dashboard-retire-spec-r4-phase6-coordinator.md`). Round 6 (both halves, past the round cap) found two BLOCKERs, folded: K7 and K8 restored (the fold had dropped them) and
+a conflict marker anywhere in an ask made a PROBLEM; its MAJOR and MINORs are carried into the plan (§3)
+(`docs/reviews/coordinator/dashboard-retire-spec-r6-coordinator.md`). Owed next: the owner's approval walkthrough. Nothing here is built.
 
 Goal thread: `dashboard-decisions` (`docs/goal-threads.md`). Why this anchor: the page being retired and the
 goal tree that keeps its asks are both pages of `status-visibility`, and the two specs this one amends
@@ -133,7 +134,7 @@ an ask inside one shared, ordered file (review §2), and (b) has neither the ref
 |---|---|---|
 | Where an ask lives | one file per ask, `docs/asks/YYYY-MM-DD-<slug>.md` (§2.3) | new directory; nothing else writes there (A1 refuses any other file shape) |
 | How an answer names its ask | it does not: the answer is written INTO the ask's file, under `## Answer` | no reference exists to resolve, so K2, K3 and K11 have no subject (§3 *Deleted*) |
-| An ask's identity | the file's stem | allocated by the tree: two branches adding one path conflict at merge (review §3 (b), measured `AA`); no id, no key, no position |
+| An ask's identity | the file's stem | allocated by the tree: git cannot hold two distinct files at one path — two branches adding one path with DIFFERENT content conflict at merge (`AA`), while IDENTICAL additions coalesce into one file, which is one ask (both measured, review §3 (b); r6 Codex MINOR); no id, no key, no position |
 | Which asks are open | a file with no `## Answer` heading outside a code fence | `read_asks` in `scripts/check-ask-store.py` (the renamed gate file), the ONE directory reader (§2.3) |
 | The old asks | `docs/dashboard-entries.md`, kept whole and FROZEN — 0 open asks, held by C1 at the cutover and L1 after it (§2.3b) | no reader parses it after S2: a frozen file with zero open asks contributes a constant empty list |
 | Showing the owner what waits on them | `scripts/goal-tree.py` NEEDS YOU | after S3 no other page lists asks |
@@ -180,8 +181,11 @@ each OPEN ask (stem, question, body) plus a PROBLEM for anything it cannot read 
 NOT READ — never "nothing waits on you" (K5) — while the readable asks are still returned, as the goal tree does for
 the store today (`scripts/goal-tree.py:1317`). PROBLEM cases, each a plan case (review §3 *What can still go wrong*):
 a missing directory; a file whose name fails the rule; an empty file or one with no `# ` first line; a
-non-regular entry (symlink, FIFO, subdirectory); a file over the per-file cap. Committed conflict markers fail the
-first-line rule (`<<<<<<<`) **[I]**.
+non-regular entry (symlink, FIFO, subdirectory); a file over the per-file cap; a file holding a git conflict marker ANYWHERE — a line beginning `<<<<<<<` or
+`>>>>>>>`, inside a code fence or not (r6 Codex BLOCKER: a conflict after a valid `# ` first line, with `## Answer` in a
+side, otherwise reads as ANSWERED and drops from NEEDS YOU, and F1 passes it because the base text survives as a
+prefix — measured by Codex on a scratch shape). Git writes both markers in every conflict hunk, so `=======`, a legal
+setext underline, is not needed to detect one.
 
 **Bounded per-file read** (review §3, compaction-state's FIFO history): `read_asks` opens each entry the way
 `_open_regular` does today (`scripts/compaction-state.py:343`) — `O_NONBLOCK`, `fstat` on the descriptor, regular
@@ -209,7 +213,7 @@ writing an entry.
 | S1 merged, S2 not | EITHER: the old store (the per-PR rule still owes an entry) or a file in `docs/asks/` | the goal tree reads BOTH sources (S1) | A1 / F1 on the new files; today's gates on the old store |
 | S2's own merge | — | S2 drops the old-store reader | **C1**: S2's CI runs `gen-dashboard.py --assert-no-open-asks` — the real `unresolved(parse_entries(store))` over the store at HEAD — GitHub's merge ref, master + S2 — and FAILS if it is not empty. An ask still open there is re-asked as a file (and answered in the old store) before S2 can merge |
 | after S2 | `docs/asks/` only | the goal tree reads `docs/asks/` only | **L1**: any change to `docs/dashboard-entries.md` makes the `ask store` step FAIL on that PR — whatever workflow the branch was cut under, since a pull request's CI runs the merge commit's workflow **[D]** |
-| the residual race: a PR whose last CI ran BEFORE S2 merged (old workflow, green, no re-run) adds an entry and merges after S2 | its entry lands in the frozen file | nothing — so it must not stay silent | **L1 on master**: master's own next CI run, and every later PR's, FAILS on the digest. L1's message prints the bytes that differ from the pinned file and the restore command (`git checkout <S2 merge commit> -- docs/dashboard-entries.md`); the repair PR restores the file and re-asks any question in the stray entry as an ask file. Loud on every PR until repaired — never a quiet loss |
+| the residual race: a PR whose last CI ran BEFORE S2 merged (old workflow, green, no re-run) adds an entry and merges after S2 | its entry lands in the frozen file | nothing — so it must not stay silent | **L1 on master**: master's own next CI run, and every later PR's, FAILS on the digest. L1's message prints the bytes that differ from the pinned file and the restore command (`git checkout <S2 merge commit> -- docs/dashboard-entries.md`); the repair PR restores the file and re-asks any question in the stray entry as an ask file. Loud on every PR until repaired — never a quiet loss. ⚠ r6 Claude M1: this window is the normal case, not a residual one, and the repair cannot be built from a digest alone — carried, with its fix, in §3 *Carried into the plan* |
 
 **The pin.** L1 compares the store's SHA-256 with `LEGACY_STORE_SHA256`, a constant in `check-ask-store.py`, written
 ONCE in S2 after S2's header edit and after S2 last merges master in. It is never re-pinned: the repair for a
@@ -287,13 +291,15 @@ stated bound: A1 does not refuse a decision-less ask, by the owner's #81 ruling.
 
 | # | Gate | FAILS IF: |
 |---|---|---|
-| A1 | **new** (replaces K1) — every file in `docs/asks/` is a readable ask | any entry of `docs/asks/` at HEAD is a PROBLEM to `read_asks` (§2.3): its name fails the name rule (the one exempt name is `.gitkeep`), it has no `# <question>` first line, it is empty, not a regular file, or over `MAX_ASK_BYTES`. Reads HEAD's tree only — no base, no history — so CI's merge ref is its right subject. A committed conflict-marker file fails it (first line `<<<<<<<`) **[I]**. Not refused, by the owner's #81 ruling (§2.4): an ask with no usable `**Decide:**` block — it is shown with its warning instead. Cases: each refused shape; a valid open ask; a valid answered ask; a `## Answer` inside a fence (valid, OPEN) |
+| A1 | **new** (replaces K1) — every file in `docs/asks/` is a readable ask | any entry of `docs/asks/` at HEAD is a PROBLEM to `read_asks` (§2.3): its name fails the name rule (the one exempt name is `.gitkeep`), it has no `# <question>` first line, it is empty, not a regular file, or over `MAX_ASK_BYTES`. Reads HEAD's tree only — no base, no history — so CI's merge ref is its right subject. A conflict marker on ANY line fails it, not only the first (r6 Codex BLOCKER; §2.3) Not refused, by the owner's #81 ruling (§2.4): an ask with no usable `**Decide:**` block — it is shown with its warning instead. Cases: each refused shape; a valid open ask; a valid answered ask; a `## Answer` inside a fence (valid, OPEN); a valid `# ` first line followed by two conflicting `## Answer` sides between `<<<<<<<` and `>>>>>>>` — a PROBLEM, A1 red, and the goal tree reports the source NOT READ (K5), never the ask answered |
 | F1 | **new**, optional — an existing ask only grows | for a file in `docs/asks/` present at the merge base, the base text is not a prefix of HEAD's text, or the file is gone at HEAD. MEASURED by the review on six cases (§3 (b)): gaining an answer and appending a superseding note pass; an edited question, a rewritten answer and a deletion are refused. It also refuses an `AA` conflict resolved by taking one side, since the other side's file was on master **[I]**. ⛔ **Pre-committed retreat:** F1 protects the RECORD of one ask and no other ask, because no ask depends on another file. If a review round finds a fix-induced defect in F1, F1 is DELETED and an ask's text becomes editable (git history keeps the original) — it is not patched. It must not become the next K9 |
 | L1 | **new** — the old store is frozen | the SHA-256 of `docs/dashboard-entries.md` at HEAD differs from `LEGACY_STORE_SHA256` (§2.3b), or the file is missing. Mutated by "append one entry" and "edit one byte of an old entry" — each must go red; a case that the message prints the differing text (so a stray ask is visible) and the restore command |
 | C1 | **new, S2 only** — the cutover leaves no ask behind | `unresolved(parse_entries(store))` over the store at S2's HEAD is not empty (`gen-dashboard.py --assert-no-open-asks`, run in the `ask store` step from S2 until S3 deletes the generator; after S3, L1 holds the bytes C1 passed on). Fixture: a store with one open ask — refused, naming its id |
 | K4 | the goal tree reads the asks through the one reader | `needs_from_asks` returns no item for a fixture `docs/asks/` holding one open ask; or its call to `read_asks` is severed and the goal tree's self-test stays green. In S1 the same holds for the old store's reader, which the goal tree still calls until S2 |
 | K5 | an unreadable source is never an empty NEEDS YOU | `docs/asks/` is missing or holds a PROBLEM entry (§2.3) and the goal tree prints "nothing waits on you" (today: `scripts/goal-tree.py:1317` reports the store NOT READ; the new source keeps that behaviour) |
 | K6 | the compaction snapshot reports the open-ask count | `pending_asks` returns a count other than the fixture's, or returns 0 when `read_asks` cannot be loaded or reports a PROBLEM (today it returns CANNOT RUN, `scripts/compaction-state.py:485`); or a FIFO ask file blocks it past its time bound |
+| K7 | `NO-REVIEW:` is still parsed by one definition | `check-review-recorded.py --self-test` or `check-merge-ready.py --self-test` goes green with `exemption_reason` replaced by a stub; or a fenced `NO-REVIEW:` line is granted |
+| K8 | nothing still EXECUTES or LINKS a retired thing | any of these, anywhere in the tree, names a retired path (`gen-dashboard.py`, `check-dashboard-entry.py` — retired by S2's rename to `check-ask-store.py`, `regen-dashboard.sh`, the `dashboard` skill — renamed `needs-you` in S2) or the `/dashboard` route: a file load (`with_name(…)`, `_sibling(…)`, `_load(…)`, `spec_from_file_location(…)`, a `ROOT / "scripts" / …` path literal); a hook `command` in `.claude/settings.json`; a `run:` line in `.github/workflows/*.yml`; a `"scripts/<retired>.py"` string literal inside a list or tuple that is an argv — passed to `subprocess.*` or held in a command table such as `check-merge-ready.py`'s gate list (r3 Claude m2; live case `scripts/check-merge-ready.py:2198`, `["python3", "scripts/check-dashboard-entry.py", …]`, which S2 repoints by name and K8 then guards); a `"file"` field in `scripts/mutations/*.json`; a key of `REGENERABLE`, `PAGES` or `PAGE_SOURCES`; a `key_link("dashboard", …)` call or an `href` to `/dashboard` emitted by a page generator. **Bound on the href category** (r3 Claude m2): K8 is a static scan and sees a LITERAL `/dashboard` (or `/dashboard#`) string in a generator; it does not see an href assembled at run time (`f"/{name}"`). The one builder that assembles page links by name, `key_link`, is covered by its own category; any other runtime-built link to the route lands on the archive record page S3 serves at `/dashboard`, not a 404. The ONE allowed `/dashboard` hit is its `RETIRED_FILES` row (`scripts/explainer-serve.py:277`). ⚠ **Not a name grep** (r1 Claude M2, Codex MINOR): the bare-name pattern hit 74 files outside the frozen directories, most of them history the spec keeps, so a grep would fail on day one or grow an exemption list that checks nothing. Prose and comments that mention a retired name are history and are not in K8's scope — K8 has no exemption list to grow. **Proof the scan sees what it claims** (r2 Codex MINOR): its `--self-test` seeds, in a scratch tree, one retired reference per covered category above, the argv category seeded from `check-merge-ready.py:2198`'s shape — each must FAIL the scan, each case named for its category — and two that must PASS: a prose/comment mention of `gen-dashboard.py` in a script and a dated doc, and the permitted `RETIRED_FILES` row. A scan that finds nothing fails the seeded cases |
 
 ⚠ **No live source can prove K4 or K6.** The old store holds 0 open asks and `docs/asks/` holds none yet, so "the
 same answer before and after" is 0 = 0 whether or not the reader works. Both are proven on a fixture with open
@@ -315,10 +321,23 @@ second invocation WITHOUT `--base` on push events, running A1 and L1 only, so th
 | K3 | the store takes asks and answers only; a resolve targets an ask | the directory holds ask files only (A1); an answer cannot exist apart from its ask |
 | K9 | the store is append-only over entries — the `rstrip` rule, the unclosed-fence diagnosis | no shared file is appended to; a fence left open in one ask cannot swallow another ask. L1 freezes the old file outright |
 | K10 | (withdrawn in r3) the history walk | — |
-| K11 | an ask is named by its key — all four clauses | the path is the key; git refuses a duplicate path at merge (review §3 (b), measured `AA` in both orders) |
-| the key grammar | `[needs-you: <key>]`, `KEY`, `key` / `ref` beside `id`, `dup_key`, `unapplied`, the fail-safe duplicate read, the positional resolve permitted for a duplicated key | no duplicate can be merged, and no answer names anything |
+| K11 | an ask is named by its key — all four clauses | the path is the key; git cannot hold two distinct files at one path — differing additions conflict (`AA`, measured in both orders), identical ones coalesce into one ask (review §3 (b)) |
+| the key grammar | `[needs-you: <key>]`, `KEY`, `key` / `ref` beside `id`, `dup_key`, `unapplied`, the fail-safe duplicate read, the positional resolve permitted for a duplicated key | no two distinct asks can share a path, and no answer names anything |
 | the S2 closing entry | `[resolved: 2026-08-31/5] [resolved: 2026-09-15/10]` | the old store is not written again (§2.3b) |
 | the skill's "one id per bracket" trap | `[resolved: a, b]` parses as one id | no brackets |
+
+### Carried into the plan (round cap, r6)
+
+Round 6 is past the round cap (`docs/review-method.md` §0 Q4c), so these findings do not change the mechanism here.
+Each is carried with its proposed fix, and **the plan must address every row** — build the fix, or refute it with
+a measurement — before S1 or S2 (as the row says) is built. Source: `docs/reviews/claude/dashboard-retire-spec-r6-claude.md`.
+
+| Finding | What is wrong | Proposed fix the plan must address | Slice |
+|---|---|---|---|
+| r6 Claude M1 — L1's cutover window is the normal case | every PR open when S2 merges carries an entry (R1) and green pre-S2 CI, so each one that merges after S2 turns master red; the pin can be stale at S2's own squash, because a PR merged between S2's last master-merge and its squash adds an entry C1 never saw; a SHA-256 alone cannot print the differing bytes, and `git checkout <S2 merge commit>` cannot be hardcoded and restores the wrong bytes in the stale-pin case | (1) pin the git BLOB id as well — `LEGACY_STORE_BLOB`, `git hash-object` of the frozen bytes, written once in S2 — so L1 prints `git diff <BLOB> <HEAD's blob>` and the restore command `git cat-file blob <BLOB> > docs/dashboard-entries.md`, correct whatever commit S2 lands as; (2) S2's merge step checks master's store is unchanged since the pin (`git diff <pin-base> origin/master -- docs/dashboard-entries.md` empty), else re-merge master and re-pin; (3) a post-merge cutover step merges master into every PR still open, so its CI re-runs under L1 and it drops its entry. §2.3b's "residual race" row is restated accordingly | S2 |
+| r6 Claude m1 — `.gitkeep` and F1 | F1 covers every file present at the base, so deleting `.gitkeep` when the first ask lands is refused; an empty base is a prefix of anything, so `.gitkeep` can grow text A1 never reads | F1 applies only to files matching the name rule; A1 requires `.gitkeep` to be empty | S1 |
+| r6 Claude m2 — the `## Answer` match is not exact | trailing text (`## Answer — A`), leading space and a four-space indented block are unspecified; a loose match closes an ask silently | the rule is `line.rstrip() == "## Answer"` at column 0, outside a fence; cases `## Answer — A` (stays OPEN) and `    ## Answer` (stays OPEN); the skill teaches the exact line | S1 |
+| r6 Claude m3 — A1 "HEAD's tree" vs `read_asks(dir)` | `read_asks` lists the filesystem; locally an untracked scratch file fails A1 and an uncommitted deletion passes it | either A1 is stated to read the working tree, or A1 lists `git ls-tree HEAD docs/asks/` and passes `read_asks` those names; the plan picks one and states it in A1's row | S1 |
 
 ### Doc rules that say "every PR adds an entry"
 
@@ -489,6 +508,7 @@ this still meets the decision's intent (the asks keep feeding NEEDS YOU), rather
 | `check-doc-citations.py` refuses an out-of-range citation in an ask file; `check-reference-namespace.py` passes a bare `#623` there | MEASURED | the same clone, a planted-defect commit (§2.3c) |
 | `check-plan-leak.py` over an ask file | NOT RUN | no plan text in the scratch clone; CANNOT RUN is not a pass |
 | That the goal tree's diff stays stable when `ref` is a file stem | INFERRED | `(source, ref)` at `scripts/goal-tree.py:1165`; the plan's case proves it |
+| A conflict after a valid first line, with `## Answer` in a side, reads as ANSWERED to the §2.3 rule and passes F1's prefix test, before r6's fold | MEASURED | Codex r6, a scratch check of both predicates |
 | F1 catching an `AA` resolved by taking one side | INFERRED | the other side's file is on master at the base; not run |
 
 ## Out of scope
