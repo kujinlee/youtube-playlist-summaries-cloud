@@ -1578,7 +1578,7 @@ EXPECTED_MUTATIONS = {
     # port_from's ASCII shape and caught int() (m4).
     # ⟳ 2026-11-13, backlog #625: 112 -> 116 — the Ask panel reaching the page, /_rev folding the questions in, and
     # a fault in either SAID (the panel on the page, the revision as `:ask-failed`).
-    "scripts/explainer-serve.py": 123,
+    "scripts/explainer-serve.py": 126,  # 123 -> 126 (dashboard-retire S1 Task 5: a directory source reads only its own mtime, any directory is accepted, the stale reply names the directory)
     # ⟳ 2026-11-13, backlog #625: the Ask answerer, pinned in the commit that creates it. One entry per rule a
     # reader relies on: the claim marker, the caps (both directions of each), Read as the only tool, the suite
     # never starting a real binary, escaping, where an answer may land, what may be replaced, an instruction
@@ -2293,7 +2293,7 @@ EXPECTED_MUTATIONS = {
     # the fetch target, the clone, a run's private dir, the tree lock, the serve copy, the shared check itself, and
     # Codex's own mutant (serve_copy_path answering an outside dir), killed by an identity case.
     # ⟳ hse slice C redesign r1 (Xm3/Cm3): 72 -> 73 — the crash guard printing a second, unattributable `[FAIL]` name.
-    "scripts/regen-pages.py": 73,
+    "scripts/regen-pages.py": 74,  # 73 -> 74 (dashboard-retire S1 Task 5: an ask edit rebuilds nothing)
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than

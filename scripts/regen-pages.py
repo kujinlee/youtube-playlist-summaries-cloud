@@ -123,6 +123,7 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent
 ROOT = SCRIPTS.parent
 TIMEOUT = 120          # seconds, per generator; the slowest measured 2026-10-28 was gen-backlog-page, 17s
 THREADS_REL = "docs/goal-threads.md"
+ASKS_REL = "docs/asks"
 REMOTE, BRANCH = "origin", "master"
 PRIVATE_PREFIX = "regen-pages-"     # each run's private temp directory (backlog #408); its tree is `<dir>/tree`
 LOCK_REL = ".claude/regen-pages.lock"   # git-ignored, in the MAIN checkout
@@ -593,8 +594,8 @@ def registered_events(settings: object) -> list[str]:
 
 def pages_for(payload: object, pages: dict[str, str]) -> list[str]:
     """PURE. Which pages a PostToolUse or PostToolUseFailure payload asks to rebuild: all of them after a
-    command containing `gh pr merge`, the goal tree alone after an edit of the threads file, nothing
-    otherwise (including a payload that is not one, or one with no `tool_input.command`)."""
+    command containing `gh pr merge`, the goal tree alone after an edit of the threads file or of a file under
+    `docs/asks/`, nothing otherwise (including a payload that is not one, or one with no `tool_input.command`)."""
     if not isinstance(payload, dict):
         return []
     ti = payload.get("tool_input")
@@ -603,6 +604,9 @@ def pages_for(payload: object, pages: dict[str, str]) -> list[str]:
     if isinstance(cmd, str) and may_merge(cmd):
         return sorted(pages)
     if isinstance(fp, str) and (fp == THREADS_REL or fp.endswith("/" + THREADS_REL)):
+        return [p for p in ("goal-tree",) if p in pages]
+    # dashboard-retire S1 Task 5: an ask file feeds the goal tree's NEEDS YOU. The directory, by its whole name.
+    if isinstance(fp, str) and (fp.startswith(ASKS_REL + "/") or ("/" + ASKS_REL + "/") in fp):
         return [p for p in ("goal-tree",) if p in pages]
     return []
 
@@ -955,6 +959,15 @@ def _self_test_cases() -> int:
     case("⛔ another file named goal-threads.md elsewhere does not",
          pages_for({"tool_input": {"file_path": "/x/mydocs/goal-threads.md"}}, table), [])
     case("⛔ a payload that is not a dict rebuilds nothing", pages_for(["gh pr merge"], table), [])
+    # 5.6–5.7 (dashboard-retire S1 Task 5): an ask file is a goal-tree source (its NEEDS YOU), so its edit
+    # rebuilds the goal tree; a path that only CONTAINS the directory's name is not one.
+    case("5.6 an edit under docs/asks rebuilds the goal tree",
+         [pages_for({"tool_input": {"file_path": "/x/y/docs/asks/2026-11-25-a.md"}}, table),
+          pages_for({"tool_input": {"file_path": "docs/asks/2026-11-25-a.md"}}, table)],
+         [["goal-tree"], ["goal-tree"]])
+    case("5.7 ⛔ a path that merely contains docs/asks does not",
+         [pages_for({"tool_input": {"file_path": "/x/notes/docs/asks-old/x.md"}}, table),
+          pages_for({"tool_input": {"file_path": "/x/mydocs/asks/x.md"}}, table)], [[], []])
     case("a threads edit rebuilds nothing when no goal-tree page is registered",
          pages_for({"tool_input": {"file_path": "docs/goal-threads.md"}}, {"dashboard": "d.py"}), [])
     case("⛔ a tool_input that is not a dict rebuilds nothing",
