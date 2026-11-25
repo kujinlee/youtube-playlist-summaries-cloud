@@ -502,8 +502,11 @@ def _self_test_body() -> int:
     # `re.compile` caches by pattern text, so two equal literals ARE one object.)
     case("#731 identity: the literal copy of master's reader matches the tokenizer's pattern and window",
          (_MASTER_CLAIM.pattern, _MASTER_HEAD), (_ca.ANCHOR_CLAIM.pattern, _ca.CLAIM_HEAD_LINES))
+    # r1 P (declined): a PROSE example is a claim too, so its heads are in the grid — master refused
+    # them as well.
     _forms = {"bare": "**Anchor:** `{}`", "quote": "> **Anchor:** `{}`",
-              "well-formed": "> **Anchor:** `{}` — **ADR:** none"}
+              "well-formed": "> **Anchor:** `{}` — **ADR:** none",
+              "prose": "Example: **Anchor:** `{}`"}
     _heads = []
     for _fa, _armed_line in _forms.items():
         for _at in (3, 12, 19):
@@ -526,9 +529,73 @@ def _self_test_body() -> int:
         _master_rc = 1 if _master_slug(_text) == "alpha" else 0
         if (_master_rc == 1 and _prc != 1) or (len(_placed) == 1 and _prc != _master_rc):
             _disagree.append((_name, _master_rc, _prc))
-    case("#731 property: over 63 generated heads, master's refusal is always a refusal, and a single "
+    case("#731 property: over 108 generated heads, master's refusal is always a refusal, and a single "
          "claim agrees exactly",
-         (len(_heads), _disagree), (63, []))
+         (len(_heads), _disagree), (108, []))
+
+    def _run(r: Path) -> tuple[int, str]:
+        import contextlib as _cl
+        import io as _io
+        out = _io.StringIO()
+        with _cl.redirect_stdout(out):
+            rc = main([], repo=r)
+        return rc, out.getvalue()
+
+    # ⛔ r1 P, DECLINED and PINNED: a prose example naming an armed slug above a real header naming an
+    # exempt one, no Status. The reader before slice S2 (`68529dd9`, the reference copied above)
+    # refused this input (rc 1, measured), so refusing it is the long-standing rule, not a new
+    # refusal; only PR #637 (`e96c4775`) passed it. The author's cost is one Status line.
+    _p_text = ("# X\nExample: **Anchor:** `alpha`\n> **Anchor:** `dev-speed` — **ADR:** none\n")
+    with _tf.TemporaryDirectory() as _gpp:
+        _ppr = _g4_world(_gpp, _live, "alpha")
+        (_ppr / "docs" / "superpowers" / "specs" / "2026-01-02-p.md").write_text(_p_text)
+        _p_rc, _p_out = _run(_ppr)
+    case("r1 P pinned: a prose example naming an armed slug is REFUSED, as the pre-S2 reader refused it",
+         (_master_slug(_p_text), _p_rc, "`alpha` is armed" in _p_out), ("alpha", 1, True))
+    # ⛔ The Codex note on the property case: master's reader split on `splitlines()`, the tokenizer
+    # on "\n". `splitlines()` also breaks at \x0c, \x1c-\x1e, \x85,  ,   (and \r alone), so
+    # its lines are FINER: master's 18-line window is a prefix of the tokenizer's, and every claim
+    # master saw the tokenizer sees. The difference only ever adds a refusal. PINNED, both ways: a
+    # claim past master's window but inside the tokenizer's is refused; one inside both is refused.
+    _ff_far = "# T\n" + "x\x0cy\n" * 16 + "**Anchor:** `alpha`\n"
+    _ff_near = "# T\n" + "x\x0cy\n" * 4 + "**Anchor:** `alpha`\n"
+    _ff_got = []
+    for _ff in (_ff_far, _ff_near):
+        with _tf.TemporaryDirectory() as _gff:
+            _ffr = _g4_world(_gff, _live, "alpha")
+            (_ffr / "docs" / "superpowers" / "specs" / "2026-01-02-ff.md").write_text(_ff)
+            _ff_got.append((_master_slug(_ff), _run(_ffr)[0]))
+    case("splitlines vs split('\\n') pinned: the tokenizer's window CONTAINS master's — only stricter",
+         _ff_got, [(None, 1), ("alpha", 1)])
+    # ⛔ r1 L: an ADR's header feeds the misnamed-slug check (and the armed set), as on master. The
+    # branch had dropped ADRs: an ADR naming `nonexistent` exited 0 here and 1 on master.
+    with _tf.TemporaryDirectory() as _gl, _tf.TemporaryDirectory() as _gl2:
+        _lr = _g4_world(_gl, _live, "alpha")
+        (_lr / "docs" / "adr").mkdir()
+        (_lr / "docs" / "adr" / "0001-x.md").write_text(
+            "# 1. X\n\n> **Anchor:** `nonexistent` — **ADR:** none\n\n## Context\n")
+        _l_rc, _l_out = _run(_lr)
+        _lr2 = _g4_world(_gl2, _live, "alpha")
+        (_lr2 / "docs" / "adr").mkdir()
+        (_lr2 / "docs" / "adr" / "0001-x.md").write_text(
+            "# 1. X\n\n> **Anchor:** `beta` — **ADR:** none\n\n## Context\n")
+        _l2_rc, _l2_out = _run(_lr2)
+    case("r1 L: an ADR whose header names no node FAILS the misnamed-slug check",
+         (_l_rc, "docs/adr/0001-x.md: `nonexistent` is not a node" in _l_out), (1, True))
+    case("r1 L: an ADR's header arms its node, as on master",
+         (_l2_rc, "armed anchors: alpha, beta" in _l2_out), (0, True))
+    # ⛔ r1 S: a loose claim naming a PROPOSED node does not arm it. The armed set is filtered with the
+    # SETTLED slugs; `current_slugs` includes proposed nodes, so with it (or no filter) `fresh` was
+    # armed and this document, whose real header names the exempt `dev-speed`, was refused.
+    with _tf.TemporaryDirectory() as _gsp:
+        _sr = _g4_world(_gsp, _live, "alpha")
+        with (_sr / "docs" / "features.md").open("a") as _fh:
+            _fh.write("### fresh\nfor: A fresh name.\nareas: (fresh)\nproposed: 2026-11-23 10:00\n")
+        (_sr / "docs" / "superpowers" / "specs" / "2026-01-02-s.md").write_text(
+            "# S\n\n> **Anchor:** `dev-speed` — **ADR:** none\n\nsee **Anchor:** `fresh`\n")
+        _s_rc, _s_out = _run(_sr)
+    case("r1 S: a loose claim naming a PROPOSED node does not arm it",
+         (_s_rc, "armed anchors: alpha" in _s_out, "fresh" in _s_out), (0, True, False))
     case("armed: two trees give two sets", _two,
          ((0, ["armed anchors: alpha"]), (0, ["armed anchors: beta"])))
     case("armed: a stale exemption fails",
