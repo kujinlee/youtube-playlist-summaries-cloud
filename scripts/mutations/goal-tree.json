@@ -6797,5 +6797,70 @@
     "expect": [
       "⭐ backlog #689 r3 M1: a leaf naming SEVERAL rows takes a list-tail subject as its merge only when EVERY live row is ✅ in its Status cell — one ✅ of two reads queued, both ✅ read merged with the PR's time"
     ]
+  },
+  {
+    "name": "the goal tree's call to read_asks is severed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    asks, problems = gate.read_asks(directory)\n",
+        "    asks, problems = [], []\n"
+      ]
+    ],
+    "expect": [
+      "3.1 K4: an open ask file is a NEEDS YOU item"
+    ]
+  },
+  {
+    "name": "the goal tree's call to the old store's reader is severed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(\"dashboard\", DASHBOARD_REL, needs_from_dashboard),",
+        "(\"dashboard\", DASHBOARD_REL, lambda _t: ([], [])),"
+      ]
+    ],
+    "expect": [
+      "3.9 the old store's asks still show"
+    ]
+  },
+  {
+    "name": "an asks problem is dropped",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            errors[\"asks\"] = \"; \".join(problems) + \" — NOT READ\"",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "3.6 K5: a PROBLEM entry marks the asks source NOT READ"
+    ]
+  },
+  {
+    "name": "a missing decision drops the ask",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        it[\"decision_warning\"] = \"; \".join(warn) if warn else None\n        items.append(it)\n",
+        "        it[\"decision_warning\"] = \"; \".join(warn) if warn else None\n        if not warn:\n            items.append(it)\n"
+      ]
+    ],
+    "expect": [
+      "3.3 an ask with no decision block is KEPT"
+    ]
+  },
+  {
+    "name": "the asks source leaves NEEDS_SOURCES",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "NEEDS_SOURCES = (\"dashboard\", \"asks\", \"ledger\", \"backlog\")",
+        "NEEDS_SOURCES = (\"dashboard\", \"ledger\", \"backlog\")"
+      ]
+    ],
+    "expect": [
+      "3.5 K5: a missing docs/asks is never"
+    ]
   }
 ]
