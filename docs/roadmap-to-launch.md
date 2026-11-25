@@ -1421,7 +1421,7 @@ corrections slice above.
 | `scripts/check-plan-code.py` | **`--mutate .` in CI since 2026-08-29** (backlog #70): mutates the DELIVERED scripts from `scripts/mutations/*.json`, over a green control, refusing a shrunk or duplicated manifest. The plan-assembling mode (`--compare`, `--verify-evidence`) still exists but **CI no longer runs it**. For the case count run `--self-test` — do not restate it here; this row has been stale twice |
 | `docs/reviews/plan-project-dashboard-r{1,2,3,4}-*.md` | rounds 1–4, **NOT CONVERGED, every half** |
 
-- [ ] **⟳ 2026-11-25 — THE PAGE AND THE PER-PR ENTRY RULE RETIRE (backlog #731; owner 2026-11-24 09:57, selection
+- [ ] **⟳ 2026-11-25 — THE PAGE AND THE PER-PR ENTRY RULE RETIRE (backlog #736; owner 2026-11-24 09:57, selection
       card A).** Spec `docs/superpowers/specs/2026-11-24-dashboard-retire-design.md` (PR #633), plan
       `docs/superpowers/plans/2026-11-24-dashboard-retire.md` (PR #636), three slices. **S1 built** (branch
       `dashboard-retire-s1`): asks move to `docs/asks/`, read by one reader, checked by the PR gate and shown on the

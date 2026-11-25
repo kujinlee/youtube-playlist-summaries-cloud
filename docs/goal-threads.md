@@ -117,7 +117,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · PR #430 · the memory-index budget warning runs when the index is edited (the owner's L3)
 - fix · PR #431 · the memory index is trimmed and sixteen unbacked memory files are committed (the owner's L2)
 - bookkeeping · PR #426 · backlog #388, backlog #389 and backlog #390 filed
-- fix · backlog #731 · the dashboard page and its per-PR entry rule retire; asks move to docs/asks/, which the goal tree's NEEDS YOU reads (slice 1 of 3: the reader, the PR gate, the goal tree)
+- fix · backlog #736 · the dashboard page and its per-PR entry rule retire; asks move to docs/asks/, which the goal tree's NEEDS YOU reads (slice 1 of 3: the reader, the PR gate, the goal tree)
 
 ## GOAL token-usage-first
 > 2026-10-30 18:50 "For now, let's enhance token usage features first. As when we hit the limit, other optimization doesn't matter."

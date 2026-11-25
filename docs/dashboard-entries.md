@@ -21645,7 +21645,7 @@ listed under the question, plus a warning if the question is written so that it 
 dashboard asks still show there too. Nothing has been removed yet: the page and the rule that every PR adds an
 entry here stay until the next two steps. Nothing new is waiting for you.
 <!--tech-->
-Backlog #731 S1, branch `dashboard-retire-s1`, plan `docs/superpowers/plans/2026-11-24-dashboard-retire.md`
+Backlog #736 S1, branch `dashboard-retire-s1`, plan `docs/superpowers/plans/2026-11-24-dashboard-retire.md`
 Tasks 1–6. `scripts/check-dashboard-entry.py`: `read_asks`, the one reader of `docs/asks/`, and the PR gate's
 A1 (grammar) and F1 (decisions) checks; `docs/asks/.gitkeep`. Readers: `scripts/goal-tree.py`
 (`needs_from_asks`, a fourth NEEDS YOU source), `scripts/compaction-state.py` (`pending_asks` counts both),
