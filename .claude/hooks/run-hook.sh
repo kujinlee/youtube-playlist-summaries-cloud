@@ -52,7 +52,21 @@ case $name in
   */*) echo "run-hook: refused hook name '$name' — a name, not a path" >&2; exit 2;;
   .*) echo "run-hook: refused hook name '$name' — it starts with '.'" >&2; exit 2;;
 esac
-dir=$(pwd -P && echo .) || { echo "run-hook: NOT RUN $name — cannot read the cwd" >&2; exit 1; }
+# A usage hook's NOT RUN (backlog #513 r1 C3; why, below the walk): a fixed JSON line on stdout, exit 0. Defined
+# before the walk so its two exits (an unreadable cwd; no checkout found) speak on that channel too (backlog #688 X2).
+usage_not_run() {
+  echo "run-hook: NOT RUN $name — $1" >&2
+  if [ "$name" = usage-pace-prompt.sh ]; then
+    printf '%s\n' '{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "⚠ usage pace NOT RUN — run-hook.sh could not locate this hook in the main checkout (backlog #513: the copy in a worktree is not trusted; the reason is on stderr). Treat the usage verdict as NOT RUN; unknown is not a stop."}}'
+  else
+    printf '%s\n' '{"systemMessage": "⚠ usage pace NOT RUN — run-hook.sh could not locate this hook in the main checkout (backlog #513: the copy in a worktree is not trusted; the reason is on stderr). Treat the usage verdict as NOT RUN; unknown is not a stop."}'
+  fi
+  exit 0
+}
+dir=$(pwd -P && echo .) || {
+  case $name in usage-pace-*) usage_not_run "cannot read the cwd (backlog #688)";; esac
+  echo "run-hook: NOT RUN $name — cannot read the cwd" >&2; exit 1
+}
 dir=${dir%.}
 dir=${dir%$'\n'}
 root=
@@ -63,6 +77,7 @@ while :; do
 done
 if [ -z "$root" ]; then root=${CLAUDE_PROJECT_DIR:-}; fi
 if [ -z "$root" ]; then
+  case $name in usage-pace-*) usage_not_run "no checkout contains $(pwd -P) and CLAUDE_PROJECT_DIR is unset (backlog #688)";; esac
   echo "run-hook: NOT RUN $name — no checkout contains $(pwd -P) and CLAUDE_PROJECT_DIR is unset" >&2
   exit 1
 fi
@@ -86,15 +101,6 @@ fi
 # ⚠ BOUNDS, stated (r3 M2): a layout git reads as a STANDALONE repository (a worktree's gitdir hand-given its own
 # objects/, r3 B2) runs that checkout's own copy, because that is git's answer; a symlinked or misnamed `.git` makes
 # its parent "main" exactly as git does (r1 C2); git's per-user config (~/.gitconfig) is still read.
-usage_not_run() {
-  echo "run-hook: NOT RUN $name — $1" >&2
-  if [ "$name" = usage-pace-prompt.sh ]; then
-    printf '%s\n' '{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "⚠ usage pace NOT RUN — run-hook.sh could not locate this hook in the main checkout (backlog #513: the copy in a worktree is not trusted; the reason is on stderr). Treat the usage verdict as NOT RUN; unknown is not a stop."}}'
-  else
-    printf '%s\n' '{"systemMessage": "⚠ usage pace NOT RUN — run-hook.sh could not locate this hook in the main checkout (backlog #513: the copy in a worktree is not trusted; the reason is on stderr). Treat the usage verdict as NOT RUN; unknown is not a stop."}'
-  fi
-  exit 0
-}
 # git, with no GIT_* variable from the session and a 5 s alarm (macOS has no `timeout`; SIGALRM survives the exec).
 git_clean() (
   for v in $(compgen -e); do case $v in GIT_*) unset "$v";; esac; done
