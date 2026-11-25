@@ -2631,6 +2631,10 @@ def _self_test_body() -> int:
         # d67a2be07817bb75. Lost: `gen-backlog-page.py` -> `check-anchors.py` (`registry_anchors`, retired). Gained:
         # `gen-backlog-page.py` -> `check-features.py` (`node_slugs`, by load) and `check-anchors.py` ->
         # `check-features.py` (`parse_features` and `current_slugs`, by load).
+        # ⟳ 2026-11-24 node-tree plan S2 Task 7 (documents attach by node slug): 364 + 2 = 366 / ccae8b361c6a9c67,
+        # diffed by hand (sorted, `comm -3`) against b27beff0's `git archive`, which reproduces 364 / 09084b7374e7a7ac.
+        # Gained: `check-features.py` -> `check-anchors.py` and `gen-features-page.py` -> `check-anchors.py`
+        # (`anchored_slugs`, the one `Anchor:` header reader, by load). Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2642,7 +2646,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (364, "09084b7374e7a7ac", []))
+             (366, "ccae8b361c6a9c67", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

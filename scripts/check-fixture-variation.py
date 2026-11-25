@@ -1051,7 +1051,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # a key set that disagreed with the file by exactly the parameter the fix existed to cover.
     'check-features.py': (
         'backlog_areas.text',
-        'check_cross.anchors_declared',
+        # ⟳ goal node tree Task 7: `check_cross.anchors_declared` left with the registry it read.
         'check_cross.areas_in_use',
         'check_cross.nodes',
         'check_nodes.nodes',
