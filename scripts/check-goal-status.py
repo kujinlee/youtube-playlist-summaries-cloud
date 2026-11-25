@@ -231,6 +231,23 @@ def living_documents(repo: Path | None = None) -> list[dict]:
     return out
 
 
+def adr_anchors(docs_root: Path) -> dict[str, list[str]]:
+    """Node slug → the ADRs whose header names it, read by `check-anchors.parse_header` over the
+    ADR's own header (`adr_head`), as master's `anchored_slugs` read them (r1 L). RAISES on an
+    unreadable ADR. A missing ADR directory holds no ADR."""
+    ca = _check_anchors()
+    out: dict[str, list[str]] = {}
+    for f in sorted((docs_root / ca.ADR_SUB).glob("*.md")):
+        try:
+            text = f.read_text(errors="replace")
+        except OSError as exc:
+            raise ValueError(f"{f} could not be read: {exc}") from exc
+        anchor = ca.parse_header(text, ca.adr_head(text))[0]
+        if anchor is not None:
+            out.setdefault(anchor, []).append(f"docs/{ca.ADR_SUB}/{f.name}")
+    return out
+
+
 def verdict(docs: list[dict], armed: tuple[str, ...]) -> tuple[int, list[str]]:
     """PURE. (rc, lines). rc=1 only for an ARMED anchor's document that is missing or malformed.
 
@@ -321,9 +338,18 @@ def main(argv: list[str], *, repo: Path | None = None,
             print("\n".join(stale))
             return 1
         # ONE reading (backlog #731): the documents' own claims. The slug each document NAMES must be
-        # a current node; the armed set is every current node ANY claim names, minus `UNARMED`.
+        # a current, settled node; the armed set is every SETTLED node ANY claim names, minus
+        # `UNARMED`. ⛔ r1 L: an ADR's header is a document naming a node too, as on master.
+        try:
+            adrs = adr_anchors(root)
+        except ValueError as exc:
+            print(f"CANNOT RUN — {exc}")
+            return 2
         named: dict[str, list[str]] = {}
         claimed: dict[str, list[str]] = {}
+        for slug, rels in adrs.items():
+            named.setdefault(slug, []).extend(rels)
+            claimed.setdefault(slug, []).extend(rels)
         for d in docs:
             if d["anchor"] is not None:
                 named.setdefault(d["anchor"], []).append(d["rel"])
@@ -334,8 +360,9 @@ def main(argv: list[str], *, repo: Path | None = None,
             print("FAILED — a document names no current node:")
             print("\n".join(misnamed))
             return 1
-        current = ca.check_features.current_slugs(nodes)
-        armed_set = armed({slug: rels for slug, rels in claimed.items() if slug in current})
+        # ⛔ r1 S: SETTLED, not `current_slugs` — a loose claim must not arm a `proposed:` node.
+        settled = ca.check_features.settled_slugs(nodes)
+        armed_set = armed({slug: rels for slug, rels in claimed.items() if slug in settled})
     else:
         armed_set = armed_override
     rc, lines = verdict(docs, armed_set)

@@ -21684,3 +21684,10 @@ property case over 63 generated heads against an independent literal copy of mas
 (`f5fa9011`), with an identity case. Self-tests: check-anchors 24 → 27, check-goal-status 41 → 45.
 Mutations rebound in place (13 and 13, all killed and attributed). Live armed set unchanged (13 slugs,
 diffed against master's code). Shipping-set edge pin unchanged.
+Round 1 fold (`docs/reviews/coordinator/b731-one-tokenizer-r1-coordinator.md`): L — ADR headers feed
+the misnamed-slug check and the armed set again (`adr_anchors`, read by `parse_header` over `adr_head`),
+as on master; S — the armed set is filtered with `settled_slugs`, so a loose claim cannot arm a
+`proposed:` node; P DECLINED and pinned — a prose example naming an armed slug is refused, as the
+pre-S2 reader (`68529dd9`) refused it; the `splitlines()`/`split("\n")` difference pinned (the
+tokenizer's window contains master's, so it only adds refusals). Property grid 63 → 108 heads with
+prose examples. Red first: 3 of 50. check-goal-status self-test 45 → 50; mutations 13 → 16, all killed.

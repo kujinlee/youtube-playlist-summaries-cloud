@@ -121,7 +121,7 @@
     "file": "scripts/check-goal-status.py",
     "edits": [
       [
-        "        armed_set = armed({slug: rels for slug, rels in claimed.items() if slug in current})",
+        "        armed_set = armed({slug: rels for slug, rels in claimed.items() if slug in settled})",
         "        armed_set = (\"alpha\",)"
       ]
     ],
@@ -167,7 +167,47 @@
     ],
     "expect": [
       "⛔ #731: armed claim FIRST, exempt well-formed claim second, no Status — FAILS, bare or well-formed",
-      "#731 property: over 63 generated heads, master's refusal is always a refusal, and a single claim agrees exactly"
+      "#731 property: over 108 generated heads, master's refusal is always a refusal, and a single claim agrees exactly"
+    ]
+  },
+  {
+    "name": "the armed set is not filtered at all, so a loose claim arms a PROPOSED node (r1 S, backlog #731)",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "        settled = ca.check_features.settled_slugs(nodes)",
+        "        settled = set(claimed)"
+      ]
+    ],
+    "expect": [
+      "r1 S: a loose claim naming a PROPOSED node does not arm it"
+    ]
+  },
+  {
+    "name": "the armed set is filtered with CURRENT slugs, which include proposed nodes (r1 S, backlog #731)",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "ca.check_features.settled_slugs(nodes)",
+        "ca.check_features.current_slugs(nodes)"
+      ]
+    ],
+    "expect": [
+      "r1 S: a loose claim naming a PROPOSED node does not arm it"
+    ]
+  },
+  {
+    "name": "ADR headers are not read, so an ADR naming no node passes and its node is unarmed (r1 L, backlog #731)",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "            adrs = adr_anchors(root)",
+        "            adrs = {}"
+      ]
+    ],
+    "expect": [
+      "r1 L: an ADR whose header names no node FAILS the misnamed-slug check",
+      "r1 L: an ADR's header arms its node, as on master"
     ]
   }
 ]
