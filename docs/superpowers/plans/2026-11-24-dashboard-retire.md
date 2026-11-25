@@ -818,8 +818,10 @@ SQ=$(gh pr view "$PR" --json state,mergeCommit -q 'select(.state=="MERGED") | .m
   && git cat-file -e "$SQ:scripts/check-ask-store.py" \
   && T="$(mktemp -d)/sq" && git worktree add -q --detach "$T" "$SQ" \
   && (cd "$T" && python3 scripts/check-ask-store.py --cutover-check "$SQ^1"); rc=$?
-[ -n "${T:-}" ] && git worktree remove --force "$T"; echo "rc=$rc"   # Expected: rc=0
+echo "rc=$rc"; test "$rc" -eq 0   # Expected: rc=0 — the LAST command carries the status (r4 Codex B1)
 ```
+
+  The worktree `$T` is KEPT: Steps 1b and 3 run the gate from it (r4 Codex B2), and Step 3 removes it.
 
   The squash is found by the PR that made it (r2 Codex M2: a `git log --grep` on a title the plan never
   sets finds nothing, or an older commit), and its identity is checked before its parent is read: merged,
@@ -838,12 +840,14 @@ SQ=$(gh pr view "$PR" --json state,mergeCommit -q 'select(.state=="MERGED") | .m
   a file in `docs/asks/`; restore the store with L1's printed `git cat-file blob <LEGACY_STORE_BLOB> >
   docs/dashboard-entries.md`. The pins stay: the frozen bytes are S2's, and the stray entry is what is removed.
 - [ ] **Step 1b: List every open PR that still carries a store edit.**
-  `python3 scripts/check-ask-store.py --list-store-prs` (Task 12's `store_edit_prs`: `--limit` set, every
-  `gh` failure CANNOT RUN). rc 2 is NOT a clean list — fix the cause and re-run.
+  `(cd "$T" && python3 scripts/check-ask-store.py --list-store-prs); rc=$?; echo "rc=$rc"; test "$rc" -eq 0`
+  — from the squash worktree, never the main checkout: before its fast-forward the renamed script is absent
+  there and the call returns 2 (r4 Codex B2, measured on a copy of today's checkout). Task 12's
+  `store_edit_prs`: `--limit` set, every `gh` failure CANNOT RUN. rc 2 is NOT a clean list — fix the cause and re-run.
 - [ ] **Step 2: For each listed PR**, in its worktree: merge master (`git merge --no-edit origin/master`),
   restore the store (`git checkout origin/master -- docs/dashboard-entries.md`), re-ask any question its
   dropped entry held as a file in `docs/asks/`, commit, push. Its CI now runs under L1.
-- [ ] **Step 3: Re-run Step 1b.** Expected: rc 0, no line.
+- [ ] **Step 3: Re-run Step 1b**, then remove the worktree: `git worktree remove --force "$T"`. Expected: rc 0, no line.
 - [ ] **Step 4: Confirm master's own run:** the `check-ask-store self-test` step (r3 Claude M2: the step a
   base half of 12.11 would have turned red) and the `ask store (push)` step of the CI run on S2's merge commit are
   green.
