@@ -21611,6 +21611,16 @@ per browser in localStorage; from `file://` it copies to the clipboard. Self-tes
 run under node). `explainer-delivery.md` §3a documents it.
 
 ## 2026-11-24
+The Fable-vs-Opus question you asked about is answered by a controlled run: both models folded the same
+review round from the same starting point, and two blind reviewers could not separate them (one preferred
+each). So Fable's worse fold numbers in the pilot came from the harder folds it was given, not from the
+model. Folds stay on Opus because a tie does not justify twice the price. Nothing new is waiting for you.
+<!--tech-->
+Register row 23 (`docs/optimization-register.md`) gains the SAME-TASK CONTROL line; backlog #630's Status
+cell records it. Subject: node-tree S1 r2 fold from `5a9725b0`; Opus arm `0e8247e0`, Fable arm `d77ce6bd`
+(never pushed). Fix-induced: Opus 1 Low, Fable 0; test gaps: Opus 3 Low, Fable 1 Medium.
+
+## 2026-11-24
 The usage-pace guard now tells the session it did not run in two places where it used to fail
 quietly: when the session's folder has been deleted, and when the session is in a copied project tree
 with no git history. Before, those ended with nothing on the channel the session reads, so a missing
