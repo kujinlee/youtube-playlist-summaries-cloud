@@ -210,6 +210,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · backlog #643, PR #584 · `npm run test:e2e` is never fully green locally (F5c fails on master; production smoke needs auth fixtures)
 - fix · backlog #619, PR #580 · the mutation sweep reads one record per shard, so a lost, duplicated or unfinished shard goes red instead of reading as clean
 - fix · backlog #685, PR #608 · an rm is backed up before it runs, or refused when its targets cannot be seen
+- fix · backlog #727 · a decision card that declares its choices offers one button per choice (★ on the recommended) and Other…, instead of Yes / No
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"

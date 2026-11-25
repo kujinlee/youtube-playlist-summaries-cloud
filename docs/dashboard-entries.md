@@ -21621,6 +21621,16 @@ cell records it. Subject: node-tree S1 r2 fold from `5a9725b0`; Opus arm `0e8247
 (never pushed). Fix-induced: Opus 1 Low, Fable 0; test gaps: Opus 3 Low, Fable 1 Medium.
 
 ## 2026-11-24
+A decision card can now offer the decision's own choices, as you asked: when a page lists them, the card
+shows one button per choice, with the recommended one starred, plus Other… for anything else, and no
+Yes / No. A card whose page lists no choices still shows Yes / No as before.
+<!--tech-->
+Backlog #727. `scripts/brief-compose.py`: `data-decision-options="A|B"` and optional `data-decision-rec`
+on the mark; `_choices` refuses fewer than two, an empty or duplicate entry, or an unlisted rec (CANNOT
+RUN); the tag carries the list as `data-ex-options` / `data-ex-rec` for `DECISION_JS`. Self-test
+255 → 261, mutations 110 → 117. `explainer-delivery.md` §3a documents it.
+
+## 2026-11-24
 The usage-pace guard now tells the session it did not run in two places where it used to fail
 quietly: when the session's folder has been deleted, and when the session is in a copied project tree
 with no git history. Before, those ended with nothing on the channel the session reads, so a missing
