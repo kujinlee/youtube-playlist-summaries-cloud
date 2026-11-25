@@ -300,10 +300,12 @@ restores it in the same `finally` as `collect`.
 S="$(mktemp -d)/c" && git clone -q . "$S" && git -C "$S" checkout -q --detach
 git -C "$S" branch -D master 2>/dev/null   # a clone made from a worktree has no local master to delete
 ! git -C "$S" rev-parse -q --verify refs/heads/master && git -C "$S" rev-parse -q --verify origin/master \
-  && (cd "$S" && python3 scripts/check-dashboard-entry.py --self-test | tail -1)
+  && (cd "$S" && set -o pipefail && python3 scripts/check-dashboard-entry.py --self-test | tail -1)
 ```
 
-  Expected: the same count as Step 5, rc 0. **FAILS IF** any `main` case is red there — the case reached
+  Expected: the same count as Step 5, rc 0. `pipefail` is load-bearing (r2 Codex m4): without it the
+  pipeline's status is `tail`'s, 0 over a red self-test — measured 2026-11-24 with a child that prints and
+  exits 1: rc 0 plain, rc 1 under `pipefail`. **FAILS IF** any `main` case is red there — the case reached
   real git. Control, run once: remove the `ask_store_problems` stub from the malformed-entry case and this run
   goes red (rc 2 where the case wants 1).
 - [ ] **Step 6: Add 7 mutations** and pin `62`:
@@ -574,11 +576,11 @@ runs A1 and F1; without, A1 only (Task 12 adds L1 to both). Output stays `ok —
 | 9.5 | INVISIBLE still diagnoses | merge-ready fixture: the exact token, fenced | the INVISIBLE sentence |
 | 9.6 | MISSPELLED still diagnoses | `no-review:` lower case | the MISSPELLED sentence |
 | 9.7 | without --base, F1 is not run and git's merge-base is not asked | impure: no remote | rc 0 on a clean tree |
-| 9.8 | `--pr-body-file` is gone, so CI must not pass it | `main(["--base", "origin/master", "--pr-body-file", "x"])` | argparse exit 2; and `grep -n -- '--pr-body-file' .github/workflows/ci.yml` prints nothing |
+| 9.8 | `--pr-body-file` is gone | `main(["--base", "origin/master", "--pr-body-file", "x"])` | argparse exit 2 (`SystemExit`, code 2) |
 
-- [ ] **Step 1: Write 9.1–9.7**; delete the cases whose subject is deleted (the entry ratchet's, the
+- [ ] **Step 1: Write 9.1–9.8**; delete the cases whose subject is deleted (the entry ratchet's, the
   MISDIRECTED fixtures). **Step 2: Run** `check-ask-store.py`, `check-merge-ready.py` and
-  `check-review-recorded.py` self-tests (FAIL: 9.3, 9.4, 9.7).
+  `check-review-recorded.py` self-tests (FAIL: 9.3, 9.4, 9.7, 9.8 — the flag still parses).
 - [ ] **Step 3: Implement the deletions.** Back up the pre-edit gate file to the scratchpad first.
 - [ ] **Step 4: Run** the three self-tests and `gen-dashboard.py --self-test` (PASS; the page still loads
   its grammar).
@@ -589,8 +591,25 @@ runs A1 and F1; without, A1 only (Task 12 adds L1 to both). Output stays `ok —
   gate at `53` (62 − 9; Task 12 adds 10). In `check-merge-ready.json` delete each entry whose anchor sits in
   a removed branch and state the new pin in the commit message. Sweep the gate script, resolve, commit.
 
-**FAILS IF (K7):** either self-test is green over the stub; or 9.2 grants the fenced line; or `ci.yml` still
-passes `--pr-body-file` to the gate.
+- [ ] **Step 6b: The CI step no longer passes the flag (r2 Codex M1).** `ci.yml` keeps ONE legitimate
+  `--pr-body-file` — the `check-review-recorded (PR only)` step's own — so a whole-file grep can never print
+  nothing. The check reads the gate's step alone (its lines up to the next `- name:`, comments dropped):
+
+```bash
+STEP=$(awk '/- name: dashboard entry ratchet$/{f=1;print;next} f&&/- name:/{f=0} f&&!/^[[:space:]]*#/' .github/workflows/ci.yml)
+test -n "$STEP" && printf '%s\n' "$STEP" | grep -q 'scripts/check-ask-store.py' \
+  && ! printf '%s\n' "$STEP" | grep -n -e '--pr-body-file' -e 'BODY' \
+  && test "$(grep -c -- '--pr-body-file' .github/workflows/ci.yml)" -eq 1
+```
+
+  Expected: rc 0, nothing printed. Controls, run 2026-11-24 on copies of today's `ci.yml`: with Task 8's
+  rename only (flag still passed) → rc 1, printing the `BODY`, `printf` and `--pr-body-file` lines; with
+  Task 9's edit → rc 0; with Task 9's edit AND the review-recorded step's flag also removed → rc 1 (count 0).
+  The step is still named `dashboard entry ratchet` here; Task 12 Step 7 replaces it.
+
+**FAILS IF (K7):** either self-test is green over the stub; or 9.2 grants the fenced line; or Step 6b
+returns 0 while the gate's step still passes `--pr-body-file` (9.8 is the flag's removal; Step 6b is CI
+not passing it).
 
 ### Task 10: drop the old-store readers
 
@@ -700,10 +719,12 @@ command prints nothing.
 | 12.15 | a failed `gh pr list` is CANNOT RUN, never "no PRs" | `gh pr list` rc 1 | `err is not None`; `--list-store-prs` rc 2 |
 | 12.16 | a failed `gh pr diff` is CANNOT RUN, never "no edit" | PR 7's diff rc 1, PR 8's lists the store | `err` names PR 7, rc 2 |
 
-- [ ] **Step 1: Write 12.1–12.10 and 12.12–12.16** against a fixture store (the constants patched in the case,
-  as other suites patch theirs; 12.13–12.16 through `_with_run`). **Step 2: Run** the self-test (FAIL).
+- [ ] **Step 1: Write 12.1–12.16** against a fixture store (the constants patched in the case, as other
+  suites patch theirs; 12.13–12.16 through `_with_run`) — 12.11 alone is live and patches nothing: it reads
+  the constants as committed (r2 Codex M3: 12.11 was expected red in Step 3 without ever being written).
+  **Step 2: Run** the self-test (FAIL, 12.11 among the names).
 - [ ] **Step 3: Implement** `legacy_store_problem`, `cutover_problem` and `main`, with the three constants
-  set to a placeholder that 12.11 refuses (`"UNPINNED"`). Run: 12.1–12.10 PASS, 12.11 FAIL.
+  set to a placeholder that 12.11 refuses (`"UNPINNED"`). Run: 12.1–12.10 and 12.12–12.16 PASS, 12.11 FAIL.
 - [ ] **Step 4: Merge master in for the last time**, as ONE command that completes or aborts:
   `git merge --no-edit origin/master`. Record that master commit as the pin-base in the commit message.
 - [ ] **Step 5: C1 on the merged tree:** `python3 scripts/gen-dashboard.py --assert-no-open-asks`. Expected
@@ -769,11 +790,21 @@ No file changes. Run once, right after S2's squash lands. The code it runs is Ta
 
 ```bash
 git fetch origin master
-SQ=$(git log -1 --format=%H --grep='^Ask store S2' origin/master)   # the S2 squash; confirm it by eye
-test -n "$SQ" && python3 scripts/check-ask-store.py --cutover-check "$SQ^1"
+PR=<S2's PR number>   # the PR Task 12 Step 10's coordinator squashed — the plan's own handle, not a title
+SQ=$(gh pr view "$PR" --json state,mergeCommit -q 'select(.state=="MERGED") | .mergeCommit.oid') \
+  && test -n "$SQ" \
+  && git merge-base --is-ancestor "$SQ" origin/master \
+  && test "$(git rev-list --parents -n1 "$SQ" | wc -w)" -eq 2 \
+  && git cat-file -e "$SQ:scripts/check-ask-store.py" \
+  && python3 scripts/check-ask-store.py --cutover-check "$SQ^1"
 ```
 
-  Expected: rc 0. On rc 1 a PR merged a store edit inside the window: master's push-mode `ask store` step is
+  The squash is found by the PR that made it (r2 Codex M2: a `git log --grep` on a title the plan never
+  sets finds nothing, or an older commit), and its identity is checked before its parent is read: merged,
+  on `origin/master`, one parent (a squash, not a merge commit), the gate file in its tree. Every link is
+  `&&`, so a failed `gh` call, an unmerged PR (the `select` prints nothing) or a wrong commit stops the chain
+  non-zero — never a pass. Controls, run 2026-11-24: the `-q` filter prints nothing on `"state":"OPEN"`;
+  the parent count refuses a two-parent merge commit and accepts squash `7a6ffa00`. Expected: rc 0. On rc 1 a PR merged a store edit inside the window: master's push-mode `ask store` step is
   red on the squash (L1 sees the stray bytes), and the stray entry may hold an ask NEEDS YOU no longer reads.
   Repair, in a PR of its own: `git show "$SQ^1:docs/dashboard-entries.md" > "$TMPDIR/s.md"` and
   `python3 scripts/gen-dashboard.py --assert-no-open-asks --store "$TMPDIR/s.md"`; re-ask each id it names as
