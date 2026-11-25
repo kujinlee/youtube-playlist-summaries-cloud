@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/dashboard-retire-spec-r3-claude.md": "100644 da7d61a624fbbd661b0430e15b42ef0db14cdbda"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "8cb1bf6e952abaab73df7a3e019704494f9b39e8",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 8074 chars, names 8cb1bf6e952a",
+  "refused": false,
+  "review": "dashboard-retire-spec-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/dashboard-retire",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
