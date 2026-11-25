@@ -21629,6 +21629,8 @@ Backlog #727. `scripts/brief-compose.py`: `data-decision-options="A|B"` and opti
 on the mark; `_choices` refuses fewer than two, an empty or duplicate entry, or an unlisted rec (CANNOT
 RUN); the tag carries the list as `data-ex-options` / `data-ex-rec` for `DECISION_JS`. Self-test
 255 → 261, mutations 110 → 117. `explainer-delivery.md` §3a documents it.
+
+## 2026-11-24
 The usage-pace guard now tells the session it did not run in two places where it used to fail
 quietly: when the session's folder has been deleted, and when the session is in a copied project tree
 with no git history. Before, those ended with nothing on the channel the session reads, so a missing
