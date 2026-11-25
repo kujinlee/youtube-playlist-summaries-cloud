@@ -237,7 +237,11 @@ element that asks it; the composer does the rest:
   2026-11-24 18:39; backlog #727): `data-decision-options` lists the choices, `|`-separated, and the optional
   `data-decision-rec` names the recommended one (★); the card then shows one button per choice plus ✎ Other…,
   ignores any `.rec` line, and a click sends `Q: ANSWER: <the choice's text>`. A list of fewer than two, an empty or
-  duplicate choice, or a rec not in the list is REFUSED at compose time (`_choices`). A click arrives in `questions.md` like a tray question, with the tag's label
+  duplicate choice, or a rec not in the list is REFUSED at compose time (`_choices`). **A choice cannot contain `|`**:
+  `|` only separates choices, and a start tag that encodes one (`&#124;`, `&vert;`, `&#x7C;`) is REFUSED, never
+  split — reword the choice. A valueless `data-decision-options` or `data-decision-rec` is refused too. With options
+  and no `data-decision-rec`, a `.rec` line after the element draws a compose-time WARNING, since the card shows no ★;
+  name the recommended choice in `data-decision-rec`. A click arrives in `questions.md` like a tray question, with the tag's label
   as its section and `Q: ANSWER: <yes|no|text>` — record it as the attribute's value and recompose. A click alone
   answers nothing. The card says *sent* — remembered in the browser per page, label and question, so a recompose
   that renumbers the cards keeps it on the right one — with a *change* button that sends a new answer; the newest

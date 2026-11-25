@@ -665,7 +665,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-24, backlog #727 (owner 18:39, declared decision choices): 110 -> 117 — the card ignores its
     # choices, the rec is unmarked, the tag never carries the list, the list is not whitespace-folded, and a
     # duplicate / an unlisted rec / a single choice is accepted.
-    "scripts/brief-compose.py": 117,
+    "scripts/brief-compose.py": 130,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch

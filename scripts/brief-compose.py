@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 261 cases
+    python3 scripts/brief-compose.py --self-test  # 264 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
@@ -1111,7 +1111,12 @@ DECISION_LABEL_ATTR = "data-decision-label"
 # The card then offers ONE button per option (the recommended one marked ★) plus ✎ Other…, and no generic
 # Yes / No; a click sends `Q: ANSWER: <option text>`. Without options the card is as before. An options list
 # with fewer than two entries, an empty or duplicate entry, or a rec that is not one of them (or a rec with no
-# options) is REFUSED at compose time — `_choices`. The validated list reaches the script on the TAG
+# options) is REFUSED at compose time — `_choices`. ⟳ r1 (Codex MAJOR, Claude F1): A CHOICE CANNOT CONTAIN `|`.
+# The parser decodes `&#124;` before the split, so an encoded `|` would silently split one choice into two; a
+# decision whose start tag encodes `|` as a character reference is therefore REFUSED, never split. ⟳ r1 (Claude
+# F2): a valueless `data-decision-options` / `data-decision-rec` is PRESENT (""), not absent, so it is refused
+# too. ⟳ r1 (Claude F3): with options and no `data-decision-rec`, a `.rec` line after the element (which the card
+# ignores) draws a compose-time WARNING — `decision_warnings`. The validated list reaches the script on the TAG
 # (`data-ex-options` / `data-ex-rec`), written only when options are declared, so a page without any composes
 # byte-identical to before.
 DECISION_OPTIONS_ATTR = "data-decision-options"
@@ -1443,6 +1448,10 @@ _QUESTION_SKIP_TAGS = frozenset({
 })
 
 
+# A character reference as HTML reads one (numeric, hex or named, `;` optional) — checked for an encoded `|`.
+_CHARREF = re.compile(r"&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);?")
+
+
 class _DecisionScan(HTMLParser):
     """Every start tag carrying `data-decision`, in document order, with its position. PURE.
 
@@ -1477,9 +1486,14 @@ class _DecisionScan(HTMLParser):
         self.ids: set[str] = set()
         # ⟳ r4: the TEXT of each marked element, in `found` order — the question its card's key hashes.
         self.texts: list[list[str]] = []
-        # The raw `data-decision-options` / `data-decision-rec` of each marked element (None = absent), in
-        # `found` order — validated by `_choices`.
-        self.choices: list[tuple[str | None, str | None]] = []
+        # The raw `data-decision-options` / `data-decision-rec` of each marked element (None = absent, "" = a
+        # bare attribute), and whether its start tag encodes `|` as a character reference, in `found` order —
+        # validated by `_choices`.
+        self.choices: list[tuple[str | None, str | None, bool]] = []
+        # Whether a `.rec` element follows each marked element as a SIBLING before the next decision (r1 F3), and
+        # the decision being watched for one: (its index, its parent's stack entry or None at the top level).
+        self.rec_lines: list[bool] = []
+        self._watch: tuple[int, list | None] | None = None
         # [tag, hides, collapsed (a non-summary child of a <details>), a <summary> already seen,
         #  the `texts` index of a marked element or None, its text is left out of a question (r5)]
         self._stack: list[list] = []
@@ -1531,8 +1545,14 @@ class _DecisionScan(HTMLParser):
             self.found.append((self.getpos(), text, (value or "").strip(),
                                (label or "").strip(), refusal))
             self.texts.append([])
-            self.choices.append((next((v for k, v in attrs if k == DECISION_OPTIONS_ATTR), None),
-                                 next((v for k, v in attrs if k == DECISION_REC_ATTR), None)))
+            self.choices.append((next(("" if v is None else v for k, v in attrs if k == DECISION_OPTIONS_ATTR), None),
+                                 next(("" if v is None else v for k, v in attrs if k == DECISION_REC_ATTR), None),
+                                 any("|" in html_unescape(m.group()) for m in _CHARREF.finditer(text))))
+            self.rec_lines.append(False)
+            self._watch = (len(self.texts) - 1, self._stack[-1] if self._stack else None)
+        elif (self._watch is not None and (self._stack[-1] if self._stack else None) is self._watch[1]
+              and "rec" in re.split(r"[\t\n\f\r ]+", next((v for k, v in attrs if k == "class"), None) or "")):
+            self.rec_lines[self._watch[0]] = True
         mark = len(self.texts) - 1 if DECISION_ATTR in names else None
         if tag == "plaintext":
             self._plaintext = True
@@ -1593,14 +1613,19 @@ def _decision_offset(markup: str, starts: list[int], pos: tuple[int, int], text:
 
 
 def _choices(n: int, total: int, text: str, line: int, options: str | None,
-             rec: str | None) -> tuple[list[str], str]:
+             rec: str | None, encoded_pipe: bool = False) -> tuple[list[str], str]:
     """A decision's declared choices, whitespace folded as the card's script reads them. PURE.
 
-    ([], "") when none are declared. CANNOT RUN (SystemExit) for fewer than two, an empty or duplicate
-    entry, a rec that is not one of them, or a rec with no options.
+    ([], "") when none are declared. CANNOT RUN (SystemExit) for an encoded `|` in the tag (a choice cannot
+    contain `|`), fewer than two, an empty or duplicate entry, a rec that is not one of them, or a rec with
+    no options. A bare attribute arrives as "" and is refused like an empty one.
     """
     where = f"decision {n} of {total} ({text} at line {line})"
     tail = " No page was written; treat as NOT RENDERED."
+    if options is not None and encoded_pipe:
+        raise SystemExit(f"brief-compose: CANNOT RUN — {where} encodes `|` as a character reference "
+                         f"(`&#124;`, `&vert;`, ...) in its start tag; a choice cannot contain `|`, which "
+                         f"separates the {DECISION_OPTIONS_ATTR} — reword the choice.{tail}")
     if options is None:
         if rec is not None:
             raise SystemExit(f"brief-compose: CANNOT RUN — {where} has {DECISION_REC_ATTR} but no "
@@ -1619,6 +1644,23 @@ def _choices(n: int, total: int, text: str, line: int, options: str | None,
         raise SystemExit(f"brief-compose: CANNOT RUN — {where} recommends {rec!r}, which is not one of "
                          f"its {DECISION_OPTIONS_ATTR} {opts!r}.{tail}")
     return opts, want
+
+
+def decision_warnings(markup: str) -> list[str]:
+    """Compose-time warnings about the decisions in `markup` — nothing is refused. PURE.
+
+    ⟳ r1 (Claude F3): a decision that declares options and no `data-decision-rec`, with a `.rec` sibling after
+    it, shows no ★ — the card ignores the `.rec` line, so the page's prose and its card can disagree.
+    """
+    scan = _DecisionScan()
+    scan.feed(markup)
+    scan.close()
+    total = len(scan.found)
+    return [f"brief-compose: WARNING — decision {n} of {total} ({text} at line {line}) declares "
+            f"{DECISION_OPTIONS_ATTR}, so its card ignores the `.rec` line after it and shows no ★; name the "
+            f"recommended choice with {DECISION_REC_ATTR}."
+            for n, ((line, _c), text, *_r) in enumerate(scan.found, 1)
+            if scan.choices[n - 1][0] is not None and scan.choices[n - 1][1] is None and scan.rec_lines[n - 1]]
 
 
 def render_decisions(markup: str) -> tuple[str, int, int]:
@@ -1877,6 +1919,8 @@ def main(argv: list[str]) -> int:
     src_text = src.read_text(encoding="utf-8")
     frag_css = css_of(content)
     css, markup, script = extract_tray(src_text, frag_css)
+    for warning in decision_warnings(content):
+        print(warning, file=sys.stderr)
     doc = compose(content, a.title, css, markup, script,
                   page_chrome.provenance(
                       _dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
@@ -3663,6 +3707,28 @@ const out = {};
          and "at least two" in _why["one"] and "at least two" in _why["empty"] and "more than once" in _why["dup"]
          and "not one of" in _why["rec"] and "nothing for it to recommend" in _why["orphan"]
          and _cr('<p data-decision data-decision-options="A|B" data-decision-rec="B">Q?</p>') == "")
+    # ⟳ r1 (Codex MAJOR, Claude F1): an encoded `|` is REFUSED, never split into extra choices; `&amp;` is not one.
+    _pipe = {e: _cr(f'<p data-decision data-decision-options="A{e}B|C">Q?</p>') for e in ("&#124;", "&vert;", "&#x7C;")}
+    case("choices: a `|` encoded as a character reference (`&#124;`, `&vert;`, `&#x7C;`) is REFUSED, not split",
+         all("CANNOT RUN" in m and "cannot contain `|`" in m and "NOT RENDERED" in m for m in _pipe.values())
+         and _cr('<p data-decision data-decision-options="A &amp; co|B">Q?</p>') == "")
+    # ⟳ r1 (Claude F2): a bare attribute is PRESENT — it is refused, not read as absent (Yes / No, or no ★).
+    _bare_o = _cr('<p data-decision data-decision-options>Q?</p>')
+    _bare_r = _cr('<p data-decision data-decision-options="A|B" data-decision-rec>Q?</p>')
+    _bare_x = _cr('<p data-decision data-decision-rec>Q?</p>')
+    case("choices: a valueless data-decision-options or data-decision-rec is REFUSED, not treated as absent",
+         "at least two" in _bare_o and "not one of" in _bare_r and "nothing for it to recommend" in _bare_x)
+    # ⟳ r1 (Claude F3): options, no rec, and a `.rec` sibling after the element → a WARNING (the card ignores it).
+    _rl = '<p class="rec">Recommend: A.</p>'
+    _wn = decision_warnings('<h1>x</h1><p data-decision data-decision-options="A|B">Q?</p>' + _rl)
+    case("choices: options with no rec and a `.rec` sibling draw ONE warning; a rec, no options, a `.rec` that is "
+         "not a sibling, or one after the next decision, draw none",
+         len(_wn) == 1 and "WARNING" in _wn[0] and "decision 1 of 1" in _wn[0] and DECISION_REC_ATTR in _wn[0]
+         and decision_warnings('<p data-decision data-decision-options="A|B" data-decision-rec="A">Q?</p>' + _rl) == []
+         and decision_warnings('<p data-decision>Q?</p>' + _rl) == []
+         and decision_warnings('<div><p data-decision data-decision-options="A|B">Q?</p></div>' + _rl) == []
+         and decision_warnings('<p data-decision data-decision-options="A|B">Q?</p><p data-decision>Z?</p>'
+                               + _rl) == [])
     # IDENTITY: no options → the tag is exactly the pre-11-24 literal; with options, removing the four attributes
     # gives byte-for-byte the page composed without them.
     _plain = render_decisions("<h1>x</h1><p data-decision>Q?</p>")[0]

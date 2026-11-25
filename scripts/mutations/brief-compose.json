@@ -1497,5 +1497,174 @@
     "expect": [
       "choices: fewer than two, an empty entry, a duplicate, a rec not listed, a rec with no options — each REFUSED"
     ]
+  },
+  {
+    "name": "decision choices: an encoded | in the tag is split rather than refused",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if options is not None and encoded_pipe:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "choices: a `|` encoded as a character reference (`&#124;`, `&vert;`, `&#x7C;`) is REFUSED, not split"
+    ]
+  },
+  {
+    "name": "decision choices: a valueless data-decision-options is read as absent",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "next((\"\" if v is None else v for k, v in attrs if k == DECISION_OPTIONS_ATTR), None)",
+        "next((v for k, v in attrs if k == DECISION_OPTIONS_ATTR), None)"
+      ]
+    ],
+    "expect": [
+      "choices: a valueless data-decision-options or data-decision-rec is REFUSED, not treated as absent"
+    ]
+  },
+  {
+    "name": "decision choices: a valueless data-decision-rec is read as absent",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "next((\"\" if v is None else v for k, v in attrs if k == DECISION_REC_ATTR), None)",
+        "next((v for k, v in attrs if k == DECISION_REC_ATTR), None)"
+      ]
+    ],
+    "expect": [
+      "choices: a valueless data-decision-options or data-decision-rec is REFUSED, not treated as absent"
+    ]
+  },
+  {
+    "name": "decision choices: a .rec sibling is never noted, so no warning",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            self.rec_lines[self._watch[0]] = True\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "choices: options with no rec and a `.rec` sibling draw ONE warning; a rec, no options, a `.rec` that is not a sibling, or one after the next decision, draw none"
+    ]
+  },
+  {
+    "name": "decision choices: a .rec that is not a sibling draws the warning",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "(self._stack[-1] if self._stack else None) is self._watch[1]",
+        "True"
+      ]
+    ],
+    "expect": [
+      "choices: options with no rec and a `.rec` sibling draw ONE warning; a rec, no options, a `.rec` that is not a sibling, or one after the next decision, draw none"
+    ]
+  },
+  {
+    "name": "decision choices: a declared rec does not silence the .rec warning",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        " and scan.choices[n - 1][1] is None and scan.rec_lines",
+        " and scan.rec_lines"
+      ]
+    ],
+    "expect": [
+      "choices: options with no rec and a `.rec` sibling draw ONE warning; a rec, no options, a `.rec` that is not a sibling, or one after the next decision, draw none"
+    ]
+  },
+  {
+    "name": "decision choices: a decision without options draws the .rec warning",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            if scan.choices[n - 1][0] is not None and scan.choices",
+        "            if scan.choices"
+      ]
+    ],
+    "expect": [
+      "choices: options with no rec and a `.rec` sibling draw ONE warning; a rec, no options, a `.rec` that is not a sibling, or one after the next decision, draw none"
+    ]
+  },
+  {
+    "name": "decision choices: a later decision does not end the .rec watch",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            self._watch = (len(self.texts) - 1,",
+        "            self._watch = self._watch or (len(self.texts) - 1,"
+      ]
+    ],
+    "expect": [
+      "choices: options with no rec and a `.rec` sibling draw ONE warning; a rec, no options, a `.rec` that is not a sibling, or one after the next decision, draw none"
+    ]
+  },
+  {
+    "name": "decision choices: an empty entry in the list is accepted",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        " or \"\" in opts:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "choices: fewer than two, an empty entry, a duplicate, a rec not listed, a rec with no options — each REFUSED"
+    ]
+  },
+  {
+    "name": "decision choices: a rec with no options is accepted",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if rec is not None:\n            raise SystemExit(f\"brief-compose: CANNOT RUN — {where} has {DECISION_REC_ATTR}",
+        "        if False:\n            raise SystemExit(f\"brief-compose: CANNOT RUN — {where} has {DECISION_REC_ATTR}"
+      ]
+    ],
+    "expect": [
+      "choices: fewer than two, an empty entry, a duplicate, a rec not listed, a rec with no options — each REFUSED"
+    ]
+  },
+  {
+    "name": "decision choices: the options written on the tag are not escaped",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "data-ex-options=\"{html_escape(\"|\".join(opts))}\"",
+        "data-ex-options=\"{\"|\".join(opts)}\""
+      ]
+    ],
+    "expect": [
+      "choices: the composer writes the validated, whitespace-folded list on the tag; the rec on the first only"
+    ]
+  },
+  {
+    "name": "decision choices: the rec is never written on the tag",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "f' data-ex-rec=\"{html_escape(rec)}\"' if rec else \"\")",
+        "\"\")"
+      ]
+    ],
+    "expect": [
+      "choices: the composer writes the validated, whitespace-folded list on the tag; the rec on the first only"
+    ]
+  },
+  {
+    "name": "decision choices: a click sends the rec rather than its own choice",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "function(){ send(tag, box, o); }));",
+        "function(){ send(tag, box, rec); }));"
+      ]
+    ],
+    "expect": [
+      "choices: a click sends `Q: ANSWER: <the choice's text>` in the tray's three-line shape"
+    ]
   }
 ]
