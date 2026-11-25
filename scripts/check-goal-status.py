@@ -443,6 +443,33 @@ def _self_test_body() -> int:
             _frc = main([], repo=_fr)
     case("⛔ F1: a pre-cutoff spec with a bare, short Anchor header and no Status is ARMED and FAILS",
          (_frc, "`cloud-sync` is armed" in _fout.getvalue()), (1, True))
+    # ⛔ backlog #731, the two red cases of the Phase 6 review (architecture-review-2026-11-25 §3):
+    # TWO Anchor claims in the head, one naming an armed slug and one a WELL-FORMED exempt node, and
+    # no Status. The guard's rule has no precedence between lines — ANY armed claim enforces — so
+    # every order and every form of the armed line must FAIL.
+    _wf = "> **Anchor:** `{}` — **ADR:** none"
+    _two_claims = {
+        "armed bare, then exempt": ("**Anchor:** `alpha`", _wf.format("dev-speed")),
+        "armed well-formed, then exempt": (_wf.format("alpha"), _wf.format("dev-speed")),
+        "exempt, then armed bare": (_wf.format("dev-speed"), "**Anchor:** `alpha`"),
+        "exempt, then armed well-formed": (_wf.format("dev-speed"), _wf.format("alpha")),
+    }
+    _two_got = {}
+    for _label, (_l1, _l2) in _two_claims.items():
+        with _tf.TemporaryDirectory() as _gt:
+            import contextlib as _cl
+            import io as _io
+            _tr = _g4_world(_gt, _live, "alpha")
+            (_tr / "docs" / "superpowers" / "specs" / "2026-01-01-g4.md").write_text(
+                f"# Two\n\n{_l1}\n\n{_l2}\n\nno status\n")
+            with _cl.redirect_stdout(_io.StringIO()):
+                _two_got[_label] = main([], repo=_tr)
+    case("⛔ #731: armed claim FIRST, exempt well-formed claim second, no Status — FAILS, bare or well-formed",
+         {k: v for k, v in _two_got.items() if k.startswith("armed")},
+         {k: 1 for k in _two_claims if k.startswith("armed")})
+    case("⛔ #731: exempt well-formed claim FIRST, armed claim second, no Status — FAILS, bare or well-formed",
+         {k: v for k, v in _two_got.items() if k.startswith("exempt")},
+         {k: 1 for k in _two_claims if k.startswith("exempt")})
     case("armed: two trees give two sets", _two,
          ((0, ["armed anchors: alpha"]), (0, ["armed anchors: beta"])))
     case("armed: a stale exemption fails",
