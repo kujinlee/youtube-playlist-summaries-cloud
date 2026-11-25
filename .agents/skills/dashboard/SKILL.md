@@ -11,7 +11,7 @@ Append one entry to the project's append-only store and regenerate the page.
 
 ## Why this exists
 
-The goal (`docs/anchors.md`, anchor `status-visibility`): *a person who was away can see the current
+The goal (node `status-visibility` of `docs/features.md`): *a person who was away can see the current
 state, what changed, and what needs them — without reading the chat transcript.*
 
 The chat transcript is not that. It is accurate and unfollowable, it is gone after a `/compact`, and

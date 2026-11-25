@@ -10,13 +10,16 @@
 # and has no skill at all.
 #
 # WHY IT MATTERS MORE HERE THAN FOR THE BACKLOG. The backlog page has ONE source. This page has
-# five — the registry, every spec/plan header, every ADR, the milestone spines, and ROOTS/DEPENDS in
-# gen-backlog-page.py — so the number of ways for it to go quietly stale is five times larger, and
-# a stale page looks exactly like a current one.
+# five — the node tree (docs/features.md), every spec/plan header, every ADR, the milestone spines,
+# and ROOTS/DEPENDS in gen-backlog-page.py — so the number of ways for it to go quietly stale is
+# five times larger, and a stale page looks exactly like a current one.
+# ⚠ docs/features.md is a source with NO arm below, by the goal-node-tree spec §5.1.1: an edit to it
+# alone leaves /goals stale until another trigger or the merge-time regen-pages.sh rebuild. That
+# source-list staleness is the class backlog #710 tracks.
 #
 # NEVER BLOCKS, NEVER FAILS THE TURN. Exits 0 unconditionally. The refusal cases are expected —
-# an anchor claimed by no document, a ROOTS key outside the registry — and the point is to surface
-# them at the moment they happen rather than the next time someone opens the page.
+# a document naming no current node, a ROOTS key that is no node of the tree — and the point is to
+# surface them at the moment they happen rather than the next time someone opens the page.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -33,7 +36,6 @@ print(d.get('tool_input', {}).get('file_path', '') or '')
 # Every input the page derives from. A source added to gen-goals-page.py and forgotten here is the
 # failure mode; the docstring's derivation list is the checklist.
 case "$FILE_PATH" in
-  */docs/anchors.md|docs/anchors.md) ;;
   */docs/adr/*.md|docs/adr/*.md) ;;
   */docs/superpowers/specs/*.md|docs/superpowers/specs/*.md) ;;
   */docs/superpowers/plans/*.md|docs/superpowers/plans/*.md) ;;

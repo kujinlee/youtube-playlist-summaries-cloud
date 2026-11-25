@@ -27,8 +27,8 @@ the documents that make it reproducible somewhere else. This file is the second 
 > (its lines 118, 158, 235), in the contract all four page-producing skills route through (spec §4,
 > criterion C3). `brief`'s own *Known gaps* section confesses only `brief`'s share.
 >
-> ⛔ **WHAT IS STILL NOT DECLARED, stated so the gap is not read as closed.** `docs/anchors.md`
-> registered 10 anchors when this was written and registers **13** today (⟳ 2026-10-15; a **14th**, `harness-ships-elsewhere`, is allocated on the unmerged marketplace-inventory branch and is deliberately not counted here — r1 M4 caught this file claiming it already); at the time exactly one touched comprehension — `status-visibility`, scoped to *"a
+> ⛔ **WHAT IS STILL NOT DECLARED, stated so the gap is not read as closed.** The anchor registry (since 2026-11-24 the
+> nodes of `docs/features.md`, ADR-0016) registered 10 anchors when this was written and registers **13** today (⟳ 2026-10-15; a **14th**, `harness-ships-elsewhere`, is allocated on the unmerged marketplace-inventory branch and is deliberately not counted here — r1 M4 caught this file claiming it already); at the time exactly one touched comprehension — `status-visibility`, scoped to *"a
 > person who was AWAY"*. That covers `brief` and the four hook-regenerated pages. It does **not**
 > cover `explain-diff`, `explain-topic` or `explain-findings`, which serve a human who is PRESENT
 > and trying to understand a change, a concept, or a triage decision. **⟳ 2026-10-15 — THAT SECOND ANCHOR NOW EXISTS: `explanation-on-demand`, covering `explain-diff`,

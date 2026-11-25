@@ -647,5 +647,31 @@
    ]
   ],
   "expect": "index: an orphan level is kept"
+ },
+ {
+  "name": "documents attach by the node's TRUNK, not its own slug, so a spec lands under the wrong node",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        f[\"docs\"].extend(docs_by_slug.get(n.slug, []))",
+    "        f[\"docs\"].extend(docs_by_slug.get(n.trunk, []))"
+   ]
+  ],
+  "expect": [
+   "collect: documents attach by the node's own slug"
+  ]
+ },
+ {
+  "name": "the node's adrs: line is not read, so the page lists no decision under any node",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        for num in n.adrs:",
+    "        for num in ():"
+   ]
+  ],
+  "expect": [
+   "collect: ADRs come from the node's adrs"
+  ]
  }
 ]

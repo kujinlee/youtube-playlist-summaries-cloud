@@ -1,6 +1,6 @@
 # Observed-reach selection — implementation plan (backlog #586, prerequisite backlog #590)
 
-> **Anchor:** `dev-speed-first` — **ADR:** none
+> **Anchor:** `dev-speed` — **ADR:** none
 > **Goal:** A change gets its verdict as fast as the evidence allows, with mutation coverage identical.
 
 **Status:** 📝 DRAFT, written 2026-11-09 from the approved spec at `1a6004c1`. Phase 2: dual adversarial review

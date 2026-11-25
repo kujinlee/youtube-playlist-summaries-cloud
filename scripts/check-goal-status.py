@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Every living spec and plan says whether it is alive — and the goals page renders it.
 
-    python3 scripts/check-goal-status.py              # enforce for the armed anchors
-    python3 scripts/check-goal-status.py --self-test  # 34 cases
+    python3 scripts/check-goal-status.py              # enforce for the armed nodes
+    python3 scripts/check-goal-status.py --self-test  # 41 cases
 
 WHY THIS EXISTS, AND IT IS A DEFECT THE OWNER FOUND BY READING THE PAGE
 ----------------------------------------------------------------------
@@ -62,8 +62,12 @@ tree, which is what found the defect in the first place.
 
 ITS SCOPE IS ARMED PER ANCHOR, DELIBERATELY
 -------------------------------------------
-`ARMED_ANCHORS` holds the anchors where a missing status FAILS. Everywhere else it WARNS and the
-run still exits 0. Reason: 106 of 198 documents carry no status line at all, and a gate that is red
+The ARMED set holds the nodes where a missing status FAILS. Everywhere else it WARNS and the
+run still exits 0. ⟳ goal node tree Task 9 (G4): the set is DERIVED — every node of
+`docs/features.md` that a document's `Anchor:` header names, minus `UNARMED` — so a new node is
+armed the day its first document names it. Widening stays the default; NARROWING is now the
+deliberate act with a visible diff: an exemption is a line in `UNARMED`, and an exemption naming no
+current node fails, so a rename cannot leave one behind silently. Reason: 106 of 198 documents carry no status line at all, and a gate that is red
 from birth across half its corpus gets switched off — that is backlog #56, measured. So an anchor
 joins the armed set when its threads have been audited and declared, which makes widening a
 deliberate act with a visible diff rather than a 106-file backfill nobody reviews.
@@ -78,29 +82,65 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SUBDIRS = ("superpowers/specs", "superpowers/plans")
 
-# The anchors where a missing declaration FAILS. See the docstring: widening is deliberate.
-# ⟳ 2026-10-22: ALL THIRTEEN ARMED, the day after the first. The owner read the page and
-# asked why 39 of 49 cards said "no status declared" — the answer was that arming bounded
-# it to one anchor. Every thread under every anchor now declares a state, each carrying the
-# evidence for its claim (a merged PR, and what is in the tree), so arming the rest costs
-# nothing and makes the page answer the question it exists to answer. ⚠ A NEW anchor is
-# still not armed automatically: it joins this tuple when its threads have been audited,
-# which keeps widening a deliberate act with a visible diff.
-ARMED_ANCHORS = (
-    "cloud-blob-key-encoding",
-    "cloud-publishing",
-    "cloud-sync",
-    "corrections-in-cloud",
-    "explanation-on-demand",
-    "feature-map",
-    "prod-smoke",
-    "review-decides-itself",
-    "serve-money-guard",
-    "serve-path-bounding",
-    "share-and-download",
-    "stable-blob-addressing",
-    "status-visibility",
-)
+# The nodes a document names whose missing declaration only WARNS. ⟳ goal node tree Task 9: this
+# REPLACES the hand-kept armed tuple (13 slugs, every one armed 2026-10-22 once its
+# threads were audited). The two below were the anchors that tuple left out, under their current
+# names (spec §6 Q6): their threads were never audited, so arming them would turn the guard red over
+# documents nobody has read. An entry naming no current node FAILS (`stale_exemptions`).
+UNARMED = ("dev-speed", "harness-ships-elsewhere")
+
+_CHECK_ANCHORS = None
+
+
+def _check_anchors():
+    """`check-anchors`, the ONE reader of the `Anchor:` header (`anchored_slugs`) and of the node
+    tree (`read_tree`). Loaded lazily and once; RAISES rather than fall back to a local copy."""
+    global _CHECK_ANCHORS
+    if _CHECK_ANCHORS is None:
+        import importlib.util
+        path = Path(__file__).resolve().parent / "check-anchors.py"
+        spec = importlib.util.spec_from_file_location("_cgs_check_anchors", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"CANNOT RUN — cannot load the anchor reader from {path}")
+        _CHECK_ANCHORS = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_CHECK_ANCHORS)
+    return _CHECK_ANCHORS
+
+
+def armed(anchored: dict[str, list[str]], unarmed: tuple[str, ...] = UNARMED) -> tuple[str, ...]:
+    """PURE. Every slug a document names, minus the exemptions, sorted."""
+    return tuple(sorted(slug for slug in anchored if slug not in unarmed))
+
+
+def with_document_anchors(anchored: dict[str, list[str]], docs: list[dict]) -> dict[str, list[str]]:
+    """PURE. `anchored` plus every spec or plan whose anchor only the LENIENT reader finds (r3 F1,
+    backlog #728): master armed such a document, so it must name — and arm — its slug here too."""
+    out = {slug: list(rels) for slug, rels in anchored.items()}
+    for d in docs:
+        if d["anchor"] is not None and d["rel"] not in out.get(d["anchor"], []):
+            out.setdefault(d["anchor"], []).append(d["rel"])
+    return out
+
+
+def misnamed_anchors(anchored: dict[str, list[str]], nodes: list) -> list[str]:
+    """One line per document whose `Anchor:` names no current, settled node, worded by
+    `check-anchors.name_problem` (its owner). Without this a mistyped slug was ARMED and the
+    document was told to declare a Status, when the defect is the name (r1 MINOR-2)."""
+    ca = _check_anchors()
+    out = []
+    for slug in sorted(anchored):
+        problem = ca.name_problem(nodes, slug)
+        if problem is not None:
+            out.extend(f"  ✗ {rel}: {problem} — fix the `Anchor:` slug" for rel in anchored[slug])
+    return out
+
+
+def stale_exemptions(unarmed: tuple[str, ...], slugs: set[str]) -> list[str]:
+    """PURE. One line per `UNARMED` entry that names no current node slug."""
+    return [f"  ✗ `{u}` is in UNARMED but is no current node slug of docs/features.md — a stale "
+            f"exemption: rename it to the node's current slug, or drop it"
+            for u in unarmed if u not in slugs]
+
 
 # marker -> state. ORDER IS THE READING ORDER on the page's legend, cheapest claim first.
 # ⚠ `⏸️` is the EMOJI PRESENTATION SEQUENCE (U+23F8 U+FE0F). A document written with the bare
@@ -117,7 +157,8 @@ STATES = {
 ALIVE_WORDS = ("current", "needs-you")
 
 STATUS_LINE = re.compile(r"^\*\*Status:\*\*\s*(.+)$", re.M)
-ANCHOR_LINE = re.compile(r"\*\*Anchor:\*\*\s*`([^`]+)`")
+# The `Anchor:` slug is NOT read here: `check-anchors.parse_header` is its one reader (r1 MINOR-4),
+# called in its LENIENT mode, master's arming rule (r3 F1, backlog #728). This bounds STATUS only.
 HEAD_LINES = 18
 
 
@@ -177,6 +218,7 @@ def living_documents(repo: Path | None = None) -> list[dict]:
     indistinguishable from a clean result, which this repository treats as a failure.
     """
     root = (repo or REPO) / "docs"
+    parse_header = _check_anchors().parse_header
     out = []
     for sub in SUBDIRS:
         d = root / sub
@@ -187,11 +229,9 @@ def living_documents(repo: Path | None = None) -> list[dict]:
                 text = f.read_text(errors="replace")
             except OSError as exc:
                 raise ValueError(f"{f} could not be read: {exc}") from exc
-            head = "\n".join(text.splitlines()[:HEAD_LINES])
-            am = ANCHOR_LINE.search(head)
             state, why = parse_status(text)
             out.append({"rel": f"docs/{sub}/{f.name}", "name": f.name,
-                        "anchor": am.group(1) if am else None,
+                        "anchor": parse_header(text, lenient=True)[0],
                         "state": state, "why": why})
     return out
 
@@ -253,7 +293,7 @@ def verdict(docs: list[dict], armed: tuple[str, ...]) -> tuple[int, list[str]]:
 
 
 def main(argv: list[str], *, repo: Path | None = None,
-         armed: tuple[str, ...] | None = None) -> int:
+         armed_override: tuple[str, ...] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Every living spec and plan says whether it is alive.")
     ap.add_argument("--self-test", action="store_true")
@@ -268,7 +308,29 @@ def main(argv: list[str], *, repo: Path | None = None,
     if not docs:
         print("CANNOT RUN — no spec or plan documents were found, so nothing was checked.")
         return 2
-    rc, lines = verdict(docs, ARMED_ANCHORS if armed is None else armed)
+    if armed_override is None:
+        ca = _check_anchors()
+        root = (repo or REPO) / "docs"
+        try:
+            nodes = ca.read_tree(root / "features.md")
+        except ca.TreeUnreadable as exc:
+            print(f"CANNOT RUN — {exc}, so the armed set cannot be derived. Treat this as NOT RUN.")
+            return 2
+        stale = stale_exemptions(UNARMED, ca.check_features.current_slugs(nodes))
+        if stale:
+            print("FAILED — an exemption outlived its node:")
+            print("\n".join(stale))
+            return 1
+        anchored = with_document_anchors(ca.anchored_slugs(root), docs)
+        misnamed = misnamed_anchors(anchored, nodes)
+        if misnamed:
+            print("FAILED — a document names no current node:")
+            print("\n".join(misnamed))
+            return 1
+        armed_set = armed(anchored)
+    else:
+        armed_set = armed_override
+    rc, lines = verdict(docs, armed_set)
     print("\n".join(lines))
     return rc
 
@@ -290,6 +352,104 @@ def _self_test_body() -> int:
         if got != want:
             failures += 1
             print(f"  [FAIL] {name}\n    got:  {got!r}\n    want: {want!r}")
+
+    # ── G4: the armed set is DERIVED (goal node tree, Task 9) ───────────────────────────────────
+    case("armed: every anchored node",
+         (armed({"alpha": ["docs/superpowers/specs/a.md"], "beta": ["docs/adr/0001-b.md"]}, ()),
+          armed({"gamma": ["docs/superpowers/plans/g.md"]}, ())),
+         (("alpha", "beta"), ("gamma",)))
+    _exempt_doc = [{"rel": "docs/superpowers/specs/x.md", "name": "x.md", "anchor": "dev-speed",
+                    "state": None, "why": None}]
+    _ex_rc, _ex_lines = verdict(_exempt_doc, armed({"dev-speed": ["x"], "alpha": ["y"]}))
+    case("armed: an exemption is not armed",
+         (armed({"dev-speed": ["x"], "alpha": ["y"], "harness-ships-elsewhere": ["z"]}),
+          _ex_rc, any("UNARMED anchors declare nothing" in ln for ln in _ex_lines)),
+         (("alpha",), 0, True))
+
+    def _g4_world(td: str, nodes: tuple[str, ...], named: str) -> Path:
+        """A repo whose tree holds `nodes` and whose one spec names `named`, declaring a state."""
+        r = Path(td)
+        (r / "docs" / "superpowers" / "specs").mkdir(parents=True)
+        (r / "docs" / "superpowers" / "plans").mkdir(parents=True)
+        (r / "docs" / "features.md").write_text("# Feature map\n## PRODUCT\n" + "".join(
+            f"### {n}\nstate: built\nfor: Node {n}.\nareas: ({n})\n" for n in nodes))
+        (r / "docs" / "superpowers" / "specs" / "2026-01-01-g4.md").write_text(
+            f"# G4\n\n> **Anchor:** `{named}` — **ADR:** none\n\n**Status:** ✅ shipped\n")
+        return r
+
+    def _g4_main(r: Path) -> tuple:
+        import contextlib as _cl
+        import io as _io
+        out = _io.StringIO()
+        with _cl.redirect_stdout(out):
+            rc = main([], repo=r)
+        return rc, [ln.strip() for ln in out.getvalue().splitlines()
+                    if "armed anchors:" in ln or "stale exemption" in ln]
+
+    _live = ("alpha", "beta") + UNARMED
+    with _tf.TemporaryDirectory() as _ga, _tf.TemporaryDirectory() as _gb, \
+            _tf.TemporaryDirectory() as _gs:
+        _two = (_g4_main(_g4_world(_ga, _live, "alpha")), _g4_main(_g4_world(_gb, _live, "beta")))
+        _stale = _g4_main(_g4_world(_gs, ("alpha", "harness-ships-elsewhere"), "alpha"))
+    # ⛔ r1 MINOR-2: a MISTYPED slug is a naming defect, not a missing status. Before the fold it
+    # was armed, its document declared a state, and this exited 0 — only check-anchors caught it.
+    with _tf.TemporaryDirectory() as _gm:
+        import contextlib as _cl
+        import io as _io
+        _mout = _io.StringIO()
+        with _cl.redirect_stdout(_mout):
+            _mrc = main([], repo=_g4_world(_gm, _live, "no-such-node"))
+    case("armed: a slug that is no node FAILS with the naming advice, not a status request",
+         (_mrc, "docs/superpowers/specs/2026-01-01-g4.md: `no-such-node` is not a node"
+                in _mout.getvalue(), "armed anchors:" in _mout.getvalue()),
+         (1, True, False))
+    # ⛔ r1 MINOR-4 made check-anchors' STRICT reader the only one, and r3 F1 (backlog #728) measured
+    # what that cost: a pre-cutoff document with a bare `**Anchor:**` line, or one on lines 11-18,
+    # was armed on master and silently unarmed here. ONE reader still — `check-anchors.parse_header`
+    # — in its LENIENT mode, which is master's arming rule (any `**Anchor:** `x`` in 18 lines).
+    with _tf.TemporaryDirectory() as _gr, _tf.TemporaryDirectory() as _gr2:
+        _rr, _rr2 = Path(_gr), Path(_gr2)
+        _sp = _rr / "docs" / "superpowers" / "specs"
+        _sp.mkdir(parents=True)
+        (_sp / "2026-01-01-a.md").write_text("# A\n\n> **Anchor:** `alpha` — **ADR:** none\n")
+        (_sp / "2026-01-01-b.md").write_text("# B\n\n**Anchor:** `alpha`\n")
+        (_sp / "2026-01-01-c.md").write_text(
+            "# C\n" + "\n" * 11 + "> **Anchor:** `alpha` — **ADR:** none\n")
+        (_sp / "2026-01-01-e.md").write_text(
+            "# E\n" + "\n" * 18 + "> **Anchor:** `alpha` — **ADR:** none\n")
+        (_rr2 / "docs" / "superpowers" / "plans").mkdir(parents=True)
+        (_rr2 / "docs" / "superpowers" / "plans" / "2026-01-01-d.md").write_text(
+            "# D\n\n> **Anchor:** `beta` — **ADR:** 0001\n")
+        case("living_documents reads the anchor by master's arming rule: bare, short and lines 11-18 count",
+             ([d["anchor"] for d in living_documents(_rr)],
+              [d["anchor"] for d in living_documents(_rr2)]),
+             (["alpha", "alpha", "alpha", None], ["beta"]))
+    # ⛔ r3 F1 (backlog #728), the reviewer's input: the ONLY document naming `cloud-sync` is
+    # pre-cutoff, its header bare and short, its Status missing. Master: rc 1, armed. Before this
+    # fold: rc 0 and "armed anchors: " empty — the missing Status passed in silence.
+    with _tf.TemporaryDirectory() as _gf:
+        import contextlib as _cl
+        import io as _io
+        _fr = Path(_gf)
+        (_fr / "docs" / "superpowers" / "specs").mkdir(parents=True)
+        (_fr / "docs" / "superpowers" / "plans").mkdir(parents=True)
+        (_fr / "docs" / "features.md").write_text(
+            "# Feature map\n## PRODUCT\n" + "".join(
+                f"### {n}\nstate: built\nfor: Node {n}.\nareas: ({n})\n" for n in ("cloud-sync",) + UNARMED))
+        (_fr / "docs" / "superpowers" / "specs" / "2026-01-01-old.md").write_text(
+            "# Old\n\n**Anchor:** `cloud-sync`\n\nno status\n")
+        _fout = _io.StringIO()
+        with _cl.redirect_stdout(_fout):
+            _frc = main([], repo=_fr)
+    case("⛔ F1: a pre-cutoff spec with a bare, short Anchor header and no Status is ARMED and FAILS",
+         (_frc, "`cloud-sync` is armed" in _fout.getvalue()), (1, True))
+    case("armed: two trees give two sets", _two,
+         ((0, ["armed anchors: alpha"]), (0, ["armed anchors: beta"])))
+    case("armed: a stale exemption fails",
+         (stale_exemptions(("dev-speed", "alpha"), {"alpha"}), stale_exemptions(("alpha",), {"alpha", "beta"}),
+          _stale[0], len(_stale[1]) == 1 and "`dev-speed`" in _stale[1][0]),
+         (["  ✗ `dev-speed` is in UNARMED but is no current node slug of docs/features.md — a stale "
+           "exemption: rename it to the node's current slug, or drop it"], [], 1, True))
 
     # ── the grammar ──────────────────────────────────────────────────────────────────────────
     case("a shipped declaration parses", parse_status("**Status:** ✅ shipped"), ("shipped", None))
@@ -396,18 +556,18 @@ def _self_test_body() -> int:
         (_r / "docs" / "superpowers" / "specs").mkdir(parents=True)
         (_r / "docs" / "superpowers" / "plans").mkdir(parents=True)
         (_r / "docs" / "superpowers" / "specs" / "2026-01-01-x-design.md").write_text(
-            "# X\n\n> **Anchor:** `armed-anchor`\n\n**Status:** ✅ shipped\n")
+            "# X\n\n> **Anchor:** `armed-anchor` — **ADR:** none\n\n**Status:** ✅ shipped\n")
         case("main() exits 0 over a world whose armed document declares a state",
-             main([], repo=_r, armed=("armed-anchor",)), 0)
+             main([], repo=_r, armed_override=("armed-anchor",)), 0)
         (_r / "docs" / "superpowers" / "plans" / "2026-01-01-x.md").write_text(
-            "# X plan\n\n> **Anchor:** `armed-anchor`\n\nno status\n")
+            "# X plan\n\n> **Anchor:** `armed-anchor` — **ADR:** none\n\nno status\n")
         case("...and exits 1 once an armed document declares nothing",
-             main([], repo=_r, armed=("armed-anchor",)), 1)
+             main([], repo=_r, armed_override=("armed-anchor",)), 1)
         case("...and 0 again when that anchor is not armed, over the SAME tree",
-             main([], repo=_r, armed=("other",)), 0)
+             main([], repo=_r, armed_override=("other",)), 0)
     with _tf.TemporaryDirectory() as _d2:
         case("an empty tree is CANNOT RUN (2), never a pass — nothing was checked",
-             main([], repo=Path(_d2), armed=("armed-anchor",)), 2)
+             main([], repo=Path(_d2), armed_override=("armed-anchor",)), 2)
     # ⛔ AN UNREADABLE DOCUMENT IS CANNOT RUN, NOT AN ABSENT STATUS. Silence there would be
     # indistinguishable from a clean result, which is this repository's loudest rule.
     with _tf.TemporaryDirectory() as _d3:
@@ -418,13 +578,13 @@ def _self_test_body() -> int:
         # "no documents" branch — the right code for the wrong reason, so the case passed with
         # the read-failure path deleted.
         (_r3 / "docs" / "superpowers" / "specs" / "2026-01-01-ok-design.md").write_text(
-            "# OK\n\n> **Anchor:** `armed-anchor`\n\n**Status:** ✅ shipped\n")
+            "# OK\n\n> **Anchor:** `armed-anchor` — **ADR:** none\n\n**Status:** ✅ shipped\n")
         _bad = _r3 / "docs" / "superpowers" / "specs" / "2026-01-01-y-design.md"
-        _bad.write_text("# Y\n\n> **Anchor:** `armed-anchor`\n\n**Status:** ✅ shipped\n")
+        _bad.write_text("# Y\n\n> **Anchor:** `armed-anchor` — **ADR:** none\n\n**Status:** ✅ shipped\n")
         _bad.chmod(0o000)
         try:
             case("an UNREADABLE document is CANNOT RUN (2), never an absent status",
-                 main([], repo=_r3, armed=("armed-anchor",)), 2)
+                 main([], repo=_r3, armed_override=("armed-anchor",)), 2)
         finally:
             _bad.chmod(0o644)
 

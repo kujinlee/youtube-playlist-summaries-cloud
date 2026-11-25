@@ -1,8 +1,8 @@
 ---
-status: proposed 2026-11-23 — accepted when the slice that deletes `docs/anchors.md` merges with
-  every gate green. Supersedes PART of ADR-0010 (where the names live; that a name never changes; that the backlog has no second mechanism).
-  ADR-0010's other decisions stand. ⚠ PROPOSED IS NOT IMPLEMENTED: at the time of writing
-  `docs/anchors.md` is still the registry and `scripts/check-anchors.py` still reads it.
+status: accepted 2026-11-24 — by PR #637 (the node-tree plan's slice S2, branch `goal-node-tree-s2`), which
+  deletes `docs/anchors.md`; proposed 2026-11-23. Supersedes PART of ADR-0010 (where the names live; that a name never
+  changes; that the backlog has no second mechanism). ADR-0010's other decisions stand. The names now live in
+  `docs/features.md`, read by `scripts/check-features.py`; `scripts/check-anchors.py` resolves every `Anchor:` against it.
 ---
 
 > **Anchor:** `status-visibility` — **ADR:** 0010, 0016

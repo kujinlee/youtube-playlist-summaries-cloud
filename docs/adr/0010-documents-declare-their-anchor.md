@@ -1,5 +1,6 @@
 ---
-status: proposed — accepted when the header check ships and passes on the living set
+status: accepted 2026-11-24 (owner, goal node tree spec §6 Q10, 2026-11-23 21:20) — its own condition was met:
+  the header check shipped and passes on the living set. ADR-0016 supersedes PART of it (where the names live).
 ---
 
 # A document declares the goal it belongs to; the index over documents is derived, never maintained

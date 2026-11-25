@@ -1,6 +1,6 @@
 # Observed-reach selection — a PR sweeps the manifests whose suites READ what it changed
 
-> **Anchor:** `dev-speed-first` — **ADR:** none
+> **Anchor:** `dev-speed` — **ADR:** none
 > **Goal:** A change gets its verdict as fast as the evidence allows, with mutation coverage identical.
 
 **Status:** ✅ APPROVED by the owner 2026-11-09 (10:33, "I agree all your recommendations"; 10:40, selection card

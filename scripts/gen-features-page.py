@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 51 cases
+    python3 scripts/gen-features-page.py --self-test  # 54 cases
 
 WHY THIS EXISTS
 ---------------
@@ -20,8 +20,9 @@ disagree with the first, and this project has measured that repeatedly; a link c
 
   the tree, the prose   <- docs/features.md          (the only hand-written surface)
   known gaps            <- docs/backlog.md rows whose (area) the node claims
-  decisions             <- docs/anchors.md's ADR column, per anchor the node claims
-  specs and plans       <- the `Anchor:` headers on docs/superpowers/{specs,plans}/*.md (ADR-0010)
+  decisions             <- the node's own `adrs:` line (ADR-0016)
+  specs and plans       <- the `Anchor:` headers on docs/superpowers/{specs,plans}/*.md naming the
+                           node's slug, read by `check-anchors.anchored_slugs` (ADR-0010)
   reviews               <- docs/reviews/** whose filename stem contains the node slug
   recent changes        <- git log subjects carrying (#N)
 
@@ -67,7 +68,6 @@ import page_markup  # noqa: E402
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 DEFAULT_OUT = pathlib.Path.home() / "explainers" / "features.html"
-SUBDIRS = ("superpowers/specs", "superpowers/plans")
 
 
 def _load(stem: str):
@@ -86,8 +86,6 @@ esc = page_markup.escape
 inline_md = page_markup.render_inline
 inline_unlinked = page_markup.render_unlinked
 
-ANCHOR_ROW = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|\s*([^|]*?)\s*\|")
-DOC_ANCHOR = re.compile(r"^>\s*\*\*Anchor:\*\*\s*`([a-z0-9-]+)`")
 PR_TAIL = re.compile(r"\(#\d+\)\s*$")
 
 def sev_glyphs(severity: dict[str, str]) -> dict[str, str]:
@@ -551,32 +549,23 @@ def gap_disagreements(page: str, order: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------- collection (reads the tree)
-def anchor_adrs(anchors_text: str) -> dict[str, list[str]]:
-    """anchor slug -> the ADR numbers its registry row names."""
-    out: dict[str, list[str]] = {}
-    for line in anchors_text.split("\n"):
-        m = ANCHOR_ROW.match(line)
-        if m:
-            out[m.group(1)] = re.findall(r"\d{4}", m.group(2))
-    return out
+_CHECK_ANCHORS = None
 
 
 def anchor_documents(docs: pathlib.Path) -> dict[str, list[dict]]:
-    """anchor slug -> the specs and plans whose `Anchor:` header claims it (ADR-0010)."""
-    out: dict[str, list[dict]] = {}
-    for sub in SUBDIRS:
-        d = docs / sub
-        if not d.is_dir():
-            continue
-        for f in sorted(d.glob("*.md")):
-            head = f.read_text(errors="replace").split("\n")[:10]
-            for line in head:
-                m = DOC_ANCHOR.match(line)
-                if m:
-                    out.setdefault(m.group(1), []).append(
-                        {"label": f.name, "href": f"/src/docs/{sub}/{f.name}"})
-                    break
-    return out
+    """node slug -> the specs and plans whose `Anchor:` header names it (ADR-0010).
+
+    ⛔ READ BY `check-anchors.anchored_slugs`, THE ONE HEADER READER (plan choice C10). This page
+    carried its own, looser header regex; a second reader of one header is a second grammar for it,
+    and the two can disagree about which documents a node has. ADRs are left out: a node's decisions
+    are its own `adrs:` line. Loaded lazily and once, like `backlog_page`."""
+    global _CHECK_ANCHORS
+    if _CHECK_ANCHORS is None:
+        _CHECK_ANCHORS = _load("check-anchors")
+    adr_dir = f"docs/{_CHECK_ANCHORS.ADR_SUB}/"
+    return {slug: [{"label": rel.rsplit("/", 1)[1], "href": f"/src/{rel}"}
+                   for rel in rels if not rel.startswith(adr_dir)]
+            for slug, rels in _CHECK_ANCHORS.anchored_slugs(docs).items()}
 
 
 def git_subjects(n: int = 400) -> list[str] | None:
@@ -638,8 +627,7 @@ def match_rows(nodes: list[Node], rows: list[dict]) -> dict[str, list[dict]]:
 def collect(nodes: list[Node]) -> tuple[dict[str, dict], dict]:
     """(fragments keyed by node slug, notes about what could not be derived)."""
     notes: dict = {}
-    adrs = anchor_adrs((DOCS / "anchors.md").read_text())
-    docs_by_anchor = anchor_documents(DOCS)
+    docs_by_slug = anchor_documents(DOCS)
 
     adr_files = {p.name[:4]: p.name for p in sorted((DOCS / "adr").glob("[0-9][0-9][0-9][0-9]-*.md"))}
     rows = backlog_rows()
@@ -665,12 +653,12 @@ def collect(nodes: list[Node]) -> tuple[dict[str, dict], dict]:
             "closed": r["closed"],
         } for r in mine]
 
-        for a in n.anchors:
-            for num in adrs.get(a, []):
-                if num in adr_files:
-                    f["adr"].append({"label": f"ADR-{num} · {adr_files[num][5:-3].replace('-', ' ')}",
-                                     "href": f"/src/docs/adr/{adr_files[num]}"})
-            f["docs"].extend(docs_by_anchor.get(a, []))
+        # A number with no file is `check-features`' refusal (`adr_problems`), not this page's.
+        for num in n.adrs:
+            if num in adr_files:
+                f["adr"].append({"label": f"ADR-{num} · {adr_files[num][5:-3].replace('-', ' ')}",
+                                 "href": f"/src/docs/adr/{adr_files[num]}"})
+        f["docs"].extend(docs_by_slug.get(n.slug, []))
 
         hits = [p for p in reviews if n.slug in p.stem]
         f["reviews"] = [{"label": p.name, "href": f"/src/{p.relative_to(ROOT)}"} for p in hits]
@@ -978,7 +966,7 @@ def _self_test_body() -> int:
     nodes, _ = parse_features(
         "## PLATFORM\n"
         "### wake-on-visit\nstate: built\nfor: Lets the worker sleep until a visitor needs it.\n"
-        "anchors: cloud-publishing\n\n"
+        "adrs: 0001\n\n"
         "### dig-job-recovery\nstate: absent\nfor: Un-sticks a dig job whose worker slept.\n"
         "expected-because: dig inherits the same race and nothing rescues it.\n")
 
@@ -1016,7 +1004,7 @@ def _self_test_body() -> int:
         "### job-queue\nstate: built\nfor: Runs the work someone walked away from.\n"
         "areas: (worker)\n"
         "#### wake-on-visit\nstate: built\nfor: Lets the worker sleep until a visitor needs it.\n"
-        "anchors: cloud-publishing\n")
+        "adrs: 0001\n")
     deep = render(nested, {}, built_at="2001-01-01T00:00", notes={"git": False, "prs_read": 0},
                   problems=["features.md:1: a problem"], generated_at="2001-01-01 00:00 · abc1234")
     check("no node is rendered twice",
@@ -1302,7 +1290,7 @@ def _self_test_body() -> int:
           (False, True, False, True, False, True, True))
 
     _na, _ = parse_features("## GOALS\n### recall\nstate: built\nfor: Finds the right memory.\n"
-                            "anchors: memory-recall\n")
+                            "adrs: 0003\n")
     _na_ix, _na_page = render_index(_na, {}, _order), render(_na, {})
     _na_head = _found(re.search(r'id="f-recall"[^>]*>\s*<summary.*?</summary>', _na_page, re.S), 0)
     check("index: a node claiming and inheriting no area says so",
@@ -1515,6 +1503,45 @@ def _self_test_body() -> int:
     check("empty stdin stays silent — there is nothing to have failed to parse",
           _run_hook(""), "rc=0")
 
+    # ⛔ goal node tree Task 7: `collect` over a WORLD — the real ADRs and backlog, symlinked; NO
+    # registry file; one spec naming `probe-a`, one plan naming `probe-b`. Three nodes so a document
+    # attached by anything but the node's own slug lands under the wrong one, and an ADR read from
+    # anywhere but `adrs:` is missed.
+    _gw = globals()
+    _keep_docs = _gw["DOCS"]
+    with tempfile.TemporaryDirectory() as _wd:
+        _w = pathlib.Path(_wd) / "docs"
+        _w.mkdir()
+        for _name in ("adr", "backlog.md", "features.md"):
+            (_w / _name).symlink_to(_keep_docs / _name)
+        for _sub, _slug in (("specs", "probe-a"), ("plans", "probe-b")):
+            (_w / "superpowers" / _sub).mkdir(parents=True)
+            (_w / "superpowers" / _sub / f"2026-01-01-{_slug}.md").write_text(
+                f"# {_slug}\n\n> **Anchor:** `{_slug}` — **ADR:** none\n")
+        _pn, _ = parse_features("## T\n### probe-a\nstate: built\nfor: A.\n"
+                                "### probe-b\nstate: built\nfor: B.\nadrs: 0010, 0016\n"
+                                "### probe-c\nstate: built\nfor: C.\nadrs: 0003\n")
+        _gw["DOCS"] = _w
+        try:
+            _wf, _wn = collect(_pn)
+        except Exception as e:      # a read of the absent registry is a crash, and the case names it
+            _wf, _wn = {"error": f"{type(e).__name__}: {e}"}, {}
+        finally:
+            _gw["DOCS"] = _keep_docs
+        _world = sorted(p.name for p in _w.iterdir())
+    _adr_title = {p.name[:4]: p.name[5:-3].replace("-", " ") for p in (DOCS / "adr").glob("[0-9]*.md")}
+    check("collect: runs with no registry file", (_world, sorted(_wf)),
+          (["adr", "backlog.md", "features.md", "superpowers"], ["probe-a", "probe-b", "probe-c"]))
+    check("collect: ADRs come from the node's adrs",
+          [[e["label"] for e in _wf.get(s, {}).get("adr", [])] for s in ("probe-a", "probe-b", "probe-c")],
+          [[], [f"ADR-0010 · {_adr_title['0010']}", f"ADR-0016 · {_adr_title['0016']}"],
+           [f"ADR-0003 · {_adr_title['0003']}"]])
+    check("collect: documents attach by the node's own slug",
+          [_wf.get(s, {}).get("docs") for s in ("probe-a", "probe-b", "probe-c")],
+          [[{"label": "2026-01-01-probe-a.md", "href": "/src/docs/superpowers/specs/2026-01-01-probe-a.md"}],
+           [{"label": "2026-01-01-probe-b.md", "href": "/src/docs/superpowers/plans/2026-01-01-probe-b.md"}],
+           []])
+
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 
@@ -1533,7 +1560,7 @@ def main() -> int:
     # Every `PR #N` this page renders links to GitHub (backlog #470); no GitHub remote -> plain text.
     page_markup.use_repo(page_markup.origin_repo(ROOT))
 
-    for p in (DOCS / "features.md", DOCS / "anchors.md", DOCS / "backlog.md"):
+    for p in (DOCS / "features.md", DOCS / "backlog.md"):
         if not p.is_file():
             print(f"CANNOT RUN — {p} is missing. Treat this as NOT RUN.", file=sys.stderr)
             return 2

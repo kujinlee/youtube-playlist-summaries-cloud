@@ -23,7 +23,8 @@ metadata:
   PR #148, `61d91c0`). **ADR-0002 is PARTLY superseded** — only its rejection of video-level shared
   summaries falls; its `(playlist_id, owner_id)` cross-tenant guard STANDS. ADR-0009 (encoder) accepted.
 - **ADR-0010** (documents declare their anchor) — shipped by PR #146 + PR #147 (`b4223f5`):
-  `docs/anchors.md`, backfilled `Anchor:`/`ADR:`/`Goal:` headers, `scripts/check-anchors.py` (in CI).
+  the anchor registry (deleted 2026-11-24 by node-tree slice S2 — the names are nodes of `docs/features.md`,
+  ADR-0016), backfilled `Anchor:`/`ADR:`/`Goal:` headers, `scripts/check-anchors.py` (in CI).
   ⚠ **Its front matter still reads `status: proposed — accepted when the header check ships and passes on
   the living set`** (2026-11-14) although that condition is met — flipping it is a human gate, still undone.
   ⚠ The check cannot tell whether a `Goal:` line is TRUE.
