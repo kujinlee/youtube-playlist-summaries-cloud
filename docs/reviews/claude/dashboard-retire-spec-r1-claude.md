@@ -1,3 +1,5 @@
+Reviewed head: 0487f068096d66c8c2e58d11a12cd04e6cecc33c
+
 # Claude half, round 1: adversarial review of `docs/superpowers/specs/2026-11-24-dashboard-retire-design.md` (at 0487f068)
 
 **Verdict: NOT CONVERGED.** Five majors and some minors, but no blocker. Most findings are scope gaps with a clear fix. The two that matter most are the unenforced append-only rule (M1) and K8 as specified (M2).
@@ -97,4 +99,4 @@ None. I looked for a missed reader that silently empties NEEDS YOU:
 - **S1 → S2 → S3 is the right order and it is forced,** once M4's ownership question and M5's same-slice repoint are settled. No slice leaves NEEDS YOU reading an empty source without saying so.
 - **K4–K7 do not pass vacuously.** Each depends on a parse that raises, or reports NOT READ, when the store or page is missing. That leaves K1/K3 (m4), K8 (M2) and the missing K9 (M1).
 
-**NOT CONVERGED**
+VERDICT: NOT CONVERGED
