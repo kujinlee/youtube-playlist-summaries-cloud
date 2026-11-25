@@ -54,6 +54,10 @@ separate-git-dir worktrees) are cases over real git layouts, with precondition r
 steering cases (GIT_DIR, GIT_COMMON_DIR, GIT_CONFIG_COUNT, GIT_CEILING_DIRECTORIES) kill the sanitization mutant g0,
 and two fake gits on PATH (one line; never answers) kill the answer-shape and alarm mutants. Mutants g0–g12.
 
+⟳ backlog #688 X2: the launcher's two exits BEFORE a root exists (an unreadable cwd; no checkout and CLAUDE_PROJECT_DIR
+unset) speak a usage hook's NOT RUN on its own channel too. Reached through the registered command: a deleted cwd, and
+an exported tree (the launcher and hooks, no `.git`) entered at its root. Cases PREROOT, mutants pr688a–pr688d; a non-usage hook stays exit 1.
+
 WHAT WOULD MAKE THIS FAIL (its falsifier): a world whose exit code, hook file or output streams differ
 from the review's table, or a mutant whose named world stays green.
 
@@ -64,7 +68,7 @@ is NOT run here. W15 (a session launched in a subdirectory loads no project hook
 any launcher and has no case.
 
     python3 scripts/check-run-hook.py               # the worlds, over the repo's launcher
-    python3 scripts/check-run-hook.py --self-test  # 163 cases
+    python3 scripts/check-run-hook.py --self-test  # 175 cases
 
 EXIT CODES (repo convention): 0 = every world as required · 1 = a world differs · 2 = CANNOT RUN
 (no git, no launcher, a world that could not be built — never a pass).
@@ -180,11 +184,12 @@ class Result:
 
 
 def launch(cwd: Path, project: str | None, args: list[str], extra: dict[str, str], out: Path,
-           timeout: float = 60) -> Result:
+           timeout: float = 60, vanish: bool = False) -> Result:
     """Run the registered command from `cwd` as the harness does: `/bin/sh -c`, CLAUDE_PROJECT_DIR set.
 
     `PWD` is the cwd as GIVEN (logical, as a shell that had `cd`'d there would export it), so a
-    launcher that reads the logical path sees the symlink. `extra` may override it, or anything."""
+    launcher that reads the logical path sees the symlink. `extra` may override it, or anything.
+    `vanish` (backlog #688): `cwd` is made, entered and REMOVED before the launch, so the child's cwd is deleted."""
     env = base_env()
     env["PWD"] = str(cwd)
     env["PROBE_OUT"] = str(out)
@@ -196,7 +201,11 @@ def launch(cwd: Path, project: str | None, args: list[str], extra: dict[str, str
     cmd = " ".join([COMMAND, *(shlex.quote(a) for a in args)])
     saved = os.getcwd()
     try:
+        if vanish:
+            cwd.mkdir(parents=True, exist_ok=True)
         chdir_parts(cwd)
+        if vanish:
+            os.rmdir(cwd)
         r = subprocess.run(["/bin/sh", "-c", cmd], env=env, input=PAYLOAD, capture_output=True, text=True,
                            timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -338,6 +347,18 @@ def build(x: Path, launcher: Path) -> World:
     p["outside"] = Path(tempfile.mkdtemp(prefix="run-hook-outside-", dir=base)).resolve() if base else None
     if p["outside"] is not None:
         w.cleanup.append(p["outside"])
+    # Backlog #688 X2: a tree that carries the launcher and hooks but NO `.git` (an exported copy), outside every
+    # checkout. With CLAUDE_PROJECT_DIR unset the registered command finds the launcher only through `./`, so the
+    # cwd is its root; the walk then finds no checkout. Its own hooks are probes: a fix that fell back to the cwd
+    # RUNS one, and the cases say NOT_RAN.
+    p["export"] = Path(tempfile.mkdtemp(prefix="run-hook-export-", dir=base)).resolve() if base else None
+    if p["export"] is not None:
+        w.cleanup.append(p["export"])
+        # A SYMLINK to main's launcher, so a mutant written there (mutant_target) is the one this world runs.
+        (p["export"] / LAUNCHER_REL).parent.mkdir(parents=True, exist_ok=True)
+        (p["export"] / LAUNCHER_REL).symlink_to(main / LAUNCHER_REL)
+        for n in ("probe.sh", USAGE, *REAL_USAGE):
+            put(p["export"] / ".claude/hooks" / n, PROBE)
     p["wtlink"] = x / "wtlink"                              # W11: a symlinked cwd
     p["wtlink"].symlink_to(p["wt"])
     p["mainlink"] = main / "link"                           # W11: a symlink INSIDE main, into a worktree
@@ -560,6 +581,7 @@ class Case:
     project: str | None = "main"  # "main" = CLAUDE_PROJECT_DIR is the main checkout; None = unset
     want_err: str | None = None   # r1 C4: a substring stderr must carry — WHICH refusal spoke, not only that one did
     want_out: str | None = None   # r1 C3: stdout, exactly
+    vanish: bool = False          # backlog #688: the cwd is deleted before the launch (see launch())
 
 
 def cases(w: World) -> list[Case]:
@@ -592,6 +614,19 @@ def cases(w: World) -> list[Case]:
         Case("W8 submodule, a subdirectory: the SUBMODULE's hook", p["vend"] / "scripts", PROBE_RC, ran(p["vend"])),
         Case("W9 nested repo with no hooks: NOT RUN, and main's copy is NOT run", p["nohooks"] / "sub", 1, NOT_RAN),
         Case(W10, p["outside"], PROBE_RC, ran(m)),
+        # Backlog #688 X2: outside every checkout with CLAUDE_PROJECT_DIR unset there is no root at all. A usage hook's
+        # NOT RUN still speaks on its own channel (exit 0, the fixed JSON line); every other hook stays exit 1.
+        Case(OUT_PLAIN, p["export"], 1, NOT_RAN, project=None, want_err=NOROOT_ERR, want_out=""),
+        Case(OUT_USAGE, p["export"], 0, NOT_RAN, args=[USAGE], project=None, want_err=NOROOT_ERR,
+             want_out=SYSTEM_JSON),
+        # ...and the same class one line earlier: a cwd that cannot be read (deleted under the session).
+        Case(GONE_PLAIN, m / "vanished", 1, NOT_RAN, want_err=NOCWD_ERR, want_out="", vanish=True),
+        Case(GONE_USAGE, m / "vanished", 0, NOT_RAN, args=[USAGE], want_err=NOCWD_ERR, want_out=SYSTEM_JSON,
+             vanish=True),
+        Case(OUT_PROMPT, p["export"], 0, NOT_RAN, args=["usage-pace-prompt.sh"], project=None, want_err=NOROOT_ERR,
+             want_out=PROMPT_JSON),
+        Case(GONE_PROMPT, m / "vanished-prompt", 0, NOT_RAN, args=["usage-pace-prompt.sh"], want_err=NOCWD_ERR,
+             want_out=PROMPT_JSON, vanish=True),
         Case("W11 symlinked cwd into a worktree: the PHYSICAL checkout's hook", p["wtlink"] / "scripts", PROBE_RC,
              ran(p["wt"])),
         Case("W11 symlink inside main pointing into a worktree: the PHYSICAL checkout's hook", p["mainlink"],
@@ -702,6 +737,16 @@ def verdict(got: tuple, want: tuple) -> bool:
 
 
 W10 = "W10 cwd outside any checkout: the project dir's hook"
+_OUT = "PREROOT #688 cwd at an exported tree's root (no .git anywhere), CLAUDE_PROJECT_DIR unset: "
+OUT_PLAIN = _OUT + "a non-usage hook is NOT RUN, exit 1, nothing on stdout"
+OUT_USAGE = _OUT + "a usage hook is NOT RUN, exit 0, its fixed systemMessage on stdout"
+OUT_PROMPT = _OUT + "the prompt hook is NOT RUN, exit 0, its fixed additionalContext on stdout"
+NOROOT_ERR = "no checkout contains"
+_GONE = "PREROOT #688 a cwd deleted under the session: "
+GONE_PLAIN = _GONE + "a non-usage hook is NOT RUN, exit 1, nothing on stdout"
+GONE_USAGE = _GONE + "a usage hook is NOT RUN, exit 0, its fixed systemMessage on stdout"
+GONE_PROMPT = _GONE + "the prompt hook is NOT RUN, exit 0, its fixed additionalContext on stdout"
+NOCWD_ERR = "cannot read the cwd"
 U1 = "U1 a usage hook in a post-launcher worktree: the MAIN checkout's copy, not the branch's (backlog #513)"
 U2 = "U2 a usage hook in a worktree whose .git names its gitdir RELATIVELY: MAIN's copy"
 U3 = "U3 a usage hook in a submodule (no commondir): the SUBMODULE's own copy"
@@ -776,7 +821,7 @@ def run_worlds(w: World, markers: Path, only: frozenset[str] | None = None) -> l
             out.append((c.name, (f"NOT RUN — no base without a .git ancestor among "
                                  f"{[str(b) for b in outside_candidates()]}",), (c.want_rc, c.want_ran)))
             continue
-        r = launch(c.cwd, project, c.args, c.extra, markers / f"m{i}")
+        r = launch(c.cwd, project, c.args, c.extra, markers / f"m{i}", vanish=c.vanish)
         got, want = (r.rc, r.ran), (c.want_rc, c.want_ran)
         if c.want_err is not None:
             got, want = got + (c.want_err in r.err,), want + (True,)
@@ -915,6 +960,19 @@ MUTANTS = [
     Mutant("c3b the prompt hook's NOT RUN is a systemMessage, which UserPromptSubmit does not add to context",
            'if [ "$name" = usage-pace-prompt.sh ]; then', "if false; then",
            (real_not_run("usage-pace-prompt.sh"),)),
+    # Backlog #688 X2: the walk's two exits before a root exists, each routed through usage_not_run for a usage hook.
+    Mutant("pr688a a usage hook outside every checkout exits 1 with stdout empty (#688)",
+           'case $name in usage-pace-*) usage_not_run "no checkout contains', 'case $name in none-*) usage_not_run "no',
+           (OUT_USAGE, OUT_PROMPT)),
+    Mutant("pr688b a usage hook in an unreadable cwd exits 1 with stdout empty (#688)",
+           'case $name in usage-pace-*) usage_not_run "cannot read the cwd', 'case $name in none-*) usage_not_run "c',
+           (GONE_USAGE, GONE_PROMPT)),
+    Mutant("pr688c the no-checkout exit speaks usage JSON for EVERY hook (#688)",
+           'case $name in usage-pace-*) usage_not_run "no checkout contains', 'case $name in *) usage_not_run "no',
+           (OUT_PLAIN,)),
+    Mutant("pr688d the unreadable-cwd exit speaks usage JSON for EVERY hook (#688)",
+           'case $name in usage-pace-*) usage_not_run "cannot read the cwd', 'case $name in *) usage_not_run "c',
+           (GONE_PLAIN,)),
     # r1 X3 (Codex): special-casing ONE real name, as Codex's disposable copy did for usage-pace-wake.sh.
     *(Mutant(f"r-{n} the {n} hook alone runs the worktree's copy", 'hook="$root/.claude/hooks/$name"\n',
              f'case $name in {n}) root=$dir;; esac\nhook="$root/.claude/hooks/$name"\n', (real_ran(n),))
@@ -1073,6 +1131,14 @@ def _suite_over_world(rows: list, w: World, x: Path, launcher: Path) -> None:
         slow = fast = "raised"
     rows.append(("a launch past its budget is a named red world (TIMED_OUT), not a crash", slow, TIMED_OUT))
     rows.append(("...and inside its budget the same launch returns the hook's own code", fast, 0))
+    # Backlog #688 r1 fold: the `vanish` flag itself, at both values. True makes, enters and deletes the cwd before
+    # the launch (the launcher refuses it); False, the control, launches from an existing cwd and main's probe runs.
+    gone = launch(w.main / "vanish-flag", str(w.main), ["probe.sh"], {}, markers / "vt", vanish=True)
+    kept = launch(w.main / "scripts", str(w.main), ["probe.sh"], {}, markers / "vf", vanish=False)
+    rows.append(("launch(vanish=True) deletes the cwd first: NOT RUN, 'cannot read the cwd' on stderr",
+                 (gone.rc, gone.ran, NOCWD_ERR in gone.err), (1, None, True)))
+    rows.append(("...and launch(vanish=False) over a kept cwd runs main's probe", (kept.rc, kept.ran is not None),
+                 (PROBE_RC, True)))
     real = (w.main / LAUNCHER_REL).read_text()
     if red_names(results):
         rows.append(("the control is green, so the mutants mean something", "RED", "green"))
