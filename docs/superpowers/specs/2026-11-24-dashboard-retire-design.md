@@ -3,7 +3,9 @@
 > **Anchor:** `status-visibility` — **ADR:** 0010
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** 🟠 needs-you — Phase 1 draft, 2026-11-24. Not yet reviewed, not yet walked through. Nothing here is built.
+**Status:** 🟠 needs-you — Phase 1 draft, 2026-11-24. Round 1 of review folded (both halves NOT CONVERGED;
+`docs/reviews/coordinator/dashboard-retire-spec-r1-coordinator.md`); §7's three questions DECIDED by the owner.
+Still awaiting: review convergence, then the owner's approval walkthrough. Nothing here is built.
 
 Goal thread: `dashboard-decisions` (`docs/goal-threads.md`). Why this anchor: the page being retired and the
 goal tree that keeps its asks are both pages of `status-visibility`, and the two specs this one amends
@@ -62,6 +64,18 @@ docstring (`scripts/check-goal-status.py:46`); the second loads the generator fo
 (`scripts/brief-compose.py:609`). No SessionStart hook reads the store directly; the compaction snapshot
 above is the only hook-side reader.
 
+⚠ **Loaders BY FILENAME, which a rename breaks even though they read no asks** (r1 Codex BLOCKER, Claude M5).
+Each one loads a file by its path string, so `git mv` alone turns it into a FileNotFoundError at import:
+
+| Loader | Where | Loads | Breaks at |
+|---|---|---|---|
+| the page's grammar import | `scripts/gen-dashboard.py:327` (`_gate_module`, `with_name("check-dashboard-entry.py")`) | the gate | S2's rename — and through it `brief-compose._contrast` (`scripts/brief-compose.py:609`), which lazily loads the generator, so `assert_em_in_every_palette` (`:1784`) fails on every brief page with the text-style switcher (measured in a scratch copy, Claude r1) |
+| the goal tree and the compaction snapshot, after S1 | `scripts/goal-tree.py:1309`, `scripts/compaction-state.py:482` | the gate (S1 repoints them there) | S2's rename |
+| the waiver parser | `scripts/check-review-recorded.py:678`, `scripts/check-merge-ready.py:653` | the gate | S2's rename |
+| the explainer-delivery guard | `scripts/check-explainer-delivery.py:53` (`PAGE_SKILLS = ["explain-topic", "dashboard"]`) | `.agents/skills/dashboard/SKILL.md`, which must cite `shared/explainer-delivery.md` | S2's skill rewrite and rename |
+
+S2 repoints every one of these in the same slice (§5).
+
 A second, unrelated dependency sits in the same gate file: `exemption_reason`, the parser for a waiver
 line in a PR body. It serves `NO-ENTRY:` (retiring) **and** `NO-REVIEW:` (staying):
 
@@ -103,10 +117,10 @@ Searched and found nothing: no earlier spec, ADR or backlog row proposes deletin
 | Concern | Mechanism | Evidence it is the only one |
 |---|---|---|
 | What is an entry, and which asks are open | `scripts/check-ask-store.py` — the grammar and the ask model in one file | today split across two files (§1.2); this merges them |
-| The store stays readable | the same script, run as a gate (§3 K1–K3) | rules already exist as `added_entry_problems` and `added_reference_errors` |
+| The store stays readable | the same script, run as a gate (§3 K9, K1–K3) | K1 and K2 exist today as `added_entry_problems` and `added_reference_errors` (K1 re-based on the parse, K2 tightened); K9 and K3 are new |
 | Showing the owner what waits on them | `scripts/goal-tree.py` NEEDS YOU | after S3 no other page lists asks |
-| A PR-body waiver line | `exemption_reason`, owned by `scripts/check-review-recorded.py` | its one remaining marker is `NO-REVIEW:` |
-| One Markdown fence rule | `fence_closes` / `FENCE` in `check-ask-store.py`; `check-review-recorded.py` loads it from there | backlog #85 — no copy |
+| A PR-body waiver line | `exemption_reason`, STAYING in `scripts/check-ask-store.py` (the renamed gate file); `check-review-recorded.py` and `check-merge-ready.py` load it from there, as today | its one remaining marker is `NO-REVIEW:`. It does not move (r1 Claude M4): the gate file imports only the standard library, which is what lets merge-ready's fixtures copy that ONE file into a temp dir (`scripts/check-merge-ready.py:4171`–`:4185`); `check-review-recorded.py` resolves `ROOT` from `__file__` and would break them |
+| One Markdown fence rule | `fence_closes` / `FENCE` in `check-ask-store.py`, beside `exemption_reason` | backlog #85 — no copy |
 | One WCAG contrast formula | `page_chrome.py` | today `scripts/gen-dashboard.py:1431`, borrowed by `scripts/brief-compose.py:609` |
 
 ### 2.2 What already does this?
@@ -114,7 +128,7 @@ Searched and found nothing: no earlier spec, ADR or backlog row proposes deletin
 | New thing | Existing mechanism | Why it is not enough as it stands |
 |---|---|---|
 | `check-ask-store.py` | `scripts/check-dashboard-entry.py:600` (`parse_entries`) and `scripts/gen-dashboard.py:454` (`unresolved`) | it is the same code, renamed and shrunk — not a new mechanism. It is done as a `git mv`, so history and the grammar's mutations follow |
-| the kept store gate | `scripts/check-dashboard-entry.py:745` and `:780` | the same two functions; only the "an entry is owed" branch of `verdict` (`:813`) is removed |
+| the kept store gate | `scripts/check-dashboard-entry.py:745` and `:780` | the same two functions, K1 re-based on the parse difference and K2 tightened to effective (earlier) targets; the "an entry is owed" branch of `verdict` (`:813`) is removed; K9 (append-only) and K3 are added — the only new checks |
 | the archive record page | `RETIRED_FILES`, `scripts/explainer-serve.py:277` | nothing new: one more row in that table |
 
 ### 2.3 The kept file
@@ -149,6 +163,15 @@ So in S3 the goal tree's NEEDS YOU item shows, under the title, the ask's questi
 plain list — read by the store's own `decisions()`, never re-parsed — and the item has no link. The
 yellow ✍ tag styling stays backlog #623's work, now aimed at `scripts/goal-tree.py`.
 
+**A malformed ask stays visible, with its diagnosis** (r1 Codex MAJOR). The store gate deliberately does
+not run `decision_errors` (backlog #81, held by the owner 2026-09-01; `scripts/check-dashboard-entry.py:795`),
+so today only the page shows that an open ask has no usable decision (`scripts/gen-dashboard.py:944`). After
+S3 the goal tree does the same: for each unresolved ask it calls the store's `decision_errors`, and a
+non-empty result is printed under the title as a warning line — the ask is KEPT in NEEDS YOU, never dropped.
+Cases: a valid open ask (question and options shown, no warning); a `[needs-you]` with no `**Decide:**`
+block (title and warning); a block with malformed choices (warning names the error). This is also K1's
+stated bound: K1 does not refuse a decision-less ask, by the owner's #81 ruling.
+
 ## 3. Gates removed and kept
 
 ### Removed
@@ -158,40 +181,43 @@ yellow ✍ tag styling stays backlog #623's work, now aimed at `scripts/goal-tre
 | R1 "a branch that changes tracked files adds an entry or declares `NO-ENTRY:`" | `verdict`, `scripts/check-dashboard-entry.py:813`; CI step `dashboard entry ratchet`, `.github/workflows/ci.yml:1106`; replayed by `scripts/check-merge-ready.py:2198` | O1 |
 | R2 `gen-dashboard.py --self-test` | `.github/workflows/ci.yml:984` | its subject is deleted |
 | R3 the dashboard rows of the page-link, theme-token and contrast checks | `scripts/check-page-links.py:82`, `:91`, `:253`; `scripts/check-theme-token-coverage.py:70` | their subject is deleted |
-| R4 the `NO-ENTRY:` / `NO-REVIEW:` wrong-marker diagnosis | `GATE_ESCAPE`, `scripts/check-merge-ready.py:530` | with one marker left there is nothing to confuse |
+| R4 the two-marker branches of the escape diagnosis ONLY — MISDIRECTED and "the other marker is in the body but inert" | `escape_diagnosis`, `scripts/check-merge-ready.py:2063`; its `other` branches at `:2087`–`:2103` | they compare two markers, and one is left. ⚠ **The diagnosis itself stays** (r1 Claude M3): INVISIBLE (the exact token is in the body but fenced, indented or backticked — the actual 2026-09-26 incident) and MISSPELLED (`ESCAPE_LOOKALIKE`, `:535`) work with one marker. `GATE_ESCAPE` (`:530`) becomes `{"review recorded": "NO-REVIEW:"}`; `ESCAPE_LOOKALIKE` narrows to `no-review`; the INVISIBLE and MISSPELLED fixtures stay, the MISDIRECTED ones go |
 
 ### Kept — each with its falsifier
 
 | # | Gate | FAILS IF: |
 |---|---|---|
-| K1 | an added entry is well-formed (`added_entry_problems`) | a branch adds a `##` block to the store whose header is not a valid date plus known flags |
-| K2 | an added reference resolves (`added_reference_errors`) | a branch adds `[resolved: <id>]` naming no earlier entry in the store |
-| K3 | **new** — the store takes asks and answers only | a branch adds a block carrying neither `[needs-you]` nor `[resolved: …]`. This is O1 turned into a check: without it the per-PR narrative can drift back unnoticed. A new `[heads-up]` is refused too — after S3 nothing displays one |
+| K9 | **new** — the store is append-only | an entry of the merge-base store is missing, altered or reordered at HEAD: `[e["raw"] for e in parse_entries(base)]` is not a prefix of the same list at HEAD. Only the text before the first entry (the header, lines 3–6, which S2 rewrites) is outside the comparison. Mutated by "delete one narrative entry" and "edit one old entry's body" — each must go red. Why (r1 Claude M1): ids are positional, so deleting or inserting an entry re-points `[resolved: …]` references — measured, one narrative deletion reopens an ask, and a shift onto an open ask CLOSES it silently, K1–K3 all passing. ⚠ **This is a tightening, not today's practice:** of the last 80 master commits that touched the store, 15 edited or inserted an entry before the end (measured, `parse_entries` at each commit and its first parent). After S2 a correction to an old entry is a NEW entry — an answer `[resolved: old]`, plus `[needs-you]` if the question is re-asked — never an edit |
+| K1 | an added entry is well-formed | an ADDED entry carries a parse error. "Added" is defined by the parse, not the patch (r1 Claude m4): the HEAD entries after the merge-base prefix that K9 guarantees. So a fenced `## Example` inside a new body is not a header (the parser already skips fences), and a modified old header is K9's failure, not a pass. Replaces `added_entry_problems`' `-U0` reading |
+| K2 | an added reference resolves EFFECTIVELY (`added_reference_errors`, tightened) | an added entry's `[resolved: <id>]` names no entry, OR names an entry whose `_pos` (date, ordinal) is not strictly earlier than its own — today's check accepts that (r1 Codex MAJOR: `added_reference_errors` returned `[]` for a forward reference, run here too, and `unresolved` then left the ask open). Fixture: a backdated answer to a later ask |
+| K3 | **new** — the store takes asks and answers only | over ADDED entries only (old narrative and heads-up blocks are grandfathered, K9 keeps them as they are): an added entry carries no flag; or carries `[heads-up]` in any combination (r1 Codex MAJOR: "neither needs-you nor resolved" let `[heads-up] [resolved: …]` through — `header_error` refuses only `[needs-you] [heads-up]`); or carries a `[resolved: X]` whose target X is neither `[needs-you]` nor `[heads-up]` — an answer answers an ask. Allowed shapes: `[needs-you]`; one or more `[resolved: …]`; both. The S2 entry closing the two open heads-ups is an ordinary allowed shape (its targets are heads-ups), so it needs no exception. Cases: each refused shape; a mixed-flag block; a resolve of a narrative entry; an unchanged historical heads-up and narrative block at HEAD (not refused) |
 | K4 | the goal tree reads the asks through the store's one parser | `needs_from_dashboard` returns no item for a fixture store holding one open ask; or its call to `unresolved` is severed and the goal tree's self-test stays green |
 | K5 | an unreadable store is never an empty NEEDS YOU | the store is missing or holds an unparseable entry and the goal tree prints "nothing waits on you" (today: `scripts/goal-tree.py:1317` reports the source NOT READ) |
 | K6 | the compaction snapshot reports the open-ask count | `pending_asks` returns a count other than the fixture's, or returns 0 when the reader cannot be loaded (today it returns CANNOT RUN, `scripts/compaction-state.py:485`) |
 | K7 | `NO-REVIEW:` is still parsed by one definition | `check-review-recorded.py --self-test` or `check-merge-ready.py --self-test` goes green with `exemption_reason` replaced by a stub; or a fenced `NO-REVIEW:` line is granted |
-| K8 | nothing still points at the retired things | `git grep -l -E 'gen-dashboard|check-dashboard-entry|regen-dashboard'` returns a path outside the frozen set of §4.3 |
+| K8 | nothing still EXECUTES or LINKS a retired thing | any of these, anywhere in the tree, names a retired path (`gen-dashboard.py`, `check-dashboard-entry.py`, `regen-dashboard.sh`, the `dashboard` skill if renamed) or the `/dashboard` route: a file load (`with_name(…)`, `_sibling(…)`, `_load(…)`, `spec_from_file_location(…)`, a `ROOT / "scripts" / …` path literal); a hook `command` in `.claude/settings.json`; a `run:` line in `.github/workflows/*.yml`; a `"file"` field in `scripts/mutations/*.json`; a key of `REGENERABLE`, `PAGES` or `PAGE_SOURCES`; a `key_link("dashboard", …)` call or an `href` to `/dashboard` emitted by a page generator. The ONE allowed `/dashboard` hit is its `RETIRED_FILES` row (`scripts/explainer-serve.py:277`). ⚠ **Not a name grep** (r1 Claude M2, Codex MINOR): the bare-name pattern hit 74 files outside the frozen directories, most of them history the spec keeps, so a grep would fail on day one or grow an exemption list that checks nothing. Prose and comments that mention a retired name are history and are not in K8's scope — K8 has no exemption list to grow |
 
 ⚠ **The live store cannot prove K4 or K6.** It holds 0 open asks today, so "the same answer before and
 after" on the live file is 0 = 0 whether or not the reader works. Both are proven on a fixture with open
 asks, and by a mutation that severs the call.
 
-K1–K3 run in CI on pull requests as one step, `ask store`, calling
+K9 and K1–K3 run in CI on pull requests as one step, `ask store`, calling
 `python3 scripts/check-ask-store.py --base "origin/$GITHUB_BASE_REF"`; it takes no PR body. Its
-`--self-test` runs unconditionally, as today's does at `.github/workflows/ci.yml:987`.
+`--self-test` runs unconditionally, as today's does at `.github/workflows/ci.yml:987`. The checkout's
+`fetch-depth: 0` stays — K2 and K9 still diff against the merge base — and the comment at `ci.yml:73`
+that justifies it is reworded to name the ask-store step, not deleted.
 
 ### Doc rules that say "every PR adds an entry"
 
 | Where | Change |
 |---|---|
-| `docs/dev-process.md:162`–`:163` | two rows become one: `scripts/check-ask-store.py` — *an entry added to the ask store parses, resolves, and is an ask or an answer*. Net −1 line, inside the budget `scripts/check-docs.py` enforces |
+| `docs/dev-process.md:162`–`:163` | two rows become one: `scripts/check-ask-store.py` — *the ask store is append-only, and an entry added to it parses, resolves to an earlier ask, and is an ask or an answer*. Net −1 line, inside the budget `scripts/check-docs.py` enforces |
 | `docs/process-checklists.md:1162`–`:1163` | the same two full rows become one |
 | `docs/process-checklists.md:400` | the committed-diff list names `check-ask-store.py` |
 | `docs/process-checklists.md:557`, `:678` | unchanged — the store is still a dated, append-only record |
 | `docs/CLAUDE.md:24` | rule 3 names `check-ask-store.py`; the committed-diff warning still holds |
 | `docs/portable-practices.md:16` | drop `regen-dashboard.sh` from the hook list; `:13` and `:1410` are dated measurements and stay |
-| `.agents/skills/dashboard/SKILL.md` | rewritten: how to write an ask and how to record its answer; no "record what changed", no page |
+| `.agents/skills/dashboard/SKILL.md` → `.agents/skills/needs-you/SKILL.md` (§7 Q2, decided) | rewritten: how to write an ask and how to record its answer; no "record what changed", no page. It states the resolve grammar's trap (r1 Claude m5): one id per bracket — `[resolved: a] [resolved: b]` clears both, while `[resolved: a, b]` parses as ONE id and is refused ("names no entry"; measured). `.claude/skills/dashboard` (the symlink) is renamed with it; `scripts/check-explainer-delivery.py:53` drops `"dashboard"` from `PAGE_SKILLS`, since the skill no longer composes a page |
 | `docs/memory/nothing-needs-you-must-read-the-dashboard.md` and its `MEMORY.md` row | the rule becomes "read the goal tree's NEEDS YOU count" — the command it names (`regen-pages.py --page dashboard`) stops existing |
 | `docs/memory/parallel-branches-append-to-one-log.md` | the store leaves its list of files every branch appends to |
 | `docs/memory/merge-ready-slice-merged-324.md:21`, `docs/memory/push-is-mine-merging-is-theirs.md:34` | the `NO-ENTRY` mentions are removed |
@@ -200,7 +226,8 @@ K1–K3 run in CI on pull requests as one step, `ask store`, calling
 ## 4. Inventory — every hit, classified
 
 Source: `git grep -l -E 'dashboard-entr|gen-dashboard|check-dashboard-entry|regen-dashboard'` at
-`b02f0a25` — **626 files**.
+`b02f0a25` — **626 files** (627 once this spec exists; the count moves with every document that names the
+store, so the frozen set below is stated as globs, not counts — r1 Claude m1).
 
 ### 4.1 Delete
 
@@ -209,28 +236,29 @@ Source: `git grep -l -E 'dashboard-entr|gen-dashboard|check-dashboard-entry|rege
 | `scripts/gen-dashboard.py` | S3 |
 | `scripts/mutations/gen-dashboard.json` | S3 (entries anchored to moved code move with it in S1) |
 | `.claude/hooks/regen-dashboard.sh` and its registration at `.claude/settings.json:158` | S3 |
-| `.claude/skills/dashboard` (a symlink to `.agents/skills/dashboard`) | follows the skill (§7 Q2) |
+| `.claude/skills/dashboard` (a symlink to `.agents/skills/dashboard`) | renamed to `needs-you` with the skill in S2 (§7 Q2, decided) |
 
 ### 4.2 Rename or edit
 
 | File | Change | Slice |
 |---|---|---|
-| `scripts/check-dashboard-entry.py` → `scripts/check-ask-store.py` | `git mv`; gains `unresolved`, `resolvers`, `cleared_ids`, `unresolved_heads_up`, `_pos`, `_slug` in S1; loses `verdict`'s owed-entry branch, `NO_ENTRY`, `EXEMPT_*`, `_is_exempt`, `exemption_reason` family in S2; gains K3 | S1 move-in, S2 rename |
+| `scripts/check-dashboard-entry.py` → `scripts/check-ask-store.py` | `git mv`; gains `unresolved`, `resolvers`, `cleared_ids`, `unresolved_heads_up`, `_pos`, `_slug` in S1; loses `verdict`'s owed-entry branch, `NO_ENTRY`, `EXEMPT_*`, `_is_exempt` in S2; KEEPS `exemption_reason`, `_declaration_reason` and the fence rule, its default marker becoming `NO-REVIEW:` (§2.1, r1 Claude M4); gains K9 and K3, and K1 moves from the patch to the parse difference | S1 move-in, S2 rename |
 | `scripts/mutations/check-dashboard-entry.json` → `check-ask-store.json` | follows the file; R1's entries are deleted, never left unbound | S2 |
 | `scripts/goal-tree.py` | `:1309` loads the store script, not the generator; `:42` docstring; in S3 `:1314` drops the link and shows the options (§2.4); cases at `:5349`, `:5653` | S1, S3 |
 | `scripts/compaction-state.py` | `:482` loads the store script; `:41`, `:474` wording; case at `:2084` | S1 |
-| `scripts/check-review-recorded.py` | becomes the owner of `exemption_reason` and `_declaration_reason`; `:678` loader removed; fence rule loaded from the store script | S2 |
-| `scripts/check-merge-ready.py` | `:653` points at `check-review-recorded.py`; `:2198` replays `ask store`; `GATE_ESCAPE` and its diagnosis removed; fixtures at `:2353`, `:4171`–`:4280` | S2 |
-| `.github/workflows/ci.yml` | `:984`–`:985` removed (S3); `:987`–`:988` and `:1106`–`:1113` renamed, the PR body dropped (S2); comments at `:1064`, `:1120` | S2, S3 |
-| `scripts/brief-compose.py` | `:609` takes `contrast_ratio` from `page_chrome.py` | S3 |
+| `scripts/check-review-recorded.py` | `:678` `_load_declaration_parser` repointed to `check-ask-store.py`; nothing moves into it | S2 |
+| `scripts/gen-dashboard.py` | `:327` `_gate_module` repointed to `check-ask-store.py` in the SAME slice as the rename (r1 Codex BLOCKER); its `--self-test` stays green through S2, and with it `brief-compose.py`'s lazy load (`:609`) | S2 (deleted S3) |
+| `scripts/check-merge-ready.py` | `:653` `DASHBOARD_GATE` renamed and pointed at `check-ask-store.py`; `:2198` replays `ask store`; `escape_diagnosis`'s two-marker branches removed, the rest kept (R4); fixtures at `:2353`, `:4171`–`:4280` keep copying ONE stdlib-only file, renamed — `_real_cde` reads `check-ask-store.py` and writes it under that name | S2 |
+| `.github/workflows/ci.yml` | `:984`–`:985` removed (S3); `:987`–`:988` and `:1106`–`:1113` renamed, the PR body dropped (S2); comments at `:73` (fetch-depth, reworded — §3), `:968` (check-page-links builds three CI pages, not four — r1 Claude m3), `:1064`, `:1120` | S2, S3 |
+| `scripts/brief-compose.py` | `:609` `_contrast` takes `contrast_ratio` from `page_chrome.py`; the comment at `:439` naming `gen-dashboard.CONTRAST_MIN` is repointed | S3 |
 | `scripts/page_chrome.py` | gains `contrast_ratio` / `_luminance` (moved, with their mutations) | S3 |
 | `scripts/page_markup.py` | `key_link` loses the `dashboard` kind (`:206`), cases `:990`, `:999` | S3 |
 | `scripts/check-page-links.py` | `:82`, `:91`, `:99`, `:104`, `:253`–`:255` lose the dashboard | S3 |
 | `scripts/check-theme-token-coverage.py` | `:70` `PAGE_SRC` needs another generator's palette as its reference — which one is a plan decision, UNVERIFIED here | S3 |
-| `scripts/explainer-serve.py` | `:224`, `:244` removed; `RETIRED_FILES` (`:277`) gains `dashboard.html`; cases | S3 |
-| `scripts/regen-pages.py`, `scripts/regen-pages.sh`, `.claude/hooks/regen-pages.sh` | fixtures and comments naming the dashboard | S3 |
-| `scripts/mutations/expected_mutations.py`, `scripts/sweep-costs.json` | pins and cost rows for the two scripts | S2, S3 |
-| `scripts/check-fixture-variation.py` (`:263`, `:1270`, `:1440`), `scripts/check-main-drivable.py`, `scripts/check-plan-code.py`, `scripts/check-publishability.py`, `scripts/check-shipping-sets.py` (`:1812`), `scripts/check-ratchet-contract.py` | tables and live-tree cases that name either script; each is re-pointed or its row removed. The exact edit per case is the plan's work — UNVERIFIED case by case here | S2, S3 |
+| `scripts/explainer-serve.py` | `:224`, `:244` removed; `RETIRED_FILES` (`:277`) gains `dashboard.html`; `PAGE_SOURCES["goal-tree"]` gains `docs/dashboard-entries.md`, so an added ask marks the goal tree stale once `regen-dashboard.sh` is gone (r1 Claude m2); cases | S3 |
+| `scripts/regen-pages.py`, `scripts/regen-pages.sh`, `.claude/hooks/regen-pages.sh` | fixtures and comments naming the dashboard; `pages_for` maps `docs/dashboard-entries.md` to `goal-tree` (r1 Claude m2) | S3 |
+| `scripts/mutations/expected_mutations.py`, `scripts/sweep-costs.json` | pins (`:267`, `:857`) and cost rows for the two scripts. The `contrast_ratio` / `CONTRAST_MIN` mutations (e.g. the `PROSE_CONTRAST_MIN` entry of `gen-dashboard.json`) MOVE to `page_chrome`'s manifest in S3 and are counted there; the plan states each slice's arithmetic from 70 / 44 (r1 Claude m7) | S1, S2, S3 |
+| `scripts/check-fixture-variation.py` (`:263`, `:1270`, `:1440`), `scripts/check-main-drivable.py`, `scripts/check-plan-code.py`, `scripts/check-publishability.py`, `scripts/check-shipping-sets.py` (`:1812`), `scripts/check-ratchet-contract.py` | tables and live-tree cases that name either script; each is re-pointed or its row removed (including the case NAME at `scripts/check-plan-code.py:7860`, "check-dashboard-entry.py reaches compaction-state through gen-dashboard.py" — r1 Claude m3). `check-publishability.py:1902`'s `requires-skill dashboard` is a SYNTHETIC fixture world (`:1893`), not a load of the real skill, and stays. The exact edit per case is the plan's work — UNVERIFIED case by case here | S2, S3 |
 | `docs/marketplace/components.json`, `shipping-sets.json`, `inventory.json` | four components leave (`skill-dashboard`, `gen-dashboard`, `check-dashboard-entry`, `hook-regen-dashboard`), one arrives; regenerated by their own tools, never hand-edited | S2, S3 |
 | `docs/dashboard-entries.md` | header lines 3–6 only | S2 |
 | `.agents/skills/dashboard/SKILL.md`, the docs and memory rows of §3 | as §3 | S2 |
@@ -239,26 +267,28 @@ Source: `git grep -l -E 'dashboard-entr|gen-dashboard|check-dashboard-entry|rege
 
 ### 4.3 Keep, untouched — the frozen set
 
-| Files | Count | Why |
+| Glob | Count at `b02f0a25` (moves; not a bound) | Why |
 |---|---|---|
 | `docs/reviews/**` | 484 | frozen testimony |
 | `docs/explainers/**` | 26 | pages as delivered on their day |
 | `docs/superpowers/**` | 32 | earlier specs and plans; two are amended by a dated note (§6), none rewritten |
-| `docs/marketplace/scan-2026-11-17.json`, `scan-2026-11-21.json`, `experiment-tier-a.*`, `experiment-tier-b.md` | 6 | dated measurements |
-| `docs/memory/*-merged.md` and other dated memory files | about 10 | records of shipped slices |
+| `docs/marketplace/scan-*.json`, `docs/marketplace/experiment-tier-*` | 6 | dated measurements |
+| `docs/memory/**`, except the rows §3 edits | — | records and rules; a mention of a retired name is history. Five non-dated rule files also name a script in passing (r1 Claude M2) and stay unless a sentence becomes FALSE |
+| `docs/backlog.md`, `docs/roadmap-to-launch.md`, `docs/portable-practices.md`, `docs/round-header-template.md`, `docs/dashboard-entries.md` | — | history rows and dated measurements, except the lines §3 and §4.2 name |
 | `scripts/fixtures/*.json` | 3 | recorded corpora; a fixture naming a deleted path is still the recording |
 | `scripts/batch-ci.py`, `scripts/check-canonical-source.py`, `scripts/check-reference-namespace.py` | 3 | they name the STORE, which stays |
-| comments citing either script as history (`scripts/check-backlog-closure.py:82`, `scripts/peer-sites.py:481`, `scripts/gen-backlog-page.py:2771`, `scripts/codex-review.py:1933` and the like) | about 10 | a dated account; reworded only if a guard in §3 K8 would otherwise fail |
+| comments and docstrings in `scripts/**` citing either script as history (`scripts/check-backlog-closure.py:82`, `scripts/peer-sites.py:481`, `scripts/gen-backlog-page.py:2771`, `scripts/codex-review.py:1933` and the like; 31 files in `scripts/` hit the bare name, mutations excluded — Claude r1) | — | a dated account; reworded only where it would become FALSE |
 
-K8's frozen set is this table. The plan turns it into an explicit path list.
+**This table is no longer K8's exemption list** (r1 Claude M2). K8 inspects executable loads and links only
+(§3), so prose here is out of its scope by construction, and K8 needs no list that can grow.
 
 ## 5. Slices — independently mergeable, in this order
 
 | # | Slice | Changes behaviour? | What proves it worked |
 |---|---|---|---|
 | S1 | **Move the ask reader beside the grammar.** The ask model moves from `gen-dashboard.py` into `check-dashboard-entry.py`; the generator rebinds it through `_GATE` as it already does for `parse_entries`; the goal tree and the compaction snapshot load the gate file. No rename yet. | No | K4 and K6 on a fixture with open asks; a mutation severing each call site goes red; `gen-dashboard.py --self-test` unchanged; the two manifests' sum is unchanged (entries relocate) |
-| S2 | **Remove the per-PR rule.** Rename to `check-ask-store.py`; delete R1 and `NO-ENTRY:`; move `exemption_reason` to `check-review-recorded.py`; add K3; CI, merge-ready, the skill, the doc rules of §3. This is the slice O2 pre-approves: `check-merge-ready.py` will report HOLD for it. | Yes — a gate is removed | a PR with no store edit and no waiver passes the `ask store` step; K1–K3 each refuse their fixture; K7; `check-docs.py` green on the shortened `docs/dev-process.md` |
-| S3 | **Delete the page.** Everything in §4.1 and the S3 rows of §4.2; the goal tree shows an ask's options (§2.4); `/dashboard` serves a small archive record. | Yes — a page is removed | K8; `check-page-links.py` and `regen-pages.py --self-test` green with four pages; `/dashboard` answers with the archive record, not a 404; K5 |
+| S2 | **Remove the per-PR rule.** Rename to `check-ask-store.py` and, IN THE SAME SLICE, repoint every by-filename loader of §1.2 (`gen-dashboard.py:327`, `goal-tree.py:1309`, `compaction-state.py:482`, `check-review-recorded.py:678`, `check-merge-ready.py:653`) and `check-explainer-delivery.py`'s `PAGE_SKILLS`; delete R1 and `NO-ENTRY:`; `exemption_reason` stays in the renamed file with `NO-REVIEW:` as its marker; narrow R4; add K9 and K3, move K1 to the parse difference, tighten K2; rename the skill to `needs-you`; CI, merge-ready, the doc rules of §3; one entry `[resolved: 2026-08-31/5] [resolved: 2026-09-15/10]` closes the two open heads-ups. This is the slice O2 pre-approves: `check-merge-ready.py` will report HOLD for it. | Yes — a gate is removed | a PR with no store edit and no waiver passes the `ask store` step; K9, K1, K2 and K3 each refuse their fixture; K7; at the merge point `gen-dashboard.py --self-test`, `goal-tree.py --self-test`, `compaction-state.py --self-test`, `brief-compose.py --self-test` and `check-explainer-delivery.py` are green (r1 Codex BLOCKER); `check-docs.py` green on the shortened `docs/dev-process.md` |
+| S3 | **Delete the page.** Everything in §4.1 and the S3 rows of §4.2; the goal tree shows an ask's options (§2.4); `/dashboard` serves a small archive record. | Yes — a page is removed | K8; `check-page-links.py` and `regen-pages.py --self-test` green with the dashboard gone from both page sets — r1 Claude m3, two different "four"s: `REGENERABLE` (`scripts/explainer-serve.py:223`) holds five pages today and four after; `check-page-links.py --build --ci` builds four today (`ci.yml:968`: dashboard, goals, features, backlog table) and three after; `/dashboard` answers with the archive record, not a 404; K5; the §2.4 cases (valid ask, missing decision, malformed choices) |
 
 Order is forced: S3 before S1 empties NEEDS YOU silently (§1.2); S2 before S1 would rename a file the
 generator loads by path while the goal tree still loads the generator.
@@ -275,19 +305,24 @@ Made as a dated note at the top of each, pointing here; the bodies are not rewri
 | `docs/superpowers/specs/2026-11-02-comprehensibility-suite-design.md` | R3 (dashboard as change log); the `/dashboard` row of the page-question table; the *Change* row of the key table; migration step 4's *Dashboard asks* bullet (asks stay in the store — NEEDS YOU keeps three sources: the store, the ledger, the backlog); step 5; step 6's "each change line links to its dashboard entry"; §8 choices 1 and 8 |
 | `docs/superpowers/specs/2026-08-28-project-dashboard-design.md`, `2026-08-31-dashboard-ask-choices-design.md`, `2026-08-31-dashboard-collapsed-cards-design.md` | the page, the per-PR rule and the collapsed cards are retired; §6.2's grammar and the ask-choices rules stay in force |
 
-## 7. Questions for the owner
+## 7. Questions for the owner — DECIDED
 
-| # | Question | Recommendation |
+Decided by the owner, 2026-11-24 17:05–17:08, on selection cards. Each row keeps the recommendation it
+was decided against.
+
+| # | Question | Decision |
 |---|---|---|
-| ✍ Q1 | **What happens to the 21,611 lines of history?** Narrative entries are 495 of 591. | **A — leave the file whole and append-only; only the header changes.** Entry ids are positional (`YYYY-MM-DD/N` counts every entry of a day), so removing narrative renumbers the asks: a trial strip changed 66 of 96 kept ids and turned 0 open asks into 63. Keeping it costs nothing measurable — the whole store parses in 0.05 s. Alternatives: **B** move everything before the cutover to an archive file and start empty (safe today only because 0 asks are open; needs a new exemption path in five guards); **C** strip narrative and rewrite every id and reference (rewrites an append-only record); **D** as A, plus a full frozen render of the page (2.07 MB) |
-| ✍ Q2 | **The `/dashboard` command.** After S2 it no longer records what changed; it writes an ask or an answer. | **Rename it `needs-you`** in S2, so the name says what it does. Alternative: keep the name `dashboard` |
-| ✍ Q3 | **Nothing will answer "what changed, and why did it matter?" in plain words.** The goal tree lists what merged; the per-PR paragraph was the only plain-words account. | **Accept the loss** — it is what O1 buys, and the PR titles and descriptions remain. Alternative: the goal tree's change lines show each PR's first description sentence (new work, a separate backlog row) |
+| Q1 | **What happens to the 21,611 lines of history?** Narrative entries are 495 of 591. | **DECIDED — A: keep `docs/dashboard-entries.md` whole; only the header changes.** Entry ids are positional (`YYYY-MM-DD/N` counts every entry of a day), so removing narrative renumbers the asks: a trial strip changed 66 of 96 kept ids and turned 0 open asks into 63. Keeping it costs nothing measurable — the whole store parses in 0.05 s. K9 now enforces the append-only half (§3). Not chosen: **B** archive file and start empty; **C** strip narrative and rewrite every id and reference; **D** as A plus a full frozen render (2.07 MB) |
+| Q2 | **The `/dashboard` command.** After S2 it no longer records what changed; it writes an ask or an answer. | **DECIDED — A: rename the skill to `/needs-you`** in S2, so the name says what it does (§3, §4.1). Not chosen: keep the name `dashboard` |
+| Q3 | **Nothing will answer "what changed, and why did it matter?" in plain words.** The goal tree lists what merged; the per-PR paragraph was the only plain-words account. | **DECIDED — A: accept the loss**; the PR titles and descriptions remain. The owner first asked whether the goal tree's readability suffers. Answer recorded: no — the goal tree reads only the ASKS from the store; its line text comes from `docs/goal-threads.md`. Not chosen: the goal tree's change lines show each PR's first description sentence (a separate backlog row) |
 
 Decided here as mechanical, not asked: the store keeps its file name; the two open heads-ups
-(`2026-08-31/5`, `2026-09-15/10`) are closed by one `[resolved: …]` entry in S2, since after S3 nothing
-would display them; `[heads-up]` stays valid for old entries and is refused on new ones (K3); the old
-page is archived as a small record page, the work-lines precedent, not a full render; the contrast
-formula moves to `page_chrome.py`; `exemption_reason` moves to `check-review-recorded.py`.
+(`2026-08-31/5`, `2026-09-15/10`) are closed in S2 by one entry with two brackets,
+`[resolved: 2026-08-31/5] [resolved: 2026-09-15/10]` (the comma form parses as one id — §3), since after
+S3 nothing would display them; `[heads-up]` stays valid for old entries and is refused on new ones (K3);
+the old page is archived as a small record page, the work-lines precedent, not a full render; the contrast
+formula moves to `page_chrome.py`; `exemption_reason` STAYS in the renamed gate file (r1 Claude M4 — the
+earlier draft moved it to `check-review-recorded.py`).
 
 ## 8. What was measured, and what was inferred
 
@@ -301,6 +336,11 @@ formula moves to `page_chrome.py`; `exemption_reason` moves to `check-review-rec
 | A full render is 2.07 MB | MEASURED | `gen-dashboard.py --fragment-only`, 2,068,653 bytes |
 | The trial strip: 66 of 96 ids change, 63 asks reopen | MEASURED on a naive strip (kept entries re-joined in order); a careful rewrite would fix references, which is option C's cost, not a refutation |
 | The exact edits inside the six guard scripts of §4.2's grouped row, and `check-theme-token-coverage.py`'s new reference palette | UNVERIFIED | their hits were listed, not each traced |
+| K9's prefix rule would have refused 15 of the last 80 master commits that touched the store (edits or mid-file inserts) | MEASURED | `parse_entries` at each first-parent commit and its parent, `git log --first-parent -n 80 origin/master -- docs/dashboard-entries.md` |
+| `added_reference_errors` accepts a forward reference, and `unresolved` then leaves the ask open | MEASURED | a two-entry fixture, run in r1 by Codex and again in the fold |
+| `header_error` refuses `[needs-you] [heads-up]` but accepts `[heads-up] [resolved: …]` and `[needs-you] [resolved: …]` | MEASURED | `header_error` on each header, in the fold |
+| A fenced `## Example` inside a body is not an entry to `parse_entries`; `## Not a date` outside a fence is an error entry | MEASURED | `parse_entries` on a fixture, in the fold |
+| `[resolved: a, b]` is refused as one id; `[resolved: a] [resolved: b]` clears both | MEASURED | `parse_entries` on a fixture (Claude r1; the comma case re-run in the fold) |
 | The mutation counts after each slice | UNVERIFIED | depends on which entries anchor to moved lines; the plan computes it |
 | That `check-merge-ready.py` reports HOLD for S2 | INFERRED | S2 removes failure-path lines and a gate invocation, which its loosening detector targets; not run |
 | Marketplace declarations regenerate cleanly with four components gone | UNVERIFIED | `check-shipping-sets.py` not run against the changed tree |
