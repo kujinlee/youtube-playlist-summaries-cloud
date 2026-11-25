@@ -56,7 +56,7 @@ and two fake gits on PATH (one line; never answers) kill the answer-shape and al
 
 ⟳ backlog #688 X2: the launcher's two exits BEFORE a root exists (an unreadable cwd; no checkout and CLAUDE_PROJECT_DIR
 unset) speak a usage hook's NOT RUN on its own channel too. Reached through the registered command: a deleted cwd, and
-an exported tree (the launcher and hooks, no `.git`) entered at its root. Mutants x2a–x2d; a non-usage hook stays exit 1.
+an exported tree (the launcher and hooks, no `.git`) entered at its root. Cases PREROOT, mutants pr688a–pr688d; a non-usage hook stays exit 1.
 
 WHAT WOULD MAKE THIS FAIL (its falsifier): a world whose exit code, hook file or output streams differ
 from the review's table, or a mutant whose named world stays green.
@@ -68,7 +68,7 @@ is NOT run here. W15 (a session launched in a subdirectory loads no project hook
 any launcher and has no case.
 
     python3 scripts/check-run-hook.py               # the worlds, over the repo's launcher
-    python3 scripts/check-run-hook.py --self-test  # 172 cases
+    python3 scripts/check-run-hook.py --self-test  # 173 cases
 
 EXIT CODES (repo convention): 0 = every world as required · 1 = a world differs · 2 = CANNOT RUN
 (no git, no launcher, a world that could not be built — never a pass).
@@ -625,6 +625,8 @@ def cases(w: World) -> list[Case]:
              vanish=True),
         Case(OUT_PROMPT, p["export"], 0, NOT_RAN, args=["usage-pace-prompt.sh"], project=None, want_err=NOROOT_ERR,
              want_out=PROMPT_JSON),
+        Case(GONE_PROMPT, m / "vanished-prompt", 0, NOT_RAN, args=["usage-pace-prompt.sh"], want_err=NOCWD_ERR,
+             want_out=PROMPT_JSON, vanish=True),
         Case("W11 symlinked cwd into a worktree: the PHYSICAL checkout's hook", p["wtlink"] / "scripts", PROBE_RC,
              ran(p["wt"])),
         Case("W11 symlink inside main pointing into a worktree: the PHYSICAL checkout's hook", p["mainlink"],
@@ -735,13 +737,15 @@ def verdict(got: tuple, want: tuple) -> bool:
 
 
 W10 = "W10 cwd outside any checkout: the project dir's hook"
-_OUT = "X2 #688 cwd at an exported tree's root (no .git anywhere), CLAUDE_PROJECT_DIR unset: "
+_OUT = "PREROOT #688 cwd at an exported tree's root (no .git anywhere), CLAUDE_PROJECT_DIR unset: "
 OUT_PLAIN = _OUT + "a non-usage hook is NOT RUN, exit 1, nothing on stdout"
 OUT_USAGE = _OUT + "a usage hook is NOT RUN, exit 0, its fixed systemMessage on stdout"
 OUT_PROMPT = _OUT + "the prompt hook is NOT RUN, exit 0, its fixed additionalContext on stdout"
 NOROOT_ERR = "no checkout contains"
-GONE_PLAIN = "X2 #688 a cwd deleted under the session: a non-usage hook is NOT RUN, exit 1, nothing on stdout"
-GONE_USAGE = "X2 #688 a cwd deleted under the session: a usage hook is NOT RUN, exit 0, its fixed systemMessage on stdout"
+_GONE = "PREROOT #688 a cwd deleted under the session: "
+GONE_PLAIN = _GONE + "a non-usage hook is NOT RUN, exit 1, nothing on stdout"
+GONE_USAGE = _GONE + "a usage hook is NOT RUN, exit 0, its fixed systemMessage on stdout"
+GONE_PROMPT = _GONE + "the prompt hook is NOT RUN, exit 0, its fixed additionalContext on stdout"
 NOCWD_ERR = "cannot read the cwd"
 U1 = "U1 a usage hook in a post-launcher worktree: the MAIN checkout's copy, not the branch's (backlog #513)"
 U2 = "U2 a usage hook in a worktree whose .git names its gitdir RELATIVELY: MAIN's copy"
@@ -957,16 +961,16 @@ MUTANTS = [
            'if [ "$name" = usage-pace-prompt.sh ]; then', "if false; then",
            (real_not_run("usage-pace-prompt.sh"),)),
     # Backlog #688 X2: the walk's two exits before a root exists, each routed through usage_not_run for a usage hook.
-    Mutant("x2a a usage hook outside every checkout exits 1 with stdout empty (#688)",
+    Mutant("pr688a a usage hook outside every checkout exits 1 with stdout empty (#688)",
            'case $name in usage-pace-*) usage_not_run "no checkout contains', 'case $name in none-*) usage_not_run "no',
            (OUT_USAGE, OUT_PROMPT)),
-    Mutant("x2b a usage hook in an unreadable cwd exits 1 with stdout empty (#688)",
+    Mutant("pr688b a usage hook in an unreadable cwd exits 1 with stdout empty (#688)",
            'case $name in usage-pace-*) usage_not_run "cannot read the cwd', 'case $name in none-*) usage_not_run "c',
-           (GONE_USAGE,)),
-    Mutant("x2c the no-checkout exit speaks usage JSON for EVERY hook (#688)",
+           (GONE_USAGE, GONE_PROMPT)),
+    Mutant("pr688c the no-checkout exit speaks usage JSON for EVERY hook (#688)",
            'case $name in usage-pace-*) usage_not_run "no checkout contains', 'case $name in *) usage_not_run "no',
            (OUT_PLAIN,)),
-    Mutant("x2d the unreadable-cwd exit speaks usage JSON for EVERY hook (#688)",
+    Mutant("pr688d the unreadable-cwd exit speaks usage JSON for EVERY hook (#688)",
            'case $name in usage-pace-*) usage_not_run "cannot read the cwd', 'case $name in *) usage_not_run "c',
            (GONE_PLAIN,)),
     # r1 X3 (Codex): special-casing ONE real name, as Codex's disposable copy did for usage-pace-wake.sh.
