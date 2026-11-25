@@ -21635,6 +21635,8 @@ Node-tree plan (`docs/superpowers/plans/2026-11-24-goal-node-tree.md`) slice S2,
 `scripts/check-goal-status.py` derives its armed set (`armed`, minus `UNARMED`, stale exemptions fail);
 `PAGE_SOURCES["features"]`, the publishability fixture and both regen hooks no longer name the registry;
 `docs/anchors.md` deleted. Phase 6 edge pin in `scripts/check-shipping-sets.py` 363 → 368.
+
+## 2026-11-24
 The usage-pace guard now tells the session it did not run in two places where it used to fail
 quietly: when the session's folder has been deleted, and when the session is in a copied project tree
 with no git history. Before, those ended with nothing on the channel the session reads, so a missing
