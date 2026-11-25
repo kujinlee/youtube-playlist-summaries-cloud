@@ -4,7 +4,7 @@
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
     python3 scripts/regen-pages.py --page backlog-table    # one page (the edit hooks, the Refresh button)
-    python3 scripts/regen-pages.py --self-test             # 121 cases
+    python3 scripts/regen-pages.py --self-test             # 123 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —

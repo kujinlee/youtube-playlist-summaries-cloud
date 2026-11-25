@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 291 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 297 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -4448,6 +4448,17 @@ def _self_test_body() -> int:
         case("5.4 a directory NOT in DIR_SOURCES is still refused by the coverage rule",
              lambda: (unwatchable({"x": ["docs"]}, REPO), unwatchable({"x": ["docs/asks"]}, REPO))
              == (["docs"], []))
+        # ⛔ THE REPO IS READ, NOT ASSUMED (check-fixture-variation): every other call passes REPO, so this world
+        # is built elsewhere — a file, the named directory, and a declared source that exists in neither.
+        def _unwatchable_elsewhere():
+            import tempfile as _tf_uw
+            with _tf_uw.TemporaryDirectory() as d:
+                r = pathlib.Path(d)
+                (r / "docs/asks").mkdir(parents=True)
+                (r / "x.md").write_text("x", encoding="utf-8")
+                return unwatchable({"p": ["x.md", "docs/asks", "gone.md"]}, r)
+        case("5.8 the repo it is GIVEN is the one read: only the source missing THERE is unwatchable",
+             lambda: _unwatchable_elsewhere() == ["gone.md"])
         case("/_stale answers 200 for a page it has sources for",
              lambda: _drive_stale()[0] == 200)
         case("/_stale says `fresh` when the page is newer than its source",

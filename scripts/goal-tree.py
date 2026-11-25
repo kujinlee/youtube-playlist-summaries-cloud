@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 593 cases
+    python3 scripts/goal-tree.py --self-test                 # 607 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -5217,6 +5217,12 @@ def _self_test_cases(*, outside: dict) -> int:
              _one1.get("decision_warning"), "decision 'pick' offers 1 option(s); at least two are needed")
         case("3.7 an answered ask is not an item", (sorted(_bk), _bip),
              (["2026-11-25-bare", "2026-11-25-one", "2026-11-25-page-name"], []))
+    # ⛔ THE DIRECTORY IT IS GIVEN IS THE ONE READ (check-fixture-variation): a second directory, its own ask only.
+    with tempfile.TemporaryDirectory() as _ad2:
+        _a2 = pathlib.Path(_ad2)
+        (_a2 / "2026-11-26-other.md").write_text(ASK_FIXTURE, encoding="utf-8")
+        case("3.9 the directory it is GIVEN is the one read: a second directory yields only its own ask",
+             [n["ref"] for n in needs_from_asks(_a2)[0]], ["2026-11-26-other"])
     _b, _bp = needs_from_backlog(BACKLOG_FIXTURE)
     case("the backlog source lists open NEEDS-OWNER rows only, by its own parser",
          ([n["ref"] for n in _b], _bp), (["backlog #5", "backlog #9", "backlog #10"], []))

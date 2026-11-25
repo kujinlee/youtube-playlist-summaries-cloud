@@ -84,7 +84,7 @@ different compaction — SESSION_NOT_COMPACTION, printed, not fixed; STALE_AFTER
 
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 125 cases
+    python3 scripts/compaction-state.py --self-test  # 130 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; a child mode exits 0 when it wrote
 its file.
