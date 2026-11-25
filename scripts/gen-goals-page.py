@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 83 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 85 cases: pure functions, and `collect` over a built world
 
 WHY THIS EXISTS
 ---------------
@@ -78,11 +78,34 @@ def _load_status_parser():
     sys.modules["_cgs"] = mod
     spec.loader.exec_module(mod)
     return mod.parse_status
+_CHECK_ANCHORS = None
+
+
+def _check_anchors():
+    """`check-anchors`, which OWNS the `Anchor:` header reader (`anchored_slugs`) and loads the node
+    tree's own parser (`check_features`). Loaded lazily and once; RAISES like `_load_status_parser`
+    rather than fall back to a local grammar (plan choice C10: one reader of one header)."""
+    global _CHECK_ANCHORS
+    if _CHECK_ANCHORS is None:
+        import importlib.util
+        path = ROOT / "scripts" / "check-anchors.py"
+        spec = importlib.util.spec_from_file_location("_gg_check_anchors", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"CANNOT RUN — cannot load the anchor reader from {path}")
+        _CHECK_ANCHORS = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_CHECK_ANCHORS)
+    return _CHECK_ANCHORS
+
+
+def _check_features():
+    """`check-features`, the node tree's parser, as `check-anchors` loaded it — one module object."""
+    return _check_anchors().check_features
+
+
 DOCS = ROOT / "docs"
 SUBDIRS = ("superpowers/specs", "superpowers/plans")
 DEFAULT_OUT = pathlib.Path.home() / "explainers" / "goals.html"
 
-REGISTRY_ROW = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|")
 ANCHOR = re.compile(r"^>\s*\*\*Anchor:\*\*\s*`([a-z0-9-]+)`\s*—\s*\*\*ADR:\*\*\s*(none|[\d,\s]+?)\s*$")
 GOAL = re.compile(r"^>\s*\*\*Goal:\*\*\s*(\S.*)$")
 DATED = re.compile(r"^(\d{4}-\d{2}-\d{2})-")
@@ -117,16 +140,6 @@ MILESTONE_STATES = (("⛔", "deferred"), ("◀", "next"), ("✅", "done"))
 
 
 # ---------------------------------------------------------------- pure parsing
-def parse_registry(text: str) -> list[dict]:
-    """[{slug, adrs, goal}] in file order. PURE."""
-    out = []
-    for line in text.split("\n"):
-        m = REGISTRY_ROW.match(line)
-        if m:
-            out.append({"slug": m.group(1), "adrs": m.group(2).strip(), "goal": m.group(3).strip()})
-    return out
-
-
 def parse_header(text: str, head_lines: int = 10) -> dict:
     """{anchor, adrs, goal} from a document's opening; anchor is None when absent. PURE."""
     got: dict = {"anchor": None, "adrs": [], "goal": ""}
@@ -430,11 +443,33 @@ def annotate_code(prs: list[dict], show=git_show_files) -> list[dict]:
     return out
 
 
-def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
-    """One record per registered anchor. Reads the tree; parsing itself is pure above."""
-    registry = parse_registry((docs / "anchors.md").read_text())
+def goal_nodes(nodes: list, anchored) -> list:
+    """The nodes that get a card IN THIS SLICE: those a document's `Anchor:` header names, or that
+    carry an `adrs:` line — in tree order (plan choice C5). PURE.
+
+    ⚠ Deliberately the registry's set by another route (measured at Task 8: the same 15, with
+    `dev-speed-first` under its current name). A card per node, laid out as the tree, is Task 19."""
+    return [n for n in nodes if n.slug in anchored or n.adrs]
+
+
+def collect(docs: pathlib.Path, gen_text: str, nodes: list) -> list[dict]:
+    """One record per goal node (`goal_nodes`). Reads the documents; parsing itself is pure above.
+
+    ⛔ A document whose header names NO current node REFUSES the build, naming the document: it
+    would otherwise vanish from every card, which reads as "this goal has no such document".
+    `check-anchors` G1 is the gate; this is the page refusing to render past it."""
+    ca = _check_anchors()
+    anchored = ca.anchored_slugs(docs)
+    current = ca.check_features.current_slugs(nodes)
+    unknown = {slug: rels for slug, rels in anchored.items() if slug not in current}
+    if unknown:
+        raise SystemExit("gen-goals-page: a document's `Anchor:` header names no current node of "
+                         "docs/features.md — " + "; ".join(
+                             f"`{slug}` in {', '.join(rels)}" for slug, rels in sorted(unknown.items())))
+    registry = [{"slug": n.slug, "adrs": n.adrs, "goal": n.purpose} for n in goal_nodes(nodes, anchored)]
     if not registry:
-        raise SystemExit("gen-goals-page: docs/anchors.md declares no anchors — nothing to render")
+        raise SystemExit("gen-goals-page: no node of docs/features.md has a document or an ADR — "
+                         "nothing to render")
 
     adrs: dict[str, dict] = {}
     for p in sorted((docs / "adr").glob("[0-9][0-9][0-9][0-9]-*.md")):
@@ -442,30 +477,32 @@ def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
                             "title": p.name[5:-3].replace("-", " ")}
 
     roots, depends = parse_roots(gen_text)
-    # Not merely unused: a ROOTS key outside the registry means the backlog graph and the
-    # anchor registry have drifted apart, which `check-anchors.py` R5 also enforces. This
-    # page would silently render an empty backlog band instead, so it says so.
+    # Not merely unused: a ROOTS key outside the goal nodes means the backlog graph and the
+    # tree have drifted apart, which `check-anchors.py` G3 also enforces. This page would
+    # silently render an empty backlog band instead, so it says so.
     stray = sorted(roots - {r['slug'] for r in registry})
 
     by_anchor: dict[str, list] = {r["slug"]: [] for r in registry}
     # Loaded ONCE here rather than per document: it executes a module, and this generator runs
     # from a hook on every write to any spec, plan, ADR or the registry.
     _status_of = _load_status_parser()
-    for sub in SUBDIRS:
-        d = docs / sub
-        if not d.is_dir():
+    adr_dir = f"docs/{ca.ADR_SUB}/"
+    for slug, rels in anchored.items():
+        if slug not in by_anchor:
             continue
-        for f in sorted(d.glob("*.md")):
+        for rel in rels:
+            if rel.startswith(adr_dir):     # an ADR is a decision chip, not a document row
+                continue
+            f = docs.parent / rel
+            sub = rel[len("docs/"):].rsplit("/", 1)[0]
             _text = f.read_text()
             h = parse_header(_text)
-            if h["anchor"] not in by_anchor:
-                continue
             # ⛔ THE GRAMMAR IS IMPORTED, NOT RESTATED — see `_load_status_parser`. A malformed
             # declaration renders as the absence it is; the GATE is what refuses it, because a
             # generator that also judged would be a second place the rule lives.
             _state, _why = _status_of(_text)
             dm = DATED.match(f.name)
-            by_anchor[h["anchor"]].append({
+            by_anchor[slug].append({
                 "name": f.name, "rel": f"docs/{sub}/{f.name}", "goal": h["goal"],
                 "dated": dm.group(1) if dm else "", "touched": last_touched(f),
                 "kind": "plan" if "plans" in sub else "spec",
@@ -494,7 +531,7 @@ def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
             "docs": ds,
             "threads": [thread_prs(t, history) for t in pair_documents(ds)],
             "spine": spine,
-            "adrs": [{"num": n, **adrs[n]} for n in re.findall(r"\d{4}", r["adrs"]) if n in adrs],
+            "adrs": [{"num": n, **adrs[n]} for n in r["adrs"] if n in adrs],
             "backlog": [(i, rel) for i, rel, root in depends if root == r["slug"]],
             "touched": max((d["touched"] for d in ds if d["touched"]), default=""),
         })
@@ -518,7 +555,7 @@ def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
 
     if stray:
         # Loud, not silent: an empty backlog band would look like "this goal has no rows".
-        print(f"⚠ ROOTS keys outside the registry, backlog bands will be empty for them: "
+        print(f"⚠ ROOTS keys outside the goal nodes, backlog bands will be empty for them: "
               f"{', '.join(stray)}", file=sys.stderr)
     return out
 
@@ -832,7 +869,7 @@ def build(anchors: list[dict], sha: str, stamp: str, generated_at: str = "") -> 
     being worked without a spine to read state from, and it is deliberately given a fixed slot rather
     than left blank.</p>
   <p class="legend">Decision: <code>docs/adr/0010-documents-declare-their-anchor.md</code> ·
-    Registry: <code>docs/anchors.md</code> · Enforced by
+    Names: <code>docs/features.md</code> (ADR-0016) · Enforced by
     <code>scripts/check-anchors.py</code>.</p>
 </footer>
 </div>
@@ -904,12 +941,6 @@ def _self_test_body() -> int:
             print(f"  [FAIL] {label}")
             print(f"    got {got!r} want {want!r}")
         failures += 0 if ok else 1
-
-    reg = "| Anchor | ADR(s) | Goal |\n|---|---|---|\n| `alpha` | 0001, 0002 | A goal. |\n"
-    eq("registry row parsed", parse_registry(reg),
-       [{"slug": "alpha", "adrs": "0001, 0002", "goal": "A goal."}])
-    eq("registry ignores the separator row", len(parse_registry(reg)), 1)
-    eq("hollow registry yields nothing", parse_registry("# Nothing\n"), [])
 
     hdr = "# T\n\n> **Anchor:** `alpha` — **ADR:** 0001\n> **Goal:** A goal.\n"
     eq("header parsed", parse_header(hdr), {"anchor": "alpha", "adrs": ["0001"], "goal": "A goal."})
@@ -1313,6 +1344,72 @@ def _self_test_body() -> int:
     finally:
         page_markup.use_repo(_saved_repo)
 
+    # ⛔ goal node tree Task 8: `collect` over a WORLD built beside the real one — no registry file,
+    # one fixture ADR (no `Anchor:` header, so it names no node), and specs/plans whose headers name
+    # the probe nodes. The ROOTS/DEPENDS text is the REAL gen-backlog-page.py, so the band reads the
+    # relation as it stands today.
+    _gen_real = (ROOT / "scripts" / "gen-backlog-page.py").read_text()
+    _tree = ("# Feature map\n## PRODUCT\n"
+             "### probe-doc\nstate: built\nfor: The probe a spec names.\n"
+             "### stable-blob-addressing\nstate: built\nfor: Blob keys that never move.\n"
+             "### probe-adr\nstate: built\nfor: Decided, never written up.\nadrs: 0010\n"
+             "### probe-bare\nstate: built\nfor: Neither.\nareas: (probe)\n")
+
+    def _world(td: str, headers: dict[str, str]) -> pathlib.Path:
+        d = pathlib.Path(td) / "docs"
+        for sub_ in SUBDIRS:
+            (d / sub_).mkdir(parents=True)
+        (d / "adr").mkdir()
+        (d / "adr" / "0010-probe-decision.md").write_text("---\nstatus: accepted\n---\n# Probe\n")
+        for rel, slug in headers.items():
+            (d / rel).write_text(f"# {slug}\n\n> **Anchor:** `{slug}` — **ADR:** none\n"
+                                 f"> **Goal:** a document's own goal line.\n")
+        return d
+
+    _nodes = _check_features().parse_features(_tree)[0]
+    with tempfile.TemporaryDirectory() as _td:
+        _d = _world(_td, {"superpowers/specs/2026-01-01-probe-doc-design.md": "probe-doc",
+                          "superpowers/plans/2026-01-02-blobs.md": "stable-blob-addressing"})
+        try:
+            _cards = {a["slug"]: a for a in collect(_d, _gen_real, _nodes)}
+        except (Exception, SystemExit) as e:
+            _cards = {"error": {"goal": f"{type(e).__name__}: {e}", "adrs": [], "docs": [],
+                                "backlog": []}}
+    check_ = eq
+    check_("cards: a node with a document",
+           [(s in _cards, _cards.get(s, {}).get("goal"), [x["name"] for x in _cards.get(s, {}).get("docs", [])])
+            for s in ("probe-doc", "stable-blob-addressing")],
+           [(True, "The probe a spec names.", ["2026-01-01-probe-doc-design.md"]),
+            (True, "Blob keys that never move.", ["2026-01-02-blobs.md"])])
+    check_("cards: a node with only adrs",
+           (_cards.get("probe-adr", {}).get("goal"), [a["num"] for a in _cards.get("probe-adr", {}).get("adrs", [])],
+            _cards.get("probe-adr", {}).get("docs")),
+           ("Decided, never written up.", ["0010"], []))
+    check_("cards: a bare node has none yet", sorted(_cards), ["probe-adr", "probe-doc", "stable-blob-addressing"])
+    _want_band = [(i, rel) for i, rel, root in parse_roots(_gen_real)[1] if root == "stable-blob-addressing"]
+    _card = _cards.get("stable-blob-addressing")
+    check_("band: the ROOTS relation still renders",
+           (bool(_want_band), _card and _card["backlog"],
+            bool(_card) and all(f"backlog #{i}" in render_goal({**_card, "fanout": {}, "head": "x"})
+                                for i, _ in _want_band),
+            _cards.get("probe-doc", {}).get("backlog")),
+           (True, _want_band, True, []))
+    _refused = {}
+    for _slug in ("no-such-node", "probe-doc"):
+        with tempfile.TemporaryDirectory() as _td:
+            _stray = _world(_td, {"superpowers/specs/2026-01-03-stray.md": _slug})
+            try:
+                # A one-node tree and no ROOTS text: the refusal reads neither the band nor the rest.
+                collect(_stray, "", _nodes[:1])
+                _refused[_slug] = None
+            except SystemExit as e:
+                _refused[_slug] = str(e)
+    check_("cards: a document anchored to no node refuses the build",
+           (_refused["probe-doc"],
+            bool(_refused["no-such-node"]) and "docs/superpowers/specs/2026-01-03-stray.md" in _refused["no-such-node"]
+            and "`no-such-node`" in _refused["no-such-node"]),
+           (None, True))
+
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 
@@ -1332,9 +1429,14 @@ def main() -> int:
     page_markup.use_repo(page_markup.origin_repo(ROOT))
 
     gen = ROOT / "scripts" / "gen-backlog-page.py"
-    if not (DOCS / "anchors.md").is_file() or not gen.is_file():
-        print("CANNOT RUN — docs/anchors.md or scripts/gen-backlog-page.py is missing. "
+    if not (DOCS / "features.md").is_file() or not gen.is_file():
+        print("CANNOT RUN — docs/features.md or scripts/gen-backlog-page.py is missing. "
               "Treat this as NOT RUN.", file=sys.stderr)
+        return 2
+    try:
+        nodes = _check_anchors().read_tree(DOCS / "features.md")
+    except _check_anchors().TreeUnreadable as e:
+        print(f"CANNOT RUN — {e}. Treat this as NOT RUN.", file=sys.stderr)
         return 2
 
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT,
@@ -1351,7 +1453,7 @@ def main() -> int:
     if warn:
         print(warn, file=sys.stderr)
 
-    anchors = collect(DOCS, gen.read_text())
+    anchors = collect(DOCS, gen.read_text(), nodes)
     fragment = build(anchors, sha, stamp,
                      page_chrome.provenance(
                          _dt.datetime.now().strftime('%Y-%m-%d %H:%M'), ROOT))

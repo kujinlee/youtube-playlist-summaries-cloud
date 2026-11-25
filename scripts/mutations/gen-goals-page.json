@@ -325,5 +325,44 @@
   "expect": [
    "a backlog chip naming a row that does not exist is marked text, never a link"
   ]
+ },
+ {
+  "name": "goal_nodes drops its anchored-document term, so a node with only a spec or plan gets no card",
+  "file": "scripts/gen-goals-page.py",
+  "edits": [
+   [
+    "if n.slug in anchored or ",
+    "if "
+   ]
+  ],
+  "expect": [
+   "cards: a node with a document"
+  ]
+ },
+{
+  "name": "goal_nodes drops its adrs: term, so a node decided but never written up loses its card",
+  "file": "scripts/gen-goals-page.py",
+  "edits": [
+   [
+    " or n.adrs]",
+    "]"
+   ]
+  ],
+  "expect": [
+   "cards: a node with only adrs"
+  ]
+ },
+{
+  "name": "a document anchored to no current node is dropped silently instead of refusing the build",
+  "file": "scripts/gen-goals-page.py",
+  "edits": [
+   [
+    "    if unknown:\n        raise SystemExit(\"gen-goals-page: a document",
+    "    if False:\n        raise SystemExit(\"gen-goals-page: a document"
+   ]
+  ],
+  "expect": [
+   "cards: a document anchored to no node refuses the build"
+  ]
  }
 ]

@@ -530,7 +530,9 @@ EXPECTED_MUTATIONS = {
     "scripts/backfill-work-lines.py": 108,
     # ⟳ 2026-11-03, backlog #470: 25 -> 28. goal-card id, qualified backlog chip, PR link (+3).
     # ⟳ 2026-11-03, backlog #470 review round 1: 28 -> 29. a chip naming a missing row is marked text (+1).
-    "scripts/gen-goals-page.py": 29,
+    # ⟳ 2026-11-24, goal node tree Task 8: 29 -> 32. goal_nodes' two terms severed singly, and the
+    # refusal of a document anchored to no current node (+3).
+    "scripts/gen-goals-page.py": 32,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
     # its own terms: seven of the ten revert a DECISION the renderer makes (which band a fragment

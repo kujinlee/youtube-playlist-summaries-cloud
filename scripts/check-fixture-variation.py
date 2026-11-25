@@ -1449,7 +1449,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'unresolved_heads_up.entries',),
     'gen-goals-page.py': (
         'parse_adr.text', 'parse_header.head_lines', 'parse_header.text',
-        'parse_milestones.text', 'parse_registry.text', 'parse_roots.text',),
+        'parse_milestones.text', 'parse_roots.text',),
     'gen-m4-manifest.py': (
         'derive.source', 'has_m4.catalog', 'has_m4.manifest', 'psql.db', 'psql.sql',),
     'page_chrome.py': (
