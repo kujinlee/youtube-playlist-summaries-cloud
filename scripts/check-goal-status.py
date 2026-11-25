@@ -112,6 +112,16 @@ def armed(anchored: dict[str, list[str]], unarmed: tuple[str, ...] = UNARMED) ->
     return tuple(sorted(slug for slug in anchored if slug not in unarmed))
 
 
+def with_document_anchors(anchored: dict[str, list[str]], docs: list[dict]) -> dict[str, list[str]]:
+    """PURE. `anchored` plus every spec or plan whose anchor only the LENIENT reader finds (r3 F1,
+    backlog #728): master armed such a document, so it must name — and arm — its slug here too."""
+    out = {slug: list(rels) for slug, rels in anchored.items()}
+    for d in docs:
+        if d["anchor"] is not None and d["rel"] not in out.get(d["anchor"], []):
+            out.setdefault(d["anchor"], []).append(d["rel"])
+    return out
+
+
 def misnamed_anchors(anchored: dict[str, list[str]], nodes: list) -> list[str]:
     """One line per document whose `Anchor:` names no current, settled node, worded by
     `check-anchors.name_problem` (its owner). Without this a mistyped slug was ARMED and the
@@ -147,8 +157,8 @@ STATES = {
 ALIVE_WORDS = ("current", "needs-you")
 
 STATUS_LINE = re.compile(r"^\*\*Status:\*\*\s*(.+)$", re.M)
-# The `Anchor:` slug is NOT read here: `check-anchors.parse_header` is its one reader (r1 MINOR-4).
-# This window bounds the STATUS search only.
+# The `Anchor:` slug is NOT read here: `check-anchors.parse_header` is its one reader (r1 MINOR-4),
+# called in its LENIENT mode, master's arming rule (r3 F1, backlog #728). This bounds STATUS only.
 HEAD_LINES = 18
 
 
@@ -221,7 +231,7 @@ def living_documents(repo: Path | None = None) -> list[dict]:
                 raise ValueError(f"{f} could not be read: {exc}") from exc
             state, why = parse_status(text)
             out.append({"rel": f"docs/{sub}/{f.name}", "name": f.name,
-                        "anchor": parse_header(text)[0],
+                        "anchor": parse_header(text, lenient=True)[0],
                         "state": state, "why": why})
     return out
 
@@ -311,7 +321,7 @@ def main(argv: list[str], *, repo: Path | None = None,
             print("FAILED — an exemption outlived its node:")
             print("\n".join(stale))
             return 1
-        anchored = ca.anchored_slugs(root)
+        anchored = with_document_anchors(ca.anchored_slugs(root), docs)
         misnamed = misnamed_anchors(anchored, nodes)
         if misnamed:
             print("FAILED — a document names no current node:")
@@ -393,24 +403,46 @@ def _self_test_body() -> int:
          (_mrc, "docs/superpowers/specs/2026-01-01-g4.md: `no-such-node` is not a node"
                 in _mout.getvalue(), "armed anchors:" in _mout.getvalue()),
          (1, True, False))
-    # ⛔ r1 MINOR-4: ONE header reader. A bare (non-blockquote) `**Anchor:**` line and one below
-    # check-anchors' window are no anchor to check-anchors, so they must be none here either —
-    # the deleted local regex read both as `alpha`, arming a slug check-anchors never saw.
+    # ⛔ r1 MINOR-4 made check-anchors' STRICT reader the only one, and r3 F1 (backlog #728) measured
+    # what that cost: a pre-cutoff document with a bare `**Anchor:**` line, or one on lines 11-18,
+    # was armed on master and silently unarmed here. ONE reader still — `check-anchors.parse_header`
+    # — in its LENIENT mode, which is master's arming rule (any `**Anchor:** `x`` in 18 lines).
     with _tf.TemporaryDirectory() as _gr, _tf.TemporaryDirectory() as _gr2:
         _rr, _rr2 = Path(_gr), Path(_gr2)
         _sp = _rr / "docs" / "superpowers" / "specs"
         _sp.mkdir(parents=True)
         (_sp / "2026-01-01-a.md").write_text("# A\n\n> **Anchor:** `alpha` — **ADR:** none\n")
-        (_sp / "2026-01-01-b.md").write_text("# B\n\n**Anchor:** `alpha` — **ADR:** none\n")
+        (_sp / "2026-01-01-b.md").write_text("# B\n\n**Anchor:** `alpha`\n")
         (_sp / "2026-01-01-c.md").write_text(
             "# C\n" + "\n" * 11 + "> **Anchor:** `alpha` — **ADR:** none\n")
+        (_sp / "2026-01-01-e.md").write_text(
+            "# E\n" + "\n" * 18 + "> **Anchor:** `alpha` — **ADR:** none\n")
         (_rr2 / "docs" / "superpowers" / "plans").mkdir(parents=True)
         (_rr2 / "docs" / "superpowers" / "plans" / "2026-01-01-d.md").write_text(
             "# D\n\n> **Anchor:** `beta` — **ADR:** 0001\n")
-        case("living_documents reads the anchor with check-anchors' reader, so the two agree",
+        case("living_documents reads the anchor by master's arming rule: bare, short and lines 11-18 count",
              ([d["anchor"] for d in living_documents(_rr)],
               [d["anchor"] for d in living_documents(_rr2)]),
-             (["alpha", None, None], ["beta"]))
+             (["alpha", "alpha", "alpha", None], ["beta"]))
+    # ⛔ r3 F1 (backlog #728), the reviewer's input: the ONLY document naming `cloud-sync` is
+    # pre-cutoff, its header bare and short, its Status missing. Master: rc 1, armed. Before this
+    # fold: rc 0 and "armed anchors: " empty — the missing Status passed in silence.
+    with _tf.TemporaryDirectory() as _gf:
+        import contextlib as _cl
+        import io as _io
+        _fr = Path(_gf)
+        (_fr / "docs" / "superpowers" / "specs").mkdir(parents=True)
+        (_fr / "docs" / "superpowers" / "plans").mkdir(parents=True)
+        (_fr / "docs" / "features.md").write_text(
+            "# Feature map\n## PRODUCT\n" + "".join(
+                f"### {n}\nstate: built\nfor: Node {n}.\nareas: ({n})\n" for n in ("cloud-sync",) + UNARMED))
+        (_fr / "docs" / "superpowers" / "specs" / "2026-01-01-old.md").write_text(
+            "# Old\n\n**Anchor:** `cloud-sync`\n\nno status\n")
+        _fout = _io.StringIO()
+        with _cl.redirect_stdout(_fout):
+            _frc = main([], repo=_fr)
+    case("⛔ F1: a pre-cutoff spec with a bare, short Anchor header and no Status is ARMED and FAILS",
+         (_frc, "`cloud-sync` is armed" in _fout.getvalue()), (1, True))
     case("armed: two trees give two sets", _two,
          ((0, ["armed anchors: alpha"]), (0, ["armed anchors: beta"])))
     case("armed: a stale exemption fails",

@@ -105,7 +105,8 @@ EXPECTED_MUTATIONS = {
     # comment below correctly says `18 -> 18`. ⚠ The executable count is right; the audit trail
     # was wrong, in the one number this round was asked to verify. Corrected, not raised.
     "scripts/check-claim-propagation.py": 18,
-    "scripts/check-anchors.py": 12,
+    # PR #637 r3 F1: +1 — `parse_header`'s lenient mode leaking into the default (strict) reader: 12 -> 13.
+    "scripts/check-anchors.py": 13,
     "scripts/check-arch-findings.py": 5,
     # ⟳ 2026-09-22, the third warning class: 8 -> 22. THREE of the eight are not about the new
     # branch's rules at all but about it being WIRED and LABELLED — `run_decide` ceasing to count
@@ -595,7 +596,8 @@ EXPECTED_MUTATIONS = {
     # the clause removed, read in any case, and without its word boundary (+3).
     # ⟳ 2026-11-20, agenda-row-state r3 (Phase 6, backlog-closed-rule): 84 -> 82. The r2 closing-word clause is
     # REVERTED with its three entries (-3); only the FIRST status mark is state — the last mark read instead (+1).
-    "scripts/gen-backlog-page.py": 84,
+    # PR #637 r3 F3: +1 — `node_slugs` returning proposed nodes again, so an `epic:` may name one: 84 -> 85.
+    "scripts/gen-backlog-page.py": 85,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
@@ -1208,7 +1210,8 @@ EXPECTED_MUTATIONS = {
     # UNARMED, the stale-exemption report, and main deriving rather than naming the set (+3).
     # ⟳ 2026-11-24, PR #637 r1 fold: 10 -> 12. A misnamed anchor fails with naming advice, and
     #   the anchor is read by check-anchors' parser rather than a local regex (+2).
-    "scripts/check-goal-status.py": 12,
+    # PR #637 r3 F1: +1 — arming from the strict headers only; the strict-reader entry was REWRITTEN to its inverse (lenient is now the fix): 12 -> 13.
+    "scripts/check-goal-status.py": 13,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
     # because a workflow-level filter is what made the `schema-gates` check unrequireable. TWO
@@ -1765,7 +1768,8 @@ EXPECTED_MUTATIONS = {
     # its own state (not in the +1).
     # ⟳ 2026-11-24, goal node tree S1 review r3: 58 -> 59 — the merged rule's message back to a
     # truthiness test of `state`, reporting a bare `state:` as "has no `state:`" (Claude F2).
-    "scripts/check-features.py": 59,
+    # PR #637 r3 F3: +1 — `settled_slugs` keeping proposed nodes: 59 -> 60.
+    "scripts/check-features.py": 60,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed

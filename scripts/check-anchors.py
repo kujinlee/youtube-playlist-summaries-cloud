@@ -75,6 +75,12 @@ FLOOR = 22
 DATED = re.compile(r"^(\d{4}-\d{2}-\d{2})-")
 ANCHOR = re.compile(r"^>\s*\*\*Anchor:\*\*\s*`([a-z0-9-]+)`\s*—\s*\*\*ADR:\*\*\s*(none|[\d,\s]+?)\s*$")
 GOAL = re.compile(r"^>\s*\*\*Goal:\*\*\s*(\S.*)$")
+# ⛔ LENIENT mode, for ARMING only (`check-goal-status`; r3 F1, backlog #728). Master's arming reader:
+# any `**Anchor:** `x`` in the first 18 lines — bare or blockquoted, with or without the ADR part. It
+# answers "which slug does this document name", never "is this header well formed": the checks in
+# THIS file never pass `lenient`, so their strictness is unchanged.
+LENIENT_ANCHOR = re.compile(r"\*\*Anchor:\*\*\s*`([^`]+)`")
+LENIENT_HEAD_LINES = 18
 ROOTS_KEY = re.compile(r'^\s{4}"([a-z0-9-]+)":\s*dict\(', re.M)
 # A DEPENDS entry: `    19: ("survives", "stable-blob-addressing",` — the root is the second string.
 DEPENDS_ROOT = re.compile(r'^\s{4}(\d+):\s*\(\s*"[a-z-]+",\s*"([^"]*)"', re.M)
@@ -109,8 +115,10 @@ def read_tree(path: pathlib.Path) -> list:
     return nodes
 
 
-def parse_header(text: str, head_lines: int = HEAD_LINES) -> tuple[str | None, list[str], bool]:
-    """(anchor, adr numbers, has_goal) from a document's opening. PURE."""
+def parse_header(text: str, head_lines: int = HEAD_LINES, *,
+                 lenient: bool = False) -> tuple[str | None, list[str], bool]:
+    """(anchor, adr numbers, has_goal) from a document's opening. PURE. `lenient` reads the anchor
+    by master's arming rule (`LENIENT_ANCHOR`) when no well-formed header names one."""
     anchor, adrs, has_goal = None, [], False
     for line in text.split("\n")[:head_lines]:
         if m := ANCHOR.match(line):
@@ -119,6 +127,9 @@ def parse_header(text: str, head_lines: int = HEAD_LINES) -> tuple[str | None, l
             adrs = [] if raw == "none" else [n.strip() for n in raw.split(",") if n.strip()]
         elif GOAL.match(line):
             has_goal = True
+    if anchor is None and lenient:
+        if m := LENIENT_ANCHOR.search("\n".join(text.split("\n")[:LENIENT_HEAD_LINES])):
+            anchor = m.group(1)
     return anchor, adrs, has_goal
 
 
@@ -327,6 +338,14 @@ def _self_test_body() -> int:
         report(label, got == want, got, want)
 
     N = _nodes()
+    # r3 F1 (backlog #728): `lenient` is check-goal-status's arming rule and only that. The default
+    # reader stays strict; the lenient one reads master's forms and stops at 18 lines.
+    _bare, _deep = "# T\n\n**Anchor:** `alpha`\n", "# T\n" + "\n" * 11 + "> **Anchor:** `alpha` — **ADR:** none\n"
+    check_eq("parse_header: the default is STRICT, lenient reads bare/short/lines 11-18, not 19+",
+             ([parse_header(_bare)[0], parse_header(_deep)[0], parse_header(_deep, 13)[0]],
+              [parse_header(_bare, lenient=True)[0], parse_header(_deep, lenient=True)[0],
+               parse_header("# T\n" + "\n" * 18 + _bare, lenient=True)[0]]),
+             ([None, None, "alpha"], ["alpha", "alpha", None]))
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         S, P, A = "superpowers/specs", "superpowers/plans", ADR_SUB

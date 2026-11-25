@@ -658,5 +658,18 @@
     "expect": [
       "anchors: is no longer a field"
     ]
+  },
+  {
+    "name": "settled_slugs keeps proposed nodes, so the gate accepts an epic naming one (r3 F3)",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    return {n.slug for n in nodes if not n.proposed}",
+        "    return {n.slug for n in nodes}"
+      ]
+    ],
+    "expect": [
+      "⛔ F3: an epic naming a proposed node FAILS the gate"
+    ]
   }
 ]

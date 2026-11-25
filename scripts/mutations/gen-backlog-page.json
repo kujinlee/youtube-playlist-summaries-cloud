@@ -999,12 +999,25 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "    return mod.current_slugs(nodes)",
-        "    return mod.current_slugs(nodes) | {w for n in nodes for w in n.was}"
+        "    return mod.settled_slugs(nodes)",
+        "    return mod.settled_slugs(nodes) | {w for n in nodes for w in n.was}"
       ]
     ],
     "expect": [
       "parent_errors: an epic naming a former slug is refused"
+    ]
+  },
+  {
+    "name": "node_slugs returns every current slug again, so an epic naming a proposed node passes (r3 F3)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        raise ValueError(f\"docs/features.md is unreadable as a node tree: {problems[:1] or 'no node'}\")\n    return mod.settled_slugs(nodes)",
+        "        raise ValueError(f\"docs/features.md is unreadable as a node tree: {problems[:1] or 'no node'}\")\n    return mod.current_slugs(nodes)"
+      ]
+    ],
+    "expect": [
+      "⛔ F3: an epic naming a proposed node is refused"
     ]
   },
   {

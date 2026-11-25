@@ -255,6 +255,12 @@ def current_slugs(nodes: list[Node]) -> set[str]:
     return {n.slug for n in nodes}
 
 
+def settled_slugs(nodes: list[Node]) -> set[str]:
+    """The current slugs minus every `proposed:` node — a name awaiting the owner's pick (spec §2.7).
+    What a NEW `epic:` may name (r3 F3), the set `check-anchors.name_problem` accepts."""
+    return {n.slug for n in nodes if not n.proposed}
+
+
 def resolve(nodes: list[Node], slug: str) -> str | None:
     """The CURRENT slug for a current or former slug, else None. ⛔ For READING history only (spec
     §2.4): a check of a NEW value asks "is this a current slug", never "does this resolve"."""
@@ -447,8 +453,8 @@ def backlog_areas(text: str) -> tuple[set[str], list[str]]:
 
 
 def kind_problems(text: str, slugs: set[str]) -> list[str]:
-    """backlog #394: a parent link naming a missing row or an `epic:` that is no current node slug
-    (`slugs`) FAILS this gate; a
+    """backlog #394: a parent link naming a missing row or an `epic:` that is no current, settled node
+    slug (`slugs`, from `settled_slugs`) FAILS this gate; a
     row with no kind is a WARNING printed here (reported, never guessed, never a failure). ⚠ The kind
     is read by `gen-backlog-page.kind_mark` and is NEVER an area: the Bundle cell alone holds tags.
     An unknown kind is a `ShapeError` from the parser, which `backlog_areas` already reports."""
@@ -521,7 +527,7 @@ def main() -> int:
         print("CANNOT RUN — no `(area)` tags parsed from docs/backlog.md. Treat this as NOT RUN.", file=sys.stderr)
         return 2
     problems += area_problems
-    problems += kind_problems(BACKLOG.read_text(), current_slugs(nodes))
+    problems += kind_problems(BACKLOG.read_text(), settled_slugs(nodes))
     # ⛔ THE LIVE SET, read by the one header reader (plan C10): a `built` node whose only fragment is
     # a spec or plan naming it passes here, and fails once that document is gone.
     problems += check_nodes(nodes, frozenset(anchors_module().anchored_slugs(DOCS_DIR)))
@@ -707,7 +713,15 @@ expected-because: standard for a hosted multi-tenant service.
                                 "| 2 | y | f | S | (w) | o |"), {"feature-map"})
     check("⛔ #394: a parent naming a missing row or an unregistered anchor FAILS the gate",
           _kp, ["backlog.md row 1: `part of: backlog #9` names a row that does not exist",
-                "backlog.md row 1: `epic: nope` is not a node in docs/features.md"])
+                "backlog.md row 1: `epic: nope` is not a current, settled node in docs/features.md"])
+    # ⛔ r3 F3: the gate's own set is the SETTLED slugs, so a `proposed:` node cannot be an epic.
+    _pn = parse_features("## T\n### feature-map\nstate: built\nfor: The map.\n"
+                         "### fresh\nfor: A fresh name.\nproposed: 2026-11-23 10:00\n")[0]
+    with _cl.redirect_stderr(_io.StringIO()):
+        _kpp = kind_problems(_bl("| 5 | x ⟦kind: story · epic: fresh⟧ | f | S | (w) | o |"), settled_slugs(_pn))
+    check("⛔ F3: an epic naming a proposed node FAILS the gate",
+          (_kpp, sorted(settled_slugs(_pn)), sorted(settled_slugs(_pn[1:]))),
+          (["backlog.md row 5: `epic: fresh` is not a current, settled node in docs/features.md"], ["feature-map"], []))
     check("#394: a row with NO kind is a WARNING, not a failure", "row 2 declares no kind" in _warn.getvalue(), True)
     with _cl.redirect_stderr(_io.StringIO()) as _quiet:
         _ok = kind_problems(_bl("| 3 | x ⟦kind: story · epic: feature-map⟧ | f | S | (w) | o |",

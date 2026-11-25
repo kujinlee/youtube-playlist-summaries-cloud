@@ -70,5 +70,11 @@
     "file": "scripts/check-anchors.py",
     "edits": [["    if problems:\n        raise TreeUnreadable", "    if False:\n        raise TreeUnreadable"]],
     "expect": ["the tree unreadable is CANNOT RUN"]
+  },
+  {
+    "name": "lenient mode leaks into the default reader, so check-anchors reads a bare Anchor line (r3 F1)",
+    "file": "scripts/check-anchors.py",
+    "edits": [["    if anchor is None and lenient:", "    if anchor is None:"]],
+    "expect": ["parse_header: the default is STRICT, lenient reads bare/short/lines 11-18, not 19+"]
   }
 ]

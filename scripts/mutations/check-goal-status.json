@@ -143,16 +143,30 @@
     ]
   },
   {
-    "name": "living_documents reads the anchor with its own loose regex again, so it arms slugs check-anchors never saw",
+    "name": "living_documents reads the anchor STRICTLY again, so a document master armed is unarmed (r3 F1, backlog #728)",
     "file": "scripts/check-goal-status.py",
     "edits": [
       [
-        "                        \"anchor\": parse_header(text)[0],",
-        "                        \"anchor\": next(iter(re.findall(r\"\\*\\*Anchor:\\*\\*\\s*`([^`]+)`\", text)), None),"
+        "                        \"anchor\": parse_header(text, lenient=True)[0],",
+        "                        \"anchor\": parse_header(text)[0],"
       ]
     ],
     "expect": [
-      "living_documents reads the anchor with check-anchors' reader, so the two agree"
+      "living_documents reads the anchor by master's arming rule: bare, short and lines 11-18 count",
+      "⛔ F1: a pre-cutoff spec with a bare, short Anchor header and no Status is ARMED and FAILS"
+    ]
+  },
+  {
+    "name": "arming reads only the strict headers again, so a bare-header document's missing Status passes (r3 F1)",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "        anchored = with_document_anchors(ca.anchored_slugs(root), docs)",
+        "        anchored = ca.anchored_slugs(root)"
+      ]
+    ],
+    "expect": [
+      "⛔ F1: a pre-cutoff spec with a bare, short Anchor header and no Status is ARMED and FAILS"
     ]
   }
 ]

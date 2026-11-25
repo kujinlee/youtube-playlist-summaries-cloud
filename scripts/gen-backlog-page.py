@@ -1293,8 +1293,9 @@ def missing_kind_notes(rows: list[dict]) -> list[str]:
 
 def parent_errors(rows: list[dict], anchors: set[str]) -> list[str]:
     """PURE. A parent link naming a row that does not exist, the row itself, or an `epic:` that is no
-    CURRENT node slug of `docs/features.md` (`anchors`, from `node_slugs`) — each REFUSED by the page
-    and by check-features. A former (`was:`) slug is refused too: a new value names the current one."""
+    CURRENT, SETTLED node slug of `docs/features.md` (`anchors`, from `node_slugs`) — each REFUSED by
+    the page and by check-features. A former (`was:`) slug is refused too: a new value names the
+    current one; so is a `proposed:` one, whose name is not yet settled (r3 F3)."""
     nums = {r["num"] for r in rows}
     out = []
     for r in rows:
@@ -1304,7 +1305,7 @@ def parent_errors(rows: list[dict], anchors: set[str]) -> list[str]:
             elif k == "backlog" and v not in nums:
                 out.append(f"row {r['num']}: `part of: backlog #{v}` names a row that does not exist")
             elif k == "epic" and v not in anchors:
-                out.append(f"row {r['num']}: `epic: {v}` is not a node in docs/features.md")
+                out.append(f"row {r['num']}: `epic: {v}` is not a current, settled node in docs/features.md")
     return out
 
 
@@ -3017,12 +3018,19 @@ def _self_test_body() -> int:
                                + [_kr[17]], {"feature-map"})
          == ["row 19: `part of: backlog #99` names a row that does not exist",
              "row 19 names ITSELF as its parent",
-             "row 19: `epic: nope` is not a node in docs/features.md"])
+             "row 19: `epic: nope` is not a current, settled node in docs/features.md"])
     _tree = "## T\n### feature-map\nstate: built\nfor: The map.\nwas: old-map\n"
     case("parent_errors: an epic naming a former slug is refused",
          lambda: [parent_errors([dict(_kr[19], parents=[("epic", v)])], node_slugs(_tree))
                   for v in ("old-map", "feature-map")]
-         == [["row 19: `epic: old-map` is not a node in docs/features.md"], []])
+         == [["row 19: `epic: old-map` is not a current, settled node in docs/features.md"], []])
+    # ⛔ r3 F3: a `proposed:` node is unsettled, so `epic:` refuses it as `check-anchors.name_problem`
+    # refuses it for Anchor, ROOTS and DEPENDS (spec §2.7) — one G3 rule for all four consumers.
+    _ptree = _tree + "### fresh\nfor: A fresh name.\nproposed: 2026-11-23 10:00\n"
+    case("⛔ F3: an epic naming a proposed node is refused",
+         lambda: [parent_errors([dict(_kr[19], parents=[("epic", v)])], node_slugs(_ptree))
+                  for v in ("fresh", "feature-map")]
+         == [["row 19: `epic: fresh` is not a current, settled node in docs/features.md"], []])
     case("node_slugs: a tree with a grammar problem or no node RAISES, never an empty vocabulary",
          lambda: [_raises(lambda t=t: node_slugs(t), ValueError)
                   for t in ("## T\n### x\nfor: x.\nproposed: 2026-11-24\n", "# nothing\n", _tree)]
@@ -4377,9 +4385,9 @@ def _raises(fn, exc: type[BaseException]) -> bool:
 
 
 def node_slugs(text: str | None = None) -> set[str]:
-    """The CURRENT node slugs of the tree (`docs/features.md`, or `text`), read by
-    `check-features.parse_features` (its owner). A tree with grammar problems or no node RAISES: an
-    empty set would refuse every `epic:` for the wrong reason."""
+    """The CURRENT, SETTLED node slugs of the tree (`docs/features.md`, or `text`) — a `proposed:`
+    node is left out (r3 F3) — read by `check-features.parse_features` (its owner). A tree with
+    grammar problems or no node RAISES: an empty set would refuse every `epic:` for the wrong reason."""
     import importlib.util as _ilu
     spec = _ilu.spec_from_file_location("_check_features", pathlib.Path(__file__).with_name("check-features.py"))
     mod = _ilu.module_from_spec(spec)
@@ -4387,7 +4395,7 @@ def node_slugs(text: str | None = None) -> set[str]:
     nodes, problems = mod.parse_features((REPO / "docs" / "features.md").read_text() if text is None else text)
     if problems or not nodes:
         raise ValueError(f"docs/features.md is unreadable as a node tree: {problems[:1] or 'no node'}")
-    return mod.current_slugs(nodes)
+    return mod.settled_slugs(nodes)
 
 
 def publish_rows(root: pathlib.Path = REPO) -> str | None:
