@@ -21637,3 +21637,18 @@ root, whose launcher is a symlink to main's so mutants reach it; a cwd deleted b
 new `vanish` launch flag), six with the r1 fold's GONE_PROMPT, labelled PREROOT, and mutants pr688a–pr688d. Self-test 163 → 175 rows (the docstring said 163; the r1 fold adds GONE_PROMPT and a `launch(vanish=True/False)` pair, which `check-fixture-variation.py` required). X1: the one
 prototype pin tried, to `CLAUDE_PROJECT_DIR`'s common dir, made 12 world cases red, 8 from RUN to NOT RUN; the
 r1 review's `git -C <main> worktree list` membership check is recorded in row 688 as a candidate, NOT RUN over the suite.
+
+## 2026-11-25
+The first of three steps toward retiring the dashboard page, which you decided on 11-24: a question waiting on
+you can now live in its own file under `docs/asks/`, and the goal tree's NEEDS YOU shows it with its options
+listed under the question, plus a warning if the question is written so that it cannot be answered. The old
+dashboard asks still show there too. Nothing has been removed yet: the page and the rule that every PR adds an
+entry here stay until the next two steps. Nothing new is waiting for you.
+<!--tech-->
+Backlog #731 S1, branch `dashboard-retire-s1`, plan `docs/superpowers/plans/2026-11-24-dashboard-retire.md`
+Tasks 1–6. `scripts/check-dashboard-entry.py`: `read_asks`, the one reader of `docs/asks/`, and the PR gate's
+A1 (grammar) and F1 (decisions) checks; `docs/asks/.gitkeep`. Readers: `scripts/goal-tree.py`
+(`needs_from_asks`, a fourth NEEDS YOU source), `scripts/compaction-state.py` (`pending_asks` counts both),
+`scripts/explainer-serve.py` (`DIR_SOURCES`, `source_mtime`: `/_stale` names the ask that moved),
+`scripts/regen-pages.py` (an ask edit rebuilds the goal tree), `scripts/check-reference-namespace.py` (scope).
+Backlog #623 retargeted to `scripts/goal-tree.py`.

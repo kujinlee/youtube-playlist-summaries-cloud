@@ -124,6 +124,8 @@ SCOPE: tuple[str, ...] = (
     # backlog row and a merged PR carry that number.
     "docs/backlog.md",
     "docs/roadmap-to-launch.md",
+    # dashboard-retire S1: the ask files — the owner reads each question on the goal tree's NEEDS YOU.
+    "docs/asks/",
 )
 
 # ⛔ `(?<![\w/#])` is load-bearing three times over: it keeps `v1#2` out, keeps a URL fragment
@@ -425,6 +427,12 @@ def _self_test_body() -> int:
          len(_v("docs/backlog.md", "| 291 | see #290 |")), 1)
     case("...and the roadmap too, for the same reason",
          len(_v("docs/roadmap-to-launch.md", "- [ ] blocked on #290")), 1)
+    # 6.1–6.2 (dashboard-retire S1 Task 6): an ask file is read by the owner on the goal tree, so it is a
+    # reader-facing surface — a bare number in a question is the same `#329` ambiguity.
+    case("6.1 a bare #N added in an ask file under docs/asks/ is refused",
+         len(_v("docs/asks/2026-11-25-a.md", "+see #623")), 1)
+    case("6.2 ...and the qualified form passes",
+         _v("docs/asks/2026-11-25-a.md", "+see backlog #623"), [])
     # ⛔ `deliverable` was MISSING from the qualifier vocabulary, so `deliverable #2` — a genuine
     # qualified reference, this project having two deliverables — fired as a violation. That is the
     # failure direction the QUALIFIER comment predicts: an omission fires rather than passing

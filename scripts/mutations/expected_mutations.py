@@ -2223,7 +2223,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-30, PR #442 r3: 20 -> 22 — both sides now come from the one-path diff. Three anchors
     # rebound (every path's diff, the sides swapped, the hunk sign), none retired; two added: the head
     # read as raw worktree bytes under `eol=crlf` (F2), and `splitlines()` for `split("\n")` (F3).
-    "scripts/check-reference-namespace.py": 22,
+    "scripts/check-reference-namespace.py": 23,  # 22 -> 23 (dashboard-retire S1 Task 6: docs/asks leaves the scope)
     # ⟳ 6 -> 9 (backlog #331(a) / #357, PR #440 r1). ⟳ 9 -> 7 (PR #440 r2): #331(a)'s `if not records` moved to
     # `bounded_read.stop_transcript`, and the None-mapping entry is now masked by `judge`'s try, so both retire;
     # r2 X1 / #331(e)'s mutant — the reader's refusal answered QUIET — is the no-transcript entry's, which names
