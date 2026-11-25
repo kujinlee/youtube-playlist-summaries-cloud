@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 255 cases
+    python3 scripts/brief-compose.py --self-test  # 261 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
