@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 252 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 253 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS

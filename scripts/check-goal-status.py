@@ -2,7 +2,7 @@
 """Every living spec and plan says whether it is alive — and the goals page renders it.
 
     python3 scripts/check-goal-status.py              # enforce for the armed nodes
-    python3 scripts/check-goal-status.py --self-test  # 40 cases
+    python3 scripts/check-goal-status.py --self-test  # 41 cases
 
 WHY THIS EXISTS, AND IT IS A DEFECT THE OWNER FOUND BY READING THE PAGE
 ----------------------------------------------------------------------

@@ -2,7 +2,7 @@
 """Every living spec and plan declares the GOAL it belongs to, by a name that survives renames.
 
     python3 scripts/check-anchors.py             # audit the repo
-    python3 scripts/check-anchors.py --self-test # 23 cases against synthetic trees
+    python3 scripts/check-anchors.py --self-test # 24 cases against synthetic trees
 
 WHY THIS EXISTS
 ---------------
