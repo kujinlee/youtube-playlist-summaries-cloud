@@ -1117,8 +1117,10 @@ DECISION_LABEL_ATTR = "data-decision-label"
 # F2): a valueless `data-decision-options` / `data-decision-rec` is PRESENT (""), not absent, so it is refused
 # too. ⟳ r1 (Claude F3): with options and no `data-decision-rec`, a `.rec` line after the element (which the card
 # ignores) draws a compose-time WARNING — `decision_warnings`. The validated list reaches the script on the TAG
-# (`data-ex-options` / `data-ex-rec`), written only when options are declared, so a page without any composes
-# byte-identical to before.
+# (`data-ex-options` / `data-ex-rec`), written only when options are declared, so an option-less decision TAG is
+# unchanged and behaves as before (r3 Claude: 6 pages, 33 clicks, identical); the page's bytes still differ by the
+# shared decision script, which carries the per-choice code (r2 Codex XM1). A `data-decision-rec` with no options
+# is refused — the one behaviour change for an option-less card.
 DECISION_OPTIONS_ATTR = "data-decision-options"
 DECISION_REC_ATTR = "data-decision-rec"
 # ⟳ r1 (Codex 2, Claude F6): the ids are NAMESPACED (`ex-`, like every class this script owns), and
