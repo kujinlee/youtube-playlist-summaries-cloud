@@ -11,8 +11,8 @@ halves:
   claude: gap
 findings:
   - id: Xm1
-    severity: Minor
-    aim: an Anchor line without the ADR tail now reads as no anchor, so an armed document could escape status enforcement
+    severity: Low
+    aim: deliverable
     fix_induced: true
     component: scripts/check-goal-status.py living_documents
     disposition: filed
