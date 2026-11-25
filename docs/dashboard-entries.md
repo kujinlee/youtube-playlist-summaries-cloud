@@ -21609,3 +21609,20 @@ the 28 node-tree decisions and the 4 publishable-components ones last night.
 three-line shape (`**<label> — DECISION n of N**`, quote, `Q: ANSWER: <a>`) to `/questions`; remembered
 per browser in localStorage; from `file://` it copies to the clipboard. Self-test 226 → 234 (the script
 run under node). `explainer-delivery.md` §3a documents it.
+
+## 2026-11-24
+The usage-pace guard now tells the session it did not run in two places where it used to fail
+quietly: when the session's folder has been deleted, and when the session is in a copied project tree
+with no git history. Before, those ended with nothing on the channel the session reads, so a missing
+budget check looked the same as a clean one. The second finding on the same backlog row (#688), about a
+worktree whose git pointer is hand-edited to name another repository, stays filed: fixing it would also
+stop the guard running inside submodules, which reverses a design decision of 2026-11-20, and the
+threat it guards against has not appeared. Nothing new is waiting for you.
+<!--tech-->
+Backlog #688 X2, branch `usage-hook-r4-findings`. `.claude/hooks/run-hook.sh`: `usage_not_run` is
+defined before the walk, and both pre-root exits (`cannot read the cwd`; `no checkout contains … and
+CLAUDE_PROJECT_DIR is unset`) route a `usage-pace-*` name through it (exit 0, the fixed JSON line); every
+other hook stays exit 1. `scripts/check-run-hook.py`: five world cases (an exported tree entered at its
+root, whose launcher is a symlink to main's so mutants reach it; a cwd deleted before the launch, via a
+new `vanish` launch flag) and mutants x2a–x2d. Self-test 163 → 172 rows (the docstring said 163). X1: a
+prototype pin to `CLAUDE_PROJECT_DIR`'s common dir made 12 world cases red, 8 from RUN to NOT RUN.
