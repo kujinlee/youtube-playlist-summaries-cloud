@@ -117,7 +117,7 @@ pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--rule);bor
 <tr><td>Asks become files under <code>docs/asks/</code></td><td>Each question is one small file; your answer is added to the bottom of that same file. NEEDS YOU on the goal tree shows the question and its options.</td></tr>
 <tr><td>The per-PR entry rule is removed</td><td>No PR has to add a paragraph, and the <code>NO-ENTRY:</code> waiver goes away. <code>NO-REVIEW:</code> stays.</td></tr>
 </table></div>
-<div class="decision" id="ok-1" data-short="what changes for you"><p data-decision data-decision-label="§1">Is section 1 — what changes for you — what you want?</p>
+<div class="decision" id="ok-1" data-short="what changes for you"><p data-decision="Yes (recommended, via APPROVE) — owner, 11-24 18:46" data-decision-label="§1">Is section 1 — what changes for you — what you want?</p>
 <p class="rec"><b>Recommended: yes.</b> It is your 09:57 decision (retire page and rule, keep asks in NEEDS YOU) plus your 17:05 rename to <code>/needs-you</code>.</p></div>
 
 <h2>2. One file per ask: its whole life</h2>
@@ -156,7 +156,7 @@ pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--rule);bor
 <figcaption>Green → yellow → blue is the normal life of an ask. The red row is the failure path: it is loud, never a silent empty list.</figcaption>
 </figure>
 <p><b>Why a file per ask.</b> Review rounds 2 to 4 kept finding new ways an answer could close the wrong question, because an answer had to name its question by a position inside one shared file. The architecture review removed that whole class: with the answer inside the question's own file, there is nothing to point at, so nothing can point wrong. Two branches that create the same file name with different text conflict in git, so two asks can never share a name.</p>
-<div class="decision" id="ok-2" data-short="one file per ask"><p data-decision data-decision-label="§2">Is section 2 — one file per ask, answer in the same file — right?</p>
+<div class="decision" id="ok-2" data-short="one file per ask"><p data-decision="Yes (recommended, via APPROVE) — owner, 11-24 18:46" data-decision-label="§2">Is section 2 — one file per ask, answer in the same file — right?</p>
 <p class="rec"><b>Recommended: yes.</b> It is the architecture review's option (b), and it ended the thrashing.</p></div>
 
 <div class="answer"><b>Your question (18:39), answered:</b> agreed: a card should offer the decision's own choices, with Other for anything else, the way a selection card does, and generic Yes/No only when the question really is yes-or-no. That is a change to the page composer (<code>brief-compose.py</code>), not to this spec, so it is being built now as its own small PR: a card can declare its options, gets one button per option with the recommended one starred, plus ✎ Other…. When it lands, this page will be rebuilt with per-choice buttons. Your section answers so far stay valid.</div>
@@ -209,7 +209,7 @@ pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--rule);bor
 <tr><td>K7</td><td>S2</td><td><code>NO-REVIEW:</code> is still parsed by one definition</td><td>the two gates that use it stay green with the parser stubbed out, or a <code>NO-REVIEW:</code> inside a code block is accepted.</td></tr>
 <tr><td>K8</td><td>S3</td><td>nothing still runs or links a retired thing</td><td>any script load, hook, CI step, mutation file, page table or generated link names a retired script or <code>/dashboard</code> (except the archive row). Its own test plants one per category and each must fail.</td></tr>
 </table></div>
-<div class="decision" id="ok-3" data-short="slices and gates"><p data-decision data-decision-label="§3">Is section 3 — three slices in this order, with these gates — right?</p>
+<div class="decision" id="ok-3" data-short="slices and gates"><p data-decision="Yes (recommended) — owner, 11-24 18:44" data-decision-label="§3">Is section 3 — three slices in this order, with these gates — right?</p>
 <p class="rec"><b>Recommended: yes.</b> The order is forced by where the reading code lives; every gate names what would make it fail.</p></div>
 
 <h2>4. Already decided by you: not asked again</h2>
@@ -225,7 +225,7 @@ pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--rule);bor
 
 <h2>5. The one thing to confirm</h2>
 <p>Your 09:57 decision, as recorded, named a file: <i>"KEEP the needs-you / resolved asks in <code>docs/dashboard-entries.md</code> as the goal tree's NEEDS YOU source."</i> The design keeps that file whole and every past ask and answer in it, but freezes it, and puts <b>new</b> asks in <code>docs/asks/</code>, which becomes the NEEDS YOU source. That meets the decision's intent (asks keep feeding NEEDS YOU) but not its letter (that one file).</p>
-<div class="decision" id="confirm" data-short="new asks in docs/asks/, old file frozen"><p data-decision data-decision-label="CONFIRM">Does "old file frozen, new asks in <code>docs/asks/</code>" meet your 09:57 decision?</p>
+<div class="decision" id="confirm" data-short="new asks in docs/asks/, old file frozen"><p data-decision="A (recommended, via APPROVE) — owner, 11-24 18:46" data-decision-label="CONFIRM">Does "old file frozen, new asks in <code>docs/asks/</code>" meet your 09:57 decision?</p>
 <p class="rec"><b>Recommended: A — accept.</b> Every past ask stays in the old file byte for byte. New asks feed NEEDS YOU from <code>docs/asks/</code>, and an answer can no longer close the wrong question because it names none.</p>
 <p class="alt"><b>B — keep new asks in the old file.</b> Then it cannot be frozen (no L1), and every answer must again point to its ask by an id inside one shared file: the design that made review rounds 2–4 thrash and that the architecture review removed. B sends the spec back to design and review.</p></div>
 
@@ -238,7 +238,7 @@ pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--rule);bor
 <tr><td>r6 Claude m2</td><td>"## Answer" must match exactly; <code>## Answer — A</code> or an indented one leaves the ask OPEN.</td><td>S1</td></tr>
 <tr><td>r6 Claude m3</td><td>A1 must say whether it reads the working folder or the committed tree; the plan picks one.</td><td>S1</td></tr>
 </table></div>
-<div class="decision" id="ok-6" data-short="carried into the plan"><p data-decision data-decision-label="§6">Is it acceptable that these four are settled in the plan rather than the spec?</p>
+<div class="decision" id="ok-6" data-short="carried into the plan"><p data-decision="Yes (recommended) — owner, 11-24 18:46" data-decision-label="§6">Is it acceptable that these four are settled in the plan rather than the spec?</p>
 <p class="rec"><b>Recommended: yes.</b> None changes the mechanism, and the plan is reviewed to convergence before anything is built.</p></div>
 
 <h2>7. Approve, or approve with changes</h2>
@@ -247,7 +247,7 @@ pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--rule);bor
 <tr><th>Card</th><th>Subject</th><th>Your answer</th></tr>
 <tr><td colspan="3"><i>This table is filled in by the page's script from the cards above. With JavaScript off, read each card's tag instead: yellow = open, green = answered.</i></td></tr>
 </table></div>
-<div class="decision" id="approve" data-short="approve the spec"><p data-decision data-decision-label="APPROVE">Approve the spec as recommended, approve it with the changes in your answers above, or not yet?</p>
+<div class="decision" id="approve" data-short="approve the spec"><p data-decision="Approved with the answers above — owner, 11-24 18:46" data-decision-label="APPROVE">Approve the spec as recommended, approve it with the changes in your answers above, or not yet?</p>
 <p class="rec"><b>Recommended: approve with your answers.</b> Every card you leave open takes its recommendation.</p>
 <p class="alt">"Not yet": say which card or section is the problem. The spec is revised and this page is rebuilt.</p></div>
 <script>

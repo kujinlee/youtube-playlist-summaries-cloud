@@ -3,7 +3,7 @@
 > **Anchor:** `status-visibility` — **ADR:** 0010
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** 🟠 needs-you — Phase 1 draft, 2026-11-24. Rounds 1–4 of review folded (r1 both halves, r2 Codex, r3 Claude, r4 Codex, all NOT CONVERGED;
+**Status:** ✅ APPROVED by the owner 2026-11-24 18:46 on the walkthrough page (`docs/explainers/2026-11-24-brief-dashboard-retire-spec-walkthrough.html`: all six cards answered, the recommendations taken, CONFIRM = A). Review converged at round 7 (Codex). Next: the Phase 2 plan, which owes §3. History: Rounds 1–4 of review folded (r1 both halves, r2 Codex, r3 Claude, r4 Codex, all NOT CONVERGED;
 `docs/reviews/coordinator/dashboard-retire-spec-r1-coordinator.md`, `…-r2-…`, `…-r3-…`, `…-r4-coordinator.md`); §7's three questions DECIDED by the owner.
 ⟳ **Phase 6 fold (2026-11-24):** rounds 2–4 THRASHED on how an answer identifies its ask, and the architecture review
 (`docs/reviews/architecture-review-2026-11-24-ask-store.md`) removed the class instead of gating it: **one file per ask in
@@ -477,6 +477,7 @@ selection card (11-24 09:57, option A) named `docs/dashboard-entries.md` — "KE
 goal tree's NEEDS YOU source". Under §2.3 the old file stays whole and read-only, holds every past ask and answer,
 and new asks live in `docs/asks/`, which becomes the goal tree's NEEDS YOU source. The walkthrough confirms that
 this still meets the decision's intent (the asks keep feeding NEEDS YOU), rather than its letter (that one file).
+**CONFIRMED by the owner 2026-11-24 18:46** (walkthrough card CONFIRM, option A, via APPROVE).
 
 ## 8. What was measured, and what was inferred
 
