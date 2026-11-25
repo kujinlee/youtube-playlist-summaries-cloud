@@ -21609,3 +21609,13 @@ the 28 node-tree decisions and the 4 publishable-components ones last night.
 three-line shape (`**<label> — DECISION n of N**`, quote, `Q: ANSWER: <a>`) to `/questions`; remembered
 per browser in localStorage; from `file://` it copies to the clipboard. Self-test 226 → 234 (the script
 run under node). `explainer-delivery.md` §3a documents it.
+
+## 2026-11-24
+The Fable-vs-Opus question you asked about is answered by a controlled run: both models folded the same
+review round from the same starting point, and two blind reviewers could not separate them (one preferred
+each). So Fable's worse fold numbers in the pilot came from the harder folds it was given, not from the
+model. Folds stay on Opus because a tie does not justify twice the price. Nothing new is waiting for you.
+<!--tech-->
+Register row 23 (`docs/optimization-register.md`) gains the SAME-TASK CONTROL line; backlog #630's Status
+cell records it. Subject: node-tree S1 r2 fold from `5a9725b0`; Opus arm `0e8247e0`, Fable arm `d77ce6bd`
+(never pushed). Fix-induced: Opus 1 Low, Fable 0; test gaps: Opus 3 Low, Fable 1 Medium.
