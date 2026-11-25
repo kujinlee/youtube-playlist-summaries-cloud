@@ -1,0 +1,24 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/backlog.md": "100644 a3a2be2104172041dd27064807cf6c86cbd803e6",
+    "docs/reviews/claude/dashboard-retire-plan-r5-claude.md": "100644 d5c1909d04c94d5582070fdda5ebf7847da80041",
+    "docs/reviews/coordinator/dashboard-retire-plan-r5-coordinator.md": "100644 26e1ff93a7d8e427b4e1a0e92aa68dc6fb085303",
+    "docs/reviews/decision-scheme/decision-log.jsonl": "100644 73a39e78cf6181e259c53b3905ae3b942d8e72aa"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "c5e3d8caaeab994c94ecd9aa807501f032dcffb0",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 6341 chars, names c5e3d8caaeab",
+  "refused": false,
+  "review": "dashboard-retire-plan-r5-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/dashboard-retire-plan",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

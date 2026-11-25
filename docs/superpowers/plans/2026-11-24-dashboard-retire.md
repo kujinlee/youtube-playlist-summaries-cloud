@@ -808,6 +808,8 @@ fixture; 12.12 holds Step 10's early check to the revision it is given).
 
 No file changes. Run once, right after S2's squash lands. The code it runs is Task 12's, tested there.
 
+⟳ **SPLIT route taken (r5, backlog #730).** Round 5 found Medium/Low defects in this task's shell (Step 1's exit 1 means three things; a dirty worktree is not excluded) — the Phase 6 review's falsifier. So the steps below are not patched again: S2's builder folds them into ONE tested entry point of `check-ask-store.py` (for example `--post-cutover`) with a case per backlog #730 finding, and this task then runs that one command.
+
 ⛔ **The shape rule for this task** (Phase 6 review,
 `docs/reviews/architecture-review-2026-11-24-dashboard-retire-cutover.md`): this task has no builder, no PR
 and no case, so nothing checks its text before it runs once, on master. So every command below is ONE call
