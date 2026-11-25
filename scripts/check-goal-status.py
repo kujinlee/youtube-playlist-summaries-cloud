@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Every living spec and plan says whether it is alive — and the goals page renders it.
 
-    python3 scripts/check-goal-status.py              # enforce for the armed anchors
-    python3 scripts/check-goal-status.py --self-test  # 34 cases
+    python3 scripts/check-goal-status.py              # enforce for the armed nodes
+    python3 scripts/check-goal-status.py --self-test  # 38 cases
 
 WHY THIS EXISTS, AND IT IS A DEFECT THE OWNER FOUND BY READING THE PAGE
 ----------------------------------------------------------------------
@@ -62,8 +62,12 @@ tree, which is what found the defect in the first place.
 
 ITS SCOPE IS ARMED PER ANCHOR, DELIBERATELY
 -------------------------------------------
-`ARMED_ANCHORS` holds the anchors where a missing status FAILS. Everywhere else it WARNS and the
-run still exits 0. Reason: 106 of 198 documents carry no status line at all, and a gate that is red
+The ARMED set holds the nodes where a missing status FAILS. Everywhere else it WARNS and the
+run still exits 0. ⟳ goal node tree Task 9 (G4): the set is DERIVED — every node of
+`docs/features.md` that a document's `Anchor:` header names, minus `UNARMED` — so a new node is
+armed the day its first document names it. Widening stays the default; NARROWING is now the
+deliberate act with a visible diff: an exemption is a line in `UNARMED`, and an exemption naming no
+current node fails, so a rename cannot leave one behind silently. Reason: 106 of 198 documents carry no status line at all, and a gate that is red
 from birth across half its corpus gets switched off — that is backlog #56, measured. So an anchor
 joins the armed set when its threads have been audited and declared, which makes widening a
 deliberate act with a visible diff rather than a 106-file backfill nobody reviews.
@@ -78,29 +82,42 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SUBDIRS = ("superpowers/specs", "superpowers/plans")
 
-# The anchors where a missing declaration FAILS. See the docstring: widening is deliberate.
-# ⟳ 2026-10-22: ALL THIRTEEN ARMED, the day after the first. The owner read the page and
-# asked why 39 of 49 cards said "no status declared" — the answer was that arming bounded
-# it to one anchor. Every thread under every anchor now declares a state, each carrying the
-# evidence for its claim (a merged PR, and what is in the tree), so arming the rest costs
-# nothing and makes the page answer the question it exists to answer. ⚠ A NEW anchor is
-# still not armed automatically: it joins this tuple when its threads have been audited,
-# which keeps widening a deliberate act with a visible diff.
-ARMED_ANCHORS = (
-    "cloud-blob-key-encoding",
-    "cloud-publishing",
-    "cloud-sync",
-    "corrections-in-cloud",
-    "explanation-on-demand",
-    "feature-map",
-    "prod-smoke",
-    "review-decides-itself",
-    "serve-money-guard",
-    "serve-path-bounding",
-    "share-and-download",
-    "stable-blob-addressing",
-    "status-visibility",
-)
+# The nodes a document names whose missing declaration only WARNS. ⟳ goal node tree Task 9: this
+# REPLACES the hand-kept armed tuple (13 slugs, every one armed 2026-10-22 once its
+# threads were audited). The two below were the anchors that tuple left out, under their current
+# names (spec §6 Q6): their threads were never audited, so arming them would turn the guard red over
+# documents nobody has read. An entry naming no current node FAILS (`stale_exemptions`).
+UNARMED = ("dev-speed", "harness-ships-elsewhere")
+
+_CHECK_ANCHORS = None
+
+
+def _check_anchors():
+    """`check-anchors`, the ONE reader of the `Anchor:` header (`anchored_slugs`) and of the node
+    tree (`read_tree`). Loaded lazily and once; RAISES rather than fall back to a local copy."""
+    global _CHECK_ANCHORS
+    if _CHECK_ANCHORS is None:
+        import importlib.util
+        path = Path(__file__).resolve().parent / "check-anchors.py"
+        spec = importlib.util.spec_from_file_location("_cgs_check_anchors", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"CANNOT RUN — cannot load the anchor reader from {path}")
+        _CHECK_ANCHORS = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_CHECK_ANCHORS)
+    return _CHECK_ANCHORS
+
+
+def armed(anchored: dict[str, list[str]], unarmed: tuple[str, ...] = UNARMED) -> tuple[str, ...]:
+    """PURE. Every slug a document names, minus the exemptions, sorted."""
+    return tuple(sorted(slug for slug in anchored if slug not in unarmed))
+
+
+def stale_exemptions(unarmed: tuple[str, ...], slugs: set[str]) -> list[str]:
+    """PURE. One line per `UNARMED` entry that names no current node slug."""
+    return [f"  ✗ `{u}` is in UNARMED but is no current node slug of docs/features.md — a stale "
+            f"exemption: rename it to the node's current slug, or drop it"
+            for u in unarmed if u not in slugs]
+
 
 # marker -> state. ORDER IS THE READING ORDER on the page's legend, cheapest claim first.
 # ⚠ `⏸️` is the EMOJI PRESENTATION SEQUENCE (U+23F8 U+FE0F). A document written with the bare
@@ -268,7 +285,23 @@ def main(argv: list[str], *, repo: Path | None = None,
     if not docs:
         print("CANNOT RUN — no spec or plan documents were found, so nothing was checked.")
         return 2
-    rc, lines = verdict(docs, ARMED_ANCHORS if armed is None else armed)
+    if armed is None:
+        ca = _check_anchors()
+        root = (repo or REPO) / "docs"
+        try:
+            nodes = ca.read_tree(root / "features.md")
+        except ca.TreeUnreadable as exc:
+            print(f"CANNOT RUN — {exc}, so the armed set cannot be derived. Treat this as NOT RUN.")
+            return 2
+        stale = stale_exemptions(UNARMED, ca.check_features.current_slugs(nodes))
+        if stale:
+            print("FAILED — an exemption outlived its node:")
+            print("\n".join(stale))
+            return 1
+        armed_set = globals()["armed"](ca.anchored_slugs(root))
+    else:
+        armed_set = armed
+    rc, lines = verdict(docs, armed_set)
     print("\n".join(lines))
     return rc
 
@@ -290,6 +323,52 @@ def _self_test_body() -> int:
         if got != want:
             failures += 1
             print(f"  [FAIL] {name}\n    got:  {got!r}\n    want: {want!r}")
+
+    # ── G4: the armed set is DERIVED (goal node tree, Task 9) ───────────────────────────────────
+    case("armed: every anchored node",
+         (armed({"alpha": ["docs/superpowers/specs/a.md"], "beta": ["docs/adr/0001-b.md"]}, ()),
+          armed({"gamma": ["docs/superpowers/plans/g.md"]}, ())),
+         (("alpha", "beta"), ("gamma",)))
+    _exempt_doc = [{"rel": "docs/superpowers/specs/x.md", "name": "x.md", "anchor": "dev-speed",
+                    "state": None, "why": None}]
+    _ex_rc, _ex_lines = verdict(_exempt_doc, armed({"dev-speed": ["x"], "alpha": ["y"]}))
+    case("armed: an exemption is not armed",
+         (armed({"dev-speed": ["x"], "alpha": ["y"], "harness-ships-elsewhere": ["z"]}),
+          _ex_rc, any("UNARMED anchors declare nothing" in ln for ln in _ex_lines)),
+         (("alpha",), 0, True))
+
+    def _g4_world(td: str, nodes: tuple[str, ...], named: str) -> Path:
+        """A repo whose tree holds `nodes` and whose one spec names `named`, declaring a state."""
+        r = Path(td)
+        (r / "docs" / "superpowers" / "specs").mkdir(parents=True)
+        (r / "docs" / "superpowers" / "plans").mkdir(parents=True)
+        (r / "docs" / "features.md").write_text("# Feature map\n## PRODUCT\n" + "".join(
+            f"### {n}\nstate: built\nfor: Node {n}.\nareas: ({n})\n" for n in nodes))
+        (r / "docs" / "superpowers" / "specs" / "2026-01-01-g4.md").write_text(
+            f"# G4\n\n> **Anchor:** `{named}` — **ADR:** none\n\n**Status:** ✅ shipped\n")
+        return r
+
+    def _g4_main(r: Path) -> tuple:
+        import contextlib as _cl
+        import io as _io
+        out = _io.StringIO()
+        with _cl.redirect_stdout(out):
+            rc = main([], repo=r)
+        return rc, [ln.strip() for ln in out.getvalue().splitlines()
+                    if "armed anchors:" in ln or "stale exemption" in ln]
+
+    _live = ("alpha", "beta") + UNARMED
+    with _tf.TemporaryDirectory() as _ga, _tf.TemporaryDirectory() as _gb, \
+            _tf.TemporaryDirectory() as _gs:
+        _two = (_g4_main(_g4_world(_ga, _live, "alpha")), _g4_main(_g4_world(_gb, _live, "beta")))
+        _stale = _g4_main(_g4_world(_gs, ("alpha", "harness-ships-elsewhere"), "alpha"))
+    case("armed: two trees give two sets", _two,
+         ((0, ["armed anchors: alpha"]), (0, ["armed anchors: beta"])))
+    case("armed: a stale exemption fails",
+         (stale_exemptions(("dev-speed", "alpha"), {"alpha"}), stale_exemptions(("alpha",), {"alpha", "beta"}),
+          _stale[0], len(_stale[1]) == 1 and "`dev-speed`" in _stale[1][0]),
+         (["  ✗ `dev-speed` is in UNARMED but is no current node slug of docs/features.md — a stale "
+           "exemption: rename it to the node's current slug, or drop it"], [], 1, True))
 
     # ── the grammar ──────────────────────────────────────────────────────────────────────────
     case("a shipped declaration parses", parse_status("**Status:** ✅ shipped"), ("shipped", None))

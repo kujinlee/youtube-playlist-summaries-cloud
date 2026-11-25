@@ -89,5 +89,44 @@
     "expect": [
       "an UNREADABLE document is CANNOT RUN (2), never an absent status"
     ]
+  },
+  {
+    "name": "the exemptions are not subtracted, so a never-audited node is armed and the guard goes red over it",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "    return tuple(sorted(slug for slug in anchored if slug not in unarmed))",
+        "    return tuple(sorted(slug for slug in anchored))"
+      ]
+    ],
+    "expect": [
+      "armed: an exemption is not armed"
+    ]
+  },
+  {
+    "name": "an exemption naming no current node is no longer reported, so a rename leaves it behind silently",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "            for u in unarmed if u not in slugs]",
+        "            for u in unarmed if False]"
+      ]
+    ],
+    "expect": [
+      "armed: a stale exemption fails"
+    ]
+  },
+  {
+    "name": "main checks the armed set against a hand-kept tuple again, so a second tree arms nothing new",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "        armed_set = globals()[\"armed\"](ca.anchored_slugs(root))",
+        "        armed_set = (\"alpha\",)"
+      ]
+    ],
+    "expect": [
+      "armed: two trees give two sets"
+    ]
   }
 ]

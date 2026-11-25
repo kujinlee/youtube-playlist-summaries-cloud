@@ -263,7 +263,8 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     'gen-dashboard.py': (
         'commit_dates.window', 'contrast_failures.minimum',),
     'gen-goals-page.py': (
-        'parse_header.head_lines', 'parse_roots.text',),
+        # ⟳ goal node tree Task 9: `parse_roots.text` left — Task 8's world case reads the real ROOTS.
+        'parse_header.head_lines',),
     'gen-m4-manifest.py': (
         'has_m4.catalog', 'has_m4.manifest', 'psql.db',),
     # ⟳ 2026-10-19: `assert_wired.where` REMOVED — it now varies. The r6/r7/r8 folds added

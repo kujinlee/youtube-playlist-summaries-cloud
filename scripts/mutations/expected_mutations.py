@@ -1201,7 +1201,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-25: 125 -> 129 — trigger 4 SUSPENDED to a WARN by the owner pending backlog #327;
     #   four entries: back on the FAIL list, suffix dropped, "NOT a pass" dropped, discarded. None retired.
     "scripts/check-decision-scheme.py": 129,
-    "scripts/check-goal-status.py": 7,
+    # ⟳ 2026-11-24, goal node tree Task 9: 7 -> 10. The armed set is DERIVED: the subtraction of
+    # UNARMED, the stale-exemption report, and main deriving rather than naming the set (+3).
+    "scripts/check-goal-status.py": 10,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
     # because a workflow-level filter is what made the `schema-gates` check unrequireable. TWO
