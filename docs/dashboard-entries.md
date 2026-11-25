@@ -21634,6 +21634,6 @@ defined before the walk, and both pre-root exits (`cannot read the cwd`; `no che
 CLAUDE_PROJECT_DIR is unset`) route a `usage-pace-*` name through it (exit 0, the fixed JSON line); every
 other hook stays exit 1. `scripts/check-run-hook.py`: five world cases (an exported tree entered at its
 root, whose launcher is a symlink to main's so mutants reach it; a cwd deleted before the launch, via a
-new `vanish` launch flag), six with the r1 fold's GONE_PROMPT, labelled PREROOT, and mutants pr688a–pr688d. Self-test 163 → 173 rows (the docstring said 163). X1: the one
+new `vanish` launch flag), six with the r1 fold's GONE_PROMPT, labelled PREROOT, and mutants pr688a–pr688d. Self-test 163 → 175 rows (the docstring said 163; the r1 fold adds GONE_PROMPT and a `launch(vanish=True/False)` pair, which `check-fixture-variation.py` required). X1: the one
 prototype pin tried, to `CLAUDE_PROJECT_DIR`'s common dir, made 12 world cases red, 8 from RUN to NOT RUN; the
 r1 review's `git -C <main> worktree list` membership check is recorded in row 688 as a candidate, NOT RUN over the suite.

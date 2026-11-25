@@ -68,7 +68,7 @@ is NOT run here. W15 (a session launched in a subdirectory loads no project hook
 any launcher and has no case.
 
     python3 scripts/check-run-hook.py               # the worlds, over the repo's launcher
-    python3 scripts/check-run-hook.py --self-test  # 173 cases
+    python3 scripts/check-run-hook.py --self-test  # 175 cases
 
 EXIT CODES (repo convention): 0 = every world as required · 1 = a world differs · 2 = CANNOT RUN
 (no git, no launcher, a world that could not be built — never a pass).
@@ -1131,6 +1131,14 @@ def _suite_over_world(rows: list, w: World, x: Path, launcher: Path) -> None:
         slow = fast = "raised"
     rows.append(("a launch past its budget is a named red world (TIMED_OUT), not a crash", slow, TIMED_OUT))
     rows.append(("...and inside its budget the same launch returns the hook's own code", fast, 0))
+    # Backlog #688 r1 fold: the `vanish` flag itself, at both values. True makes, enters and deletes the cwd before
+    # the launch (the launcher refuses it); False, the control, launches from an existing cwd and main's probe runs.
+    gone = launch(w.main / "vanish-flag", str(w.main), ["probe.sh"], {}, markers / "vt", vanish=True)
+    kept = launch(w.main / "scripts", str(w.main), ["probe.sh"], {}, markers / "vf", vanish=False)
+    rows.append(("launch(vanish=True) deletes the cwd first: NOT RUN, 'cannot read the cwd' on stderr",
+                 (gone.rc, gone.ran, NOCWD_ERR in gone.err), (1, None, True)))
+    rows.append(("...and launch(vanish=False) over a kept cwd runs main's probe", (kept.rc, kept.ran is not None),
+                 (PROBE_RC, True)))
     real = (w.main / LAUNCHER_REL).read_text()
     if red_names(results):
         rows.append(("the control is green, so the mutants mean something", "RED", "green"))

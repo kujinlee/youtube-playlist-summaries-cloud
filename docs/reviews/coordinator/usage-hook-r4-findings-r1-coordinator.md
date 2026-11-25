@@ -26,9 +26,14 @@ stays exit 1 with an empty stdout; X1 staying FILED is right. Codex found nothin
 | **MINOR2** — no unreadable-cwd case for the prompt hook | True. OUT_PROMPT existed; the deleted-cwd exit had only GONE_USAGE (the systemMessage channel). | New case GONE_PROMPT (`usage-pace-prompt.sh`, `vanish=True`, want PROMPT_JSON, exit 0), added to mutant pr688b's kill set. CONTROL: the branch's checker over **origin/master's** `run-hook.sh` turns GONE_PROMPT red, `got (1, None, True, '')`, alongside OUT_USAGE, GONE_USAGE and OUT_PROMPT. |
 | **MINOR3** — "X2" named two findings in one file | True. The new rows were `X2 #688 …`; the backlog #513 r1 rows `NL`/`NLCD` are `X2 a worktree …`/`X2 a commondir …`. | The new cases are labelled `PREROOT #688 …` (unused in the file before), and mutants x2a–x2d are now pr688a–pr688d. The docstring, row 688 and the dashboard entry follow. No `scripts/mutations/*.json` named them (grep found none). The #513 `X2` rows and their manifest anchors are untouched. |
 
+**Added at the coordinator's request — CI red on PR #634:** `check-fixture-variation.py` refused `launch(vanish=…)`,
+passed the same value at every call site it reads (the world runner passes `c.vanish`, which it cannot see vary).
+Two direct suite rows now call `launch(vanish=True)` (NOT RUN, `cannot read the cwd`) and `launch(vanish=False)` (the
+control: main's probe runs, rc 7). No EXEMPT row was added.
+
 **`fixes_nontrivial: true`, and why:** MINOR2 adds a world case, which is test code that no reviewer has seen. MINOR1
 writes a new claim about a candidate fix. Both are small, but neither is purely editorial.
 
-**Gates after the fold:** `check-run-hook.py` 91/91 worlds; `--self-test` 173/173 (pr688a–pr688d each killed);
+**Gates after the fold:** `check-run-hook.py` 91/91 worlds; `--self-test` 175/175 (pr688a–pr688d each killed); `check-fixture-variation.py` OK;
 `check-docs.py` OK; `gen-backlog-page.py --self-test` 250/250; `check-reference-namespace.py --base origin/master` OK;
 the all-manifest anchor resolve shows 6738 anchors, 0 not found exactly once.
