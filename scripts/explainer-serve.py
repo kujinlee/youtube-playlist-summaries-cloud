@@ -244,18 +244,19 @@ PAGE_SOURCES = {
     "dashboard": ["docs/dashboard-entries.md"],
     "backlog-table": ["docs/backlog.md"],
     "goals": ["docs/roadmap-to-launch.md"],
-    # ⛔ THREE WHOLE FILES, NOT DIRECTORIES, AND THIS LINE HAS BEEN WRONG TWICE ALREADY. Widening it
+    # ⛔ WHOLE FILES, NOT DIRECTORIES, AND THIS LINE HAS BEEN WRONG TWICE ALREADY. Widening it
     # to `docs/adr`, `docs/superpowers/specs` and `docs/reviews` — so the watched set would match
     # what the generator derives from — turns the case below RED: it asserts every declared source
     # is a real FILE, and a directory is not one (measured: 202/202 -> 201/202).
     #
-    # The residual is stated rather than hidden. `/_stale` raises a BANNER over these three; the
+    # The residual is stated rather than hidden. `/_stale` raises a BANNER over these two; the
     # regen hook rebuilds on the wider set, which is the half that matters. So editing a spec, ADR
     # or review does rebuild the page and does not light the banner. `/goals` has the same shape.
     # Teaching `/_stale` about directories (rglob each entry, take the max mtime) is a real change
     # to this file and is deliberately out of that plan's scope. ⟳ dashboard-retire S1: `/_stale` now
     # reads a directory NAMED in DIR_SOURCES (one level of `*.md`); these three are still not named.
-    "features": ["docs/features.md", "docs/anchors.md", "docs/backlog.md"],
+    # ⟳ goal node tree Task 10: the anchor registry left this list; its names live in the tree (ADR-0016).
+    "features": ["docs/features.md", "docs/backlog.md"],
     # The declared threads only: the snapshot log is git-ignored (no checkout would carry it, which the
     # every-source-is-a-real-file case below would refuse), and the STATES move with gh and git, which
     # no file carries — so "fresh" here means "nothing re-declared since", not "gh agrees".

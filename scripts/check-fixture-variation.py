@@ -263,7 +263,8 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     'gen-dashboard.py': (
         'commit_dates.window', 'contrast_failures.minimum',),
     'gen-goals-page.py': (
-        'parse_header.head_lines', 'parse_roots.text',),
+        # ⟳ goal node tree Task 9: `parse_roots.text` left — Task 8's world case reads the real ROOTS.
+        'parse_header.head_lines',),
     'gen-m4-manifest.py': (
         'has_m4.catalog', 'has_m4.manifest', 'psql.db',),
     # ⟳ 2026-10-19: `assert_wired.where` REMOVED — it now varies. The r6/r7/r8 folds added
@@ -744,7 +745,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # re-enters the suite); everything else is varied by a case.
     "check-goal-status.py": (
         "main.argv",
-        "main.armed",
+        "main.armed_override",
         "main.repo",
         "parse_status.text",
         "verdict.armed",
@@ -1051,7 +1052,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # a key set that disagreed with the file by exactly the parameter the fix existed to cover.
     'check-features.py': (
         'backlog_areas.text',
-        'check_cross.anchors_declared',
+        # ⟳ goal node tree Task 7: `check_cross.anchors_declared` left with the registry it read.
         'check_cross.areas_in_use',
         'check_cross.nodes',
         'check_nodes.nodes',
@@ -1449,7 +1450,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'unresolved_heads_up.entries',),
     'gen-goals-page.py': (
         'parse_adr.text', 'parse_header.head_lines', 'parse_header.text',
-        'parse_milestones.text', 'parse_registry.text', 'parse_roots.text',),
+        'parse_milestones.text', 'parse_roots.text',),
     'gen-m4-manifest.py': (
         'derive.source', 'has_m4.catalog', 'has_m4.manifest', 'psql.db', 'psql.sql',),
     'page_chrome.py': (
@@ -1490,6 +1491,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 EXEMPT: dict[str, str] = {
     # backlog #625 (2026-11-13): ask_answerer.py — two PURE functions each driven by ONE table loop. This scan
     # compares argument EXPRESSIONS, so a loop variable reads as one value; the ROWS vary.
+    # goal node tree Task 6 (2026-11-24): check-anchors.py — each case builds its OWN tree under `tmp`, bound to
+    # one name; this scan compares argument EXPRESSIONS, so a reassigned name reads as one value.
+    "check-anchors.py:anchored_slugs.docs": "every case binds a freshly built tree to `d` (a spec, a plan and an ADR naming one slug; an ADR with no header), and the two expected maps differ; guarded by the manifest entry that drops docs/adr from the directories read, which dies via the case naming it",
+    "check-anchors.py:read_tree.path": "one table loop of 4 files (missing, malformed, no node, a good tree), only the last readable; guarded by the manifest entry that reads a malformed tree as a vocabulary, which dies via the case naming it",
     "ask_answerer.py:page_name.doc": "one table loop of 13 rows (a page, a slug, a query string, a path that leaves the folder, the state folder, a fragment, an encoded slash); guarded by the manifest entry that drops the containment test, which dies via the case naming it",
     "ask_answerer.py:parse_reply.text": "one table loop of 6 rows (instruction, question, a KIND line in the wrong case, the label inside a sentence, an unknown kind, a KIND line alone); guarded by the manifest entry that reads every reply as a question, which dies via the case naming it",
     # backlog #495 r1 (2026-11-11): check-plan-code.py's re-run snapshot is threaded through run_mutations' OWN

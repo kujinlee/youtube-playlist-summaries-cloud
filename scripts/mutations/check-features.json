@@ -135,39 +135,6 @@
     "expect": "an absent node WITH a fragment fails"
   },
   {
-    "name": "an anchor outside the registry stops being reported",
-    "file": "scripts/check-features.py",
-    "edits": [
-      [
-        "            if a not in anchors_declared:",
-        "            if False:"
-      ]
-    ],
-    "expect": "an unknown anchor fails"
-  },
-  {
-    "name": "an anchor no node claims stops being reported, so a spec silently cannot appear",
-    "file": "scripts/check-features.py",
-    "edits": [
-      [
-        "    for anchor in sorted(anchors_declared - set(anchor_claims)):",
-        "    for anchor in sorted(set()):"
-      ]
-    ],
-    "expect": "an anchor claimed by NO node fails"
-  },
-  {
-    "name": "an anchor claimed by two nodes stops being reported",
-    "file": "scripts/check-features.py",
-    "edits": [
-      [
-        "    for anchor, owners in anchor_claims.items():\n        if len(owners) > 1:",
-        "    for anchor, owners in anchor_claims.items():\n        if False:"
-      ]
-    ],
-    "expect": "an anchor claimed by TWO nodes fails"
-  },
-  {
     "name": "an area no backlog row uses stops being reported, so a stale alias looks like coverage",
     "file": "scripts/check-features.py",
     "edits": [
@@ -337,7 +304,7 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "    return [f\"backlog.md {e}\" for e in bp.parent_errors(rows, anchors)]",
+        "    return [f\"backlog.md {e}\" for e in bp.parent_errors(rows, slugs)]",
         "    return []"
       ]
     ],
@@ -451,8 +418,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "len(n.anchors) + (n.slug in anchored)",
-        "len(n.anchors)"
+        "len(n.adrs) + (n.slug in anchored)",
+        "len(n.adrs)"
       ]
     ],
     "expect": "rules: an anchored document is a fragment"
@@ -654,5 +621,55 @@
       ]
     ],
     "expect": "rules: a BARE state: is not reported as a missing state:"
+  },
+  {
+    "name": "adr_problems stops testing membership, so an adrs: number with no file passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "for n in nodes for a in n.adrs if a not in known]",
+        "for n in nodes for a in n.adrs if False]"
+      ]
+    ],
+    "expect": "adrs: a number with no file is refused"
+  },
+  {
+    "name": "main passes an empty anchored set again, so a built node whose one fragment is a spec naming it is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "frozenset(anchors_module().anchored_slugs(DOCS_DIR))",
+        "frozenset()"
+      ]
+    ],
+    "expect": [
+      "main: a built node with only an anchored document passes"
+    ]
+  },
+  {
+    "name": "the retired `anchors:` field falls through to the generic refusal, which never names what replaced it",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if retired in RETIRED_FIELDS:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "anchors: is no longer a field"
+    ]
+  },
+  {
+    "name": "settled_slugs keeps proposed nodes, so the gate accepts an epic naming one (r3 F3)",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    return {n.slug for n in nodes if not n.proposed}",
+        "    return {n.slug for n in nodes}"
+      ]
+    ],
+    "expect": [
+      "⛔ F3: an epic naming a proposed node FAILS the gate"
+    ]
   }
 ]

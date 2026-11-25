@@ -89,5 +89,84 @@
     "expect": [
       "an UNREADABLE document is CANNOT RUN (2), never an absent status"
     ]
+  },
+  {
+    "name": "the exemptions are not subtracted, so a never-audited node is armed and the guard goes red over it",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "    return tuple(sorted(slug for slug in anchored if slug not in unarmed))",
+        "    return tuple(sorted(slug for slug in anchored))"
+      ]
+    ],
+    "expect": [
+      "armed: an exemption is not armed"
+    ]
+  },
+  {
+    "name": "an exemption naming no current node is no longer reported, so a rename leaves it behind silently",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "            for u in unarmed if u not in slugs]",
+        "            for u in unarmed if False]"
+      ]
+    ],
+    "expect": [
+      "armed: a stale exemption fails"
+    ]
+  },
+  {
+    "name": "main checks the armed set against a hand-kept tuple again, so a second tree arms nothing new",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "        armed_set = armed(anchored)",
+        "        armed_set = (\"alpha\",)"
+      ]
+    ],
+    "expect": [
+      "armed: two trees give two sets"
+    ]
+  },
+  {
+    "name": "a document naming no current node is armed again, so a typo is told to declare a Status instead of fixing its name",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "        if misnamed:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "armed: a slug that is no node FAILS with the naming advice, not a status request"
+    ]
+  },
+  {
+    "name": "living_documents reads the anchor STRICTLY again, so a document master armed is unarmed (r3 F1, backlog #728)",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "                        \"anchor\": parse_header(text, lenient=True)[0],",
+        "                        \"anchor\": parse_header(text)[0],"
+      ]
+    ],
+    "expect": [
+      "living_documents reads the anchor by master's arming rule: bare, short and lines 11-18 count",
+      "⛔ F1: a pre-cutoff spec with a bare, short Anchor header and no Status is ARMED and FAILS"
+    ]
+  },
+  {
+    "name": "arming reads only the strict headers again, so a bare-header document's missing Status passes (r3 F1)",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "        anchored = with_document_anchors(ca.anchored_slugs(root), docs)",
+        "        anchored = ca.anchored_slugs(root)"
+      ]
+    ],
+    "expect": [
+      "⛔ F1: a pre-cutoff spec with a bare, short Anchor header and no Status is ARMED and FAILS"
+    ]
   }
 ]

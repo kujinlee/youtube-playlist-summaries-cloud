@@ -21621,6 +21621,22 @@ cell records it. Subject: node-tree S1 r2 fold from `5a9725b0`; Opus arm `0e8247
 (never pushed). Fix-induced: Opus 1 Low, Fable 0; test gaps: Opus 3 Low, Fable 1 Medium.
 
 ## 2026-11-24
+The separate list of goal names is gone: every goal, goal-tree goal and feature name is now a node in the
+one feature tree, and the checks, the goals page and the goal-status guard all read their names from it.
+A document attaches to a node by naming the node's own slug. Renamed goals keep their old names in a
+`was:` line, so old logs still resolve. The goals page shows the same 15 cards it did before, and the
+guard watches the same 13 goals. ADR-0016 (names live in one node tree) is marked accepted. Nothing new is
+waiting for you.
+<!--tech-->
+Node-tree plan (`docs/superpowers/plans/2026-11-24-goal-node-tree.md`) slice S2, Tasks 5–11, branch
+`goal-node-tree-s2`. `scripts/check-anchors.py` resolves `Anchor:` against `check-features` nodes
+(`anchored_slugs`, `read_tree`); the `anchors:` field retired from `docs/features.md`;
+`scripts/gen-goals-page.py` builds its cards from `goal_nodes` (a document's anchor or an `adrs:` line);
+`scripts/check-goal-status.py` derives its armed set (`armed`, minus `UNARMED`, stale exemptions fail);
+`PAGE_SOURCES["features"]`, the publishability fixture and both regen hooks no longer name the registry;
+`docs/anchors.md` deleted. Phase 6 edge pin in `scripts/check-shipping-sets.py` 363 → 368.
+
+## 2026-11-24
 A decision card can now offer the decision's own choices, as you asked: when a page lists them, the card
 shows one button per choice, with the recommended one starred, plus Other… for anything else, and no
 Yes / No. A card whose page lists no choices still shows Yes / No as before.

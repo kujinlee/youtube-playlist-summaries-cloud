@@ -6,12 +6,13 @@ http://127.0.0.1:7391/features by `scripts/gen-features-page.py`; validated by
 
 **This file holds NAMES and PURPOSE, never STATE.** A node says what it is *for*; where it stands is
 derived from the fragments beneath it. Do not add status, progress or "what's next" — a central file
-that holds state drifts, and this project has measured that twice (see `docs/anchors.md`).
+that holds state drifts, and this project has measured that twice (see ADR-0010).
 
-**Fragments attach through declarations that already exist.** An `anchors:` line names goals from
-`docs/anchors.md`, which carry their specs, plans and ADRs with them; an `areas:` line names the
-`(area)` tags `docs/backlog.md` rows carry. Every anchor and every in-use area is claimed by exactly
-one node, so a rename turns the check red instead of vanishing from the page. Areas compare PER TAG
+**Fragments attach through declarations that already exist.** A spec or plan names its node by slug
+in its own `> **Anchor:**` header; an `adrs:` line names the decisions a node rests on; an `areas:`
+line names the `(area)` tags `docs/backlog.md` rows carry. This file is the ONE list of names
+(ADR-0016): a header naming no current slug turns `check-anchors` red, and every in-use area is
+claimed by exactly one node, so a rename turns the check red instead of vanishing from the page. Areas compare PER TAG
 and normalised — `(cloud/money)` and `(cloud / money)` are one tag, so write it once — and a tag is
 claimed by the nearest area that equals it or is a family above it. A row carrying several tags,
 `(tooling) (comprehensibility)`, appears under the node claiming each one.
@@ -21,8 +22,11 @@ claimed by the nearest area that equals it or is a family above it. A row carryi
 ### summarise-a-playlist
 state: built
 for: Turns every video in a YouTube playlist into a summary a person can read.
-anchors: cloud-publishing
 areas: (product)
+
+#### cloud-publishing
+for: Summaries are produced and published by a hosted service, not only by a local vault.
+adrs: 0001, 0005
 
 #### ingest-a-playlist
 state: built
@@ -52,13 +56,12 @@ expected-because: dig inherits the same worker exit-window race a summary does, 
 ### corrections-in-cloud
 state: built
 for: Lets a reader fix something a summary got wrong and get the corrected version back.
-anchors: corrections-in-cloud
 areas: (cloud/quality)
 
 ### share-and-download
 state: built
 for: Lets a summary be read by someone without an account, and taken away as a PDF or an HTML document.
-anchors: share-and-download
+adrs: 0003
 
 #### shared-dig-deeper
 state: absent
@@ -68,7 +71,7 @@ expected-because: the share route renders with `dig: false` (app/s/[token]/route
 ### cloud-sync
 state: built
 for: Keeps one video's summary coherent between a person's local vault and the hosted copy.
-anchors: cloud-sync
+adrs: 0002
 
 ## PLATFORM
 
@@ -85,24 +88,26 @@ areas: (ops)
 ### serve-path-bounding
 state: built
 for: Keeps a reader's wait for a summary short and predictable, however much work it takes to produce.
-anchors: serve-path-bounding
 
 ### spend-control
 state: built
 for: Keeps one generation paid for once, and the total spend under a ceiling the operator chooses.
-anchors: serve-money-guard
 areas: (cloud/money)
+
+#### serve-money-guard
+for: Serving a summary cannot spend money twice, and the protection is enforced rather than accidental.
+adrs: 0008
 
 ### stable-blob-addressing
 state: built
 for: Gives a stored artifact an address that survives a title change and a re-summarisation.
-anchors: stable-blob-addressing
+adrs: 0006, 0007
 areas: (product / addressing)
 
 #### cloud-blob-key-encoding
 state: built
 for: Lets a video titled in any language be stored in and served from cloud storage.
-anchors: cloud-blob-key-encoding
+adrs: 0009
 
 ### concurrency-safety
 state: built
@@ -119,7 +124,6 @@ areas: (cloud/security)
 ### prod-smoke
 state: built
 for: Proves by machine that what serves production is what was meant to ship.
-anchors: prod-smoke
 areas: (deploy / gates)
 
 ### automated-test-suites
@@ -130,13 +134,7 @@ areas: (cloud/test), (test infra)
 ### guard-and-gate-harness
 state: built
 for: Gives the rules this project works by a mechanical enforcer, instead of a reader who has to remember them.
-anchors: dev-speed-first
 areas: (tooling)
-
-#### harness-speed
-state: built
-for: Keeps the build-and-check loop fast and cheap — CI wall-clock, the mutation sweep's cost, batched CI runs, and the token usage agents spend.
-areas: (tooling/speed)
 
 #### review-process
 state: built
@@ -163,16 +161,19 @@ state: built
 for: Makes each guard check what it claims to — no false green, no copy of a rule that drifts, no gate that can be walked past.
 areas: (tooling/guards)
 
+### dev-speed
+was: dev-speed-first, harness-speed
+for: A change gets its verdict as fast as the evidence allows, with mutation coverage identical.
+areas: (tooling/speed)
+
 ### status-visibility
 state: built
 for: Lets a person who was away see where the work stands and what needs a decision from them.
-anchors: status-visibility
 areas: (comprehensibility)
 
 #### feature-map
 state: built
 for: Lets anyone find what the system does, what it omits on purpose, and the fragments that define each.
-anchors: feature-map
 areas: (comprehensibility/feature-map)
 
 #### goal-tree
@@ -188,22 +189,21 @@ expected-because: retired 2026-10-28 into the goal-tree node above (the owner's 
 ### explanation-on-demand
 state: built
 for: Lets a person have a subject they choose explained in a page they can ask questions inside.
-anchors: explanation-on-demand
 areas: (comprehensibility/explainers)
 
 ### review-decides-itself
 state: built
 for: Lets a review loop choose its own next step from recorded evidence rather than from recall.
-anchors: review-decides-itself
+adrs: 0014
 areas: (process)
 
 ### process-harness
 state: built
 for: Makes the way this project is built reusable by another repository, rather than resident in this one's habits.
-anchors: harness-ships-elsewhere
 areas: (process / deliverable #2)
 
 #### harness-ships-elsewhere
 state: absent
 for: Lets someone who has never seen this repository install the harness and use it in their own.
+adrs: 0015
 expected-because: the harness is written down but has never been installed anywhere else. Its own coupling measurement puts 9 repo-specific items in `brief/SKILL.md`'s ground-truth command list alone — 4 bare guard names, 4 document paths and 1 tool name, belonging to this repo's process rather than to any plugin — so a component can read as project-independent and still be unusable. (Corrected 2026-10-16 by the marketplace-inventory round-1 review: the literal `scripts/check-*` does not occur in that file, and 5 of the 9 are neither paths nor file invocations, so a path-and-invocation scan cannot see them.)

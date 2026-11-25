@@ -40,7 +40,7 @@ S1 and S2 reproduce in a real repository: they are not artefacts of the seeded o
 | `explain-diff` | 0 | 97 s | 16 | 0.329 | `2026-11-19-explanation-manifest-entry-79-dec7e4188.html` | Written, **not served**: the model skipped the delivery loop and offered a `file://` path; no Ask tray. (Tier A's run served its page — same skill, different outcome) |
 | `explain-findings` | 0 | 43 s | 11 | 0.216 | none | "This repo has no `scripts/brief-compose.py`" — S3 (CWD-relative names); verdict in text |
 | `explain-topic` | 0 | 86 s | 19 | 0.360 | `…-topic-continuation-enforcement-incomplete.fragment.html` | Fragment written, not composed (S2), not served |
-| `dashboard` | 0 | 12 s | 5 | 0.067 | none | Refused: `docs/dashboard-entries.md`, `scripts/regen-pages.py`, `check-dashboard-entry.py`, `.claude/hooks/regen-dashboard.sh`, `docs/anchors.md` absent — S4 |
+| `dashboard` | 0 | 12 s | 5 | 0.067 | none | Refused: `docs/dashboard-entries.md`, `scripts/regen-pages.py`, `check-dashboard-entry.py`, `.claude/hooks/regen-dashboard.sh`, the anchor registry absent — S4 |
 
 Total 1.10 USD, 5 runs, stranger account. **No page with an Ask tray was produced (0 of 5); 0 pages served by a
 skill.** Every skill's base directory was again the STAGED marketplace (`<run>/mkt/comprehensibility/skills/<skill>`),
@@ -97,7 +97,7 @@ when no dependency finding named that failure's cause.
 | `explain-findings`: "this repo has no `scripts/brief-compose.py`" | `skill-explain-findings` | tier A S3 | **case added (red→green)**: `skill-explain-findings:2:1` (cwd-relative, plugin-root fix) |
 | `brief-compose` rc 1 (no `~/explainers`) | `brief-compose` | tier A | **case added (red→green)** at the round 1 fold: `brief-compose:6:1` (detector 6 `home-path`) |
 | `gen-dashboard` rc 1, `brief` and `explain-topic` refused or not composed (no Ask-tray page) | `gen-dashboard`, `skill-brief`, `skill-explain-topic`, `brief-compose` | tier A S2 | **limit recorded**: tier A L1 |
-| `dashboard` refused: host files absent — `docs/dashboard-entries.md`, `docs/anchors.md` | `skill-dashboard` | tier A S4 | **case added (red→green)** for `docs/dashboard-entries.md` (`skill-dashboard:4:1`, round 1 M1); `docs/anchors.md` is **limit recorded**: tier A L2 |
+| `dashboard` refused: host files absent — `docs/dashboard-entries.md`, the anchor registry | `skill-dashboard` | tier A S4 | **case added (red→green)** for `docs/dashboard-entries.md` (`skill-dashboard:4:1`, round 1 M1); the anchor registry is **limit recorded**: tier A L2 |
 | `dashboard` refused: package file absent — `scripts/regen-pages.py` | `skill-dashboard` | tier A S3 | **predicted**: `skill-dashboard:2:1` |
 | `dashboard` refused: package files absent — `scripts/check-dashboard-entry.py` (SKILL.md `:21`), `.claude/hooks/regen-dashboard.sh` (`:88`) | `skill-dashboard` | tier A S3's cause, named in description | **limit recorded**: tier A L6 (round 1 M2) |
 | `explain-diff` page written, not served (the model skipped the delivery loop) | `skill-explain-diff` | new in tier B | **limit recorded**: tier A L4 (model adherence) |

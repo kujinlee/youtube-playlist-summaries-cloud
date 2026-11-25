@@ -8,12 +8,12 @@
 # entire body is "run the script"; `/goals` and `/backlog-table` set this precedent already —
 # script plus hook, no skill.
 #
-# WHY STALENESS IS INVISIBLE HERE WITHOUT THIS HOOK. `/features` derives from SEVEN path families:
-# `docs/features.md` itself, `docs/anchors.md`, `docs/backlog.md`, every `docs/adr/*.md`, every
+# WHY STALENESS IS INVISIBLE HERE WITHOUT THIS HOOK. `/features` derives from SIX path families:
+# `docs/features.md` itself, `docs/backlog.md`, every `docs/adr/*.md`, every
 # `docs/superpowers/specs/*.md` header, every `docs/superpowers/plans/*.md` header, and every
 # `docs/reviews/**` file a node's slug matches. That is wider than `/_stale`'s own idea of this
 # page's sources: `PAGE_SOURCES["features"]` in `scripts/explainer-serve.py` deliberately stays
-# THREE WHOLE FILES (`docs/features.md`, `docs/anchors.md`, `docs/backlog.md`), not directories —
+# TWO WHOLE FILES (`docs/features.md`, `docs/backlog.md`), not directories —
 # widening it there turns that file's own self-test 202/202 -> 201/202, because it asserts every
 # declared source is a real FILE. So the two sets disagree ON PURPOSE: this hook rebuilds on the
 # wide set below; `/_stale`'s banner watches only the narrow set. A spec, ADR or review edit
@@ -58,7 +58,6 @@ fi
 # the failure mode; the page's own docstring derivation list is the checklist.
 case "$FILE_PATH" in
   */docs/features.md|docs/features.md) ;;
-  */docs/anchors.md|docs/anchors.md) ;;
   */docs/backlog.md|docs/backlog.md) ;;
   */docs/adr/*.md|docs/adr/*.md) ;;
   */docs/superpowers/specs/*.md|docs/superpowers/specs/*.md) ;;

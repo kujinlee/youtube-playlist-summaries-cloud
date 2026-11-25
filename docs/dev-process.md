@@ -155,7 +155,7 @@ copy that drifts. One line per row; each row's measurements and history are in
 | `scripts/check-memory-shape.py` | every memory file opens with its current rule (no history marker first), has well-formed frontmatter, and is reachable from MEMORY.md |
 | `scripts/check-backlog-closure.py` | warns when a merged subject closes a backlog row that lacks `✅` (warn-only) |
 | `scripts/check-review-rounds.py` | a review round has BOTH halves, or a written `REVIEW GAP:` reason |
-| `scripts/check-anchors.py` | every living spec/plan declares the GOAL it belongs to (ADR-0010; `docs/anchors.md`) |
+| `scripts/check-anchors.py` | every living spec/plan declares the GOAL it belongs to (ADR-0010; a node of `docs/features.md`, ADR-0016) |
 | `scripts/check-explainer-delivery.py` | the explainer delivery loop is described in ONE place; skills cite it |
 | `scripts/check-test-counts.py` | the roadmap's stated test counts equal the suite's actual counts |
 | `scripts/check-arch-findings.py` | ratchet on architecture-review findings |

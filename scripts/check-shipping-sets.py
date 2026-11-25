@@ -2626,7 +2626,21 @@ def _self_test_body() -> int:
         # ⟳ 2026-11-24 node-tree plan S1 Task 3 (plan choice C9): 362 + 1 = 363 / d67a2be07817bb75. Its one gained line,
         # diffed by hand (sorted, `comm -3`) against 561379e6's `git archive`: `goal-tree.py` -> `check-features.py`
         # (GOAL_RE and REQUEST_RE, by load). Lost: 0.
-        # ⟳ 2026-11-25 dashboard-retire S1 (backlog #736, `read_asks`): 363 + 2 = 365 / 8e67559e9f7c372c. Its two gained
+        # ⟳ 2026-11-24 node-tree plan S2 Task 6 (the anchor vocabulary moves to the tree): 363 - 1 + 2 = 364 /
+        # 09084b7374e7a7ac, diffed by hand (sorted, `comm -3`) against f5fa9011's `git archive`, which reproduces 363 /
+        # d67a2be07817bb75. Lost: `gen-backlog-page.py` -> `check-anchors.py` (the registry reader, retired). Gained:
+        # `gen-backlog-page.py` -> `check-features.py` (`node_slugs`, by load) and `check-anchors.py` ->
+        # `check-features.py` (`parse_features` and `current_slugs`, by load).
+        # ⟳ 2026-11-24 node-tree plan S2 Task 7 (documents attach by node slug): 364 + 2 = 366 / ccae8b361c6a9c67,
+        # diffed by hand (sorted, `comm -3`) against b27beff0's `git archive`, which reproduces 364 / 09084b7374e7a7ac.
+        # Gained: `check-features.py` -> `check-anchors.py` and `gen-features-page.py` -> `check-anchors.py`
+        # (`anchored_slugs`, the one `Anchor:` header reader, by load). Lost: 0.
+        # ⟳ 2026-11-24 node-tree plan S2 Task 8 (the goals page reads the tree): 366 + 1 = 367 / 34bd1dcae81e8d79,
+        # diffed by hand against the Task 7 tree (366 / ccae8b361c6a9c67). Gained: `gen-goals-page.py` ->
+        # `check-anchors.py` (the header reader and the tree's parser, by load). Lost: 0.
+        # ⟳ 2026-11-24 node-tree plan S2 Task 9 (the armed set is derived): 367 + 1 = 368 / bdc110af044ece88,
+        # diffed by hand against the Task 8 tree. Gained: `check-goal-status.py` -> `check-anchors.py`. Lost: 0.
+        # ⟳ 2026-11-25 dashboard-retire S1 (backlog #736, `read_asks`): 368 + 2 = 370 / 3effa00a97160051, re-measured after merging master e96c4775. Its two gained
         # lines, diffed by hand (sorted, `comm -3`) against 0392c70f's tree: `compaction-state.py` ->
         # `check-dashboard-entry.py` and `goal-tree.py` -> `check-dashboard-entry.py` (each loads `read_asks`, the one
         # reader of `docs/asks/`). Lost: 0.
@@ -2641,7 +2655,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (365, "8e67559e9f7c372c", []))
+             (370, "3effa00a97160051", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
