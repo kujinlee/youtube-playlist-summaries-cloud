@@ -111,7 +111,7 @@ Measured on this branch 2026-11-24 by locating each entry's anchor in its enclos
 
 | Manifest | Today | After S1 | After S2 | After S3 |
 |---|---|---|---|---|
-| gate (`check-dashboard-entry.json`, renamed `check-ask-store.json` in S2) | 44 | **60** = 44 + 16 new (Tasks 1–2) | **56** = 60 − 9 deleted + 5 new (Tasks 9, 12) | **44** = 56 − 12 deleted (Task 16) |
+| gate (`check-dashboard-entry.json`, renamed `check-ask-store.json` in S2) | 44 | **62** = 44 + 18 new (Tasks 1–2) | **63** = 62 − 9 deleted + 10 new (Tasks 9, 12) | **45** = 63 − 18 deleted (Task 16) |
 | `gen-dashboard.json` | 70 | 70 | **72** = 70 + 2 (Task 7) | **0** — file deleted (Task 15) |
 | `page_chrome.json` | 114 | 114 | 114 | **117** = 114 + 3 new (Task 14) |
 
@@ -121,8 +121,11 @@ Measured on this branch 2026-11-24 by locating each entry's anchor in its enclos
 - **4 re-bound in S2, not deleted:** `collect` 2 (the broken-git and missing-git entries) and `main` 1 (the
   git-failure fail-open entry) follow the git calls into `ask_store_problems` and `main`; `_declaration_reason`
   1 ("the marker parameter is ignored…") keeps its anchor and its `expect` names the `NO-REVIEW:` case.
-- **The 12 deleted in S3** anchor in the grammar that leaves with the page: `parse_entries` 7,
-  `header_error` 3, `BLOCK` 1, `_first_sentence` 1.
+- **The 18 deleted in S3:** 12 anchor in the grammar that leaves with the page (`parse_entries` 7,
+  `header_error` 3, `BLOCK` 1, `_first_sentence` 1); 6 anchor in the cutover code Task 16 deletes
+  (`cutover_problem` 1, the `--cutover-check` REF read 1, `store_edit_prs` 4 — Task 12's mutations expecting
+  12.8, 12.12 and 12.13–12.16).
+- **The 45 after S3** = the 23 below + Tasks 1–2's 18 + L1's 4 (expecting 12.2, 12.3, 12.5, 12.10).
 - **23 stay throughout:** `fence_closes` 4, `fenced_lines` 1, `exemption_reason` 4, `_declaration_reason` 4,
   `_indented` 1, `EMPH` 1, `decisions` 2, `decision_errors` 3, plus the 3 re-bound `collect` / `main` entries.
 - ⚠ **A measured refinement of the spec's "the contrast mutations MOVE":** of the 70 generator entries
@@ -130,7 +133,7 @@ Measured on this branch 2026-11-24 by locating each entry's anchor in its enclos
   whose subject is deleted. None anchors `contrast_ratio` or `_luminance`. So nothing moves: that entry is
   deleted with the page, and Task 14 writes 3 NEW formula mutations in `page_chrome.json`.
 
-Pins for the other manifests change only by the mutations this plan names: `goal-tree.json` 520 → 524 (S1);
+Pins for the other manifests change only by the mutations this plan names: `goal-tree.json` 520 → 525 (S1);
 `compaction-state.json` 89 → 91 (S1); `explainer-serve.json` 123 → 126 (S1); `regen-pages.json` 73 → 74 (S1);
 `check-reference-namespace.json` 22 → 23 (S1). S2 and S3 deletions in those and in `check-merge-ready.json`
 (214) follow one rule — an entry whose anchor's code is deleted goes — and the builder states each resulting
@@ -181,7 +184,7 @@ prints the same count before and after (the page is unchanged).
 | 1.13 | a file over the cap, or not UTF-8, is a PROBLEM | 65,537 bytes; bytes `b"# q\n\xff"` | one problem each, no exception |
 | 1.14 | a question with no body is OPEN | `# Which form?` with no newline | 1 ask, `body == ""` |
 | 1.15 | a PROBLEM entry still returns the readable asks | 1.1's file beside `Foo.md` | 1 ask AND 1 problem |
-| 1.16 | over MAX_ASKS is a PROBLEM, not a truncation | 1,001 valid names, `MAX_ASKS` patched to 3 with 4 files | 3 asks AND 1 problem stating both numbers |
+| 1.16 | over MAX_ASKS is a PROBLEM, not a truncation | `MAX_ASKS` patched to 3 (restored in `finally`), 4 valid files | 3 asks AND 1 problem stating both numbers |
 | 1.17 | a symlink, a subdirectory and a FIFO are PROBLEMS, and the FIFO does not block | impure world; the FIFO case asserts the call returns in under 0.5 s | one problem each |
 
 - [ ] **Step 1: Write the failing cases** 1.1–1.16 in `_self_test_body` over a `tempfile.TemporaryDirectory`,
@@ -246,6 +249,7 @@ case("a conflict marker on ANY line is a PROBLEM",
     `err`, and `main` prints `CANNOT RUN — … Treat this as NOT CHECKED.` and returns 2.
   - `main` calls it after `collect`; a non-empty problem list prints `REFUSED — ` and returns 1 whatever the
     entry verdict, the waiver included.
+  - Its git calls go through `subprocess.run`, so the existing `_with_run` stub reaches them (r1 Claude M2).
 
 **Enumerated behaviors:**
 
@@ -262,11 +266,25 @@ case("a conflict marker on ANY line is a PROBLEM",
 | 2.9 | an untracked scratch file does not fail A1 | impure: `docs/asks/.DS_Store` untracked | rc as without it |
 | 2.10 | the directory listing still reports that file | `read_asks(dir)` on the same world | 1 problem (the goal tree's view) |
 | 2.11 | a tracked ask missing on disk is a PROBLEM | impure: `rm` without commit | rc 1, "tracked at HEAD, missing on disk" |
-| 2.12 | a broken git under A1 is CANNOT RUN | impure: `git` not on `PATH` | rc 2, never 0 |
+| 2.12 | A1's own git failure is CANNOT RUN | pure: `_with_run(_boom, lambda: ask_store_problems("master", ROOT))`, and again with a stub returning `_R(128, "", "fatal")` | `err is not None` both times, `problems == []` |
 | 2.13 | the live tree passes | this repo, `docs/asks/.gitkeep` only | `([], None)` |
+| 2.14 | main refuses on A1's problem list | pure: `collect` stubbed clean, `ask_store_problems` stubbed `(["x"], None)` | rc 1, `REFUSED — ` |
+| 2.15 | main is CANNOT RUN on A1's err | pure: `collect` stubbed clean, `ask_store_problems` stubbed `([], "boom")` | rc 2, never 0 or 1 |
 
-- [ ] **Step 1: Write the failing cases** 2.1–2.7 (pure) and 2.8–2.13 (impure, `fixture_git` as the existing
-  cannot-run cases build theirs).
+**Why 2.12 is driven directly, not through `main` (r1 Claude M2):** through `main`, a missing `git` fails first
+inside `collect` (its first `git` call), so a `main`-level case passes on `collect`'s CANNOT RUN even when
+`ask_store_problems` swallows its own error and returns `([], None)` — a fail-open with no witness.
+
+**The existing `main` cases stub A1 too (r1 Claude M1).** The case "main: an entry-only branch with a malformed
+entry exits 1" (and the CANNOT RUN case beside it) stubs only `g["collect"]` and calls `main(["--base",
+"master"])`. After this task that call reaches A1's real `git merge-base master HEAD`; in a CI `pull_request`
+checkout there is `origin/master` and no local `master`, so git fails, `main` returns 2 and the case is red —
+in CI only. Every existing `main` case therefore saves `g["ask_store_problems"]`, stubs it `([], None)`, and
+restores it in the same `finally` as `collect`.
+
+- [ ] **Step 1: Write the failing cases** 2.1–2.7, 2.12, 2.14 and 2.15 (pure) and 2.8–2.11, 2.13 (impure,
+  `fixture_git` as the existing cannot-run cases build theirs); add the `ask_store_problems` stub to every
+  existing `main` case.
 - [ ] **Step 2: Run** the self-test. Expected: FAIL on the new names.
 - [ ] **Step 3: Implement** `f1_problems`, `ask_store_problems`, the `main` call, and one docstring paragraph
   stating the m3 decision in these words: *A1 reads the names git tracks at HEAD (`git ls-tree`), not the
@@ -275,7 +293,20 @@ case("a conflict marker on ANY line is a PROBLEM",
 - [ ] **Step 5: Run** the self-test (PASS), then the gate itself after committing:
   `python3 scripts/check-dashboard-entry.py --base origin/master`. Expected: no `REFUSED` line that names
   `docs/asks`.
-- [ ] **Step 6: Add 5 mutations** and pin `60`:
+- [ ] **Step 5b: Run the self-test where CI runs it — no local `master` (r1 Claude M1's falsifier).** The
+  local run cannot show the break, because `master` exists here:
+
+```bash
+S="$(mktemp -d)/c" && git clone -q . "$S" && git -C "$S" checkout -q --detach
+git -C "$S" branch -D master 2>/dev/null   # a clone made from a worktree has no local master to delete
+! git -C "$S" rev-parse -q --verify refs/heads/master && git -C "$S" rev-parse -q --verify origin/master \
+  && (cd "$S" && python3 scripts/check-dashboard-entry.py --self-test | tail -1)
+```
+
+  Expected: the same count as Step 5, rc 0. **FAILS IF** any `main` case is red there — the case reached
+  real git. Control, run once: remove the `ask_store_problems` stub from the malformed-entry case and this run
+  goes red (rc 2 where the case wants 1).
+- [ ] **Step 6: Add 7 mutations** and pin `62`:
 
 | Mutation name | Edit | Expects |
 |---|---|---|
@@ -283,7 +314,9 @@ case("a conflict marker on ANY line is a PROBLEM",
 | F1 accepts a rewritten ask | prefix test → `True` | 2.3 |
 | F1 misses a deleted ask | skip names absent from head | 2.4 |
 | A1 lists the directory instead of HEAD's tree | pass `None` for `names` | 2.9 |
-| main stops running A1 | drop the `ask_store_problems` call's refusal | 2.8 |
+| main stops running A1 | drop the `ask_store_problems` call's refusal | 2.14 |
+| A1's git failure returns err=None | `ask_store_problems`' failure branch returns `(problems, None)` | 2.12 |
+| main ignores A1's err | drop the `if err:` return 2 after `ask_store_problems` | 2.15 |
 
 - [ ] **Step 7: Sweep, resolve, commit.**
 
@@ -326,7 +359,7 @@ behaviors 2.1–2.7 and three mutations — and the pin drops by 3. It is not pa
 | 3.6 | K5: a PROBLEM entry marks the source NOT READ and keeps the readable ask | 3.1's ask beside `Foo.md` | 1 item AND NOT READ |
 | 3.7 | an answered ask is not an item | file with `## Answer` | 0 items |
 | 3.8 | the item's ref is stable across runs | two `collect` calls on one tree | the `(source, ref)` diff is empty |
-| 3.9 | the old store's asks still show | fixture store with one open ask | 1 item, `source == "dashboard"`, `/dashboard#…` link |
+| 3.9 | the old store's asks still show | fixture root with one open ask in the store, driven through `collect` (not `needs_from_dashboard` directly) | 1 item, `source == "dashboard"`, `/dashboard#…` link |
 | 3.10 | the all-clear names four sources | every source read, none open | the line names dashboard asks, ask files, the ledger and the backlog |
 
 - [ ] **Step 1: Write the failing cases** 3.1–3.10 beside the existing `needs_from_dashboard` cases.
@@ -334,14 +367,18 @@ behaviors 2.1–2.7 and three mutations — and the pin drops by 3. It is not pa
 - [ ] **Step 3: Implement.** Options and the warning print under the item in both `_item_line` (text) and
   `needs_html` (a `<ul class="opts">` and a `<p class="warn">`), every string through `html.escape`.
 - [ ] **Step 4: Run** the self-test (PASS) and `python3 scripts/check-page-links.py --self-test`.
-- [ ] **Step 5: Add 4 mutations**, pin `524`: "the goal tree's call to read_asks is severed" (return
-  `([], [])`; expects 3.1), "an asks problem is dropped" (expects 3.6), "a missing decision drops the ask"
-  (expects 3.3), "the asks source leaves NEEDS_SOURCES" (expects 3.5).
+- [ ] **Step 5: Add 5 mutations**, pin `525`: "the goal tree's call to read_asks is severed" (return
+  `([], [])`; expects 3.1), "the goal tree's call to the old store's reader is severed" (in the source loop of
+  `collect`, `needs_from_dashboard),` → `lambda _t: ([], [])),`; expects 3.9 — spec K4: *in S1 the same holds
+  for the old store's reader*, r1 Codex M4), "an asks problem is dropped" (expects 3.6), "a missing decision
+  drops the ask" (expects 3.3), "the asks source leaves NEEDS_SOURCES" (expects 3.5). No existing
+  `goal-tree.json` entry anchors that call (checked 2026-11-24: 0 entries' `before` text names
+  `needs_from_dashboard`), so the old-reader sever is new. Task 10 deletes it with its anchor.
 - [ ] **Step 6: Sweep** `--only scripts/goal-tree.py` in the draft PR's CI (520+ mutations exceed one local
   command's budget); run the anchor resolve locally; commit.
 
-**FAILS IF (K4, K5):** the severed-call mutation stays green; or the tree prints "nothing waits on you"
-while `docs/asks/` is missing or holds a PROBLEM.
+**FAILS IF (K4, K5):** either severed-call mutation (the new reader's or the old reader's) stays green; or the
+tree prints "nothing waits on you" while `docs/asks/` is missing or holds a PROBLEM.
 
 ### Task 4: the compaction snapshot counts both sources
 
@@ -444,7 +481,8 @@ Task 12 is LAST and is written after master is merged in for the final time.
 
 **Files:** Modify `scripts/gen-dashboard.py` (`main`, cases), `scripts/mutations/gen-dashboard.json`, pin `72`.
 
-**Interfaces:** Produces the flag: reads `docs/dashboard-entries.md` (or `--store PATH` in cases), prints
+**Interfaces:** Produces the flag: reads `docs/dashboard-entries.md` (or the store named by
+`--store PATH`), prints
 `ok — the old store holds 0 open asks` rc 0, or `REFUSED — <n> open ask(s): <ids>` rc 1; an unreadable store
 or any entry with a parse error is `CANNOT RUN` rc 2.
 
@@ -478,7 +516,10 @@ or any entry with a parse error is `CANNOT RUN` rc 2.
   world stays), `scripts/check-shipping-sets.py`, `scripts/check-ratchet-contract.py`,
   `scripts/check-fixture-git-isolation.py`, `scripts/check-selftest-counts.py`, and the manifests that name
   it (`batch-ci.json`, `check-fixture-git-isolation.json`, `check-publishability.json`, `check-plan-code.json`)
-- Modify `.github/workflows/ci.yml`: the self-test step's name and path only (Task 12 owns the gate step)
+- Modify `.github/workflows/ci.yml`: the self-test step's name and path, AND the `dashboard entry ratchet`
+  step's script path (`scripts/check-dashboard-entry.py` → `scripts/check-ask-store.py`, its arguments
+  unchanged; Task 9 drops `--pr-body-file`, Task 12 replaces the step). Without it every commit between this
+  task and Task 12 runs a CI gate against a file that no longer exists (r1 Codex M3)
 
 No behavior changes, so there is no new case: the test is that every existing suite stays green.
 
@@ -498,7 +539,10 @@ git grep -n -E 'with_name\("check-dashboard-entry|_sibling\("check-dashboard-ent
 - [ ] **Step 5: Commit** `Ask store S2: the gate file is check-ask-store.py; every loader repointed`.
 
 **FAILS IF:** any Step-1 suite's count changes or its rc is non-zero; or Step 3 prints a line that is a load,
-an argv or a manifest `file` (a comment naming the old file as history is not).
+an argv, a workflow `run:` line or a manifest `file` (a comment naming the old file as history is not).
+Control, run 2026-11-24 on the unrenamed tree: Step 3's `.github` half prints `ci.yml:988` (the self-test) and
+`ci.yml:1112` (the PR gate) — so the grep sees the gate step, and a rename that repoints only the self-test
+leaves `ci.yml:1112` printed.
 
 ### Task 9: remove R1 and `NO-ENTRY:`; narrow the escape diagnosis
 
@@ -513,6 +557,9 @@ an argv or a manifest `file` (a comment naming the old file as history is not).
   "the other marker is in the body but inert"); the gate list's `dashboard entry` row becomes
   `("ask store", ["python3", "scripts/check-ask-store.py", "--base", …])` with no PR body
 - Modify both manifests and pins; `scripts/check-review-recorded.py` cases if they pass the marker
+- Modify `.github/workflows/ci.yml`: the gate step drops `--pr-body-file /tmp/pr-body.md`, its `BODY` env and
+  its `printf` (the flag no longer parses, so leaving it turns the step red with an argparse error). The
+  `review recorded` step writes its own body file and is untouched
 
 **Interfaces:** Produces `main(argv)` with `--self-test` and `--base` (optional, no default): with a base it
 runs A1 and F1; without, A1 only (Task 12 adds L1 to both). Output stays `ok — …` / `REFUSED — …` /
@@ -527,6 +574,7 @@ runs A1 and F1; without, A1 only (Task 12 adds L1 to both). Output stays `ok —
 | 9.5 | INVISIBLE still diagnoses | merge-ready fixture: the exact token, fenced | the INVISIBLE sentence |
 | 9.6 | MISSPELLED still diagnoses | `no-review:` lower case | the MISSPELLED sentence |
 | 9.7 | without --base, F1 is not run and git's merge-base is not asked | impure: no remote | rc 0 on a clean tree |
+| 9.8 | `--pr-body-file` is gone, so CI must not pass it | `main(["--base", "origin/master", "--pr-body-file", "x"])` | argparse exit 2; and `grep -n -- '--pr-body-file' .github/workflows/ci.yml` prints nothing |
 
 - [ ] **Step 1: Write 9.1–9.7**; delete the cases whose subject is deleted (the entry ratchet's, the
   MISDIRECTED fixtures). **Step 2: Run** `check-ask-store.py`, `check-merge-ready.py` and
@@ -538,10 +586,11 @@ runs A1 and F1; without, A1 only (Task 12 adds L1 to both). Output stays `ok —
   the `check-review-recorded.py` and `check-merge-ready.py` self-tests against it. Expected: BOTH red. If
   either stays green, add the case that reddens it before continuing.
 - [ ] **Step 6: Manifests.** Delete the 9 entries and re-bind the 4 named in *Mutation arithmetic*; pin the
-  gate at `51` (60 − 9; Task 12 adds 5). In `check-merge-ready.json` delete each entry whose anchor sits in
+  gate at `53` (62 − 9; Task 12 adds 10). In `check-merge-ready.json` delete each entry whose anchor sits in
   a removed branch and state the new pin in the commit message. Sweep the gate script, resolve, commit.
 
-**FAILS IF (K7):** either self-test is green over the stub; or 9.2 grants the fenced line.
+**FAILS IF (K7):** either self-test is green over the stub; or 9.2 grants the fenced line; or `ci.yml` still
+passes `--pr-body-file` to the gate.
 
 ### Task 10: drop the old-store readers
 
@@ -560,9 +609,9 @@ wording), `scripts/compaction-state.py` (the store read and `MAX_STORE` leave `p
 
 - [ ] **Steps 1–4:** cases (3.9 and the store half of 4.1 are deleted with their subject), red, implement,
   green on both self-tests.
-- [ ] **Step 5: Manifests.** Delete the entries anchored in removed code (two in `goal-tree.json` name the
-  dashboard source; one in `compaction-state.json` is the FIFO-store entry, re-bound to 4.4's anchor rather
-  than deleted). Resolve; commit.
+- [ ] **Step 5: Manifests.** Delete the entries anchored in removed code (in `goal-tree.json`
+  the two that name the dashboard source and Task 3's old-reader sever; one in `compaction-state.json` is the
+  FIFO-store entry, re-bound to 4.4's anchor rather than deleted). Resolve; commit.
 
 **FAILS IF:** 10.1 returns an item, or `git grep -n 'gen-dashboard' scripts/goal-tree.py
 scripts/compaction-state.py` prints a load.
@@ -606,7 +655,8 @@ command prints nothing.
 **Files:**
 - Modify `docs/dashboard-entries.md` (header lines 3–6 only)
 - Modify `scripts/check-ask-store.py` (`LEGACY_STORE_REL`, `LEGACY_STORE_SHA256`, `LEGACY_STORE_BLOB`,
-  `LEGACY_STORE_BASE_BLOB`, `legacy_store_problem`, `cutover_problem`, `main`), manifest, pin `56`
+  `LEGACY_STORE_BASE_BLOB`, `legacy_store_problem`, `cutover_problem`, `PR_LIST_LIMIT`, `store_edit_prs`,
+  `main`), manifest, pin `63`
 - Modify `.github/workflows/ci.yml` (the gate steps; the `fetch-depth: 0` comment reworded to name F1 and L1's
   diff), `scripts/check-merge-ready.py` (the replayed step also runs C1)
 
@@ -621,7 +671,13 @@ command prints nothing.
   else a message naming both blobs and saying: merge master in, re-run C1, re-pin all three constants.
 - `main`: L1 runs in BOTH modes (with and without `--base`), reading
   `git rev-parse HEAD:docs/dashboard-entries.md` and `git cat-file blob`. `--cutover-check REF` runs only
-  `cutover_problem(git rev-parse REF:docs/dashboard-entries.md)`.
+  `cutover_problem(git rev-parse REF:docs/dashboard-entries.md)` — REF is any revision, so `<sha>^1` works.
+- `PR_LIST_LIMIT = 1000`; `store_edit_prs() -> tuple[list[str], str | None]` — `gh pr list --state open
+  --limit PR_LIST_LIMIT --json number,headRefName`, then `gh pr diff <n> --name-only` per PR; returns one
+  `PR <n> (<branch>) edits the frozen store` line per PR whose diff names `docs/dashboard-entries.md`. Any
+  non-zero rc, an unparseable list, or a list of exactly `PR_LIST_LIMIT` entries (there may be more) is
+  `err`. `--list-store-prs` prints the lines and returns 0, or `CANNOT RUN — … Treat this as NOT CHECKED.`
+  rc 2. It exists for Task 13 and leaves in Task 16 (r1 Codex M1).
 
 **Enumerated behaviors:**
 
@@ -638,9 +694,14 @@ command prints nothing.
 | 12.9 | master's store unchanged passes | `cutover_problem(LEGACY_STORE_BASE_BLOB)` | `None` |
 | 12.10 | push mode runs L1 | impure: `main([])` over a tree with an appended entry | rc 1 |
 | 12.11 | the three pins describe the live tree | live: `git hash-object` and SHA-256 of the store at HEAD; `git rev-parse <pin-base>:docs/dashboard-entries.md` | equal to the constants |
+| 12.12 | the cutover check reads the revision it is given | impure: fixture repo, commit A (store = pinned base), commit B appends an entry, commit C on top; `--cutover-check C^1` and `--cutover-check A` | rc 1 for `C^1` (B's store), rc 0 for `A` |
+| 12.13 | a PR beyond gh's default page is listed | `subprocess.run` stubbed: `gh pr list` returns `min(<--limit>, 31)` PRs (30 when `--limit` is absent), PR 31's diff names the store | PR 31 listed |
+| 12.14 | a full page is CANNOT RUN | the stub returns exactly `PR_LIST_LIMIT` PRs | `err` names the limit |
+| 12.15 | a failed `gh pr list` is CANNOT RUN, never "no PRs" | `gh pr list` rc 1 | `err is not None`; `--list-store-prs` rc 2 |
+| 12.16 | a failed `gh pr diff` is CANNOT RUN, never "no edit" | PR 7's diff rc 1, PR 8's lists the store | `err` names PR 7, rc 2 |
 
-- [ ] **Step 1: Write 12.1–12.10** against a fixture store (the constants patched in the case, as other
-  suites patch theirs). **Step 2: Run** the self-test (FAIL).
+- [ ] **Step 1: Write 12.1–12.10 and 12.12–12.16** against a fixture store (the constants patched in the case,
+  as other suites patch theirs; 12.13–12.16 through `_with_run`). **Step 2: Run** the self-test (FAIL).
 - [ ] **Step 3: Implement** `legacy_store_problem`, `cutover_problem` and `main`, with the three constants
   set to a placeholder that 12.11 refuses (`"UNPINNED"`). Run: 12.1–12.10 PASS, 12.11 FAIL.
 - [ ] **Step 4: Merge master in for the last time**, as ONE command that completes or aborts:
@@ -671,9 +732,15 @@ python3 -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read(
         run: python3 scripts/check-ask-store.py
 ```
 
-- [ ] **Step 8: 5 mutations:** "L1 compares nothing" (expects 12.3), "a missing store passes L1" (12.2),
+  The push-mode step runs on `batch/**` as well as `master` (ci.yml's `on.push.branches`), and that is
+  intended (r1 Claude m5): a batch branch is master plus ready PR heads, so a batch carrying a store edit is
+  red exactly as that PR would be. No `if:` on the ref.
+
+- [ ] **Step 8: 10 mutations:** "L1 compares nothing" (expects 12.3), "a missing store passes L1" (12.2),
   "the restore command is dropped from L1's message" (12.5), "push mode skips L1" (12.10), "the cutover check
-  accepts any blob" (12.8). Sweep, resolve.
+  accepts any blob" (12.8), "the cutover check reads HEAD instead of REF" (12.12), "the PR list keeps gh's
+  default limit" (drop `--limit`; 12.13), "a full page passes" (12.14), "a failed PR list reads as no PRs"
+  (12.15), "a failed PR diff reads as no edit" (12.16). Sweep, resolve.
 - [ ] **Step 9: Slice gate.** `gen-dashboard.py`, `goal-tree.py`, `compaction-state.py`, `brief-compose.py`
   self-tests and `check-explainer-delivery.py`, `check-docs.py` — all rc 0. Then, committed:
   `python3 scripts/check-ask-store.py --base origin/master` prints `ok — `.
@@ -685,34 +752,49 @@ python3 scripts/check-ask-store.py --cutover-check origin/master
 ```
 
   Expected: rc 0. On rc 1 a PR merged an entry after the pin: return to Step 4 and re-pin all three.
+  ⚠ **This check is early, not sufficient (r1 Codex M2):** master can move between it and the squash, and
+  `--match-head-commit` pins the PR head, not the base. The binding check is Task 13 Step 1, which reads the
+  squash commit's own first parent — the exact store the squash was built on — so no window is left.
 
 **FAILS IF (L1):** the store at HEAD differs from the pinned bytes, or is missing, and the step is green —
-on a pull request or on a push to master. **FAILS IF (M1 part 2):** master's store blob differs from
-`LEGACY_STORE_BASE_BLOB` at the moment of the squash and `--cutover-check` returns 0.
+on a pull request or on a push to master. **FAILS IF (M1 part 2):** the squash commit's first parent holds a store
+blob other than `LEGACY_STORE_BASE_BLOB` and Task 13 Step 1's `--cutover-check <squash>^1` returns 0
+(behavior 12.12 is that check on a fixture).
 
 ### Task 13: the post-merge cutover (M1 part 3) — the coordinator's, outward-facing
 
-No file changes. Run once, right after S2's squash lands.
+No file changes. Run once, right after S2's squash lands. The code it runs is Task 12's, tested there.
 
-- [ ] **Step 1: List every open PR that still carries a store edit.**
+- [ ] **Step 1: Check the store the squash was actually built on (r1 Codex M2).**
 
 ```bash
-gh pr list --state open --json number,headRefName --jq '.[] | "\(.number) \(.headRefName)"' | while read -r n b; do
-  gh pr diff "$n" --name-only | grep -qx 'docs/dashboard-entries.md' && echo "PR $n ($b) edits the frozen store"
-done
+git fetch origin master
+SQ=$(git log -1 --format=%H --grep='^Ask store S2' origin/master)   # the S2 squash; confirm it by eye
+test -n "$SQ" && python3 scripts/check-ask-store.py --cutover-check "$SQ^1"
 ```
 
+  Expected: rc 0. On rc 1 a PR merged a store edit inside the window: master's push-mode `ask store` step is
+  red on the squash (L1 sees the stray bytes), and the stray entry may hold an ask NEEDS YOU no longer reads.
+  Repair, in a PR of its own: `git show "$SQ^1:docs/dashboard-entries.md" > "$TMPDIR/s.md"` and
+  `python3 scripts/gen-dashboard.py --assert-no-open-asks --store "$TMPDIR/s.md"`; re-ask each id it names as
+  a file in `docs/asks/`; restore the store with L1's printed `git cat-file blob <LEGACY_STORE_BLOB> >
+  docs/dashboard-entries.md`. The pins stay: the frozen bytes are S2's, and the stray entry is what is removed.
+- [ ] **Step 1b: List every open PR that still carries a store edit.**
+  `python3 scripts/check-ask-store.py --list-store-prs` (Task 12's `store_edit_prs`: `--limit` set, every
+  `gh` failure CANNOT RUN). rc 2 is NOT a clean list — fix the cause and re-run.
 - [ ] **Step 2: For each listed PR**, in its worktree: merge master (`git merge --no-edit origin/master`),
   restore the store (`git checkout origin/master -- docs/dashboard-entries.md`), re-ask any question its
   dropped entry held as a file in `docs/asks/`, commit, push. Its CI now runs under L1.
-- [ ] **Step 3: Re-run Step 1.** Expected output: nothing.
+- [ ] **Step 3: Re-run Step 1b.** Expected: rc 0, no line.
 - [ ] **Step 4: Confirm master's own run:** the `ask store (push)` step of the CI run on S2's merge commit is
   green.
 
-**FAILS IF:** Step 3 prints any PR; or a later push to master turns `ask store (push)` red (then the repair
+**FAILS IF:** Step 1 returns 0 while the squash's first parent holds another store blob; Step 3 prints any PR
+or returns 2; or a later push to master turns `ask store (push)` red (then the repair
 is 12.7's command, taken from the step's own output, in a PR of its own).
-**Test:** behavior 12.7 is this step's mechanism run on a fixture — a branch carrying an appended entry is
-red under L1, and the printed command makes it green.
+**Test:** 12.12 is Step 1's check on a fixture; 12.13–12.16 are Step 1b's listing (a PR past gh's default
+page, a full page, a failed list, a failed diff); 12.7 is Step 2's repair — a branch carrying an appended
+entry is red under L1, and the printed command makes it green.
 
 ---
 
@@ -782,6 +864,11 @@ or the theme check passes while the goal tree's light block omits a shim token.
   check-page-links comment: three CI pages), `docs/marketplace/components.json` + the regenerated
   `shipping-sets.json` (`gen-dashboard` and `hook-regen-dashboard` leave), `docs/portable-practices.md`
   (the hook list), `docs/dev-process.md` (its `regen-pages` wording if it names five pages)
+- Modify two self-test fixtures that hold `"scripts/gen-dashboard.py"` as an arbitrary script path in a list
+  (r1 Claude m4; K8's scanner visits list elements and would refuse them): `scripts/check-review-decision.py`
+  (the case "a harness script is no longer assumed contained") and `scripts/gen-goals-page.py` (the
+  `annotate_code` fixture `_shown`). Rename each to `scripts/gen-backlog-page.py`, a live script, so the
+  scanner needs no exemption for a retired name; each file's self-test count is unchanged
 
 **Interfaces:** `check-retired-references.py` — `RETIRED_PATHS` (`gen-dashboard.py`,
 `check-dashboard-entry.py`, `regen-dashboard.sh`, the `dashboard` skill directory), `RETIRED_ROUTE =
@@ -817,7 +904,8 @@ that are call arguments, path-literal operands, list or tuple elements, and dict
 - [ ] **Step 5: Write 15.15** and the page-set cases (four regenerable pages; three CI pages), red.
 - [ ] **Step 6: Delete and repoint** every item of the Files list. Write the archive record page.
 - [ ] **Step 7: Run** `explainer-serve.py`, `check-page-links.py`, `page_markup.py`, `regen-pages.py`,
-  `brief-compose.py`, `goal-tree.py`, `check-shipping-sets.py` self-tests, `check-page-links.py --build --ci`,
+  `brief-compose.py`, `goal-tree.py`, `check-shipping-sets.py`, `check-review-decision.py`,
+  `gen-goals-page.py` self-tests, `check-page-links.py --build --ci`,
   the closure check, and the LIVE scan. Expected: all rc 0 except the scan, which lists only gate-file items
   Task 16 owns.
 - [ ] **Step 8: Mutations for the scanner** — one per category that drops that category's visitor, each
@@ -834,8 +922,8 @@ page-table key or literal link still names a retired thing.
 **Files:**
 - Modify `scripts/check-ask-store.py`: delete `parse_entries`, `header_error`, `valid_date`, `HEADER`,
   `FLAG`, `BLOCK`, `_first_sentence` and its constants, `--cutover-check`, `cutover_problem`,
-  `LEGACY_STORE_BASE_BLOB`, and their cases; manifest −12, pin `44` (minus 1 more if the cutover mutation's
-  anchor is deleted — then the pin is `43` and the commit message says so)
+  `LEGACY_STORE_BASE_BLOB`, `--list-store-prs`, `store_edit_prs`, `PR_LIST_LIMIT`, and their cases (12.8,
+  12.9, 12.12–12.16); manifest −18 (12 grammar + 6 cutover), pin `45`
 - Modify `.github/workflows/ci.yml` (the live `check-retired-references.py` step), `CONTEXT.md`, the ADR-0015
   sentence and `.gitignore` only where a sentence would become false, `docs/roadmap-to-launch.md`,
   `docs/goal-threads.md`, `docs/backlog.md` (this work's row closed), the memory row
