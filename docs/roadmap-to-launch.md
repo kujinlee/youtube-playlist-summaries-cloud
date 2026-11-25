@@ -1404,7 +1404,7 @@ whether editing an already-applied migration is safe here.
 
 ## Project dashboard — anchor `status-visibility` — 🏗 TASKS 1–6 BUILT; THE GATE HAS NOT YET REFUSED ON GITHUB
 
-**Goal (`docs/anchors.md:39`):** a person who was away can see the current state, what changed, and
+**Goal (node `status-visibility` of `docs/features.md`):** a person who was away can see the current state, what changed, and
 what needs them — without reading the chat transcript.
 
 **This section exists because the slice had none.** The spec and the plan were both merged on
@@ -2709,7 +2709,7 @@ unapplied for eight days while every document read "merged, done".
 > | **3** | youtube-playlist-summaries-cloud | `cloud-publishing`, `cloud-sync`, `share-and-download`, `serve-money-guard`, `serve-path-bounding`, `stable-blob-addressing` (⏸ parked), `cloud-blob-key-encoding`, `corrections-in-cloud`, `prod-smoke` | **D1** | M1+M2+M3 closed. Live: **Fly v11, deployed 2026-10-15**; prod schema **`0027`**. ⟳ **This cell said `v10, 2026-08-24` and was contradicted by this file's own release log within four hours of being written** — see the v11 record below. The deploy it describes is what fixed the condition it reported: 0 of 213 commits in the preceding 52 days had touched product code alone, and v11 shipped the three worker/lease commits that had been merged and unreleased since 2026-09-18 |
 >
 > **All registered anchors are accounted for by these three, with none left over** (13 when this was written; **14** after `harness-ships-elsewhere` was allocated 2026-10-15 — it belongs to goals 1 and 2, both D2) —
-> so there is no fourth goal hiding, and nothing in `docs/anchors.md` is unclaimed by a programme.
+> so there is no fourth goal hiding, and nothing in the anchor registry (now the nodes of `docs/features.md`, ADR-0016) was unclaimed by a programme.
 >
 > ⭐ **D1 and D2 are the project's two DELIVERABLES, stated by the owner 2026-08-11 and not derivable
 > from this file or the code** — D1 the product, D2 a battle-tested harness and reproducible
@@ -2726,9 +2726,9 @@ unapplied for eight days while every document read "merged, done".
 >
 > ⛔ **THE GOAL CHANGE AT THE BOTTOM OF THIS BLOCK'S PREDECESSOR IS NOW SPENT, AND ITS REGISTRATION
 > IS OWED.** The 2026-09-06 block closes by putting *"declaring the comprehensibility suite a project
-> deliverable"* deliberately out of scope, as *"a goal change, whose home is `docs/anchors.md`"*. The
-> owner has now made that change. ⚠ **It is NOT discharged by this table**: `docs/anchors.md` holds
-> names that must each be claimed by a document (`check-anchors` R4 — *"claimed by no document — use
+> deliverable"* deliberately out of scope, as *"a goal change, whose home is"* the anchor registry (⟳ 2026-11-24: now a node of `docs/features.md`, ADR-0016). The
+> owner has now made that change. ⚠ **It is NOT discharged by this table**: the registry held
+> names that had each to be claimed by a document (`check-anchors` R4 — *"claimed by no document — use
 > it or remove it"*), so the registration needs a claiming document and cannot be a one-line edit.
 > Tracked as **`docs/backlog.md` row 290**.
 
@@ -2818,7 +2818,7 @@ unapplied for eight days while every document read "merged, done".
 > for the four agent-authored pages only.** The four hook-regenerated ones already cost zero context;
 > proposing to fork them is a category error. ⚠ **Two items in that row are the user's call and are
 > deliberately NOT part of this goal:** declaring the comprehensibility suite a project deliverable
-> (a goal change, whose home is `docs/anchors.md`), and marketplace publication (outward-facing and
+> (a goal change, whose home is a node of `docs/features.md`), and marketplace publication (outward-facing and
 > irreversible).
 >
 > ✅ **DONE 2026-09-08 — all five tasks run; results in the spec's §8.** T0 discharged (first

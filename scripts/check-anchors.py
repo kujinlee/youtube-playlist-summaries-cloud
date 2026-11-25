@@ -20,7 +20,7 @@ Names: the node tree, `docs/features.md` (ADR-0016).
 WHAT IT ASSERTS, AND WHY EACH RULE EARNS ITS KEEP
 -------------------------------------------------
 ⟳ 2026-11-24 (goal node tree, plan Task 6; ADR-0016): the names live in ONE tree, `docs/features.md`,
-read by `check-features.parse_features` (its owner). `docs/anchors.md` is no longer read. The registry's
+read by `check-features.parse_features` (its owner). The separate registry file is deleted (Task 11). Its
 "every anchor is claimed by a document" rule is DROPPED: a node with no document is a node nobody has
 written about yet, never a defect.
 

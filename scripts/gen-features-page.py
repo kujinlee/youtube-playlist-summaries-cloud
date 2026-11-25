@@ -1528,9 +1528,10 @@ def _self_test_body() -> int:
             _wf, _wn = {"error": f"{type(e).__name__}: {e}"}, {}
         finally:
             _gw["DOCS"] = _keep_docs
-        _registry = (_w / "anchors.md").exists()
+        _world = sorted(p.name for p in _w.iterdir())
     _adr_title = {p.name[:4]: p.name[5:-3].replace("-", " ") for p in (DOCS / "adr").glob("[0-9]*.md")}
-    check("collect: runs with no registry file", (_registry, sorted(_wf)), (False, ["probe-a", "probe-b", "probe-c"]))
+    check("collect: runs with no registry file", (_world, sorted(_wf)),
+          (["adr", "backlog.md", "features.md", "superpowers"], ["probe-a", "probe-b", "probe-c"]))
     check("collect: ADRs come from the node's adrs",
           [[e["label"] for e in _wf.get(s, {}).get("adr", [])] for s in ("probe-a", "probe-b", "probe-c")],
           [[], [f"ADR-0010 · {_adr_title['0010']}", f"ADR-0016 · {_adr_title['0016']}"],

@@ -200,7 +200,7 @@ def parse_roots(text: str) -> tuple[set[str], list[tuple[int, str, str]]]:
 # and an `inline_md` that ran a code-span regex and then a bold regex over its output —
 # so a `**` inside backticks was emphasised, and `*` was not supported at all.
 #
-# MEASURED 2026-08-30 over this page's own corpus (docs/anchors.md + docs/adr/*.md):
+# MEASURED 2026-08-30 over this page's own corpus then (the anchor registry + docs/adr/*.md):
 # 145 emphasis spans across 132 lines and 17 markdown links were being printed as
 # literal asterisks and brackets, because the author wrote markup this renderer did not
 # know. The apostrophe gap was real too — `esc` fed attribute values at :296 onward.
@@ -448,7 +448,7 @@ def goal_nodes(nodes: list, anchored) -> list:
     carry an `adrs:` line — in tree order (plan choice C5). PURE.
 
     ⚠ Deliberately the registry's set by another route (measured at Task 8: the same 15, with
-    `dev-speed-first` under its current name). A card per node, laid out as the tree, is Task 19."""
+    the dev-speed node under its current name, its old one in `was:`). A card per node, laid out as the tree, is Task 19."""
     return [n for n in nodes if n.slug in anchored or n.adrs]
 
 

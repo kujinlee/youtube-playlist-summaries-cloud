@@ -2628,7 +2628,7 @@ def _self_test_body() -> int:
         # (GOAL_RE and REQUEST_RE, by load). Lost: 0.
         # ⟳ 2026-11-24 node-tree plan S2 Task 6 (the anchor vocabulary moves to the tree): 363 - 1 + 2 = 364 /
         # 09084b7374e7a7ac, diffed by hand (sorted, `comm -3`) against f5fa9011's `git archive`, which reproduces 363 /
-        # d67a2be07817bb75. Lost: `gen-backlog-page.py` -> `check-anchors.py` (`registry_anchors`, retired). Gained:
+        # d67a2be07817bb75. Lost: `gen-backlog-page.py` -> `check-anchors.py` (the registry reader, retired). Gained:
         # `gen-backlog-page.py` -> `check-features.py` (`node_slugs`, by load) and `check-anchors.py` ->
         # `check-features.py` (`parse_features` and `current_slugs`, by load).
         # ⟳ 2026-11-24 node-tree plan S2 Task 7 (documents attach by node slug): 364 + 2 = 366 / ccae8b361c6a9c67,
