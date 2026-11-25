@@ -21635,6 +21635,8 @@ Node-tree plan (`docs/superpowers/plans/2026-11-24-goal-node-tree.md`) slice S2,
 `scripts/check-goal-status.py` derives its armed set (`armed`, minus `UNARMED`, stale exemptions fail);
 `PAGE_SOURCES["features"]`, the publishability fixture and both regen hooks no longer name the registry;
 `docs/anchors.md` deleted. Phase 6 edge pin in `scripts/check-shipping-sets.py` 363 → 368.
+
+## 2026-11-24
 A decision card can now offer the decision's own choices, as you asked: when a page lists them, the card
 shows one button per choice, with the recommended one starred, plus Other… for anything else, and no
 Yes / No. A card whose page lists no choices still shows Yes / No as before.
