@@ -2,7 +2,7 @@
 """Every living spec and plan says whether it is alive — and the goals page renders it.
 
     python3 scripts/check-goal-status.py              # enforce for the armed nodes
-    python3 scripts/check-goal-status.py --self-test  # 41 cases
+    python3 scripts/check-goal-status.py --self-test  # 45 cases
 
 WHY THIS EXISTS, AND IT IS A DEFECT THE OWNER FOUND BY READING THE PAGE
 ----------------------------------------------------------------------
@@ -63,8 +63,8 @@ tree, which is what found the defect in the first place.
 ITS SCOPE IS ARMED PER ANCHOR, DELIBERATELY
 -------------------------------------------
 The ARMED set holds the nodes where a missing status FAILS. Everywhere else it WARNS and the
-run still exits 0. ⟳ goal node tree Task 9 (G4): the set is DERIVED — every node of
-`docs/features.md` that a document's `Anchor:` header names, minus `UNARMED` — so a new node is
+run still exits 0. ⟳ goal node tree Task 9 (G4), backlog #731: the set is DERIVED — every node of
+`docs/features.md` that ANY `Anchor:` claim in a spec or plan's head names, minus `UNARMED` — so a new node is
 armed the day its first document names it. Widening stays the default; NARROWING is now the
 deliberate act with a visible diff: an exemption is a line in `UNARMED`, and an exemption naming no
 current node fails, so a rename cannot leave one behind silently. Reason: 106 of 198 documents carry no status line at all, and a gate that is red
@@ -93,8 +93,8 @@ _CHECK_ANCHORS = None
 
 
 def _check_anchors():
-    """`check-anchors`, the ONE reader of the `Anchor:` header (`anchored_slugs`) and of the node
-    tree (`read_tree`). Loaded lazily and once; RAISES rather than fall back to a local copy."""
+    """`check-anchors`, the ONE tokenizer of the `Anchor:` header (`anchor_claims`) and the reader of
+    the node tree (`read_tree`). Loaded lazily and once; RAISES rather than fall back to a local copy."""
     global _CHECK_ANCHORS
     if _CHECK_ANCHORS is None:
         import importlib.util
@@ -110,16 +110,6 @@ def _check_anchors():
 def armed(anchored: dict[str, list[str]], unarmed: tuple[str, ...] = UNARMED) -> tuple[str, ...]:
     """PURE. Every slug a document names, minus the exemptions, sorted."""
     return tuple(sorted(slug for slug in anchored if slug not in unarmed))
-
-
-def with_document_anchors(anchored: dict[str, list[str]], docs: list[dict]) -> dict[str, list[str]]:
-    """PURE. `anchored` plus every spec or plan whose anchor only the LENIENT reader finds (r3 F1,
-    backlog #728): master armed such a document, so it must name — and arm — its slug here too."""
-    out = {slug: list(rels) for slug, rels in anchored.items()}
-    for d in docs:
-        if d["anchor"] is not None and d["rel"] not in out.get(d["anchor"], []):
-            out.setdefault(d["anchor"], []).append(d["rel"])
-    return out
 
 
 def misnamed_anchors(anchored: dict[str, list[str]], nodes: list) -> list[str]:
@@ -157,8 +147,8 @@ STATES = {
 ALIVE_WORDS = ("current", "needs-you")
 
 STATUS_LINE = re.compile(r"^\*\*Status:\*\*\s*(.+)$", re.M)
-# The `Anchor:` slug is NOT read here: `check-anchors.parse_header` is its one reader (r1 MINOR-4),
-# called in its LENIENT mode, master's arming rule (r3 F1, backlog #728). This bounds STATUS only.
+# The `Anchor:` slugs are NOT read here: `check-anchors.anchor_claims` is their one tokenizer (r1
+# MINOR-4; backlog #731). This bounds STATUS only.
 HEAD_LINES = 18
 
 
@@ -212,13 +202,13 @@ def parse_status(text: str) -> tuple[str | None, str | None]:
 
 
 def living_documents(repo: Path | None = None) -> list[dict]:
-    """Every spec and plan, with its anchor and parsed status. RAISES on an unreadable tree.
+    """Every spec and plan, with its anchor claims and parsed status. RAISES on an unreadable tree.
 
     A document that cannot be read is CANNOT RUN, never an absent status — silence there is
     indistinguishable from a clean result, which this repository treats as a failure.
     """
     root = (repo or REPO) / "docs"
-    parse_header = _check_anchors().parse_header
+    anchor_claims = _check_anchors().anchor_claims
     out = []
     for sub in SUBDIRS:
         d = root / sub
@@ -230,8 +220,13 @@ def living_documents(repo: Path | None = None) -> list[dict]:
             except OSError as exc:
                 raise ValueError(f"{f} could not be read: {exc}") from exc
             state, why = parse_status(text)
+            claims = anchor_claims(text)
+            well_formed = [c.slug for c in claims if c.well_formed]
             out.append({"rel": f"docs/{sub}/{f.name}", "name": f.name,
-                        "anchor": parse_header(text, lenient=True)[0],
+                        # the slug NAMED (messages, `misnamed_anchors`): the strict header's when
+                        # there is one, else the first claim. Arming reads `claims`, all of them.
+                        "anchor": well_formed[-1] if well_formed else (claims[0].slug if claims else None),
+                        "claims": tuple(dict.fromkeys(c.slug for c in claims)),
                         "state": state, "why": why})
     return out
 
@@ -260,14 +255,17 @@ def verdict(docs: list[dict], armed: tuple[str, ...]) -> tuple[int, list[str]]:
     """
     missing, broken, counts = [], [], {}
     for d in docs:
-        armed_here = d["anchor"] in armed
+        # ⛔ backlog #731: ANY claim in the head naming an armed slug enforces. No precedence
+        # between lines, so no order of two Anchor lines can unarm a document.
+        armed_by = next((c for c in d["claims"] if c in armed), None)
+        armed_here = armed_by is not None
         if d["why"] and armed_here:
             broken.append(f"  ✗ {d['rel']}: {d['why']}")
         elif d["state"] is None:
             if armed_here:
                 missing.append(f"  ✗ {d['rel']}: no `**Status:**` line in the first {HEAD_LINES}"
                                f" lines, or one that is not in this vocabulary, and "
-                               f"`{d['anchor']}` is armed")
+                               f"`{armed_by}` is armed")
         else:
             counts[d["state"]] = counts.get(d["state"], 0) + 1
     lines = []
@@ -281,7 +279,8 @@ def verdict(docs: list[dict], armed: tuple[str, ...]) -> tuple[int, list[str]]:
         lines.append("    **Status:** 🟠 needs-you — four options, awaiting the human gate")
         return 1, lines
     unarmed_blank = sum(1 for d in docs
-                        if d["state"] is None and d["anchor"] not in armed and d["anchor"])
+                        if d["state"] is None and d["claims"]
+                        and not any(c in armed for c in d["claims"]))
     lines.append(f"goal status OK — {declared} of {len(docs)} document(s) declare a state "
                  f"({', '.join(f'{v} {k}' for k, v in sorted(counts.items()))})")
     lines.append(f"  armed anchors: {', '.join(armed)}")
@@ -321,13 +320,22 @@ def main(argv: list[str], *, repo: Path | None = None,
             print("FAILED — an exemption outlived its node:")
             print("\n".join(stale))
             return 1
-        anchored = with_document_anchors(ca.anchored_slugs(root), docs)
-        misnamed = misnamed_anchors(anchored, nodes)
+        # ONE reading (backlog #731): the documents' own claims. The slug each document NAMES must be
+        # a current node; the armed set is every current node ANY claim names, minus `UNARMED`.
+        named: dict[str, list[str]] = {}
+        claimed: dict[str, list[str]] = {}
+        for d in docs:
+            if d["anchor"] is not None:
+                named.setdefault(d["anchor"], []).append(d["rel"])
+            for slug in d["claims"]:
+                claimed.setdefault(slug, []).append(d["rel"])
+        misnamed = misnamed_anchors(named, nodes)
         if misnamed:
             print("FAILED — a document names no current node:")
             print("\n".join(misnamed))
             return 1
-        armed_set = armed(anchored)
+        current = ca.check_features.current_slugs(nodes)
+        armed_set = armed({slug: rels for slug, rels in claimed.items() if slug in current})
     else:
         armed_set = armed_override
     rc, lines = verdict(docs, armed_set)
@@ -359,7 +367,7 @@ def _self_test_body() -> int:
           armed({"gamma": ["docs/superpowers/plans/g.md"]}, ())),
          (("alpha", "beta"), ("gamma",)))
     _exempt_doc = [{"rel": "docs/superpowers/specs/x.md", "name": "x.md", "anchor": "dev-speed",
-                    "state": None, "why": None}]
+                    "claims": ("dev-speed",), "state": None, "why": None}]
     _ex_rc, _ex_lines = verdict(_exempt_doc, armed({"dev-speed": ["x"], "alpha": ["y"]}))
     case("armed: an exemption is not armed",
          (armed({"dev-speed": ["x"], "alpha": ["y"], "harness-ships-elsewhere": ["z"]}),
@@ -405,8 +413,8 @@ def _self_test_body() -> int:
          (1, True, False))
     # ⛔ r1 MINOR-4 made check-anchors' STRICT reader the only one, and r3 F1 (backlog #728) measured
     # what that cost: a pre-cutoff document with a bare `**Anchor:**` line, or one on lines 11-18,
-    # was armed on master and silently unarmed here. ONE reader still — `check-anchors.parse_header`
-    # — in its LENIENT mode, which is master's arming rule (any `**Anchor:** `x`` in 18 lines).
+    # was armed on master and silently unarmed here. ⟳ backlog #731: ONE tokenizer,
+    # `check-anchors.anchor_claims` — every `**Anchor:** `x`` in 18 lines is a claim.
     with _tf.TemporaryDirectory() as _gr, _tf.TemporaryDirectory() as _gr2:
         _rr, _rr2 = Path(_gr), Path(_gr2)
         _sp = _rr / "docs" / "superpowers" / "specs"
@@ -420,10 +428,13 @@ def _self_test_body() -> int:
         (_rr2 / "docs" / "superpowers" / "plans").mkdir(parents=True)
         (_rr2 / "docs" / "superpowers" / "plans" / "2026-01-01-d.md").write_text(
             "# D\n\n> **Anchor:** `beta` — **ADR:** 0001\n")
-        case("living_documents reads the anchor by master's arming rule: bare, short and lines 11-18 count",
-             ([d["anchor"] for d in living_documents(_rr)],
-              [d["anchor"] for d in living_documents(_rr2)]),
-             (["alpha", "alpha", "alpha", None], ["beta"]))
+        (_sp / "2026-01-01-f.md").write_text(
+            "# F\n**Anchor:** `beta` in prose\n> **Anchor:** `alpha` — **ADR:** none\n")
+        case("living_documents reads every claim: bare, short and lines 11-18 count, 19+ does not",
+             ([(d["anchor"], d["claims"]) for d in living_documents(_rr)],
+              [(d["anchor"], d["claims"]) for d in living_documents(_rr2)]),
+             ([("alpha", ("alpha",)), ("alpha", ("alpha",)), ("alpha", ("alpha",)), (None, ()),
+               ("alpha", ("beta", "alpha"))], [("beta", ("beta",))]))
     # ⛔ r3 F1 (backlog #728), the reviewer's input: the ONLY document naming `cloud-sync` is
     # pre-cutoff, its header bare and short, its Status missing. Master: rc 1, armed. Before this
     # fold: rc 0 and "armed anchors: " empty — the missing Status passed in silence.
@@ -470,6 +481,54 @@ def _self_test_body() -> int:
     case("⛔ #731: exempt well-formed claim FIRST, armed claim second, no Status — FAILS, bare or well-formed",
          {k: v for k, v in _two_got.items() if k.startswith("exempt")},
          {k: 1 for k in _two_claims if k.startswith("exempt")})
+    # ⛔ backlog #731, the PROPERTY case. `_MASTER_CLAIM` is an INDEPENDENT literal copy of master's
+    # arming reader, copied by hand from `git show f5fa9011:scripts/check-goal-status.py` (lines
+    # 120-121, `ANCHOR_LINE` and `HEAD_LINES`, and `living_documents`' first `.search` over
+    # `splitlines()`). It is NOT imported: a reference derived from the code under test cannot
+    # disagree with it. Over a generated grid of heads, whenever master's FIRST match names the
+    # armed slug, `main` must refuse (rc 1). With ONE claim in the head the two must agree exactly.
+    import re as _re
+    _MASTER_CLAIM = _re.compile(r"\*\*Anchor:\*\*\s*`([^`]+)`")
+    _MASTER_HEAD = 18
+
+    def _master_slug(text: str):
+        m = _MASTER_CLAIM.search("\n".join(text.splitlines()[:_MASTER_HEAD]))
+        return m.group(1) if m else None
+
+    _ca = _check_anchors()
+    # The IDENTITY case: the literal copy and the tokenizer's pattern and window agree TODAY. Because
+    # the copy is a literal in THIS file, an edit to `check-anchors.ANCHOR_CLAIM` or its window
+    # reddens this case by name and leaves the grid below still judging against master. (Not `is`:
+    # `re.compile` caches by pattern text, so two equal literals ARE one object.)
+    case("#731 identity: the literal copy of master's reader matches the tokenizer's pattern and window",
+         (_MASTER_CLAIM.pattern, _MASTER_HEAD), (_ca.ANCHOR_CLAIM.pattern, _ca.CLAIM_HEAD_LINES))
+    _forms = {"bare": "**Anchor:** `{}`", "quote": "> **Anchor:** `{}`",
+              "well-formed": "> **Anchor:** `{}` — **ADR:** none"}
+    _heads = []
+    for _fa, _armed_line in _forms.items():
+        for _at in (3, 12, 19):
+            _heads.append((f"{_fa}@{_at}", {_at: _armed_line.format("alpha")}))
+            for _fo, _other_line in _forms.items():
+                for _side in (-1, 1):
+                    _heads.append((f"{_fa}@{_at} + {_fo}@{_at + _side}",
+                                   {_at: _armed_line.format("alpha"),
+                                    _at + _side: _other_line.format("dev-speed")}))
+    _disagree = []
+    for _name, _placed in _heads:
+        _text = "\n".join(_placed.get(i, "# Head" if i == 1 else "") for i in range(1, 26)) + "\nno status\n"
+        with _tf.TemporaryDirectory() as _gp:
+            import contextlib as _cl
+            import io as _io
+            _pr = _g4_world(_gp, _live, "alpha")
+            (_pr / "docs" / "superpowers" / "specs" / "2026-01-01-g4.md").write_text(_text)
+            with _cl.redirect_stdout(_io.StringIO()):
+                _prc = main([], repo=_pr)
+        _master_rc = 1 if _master_slug(_text) == "alpha" else 0
+        if (_master_rc == 1 and _prc != 1) or (len(_placed) == 1 and _prc != _master_rc):
+            _disagree.append((_name, _master_rc, _prc))
+    case("#731 property: over 63 generated heads, master's refusal is always a refusal, and a single "
+         "claim agrees exactly",
+         (len(_heads), _disagree), (63, []))
     case("armed: two trees give two sets", _two,
          ((0, ["armed anchors: alpha"]), (0, ["armed anchors: beta"])))
     case("armed: a stale exemption fails",
@@ -532,7 +591,7 @@ def _self_test_body() -> int:
 
     # ── the verdict ──────────────────────────────────────────────────────────────────────────
     _armed = ("armed-anchor",)
-    _ok = {"rel": "docs/a.md", "name": "a.md", "anchor": "armed-anchor",
+    _ok = {"rel": "docs/a.md", "name": "a.md", "anchor": "armed-anchor", "claims": ("armed-anchor",),
            "state": "shipped", "why": None}
     case("a declared document under an armed anchor passes",
          verdict([_ok], _armed)[0], 0)
@@ -543,17 +602,17 @@ def _self_test_body() -> int:
     # ⚠ ADJACENT: the same blank document under an UNARMED anchor must pass — that is the whole
     # point of arming, and without this case the feature is indistinguishable from a 198-file gate.
     case("...while the SAME blank document under an UNARMED anchor passes, which is what arming IS",
-         verdict([{**_ok, "state": None, "anchor": "other"}], _armed)[0], 0)
+         verdict([{**_ok, "state": None, "anchor": "other", "claims": ("other",)}], _armed)[0], 0)
     case("...and it is COUNTED and reported, so an unarmed blank is visible rather than silent",
          "1 document(s) under UNARMED anchors declare nothing" in
-         "\n".join(verdict([{**_ok, "state": None, "anchor": "other"}], _armed)[1]), True)
+         "\n".join(verdict([{**_ok, "state": None, "anchor": "other", "claims": ("other",)}], _armed)[1]), True)
     # ⛔⛔ REVERSED ON THE FIRST LIVE RUN. This case used to assert that a malformed declaration
     # fails ANYWHERE — and that refused 78 documents whose `**Status:**` carries the design's
     # review state in legitimate prose ("Approved", "v7 — CONVERGED"). A different field under the
     # same name is not a broken version of this one, and failing them is backlog #56 (a gate red
     # from birth gets switched off).
     case("⛔ a non-marker status under an UNARMED anchor is NOT a failure — it is another field",
-         verdict([{**_ok, "state": None, "why": "bad marker", "anchor": "other"}], _armed)[0], 0)
+         verdict([{**_ok, "state": None, "why": "bad marker", "anchor": "other", "claims": ("other",)}], _armed)[0], 0)
     # ⚠ ADJACENT, and this is the pair that makes arming mean something: the SAME malformed line
     # inside an ARMED anchor IS a defect, because there the document claims this vocabulary.
     case("⛔ ...while the SAME malformed line inside an ARMED anchor fails, naming the file",
@@ -567,7 +626,7 @@ def _self_test_body() -> int:
          "1 current, 1 shipped" in "\n".join(verdict(
              [_ok, {**_ok, "rel": "docs/b.md", "state": "current"}], _armed)[1]), True)
     case("a document with NO anchor and no status is not demanded of",
-         verdict([{**_ok, "anchor": None, "state": None}], _armed)[0], 0)
+         verdict([{**_ok, "anchor": None, "claims": (), "state": None}], _armed)[0], 0)
     # ⛔ `armed` VARIED, not exempted — `check-fixture-variation` found every call site passing
     # the same tuple, which leaves every clause that reads it unguarded. An EMPTY armed set is the
     # distinct input that matters: it proves ARMING is what produces the failure, rather than
