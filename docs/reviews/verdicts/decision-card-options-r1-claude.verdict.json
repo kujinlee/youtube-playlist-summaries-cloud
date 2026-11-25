@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/decision-card-options-r1-claude.md": "100644 aeab50746cc2df0ed4cf35a16f02640ad0b563e0",
+    "docs/reviews/codex/decision-card-options-r1-codex.md": "100644 ae01895d03c995411df08ad6a030ff2ec0454778",
+    "docs/reviews/verdicts/decision-card-options-r1-codex.verdict.json": "100644 d13b3dfd819dc411c6ec9fc9ceb1024d52b37f39"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "12933d937ddb2ce92546fb7cb388838d88bc4e56",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 5716 chars, names 12933d937ddb",
+  "refused": false,
+  "review": "decision-card-options-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/decision-options",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
