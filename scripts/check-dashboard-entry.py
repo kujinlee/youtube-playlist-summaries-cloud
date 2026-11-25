@@ -3,8 +3,11 @@
 from __future__ import annotations
 import argparse
 import datetime as _dt
+import errno
+import os
 import pathlib
 import re
+import stat
 import subprocess
 import sys
 
@@ -482,6 +485,127 @@ def decision_errors(plain: str, category: str) -> list[str]:
         if sum(1 for o in d["options"] if o["recommended"]) > 1:
             problems.append(f"decision {label!r} marks more than one option [recommended]")
     return problems
+
+
+# ─── the ask store: one file per ask under docs/asks/ (dashboard-retire spec §2.3) ─────────────
+#
+# ⛔ ONE READER. Nothing but this file lists `docs/asks/` or re-implements the fence rule, the
+# answer rule or `decisions()`; the goal tree and the compaction snapshot load this file and call
+# `read_asks`. A second reader is a second copy of the rules, free to drift.
+ASKS_REL = "docs/asks"
+ASK_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9]+(-[a-z0-9]+)*\.md$")
+ASK_KEEP = ".gitkeep"
+ANSWER = "## Answer"
+MAX_ASK_BYTES = 64 * 1024
+MAX_ASKS = 1000
+ASK_CONFLICT = ("<<<<<<<", ">>>>>>>")
+
+
+def answered(text: str) -> bool:
+    """True when a line, outside every fence, is exactly `## Answer` (trailing whitespace and a
+    CR allowed). Nothing looser: `## Answer — A`, an indented heading and a fenced one leave the
+    ask OPEN (spec §3, r6 Claude m2)."""
+    in_fence = fenced_lines(text)
+    for i, line in enumerate(text.split("\n")):
+        if i in in_fence:
+            continue
+        heading = line.rstrip()
+        if heading == ANSWER:
+            return True
+    return False
+
+
+def _read_ask_bytes(path: pathlib.Path) -> tuple[bytes | None, int, str | None]:
+    """(data, size, why-not). Opened without following a symlink and without blocking on a FIFO;
+    only a regular file is read, and never more than `MAX_ASK_BYTES + 1` bytes."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return None, 0, "missing on disk"
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            return None, 0, "is a symlink, not a regular file"
+        return None, 0, f"could not be opened ({exc.strerror})"
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return None, 0, "not a regular file"
+        chunks: list[bytes] = []
+        got = 0
+        while got <= MAX_ASK_BYTES:
+            chunk = os.read(fd, MAX_ASK_BYTES + 1 - got)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            got += len(chunk)
+        return b"".join(chunks), max(st.st_size, got), None
+    except OSError as exc:
+        return None, 0, f"could not be read ({exc.strerror})"
+    finally:
+        os.close(fd)
+
+
+def read_asks(directory: pathlib.Path,
+              names: list[str] | None = None) -> tuple[list[dict], list[str]]:
+    """The OPEN asks in `directory`, in filename order, and the problems.
+
+    Each ask is `{"stem", "question", "body"}`: `question` is the first line without `# `, `body`
+    every line after it. Each problem is a plain sentence naming its file. `names=None` lists the
+    directory (the goal tree's view: an untracked file IS what the owner sees); a list reads
+    exactly those names (A1's view: the names git tracks at HEAD).
+
+    ⛔ A PROBLEM NEVER HIDES AN ASK, AND NEVER READS AS "NO ASKS". The readable asks are returned
+    beside the problems, and a missing directory is a problem, not an empty store.
+    """
+    asks: list[dict] = []
+    problems: list[str] = []
+    if names is None:
+        try:
+            names = os.listdir(directory)
+        except FileNotFoundError:
+            return [], [f"{ASKS_REL}/ is missing ({directory}) — no ask could be read"]
+        except OSError as exc:
+            return [], [f"{ASKS_REL}/ could not be listed ({exc.strerror})"]
+    names = sorted(names)
+    if len(names) > MAX_ASKS:
+        problems.append(f"{ASKS_REL}/ holds {len(names)} entries, over the cap of {MAX_ASKS}; "
+                        f"only the first {MAX_ASKS} were read")
+        names = names[:MAX_ASKS]
+    for name in names:
+        where = f"{ASKS_REL}/{name}"
+        if name != ASK_KEEP and not ASK_NAME.match(name):
+            problems.append(f"{where}: the name is not YYYY-MM-DD-<slug>.md "
+                            f"(lowercase letters, digits and single hyphens)")
+            continue
+        data, size, why = _read_ask_bytes(pathlib.Path(directory) / name)
+        if why is not None:
+            problems.append(f"{where}: {why}")
+            continue
+        if name == ASK_KEEP:
+            if size != 0:
+                problems.append(f"{where}: must be empty — it holds {size} byte(s)")
+            continue
+        if size > MAX_ASK_BYTES:
+            problems.append(f"{where}: {size} bytes, over the cap of {MAX_ASK_BYTES}")
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            problems.append(f"{where}: not UTF-8 text")
+            continue
+        lines = text.split("\n")
+        if any(l.startswith(ASK_CONFLICT) for l in lines):
+            problems.append(f"{where}: carries a merge-conflict marker — resolve it")
+            continue
+        first = lines[0].rstrip()
+        if not first.startswith("# ") or not first[2:].strip():
+            problems.append(f"{where}: the first line must be '# <question>'")
+            continue
+        if answered(text):
+            continue
+        asks.append({"stem": name[: -len(".md")], "question": first[2:].strip(),
+                     "body": "\n".join(lines[1:])})
+    return asks, problems
 
 
 def _is_exempt(path: str) -> bool:
@@ -1302,6 +1426,93 @@ def _self_test_body() -> int:
     case("...and both keep their ids", [e["id"] for e in _INERT],
          ["2026-08-28/1", "2026-08-29/1"])
 
+    # ─── read_asks (dashboard-retire plan, Task 1) — each world is its own temp directory ──────
+    import tempfile as _tf
+    _ask_root = _tf.mkdtemp(prefix="asks-")
+    _ask_n = [0]
+
+    def world(files: dict) -> pathlib.Path:
+        _ask_n[0] += 1
+        d = pathlib.Path(_ask_root) / f"w{_ask_n[0]}"
+        d.mkdir()
+        for fname, content in files.items():
+            (d / fname).write_bytes(content if isinstance(content, bytes)
+                                    else content.encode("utf-8"))
+        return d
+
+    def stems(r):
+        return [a["stem"] for a in r[0]]
+
+    _OPEN = "# Which form?\n**Decide:** which form?\n- one [recommended]\n- two\n"
+    _r = read_asks(world({"2026-11-25-a.md": _OPEN}))
+    case("a valid open ask is returned", (stems(_r), len(_r[1])), (["2026-11-25-a"], 0))
+    case("...with its question and its body", (_r[0][0]["question"], _r[0][0]["body"]),
+         ("Which form?", _OPEN.split("\n", 1)[1]))
+    case("a valid answered ask is not returned",
+         read_asks(world({"2026-11-25-a.md": _OPEN + "## Answer\none\n"})), ([], []))
+    case("an empty .gitkeep is neither an ask nor a problem",
+         read_asks(world({".gitkeep": ""})), ([], []))
+    _r = read_asks(world({".gitkeep": "x"}))
+    case("a non-empty .gitkeep is a PROBLEM",
+         (_r[0], len(_r[1]), ".gitkeep" in "".join(_r[1])), ([], 1, True))
+    _r = read_asks(pathlib.Path(_ask_root) / "no-such-dir")
+    case("a missing directory is a PROBLEM, never no asks", (_r[0], len(_r[1])), ([], 1))
+    case("a `## Answer` inside a fence leaves the ask OPEN",
+         stems(read_asks(world({"2026-11-25-a.md": "# Q?\n```\n## Answer\nyes\n```\n"}))),
+         ["2026-11-25-a"])
+    case("`## Answer — A` leaves the ask OPEN",
+         [a["stem"] for a in read_asks(world({"2026-11-25-a.md": "# Q?\nbody\n## Answer — A\nyes\n"}))[0]],
+         ["2026-11-25-a"])
+    case("an indented `## Answer` leaves the ask OPEN",
+         stems(read_asks(world({"2026-11-25-a.md": "# Q?\n    ## Answer\nyes\n"}))),
+         ["2026-11-25-a"])
+    case("`## Answer` with trailing space or CR closes the ask",
+         read_asks(world({"2026-11-25-a.md": "# Q?\r\nbody\r\n## Answer \r\nyes\r\n"})), ([], []))
+    _bad = ["Foo.md", "2026-11-25-a.txt", ".DS_Store", "2026-11-25-a.md~", "2026-11-25-A.md"]
+    _r = read_asks(world({n: _OPEN for n in _bad}))
+    case("a name that fails the rule is a PROBLEM",
+         (_r[0], sorted(n for n in _bad if any(f"/{n}:" in p for p in _r[1])), len(_r[1])),
+         ([], sorted(_bad), len(_bad)))
+    _r = read_asks(world({"2026-11-25-a.md": "", "2026-11-25-b.md": "Which form?\nbody\n"}))
+    case("an empty file, or one with no `# ` first line, is a PROBLEM",
+         (_r[0], len(_r[1])), ([], 2))
+    case("a conflict marker on ANY line is a PROBLEM",
+         (lambda r: (r[0], len(r[1])))(read_asks(world({"2026-11-25-a.md":
+             "# Q?\n<<<<<<< ours\n## Answer\nA\n=======\n## Answer\nB\n>>>>>>> theirs\n"}))),
+         ([], 1))
+    case("...a conflict marker inside a fence is a PROBLEM too",
+         (lambda r: (r[0], len(r[1])))(read_asks(world({"2026-11-25-a.md":
+             "# Q?\nbody\n```\n>>>>>>> theirs\n```\n"}))),
+         ([], 1))
+    _r = read_asks(world({"2026-11-25-a.md": "# q\n" + "x" * (MAX_ASK_BYTES + 1 - 4),
+                          "2026-11-25-b.md": b"# q\n\xff"}))
+    case("a file over the cap, or not UTF-8, is a PROBLEM",
+         (_r[0], len(_r[1]), any("over the cap" in p for p in _r[1]),
+          any("UTF-8" in p for p in _r[1])), ([], 2, True, True))
+    case("...a file exactly at the cap is read",
+         stems(read_asks(world({"2026-11-25-a.md": "# q\n" + "x" * (MAX_ASK_BYTES - 4)}))),
+         ["2026-11-25-a"])
+    _r = read_asks(world({"2026-11-25-a.md": "# Which form?"}))
+    case("a question with no body is OPEN",
+         (stems(_r), _r[0][0]["body"] if _r[0] else None, _r[1]), (["2026-11-25-a"], "", []))
+    _r = read_asks(world({"2026-11-25-a.md": _OPEN, "Foo.md": _OPEN}))
+    case("a PROBLEM entry still returns the readable asks", (stems(_r), len(_r[1])),
+         (["2026-11-25-a"], 1))
+    _real_max = globals()["MAX_ASKS"]
+    globals()["MAX_ASKS"] = 3
+    try:
+        _r = read_asks(world({f"2026-11-2{i}-a.md": _OPEN for i in range(4)}))
+    finally:
+        globals()["MAX_ASKS"] = _real_max
+    case("over MAX_ASKS is a PROBLEM, not a truncation",
+         (len(_r[0]), len(_r[1]), bool(_r[1]) and "4" in _r[1][0] and "3" in _r[1][0]),
+         (3, 1, True))
+    case("...the names argument reads exactly those names",
+         stems(read_asks(world({"2026-11-25-a.md": _OPEN, "2026-11-25-b.md": _OPEN}),
+                         ["2026-11-25-b.md"])), ["2026-11-25-b"])
+    import shutil as _sh
+    _sh.rmtree(_ask_root, ignore_errors=True)
+
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
@@ -1476,6 +1687,22 @@ def _impure_self_test_body() -> int:
         g["collect"] = real_collect
     case("main: an entry-only branch with a malformed entry exits 1", rc2, 1)
     case("...and the refusal reaches stdout", "REFUSED" in buf2.getvalue(), True)
+
+    # ─── read_asks over entries that are not regular files (dashboard-retire plan, 1.17) ───────
+    import tempfile as _tf, time as _time
+    _odd = pathlib.Path(_tf.mkdtemp(prefix="asks-odd-"))
+    (_odd / "target.txt").write_text("# Q?\n", encoding="utf-8")
+    os.symlink(_odd / "target.txt", _odd / "2026-11-25-link.md")
+    (_odd / "2026-11-25-dir.md").mkdir()
+    os.mkfifo(_odd / "2026-11-25-fifo.md")
+    _t0 = _time.monotonic()
+    _r = read_asks(_odd, ["2026-11-25-dir.md", "2026-11-25-fifo.md", "2026-11-25-link.md"])
+    _fast = _time.monotonic() - _t0 < 0.5
+    case("a symlink, a subdirectory and a FIFO are PROBLEMS, and the FIFO does not block",
+         (_r[0], [("not a regular file" in p) for p in _r[1]], _fast),
+         ([], [True, True, True], True))
+    import shutil as _sh
+    _sh.rmtree(_odd, ignore_errors=True)
 
     print(f"{ok}/{ok+fail} cannot-run cases passed")
     return 1 if fail else 0

@@ -854,7 +854,10 @@ EXPECTED_MUTATIONS = {
     # an UNTESTED SENTENCE: the suite was 148/148 with it present or absent. The entry deletes the
     # clause and the new case reds. ⭐ Worth naming the shape: #168 is *the knowledge lives where
     # the person in trouble is not looking*, and it shipped with its own remedy unmeasured.
-    "scripts/check-dashboard-entry.py": 44,
+    # ⟳ 2026-11-25, dashboard-retire S1 Task 1: 44 -> 55 — `read_asks`, the one reader of docs/asks/:
+    # the answer rule (3), the conflict scan, the byte cap, the regular-file test, the MAX_ASKS problem,
+    # the name rule, the .gitkeep size test, the readable-asks-beside-problems return, the missing dir.
+    "scripts/check-dashboard-entry.py": 55,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
