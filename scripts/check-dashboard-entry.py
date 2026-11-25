@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Refuse a branch that changes tracked files and records no dashboard entry."""
+"""Refuse a branch that changes tracked files and records no dashboard entry.
+
+It also checks the ask store, `docs/asks/` (one file per ask): A1, every file there is a well-formed
+ask, and F1, an ask at the merge base is still at HEAD and only grew at its end. A1 reads the names
+git tracks at HEAD (`git ls-tree`), not the directory listing; content comes from the working tree.
+A problem in the ask store is REFUSED whatever the entry verdict, a `NO-ENTRY:` waiver included.
+"""
 from __future__ import annotations
 import argparse
 import datetime as _dt
 import errno
 import os
 import pathlib
+import posixpath
 import re
 import stat
 import subprocess
@@ -606,6 +613,90 @@ def read_asks(directory: pathlib.Path,
         asks.append({"stem": name[: -len(".md")], "question": first[2:].strip(),
                      "body": "\n".join(lines[1:])})
     return asks, problems
+
+
+def f1_problems(base_files: dict[str, bytes], head_files: dict[str, bytes]) -> list[str]:
+    """F1, append-only: every ask at the merge base is still at HEAD, and its bytes there begin
+    with its bytes at the base. Gaining an answer, or a superseding note after one, appends;
+    an edited question, a rewritten answer or a deletion does not. Pure.
+
+    Only names matching `ASK_NAME` are F1's subject: `.gitkeep` goes when the first ask arrives,
+    and a badly named file is A1's to refuse while it exists (r6 Claude m1)."""
+    problems: list[str] = []
+    for name in sorted(base_files):
+        if not ASK_NAME.match(name):
+            continue
+        if name not in head_files:
+            problems.append(f"{ASKS_REL}/{name}: present at the merge base, gone at HEAD — "
+                            f"an ask is never deleted; answer it with a '## Answer' line")
+            continue
+        is_prefix = head_files[name].startswith(base_files[name])
+        if not is_prefix:
+            problems.append(f"{ASKS_REL}/{name}: changed in place — an ask only grows at its end "
+                            f"(an answer, then any later note); restore the merge base's bytes "
+                            f"and append instead")
+    return problems
+
+
+class _AskGitError(Exception):
+    """A git call the ask store needs did not run, or exited non-zero."""
+
+
+def _ask_git(root: pathlib.Path, *args: str) -> bytes:
+    try:
+        r = subprocess.run(["git", *args], cwd=root, capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise _AskGitError(f"could not run git {args[0]}: {exc}") from exc
+    if r.returncode != 0:
+        err = r.stderr if isinstance(r.stderr, str) else (r.stderr or b"").decode("utf-8", "replace")
+        raise _AskGitError(f"git {args[0]} exited {r.returncode}: {err.strip()[:200]}")
+    return r.stdout if isinstance(r.stdout, bytes) else (r.stdout or "").encode("utf-8")
+
+
+def _ask_blobs(root: pathlib.Path, rev: str) -> dict[str, bytes]:
+    """{basename: bytes} of every blob directly under `docs/asks/` at `rev`."""
+    out: dict[str, bytes] = {}
+    listing = _ask_git(root, "ls-tree", "-z", rev, f"{ASKS_REL}/")
+    for rec in listing.decode("utf-8", "surrogateescape").split("\0"):
+        if not rec.strip():
+            continue
+        meta, path = rec.split("\t", 1)
+        if meta.split()[1] != "blob":
+            continue
+        out[posixpath.basename(path)] = _ask_git(root, "cat-file", "blob", f"{rev}:{path}")
+    return out
+
+
+def ask_store_problems(base: str | None, root: pathlib.Path) -> tuple[list[str], str | None]:
+    """A1 and F1 over the ask store: `(problems, err)`. `err` is set when git could not answer,
+    and `main` turns it into CANNOT RUN — never a pass.
+
+    A1 reads the names git tracks at HEAD (`git ls-tree`), not the directory listing; content
+    comes from the working tree. In CI the working tree IS HEAD, and every other clause of this
+    gate reads the committed tree, so an untracked scratch file (`.DS_Store`) cannot fail a
+    CI-shaped run locally (r6 Claude m3). The goal tree keeps the directory listing, where an
+    untracked file is what the owner would see.
+
+    F1 runs only when `base` is given: the asks at `git merge-base <base> HEAD` against HEAD's.
+    """
+    problems: list[str] = []
+    try:
+        listing = _ask_git(root, "ls-tree", "-z", "--name-only", "HEAD", f"{ASKS_REL}/")
+        tracked = [posixpath.basename(p) for p in
+                   listing.decode("utf-8", "surrogateescape").split("\0") if p.strip()]
+        present = []
+        for name in tracked:
+            if os.path.lexists(root / ASKS_REL / name):
+                present.append(name)
+            else:
+                problems.append(f"{ASKS_REL}/{name}: tracked at HEAD, missing on disk")
+        problems += read_asks(root / ASKS_REL, present)[1]
+        if base is not None:
+            merge_base = _ask_git(root, "merge-base", base, "HEAD").decode().strip()
+            problems += f1_problems(_ask_blobs(root, merge_base), _ask_blobs(root, "HEAD"))
+    except _AskGitError as exc:
+        return [], f"the ask store could not be checked — {exc}"
+    return problems, None
 
 
 def _is_exempt(path: str) -> bool:
@@ -1513,6 +1604,27 @@ def _self_test_body() -> int:
     import shutil as _sh
     _sh.rmtree(_ask_root, ignore_errors=True)
 
+    # ─── F1, append-only (dashboard-retire plan, Task 2) ──────────────────────────────────────
+    _Q = b"# Which form?\n**Decide:** which form?\n- one [recommended]\n- two\n"
+    _QA = _Q + b"## Answer\none\n"
+    case("gaining an answer passes F1",
+         f1_problems({"2026-11-25-a.md": _Q}, {"2026-11-25-a.md": _QA}), [])
+    case("an appended superseding note passes F1",
+         f1_problems({"2026-11-25-a.md": _QA}, {"2026-11-25-a.md": _QA + b"\nLater: two.\n"}), [])
+    _r = f1_problems({"2026-11-25-a.md": _Q},
+                     {"2026-11-25-a.md": _Q.replace(b"Which form?", b"Which shape?", 1)})
+    case("an edited question is refused",
+         (len(_r), "2026-11-25-a.md" in "".join(_r)), (1, True))
+    _r = f1_problems({"2026-11-25-a.md": _Q}, {})
+    case("a deleted ask is refused", (len(_r), "gone at HEAD" in "".join(_r)), (1, True))
+    case("deleting .gitkeep with the first ask passes F1",
+         f1_problems({".gitkeep": b""}, {"2026-11-25-a.md": _Q}), [])
+    case("a base file outside the name rule is not F1's subject",
+         f1_problems({"Foo.md": b"x"}, {}), [])
+    case("a rewritten answer is refused",
+         len(f1_problems({"2026-11-25-a.md": _QA},
+                         {"2026-11-25-a.md": _QA.replace(b"\none\n", b"\ntwo\n")})), 1)
+
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
@@ -1664,12 +1776,18 @@ def _impure_self_test_body() -> int:
     # ⚠ FIVE values since backlog #82. A stub that drifts from the real signature tests a
     # contract nobody has — here it crashed loudly, which is the good failure; a stub returning
     # the RIGHT arity with the wrong meaning would not have.
+    # ⚠ dashboard-retire r1 Claude M1: every `main` case stubs A1 as well as `collect`. Unstubbed,
+    # `main` reaches A1's real `git merge-base master HEAD`, and a CI `pull_request` checkout has no
+    # local `master` — the case goes red (rc 2) in CI only.
+    real_asp = g["ask_store_problems"]
     g["collect"] = lambda base: ([], False, "could not run git: boom", [], [])
+    g["ask_store_problems"] = lambda base, root: ([], None)
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf:
             rc = main(["--base", "master"])
     finally:
         g["collect"] = real_collect
+        g["ask_store_problems"] = real_asp
     case("main: a could-not-tell exits 2 — NEVER 0", rc, 2)
     case("...and says NOT CHECKED", "NOT CHECKED" in buf.getvalue(), True)
 
@@ -1680,11 +1798,13 @@ def _impure_self_test_body() -> int:
     # not passed through, so it is the one that makes the wiring load-bearing.
     g["collect"] = lambda base: (["docs/dashboard-entries.md"], False, None,
                                  ["'## 2026-02-30' — not a real calendar date"], [])
+    g["ask_store_problems"] = lambda base, root: ([], None)
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf2:
             rc2 = main(["--base", "master"])
     finally:
         g["collect"] = real_collect
+        g["ask_store_problems"] = real_asp
     case("main: an entry-only branch with a malformed entry exits 1", rc2, 1)
     case("...and the refusal reaches stdout", "REFUSED" in buf2.getvalue(), True)
 
@@ -1703,6 +1823,92 @@ def _impure_self_test_body() -> int:
          ([], [True, True, True], True))
     import shutil as _sh
     _sh.rmtree(_odd, ignore_errors=True)
+
+    # ─── A1 and F1 through git (dashboard-retire plan, Task 2) ────────────────────────────────
+    # 2.12: driven DIRECTLY, not through `main` (r1 Claude M2). Through `main`, a missing git fails
+    # first inside `collect`, so a fail-open `ask_store_problems` would have no witness.
+    _p, _e = _with_run(_boom, lambda: ask_store_problems("master", ROOT))
+    _p2, _e2 = _with_run(lambda *a, **k: _R(128, "", "fatal"),
+                         lambda: ask_store_problems("master", ROOT))
+    case("A1's own git failure is CANNOT RUN",
+         (_e is not None, _p, _e2 is not None, _p2), (True, [], True, []))
+    # 2.14 / 2.15: `main`'s dispatch on A1's two outputs, `collect` stubbed clean.
+    g["collect"] = lambda base: ([], False, None, [], [])
+    g["ask_store_problems"] = lambda base, root: (["x"], None)
+    try:
+        with _cl.redirect_stdout(_io.StringIO()) as buf3:
+            rc3 = main(["--base", "master"])
+    finally:
+        g["collect"] = real_collect
+        g["ask_store_problems"] = real_asp
+    case("main refuses on A1's problem list",
+         (rc3, "REFUSED — the ask store" in buf3.getvalue()), (1, True))
+    g["collect"] = lambda base: ([], False, None, [], [])
+    g["ask_store_problems"] = lambda base, root: ([], "boom")
+    try:
+        with _cl.redirect_stdout(_io.StringIO()) as buf4:
+            rc4 = main(["--base", "master"])
+    finally:
+        g["collect"] = real_collect
+        g["ask_store_problems"] = real_asp
+    case("main is CANNOT RUN on A1's err", (rc4, "NOT CHECKED" in buf4.getvalue()), (2, True))
+
+    # 2.8–2.11, 2.13: a `fixture_git` temp repository, never this checkout (r3 Claude M1: the
+    # mutation harness stages a tree with no `.git`, where a live `git ls-tree HEAD` exits 128).
+    import fixture_git
+
+    def _repo(files: dict, untracked: dict | None = None) -> pathlib.Path:
+        d = pathlib.Path(_tf.mkdtemp(prefix="asks-repo-"))
+        env = fixture_git.env()
+        subprocess.run(["git", "init", "-q", str(d)], check=True, env=env)
+        for rel, content in files.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(content, encoding="utf-8")
+        subprocess.run(["git", "-C", str(d), "add", "-A"], check=True, env=env)
+        subprocess.run(["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@t",
+                        "commit", "-qm", "base"], check=True, capture_output=True, env=env)
+        for rel, content in (untracked or {}).items():
+            (d / rel).write_text(content, encoding="utf-8")
+        return d
+
+    def _main_at(root: pathlib.Path) -> tuple[int, str]:
+        real_root = g["ROOT"]
+        g["ROOT"] = root
+        g["collect"] = lambda base: ([], False, None, [], [])
+        try:
+            with _cl.redirect_stdout(_io.StringIO()) as b:
+                rc = main(["--base", "HEAD"])
+        finally:
+            g["ROOT"] = real_root
+            g["collect"] = real_collect
+        return rc, b.getvalue()
+
+    _keep = {"docs/asks/.gitkeep": ""}
+    _rc, _out = _main_at(_repo({**_keep, "docs/asks/Foo.md": "# Q?\n"}))
+    case("main refuses a bad ask file at HEAD", (_rc, "Foo.md" in _out), (1, True))
+    _clean = _repo(_keep)
+    _dirty = _repo(_keep, {"docs/asks/.DS_Store": "x"})
+    case("an untracked scratch file does not fail A1",
+         (_main_at(_dirty)[0], _main_at(_clean)[0]), (0, 0))
+    case("the directory listing still reports that file",
+         len(read_asks(_dirty / "docs/asks")[1]), 1)
+    _gone = _repo({**_keep, "docs/asks/2026-11-25-a.md": "# Q?\n"})
+    os.remove(_gone / "docs/asks/2026-11-25-a.md")
+    _rc, _out = _main_at(_gone)
+    case("a tracked ask missing on disk is a PROBLEM",
+         (_rc, "tracked at HEAD, missing on disk" in _out), (1, True))
+    case("a tree holding only `.gitkeep` passes", ask_store_problems(None, _clean), ([], None))
+    # F1 end to end: the merge base's blob against HEAD's, read through `git cat-file`.
+    _edit = _repo({**_keep, "docs/asks/2026-11-25-a.md": "# Q?\n"})
+    (_edit / "docs/asks/2026-11-25-a.md").write_text("# Other?\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(_edit), "-c", "user.name=t", "-c", "user.email=t@t",
+                    "commit", "-qam", "edit"], check=True, capture_output=True,
+                   env=fixture_git.env())
+    _p, _e = ask_store_problems("HEAD~1", _edit)
+    case("...F1 reads the merge base's blob through git and refuses an edited question",
+         (len(_p), _e), (1, None))
+    for _d in (_clean, _dirty, _gone, _edit):
+        _sh.rmtree(_d, ignore_errors=True)
 
     print(f"{ok}/{ok+fail} cannot-run cases passed")
     return 1 if fail else 0
@@ -1725,6 +1931,10 @@ def main(argv: list[str]) -> int:
     if err:
         print(f"CANNOT RUN — {err}\nTreat this as NOT CHECKED.")
         return 2
+    ask_problems, ask_err = ask_store_problems(a.base, ROOT)
+    if ask_err:
+        print(f"CANNOT RUN — {ask_err}\nTreat this as NOT CHECKED.")
+        return 2
     body = ""
     if a.pr_body_file:
         import pathlib
@@ -1732,6 +1942,10 @@ def main(argv: list[str]) -> int:
         body = p.read_text(encoding="utf-8") if p.exists() else ""
     code, reason = verdict(changed, added, body, entry_problems, ref_problems)
     print(("ok — " if code == 0 else "REFUSED — ") + reason)
+    if ask_problems:
+        print(f"REFUSED — the ask store under {ASKS_REL}/ has {len(ask_problems)} problem(s):\n"
+              + "\n".join(f"  - {p}" for p in ask_problems))
+        return 1
     return code
 
 if __name__ == "__main__":

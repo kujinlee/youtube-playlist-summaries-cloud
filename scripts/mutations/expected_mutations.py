@@ -857,7 +857,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-25, dashboard-retire S1 Task 1: 44 -> 55 — `read_asks`, the one reader of docs/asks/:
     # the answer rule (3), the conflict scan, the byte cap, the regular-file test, the MAX_ASKS problem,
     # the name rule, the .gitkeep size test, the readable-asks-beside-problems return, the missing dir.
-    "scripts/check-dashboard-entry.py": 55,
+    # Task 2: 55 -> 62 — F1 (the name filter, the prefix test, the deletion), A1 reads HEAD's names, and
+    # main's dispatch on A1 (the refusal, the err) plus ask_store_problems' own failure branch.
+    "scripts/check-dashboard-entry.py": 62,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look

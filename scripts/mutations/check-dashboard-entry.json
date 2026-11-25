@@ -684,5 +684,82 @@
       ]
     ],
     "expect": "a missing directory is a PROBLEM, never no asks"
+  },
+  {
+    "name": "F1 checks every base file",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if not ASK_NAME.match(name):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "deleting .gitkeep with the first ask passes F1"
+  },
+  {
+    "name": "F1 accepts a rewritten ask",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        is_prefix = head_files[name].startswith(base_files[name])",
+        "        is_prefix = True"
+      ]
+    ],
+    "expect": "an edited question is refused"
+  },
+  {
+    "name": "F1 misses a deleted ask",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "            problems.append(f\"{ASKS_REL}/{name}: present at the merge base, gone at HEAD — \"\n                            f\"an ask is never deleted; answer it with a '## Answer' line\")\n",
+        ""
+      ]
+    ],
+    "expect": "a deleted ask is refused"
+  },
+  {
+    "name": "A1 lists the directory instead of HEAD's tree",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        problems += read_asks(root / ASKS_REL, present)[1]",
+        "        problems += read_asks(root / ASKS_REL, None)[1]"
+      ]
+    ],
+    "expect": "an untracked scratch file does not fail A1"
+  },
+  {
+    "name": "main stops running A1",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "    if ask_problems:",
+        "    if False:"
+      ]
+    ],
+    "expect": "main refuses on A1's problem list"
+  },
+  {
+    "name": "A1's git failure returns err=None",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        return [], f\"the ask store could not be checked — {exc}\"",
+        "        return problems, None"
+      ]
+    ],
+    "expect": "A1's own git failure is CANNOT RUN"
+  },
+  {
+    "name": "main ignores A1's err",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "    if ask_err:",
+        "    if False:"
+      ]
+    ],
+    "expect": "main is CANNOT RUN on A1's err"
   }
 ]
