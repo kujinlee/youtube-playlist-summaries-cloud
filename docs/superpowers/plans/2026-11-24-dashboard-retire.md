@@ -267,7 +267,7 @@ case("a conflict marker on ANY line is a PROBLEM",
 | 2.10 | the directory listing still reports that file | `read_asks(dir)` on the same world | 1 problem (the goal tree's view) |
 | 2.11 | a tracked ask missing on disk is a PROBLEM | impure: `rm` without commit | rc 1, "tracked at HEAD, missing on disk" |
 | 2.12 | A1's own git failure is CANNOT RUN | pure: `_with_run(_boom, lambda: ask_store_problems("master", ROOT))`, and again with a stub returning `_R(128, "", "fatal")` | `err is not None` both times, `problems == []` |
-| 2.13 | the live tree passes | this repo, `docs/asks/.gitkeep` only | `([], None)` |
+| 2.13 | a tree holding only `.gitkeep` passes | impure: a `fixture_git` temp repo with `docs/asks/.gitkeep` committed; `ask_store_problems(None, <that repo>)` — never this checkout (r3 Claude M1: the mutation harness stages a tree with no `.git`, where a live `git ls-tree HEAD` exits 128) | `([], None)` |
 | 2.14 | main refuses on A1's problem list | pure: `collect` stubbed clean, `ask_store_problems` stubbed `(["x"], None)` | rc 1, `REFUSED — ` |
 | 2.15 | main is CANNOT RUN on A1's err | pure: `collect` stubbed clean, `ask_store_problems` stubbed `([], "boom")` | rc 2, never 0 or 1 |
 
@@ -289,7 +289,7 @@ restores it in the same `finally` as `collect`.
 - [ ] **Step 3: Implement** `f1_problems`, `ask_store_problems`, the `main` call, and one docstring paragraph
   stating the m3 decision in these words: *A1 reads the names git tracks at HEAD (`git ls-tree`), not the
   directory listing; content comes from the working tree.*
-- [ ] **Step 4: Create** `docs/asks/.gitkeep`, commit it WITH the code (2.13 needs the directory at HEAD).
+- [ ] **Step 4: Create** `docs/asks/.gitkeep`, commit it WITH the code (Step 5's live run reads the directory at HEAD; 2.13 builds its own).
 - [ ] **Step 5: Run** the self-test (PASS), then the gate itself after committing:
   `python3 scripts/check-dashboard-entry.py --base origin/master`. Expected: no `REFUSED` line that names
   `docs/asks`.
@@ -300,10 +300,12 @@ restores it in the same `finally` as `collect`.
 S="$(mktemp -d)/c" && git clone -q . "$S" && git -C "$S" checkout -q --detach
 git -C "$S" branch -D master 2>/dev/null   # a clone made from a worktree has no local master to delete
 ! git -C "$S" rev-parse -q --verify refs/heads/master && git -C "$S" rev-parse -q --verify origin/master \
-  && (cd "$S" && set -o pipefail && python3 scripts/check-dashboard-entry.py --self-test | tail -1)
+  && (cd "$S" && set -o pipefail && python3 scripts/check-dashboard-entry.py --self-test | tail -2)
 ```
 
-  Expected: the same count as Step 5, rc 0. `pipefail` is load-bearing (r2 Codex m4): without it the
+  Expected: rc 0 and the SAME TWO summary lines as Step 5 — the pure suite's `N/N passed`, then the impure
+  suite's `M/M cannot-run cases passed` (r3 Claude m5: `tail -1` showed only the second; measured on a
+  copy 2026-11-24, today's lines are `149/149 passed` and `13/13 cannot-run cases passed`). `pipefail` is load-bearing (r2 Codex m4): without it the
   pipeline's status is `tail`'s, 0 over a red self-test — measured 2026-11-24 with a child that prints and
   exits 1: rc 0 plain, rc 1 under `pipefail`. **FAILS IF** any `main` case is red there — the case reached
   real git. Control, run once: remove the `ask_store_problems` stub from the malformed-entry case and this run
@@ -320,7 +322,11 @@ git -C "$S" branch -D master 2>/dev/null   # a clone made from a worktree has no
 | A1's git failure returns err=None | `ask_store_problems`' failure branch returns `(problems, None)` | 2.12 |
 | main ignores A1's err | drop the `if err:` return 2 after `ask_store_problems` | 2.15 |
 
-- [ ] **Step 7: Sweep, resolve, commit.**
+- [ ] **Step 7: Sweep, resolve, commit.** The control must be GREEN in the staged tree, which has no `.git`:
+  `python3 scripts/check-plan-code.py --mutate . --only scripts/check-dashboard-entry.py` reports no
+  red-control or NOT MEASURED line (r3 Claude M1). **FAILS IF** any case of this suite reads this checkout's
+  git — measured 2026-11-24 in a copy with no `.git`: `git ls-tree --name-only HEAD docs/asks/` rc 128, the
+  same call in a `fixture_git` temp repo rc 0.
 
 **FAILS IF:** a file at HEAD under `docs/asks/` that `read_asks` calls a PROBLEM passes the gate; or an ask
 present at the merge base is absent or not a byte prefix at HEAD and the gate passes.
@@ -366,7 +372,11 @@ behaviors 2.1–2.7 and three mutations — and the pin drops by 3. It is not pa
 
 - [ ] **Step 1: Write the failing cases** 3.1–3.10 beside the existing `needs_from_dashboard` cases.
 - [ ] **Step 2: Run** `python3 scripts/goal-tree.py --self-test`. Expected: FAIL on the new names.
-- [ ] **Step 3: Implement.** Options and the warning print under the item in both `_item_line` (text) and
+- [ ] **Step 3: Implement.** The source loop in `collect` keeps its tuple text verbatim — `("dashboard",
+  DASHBOARD_REL, needs_from_dashboard),` stays one line — and the `asks` directory source is a separate
+  `try` block after the loop, because Step 5's old-reader sever anchors that exact text (r3 Claude m3). If
+  the implementation must reshape it, take the anchor from the implemented line and run the all-manifest
+  anchor resolve before Step 5. Options and the warning print under the item in both `_item_line` (text) and
   `needs_html` (a `<ul class="opts">` and a `<p class="warn">`), every string through `html.escape`.
 - [ ] **Step 4: Run** the self-test (PASS) and `python3 scripts/check-page-links.py --self-test`.
 - [ ] **Step 5: Add 5 mutations**, pin `525`: "the goal tree's call to read_asks is severed" (return
@@ -712,7 +722,7 @@ command prints nothing.
 | 12.8 | master's store moved since the pin is refused | `cutover_problem("<another blob>")` | a problem naming both blobs |
 | 12.9 | master's store unchanged passes | `cutover_problem(LEGACY_STORE_BASE_BLOB)` | `None` |
 | 12.10 | push mode runs L1 | impure: `main([])` over a tree with an appended entry | rc 1 |
-| 12.11 | the three pins describe the live tree | live: `git hash-object` and SHA-256 of the store at HEAD; `git rev-parse <pin-base>:docs/dashboard-entries.md` | equal to the constants |
+| 12.11 | the two HEAD pins describe the store on disk | the file at `ROOT / LEGACY_STORE_REL`: `git hash-object -- <path>` and `hashlib.sha256` of its bytes — no `HEAD`, no `rev-parse`, so no repository is needed | equal to `LEGACY_STORE_BLOB` and `LEGACY_STORE_SHA256` |
 | 12.12 | the cutover check reads the revision it is given | impure: fixture repo, commit A (store = pinned base), commit B appends an entry, commit C on top; `--cutover-check C^1` and `--cutover-check A` | rc 1 for `C^1` (B's store), rc 0 for `A` |
 | 12.13 | a PR beyond gh's default page is listed | `subprocess.run` stubbed: `gh pr list` returns `min(<--limit>, 31)` PRs (30 when `--limit` is absent), PR 31's diff names the store | PR 31 listed |
 | 12.14 | a full page is CANNOT RUN | the stub returns exactly `PR_LIST_LIMIT` PRs | `err` names the limit |
@@ -720,13 +730,22 @@ command prints nothing.
 | 12.16 | a failed `gh pr diff` is CANNOT RUN, never "no edit" | PR 7's diff rc 1, PR 8's lists the store | `err` names PR 7, rc 2 |
 
 - [ ] **Step 1: Write 12.1–12.16** against a fixture store (the constants patched in the case, as other
-  suites patch theirs; 12.13–12.16 through `_with_run`) — 12.11 alone is live and patches nothing: it reads
-  the constants as committed (r2 Codex M3: 12.11 was expected red in Step 3 without ever being written).
+  suites patch theirs; 12.13–12.16 through `_with_run`) — 12.11 alone patches nothing: it reads the
+  constants as committed against the store file on disk (r2 Codex M3: 12.11 was expected red in Step 3
+  without ever being written). ⚠ **12.11 reads no git history (r3 Claude M1, M2).** `git hash-object <path>`
+  needs no repository (measured 2026-11-24 in a copy with no `.git`: rc 0, and the blob equals
+  `git rev-parse HEAD:docs/dashboard-entries.md` in this checkout), and `docs/` is in `HARNESS_TREE`, so it
+  runs in the mutation harness's staged tree. It has NO base half: `LEGACY_STORE_BASE_BLOB` is master's
+  store at pin time, which after S2's squash master no longer holds, so any self-test reading of it would go
+  red on master from S2 until Task 16 deletes the constant. That pin is checked where its subject exists —
+  Step 10's `--cutover-check origin/master` and Task 13 Step 1's `--cutover-check "$SQ^1"`, each of which
+  returns 1 on a base blob other than the store it reads (12.8, 12.12).
   **Step 2: Run** the self-test (FAIL, 12.11 among the names).
 - [ ] **Step 3: Implement** `legacy_store_problem`, `cutover_problem` and `main`, with the three constants
   set to a placeholder that 12.11 refuses (`"UNPINNED"`). Run: 12.1–12.10 and 12.12–12.16 PASS, 12.11 FAIL.
 - [ ] **Step 4: Merge master in for the last time**, as ONE command that completes or aborts:
-  `git merge --no-edit origin/master`. Record that master commit as the pin-base in the commit message.
+  `git merge --no-edit origin/master`. Name that master commit in the commit message, for a reader — no
+  code reads it (12.11 has no base half; r3 Claude M2).
 - [ ] **Step 5: C1 on the merged tree:** `python3 scripts/gen-dashboard.py --assert-no-open-asks`. Expected
   rc 0. On rc 1, re-ask each named ask as a file in `docs/asks/`, answer it in the old store on master
   through its own PR first, and return to Step 4.
@@ -739,7 +758,8 @@ python3 -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read(
 ```
 
   The two outputs are `LEGACY_STORE_BLOB` and `LEGACY_STORE_SHA256`. Commit the store and the gate file
-  together, then run the self-test: 12.11 PASS.
+  together, then run the self-test: 12.11 PASS; and `python3 scripts/check-ask-store.py --cutover-check
+  origin/master` rc 0 — the base pin's own check, made while master still holds that store.
 - [ ] **Step 7: CI.** Replace the PR-only `dashboard entry ratchet` step and its PR-body file:
 
 ```yaml
@@ -796,12 +816,19 @@ SQ=$(gh pr view "$PR" --json state,mergeCommit -q 'select(.state=="MERGED") | .m
   && git merge-base --is-ancestor "$SQ" origin/master \
   && test "$(git rev-list --parents -n1 "$SQ" | wc -w)" -eq 2 \
   && git cat-file -e "$SQ:scripts/check-ask-store.py" \
-  && python3 scripts/check-ask-store.py --cutover-check "$SQ^1"
+  && T="$(mktemp -d)/sq" && git worktree add -q --detach "$T" "$SQ" \
+  && (cd "$T" && python3 scripts/check-ask-store.py --cutover-check "$SQ^1"); rc=$?
+[ -n "${T:-}" ] && git worktree remove --force "$T"; echo "rc=$rc"   # Expected: rc=0
 ```
 
   The squash is found by the PR that made it (r2 Codex M2: a `git log --grep` on a title the plan never
   sets finds nothing, or an older commit), and its identity is checked before its parent is read: merged,
-  on `origin/master`, one parent (a squash, not a merge commit), the gate file in its tree. Every link is
+  on `origin/master`, one parent (a squash, not a merge commit), the gate file in its tree. The check runs
+  from a detached worktree AT the squash (r3 Claude m4): in the main checkout before a fast-forward the
+  script does not exist yet, and piping `git show "$SQ:…"` into `python3 -` does not work — the gate's
+  `ROOT` is `Path(__file__).resolve().parent.parent`, and under `-` that is the cwd's PARENT (measured
+  2026-11-24), so its git calls would read the wrong directory. Run from the repository's main checkout,
+  so `git worktree add` shares its objects. Every link is
   `&&`, so a failed `gh` call, an unmerged PR (the `select` prints nothing) or a wrong commit stops the chain
   non-zero — never a pass. Controls, run 2026-11-24: the `-q` filter prints nothing on `"state":"OPEN"`;
   the parent count refuses a two-parent merge commit and accepts squash `7a6ffa00`. Expected: rc 0. On rc 1 a PR merged a store edit inside the window: master's push-mode `ask store` step is
@@ -817,7 +844,8 @@ SQ=$(gh pr view "$PR" --json state,mergeCommit -q 'select(.state=="MERGED") | .m
   restore the store (`git checkout origin/master -- docs/dashboard-entries.md`), re-ask any question its
   dropped entry held as a file in `docs/asks/`, commit, push. Its CI now runs under L1.
 - [ ] **Step 3: Re-run Step 1b.** Expected: rc 0, no line.
-- [ ] **Step 4: Confirm master's own run:** the `ask store (push)` step of the CI run on S2's merge commit is
+- [ ] **Step 4: Confirm master's own run:** the `check-ask-store self-test` step (r3 Claude M2: the step a
+  base half of 12.11 would have turned red) and the `ask store (push)` step of the CI run on S2's merge commit are
   green.
 
 **FAILS IF:** Step 1 returns 0 while the squash's first parent holds another store blob; Step 3 prints any PR
