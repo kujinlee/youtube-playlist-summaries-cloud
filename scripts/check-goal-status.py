@@ -2,7 +2,7 @@
 """Every living spec and plan says whether it is alive — and the goals page renders it.
 
     python3 scripts/check-goal-status.py              # enforce for the armed nodes
-    python3 scripts/check-goal-status.py --self-test  # 50 cases
+    python3 scripts/check-goal-status.py --self-test  # 51 cases
 
 WHY THIS EXISTS, AND IT IS A DEFECT THE OWNER FOUND BY READING THE PAGE
 ----------------------------------------------------------------------
@@ -242,7 +242,7 @@ def adr_anchors(docs_root: Path) -> dict[str, list[str]]:
             text = f.read_text(errors="replace")
         except OSError as exc:
             raise ValueError(f"{f} could not be read: {exc}") from exc
-        anchor = ca.parse_header(text, ca.adr_head(text))[0]
+        anchor = ca._header(text, True)[0]
         if anchor is not None:
             out.setdefault(anchor, []).append(f"docs/{ca.ADR_SUB}/{f.name}")
     return out
@@ -611,6 +611,17 @@ def _self_test_body() -> int:
          (_l_rc, "docs/adr/0001-x.md: `nonexistent` is not a node" in _l_out), (1, True))
     case("r1 L: an ADR's header arms its node, as on master",
          (_l2_rc, "armed anchors: alpha, beta" in _l2_out), (0, True))
+    # ⛔ r2 LOW 1: the ADR's header is read through check-anchors' own `_header`, never a restatement.
+    # Read with the default window, an ADR anchored past line 10 (live: 0013, 0014, 0015) was not read.
+    with _tf.TemporaryDirectory() as _glf:
+        _lfr = _g4_world(_glf, _live, "alpha")
+        (_lfr / "docs" / "adr").mkdir()
+        (_lfr / "docs" / "adr" / "0001-far.md").write_text(
+            "# 1. Far\n\n" + "".join(f"Preamble line {i}.\n\n" for i in range(8))
+            + "> **Anchor:** `nonexistent` — **ADR:** none\n\n## Context\n")
+        _lf_rc, _lf_out = _run(_lfr)
+    case("r2 L: an ADR anchored PAST line 18 naming no node still FAILS the misnamed-slug check",
+         (_lf_rc, "docs/adr/0001-far.md: `nonexistent` is not a node" in _lf_out), (1, True))
     # ⛔ r1 S: a loose claim naming a PROPOSED node does not arm it. The armed set is filtered with the
     # SETTLED slugs; `current_slugs` includes proposed nodes, so with it (or no filter) `fresh` was
     # armed and this document, whose real header names the exempt `dev-speed`, was refused.
