@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/decision-card-options-r3-claude.md": "100644 f30643bc032f7ed0e6ffea5662c5f74165cfe133"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "56cc0f9817414986cc2504b87bf36d518ed3c373",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 6655 chars, names 56cc0f981741",
+  "refused": false,
+  "review": "decision-card-options-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/decision-options",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
