@@ -646,8 +646,8 @@
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
-        "ASK_NAME = re.compile(r\"^\\d{4}-\\d{2}-\\d{2}-[a-z0-9]+(-[a-z0-9]+)*\\.md$\")",
-        "ASK_NAME = re.compile(r\"^\\d{4}-\\d{2}-\\d{2}-[A-Za-z0-9]+(-[A-Za-z0-9]+)*\\.md$\")"
+        "ASK_NAME = re.compile(r\"[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*\\.md\")",
+        "ASK_NAME = re.compile(r\"[0-9]{4}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9]+(-[A-Za-z0-9]+)*\\.md\")"
       ]
     ],
     "expect": "a name that fails the rule is a PROBLEM"
@@ -690,7 +690,7 @@
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
-        "        if not ASK_NAME.match(name):\n            continue\n",
+        "        if not ASK_NAME.fullmatch(name):\n            continue\n",
         ""
       ]
     ],
@@ -723,7 +723,7 @@
     "file": "scripts/check-dashboard-entry.py",
     "edits": [
       [
-        "        problems += read_asks(root / ASKS_REL, present)[1]",
+        "        problems += _judge_asks(list(head), head.__getitem__)[1]",
         "        problems += read_asks(root / ASKS_REL, None)[1]"
       ]
     ],
@@ -761,5 +761,86 @@
       ]
     ],
     "expect": "main is CANNOT RUN on A1's err"
+  },
+  {
+    "name": "r1 A: a HEAD with no docs/asks/ passes A1",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if not head:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "r1 A: a HEAD tree with no docs/asks/ is refused"
+    ]
+  },
+  {
+    "name": "r1 B: the name rule is asked with .match, so a trailing newline passes",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if name != ASK_KEEP and not ASK_NAME.fullmatch(name):",
+        "        if name != ASK_KEEP and not ASK_NAME.match(name):"
+      ]
+    ],
+    "expect": [
+      "r1 B: a name ending in a newline, or with non-ASCII digits, is a PROBLEM beside a valid name that is read"
+    ]
+  },
+  {
+    "name": "r1 B: the name rule's year admits any Unicode digit",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "ASK_NAME = re.compile(r\"[0-9]{4}-",
+        "ASK_NAME = re.compile(r\"\\d{4}-"
+      ]
+    ],
+    "expect": [
+      "r1 B: a name ending in a newline, or with non-ASCII digits, is a PROBLEM beside a valid name that is read"
+    ]
+  },
+  {
+    "name": "r1 D: F1 drops the no-final-newline clause, so the last line can be edited",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if (is_prefix and base and not base.endswith(b\"\\n\") and len(head) > len(base)",
+        "        if (False and base and not base.endswith(b\"\\n\") and len(head) > len(base)"
+      ]
+    ],
+    "expect": [
+      "r1 D: with no trailing newline at the base, an edited last-line question is refused",
+      "r1 D: ...and so is a rewritten last-line answer"
+    ]
+  },
+  {
+    "name": "r1 F: A1 reads the working tree's bytes instead of HEAD's",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "            data = _ask_git(root, \"cat-file\", \"blob\", obj)\n",
+        "            data = (root / path).read_bytes() if (root / path).is_file() else b\"\"\n"
+      ]
+    ],
+    "expect": [
+      "r1 F: a conflict marker committed at HEAD is refused though the working tree was fixed",
+      "r1 F: a valid ask deleted from the working tree still passes A1 — HEAD holds it",
+      "r1 F: ...and a bad working-tree edit over a good commit passes"
+    ]
+  },
+  {
+    "name": "r1 F: a symlink tracked at HEAD is read as a blob",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if mode == \"120000\":",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "r1 F: a symlink tracked at HEAD is a PROBLEM read from its tree mode"
+    ]
   }
 ]

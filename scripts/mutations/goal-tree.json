@@ -623,8 +623,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "for k in (\"source\", \"ref\", \"href\", \"text\", \"multi\")})",
-        "for k in (\"source\", \"ref\", \"href\", \"text\")})"
+        "for k in (\"source\", \"ref\", \"href\", \"text\", \"multi\")}\n",
+        "for k in (\"source\", \"ref\", \"href\", \"text\")}\n"
       ]
     ],
     "expect": [
@@ -6861,6 +6861,45 @@
     ],
     "expect": [
       "3.5 K5: a missing docs/asks is never"
+    ]
+  },
+  {
+    "name": "r1 M1: a merged ask's options and warning are dropped by consolidate",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                                  | {k: it[k] for k in (\"options\", \"decision_warning\") if it.get(k)})",
+        "                                  )"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 M1: a merged ask's options and its warning stay under the backlog item, in text and in HTML"
+    ]
+  },
+  {
+    "name": "r1 M1: the text details do not walk the merged sources",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for a in n.get(\"also\") or []:\n        d = _own_details(a)\n",
+        "    for a in []:\n        d = _own_details(a)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 M1: a merged ask's options and its warning stay under the backlog item, in text and in HTML"
+    ]
+  },
+  {
+    "name": "r1 M1: the HTML details do not walk the merged sources",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for a in n.get(\"also\") or []:\n        d = _own_details_html(a)\n",
+        "    for a in []:\n        d = _own_details_html(a)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 M1: a merged ask's options and its warning stay under the backlog item, in text and in HTML"
     ]
   }
 ]

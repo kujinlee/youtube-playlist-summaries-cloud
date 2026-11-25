@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 607 cases
+    python3 scripts/goal-tree.py --self-test                 # 608 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -1408,7 +1408,9 @@ def consolidate(items: list[dict]) -> list[dict]:
         target = (rows.get(tuple(it["identity"]))
                   if it.get("row") is None and it.get("identity") else None)
         if target is not None:
-            target["also"].append({k: it[k] for k in ("source", "ref", "href", "text", "multi")})
+            target["also"].append({k: it[k] for k in ("source", "ref", "href", "text", "multi")}
+                                  # r1 Claude M1 (spec §2.4): an ask's options and warning ride along, never dropped
+                                  | {k: it[k] for k in ("options", "decision_warning") if it.get(k)})
             continue
         out.append(it)
     return out
@@ -2501,10 +2503,21 @@ def _item_line(n: dict) -> str:
     return " · ".join(bits)
 
 
-def _item_details(n: dict) -> list[str]:
-    """PURE. What prints UNDER an item (dashboard-retire S1): each option of an ask, then its decision warning."""
+def _own_details(n: dict) -> list[str]:
+    """PURE. One ask's options, then its decision warning."""
     return [f"• {o}" for o in n.get("options") or []] + (
         [f'⚠ {n["decision_warning"]}'] if n.get("decision_warning") else [])
+
+
+def _item_details(n: dict) -> list[str]:
+    """PURE. What prints UNDER an item (dashboard-retire S1): each option of an ask, then its decision warning —
+    the item's own, then each merged ask's under its name (r1 Claude M1: a merge never hides them, spec §2.4)."""
+    out = _own_details(n)
+    for a in n.get("also") or []:
+        d = _own_details(a)
+        if d:
+            out += [f'from {a["source"]} {a["ref"]}:'] + [f"  {x}" for x in d]
+    return out
 
 
 def story(ch: list[str]) -> str:
@@ -2598,11 +2611,21 @@ def _ref_html(source: str, ref: str, href: str | None) -> str:
     return f'<code>{html.escape(ref)}</code> <span class="src">(.claude/inflight.jsonl)</span>'
 
 
-def _details_html(n: dict) -> str:
-    """An ask's options and its decision warning, under the item; every string escaped."""
+def _own_details_html(n: dict) -> str:
     opts = n.get("options") or []
     return ((('<ul class="opts">' + "".join(f"<li>{html.escape(o)}</li>" for o in opts) + "</ul>") if opts else "")
             + (f'<p class="warn">⚠ {html.escape(n["decision_warning"])}</p>' if n.get("decision_warning") else ""))
+
+
+def _details_html(n: dict) -> str:
+    """An ask's options and its decision warning, under the item — the item's own, then each merged ask's under
+    its name (r1 Claude M1); every string escaped."""
+    out = _own_details_html(n)
+    for a in n.get("also") or []:
+        d = _own_details_html(a)
+        if d:
+            out += f'<p class="src">from {html.escape(a["source"])} {html.escape(a["ref"])}:</p>{d}'
+    return out
 
 
 def needs_html(snap: dict) -> str:
@@ -5228,6 +5251,25 @@ def _self_test_cases(*, outside: dict) -> int:
          ([n["ref"] for n in _b], _bp), (["backlog #5", "backlog #9", "backlog #10"], []))
     case("⛔ X1: a line the row parser refuses is a PROBLEM, never an item",
          needs_from_backlog(BACKLOG_BAD)[1], ["1 line(s) of docs/backlog.md the row parser could not read"])
+    # ⛔ r1 Claude M1 (spec §2.4): an ask that declares `decision: backlog #5` MERGES into that row's item, and its
+    # options and warning must survive the merge — printed and drawn under the merged item, not dropped.
+    with tempfile.TemporaryDirectory() as _ad3:
+        _a3 = pathlib.Path(_ad3)
+        (_a3 / "2026-11-25-pick.md").write_text(
+            "# Which name? decision: backlog #5\n\n**Decide:** which name?\n- needs-you [recommended]\n- asks\n",
+            encoding="utf-8")
+        (_a3 / "2026-11-25-bad.md").write_text(
+            "# Which colour? decision: backlog #5\n\n**Decide:** pick\n- only\n", encoding="utf-8")
+        _m = consolidate(_b + needs_from_asks(_a3)[0])
+        _m5 = next((n for n in _m if n["ref"] == "backlog #5"), {})
+        _det = "\n".join(_item_details(_m5))
+        _htm = _details_html(_m5)
+        case("⛔ r1 M1: a merged ask's options and its warning stay under the backlog item, in text and in HTML",
+             (sorted(a["ref"] for a in _m5.get("also") or []),
+              "• needs-you [recommended]" in _det, "• asks" in _det,
+              "offers 1 option(s)" in _det,
+              "<li>needs-you [recommended]</li>" in _htm, "offers 1 option(s)" in _htm),
+             (["2026-11-25-bad", "2026-11-25-pick"], True, True, True, True, True))
     case("a backlog need carries the row's title and the clause after the marker",
          _b[0]["text"], "Pick a name — waits on you")
     case("⭐ X4: NEEDS-OWNER-ACTION is an ACTION, not a decision, and its marker is not in the text",

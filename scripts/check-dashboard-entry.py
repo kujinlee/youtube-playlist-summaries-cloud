@@ -500,7 +500,9 @@ def decision_errors(plain: str, category: str) -> list[str]:
 # answer rule or `decisions()`; the goal tree and the compaction snapshot load this file and call
 # `read_asks`. A second reader is a second copy of the rules, free to drift.
 ASKS_REL = "docs/asks"
-ASK_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9]+(-[a-z0-9]+)*\.md$")
+# ⛔ Always `fullmatch`, never `.match`: `$` admits a trailing newline. `[0-9]`, never `\d`, which admits any
+# Unicode digit (r1 Codex MEDIUM, Claude L2).
+ASK_NAME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*\.md")
 ASK_KEEP = ".gitkeep"
 ANSWER = "## Answer"
 MAX_ASK_BYTES = 64 * 1024
@@ -564,8 +566,6 @@ def read_asks(directory: pathlib.Path,
     ⛔ A PROBLEM NEVER HIDES AN ASK, AND NEVER READS AS "NO ASKS". The readable asks are returned
     beside the problems, and a missing directory is a problem, not an empty store.
     """
-    asks: list[dict] = []
-    problems: list[str] = []
     if names is None:
         try:
             names = os.listdir(directory)
@@ -573,6 +573,14 @@ def read_asks(directory: pathlib.Path,
             return [], [f"{ASKS_REL}/ is missing ({directory}) — no ask could be read"]
         except OSError as exc:
             return [], [f"{ASKS_REL}/ could not be listed ({exc.strerror})"]
+    return _judge_asks(names, lambda name: _read_ask_bytes(pathlib.Path(directory) / name))
+
+
+def _judge_asks(names: list[str], load) -> tuple[list[dict], list[str]]:
+    """The rules of `read_asks` over `names`, whatever holds the bytes: `load(name)` answers
+    `(data, size, why-not)` — `_read_ask_bytes` for a directory, HEAD's tree for A1 (r1 Claude L4)."""
+    asks: list[dict] = []
+    problems: list[str] = []
     names = sorted(names)
     if len(names) > MAX_ASKS:
         problems.append(f"{ASKS_REL}/ holds {len(names)} entries, over the cap of {MAX_ASKS}; "
@@ -580,11 +588,11 @@ def read_asks(directory: pathlib.Path,
         names = names[:MAX_ASKS]
     for name in names:
         where = f"{ASKS_REL}/{name}"
-        if name != ASK_KEEP and not ASK_NAME.match(name):
+        if name != ASK_KEEP and not ASK_NAME.fullmatch(name):
             problems.append(f"{where}: the name is not YYYY-MM-DD-<slug>.md "
                             f"(lowercase letters, digits and single hyphens)")
             continue
-        data, size, why = _read_ask_bytes(pathlib.Path(directory) / name)
+        data, size, why = load(name)
         if why is not None:
             problems.append(f"{where}: {why}")
             continue
@@ -624,13 +632,19 @@ def f1_problems(base_files: dict[str, bytes], head_files: dict[str, bytes]) -> l
     and a badly named file is A1's to refuse while it exists (r6 Claude m1)."""
     problems: list[str] = []
     for name in sorted(base_files):
-        if not ASK_NAME.match(name):
+        if not ASK_NAME.fullmatch(name):
             continue
         if name not in head_files:
             problems.append(f"{ASKS_REL}/{name}: present at the merge base, gone at HEAD — "
                             f"an ask is never deleted; answer it with a '## Answer' line")
             continue
         is_prefix = head_files[name].startswith(base_files[name])
+        # r1 Claude L1: a base with no final newline ends mid-line, so a byte prefix alone lets its LAST line be
+        # edited (`# Q?` → `# Q? Actually…`). What follows such a base must begin a new line.
+        base, head = base_files[name], head_files[name]
+        if (is_prefix and base and not base.endswith(b"\n") and len(head) > len(base)
+                and head[len(base):len(base) + 1] != b"\n"):
+            is_prefix = False
         if not is_prefix:
             problems.append(f"{ASKS_REL}/{name}: changed in place — an ask only grows at its end "
                             f"(an answer, then any later note); restore the merge base's bytes "
@@ -667,30 +681,51 @@ def _ask_blobs(root: pathlib.Path, rev: str) -> dict[str, bytes]:
     return out
 
 
+def _ask_tree(root: pathlib.Path, rev: str) -> dict[str, tuple[bytes | None, int, str | None]]:
+    """{basename: (data, size, why-not)} for every entry directly under `docs/asks/` at `rev`, read from git's
+    tree alone — the answer `_read_ask_bytes` gives for a directory. A symlink and a non-blob are refused by
+    their tree mode; a blob over `MAX_ASK_BYTES` is sized by `ls-tree -l`, never fetched."""
+    out: dict[str, tuple[bytes | None, int, str | None]] = {}
+    listing = _ask_git(root, "ls-tree", "-z", "-l", rev, f"{ASKS_REL}/")
+    for rec in listing.decode("utf-8", "surrogateescape").split("\0"):
+        if not rec.strip():
+            continue
+        meta, path = rec.split("\t", 1)
+        mode, kind, obj, size = meta.split()
+        name = posixpath.basename(path)
+        if mode == "120000":
+            out[name] = (None, 0, "is a symlink, not a regular file")
+        elif kind != "blob":
+            out[name] = (None, 0, "not a regular file")
+        elif int(size) > MAX_ASK_BYTES:
+            out[name] = (b"", int(size), None)
+        else:
+            data = _ask_git(root, "cat-file", "blob", obj)
+            out[name] = (data, len(data), None)
+    return out
+
+
 def ask_store_problems(base: str | None, root: pathlib.Path) -> tuple[list[str], str | None]:
     """A1 and F1 over the ask store: `(problems, err)`. `err` is set when git could not answer,
     and `main` turns it into CANNOT RUN — never a pass.
 
-    A1 reads the names git tracks at HEAD (`git ls-tree`), not the directory listing; content
-    comes from the working tree. In CI the working tree IS HEAD, and every other clause of this
-    gate reads the committed tree, so an untracked scratch file (`.DS_Store`) cannot fail a
-    CI-shaped run locally (r6 Claude m3). The goal tree keeps the directory listing, where an
-    untracked file is what the owner would see.
+    A1 reads HEAD's tree only — the names AND the bytes, through git (`_ask_tree`), never the
+    working tree (r1 Claude L4): a dirty tree cannot change the verdict, so a local run answers
+    what CI's merge ref will. An untracked scratch file (`.DS_Store`) cannot fail it (r6 Claude
+    m3). The goal tree keeps the directory listing, where an untracked file is what the owner
+    would see. A HEAD with no `docs/asks/` at all is refused (r1 Codex HIGH, Claude M2): both
+    readers downstream treat a missing store as NOT READ, so the gate must not let it merge.
 
     F1 runs only when `base` is given: the asks at `git merge-base <base> HEAD` against HEAD's.
     """
     problems: list[str] = []
     try:
-        listing = _ask_git(root, "ls-tree", "-z", "--name-only", "HEAD", f"{ASKS_REL}/")
-        tracked = [posixpath.basename(p) for p in
-                   listing.decode("utf-8", "surrogateescape").split("\0") if p.strip()]
-        present = []
-        for name in tracked:
-            if os.path.lexists(root / ASKS_REL / name):
-                present.append(name)
-            else:
-                problems.append(f"{ASKS_REL}/{name}: tracked at HEAD, missing on disk")
-        problems += read_asks(root / ASKS_REL, present)[1]
+        head = _ask_tree(root, "HEAD")
+        if not head:
+            problems.append(f"{ASKS_REL}/ is not tracked at HEAD — the goal tree and the compaction "
+                            f"snapshot cannot read a missing store; keep {ASK_KEEP} until the first "
+                            f"ask lands")
+        problems += _judge_asks(list(head), head.__getitem__)[1]
         if base is not None:
             merge_base = _ask_git(root, "merge-base", base, "HEAD").decode().strip()
             problems += f1_problems(_ask_blobs(root, merge_base), _ask_blobs(root, "HEAD"))
@@ -1564,6 +1599,13 @@ def _self_test_body() -> int:
     case("a name that fails the rule is a PROBLEM",
          (_r[0], sorted(n for n in _bad if any(f"/{n}:" in p for p in _r[1])), len(_r[1])),
          ([], sorted(_bad), len(_bad)))
+    # r1 B: `$` with `.match` admitted a trailing newline, and `\d` admitted non-ASCII digits. A valid name sits in
+    # the same world, so a rule that refused every name cannot pass this case.
+    _bad2 = ["2026-11-25-a.md\n", "\u0662\u0660\u0662\u0666-11-25-a.md"]
+    _r = read_asks(world({**{n: _OPEN for n in _bad2}, "2026-11-25-ok.md": _OPEN}))
+    case("r1 B: a name ending in a newline, or with non-ASCII digits, is a PROBLEM beside a valid name that is read",
+         (stems(_r), sorted(n for n in _bad2 if any(f"/{n}:" in p for p in _r[1])), len(_r[1])),
+         (["2026-11-25-ok"], sorted(_bad2), len(_bad2)))
     _r = read_asks(world({"2026-11-25-a.md": "", "2026-11-25-b.md": "Which form?\nbody\n"}))
     case("an empty file, or one with no `# ` first line, is a PROBLEM",
          (_r[0], len(_r[1])), ([], 2))
@@ -1624,6 +1666,16 @@ def _self_test_body() -> int:
     case("a rewritten answer is refused",
          len(f1_problems({"2026-11-25-a.md": _QA},
                          {"2026-11-25-a.md": _QA.replace(b"\none\n", b"\ntwo\n")})), 1)
+    # r1 D: a base with no trailing newline — the byte prefix alone let the LAST line be edited.
+    case("r1 D: with no trailing newline at the base, an edited last-line question is refused",
+         len(f1_problems({"2026-11-25-a.md": b"# Which form?"},
+                         {"2026-11-25-a.md": b"# Which form? Actually, which colour?\n"})), 1)
+    case("r1 D: ...and so is a rewritten last-line answer",
+         len(f1_problems({"2026-11-25-a.md": _Q + b"## Answer\na"},
+                         {"2026-11-25-a.md": _Q + b"## Answer\na -- no, b\n"})), 1)
+    case("r1 D: ...while an answer appended after a newline still passes",
+         f1_problems({"2026-11-25-a.md": b"# Which form?"},
+                     {"2026-11-25-a.md": b"# Which form?\n## Answer\na\n"}), [])
 
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
@@ -1892,11 +1944,41 @@ def _impure_self_test_body() -> int:
          (_main_at(_dirty)[0], _main_at(_clean)[0]), (0, 0))
     case("the directory listing still reports that file",
          len(read_asks(_dirty / "docs/asks")[1]), 1)
+    # r1 F: A1 judges HEAD's BYTES, not the working tree's — a dirty tree cannot change the verdict either way.
     _gone = _repo({**_keep, "docs/asks/2026-11-25-a.md": "# Q?\n"})
     os.remove(_gone / "docs/asks/2026-11-25-a.md")
-    _rc, _out = _main_at(_gone)
-    case("a tracked ask missing on disk is a PROBLEM",
-         (_rc, "tracked at HEAD, missing on disk" in _out), (1, True))
+    case("r1 F: a valid ask deleted from the working tree still passes A1 — HEAD holds it",
+         ask_store_problems(None, _gone), ([], None))
+    _bad_head = _repo({**_keep, "docs/asks/2026-11-25-a.md": "# Q?\n<<<<<<< ours\n## Answer\nA\n>>>>>>> theirs\n"})
+    (_bad_head / "docs/asks/2026-11-25-a.md").write_text("# Q?\n## Answer\nA\n", encoding="utf-8")
+    _p, _e = ask_store_problems(None, _bad_head)
+    case("r1 F: a conflict marker committed at HEAD is refused though the working tree was fixed",
+         (len(_p), "conflict" in "".join(_p), _e), (1, True, None))
+    _good_head = _repo({**_keep, "docs/asks/2026-11-25-a.md": "# Q?\n"})
+    (_good_head / "docs/asks/2026-11-25-a.md").write_text("no heading\n", encoding="utf-8")
+    case("r1 F: ...and a bad working-tree edit over a good commit passes",
+         ask_store_problems(None, _good_head), ([], None))
+    _link = _repo(_keep)
+    os.symlink("../../README", _link / "docs/asks/2026-11-25-l.md")
+    subprocess.run(["git", "-C", str(_link), "add", "-A"], check=True, env=fixture_git.env())
+    subprocess.run(["git", "-C", str(_link), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "l"],
+                   check=True, capture_output=True, env=fixture_git.env())
+    _p, _e = ask_store_problems(None, _link)
+    case("r1 F: a symlink tracked at HEAD is a PROBLEM read from its tree mode",
+         (len(_p), "is a symlink" in "".join(_p), _e), (1, True, None))
+    # r1 A: a HEAD with no `docs/asks/` at all — never tracked, or `.gitkeep` removed with no ask — is refused;
+    # the readers downstream would go NOT READ on every run.
+    _none = _repo({"README": "x\n"})
+    _p, _e = ask_store_problems(None, _none)
+    case("r1 A: a HEAD tree with no docs/asks/ is refused",
+         (len(_p), "not tracked at HEAD" in "".join(_p), _e), (1, True, None))
+    _rmkeep = _repo(_keep)
+    os.remove(_rmkeep / "docs/asks/.gitkeep")
+    subprocess.run(["git", "-C", str(_rmkeep), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "rm"],
+                   check=True, capture_output=True, env=fixture_git.env())
+    _p, _e = ask_store_problems("HEAD~1", _rmkeep)
+    case("r1 A: ...and so is a branch that removes .gitkeep while no ask exists",
+         (len(_p), "not tracked at HEAD" in "".join(_p), _e), (1, True, None))
     case("a tree holding only `.gitkeep` passes", ask_store_problems(None, _clean), ([], None))
     # F1 end to end: the merge base's blob against HEAD's, read through `git cat-file`.
     _edit = _repo({**_keep, "docs/asks/2026-11-25-a.md": "# Q?\n"})
@@ -1907,7 +1989,7 @@ def _impure_self_test_body() -> int:
     _p, _e = ask_store_problems("HEAD~1", _edit)
     case("...F1 reads the merge base's blob through git and refuses an edited question",
          (len(_p), _e), (1, None))
-    for _d in (_clean, _dirty, _gone, _edit):
+    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep):
         _sh.rmtree(_d, ignore_errors=True)
 
     print(f"{ok}/{ok+fail} cannot-run cases passed")

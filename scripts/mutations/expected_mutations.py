@@ -484,7 +484,7 @@ EXPECTED_MUTATIONS = {
     # Codex m2 (the ahead-window is 120 days, not round 1's 92: 1). Rebound, not counted: the ~six-months entry's
     # anchor (`WAIT_AHEAD_DAYS = 120 `), and the four C5 entries' expected case name (03-25 replaces 02-25).
     # ⟳ 2026-11-20, agenda-row-state r3 fold: 501 -> 502. F3 (a date exactly WAIT_AHEAD_DAYS ahead is next year's: 1).
-    "scripts/goal-tree.py": 525,  # 520 -> 525 (dashboard-retire S1 Task 3: the asks reader severed, the old reader severed, an asks problem dropped, a missing decision drops the ask, asks leaves NEEDS_SOURCES); 519 -> 520 (backlog #689 r3 M1: a several-row leaf needs every row ✅ for a list tail); 510 -> 519 (backlog #689 r2 fold: list tail gated by the Status cell — 6, older fold with no merge age — 3); 502 -> 510 (backlog #689 + r1 fold: one per clause — all/any, unread cells, ledger beats cell, by_cell bucket, list tail, whole number, two timeline words); 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    "scripts/goal-tree.py": 528,  # 525 -> 528 (dashboard-retire S1 r1 M1: a merged ask's options and warning — consolidate carries them, the text and HTML details walk `also`); 520 -> 525 (dashboard-retire S1 Task 3: the asks reader severed, the old reader severed, an asks problem dropped, a missing decision drops the ask, asks leaves NEEDS_SOURCES); 519 -> 520 (backlog #689 r3 M1: a several-row leaf needs every row ✅ for a list tail); 510 -> 519 (backlog #689 r2 fold: list tail gated by the Status cell — 6, older fold with no merge age — 3); 502 -> 510 (backlog #689 + r1 fold: one per clause — all/any, unread cells, ledger beats cell, by_cell bucket, list tail, whole number, two timeline words); 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -866,7 +866,9 @@ EXPECTED_MUTATIONS = {
     # the name rule, the .gitkeep size test, the readable-asks-beside-problems return, the missing dir.
     # Task 2: 55 -> 62 — F1 (the name filter, the prefix test, the deletion), A1 reads HEAD's names, and
     # main's dispatch on A1 (the refusal, the err) plus ask_store_problems' own failure branch.
-    "scripts/check-dashboard-entry.py": 62,
+    # r1 fold: 62 -> 68 — A1 refuses a HEAD with no docs/asks/, the name rule's fullmatch and ASCII digits (2),
+    # F1's no-final-newline clause, A1 reads HEAD's bytes and a tracked symlink's tree mode (2).
+    "scripts/check-dashboard-entry.py": 68,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
@@ -1590,7 +1592,7 @@ EXPECTED_MUTATIONS = {
     # port_from's ASCII shape and caught int() (m4).
     # ⟳ 2026-11-13, backlog #625: 112 -> 116 — the Ask panel reaching the page, /_rev folding the questions in, and
     # a fault in either SAID (the panel on the page, the revision as `:ask-failed`).
-    "scripts/explainer-serve.py": 126,  # 123 -> 126 (dashboard-retire S1 Task 5: a directory source reads only its own mtime, any directory is accepted, the stale reply names the directory)
+    "scripts/explainer-serve.py": 127,  # 126 -> 127 (dashboard-retire S1 r1 L3: a directory source's own mtime); 123 -> 126 (dashboard-retire S1 Task 5: a directory source reads only its own mtime, any directory is accepted, the stale reply names the directory)
     # ⟳ 2026-11-13, backlog #625: the Ask answerer, pinned in the commit that creates it. One entry per rule a
     # reader relies on: the claim marker, the caps (both directions of each), Read as the only tool, the suite
     # never starting a real binary, escaping, where an answer may land, what may be replaced, an instruction

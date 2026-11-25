@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 297 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 298 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -4404,7 +4404,9 @@ def _self_test_body() -> int:
         #   "added"     — a new ask file (950) and the directory entry it created (900);
         #   "appended"  — an answer appended IN PLACE: the file moves (900), the directory does NOT;
         #   "untouched" — nothing moved;
-        #   "gitkeep"   — only the non-`.md` placeholder moved (900), the directory held.
+        #   "gitkeep"   — only the non-`.md` placeholder moved (900), the directory held;
+        #   "removed"   — an ask file REMOVED (r1 Claude L3): only the directory moves (900), and the one ask left
+        #                 is still at 100, so the directory's own term is the only witness.
         # ⚠ The directory's mtime is set LAST: writing a child moves it, so any earlier utime is undone.
         def _drive_stale_asks(asks, _root, _repo, slug):
             d = _repo / "docs" / "asks"
@@ -4426,6 +4428,9 @@ def _self_test_body() -> int:
                 os.utime(d / "2026-11-20-a.md", (900, 900))
             elif asks == "gitkeep":
                 os.utime(d / ".gitkeep", (900, 900))
+            elif asks == "removed":
+                (d / "2026-11-21-c.md").write_text("# Question: three?\n")
+                (d / "2026-11-21-c.md").unlink(); dir_t = 900
             os.utime(d, (dir_t, dir_t))
             _sav = (globals()["ROOT"], globals()["REPO"], dict(PAGE_SOURCES))
             try:
@@ -4444,6 +4449,8 @@ def _self_test_body() -> int:
              lambda: _drive_stale(asks="untouched")[1] == b"fresh")
         case("5.5 a non-.md child of the directory is not watched",
              lambda: _drive_stale(asks="gitkeep")[1] == b"fresh")
+        case("5.6 r1 L3: a REMOVED ask file makes it stale through the directory's own mtime, naming the directory",
+             lambda: _drive_stale(asks="removed")[1] == b"stale docs/asks")
         # ⛔ 5.4 THE ADMISSION IS NAMED, NOT "ANY DIRECTORY". `docs/` is a real directory in every checkout,
         # so a rule that admitted any directory would watch the whole docs tree and call it covered.
         case("5.4 a directory NOT in DIR_SOURCES is still refused by the coverage rule",
