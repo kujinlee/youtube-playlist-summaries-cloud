@@ -6808,7 +6808,7 @@
       ]
     ],
     "expect": [
-      "3.1 K4: an open ask file is a NEEDS YOU item"
+      "3.1 K4: an open ask file is a NEEDS YOU item from the asks source, keyed by its stem, with no link"
     ]
   },
   {
@@ -6821,7 +6821,7 @@
       ]
     ],
     "expect": [
-      "3.9 the old store's asks still show"
+      "3.9 the old store's asks still show, through collect, with their /dashboard link"
     ]
   },
   {
@@ -6834,7 +6834,7 @@
       ]
     ],
     "expect": [
-      "3.6 K5: a PROBLEM entry marks the asks source NOT READ"
+      "3.6 K5: a PROBLEM entry marks the asks source NOT READ and KEEPS the readable ask"
     ]
   },
   {
@@ -6847,7 +6847,7 @@
       ]
     ],
     "expect": [
-      "3.3 an ask with no decision block is KEPT"
+      "3.3 an ask with no decision block is KEPT, with a warning naming the missing block"
     ]
   },
   {
@@ -6860,7 +6860,7 @@
       ]
     ],
     "expect": [
-      "3.5 K5: a missing docs/asks is never"
+      "3.5 K5: a missing docs/asks is never 'nothing waits on you' — the asks source is NOT READ"
     ]
   },
   {

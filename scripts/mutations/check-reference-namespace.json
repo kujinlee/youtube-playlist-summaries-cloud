@@ -295,7 +295,7 @@
       ]
     ],
     "expect": [
-      "6.1 a bare #N added in an ask file"
+      "6.1 a bare #N added in an ask file under docs/asks/ is refused"
     ]
   }
 ]

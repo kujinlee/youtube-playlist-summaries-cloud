@@ -1179,7 +1179,7 @@
       ]
     ],
     "expect": [
-      "4.2 a PROBLEM in docs/asks is CANNOT RUN"
+      "4.2 a PROBLEM in docs/asks is CANNOT RUN, never 0 and never a partial count"
     ]
   }
 ]
