@@ -735,6 +735,109 @@ def ask_store_problems(base: str | None, root: pathlib.Path) -> tuple[list[str],
     return problems, None
 
 
+# ── L1: the old dashboard store is FROZEN to pinned bytes (dashboard-retire S2, Task 12) ──────
+#
+# ⛔ A new ask is a file in `docs/asks/`. Nothing reads `docs/dashboard-entries.md` for asks any more,
+# so an entry appended there would be an ask nobody sees: L1 refuses ANY change to it, on a pull
+# request and without `--base` (`main` runs it in both modes). The two HEAD pins describe the frozen
+# bytes; `LEGACY_STORE_BASE_BLOB` is master's store at pin time, read only by `--cutover-check` (12.8,
+# 12.12), because after the squash master no longer holds it. ⚠ The base pin, `cutover_problem`,
+# `PR_LIST_LIMIT` and `store_edit_prs` are the cutover's and leave in S3 (plan Task 16).
+LEGACY_STORE_REL = "docs/dashboard-entries.md"
+LEGACY_STORE_BLOB = "befaa1cb22cfb272bc803e23b4b990ae812ebc27"        # HEAD: git hash-object
+LEGACY_STORE_SHA256 = "c6e110df45ac06328b14356d276b03a47f505737b18ab0901065acdc4b1ef97f"
+LEGACY_STORE_BASE_BLOB = "a9553580e41bac27f7710f28c7dee1f4216e98f0"   # master f9979fa0, before the header edit
+L1_DIFF_LINES = 40
+PR_LIST_LIMIT = 1000
+
+
+def legacy_store_problem(head_blob: str | None, head_bytes: bytes | None,
+                         diff) -> str | None:
+    """PURE. `None` when HEAD's store bytes hash to `LEGACY_STORE_SHA256`; otherwise what differs (the
+    first L1_DIFF_LINES lines of `diff(LEGACY_STORE_BLOB, head_blob)`, or that it could not be printed),
+    then the command that shows it and the one that restores it — by BLOB, never a commit id, so the
+    command works whatever history the branch has."""
+    import hashlib
+    if head_bytes is not None and hashlib.sha256(head_bytes).hexdigest() == LEGACY_STORE_SHA256:
+        return None
+    restore = f"git cat-file blob {LEGACY_STORE_BLOB} > {LEGACY_STORE_REL}"
+    if head_bytes is None or head_blob is None:
+        return (f"{LEGACY_STORE_REL} is missing at HEAD — it is a frozen record and must stay; restore it "
+                f"with:\n    {restore}")
+    shown = diff(LEGACY_STORE_BLOB, head_blob)
+    what = ("    the diff could not be printed (the pinned blob is not in this clone)" if shown is None
+            else "\n".join("    | " + ln for ln in shown.splitlines()[:L1_DIFF_LINES]))
+    return (f"{LEGACY_STORE_REL} changed — it is FROZEN; a new ask is a file in {ASKS_REL}/. What differs:\n"
+            f"{what}\n  See it whole with:\n    git diff {LEGACY_STORE_BLOB} {head_blob}\n"
+            f"  Restore the frozen bytes with:\n    {restore}")
+
+
+def cutover_problem(ref_blob: str | None) -> str | None:
+    """PURE. `None` when the store at the revision read is `LEGACY_STORE_BASE_BLOB` (master's at pin time)."""
+    if ref_blob == LEGACY_STORE_BASE_BLOB:
+        return None
+    return (f"master's {LEGACY_STORE_REL} moved since the pin: it is {ref_blob or 'missing'}, the pin is "
+            f"{LEGACY_STORE_BASE_BLOB}. Merge master in, re-run C1 (gen-dashboard.py --assert-no-open-asks), "
+            f"and re-pin all three constants (LEGACY_STORE_BASE_BLOB, LEGACY_STORE_BLOB, LEGACY_STORE_SHA256).")
+
+
+def _store_blob(root: pathlib.Path, rev: str) -> str | None:
+    """The store's blob id at `rev`, or None when `rev` has no such path. ⚠ Read through `ls-tree`, not
+    `rev-parse REV:path`, so a missing path (an empty answer, rc 0) is told apart from git failing (raises)."""
+    out = _ask_git(root, "ls-tree", "-z", rev, "--", LEGACY_STORE_REL).decode("utf-8", "surrogateescape")
+    rec = out.split("\0")[0]
+    if not rec.strip():
+        return None
+    meta = rec.split("\t", 1)[0].split()
+    return meta[2] if meta[1] == "blob" else None
+
+
+def legacy_store_check(root: pathlib.Path) -> tuple[str | None, str | None]:
+    """L1 over HEAD: `(problem, err)`. `err` when git could not answer — CANNOT RUN, never a pass."""
+    try:
+        blob = _store_blob(root, "HEAD")
+        data = _ask_git(root, "cat-file", "blob", blob) if blob else None
+    except _AskGitError as exc:
+        return None, f"the frozen store could not be read — {exc}"
+
+    def _diff(a: str, b: str) -> str | None:
+        try:
+            return _ask_git(root, "diff", a, b).decode("utf-8", "replace")
+        except _AskGitError:
+            return None
+    return legacy_store_problem(blob, data, _diff), None
+
+
+def store_edit_prs() -> tuple[list[str], str | None]:
+    """Every OPEN pull request whose diff names the store: `(lines, err)`. Any failed `gh` call, an
+    unparseable list, or a list of exactly PR_LIST_LIMIT entries (there may be more) is `err`."""
+    import json as _json
+
+    def _gh(*args: str):
+        try:
+            return subprocess.run(["gh", *args], cwd=ROOT, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return exc
+    r = _gh("pr", "list", "--state", "open", "--limit", str(PR_LIST_LIMIT), "--json", "number,headRefName")
+    if isinstance(r, Exception) or r.returncode != 0:
+        why = r if isinstance(r, Exception) else f"exited {r.returncode}: {(r.stderr or '').strip()[:200]}"
+        return [], f"gh pr list did not answer ({why})"
+    try:
+        prs = [(int(p["number"]), str(p["headRefName"])) for p in _json.loads(r.stdout or "")]
+    except (ValueError, TypeError, KeyError) as exc:
+        return [], f"gh pr list's answer did not parse ({exc})"
+    if len(prs) >= PR_LIST_LIMIT:
+        return [], f"gh pr list returned {len(prs)} PRs, the limit of {PR_LIST_LIMIT} — there may be more"
+    lines: list[str] = []
+    for n, branch in prs:
+        d = _gh("pr", "diff", str(n), "--name-only")
+        if isinstance(d, Exception) or d.returncode != 0:
+            return lines, f"gh pr diff {n} did not answer — PR {n} ({branch}) was not checked"
+        if LEGACY_STORE_REL in (d.stdout or "").splitlines():
+            lines.append(f"PR {n} ({branch}) edits the frozen store")
+    return lines, None
+
+
 
 
 
@@ -973,6 +1076,12 @@ def parse_entries(text: str) -> list[dict]:
             break
     return out
 
+
+
+def _git_blob_id(data: bytes) -> str:
+    """TEST ONLY. git's blob id for `data` — `sha1("blob <n>\\0" + data)` — computed without a repository."""
+    import hashlib
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
 def _self_test() -> int:
@@ -1418,6 +1527,39 @@ def _self_test_body() -> int:
          f1_problems({"2026-11-25-a.md": b"# Which form?"},
                      {"2026-11-25-a.md": b"# Which form?\n## Answer\na\n"}), [])
 
+    # ── dashboard-retire S2, Task 12: L1 and the cutover check, PURE (12.1–12.6, 12.8, 12.9) ──
+    # The pins are patched to a FIXTURE store here; 12.11 (impure) holds the committed pins to the real file.
+    import hashlib as _hl
+    _fs = b"# Dashboard entries\n\n## 2026-10-01\nOld entry one.\n"
+    _fb = _git_blob_id(_fs)
+    _gp = globals()
+    _pins = {k: _gp[k] for k in ("LEGACY_STORE_BLOB", "LEGACY_STORE_SHA256", "LEGACY_STORE_BASE_BLOB")}
+    _gp.update(LEGACY_STORE_BLOB=_fb, LEGACY_STORE_SHA256=_hl.sha256(_fs).hexdigest(), LEGACY_STORE_BASE_BLOB=_fb)
+    try:
+        case("12.1 the pinned bytes pass L1", legacy_store_problem(_fb, _fs, lambda a, b: ""), None)
+        _m2 = legacy_store_problem(None, None, lambda a, b: "")
+        case("12.2 a missing store is refused", (_m2 is not None, "missing" in (_m2 or "")), (True, True))
+        _app = _fs + b"\n## 2026-11-26 [needs-you]\nA stray ask nobody reads.\n"
+        _ab = _git_blob_id(_app)
+        _m3 = legacy_store_problem(
+            _ab, _app, lambda a, b: ("+## 2026-11-26 [needs-you]\n+A stray ask nobody reads.\n"
+                                     if (a, b) == (_fb, _ab) else None)) or ""
+        case("12.3 an appended entry is refused and SHOWN", "A stray ask nobody reads." in _m3, True)
+        _fl = _fs.replace(b"one.", b"onE.")
+        case("12.4 one edited byte of an old entry is refused",
+             legacy_store_problem(_git_blob_id(_fl), _fl, lambda a, b: "") is not None, True)
+        case("12.5 the message carries the restore command by BLOB, and no commit id",
+             (f"git cat-file blob {_fb} > docs/dashboard-entries.md" in _m3,
+              set(re.findall(r"\b[0-9a-f]{40}\b", _m3)) <= {_fb, _ab}), (True, True))
+        case("12.6 a pinned blob absent from the clone is still refused, saying the diff could not be printed",
+             "the diff could not be printed" in (legacy_store_problem(_ab, _app, lambda a, b: None) or ""), True)
+        _m8 = cutover_problem("0" * 40) or ""
+        case("12.8 master's store moved since the pin is refused, naming both blobs",
+             ("0" * 40 in _m8, _fb in _m8, "re-pin" in _m8), (True, True, True))
+        case("12.9 master's store unchanged passes the cutover check", cutover_problem(_fb), None)
+    finally:
+        _gp.update(_pins)
+
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
@@ -1469,6 +1611,8 @@ def _impure_self_test_body() -> int:
     # real `git merge-base master HEAD`, and a CI `pull_request` checkout has no local `master` —
     # the case goes red (rc 2) in CI only.
     real_asp = g["ask_store_problems"]
+    real_l1 = g["legacy_store_check"]
+    g["legacy_store_check"] = lambda root: (None, None)   # L1 has its own cases (12.x); these drive A1's dispatch
     g["ask_store_problems"] = lambda base, root: ([], "could not run git: boom")
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf:
@@ -1518,15 +1662,23 @@ def _impure_self_test_body() -> int:
     finally:
         g["ask_store_problems"] = real_asp
     case("main is CANNOT RUN on A1's err", (rc4, "NOT CHECKED" in buf4.getvalue()), (2, True))
+    g["legacy_store_check"] = real_l1
 
     # 2.8–2.11, 2.13: a `fixture_git` temp repository, never this checkout (r3 Claude M1: the
     # mutation harness stages a tree with no `.git`, where a live `git ls-tree HEAD` exits 128).
     import fixture_git
 
+    import hashlib as _hl
+    _FS = "# Dashboard entries\n\n## 2026-10-01\nOld entry one.\n"   # the fixture's frozen store
+    _FPINS = {"LEGACY_STORE_BLOB": _git_blob_id(_FS.encode()),
+              "LEGACY_STORE_SHA256": _hl.sha256(_FS.encode()).hexdigest(),
+              "LEGACY_STORE_BASE_BLOB": _git_blob_id(_FS.encode())}
+
     def _repo(files: dict, untracked: dict | None = None) -> pathlib.Path:
         d = pathlib.Path(_tf.mkdtemp(prefix="asks-repo-"))
         env = fixture_git.env()
         subprocess.run(["git", "init", "-q", str(d)], check=True, env=env)
+        files = {"docs/dashboard-entries.md": _FS, **files}
         for rel, content in files.items():
             (d / rel).parent.mkdir(parents=True, exist_ok=True)
             (d / rel).write_text(content, encoding="utf-8")
@@ -1538,14 +1690,21 @@ def _impure_self_test_body() -> int:
         return d
 
     def _main_at(root: pathlib.Path, argv: list[str] | None = None) -> tuple[int, str]:
-        real_root = g["ROOT"]
+        real_root, real_pins = g["ROOT"], {k: g[k] for k in _FPINS}
         g["ROOT"] = root
+        g.update(_FPINS)
         try:
             with _cl.redirect_stdout(_io.StringIO()) as b:
                 rc = main(["--base", "HEAD"] if argv is None else argv)
         finally:
             g["ROOT"] = real_root
+            g.update(real_pins)
         return rc, b.getvalue()
+
+    def _commit(d: pathlib.Path, msg: str) -> None:
+        subprocess.run(["git", "-C", str(d), "add", "-A"], check=True, env=fixture_git.env())
+        subprocess.run(["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", msg],
+                       check=True, capture_output=True, env=fixture_git.env())
 
     _keep = {"docs/asks/.gitkeep": ""}
     _rc, _out = _main_at(_repo({**_keep, "docs/asks/Foo.md": "# Q?\n"}))
@@ -1630,7 +1789,70 @@ def _impure_self_test_body() -> int:
     except SystemExit as exc:
         _rc98 = exc.code
     case("9.8 --pr-body-file is refused as a usage error (exit 2)", _rc98, 2)
-    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code):
+    # ── dashboard-retire S2, Task 12: L1, the cutover check and the open-PR lister, IMPURE ──
+    _st = _repo(_keep)
+    with open(_st / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
+        _fh.write("\n## 2026-11-26 [needs-you]\nA stray ask nobody reads.\n")
+    _commit(_st, "append")
+    _rc10, _o10 = _main_at(_st, [])
+    case("12.10 without --base (a push) L1 still runs, and refuses the appended entry",
+         (_rc10, "REFUSED — L1" in _o10, "A stray ask nobody reads." in _o10), (1, True, True))
+    _restore = [ln.strip() for ln in _o10.splitlines() if ln.strip().startswith("git cat-file blob ")]
+    if _restore:
+        subprocess.run(_restore[0], shell=True, cwd=_st, check=False, env=fixture_git.env())
+        _commit(_st, "restore")
+    case("12.7 the printed restore command repairs the tree: L1 red before, green after",
+         (_rc10, len(_restore), _main_at(_st, [])[0]), (1, 1, 0))
+    # 12.12: A = the pinned base store, B appends an entry, C changes something else on top.
+    _cv = _repo(_keep)
+    _a = subprocess.run(["git", "-C", str(_cv), "rev-parse", "HEAD"], capture_output=True, text=True,
+                        env=fixture_git.env()).stdout.strip()
+    with open(_cv / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
+        _fh.write("\n## 2026-11-26\nMerged after the pin.\n")
+    _commit(_cv, "B")
+    (_cv / "README").write_text("c\n", encoding="utf-8")
+    _commit(_cv, "C")
+    case("12.12 the cutover check reads the revision it is given: C^1 (B's store) rc 1, A rc 0",
+         (_main_at(_cv, ["--cutover-check", "HEAD^1"])[0], _main_at(_cv, ["--cutover-check", _a])[0]), (1, 0))
+    # 12.11: the COMMITTED pins against the store on disk — no HEAD, no rev-parse, so no repository needed.
+    _sp = ROOT / LEGACY_STORE_REL
+    _hb = subprocess.run(["git", "hash-object", "--", str(_sp)], capture_output=True, text=True,
+                         env=fixture_git.env()).stdout.strip() if _sp.is_file() else None
+    _hs = _hl.sha256(_sp.read_bytes()).hexdigest() if _sp.is_file() else None
+    case("12.11 the two HEAD pins describe the store on disk (git hash-object, sha256)",
+         (_hb, _hs), (LEGACY_STORE_BLOB, LEGACY_STORE_SHA256))
+    # 12.13–12.16: `gh` stubbed through `_with_run`.
+    import json as _js
+
+    def _gh_stub(numbers, store_in=(), diff_rc=None, list_rc: int = 0):
+        def run(cmd, *a, **k):
+            if cmd[:3] == ["gh", "pr", "list"]:
+                if list_rc:
+                    return _R(list_rc, "", "gh: boom")
+                lim = int(cmd[cmd.index("--limit") + 1]) if "--limit" in cmd else 30
+                ns = numbers(lim)
+                return _R(0, _js.dumps([{"number": n, "headRefName": f"b{n}"} for n in ns]))
+            if cmd[:3] == ["gh", "pr", "diff"]:
+                n = int(cmd[3])
+                if diff_rc and n in diff_rc:
+                    return _R(1, "", "gh: boom")
+                return _R(0, "docs/dashboard-entries.md\n" if n in store_in else "scripts/x.py\n")
+            return _R(127, "", f"unexpected {cmd[:3]}")
+        return run
+    case("12.13 a PR beyond gh's default page of 30 is listed",
+         _with_run(_gh_stub(lambda lim: range(1, min(lim, 31) + 1), store_in={31}), store_edit_prs),
+         (["PR 31 (b31) edits the frozen store"], None))
+    _l14, _e14 = _with_run(_gh_stub(lambda lim: range(1, PR_LIST_LIMIT + 1)), store_edit_prs)
+    case("12.14 a full page of PR_LIST_LIMIT is CANNOT RUN, naming the limit",
+         (_l14, str(PR_LIST_LIMIT) in (_e14 or "")), ([], True))
+    _with_main = lambda: _main_at(ROOT, ["--list-store-prs"])[0]
+    case("12.15 a failed gh pr list is CANNOT RUN, never 'no PRs': err set, --list-store-prs rc 2",
+         (_with_run(_gh_stub(lambda lim: [], list_rc=1), store_edit_prs)[1] is not None,
+          _with_run(_gh_stub(lambda lim: [], list_rc=1), _with_main)), (True, 2))
+    _e16 = _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, diff_rc={7}), store_edit_prs)[1] or ""
+    case("12.16 a failed gh pr diff is CANNOT RUN, never 'no edit': err names PR 7, rc 2",
+         ("PR 7" in _e16, _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, diff_rc={7}), _with_main)), (True, 2))
+    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code, _st, _cv):
         _sh.rmtree(_d, ignore_errors=True)
 
     print(f"{ok}/{ok+fail} cannot-run cases passed")
@@ -1645,16 +1867,43 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--base", default=None,
                     help="the ref F1 compares against (`git merge-base <base> HEAD`); "
                          "without it only A1 runs")
+    ap.add_argument("--cutover-check", metavar="REF", default=None,
+                    help="only: is the store at REF still master's at pin time (LEGACY_STORE_BASE_BLOB)?")
+    ap.add_argument("--list-store-prs", action="store_true",
+                    help="only: list the open pull requests whose diff names the frozen store")
     a = ap.parse_args(argv)
+    if a.cutover_check is not None:
+        try:
+            ref_blob = _store_blob(ROOT, a.cutover_check)
+        except _AskGitError as exc:
+            print(f"CANNOT RUN — the store at {a.cutover_check} could not be read — {exc}\n"
+                  f"Treat this as NOT CHECKED.")
+            return 2
+        why = cutover_problem(ref_blob)
+        print(f"REFUSED — {why}" if why else
+              f"ok — the store at {a.cutover_check} is the pinned base blob {LEGACY_STORE_BASE_BLOB}")
+        return 1 if why else 0
+    if a.list_store_prs:
+        lines, err = store_edit_prs()
+        if err:
+            print(f"CANNOT RUN — {err}. Treat this as NOT CHECKED.")
+            return 2
+        print("\n".join(lines) if lines else "ok — no open pull request edits the frozen store")
+        return 0
     if a.self_test:
         # BOTH suites, both always run. `or` would short-circuit and hide the
         # cannot-run cases whenever the pure suite is already red.
         pure, impure = _self_test(), _impure_self_test()
         return 1 if (pure or impure) else 0
     ask_problems, ask_err = ask_store_problems(a.base, ROOT)
-    if ask_err:
-        print(f"CANNOT RUN — {ask_err}\nTreat this as NOT CHECKED.")
+    # L1 runs in BOTH modes: with `--base` (a pull request) and without (master, batch/**).
+    l1_problem, l1_err = legacy_store_check(ROOT)
+    if ask_err or l1_err:
+        print(f"CANNOT RUN — {ask_err or l1_err}\nTreat this as NOT CHECKED.")
         return 2
+    if l1_problem:
+        print(f"REFUSED — L1: {l1_problem}")
+        return 1
     if ask_problems:
         print(f"REFUSED — the ask store under {ASKS_REL}/ has {len(ask_problems)} problem(s):\n"
               + "\n".join(f"  - {p}" for p in ask_problems))
