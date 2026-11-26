@@ -8,7 +8,7 @@
     python3 scripts/check-page-links.py --self-test  # 94 cases
 
 WHY (backlog #470; spec `docs/superpowers/specs/2026-11-02-comprehensibility-suite-design.md` §3, §7).
-A key — `backlog #N`, `PR #N`, a goal, a feature, a dashboard entry, a goal-tree thread — has ONE home
+A key — `backlog #N`, `PR #N`, a goal, a feature, a goal-tree thread — has ONE home
 page, and `page_markup.key_link` is the one function that builds the href to it. Before it, six hrefs were
 hand-built in four places and the generated pages carried 0 PR links against 18-157 PR mentions each
 (MEASURED, inventory 2026-10-27). This guard is the spec's three falsifiers for that rule, as checks, and
@@ -41,7 +41,7 @@ from PARSED start tags: a string inside a script or a comment is not an element.
     literal in one expression. Only the BODIES of the self-test
     functions (`_self_test*` / `self_test*`) are exempt — expected VALUES, not built links.
   * The page rules read BUILT pages. `--build` needs a `gh` login, the Ask tray and the goal-tree log, so
-    it runs locally. `--build --ci` builds what the checkout alone can: dashboard, goals and features as
+    it runs locally. `--build --ci` builds what the checkout alone can: goals and features as
     fragments, the backlog table whole. The goal-tree page needs the local log and is NOT RUN there — said
     so, and its fragments are counted unchecked. A missing page is CANNOT RUN (exit 2), never a pass.
   * Rule 3 checks fragments whose target is a page built here (or the same page). A fragment pointing
@@ -99,8 +99,9 @@ EXEMPT_SOURCES = {"page_markup.py", "check-page-links.py"}
 TEST_FUNC = re.compile(r"_?self_test\w*")
 # A file naming none of these cannot spell an href to a home page, so it is not parsed (a full AST pass
 # over every script cost ~3.5 s, and the self-test runs it four times).
-# ⟳ dashboard-retire S3: `/dashboard` left both — the page is retired; K8 (`check-retired-references.py`)
-# refuses a literal href to it.
+# ⟳ dashboard-retire S3: `/dashboard` left both — the page is retired. K8 (`check-retired-references.py`)
+# refuses ANY non-docstring string constant naming the route in any tracked `.py`, so an href to it built by
+# `+`, `%` or `.format` is refused there (its cases "F2 an href built by …", review S3 r1 F2), not here.
 HOME_PATHS = ("/backlog-table", "/goals", "/features", "/goal-tree", "/pull")
 
 # ── rule 1: a bare `#N` chip

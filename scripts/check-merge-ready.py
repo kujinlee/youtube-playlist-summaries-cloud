@@ -699,7 +699,8 @@ def _dashboard_gate(src: Path):
     """The gate that OWNS the escape grammar, imported rather than re-implemented.
 
     ⛔ `exemption_reason(body, marker)` is parameterised by marker and is declared
-    "ONE DEFINITION, shared with gen-dashboard.py". Re-deriving the rule here would
+    "ONE DEFINITION" (⟳ dashboard-retire S3: its other consumer, gen-dashboard.py, is deleted,
+    so this is its one importer). Re-deriving the rule here would
     be a second implementation of it, and this repo has recorded that shape drifting
     seventeen times — a weaker stand-in passes what the real one refuses.
     """

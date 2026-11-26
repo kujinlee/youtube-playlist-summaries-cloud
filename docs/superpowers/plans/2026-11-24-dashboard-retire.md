@@ -111,7 +111,7 @@ Measured on this branch 2026-11-24 by locating each entry's anchor in its enclos
 
 | Manifest | Today | After S1 | After S2 | After S3 |
 |---|---|---|---|---|
-| gate (`check-dashboard-entry.json`, renamed `check-ask-store.json` in S2) | 44 | **62** = 44 + 18 new (Tasks 1–2) | **63** = 62 − 9 deleted + 10 new (Tasks 9, 12) | **45** = 63 − 18 deleted (Task 16) |
+| gate (`check-dashboard-entry.json`, renamed `check-ask-store.json` in S2) | 44 | **62** = 44 + 18 new (Tasks 1–2) | **63** = 62 − 9 deleted + 10 new (Tasks 9, 12) | ~~45~~ **54**, measured: 98 − 14 − 30 (Task 16; see the ⟳ note below) |
 | `gen-dashboard.json` | 70 | 70 | **72** = 70 + 2 (Task 7) | **0** — file deleted (Task 15) |
 | `page_chrome.json` | 114 | 114 | 114 | **117** = 114 + 3 new (Task 14) |
 
@@ -125,7 +125,13 @@ Measured on this branch 2026-11-24 by locating each entry's anchor in its enclos
   `header_error` 3, `BLOCK` 1, `_first_sentence` 1); 6 anchor in the cutover code Task 16 deletes
   (`cutover_problem` 1, the `--cutover-check` REF read 1, `store_edit_prs` 4 — Task 12's mutations expecting
   12.8, 12.12 and 12.13–12.16).
-- **The 45 after S3** = the 23 below + Tasks 1–2's 18 + L1's 4 (expecting 12.2, 12.3, 12.5, 12.10).
+- ⟳ **S3 r1 F6 — the After S3 figure is 54, not 45, and here is the whole difference (manifest lengths read at
+  each commit):** S1 landed 68, not 62; S2 merged at 71 (`e1b13c15`, PR #640), not 63; backlog #730 (PR #643,
+  `829660eb`) added 27 for `post_cutover`, so master held 98 when S3 began. S3 Task 16 then deleted 14 with the
+  grammar and the base-blob check (98 → 84, `cabe665d`) and 30 of the 31 that anchored in `store_edit_prs` and
+  `post_cutover` (84 → 54, `05c13928`); the 31st anchors in the staying `_ask_tree` and was kept, retargeted.
+  The arithmetic below is the plan's original derivation, kept as history.
+- **The 45 after S3** (original derivation) = the 23 below + Tasks 1–2's 18 + L1's 4 (expecting 12.2, 12.3, 12.5, 12.10).
 - **23 stay throughout:** `fence_closes` 4, `fenced_lines` 1, `exemption_reason` 4, `_declaration_reason` 4,
   `_indented` 1, `EMPH` 1, `decisions` 2, `decision_errors` 3, plus the 3 re-bound `collect` / `main` entries.
 - ⚠ **A measured refinement of the spec's "the contrast mutations MOVE":** of the 70 generator entries
@@ -828,6 +834,10 @@ file, with a case and a mutation — never more shell here.**
 
 - [x] **Step 1: the whole cutover check, one command.** ✅ 2026-11-26 08:37: `post-cutover rc 0` on master `829660eb` (CI run 45858774949).
 
+  ⟳ **HISTORY — this command no longer exists (S3 r1 F3).** `--post-cutover` was deleted by S3 Task 16 after
+  this one run answered rc 0 (backlog #739, closed as moot). The command and the text below describe what
+  was run once, on 2026-11-26; do not run it — on master after S3 the flag is refused.
+
 ```bash
 git fetch -q origin +refs/heads/master:refs/remotes/origin/master && d="$(mktemp -d)/pc" && git worktree add -q --detach "$d" origin/master && (cd "$d" && python3 scripts/check-ask-store.py --post-cutover); git worktree remove --force "$d"
 ```
@@ -1018,7 +1028,8 @@ that are call arguments, path-literal operands, list or tuple elements, and dict
   the closure check, and the LIVE scan. Expected: all rc 0 except the scan, which lists only gate-file items
   Task 16 owns.
 - [x] **Step 8: Mutations for the scanner** — one per category that drops that category's visitor, each
-  expecting its seeded case (8 entries), plus "prose is scanned" expecting 15.11. Pin `9`. Resolve
+  expecting its seeded case (8 entries), plus "prose is scanned" expecting 15.11. Pin `9`. ⟳ S3 r1 F1: K8 was redesigned as a token scan
+  (the enumerating scanner missed ~13 forms), and its manifest is 15 entries, one per rule; the pin is `15`. Resolve
   (the deleted manifest must leave no pin behind: `python3 scripts/check-plan-code.py --self-test`).
 - [x] **Step 9: Commit.**
 

@@ -22,11 +22,11 @@ import stat
 import subprocess
 import sys
 
-# INSTANCE, NOT CLASS — the reason this is here. The sibling `gen-dashboard.py`
-# shipped a fix for exactly this (its `git`/`gh` calls inherited the caller's
+# INSTANCE, NOT CLASS — the reason this is here. The sibling `gen-dashboard.py` (deleted
+# in dashboard-retire S3) shipped a fix for exactly this (its `git`/`gh` calls inherited the caller's
 # cwd, so a run from anywhere else reported an empty project as a healthy one).
 # Review found the same shape here, in the same feature, in the script
-# `gen-dashboard.py` imports at load time. It happens to work only because CI
+# `gen-dashboard.py` imported at load time. It happens to work only because CI
 # invokes it from the repo root — "works because of where the caller stood" is
 # the property that fix set out to delete, so it is deleted in both places.
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -67,7 +67,7 @@ def _declaration_reason(s: str, marker: str = NO_REVIEW) -> str | None:
     are inert, and that emphasis is NOT one of them — cost measured escapes to get right; a sibling
     gate re-deriving them would drift, which is the divergence this file has already paid for twice.
     ⟳ dashboard-retire S2: the default is `NO-REVIEW:`, the one marker left. `gen-dashboard.py`, whose
-    exemption list is historical `NO-ENTRY:` declarations, passes that marker explicitly until S3.
+    exemption list was historical `NO-ENTRY:` declarations, passed that marker until S3 deleted it.
 
     ONE definition, called from BOTH of `exemption_reason`'s scan points. They had
     the marker test written out twice and would have needed the same fix twice —
@@ -186,8 +186,9 @@ def fenced_lines(text: str) -> set[int]:
 def exemption_reason(pr_body: str, marker: str = NO_REVIEW) -> str | None:
     """The reason after a line-leading declaration marker, or None.
 
-    ONE DEFINITION, shared with scripts/gen-dashboard.py, so the page displays exactly
-    the exemptions the gate granted (spec §7). An exemption must be DELIBERATE,
+    ONE DEFINITION, imported by `check-merge-ready.py` (`_dashboard_gate`), which asks it about
+    each marker rather than re-deriving the rule. (⟳ dashboard-retire S3: its other consumer, the
+    deleted `gen-dashboard.py`, displayed the exemptions the gate granted, spec §7.) An exemption must be DELIBERATE,
     so anything a Markdown reader treats as inert does not count: fenced code
     (closed only by its own character), indented code (4+ columns, tabs
     included), HTML comments across lines, and blockquotes.
@@ -787,8 +788,8 @@ def _self_test_body() -> int:
     case("9.2 a fenced NO-REVIEW: does not exempt", exemption_reason(fenced), None)
     case("9.3 NO-REVIEW: is the default marker", exemption_reason("NO-REVIEW: docs only"), "docs only")
     case("9.4 a NO-ENTRY: declaration is no longer read", exemption_reason("NO-ENTRY: x"), None)
-    # ⛔ THE `marker` PARAMETER IS STILL LOAD-BEARING: gen-dashboard passes `NO-ENTRY:` to list the
-    # historical waivers. With `NO-REVIEW:` the default, only a NON-default marker shows it is read.
+    # ⛔ THE `marker` PARAMETER IS STILL LOAD-BEARING: check-merge-ready passes each marker it reads
+    # (gen-dashboard, which passed `NO-ENTRY:`, was deleted in S3). With `NO-REVIEW:` the default, only a NON-default marker shows it is read.
     case("a non-default marker is honoured", exemption_reason("X-MARK: y", "X-MARK:"), "y")
     # ─── the marker survives EMPHASIS ──────────────────────────────────────
     # ⛔ MEASURED 2026-09-01: `**NO-REVIEW:** typo fix` returned None, so a PR body

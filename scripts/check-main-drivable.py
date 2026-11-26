@@ -3047,7 +3047,7 @@ def _self_test_body() -> int:                                      # noqa: C901 
                   "    globals()['FLAG'] = _real\n"
                   "    case('b', main(['--base', 'master']), 0)\n")
     case("⛔ a substitution RESTORED before the call buys nothing — "
-         "check-dashboard-entry.py's shape, and the false credit this rule shipped once",
+         "the retired entry gate's shape, and the false credit this rule shipped once",
          classify(_wired(R_RESTORED)).routes, frozenset())
     # ⚠ TWO writes, not three: `_real = globals()['FLAG']` writes a LOCAL and is a save, not a
     # write to the global. The first draft of this case expected three and the rule was right.
@@ -4377,7 +4377,7 @@ def _self_test_body() -> int:                                      # noqa: C901 
                      ("'/nonexistent'", "a literal — INERT, but plainly not the live tree"),
                      ("None", "...and so is None"),
                      ("lambda base: ([], False, 'boom')",
-                      "a stub, which is `check-dashboard-entry.py`'s ONLY credit")):
+                      "a stub, which is the retired entry gate's ONLY credit")):
         case(f"...while `globals()['ROOT'] = {_v}` does change the world — {_why}", _sub(_v),
              frozenset({REBIND}))
     # ⚠ THE NAIVE SYMMETRY FIX — "require BUILT, like the other three routes" — IS WRONG, and this

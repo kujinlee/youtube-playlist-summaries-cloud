@@ -1890,7 +1890,7 @@ def _self_test_body() -> int:
          lambda: (items(w_b, {"b": [B], "ad": [".agents/skills/artifact-design/SKILL.md"]}, "b", 5),
                   items(w_b, {"e": [E], "ad": [".agents/skills/artifact-design/SKILL.md"]}, "e", 5)),
          (([], []), ([], [])))
-    w_s = world({N: ("Use /dashboard to record it.\n"
+    w_s = world({N: ("Use /goals to record it.\n"
                      "This requires the `grill-me` skill.\n"
                      "Invoke the superpowers:brainstorming skill.\n"
                      "Use the same skill again, or load this skill twice.\n"
@@ -1899,7 +1899,7 @@ def _self_test_body() -> int:
     case("detector 5: use /X, a required skill and a named skill are each a finding; an ordinary word before "
          "`skill`, a path and a bare code span are not; and only Markdown is read",
          lambda: (items(w_s, {"n": [N]}, "n", 5)[0], items(w_s, {"t": ["scripts/tool.py"]}, "t", 5)[0]),
-         ([(1, "requires-skill", "dashboard"), (2, "requires-skill", "grill-me"),
+         ([(1, "requires-skill", "goals"), (2, "requires-skill", "grill-me"),
            (3, "requires-skill", "superpowers:brainstorming")], []))
 
     # --- Task 12: detectors 6 (runtime prerequisites) and 7 (inbound registration) --------------------------

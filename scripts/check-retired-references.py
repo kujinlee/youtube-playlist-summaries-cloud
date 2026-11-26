@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""K8: nothing that RUNS still names a thing the dashboard retirement deleted.
+"""K8: no live source or config file still names a thing the dashboard retirement deleted.
 
     python3 scripts/check-retired-references.py              # rc 0 ok, rc 1 findings, rc 2 CANNOT RUN
     python3 scripts/check-retired-references.py --self-test
@@ -8,30 +8,44 @@ WHY THIS EXISTS (spec `docs/superpowers/specs/2026-11-24-dashboard-retire-design
 --------------------------------------------------------------------------------------------
 Slice S3 deletes the dashboard page's generator, its hook and the old entry gate. A deleted file that
 something still LOADS fails only when that something runs, which for a hook or a nightly job can be days
-later and somewhere nobody is looking. A name grep cannot be the check: the retired names stay in prose
-on purpose (dated reviews, the plan, the spec, this docstring), so a grep is red forever or exempts its
-way to green. This reads the places a name is EXECUTED from, by their structure:
+later and somewhere nobody is looking.
 
-  load        a string argument of `with_name`, `_sibling`, `_load`, `spec_from_file_location`
-  path        a string operand of `/` (`ROOT / "scripts" / "gen-dashboard.py"`)
-  argv        a string element of a list or tuple (a gate table's command line)
-  page-table  a `"dashboard"` key or element of `REGENERABLE`, `PAGES`, `CI_PAGES`, `PAGE_SOURCES`
-  link        `key_link("dashboard", …)`, or a string holding an href to the retired route
-  hook        a `command` in `.claude/settings.json`
-  workflow    a `run:` line of `.github/workflows/*.yml` (comment lines skipped)
-  manifest    a `file` field of `scripts/mutations/*.json`
+WHAT IT CHECKS — exactly this, and nothing narrower
+---------------------------------------------------
+The retired things are the path tokens `RETIRED_PATHS` and the route `/dashboard` (also after
+`localhost` or a `:port`; never `/dashboard-archive`, `/dashboards`, `x/dashboard`). Every tracked file
+is read unless an exemption below names it, in one of two ways:
 
-Python is read with `ast`: comments are never seen, and a string that is a whole statement (a docstring,
-or prose standing alone) is skipped. `/dashboard-archive` and `/dashboards` are not the route.
+  string      Python (`.py`): EVERY string constant, f-string parts included, wherever it sits — a call
+              argument positional or keyword, a module constant, a dict value, a path operand, a
+              `shell=True` / `bash -c` command, a `Path(...)` / `joinpath(...)` argument, a JS or HTML
+              string a generator emits. Read with `ast`, so comments are never seen, and a string that is
+              a whole statement (a docstring, or prose standing alone) is skipped.
+  text        every other source or config kind (`TEXT_SUFFIXES`, plus an extensionless file that starts
+              `#!` such as `.githooks/pre-push`): every line, except a whole-line comment. The category
+              named in a finding is where the file lives: `hook` (`.claude/settings.json`,
+              `.claude/hooks/`, `.githooks/`), `workflow`, `manifest` (`scripts/mutations/`), else `text`.
+  page-table  Python: the bare word `"dashboard"` anywhere in a simple statement that names a page table
+              (`PAGE_TABLES`): a literal, a later `T["dashboard"] = …`, `T.update({"dashboard": …})`.
+              A membership test (`"dashboard" not in T`) is not a use. This is the one thing a text scan
+              cannot see — the bare word is everywhere else — and why Python is parsed at all.
+  link        Python: `key_link("dashboard", …)` or `key_link(kind="dashboard", …)`.
+
+A text scan of a token cannot miss a syntactic form; the spec's original design enumerated forms, and
+review round 1 found thirteen it missed (`docs/reviews/coordinator/dashboard-retire-s3-r1-coordinator.md`).
+
+NOT READ, by kind (prose and pages, which keep the retired names as history on purpose): `.md`, `.html`,
+`.css`, `.txt`, images. NOT READ, by path — `EXEMPT_PREFIXES`, each with its reason; this script itself;
+and the literals of `ALLOWED`, each scoped to ONE file. A name assembled at run time from pieces that
+are each innocent (`"gen-" + "dashboard.py"`) is not seen: the bound of any static scan.
 
 THE FILE SET is `git ls-files` when the root is a repository, so the scan reads what CI reads; a root
-that is not one (the self-test's scratch trees) is walked. This script is not scanned: its own tables
-name the retired things.
+that is not one (the self-test's scratch trees) is walked.
 
-WHAT WOULD MAKE THIS FAIL (its falsifier): a seeded reference of any category above passes the scan; or
-the prose seed or the `RETIRED_FILES` seed fails it. CANNOT RUN (rc 2, never a pass): a scanned `.py`
-does not parse, `.claude/settings.json` is missing or is not JSON, no workflow file exists, or a
-manifest is not JSON.
+WHAT WOULD MAKE THIS FAIL (its falsifier): a seeded reference in any form listed by the self-test passes
+the scan; or a seeded exemption, comment, docstring or near-miss name is refused. CANNOT RUN (rc 2, never
+a pass): a scanned `.py` does not parse, a scanned file cannot be read as UTF-8, `.claude/settings.json`
+is missing or is not JSON, no workflow file exists, or a manifest is not JSON.
 """
 from __future__ import annotations
 
@@ -53,11 +67,38 @@ RETIRED_PATHS = ("gen-dashboard.py", "check-dashboard-entry.py", "regen-dashboar
                  ".claude/skills/dashboard", ".agents/skills/dashboard")
 RETIRED_ROUTE = "/dashboard"
 _TOKEN = re.compile(r"(?<![\w.-])(?:" + "|".join(re.escape(p) for p in RETIRED_PATHS) + r")(?![\w.-])")
-_HREF = re.compile(r"""href=\\?["']?""" + re.escape(RETIRED_ROUTE) + r"(?![\w-])")
+# The route: not inside a longer path segment (`x/dashboard`) — unless what precedes it is a host the
+# explainer server answers on (`localhost/…`, `:7391/…`). Not followed by a name character, so
+# `/dashboard-archive` and `/dashboards` are other routes; `/dashboard#…`, `/dashboard.html` are this one.
+_ROUTE = re.compile(r"(?:(?<![\w.-])|(?<=localhost)|(?<=:\d\d)|(?<=:\d\d\d)|(?<=:\d\d\d\d)|(?<=:\d\d\d\d\d))"
+                    + re.escape(RETIRED_ROUTE) + r"(?![\w-])")
 
-LOADERS = frozenset({"with_name", "_sibling", "_load", "spec_from_file_location"})
 PAGE_TABLES = frozenset({"REGENERABLE", "PAGES", "CI_PAGES", "PAGE_SOURCES"})
 RETIRED_PAGE = "dashboard"
+
+# Kinds read line by line, and the whole-line comment marker of each (None: the kind has no comments).
+TEXT_SUFFIXES = {".sh": "#", ".bash": "#", ".yml": "#", ".yaml": "#", ".toml": "#", ".json": None,
+                 ".js": "//", ".mjs": "//", ".cjs": "//", ".jsx": "//", ".ts": "//", ".tsx": "//"}
+
+# Paths never read, each with its reason. A prefix ending in `/` is a directory.
+EXEMPT_PREFIXES = {
+    "docs/reviews/": "dated reviews: the record of what was checked, naming what then existed",
+    "docs/superpowers/": "specs and plans: the history of the decision, which names the retired things on purpose",
+    "docs/marketplace/scan-": "dated marketplace scans: measurements of the tree as it then was",
+    "docs/marketplace/inventory.json": "each component's measured notes, written when it was measured",
+    "scripts/fixtures/": "recorded observations a self-test replays as data; nothing executes them",
+}
+# (file, exact string constant) pairs allowed to name the route, each with its reason.
+ALLOWED = {
+    ("scripts/explainer-serve.py", "/dashboard"):
+        "15.15: the archive route's own case, asserting the retired url answers with the archive record",
+    ("scripts/explainer-serve.py", "/dashboard.html"):
+        "15.15: the same case, for the page's file url",
+    ("scripts/page_markup.py", 'The page is served at "http://127.0.0.1:7391/dashboard" now.'):
+        "a URL-linkifier case keeping review r3's input verbatim; the url is text to linkify, never followed",
+    ("scripts/check-page-links.py", 'The page is served at "http://127.0.0.1:7391/dashboard" now.'):
+        "the same verbatim input in the linkifier's fuzz corpus (`FUZZ_VERBATIM`)",
+}
 
 
 class CannotRun(Exception):
@@ -83,6 +124,14 @@ def _read(root: Path, rel: str) -> str:
         raise CannotRun(f"{rel} could not be read ({e})") from e
 
 
+def _exempt(rel: str) -> bool:
+    return rel == SELF or any(rel.startswith(p) for p in EXEMPT_PREFIXES)
+
+
+def _names_retired(s: str) -> bool:
+    return bool(_TOKEN.search(s) or _ROUTE.search(s))
+
+
 def _call_name(call: ast.Call) -> str | None:
     f = call.func
     return f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None
@@ -98,6 +147,14 @@ def _prose(tree: ast.AST) -> set[int]:
             if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)}
 
 
+_SIMPLE = (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Expr, ast.Return)
+
+
+def _membership_test(node: ast.AST, parents: dict[int, ast.AST]) -> bool:
+    p = parents.get(id(node))
+    return isinstance(p, ast.Compare) and all(isinstance(op, (ast.In, ast.NotIn)) for op in p.ops)
+
+
 def _python_findings(rel: str, text: str) -> list[str]:
     try:
         tree = ast.parse(text, filename=rel)
@@ -107,115 +164,94 @@ def _python_findings(rel: str, text: str) -> list[str]:
     prose = _prose(tree)
     out: list[str] = []
     for node in ast.walk(tree):
-        # page-table: a "dashboard" key (or element) of a page table
-        if isinstance(node, (ast.Assign, ast.AnnAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if any(isinstance(t, ast.Name) and t.id in PAGE_TABLES for t in targets):
-                v = node.value
-                items = v.keys if isinstance(v, ast.Dict) else v.elts if isinstance(v, (ast.List, ast.Tuple, ast.Set)) else []
-                for k in items:
-                    if isinstance(k, ast.Constant) and k.value == RETIRED_PAGE:
+        # page-table: the bare page name in any simple statement that names a page table
+        if isinstance(node, _SIMPLE):
+            names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)} \
+                | {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
+            if names & PAGE_TABLES:
+                for k in ast.walk(node):
+                    if isinstance(k, ast.Constant) and k.value == RETIRED_PAGE and not _membership_test(k, parents):
                         out.append(_finding(rel, k.lineno, "page-table", k.value))
-        # link: key_link("dashboard", …)
-        if isinstance(node, ast.Call) and _call_name(node) == "key_link" and node.args \
-                and isinstance(node.args[0], ast.Constant) and node.args[0].value == RETIRED_PAGE:
-            out.append(_finding(rel, node.lineno, "link", f"key_link({RETIRED_PAGE!r}, …)"))
-        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
-            continue
-        if id(node) in prose:
-            continue
-        # link: a literal href to the retired route, an f-string's text part included
-        if _HREF.search(node.value):
-            out.append(_finding(rel, node.lineno, "link", node.value))
-            continue
-        if not _TOKEN.search(node.value):
-            continue
-        p = parents.get(id(node))
-        if isinstance(p, ast.Call) and _call_name(p) in LOADERS and any(a is node for a in p.args):
-            out.append(_finding(rel, node.lineno, "load", node.value))
-        elif isinstance(p, ast.BinOp) and isinstance(p.op, ast.Div):
-            out.append(_finding(rel, node.lineno, "path", node.value))
-        elif isinstance(p, (ast.List, ast.Tuple)) and not re.search(r"\s", node.value):
-            # an argv element is one word; a sentence in a tuple is a case name, which is prose
-            out.append(_finding(rel, node.lineno, "argv", node.value))
+        # link: key_link("dashboard", …), positional or keyword
+        if isinstance(node, ast.Call) and _call_name(node) == "key_link":
+            kinds = node.args[:1] + [kw.value for kw in node.keywords if kw.arg == "kind"]
+            if any(isinstance(a, ast.Constant) and a.value == RETIRED_PAGE for a in kinds):
+                out.append(_finding(rel, node.lineno, "link", f"key_link({RETIRED_PAGE!r}, …)"))
+        # string: every string constant that is not prose
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in prose \
+                and _names_retired(node.value) and (rel, node.value) not in ALLOWED:
+            out.append(_finding(rel, node.lineno, "string", node.value))
     return out
 
 
-def _hook_findings(root: Path) -> list[str]:
+def _text_category(rel: str) -> str:
+    if rel == ".claude/settings.json" or rel.startswith((".claude/hooks/", ".githooks/")):
+        return "hook"
+    if rel.startswith(".github/workflows/"):
+        return "workflow"
+    if rel.startswith("scripts/mutations/"):
+        return "manifest"
+    return "text"
+
+
+def _text_kind(root: Path, rel: str) -> tuple[bool, str | None]:
+    """(is this file read line by line, its whole-line comment marker)."""
+    suffix = Path(rel).suffix
+    if suffix in TEXT_SUFFIXES:
+        return True, TEXT_SUFFIXES[suffix]
+    if suffix == "" and not Path(rel).name.startswith("."):
+        try:
+            with open(root / rel, "rb") as fh:
+                return fh.read(2) == b"#!", "#"
+        except OSError as e:
+            raise CannotRun(f"{rel} could not be read ({e})") from e
+    return False, None
+
+
+def _text_findings(rel: str, text: str, comment: str | None) -> list[str]:
+    out = []
+    for n, line in enumerate(text.splitlines(), 1):
+        s = line.strip()
+        if comment and (s.startswith(comment) or (comment == "//" and s.startswith(("/*", "*")))):
+            continue
+        if _names_retired(line):
+            out.append(_finding(rel, n, _text_category(rel), s))
+    return out
+
+
+def _preconditions(root: Path, files: list[str]) -> None:
+    """What the scan must be able to read, or it is CANNOT RUN — never a pass."""
     rel = ".claude/settings.json"
     if not (root / rel).is_file():
         raise CannotRun(f"{rel} is missing")
     try:
-        data = json.loads(_read(root, rel))
+        json.loads(_read(root, rel))
     except json.JSONDecodeError as e:
         raise CannotRun(f"{rel} is not JSON ({e})") from e
-    out: list[str] = []
-
-    def walk(x) -> None:
-        if isinstance(x, dict):
-            for k, v in x.items():
-                if k == "command" and isinstance(v, str) and _TOKEN.search(v):
-                    out.append(_finding(rel, 0, "hook", v))
-                walk(v)
-        elif isinstance(x, list):
-            for v in x:
-                walk(v)
-    walk(data)
-    return out
-
-
-def run_lines(text: str) -> list[tuple[int, str]]:
-    """(line number, text) of every line a workflow's `run:` keys execute; comment lines skipped."""
-    lines, out, i = text.splitlines(), [], 0
-    while i < len(lines):
-        m = re.match(r"^(\s*)(?:-\s+)?run:\s*(.*)$", lines[i])
-        if not m:
-            i += 1
-            continue
-        indent, rest = len(m.group(1)), m.group(2).strip()
-        if rest[:1] in ("|", ">"):
-            j = i + 1
-            while j < len(lines) and (not lines[j].strip() or len(lines[j]) - len(lines[j].lstrip()) > indent):
-                out.append((j + 1, lines[j]))
-                j += 1
-            i = j
-            continue
-        out.append((i + 1, rest))
-        i += 1
-    return [(n, s) for n, s in out if s.strip() and not s.strip().startswith("#")]
-
-
-def _workflow_findings(root: Path, files: list[str]) -> list[str]:
-    flows = [f for f in files if f.startswith(".github/workflows/") and f.endswith((".yml", ".yaml"))]
-    if not flows:
+    if not [f for f in files if f.startswith(".github/workflows/") and f.endswith((".yml", ".yaml"))]:
         raise CannotRun("no workflow file under .github/workflows/")
-    return [_finding(rel, n, "workflow", s.strip()) for rel in flows
-            for n, s in run_lines(_read(root, rel)) if _TOKEN.search(s)]
-
-
-def _manifest_findings(root: Path, files: list[str]) -> list[str]:
-    out: list[str] = []
-    for rel in files:
-        if not (rel.startswith("scripts/mutations/") and rel.endswith(".json")):
-            continue
-        try:
-            data = json.loads(_read(root, rel))
-        except json.JSONDecodeError as e:
-            raise CannotRun(f"{rel} is not JSON ({e})") from e
-        named = sorted({e["file"] for e in (data if isinstance(data, list) else [])
-                        if isinstance(e, dict) and isinstance(e.get("file"), str) and _TOKEN.search(e["file"])})
-        # one finding per manifest and file, not per entry: a 72-entry manifest is one thing to delete
-        out += [_finding(rel, 0, "manifest", f) for f in named]
-    return out
+    for f in files:
+        if f.startswith("scripts/mutations/") and f.endswith(".json"):
+            try:
+                json.loads(_read(root, f))
+            except json.JSONDecodeError as e:
+                raise CannotRun(f"{f} is not JSON ({e})") from e
 
 
 def scan(root: Path) -> list[str]:
     """One sentence per reference to a retired thing; raises CannotRun when a source cannot be read."""
     files = _files(root)
-    out = _hook_findings(root) + _workflow_findings(root, files) + _manifest_findings(root, files)
+    _preconditions(root, files)
+    out: list[str] = []
     for rel in files:
-        if rel.endswith(".py") and rel != SELF and (root / rel).is_file():
+        if _exempt(rel) or not (root / rel).is_file():
+            continue
+        if rel.endswith(".py"):
             out += _python_findings(rel, _read(root, rel))
+            continue
+        is_text, comment = _text_kind(root, rel)
+        if is_text:
+            out += _text_findings(rel, _read(root, rel), comment)
     return out
 
 
@@ -236,8 +272,8 @@ def main(argv: list[str]) -> int:
         for f in findings:
             print(f"  {f}", file=sys.stderr)
         return 1
-    print("check-retired-references: ok — no load, path, argv, page-table, link, hook, workflow "
-          "or manifest names a retired thing")
+    print("check-retired-references: ok — no string constant, source or config line, page table or "
+          "key_link names a retired thing")
     return 0
 
 
@@ -274,35 +310,64 @@ def _cats(files: dict[str, str]) -> list[str]:
     return [re.search(r"\[([\w-]+)\]", f).group(1) for f in found]
 
 
+# Every input review round 1 ran that the enumerating scanner passed (F1, both halves) or that
+# check-page-links stopped refusing (F2). Each must be refused: a non-empty finding list.
+# (case name, file, text)
+_PY = "scripts/a.py"
+REVIEW_R1_INPUTS = (
+    ("F1a a shell=True command string is refused", _PY,
+     'subprocess.run("python3 scripts/gen-dashboard.py --self-test", shell=True)\n'),
+    ("F1b a bash -c argv element is refused", _PY,
+     'subprocess.run(["bash", "-c", "python3 scripts/gen-dashboard.py --self-test"])\n'),
+    ("F1c a gate-table tuple whose command is one string is refused", _PY,
+     'GATES = [("dash", "python3 scripts/check-dashboard-entry.py --base master")]\n'),
+    ("F1d a Path(...) argument is refused", _PY, 'P = Path("scripts/gen-dashboard.py")\n'),
+    ("F1d a joinpath(...) argument is refused", _PY, 'P = ROOT.joinpath("scripts", "gen-dashboard.py")\n'),
+    ("F1e an f-string argv element is refused", _PY, 'A = ["python3", f"{ROOT}/scripts/gen-dashboard.py"]\n'),
+    ("F1f a module constant is refused", _PY, 'GEN = "scripts/gen-dashboard.py"\n'),
+    ("F1f a dict value is refused", _PY, 'T = {"dash": "scripts/gen-dashboard.py"}\n'),
+    ("F1g a loader's keyword argument is refused", _PY,
+     'S = importlib.util.spec_from_file_location("gd", location="scripts/gen-dashboard.py")\n'),
+    ("F1g a _load keyword argument is refused", _PY, 'M = _load(path="gen-dashboard.py")\n'),
+    ("F1h a page table changed by subscript is refused", _PY, 'REGENERABLE["dashboard"] = "x.py"\n'),
+    ("F1h a page table changed by update() is refused", _PY, 'PAGES.update({"dashboard": "x.py"})\n'),
+    ("F1h an href with spaces round its = is refused", _PY, 'HTML = \'<a href = "/dashboard">x</a>\'\n'),
+    ("F1i a hook script whose body runs the generator is refused", ".claude/hooks/x.sh",
+     '#!/bin/bash\npython3 scripts/gen-dashboard.py --self-test\n'),
+    ("F1j a package.json script is refused", "package.json",
+     '{"scripts": {"dash": "python3 scripts/gen-dashboard.py"}}\n'),
+    ("F1j a .githooks hook is refused", ".githooks/pre-push", '#!/bin/sh\npython3 scripts/gen-dashboard.py\n'),
+    ("F1k a workflow flow-mapping step is refused", ".github/workflows/ci.yml",
+     "jobs:\n  t:\n    steps:\n      - {name: x, run: python3 scripts/gen-dashboard.py}\n"),
+    ("F1l a JS fetch of the route in a generator's string is refused", _PY,
+     "JS = \"fetch('/dashboard')\"\n"),
+    ("F1l a JS href assignment in a generator's string is refused", _PY, 'JS = "a.href = \\"/dashboard\\";"\n'),
+    ("F1l a nav tuple naming the route is refused", _PY, 'NAV = (("Dashboard", "/dashboard"), ("Goals", "/goals"))\n'),
+    ("F1l a TypeScript fetch of the route is refused", "app/x.ts", "const r = await fetch('/dashboard');\n"),
+    ("F2 an href built by + concatenation is refused", _PY,
+     'def h(slug):\n    return "/dashboard" + "#" + slug\n'),
+    ("F2 an href built by % is refused", _PY, 'h = "/dashboard#%s" % slug\n'),
+    ("F2 an href built by .format is refused", _PY, 'h = "/dashboard#{}".format(slug)\n'),
+    ("a localhost url of the route is refused", _PY, 'U = "http://localhost:7391/dashboard"\n'),
+)
+
+
 def _self_test_body() -> int:
     cases: list[tuple[str, object, object]] = []
 
     def case(name: str, got, want) -> None:
         cases.append((name, got, want))
 
-    # 15.1–15.3: loads and path literals
+    # 15.1–15.10: the seeds the plan enumerated, each still refused, by its category now
     case("15.1 a with_name load is refused",
-         _cats({"scripts/a.py": 'from pathlib import Path\nP = Path(__file__).with_name("gen-dashboard.py")\n'}),
-         ["load"])
-    case("15.2 a _sibling load is refused",
-         _cats({"scripts/a.py": 'M = _sibling("gen-dashboard.py")\n'}), ["load"])
-    case("15.2 a _load load is refused",
-         _cats({"scripts/a.py": 'M = _load("gen-dashboard.py", "gd")\n'}), ["load"])
-    case("15.2 a spec_from_file_location load is refused",
-         _cats({"scripts/a.py": 'import importlib.util\n'
-                                'S = importlib.util.spec_from_file_location("gd", "scripts/gen-dashboard.py")\n'}),
-         ["load"])
+         _cats({_PY: 'from pathlib import Path\nP = Path(__file__).with_name("gen-dashboard.py")\n'}), ["string"])
+    case("15.2 a _sibling load is refused", _cats({_PY: 'M = _sibling("gen-dashboard.py")\n'}), ["string"])
     case("15.3 a ROOT / scripts / … path literal is refused",
-         _cats({"scripts/a.py": 'P = ROOT / "scripts" / "gen-dashboard.py"\n'}), ["path"])
-    # 15.4–15.7: hooks, workflows, argv, manifests
+         _cats({_PY: 'P = ROOT / "scripts" / "gen-dashboard.py"\n'}), ["string"])
     case("15.4 a hook command is refused",
          _cats({".claude/settings.json": json.dumps({"hooks": {"PostToolUse": [{"hooks": [
              {"type": "command", "command": "bash .claude/hooks/run-hook.sh regen-dashboard.sh"}]}]}})}),
          ["hook"])
-    case("15.5 a workflow run line is refused",
-         _cats({".github/workflows/ci.yml":
-                "jobs:\n  t:\n    steps:\n      - run: python3 scripts/check-dashboard-entry.py\n"}),
-         ["workflow"])
     case("15.5 a line of a workflow run block is refused, and its comment line is not",
          _cats({".github/workflows/ci.yml":
                 "jobs:\n  t:\n    steps:\n      - name: x\n        run: |\n"
@@ -311,59 +376,92 @@ def _self_test_body() -> int:
                 "      - name: y\n        run: echo gen-dashboard.py-free\n"}),
          ["workflow"])
     case("15.6 an argv literal in a gate table is refused",
-         _cats({"scripts/a.py": 'GATES = [["python3", "scripts/check-dashboard-entry.py", "--base", b]]\n'}),
-         ["argv"])
-    case("15.6 a sentence in a tuple is a case name, not an argv element",
-         _cats({"scripts/a.py": 'CASES = [("a stub, which is `check-dashboard-entry.py`\'s credit", 1)]\n'}), [])
+         _cats({_PY: 'GATES = [["python3", "scripts/check-dashboard-entry.py", "--base", b]]\n'}), ["string"])
     case("15.7 a manifest file field is refused",
          _cats({"scripts/mutations/x.json": json.dumps([{"name": "n", "file": "scripts/gen-dashboard.py",
                                                          "edits": [["a", "b"]], "expect": ["c"]}])}),
          ["manifest"])
-    # 15.8: the page tables
     for table in ("REGENERABLE", "PAGES", "PAGE_SOURCES"):
         case(f"15.8 a {table} key is refused",
-             _cats({"scripts/a.py": f'{table} = {{"goals": "gen-goals-page.py", "dashboard": "x.py"}}\n'}),
-             ["page-table"])
-    case("15.8 a page-table element is refused",
-         _cats({"scripts/a.py": 'PAGES = ("goals", "dashboard")\n'}), ["page-table"])
-    case("15.8 another table's dashboard key is not a page table",
-         _cats({"scripts/a.py": 'COLOURS = {"dashboard": "#fff"}\n'}), [])
-    # 15.9–15.10: links
-    case("15.9 a key_link('dashboard', …) call is refused",
-         _cats({"scripts/a.py": 'h = key_link("dashboard", slug)\n'}), ["link"])
-    case("15.9 a key_link to a live page is not",
-         _cats({"scripts/a.py": 'h = key_link("goals", slug)\n'}), [])
-    case("15.10 a literal href to the route is refused",
-         _cats({"scripts/a.py": 'def row(slug):\n    return f\'<a href="/dashboard#{slug}">x</a>\'\n'}),
+             _cats({_PY: f'{table} = {{"goals": "gen-goals-page.py", "dashboard": "x.py"}}\n'}), ["page-table"])
+    case("15.8 a page-table element is refused", _cats({_PY: 'PAGES = ("goals", "dashboard")\n'}), ["page-table"])
+    case("15.9 a key_link('dashboard', …) call is refused", _cats({_PY: 'h = key_link("dashboard", slug)\n'}),
          ["link"])
-    # 15.11–15.13: what passes
+    case("15.9 a key_link(kind='dashboard') call is refused",
+         _cats({_PY: 'h = key_link(kind="dashboard", key=slug)\n'}), ["link"])
+    case("15.10 a literal href to the route is refused",
+         _cats({_PY: 'def row(slug):\n    return f\'<a href="/dashboard#{slug}">x</a>\'\n'}), ["string"])
+
+    # Review round 1's inputs: every one refused.
+    for name, rel, text in REVIEW_R1_INPUTS:
+        got = _cats({rel: text})
+        case(name, bool(got) and "CANNOT RUN" not in got, True)
+
+    # 15.11–15.13 and the adjacent negatives: what passes
     case("15.11 prose and comments pass",
-         _cats({"scripts/a.py": '"""The old page was built by gen-dashboard.py and linked\n'
-                                '<a href="/dashboard">it</a>; scripts/gen-dashboard.py is gone."""\n'
-                                '# gen-dashboard.py was retired by slice S3\n'
-                                'def f():\n    """Once called _load("gen-dashboard.py")."""\n'
-                                '    return 1\n',
-                "docs/reviews/2026-11-01-old.md": "Ran `python3 scripts/gen-dashboard.py`, linked /dashboard.\n"}),
+         _cats({_PY: '"""The old page was built by gen-dashboard.py and linked\n'
+                     '<a href="/dashboard">it</a>; scripts/gen-dashboard.py is gone."""\n'
+                     '# gen-dashboard.py was retired by slice S3\n'
+                     'def f():\n    """Once called _load("gen-dashboard.py")."""\n'
+                     '    return 1\n'}),
          [])
-    case("15.12 the RETIRED_FILES row passes",
-         _cats({"scripts/a.py": 'RETIRED_FILES = {"dashboard.html": "/dashboard-archive"}\n'}), [])
+    case("15.11 a whole-line comment in a hook, a TS file and a workflow passes",
+         _cats({".claude/hooks/x.sh": "#!/bin/bash\n# gen-dashboard.py was retired\necho ok\n",
+                "app/x.ts": "// the old /dashboard page is gone\n/* gen-dashboard.py */\nconst a = 1;\n",
+                ".github/workflows/ci.yml": "jobs:\n  t:\n    steps:\n      # gen-dashboard.py was here\n"
+                                            "      - run: python3 scripts/ok.py\n"}),
+         [])
+    case("15.12 the RETIRED_FILES row passes", _cats({_PY: 'RETIRED_FILES = {"dashboard.html": "/dashboard-archive"}\n'}),
+         [])
     case("15.13 /dashboard-archive and /dashboards are not the route",
-         _cats({"scripts/a.py": 'A = \'<a href="/dashboard-archive">a</a>\'\nB = \'<a href="/dashboards">b</a>\'\n'}),
-         [])
+         _cats({_PY: 'A = \'<a href="/dashboard-archive">a</a>\'\nB = \'<a href="/dashboards">b</a>\'\n'}), [])
     case("15.13 a live script's path literal passes",
-         _cats({"scripts/a.py": 'P = ROOT / "scripts" / "gen-goals-page.py"\nQ = ["scripts/gen-backlog-page.py"]\n'}),
-         [])
-    # 15.14: CANNOT RUN
-    case("15.14 a script that does not parse is CANNOT RUN",
-         _cats({"scripts/a.py": "def broken(:\n"}), ["CANNOT RUN"])
-    case("15.14 settings.json that is not JSON is CANNOT RUN",
-         _cats({".claude/settings.json": "{not json"}), ["CANNOT RUN"])
-    case("15.14 a tree with no workflow is CANNOT RUN, never a pass",
-         _cats({".github/workflows/ci.yml": None}), ["CANNOT RUN"])
-    # The finding sentence names the file and the literal, so the work list is actionable.
-    found = scan(_world({"scripts/a.py": 'P = ROOT / "scripts" / "gen-dashboard.py"\n'}))
-    case("a finding names its file and the literal",
-         (len(found), "scripts/a.py" in found[0] if found else None,
+         _cats({_PY: 'P = ROOT / "scripts" / "gen-goals-page.py"\nQ = ["scripts/gen-backlog-page.py"]\n'}), [])
+    case("near miss: a longer file name that contains a retired one passes",
+         _cats({_PY: 'A = "gen-dashboard.pyc"\nB = "xgen-dashboard.py"\nC = "check-dashboard-entry.py.bak"\n'}), [])
+    case("near miss: a route inside a longer path or on another host passes",
+         _cats({_PY: 'A = "docs/explainers/x/dashboard"\nB = "https://example.com/dashboard"\n'}), [])
+    case("near miss: the bare word in a table that is not a page table passes",
+         _cats({_PY: 'COLOURS = {"dashboard": "#fff"}\nCOLOURS["dashboard"] = "#000"\n'}), [])
+    case("near miss: a membership test against a page table passes",
+         _cats({_PY: 'assert "dashboard" not in REGENERABLE\nok = "dashboard" in PAGES\n'}), [])
+    case("near miss: a key_link to a live page passes", _cats({_PY: 'h = key_link("goals", slug)\n'}), [])
+    case("near miss: prose kinds (.md, .html, .css) are not read",
+         _cats({"docs/x.md": "Run `python3 scripts/gen-dashboard.py`.\n",
+                "docs/explainers/x.html": '<a href="/dashboard">old</a>\n',
+                "docs/x.css": "/* gen-dashboard.py */\n"}), [])
+    case("near miss: an extensionless file with no #! is not read",
+         _cats({"scripts/NOTES": "python3 scripts/gen-dashboard.py\n"}), [])
+
+    # Every exemption is honoured, and is no wider than it says.
+    for prefix in EXEMPT_PREFIXES:
+        rel = prefix + ("x.py" if prefix.endswith("/") else ("" if prefix.endswith(".json") else "x.json"))
+        text = 'A = "scripts/gen-dashboard.py"\n' if rel.endswith(".py") else '{"a": "scripts/gen-dashboard.py"}\n'
+        case(f"exempt: {prefix} is not read", _cats({rel: text}), [])
+    case("exempt: this script itself is not read", _cats({SELF: 'A = "scripts/gen-dashboard.py"\n'}), [])
+    case("exempt: an ALLOWED literal passes in its own file",
+         _cats({"scripts/explainer-serve.py": 'U = ("/dashboard", "/dashboard.html")\n'}), [])
+    case("exempt: an ALLOWED literal is refused in any other file",
+         _cats({"scripts/other.py": 'U = ("/dashboard", "/dashboard.html")\n'}), ["string", "string"])
+    case("exempt: the exempt file's NEIGHBOUR is read (docs/reviewsX is not docs/reviews/)",
+         _cats({"docs/reviewsX/x.py": 'A = "scripts/gen-dashboard.py"\n'}), ["string"])
+    case("exempt: an ALLOWED file's non-allowed literal is still refused",
+         _cats({"scripts/explainer-serve.py": 'G = "scripts/gen-dashboard.py"\n'}), ["string"])
+
+    # CANNOT RUN
+    case("15.14 a script that does not parse is CANNOT RUN", _cats({_PY: "def broken(:\n"}), ["CANNOT RUN"])
+    case("15.14 settings.json that is not JSON is CANNOT RUN", _cats({".claude/settings.json": "{not json"}),
+         ["CANNOT RUN"])
+    case("15.14 settings.json that is missing is CANNOT RUN", _cats({".claude/settings.json": None}),
+         ["CANNOT RUN"])
+    case("15.14 a tree with no workflow is CANNOT RUN, never a pass", _cats({".github/workflows/ci.yml": None}),
+         ["CANNOT RUN"])
+    case("15.14 a manifest that is not JSON is CANNOT RUN", _cats({"scripts/mutations/x.json": "[not json"}),
+         ["CANNOT RUN"])
+    # The finding sentence names the file, the line and the literal, so the work list is actionable.
+    found = scan(_world({"scripts/a.py": 'x = 1\nP = ROOT / "scripts" / "gen-dashboard.py"\n'}))
+    case("a finding names its file, its line and the literal",
+         (len(found), found[0].startswith("scripts/a.py:2:") if found else None,
           "gen-dashboard.py" in found[0] if found else None), (1, True, True))
 
     # main() over a constructed world, through --root (ADR-0014: the entry point is driven, not only scan()).
@@ -395,6 +493,10 @@ def _self_test_body() -> int:
         ok = got == want
         failed += not ok
         print(f"  ok     {name}" if ok else f"  [FAIL] {name}: got {got!r} want {want!r}")
+    names = [n for n, _, _ in cases]
+    if len(set(names)) != len(names):
+        failed += 1
+        print("  [FAIL] case names are not unique (a mutation's expect names exactly one)")
     print(f"\n{len(cases) - failed}/{len(cases)} passed")
     return 1 if failed else 0
 

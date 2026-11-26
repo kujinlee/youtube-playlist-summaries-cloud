@@ -13,8 +13,8 @@ DIFFERENCE:
   * `brief-compose.py` supplies 11 tokens on `html` inside `@media (prefers-color-scheme: dark)`.
     That media query keys off the OS, and a page's own `data-theme` toggle cannot override it.
     Its own comment states the intent: the shim "only supplies what nobody supplied."
-  * `gen-dashboard.py`'s `light_vars` declares 17 tokens — but 8 of the shim's 11 are not among
-    them. For those 8, nobody supplied a light value, so the shim's DARK value stays in force
+  * `gen-dashboard.py`'s `light_vars` (the page, since deleted) declared 17 tokens — but 8 of the
+    shim's 11 were not among them. For those 8, nobody supplied a light value, so the shim's DARK value stays in force
     while the page is in light mode.
 
 The shim is behaving exactly as documented. It is correctly answering a question the light
@@ -27,7 +27,7 @@ because it is why the check exists.
 
 WHY A NEW CHECK, WHEN TWO CONTRAST GUARDS ALREADY EXIST
 -------------------------------------------------------
-They cannot see this, and that is structural rather than an oversight:
+They could not see this (the two guards below were the dashboard's, as measured then), and that was structural rather than an oversight:
 
   * `gen-dashboard.py:1290` `LINK_SURFACES = ("--bg", "--panel", "--need-bg", "--err-bg")` — no
     `--card`, so the failing `(--ink, --card)` pair is never enumerated.

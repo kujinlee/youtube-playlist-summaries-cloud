@@ -1953,7 +1953,7 @@ RELOAD_JS = """
         // ⚠ THE RESPONSE NAMES ITS OWN SOURCE: "fresh", or "stale <repo-relative path>".
         // The path comes from the server's PAGE_SOURCES, so there is NO slug->label map on this
         // side to drift out of step with it. Before 2026-09-02 this string was the hardcoded
-        // "the backlog file", which told a reader of /dashboard or /goals to go look at a file
+        // "the backlog file", which told a reader of /goals or /backlog-table to go look at a file
         // that had not changed — on the one page whose entire job is saying what to look at.
         var stale = v.indexOf('stale') === 0;
         var src = stale ? v.slice('stale'.length).trim() : '';
