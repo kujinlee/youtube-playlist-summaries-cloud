@@ -876,7 +876,18 @@ EXPECTED_MUTATIONS = {
     # anchored there go with it; 3 RE-BOUND onto A1's `_ask_git` and the new `main`, 1 onto `NO_REVIEW`.
     # dashboard-retire S2 r1 fold F1: 69 -> 71 — L1's git-failure path: `legacy_store_check` returning no err,
     # and `main` ignoring L1's err.
-    "scripts/check-ask-store.py": 71,
+    # backlog #730: 71 -> 84 — `--post-cutover` (plan Task 13 as one entry point): the fetch, L1 and A1 over
+    # the fetched ref (not HEAD, not the working tree), the not-merged and fetch-failure codes, A1's own rc,
+    # the running-script comparison, the store-PR list, master's CI step (red, not yet, gh failure), main.
+    # backlog #730 r1 fold: 84 -> 96 — F1 (a post-squash run is told by its COMMIT: an L1 step skipped or
+    # failed, a self-test absent, a pre-squash commit, an unreadable commit), F6 (the `verify` job only), F2
+    # (gh pr list / gh run view / L1 / A1 git errors under --post-cutover, an unreadable ask object), F4, F5.
+    # backlog #730 r2 fold: 96 -> 98 — `_master_ci` now judges only the run on the fetched head commit.
+    # RETIRED 3 that encoded the marker-per-run rule (a pre-squash commit judged, a skipped-L1 run passed over,
+    # an unreadable run commit passed over: no run loop or run-commit read is left). ADDED 5: G1 the head-SHA
+    # match, G3 the not-yet-completed check, G2 the `verify` job's conclusion and the run's conclusion, and
+    # the NEWEST of several runs on the head commit is the one judged.
+    "scripts/check-ask-store.py": 98,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look

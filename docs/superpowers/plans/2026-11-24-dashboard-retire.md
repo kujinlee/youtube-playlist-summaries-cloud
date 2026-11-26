@@ -94,7 +94,7 @@ Five inputs the spec implies and no gate row names. Each has a case in the task 
 
 | Finding | Decision | Task | Test |
 |---|---|---|---|
-| r6 Claude **M1** — L1's cutover window is the normal case | BUILD all three parts. (1) `LEGACY_STORE_BLOB` beside `LEGACY_STORE_SHA256`; L1 prints `git diff <BLOB> <HEAD's blob>` and `git cat-file blob <BLOB> > docs/dashboard-entries.md`. (2) `LEGACY_STORE_BASE_BLOB` — master's store as S2 last merged it — and `check-ask-store.py --cutover-check origin/master`, run immediately before the squash. (3) a post-merge step merges master into every open PR whose diff still edits the store | 12, 13 | 12.3–12.8; 13's listing command and its falsifier |
+| r6 Claude **M1** — L1's cutover window is the normal case | BUILD all three parts. (1) `LEGACY_STORE_BLOB` beside `LEGACY_STORE_SHA256`; L1 prints `git diff <BLOB> <HEAD's blob>` and `git cat-file blob <BLOB> > docs/dashboard-entries.md`. (2) `LEGACY_STORE_BASE_BLOB` — master's store as S2 last merged it — and `check-ask-store.py --cutover-check origin/master`, run immediately before the squash. (3) a post-merge step merges master into every open PR whose diff still edits the store — narrowed ON PURPOSE from the spec's "every PR still open": a PR whose diff does not touch the store carries nothing L1 refuses, and squashing it cannot move the store, so no merge is owed to it (backlog #730 L4) | 12, 13 | 12.3–12.8; 13's listing command and its falsifier |
 | r6 Claude **m1** — `.gitkeep` and F1 | BUILD. F1 considers only base names matching the name rule; a non-empty `.gitkeep` is a PROBLEM in `read_asks`, so A1 and the goal tree both refuse it | 1, 2 | 1.4; 2.5, 2.6 |
 | r6 Claude **m2** — the `## Answer` match is not exact | BUILD. The Global-constraints rule, in one function `answered(text)`; the skill teaches the exact line | 1, 11 | 1.6–1.9; Task 11's grep |
 | r6 Claude **m3** — A1 "HEAD's tree" vs `read_asks(dir)` | PICKED: **A1 lists `git ls-tree --name-only HEAD docs/asks/` and passes those names to `read_asks`.** File content is read from the working tree, which in CI equals HEAD. Stated in A1's docstring and `--help` | 2 | 2.9–2.11 |
@@ -806,65 +806,101 @@ fixture; 12.12 holds Step 10's early check to the revision it is given).
 
 ### Task 13: the post-merge cutover (M1 part 3) — the coordinator's, outward-facing
 
-No file changes. Run once, right after S2's squash lands. The code it runs is Task 12's, tested there.
+No file changes. Run once, right after S2's squash lands. The code it runs is `check-ask-store.py
+--post-cutover` (`post_cutover`), built and tested in S2 (backlog #730).
 
-⟳ **SPLIT route taken (r5, backlog #730).** Round 5 found Medium/Low defects in this task's shell (Step 1's exit 1 means three things; a dirty worktree is not excluded) — the Phase 6 review's falsifier. So the steps below are not patched again: S2's builder folds them into ONE tested entry point of `check-ask-store.py` (for example `--post-cutover`) with a case per backlog #730 finding, and this task then runs that one command.
+⟳ **SPLIT route taken (r5, backlog #730) — and DONE.** Round 5 found Medium/Low defects in this task's
+shell (Step 1's exit 1 meant three things; a dirty worktree was not excluded) — the Phase 6 review's
+falsifier. So the steps were not patched again: Steps 1, 2, 4 and 5 are now ONE tested entry point,
+`--post-cutover`, with one case per backlog #730 finding and a mutation per case. Step 3 (the per-PR
+repair) stays by hand: it writes to other branches, which a gate must never do.
 
 ⛔ **The shape rule for this task** (Phase 6 review,
 `docs/reviews/architecture-review-2026-11-24-dashboard-retire-cutover.md`): this task has no builder, no PR
 and no case, so nothing checks its text before it runs once, on master. So every command below is ONE call
 of a tested entry point of `check-ask-store.py`, run in ONE shell call, and that call's own exit status is
-the answer. No shell variable is carried from one step to the next (the coordinator's shell calls share no
-state), no step identifies the squash commit, and no step builds or removes a worktree. **A step that needs
-more than that is code for the gate file, with a case and a mutation — never more shell here.**
+the answer — read from the `post-cutover rc N` line it prints last, never from the shell's `$?`. No shell
+variable is carried from one step to the next (the coordinator's shell calls share no state), and no step
+identifies the squash commit. ⟳ backlog #730 r1 F3: the ONE worktree is Step 1's own — a fresh, detached
+worktree of `origin/master` built and removed inside that one call, so no prior state (a missing path, a
+local edit blocking a checkout) can collide with it. **A step that needs more than that is code for the gate
+file, with a case and a mutation — never more shell here.**
 
-- [ ] **Step 1: L1 over master's tip — the binding check for M1 part 2.**
-
-```bash
-cd <S2's worktree> && git fetch origin master && git checkout -q --detach origin/master && python3 scripts/check-ask-store.py
-```
-
-  Expected: rc 0. This is push-mode L1, the path 12.10 drives; it reads the committed store at
-  HEAD, never the working tree. It asks about master's STATE, not about the squash's parent: if master's
-  store moved between Task 12 Step 10 and the squash, the squash's own store is the pinned bytes plus the
-  stray entry, so L1 is red on it (measured 2026-11-24 on a fixture repo: master unchanged → squash store =
-  the pin; an entry appended on master before the squash → squash store ≠ the pin, the diff is that entry).
-  It also sees an entry that lands AFTER the squash, which a check of the squash's parent passes (same
-  fixture). Any clean worktree of this repository serves: the checkout puts the merged gate file in it.
-  Not a pass: rc 2 with `can't open file` means `origin/master` has no gate file — S2 is not merged; a
-  failed `fetch` or `checkout` stops the chain non-zero (controls run 2026-11-24 on a scratch clone: script
-  absent → 2; failed fetch → 128; the placeholder left unfilled → 2).
-  On rc 1, L1's message prints the stray text and the restore command. Repair, in a PR of its own: in this
-  same checkout run `python3 scripts/gen-dashboard.py --assert-no-open-asks` (the store at HEAD is the
-  stray one); re-ask each id it names as a file in `docs/asks/`; restore the store with L1's printed
-  `git cat-file blob <LEGACY_STORE_BLOB> > docs/dashboard-entries.md`. The pins stay: the frozen bytes are
-  S2's, and the stray entry is what is removed.
-- [ ] **Step 2: List every open PR that still carries a store edit.**
+- [ ] **Step 1: the whole cutover check, one command.**
 
 ```bash
-cd <S2's worktree> && python3 scripts/check-ask-store.py --list-store-prs
+git fetch -q origin +refs/heads/master:refs/remotes/origin/master && d="$(mktemp -d)/pc" && git worktree add -q --detach "$d" origin/master && (cd "$d" && python3 scripts/check-ask-store.py --post-cutover); git worktree remove --force "$d"
 ```
 
-  The checkout Step 1 left, which holds the merged script. Task 12's `store_edit_prs`: `--limit` set, every
-  `gh` failure CANNOT RUN. rc 0 with one line per PR, or no line. rc 2 is NOT a clean list — fix the cause
-  and re-run.
-- [ ] **Step 3: For each listed PR**, in its worktree: merge master (`git merge --no-edit origin/master`),
-  restore the store (`git checkout origin/master -- docs/dashboard-entries.md`), re-ask any question its
-  dropped entry held as a file in `docs/asks/`, commit, push. Its CI now runs under L1.
-- [ ] **Step 4: Re-run Step 2's command.** Expected: rc 0, no line.
-- [ ] **Step 5: Confirm master's own CI:** in the newest COMPLETED `CI` run on `master` at or after the
-  squash, the `check-ask-store self-test` step (r3 Claude M2: the step a base half of 12.11 would have
-  turned red) and the `ask store (push)` step are green. Not necessarily the run on the squash commit
-  itself: a pending master run is replaced by a later push's (the `concurrency` comment in `ci.yml`), and
-  L1 reads state, so a later run answers the same question.
+  Run it from any checkout of this repository. ⛔ **The status is N in the LAST line the script prints,
+  `post-cutover rc N` — never the shell's `$?`** (r1 F3: a failed `cd` or `checkout` exits 1, which is this
+  table's "the store moved", and the trailing `worktree remove` sets `$?` anyway). **No `post-cutover rc N`
+  line means the check did not run** (the fetch, `mktemp` or `worktree add` failed, or the script crashed):
+  NOT CHECKED, never a pass — read the error, fix it, re-run. A fresh worktree has no local edit, so the
+  gate it runs is `origin/master`'s own (rc 4 cannot come from a stale copy), and before the squash it holds
+  no gate file, so `python3` cannot open it and no rc line is printed: that is "S2 not merged" too.
 
-**FAILS IF:** Step 1 returns 0 while the store at `origin/master` differs from the pinned bytes; Step 4
-prints any PR or returns 2; or a later push to master turns `ask store (push)` red (then the repair is
-12.7's command, taken from the step's own output, in a PR of its own).
-**Test:** 12.10 is Step 1's check on a fixture (mutations "push mode skips L1" and "L1 compares nothing");
-12.13–12.16 are Step 2's listing (a PR past gh's default page, a full page, a failed list, a failed diff);
-12.7 is Step 3's repair — a branch carrying an appended entry is red under L1, and the printed command
-makes it green.
+  `--post-cutover` fetches `origin master` itself and reads only COMMITTED objects of `origin/master`
+  (`git ls-tree` / `git cat-file`), never the working tree, so a dirty worktree cannot move its verdict
+  (case "730 L1: a dirty worktree …"). It refuses to judge with a gate copy that is not master's: the
+  running script's blob id must equal `origin/master`'s `scripts/check-ask-store.py` blob, else rc 4 (case
+  "730 L1: a running gate that is not master's blob …") — which is why the command runs from a fresh
+  detached worktree of `origin/master`, and why a local edit to the gate cannot be the judge. In order it checks:
+  L1 (the store is the pinned bytes), A1 (`docs/asks/` is well-formed), the open PRs that still edit the
+  store (Task 12's `store_edit_prs`; an empty `gh pr diff` answer is CANNOT RUN), and master's CI: the CI
+  run on the fetched head commit — the newest `CI` push run on `master` whose `headSha` IS the fetched
+  `origin/master` commit, listed whatever its status — must be `completed`, and the run's conclusion, the
+  `verify` job's conclusion, and both `check-ask-store self-test` and `ask store (push)` in that job must be
+  `success`; read-only `gh run list` / `gh run view`. ⟳ r2 G1–G3: a run on any other commit never answers,
+  though it carry S2's gate (S2's own squash does); the head's run not yet listed, or listed and not
+  completed, is rc 8. ⟳ r1 F1: in `verify` an earlier red step marks the later ones `skipped`, which is what
+  a red run looks like, so `skipped`, `cancelled`, `failure` or absent — of a step, the job or the run — is
+  red. Each check prints one `ok — ` / `REFUSED (rc N) — ` / `CANNOT RUN — ` line;
+  the last line is `post-cutover rc N`.
+
+  | rc | means | do |
+  |---|---|---|
+  | 0 | all four green | done — Task 13 is complete |
+  | 1 | master's store moved off the pins; the message prints the stray text and `git cat-file blob <LEGACY_STORE_BLOB> > docs/dashboard-entries.md` | repair in a PR of its own: run `python3 scripts/gen-dashboard.py --assert-no-open-asks` in this checkout, re-ask each id it names as a file in `docs/asks/`, restore the store with the printed command. The pins stay |
+  | 2 | CANNOT RUN — git or `gh` could not answer (fetch, cat-file, `gh pr list`, `gh run list`/`view`) | NOT a pass: fix the cause, re-run |
+  | 3 | S2 IS NOT MERGED — `origin/master` has no gate file, or one without L1. Nothing else was checked | wait for the squash, re-run |
+  | 4 | the running gate is not `origin/master`'s blob | re-run from a clean detached checkout of `origin/master` |
+  | 5 | A1 refuses `docs/asks/` on master | fix the named ask file in a PR |
+  | 6 | an open PR still edits the store; each is named | Step 2 |
+  | 7 | the CI run on the fetched head commit is completed and not green: the run, its `verify` job or one of the two steps is not `success` (failure, skipped, cancelled or absent); the line names each | read that run; repair as rc 1 |
+  | 8 | the CI run on the fetched head commit is not listed yet, or not completed | wait for it, re-run |
+
+  When several checks refuse, rc is the first in the order 1, 5, 6, 7, 8; a CANNOT RUN is reported as rc 2
+  only when nothing refused, and every line is printed either way.
+- [ ] **Step 2: For each PR Step 1 named (rc 6)**, in its worktree: merge master (`git merge --no-edit
+  origin/master`), restore the store (`git checkout origin/master -- docs/dashboard-entries.md`), re-ask any
+  question its dropped entry held as a file in `docs/asks/`, commit, push. Its CI now runs under L1.
+- [ ] **Step 3: Re-run Step 1's command.** Expected: rc 0 (rc 8 means only that the CI run on the fetched
+  head commit has not completed yet — re-run).
+
+**FAILS IF:** Step 1 returns 0 while the store at `origin/master` differs from the pinned bytes, while an
+open PR still edits the store, or while the CI run on the fetched head commit is absent, not completed, or has
+its conclusion, its `verify` job's conclusion, `ask store (push)` or `check-ask-store self-test` anything but
+`success` (a run whose L1 step was skipped by an earlier red is red); or a later push to master turns `ask store (push)` red (then the repair is 12.7's command,
+taken from the step's own output, in a PR of its own).
+**Test:** the twenty-six `730 …` impure cases of `check-ask-store.py --self-test`; each but three has a
+mutation in `scripts/mutations/check-ask-store.json` that turns exactly it red: M1 (rc 0, 1, 2, 3, 5 kept
+apart), L1 (the dirty worktree, the stale judge), Step 2's listing (rc 6), L2 (a failed `gh run list` is
+rc 2), and `main`'s dispatch; the r1 fold's: F1 (GitHub's real step shapes — the head's self-test red with
+the L1 step skipped over an older commit's green, the L1 step skipped in a green job, the self-test absent,
+all rc 7), F6 (only `verify`'s steps count), F2 (`gh pr list`, `gh run view`, and git failing on master's
+store or an ask, all rc 2), F4 (an empty `gh pr diff`), F5 (the fetch's explicit refspec); and the r2 fold's:
+G1 (a green run on an earlier commit carrying the gate is rc 8), G3 (the head's run in progress over an older
+commit's green is rc 8), G2 (the `verify` job failed in a run concluded `success`, and the run failed in
+another job, both rc 7), and the newest of two runs on the head commit judged. The three without a mutation
+of their own: M1's rc 0 (the all-green world, which a mutation breaking any clause turns red with others),
+F1's head-red-over-older-green, and G2's run cancelled after both steps succeeded (the last two refused by
+more than one clause, so no single mutation turns either alone red).
+Not driven by a case: the Step 1 shell line itself (it is read by its last line, above). Behind them: 12.10 is push-mode L1 (mutation "push mode skips L1"); 12.3 is
+L1's comparison itself (mutation "L1 compares nothing" — Task 12 Step 8 binds it to 12.3, and so does this
+line; backlog #730 L3); 12.13–12.16 are the PR listing (a PR past gh's default page, a full page, a failed
+list, a failed diff); 12.7 is Step 2's repair — a branch carrying an appended entry is red under L1, and the
+printed command makes it green.
 **FAILS IF (the shape rule):** a review of this task finds a defect in shell written here. Then the task is
 not patched again: its steps become one entry point of the gate file with its own cases (the review's
 *SPLIT* route).
