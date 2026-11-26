@@ -21665,20 +21665,6 @@ prototype pin tried, to `CLAUDE_PROJECT_DIR`'s common dir, made 12 world cases r
 r1 review's `git -C <main> worktree list` membership check is recorded in row 688 as a candidate, NOT RUN over the suite.
 
 ## 2026-11-25
-The first of three steps toward retiring the dashboard page, which you decided on 11-24: a question waiting on
-you can now live in its own file under `docs/asks/`, and the goal tree's NEEDS YOU shows it with its options
-listed under the question, plus a warning if the question is written so that it cannot be answered. The old
-dashboard asks still show there too. Nothing has been removed yet: the page and the rule that every PR adds an
-entry here stay until the next two steps. Nothing new is waiting for you.
-<!--tech-->
-Backlog #736 S1, branch `dashboard-retire-s1`, plan `docs/superpowers/plans/2026-11-24-dashboard-retire.md`
-Tasks 1–6. `scripts/check-dashboard-entry.py`: `read_asks`, the one reader of `docs/asks/`, and the PR gate's
-A1 (grammar) and F1 (decisions) checks; `docs/asks/.gitkeep`. Readers: `scripts/goal-tree.py`
-(`needs_from_asks`, a fourth NEEDS YOU source), `scripts/compaction-state.py` (`pending_asks` counts both),
-`scripts/explainer-serve.py` (`DIR_SOURCES`, `source_mtime`: `/_stale` names the ask that moved),
-`scripts/regen-pages.py` (an ask edit rebuilds the goal tree), `scripts/check-reference-namespace.py` (scope).
-Backlog #623 retargeted to `scripts/goal-tree.py`.
-
 The check that makes a living spec or plan say whether it is alive now reads a document's goal line
 once, not twice. Before, a document with two goal lines in its opening, one for a goal that is
 checked and one for an exempt goal, could skip the check depending on which line came first. Now
@@ -21705,3 +21691,18 @@ as on master; S — the armed set is filtered with `settled_slugs`, so a loose c
 pre-S2 reader (`68529dd9`) refused it; the `splitlines()`/`split("\n")` difference pinned (the
 tokenizer's window contains master's, so it only adds refusals). Property grid 63 → 108 heads with
 prose examples. Red first: 3 of 50. check-goal-status self-test 45 → 50; mutations 13 → 16, all killed.
+
+## 2026-11-25
+The first of three steps toward retiring the dashboard page, which you decided on 11-24: a question waiting on
+you can now live in its own file under `docs/asks/`, and the goal tree's NEEDS YOU shows it with its options
+listed under the question, plus a warning if the question is written so that it cannot be answered. The old
+dashboard asks still show there too. Nothing has been removed yet: the page and the rule that every PR adds an
+entry here stay until the next two steps. Nothing new is waiting for you.
+<!--tech-->
+Backlog #736 S1, branch `dashboard-retire-s1`, plan `docs/superpowers/plans/2026-11-24-dashboard-retire.md`
+Tasks 1–6. `scripts/check-dashboard-entry.py`: `read_asks`, the one reader of `docs/asks/`, and the PR gate's
+A1 (grammar) and F1 (decisions) checks; `docs/asks/.gitkeep`. Readers: `scripts/goal-tree.py`
+(`needs_from_asks`, a fourth NEEDS YOU source), `scripts/compaction-state.py` (`pending_asks` counts both),
+`scripts/explainer-serve.py` (`DIR_SOURCES`, `source_mtime`: `/_stale` names the ask that moved),
+`scripts/regen-pages.py` (an ask edit rebuilds the goal tree), `scripts/check-reference-namespace.py` (scope).
+Backlog #623 retargeted to `scripts/goal-tree.py`.
