@@ -1,9 +1,9 @@
 # Dashboard entries
 
-Append-only. One `## YYYY-MM-DD` block per entry; **newest at the end**.
-Nothing here is edited or deleted — corrections are appended.
-Grammar: `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` §6.2.
-Rendered by `scripts/gen-dashboard.py`; enforced by `scripts/check-dashboard-entry.py`.
+**FROZEN 2026-11-25 (dashboard-retire S2).** A record of what was asked and decided up to then; nothing is
+added, edited or deleted here any more. A new ask is a file in `docs/asks/` (the `needs-you` skill).
+Grammar of the entries below: `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` §6.2.
+Frozen to pinned bytes by `scripts/check-ask-store.py` (L1).
 
 ## 2026-08-28
 Started building the dashboard — a page that shows what changed while you were away.

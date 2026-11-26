@@ -5547,6 +5547,8 @@ def _self_test_body() -> int:
                                       "scripts/check-anchors.py",
                                       "scripts/check-anon-exposure.py",
                                       "scripts/check-arch-findings.py",
+                                      # 2026-11-25 dashboard-retire S2 Task 8: renamed from check-dashboard-entry.py.
+                                      "scripts/check-ask-store.py",
                                       "scripts/check-backlog-closure.py",
                                       "scripts/check-banner-armed.py",
                                       "scripts/check-canonical-source.py",
@@ -5556,7 +5558,6 @@ def _self_test_body() -> int:
                                       "scripts/check-closing-table.py",
                                       # backlog #440: the PreCompact boundary hook, with its manifest.
                                       "scripts/check-compaction-boundary.py",
-                                      "scripts/check-dashboard-entry.py",
                                       "scripts/check-decision-scheme.py",
                                       "scripts/check-diff-coverage.py",
                                       "scripts/check-doc-citations.py",
@@ -7856,8 +7857,8 @@ def _self_test_body() -> int:
            "scripts/check-c.py": "", "scripts/check-z.py": "y = 1\n"}
     case("⭐ backlog #498: a target that loads a sibling by its FILENAME (`\"gen-b.py\"`) is reached through it",
          _sel(["scripts/check-c.py"], src=_FN), frozenset({"scripts/check-c.py", "scripts/gen-b.py", "scripts/check-a.py"}))
-    _r498 = _rsel("scripts/check-dashboard-entry.py")
-    case("backlog #498 on the real tree: check-dashboard-entry.py reaches compaction-state through gen-dashboard.py",
+    _r498 = _rsel("scripts/check-ask-store.py")
+    case("backlog #498 on the real tree: check-ask-store.py reaches compaction-state through gen-dashboard.py",
          (_r498 is not None, "scripts/compaction-state.py" in (_r498 or set())), (True, True))
     # ── backlog #533: A PIN BUMP IS NOT A HARNESS CHANGE ──────────────────────────────────────
     # Measured 2026-11-06 on PR #516, PR #522, PR #524 and PR #525: four of five went FULL (18 shards) only

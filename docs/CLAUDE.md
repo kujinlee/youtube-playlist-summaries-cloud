@@ -21,9 +21,9 @@ answer the PR-only gates: `python3 scripts/check-merge-ready.py --pr <N>`.
 backlog area that no node in `docs/features.md` declares. Invent one and the row *cannot be displayed* —
 the failure is silent in the file and loud in CI. Read the `areas:` lines in `features.md` first.
 
-⛔ **3. `check-dashboard-entry.py` reads the COMMITTED diff.** Run it before committing and `rc=0` means
-*"no tracked files changed"*, not *"your entry is fine"* — a vacuous pass that has now been believed
-twice. Commit, then run it, and check the message says **"an entry block was added"**.
+⛔ **3. `check-ask-store.py --base origin/master` reads the COMMITTED tree.** Run it before committing
+and `rc=0` answers about the last commit, not your edit — a vacuous pass of this shape has been believed
+twice. Commit, then run it, and check the message begins **"ok — "**.
 
 ---
 

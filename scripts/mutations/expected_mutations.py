@@ -266,7 +266,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 51 -> 52 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
     "scripts/check-closing-table.py": 52,
     # ⟳ 2026-11-03, backlog #470: 68 -> 70. the PR option link through key_link, and its un-nested text (+2).
-    "scripts/gen-dashboard.py": 70,
+    # ⟳ 2026-11-25, dashboard-retire S2 Task 7: 70 -> 72. C1 `--assert-no-open-asks` refuses an open ask, and a
+    # parse error is CANNOT RUN, never "no asks" (+2).
+    "scripts/gen-dashboard.py": 72,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
     # all had one. ⚠ IT WAS NOT "the ONE generator with no manifest", which both round-1
@@ -485,7 +487,7 @@ EXPECTED_MUTATIONS = {
     # Codex m2 (the ahead-window is 120 days, not round 1's 92: 1). Rebound, not counted: the ~six-months entry's
     # anchor (`WAIT_AHEAD_DAYS = 120 `), and the four C5 entries' expected case name (03-25 replaces 02-25).
     # ⟳ 2026-11-20, agenda-row-state r3 fold: 501 -> 502. F3 (a date exactly WAIT_AHEAD_DAYS ahead is next year's: 1).
-    "scripts/goal-tree.py": 528,  # 525 -> 528 (dashboard-retire S1 r1 M1: a merged ask's options and warning — consolidate carries them, the text and HTML details walk `also`); 520 -> 525 (dashboard-retire S1 Task 3: the asks reader severed, the old reader severed, an asks problem dropped, a missing decision drops the ask, asks leaves NEEDS_SOURCES); 519 -> 520 (backlog #689 r3 M1: a several-row leaf needs every row ✅ for a list tail); 510 -> 519 (backlog #689 r2 fold: list tail gated by the Status cell — 6, older fold with no merge age — 3); 502 -> 510 (backlog #689 + r1 fold: one per clause — all/any, unread cells, ledger beats cell, by_cell bucket, list tail, whole number, two timeline words); 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
+    "scripts/goal-tree.py": 526,  # 528 -> 526 (dashboard-retire S2 Task 10: the old store's reader gone — its X1 problem and the sever deleted; Z2 and Y1 re-bound onto the asks reader, NEEDS_SOURCES re-bound); 525 -> 528 (dashboard-retire S1 r1 M1: a merged ask's options and warning — consolidate carries them, the text and HTML details walk `also`); 520 -> 525 (dashboard-retire S1 Task 3: the asks reader severed, the old reader severed, an asks problem dropped, a missing decision drops the ask, asks leaves NEEDS_SOURCES); 519 -> 520 (backlog #689 r3 M1: a several-row leaf needs every row ✅ for a list tail); 510 -> 519 (backlog #689 r2 fold: list tail gated by the Status cell — 6, older fold with no merge age — 3); 502 -> 510 (backlog #689 + r1 fold: one per clause — all/any, unread cells, ledger beats cell, by_cell bucket, list tail, whole number, two timeline words); 395 -> 417 (backlog #650) -> 435 (r1) -> 446 (r2) -> 438 (Phase 6): declared waits
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -869,7 +871,12 @@ EXPECTED_MUTATIONS = {
     # main's dispatch on A1 (the refusal, the err) plus ask_store_problems' own failure branch.
     # r1 fold: 62 -> 68 — A1 refuses a HEAD with no docs/asks/, the name rule's fullmatch and ASCII digits (2),
     # F1's no-final-newline clause, A1 reads HEAD's bytes and a tracked symlink's tree mode (2).
-    "scripts/check-dashboard-entry.py": 68,
+    # ⟳ dashboard-retire S2 Task 9: 68 -> 59. R1 (`verdict`, `collect`, `added_entry_problems`,
+    # `added_reference_errors`, `_added_entry_line`) is deleted with the per-PR entry ratchet: 9 mutations
+    # anchored there go with it; 3 RE-BOUND onto A1's `_ask_git` and the new `main`, 1 onto `NO_REVIEW`.
+    # dashboard-retire S2 r1 fold F1: 69 -> 71 — L1's git-failure path: `legacy_store_check` returning no err,
+    # and `main` ignoring L1's err.
+    "scripts/check-ask-store.py": 71,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
@@ -2187,7 +2194,10 @@ EXPECTED_MUTATIONS = {
     # `frozenset(tree)` argument is gone — `counted` replaced it, and a deletion is excluded structurally (no
     # `new` path). THREE RE-BOUND: #680 (b) and r2 X2's first onto `f in counted`, r1 X1's onto `if not clean and
     # inline != ""`.
-    "scripts/check-merge-ready.py": 214,
+    # ⟳ dashboard-retire S2 Task 9: 214 -> 212. MISDIRECTED and INERT-OTHER needed a second gate's escape
+    # and retired with `NO-ENTRY:` (2 gone); INVISIBLE RE-BOUND onto the loop's new first `if`.
+    # dashboard-retire S2 r1 fold F2: 212 -> 213 — the replay of C1 (`gen-dashboard.py --assert-no-open-asks`).
+    "scripts/check-merge-ready.py": 213,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

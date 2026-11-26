@@ -1,6 +1,6 @@
 ---
 name: merge-ready-slice-merged-324
-description: "FIRES-WHEN: about to open, check or merge a PR; about to call a branch ready — run check-merge-ready.py --pr N, never a gate subset; NO-ENTRY vs NO-REVIEW are different escapes. PR #324 (af4d9033) built it; 3 rounds each found a silent miss in the SAME parser"
+description: "FIRES-WHEN: about to open, check or merge a PR; about to call a branch ready — run check-merge-ready.py --pr N, never a gate subset; NO-REVIEW is the one waiver marker. PR #324 (af4d9033) built it; 3 rounds each found a silent miss in the SAME parser"
 metadata: 
   node_type: memory
   type: project
@@ -11,17 +11,12 @@ metadata:
 ## The rule (current)
 
 ⛔ **Before opening or merging any PR: `python3 scripts/check-merge-ready.py --pr <N>` — THE ONE, not "more gates".**
-A hand-picked local subset cannot reach the PR-only steps (`check-dashboard-entry`, `check-review-recorded`), which
+A hand-picked local subset cannot reach the PR-only steps (`check-ask-store`, `check-review-recorded`), which
 read the PR body and the committed diff against the base. Relay its verdict line (`READY` / not) verbatim.
 
-- **Two gates, two escape tokens — not interchangeable:**
+- **The escape token:** `check-review-recorded` takes `NO-REVIEW: <reason>` — this branch needs no review round.
 
-  | gate | escape | means |
-  |---|---|---|
-  | `check-dashboard-entry` | `NO-ENTRY: <reason>` | this branch needs no dashboard entry |
-  | `check-review-recorded` | `NO-REVIEW: <reason>` | this branch needs no review round |
-
-  ⭐ Usually the right move is the entry, not the escape.
+  ⭐ Usually the right move is the review, not the escape.
 - **It reads the COMMITTED diff:** an uncommitted entry looks like no entry, and `rc=0` on a branch with no commits is
   vacuous. Commit, then run it. Editing the PR body alone will not clear it — CI reads the body from the frozen event
   payload, so push something after.

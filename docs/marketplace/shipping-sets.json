@@ -1,5 +1,5 @@
 {
- "measured_at": "d0db35d3",
+ "measured_at": "575a5606",
  "packages": {
   "ci-layer": {
    "channel": "reusable-workflow",
@@ -38,6 +38,7 @@
       "scripts/mutations/check-anchors.json",
       "scripts/mutations/check-anon-exposure.json",
       "scripts/mutations/check-arch-findings.json",
+      "scripts/mutations/check-ask-store.json",
       "scripts/mutations/check-backlog-closure.json",
       "scripts/mutations/check-banner-armed.json",
       "scripts/mutations/check-canonical-source.json",
@@ -46,7 +47,6 @@
       "scripts/mutations/check-claim-propagation.json",
       "scripts/mutations/check-closing-table.json",
       "scripts/mutations/check-compaction-boundary.json",
-      "scripts/mutations/check-dashboard-entry.json",
       "scripts/mutations/check-decision-scheme.json",
       "scripts/mutations/check-diff-coverage.json",
       "scripts/mutations/check-doc-citations.json",
@@ -172,7 +172,7 @@
     "scripts/ask_answerer.py",
     "scripts/brief-compose.py",
     "scripts/check-anchors.py",
-    "scripts/check-dashboard-entry.py",
+    "scripts/check-ask-store.py",
     "scripts/check-docs.py",
     "scripts/check-features.py",
     "scripts/check-goal-status.py",
@@ -188,8 +188,8 @@
     "scripts/page_markup.py",
     "scripts/regen-pages.py",
     "scripts/session-state.py",
-    "skills/dashboard/SKILL.md",
     "skills/explain-topic/SKILL.md",
+    "skills/needs-you/SKILL.md",
     "skills/shared/corpus-search.md",
     "skills/shared/explainer-delivery.md",
     "skills/shared/handoff-path.md"
@@ -221,7 +221,7 @@
     },
     "check-dashboard-entry": {
      "files": [
-      "scripts/check-dashboard-entry.py"
+      "scripts/check-ask-store.py"
      ],
      "expected_count": 1
     },
@@ -371,7 +371,7 @@
     },
     "skill-dashboard": {
      "files": [
-      "skills/dashboard/SKILL.md"
+      "skills/needs-you/SKILL.md"
      ],
      "expected_count": 1
     },

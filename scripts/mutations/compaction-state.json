@@ -299,7 +299,7 @@
     ]
   },
   {
-    "name": "(A) a FIFO dashboard store is opened and read",
+    "name": "(A) a FIFO transcript is opened and read (⟳ dashboard-retire S2: the store it named is no longer read)",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
@@ -308,7 +308,7 @@
       ]
     ],
     "expect": [
-      "⭐ a FIFO dashboard store is refused WITHOUT blocking (r2 Codex XM3 hung here past 16 s)"
+      "⭐ a FIFO transcript is refused WITHOUT blocking (r2 Codex XM3: a FIFO store hung the hook past 16 s)"
     ]
   },
   {
@@ -750,7 +750,7 @@
       ]
     ],
     "expect": [
-      "⭐ pending decisions: the MARKED ledger entry (not one that only mentions the owner) and the dashboard's asks"
+      "⭐ pending decisions: the MARKED ledger entry (not one that only mentions the owner) and the open ask files"
     ]
   },
   {
@@ -1161,12 +1161,12 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "        files, problems = _load(\"check-dashboard-entry.py\", \"_ask_gate_for_compaction\").read_asks(root / \"docs\" / \"asks\")\n",
+        "        files, problems = _load(\"check-ask-store.py\", \"_ask_gate_for_compaction\").read_asks(root / \"docs\" / \"asks\")\n",
         "        files, problems = [], []\n"
       ]
     ],
     "expect": [
-      "4.1 K6: the count is the store's open asks plus the open ask files"
+      "10.4 the snapshot counts the open ask files only"
     ]
   },
   {

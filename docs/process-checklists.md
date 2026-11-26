@@ -397,7 +397,7 @@ two held by tests. Only the human-checked one was reopened. Reopen the part that
 ## Running a gate AS EVIDENCE (added 2026-09-22)
 
 ⛔ **A gate run over an uncommitted working tree is not evidence about what CI will read.** Several
-gates compare the **committed** diff against a base — `check-dashboard-entry.py`,
+gates compare the **committed** diff against a base — `check-ask-store.py`,
 `check-review-recorded.py`, `check-backlog-closure.py`. Run before committing, they answer about a
 tree that does not exist yet, and the answer is usually a cheerful pass.
 
@@ -675,9 +675,9 @@ Edit the claim where it stands; if the history matters, keep the original **as a
 or a ⟳ note attached to the corrected sentence**, never as a later paragraph that argues with an
 earlier one.
 
-⚠ The exception is an **append-only store** (`docs/dashboard-entries.md`), where a correction is
-required to be a new entry — because there, ids are positional and editing rebinds them. Everywhere
-else, in place.
+⚠ The exception is an **append-only record** — an ask file in `docs/asks/`, where a correction is
+appended below the answer, because `check-ask-store.py` (F1) refuses an ask edited in place. Everywhere
+else, in place. (⟳ 2026-11-25: `docs/dashboard-entries.md` was the append-only store until it was frozen.)
 
 ### 3 · A class claim requires a class SWEEP
 
@@ -1159,8 +1159,7 @@ measured cost attached — not as gates.
 | `scripts/check-explainer-delivery.py` | the explainer delivery loop is described in ONE place; page-producing skills cite it, never restate it (`--self-test`: 8 cases) |
 | `scripts/check-test-counts.py` | the roadmap's stated test counts equal the suite's actual counts |
 | `scripts/check-arch-findings.py` | ratchet on architecture-review findings |
-| `scripts/check-dashboard-entry.py` | a branch that changes tracked files records a dashboard entry, or declares `NO-ENTRY: <reason>` — which the dashboard then **displays**. Owns the entry-header grammar the page imports (`--self-test`) |
-| `scripts/gen-dashboard.py` | the dashboard page is derived, never hand-edited; composed through `brief-compose.py` so it cannot lose its Ask tray (`--self-test`) |
+| `scripts/check-ask-store.py` | every file in `docs/asks/` is a readable ask (A1) that only grows (F1, against the base), and the old store `docs/dashboard-entries.md` stays frozen to its pinned bytes (L1). ⟳ 2026-11-25 (dashboard-retire S2): it was `check-dashboard-entry.py`, and the per-PR entry rule and `NO-ENTRY:` are retired (`--self-test`) |
 | `scripts/check-plan-code.py` | **`--mutate .` is what CI runs** (backlog #70, 2026-08-29). ⛔ **2026-10-25, the owner: the FULL sweep is CI's, on shards; locally it is PARTIAL** — off CI, `--mutate` times each target's control and REFUSES a run estimated past 10 min (`--allow-long-local` lets THAT one run through; it cannot persist); `--only <script>` is the local diagnostic (backlog #208). Open the PR as a DRAFT at slice start so the sweep runs there — a draft asserts nothing about readiness. every mutation in `scripts/mutations/*.json` is applied to the DELIVERED scripts and must go red **via the case it names**, over a control proved green first. Coverage cannot shrink — `EXPECTED_MUTATIONS` pins it, and duplicate names/anchors are refused. ⟳ 2026-08-30: every spawned suite runs under a **redirected `HOME`**, so a mutation cannot reach the reader's live pages under `~/explainers/` — structural, not per-entry, because the per-entry version had already failed once. ⟳ 2026-09-08: `<plan>`/`--evidence`/`--compare`/`--verify-evidence` — **PLAN MODE — are RETIRED and now REFUSE with rc=2** naming the retirement; superseded by `--mutate .` (PR #176), which measures the shipped code rather than a document's copy of it. Refused, not deleted, so an old invocation gets a sentence instead of argparse's "unrecognized arguments" (`--self-test`). ⟳⟳ 2026-09-09 (PR 2 of 2): **the refusals stay; the CODE BEHIND THEM IS NOW DELETED** — 7 functions, 7 constants and 143 cases, `3,607 → 1,983` lines. `EXPECTED_MUTATIONS` for this file falls **44 → 23** and the declared sum **392 → 371**, which is the ONE permitted kind of fall: 20 anchors stop resolving because the code they name is gone, so the entries are *retired with their subject* rather than orphaned, recorded at both sites with the count and the reason. ⟳ 2026-09-07: the harness stages `HARNESS_TREE`, not `scripts/` alone — four guards resolve their SUBJECT from the repo root, so a scripts-only tree gave each a red control and left them unmanifested for weeks. ⚠ That tuple is **not** a containment boundary and reading it as one is what cost the four: `copytree` yields a COPY, and the boundary is `child_env`'s `$HOME` redirect above |
 | `scripts/check-plan-file-tags.py` | no document under `docs/` embeds code through a retired plan-mode tag. Retiring plan mode removed the ONLY reader of the `<!-- file: … -->` grammar, so "no plan embeds code" went from enforced to merely true — measured 2026-09-08 as 0 across 1,115 documents, and an empty corpus is **CANNOT RUN**, because a zero over nothing is not a finding. Prose ABOUT a tag (13 documents, all backticked) must keep passing; a bare substring test breaks every one of them, which `plan-mutation-retarget-r1` already paid for. ⚠ The fence rule is `extract`'s own, taken by RUNNING it: v1 reasoned about the parser instead, and its first live run flagged a committed review doc the parser had never seen (`--self-test`: 21 cases) |
 | `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |
