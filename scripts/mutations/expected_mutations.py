@@ -265,10 +265,8 @@ EXPECTED_MUTATIONS = {
     # non-object input. PR #440 r2: both retargeted onto `bounded_read`, the count unchanged.
     # ⟳ 51 -> 52 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
     "scripts/check-closing-table.py": 52,
-    # ⟳ 2026-11-03, backlog #470: 68 -> 70. the PR option link through key_link, and its un-nested text (+2).
-    # ⟳ 2026-11-25, dashboard-retire S2 Task 7: 70 -> 72. C1 `--assert-no-open-asks` refuses an open ask, and a
-    # parse error is CANNOT RUN, never "no asks" (+2).
-    "scripts/gen-dashboard.py": 72,
+    # ⟳ 2026-11-26, dashboard-retire S3 Task 15: `scripts/gen-dashboard.py` (72) DELETED with its manifest —
+    # the page retired, and an entry whose subject is gone is deleted, never kept as a pin of nothing.
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
     # all had one. ⚠ IT WAS NOT "the ONE generator with no manifest", which both round-1
@@ -2211,7 +2209,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ dashboard-retire S2 Task 9: 214 -> 212. MISDIRECTED and INERT-OTHER needed a second gate's escape
     # and retired with `NO-ENTRY:` (2 gone); INVISIBLE RE-BOUND onto the loop's new first `if`.
     # dashboard-retire S2 r1 fold F2: 212 -> 213 — the replay of C1 (`gen-dashboard.py --assert-no-open-asks`).
-    "scripts/check-merge-ready.py": 213,
+    # ⟳ dashboard-retire S3 Task 15: 213 -> 212 — C1 left with its generator, so its replay entry went too.
+    "scripts/check-merge-ready.py": 212,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -2265,6 +2264,7 @@ EXPECTED_MUTATIONS = {
     # rebound (every path's diff, the sides swapped, the hunk sign), none retired; two added: the head
     # read as raw worktree bytes under `eol=crlf` (F2), and `splitlines()` for `split("\n")` (F3).
     "scripts/check-reference-namespace.py": 23,  # 22 -> 23 (dashboard-retire S1 Task 6: docs/asks leaves the scope)
+    "scripts/check-retired-references.py": 10,  # new (dashboard-retire S3 Task 15: K8, one per visitor + the prose skip)
     # ⟳ 6 -> 9 (backlog #331(a) / #357, PR #440 r1). ⟳ 9 -> 7 (PR #440 r2): #331(a)'s `if not records` moved to
     # `bounded_read.stop_transcript`, and the None-mapping entry is now masked by `judge`'s try, so both retire;
     # r2 X1 / #331(e)'s mutant — the reader's refusal answered QUIET — is the no-transcript entry's, which names

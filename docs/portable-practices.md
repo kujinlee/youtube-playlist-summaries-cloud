@@ -12,8 +12,9 @@ the documents that make it reproducible somewhere else. This file is the second 
 >
 > **The suite is 11,624 lines across 17 components, measured at `a4f6d4b5` (2026-10-16)** (⟳ 2026-10-15: this said *9 files / 3,599 lines* for five weeks. Those same nine files were **6,542** lines at `a4f6d4b5`, so the old figure was **1.82x** low against its own subject; the 11,624 is a different and larger set, and the two are not compared as a ratio. The 11,624 is **10,373** lines of Python in six files (`brief-compose` 1,780, `explainer-serve` 2,907, `page_chrome` 450, `page_markup` 438, `gen-dashboard` 3,546, `gen-goals-page` 1,252), **604** in the four `SKILL.md` files and **647** in the three shared contracts (`explainer-delivery.md` 363, `corpus-search.md` 73, `handoff-path.md` 211); the four regen hooks complete the 17 and their lines are not counted. Re-derived by enumeration during the marketplace inventory; the old figure is the first evidence that an inventory was needed rather than a recollection. ⟳ 2026-11-15, D8: the ratio, the file set and the total corrected per the [`marketplace-inventory` spec](superpowers/specs/2026-10-15-marketplace-inventory-design.md) §7 item 8, derivation in its §3.) — the four page-producing skills (`explain-diff`, `brief`,
 > `explain-findings`, `explain-topic`), the shared delivery contract, `brief-compose.py`,
-> `explainer-serve.py`, `page_chrome.py`, `page_markup.py` — plus the four hook-regenerated pages
-> (`regen-backlog-page.sh`, `regen-dashboard.sh`, `regen-goals-page.sh`, `regen-features-page.sh`).
+> `explainer-serve.py`, `page_chrome.py`, `page_markup.py` — plus the three hook-regenerated pages
+> (`regen-backlog-page.sh`, `regen-goals-page.sh`, `regen-features-page.sh`; ⟳ 2026-11-26 the fourth,
+> `regen-dashboard.sh`, retired with its page — dashboard-retire S3).
 > Enumerated in `docs/backlog.md` row 89, not recalled.
 >
 > ⚠ **WHY THIS SENTENCE CHANGES WHAT THE FILE IS FOR.** *Project-independent* is filter 2 below,

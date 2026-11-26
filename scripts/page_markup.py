@@ -98,7 +98,6 @@ DEL_AT = re.compile(r"~~([^~]+)~~")
 # it could be a row, a PR or an issue, and a link that guesses which is worse than none.
 KEY_REF = re.compile(r"\b(backlog|PR) #(\d+)\b")
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-ENTRY_SLUG = re.compile(r"[A-Za-z0-9_-]+")      # `gen-dashboard._slug` of an entry id
 GITHUB_REMOTE = re.compile(r"github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$")
 
 # The repo PR links point at, or None. ⛔ None renders `PR #N` as PLAIN TEXT, never a guessed URL.
@@ -191,7 +190,7 @@ def key_link(kind: str, key, repo: str | None = None) -> str | None:
     no honest link exists — the caller then renders the key as plain text.
 
     kind: `backlog` (row number) · `PR` (number; needs `repo`) · `goal` / `feature` (slug) ·
-    `dashboard` (an entry's `gen-dashboard._slug`) · `thread` (`backlog-N` / `pr-N`).
+    `thread` (`backlog-N` / `pr-N`). (⟳ dashboard-retire S3: the `dashboard` kind retired with its page.)
     An unknown kind RAISES: a caller with a new kind of key must add it here, not build its own.
     """
     key = str(key)
@@ -203,8 +202,6 @@ def key_link(kind: str, key, repo: str | None = None) -> str | None:
         return f"/goals#{goal_id(key)}" if SLUG.fullmatch(key) else None
     if kind == "feature":
         return f"/features#{feature_id(key)}" if SLUG.fullmatch(key) else None
-    if kind == "dashboard":
-        return f"/dashboard#{key}" if ENTRY_SLUG.fullmatch(key) else None
     if kind == "thread":
         return f"/goal-tree#{thread_id(key)}" if re.fullmatch(r"(?:backlog|pr)-\d+", key) else None
     raise ValueError(f"key_link: unknown key kind {kind!r}")
@@ -987,7 +984,6 @@ def _self_test_body() -> int:
     case("key_link: a PR with NO repo is no link, never a guessed URL", key_link("PR", 20, None), None)
     case("key_link: goal", key_link("goal", "status-visibility"), "/goals#g-status-visibility")
     case("key_link: feature", key_link("feature", "wake-on-visit"), "/features#f-wake-on-visit")
-    case("key_link: dashboard entry slug", key_link("dashboard", "2026-10-01-1"), "/dashboard#2026-10-01-1")
     case("key_link: thread", key_link("thread", "pr-20"), "/goal-tree#t-pr-20")
     case("thread_id: the id is the key, prefixed", thread_id("pr-3"), "t-pr-3")
     case("key_link: the thread link and the tree's emitted id agree",
@@ -996,13 +992,23 @@ def _self_test_body() -> int:
     case("key_link: a non-numeric PR key is no link", key_link("PR", "x", "o/r"), None)
     case("key_link: a goal slug that is not a slug is no link", key_link("goal", 'a"b'), None)
     case("key_link: a feature slug that is not a slug is no link", key_link("feature", "A B"), None)
-    case("key_link: a dashboard key with a slash is no link", key_link("dashboard", "2026-10-01/1"), None)
     case("key_link: a thread key of another kind is no link", key_link("thread", "issue-3"), None)
     try:
         key_link("issue", 3)
         case("key_link: an unknown kind RAISES", "returned", "raised")
     except ValueError:
         case("key_link: an unknown kind RAISES", "raised", "raised")
+    # ⟳ dashboard-retire S3: the dashboard page retired, so its kind is unknown — an href to it is refused.
+    # The kind is named through a variable: a literal `key_link("dashboard", …)` is exactly what K8
+    # (`check-retired-references.py`) refuses, and this case is the one place that call is MEANT to fail.
+    _retired_kind = "dashboard"
+    try:
+        key_link(_retired_kind, "2026-10-01-1")
+        case("key_link: the retired dashboard kind RAISES, it builds no link to a page that is gone",
+             "returned", "raised")
+    except ValueError:
+        case("key_link: the retired dashboard kind RAISES, it builds no link to a page that is gone",
+             "raised", "raised")
 
     case("key_segments: both kinds, with a repo",
          key_segments("PR #20 and backlog #10", "o/r"),

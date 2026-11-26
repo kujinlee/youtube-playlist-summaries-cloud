@@ -1933,13 +1933,14 @@ def _self_test_body() -> int:
              "  git status | node x.js\n"
              "fi\n"
              "echo docker; cd curl\n")
-    dash = ('"""Dashboard.\n\n    python3 scripts/gen-dashboard.py\n"""\nimport subprocess\n\n\n'
+    # ⟳ dashboard-retire S3: this fixture was a copy of gen-dashboard.py; the page retired, so it is a neutral name.
+    dash = ('"""Report.\n\n    python3 scripts/gen-report.py\n"""\nimport subprocess\n\n\n'
             "def _gh(args):\n"
             '    return subprocess.run(["gh"] + args, capture_output=True, text=True)\n'
             'SELF_TEST = "--self-test"\n')
     w_r = world({".claude/hooks/ff.sh": "#!/bin/bash\n# a form feed: \x0c in a comment\ngit status\n",
                  "scripts/needs.py": needs, "scripts/helper.py": "X = 1\n", ".claude/hooks/h6.sh": hook6,
-                 "scripts/gen-dashboard.py": dash,
+                 "scripts/gen-report.py": dash,
                  ".agents/skills/q/SKILL.md": "Run `git status`, then `gh pr list`.\n"})
 
     def d6(sets: dict, cid: str) -> list:
@@ -1963,8 +1964,8 @@ def _self_test_body() -> int:
          "is opened are not",
          lambda: [r for r in d6(both, "n") if r[1] == "config"],
          [(20, "config", "API_TOKEN")])
-    case("gen-dashboard.py's gh call is an executable finding",
-         lambda: d6({"g": ["scripts/gen-dashboard.py"]}, "g"),
+    case("a generator's gh call is an executable finding",
+         lambda: d6({"g": ["scripts/gen-report.py"]}, "g"),
          [(9, "executable", "gh")])
     case("shell: a known program in command position is an executable finding; a comment, an argument and a "
          "directory name are not, and Markdown is not read for programs",
@@ -2610,18 +2611,22 @@ def _self_test_body() -> int:
         case("the live tree: page_chrome.py, a library, has no detector-3 finding",
              lambda: [f for f in live["page-chrome"]["findings"] if f["detector"] == 3],
              [])
-        case("the live tree: gen-dashboard.py's gh call is an executable finding",
-             lambda: [(f["kind"], f["term"]) for f in live["gen-dashboard"]["findings"]
-                      if f["detector"] == 6 and f["term"] == "gh"],
-             [("executable", "gh")])
-        case("the live tree: each of the four regen hooks and the recall hook is needs-registration, reached "
+        # ⟳ dashboard-retire S3: this was gen-dashboard.py's gh call. That generator retired, and the one other live
+        # `gh` runner (`check-ask-store.store_edit_prs`) leaves in Task 16, so the case reads recall-llm.py's call to
+        # `claude` — likewise a program outside the standard tool set, handed to a runner by name.
+        case("the live tree: recall-llm.py's claude call is an executable finding",
+             lambda: [(f["kind"], f["term"]) for f in live["recall-llm"]["findings"]
+                      if f["detector"] == 6 and f["term"] == "claude"],
+             [("executable", "claude")])
+        # ⟳ dashboard-retire S3: four regen hooks → three (regen-dashboard.sh retired with its page).
+        case("the live tree: each of the three regen hooks and the recall hook is needs-registration, reached "
              "through .claude/settings.json",
              lambda: sorted(f["file"] for e in live.values() for f in e["findings"]
                             if f["detector"] == 7 and f.get("target") == ".claude/settings.json"
-                            and Path(f["file"]).stem in ("regen-backlog-page", "regen-dashboard",
+                            and Path(f["file"]).stem in ("regen-backlog-page",
                                                          "regen-features-page", "regen-goals-page",
                                                          "surface-recall")),
-             [f".claude/hooks/{h}.sh" for h in ("regen-backlog-page", "regen-dashboard", "regen-features-page",
+             [f".claude/hooks/{h}.sh" for h in ("regen-backlog-page", "regen-features-page",
                                                 "regen-goals-page", "surface-recall")])
 
     print(f"{ok}/{ok + fail} self-test cases passed")

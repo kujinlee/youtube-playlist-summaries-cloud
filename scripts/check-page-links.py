@@ -22,7 +22,7 @@ the page-validity rules review round 1 showed the linker needs:
   1. EVERY KEY IS A LINK — a page shows `backlog #N` or `PR #N` in a text node that is not exempt, or a
      bare `#N` chip outside an `<a>`.
   1b. NO `<a>` IN AN `<a>` — a page opens an `<a>` while one is open, or ends with one open.
-  2. ONE LINK FUNCTION — an href to `/backlog-table#i`, `/goals#`, `/features#`, `/dashboard#`,
+  2. ONE LINK FUNCTION — an href to `/backlog-table#i`, `/goals#`, `/features#`,
      `/goal-tree#` or `github.com/…/pull/` is built anywhere in `scripts/` except `page_markup.py`.
   3. LINKS RESOLVE — an internal link's `#fragment` has no matching `id` on its target page.
   4. IDS ARE UNIQUE — a page declares one `id` twice.
@@ -79,7 +79,6 @@ OK, BROKEN, CANNOT = 0, 1, 2
 # page name (its served path) -> the generator that builds it, with the arguments that build it.
 # The last argument is the flag the output path follows.
 PAGES: dict[str, list[str]] = {
-    "dashboard": ["gen-dashboard.py", "--out"],
     "backlog-table": ["gen-backlog-page.py", "--out"],
     "goals": ["gen-goals-page.py", "--out"],
     "features": ["gen-features-page.py", "--out"],
@@ -88,7 +87,6 @@ PAGES: dict[str, list[str]] = {
 # `--ci`: what the checkout alone builds. A fragment needs no Ask tray; the goal-tree page needs the
 # local log, so it is absent here, and said so.
 CI_PAGES: dict[str, list[str]] = {
-    "dashboard": ["gen-dashboard.py", "--fragment-only"],
     "backlog-table": ["gen-backlog-page.py", "--out"],
     "goals": ["gen-goals-page.py", "--fragment-only"],
     "features": ["gen-features-page.py", "--fragment-only"],
@@ -96,12 +94,14 @@ CI_PAGES: dict[str, list[str]] = {
 BUILD_TIMEOUT = 120      # seconds per generator; the slowest measured 2026-11-03 was gen-backlog-page, ~20s
 
 # ── rule 2: hrefs to a key's home page, as SOURCE literals
-HREF_LITERAL = re.compile(r"/backlog-table#i|/goals#|/features#|/dashboard#|/goal-tree#|(?<!refs)/pull/[{\"'\d]")
+HREF_LITERAL = re.compile(r"/backlog-table#i|/goals#|/features#|/goal-tree#|(?<!refs)/pull/[{\"'\d]")
 EXEMPT_SOURCES = {"page_markup.py", "check-page-links.py"}
 TEST_FUNC = re.compile(r"_?self_test\w*")
 # A file naming none of these cannot spell an href to a home page, so it is not parsed (a full AST pass
 # over every script cost ~3.5 s, and the self-test runs it four times).
-HOME_PATHS = ("/backlog-table", "/goals", "/features", "/dashboard", "/goal-tree", "/pull")
+# ⟳ dashboard-retire S3: `/dashboard` left both — the page is retired; K8 (`check-retired-references.py`)
+# refuses a literal href to it.
+HOME_PATHS = ("/backlog-table", "/goals", "/features", "/goal-tree", "/pull")
 
 # ── rule 1: a bare `#N` chip
 CHIP_TEXT = re.compile(r"\s*#\d+")
@@ -250,9 +250,6 @@ def nested_anchors(page: str) -> list[str]:
 # placed where that generator places it, is linked and checked over a seeded fuzz corpus.
 # (script, attribute, how the page wraps it). goal-tree's `_html_line` takes the repo too.
 GENERATOR_RENDERERS = (
-    ("gen-dashboard.py", "_prose", "<div>{}</div>"),
-    ("gen-dashboard.py", "_inline", "<p>{}</p>"),
-    ("gen-dashboard.py", "_inline_unlinked", '<a href="#x">{}</a>'),
     ("gen-backlog-page.py", "md", "<table><tbody><tr><td>{}</td></tr></tbody></table>"),
     ("gen-goals-page.py", "inline_md", '<p class="sentence">{}</p>'),
     ("gen-features-page.py", "inline_md", '<p class="purpose">{}</p>'),
@@ -526,11 +523,17 @@ def _self_test_body() -> int:
             fail += 1
             print(f"[FAIL] {label}: got {got!r} want {want!r}")
 
+    # ── the page set (dashboard-retire S3, Task 15: the dashboard page is retired)
+    case("the pages built are the four live ones", sorted(PAGES),
+         ["backlog-table", "features", "goal-tree", "goals"])
+    case("--ci builds three of them (goal-tree needs the local log)", sorted(CI_PAGES),
+         ["backlog-table", "features", "goals"])
+
     # ── rule 2
     case("rule 2: a hand-built backlog href is found, with its line",
          built_hrefs("x.py", 'a = 1\nh = f"/backlog-table#i{n}"\n'), ["x.py:2: /backlog-table#i"])
     case("rule 2: each of the other home pages is found",
-         len(built_hrefs("x.py", 'h = ("/goals#a" "/features#b" "/dashboard#c" "/goal-tree#t")')), 4)
+         len(built_hrefs("x.py", 'h = ("/goals#a" "/features#b" "/backlog-table#i9" "/goal-tree#t")')), 4)
     case("rule 2: a PR href split over two lines is still found (the gen-dashboard shape)",
          len(built_hrefs("x.py", "a = f'https://github.com/{s}'\nb = f'/pull/{n}\">'")), 1)
     case("rule 2: a PR href whose number is joined on is found", len(built_hrefs("x.py", 'b = "/pull/" + n')), 1)
@@ -682,8 +685,9 @@ def _self_test_body() -> int:
     with tempfile.TemporaryDirectory() as t0:
         (pathlib.Path(t0) / "goals.html").write_text("<p></p>")
         rc, lines = check_pages(pathlib.Path(t0))
-        case("ONE page present is still CANNOT RUN, naming the four missing",
-             (rc, lines[0].count(".html")), (CANNOT, 4))
+        # ⟳ dashboard-retire S3: five pages → four, so one present leaves three missing.
+        case("ONE page present is still CANNOT RUN, naming the three missing",
+             (rc, lines[0].count(".html")), (CANNOT, 3))
         case("--ci's page set is checked without the goal-tree page",
              check_pages(pathlib.Path(t0), ("goals",))[0], OK)
     with tempfile.TemporaryDirectory() as t:

@@ -803,7 +803,7 @@ def _self_test_body() -> int:
          scope_for(["lib/spend-ledger.ts"], _prose), "full-loop")
     # ⟳ r2 High: `scripts/` left CONTAINED_PREFIXES, so a harness script is full-loop now.
     case("a harness script is no longer assumed contained",
-         scope_for(["scripts/gen-dashboard.py"], _prose), "full-loop")
+         scope_for(["scripts/gen-backlog-page.py"], _prose), "full-loop")
     case("a guard that protects paid attempts needs the full loop",
          scope_for(["scripts/check-paid-caller-arrival.py"], _prose), "full-loop")
     case("docs alone are one round",

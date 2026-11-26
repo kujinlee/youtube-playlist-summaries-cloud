@@ -8,6 +8,7 @@
   "hand-timed:scripts/mkt_stage.py@marketplace-inventory Task 3 (self-test 1.7 s locally with its live case; priced 2.0 s, no CI sample yet)",
   "hand-timed:scripts/check-idle-stop.py@idle-stop-guard r1 fold (self-test 1.8 s locally over 73 cases, 79 mutations in 210 s = 2.7 s each; priced 2.0 s and 3.0 s, no CI sample yet)",
   "hand-timed:scripts/agent-watchdog.py@backlog #657 (self-test 0.26 s locally on a fake clock; priced 1.0 s, no CI sample yet)",
+  "hand-timed:scripts/check-retired-references.py@dashboard-retire S3 Task 15 (self-test 0.22 s locally over 27 cases; priced 1.0 s, no CI sample yet)",
   "hand-timed:scripts/check-shipping-sets.py@marketplace-inventory Task 7 (self-test 10.8 s locally; priced 11.0 s, no CI sample yet)",
   "hand-timed:scripts/mkt_stage.py@marketplace-inventory Task 6 (self-test 13.3 s locally after the --declare cases; re-priced 2.0 -> 13.5 s, no CI sample yet)",
   "hand-timed:scripts/check-shipping-sets.py@PR #598 review r1 fold (117 cases; the self-test is 6.8 s locally under the mutation harness, which skips its 3 live-tree cases, and 29.3 s outside it; re-priced 11.0 -> 7.0 s, no CI sample yet)",
@@ -397,6 +398,13 @@
    "samples": 44,
    "mutations": 44
   },
+  "scripts/check-retired-references.py": {
+   "control": 1.0,
+   "recontrol": 1.0,
+   "mutation": 1.0,
+   "samples": 0,
+   "mutations": 0
+  },
   "scripts/check-review-decision.py": {
    "control": 0.073,
    "recontrol": 0.074,
@@ -578,13 +586,6 @@
    "mutation": 19.166,
    "samples": 76,
    "mutations": 154
-  },
-  "scripts/gen-dashboard.py": {
-   "control": 2.381,
-   "recontrol": 2.381,
-   "mutation": 2.434,
-   "samples": 76,
-   "mutations": 140
   },
   "scripts/gen-features-page.py": {
    "control": 0.524,

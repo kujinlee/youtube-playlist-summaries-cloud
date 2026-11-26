@@ -1328,7 +1328,7 @@
     "if isinstance(node, ast.Tuple) and node.elts:"
    ]
   ],
-  "expect": "gen-dashboard.py's gh call is an executable finding"
+  "expect": "a generator's gh call is an executable finding"
  },
  {
   "name": "detector 6: an environment write is a read",

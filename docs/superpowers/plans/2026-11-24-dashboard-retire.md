@@ -1007,20 +1007,20 @@ that are call arguments, path-literal operands, list or tuple elements, and dict
 | 15.14 | a script that does not parse is CANNOT RUN | a syntax error in a scanned file | rc 2 |
 | 15.15 | `/dashboard` answers with the archive record | `explainer-serve` case: `retired_target("dashboard.html")` | `/dashboard-archive`, not a 404 |
 
-- [ ] **Step 1: Write the scanner's seeded cases** 15.1–15.14. **Step 2: Run** its `--self-test` (FAIL).
-- [ ] **Step 3: Implement `scan`.** **Step 4: Run** the self-test (PASS), then the LIVE scan. Expected: rc 1,
+- [x] **Step 1: Write the scanner's seeded cases** 15.1–15.14. **Step 2: Run** its `--self-test` (FAIL).
+- [x] **Step 3: Implement `scan`.** **Step 4: Run** the self-test (PASS), then the LIVE scan. Expected: rc 1,
   listing exactly what this task and Task 16 must still remove — save that list; it is the work list.
-- [ ] **Step 5: Write 15.15** and the page-set cases (four regenerable pages; three CI pages), red.
-- [ ] **Step 6: Delete and repoint** every item of the Files list. Write the archive record page.
-- [ ] **Step 7: Run** `explainer-serve.py`, `check-page-links.py`, `page_markup.py`, `regen-pages.py`,
+- [x] **Step 5: Write 15.15** and the page-set cases (four regenerable pages; three CI pages), red.
+- [x] **Step 6: Delete and repoint** every item of the Files list. Write the archive record page.
+- [x] **Step 7: Run** `explainer-serve.py`, `check-page-links.py`, `page_markup.py`, `regen-pages.py`,
   `brief-compose.py`, `goal-tree.py`, `check-shipping-sets.py`, `check-review-decision.py`,
   `gen-goals-page.py` self-tests, `check-page-links.py --build --ci`,
   the closure check, and the LIVE scan. Expected: all rc 0 except the scan, which lists only gate-file items
   Task 16 owns.
-- [ ] **Step 8: Mutations for the scanner** — one per category that drops that category's visitor, each
+- [x] **Step 8: Mutations for the scanner** — one per category that drops that category's visitor, each
   expecting its seeded case (8 entries), plus "prose is scanned" expecting 15.11. Pin `9`. Resolve
   (the deleted manifest must leave no pin behind: `python3 scripts/check-plan-code.py --self-test`).
-- [ ] **Step 9: Commit.**
+- [x] **Step 9: Commit.**
 
 **FAILS IF (K8):** a seeded reference of any category passes the scan; or the prose seed or the
 `RETIRED_FILES` seed fails it; or the live scan is green while a load, hook, run line, argv, manifest field,

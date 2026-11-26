@@ -1044,7 +1044,7 @@ def _self_test_body() -> int:
 
     _prs = [{"sha": "aaa", "num": "186", "date": "2026-08-31", "subject": "s"},
             {"sha": "bbb", "num": "187", "date": "2026-08-31", "subject": "t"}]
-    _shown = {"aaa": ["scripts/gen-dashboard.py", "docs/x.md"], "bbb": ["docs/x.md"]}
+    _shown = {"aaa": ["scripts/gen-backlog-page.py", "docs/x.md"], "bbb": ["docs/x.md"]}
     _out = annotate_code(_prs, lambda sha: _shown.get(sha))
     eq("a PR touching a script is tagged code", _out[0]["code"], True)
     eq("a doc-only PR is not", _out[1]["code"], False)

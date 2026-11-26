@@ -1809,7 +1809,8 @@ def _self_test_body() -> int:
                               closure(tree({**gen, "scripts/check-gate.py": ""}), gen_src), gen_src), [])
     # The reviewer's six, written out here and never read from the map: each shipped entry point and the sibling it
     # loads by path. An edge reader that loses one of these forms loses a row.
-    six = (("gen-dashboard", "check-ask-store"), ("gen-goals-page", "check-goal-status"),
+    # ⟳ dashboard-retire S3: `gen-dashboard` retired; `compaction-state` loads the same sibling (`read_asks`) by path.
+    six = (("compaction-state", "check-ask-store"), ("gen-goals-page", "check-goal-status"),
            ("gen-features-page", "check-features"), ("gen-backlog-page", "check-docs"),
            ("goal-tree", "session-state"), ("check-surface-recall", "check-rc-contract"))
     case("CB1: the live tree — each of the six shipped entry points has an edge to the sibling it loads by path",
@@ -2651,6 +2652,12 @@ def _self_test_body() -> int:
         # `diff`) against each task's own `git archive` (062ee7cb 370, 575a5606 368, 40695b79 368, a91784a4 369). Lost
         # (Task 10, the old store no longer read): `compaction-state.py` -> `gen-dashboard.py` and `goal-tree.py` ->
         # `gen-dashboard.py`. Gained (Task 12, merge-ready replays C1): `check-merge-ready.py` -> `gen-dashboard.py`.
+        # ⟳ 2026-11-26 dashboard-retire S3 Tasks 14 + 15: 369 - 1 - 9 + 2 = 361 / 6e70bc13894e54c2, diffed by hand (sorted,
+        # `diff`) against each tree's own `git archive` (829660eb 369, 43939540 368). Lost (Task 14, the contrast formula
+        # moved to page_chrome): `brief-compose.py` -> `gen-dashboard.py`. Lost (Task 15, the generator deleted): its six
+        # outgoing edges, and `check-merge-ready.py`, `explainer-serve.py` and `regen-pages.py` -> `gen-dashboard.py`.
+        # Gained: `check-retired-references.py` -> `fixture_git.py` (K8, new), and `regen-pages.py` ->
+        # `gen-backlog-page.py` (its self-test fixture now names a live generator).
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2662,7 +2669,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (369, "fd17d2d55520b77c", []))
+             (361, "6e70bc13894e54c2", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

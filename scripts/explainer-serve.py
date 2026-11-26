@@ -221,7 +221,6 @@ def run_in_group(argv: list[str], *, timeout: float) -> subprocess.CompletedProc
 # What a Refresh press runs the runner with. A module name, so the suite can stand in for it.
 REGEN_EXEC = run_in_group
 REGENERABLE = {
-    "dashboard": "gen-dashboard.py",
     "backlog-table": "gen-backlog-page.py",
     "goals": "gen-goals-page.py",
     "features": "gen-features-page.py",
@@ -241,7 +240,6 @@ REGENERABLE = {
 # source is a file in git, the output is a file in ~/explainers, and conflating those is how
 # `/_rev` once resolved a standing page two different ways.
 PAGE_SOURCES = {
-    "dashboard": ["docs/dashboard-entries.md"],
     "backlog-table": ["docs/backlog.md"],
     "goals": ["docs/roadmap-to-launch.md"],
     # ⛔ WHOLE FILES, NOT DIRECTORIES, AND THIS LINE HAS BEEN WRONG TWICE ALREADY. Widening it
@@ -307,7 +305,8 @@ STALE_EXEMPT: dict[str, str] = {}
 # map of URL SPELLINGS, and `/%77ork-lines.html` and `/./work-lines.html` served the stale copy, because
 # retirement read the raw url while the resolver decoded and normalised it. It is now keyed by the
 # CANONICAL page — the file name the resolver would serve, from the root — see `retired_target`.
-RETIRED_FILES = {"work-lines.html": "/work-lines-archive"}
+# ⟳ dashboard-retire S3: the dashboard page retired the same way (spec §4.1, the work-lines precedent).
+RETIRED_FILES = {"work-lines.html": "/work-lines-archive", "dashboard.html": "/dashboard-archive"}
 _RETIRED_FOLDED = {k.casefold(): v for k, v in RETIRED_FILES.items()}
 
 
@@ -2500,15 +2499,15 @@ def _serve_copy_cases(case) -> None:
     def _every_page_footed(root, sync, setup, **_):
         sync()
         (root / "2026-01-03-brief-unmerged.html").write_text("<p>new</p>")
-        (root / "dashboard.html").write_text("<p>generated</p>")
+        (root / "goals.html").write_text("<p>generated</p>")
         (root / "x.css").write_text("p{}")
         out = []
-        for u in ("/2026-01-01-topic-a.html", "/2026-01-03-brief-unmerged.html", "/dashboard"):
+        for u in ("/2026-01-01-topic-a.html", "/2026-01-03-brief-unmerged.html", "/goals"):
             sp = served_page(u, setup())
             out.append(page_body(sp).decode().count('id="ex-source"') == 1 and sp.label.strip() != "")
         sp = served_page("/x.css", setup())
         out.append("ex-source" in page_body(sp).decode())
-        labels = [served_page(u, setup()).label for u in ("/2026-01-03-brief-unmerged.html", "/dashboard")]
+        labels = [served_page(u, setup()).label for u in ("/2026-01-03-brief-unmerged.html", "/goals")]
         return (out, labels[0].startswith("local edits on ") and "not on master" in labels[0],
                 labels[1].startswith("generated from origin/master"))
     case("⭐ #627 FAILS-IF: every served HTML page's footer names its source — master, unmerged, generated",
@@ -3240,7 +3239,18 @@ def _self_test_body() -> int:
                        for u in ("/work-lines", "/work-lines.html", "/goal-tree")])
              == (True, ["/work-lines-archive", "/work-lines-archive", None]))
         case("...and a live page's url is not redirected",
-             lambda: retired_target("/dashboard", REPO / "docs" / "explainers") is None)
+             lambda: retired_target("/goals", REPO / "docs" / "explainers") is None)
+        # dashboard-retire S3, Task 15 (15.15): the dashboard page is retired like work-lines was, so
+        # every url it had answers with the archive record, never a 404 and never a stale copy.
+        case("15.15 the retired dashboard page is NOT regenerable, and its urls go to its archive record",
+             lambda: ("dashboard" not in REGENERABLE, "dashboard" not in PAGE_SOURCES,
+                      [retired_target(u, REPO / "docs" / "explainers")
+                       for u in ("/dashboard", "/dashboard.html", "dashboard.html")])
+             == (True, True, ["/dashboard-archive"] * 3))
+        case("...and its archive record is a real, tracked file that says it is ARCHIVED",
+             lambda: "ARCHIVED" in (REPO / "docs/explainers/dashboard-archive.html").read_text())
+        case("the regenerable pages are the four live ones",
+             lambda: sorted(REGENERABLE) == ["backlog-table", "features", "goal-tree", "goals"])
         case("...and the archive it redirects to is a real, tracked file that says it is ARCHIVED",
              lambda: "ARCHIVED" in (REPO / "docs/explainers/work-lines-archive.html").read_text())
 

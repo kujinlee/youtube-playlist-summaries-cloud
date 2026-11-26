@@ -1,5 +1,5 @@
 {
- "measured_at": "575a5606",
+ "measured_at": "43939540",
  "packages": {
   "ci-layer": {
    "channel": "reusable-workflow",
@@ -83,6 +83,7 @@
       "scripts/mutations/check-ratchet-contract.json",
       "scripts/mutations/check-rc-contract.json",
       "scripts/mutations/check-reference-namespace.json",
+      "scripts/mutations/check-retired-references.json",
       "scripts/mutations/check-review-decision.json",
       "scripts/mutations/check-review-recorded.json",
       "scripts/mutations/check-review-rounds.json",
@@ -112,7 +113,6 @@
       "scripts/mutations/fixture_git.json",
       "scripts/mutations/gates-for-pr.json",
       "scripts/mutations/gen-backlog-page.json",
-      "scripts/mutations/gen-dashboard.json",
       "scripts/mutations/gen-features-page.json",
       "scripts/mutations/gen-goals-page.json",
       "scripts/mutations/gen-work-lines.json",
@@ -163,7 +163,6 @@
    "installed_files": [
     ".claude-plugin/plugin.json",
     ".claude/hooks/regen-backlog-page.sh",
-    ".claude/hooks/regen-dashboard.sh",
     ".claude/hooks/regen-features-page.sh",
     ".claude/hooks/regen-goals-page.sh",
     ".claude/hooks/regen-pages.sh",
@@ -179,7 +178,6 @@
     "scripts/explainer-serve.py",
     "scripts/fixture_git.py",
     "scripts/gen-backlog-page.py",
-    "scripts/gen-dashboard.py",
     "scripts/gen-features-page.py",
     "scripts/gen-goals-page.py",
     "scripts/gen-work-lines.py",
@@ -279,12 +277,6 @@
      ],
      "expected_count": 1
     },
-    "gen-dashboard": {
-     "files": [
-      "scripts/gen-dashboard.py"
-     ],
-     "expected_count": 1
-    },
     "gen-features-page": {
      "files": [
       "scripts/gen-features-page.py"
@@ -318,12 +310,6 @@
     "hook-regen-backlog-page": {
      "files": [
       ".claude/hooks/regen-backlog-page.sh"
-     ],
-     "expected_count": 1
-    },
-    "hook-regen-dashboard": {
-     "files": [
-      ".claude/hooks/regen-dashboard.sh"
      ],
      "expected_count": 1
     },

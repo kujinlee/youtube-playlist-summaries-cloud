@@ -258,8 +258,6 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'build.edited', 'build.generated_at', 'build.sha', 'build.stamp',
         'link_contrast_errors.minimum', 'plain.text', 'report_run.rows',
         'report_run.unread', 'report_unread.unread', 'rows_of.text',),
-    'gen-dashboard.py': (
-        'commit_dates.window', 'contrast_failures.minimum',),
     'gen-goals-page.py': (
         # ⟳ goal node tree Task 9: `parse_roots.text` left — Task 8's world case reads the real ROOTS.
         'parse_header.head_lines',),
@@ -1163,6 +1161,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # (backlog #320), so `rounds_for` is back to one parameter. Retired with their
     # subject, which is the one permitted kind of fall. `scope_lead`/`scope_tally`/
     # `scope_lead_lines` joined for the margin and abstention.
+    # dashboard-retire S3 Task 15: K8's scanner. Its cases drive `scan` through many worlds.
+    'check-retired-references.py': (
+        'scan.root',),
     'check-review-decision.py': (
         'converged.rounds',
         'converged.scope',
@@ -1438,16 +1439,6 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'sanitise_groups.groups', 'sanitise_groups.open_nums',
         'unread_note.unread', 'waiting_on.size',
         'word_diff.after', 'word_diff.before',),
-    'gen-dashboard.py': (
-        'badge_of.cleared', 'badge_of.entry', 'bucket_days.dates',
-        'bucket_days.entries', 'bucket_days.today', 'bucket_days.window', 'build.days',
-        'build.entries', 'build.exempt_error', 'build.exemptions', 'build.generated_at',
-        'build.git_error', 'build.pr_error', 'build.prs', 'build.store',
-        'build.store_error', 'build.window', 'cleared_ids.entries',
-        'commit_dates.window', 'contrast_failures.html', 'contrast_failures.minimum',
-        'main.argv', 'pr_state.budget',
-        'pr_state.cache', 'pr_state.n', 'scheme_palettes.css', 'unresolved.entries',
-        'unresolved_heads_up.entries',),
     'gen-goals-page.py': (
         'parse_adr.text', 'parse_header.head_lines', 'parse_header.text',
         'parse_milestones.text', 'parse_roots.text',),
