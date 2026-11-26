@@ -2312,7 +2312,7 @@
     ],
     "expect": [
       "⭐ backlog #498: a target that loads a sibling by its FILENAME (`\"gen-b.py\"`) is reached through it",
-      "⭐ backlog #498: a target that loads a sibling by its FILENAME (`\"gen-b.py\"`) is reached through it"
+      "backlog #498 on the real tree: agent-watchdog.py reaches check-stalled-work through goal-tree.py, which check-stalled-work loads by its FILENAME"
     ]
   },
   {
