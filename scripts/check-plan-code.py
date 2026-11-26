@@ -7857,9 +7857,14 @@ def _self_test_body() -> int:
            "scripts/check-c.py": "", "scripts/check-z.py": "y = 1\n"}
     case("⭐ backlog #498: a target that loads a sibling by its FILENAME (`\"gen-b.py\"`) is reached through it",
          _sel(["scripts/check-c.py"], src=_FN), frozenset({"scripts/check-c.py", "scripts/gen-b.py", "scripts/check-a.py"}))
-    _r498 = _rsel("scripts/check-ask-store.py")
-    case("backlog #498 on the real tree: check-ask-store.py reaches compaction-state through gen-dashboard.py",
-         (_r498 is not None, "scripts/compaction-state.py" in (_r498 or set())), (True, True))
+    # backlog #737: the real-tree witness must take the FILENAME hop and nothing else. goal-tree imports
+    # agent-watchdog by its quoted stem (`_sibling("agent-watchdog")`); check-stalled-work names neither
+    # agent-watchdog nor its stem, and loads goal-tree only by FILENAME (`with_name("goal-tree.py")`).
+    # Measured: under the backlog #498 mutation this pair is lost, and severing that one literal loses it too.
+    _r498 = _rsel("scripts/agent-watchdog.py")
+    case("backlog #498 on the real tree: agent-watchdog.py reaches check-stalled-work through goal-tree.py, "
+         "which check-stalled-work loads by its FILENAME",
+         (_r498 is not None, "scripts/check-stalled-work.py" in (_r498 or set())), (True, True))
     # ── backlog #533: A PIN BUMP IS NOT A HARNESS CHANGE ──────────────────────────────────────
     # Measured 2026-11-06 on PR #516, PR #522, PR #524 and PR #525: four of five went FULL (18 shards) only
     # because a pin bump edited this file. The pins now live in `PINS_FILE`, which is data, so a
