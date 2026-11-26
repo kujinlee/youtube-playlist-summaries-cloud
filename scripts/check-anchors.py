@@ -2,7 +2,7 @@
 """Every living spec and plan declares the GOAL it belongs to, by a name that survives renames.
 
     python3 scripts/check-anchors.py             # audit the repo
-    python3 scripts/check-anchors.py --self-test # 24 cases against synthetic trees
+    python3 scripts/check-anchors.py --self-test # 27 cases against synthetic trees
 
 WHY THIS EXISTS
 ---------------
@@ -49,11 +49,13 @@ NOT RUN).
 """
 from __future__ import annotations
 
+import bisect
 import importlib.util
 import pathlib
 import re
 import sys
 import tempfile
+from typing import NamedTuple
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
@@ -75,12 +77,12 @@ FLOOR = 22
 DATED = re.compile(r"^(\d{4}-\d{2}-\d{2})-")
 ANCHOR = re.compile(r"^>\s*\*\*Anchor:\*\*\s*`([a-z0-9-]+)`\s*—\s*\*\*ADR:\*\*\s*(none|[\d,\s]+?)\s*$")
 GOAL = re.compile(r"^>\s*\*\*Goal:\*\*\s*(\S.*)$")
-# ⛔ LENIENT mode, for ARMING only (`check-goal-status`; r3 F1, backlog #728). Master's arming reader:
-# any `**Anchor:** `x`` in the first 18 lines — bare or blockquoted, with or without the ADR part. It
-# answers "which slug does this document name", never "is this header well formed": the checks in
-# THIS file never pass `lenient`, so their strictness is unchanged.
-LENIENT_ANCHOR = re.compile(r"\*\*Anchor:\*\*\s*`([^`]+)`")
-LENIENT_HEAD_LINES = 18
+# ⟳ backlog #731: the ONE tokenizer's loose grammar. An anchor CLAIM is any `**Anchor:** `x`` in the
+# first CLAIM_HEAD_LINES lines — bare or blockquoted, with or without the ADR part. It answers "which
+# slugs does this head name", never "is this header well formed"; `ANCHOR` (above) answers that, and a
+# claim on a line `ANCHOR` matches inside the strict window is marked `well_formed`.
+ANCHOR_CLAIM = re.compile(r"\*\*Anchor:\*\*\s*`([^`]+)`")
+CLAIM_HEAD_LINES = 18
 ROOTS_KEY = re.compile(r'^\s{4}"([a-z0-9-]+)":\s*dict\(', re.M)
 # A DEPENDS entry: `    19: ("survives", "stable-blob-addressing",` — the root is the second string.
 DEPENDS_ROOT = re.compile(r'^\s{4}(\d+):\s*\(\s*"[a-z-]+",\s*"([^"]*)"', re.M)
@@ -115,21 +117,48 @@ def read_tree(path: pathlib.Path) -> list:
     return nodes
 
 
-def parse_header(text: str, head_lines: int = HEAD_LINES, *,
-                 lenient: bool = False) -> tuple[str | None, list[str], bool]:
-    """(anchor, adr numbers, has_goal) from a document's opening. PURE. `lenient` reads the anchor
-    by master's arming rule (`LENIENT_ANCHOR`) when no well-formed header names one."""
-    anchor, adrs, has_goal = None, [], False
-    for line in text.split("\n")[:head_lines]:
+class AnchorClaim(NamedTuple):
+    """One anchor-like claim in a document's head."""
+    line: int                # 0-based line index
+    slug: str                # as WRITTEN; G1 / `name_problem` says whether it is a node
+    well_formed: bool        # the whole line matches `ANCHOR` inside the strict window
+    adrs: tuple[str, ...]    # the declared ADR numbers; only a well-formed claim carries any
+
+
+def anchor_claims(text: str, head_lines: int = HEAD_LINES) -> list[AnchorClaim]:
+    """Every anchor claim in a document's head, in order. PURE. THE ONE TOKENIZER (backlog #731).
+
+    A claim is `well_formed` when its line matches `ANCHOR` within the first `head_lines` lines (an
+    ADR passes `adr_head`). Every other `ANCHOR_CLAIM` match in the first `CLAIM_HEAD_LINES` lines is
+    a loose claim. No claim is preferred over another here: precedence is each consumer's own rule,
+    stated where it is applied (`parse_header` takes the last well-formed claim; `check-goal-status`
+    enforces when ANY claim names an armed slug)."""
+    lines = text.split("\n")
+    by_line: dict[int, list[AnchorClaim]] = {}
+    for i, line in enumerate(lines[:head_lines]):
         if m := ANCHOR.match(line):
-            anchor = m.group(1)
             raw = m.group(2)
-            adrs = [] if raw == "none" else [n.strip() for n in raw.split(",") if n.strip()]
-        elif GOAL.match(line):
-            has_goal = True
-    if anchor is None and lenient:
-        if m := LENIENT_ANCHOR.search("\n".join(text.split("\n")[:LENIENT_HEAD_LINES])):
-            anchor = m.group(1)
+            adrs = () if raw == "none" else tuple(n.strip() for n in raw.split(",") if n.strip())
+            by_line[i] = [AnchorClaim(i, m.group(1), True, adrs)]
+    well_formed_lines = set(by_line)
+    starts, pos = [], 0
+    for line in lines[:CLAIM_HEAD_LINES]:
+        starts.append(pos)
+        pos += len(line) + 1
+    for m in ANCHOR_CLAIM.finditer("\n".join(lines[:CLAIM_HEAD_LINES])):
+        i = bisect.bisect_right(starts, m.start()) - 1
+        if i not in well_formed_lines:     # a well-formed line's own match is that claim, once
+            by_line.setdefault(i, []).append(AnchorClaim(i, m.group(1), False, ()))
+    return [c for i in sorted(by_line) for c in by_line[i]]
+
+
+def parse_header(text: str, head_lines: int = HEAD_LINES) -> tuple[str | None, list[str], bool]:
+    """(anchor, adr numbers, has_goal) from a document's opening. PURE. The anchor is the LAST
+    well-formed claim of `anchor_claims` (the strict reader's long-standing rule; a head naming two
+    goals is backlog B2's to refuse)."""
+    well_formed = [c for c in anchor_claims(text, head_lines) if c.well_formed]
+    anchor, adrs = (well_formed[-1].slug, list(well_formed[-1].adrs)) if well_formed else (None, [])
+    has_goal = any(GOAL.match(line) for line in text.split("\n")[:head_lines])
     return anchor, adrs, has_goal
 
 
@@ -338,14 +367,24 @@ def _self_test_body() -> int:
         report(label, got == want, got, want)
 
     N = _nodes()
-    # r3 F1 (backlog #728): `lenient` is check-goal-status's arming rule and only that. The default
-    # reader stays strict; the lenient one reads master's forms and stops at 18 lines.
+    # backlog #731: ONE tokenizer. `parse_header` is strict (well-formed, first ten lines);
+    # `anchor_claims` reports every claim in 18 lines, marking which are well formed, in order.
     _bare, _deep = "# T\n\n**Anchor:** `alpha`\n", "# T\n" + "\n" * 11 + "> **Anchor:** `alpha` — **ADR:** none\n"
-    check_eq("parse_header: the default is STRICT, lenient reads bare/short/lines 11-18, not 19+",
-             ([parse_header(_bare)[0], parse_header(_deep)[0], parse_header(_deep, 13)[0]],
-              [parse_header(_bare, lenient=True)[0], parse_header(_deep, lenient=True)[0],
-               parse_header("# T\n" + "\n" * 18 + _bare, lenient=True)[0]]),
-             ([None, None, "alpha"], ["alpha", "alpha", None]))
+    check_eq("parse_header is STRICT: a bare line or one on lines 11-18 is no header, unless the window is widened",
+             [parse_header(_bare)[0], parse_header(_deep)[0], parse_header(_deep, 13)[0]],
+             [None, None, "alpha"])
+    check_eq("anchor_claims: bare, short and lines 11-18 are claims, line 19+ is not; a wider window makes it well formed",
+             [[(c.slug, c.well_formed) for c in anchor_claims(t, n)]
+              for t, n in ((_bare, HEAD_LINES), (_deep, HEAD_LINES), ("# T\n" + "\n" * 18 + _bare, HEAD_LINES),
+                           (_deep, 13), ("# T\n" + "\n" * 18 + _deep, 40))],
+             [[("alpha", False)], [("alpha", False)], [], [("alpha", True)], [("alpha", True)]])
+    _two = ("# T\n**Anchor:** `beta` in prose\n> **Anchor:** `alpha` — **ADR:** 0001, 0002\n"
+            "> **Anchor:** `gamma`\n")
+    check_eq("anchor_claims: every claim in ORDER, the well-formed one marked with its ADRs, no precedence",
+             [(c.line, c.slug, c.well_formed, c.adrs) for c in anchor_claims(_two)],
+             [(1, "beta", False, ()), (2, "alpha", True, ("0001", "0002")), (3, "gamma", False, ())])
+    check_eq("parse_header reads the LAST well-formed claim and ignores loose ones",
+             parse_header(_two + "> **Anchor:** `delta` — **ADR:** none\n")[:2], ("delta", []))
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         S, P, A = "superpowers/specs", "superpowers/plans", ADR_SUB

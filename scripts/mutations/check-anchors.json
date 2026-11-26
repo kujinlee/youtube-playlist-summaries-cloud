@@ -72,9 +72,9 @@
     "expect": ["the tree unreadable is CANNOT RUN"]
   },
   {
-    "name": "lenient mode leaks into the default reader, so check-anchors reads a bare Anchor line (r3 F1)",
+    "name": "parse_header reads LOOSE claims too, so check-anchors accepts a bare Anchor line as a header (backlog #731)",
     "file": "scripts/check-anchors.py",
-    "edits": [["    if anchor is None and lenient:", "    if anchor is None:"]],
-    "expect": ["parse_header: the default is STRICT, lenient reads bare/short/lines 11-18, not 19+"]
+    "edits": [["    well_formed = [c for c in anchor_claims(text, head_lines) if c.well_formed]", "    well_formed = [c for c in anchor_claims(text, head_lines)]"]],
+    "expect": ["parse_header is STRICT: a bare line or one on lines 11-18 is no header, unless the window is widened"]
   }
 ]

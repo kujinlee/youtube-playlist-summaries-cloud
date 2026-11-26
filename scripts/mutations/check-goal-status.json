@@ -121,7 +121,7 @@
     "file": "scripts/check-goal-status.py",
     "edits": [
       [
-        "        armed_set = armed(anchored)",
+        "        armed_set = armed({slug: rels for slug, rels in claimed.items() if slug in settled})",
         "        armed_set = (\"alpha\",)"
       ]
     ],
@@ -143,30 +143,71 @@
     ]
   },
   {
-    "name": "living_documents reads the anchor STRICTLY again, so a document master armed is unarmed (r3 F1, backlog #728)",
+    "name": "living_documents keeps only the WELL-FORMED claims, so a document master armed is unarmed (r3 F1, backlog #728/#731)",
     "file": "scripts/check-goal-status.py",
     "edits": [
       [
-        "                        \"anchor\": parse_header(text, lenient=True)[0],",
-        "                        \"anchor\": parse_header(text)[0],"
+        "                        \"claims\": tuple(dict.fromkeys(c.slug for c in claims)),",
+        "                        \"claims\": tuple(well_formed),"
       ]
     ],
     "expect": [
-      "living_documents reads the anchor by master's arming rule: bare, short and lines 11-18 count",
+      "living_documents reads every claim: bare, short and lines 11-18 count, 19+ does not",
       "⛔ F1: a pre-cutoff spec with a bare, short Anchor header and no Status is ARMED and FAILS"
     ]
   },
   {
-    "name": "arming reads only the strict headers again, so a bare-header document's missing Status passes (r3 F1)",
+    "name": "arming reads only the NAMED claim again (a precedence between lines), so a second armed claim passes (backlog #731)",
     "file": "scripts/check-goal-status.py",
     "edits": [
       [
-        "        anchored = with_document_anchors(ca.anchored_slugs(root), docs)",
-        "        anchored = ca.anchored_slugs(root)"
+        "        armed_by = next((c for c in d[\"claims\"] if c in armed), None)",
+        "        armed_by = d[\"anchor\"] if d[\"anchor\"] in armed else None"
       ]
     ],
     "expect": [
-      "⛔ F1: a pre-cutoff spec with a bare, short Anchor header and no Status is ARMED and FAILS"
+      "⛔ #731: armed claim FIRST, exempt well-formed claim second, no Status — FAILS, bare or well-formed",
+      "#731 property: over 108 generated heads, master's refusal is always a refusal, and a single claim agrees exactly"
+    ]
+  },
+  {
+    "name": "the armed set is not filtered at all, so a loose claim arms a PROPOSED node (r1 S, backlog #731)",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "        settled = ca.check_features.settled_slugs(nodes)",
+        "        settled = set(claimed)"
+      ]
+    ],
+    "expect": [
+      "r1 S: a loose claim naming a PROPOSED node does not arm it"
+    ]
+  },
+  {
+    "name": "the armed set is filtered with CURRENT slugs, which include proposed nodes (r1 S, backlog #731)",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "ca.check_features.settled_slugs(nodes)",
+        "ca.check_features.current_slugs(nodes)"
+      ]
+    ],
+    "expect": [
+      "r1 S: a loose claim naming a PROPOSED node does not arm it"
+    ]
+  },
+  {
+    "name": "ADR headers are not read, so an ADR naming no node passes and its node is unarmed (r1 L, backlog #731)",
+    "file": "scripts/check-goal-status.py",
+    "edits": [
+      [
+        "            adrs = adr_anchors(root)",
+        "            adrs = {}"
+      ]
+    ],
+    "expect": [
+      "r1 L: an ADR whose header names no node FAILS the misnamed-slug check",
+      "r1 L: an ADR's header arms its node, as on master"
     ]
   }
 ]
