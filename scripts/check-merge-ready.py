@@ -293,6 +293,11 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     # step's env aliases as `SWEEP_TIMEOUT_MINUTES` (check-plan-code's time budget). Still a setting, not a gate.
     ("ci.yml", "timeout-minutes: &sweep-limit ${{ github.event_name == 'schedule' && 60 || 30 }}"):
         (1, "the sweep shard's timeout, longer on the two-seed scheduled sweep — gates no step"),
+    # ⟳ 2026-11-25, dashboard-retire S2 Task 12: the ask store's PUSH-mode step (A1 + L1 on master and
+    # batch/**). It never runs on a pull request, so it is no gate a READY verdict could miss; the PR's
+    # own `ask store (pull request)` step, which this script replays, runs the same L1.
+    ("ci.yml", "if: github.event_name == 'push'"):
+        (1, "the ask store's push-mode step (master, batch/**) — never runs on a pull request"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),
     # ⟳ 2026-11-15, backlog #651 (owner 11-15, option A): the full sweep moved from every master push to the
@@ -2180,6 +2185,7 @@ def main(argv: list[str]) -> int:
     for name, cmd in [
         # ⟳ dashboard-retire S2: the ask-store gate reads no body (its `NO-ENTRY:` waiver retired).
         ("ask store", ["python3", "scripts/check-ask-store.py", "--base", BASE_REF]),
+        ("old store holds no open ask (C1)", ["python3", "scripts/gen-dashboard.py", "--assert-no-open-asks"]),
         ("review recorded", ["python3", "scripts/check-review-recorded.py",
                              "--base", BASE_REF, "--pr-body-file", str(body_file)]),
         ("review rounds", ["python3", "scripts/check-review-rounds.py"]),
@@ -2378,7 +2384,7 @@ def _self_test_body() -> int:
     # ⚠ The REAL workflow, not a fixture: the derivation must agree with what CI actually gates.
     check("the derivation finds exactly the FOUR steps ci.yml gates today",
           sorted(pr_only_steps(WORKFLOW.read_text())) if WORKFLOW.is_file() else [],
-          ["check-review-recorded (PR only)", "dashboard entry ratchet",
+          ["ask store (pull request)", "check-review-recorded (PR only)",
            "doc citations resolve", "reference namespaces are qualified"])
 
     check("the real workflow has pull-request-only steps — an empty answer here is CANNOT RUN",

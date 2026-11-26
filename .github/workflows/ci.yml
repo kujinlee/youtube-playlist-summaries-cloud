@@ -70,7 +70,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      # fetch-depth: 0 is REQUIRED by the dashboard entry ratchet, which diffs
+      # fetch-depth: 0 is REQUIRED by the ask-store step (F1 and L1), which diffs
       # `origin/$GITHUB_BASE_REF...HEAD`. actions/checkout takes depth 1 on the synthesised
       # merge ref, so HEAD is a graft with NO MERGE BASE and the ratchet exits 2 —
       # `fatal: origin/master...HEAD: no merge base`, i.e. CANNOT RUN, i.e. NOT CHECKED.
@@ -1103,18 +1103,25 @@ jobs:
       - name: doc-citations guard's own cases
         run: python3 scripts/check-doc-citations.py --self-test
 
-      # ⟳ dashboard-retire S2: the per-PR entry rule and its `NO-ENTRY:` waiver are retired, so the
-      # step reads no PR body; it checks the ask store (A1, and F1 against the base).
-      - name: dashboard entry ratchet
+      # ⟳ dashboard-retire S2: the per-PR entry rule and its `NO-ENTRY:` waiver are retired; no step
+      # reads a PR body. On a pull request: A1, F1 against the base, L1 (the old store is frozen), and
+      # C1 (the old store holds no open ask). On a push: A1 and L1. The push step runs on `batch/**`
+      # as well as master, which is intended: a batch carrying a store edit is red exactly as its PR.
+      - name: ask store (pull request)
         if: github.event_name == 'pull_request'
-        run: python3 scripts/check-ask-store.py --base "origin/$GITHUB_BASE_REF"
+        run: |
+          python3 scripts/check-ask-store.py --base "origin/$GITHUB_BASE_REF"
+          python3 scripts/gen-dashboard.py --assert-no-open-asks
+      - name: ask store (push)
+        if: github.event_name == 'push'
+        run: python3 scripts/check-ask-store.py
 
       # ⛔ THE ZERO-ROUND CASE. `check-review-rounds` audits rounds that EXIST; a branch with none
       # passes it vacuously, which is how five PRs merged unreviewed on 2026-09-09 with every gate
       # green. Same shape as the sibling above: a branch that changes CODE records a round, or says
       # `NO-REVIEW: <reason>` in the PR body.
       # ⚠ WRITES ITS OWN BODY FILE. The first version read `/tmp/pr-body.md` produced by the
-      # dashboard-entry step above — a side effect of a DIFFERENT step, which reordering, removing
+      # old dashboard-entry step (now `ask store`) — a side effect of a DIFFERENT step, which reordering, removing
       # or short-circuiting that step would turn into a stale or missing read (r1 finding R8).
       # Same `printf '%s' "$BODY"` for the same reason stated there: a PR body is attacker-
       # controlled text full of backticks and quotes.
