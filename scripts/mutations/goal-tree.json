@@ -623,8 +623,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "for k in (\"source\", \"ref\", \"href\", \"text\", \"multi\")})",
-        "for k in (\"source\", \"ref\", \"href\", \"text\")})"
+        "for k in (\"source\", \"ref\", \"href\", \"text\", \"multi\")}\n",
+        "for k in (\"source\", \"ref\", \"href\", \"text\")}\n"
       ]
     ],
     "expect": [
@@ -6796,6 +6796,110 @@
     ],
     "expect": [
       "⭐ backlog #689 r3 M1: a leaf naming SEVERAL rows takes a list-tail subject as its merge only when EVERY live row is ✅ in its Status cell — one ✅ of two reads queued, both ✅ read merged with the PR's time"
+    ]
+  },
+  {
+    "name": "the goal tree's call to read_asks is severed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    asks, problems = gate.read_asks(directory)\n",
+        "    asks, problems = [], []\n"
+      ]
+    ],
+    "expect": [
+      "3.1 K4: an open ask file is a NEEDS YOU item from the asks source, keyed by its stem, with no link"
+    ]
+  },
+  {
+    "name": "the goal tree's call to the old store's reader is severed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(\"dashboard\", DASHBOARD_REL, needs_from_dashboard),",
+        "(\"dashboard\", DASHBOARD_REL, lambda _t: ([], [])),"
+      ]
+    ],
+    "expect": [
+      "3.9 the old store's asks still show, through collect, with their /dashboard link"
+    ]
+  },
+  {
+    "name": "an asks problem is dropped",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            errors[\"asks\"] = \"; \".join(problems) + \" — NOT READ\"",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "3.6 K5: a PROBLEM entry marks the asks source NOT READ and KEEPS the readable ask"
+    ]
+  },
+  {
+    "name": "a missing decision drops the ask",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        it[\"decision_warning\"] = \"; \".join(warn) if warn else None\n        items.append(it)\n",
+        "        it[\"decision_warning\"] = \"; \".join(warn) if warn else None\n        if not warn:\n            items.append(it)\n"
+      ]
+    ],
+    "expect": [
+      "3.3 an ask with no decision block is KEPT, with a warning naming the missing block"
+    ]
+  },
+  {
+    "name": "the asks source leaves NEEDS_SOURCES",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "NEEDS_SOURCES = (\"dashboard\", \"asks\", \"ledger\", \"backlog\")",
+        "NEEDS_SOURCES = (\"dashboard\", \"ledger\", \"backlog\")"
+      ]
+    ],
+    "expect": [
+      "3.5 K5: a missing docs/asks is never 'nothing waits on you' — the asks source is NOT READ"
+    ]
+  },
+  {
+    "name": "r1 M1: a merged ask's options and warning are dropped by consolidate",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                                  | {k: it[k] for k in (\"options\", \"decision_warning\") if it.get(k)})",
+        "                                  )"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 M1: a merged ask's options and its warning stay under the backlog item, in text and in HTML"
+    ]
+  },
+  {
+    "name": "r1 M1: the text details do not walk the merged sources",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for a in n.get(\"also\") or []:\n        d = _own_details(a)\n",
+        "    for a in []:\n        d = _own_details(a)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 M1: a merged ask's options and its warning stay under the backlog item, in text and in HTML"
+    ]
+  },
+  {
+    "name": "r1 M1: the HTML details do not walk the merged sources",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for a in n.get(\"also\") or []:\n        d = _own_details_html(a)\n",
+        "    for a in []:\n        d = _own_details_html(a)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 M1: a merged ask's options and its warning stay under the backlog item, in text and in HTML"
     ]
   }
 ]

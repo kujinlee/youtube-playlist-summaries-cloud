@@ -284,5 +284,18 @@
     "expect": [
       "r3 F3: an added line holding `\\x1c` is ONE line, so the bare #N after it is judged"
     ]
+  },
+  {
+    "name": "docs/asks leaves the scope",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    \"docs/asks/\",\n)\n",
+        ")\n"
+      ]
+    ],
+    "expect": [
+      "6.1 a bare #N added in an ask file under docs/asks/ is refused"
+    ]
   }
 ]

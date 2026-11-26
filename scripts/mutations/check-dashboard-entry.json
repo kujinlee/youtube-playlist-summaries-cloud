@@ -563,5 +563,284 @@
       ]
     ],
     "expect": "the refusal telling you to edit the PR body also says you must PUSH, and why (#168)"
+  },
+  {
+    "name": "the answer rule loosens to a prefix",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if heading == ANSWER:",
+        "        if heading.startswith(ANSWER):"
+      ]
+    ],
+    "expect": "`## Answer — A` leaves the ask OPEN"
+  },
+  {
+    "name": "the answer rule strips leading space",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        heading = line.rstrip()",
+        "        heading = line.strip()"
+      ]
+    ],
+    "expect": "an indented `## Answer` leaves the ask OPEN"
+  },
+  {
+    "name": "the answer rule ignores the fence",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if i in in_fence:\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "a `## Answer` inside a fence leaves the ask OPEN"
+  },
+  {
+    "name": "a conflict marker is looked for on the first line only",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if any(l.startswith(ASK_CONFLICT) for l in lines):",
+        "        if any(l.startswith(ASK_CONFLICT) for l in lines[:1]):"
+      ]
+    ],
+    "expect": "a conflict marker on ANY line is a PROBLEM"
+  },
+  {
+    "name": "the per-file cap is dropped",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if size > MAX_ASK_BYTES:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a file over the cap, or not UTF-8, is a PROBLEM"
+  },
+  {
+    "name": "a non-regular entry is read",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if not stat.S_ISREG(st.st_mode):",
+        "        if False:"
+      ]
+    ],
+    "expect": "a symlink, a subdirectory and a FIFO are PROBLEMS, and the FIFO does not block"
+  },
+  {
+    "name": "MAX_ASKS truncates in silence",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        problems.append(f\"{ASKS_REL}/ holds {len(names)} entries, over the cap of {MAX_ASKS}; \"\n                        f\"only the first {MAX_ASKS} were read\")\n",
+        ""
+      ]
+    ],
+    "expect": "over MAX_ASKS is a PROBLEM, not a truncation"
+  },
+  {
+    "name": "the name rule admits uppercase",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "ASK_NAME = re.compile(r\"[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*\\.md\")",
+        "ASK_NAME = re.compile(r\"[0-9]{4}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9]+(-[A-Za-z0-9]+)*\\.md\")"
+      ]
+    ],
+    "expect": "a name that fails the rule is a PROBLEM"
+  },
+  {
+    "name": "a non-empty .gitkeep is skipped",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "            if size != 0:",
+        "            if False:"
+      ]
+    ],
+    "expect": "a non-empty .gitkeep is a PROBLEM"
+  },
+  {
+    "name": "a problem drops the readable asks",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "    return asks, problems\n",
+        "    return ([] if problems else asks), problems\n"
+      ]
+    ],
+    "expect": "a PROBLEM entry still returns the readable asks"
+  },
+  {
+    "name": "a missing directory reads as no asks",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "            return [], [f\"{ASKS_REL}/ is missing ({directory}) — no ask could be read\"]",
+        "            return [], []"
+      ]
+    ],
+    "expect": "a missing directory is a PROBLEM, never no asks"
+  },
+  {
+    "name": "F1 checks every base file",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if not ASK_NAME.fullmatch(name):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "deleting .gitkeep with the first ask passes F1"
+  },
+  {
+    "name": "F1 accepts a rewritten ask",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        is_prefix = head_files[name].startswith(base_files[name])",
+        "        is_prefix = True"
+      ]
+    ],
+    "expect": "an edited question is refused"
+  },
+  {
+    "name": "F1 misses a deleted ask",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "            problems.append(f\"{ASKS_REL}/{name}: present at the merge base, gone at HEAD — \"\n                            f\"an ask is never deleted; answer it with a '## Answer' line\")\n",
+        ""
+      ]
+    ],
+    "expect": "a deleted ask is refused"
+  },
+  {
+    "name": "A1 lists the directory instead of HEAD's tree",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        problems += _judge_asks(list(head), head.__getitem__)[1]",
+        "        problems += read_asks(root / ASKS_REL, None)[1]"
+      ]
+    ],
+    "expect": "an untracked scratch file does not fail A1"
+  },
+  {
+    "name": "main stops running A1",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "    if ask_problems:",
+        "    if False:"
+      ]
+    ],
+    "expect": "main refuses on A1's problem list"
+  },
+  {
+    "name": "A1's git failure returns err=None",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        return [], f\"the ask store could not be checked — {exc}\"",
+        "        return problems, None"
+      ]
+    ],
+    "expect": "A1's own git failure is CANNOT RUN"
+  },
+  {
+    "name": "main ignores A1's err",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "    if ask_err:",
+        "    if False:"
+      ]
+    ],
+    "expect": "main is CANNOT RUN on A1's err"
+  },
+  {
+    "name": "r1 A: a HEAD with no docs/asks/ passes A1",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if not head:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "r1 A: a HEAD tree with no docs/asks/ is refused"
+    ]
+  },
+  {
+    "name": "r1 B: the name rule is asked with .match, so a trailing newline passes",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if name != ASK_KEEP and not ASK_NAME.fullmatch(name):",
+        "        if name != ASK_KEEP and not ASK_NAME.match(name):"
+      ]
+    ],
+    "expect": [
+      "r1 B: a name ending in a newline, or with non-ASCII digits, is a PROBLEM beside a valid name that is read"
+    ]
+  },
+  {
+    "name": "r1 B: the name rule's year admits any Unicode digit",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "ASK_NAME = re.compile(r\"[0-9]{4}-",
+        "ASK_NAME = re.compile(r\"\\d{4}-"
+      ]
+    ],
+    "expect": [
+      "r1 B: a name ending in a newline, or with non-ASCII digits, is a PROBLEM beside a valid name that is read"
+    ]
+  },
+  {
+    "name": "r1 D: F1 drops the no-final-newline clause, so the last line can be edited",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if (is_prefix and base and not base.endswith(b\"\\n\") and len(head) > len(base)",
+        "        if (False and base and not base.endswith(b\"\\n\") and len(head) > len(base)"
+      ]
+    ],
+    "expect": [
+      "r1 D: with no trailing newline at the base, an edited last-line question is refused",
+      "r1 D: ...and so is a rewritten last-line answer"
+    ]
+  },
+  {
+    "name": "r1 F: A1 reads the working tree's bytes instead of HEAD's",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "            data = _ask_git(root, \"cat-file\", \"blob\", obj)\n",
+        "            data = (root / path).read_bytes() if (root / path).is_file() else b\"\"\n"
+      ]
+    ],
+    "expect": [
+      "r1 F: a conflict marker committed at HEAD is refused though the working tree was fixed",
+      "r1 F: a valid ask deleted from the working tree still passes A1 — HEAD holds it",
+      "r1 F: ...and a bad working-tree edit over a good commit passes"
+    ]
+  },
+  {
+    "name": "r1 F: a symlink tracked at HEAD is read as a blob",
+    "file": "scripts/check-dashboard-entry.py",
+    "edits": [
+      [
+        "        if mode == \"120000\":",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "r1 F: a symlink tracked at HEAD is a PROBLEM read from its tree mode"
+    ]
   }
 ]

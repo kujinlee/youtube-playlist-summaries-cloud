@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 593 cases
+    python3 scripts/goal-tree.py --self-test                 # 608 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -38,14 +38,16 @@ The log is `.claude/goal-tree-log.jsonl` in the MAIN checkout (`session-state.ma
 so a log appended on every merge churns no tracked file, and one log however many worktrees append.
 
 ⭐ NEEDS YOU, at the top of the page (owner decision D1, 2026-10-28): ONE list of decisions only the owner
-can make, open now, from three sources, each read by its owner's code and never a copy of it:
+can make, open now, from four sources, each read by its owner's code and never a copy of it:
   * the dashboard's unresolved asks — `gen-dashboard.unresolved()` — plus every entry the store's grammar
     could not read, NAMED as unreadable (it may be an ask);
+  * the open ask files in `docs/asks/` — the gate's `read_asks()`, its ONE reader — each shown with its
+    options and, when its decision block is malformed or missing, a warning (dashboard-retire S1);
   * in-flight entries marked `WAITS-ON-OWNER:` — `session-state.waits_on_owner()`, main checkout's ledger;
   * open backlog rows still marked NEEDS-OWNER (`needs_owner`), parsed by `gen-backlog-page.parse`, with
     any line that parser refused to read reported as unreadable; a row whose status says it was settled after
     its marker is FLAGGED "may already be settled" with the remedy, and stays listed (backlog #496).
-"Nothing waits on you" is said only when ALL THREE were read; a source that cannot be read — or that holds
+"Nothing waits on you" is said only when ALL FOUR were read; a source that cannot be read — or that holds
 even one record it cannot read (a truncated ledger line, an unparseable dashboard entry, a refused backlog
 line) — is NOT READ, its readable items are still shown, and the snapshot is not logged, like any other
 CANNOT RUN (round 1 X1). Decisions and ACTIONS only the owner can take are two lists (X4:
@@ -125,12 +127,14 @@ ANSWERS_REL = "docs/goal-tree-answers.json"
 # merge must not churn a tracked file, and a worktree run must append to the ONE log the page reads.
 LOG_REL = ".claude/goal-tree-log.jsonl"
 DASHBOARD_REL = "docs/dashboard-entries.md"
+# dashboard-retire S1: one file per ask, read ONLY through the gate's `read_asks` (spec §2.3).
+ASKS_REL = "docs/asks"
 BACKLOG_REL = "docs/backlog.md"
 NEEDS_OWNER = "NEEDS-OWNER"
 # backlog #389: the work-lines page's job lives here now, and a frozen record of it is at this url.
 WORK_LINES_ARCHIVE = "/work-lines-archive"
-# The three sources of the NEEDS YOU list; "nothing waits on you" is said only when ALL were read.
-NEEDS_SOURCES = ("dashboard", "ledger", "backlog")
+# The four sources of the NEEDS YOU list; "nothing waits on you" is said only when ALL were read.
+NEEDS_SOURCES = ("dashboard", "asks", "ledger", "backlog")
 DEFAULT_OUT = pathlib.Path.home() / "explainers" / "goal-tree.html"
 RELATIONS = ("fix", "blocker", "bookkeeping", "side")
 OPEN_LIMIT = 100
@@ -1318,6 +1322,27 @@ def needs_from_dashboard(text: str) -> tuple[list[dict], list[str]]:
                     f"could not read ({', '.join(bad)})"] if bad else [])
 
 
+def needs_from_asks(directory: pathlib.Path) -> tuple[list[dict], list[str]]:
+    """(items, problems). The OPEN asks in `docs/asks/`, by the gate's `read_asks` — the ONE reader of that
+    directory (spec §2.3); this never lists it or parses a file itself. Each item carries its `options` (each
+    option's text, ` [recommended]` kept) and its `decision_warning` (`decision_errors`' sentences, or None).
+
+    ⛔ A MALFORMED DECISION KEEPS THE ASK: an ask with no block, or one option, is still shown, with its warning
+    — it is louder, never quieter. A problem the reader names makes the source NOT READ (the caller's job)."""
+    gate = _sibling("check-dashboard-entry")
+    asks, problems = gate.read_asks(directory)
+    items = []
+    for a in asks:
+        whole = f"{a['question']}\n{a['body']}"
+        warn = gate.decision_errors(a["body"], "needs-you")
+        it = _item("decision", "asks", a["stem"], None, _SS.clean(a["question"], 160), identity(whole), whole)
+        it["options"] = [o["text"] + (f" {gate.REC}" if o["recommended"] else "")
+                         for d in gate.decisions(a["body"]) for o in d["options"]]
+        it["decision_warning"] = "; ".join(warn) if warn else None
+        items.append(it)
+    return items, problems
+
+
 def needs_from_ledger(entries: list[dict]) -> list[dict]:
     """In-flight entries marked `WAITS-ON-OWNER:` — session-state's own predicate, not a copy. A
     following `ACTION:` makes it an action rather than a decision."""
@@ -1383,7 +1408,9 @@ def consolidate(items: list[dict]) -> list[dict]:
         target = (rows.get(tuple(it["identity"]))
                   if it.get("row") is None and it.get("identity") else None)
         if target is not None:
-            target["also"].append({k: it[k] for k in ("source", "ref", "href", "text", "multi")})
+            target["also"].append({k: it[k] for k in ("source", "ref", "href", "text", "multi")}
+                                  # r1 Claude M1 (spec §2.4): an ask's options and warning ride along, never dropped
+                                  | {k: it[k] for k in ("options", "decision_warning") if it.get(k)})
             continue
         out.append(it)
     return out
@@ -1571,6 +1598,16 @@ def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
         needs += items
         if problems:
             errors[key] = "; ".join(problems) + " — NOT READ"
+    # The ask files are a DIRECTORY source, so they are read here and not in the loop above (whose tuple text a
+    # mutation anchors, plan Task 3 Step 3). Same contract: an exception or a problem is NOT READ, never "none".
+    try:
+        items, problems = needs_from_asks(root / ASKS_REL)
+    except Exception as exc:                      # noqa: BLE001 - NOT READ, named, never "none"
+        errors["asks"] = f"{ASKS_REL}/ NOT READ ({type(exc).__name__}: {_SS.clean(exc, 120)})"
+    else:
+        needs += items
+        if problems:
+            errors["asks"] = "; ".join(problems) + " — NOT READ"
     needs += needs_from_ledger(src["ledger"])
     src["needs"] = consolidate(needs)
     # backlog #484: which rows are SUPERSEDED or WITHDRAWN. Unread (or partly unread) leaves `fates` None,
@@ -2443,7 +2480,7 @@ def tree_lines(snap: dict, at=None) -> list[str]:
 
 
 def needs_state(snap: dict) -> str:
-    """PURE. "items", "none" (all three sources read, nothing found) or "not-read" (empty, and at
+    """PURE. "items", "none" (all four sources read, nothing found) or "not-read" (empty, and at
     least one source was NOT READ — which is never reported as nothing)."""
     if snap.get("needs"):
         return "items"
@@ -2464,6 +2501,23 @@ def _item_line(n: dict) -> str:
     if counts_conflict(n):
         bits.append("⚠ the sources state different counts")
     return " · ".join(bits)
+
+
+def _own_details(n: dict) -> list[str]:
+    """PURE. One ask's options, then its decision warning."""
+    return [f"• {o}" for o in n.get("options") or []] + (
+        [f'⚠ {n["decision_warning"]}'] if n.get("decision_warning") else [])
+
+
+def _item_details(n: dict) -> list[str]:
+    """PURE. What prints UNDER an item (dashboard-retire S1): each option of an ask, then its decision warning —
+    the item's own, then each merged ask's under its name (r1 Claude M1: a merge never hides them, spec §2.4)."""
+    out = _own_details(n)
+    for a in n.get("also") or []:
+        d = _own_details(a)
+        if d:
+            out += [f'from {a["source"]} {a["ref"]}:'] + [f"  {x}" for x in d]
+    return out
 
 
 def story(ch: list[str]) -> str:
@@ -2527,8 +2581,8 @@ def needs_lines(snap: dict) -> list[str]:
     lists (X4): decisions only the owner can make, and actions only the owner can take."""
     st, items = needs_state(snap), snap.get("needs") or []
     if st == "none":
-        return ["NEEDS YOU — nothing waits on you (dashboard asks, the in-flight ledger and the backlog "
-                "were all read)"]
+        return ["NEEDS YOU — nothing waits on you (dashboard asks, ask files, the in-flight ledger and the "
+                "backlog were all read)"]
     out = []
     if st == "not-read":
         out.append("NEEDS YOU — NOT KNOWN: a source was NOT READ, so an empty list here is not an "
@@ -2541,7 +2595,10 @@ def needs_lines(snap: dict) -> list[str]:
         several = sum(1 for n in group if n.get("multi"))   # a declared 0 stands for no answers
         out.append(f"NEEDS YOU — {len(group)} {title}"
                    + (f" ({several} of them stand for several answers)" if several else ""))
-        out += [("└─ " if i == len(group) - 1 else "├─ ") + _item_line(n) for i, n in enumerate(group)]
+        for i, n in enumerate(group):
+            last = i == len(group) - 1
+            out.append(("└─ " if last else "├─ ") + _item_line(n))
+            out += [("     " if last else "│    ") + d for d in _item_details(n)]
     out += [f"⚠ NOT READ — {w}" for w in snap.get("needs_not_read") or []]
     return out
 
@@ -2549,7 +2606,26 @@ def needs_lines(snap: dict) -> list[str]:
 def _ref_html(source: str, ref: str, href: str | None) -> str:
     if href:
         return f'<a href="{html.escape(href, quote=True)}">{html.escape(ref)}</a>'
+    if source == "asks":
+        return f'<code>{html.escape(ref)}</code> <span class="src">(docs/asks/)</span>'
     return f'<code>{html.escape(ref)}</code> <span class="src">(.claude/inflight.jsonl)</span>'
+
+
+def _own_details_html(n: dict) -> str:
+    opts = n.get("options") or []
+    return ((('<ul class="opts">' + "".join(f"<li>{html.escape(o)}</li>" for o in opts) + "</ul>") if opts else "")
+            + (f'<p class="warn">⚠ {html.escape(n["decision_warning"])}</p>' if n.get("decision_warning") else ""))
+
+
+def _details_html(n: dict) -> str:
+    """An ask's options and its decision warning, under the item — the item's own, then each merged ask's under
+    its name (r1 Claude M1); every string escaped."""
+    out = _own_details_html(n)
+    for a in n.get("also") or []:
+        d = _own_details_html(a)
+        if d:
+            out += f'<p class="src">from {html.escape(a["source"])} {html.escape(a["ref"])}:</p>{d}'
+    return out
 
 
 def needs_html(snap: dict) -> str:
@@ -2585,7 +2661,7 @@ def needs_html(snap: dict) -> str:
 
             parts.append(f'<li><span class="src">{html.escape(n["source"])}</span> '
                          f'{_ref_html(n["source"], n["ref"], n.get("href"))} · '
-                         f'{html.escape(n["text"])}{extra}</li>')
+                         f'{html.escape(n["text"])}{extra}{_details_html(n)}</li>')
         parts.append("</ul>")
     parts += [f'<p class="warn">⚠ NOT READ — {html.escape(w)}</p>'
               for w in snap.get("needs_not_read") or []]
@@ -3057,6 +3133,8 @@ section.needs p.quiet{margin:0;font-size:.8rem;color:var(--ink-faint)}
 section.needs h2{margin:.5rem 0}
 section.needs ul{margin:.3rem 0;padding-left:1.1rem;font-size:.9rem}
 section.needs li{margin:.2rem 0}
+section.needs ul.opts{margin:.15rem 0;font-size:.85rem}
+section.needs p.warn{margin:.15rem 0;font-size:.85rem}
 section.agenda{background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--accent);
                border-radius:.5rem;padding:.4rem 1.1rem .7rem;margin:1rem 0}
 section.agenda.none{border-left-color:var(--rule)}
@@ -3291,6 +3369,8 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
 DASH_FIXTURE = ("## 2026-10-01 [needs-you]\nPick one for backlog #5.\n\n## 2026-10-02 [needs-you]\nAnother.\n\n"
                 "## 2026-10-03 [resolved: 2026-10-02/1]\nDone.\n")
 DASH_BAD = DASH_FIXTURE + "\n## 2026-10-04 [bogus-flag]\nx\n"
+# One open ask in docs/asks/'s grammar (dashboard-retire spec §2.3): `# <question>`, then a decision block.
+ASK_FIXTURE = "# Which name for the page?\n\n**Decide:** which name?\n- needs-you [recommended]\n- asks\n"
 BACKLOG_FIXTURE = ("# B\n\n## Items\n\n| # | Item | Touches | Size | Bundle | Status |\n"
                    "|---|---|---|---|---|---|\n"
                    "| 5 | **Pick a name** — body | x | S | (t) | NEEDS-OWNER — waits on you |\n"
@@ -3494,6 +3574,7 @@ def _cases_672(case) -> None:
             json.dumps(ent(w5)) + "\n" + json.dumps(ent(gone, id="gone-one")) + "\n")
         (m / "docs").mkdir()
         (m / DASHBOARD_REL).write_text(DASH_FIXTURE)
+        (m / ASKS_REL).mkdir()   # dashboard-retire S1: the ask store, empty and READ
         (m / BACKLOG_REL).write_text(BACKLOG_FIXTURE)
 
         def run_(cmd, cwd, timeout):
@@ -5136,11 +5217,59 @@ def _self_test_cases(*, outside: dict) -> int:
     case("⛔ X1: an entry the store cannot read is a PROBLEM naming its id; readable asks are kept",
          ([n["ref"] for n in _d2], _dp2),
          (["2026-10-01/1"], ["1 dashboard entry the store's grammar could not read (2026-10-04/1)"]))
+    # ── docs/asks/: one file per ask, read by the GATE's read_asks (dashboard-retire S1, Task 3) ──────────────
+    with tempfile.TemporaryDirectory() as _ad:
+        _a = pathlib.Path(_ad)
+        (_a / "2026-11-25-page-name.md").write_text(ASK_FIXTURE, encoding="utf-8")
+        _ai, _ap = needs_from_asks(_a)
+        case("3.1 K4: an open ask file is a NEEDS YOU item from the asks source, keyed by its stem, with no link",
+             ([(n["source"], n["ref"], n["href"], n["kind"]) for n in _ai], _ap),
+             ([("asks", "2026-11-25-page-name", None, "decision")], []))
+        case("3.2 a valid ask carries its question and its options, [recommended] kept, and no warning",
+             tuple((_ai or [{}])[0].get(k) for k in ("text", "options", "decision_warning")),
+             ("Which name for the page?", ["needs-you [recommended]", "asks"], None))
+        (_a / "2026-11-25-bare.md").write_text("# Just a question?\n\nNo block here.\n", encoding="utf-8")
+        (_a / "2026-11-25-one.md").write_text("# One choice?\n\n**Decide:** pick\n- only\n", encoding="utf-8")
+        (_a / "2026-11-25-done.md").write_text(ASK_FIXTURE + "\n## Answer\nneeds-you\n", encoding="utf-8")
+        _bi, _bip = needs_from_asks(_a)
+        _bk = {n["ref"]: n for n in _bi}
+        _bare, _one1 = _bk.get("2026-11-25-bare", {}), _bk.get("2026-11-25-one", {})   # a missing item fails, never crashes
+        case("3.3 an ask with no decision block is KEPT, with a warning naming the missing block",
+             (_bare.get("options"), "names no decision" in (_bare.get("decision_warning") or "")), ([], True))
+        case("3.4 malformed choices are named in the warning, in decision_errors' own sentence",
+             _one1.get("decision_warning"), "decision 'pick' offers 1 option(s); at least two are needed")
+        case("3.7 an answered ask is not an item", (sorted(_bk), _bip),
+             (["2026-11-25-bare", "2026-11-25-one", "2026-11-25-page-name"], []))
+    # ⛔ THE DIRECTORY IT IS GIVEN IS THE ONE READ (check-fixture-variation): a second directory, its own ask only.
+    with tempfile.TemporaryDirectory() as _ad2:
+        _a2 = pathlib.Path(_ad2)
+        (_a2 / "2026-11-26-other.md").write_text(ASK_FIXTURE, encoding="utf-8")
+        case("3.9 the directory it is GIVEN is the one read: a second directory yields only its own ask",
+             [n["ref"] for n in needs_from_asks(_a2)[0]], ["2026-11-26-other"])
     _b, _bp = needs_from_backlog(BACKLOG_FIXTURE)
     case("the backlog source lists open NEEDS-OWNER rows only, by its own parser",
          ([n["ref"] for n in _b], _bp), (["backlog #5", "backlog #9", "backlog #10"], []))
     case("⛔ X1: a line the row parser refuses is a PROBLEM, never an item",
          needs_from_backlog(BACKLOG_BAD)[1], ["1 line(s) of docs/backlog.md the row parser could not read"])
+    # ⛔ r1 Claude M1 (spec §2.4): an ask that declares `decision: backlog #5` MERGES into that row's item, and its
+    # options and warning must survive the merge — printed and drawn under the merged item, not dropped.
+    with tempfile.TemporaryDirectory() as _ad3:
+        _a3 = pathlib.Path(_ad3)
+        (_a3 / "2026-11-25-pick.md").write_text(
+            "# Which name? decision: backlog #5\n\n**Decide:** which name?\n- needs-you [recommended]\n- asks\n",
+            encoding="utf-8")
+        (_a3 / "2026-11-25-bad.md").write_text(
+            "# Which colour? decision: backlog #5\n\n**Decide:** pick\n- only\n", encoding="utf-8")
+        _m = consolidate(_b + needs_from_asks(_a3)[0])
+        _m5 = next((n for n in _m if n["ref"] == "backlog #5"), {})
+        _det = "\n".join(_item_details(_m5))
+        _htm = _details_html(_m5)
+        case("⛔ r1 M1: a merged ask's options and its warning stay under the backlog item, in text and in HTML",
+             (sorted(a["ref"] for a in _m5.get("also") or []),
+              "• needs-you [recommended]" in _det, "• asks" in _det,
+              "offers 1 option(s)" in _det,
+              "<li>needs-you [recommended]</li>" in _htm, "offers 1 option(s)" in _htm),
+             (["2026-11-25-bad", "2026-11-25-pick"], True, True, True, True, True))
     case("a backlog need carries the row's title and the clause after the marker",
          _b[0]["text"], "Pick a name — waits on you")
     case("⭐ X4: NEEDS-OWNER-ACTION is an ACTION, not a decision, and its marker is not in the text",
@@ -5318,6 +5447,23 @@ def _self_test_cases(*, outside: dict) -> int:
     case("⭐ an empty list read from ALL three sources says nothing waits on you",
          (needs_state(_ns), needs_lines(_ns)[0].startswith("NEEDS YOU — nothing waits on you")),
          ("none", True))
+    case("3.10 the all-clear names all four sources: dashboard asks, ask files, the ledger and the backlog",
+         needs_lines(_ns)[0], "NEEDS YOU — nothing waits on you (dashboard asks, ask files, the in-flight ledger "
+                              "and the backlog were all read)")
+    _ask = dict(_item("decision", "asks", "2026-11-25-x", None, "Pick <b>?"),
+                options=["a <i>", "b [recommended]"], decision_warning="offers <1> option")
+    _akn = derive(goals, src(needs=[_ask, _item("decision", "ledger", "led", None, "t")]), "t")
+    case("3.2 ...the options and the warning print UNDER the item in the text, the tree's rail kept",
+         needs_lines(_akn)[1:4] + needs_lines(_akn)[5:6],
+         ["├─ [asks] 2026-11-25-x · Pick <b>?", "│    • a <i>", "│    • b [recommended]", "└─ [ledger] led · t"])
+    case("3.2 ...the warning is the item's last line under it", needs_lines(_akn)[4], "│    ⚠ offers <1> option")
+    _akh = needs_html(_akn)
+    case("3.2 ...and in the page: an opts list and a warn line, every string escaped, the ref named as docs/asks/",
+         ('<code>2026-11-25-x</code> <span class="src">(docs/asks/)</span>' in _akh,
+          '<ul class="opts"><li>a &lt;i&gt;</li><li>b [recommended]</li></ul>' in _akh,
+          '<p class="warn">⚠ offers &lt;1&gt; option</p>' in _akh, "Pick &lt;b&gt;?" in _akh,
+          '<code>led</code> <span class="src">(.claude/inflight.jsonl)</span>' in _akh, "<i>" in _akh),
+         (True, True, True, True, True, False))
     _one = dict(_item("decision", "backlog", "backlog #5", "/backlog-table#i5", "t", (5, "decision")),
                 row=5)
     _nd = derive(goals, src(needs=[_one]), "t")
@@ -5619,6 +5765,7 @@ def _self_test_cases(*, outside: dict) -> int:
             '{"id": "build-12", "what": "w"}\n{"id": "ask-1", "what": "WAITS-ON-OWNER: decision: backlog #5 — pick A or B"}\n')
         (r / "docs").mkdir()
         (r / DASHBOARD_REL).write_text(DASH_FIXTURE)
+        (r / ASKS_REL).mkdir()   # dashboard-retire S1: the ask store, empty and READ
         (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE)
         ok = [(["git", "fetch"], (0, "")),
               (["git", "log"], (0, "abc1234\t2026-11-03 19:09\tone (backlog #10) (#20)\nabc0000\t2026-11-02 10:00\tno pr here\n")),
@@ -5653,6 +5800,31 @@ def _self_test_cases(*, outside: dict) -> int:
              [("2026-10-01/1", "/dashboard#2026-10-01-1", []),
               ("backlog #5", "/backlog-table#i5", ["ask-1"]),
               ("backlog #9", "/backlog-table#i9", []), ("backlog #10", "/backlog-table#i10", [])])
+        case("3.9 the old store's asks still show, through collect, with their /dashboard link",
+             [(n["source"], n["ref"], n["href"]) for n in s["needs"] if n["source"] == "dashboard"],
+             [("dashboard", "2026-10-01/1", "/dashboard#2026-10-01-1")])
+        (r / ASKS_REL / "2026-11-25-page-name.md").write_text(ASK_FIXTURE, encoding="utf-8")
+        _sa1, _sa2 = collect(r, run_ok), collect(r, run_ok)
+        case("3.8 an ask's ref is stable across runs: two collects on one tree, no (source, ref) diff",
+             ({(n["source"], n["ref"]) for n in _sa1["needs"]} ^ {(n["source"], n["ref"]) for n in _sa2["needs"]},
+              ("asks", "2026-11-25-page-name") in {(n["source"], n["ref"]) for n in _sa1["needs"]}), (set(), True))
+        (r / ASKS_REL / "Foo.md").write_text("# a badly named ask\n", encoding="utf-8")
+        _sa3 = collect(r, run_ok)
+        _sn3 = derive(goals, _sa3, "t")
+        case("3.6 K5: a PROBLEM entry marks the asks source NOT READ and KEEPS the readable ask",
+             ([n["ref"] for n in _sa3["needs"] if n["source"] == "asks"], _sa3["errors"].get("asks", "").endswith(
+                 " — NOT READ"), "docs/asks/Foo.md" in _sa3["errors"].get("asks", ""), needs_state(_sn3)),
+             (["2026-11-25-page-name"], True, True, "items"))
+        (r / ASKS_REL / "Foo.md").unlink()
+        (r / ASKS_REL / "2026-11-25-page-name.md").unlink()
+        (r / ASKS_REL).rmdir()
+        _sa4 = collect(r, run_ok)
+        _sn4 = derive(goals, dict(_sa4, needs=[]), "t")
+        case("3.5 K5: a missing docs/asks is never 'nothing waits on you' — the asks source is NOT READ",
+             (needs_state(_sn4), any(ln.startswith("⚠ NOT READ — asks: docs/asks/ is missing") and
+                                     ln.endswith(" — NOT READ") for ln in needs_lines(_sn4)),
+              "nothing waits on you" in render_text(_sn4)), ("not-read", True, False))
+        (r / ASKS_REL).mkdir()
         (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE)
         (r / "main" / ".claude" / "inflight.jsonl").write_text(
             '{"id": "build-12", "what": "w"}\n{"id":"pick","what":"WAITS-ON-OWNER: Choose A or B"\n')
@@ -6902,6 +7074,7 @@ def _self_test_cases(*, outside: dict) -> int:
         (_side / ".claude" / "plans" / "side-only.md").write_text("<!-- parent: - -->\n- [ ] a")
         (_m / "docs").mkdir()
         (_m / DASHBOARD_REL).write_text(DASH_FIXTURE)
+        (_m / ASKS_REL).mkdir()   # dashboard-retire S1: the ask store, empty and READ
         (_m / BACKLOG_REL).write_text(BACKLOG_FIXTURE)
 
         def _run_x3(cmd, cwd, timeout):

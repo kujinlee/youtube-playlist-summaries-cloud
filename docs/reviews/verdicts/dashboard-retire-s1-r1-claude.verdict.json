@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/dashboard-retire-s1-r1-claude.md": "100644 b01d4289df90db7f48423805f6b6227cfe5525a5",
+    "docs/reviews/codex/dashboard-retire-s1-r1-codex.md": "100644 a0a8501ef40988c2385b8723c14bbbcb36a4ddde",
+    "docs/reviews/verdicts/dashboard-retire-s1-r1-codex.verdict.json": "100644 7eddc6bb9763b9920dbb4978954952b77cc13c9c"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "3ef5166e209558c7a1e6963eabc585dd5cd0ed49",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 10461 chars, names 3ef5166e2095",
+  "refused": false,
+  "review": "dashboard-retire-s1-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/dashboard-retire-s1",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

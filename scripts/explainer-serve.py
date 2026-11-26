@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 291 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 298 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -253,7 +253,8 @@ PAGE_SOURCES = {
     # regen hook rebuilds on the wider set, which is the half that matters. So editing a spec, ADR
     # or review does rebuild the page and does not light the banner. `/goals` has the same shape.
     # Teaching `/_stale` about directories (rglob each entry, take the max mtime) is a real change
-    # to this file and is deliberately out of that plan's scope.
+    # to this file and is deliberately out of that plan's scope. ⟳ dashboard-retire S1: `/_stale` now
+    # reads a directory NAMED in DIR_SOURCES (one level of `*.md`); these three are still not named.
     # ⟳ goal node tree Task 10: the anchor registry left this list; its names live in the tree (ADR-0016).
     "features": ["docs/features.md", "docs/backlog.md"],
     # The declared threads only: the snapshot log is git-ignored (no checkout would carry it, which the
@@ -262,8 +263,39 @@ PAGE_SOURCES = {
     # The answers file too (PR #558 r1 F): the page shows answers to questions asked on it, so an answer added
     # after the build lights the banner. ⚠ The page is built from origin/master, so an answer reaches it only
     # after its PR merges; until then the banner says "stale" only in a checkout that holds the edit.
-    "goal-tree": ["docs/goal-threads.md", "docs/goal-tree-answers.json"],
+    # ⟳ dashboard-retire S1 Task 5: the ask files too — the page's NEEDS YOU reads them (spec §2.3), so a new
+    # ask or an answer appended to one lights the banner. A DIRECTORY, admitted by name in DIR_SOURCES below.
+    "goal-tree": ["docs/goal-threads.md", "docs/goal-tree-answers.json", "docs/asks"],
 }
+# ⛔ THE DIRECTORIES A PAGE MAY DECLARE AS A SOURCE, BY NAME (dashboard-retire S1). Every other source must be
+# a real file, as before: admitting "any directory" would let `docs` be declared and called covered. A directory
+# source's time is the newest of the directory itself (an ask added or removed) and its `*.md` children, one
+# level (an answer appended in place moves only the file) — see `source_mtime`.
+DIR_SOURCES = frozenset({"docs/asks"})
+
+
+def source_mtime(path: pathlib.Path, rel: str | None = None) -> tuple[int, str]:
+    """(st_mtime_ns, the path that holds it). For a file, its own. For a directory, the maximum over the directory
+    and its `*.md` children, one level, so `/_stale` can NAME the ask that moved. `rel` is the label for `path`
+    (the repo-relative source as PAGE_SOURCES spells it); a child's label is `rel/<name>`."""
+    rel = str(path) if rel is None else rel
+    own = (path.stat().st_mtime_ns, rel)
+    if not path.is_dir():
+        return own
+    children = [(c.stat().st_mtime_ns, f"{rel}/{c.name}") for c in path.glob("*.md") if c.is_file()]
+    return max([own, *children])
+
+
+def watchable(repo: pathlib.Path, src: str) -> bool:
+    """A declared source `/_stale` can read: a real file, or a directory named in DIR_SOURCES. ONE rule, read by the
+    handler and by the coverage case (`unwatchable`), so the two cannot disagree about what counts."""
+    target = repo / src
+    return target.is_file() or (src in DIR_SOURCES and target.is_dir())
+
+
+def unwatchable(page_sources: dict, repo: pathlib.Path) -> list[str]:
+    """Every declared source `watchable` refuses — the coverage case holds this EMPTY for the real map."""
+    return [s for ss in page_sources.values() for s in ss if not watchable(repo, s)]
 # ⛔ THE ONLY PAGES WITH NO `/_stale` BANNER, and why — the self-test holds this set EQUAL to the
 # keys whose source list is empty, so an empty list can never appear on another page silently.
 # ⟳ backlog #389: EMPTY now — its one member, the work-lines page, retired. The case below still
@@ -2079,8 +2111,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # implementation of one fact, which is how the hardcoded "the backlog file"
                 # ended up on /dashboard and /goals in the first place.
                 newest, newest_src = max(
-                    ((REPO / s).stat().st_mtime_ns, s) for s in sources
-                    if (REPO / s).is_file())
+                    source_mtime(REPO / s, s) for s in sources if watchable(REPO, s))
             except (OSError, ValueError):
                 return self._send(200, b"fresh", "text/plain; charset=utf-8")
             verdict = stale_verdict(built, newest)
@@ -3195,9 +3226,8 @@ def _self_test_body() -> int:
         # staleness is exactly the silent gap this whole change is closing.
         case("⭐ every regenerable page declares where it is built FROM",
              lambda: sorted(PAGE_SOURCES) == sorted(REGENERABLE))
-        case("...and every declared source is a real file in the repo",
-             lambda: [s for ss in PAGE_SOURCES.values() for s in ss
-                      if not (REPO / s).is_file()] == [])
+        case("...and every declared source is a real file in the repo, or a DIR_SOURCES directory",
+             lambda: unwatchable(PAGE_SOURCES, REPO) == [])
         # ⛔ THE EXEMPTION IS EXPLICIT, AND IT CANNOT SPREAD. The file-only case above passes
         # VACUOUSLY on an empty list, so emptiness itself is pinned: exactly the pages named in
         # STALE_EXEMPT have no sources, and each exemption states its reason.
@@ -4338,9 +4368,11 @@ def _self_test_body() -> int:
         #
         # So the world is BUILT: a page in a sandbox `ROOT`, its source in a sandbox `REPO`, and a
         # `PAGE_SOURCES` entry wiring them — all restored in a `finally`.
-        def _drive_stale(*, declare_source=True, page_newer=True, slug="yps-stale", suffix=""):
+        def _drive_stale(*, declare_source=True, page_newer=True, slug="yps-stale", suffix="", asks=None):
             _root, _repo = root / "stale-root", root / "stale-repo"
             _root.mkdir(exist_ok=True); _repo.mkdir(exist_ok=True)
+            if asks is not None:
+                return _drive_stale_asks(asks, _root, _repo, slug)
             (_root / f"{slug}.html").write_text("<p>page</p>")
             # ⛔ TWO SOURCES, AND THE SECOND ONE IS THE CASE — r3 MEDIUM 3. With a single-source
             # fixture every multi-source property was unfalsifiable: `max(...)` -> `min(...)`
@@ -4367,6 +4399,74 @@ def _self_test_body() -> int:
             finally:
                 globals()["ROOT"], globals()["REPO"] = _sav[0], _sav[1]
                 PAGE_SOURCES.clear(); PAGE_SOURCES.update(_sav[2])
+        # ⟳ dashboard-retire S1 Task 5: a DIRECTORY source (DIR_SOURCES). The page is built at 500; the
+        # ask directory and every file in it start at 100. `asks` names what moved after the build:
+        #   "added"     — a new ask file (950) and the directory entry it created (900);
+        #   "appended"  — an answer appended IN PLACE: the file moves (900), the directory does NOT;
+        #   "untouched" — nothing moved;
+        #   "gitkeep"   — only the non-`.md` placeholder moved (900), the directory held;
+        #   "removed"   — an ask file REMOVED (r1 Claude L3): only the directory moves (900), and the one ask left
+        #                 is still at 100, so the directory's own term is the only witness.
+        # ⚠ The directory's mtime is set LAST: writing a child moves it, so any earlier utime is undone.
+        def _drive_stale_asks(asks, _root, _repo, slug):
+            d = _repo / "docs" / "asks"
+            import shutil as _sh_asks
+            _sh_asks.rmtree(d, ignore_errors=True); d.mkdir(parents=True)
+            (_root / f"{slug}.html").write_text("<p>page</p>")
+            os.utime(_root / f"{slug}.html", (500, 500))
+            (d / "2026-11-20-a.md").write_text("# Question: one?\n")
+            (d / ".gitkeep").write_text("")
+            for c in d.iterdir():
+                os.utime(c, (100, 100))
+            dir_t = 100
+            if asks == "added":
+                (d / "2026-11-25-b.md").write_text("# Question: two?\n")
+                os.utime(d / "2026-11-25-b.md", (950, 950)); dir_t = 900
+            elif asks == "appended":
+                with (d / "2026-11-20-a.md").open("a") as fh:
+                    fh.write("\n## Answer\nyes\n")
+                os.utime(d / "2026-11-20-a.md", (900, 900))
+            elif asks == "gitkeep":
+                os.utime(d / ".gitkeep", (900, 900))
+            elif asks == "removed":
+                (d / "2026-11-21-c.md").write_text("# Question: three?\n")
+                (d / "2026-11-21-c.md").unlink(); dir_t = 900
+            os.utime(d, (dir_t, dir_t))
+            _sav = (globals()["ROOT"], globals()["REPO"], dict(PAGE_SOURCES))
+            try:
+                globals()["ROOT"], globals()["REPO"] = _root, _repo
+                PAGE_SOURCES[slug] = ("docs/asks",)
+                return _drive_get(f"/_stale?p=/{slug}")
+            finally:
+                globals()["ROOT"], globals()["REPO"] = _sav[0], _sav[1]
+                PAGE_SOURCES.clear(); PAGE_SOURCES.update(_sav[2])
+        # 5.1–5.5, the plan's behaviors (dashboard-retire S1 Task 5).
+        case("5.1 an added ask file makes the goal tree stale, NAMING the file",
+             lambda: _drive_stale(asks="added")[1] == b"stale docs/asks/2026-11-25-b.md")
+        case("5.2 an answer appended in place makes it stale — the directory's own mtime did not move",
+             lambda: _drive_stale(asks="appended")[1] == b"stale docs/asks/2026-11-20-a.md")
+        case("5.3 an untouched ask directory is fresh",
+             lambda: _drive_stale(asks="untouched")[1] == b"fresh")
+        case("5.5 a non-.md child of the directory is not watched",
+             lambda: _drive_stale(asks="gitkeep")[1] == b"fresh")
+        case("5.6 r1 L3: a REMOVED ask file makes it stale through the directory's own mtime, naming the directory",
+             lambda: _drive_stale(asks="removed")[1] == b"stale docs/asks")
+        # ⛔ 5.4 THE ADMISSION IS NAMED, NOT "ANY DIRECTORY". `docs/` is a real directory in every checkout,
+        # so a rule that admitted any directory would watch the whole docs tree and call it covered.
+        case("5.4 a directory NOT in DIR_SOURCES is still refused by the coverage rule",
+             lambda: (unwatchable({"x": ["docs"]}, REPO), unwatchable({"x": ["docs/asks"]}, REPO))
+             == (["docs"], []))
+        # ⛔ THE REPO IS READ, NOT ASSUMED (check-fixture-variation): every other call passes REPO, so this world
+        # is built elsewhere — a file, the named directory, and a declared source that exists in neither.
+        def _unwatchable_elsewhere():
+            import tempfile as _tf_uw
+            with _tf_uw.TemporaryDirectory() as d:
+                r = pathlib.Path(d)
+                (r / "docs/asks").mkdir(parents=True)
+                (r / "x.md").write_text("x", encoding="utf-8")
+                return unwatchable({"p": ["x.md", "docs/asks", "gone.md"]}, r)
+        case("5.8 the repo it is GIVEN is the one read: only the source missing THERE is unwatchable",
+             lambda: _unwatchable_elsewhere() == ["gone.md"])
         case("/_stale answers 200 for a page it has sources for",
              lambda: _drive_stale()[0] == 200)
         case("/_stale says `fresh` when the page is newer than its source",

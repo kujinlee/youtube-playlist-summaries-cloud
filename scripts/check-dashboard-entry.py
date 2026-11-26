@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
-"""Refuse a branch that changes tracked files and records no dashboard entry."""
+"""Refuse a branch that changes tracked files and records no dashboard entry.
+
+It also checks the ask store, `docs/asks/` (one file per ask): A1, every file there is a well-formed
+ask, and F1, an ask at the merge base is still at HEAD and only grew at its end. A1 reads the names
+git tracks at HEAD (`git ls-tree`), not the directory listing; content comes from the working tree.
+A problem in the ask store is REFUSED whatever the entry verdict, a `NO-ENTRY:` waiver included.
+"""
 from __future__ import annotations
 import argparse
 import datetime as _dt
+import errno
+import os
 import pathlib
+import posixpath
 import re
+import stat
 import subprocess
 import sys
 
@@ -482,6 +492,246 @@ def decision_errors(plain: str, category: str) -> list[str]:
         if sum(1 for o in d["options"] if o["recommended"]) > 1:
             problems.append(f"decision {label!r} marks more than one option [recommended]")
     return problems
+
+
+# ─── the ask store: one file per ask under docs/asks/ (dashboard-retire spec §2.3) ─────────────
+#
+# ⛔ ONE READER. Nothing but this file lists `docs/asks/` or re-implements the fence rule, the
+# answer rule or `decisions()`; the goal tree and the compaction snapshot load this file and call
+# `read_asks`. A second reader is a second copy of the rules, free to drift.
+ASKS_REL = "docs/asks"
+# ⛔ Always `fullmatch`, never `.match`: `$` admits a trailing newline. `[0-9]`, never `\d`, which admits any
+# Unicode digit (r1 Codex MEDIUM, Claude L2).
+ASK_NAME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*\.md")
+ASK_KEEP = ".gitkeep"
+ANSWER = "## Answer"
+MAX_ASK_BYTES = 64 * 1024
+MAX_ASKS = 1000
+ASK_CONFLICT = ("<<<<<<<", ">>>>>>>")
+
+
+def answered(text: str) -> bool:
+    """True when a line, outside every fence, is exactly `## Answer` (trailing whitespace and a
+    CR allowed). Nothing looser: `## Answer — A`, an indented heading and a fenced one leave the
+    ask OPEN (spec §3, r6 Claude m2)."""
+    in_fence = fenced_lines(text)
+    for i, line in enumerate(text.split("\n")):
+        if i in in_fence:
+            continue
+        heading = line.rstrip()
+        if heading == ANSWER:
+            return True
+    return False
+
+
+def _read_ask_bytes(path: pathlib.Path) -> tuple[bytes | None, int, str | None]:
+    """(data, size, why-not). Opened without following a symlink and without blocking on a FIFO;
+    only a regular file is read, and never more than `MAX_ASK_BYTES + 1` bytes."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return None, 0, "missing on disk"
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            return None, 0, "is a symlink, not a regular file"
+        return None, 0, f"could not be opened ({exc.strerror})"
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return None, 0, "not a regular file"
+        chunks: list[bytes] = []
+        got = 0
+        while got <= MAX_ASK_BYTES:
+            chunk = os.read(fd, MAX_ASK_BYTES + 1 - got)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            got += len(chunk)
+        return b"".join(chunks), max(st.st_size, got), None
+    except OSError as exc:
+        return None, 0, f"could not be read ({exc.strerror})"
+    finally:
+        os.close(fd)
+
+
+def read_asks(directory: pathlib.Path,
+              names: list[str] | None = None) -> tuple[list[dict], list[str]]:
+    """The OPEN asks in `directory`, in filename order, and the problems.
+
+    Each ask is `{"stem", "question", "body"}`: `question` is the first line without `# `, `body`
+    every line after it. Each problem is a plain sentence naming its file. `names=None` lists the
+    directory (the goal tree's view: an untracked file IS what the owner sees); a list reads
+    exactly those names (A1's view: the names git tracks at HEAD).
+
+    ⛔ A PROBLEM NEVER HIDES AN ASK, AND NEVER READS AS "NO ASKS". The readable asks are returned
+    beside the problems, and a missing directory is a problem, not an empty store.
+    """
+    if names is None:
+        try:
+            names = os.listdir(directory)
+        except FileNotFoundError:
+            return [], [f"{ASKS_REL}/ is missing ({directory}) — no ask could be read"]
+        except OSError as exc:
+            return [], [f"{ASKS_REL}/ could not be listed ({exc.strerror})"]
+    return _judge_asks(names, lambda name: _read_ask_bytes(pathlib.Path(directory) / name))
+
+
+def _judge_asks(names: list[str], load) -> tuple[list[dict], list[str]]:
+    """The rules of `read_asks` over `names`, whatever holds the bytes: `load(name)` answers
+    `(data, size, why-not)` — `_read_ask_bytes` for a directory, HEAD's tree for A1 (r1 Claude L4)."""
+    asks: list[dict] = []
+    problems: list[str] = []
+    names = sorted(names)
+    if len(names) > MAX_ASKS:
+        problems.append(f"{ASKS_REL}/ holds {len(names)} entries, over the cap of {MAX_ASKS}; "
+                        f"only the first {MAX_ASKS} were read")
+        names = names[:MAX_ASKS]
+    for name in names:
+        where = f"{ASKS_REL}/{name}"
+        if name != ASK_KEEP and not ASK_NAME.fullmatch(name):
+            problems.append(f"{where}: the name is not YYYY-MM-DD-<slug>.md "
+                            f"(lowercase letters, digits and single hyphens)")
+            continue
+        data, size, why = load(name)
+        if why is not None:
+            problems.append(f"{where}: {why}")
+            continue
+        if name == ASK_KEEP:
+            if size != 0:
+                problems.append(f"{where}: must be empty — it holds {size} byte(s)")
+            continue
+        if size > MAX_ASK_BYTES:
+            problems.append(f"{where}: {size} bytes, over the cap of {MAX_ASK_BYTES}")
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            problems.append(f"{where}: not UTF-8 text")
+            continue
+        lines = text.split("\n")
+        if any(l.startswith(ASK_CONFLICT) for l in lines):
+            problems.append(f"{where}: carries a merge-conflict marker — resolve it")
+            continue
+        first = lines[0].rstrip()
+        if not first.startswith("# ") or not first[2:].strip():
+            problems.append(f"{where}: the first line must be '# <question>'")
+            continue
+        if answered(text):
+            continue
+        asks.append({"stem": name[: -len(".md")], "question": first[2:].strip(),
+                     "body": "\n".join(lines[1:])})
+    return asks, problems
+
+
+def f1_problems(base_files: dict[str, bytes], head_files: dict[str, bytes]) -> list[str]:
+    """F1, append-only: every ask at the merge base is still at HEAD, and its bytes there begin
+    with its bytes at the base. Gaining an answer, or a superseding note after one, appends;
+    an edited question, a rewritten answer or a deletion does not. Pure.
+
+    Only names matching `ASK_NAME` are F1's subject: `.gitkeep` goes when the first ask arrives,
+    and a badly named file is A1's to refuse while it exists (r6 Claude m1)."""
+    problems: list[str] = []
+    for name in sorted(base_files):
+        if not ASK_NAME.fullmatch(name):
+            continue
+        if name not in head_files:
+            problems.append(f"{ASKS_REL}/{name}: present at the merge base, gone at HEAD — "
+                            f"an ask is never deleted; answer it with a '## Answer' line")
+            continue
+        is_prefix = head_files[name].startswith(base_files[name])
+        # r1 Claude L1: a base with no final newline ends mid-line, so a byte prefix alone lets its LAST line be
+        # edited (`# Q?` → `# Q? Actually…`). What follows such a base must begin a new line.
+        base, head = base_files[name], head_files[name]
+        if (is_prefix and base and not base.endswith(b"\n") and len(head) > len(base)
+                and head[len(base):len(base) + 1] != b"\n"):
+            is_prefix = False
+        if not is_prefix:
+            problems.append(f"{ASKS_REL}/{name}: changed in place — an ask only grows at its end "
+                            f"(an answer, then any later note); restore the merge base's bytes "
+                            f"and append instead")
+    return problems
+
+
+class _AskGitError(Exception):
+    """A git call the ask store needs did not run, or exited non-zero."""
+
+
+def _ask_git(root: pathlib.Path, *args: str) -> bytes:
+    try:
+        r = subprocess.run(["git", *args], cwd=root, capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise _AskGitError(f"could not run git {args[0]}: {exc}") from exc
+    if r.returncode != 0:
+        err = r.stderr if isinstance(r.stderr, str) else (r.stderr or b"").decode("utf-8", "replace")
+        raise _AskGitError(f"git {args[0]} exited {r.returncode}: {err.strip()[:200]}")
+    return r.stdout if isinstance(r.stdout, bytes) else (r.stdout or "").encode("utf-8")
+
+
+def _ask_blobs(root: pathlib.Path, rev: str) -> dict[str, bytes]:
+    """{basename: bytes} of every blob directly under `docs/asks/` at `rev`."""
+    out: dict[str, bytes] = {}
+    listing = _ask_git(root, "ls-tree", "-z", rev, f"{ASKS_REL}/")
+    for rec in listing.decode("utf-8", "surrogateescape").split("\0"):
+        if not rec.strip():
+            continue
+        meta, path = rec.split("\t", 1)
+        if meta.split()[1] != "blob":
+            continue
+        out[posixpath.basename(path)] = _ask_git(root, "cat-file", "blob", f"{rev}:{path}")
+    return out
+
+
+def _ask_tree(root: pathlib.Path, rev: str) -> dict[str, tuple[bytes | None, int, str | None]]:
+    """{basename: (data, size, why-not)} for every entry directly under `docs/asks/` at `rev`, read from git's
+    tree alone — the answer `_read_ask_bytes` gives for a directory. A symlink and a non-blob are refused by
+    their tree mode; a blob over `MAX_ASK_BYTES` is sized by `ls-tree -l`, never fetched."""
+    out: dict[str, tuple[bytes | None, int, str | None]] = {}
+    listing = _ask_git(root, "ls-tree", "-z", "-l", rev, f"{ASKS_REL}/")
+    for rec in listing.decode("utf-8", "surrogateescape").split("\0"):
+        if not rec.strip():
+            continue
+        meta, path = rec.split("\t", 1)
+        mode, kind, obj, size = meta.split()
+        name = posixpath.basename(path)
+        if mode == "120000":
+            out[name] = (None, 0, "is a symlink, not a regular file")
+        elif kind != "blob":
+            out[name] = (None, 0, "not a regular file")
+        elif int(size) > MAX_ASK_BYTES:
+            out[name] = (b"", int(size), None)
+        else:
+            data = _ask_git(root, "cat-file", "blob", obj)
+            out[name] = (data, len(data), None)
+    return out
+
+
+def ask_store_problems(base: str | None, root: pathlib.Path) -> tuple[list[str], str | None]:
+    """A1 and F1 over the ask store: `(problems, err)`. `err` is set when git could not answer,
+    and `main` turns it into CANNOT RUN — never a pass.
+
+    A1 reads HEAD's tree only — the names AND the bytes, through git (`_ask_tree`), never the
+    working tree (r1 Claude L4): a dirty tree cannot change the verdict, so a local run answers
+    what CI's merge ref will. An untracked scratch file (`.DS_Store`) cannot fail it (r6 Claude
+    m3). The goal tree keeps the directory listing, where an untracked file is what the owner
+    would see. A HEAD with no `docs/asks/` at all is refused (r1 Codex HIGH, Claude M2): both
+    readers downstream treat a missing store as NOT READ, so the gate must not let it merge.
+
+    F1 runs only when `base` is given: the asks at `git merge-base <base> HEAD` against HEAD's.
+    """
+    problems: list[str] = []
+    try:
+        head = _ask_tree(root, "HEAD")
+        if not head:
+            problems.append(f"{ASKS_REL}/ is not tracked at HEAD — the goal tree and the compaction "
+                            f"snapshot cannot read a missing store; keep {ASK_KEEP} until the first "
+                            f"ask lands")
+        problems += _judge_asks(list(head), head.__getitem__)[1]
+        if base is not None:
+            merge_base = _ask_git(root, "merge-base", base, "HEAD").decode().strip()
+            problems += f1_problems(_ask_blobs(root, merge_base), _ask_blobs(root, "HEAD"))
+    except _AskGitError as exc:
+        return [], f"the ask store could not be checked — {exc}"
+    return problems, None
 
 
 def _is_exempt(path: str) -> bool:
@@ -1302,6 +1552,131 @@ def _self_test_body() -> int:
     case("...and both keep their ids", [e["id"] for e in _INERT],
          ["2026-08-28/1", "2026-08-29/1"])
 
+    # ─── read_asks (dashboard-retire plan, Task 1) — each world is its own temp directory ──────
+    import tempfile as _tf
+    _ask_root = _tf.mkdtemp(prefix="asks-")
+    _ask_n = [0]
+
+    def world(files: dict) -> pathlib.Path:
+        _ask_n[0] += 1
+        d = pathlib.Path(_ask_root) / f"w{_ask_n[0]}"
+        d.mkdir()
+        for fname, content in files.items():
+            (d / fname).write_bytes(content if isinstance(content, bytes)
+                                    else content.encode("utf-8"))
+        return d
+
+    def stems(r):
+        return [a["stem"] for a in r[0]]
+
+    _OPEN = "# Which form?\n**Decide:** which form?\n- one [recommended]\n- two\n"
+    _r = read_asks(world({"2026-11-25-a.md": _OPEN}))
+    case("a valid open ask is returned", (stems(_r), len(_r[1])), (["2026-11-25-a"], 0))
+    case("...with its question and its body", (_r[0][0]["question"], _r[0][0]["body"]),
+         ("Which form?", _OPEN.split("\n", 1)[1]))
+    case("a valid answered ask is not returned",
+         read_asks(world({"2026-11-25-a.md": _OPEN + "## Answer\none\n"})), ([], []))
+    case("an empty .gitkeep is neither an ask nor a problem",
+         read_asks(world({".gitkeep": ""})), ([], []))
+    _r = read_asks(world({".gitkeep": "x"}))
+    case("a non-empty .gitkeep is a PROBLEM",
+         (_r[0], len(_r[1]), ".gitkeep" in "".join(_r[1])), ([], 1, True))
+    _r = read_asks(pathlib.Path(_ask_root) / "no-such-dir")
+    case("a missing directory is a PROBLEM, never no asks", (_r[0], len(_r[1])), ([], 1))
+    case("a `## Answer` inside a fence leaves the ask OPEN",
+         stems(read_asks(world({"2026-11-25-a.md": "# Q?\n```\n## Answer\nyes\n```\n"}))),
+         ["2026-11-25-a"])
+    case("`## Answer — A` leaves the ask OPEN",
+         [a["stem"] for a in read_asks(world({"2026-11-25-a.md": "# Q?\nbody\n## Answer — A\nyes\n"}))[0]],
+         ["2026-11-25-a"])
+    case("an indented `## Answer` leaves the ask OPEN",
+         stems(read_asks(world({"2026-11-25-a.md": "# Q?\n    ## Answer\nyes\n"}))),
+         ["2026-11-25-a"])
+    case("`## Answer` with trailing space or CR closes the ask",
+         read_asks(world({"2026-11-25-a.md": "# Q?\r\nbody\r\n## Answer \r\nyes\r\n"})), ([], []))
+    _bad = ["Foo.md", "2026-11-25-a.txt", ".DS_Store", "2026-11-25-a.md~", "2026-11-25-A.md"]
+    _r = read_asks(world({n: _OPEN for n in _bad}))
+    case("a name that fails the rule is a PROBLEM",
+         (_r[0], sorted(n for n in _bad if any(f"/{n}:" in p for p in _r[1])), len(_r[1])),
+         ([], sorted(_bad), len(_bad)))
+    # r1 B: `$` with `.match` admitted a trailing newline, and `\d` admitted non-ASCII digits. A valid name sits in
+    # the same world, so a rule that refused every name cannot pass this case.
+    _bad2 = ["2026-11-25-a.md\n", "\u0662\u0660\u0662\u0666-11-25-a.md"]
+    _r = read_asks(world({**{n: _OPEN for n in _bad2}, "2026-11-25-ok.md": _OPEN}))
+    case("r1 B: a name ending in a newline, or with non-ASCII digits, is a PROBLEM beside a valid name that is read",
+         (stems(_r), sorted(n for n in _bad2 if any(f"/{n}:" in p for p in _r[1])), len(_r[1])),
+         (["2026-11-25-ok"], sorted(_bad2), len(_bad2)))
+    _r = read_asks(world({"2026-11-25-a.md": "", "2026-11-25-b.md": "Which form?\nbody\n"}))
+    case("an empty file, or one with no `# ` first line, is a PROBLEM",
+         (_r[0], len(_r[1])), ([], 2))
+    case("a conflict marker on ANY line is a PROBLEM",
+         (lambda r: (r[0], len(r[1])))(read_asks(world({"2026-11-25-a.md":
+             "# Q?\n<<<<<<< ours\n## Answer\nA\n=======\n## Answer\nB\n>>>>>>> theirs\n"}))),
+         ([], 1))
+    case("...a conflict marker inside a fence is a PROBLEM too",
+         (lambda r: (r[0], len(r[1])))(read_asks(world({"2026-11-25-a.md":
+             "# Q?\nbody\n```\n>>>>>>> theirs\n```\n"}))),
+         ([], 1))
+    _r = read_asks(world({"2026-11-25-a.md": "# q\n" + "x" * (MAX_ASK_BYTES + 1 - 4),
+                          "2026-11-25-b.md": b"# q\n\xff"}))
+    case("a file over the cap, or not UTF-8, is a PROBLEM",
+         (_r[0], len(_r[1]), any("over the cap" in p for p in _r[1]),
+          any("UTF-8" in p for p in _r[1])), ([], 2, True, True))
+    case("...a file exactly at the cap is read",
+         stems(read_asks(world({"2026-11-25-a.md": "# q\n" + "x" * (MAX_ASK_BYTES - 4)}))),
+         ["2026-11-25-a"])
+    _r = read_asks(world({"2026-11-25-a.md": "# Which form?"}))
+    case("a question with no body is OPEN",
+         (stems(_r), _r[0][0]["body"] if _r[0] else None, _r[1]), (["2026-11-25-a"], "", []))
+    _r = read_asks(world({"2026-11-25-a.md": _OPEN, "Foo.md": _OPEN}))
+    case("a PROBLEM entry still returns the readable asks", (stems(_r), len(_r[1])),
+         (["2026-11-25-a"], 1))
+    _real_max = globals()["MAX_ASKS"]
+    globals()["MAX_ASKS"] = 3
+    try:
+        _r = read_asks(world({f"2026-11-2{i}-a.md": _OPEN for i in range(4)}))
+    finally:
+        globals()["MAX_ASKS"] = _real_max
+    case("over MAX_ASKS is a PROBLEM, not a truncation",
+         (len(_r[0]), len(_r[1]), bool(_r[1]) and "4" in _r[1][0] and "3" in _r[1][0]),
+         (3, 1, True))
+    case("...the names argument reads exactly those names",
+         stems(read_asks(world({"2026-11-25-a.md": _OPEN, "2026-11-25-b.md": _OPEN}),
+                         ["2026-11-25-b.md"])), ["2026-11-25-b"])
+    import shutil as _sh
+    _sh.rmtree(_ask_root, ignore_errors=True)
+
+    # ─── F1, append-only (dashboard-retire plan, Task 2) ──────────────────────────────────────
+    _Q = b"# Which form?\n**Decide:** which form?\n- one [recommended]\n- two\n"
+    _QA = _Q + b"## Answer\none\n"
+    case("gaining an answer passes F1",
+         f1_problems({"2026-11-25-a.md": _Q}, {"2026-11-25-a.md": _QA}), [])
+    case("an appended superseding note passes F1",
+         f1_problems({"2026-11-25-a.md": _QA}, {"2026-11-25-a.md": _QA + b"\nLater: two.\n"}), [])
+    _r = f1_problems({"2026-11-25-a.md": _Q},
+                     {"2026-11-25-a.md": _Q.replace(b"Which form?", b"Which shape?", 1)})
+    case("an edited question is refused",
+         (len(_r), "2026-11-25-a.md" in "".join(_r)), (1, True))
+    _r = f1_problems({"2026-11-25-a.md": _Q}, {})
+    case("a deleted ask is refused", (len(_r), "gone at HEAD" in "".join(_r)), (1, True))
+    case("deleting .gitkeep with the first ask passes F1",
+         f1_problems({".gitkeep": b""}, {"2026-11-25-a.md": _Q}), [])
+    case("a base file outside the name rule is not F1's subject",
+         f1_problems({"Foo.md": b"x"}, {}), [])
+    case("a rewritten answer is refused",
+         len(f1_problems({"2026-11-25-a.md": _QA},
+                         {"2026-11-25-a.md": _QA.replace(b"\none\n", b"\ntwo\n")})), 1)
+    # r1 D: a base with no trailing newline — the byte prefix alone let the LAST line be edited.
+    case("r1 D: with no trailing newline at the base, an edited last-line question is refused",
+         len(f1_problems({"2026-11-25-a.md": b"# Which form?"},
+                         {"2026-11-25-a.md": b"# Which form? Actually, which colour?\n"})), 1)
+    case("r1 D: ...and so is a rewritten last-line answer",
+         len(f1_problems({"2026-11-25-a.md": _Q + b"## Answer\na"},
+                         {"2026-11-25-a.md": _Q + b"## Answer\na -- no, b\n"})), 1)
+    case("r1 D: ...while an answer appended after a newline still passes",
+         f1_problems({"2026-11-25-a.md": b"# Which form?"},
+                     {"2026-11-25-a.md": b"# Which form?\n## Answer\na\n"}), [])
+
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
@@ -1453,12 +1828,18 @@ def _impure_self_test_body() -> int:
     # ⚠ FIVE values since backlog #82. A stub that drifts from the real signature tests a
     # contract nobody has — here it crashed loudly, which is the good failure; a stub returning
     # the RIGHT arity with the wrong meaning would not have.
+    # ⚠ dashboard-retire r1 Claude M1: every `main` case stubs A1 as well as `collect`. Unstubbed,
+    # `main` reaches A1's real `git merge-base master HEAD`, and a CI `pull_request` checkout has no
+    # local `master` — the case goes red (rc 2) in CI only.
+    real_asp = g["ask_store_problems"]
     g["collect"] = lambda base: ([], False, "could not run git: boom", [], [])
+    g["ask_store_problems"] = lambda base, root: ([], None)
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf:
             rc = main(["--base", "master"])
     finally:
         g["collect"] = real_collect
+        g["ask_store_problems"] = real_asp
     case("main: a could-not-tell exits 2 — NEVER 0", rc, 2)
     case("...and says NOT CHECKED", "NOT CHECKED" in buf.getvalue(), True)
 
@@ -1469,13 +1850,147 @@ def _impure_self_test_body() -> int:
     # not passed through, so it is the one that makes the wiring load-bearing.
     g["collect"] = lambda base: (["docs/dashboard-entries.md"], False, None,
                                  ["'## 2026-02-30' — not a real calendar date"], [])
+    g["ask_store_problems"] = lambda base, root: ([], None)
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf2:
             rc2 = main(["--base", "master"])
     finally:
         g["collect"] = real_collect
+        g["ask_store_problems"] = real_asp
     case("main: an entry-only branch with a malformed entry exits 1", rc2, 1)
     case("...and the refusal reaches stdout", "REFUSED" in buf2.getvalue(), True)
+
+    # ─── read_asks over entries that are not regular files (dashboard-retire plan, 1.17) ───────
+    import tempfile as _tf, time as _time
+    _odd = pathlib.Path(_tf.mkdtemp(prefix="asks-odd-"))
+    (_odd / "target.txt").write_text("# Q?\n", encoding="utf-8")
+    os.symlink(_odd / "target.txt", _odd / "2026-11-25-link.md")
+    (_odd / "2026-11-25-dir.md").mkdir()
+    os.mkfifo(_odd / "2026-11-25-fifo.md")
+    _t0 = _time.monotonic()
+    _r = read_asks(_odd, ["2026-11-25-dir.md", "2026-11-25-fifo.md", "2026-11-25-link.md"])
+    _fast = _time.monotonic() - _t0 < 0.5
+    case("a symlink, a subdirectory and a FIFO are PROBLEMS, and the FIFO does not block",
+         (_r[0], [("not a regular file" in p) for p in _r[1]], _fast),
+         ([], [True, True, True], True))
+    import shutil as _sh
+    _sh.rmtree(_odd, ignore_errors=True)
+
+    # ─── A1 and F1 through git (dashboard-retire plan, Task 2) ────────────────────────────────
+    # 2.12: driven DIRECTLY, not through `main` (r1 Claude M2). Through `main`, a missing git fails
+    # first inside `collect`, so a fail-open `ask_store_problems` would have no witness.
+    _p, _e = _with_run(_boom, lambda: ask_store_problems("master", ROOT))
+    _p2, _e2 = _with_run(lambda *a, **k: _R(128, "", "fatal"),
+                         lambda: ask_store_problems("master", ROOT))
+    case("A1's own git failure is CANNOT RUN",
+         (_e is not None, _p, _e2 is not None, _p2), (True, [], True, []))
+    # 2.14 / 2.15: `main`'s dispatch on A1's two outputs, `collect` stubbed clean.
+    g["collect"] = lambda base: ([], False, None, [], [])
+    g["ask_store_problems"] = lambda base, root: (["x"], None)
+    try:
+        with _cl.redirect_stdout(_io.StringIO()) as buf3:
+            rc3 = main(["--base", "master"])
+    finally:
+        g["collect"] = real_collect
+        g["ask_store_problems"] = real_asp
+    case("main refuses on A1's problem list",
+         (rc3, "REFUSED — the ask store" in buf3.getvalue()), (1, True))
+    g["collect"] = lambda base: ([], False, None, [], [])
+    g["ask_store_problems"] = lambda base, root: ([], "boom")
+    try:
+        with _cl.redirect_stdout(_io.StringIO()) as buf4:
+            rc4 = main(["--base", "master"])
+    finally:
+        g["collect"] = real_collect
+        g["ask_store_problems"] = real_asp
+    case("main is CANNOT RUN on A1's err", (rc4, "NOT CHECKED" in buf4.getvalue()), (2, True))
+
+    # 2.8–2.11, 2.13: a `fixture_git` temp repository, never this checkout (r3 Claude M1: the
+    # mutation harness stages a tree with no `.git`, where a live `git ls-tree HEAD` exits 128).
+    import fixture_git
+
+    def _repo(files: dict, untracked: dict | None = None) -> pathlib.Path:
+        d = pathlib.Path(_tf.mkdtemp(prefix="asks-repo-"))
+        env = fixture_git.env()
+        subprocess.run(["git", "init", "-q", str(d)], check=True, env=env)
+        for rel, content in files.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(content, encoding="utf-8")
+        subprocess.run(["git", "-C", str(d), "add", "-A"], check=True, env=env)
+        subprocess.run(["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@t",
+                        "commit", "-qm", "base"], check=True, capture_output=True, env=env)
+        for rel, content in (untracked or {}).items():
+            (d / rel).write_text(content, encoding="utf-8")
+        return d
+
+    def _main_at(root: pathlib.Path) -> tuple[int, str]:
+        real_root = g["ROOT"]
+        g["ROOT"] = root
+        g["collect"] = lambda base: ([], False, None, [], [])
+        try:
+            with _cl.redirect_stdout(_io.StringIO()) as b:
+                rc = main(["--base", "HEAD"])
+        finally:
+            g["ROOT"] = real_root
+            g["collect"] = real_collect
+        return rc, b.getvalue()
+
+    _keep = {"docs/asks/.gitkeep": ""}
+    _rc, _out = _main_at(_repo({**_keep, "docs/asks/Foo.md": "# Q?\n"}))
+    case("main refuses a bad ask file at HEAD", (_rc, "Foo.md" in _out), (1, True))
+    _clean = _repo(_keep)
+    _dirty = _repo(_keep, {"docs/asks/.DS_Store": "x"})
+    case("an untracked scratch file does not fail A1",
+         (_main_at(_dirty)[0], _main_at(_clean)[0]), (0, 0))
+    case("the directory listing still reports that file",
+         len(read_asks(_dirty / "docs/asks")[1]), 1)
+    # r1 F: A1 judges HEAD's BYTES, not the working tree's — a dirty tree cannot change the verdict either way.
+    _gone = _repo({**_keep, "docs/asks/2026-11-25-a.md": "# Q?\n"})
+    os.remove(_gone / "docs/asks/2026-11-25-a.md")
+    case("r1 F: a valid ask deleted from the working tree still passes A1 — HEAD holds it",
+         ask_store_problems(None, _gone), ([], None))
+    _bad_head = _repo({**_keep, "docs/asks/2026-11-25-a.md": "# Q?\n<<<<<<< ours\n## Answer\nA\n>>>>>>> theirs\n"})
+    (_bad_head / "docs/asks/2026-11-25-a.md").write_text("# Q?\n## Answer\nA\n", encoding="utf-8")
+    _p, _e = ask_store_problems(None, _bad_head)
+    case("r1 F: a conflict marker committed at HEAD is refused though the working tree was fixed",
+         (len(_p), "conflict" in "".join(_p), _e), (1, True, None))
+    _good_head = _repo({**_keep, "docs/asks/2026-11-25-a.md": "# Q?\n"})
+    (_good_head / "docs/asks/2026-11-25-a.md").write_text("no heading\n", encoding="utf-8")
+    case("r1 F: ...and a bad working-tree edit over a good commit passes",
+         ask_store_problems(None, _good_head), ([], None))
+    _link = _repo(_keep)
+    os.symlink("../../README", _link / "docs/asks/2026-11-25-l.md")
+    subprocess.run(["git", "-C", str(_link), "add", "-A"], check=True, env=fixture_git.env())
+    subprocess.run(["git", "-C", str(_link), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "l"],
+                   check=True, capture_output=True, env=fixture_git.env())
+    _p, _e = ask_store_problems(None, _link)
+    case("r1 F: a symlink tracked at HEAD is a PROBLEM read from its tree mode",
+         (len(_p), "is a symlink" in "".join(_p), _e), (1, True, None))
+    # r1 A: a HEAD with no `docs/asks/` at all — never tracked, or `.gitkeep` removed with no ask — is refused;
+    # the readers downstream would go NOT READ on every run.
+    _none = _repo({"README": "x\n"})
+    _p, _e = ask_store_problems(None, _none)
+    case("r1 A: a HEAD tree with no docs/asks/ is refused",
+         (len(_p), "not tracked at HEAD" in "".join(_p), _e), (1, True, None))
+    _rmkeep = _repo(_keep)
+    os.remove(_rmkeep / "docs/asks/.gitkeep")
+    subprocess.run(["git", "-C", str(_rmkeep), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "rm"],
+                   check=True, capture_output=True, env=fixture_git.env())
+    _p, _e = ask_store_problems("HEAD~1", _rmkeep)
+    case("r1 A: ...and so is a branch that removes .gitkeep while no ask exists",
+         (len(_p), "not tracked at HEAD" in "".join(_p), _e), (1, True, None))
+    case("a tree holding only `.gitkeep` passes", ask_store_problems(None, _clean), ([], None))
+    # F1 end to end: the merge base's blob against HEAD's, read through `git cat-file`.
+    _edit = _repo({**_keep, "docs/asks/2026-11-25-a.md": "# Q?\n"})
+    (_edit / "docs/asks/2026-11-25-a.md").write_text("# Other?\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(_edit), "-c", "user.name=t", "-c", "user.email=t@t",
+                    "commit", "-qam", "edit"], check=True, capture_output=True,
+                   env=fixture_git.env())
+    _p, _e = ask_store_problems("HEAD~1", _edit)
+    case("...F1 reads the merge base's blob through git and refuses an edited question",
+         (len(_p), _e), (1, None))
+    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep):
+        _sh.rmtree(_d, ignore_errors=True)
 
     print(f"{ok}/{ok+fail} cannot-run cases passed")
     return 1 if fail else 0
@@ -1498,6 +2013,10 @@ def main(argv: list[str]) -> int:
     if err:
         print(f"CANNOT RUN — {err}\nTreat this as NOT CHECKED.")
         return 2
+    ask_problems, ask_err = ask_store_problems(a.base, ROOT)
+    if ask_err:
+        print(f"CANNOT RUN — {ask_err}\nTreat this as NOT CHECKED.")
+        return 2
     body = ""
     if a.pr_body_file:
         import pathlib
@@ -1505,6 +2024,10 @@ def main(argv: list[str]) -> int:
         body = p.read_text(encoding="utf-8") if p.exists() else ""
     code, reason = verdict(changed, added, body, entry_problems, ref_problems)
     print(("ok — " if code == 0 else "REFUSED — ") + reason)
+    if ask_problems:
+        print(f"REFUSED — the ask store under {ASKS_REL}/ has {len(ask_problems)} problem(s):\n"
+              + "\n".join(f"  - {p}" for p in ask_problems))
+        return 1
     return code
 
 if __name__ == "__main__":

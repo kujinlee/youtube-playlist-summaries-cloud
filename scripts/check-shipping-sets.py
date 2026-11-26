@@ -2640,6 +2640,10 @@ def _self_test_body() -> int:
         # `check-anchors.py` (the header reader and the tree's parser, by load). Lost: 0.
         # ⟳ 2026-11-24 node-tree plan S2 Task 9 (the armed set is derived): 367 + 1 = 368 / bdc110af044ece88,
         # diffed by hand against the Task 8 tree. Gained: `check-goal-status.py` -> `check-anchors.py`. Lost: 0.
+        # ⟳ 2026-11-25 dashboard-retire S1 (backlog #736, `read_asks`): 368 + 2 = 370 / 3effa00a97160051, re-measured after merging master e96c4775. Its two gained
+        # lines, diffed by hand (sorted, `comm -3`) against 0392c70f's tree: `compaction-state.py` ->
+        # `check-dashboard-entry.py` and `goal-tree.py` -> `check-dashboard-entry.py` (each loads `read_asks`, the one
+        # reader of `docs/asks/`). Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2651,7 +2655,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (368, "bdc110af044ece88", []))
+             (370, "3effa00a97160051", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

@@ -1155,5 +1155,31 @@
     "expect": [
       "⭐ #407 r2: ...and the self-test as MATRIX data, not a step — only a list item directly under `steps:` runs"
     ]
+  },
+  {
+    "name": "pending_asks stops calling read_asks",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        files, problems = _load(\"check-dashboard-entry.py\", \"_ask_gate_for_compaction\").read_asks(root / \"docs\" / \"asks\")\n",
+        "        files, problems = [], []\n"
+      ]
+    ],
+    "expect": [
+      "4.1 K6: the count is the store's open asks plus the open ask files"
+    ]
+  },
+  {
+    "name": "an asks problem counts as zero",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if problems:\n        return None, [], f\"{len(problems)} problem(s) in docs/asks/",
+        "    if False:\n        return None, [], f\"{len(problems)} problem(s) in docs/asks/"
+      ]
+    ],
+    "expect": [
+      "4.2 a PROBLEM in docs/asks is CANNOT RUN, never 0 and never a partial count"
+    ]
   }
 ]
