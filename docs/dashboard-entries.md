@@ -21663,3 +21663,31 @@ root, whose launcher is a symlink to main's so mutants reach it; a cwd deleted b
 new `vanish` launch flag), six with the r1 fold's GONE_PROMPT, labelled PREROOT, and mutants pr688a–pr688d. Self-test 163 → 175 rows (the docstring said 163; the r1 fold adds GONE_PROMPT and a `launch(vanish=True/False)` pair, which `check-fixture-variation.py` required). X1: the one
 prototype pin tried, to `CLAUDE_PROJECT_DIR`'s common dir, made 12 world cases red, 8 from RUN to NOT RUN; the
 r1 review's `git -C <main> worktree list` membership check is recorded in row 688 as a candidate, NOT RUN over the suite.
+
+## 2026-11-25
+The check that makes a living spec or plan say whether it is alive now reads a document's goal line
+once, not twice. Before, a document with two goal lines in its opening, one for a goal that is
+checked and one for an exempt goal, could skip the check depending on which line came first. Now
+any goal line naming a checked goal is enough to require a status. No document in the repository
+has two such lines today, so nothing changes on the live run. Nothing new is waiting for you.
+<!--tech-->
+Backlog #731, branch `b731-one-tokenizer`, the redesign from the Phase 6 review
+`docs/reviews/coordinator/architecture-review-2026-11-25-node-tree-s2-living-documents.md` §3.
+`scripts/check-anchors.py`: one pure tokenizer `anchor_claims(text, head_lines)` returns every
+`**Anchor:** \`x\`` claim in the first 18 lines, in order, marking `well_formed` (the line matches
+`ANCHOR` inside the strict window); `parse_header` loses `lenient` and takes the last well-formed
+claim. `scripts/check-goal-status.py`: a document is enforced when ANY claim names an armed slug (no
+precedence); the armed set is every current node any claim names, minus `UNARMED`, from the one walk
+(`with_document_anchors` and the `anchored_slugs` call are deleted, so ADR headers no longer feed this
+guard; `check-anchors` G1 still judges them). Red first: two cases, 3 of 4 inputs rc 0 before. A
+property case over 63 generated heads against an independent literal copy of master's reader
+(`f5fa9011`), with an identity case. Self-tests: check-anchors 24 → 27, check-goal-status 41 → 45.
+Mutations rebound in place (13 and 13, all killed and attributed). Live armed set unchanged (13 slugs,
+diffed against master's code). Shipping-set edge pin unchanged.
+Round 1 fold (`docs/reviews/coordinator/b731-one-tokenizer-r1-coordinator.md`): L — ADR headers feed
+the misnamed-slug check and the armed set again (`adr_anchors`, read by `parse_header` over `adr_head`),
+as on master; S — the armed set is filtered with `settled_slugs`, so a loose claim cannot arm a
+`proposed:` node; P DECLINED and pinned — a prose example naming an armed slug is refused, as the
+pre-S2 reader (`68529dd9`) refused it; the `splitlines()`/`split("\n")` difference pinned (the
+tokenizer's window contains master's, so it only adds refusals). Property grid 63 → 108 heads with
+prose examples. Red first: 3 of 50. check-goal-status self-test 45 → 50; mutations 13 → 16, all killed.

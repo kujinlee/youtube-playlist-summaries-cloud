@@ -1,0 +1,24 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/b731-one-tokenizer-r1-claude.md": "100644 18552849615bf214a739288d0640c9b68998ee85",
+    "docs/reviews/codex/b731-one-tokenizer-r1-codex.md": "100644 c34d5d6abe0b272942ba0b8238f748514bfbd4d8",
+    "docs/reviews/coordinator/b731-one-tokenizer-r1-coordinator.md": "100644 45c1db1ae2df43d5d699fd77b748866f487269b0",
+    "docs/reviews/verdicts/b731-one-tokenizer-r1-codex.verdict.json": "100644 3614d2e7b3d7fdf0afb77669053e52d1c1678f43"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "11f02283baeb290f707a3277798b74bc07bb5e51",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 10577 chars, names 11f02283baeb",
+  "refused": false,
+  "review": "b731-one-tokenizer-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/b731-one-tokenizer",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
