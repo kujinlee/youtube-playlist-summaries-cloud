@@ -75,8 +75,8 @@
     "file": "scripts/check-ask-store.py",
     "edits": [
       [
-        "        print(f\"CANNOT RUN — {ask_err}\\nTreat this as NOT CHECKED.\")\n        return 2",
-        "        print(f\"CANNOT RUN — {ask_err}\\nTreat this as NOT CHECKED.\")\n        return 0"
+        "        print(f\"CANNOT RUN — {ask_err or l1_err}\\nTreat this as NOT CHECKED.\")\n        return 2",
+        "        print(f\"CANNOT RUN — {ask_err or l1_err}\\nTreat this as NOT CHECKED.\")\n        return 0"
       ]
     ],
     "expect": "main: a could-not-tell exits 2 — NEVER 0"
@@ -642,8 +642,8 @@
     "file": "scripts/check-ask-store.py",
     "edits": [
       [
-        "    if ask_err:",
-        "    if False:"
+        "    if ask_err or l1_err:",
+        "    if l1_err:"
       ]
     ],
     "expect": "main is CANNOT RUN on A1's err"
@@ -728,5 +728,115 @@
     "expect": [
       "r1 F: a symlink tracked at HEAD is a PROBLEM read from its tree mode"
     ]
+  },
+  {
+    "name": "L1 compares nothing",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    if head_bytes is not None and hashlib.sha256(head_bytes).hexdigest() == LEGACY_STORE_SHA256:",
+        "    if head_bytes is not None:"
+      ]
+    ],
+    "expect": "12.3 an appended entry is refused and SHOWN"
+  },
+  {
+    "name": "a missing store passes L1",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        return (f\"{LEGACY_STORE_REL} is missing at HEAD — it is a frozen record and must stay; restore it \"",
+        "        return None and (f\"{LEGACY_STORE_REL} is missing at HEAD — it is a frozen record and must stay; restore it \""
+      ]
+    ],
+    "expect": "12.2 a missing store is refused"
+  },
+  {
+    "name": "the restore command is dropped from L1's message",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "            f\"  Restore the frozen bytes with:\\n    {restore}\")",
+        "            \"\")"
+      ]
+    ],
+    "expect": "12.5 the message carries the restore command by BLOB, and no commit id"
+  },
+  {
+    "name": "push mode skips L1",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    l1_problem, l1_err = legacy_store_check(ROOT)",
+        "    l1_problem, l1_err = legacy_store_check(ROOT) if a.base else (None, None)"
+      ]
+    ],
+    "expect": "12.10 without --base (a push) L1 still runs, and refuses the appended entry"
+  },
+  {
+    "name": "the cutover check accepts any blob",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    if ref_blob == LEGACY_STORE_BASE_BLOB:",
+        "    if True:"
+      ]
+    ],
+    "expect": "12.8 master's store moved since the pin is refused, naming both blobs"
+  },
+  {
+    "name": "the cutover check reads HEAD instead of REF",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "            ref_blob = _store_blob(ROOT, a.cutover_check)",
+        "            ref_blob = _store_blob(ROOT, \"HEAD\")"
+      ]
+    ],
+    "expect": "12.12 the cutover check reads the revision it is given: C^1 (B's store) rc 1, A rc 0"
+  },
+  {
+    "name": "the PR list keeps gh's default limit",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    r = _gh(\"pr\", \"list\", \"--state\", \"open\", \"--limit\", str(PR_LIST_LIMIT), \"--json\", \"number,headRefName\")",
+        "    r = _gh(\"pr\", \"list\", \"--state\", \"open\", \"--json\", \"number,headRefName\")"
+      ]
+    ],
+    "expect": "12.13 a PR beyond gh's default page of 30 is listed"
+  },
+  {
+    "name": "a full page passes",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    if len(prs) >= PR_LIST_LIMIT:",
+        "    if len(prs) > PR_LIST_LIMIT:"
+      ]
+    ],
+    "expect": "12.14 a full page of PR_LIST_LIMIT is CANNOT RUN, naming the limit"
+  },
+  {
+    "name": "a failed PR list reads as no PRs",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        return [], f\"gh pr list did not answer ({why})\"",
+        "        return [], None"
+      ]
+    ],
+    "expect": "12.15 a failed gh pr list is CANNOT RUN, never 'no PRs': err set, --list-store-prs rc 2"
+  },
+  {
+    "name": "a failed PR diff reads as no edit",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "            return lines, f\"gh pr diff {n} did not answer — PR {n} ({branch}) was not checked\"",
+        "            continue"
+      ]
+    ],
+    "expect": "12.16 a failed gh pr diff is CANNOT RUN, never 'no edit': err names PR 7, rc 2"
   }
 ]

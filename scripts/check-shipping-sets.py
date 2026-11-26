@@ -2647,6 +2647,10 @@ def _self_test_body() -> int:
         # ⟳ 2026-11-25 dashboard-retire S2 Task 8 (the gate file renamed `check-ask-store.py`): 370 / 11b65c8abbb07195,
         # diffed by hand (sorted, `diff`) against the Task 7 tree f3d75203: the six edges into or out of
         # `check-dashboard-entry.py` now name `check-ask-store.py`, the same six importers. Gained: 0 new. Lost: 0.
+        # ⟳ 2026-11-25 dashboard-retire S2 Tasks 10 + 12: 370 - 2 + 1 = 369 / fd17d2d55520b77c, diffed by hand (sorted,
+        # `diff`) against each task's own `git archive` (062ee7cb 370, 575a5606 368, 40695b79 368, a91784a4 369). Lost
+        # (Task 10, the old store no longer read): `compaction-state.py` -> `gen-dashboard.py` and `goal-tree.py` ->
+        # `gen-dashboard.py`. Gained (Task 12, merge-ready replays C1): `check-merge-ready.py` -> `gen-dashboard.py`.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2658,7 +2662,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (370, "11b65c8abbb07195", []))
+             (369, "fd17d2d55520b77c", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

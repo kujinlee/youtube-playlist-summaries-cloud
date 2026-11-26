@@ -874,7 +874,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ dashboard-retire S2 Task 9: 68 -> 59. R1 (`verdict`, `collect`, `added_entry_problems`,
     # `added_reference_errors`, `_added_entry_line`) is deleted with the per-PR entry ratchet: 9 mutations
     # anchored there go with it; 3 RE-BOUND onto A1's `_ask_git` and the new `main`, 1 onto `NO_REVIEW`.
-    "scripts/check-ask-store.py": 59,
+    "scripts/check-ask-store.py": 69,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
