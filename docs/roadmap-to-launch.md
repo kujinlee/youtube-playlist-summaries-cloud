@@ -1430,9 +1430,8 @@ corrections slice above.
       `needs-you`, and the old store is frozen to pinned bytes. **S3 built** (branch `dashboard-retire-s3`, draft
       PR #644): `gen-dashboard.py` and its page are deleted, a frozen `docs/explainers/dashboard-archive.html`
       stands in, `check-retired-references.py` refuses any live reference to them, and the entry grammar and
-      the base-blob cutover check leave `check-ask-store.py`. ⚠ OPEN: the plan also deletes `store_edit_prs`,
-      `PR_LIST_LIMIT` and `--list-store-prs`, but `post_cutover` (backlog #730) still calls `store_edit_prs`, so
-      they stay until the owner or lead decides `--post-cutover`'s fate. The history
+      the one-shot cutover tooling (the base-blob check, `--list-store-prs` and `--post-cutover`, backlog #730,
+      which ran once and answered rc 0) leave `check-ask-store.py`; backlog #739 is closed as moot. The history
       above stands as recorded. **FAILS IF** after S3 a merged PR still needs a dashboard entry.
 
 - [x] **Plan rounds 1–4 — dual adversarial.** All four folded in (v2→v6). Round 1's halves overlapped

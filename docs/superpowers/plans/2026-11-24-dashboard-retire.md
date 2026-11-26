@@ -1048,9 +1048,11 @@ page-table key or literal link still names a retired thing.
 - [x] **Step 1:** delete the grammar and its cases; run `check-ask-store.py`, `check-merge-ready.py`,
   `check-review-recorded.py`, `goal-tree.py`, `compaction-state.py` self-tests. Expected: rc 0.
 - [ ] **Step 2:** manifests, pins, the anchor resolve, `--only scripts/check-ask-store.py` sweep.
-  ⟳ S3 build: manifest 98 → 84 (14 deleted, pin repinned); the anchor resolve passes. The local `--only` sweep was
-  NOT RUN (84 × ~9 s exceeds the local budget and the 265 s call bound); the PR's CI shards run it. `store_edit_prs`,
-  `PR_LIST_LIMIT` and `--list-store-prs` are NOT deleted: `post_cutover` (backlog #730) calls `store_edit_prs`.
+  ⟳ S3 build: manifest 98 → 54, pin repinned. 14 left with the grammar and the base-blob check; 31 with
+  `store_edit_prs` and `post_cutover` (backlog #730), deleted too after Task 13's one run answered rc 0 (the plan's
+  45 predates #730). One of the 31 anchors in the staying `_ask_tree` and is kept, retargeted to a new case. The
+  anchor resolve passes. The local `--only` sweep was NOT RUN (54 × ~9 s exceeds the 265 s call bound); the PR's
+  CI shards run it, so this box stays unticked until they are green.
 - [x] **Step 3:** add the CI step; run the live scan (16.3) and every `python3 scripts/check-*` docs step.
 - [x] **Step 4:** `python3 scripts/check-ratchet-contract.py` — the new guard has a `--self-test`, no
   fail-open handler and a caller. Commit.

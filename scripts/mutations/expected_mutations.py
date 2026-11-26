@@ -885,11 +885,13 @@ EXPECTED_MUTATIONS = {
     # an unreadable run commit passed over: no run loop or run-commit read is left). ADDED 5: G1 the head-SHA
     # match, G3 the not-yet-completed check, G2 the `verify` job's conclusion and the run's conclusion, and
     # the NEWEST of several runs on the head commit is the one judged.
-    # dashboard-retire S3 (plan Task 16): 98 -> 84. DELETED 14 whose anchors left with the page's grammar
+    # dashboard-retire S3 (plan Task 16): 98 -> 54. DELETED 14 whose anchors left with the page's grammar
     # and parser (BLOCK, header_error's both-flags and empty-resolved rules, parse_entries' eight) and with the
-    # base-blob cutover check (12.8, 12.12). The plan's 45 was written before backlog #730 added its entries; the store_edit_prs
-    # entries stay with `post_cutover`, which still calls it (an open fork).
-    "scripts/check-ask-store.py": 84,
+    # base-blob cutover check (12.8, 12.12), and 31 with `store_edit_prs` (4) and `post_cutover` (27, backlog #730),
+    # deleted after Task 13's one run answered rc 0. One of the 31 anchors in `_ask_tree`, which stays: it is
+    # KEPT, retargeted to the new case "S3: an ask git cannot read is CANNOT RUN rc 2, never A1 ok" (98-14-31+1=54;
+    # the plan's 45 predates backlog #730).
+    "scripts/check-ask-store.py": 54,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look

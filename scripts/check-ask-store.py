@@ -6,10 +6,10 @@ still at HEAD and only grew at its end. Both read HEAD's tree through git (`git 
 the directory listing, so an untracked scratch file cannot fail the gate.
 
 It also owns the declaration parser `exemption_reason`, which `check-review-recorded.py` and
-`check-merge-ready.py` call for `NO-REVIEW:`. `--post-cutover` is plan Task 13 (the cutover after
-S2's squash) as one command with one exit status per cause (backlog #730; see `post_cutover`). ⟳ dashboard-retire S2: the per-PR dashboard-entry rule
+`check-merge-ready.py` call for `NO-REVIEW:`. ⟳ dashboard-retire S2: the per-PR dashboard-entry rule
 (R1) and its `NO-ENTRY:` waiver are retired. ⟳ S3: the entry grammar and parser left with the page that imported
-them, and so did the base-blob cutover check (`--cutover-check`).
+them, and so did the one-shot cutover tooling — `--cutover-check`, `--list-store-prs` and `--post-cutover`
+(plan Task 13, backlog #730), whose single run on master `829660eb` answered `post-cutover rc 0`.
 """
 from __future__ import annotations
 import argparse
@@ -608,8 +608,8 @@ def ask_store_problems(base: str | None, root: pathlib.Path,
     readers downstream treat a missing store as NOT READ, so the gate must not let it merge.
 
     F1 runs only when `base` is given: the asks at `git merge-base <base> HEAD` against HEAD's.
-    `rev` is the tree A1 reads (HEAD unless given): `--post-cutover` passes `origin/master`, so A1
-    judges master's COMMITTED asks and no worktree can flip it (backlog #730 L1).
+    `rev` is the tree A1 reads (HEAD unless given). Its one other caller, `--post-cutover`
+    (backlog #730), was deleted in dashboard-retire S3; `main` passes HEAD.
     """
     problems: list[str] = []
     try:
@@ -633,13 +633,12 @@ def ask_store_problems(base: str | None, root: pathlib.Path,
 # so an entry appended there would be an ask nobody sees: L1 refuses ANY change to it, on a pull
 # request and without `--base` (`main` runs it in both modes). The two HEAD pins describe the frozen
 # bytes. ⟳ S3 (plan Task 16): the base pin `LEGACY_STORE_BASE_BLOB`, `cutover_problem` and `--cutover-check`
-# were the cutover's and are deleted. ⚠ `PR_LIST_LIMIT` and `store_edit_prs` are listed for deletion too, but
-# `post_cutover` (backlog #730, added after the plan) calls `store_edit_prs`; they stay until that is decided.
+# were the cutover's and are deleted, and so are `PR_LIST_LIMIT`, `store_edit_prs` and `post_cutover`
+# (backlog #730): Task 13 ran once and answered rc 0, so nothing is left for them to judge.
 LEGACY_STORE_REL = "docs/dashboard-entries.md"
 LEGACY_STORE_BLOB = "befaa1cb22cfb272bc803e23b4b990ae812ebc27"        # HEAD: git hash-object
 LEGACY_STORE_SHA256 = "c6e110df45ac06328b14356d276b03a47f505737b18ab0901065acdc4b1ef97f"
 L1_DIFF_LINES = 40
-PR_LIST_LIMIT = 1000
 
 
 def legacy_store_problem(head_blob: str | None, head_bytes: bytes | None,
@@ -690,195 +689,6 @@ def legacy_store_check(root: pathlib.Path, rev: str = "HEAD") -> tuple[str | Non
         except _AskGitError:
             return None
     return legacy_store_problem(blob, data, _diff), None
-
-
-def store_edit_prs() -> tuple[list[str], str | None]:
-    """Every OPEN pull request whose diff names the store: `(lines, err)`. Any failed `gh` call, an
-    unparseable list, or a list of exactly PR_LIST_LIMIT entries (there may be more) is `err`."""
-    import json as _json
-
-    def _gh(*args: str):
-        try:
-            return subprocess.run(["gh", *args], cwd=ROOT, capture_output=True, text=True, timeout=60)
-        except (OSError, subprocess.SubprocessError) as exc:
-            return exc
-    r = _gh("pr", "list", "--state", "open", "--limit", str(PR_LIST_LIMIT), "--json", "number,headRefName")
-    if isinstance(r, Exception) or r.returncode != 0:
-        why = r if isinstance(r, Exception) else f"exited {r.returncode}: {(r.stderr or '').strip()[:200]}"
-        return [], f"gh pr list did not answer ({why})"
-    try:
-        prs = [(int(p["number"]), str(p["headRefName"])) for p in _json.loads(r.stdout or "")]
-    except (ValueError, TypeError, KeyError) as exc:
-        return [], f"gh pr list's answer did not parse ({exc})"
-    if len(prs) >= PR_LIST_LIMIT:
-        return [], f"gh pr list returned {len(prs)} PRs, the limit of {PR_LIST_LIMIT} — there may be more"
-    lines: list[str] = []
-    for n, branch in prs:
-        d = _gh("pr", "diff", str(n), "--name-only")
-        if isinstance(d, Exception) or d.returncode != 0:
-            return lines, f"gh pr diff {n} did not answer — PR {n} ({branch}) was not checked"
-        names = (d.stdout or "").splitlines()
-        if not names:                       # r1 F4: every PR diff names a file; an empty answer is no answer
-            return lines, f"gh pr diff {n} answered with no files — PR {n} ({branch}) was not checked"
-        if LEGACY_STORE_REL in names:
-            lines.append(f"PR {n} ({branch}) edits the frozen store")
-    return lines, None
-
-
-# ── --post-cutover: plan Task 13 as ONE tested entry point (backlog #730) ──────────────────────
-#
-# ⛔ WHY THIS IS CODE AND NOT SHELL. Task 13 runs once, on master, after S2's squash, and nothing
-# reviewed its shell before it ran: r5 found its exit 1 meant three things (a `cd` into a missing
-# worktree, a `checkout --detach` blocked by a local edit, L1's "the store moved" — and A1 a fourth),
-# and "any clean worktree serves" was asserted, never checked (a dirty `check-ask-store.py` would have
-# judged master). The Phase 6 falsifier routed it here: ONE command whose exit status is the answer.
-#
-# ⛔ IT READS ONLY COMMITTED OBJECTS (r5 L1). It fetches `<remote> <branch>` itself and reads the store,
-# the asks and the gate file at `<remote>/<branch>` through `git ls-tree` / `git cat-file` — never
-# `git checkout`, so no worktree is moved, a dirty one cannot block it, and none can change its verdict.
-# The one thing a worktree CAN still supply is the script running this check, so it compares its OWN
-# bytes' blob id to master's `scripts/check-ask-store.py` and refuses (rc 4) when they differ: a local
-# copy, edited or stale, never judges master.
-#
-# The exit status, one cause each (r5 M1). When several checks refuse, the FIRST in `order` (in
-# `post_cutover`) is the status, and every check's line is still printed:
-PC_OK = 0               # master's store is the pinned bytes, A1 passes, no PR edits it, and the CI run on the
-                        # fetched head commit is completed and green (r2 G1-G3)
-PC_STORE_MOVED = 1      # L1 refused master's committed store: it moved off LEGACY_STORE_BLOB/SHA256
-PC_CANNOT_RUN = 2       # git or gh could not answer — treat as NOT CHECKED, never a pass
-PC_NOT_MERGED = 3       # master has no gate file, or one without L1: S2 is not merged
-PC_STALE_JUDGE = 4      # the running script is not master's blob — run it from a checkout of master
-PC_ASKS_REFUSED = 5     # A1 refused master's committed docs/asks/
-PC_STORE_PRS = 6        # an open pull request still edits the frozen store (plan Task 13 Step 1, the former Step 2)
-PC_CI_RED = 7           # the CI run on the fetched head commit: the run, its `verify` job or one of the two
-                        # steps is not `success` (failure, cancelled, skipped, absent)
-PC_CI_NOT_YET = 8       # the CI run on the fetched head commit is not listed yet, or not completed — wait, re-run
-POST_CUTOVER_REMOTE = "origin"
-POST_CUTOVER_BRANCH = "master"
-GATE_REL = "scripts/check-ask-store.py"
-GATE_L1_MARKER = b"\nLEGACY_STORE_SHA256 = "     # a gate file without it predates S2's L1
-CI_WORKFLOW = "CI"
-CI_JOB = "verify"                               # ci.yml's job holding both steps (r1 F6: never merged across jobs)
-CI_SELFTEST_STEP = "check-ask-store self-test"
-CI_L1_STEP = "ask store (push)"
-RUN_LIST_LIMIT = 20
-
-
-def _gate_at(root: pathlib.Path, rev: str) -> tuple[str | None, bytes]:
-    """`(blob, bytes)` of `GATE_REL` at `rev`; `(None, b"")` when `rev` has no gate file. Raises
-    `_AskGitError` when git cannot answer (an unknown commit included)."""
-    blob = _store_blob(root, rev, GATE_REL)
-    return blob, (_ask_git(root, "cat-file", "blob", blob) if blob else b"")
-
-
-def _master_ci(root: pathlib.Path, branch: str, head: str) -> tuple[int | None, str, str | None]:
-    """Plan Task 13 Step 1, the former Step 5 (r5 L2): `(code, line, err)` over the push-event run of
-    `CI_WORKFLOW` on `branch` whose `headSha` IS `head` — the fetched `<remote>/<branch>` commit that
-    `post_cutover` judges everywhere else. ⛔ r2 G1: a run on ANY other commit does not answer, though it carry
-    S2's gate (S2's own squash does): no run on `head` in the newest RUN_LIST_LIMIT is PC_CI_NOT_YET. ⛔ r2 G3:
-    runs are listed whatever their status, and the newest run on `head` is judged; one not yet `completed` is
-    PC_CI_NOT_YET — never hidden behind an older completed one. ⛔ r2 G2 + r1 F1/F6: it is green only when the
-    run's `conclusion`, `CI_JOB`'s `conclusion`, and that job's `CI_SELFTEST_STEP` AND `CI_L1_STEP` are all
-    `success`; anything else (`failure`, `cancelled`, `skipped`, an absent job or step) is PC_CI_RED — in
-    `verify` an earlier red step marks every later one `skipped`, which is what a red run looks like. Any
-    failed or unparseable `gh` answer is `err`."""
-    import json as _json
-
-    def _gh(*args: str):
-        try:
-            return subprocess.run(["gh", *args], cwd=root, capture_output=True, text=True, timeout=60)
-        except (OSError, subprocess.SubprocessError) as exc:
-            return exc
-
-    def _why(r) -> str:
-        return str(r) if isinstance(r, Exception) else f"exited {r.returncode}: {(r.stderr or '').strip()[:200]}"
-    r = _gh("run", "list", "--workflow", CI_WORKFLOW, "--branch", branch, "--event", "push",
-            "--limit", str(RUN_LIST_LIMIT), "--json", "databaseId,headSha,status,conclusion")
-    if isinstance(r, Exception) or r.returncode != 0:
-        return None, "", f"gh run list did not answer ({_why(r)})"
-    try:
-        runs = [(int(x["databaseId"]), str(x["headSha"]), str(x["status"]), x["conclusion"] or "")
-                for x in _json.loads(r.stdout or "")]
-    except (ValueError, TypeError, KeyError) as exc:
-        return None, "", f"gh run list's answer did not parse ({exc})"
-    mine = [x for x in runs if x[1] == head]                # gh lists the newest first
-    if not mine:
-        return (PC_CI_NOT_YET, f"none of the newest {len(runs)} push-event runs of {CI_WORKFLOW} on {branch} "
-                f"is on its head {head[:8]} — that commit's run is not listed yet; wait for it and re-run", None)
-    rid, sha, status, conclusion = mine[0]
-    if status != "completed":
-        return (PC_CI_NOT_YET, f"CI run {rid} ({sha[:8]}) on {branch} is `{status}`, not completed — wait "
-                f"for it to complete and re-run", None)
-    v = _gh("run", "view", str(rid), "--json", "jobs")
-    if isinstance(v, Exception) or v.returncode != 0:
-        return None, "", f"gh run view {rid} did not answer ({_why(v)})"
-    try:
-        verify = [j for j in _json.loads(v.stdout or "")["jobs"]
-                  if j.get("name") == CI_JOB]
-        steps = {s["name"]: s.get("conclusion") for j in verify for s in j.get("steps") or []}
-        job = (verify[0].get("conclusion") or "") if verify else ""
-    except (ValueError, TypeError, KeyError, AttributeError) as exc:
-        return None, "", f"gh run view {rid}'s answer did not parse ({exc})"
-    got = ", ".join(f"`{n}` {steps.get(n) or 'absent'}" for n in (CI_SELFTEST_STEP, CI_L1_STEP))
-    steps_green = all(steps.get(n) == "success" for n in (CI_SELFTEST_STEP, CI_L1_STEP))
-    green = conclusion == "success" and job == "success" and steps_green
-    return ((None if green else PC_CI_RED), f"CI run {rid} ({sha[:8]}) on {branch}: run {conclusion or 'none'}, "
-            f"job `{CI_JOB}` {job or 'absent'}: {got}", None)
-
-
-def post_cutover(root: pathlib.Path, remote: str, branch: str) -> tuple[int, list[str]]:
-    """Plan Task 13, whole: `(rc, lines)`, rc one of the PC_* codes above. Fetches `<remote> <branch>`,
-    then judges `<remote>/<branch>` from committed objects only: is S2's gate there (3), is it the script
-    running now (4), L1 over its store (1), A1 over its asks (5), open PRs editing the store (6, through
-    `store_edit_prs`), and the CI run on the fetched head commit (7, 8). Any git/gh failure is 2."""
-    ref = f"{remote}/{branch}"
-    try:
-        # r1 F5: an explicit refspec, so `<remote>/<branch>` moves whatever `remote.<remote>.fetch` says
-        _ask_git(root, "fetch", "-q", remote, f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}")
-        gate, gate_bytes = _gate_at(root, ref)
-        head = _ask_git(root, "rev-parse", "--verify", f"{ref}^{{commit}}").decode("utf-8").strip()
-    except _AskGitError as exc:
-        return PC_CANNOT_RUN, [f"CANNOT RUN — {ref} could not be fetched or read — {exc}. "
-                               f"Treat this as NOT CHECKED."]
-    if GATE_L1_MARKER not in gate_bytes:
-        return PC_NOT_MERGED, [f"REFUSED — S2 IS NOT MERGED: {ref} has "
-                               + ("no " + GATE_REL if not gate else f"a {GATE_REL} without L1")
-                               + ". Nothing else was checked."]
-    running = _git_blob_id(pathlib.Path(__file__).read_bytes())
-    if running != gate:
-        return PC_STALE_JUDGE, [f"REFUSED — the running {GATE_REL} is blob {running}, {ref}'s is {gate}: a "
-                                f"local copy must not judge master. Run this from a checkout of {ref} whose "
-                                f"{GATE_REL} is unmodified. Nothing else was checked."]
-    lines: list[str] = []
-    refused: list[int] = []
-    errs: list[str] = []
-
-    def _record(code: int, problem, err, ok_line: str) -> None:
-        if err:
-            errs.append(err)
-            lines.append(f"CANNOT RUN — {err}")
-        elif problem:
-            refused.append(code)
-            lines.append(f"REFUSED (rc {code}) — {problem}")
-        else:
-            lines.append(f"ok — {ok_line}")
-    _record(PC_STORE_MOVED, *legacy_store_check(root, ref), f"L1: {ref}'s store is the pinned bytes")
-    a1, a1_err = ask_store_problems(None, root, ref)
-    _record(PC_ASKS_REFUSED, ("A1: " + "; ".join(a1)) if a1 else None, a1_err,
-            f"A1: {ref}'s {ASKS_REL}/ is well-formed")
-    prs, prs_err = store_edit_prs()
-    _record(PC_STORE_PRS, ("open PRs still edit the frozen store (merge master in, restore it): "
-                           + "; ".join(prs)) if prs else None, prs_err,
-            "no open pull request edits the frozen store")
-    ci_code, ci_line, ci_err = _master_ci(root, branch, head)
-    _record(ci_code or PC_OK, ci_line if ci_code else None, ci_err, ci_line)
-    order = (PC_STORE_MOVED, PC_ASKS_REFUSED, PC_STORE_PRS, PC_CI_RED, PC_CI_NOT_YET)
-    rc = next((c for c in order if c in refused), PC_CANNOT_RUN if errs else PC_OK)
-    lines.append(f"post-cutover rc {rc}" + (" — Treat this as NOT CHECKED." if rc == PC_CANNOT_RUN else ""))
-    return rc, lines
-
-
-
 
 
 def _git_blob_id(data: bytes) -> str:
@@ -1497,7 +1307,7 @@ def _impure_self_test_body() -> int:
     except SystemExit as exc:
         _rc98 = exc.code
     case("9.8 --pr-body-file is refused as a usage error (exit 2)", _rc98, 2)
-    # ── dashboard-retire S2, Task 12: L1, the cutover check and the open-PR lister, IMPURE ──
+    # ── dashboard-retire S2, Task 12: L1, IMPURE (the cutover check and the open-PR lister left in S3) ──
     _st = _repo(_keep)
     with open(_st / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
         _fh.write("\n## 2026-11-26 [needs-you]\nA stray ask nobody reads.\n")
@@ -1518,42 +1328,6 @@ def _impure_self_test_body() -> int:
     _hs = _hl.sha256(_sp.read_bytes()).hexdigest() if _sp.is_file() else None
     case("12.11 the two HEAD pins describe the store on disk (git hash-object, sha256)",
          (_hb, _hs), (LEGACY_STORE_BLOB, LEGACY_STORE_SHA256))
-    # 12.13–12.16: `gh` stubbed through `_with_run`.
-    import json as _js
-
-    def _gh_stub(numbers, store_in=(), diff_rc=None, list_rc: int = 0, empty_in=()):
-        def run(cmd, *a, **k):
-            if cmd[:3] == ["gh", "pr", "list"]:
-                if list_rc:
-                    return _R(list_rc, "", "gh: boom")
-                lim = int(cmd[cmd.index("--limit") + 1]) if "--limit" in cmd else 30
-                ns = numbers(lim)
-                return _R(0, _js.dumps([{"number": n, "headRefName": f"b{n}"} for n in ns]))
-            if cmd[:3] == ["gh", "pr", "diff"]:
-                n = int(cmd[3])
-                if diff_rc and n in diff_rc:
-                    return _R(1, "", "gh: boom")
-                if n in empty_in:
-                    return _R(0, "")
-                return _R(0, "docs/dashboard-entries.md\n" if n in store_in else "scripts/x.py\n")
-            return _R(127, "", f"unexpected {cmd[:3]}")
-        return run
-    case("12.13 a PR beyond gh's default page of 30 is listed",
-         _with_run(_gh_stub(lambda lim: range(1, min(lim, 31) + 1), store_in={31}), store_edit_prs),
-         (["PR 31 (b31) edits the frozen store"], None))
-    _l14, _e14 = _with_run(_gh_stub(lambda lim: range(1, PR_LIST_LIMIT + 1)), store_edit_prs)
-    case("12.14 a full page of PR_LIST_LIMIT is CANNOT RUN, naming the limit",
-         (_l14, str(PR_LIST_LIMIT) in (_e14 or "")), ([], True))
-    _with_main = lambda: _main_at(ROOT, ["--list-store-prs"])[0]
-    case("12.15 a failed gh pr list is CANNOT RUN, never 'no PRs': err set, --list-store-prs rc 2",
-         (_with_run(_gh_stub(lambda lim: [], list_rc=1), store_edit_prs)[1] is not None,
-          _with_run(_gh_stub(lambda lim: [], list_rc=1), _with_main)), (True, 2))
-    _e16 = _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, diff_rc={7}), store_edit_prs)[1] or ""
-    case("12.16 a failed gh pr diff is CANNOT RUN, never 'no edit': err names PR 7, rc 2",
-         ("PR 7" in _e16, _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, diff_rc={7}), _with_main)), (True, 2))
-    _e17 = _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, empty_in={7}), store_edit_prs)[1] or ""
-    case("730 r1 F4: an empty gh pr diff answer is CANNOT RUN, never 'no edit': err names PR 7, rc 2",
-         ("PR 7" in _e17, _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, empty_in={7}), _with_main)), (True, 2))
     # r1 F1: git cannot read the frozen store — it is committed, then its loose object is deleted, so
     # `ls-tree` still names the blob and `cat-file` exits 128. A1's own blobs are intact. L1 must hand
     # back its err, and `main` must say CANNOT RUN (rc 2) — never "ok" over a store nobody read.
@@ -1564,6 +1338,17 @@ def _impure_self_test_body() -> int:
     _rcu, _ou = _main_at(_unr, [])
     case("r1 F1: an unreadable frozen store is CANNOT RUN: L1 returns its err and main exits 2",
          (_l1p, _l1e is not None, _rcu, "CANNOT RUN" in _ou), (None, True, 2, True))
+    # S3 (was backlog #730 r1 F2, whose case left with `--post-cutover`): an ask git cannot read is
+    # CANNOT RUN — committed, then its loose object deleted, so `ls-tree` names it and cannot size it.
+    _ua = _repo(_keep)
+    _ab = subprocess.run(["git", "ls-tree", "HEAD", "--", "docs/asks/"], cwd=_ua, capture_output=True,
+                         text=True, env=fixture_git.env()).stdout.split()
+    _ab = next((w for w in _ab if len(w) == 40 and w != _FPINS["LEGACY_STORE_BLOB"]), None)
+    if _ab:
+        os.remove(_ua / ".git" / "objects" / _ab[:2] / _ab[2:])
+    _rca, _oa = _main_at(_ua, [])
+    case("S3: an ask git cannot read is CANNOT RUN rc 2, never A1 ok",
+         (_ab is not None, _rca, "CANNOT RUN" in _oa, "ok — " in _oa), (True, 2, True, False))
     # r1 F4: an L1 refusal does not hide A1's problems found in the same run — both are printed, rc 1.
     _both = _repo({**_keep, "docs/asks/Foo.md": "# Q?\n"})
     with open(_both / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
@@ -1572,242 +1357,8 @@ def _impure_self_test_body() -> int:
     _rcb, _ob4 = _main_at(_both, [])
     case("r1 F4: an L1 refusal still reports A1's problems from the same run",
          (_rcb, "REFUSED — L1" in _ob4, "Foo.md" in _ob4), (1, True, True))
-    # ── backlog #730: `--post-cutover` (plan Task 13 as one entry point), IMPURE ──────────────────
-    # Each world is a fixture ORIGIN (its branch holds the store, the asks and a gate file) and a CLONE
-    # of it, the checkout the command runs in. `later` is committed to the origin AFTER the clone, so the
-    # clone's HEAD is behind and only the fetch shows it; `pre` is committed BEFORE the clone, whose HEAD is
-    # then detached one commit back, so HEAD is behind with no fetch needed; `dirty` is written, uncommitted,
-    # into the clone.
-    # `gh` is stubbed (no live GitHub); git is real and runs only in these temp repositories.
-    _gate_text = pathlib.Path(__file__).read_text(encoding="utf-8")
-    _pc_dirs: list = []
-    _real_run2 = subprocess.run
-
-    def _pc_world(branch: str, gate: str | None, later: dict | None = None, dirty: dict | None = None,
-                  remote: str = "origin", pre: dict | None = None, narrow: bool = False) -> pathlib.Path:
-        o = _repo({**_keep, **({GATE_REL: gate} if gate is not None else {})})
-        subprocess.run(["git", "-C", str(o), "branch", "-M", branch], check=True, env=fixture_git.env())
-        for rel, content in (pre or {}).items():
-            (o / rel).parent.mkdir(parents=True, exist_ok=True)
-            (o / rel).write_text(content, encoding="utf-8")
-        if pre:
-            _commit(o, "before the clone")
-        w = pathlib.Path(_tf.mkdtemp(prefix="asks-clone-")) / "w"
-        subprocess.run(["git", "clone", "-q", "-o", remote, str(o), str(w)], check=True, capture_output=True,
-                       env=fixture_git.env())
-        if pre:
-            subprocess.run(["git", "-C", str(w), "checkout", "-q", "--detach", "HEAD~1"], check=True,
-                           capture_output=True, env=fixture_git.env())
-        if narrow:      # r1 F5: a clone whose fetch refspec does not cover `branch`
-            subprocess.run(["git", "-C", str(w), "config", f"remote.{remote}.fetch",
-                            f"+refs/heads/nothing:refs/remotes/{remote}/nothing"], check=True, env=fixture_git.env())
-        for rel, content in (later or {}).items():
-            (o / rel).parent.mkdir(parents=True, exist_ok=True)
-            (o / rel).write_text(content, encoding="utf-8")
-        if later:
-            _commit(o, "after the clone")
-        for rel, content in (dirty or {}).items():
-            (w / rel).parent.mkdir(parents=True, exist_ok=True)
-            (w / rel).write_text(content, encoding="utf-8")
-        _pc_dirs.extend([o, w.parent])
-        return w
-
-    _GREEN = {CI_SELFTEST_STEP: "success", CI_L1_STEP: "success"}
-
-    def _pc_gh(store_prs=(), runs=None, run_list_rc: int = 0, pr_list_rc: int = 0, run_view_rc: int = 0):
-        """`gh` answered from tables; every other command (git) runs for real. A run is `(id, rev, jobs)`:
-        `rev` is `""` (the fetched `origin/<branch>` tip), `"~N"` (N commits behind it) or a literal sha, resolved
-        in the clone AFTER the fetch, so `headSha` is a real commit as GitHub's is. `jobs` is the `verify` job's
-        {step: conclusion}, or a list of `(job name, {step: conclusion}[, job conclusion])`. An optional 4th item
-        `{"status", "conclusion", "job"}` sets the run's status (default `completed`), its conclusion (default
-        `success`; `""` while not completed, as gh prints it) and the `verify` job's conclusion (default
-        `success`). ⛔ r2: `gh run list` answers as GitHub's does — only the `--json` fields asked for, and
-        `--status` honoured — so a query that asks for less, or filters to completed runs, sees what gh shows."""
-        runs = [(901, "", _GREEN)] if runs is None else runs
-
-        def _meta(r) -> dict:
-            m = dict(r[3]) if len(r) > 3 else {}
-            m.setdefault("status", "completed")
-            m.setdefault("conclusion", "success" if m["status"] == "completed" else "")
-            m.setdefault("job", "success" if m["status"] == "completed" else "")
-            return m
-
-        def _sha(cwd, branch: str, rev: str) -> str:
-            if re.fullmatch(r"[0-9a-f]{40}", rev):
-                return rev
-            return _real_run2(["git", "-C", str(cwd), "rev-parse", f"origin/{branch}{rev}"], capture_output=True,
-                              text=True, check=True).stdout.strip()
-
-        def run(cmd, *a, **k):
-            if not cmd or cmd[0] != "gh":
-                return _real_run2(cmd, *a, **k)
-            if cmd[1:3] == ["pr", "list"]:
-                if pr_list_rc:
-                    return _R(pr_list_rc, "", "gh: boom")
-                return _R(0, _js.dumps([{"number": n, "headRefName": f"b{n}"} for n in store_prs]))
-            if cmd[1:3] == ["pr", "diff"]:
-                return _R(0, "docs/dashboard-entries.md\n")
-            if cmd[1:3] == ["run", "list"]:
-                if run_list_rc:
-                    return _R(run_list_rc, "", "gh: boom")
-                b = cmd[cmd.index("--branch") + 1]
-                fields = cmd[cmd.index("--json") + 1].split(",")
-                want = cmd[cmd.index("--status") + 1] if "--status" in cmd else None
-                rows = [{"databaseId": r[0], "headSha": _sha(k.get("cwd"), b, r[1]),
-                         "status": _meta(r)["status"], "conclusion": _meta(r)["conclusion"]} for r in runs]
-                return _R(0, _js.dumps([{f: row[f] for f in fields} for row in rows
-                                        if want is None or row["status"] == want]))
-            if cmd[1:3] == ["run", "view"]:
-                if run_view_rc:
-                    return _R(run_view_rc, "", "gh: boom")
-                r = {r[0]: r for r in runs}[int(cmd[3])]
-                m = _meta(r)
-                jobs = [(CI_JOB, r[2], m["job"])] if isinstance(r[2], dict) else [
-                    (j[0], j[1], j[2] if len(j) > 2 else (m["job"] if j[0] == CI_JOB else "success")) for j in r[2]]
-                return _R(0, _js.dumps({"jobs": [{
-                    "name": jn, "status": "completed" if jc else "in_progress", "conclusion": jc,
-                    "steps": [{"name": n, "status": "completed" if c else "in_progress", "conclusion": c}
-                              for n, c in st.items()]} for jn, st, jc in jobs]}))
-            return _R(127, "", f"unexpected {cmd[:3]}")
-        return run
-
-    def _pc(w: pathlib.Path, remote: str, branch: str, gh) -> tuple[int, str]:
-        real_pins = {k: g[k] for k in _FPINS}
-        g.update(_FPINS)
-        try:
-            rc, lines = _with_run(gh, lambda: post_cutover(w, remote, branch))
-        finally:
-            g.update(real_pins)
-        return rc, "\n".join(lines)
-
-    def _drop_object(w: pathlib.Path, oid: str) -> None:
-        """Delete one loose object from the clone, so git names it in a tree and cannot read it (exit 128)."""
-        os.remove(w / ".git" / "objects" / oid[:2] / oid[2:])
-
-    _G = _pc_gh()
-    _stray = _FS + "\n## 2026-11-27 [needs-you]\nStray after the squash.\n"
-    _w0 = _pc_world("master", _gate_text)
-    _rc0, _o0 = _pc(_w0, "origin", "master", _G)
-    _tip0 = _real_run2(["git", "-C", str(_w0), "rev-parse", "origin/master"], capture_output=True,
-                       text=True).stdout.strip()
-    case("730 M1: master at the pins, its gate the running one, no store PR, CI green — rc 0",
-         (_rc0, _o0), (0, "ok — L1: origin/master's store is the pinned bytes\n"
-                          "ok — A1: origin/master's docs/asks/ is well-formed\n"
-                          "ok — no open pull request edits the frozen store\n"
-                          f"ok — CI run 901 ({_tip0[:8]}) on master: run success, job `verify` success: "
-                          "`check-ask-store self-test` success, `ask store (push)` success\n"
-                          "post-cutover rc 0"))
-    _w1 = _pc_world("master", _gate_text, later={LEGACY_STORE_REL: _stray})
-    _rc1, _o1 = _pc(_w1, "origin", "master", _G)
-    case("730 M1: master's committed store moved off the pins (the clone's HEAD behind) is rc 1, with the restore",
-         (_rc1, "Stray after the squash." in _o1, f"git cat-file blob {_FPINS['LEGACY_STORE_BLOB']}" in _o1),
-         (1, True, True))
-    _wn = _pc_world("master", _gate_text, later={LEGACY_STORE_REL: _stray}, narrow=True)
-    case("730 r1 F5: the fetch moves origin/master even when the clone's refspec does not cover it — rc 1",
-         _pc(_wn, "origin", "master", _G)[0], 1)
-    _w3a = _pc_world("master", "print('a gate from before S2')\n")
-    _w3b = _pc_world("trunk", None)
-    _rc3a, _o3a = _pc(_w3a, "origin", "master", _G)
-    _rc3b, _o3b = _pc(_w3b, "origin", "trunk", _G)
-    case("730 M1: master without the L1 gate, or with no gate file (S2 not merged), is rc 3 — never L1's rc 1",
-         (_rc3a, "without L1" in _o3a, _rc3b, f"no {GATE_REL}" in _o3b), (3, True, 3, True))
-    _rc2, _o2 = _pc(_w0, "nowhere", "master", _G)
-    case("730 M1: a fetch git cannot do is CANNOT RUN rc 2, never a pass",
-         (_rc2, _o2.startswith("CANNOT RUN — nowhere/master could not be fetched")), (2, True))
-    _w5 = _pc_world("master", _gate_text, pre={"docs/asks/Foo.md": "# Q?\n"},
-                    dirty={"docs/asks/Foo.md": "# Q?\n"})
-    _rc5, _o5 = _pc(_w5, "origin", "master", _G)
-    case("730 M1: an ask A1 refuses on master is rc 5, not the store's rc 1",
-         (_rc5, "REFUSED (rc 5) — A1: " in _o5, "Foo.md" in _o5), (5, True, True))
-    _wa = _pc_world("master", _gate_text, dirty={LEGACY_STORE_REL: _stray, "docs/asks/Bar.md": "no heading\n"})
-    case("730 L1: a dirty worktree (store and an ask, uncommitted) does not change the verdict — rc 0",
-         _pc(_wa, "origin", "master", _G)[0], 0)
-    _wb = _pc_world("master", _gate_text + "# edited locally\n", remote="upstream")
-    _rcb4, _ob4b = _pc(_wb, "upstream", "master", _G)
-    case("730 L1: a running gate that is not master's blob is rc 4 — a local copy never judges master",
-         (_rcb4, "must not judge master" in _ob4b, "upstream/master's is" in _ob4b), (4, True, True))
-    # r1 F2: git cannot read what the fetched tree names — the object is deleted from the clone only.
-    _wl = _pc_world("master", _gate_text)
-    _drop_object(_wl, _FPINS["LEGACY_STORE_BLOB"])
-    _rcl, _ol = _pc(_wl, "origin", "master", _G)
-    case("730 r1 F2: master's store git cannot read is CANNOT RUN rc 2, never L1 ok",
-         (_rcl, "CANNOT RUN — the frozen store could not be read" in _ol), (2, True))
-    _ask_z = "# Unreadable on purpose?\n"
-    _wq = _pc_world("master", _gate_text, pre={"docs/asks/2026-11-26-z.md": _ask_z})
-    _drop_object(_wq, _git_blob_id(_ask_z.encode()))
-    _rcq, _oq = _pc(_wq, "origin", "master", _G)
-    case("730 r1 F2: an ask git cannot read on master is CANNOT RUN rc 2, never A1 ok",
-         (_rcq, "CANNOT RUN — the ask store could not be checked" in _oq), (2, True))
-    _rc6, _o6 = _pc(_w0, "origin", "master", _pc_gh(store_prs=(41,)))
-    case("730 Step 2: an open PR still editing the store is rc 6 and is named",
-         (_rc6, "PR 41 (b41) edits the frozen store" in _o6), (6, True))
-    _rcp, _op = _pc(_w0, "origin", "master", _pc_gh(pr_list_rc=1))
-    case("730 r1 F2: a failed gh pr list under --post-cutover is CANNOT RUN rc 2, never 'no PRs'",
-         (_rcp, "CANNOT RUN — gh pr list did not answer" in _op), (2, True))
-    # r1 F1 + r2 G1-G3: GitHub's REAL shapes. In `verify` a red step marks every later step `skipped`. Only the
-    # run whose `headSha` is the fetched head answers (G1); runs are listed whatever their status (G3); green
-    # needs the run, the `verify` job and both steps `success` (G2).
-    _w2c = _pc_world("master", _gate_text, later={"docs/x.txt": "a later master commit\n"})
-    _rc7, _o7 = _pc(_w2c, "origin", "master", _pc_gh(runs=[
-        (906, "", {CI_SELFTEST_STEP: "failure", CI_L1_STEP: "skipped"}, {"conclusion": "failure", "job": "failure"}),
-        (905, "~1", _GREEN)]))
-    case("730 r1 F1: the head's run, self-test red and the L1 step skipped, is rc 7 over an older commit's green",
-         (_rc7, "CI run 906" in _o7, "`ask store (push)` skipped" in _o7), (7, True, True))
-    _rc7b, _o7b = _pc(_w0, "origin", "master", _pc_gh(runs=[
-        (907, "", {CI_SELFTEST_STEP: "success", CI_L1_STEP: "skipped"})]))
-    case("730 r1 F1: a head run whose L1 step was skipped while its job and run succeeded is rc 7",
-         (_rc7b, "`ask store (push)` skipped" in _o7b), (7, True))
-    _rc7c, _o7c = _pc(_w0, "origin", "master", _pc_gh(runs=[(908, "", {CI_L1_STEP: "success"})]))
-    case("730 r1 F1: a head run with no self-test step is rc 7 — absent is not green",
-         (_rc7c, "`check-ask-store self-test` absent" in _o7c), (7, True))
-    _rc7d = _pc(_w0, "origin", "master", _pc_gh(runs=[
-        (910, "", [(CI_JOB, {"unit suite": "success"}), ("mutation-sweep", _GREEN)])]))[0]
-    case("730 r1 F6: only the verify job's steps count — another job's same-named green steps do not — rc 7",
-         _rc7d, 7)
-    # G1: S2's own squash, and every commit after it, carries the gate — so a commit carrying it is no proof
-    # that its run is the head's. Before r2 this green run on `~1` answered rc 0.
-    _w8 = _pc_world("trunk", _gate_text, later={"docs/x.txt": "a later trunk commit\n"})
-    _rc8, _o8 = _pc(_w8, "origin", "trunk", _pc_gh(runs=[(905, "~1", _GREEN)]))
-    case("730 r2 G1: a green run on an earlier commit carrying S2's gate does not answer for the head — rc 8",
-         (_rc8, "is not listed yet" in _o8, "on trunk" in _o8), (8, True, True))
-    # G3: the head's run still in progress, an older commit's completed run green. Before r2 `--status
-    # completed` hid the head's run and the older one answered rc 0.
-    _rcg3, _og3 = _pc(_w2c, "origin", "master", _pc_gh(runs=[
-        (921, "", {CI_SELFTEST_STEP: "success", CI_L1_STEP: ""}, {"status": "in_progress"}),
-        (920, "~1", _GREEN)]))
-    case("730 r2 G3: the head's run in progress while an older commit's run is green is rc 8, not green",
-         (_rcg3, "CI run 921" in _og3, "`in_progress`, not completed" in _og3), (8, True, True))
-    # G2: both steps `success` and still not green. Before r2 each of these answered rc 0.
-    _rcg2, _og2 = _pc(_w0, "origin", "master", _pc_gh(runs=[
-        (922, "", _GREEN, {"conclusion": "cancelled", "job": "cancelled"})]))
-    case("730 r2 G2: a run cancelled after both verify steps succeeded is rc 7",
-         (_rcg2, "run cancelled, job `verify` cancelled" in _og2), (7, True))
-    _rcg2j, _og2j = _pc(_w0, "origin", "master", _pc_gh(runs=[(923, "", _GREEN, {"job": "failure"})]))
-    case("730 r2 G2: a verify job that failed while the run concluded success (continue-on-error) is rc 7",
-         (_rcg2j, "run success, job `verify` failure" in _og2j), (7, True))
-    _rcg2r, _og2r = _pc(_w0, "origin", "master", _pc_gh(runs=[
-        (924, "", [(CI_JOB, _GREEN), ("mutation-sweep", {"sweep": "failure"}, "failure")], {"conclusion": "failure"})]))
-    case("730 r2 G2: a run that failed in another job while verify is green is rc 7",
-         (_rcg2r, "run failure, job `verify` success" in _og2r), (7, True))
-    _rcg4, _og4 = _pc(_w0, "origin", "master", _pc_gh(runs=[
-        (931, "", {CI_SELFTEST_STEP: "success", CI_L1_STEP: "failure"}, {"conclusion": "failure", "job": "failure"}),
-        (930, "", _GREEN)]))
-    case("730 r2: two runs on the head commit, the newest red, is rc 7 — the newest is judged",
-         (_rcg4, "CI run 931" in _og4), (7, True))
-    _rcc, _oc = _pc(_w0, "origin", "master", _pc_gh(run_list_rc=1))
-    case("730 L2: a failed gh run list is CANNOT RUN rc 2, never 'no runs'",
-         (_rcc, "CANNOT RUN — gh run list did not answer" in _oc), (2, True))
-    _rcv, _ov = _pc(_w0, "origin", "master", _pc_gh(run_view_rc=1))
-    case("730 r1 F2: a failed gh run view is CANNOT RUN rc 2, never an older run's verdict",
-         (_rcv, "CANNOT RUN — gh run view 901 did not answer" in _ov), (2, True))
-    # Over the all-green world, so no other check's mutation can move it: only the dispatch can.
-    _rcm, _om = _with_run(_G, lambda: _main_at(_w0, ["--post-cutover"]))
-    case("730 main --post-cutover runs the check over origin/master and exits with its status",
-         (_rcm, _om.rstrip().endswith("post-cutover rc 0"), "ok — CI run 901" in _om), (0, True, True))
-    for _d in _pc_dirs:
-        _sh.rmtree(_d, ignore_errors=True)
     for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code, _st,
-               _unr, _both):
+               _unr, _both, _ua):
         _sh.rmtree(_d, ignore_errors=True)
 
     print(f"{ok}/{ok+fail} cannot-run cases passed")
@@ -1822,27 +1373,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--base", default=None,
                     help="the ref F1 compares against (`git merge-base <base> HEAD`); "
                          "without it only A1 runs")
-    ap.add_argument("--list-store-prs", action="store_true",
-                    help="only: list the open pull requests whose diff names the frozen store")
-    ap.add_argument("--post-cutover", action="store_true",
-                    help=f"only: plan Task 13 after S2's squash, as one command — fetch "
-                         f"{POST_CUTOVER_REMOTE} {POST_CUTOVER_BRANCH} and judge its committed tree. "
-                         f"Exit: 0 ok; 1 the store moved off its pins; 2 CANNOT RUN (git/gh); 3 S2 not "
-                         f"merged; 4 the running script is not master's; 5 A1 refused master's asks; "
-                         f"6 an open PR still edits the store; 7 master's CI step red; 8 no completed "
-                         f"master CI run has the step yet")
     a = ap.parse_args(argv)
-    if a.post_cutover:
-        rc, lines = post_cutover(ROOT, POST_CUTOVER_REMOTE, POST_CUTOVER_BRANCH)
-        print("\n".join(lines))
-        return rc
-    if a.list_store_prs:
-        lines, err = store_edit_prs()
-        if err:
-            print(f"CANNOT RUN — {err}. Treat this as NOT CHECKED.")
-            return 2
-        print("\n".join(lines) if lines else "ok — no open pull request edits the frozen store")
-        return 0
     if a.self_test:
         # BOTH suites, both always run. `or` would short-circuit and hide the
         # cannot-run cases whenever the pure suite is already red.

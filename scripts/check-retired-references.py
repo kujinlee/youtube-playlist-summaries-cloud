@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -364,6 +365,30 @@ def _self_test_body() -> int:
     case("a finding names its file and the literal",
          (len(found), "scripts/a.py" in found[0] if found else None,
           "gen-dashboard.py" in found[0] if found else None), (1, True, True))
+
+    # main() over a constructed world, through --root (ADR-0014: the entry point is driven, not only scan()).
+    import contextlib
+    import io
+
+    def _main(files: dict[str, str], relative: bool = False) -> tuple[int, str]:
+        err, out = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(out):
+            if relative:
+                rc = main(["--root", os.path.relpath(_world(files))])
+            else:
+                rc = main(["--root", str(_world(files))])
+        return rc, out.getvalue() + err.getvalue()
+    rc0, t0 = _main({})
+    case("main over a clean world is rc 0 and says ok", (rc0, "ok — " in t0), (0, True))
+    rc1, t1 = _main({"scripts/a.py": 'M = _sibling("gen-dashboard.py")\n'})
+    case("main over a world with a reference is rc 1 and names the file",
+         (rc1, "scripts/a.py" in t1), (1, True))
+    rc3, t3 = _main({"scripts/b.py": 'M = _sibling("gen-dashboard.py")\n'}, relative=True)
+    case("main reads --root as given, relative too: the reference is still found, rc 1",
+         (rc3, "scripts/b.py" in t3), (1, True))
+    rc2, t2 = _main({"scripts/a.py": "def broken(:\n"})
+    case("main over an unreadable world is rc 2, CANNOT RUN, never a pass",
+         (rc2, "CANNOT RUN" in t2), (2, True))
 
     failed = 0
     for name, got, want in cases:
