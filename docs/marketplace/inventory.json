@@ -703,49 +703,6 @@
       "notes": "Measured by A-script-regen-pages-all: rc 2 `CANNOT RUN \u2014 git cannot name this repository's common directory from <install dir>` \u2014 it locates the project from its own install path, ROOT = SCRIPTS.parent (regen-pages.py:123), not the user's (suite defect S1). Condition 3 fails; C4 fail, measured. regen-pages:6:1 (line 163, git) is where it fails, but git itself is a host tool, so it is not cited; Detector-6 findings that name a host tool or variable a stranger has (git, node, gh, HOME, PATH, sleep, awk, date) and detector-2 `unread` findings (a script re-running itself or a throwaway child, as its tests do) are not grounds, as in the effort (1) and (2) rows. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): locate the project from CLAUDE_PROJECT_DIR or the caller's working directory, keep package files on the script's own path, and make docs/goal-threads.md (THREADS_REL, line 125) optional. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued; round 2 X1: each figure is this component's COMPLETE cost by that route, every dependency it needs included; work shared with other rows is named with the row that owns it, so the figures are not to be summed across rows): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); an optional file is not a setting either; template-repository 13 h = 1 h the next_project reasoning: the files live in the stranger's own repository, so S1 does not bite, and the template ships an empty docs/goal-threads.md + 4 h the template repository (shared; owned and described in skill-explain-topic's row) + 8 h S2's code fix (shared; owned by brief-compose's row), because it runs gen-dashboard and gen-goals-page (regen-pages.py:865), each of which fails when brief-compose refuses (gen-dashboard.py:3563, gen-goals-page.py:1375-1384); limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 13 h."
     },
     {
-      "id": "gen-dashboard",
-      "effort": 3,
-      "roles": [
-        "entry-point"
-      ],
-      "phase": "1",
-      "verdict": "NEEDS-WORK",
-      "grade": "measured",
-      "scenario": null,
-      "rests_on": [
-        {
-          "kind": "experiment",
-          "scenario": "A-script-gen-dashboard"
-        },
-        {
-          "kind": "finding",
-          "ids": [
-            "gen-dashboard:3:1"
-          ]
-        }
-      ],
-      "harvest": "none",
-      "practice_entry": null,
-      "criteria": {
-        "C1": "pass",
-        "C2": "pass",
-        "C3": "pass",
-        "C4": "fail",
-        "C5": "pass"
-      },
-      "cost": {
-        "public_bar_hours": 8.0,
-        "next_project_hours": 1.0,
-        "grade": "argued"
-      },
-      "route": {
-        "kind": "template-repository",
-        "cost_hours": 16.0,
-        "grade": "argued"
-      },
-      "notes": "Measured by A-script-gen-dashboard: rc 1, it reads <install dir>/docs/backlog.md (S1; ROOT gen-dashboard.py:21, STORE_DEFAULT :28), then brief-compose refuses (S2). Conditions 3 and 4 fail: it documents a recovery (`Run /explain-diff once to produce one, then re-run`) and following it was observed to fail. C4 fail, measured; gen-dashboard:3:1 (no user documentation) bears on the same criterion: a stranger has nothing to recover from. :6:2 (gh, line 526) needs a GitHub CLI a stranger may not have; not measured, not a ground. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes S1 (project root from the caller), adds the user doc (:3:1) and corrected recovery advice; S2 is brief-compose's route. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued; round 2 X1: each figure is this component's COMPLETE cost by that route, every dependency it needs included; work shared with other rows is named with the row that owns it, so the figures are not to be summed across rows): decouple-config does not apply: its work is path resolution, and spec 4 rejected a user-configurable path for that class (more surface, same class); template-repository 16 h = 4 h 1 h next_project (S1 does not bite in the stranger's own repository) plus the user doc (:3:1) and corrected recovery advice a stranger still needs, about 3 h + 4 h the template repository (shared; owned and described in skill-explain-topic's row) + 8 h S2's code fix (shared; owned by brief-compose's row), because measured: brief-compose refused (A-script-gen-dashboard); limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 16 h."
-    },
-    {
       "id": "gen-goals-page",
       "effort": 3,
       "roles": [
@@ -977,45 +934,6 @@
         "grade": "argued"
       },
       "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-backlog-page:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :7:1 by declaring the hook in the package's hooks/hooks.json through ${CLAUDE_PLUGIN_ROOT}; this row owns that file's price for all five regen hooks; depends on the hook-dispatcher row's fix. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued; round 2 X1: each figure is this component's COMPLETE cost by that route, every dependency it needs included; work shared with other rows is named with the row that owns it, so the figures are not to be summed across rows): decouple-config does not apply: a hook registration is not a setting; template-repository 4.5 h = 0.5 h the next_project reasoning: the files live in the stranger's own repository, so the template carries .claude/settings.json registering the hook, so S5 does not bite, and run-hook.sh resolves the hook in the template (hook-dispatcher's row), so that fix is not needed either + 4 h the template repository (shared; owned and described in skill-explain-topic's row); S2 is not added: it runs gen-backlog-page, which writes the page without the tray when brief-compose refuses (gen-backlog-page.py:4463-4479); limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 4.5 h."
-    },
-    {
-      "id": "hook-regen-dashboard",
-      "effort": 3,
-      "roles": [
-        "entry-point"
-      ],
-      "phase": "1",
-      "verdict": "NEEDS-WORK",
-      "grade": "argued",
-      "scenario": null,
-      "rests_on": [
-        {
-          "kind": "finding",
-          "ids": [
-            "hook-regen-dashboard:7:1"
-          ]
-        }
-      ],
-      "harvest": "none",
-      "practice_entry": null,
-      "criteria": {
-        "C1": "pass",
-        "C2": "pass",
-        "C3": "pass",
-        "C4": "fail",
-        "C5": "pass"
-      },
-      "cost": {
-        "public_bar_hours": 0.5,
-        "next_project_hours": 0.5,
-        "grade": "argued"
-      },
-      "route": {
-        "kind": "template-repository",
-        "cost_hours": 12.5,
-        "grade": "argued"
-      },
-      "notes": "Not exercised (tier A: `bash` not on the allow-list), so argued. hook-regen-dashboard:7:1 (needs-registration): the script is registered only through this repository's .claude/settings.json, and the installed package carries no hooks/hooks.json, so Claude Code would never invoke it (suite defect S5; C4 fail, argued). Its doc-path findings (if any) are the match patterns for the files it watches in the user's project, which is where they should resolve; not grounds. Hours are agent-implemented work including review to convergence under the round cap (r1 both halves, then alternating halves), argued: nothing was run to price them. next_project_hours prices copying the component into the owner's next repository as files, where the install directory IS the project and ~/explainers already holds tray pages, so S1, S2 and S3 do not bite. Basis (public bar): removes :7:1 with this hook's one entry in the package's hooks/hooks.json, 0.5 h, the same work as next_project's one registration; the file itself is priced in hook-regen-backlog-page's row at 0 h here (round 1 C9: each of the five priced it at 2 h at r0); depends on the hook-dispatcher row's fix. The public bar is the fix in place for D3's plugin channel, a route D10 does not name (backlog #703); the route below is the cheapest of D10's four. Routes compared (D10, all argued; round 2 X1: each figure is this component's COMPLETE cost by that route, every dependency it needs included; work shared with other rows is named with the row that owns it, so the figures are not to be summed across rows): decouple-config does not apply: a hook registration is not a setting; template-repository 12.5 h = 0.5 h the next_project reasoning: the files live in the stranger's own repository, so the template carries .claude/settings.json registering the hook, so S5 does not bite, and run-hook.sh resolves the hook in the template (hook-dispatcher's row), so that fix is not needed either + 4 h the template repository (shared; owned and described in skill-explain-topic's row) + 8 h S2's code fix (shared; owned by brief-compose's row), because it runs regen-pages --page dashboard (regen-dashboard.sh:42), which reaches gen-dashboard and brief-compose; limit: a template serves a stranger starting a NEW repository, not one adding the package to an existing one, and it is not D3's plugin channel; portable-core does not apply: there is no project-specific part to leave behind; practice does not apply: no practice is identified in it (harvest none; spec 4c needs a written entry). Cheapest: template-repository, 12.5 h."
     },
     {
       "id": "hook-regen-features-page",

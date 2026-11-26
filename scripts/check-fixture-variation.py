@@ -227,8 +227,6 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'declares.count_drift', 'population_errors.pinned',),
     'check-test-counts.py': (
         'compare.actual', 'load_results.path',),
-    'check-theme-token-coverage.py': (
-        'palette_tokens.name',),
     # ⟳ 2026-09-23, backlog #176 — `verdict_record.out_path` LEAVES THIS DICT, and it is the
     # OTHER direction of the guard's own warning: not debt paid, but a SUBJECT DELETED. The
     # parameter is gone because the record's `review` field stopped being derived from the
@@ -260,8 +258,6 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'build.edited', 'build.generated_at', 'build.sha', 'build.stamp',
         'link_contrast_errors.minimum', 'plain.text', 'report_run.rows',
         'report_run.unread', 'report_unread.unread', 'rows_of.text',),
-    'gen-dashboard.py': (
-        'commit_dates.window', 'contrast_failures.minimum',),
     'gen-goals-page.py': (
         # ⟳ goal node tree Task 9: `parse_roots.text` left — Task 8's world case reads the real ROOTS.
         'parse_header.head_lines',),
@@ -1165,6 +1161,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # (backlog #320), so `rounds_for` is back to one parameter. Retired with their
     # subject, which is the one permitted kind of fall. `scope_lead`/`scope_tally`/
     # `scope_lead_lines` joined for the margin and abstention.
+    # dashboard-retire S3 Task 15: K8's scanner. Its cases drive `scan` through many worlds.
+    'check-retired-references.py': (
+        'scan.root',),
     'check-review-decision.py': (
         'converged.rounds',
         'converged.scope',
@@ -1276,8 +1275,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'decision_errors.category',
         'decision_errors.plain', 'decisions.plain', 'exemption_reason.marker',
         'exemption_reason.pr_body', 'fence_closes.open_run', 'fence_closes.rest',
-        'fence_closes.run', 'fenced_lines.text', 'header_error.line',
-        'parse_entries.text',),
+        'fence_closes.run', 'fenced_lines.text',),
     'check-docs.py': (
         'backlog_marker_errors.label', 'backlog_marker_errors.lines',
         'backlog_marker_errors.ok_lines', 'backlog_shape_errors.label',
@@ -1362,8 +1360,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'assert_describes_this_tree.results', 'compare.actual', 'compare.documented',
         'documented_counts.roadmap_text', 'load_results.path', 'test_sources.config',),
     'check-theme-token-coverage.py': (
-        'audit.known_gap', 'audit.light', 'audit.shim', 'palette_tokens.name',
-        'palette_tokens.text', 'shim_tokens.text',),
+        'audit.known_gap', 'audit.light', 'audit.shim', 'css_block_tokens.selector',
+        'css_block_tokens.text', 'shim_tokens.text',),
     'check-vocabulary-collisions.py': (
         'evaluate.allowed', 'evaluate.cols', 'evaluate.stems',),
     # ⟳ 2026-09-23, backlog #176 — RE-DERIVED by running `analyse()` over the frozen source, not
@@ -1440,16 +1438,6 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'sanitise_groups.groups', 'sanitise_groups.open_nums',
         'unread_note.unread', 'waiting_on.size',
         'word_diff.after', 'word_diff.before',),
-    'gen-dashboard.py': (
-        'badge_of.cleared', 'badge_of.entry', 'bucket_days.dates',
-        'bucket_days.entries', 'bucket_days.today', 'bucket_days.window', 'build.days',
-        'build.entries', 'build.exempt_error', 'build.exemptions', 'build.generated_at',
-        'build.git_error', 'build.pr_error', 'build.prs', 'build.store',
-        'build.store_error', 'build.window', 'cleared_ids.entries',
-        'commit_dates.window', 'contrast_failures.html', 'contrast_failures.minimum',
-        'contrast_ratio.bg', 'contrast_ratio.fg', 'main.argv', 'pr_state.budget',
-        'pr_state.cache', 'pr_state.n', 'scheme_palettes.css', 'unresolved.entries',
-        'unresolved_heads_up.entries',),
     'gen-goals-page.py': (
         'parse_adr.text', 'parse_header.head_lines', 'parse_header.text',
         'parse_milestones.text', 'parse_roots.text',),
@@ -1457,8 +1445,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'derive.source', 'has_m4.catalog', 'has_m4.manifest', 'psql.db', 'psql.sql',),
     'page_chrome.py': (
         'assert_wired.page', 'assert_wired.where', 'chrome_bar.refresh',
-        'chrome_bar.slug', 'chrome_bar.when', 'has_control.page',
-        'missing_palettes.page', 'provenance.now', 'provenance.root', 'stamp.when',),
+        'chrome_bar.slug', 'chrome_bar.when', 'contrast_ratio.bg', 'contrast_ratio.fg',
+        'has_control.page', 'missing_palettes.page', 'provenance.now', 'provenance.root',
+        'stamp.when',),
     # ⟳ 2026-09-16 — `peer-sites.py` arrives pinned rather than as debt. Note `parse_hunks.diff`
     # in this set: the RULE was split out of `changed_lines` because this very guard refused the
     # welded version, so the pin records not just what is examined but that the split happened.

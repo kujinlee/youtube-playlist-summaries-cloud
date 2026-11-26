@@ -193,8 +193,8 @@ def replayed_gates(body_file: Path) -> list[tuple[str, list[str]]]:
     report column. ⟳ dashboard-retire S2 r1 F2: a module function, so a case can hold it to ci.yml."""
     return [
         # ⟳ dashboard-retire S2: the ask-store gate reads no body (its `NO-ENTRY:` waiver retired).
+        # ⟳ S3: C1 (`gen-dashboard.py --assert-no-open-asks`) left with its generator.
         ("ask store", ["python3", "scripts/check-ask-store.py", "--base", BASE_REF]),
-        ("C1 no open ask", ["python3", "scripts/gen-dashboard.py", "--assert-no-open-asks"]),
         ("review recorded", ["python3", "scripts/check-review-recorded.py",
                              "--base", BASE_REF, "--pr-body-file", str(body_file)]),
         ("review rounds", ["python3", "scripts/check-review-rounds.py"]),
@@ -699,7 +699,8 @@ def _dashboard_gate(src: Path):
     """The gate that OWNS the escape grammar, imported rather than re-implemented.
 
     ⛔ `exemption_reason(body, marker)` is parameterised by marker and is declared
-    "ONE DEFINITION, shared with gen-dashboard.py". Re-deriving the rule here would
+    "ONE DEFINITION" (⟳ dashboard-retire S3: its other consumer, gen-dashboard.py, is deleted,
+    so this is its one importer). Re-deriving the rule here would
     be a second implementation of it, and this repo has recorded that shape drifting
     seventeen times — a weaker stand-in passes what the real one refuses.
     """
@@ -2425,8 +2426,8 @@ def _self_test_body() -> int:
           [["python3", "scripts/a.py", "--base", BASE_REF], ["python3", "scripts/b.py", "--flag"]])
     _ci_ask = step_python_commands(WORKFLOW.read_text(), "ask store (pull request)") if WORKFLOW.is_file() else []
     _replayed = [argv for _n, argv in replayed_gates(Path("/x"))]
-    check("r1 F2: every command of ci.yml's `ask store (pull request)` step is replayed (A1/F1/L1 AND C1)",
-          (len(_ci_ask), [c for c in _ci_ask if c not in _replayed]), (2, []))
+    check("r1 F2: every command of ci.yml's `ask store (pull request)` step is replayed (A1/F1/L1)",
+          (len(_ci_ask), [c for c in _ci_ask if c not in _replayed]), (1, []))
     check("r1 F2: every replayed label fits the 18-character report column",
           [n for n, _a in replayed_gates(Path("/x")) if len(n) > 18], [])
     # ⟳ r1 F2 fold, CI fixture-variation: `body_file` reaches the review gate's argv, at two distinct paths.

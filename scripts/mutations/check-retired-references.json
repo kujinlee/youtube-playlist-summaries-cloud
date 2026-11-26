@@ -1,0 +1,178 @@
+[
+ {
+  "name": "K8 string: a Python string constant is not read",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "and _names_retired(node.value) and (rel, node.value) not in ALLOWED:",
+    "and False:"
+   ]
+  ],
+  "expect": "F1f a module constant is refused"
+ },
+ {
+  "name": "K8 prose is scanned: docstrings and whole-statement strings are no longer skipped",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "isinstance(node.value, str) and id(node) not in prose \\",
+    "isinstance(node.value, str) and True \\"
+   ]
+  ],
+  "expect": "15.11 prose and comments pass"
+ },
+ {
+  "name": "K8 page-table: a statement naming a page table is not read",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "            if names & PAGE_TABLES:",
+    "            if False:"
+   ]
+  ],
+  "expect": "F1h a page table changed by subscript is refused"
+ },
+ {
+  "name": "K8 page-table: a membership test is counted as a use",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    " and not _membership_test(k, parents):",
+    ":"
+   ]
+  ],
+  "expect": "near miss: a membership test against a page table passes"
+ },
+ {
+  "name": "K8 link: key_link's kind keyword is not read",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "kinds = node.args[:1] + [kw.value for kw in node.keywords if kw.arg == \"kind\"]",
+    "kinds = node.args[:1]"
+   ]
+  ],
+  "expect": "15.9 a key_link(kind='dashboard') call is refused"
+ },
+ {
+  "name": "K8 text: a non-Python source or config file is not read",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "        if is_text:\n",
+    "        if False:\n"
+   ]
+  ],
+  "expect": "F1j a package.json script is refused"
+ },
+ {
+  "name": "K8 text: an extensionless #! file is not read",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "return fh.read(2) == b\"#!\", \"#\"",
+    "return False, \"#\""
+   ]
+  ],
+  "expect": "F1j a .githooks hook is refused"
+ },
+ {
+  "name": "K8 text: a whole-line comment is read as a reference",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "if comment and _whole_line_comment(s, comment):",
+    "if False:"
+   ]
+  ],
+  "expect": "15.11 a whole-line comment in a hook, a TS file and a workflow passes"
+ },
+ {
+  "name": "K8 exempt: the history prefixes are not honoured",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "return rel == SELF or any(rel.startswith(p) for p in EXEMPT_PREFIXES)",
+    "return rel == SELF"
+   ]
+  ],
+  "expect": "exempt: docs/reviews/ is not read"
+ },
+ {
+  "name": "K8 allowed: an ALLOWED literal is allowed in every file, not only its own",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "(rel, node.value) not in ALLOWED:",
+    "node.value not in {v for _, v in ALLOWED}:"
+   ]
+  ],
+  "expect": "exempt: an ALLOWED literal is refused in any other file"
+ },
+ {
+  "name": "K8 route: a route after localhost or a port is not the route",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "r\"(?:(?<![\\w.-])|(?<=localhost)|(?<=:\\d\\d)|(?<=:\\d\\d\\d)|(?<=:\\d\\d\\d\\d)|(?<=:\\d\\d\\d\\d\\d))\"",
+    "r\"(?<![\\w.-])\""
+   ]
+  ],
+  "expect": "a localhost url of the route is refused"
+ },
+ {
+  "name": "K8 token: a retired name inside a longer file name is refused",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "+ r\")(?![\\w.-])\")",
+    "+ r\")\")"
+   ]
+  ],
+  "expect": "near miss: a longer file name that contains a retired one passes"
+ },
+ {
+  "name": "K8 CANNOT RUN: a missing settings.json is a pass",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "raise CannotRun(f\"{rel} is missing\")",
+    "return"
+   ]
+  ],
+  "expect": "15.14 settings.json that is missing is CANNOT RUN"
+ },
+ {
+  "name": "K8 CANNOT RUN: a tree with no workflow is a pass",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "raise CannotRun(\"no workflow file under .github/workflows/\")",
+    "pass"
+   ]
+  ],
+  "expect": "15.14 a tree with no workflow is CANNOT RUN, never a pass"
+ },
+ {
+  "name": "K8 CANNOT RUN: a manifest that is not JSON is a pass",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "raise CannotRun(f\"{f} is not JSON ({e})\") from e",
+    "pass"
+   ]
+  ],
+  "expect": "15.14 a manifest that is not JSON is CANNOT RUN"
+ },
+ {
+  "name": "K8 text G2: code after a closed `/*` comment on its line is skipped as a comment",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "        return end == -1 or not s[end + 2:].strip()",
+    "        return True"
+   ]
+  ],
+  "expect": "G2 code after a closed block comment on its line is refused"
+ }
+]

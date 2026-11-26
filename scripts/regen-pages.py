@@ -866,7 +866,7 @@ def _self_test_cases() -> int:
             failures += 1
             print(f"  [FAIL] {name}\n    got:  {got!r}\n    want: {want!r}")
 
-    table = {"dashboard": "gen-dashboard.py", "goal-tree": "goal-tree.py", "goals": "gen-goals-page.py"}
+    table = {"backlog-table": "gen-backlog-page.py", "goal-tree": "goal-tree.py", "goals": "gen-goals-page.py"}
     _SHA = "ab" * 20
 
     # ⭐ CRASH_CASE, pinned on the PRODUCER side of the `[FAIL] <case>` contract (Phase 6, hse slice C): the guard's
@@ -906,7 +906,7 @@ def _self_test_cases() -> int:
         return {"tool_input": {"command": cmd}}
 
     case("a merge rebuilds EVERY page", pages_for(bash("gh pr merge 425 --squash"), table),
-         ["dashboard", "goal-tree", "goals"])
+         ["backlog-table", "goal-tree", "goals"])
     case("⛔ a command that is not a merge rebuilds nothing", pages_for(bash("gh pr view 425"), table), [])
     # Z3: every input rounds 2 and 3 raised, with the verdict the substring test gives and why.
     case("⭐ Z3: real merges FIRE, however the shell around them is written",
@@ -928,7 +928,7 @@ def _self_test_cases() -> int:
               "tool_input": {"command": "gh pr merge 433; false", "description": "merge"},
               "error": "Exit code 1", "is_interrupt": False}
     case("⭐ W1: a PostToolUseFailure payload for `gh pr merge 433; false` rebuilds every page",
-         pages_for(failed, table), ["dashboard", "goal-tree", "goals"])
+         pages_for(failed, table), ["backlog-table", "goal-tree", "goals"])
     case("⛔ W1: a failure payload with no tool_input.command rebuilds nothing",
          [pages_for({"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "error": "x"}, table),
           pages_for({"hook_event_name": "PostToolUseFailure", "tool_input": {}}, table)], [[], []])
@@ -969,7 +969,7 @@ def _self_test_cases() -> int:
          [pages_for({"tool_input": {"file_path": "/x/notes/docs/asks-old/x.md"}}, table),
           pages_for({"tool_input": {"file_path": "/x/mydocs/asks/x.md"}}, table)], [[], []])
     case("a threads edit rebuilds nothing when no goal-tree page is registered",
-         pages_for({"tool_input": {"file_path": "docs/goal-threads.md"}}, {"dashboard": "d.py"}), [])
+         pages_for({"tool_input": {"file_path": "docs/goal-threads.md"}}, {"backlog-table": "d.py"}), [])
     case("⛔ a tool_input that is not a dict rebuilds nothing",
          pages_for({"tool_input": "gh pr merge 1"}, table), [])
 
@@ -977,29 +977,29 @@ def _self_test_cases() -> int:
 
     def fake(script, timeout, tree):
         calls.append((script, timeout, tree))
-        if script == "gen-dashboard.py":
+        if script == "gen-backlog-page.py":
             return 1, "boom\nlast line"
         if script == "gen-goals-page.py":
             raise OSError("no such interpreter")
         if script == "goal-tree.py":
             return 124, "timed out after 120s"
         return 0, ""
-    res = regen(["dashboard", "goal-tree", "goals"], table, fake, timeout=7, tree=pathlib.Path("/fresh/t"))
+    res = regen(["backlog-table", "goal-tree", "goals"], table, fake, timeout=7, tree=pathlib.Path("/fresh/t"))
     case("⭐ one failing, one hung and one crashing generator: EVERY page is still attempted",
-         sorted(c[0] for c in calls), ["gen-dashboard.py", "gen-goals-page.py", "goal-tree.py"])
+         sorted(c[0] for c in calls), ["gen-backlog-page.py", "gen-goals-page.py", "goal-tree.py"])
     case("each generator gets its OWN timeout", sorted({c[1] for c in calls}), [7])
     case("⭐ backlog #408: every generator is handed the FRESH tree, never this checkout",
          sorted({str(c[2]) for c in calls}), ["/fresh/t"])
     case("results come back in the order asked, each with its exit code",
-         [(r["page"], r["rc"]) for r in res], [("dashboard", 1), ("goal-tree", 124), ("goals", -1)])
+         [(r["page"], r["rc"]) for r in res], [("backlog-table", 1), ("goal-tree", 124), ("goals", -1)])
     case("a generator that raises is a named failure, not an exception",
          res[2]["tail"], "OSError: no such interpreter")
     lines = report(res, 3.2)
     case("the report counts what rebuilt and times every page",
-         lines[0].startswith("↻ pages rebuilt: 0 of 3 in 3.2s (dashboard "), True)
+         lines[0].startswith("↻ pages rebuilt: 0 of 3 in 3.2s (backlog-table "), True)
     case("⛔ every failure is NAMED with its exit code, and says the page is stale",
          [ln.split(" — ")[0] for ln in lines[1:]],
-         ["⚠  dashboard NOT rebuilt (exit 1)", "⚠  goal-tree NOT rebuilt (exit 124)",
+         ["⚠  backlog-table NOT rebuilt (exit 1)", "⚠  goal-tree NOT rebuilt (exit 124)",
           "⚠  goals NOT rebuilt (exit -1)"])
     case("the report names the commit it was built from when it knows one, and nothing when it does not",
          [report(res, 1.0, _SHA)[0].endswith(f" — built from origin/master {_SHA[:12]}"),
@@ -1035,14 +1035,16 @@ def _self_test_cases() -> int:
     case("⛔ --hook that cannot run at all still exits 0, and SAYS the pages may be stale",
          (rc, "may be STALE" in said), (0, True))
     case("--all exits 1 when a page did not rebuild (it is a command, not a hook)",
-         drive(["--all"], "", pages={"dashboard": "gen-dashboard.py"})[0], 1)
+         drive(["--all"], "", pages={"backlog-table": "gen-backlog-page.py"})[0], 1)
     with contextlib.redirect_stdout(io.StringIO()) as _quiet:
         rc_ok = main(["--all"], stdin=io.StringIO(""), run=lambda s, t, w: (0, ""), pages={"x": "x.py"},
                      tree_for=fake_tree)
     case("--all exits 0 when every page rebuilt, and reports it",
          (rc_ok, _quiet.getvalue().startswith("↻ pages rebuilt: 1 of 1")), (0, True))
-    case("the real page table is the server's REGENERABLE, goal tree and dashboard included",
-         {"goal-tree", "dashboard", "backlog-table", "features", "goals"} <= set(regenerable()), True)
+    # ⟳ dashboard-retire S3: the dashboard page retired, so the real table is the four live pages.
+    case("the real page table is the server's REGENERABLE: the four live pages, the retired dashboard absent",
+         (sorted(regenerable()), "dashboard" in regenerable()),
+         (["backlog-table", "features", "goal-tree", "goals"], False))
 
     # ── backlog #408: every page is built from a FRESH origin/master, never this checkout ──────────────
     tmp = pathlib.Path(os.path.realpath(tempfile.mkdtemp(prefix="regen-fresh-")))
@@ -1506,9 +1508,9 @@ def _self_test_cases() -> int:
     case("⭐ review r1 C2: --page --after-edit SAYS the page shows origin/master and the edit appears after it merges",
          (rc_ae, said_ae.splitlines()[-1]),
          (0, f"↻ goals: pages show origin/master {_SHA[:12]}; this edit appears after it merges"))
-    rc_pf, said_pf = drive(["--page", "dashboard"], "")
+    rc_pf, said_pf = drive(["--page", "backlog-table"], "")
     case("--page returns a failed generator's exit code and says NOT rebuilt",
-         (rc_pf, said_pf.splitlines()[-1].startswith("⚠  dashboard NOT rebuilt (exit 1)")), (1, True))
+         (rc_pf, said_pf.splitlines()[-1].startswith("⚠  backlog-table NOT rebuilt (exit 1)")), (1, True))
     rc_u, said_u = drive(["--page", "gen-goals-page.py"], "", run=rec)
     case("--page refuses a name that is not a page KEY, naming the legal set",
          (rc_u, "goal-tree" in said_u), (2, True))

@@ -13,16 +13,21 @@ DIFFERENCE:
   * `brief-compose.py` supplies 11 tokens on `html` inside `@media (prefers-color-scheme: dark)`.
     That media query keys off the OS, and a page's own `data-theme` toggle cannot override it.
     Its own comment states the intent: the shim "only supplies what nobody supplied."
-  * `gen-dashboard.py`'s `light_vars` declares 17 tokens — but 8 of the shim's 11 are not among
-    them. For those 8, nobody supplied a light value, so the shim's DARK value stays in force
+  * `gen-dashboard.py`'s `light_vars` (the page, since deleted) declared 17 tokens — but 8 of the
+    shim's 11 were not among them. For those 8, nobody supplied a light value, so the shim's DARK value stays in force
     while the page is in light mode.
 
 The shim is behaving exactly as documented. It is correctly answering a question the light
 palette never asked.
 
+THE SUBJECT MOVED, 2026-11-26 (dashboard-retire S3, Task 14): the dashboard page was retired, so
+the light palette checked is now the goal tree's `:root[data-theme="light"]{…}` block
+(`scripts/goal-tree.py`), read by `css_block_tokens`. The history above is the dashboard's, kept
+because it is why the check exists.
+
 WHY A NEW CHECK, WHEN TWO CONTRAST GUARDS ALREADY EXIST
 -------------------------------------------------------
-They cannot see this, and that is structural rather than an oversight:
+They could not see this (the two guards below were the dashboard's, as measured then), and that was structural rather than an oversight:
 
   * `gen-dashboard.py:1290` `LINK_SURFACES = ("--bg", "--panel", "--need-bg", "--err-bg")` — no
     `--card`, so the failing `(--ink, --card)` pair is never enumerated.
@@ -56,7 +61,7 @@ FAILS IF
     find a palette has NOT passed; from a green tick the two are indistinguishable.
   * any of the three ratchet directions above trips -> exit 1.
 
-  --self-test  runs 12 cases against synthetic sources, including that each failure mode is
+  --self-test  runs 14 cases against synthetic sources, including that each failure mode is
                DETECTED and that a bare mention of a token name does not count as a declaration.
 """
 from __future__ import annotations
@@ -67,7 +72,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SHIM_SRC = ROOT / "scripts" / "brief-compose.py"
-PAGE_SRC = ROOT / "scripts" / "gen-dashboard.py"
+# The page whose light palette is checked: the goal tree, which absorbed the asks when the
+# dashboard was retired (dashboard-retire S3, Task 14) and is composed through `brief-compose.py`,
+# so the shim applies to it. It declares its light palette as a CSS block, not a Python tuple.
+PAGE_SRC = ROOT / "scripts" / "goal-tree.py"
+LIGHT_SELECTOR = ':root[data-theme="light"]'
 
 # MEASURED 2026-09-01 by diffing the two token sets, then confirmed live in Chrome: each of these
 # reads byte-identical in both themes on the served page. Backlog #79 removes them; every removal
@@ -105,15 +114,16 @@ def shim_tokens(text: str) -> set[str]:
     return set(re.findall(r"(--[\w-]+)\s*:", m.group(1)))
 
 
-def palette_tokens(text: str, name: str) -> set[str]:
-    """Tokens declared by a `name = ( … )` palette assignment.
+def css_block_tokens(text: str, selector: str) -> set[str]:
+    """Tokens declared inside the FIRST `selector{ … }` block of `text`.
 
-    Matches `--x:` with a colon, so a token merely NAMED in a comment or an f-string lookup is not
-    counted as declared. RAISES when the assignment is absent.
+    Matches `--x:` with a colon, so a token merely NAMED (a `var(--x)` lookup, a comment) is not
+    counted as declared. RAISES when no block matches — a page with no light block has not
+    covered anything, and an empty set would let the check pass about nothing.
     """
-    m = re.search(rf"^\s*{re.escape(name)}\s*=\s*\((.*?)\)\s*$", text, re.S | re.M)
+    m = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", text)
     if not m:
-        raise ValueError(f"no `{name} = ( … )` assignment found")
+        raise ValueError(f"no `{selector}{{ … }}` block found")
     return set(re.findall(r"(--[\w-]+)\s*:", m.group(1)))
 
 
@@ -151,7 +161,7 @@ def main() -> int:
 
     try:
         shim = shim_tokens(SHIM_SRC.read_text())
-        light = palette_tokens(PAGE_SRC.read_text(), "light_vars")
+        light = css_block_tokens(PAGE_SRC.read_text(), LIGHT_SELECTOR)
     except ValueError as exc:
         print(f"CANNOT RUN — {exc}. Treat this as NOT RUN.", file=sys.stderr)
         return 2
@@ -175,8 +185,11 @@ _SHIM = """
   }
 """
 _LIGHT = """
-    light_vars = (
-        "--ink:#1b2024;--rule:#d8d6ce;--bg:#f7f8fa;")
+:root{--ink:#000;--card:#111;}
+@media(prefers-color-scheme:dark){:root{--ink:#fff;--card:#222;}}
+:root[data-theme="light"]{--ink:#1b2024;--rule:#d8d6ce;
+      --bg:#f7f8fa;}
+:root[data-theme="light"]{--card:#fff;}
 """
 
 
@@ -214,19 +227,25 @@ def _self_test_body() -> int:
 
     # ── parsing ──
     check("shim tokens parsed", shim_tokens(_SHIM), {"--rule", "--bg", "--card", "--ink"})
-    check("light tokens parsed", palette_tokens(_LIGHT, "light_vars"),
+    # Only the FIRST block under the selector, and only that selector: the unscoped `:root` and the
+    # OS-dark `:root` around it declare `--card`, and so does a second light block, and none counts.
+    check("light tokens parsed", css_block_tokens(_LIGHT, LIGHT_SELECTOR),
           {"--ink", "--rule", "--bg"})
+    check("the selector chooses the block: `:root` reads the unscoped one",
+          css_block_tokens(_LIGHT, ":root"), {"--ink", "--card"})
     check("`@media(` with no space still parses",
           shim_tokens("@media(prefers-color-scheme:dark){html{--card:#111;}}"), {"--card"})
     check("missing shim block RAISES, never returns empty",
           raises(lambda: shim_tokens("html { --card: #111 }")), True)
-    check("missing palette assignment RAISES",
-          raises(lambda: palette_tokens("dark_vars = ('--ink:#fff')", "light_vars")), True)
-    # A token named in a comment is not a declaration. Counting mentions would let a page "cover"
-    # a token by talking about it — the exact shape of a check that measures the wrong thing.
+    check("a page with no light block RAISES, never returns empty",
+          raises(lambda: css_block_tokens(":root{--ink:#fff}", LIGHT_SELECTOR)), True)
+    check("an empty page RAISES (CANNOT RUN, not a pass)",
+          raises(lambda: css_block_tokens("", LIGHT_SELECTOR)), True)
+    # A token named without a colon is not a declaration. Counting mentions would let a page
+    # "cover" a token by talking about it — the exact shape of a check that measures the wrong thing.
     check("a token mentioned without a colon is not declared",
-          palette_tokens('light_vars = (\n  "# --card is handled elsewhere" "--ink:#000;")',
-                         "light_vars"), {"--ink"})
+          css_block_tokens(':root[data-theme="light"]{--ink:#000;color:var(--card)}',
+                           LIGHT_SELECTOR), {"--ink"})
 
     # ── the three ratchet directions ──
     shim = {"--card", "--ink-soft", "--ink", "--bg"}

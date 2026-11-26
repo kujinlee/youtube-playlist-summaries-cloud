@@ -589,7 +589,7 @@ POPULATION_CASES: list[tuple[str, list[str], list[str]]] = [
     ("a guard wired into NOTHING is still in the population — that is the whole point",
      ["scripts/check-orphan.py"], ["scripts/check-orphan.py"]),
     ("a non-guard script is not in the population",
-     ["scripts/gen-dashboard.py", "scripts/check-a.py"], ["scripts/check-a.py"]),
+     ["scripts/gen-backlog-page.py", "scripts/check-a.py"], ["scripts/check-a.py"]),
 ]
 
 

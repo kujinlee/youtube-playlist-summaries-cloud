@@ -570,5 +570,31 @@
     "expect": [
       "property: every generator renderer in GENERATOR_RENDERERS is read from its own module"
     ]
+  },
+  {
+    "name": "rule 2 G1: a dashboard-route fragment href is not a key href",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "/features#|/dash(?:board)#|/goal-tree#",
+        "/features#|/goal-tree#"
+      ]
+    ],
+    "expect": [
+      "rule 2 G1: a dashboard href joined from partial constants is found"
+    ]
+  },
+  {
+    "name": "rule 2 G1: a file naming only the dashboard route is not parsed",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "\"/features\", \"/dash\" + \"board\", \"/goal-tree\"",
+        "\"/features\", \"/goal-tree\""
+      ]
+    ],
+    "expect": [
+      "rule 2 G1: a dashboard href joined by + is found"
+    ]
   }
 ]

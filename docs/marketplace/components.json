@@ -146,18 +146,6 @@
       ]
     },
     {
-      "id": "gen-dashboard",
-      "effort": 3,
-      "roles": [
-        "entry-point"
-      ],
-      "phase": "1",
-      "package": "comprehensibility",
-      "files": [
-        "scripts/gen-dashboard.py"
-      ]
-    },
-    {
       "id": "gen-goals-page",
       "effort": 3,
       "roles": [
@@ -328,18 +316,6 @@
       "package": "comprehensibility",
       "files": [
         ".claude/hooks/regen-backlog-page.sh"
-      ]
-    },
-    {
-      "id": "hook-regen-dashboard",
-      "effort": 3,
-      "roles": [
-        "entry-point"
-      ],
-      "phase": "1",
-      "package": "comprehensibility",
-      "files": [
-        ".claude/hooks/regen-dashboard.sh"
       ]
     },
     {

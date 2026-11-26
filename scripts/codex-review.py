@@ -1957,7 +1957,7 @@ def _self_test_body() -> int:
     # under review — which is how a warning becomes noise and stops being read.
     chk("a brief DESCRIBING code that writes a report does NOT trip the passive pattern",
         prompt_demands_a_file(
-            "The report will be written to disk by gen-dashboard.py; check the sandbox holds."),
+            "The report will be written to disk by gen-goals-page.py; check the sandbox holds."),
         None)
     chk("the Codex brief's OWN prohibition does not trip it — it forbids writing, not demands it",
         prompt_demands_a_file(

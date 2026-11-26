@@ -111,7 +111,7 @@ Measured on this branch 2026-11-24 by locating each entry's anchor in its enclos
 
 | Manifest | Today | After S1 | After S2 | After S3 |
 |---|---|---|---|---|
-| gate (`check-dashboard-entry.json`, renamed `check-ask-store.json` in S2) | 44 | **62** = 44 + 18 new (Tasks 1–2) | **63** = 62 − 9 deleted + 10 new (Tasks 9, 12) | **45** = 63 − 18 deleted (Task 16) |
+| gate (`check-dashboard-entry.json`, renamed `check-ask-store.json` in S2) | 44 | **62** = 44 + 18 new (Tasks 1–2) | **63** = 62 − 9 deleted + 10 new (Tasks 9, 12) | ~~45~~ **54**, measured: 98 − 14 − 30 (Task 16; see the ⟳ note below) |
 | `gen-dashboard.json` | 70 | 70 | **72** = 70 + 2 (Task 7) | **0** — file deleted (Task 15) |
 | `page_chrome.json` | 114 | 114 | 114 | **117** = 114 + 3 new (Task 14) |
 
@@ -125,7 +125,13 @@ Measured on this branch 2026-11-24 by locating each entry's anchor in its enclos
   `header_error` 3, `BLOCK` 1, `_first_sentence` 1); 6 anchor in the cutover code Task 16 deletes
   (`cutover_problem` 1, the `--cutover-check` REF read 1, `store_edit_prs` 4 — Task 12's mutations expecting
   12.8, 12.12 and 12.13–12.16).
-- **The 45 after S3** = the 23 below + Tasks 1–2's 18 + L1's 4 (expecting 12.2, 12.3, 12.5, 12.10).
+- ⟳ **S3 r1 F6 — the After S3 figure is 54, not 45, and here is the whole difference (manifest lengths read at
+  each commit):** S1 landed 68, not 62; S2 merged at 71 (`e1b13c15`, PR #640), not 63; backlog #730 (PR #643,
+  `829660eb`) added 27 for `post_cutover`, so master held 98 when S3 began. S3 Task 16 then deleted 14 with the
+  grammar and the base-blob check (98 → 84, `cabe665d`) and 30 of the 31 that anchored in `store_edit_prs` and
+  `post_cutover` (84 → 54, `05c13928`); the 31st anchors in the staying `_ask_tree` and was kept, retargeted.
+  The arithmetic below is the plan's original derivation, kept as history.
+- **The 45 after S3** (original derivation) = the 23 below + Tasks 1–2's 18 + L1's 4 (expecting 12.2, 12.3, 12.5, 12.10).
 - **23 stay throughout:** `fence_closes` 4, `fenced_lines` 1, `exemption_reason` 4, `_declaration_reason` 4,
   `_indented` 1, `EMPH` 1, `decisions` 2, `decision_errors` 3, plus the 3 re-bound `collect` / `main` entries.
 - ⚠ **A measured refinement of the spec's "the contrast mutations MOVE":** of the 70 generator entries
@@ -826,7 +832,11 @@ worktree of `origin/master` built and removed inside that one call, so no prior 
 local edit blocking a checkout) can collide with it. **A step that needs more than that is code for the gate
 file, with a case and a mutation — never more shell here.**
 
-- [ ] **Step 1: the whole cutover check, one command.**
+- [x] **Step 1: the whole cutover check, one command.** ✅ 2026-11-26 08:37: `post-cutover rc 0` on master `829660eb` (CI run 45858774949).
+
+  ⟳ **HISTORY — this command no longer exists (S3 r1 F3).** `--post-cutover` was deleted by S3 Task 16 after
+  this one run answered rc 0 (backlog #739, closed as moot). The command and the text below describe what
+  was run once, on 2026-11-26; do not run it — on master after S3 the flag is refused.
 
 ```bash
 git fetch -q origin +refs/heads/master:refs/remotes/origin/master && d="$(mktemp -d)/pc" && git worktree add -q --detach "$d" origin/master && (cd "$d" && python3 scripts/check-ask-store.py --post-cutover); git worktree remove --force "$d"
@@ -872,10 +882,10 @@ git fetch -q origin +refs/heads/master:refs/remotes/origin/master && d="$(mktemp
 
   When several checks refuse, rc is the first in the order 1, 5, 6, 7, 8; a CANNOT RUN is reported as rc 2
   only when nothing refused, and every line is printed either way.
-- [ ] **Step 2: For each PR Step 1 named (rc 6)**, in its worktree: merge master (`git merge --no-edit
+- [x] **Step 2: For each PR Step 1 named (rc 6)** (✅ none owed: Step 1 returned rc 0, so no PR was named), in its worktree: merge master (`git merge --no-edit
   origin/master`), restore the store (`git checkout origin/master -- docs/dashboard-entries.md`), re-ask any
   question its dropped entry held as a file in `docs/asks/`, commit, push. Its CI now runs under L1.
-- [ ] **Step 3: Re-run Step 1's command.** Expected: rc 0 (rc 8 means only that the CI run on the fetched
+- [x] **Step 3: Re-run Step 1's command.** ✅ rc 0 on the first run (2026-11-26 08:37, run 45858774949 on `829660eb`), so no re-run was owed. Expected: rc 0 (rc 8 means only that the CI run on the fetched
   head commit has not completed yet — re-run).
 
 **FAILS IF:** Step 1 returns 0 while the store at `origin/master` differs from the pinned bytes, while an
@@ -1007,20 +1017,26 @@ that are call arguments, path-literal operands, list or tuple elements, and dict
 | 15.14 | a script that does not parse is CANNOT RUN | a syntax error in a scanned file | rc 2 |
 | 15.15 | `/dashboard` answers with the archive record | `explainer-serve` case: `retired_target("dashboard.html")` | `/dashboard-archive`, not a 404 |
 
-- [ ] **Step 1: Write the scanner's seeded cases** 15.1–15.14. **Step 2: Run** its `--self-test` (FAIL).
-- [ ] **Step 3: Implement `scan`.** **Step 4: Run** the self-test (PASS), then the LIVE scan. Expected: rc 1,
+- [x] **Step 1: Write the scanner's seeded cases** 15.1–15.14. **Step 2: Run** its `--self-test` (FAIL).
+- [x] **Step 3: Implement `scan`.** **Step 4: Run** the self-test (PASS), then the LIVE scan. Expected: rc 1,
   listing exactly what this task and Task 16 must still remove — save that list; it is the work list.
-- [ ] **Step 5: Write 15.15** and the page-set cases (four regenerable pages; three CI pages), red.
-- [ ] **Step 6: Delete and repoint** every item of the Files list. Write the archive record page.
-- [ ] **Step 7: Run** `explainer-serve.py`, `check-page-links.py`, `page_markup.py`, `regen-pages.py`,
+- [x] **Step 5: Write 15.15** and the page-set cases (four regenerable pages; three CI pages), red.
+- [x] **Step 6: Delete and repoint** every item of the Files list. Write the archive record page.
+- [x] **Step 7: Run** `explainer-serve.py`, `check-page-links.py`, `page_markup.py`, `regen-pages.py`,
   `brief-compose.py`, `goal-tree.py`, `check-shipping-sets.py`, `check-review-decision.py`,
   `gen-goals-page.py` self-tests, `check-page-links.py --build --ci`,
   the closure check, and the LIVE scan. Expected: all rc 0 except the scan, which lists only gate-file items
   Task 16 owns.
-- [ ] **Step 8: Mutations for the scanner** — one per category that drops that category's visitor, each
-  expecting its seeded case (8 entries), plus "prose is scanned" expecting 15.11. Pin `9`. Resolve
+- [x] **Step 8: Mutations for the scanner** — one per category that drops that category's visitor, each
+  expecting its seeded case (8 entries), plus "prose is scanned" expecting 15.11. Pin `9`. ⟳ S3 r1 F1: K8 was redesigned as a token scan
+  (the enumerating scanner missed ~13 forms), and its manifest is 15 entries, one per rule; the pin is `15`. Resolve
   (the deleted manifest must leave no pin behind: `python3 scripts/check-plan-code.py --self-test`).
-- [ ] **Step 9: Commit.**
+- [x] **Step 9: Commit.**
+
+**K8's scope (⟳ S3 r2 G3):** it refuses what it SCANS — non-prose Python string constants and non-comment lines
+of the `TEXT_SUFFIXES` kinds — and names what it does not: docstrings (even one read as `__doc__`), whole-line
+comments, `.md`/`.html`/Makefiles and other unlisted kinds, and the five exempt prefixes, each because it holds
+history, not code. A `/dashboard#` href joined at run time is check-page-links rule 2's (G1).
 
 **FAILS IF (K8):** a seeded reference of any category passes the scan; or the prose seed or the
 `RETIRED_FILES` seed fails it; or the live scan is green while a load, hook, run line, argv, manifest field,
@@ -1042,14 +1058,19 @@ page-table key or literal link still names a retired thing.
 |---|---|---|---|
 | 16.1 | the gate still reads asks, decisions and waivers | the staying cases of Tasks 1, 2, 9, 12 | unchanged counts |
 | 16.2 | L1 is still green | live run, no `--base` | rc 0 — nothing in S3 touches the store |
-| 16.3 | the live scan is green | `python3 scripts/check-retired-references.py` | rc 0 |
+| 16.3 | the live scan is green over what it scans (its docstring names what it does not) | `python3 scripts/check-retired-references.py` | rc 0 |
 | 16.4 | NEEDS YOU still shows an ask | Task 3's 3.2–3.6 | green |
 
-- [ ] **Step 1:** delete the grammar and its cases; run `check-ask-store.py`, `check-merge-ready.py`,
+- [x] **Step 1:** delete the grammar and its cases; run `check-ask-store.py`, `check-merge-ready.py`,
   `check-review-recorded.py`, `goal-tree.py`, `compaction-state.py` self-tests. Expected: rc 0.
 - [ ] **Step 2:** manifests, pins, the anchor resolve, `--only scripts/check-ask-store.py` sweep.
-- [ ] **Step 3:** add the CI step; run the live scan (16.3) and every `python3 scripts/check-*` docs step.
-- [ ] **Step 4:** `python3 scripts/check-ratchet-contract.py` — the new guard has a `--self-test`, no
+  ⟳ S3 build: manifest 98 → 54, pin repinned. 14 left with the grammar and the base-blob check; 31 with
+  `store_edit_prs` and `post_cutover` (backlog #730), deleted too after Task 13's one run answered rc 0 (the plan's
+  45 predates #730). One of the 31 anchors in the staying `_ask_tree` and is kept, retargeted to a new case. The
+  anchor resolve passes. The local `--only` sweep was NOT RUN (54 × ~9 s exceeds the 265 s call bound); the PR's
+  CI shards run it, so this box stays unticked until they are green.
+- [x] **Step 3:** add the CI step; run the live scan (16.3) and every `python3 scripts/check-*` docs step.
+- [x] **Step 4:** `python3 scripts/check-ratchet-contract.py` — the new guard has a `--self-test`, no
   fail-open handler and a caller. Commit.
 
 **FAILS IF:** the live K8 scan is red; or L1 is red; or any self-test in Step 1 changes a staying case's

@@ -1425,9 +1425,14 @@ corrections slice above.
       card A).** Spec `docs/superpowers/specs/2026-11-24-dashboard-retire-design.md` (PR #633), plan
       `docs/superpowers/plans/2026-11-24-dashboard-retire.md` (PR #636), three slices. **S1 merged** (PR #638,
       `f9979fa0`): asks move to `docs/asks/`, read by one reader, checked by the PR gate and shown on the goal tree's
-      NEEDS YOU. **S2 built** (branch `dashboard-retire-s2`): the gate is `check-ask-store.py`, the per-PR entry rule
+      NEEDS YOU. **S2 merged** (PR #640, `e1b13c15`): the gate is `check-ask-store.py`, the per-PR entry rule
       and `NO-ENTRY:` are gone, the goal tree and the compaction snapshot read only `docs/asks/`, the skill is
-      `needs-you`, and the old store is frozen to pinned bytes. S3 deletes the page. The history
+      `needs-you`, and the old store is frozen to pinned bytes. **S3 built** (branch `dashboard-retire-s3`, draft
+      PR #644): `gen-dashboard.py` and its page are deleted, a frozen `docs/explainers/dashboard-archive.html`
+      stands in, `check-retired-references.py` refuses a reference to them in every scanned string or line (not
+      docstrings, whole-line comments, `.md`/`.html`/Makefiles or its exempt prefixes), and the entry grammar and
+      the one-shot cutover tooling (the base-blob check, `--list-store-prs` and `--post-cutover`, backlog #730,
+      which ran once and answered rc 0) leave `check-ask-store.py`; backlog #739 is closed as moot. The history
       above stands as recorded. **FAILS IF** after S3 a merged PR still needs a dashboard entry.
 
 - [x] **Plan rounds 1–4 — dual adversarial.** All four folded in (v2→v6). Round 1's halves overlapped

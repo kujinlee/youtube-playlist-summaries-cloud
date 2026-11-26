@@ -6,13 +6,13 @@ still at HEAD and only grew at its end. Both read HEAD's tree through git (`git 
 the directory listing, so an untracked scratch file cannot fail the gate.
 
 It also owns the declaration parser `exemption_reason`, which `check-review-recorded.py` and
-`check-merge-ready.py` call for `NO-REVIEW:`. `--post-cutover` is plan Task 13 (the cutover after
-S2's squash) as one command with one exit status per cause (backlog #730; see `post_cutover`). ⟳ dashboard-retire S2: the per-PR dashboard-entry rule
-(R1) and its `NO-ENTRY:` waiver are retired; the entry grammar the page still imports stays until S3.
+`check-merge-ready.py` call for `NO-REVIEW:`. ⟳ dashboard-retire S2: the per-PR dashboard-entry rule
+(R1) and its `NO-ENTRY:` waiver are retired. ⟳ S3: the entry grammar and parser left with the page that imported
+them, and so did the one-shot cutover tooling — `--cutover-check`, `--list-store-prs` and `--post-cutover`
+(plan Task 13, backlog #730), whose single run on master `829660eb` answered `post-cutover rc 0`.
 """
 from __future__ import annotations
 import argparse
-import datetime as _dt
 import errno
 import os
 import pathlib
@@ -22,134 +22,16 @@ import stat
 import subprocess
 import sys
 
-# INSTANCE, NOT CLASS — the reason this is here. The sibling `gen-dashboard.py`
-# shipped a fix for exactly this (its `git`/`gh` calls inherited the caller's
+# INSTANCE, NOT CLASS — the reason this is here. The sibling `gen-dashboard.py` (deleted
+# in dashboard-retire S3) shipped a fix for exactly this (its `git`/`gh` calls inherited the caller's
 # cwd, so a run from anywhere else reported an empty project as a healthy one).
 # Review found the same shape here, in the same feature, in the script
-# `gen-dashboard.py` imports at load time. It happens to work only because CI
+# `gen-dashboard.py` imported at load time. It happens to work only because CI
 # invokes it from the repo root — "works because of where the caller stood" is
 # the property that fix set out to delete, so it is deleted in both places.
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 NO_REVIEW = "NO-REVIEW:"     # the one declaration marker left; R1's `NO-ENTRY:` retired in S2
-
-# ─── the entry-header grammar — ONE definition, imported by scripts/gen-dashboard.py
-HEADER = re.compile(r"^## (\S+)(.*)$")
-FLAG = re.compile(r"\[(needs-you|heads-up|resolved:\s*[^\]]*)\]")
-# What starts an entry block in the store — and read the name as block-ATTEMPT,
-# not as a transcription of spec §6.2's "Block start" row. §6.2 defines a block
-# start as `## ` at column 0 WITH the space; this is deliberately WIDER, and the
-# gap is the parser's recovery policy, not the grammar. Saying so because the
-# earlier framing implied exact §6.2 compliance and it does not have it.
-#
-# Where it is FAITHFUL to §6.2 is the part that was broken: row "`##` inside
-# detail" reads "only column-0 `## ` splits blocks", so a `###` line is body
-# markup. `(?!#)` is that rule's teeth.
-#
-# ⟳ MOVED HERE 2026-09-01. It lived in `gen-dashboard.py` as `^##\s*\S`, which
-# MATCHES `### Worth knowing` — `\s*` takes zero characters and `\S` takes the
-# third `#`. Two hand-written near-copies of one grammar, and they diverged on
-# exactly the input the gate's `(?!#)` was written to exclude. Measured cost, end
-# to end: a level-3 heading in a body did not merely add a "could not parse" card,
-# it SPLIT the entry — the prose after it was swallowed into the orphan block and
-# the entry above rendered TRUNCATED, losing content with no error next to it.
-#
-# It stays PERMISSIVE about the space (`##Nospace` still starts a block) on
-# purpose: that is a near-miss header, and swallowing one into the previous
-# entry's body is the silent failure this whole gate exists to prevent. `###` is
-# different in kind — it is markup an author writes deliberately, not a typo.
-BLOCK = re.compile(r"^##(?!#)\s*\S")
-
-
-def valid_date(s: str) -> bool:
-    try:
-        _dt.date.fromisoformat(s)
-        return True
-    except ValueError:
-        return False
-
-
-def header_error(line: str) -> str | None:
-    """None if `line` is a well-formed entry header, else why not.
-
-    Shared by the parser and the ratchet so they cannot disagree about header
-    SYNTAX.
-
-    ⛔ THIS DOCSTRING USED TO CLAIM THEY "CANNOT DISAGREE ABOUT WHAT A HEADER IS".
-    That was FALSE, and it was false before the sentence was written. The page's
-    `parse_entries` has a SECOND pass this function has never had: it checks that a
-    `[resolved: <id>]` names an entry that actually EXISTS. Codex's retrospective
-    review r1 found the empty-payload instance; measuring the class found FIVE
-    headers the gate accepted and the page rejected, of which THREE
-    (`[resolved: nonsense]`, `[resolved: 2026-09-01/99]`, `[resolved: 2026-13-45/1]`)
-    are REFERENTIAL and cannot be judged from a header alone at all — they are
-    properties of the whole store.
-
-    So the honest contract is: SYNTAX agrees here; REFERENCE cannot be judged from a
-    header alone and never will be, because it is a property of the whole store.
-
-    ⟳ CORRECTED 2026-09-06 — backlog #82 SHIPPED (`3ec912f6`), and this paragraph
-    outlived it by hours. It used to end: *"Until then a wrong-but-existing
-    `[resolved:]` id reaches the reader as 'could not parse this entry' on the page
-    rather than as a refusal at the gate."* **That is now false.**
-    `added_reference_errors` reads BASE and HEAD of the store and `verdict` refuses on
-    it ABOVE the exemption short-circuit, so the gate rejects a dangling reference.
-    MEASURED the same day on `[resolved: 2026-09-01/99]`: `header_error` → `None`,
-    `added_reference_errors` → `['… names no entry in this file']`, `verdict` → `rc=1`.
-
-    ⚠ NOTE THE SHAPE, because it is the one this file keeps producing. The old
-    sentence was TRUE ABOUT THIS FUNCTION — `header_error` still returns `None` on a
-    dangling reference and still cannot do otherwise — and STALE ABOUT THE FILE, where
-    a sibling now refuses it. A docstring that scopes its claim to its own function but
-    states a consequence for the whole gate will go stale every time a sibling grows.
-    **State what this function decides; name the sibling that decides the rest.**
-
-    So: reference is decided by `parse_entries` (which sets the entry's error), not here. This
-    function is the SYNTAX half, and remains shared with the page's parser.
-    ⟳ dashboard-retire S2: `added_reference_errors` and `verdict` were deleted with the per-PR
-    entry ratchet, so NO gate refuses a dangling reference any more; the page shows it until S3.
-
-    The SYNTAX half is still worth the shared definition, and was earned the hard
-    way: v2.2 claimed the two already agreed; measured, they diverged on five
-    shapes — `## D-foo`, `## D.`, a typo'd flag, an unknown-flag payload, and a
-    title on the header line — each of which the ratchet waved through while the
-    page rendered it under "Could not parse this entry".
-    """
-    m = HEADER.match(line)
-    if m is None:
-        return "header must be '## ' then a YYYY-MM-DD date — check the space after the ##"
-    if not valid_date(m.group(1)):
-        return f"not a real calendar date: {m.group(1)!r}"
-    leftover = FLAG.sub("", m.group(2)).strip()
-    if leftover:
-        return f"unrecognised text in header: {leftover!r}"
-    # ⚠ THE BOTH-FLAGS REFUSAL LIVES HERE, not in the generator's parser.
-    # `FLAG.sub` above strips every flag, so a header carrying BOTH would otherwise
-    # leave no `leftover` and this function would return None — the ratchet accepting
-    # a header the page renders as "could not parse". That is the sixth divergence
-    # this function's docstring exists to prevent, and the ask-choices spec §9 names
-    # it as a falsifier. Both callers read the verdict from here.
-    flags = FLAG.findall(m.group(2))
-    # ⟳ 2026-09-01, Codex retrospective review r1 (High). `resolved:\s*[^\]]*`
-    # permits a payload of ZERO characters, so `[resolved:]` was a well-formed
-    # header HERE and "with no entry id after it" on the PAGE. Written as a named
-    # check rather than a tighter regex for three reasons: the message can then be
-    # WORD-FOR-WORD the page's, so the two do not merely both refuse but say the
-    # same thing; the rule is legible; and `strip()` is a SEPARATE decision from
-    # emptiness, so each can be mutated on its own line.
-    # ⚠ `+` alone would NOT have been enough: `\s*` matches nothing and `[^\]]+`
-    # then eats the spaces of `[resolved:   ]`. Measured in a temp copy first.
-    for f in flags:
-        if not f.startswith("resolved:"):
-            continue
-        payload = f[len("resolved:"):].strip()
-        if not payload:
-            return "[resolved:] with no entry id after it"
-    if "needs-you" in flags and "heads-up" in flags:
-        return ("an entry is [needs-you] OR [heads-up], never both — "
-                "a heads-up asks for nothing")
-    return None
-
 
 FENCE = re.compile(r"^(?P<ind> {0,3})(?P<ch>`{3,}|~{3,})")
 
@@ -185,11 +67,11 @@ def _declaration_reason(s: str, marker: str = NO_REVIEW) -> str | None:
     are inert, and that emphasis is NOT one of them — cost measured escapes to get right; a sibling
     gate re-deriving them would drift, which is the divergence this file has already paid for twice.
     ⟳ dashboard-retire S2: the default is `NO-REVIEW:`, the one marker left. `gen-dashboard.py`, whose
-    exemption list is historical `NO-ENTRY:` declarations, passes that marker explicitly until S3.
+    exemption list was historical `NO-ENTRY:` declarations, passed that marker until S3 deleted it.
 
     ONE definition, called from BOTH of `exemption_reason`'s scan points. They had
     the marker test written out twice and would have needed the same fix twice —
-    the divergence `header_error`'s docstring exists to prevent, in the same file.
+    two hand-written copies of one rule, which is how this file's copies drifted before.
 
     ⚠ EMPHASIS IS NOT AN INERT CONTEXT, and that is the whole distinction. Fenced,
     indented, commented and blockquoted all mean *not deliberate*, so they do not
@@ -252,6 +134,10 @@ def fenced_lines(text: str) -> set[int]:
     in this very file — the `startswith` note beside `_inert_lines` records a real
     decision parsing as inert because of it.
 
+    ⟳ dashboard-retire S3: `parse_entries` is deleted with the page; its history is
+    kept below because the measured reason still explains why the two scanners differ.
+    Its caller today is `answered` (the `## Answer` rule).
+
     ⛔ WHY `parse_entries` GETS THIS AND NOT `_inert_lines`, WHICH IT WOULD BE
     CHEAPER TO REUSE. `_inert_lines` deliberately OVER-approximates: any line
     carrying `<!--` with no `-->` opens a comment that runs to the end of input.
@@ -300,8 +186,9 @@ def fenced_lines(text: str) -> set[int]:
 def exemption_reason(pr_body: str, marker: str = NO_REVIEW) -> str | None:
     """The reason after a line-leading declaration marker, or None.
 
-    ONE DEFINITION, shared with scripts/gen-dashboard.py, so the page displays exactly
-    the exemptions the gate granted (spec §7). An exemption must be DELIBERATE,
+    ONE DEFINITION, imported by `check-merge-ready.py` (`_dashboard_gate`), which asks it about
+    each marker rather than re-deriving the rule. (⟳ dashboard-retire S3: its other consumer, the
+    deleted `gen-dashboard.py`, displayed the exemptions the gate granted, spec §7.) An exemption must be DELIBERATE,
     so anything a Markdown reader treats as inert does not count: fenced code
     (closed only by its own character), indented code (4+ columns, tabs
     included), HTML comments across lines, and blockquotes.
@@ -722,8 +609,8 @@ def ask_store_problems(base: str | None, root: pathlib.Path,
     readers downstream treat a missing store as NOT READ, so the gate must not let it merge.
 
     F1 runs only when `base` is given: the asks at `git merge-base <base> HEAD` against HEAD's.
-    `rev` is the tree A1 reads (HEAD unless given): `--post-cutover` passes `origin/master`, so A1
-    judges master's COMMITTED asks and no worktree can flip it (backlog #730 L1).
+    `rev` is the tree A1 reads (HEAD unless given). Its one other caller, `--post-cutover`
+    (backlog #730), was deleted in dashboard-retire S3; `main` passes HEAD.
     """
     problems: list[str] = []
     try:
@@ -746,15 +633,13 @@ def ask_store_problems(base: str | None, root: pathlib.Path,
 # ⛔ A new ask is a file in `docs/asks/`. Nothing reads `docs/dashboard-entries.md` for asks any more,
 # so an entry appended there would be an ask nobody sees: L1 refuses ANY change to it, on a pull
 # request and without `--base` (`main` runs it in both modes). The two HEAD pins describe the frozen
-# bytes; `LEGACY_STORE_BASE_BLOB` is master's store at pin time, read only by `--cutover-check` (12.8,
-# 12.12), because after the squash master no longer holds it. ⚠ The base pin, `cutover_problem`,
-# `PR_LIST_LIMIT` and `store_edit_prs` are the cutover's and leave in S3 (plan Task 16).
+# bytes. ⟳ S3 (plan Task 16): the base pin `LEGACY_STORE_BASE_BLOB`, `cutover_problem` and `--cutover-check`
+# were the cutover's and are deleted, and so are `PR_LIST_LIMIT`, `store_edit_prs` and `post_cutover`
+# (backlog #730): Task 13 ran once and answered rc 0, so nothing is left for them to judge.
 LEGACY_STORE_REL = "docs/dashboard-entries.md"
 LEGACY_STORE_BLOB = "befaa1cb22cfb272bc803e23b4b990ae812ebc27"        # HEAD: git hash-object
 LEGACY_STORE_SHA256 = "c6e110df45ac06328b14356d276b03a47f505737b18ab0901065acdc4b1ef97f"
-LEGACY_STORE_BASE_BLOB = "a9553580e41bac27f7710f28c7dee1f4216e98f0"   # master f9979fa0, before the header edit
 L1_DIFF_LINES = 40
-PR_LIST_LIMIT = 1000
 
 
 def legacy_store_problem(head_blob: str | None, head_bytes: bytes | None,
@@ -776,15 +661,6 @@ def legacy_store_problem(head_blob: str | None, head_bytes: bytes | None,
     return (f"{LEGACY_STORE_REL} changed — it is FROZEN; a new ask is a file in {ASKS_REL}/. What differs:\n"
             f"{what}\n  See it whole with:\n    git diff {LEGACY_STORE_BLOB} {head_blob}\n"
             f"  Restore the frozen bytes with:\n    {restore}")
-
-
-def cutover_problem(ref_blob: str | None) -> str | None:
-    """PURE. `None` when the store at the revision read is `LEGACY_STORE_BASE_BLOB` (master's at pin time)."""
-    if ref_blob == LEGACY_STORE_BASE_BLOB:
-        return None
-    return (f"master's {LEGACY_STORE_REL} moved since the pin: it is {ref_blob or 'missing'}, the pin is "
-            f"{LEGACY_STORE_BASE_BLOB}. Merge master in, re-run C1 (gen-dashboard.py --assert-no-open-asks), "
-            f"and re-pin all three constants (LEGACY_STORE_BASE_BLOB, LEGACY_STORE_BLOB, LEGACY_STORE_SHA256).")
 
 
 def _store_blob(root: pathlib.Path, rev: str, rel: str = LEGACY_STORE_REL) -> str | None:
@@ -816,432 +692,6 @@ def legacy_store_check(root: pathlib.Path, rev: str = "HEAD") -> tuple[str | Non
     return legacy_store_problem(blob, data, _diff), None
 
 
-def store_edit_prs() -> tuple[list[str], str | None]:
-    """Every OPEN pull request whose diff names the store: `(lines, err)`. Any failed `gh` call, an
-    unparseable list, or a list of exactly PR_LIST_LIMIT entries (there may be more) is `err`."""
-    import json as _json
-
-    def _gh(*args: str):
-        try:
-            return subprocess.run(["gh", *args], cwd=ROOT, capture_output=True, text=True, timeout=60)
-        except (OSError, subprocess.SubprocessError) as exc:
-            return exc
-    r = _gh("pr", "list", "--state", "open", "--limit", str(PR_LIST_LIMIT), "--json", "number,headRefName")
-    if isinstance(r, Exception) or r.returncode != 0:
-        why = r if isinstance(r, Exception) else f"exited {r.returncode}: {(r.stderr or '').strip()[:200]}"
-        return [], f"gh pr list did not answer ({why})"
-    try:
-        prs = [(int(p["number"]), str(p["headRefName"])) for p in _json.loads(r.stdout or "")]
-    except (ValueError, TypeError, KeyError) as exc:
-        return [], f"gh pr list's answer did not parse ({exc})"
-    if len(prs) >= PR_LIST_LIMIT:
-        return [], f"gh pr list returned {len(prs)} PRs, the limit of {PR_LIST_LIMIT} — there may be more"
-    lines: list[str] = []
-    for n, branch in prs:
-        d = _gh("pr", "diff", str(n), "--name-only")
-        if isinstance(d, Exception) or d.returncode != 0:
-            return lines, f"gh pr diff {n} did not answer — PR {n} ({branch}) was not checked"
-        names = (d.stdout or "").splitlines()
-        if not names:                       # r1 F4: every PR diff names a file; an empty answer is no answer
-            return lines, f"gh pr diff {n} answered with no files — PR {n} ({branch}) was not checked"
-        if LEGACY_STORE_REL in names:
-            lines.append(f"PR {n} ({branch}) edits the frozen store")
-    return lines, None
-
-
-# ── --post-cutover: plan Task 13 as ONE tested entry point (backlog #730) ──────────────────────
-#
-# ⛔ WHY THIS IS CODE AND NOT SHELL. Task 13 runs once, on master, after S2's squash, and nothing
-# reviewed its shell before it ran: r5 found its exit 1 meant three things (a `cd` into a missing
-# worktree, a `checkout --detach` blocked by a local edit, L1's "the store moved" — and A1 a fourth),
-# and "any clean worktree serves" was asserted, never checked (a dirty `check-ask-store.py` would have
-# judged master). The Phase 6 falsifier routed it here: ONE command whose exit status is the answer.
-#
-# ⛔ IT READS ONLY COMMITTED OBJECTS (r5 L1). It fetches `<remote> <branch>` itself and reads the store,
-# the asks and the gate file at `<remote>/<branch>` through `git ls-tree` / `git cat-file` — never
-# `git checkout`, so no worktree is moved, a dirty one cannot block it, and none can change its verdict.
-# The one thing a worktree CAN still supply is the script running this check, so it compares its OWN
-# bytes' blob id to master's `scripts/check-ask-store.py` and refuses (rc 4) when they differ: a local
-# copy, edited or stale, never judges master.
-#
-# The exit status, one cause each (r5 M1). When several checks refuse, the FIRST in `order` (in
-# `post_cutover`) is the status, and every check's line is still printed:
-PC_OK = 0               # master's store is the pinned bytes, A1 passes, no PR edits it, and the CI run on the
-                        # fetched head commit is completed and green (r2 G1-G3)
-PC_STORE_MOVED = 1      # L1 refused master's committed store: it moved off LEGACY_STORE_BLOB/SHA256
-PC_CANNOT_RUN = 2       # git or gh could not answer — treat as NOT CHECKED, never a pass
-PC_NOT_MERGED = 3       # master has no gate file, or one without L1: S2 is not merged
-PC_STALE_JUDGE = 4      # the running script is not master's blob — run it from a checkout of master
-PC_ASKS_REFUSED = 5     # A1 refused master's committed docs/asks/
-PC_STORE_PRS = 6        # an open pull request still edits the frozen store (plan Task 13 Step 1, the former Step 2)
-PC_CI_RED = 7           # the CI run on the fetched head commit: the run, its `verify` job or one of the two
-                        # steps is not `success` (failure, cancelled, skipped, absent)
-PC_CI_NOT_YET = 8       # the CI run on the fetched head commit is not listed yet, or not completed — wait, re-run
-POST_CUTOVER_REMOTE = "origin"
-POST_CUTOVER_BRANCH = "master"
-GATE_REL = "scripts/check-ask-store.py"
-GATE_L1_MARKER = b"\nLEGACY_STORE_SHA256 = "     # a gate file without it predates S2's L1
-CI_WORKFLOW = "CI"
-CI_JOB = "verify"                               # ci.yml's job holding both steps (r1 F6: never merged across jobs)
-CI_SELFTEST_STEP = "check-ask-store self-test"
-CI_L1_STEP = "ask store (push)"
-RUN_LIST_LIMIT = 20
-
-
-def _gate_at(root: pathlib.Path, rev: str) -> tuple[str | None, bytes]:
-    """`(blob, bytes)` of `GATE_REL` at `rev`; `(None, b"")` when `rev` has no gate file. Raises
-    `_AskGitError` when git cannot answer (an unknown commit included)."""
-    blob = _store_blob(root, rev, GATE_REL)
-    return blob, (_ask_git(root, "cat-file", "blob", blob) if blob else b"")
-
-
-def _master_ci(root: pathlib.Path, branch: str, head: str) -> tuple[int | None, str, str | None]:
-    """Plan Task 13 Step 1, the former Step 5 (r5 L2): `(code, line, err)` over the push-event run of
-    `CI_WORKFLOW` on `branch` whose `headSha` IS `head` — the fetched `<remote>/<branch>` commit that
-    `post_cutover` judges everywhere else. ⛔ r2 G1: a run on ANY other commit does not answer, though it carry
-    S2's gate (S2's own squash does): no run on `head` in the newest RUN_LIST_LIMIT is PC_CI_NOT_YET. ⛔ r2 G3:
-    runs are listed whatever their status, and the newest run on `head` is judged; one not yet `completed` is
-    PC_CI_NOT_YET — never hidden behind an older completed one. ⛔ r2 G2 + r1 F1/F6: it is green only when the
-    run's `conclusion`, `CI_JOB`'s `conclusion`, and that job's `CI_SELFTEST_STEP` AND `CI_L1_STEP` are all
-    `success`; anything else (`failure`, `cancelled`, `skipped`, an absent job or step) is PC_CI_RED — in
-    `verify` an earlier red step marks every later one `skipped`, which is what a red run looks like. Any
-    failed or unparseable `gh` answer is `err`."""
-    import json as _json
-
-    def _gh(*args: str):
-        try:
-            return subprocess.run(["gh", *args], cwd=root, capture_output=True, text=True, timeout=60)
-        except (OSError, subprocess.SubprocessError) as exc:
-            return exc
-
-    def _why(r) -> str:
-        return str(r) if isinstance(r, Exception) else f"exited {r.returncode}: {(r.stderr or '').strip()[:200]}"
-    r = _gh("run", "list", "--workflow", CI_WORKFLOW, "--branch", branch, "--event", "push",
-            "--limit", str(RUN_LIST_LIMIT), "--json", "databaseId,headSha,status,conclusion")
-    if isinstance(r, Exception) or r.returncode != 0:
-        return None, "", f"gh run list did not answer ({_why(r)})"
-    try:
-        runs = [(int(x["databaseId"]), str(x["headSha"]), str(x["status"]), x["conclusion"] or "")
-                for x in _json.loads(r.stdout or "")]
-    except (ValueError, TypeError, KeyError) as exc:
-        return None, "", f"gh run list's answer did not parse ({exc})"
-    mine = [x for x in runs if x[1] == head]                # gh lists the newest first
-    if not mine:
-        return (PC_CI_NOT_YET, f"none of the newest {len(runs)} push-event runs of {CI_WORKFLOW} on {branch} "
-                f"is on its head {head[:8]} — that commit's run is not listed yet; wait for it and re-run", None)
-    rid, sha, status, conclusion = mine[0]
-    if status != "completed":
-        return (PC_CI_NOT_YET, f"CI run {rid} ({sha[:8]}) on {branch} is `{status}`, not completed — wait "
-                f"for it to complete and re-run", None)
-    v = _gh("run", "view", str(rid), "--json", "jobs")
-    if isinstance(v, Exception) or v.returncode != 0:
-        return None, "", f"gh run view {rid} did not answer ({_why(v)})"
-    try:
-        verify = [j for j in _json.loads(v.stdout or "")["jobs"]
-                  if j.get("name") == CI_JOB]
-        steps = {s["name"]: s.get("conclusion") for j in verify for s in j.get("steps") or []}
-        job = (verify[0].get("conclusion") or "") if verify else ""
-    except (ValueError, TypeError, KeyError, AttributeError) as exc:
-        return None, "", f"gh run view {rid}'s answer did not parse ({exc})"
-    got = ", ".join(f"`{n}` {steps.get(n) or 'absent'}" for n in (CI_SELFTEST_STEP, CI_L1_STEP))
-    steps_green = all(steps.get(n) == "success" for n in (CI_SELFTEST_STEP, CI_L1_STEP))
-    green = conclusion == "success" and job == "success" and steps_green
-    return ((None if green else PC_CI_RED), f"CI run {rid} ({sha[:8]}) on {branch}: run {conclusion or 'none'}, "
-            f"job `{CI_JOB}` {job or 'absent'}: {got}", None)
-
-
-def post_cutover(root: pathlib.Path, remote: str, branch: str) -> tuple[int, list[str]]:
-    """Plan Task 13, whole: `(rc, lines)`, rc one of the PC_* codes above. Fetches `<remote> <branch>`,
-    then judges `<remote>/<branch>` from committed objects only: is S2's gate there (3), is it the script
-    running now (4), L1 over its store (1), A1 over its asks (5), open PRs editing the store (6, through
-    `store_edit_prs`), and the CI run on the fetched head commit (7, 8). Any git/gh failure is 2."""
-    ref = f"{remote}/{branch}"
-    try:
-        # r1 F5: an explicit refspec, so `<remote>/<branch>` moves whatever `remote.<remote>.fetch` says
-        _ask_git(root, "fetch", "-q", remote, f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}")
-        gate, gate_bytes = _gate_at(root, ref)
-        head = _ask_git(root, "rev-parse", "--verify", f"{ref}^{{commit}}").decode("utf-8").strip()
-    except _AskGitError as exc:
-        return PC_CANNOT_RUN, [f"CANNOT RUN — {ref} could not be fetched or read — {exc}. "
-                               f"Treat this as NOT CHECKED."]
-    if GATE_L1_MARKER not in gate_bytes:
-        return PC_NOT_MERGED, [f"REFUSED — S2 IS NOT MERGED: {ref} has "
-                               + ("no " + GATE_REL if not gate else f"a {GATE_REL} without L1")
-                               + ". Nothing else was checked."]
-    running = _git_blob_id(pathlib.Path(__file__).read_bytes())
-    if running != gate:
-        return PC_STALE_JUDGE, [f"REFUSED — the running {GATE_REL} is blob {running}, {ref}'s is {gate}: a "
-                                f"local copy must not judge master. Run this from a checkout of {ref} whose "
-                                f"{GATE_REL} is unmodified. Nothing else was checked."]
-    lines: list[str] = []
-    refused: list[int] = []
-    errs: list[str] = []
-
-    def _record(code: int, problem, err, ok_line: str) -> None:
-        if err:
-            errs.append(err)
-            lines.append(f"CANNOT RUN — {err}")
-        elif problem:
-            refused.append(code)
-            lines.append(f"REFUSED (rc {code}) — {problem}")
-        else:
-            lines.append(f"ok — {ok_line}")
-    _record(PC_STORE_MOVED, *legacy_store_check(root, ref), f"L1: {ref}'s store is the pinned bytes")
-    a1, a1_err = ask_store_problems(None, root, ref)
-    _record(PC_ASKS_REFUSED, ("A1: " + "; ".join(a1)) if a1 else None, a1_err,
-            f"A1: {ref}'s {ASKS_REL}/ is well-formed")
-    prs, prs_err = store_edit_prs()
-    _record(PC_STORE_PRS, ("open PRs still edit the frozen store (merge master in, restore it): "
-                           + "; ".join(prs)) if prs else None, prs_err,
-            "no open pull request edits the frozen store")
-    ci_code, ci_line, ci_err = _master_ci(root, branch, head)
-    _record(ci_code or PC_OK, ci_line if ci_code else None, ci_err, ci_line)
-    order = (PC_STORE_MOVED, PC_ASKS_REFUSED, PC_STORE_PRS, PC_CI_RED, PC_CI_NOT_YET)
-    rc = next((c for c in order if c in refused), PC_CANNOT_RUN if errs else PC_OK)
-    lines.append(f"post-cutover rc {rc}" + (" — Treat this as NOT CHECKED." if rc == PC_CANNOT_RUN else ""))
-    return rc, lines
-
-
-
-
-
-# ── the entry MODEL, relocated from gen-dashboard.py (backlog #82) ──────────────────────────
-#
-# ⛔ IT LIVES HERE BECAUSE A REFERENCE IS A PROPERTY OF THE WHOLE STORE. `header_error` judges
-# one header line and can never decide whether `[resolved: 2026-09-01/99]` NAMES anything;
-# `added_entry_problems` only ever sees a PATCH. Measured 2026-09-01: three `[resolved: …]`
-# shapes returned `header_error -> None` while the page set "names no entry in this file".
-#
-# ⛔ AND THE OBVIOUS FIX WAS FORBIDDEN. Having the gate import `gen-dashboard.parse_entries`
-# inverts `_gate_module`'s written rule — *a GATE must not import the thing it guards*. A lazy
-# import works technically, which is exactly why the rule is honoured deliberately here rather
-# than discovered later. The arrow still points page -> gate; the page imports these back.
-#
-# ⚠ `_first_sentence` TRAVELS WITH THE PARSER and that is not scope creep: it has two callers
-# doing different jobs — setting an entry's title, and re-deriving the headline while rendering
-# — and the render's own comment says it works by RE-APPLYING this function rather than by
-# prefix-matching. A second copy would break the identity that comment depends on.
-
-TECH_MARKER = "<!--tech-->"
-SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
-TITLE_FLOOR = 12
-ABBREVIATIONS = {"dr", "mr", "mrs", "ms", "prof", "st", "vs", "etc", "approx",
-                 "fig", "no", "inc", "ltd", "jan", "feb", "mar", "apr", "jun",
-                 "jul", "aug", "sep", "sept", "oct", "nov", "dec"}
-
-def _ends_in_abbreviation(text: str) -> bool:
-    """Is this "sentence" actually stopping mid-thought at an abbreviation?
-
-    ⚠ Review REPRODUCED: "Met with Dr. Smith about the release." produced the
-    headline "Met with Dr." — and because the fold DROPS the headline, the lede
-    then opened with the orphaned word "Smith". Splitting on `[.!?]\\s` treats
-    every full stop as a sentence end, and `TITLE_FLOOR` did not save it because
-    "Met with Dr." is exactly 12 characters.
-
-    A trailing token that is short, or that contains an internal dot ("e.g."),
-    is an abbreviation rather than a sentence end. Conservative by design: a
-    false positive merely makes the headline one sentence longer, while a false
-    negative cuts a word off the front of the reader's prose.
-    """
-    last = text.rstrip()[:-1].rsplit(" ", 1)[-1] if text.rstrip().endswith((".", "!", "?")) else ""
-    if not last:
-        return False
-    return "." in last or last.lower().strip(".") in ABBREVIATIONS
-
-
-# ── inline markup is NOT implemented here any more. Backlog #71. ───────────────────────────────
-#
-# What stood between here and `_prose`: `INLINE_URL`, `ENTITY_TAIL`, `_trim_url_tail`, `_inline`
-# and `_inline_scan` — about 100 lines, and the best inline renderer in this repo. It was rewritten
-# as ONE left-to-right scan in PR #178 over four review rounds, precisely because stacked `re.sub`
-# passes are blind to each other's output.
-#
-# ⚠ THAT FIX WAS UNREACHABLE FROM THE OTHER THREE GENERATORS, and all three still had the defect it
-# cured. Measured 2026-08-30 on the rendered backlog page: 6 crossed tag spans and 10 cases of
-# markup emitted inside a code span, including this repo's own `select count(*) filter (…)`
-# arriving as `select count(<em>) filter …`. The renderer was never the problem; having no seam to
-# reach it through was.
-#
-# It now lives in `scripts/page_markup.py`, widened to the union of what the four supported, and
-# the mutations that guarded it moved with it — so they defend four pages instead of one.
-
-def _first_sentence(text: str) -> str:
-    """The headline for an entry: its first SENTENCE, not its first LINE.
-
-    It was `the first non-blank line`, which is a physical artefact of where the
-    author's editor wrapped — so a heading read "...It is one page at" and
-    stopped. A sentence is a unit of meaning; a line is a unit of typing.
-
-    Short leading fragments ("Decided:", "Fixed.") are joined onto the next
-    sentence rather than standing alone as the whole headline.
-
-    ⟳ 2026-08-31: NOT TRUNCATED, and that is the point. There was a `cap`
-    (TITLE_CAP = 110) plus a repair, `_close_orphan_markup`, for the `**bold**`
-    spans the cut orphaned. Both are gone. MEASURED on the live page: the cap cut
-    the title while `_prose` dropped the whole first sentence, so the words
-    between the cut and the full stop were displayed NOWHERE. Clipping is now CSS
-    (`text-overflow: ellipsis`), which keeps the text in the DOM where
-    find-in-page and an opened card can both reach it. The orphan repair existed
-    only to heal a wound the cap inflicted; removing the cut removed the class.
-    """
-    text = " ".join(text.split())
-    if not text:
-        return ""
-    out = ""
-    for part in SENTENCE_END.split(text):
-        out = f"{out} {part}".strip() if out else part
-        if len(out) >= TITLE_FLOOR and not _ends_in_abbreviation(out):
-            break
-    return out
-
-
-
-def parse_entries(text: str) -> list[dict]:
-    """Split on column-0 '##' only. A malformed block is RETURNED with an
-    error, never dropped — the page must show it in place (spec §6.2).
-
-    `resolves` is a LIST: spec §6.2 says flags are "zero or more", and a
-    second [resolved:] used to overwrite the first silently, clearing one item
-    and leaving the other open forever with error=None.
-
-    ⟳ 2026-09-01, backlog #84: "column-0 '##'" was not the whole rule and the spec
-    always said so. §6.2's `##`-inside-detail row reads "indent OR FENCE it to
-    include one literally". The indent half worked by accident — `BLOCK` is
-    `^`-anchored, so an indented line never matched — and the FENCE half had no
-    implementation at all. MEASURED before the fix, on this parser:
-
-        "## 2026-08-28\\nTitle.\\n```\\n## 2026-08-29\\nfenced\\n```\\nTail prose.\\n"
-        -> 2 entries, ids ['2026-08-28/1', '2026-08-29/1'], errors 0, tail LOST
-
-    Note `errors 0`. The phantom is not a visible "could not parse" card — it is a
-    fully VALID entry that renders like any other, holding a real id. Ids are
-    positional and a standing `[resolved: <id>]` binds by id, so one fenced example
-    renumbers every later entry that day and can rebind a resolution to the wrong
-    item. Silent, on the section whose whole job is telling the reader what needs
-    them.
-
-    ⛔ THE FIX ADDS A CONSUMER, NOT AN IMPLEMENTATION. The obvious repair — track
-    fence state right here — would have been the THIRD hand-written fence scanner in
-    this feature: `check-dashboard-entry.py` already carries one in
-    `exemption_reason` and one in `_inert_lines`, and those two have already drifted
-    once (see the `startswith` comment beside `_inert_lines`). PR #205 merged hours
-    earlier for exactly this shape, one seam over. So the parser asks the gate what a
-    Markdown reader treats as literal, and holds no opinion of its own.
-
-    ⚠ IT ASKS FOR FENCES, NOT FOR "INERT". The first cut of this fix reused the
-    gate's `_inert_lines`, which is the cheaper reuse and looked equivalent — a probe
-    over blockquote, indent and fence shapes showed the only line it newly suppressed
-    was the fenced header. That probe had NO HTML COMMENT in it. Run against the real
-    store, `_inert_lines` DELETED entry 2026-09-01/16: an earlier entry mentions
-    `<!--` in prose while explaining this very machinery, `_inert_lines` treats an
-    unclosed `<!--` as a comment running to end-of-input, and every entry after it
-    vanished (47 -> 46). Over-approximating fails SAFE for "is there an ask here?"
-    and DANGEROUS for "does a block start here?". A measurement is only as good as
-    its corpus.
-    """
-    blocks: list[list[str]] = []
-    fenced = fenced_lines(text)
-    for i, line in enumerate(text.split("\n")):
-        if BLOCK.match(line) and i not in fenced:
-            blocks.append([line])
-        elif blocks:
-            blocks[-1].append(line)
-    out: list[dict] = []
-    seen: dict[str, int] = {}
-    for b in blocks:
-        entry = {"raw": "\n".join(b), "error": None, "needs_you": False,
-                 "heads_up": False, "resolves": [],
-                 "date": None, "ordinal": 0, "id": None, "would_be_id": None,
-                 "title": "", "plain": "", "tech": None}
-        err = header_error(b[0])
-        # ⛔ THE RAW HEADER LINE, recorded for `added_reference_errors` (deleted in S2; code review r1,
-        # Blocking + High). It is what an error is ABOUT, and it is stable under the
-        # positional renumbering that appending an entry causes — which neither the id nor
-        # the body-derived title is.
-        entry["header"] = b[0]
-        m = HEADER.match(b[0])
-        if m is not None and valid_date(m.group(1)):
-            # The ordinal is claimed as soon as the DATE is known good — BEFORE
-            # the flag check — so repairing a typo'd flag does not renumber the
-            # entries after it and silently rebind a standing [resolved:].
-            date = m.group(1)
-            seen[date] = seen.get(date, 0) + 1
-            entry["date"], entry["ordinal"] = date, seen[date]
-            entry["id"] = f"{date}/{seen[date]}"
-            for f in FLAG.findall(m.group(2)):
-                # The `else` here used to assume every non-`needs-you` flag
-                # contains a colon — true only by accident of FLAG's current
-                # alternation, in a file whose header says it OWNS the grammar
-                # and invites you to extend it there. Measured: adding one
-                # alternative to FLAG left the gate's suite fully green and made
-                # `f.split(":", 1)[1]` raise IndexError on EVERY render, so the
-                # page stopped existing rather than degrading one entry. The
-                # generator imported the grammar's symbols but not its meaning.
-                if f == "needs-you":
-                    entry["needs_you"] = True
-                elif f == "heads-up":
-                    # ⚠ Added WITH the FLAG alternative in check-dashboard-entry.py,
-                    # never after it. The comment above records the measured cost of
-                    # doing otherwise: the gate's suite stayed fully green while
-                    # `f.split(":", 1)[1]` raised IndexError on EVERY render.
-                    entry["heads_up"] = True
-                elif f.startswith("resolved:"):
-                    entry["resolves"].append(f.split(":", 1)[1].strip())
-                else:
-                    entry["error"] = f"unrecognised flag [{f}]"
-        elif m is not None:
-            # A block whose DATE is malformed never gets an id, so pass 2 could
-            # not distinguish "no such entry" from "that entry exists and is
-            # unparseable" — and sent the author hunting for a typo that was not
-            # there. A bad date is the CANONICAL malformed entry (§6.2's own
-            # example, and the one control D exercises), so it was precisely the
-            # case the earlier three-way fix did not reach.
-            raw_date = m.group(1)
-            seen[raw_date] = seen.get(raw_date, 0) + 1
-            entry["would_be_id"] = f"{raw_date}/{seen[raw_date]}"
-        if err:
-            entry["error"] = err
-            out.append(entry)
-            continue
-        body = b[1:]
-        cut = next((i for i, l in enumerate(body) if l.strip() == TECH_MARKER), None)
-        plain_lines = body if cut is None else body[:cut]
-        entry["tech"] = None if cut is None else "\n".join(body[cut + 1:]).strip()
-        # The FIRST PARAGRAPH, reduced to its first sentence — not the first
-        # physical line. The blank-line test below is unchanged: an entry whose
-        # first line is blank still has no title and is still an error.
-        _first_para: list[str] = []
-        for _l in plain_lines:
-            if _l.strip():
-                _first_para.append(_l.strip())
-            elif _first_para:
-                break
-        entry["title"] = _first_sentence(" ".join(_first_para))
-        entry["plain"] = "\n".join(plain_lines).strip()
-        if not entry["title"]:
-            entry["error"] = "no title line — the first line after the header is blank"
-        out.append(entry)
-
-    # PASS 2 — every [resolved:] must name an entry that exists.
-    ids = {e["id"] for e in out if e["id"] and not e["error"]}
-    for e in out:
-        if e["error"]:
-            continue
-        for r in e["resolves"]:
-            if r in ids:
-                continue
-            if not r:
-                e["error"] = "[resolved:] with no entry id after it"
-            elif any(o["id"] == r or o["would_be_id"] == r for o in out):
-                e["error"] = (f"[resolved: {r}] names an entry that could not be "
-                              f"parsed — fix that entry first")
-            else:
-                e["error"] = f"[resolved: {r}] names no entry in this file"
-            break
-    return out
-
-
-
 def _git_blob_id(data: bytes) -> str:
     """git's blob id for `data` — `sha1("blob <n>\\0" + data)` — computed without a repository."""
     import hashlib
@@ -1266,18 +716,9 @@ def _self_test_body() -> int:
             fail += 1
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
 
-    # ⟳ dashboard-retire S2: the entry ratchet (R1) and its cases are gone. What stays: the BLOCK
-    # rule the page's parser uses, the fence scanner, `exemption_reason` (now `NO-REVIEW:` by
-    # default), the decision grammar and the parser.
-    # ⚠ `###` is a sub-heading inside a body, NOT a block start — spec §6.2 says only column-0
-    # `## ` splits blocks (quoted at `BLOCK`).
-    # ⛔ THE DIVERGENCE ITSELF, asserted on the OBJECT both sides now share rather
-    # than on either side's behaviour. The case above passed for months while the
-    # page disagreed, because nothing compared them — that is the whole defect, and
-    # a test of one half could not have caught it.
-    case("the block-start rule excludes a sub-heading", bool(BLOCK.match("### Worth knowing")), False)
-    case("...and still starts on a real header", bool(BLOCK.match("## 2026-08-28")), True)
-    case("...and still catches a missing space", bool(BLOCK.match("##2026-08-28")), True)
+    # ⟳ dashboard-retire S2: the entry ratchet (R1) and its cases are gone. ⟳ S3: so are the BLOCK rule
+    # and the header grammar, with the page's parser. What stays: the fence scanner, `exemption_reason`
+    # (`NO-REVIEW:` by default), the decision grammar and the ask store.
 
     # ─── backlog #84: fenced_lines, the scanner the PAGE's parser asks ───────
     case("a fence opens and closes", sorted(fenced_lines("a\n```\nx\n```\nb\n")), [1, 2, 3])
@@ -1347,8 +788,8 @@ def _self_test_body() -> int:
     case("9.2 a fenced NO-REVIEW: does not exempt", exemption_reason(fenced), None)
     case("9.3 NO-REVIEW: is the default marker", exemption_reason("NO-REVIEW: docs only"), "docs only")
     case("9.4 a NO-ENTRY: declaration is no longer read", exemption_reason("NO-ENTRY: x"), None)
-    # ⛔ THE `marker` PARAMETER IS STILL LOAD-BEARING: gen-dashboard passes `NO-ENTRY:` to list the
-    # historical waivers. With `NO-REVIEW:` the default, only a NON-default marker shows it is read.
+    # ⛔ THE `marker` PARAMETER IS STILL LOAD-BEARING: check-merge-ready passes each marker it reads
+    # (gen-dashboard, which passed `NO-ENTRY:`, was deleted in S3). With `NO-REVIEW:` the default, only a NON-default marker shows it is read.
     case("a non-default marker is honoured", exemption_reason("X-MARK: y", "X-MARK:"), "y")
     # ─── the marker survives EMPHASIS ──────────────────────────────────────
     # ⛔ MEASURED 2026-09-01: `**NO-REVIEW:** typo fix` returned None, so a PR body
@@ -1426,30 +867,6 @@ def _self_test_body() -> int:
     ]:
         case(f"exemption_reason — {name}", exemption_reason(body), want)
 
-    # ─── the header grammar, shared with the parser ───
-    case("heads-up header_error is None", header_error("## 2026-08-28 [heads-up]"), None)
-    # The gate and the page must not disagree about this header (ask-choices spec §9).
-    case("both flags is a header error",
-         header_error("## 2026-08-28 [needs-you] [heads-up]") is not None, True)
-
-    # ─── the empty resolved payload — Codex retrospective review r1, High ────
-    # ⛔ FOUND BY THE ADVERSARIAL HALF. Not by this suite, not by 150 mutations,
-    # not by any gate — all of which measure this code against itself.
-    # `[resolved:]` passed `header_error`, so `added_entry_problems` returned []
-    # and an ENTRY-ONLY branch got `(0, "no tracked files changed outside the
-    # exempt paths")` while `gen-dashboard.parse_entries` set
-    # "[resolved:] with no entry id after it". Gate green, page broken — the exact
-    # class backlog #78 set out to close, surviving inside #78's own fix.
-    case("an empty resolved payload is refused",
-         header_error("## 2026-09-01 [resolved:]") is not None, True)
-    # ⚠ WHITESPACE-ONLY IS A SECOND SHAPE, and the obvious one-character `*`->`+`
-    # fix does NOT close it: `\s*` matches nothing and `[^\]]+` then eats the
-    # spaces. MEASURED in a temp copy before this fix was written.
-    case("a whitespace-only resolved payload is refused",
-         header_error("## 2026-09-01 [resolved:   ]") is not None, True)
-    case("a real resolved payload still passes",
-         header_error("## 2026-09-01 [resolved: 2026-08-31/1]"), None)
-
     # ── the decision grammar (ask-choices spec §4) ──
     GOOD = ("An ask.\n\n**Decide:** Merge it\n- merge PR #181 [recommended]\n"
             "- hold it and tell me what to change\n")
@@ -1508,63 +925,6 @@ def _self_test_body() -> int:
     case("a tab-indented continuation does not drop options",
          len(decisions("**Decide:** Q\n- merge PR #1\n\t- it is green\n"
                        "- hold it\n")[0]["options"]), 2)
-    case("header_error names the space", "space" in (header_error("##2026-08-28") or ""), True)
-    case("header_error is None on a good header", header_error("## 2026-08-28 [needs-you]"), None)
-
-
-    case("F1b the `nonsense` resolved shape passes header_error (the parser judges it)",
-         header_error("## 2026-08-30 [resolved: nonsense]"), None)
-
-
-    # ── the relocated parser's own behaviours (backlog #82) ────────────────────────────────
-    # ⛔ THESE EXIST BECAUSE THE MUTATION HARNESS RUNS ONLY THE MUTATED FILE'S SUITE
-    # (`check-plan-code.py:852`, `run_suite(d, fname)`). `parse_entries` moved here, so the
-    # eight mutations that guard it moved with it — and a mutation whose killing case sits in
-    # ANOTHER file's suite reads as a survivor. gen-dashboard keeps its own copies as
-    # CONSUMER coverage: the page asserting the imported function still behaves is a
-    # different question from the owner asserting its own rules.
-    _R2 = parse_entries("## 2026-08-26\nOne.\n## 2026-08-27\nTwo.\n"
-                        "## 2026-08-28 [resolved: 2026-08-26/1] [resolved: 2026-08-27/1]\nBoth.\n")
-    case("two [resolved:] flags are both kept", len(_R2[2]["resolves"]), 2)
-    case("resolve of an unknown id is an error",
-         "names no entry" in (parse_entries("## 2026-08-29 [resolved: 1999-01-01/9]\nX.\n")[0]["error"] or ""),
-         True)
-    # ⛔ THE ORDINAL IS CLAIMED WHEN THE DATE IS GOOD, BEFORE the flag check — so repairing a
-    # typo'd flag must not renumber the entries after it and silently rebind a standing
-    # [resolved:]. A bad-DATE block is the wrong fixture: it never claims an ordinal at all.
-    _ORD = parse_entries("## 2026-08-28 [needs-yo]\nTypo'd flag.\n## 2026-08-28\nReal one.\n")
-    case("a malformed block still consumes its ordinal",
-         [e["id"] for e in _ORD], ["2026-08-28/1", "2026-08-28/2"])
-    # ⚠ FLAG IS WIDENED ON PURPOSE. The else-branch below is unreachable while FLAG matches
-    # exactly the three flags the if/elif chain handles — so a case using a plain `[blocked]`
-    # tests the HEADER's unrecognised-text path instead and cannot kill the flag-loop
-    # mutations. This simulates the real hazard: the gate learns a new flag and the loop does
-    # not. The case above asserts the widening is real, so it cannot pass for the wrong reason.
-    _wide = re.compile(r"\[(needs-you|heads-up|blocked|resolved:\s*[^\]]*)\]")
-    case("the unknown-flag fixture really extends the gate's own pattern",
-         (_wide.pattern != FLAG.pattern, _wide.findall("[blocked]")), (True, ["blocked"]))
-    _real_flag = globals()["FLAG"]
-    globals()["FLAG"] = _wide
-    try:
-        _UNK = parse_entries("## 2026-08-29 [blocked]\nA thing.\n")
-    except Exception as exc:                 # the defect: an unknown flag would crash the page
-        _UNK = [{"error": f"RAISED {type(exc).__name__}"}]
-    finally:
-        globals()["FLAG"] = _real_flag
-    case("an unrecognised flag is an ERROR, not a crash", bool(_UNK[0]["error"]), True)
-    case("...and says WHICH text it could not recognise",
-         "unrecognised flag" in (_UNK[0]["error"] or ""), True)
-    _LONG = ("A first sentence deliberately far longer than any truncation cap this parser has "
-             "ever applied to a headline, so a reinstated cap would visibly cut its tail off.")
-    case("a long first sentence reaches the reader WHOLE",
-         parse_entries(f"## 2026-08-28\n{_LONG}\nMore.\n")[0]["title"], _LONG)
-    _FEN = parse_entries("## 2026-08-28\nTitle.\n```\n## 2026-08-29\nfenced\n```\nAfter.\n")
-    case("a fenced header does not split the entry", len(_FEN), 1)
-    case("...and mints no phantom id", [e["id"] for e in _FEN], ["2026-08-28/1"])
-    _INERT = parse_entries("## 2026-08-28\nI mention `<!--` in prose.\n## 2026-08-29\nB.\n")
-    case("prose mentioning <!-- does not swallow the NEXT entry", len(_INERT), 2)
-    case("...and both keep their ids", [e["id"] for e in _INERT],
-         ["2026-08-28/1", "2026-08-29/1"])
 
     # ─── read_asks (dashboard-retire plan, Task 1) — each world is its own temp directory ──────
     import tempfile as _tf
@@ -1691,14 +1051,14 @@ def _self_test_body() -> int:
          f1_problems({"2026-11-25-a.md": b"# Which form?"},
                      {"2026-11-25-a.md": b"# Which form?\n## Answer\na\n"}), [])
 
-    # ── dashboard-retire S2, Task 12: L1 and the cutover check, PURE (12.1–12.6, 12.8, 12.9) ──
+    # ── dashboard-retire S2, Task 12: L1, PURE (12.1–12.6; 12.8 and 12.9 left with the cutover check in S3) ──
     # The pins are patched to a FIXTURE store here; 12.11 (impure) holds the committed pins to the real file.
     import hashlib as _hl
     _fs = b"# Dashboard entries\n\n## 2026-10-01\nOld entry one.\n"
     _fb = _git_blob_id(_fs)
     _gp = globals()
-    _pins = {k: _gp[k] for k in ("LEGACY_STORE_BLOB", "LEGACY_STORE_SHA256", "LEGACY_STORE_BASE_BLOB")}
-    _gp.update(LEGACY_STORE_BLOB=_fb, LEGACY_STORE_SHA256=_hl.sha256(_fs).hexdigest(), LEGACY_STORE_BASE_BLOB=_fb)
+    _pins = {k: _gp[k] for k in ("LEGACY_STORE_BLOB", "LEGACY_STORE_SHA256")}
+    _gp.update(LEGACY_STORE_BLOB=_fb, LEGACY_STORE_SHA256=_hl.sha256(_fs).hexdigest())
     try:
         case("12.1 the pinned bytes pass L1", legacy_store_problem(_fb, _fs, lambda a, b: ""), None)
         _m2 = legacy_store_problem(None, None, lambda a, b: "")
@@ -1717,10 +1077,6 @@ def _self_test_body() -> int:
               set(re.findall(r"\b[0-9a-f]{40}\b", _m3)) <= {_fb, _ab}), (True, True))
         case("12.6 a pinned blob absent from the clone is still refused, saying the diff could not be printed",
              "the diff could not be printed" in (legacy_store_problem(_ab, _app, lambda a, b: None) or ""), True)
-        _m8 = cutover_problem("0" * 40) or ""
-        case("12.8 master's store moved since the pin is refused, naming both blobs",
-             ("0" * 40 in _m8, _fb in _m8, "re-pin" in _m8), (True, True, True))
-        case("12.9 master's store unchanged passes the cutover check", cutover_problem(_fb), None)
     finally:
         _gp.update(_pins)
 
@@ -1835,8 +1191,7 @@ def _impure_self_test_body() -> int:
     import hashlib as _hl
     _FS = "# Dashboard entries\n\n## 2026-10-01\nOld entry one.\n"   # the fixture's frozen store
     _FPINS = {"LEGACY_STORE_BLOB": _git_blob_id(_FS.encode()),
-              "LEGACY_STORE_SHA256": _hl.sha256(_FS.encode()).hexdigest(),
-              "LEGACY_STORE_BASE_BLOB": _git_blob_id(_FS.encode())}
+              "LEGACY_STORE_SHA256": _hl.sha256(_FS.encode()).hexdigest()}
 
     def _repo(files: dict, untracked: dict | None = None) -> pathlib.Path:
         d = pathlib.Path(_tf.mkdtemp(prefix="asks-repo-"))
@@ -1953,7 +1308,7 @@ def _impure_self_test_body() -> int:
     except SystemExit as exc:
         _rc98 = exc.code
     case("9.8 --pr-body-file is refused as a usage error (exit 2)", _rc98, 2)
-    # ── dashboard-retire S2, Task 12: L1, the cutover check and the open-PR lister, IMPURE ──
+    # ── dashboard-retire S2, Task 12: L1, IMPURE (the cutover check and the open-PR lister left in S3) ──
     _st = _repo(_keep)
     with open(_st / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
         _fh.write("\n## 2026-11-26 [needs-you]\nA stray ask nobody reads.\n")
@@ -1967,17 +1322,6 @@ def _impure_self_test_body() -> int:
         _commit(_st, "restore")
     case("12.7 the printed restore command repairs the tree: L1 red before, green after",
          (_rc10, len(_restore), _main_at(_st, [])[0]), (1, 1, 0))
-    # 12.12: A = the pinned base store, B appends an entry, C changes something else on top.
-    _cv = _repo(_keep)
-    _a = subprocess.run(["git", "-C", str(_cv), "rev-parse", "HEAD"], capture_output=True, text=True,
-                        env=fixture_git.env()).stdout.strip()
-    with open(_cv / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
-        _fh.write("\n## 2026-11-26\nMerged after the pin.\n")
-    _commit(_cv, "B")
-    (_cv / "README").write_text("c\n", encoding="utf-8")
-    _commit(_cv, "C")
-    case("12.12 the cutover check reads the revision it is given: C^1 (B's store) rc 1, A rc 0",
-         (_main_at(_cv, ["--cutover-check", "HEAD^1"])[0], _main_at(_cv, ["--cutover-check", _a])[0]), (1, 0))
     # 12.11: the COMMITTED pins against the store on disk — no HEAD, no rev-parse, so no repository needed.
     _sp = ROOT / LEGACY_STORE_REL
     _hb = subprocess.run(["git", "hash-object", "--", str(_sp)], capture_output=True, text=True,
@@ -1985,42 +1329,6 @@ def _impure_self_test_body() -> int:
     _hs = _hl.sha256(_sp.read_bytes()).hexdigest() if _sp.is_file() else None
     case("12.11 the two HEAD pins describe the store on disk (git hash-object, sha256)",
          (_hb, _hs), (LEGACY_STORE_BLOB, LEGACY_STORE_SHA256))
-    # 12.13–12.16: `gh` stubbed through `_with_run`.
-    import json as _js
-
-    def _gh_stub(numbers, store_in=(), diff_rc=None, list_rc: int = 0, empty_in=()):
-        def run(cmd, *a, **k):
-            if cmd[:3] == ["gh", "pr", "list"]:
-                if list_rc:
-                    return _R(list_rc, "", "gh: boom")
-                lim = int(cmd[cmd.index("--limit") + 1]) if "--limit" in cmd else 30
-                ns = numbers(lim)
-                return _R(0, _js.dumps([{"number": n, "headRefName": f"b{n}"} for n in ns]))
-            if cmd[:3] == ["gh", "pr", "diff"]:
-                n = int(cmd[3])
-                if diff_rc and n in diff_rc:
-                    return _R(1, "", "gh: boom")
-                if n in empty_in:
-                    return _R(0, "")
-                return _R(0, "docs/dashboard-entries.md\n" if n in store_in else "scripts/x.py\n")
-            return _R(127, "", f"unexpected {cmd[:3]}")
-        return run
-    case("12.13 a PR beyond gh's default page of 30 is listed",
-         _with_run(_gh_stub(lambda lim: range(1, min(lim, 31) + 1), store_in={31}), store_edit_prs),
-         (["PR 31 (b31) edits the frozen store"], None))
-    _l14, _e14 = _with_run(_gh_stub(lambda lim: range(1, PR_LIST_LIMIT + 1)), store_edit_prs)
-    case("12.14 a full page of PR_LIST_LIMIT is CANNOT RUN, naming the limit",
-         (_l14, str(PR_LIST_LIMIT) in (_e14 or "")), ([], True))
-    _with_main = lambda: _main_at(ROOT, ["--list-store-prs"])[0]
-    case("12.15 a failed gh pr list is CANNOT RUN, never 'no PRs': err set, --list-store-prs rc 2",
-         (_with_run(_gh_stub(lambda lim: [], list_rc=1), store_edit_prs)[1] is not None,
-          _with_run(_gh_stub(lambda lim: [], list_rc=1), _with_main)), (True, 2))
-    _e16 = _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, diff_rc={7}), store_edit_prs)[1] or ""
-    case("12.16 a failed gh pr diff is CANNOT RUN, never 'no edit': err names PR 7, rc 2",
-         ("PR 7" in _e16, _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, diff_rc={7}), _with_main)), (True, 2))
-    _e17 = _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, empty_in={7}), store_edit_prs)[1] or ""
-    case("730 r1 F4: an empty gh pr diff answer is CANNOT RUN, never 'no edit': err names PR 7, rc 2",
-         ("PR 7" in _e17, _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, empty_in={7}), _with_main)), (True, 2))
     # r1 F1: git cannot read the frozen store — it is committed, then its loose object is deleted, so
     # `ls-tree` still names the blob and `cat-file` exits 128. A1's own blobs are intact. L1 must hand
     # back its err, and `main` must say CANNOT RUN (rc 2) — never "ok" over a store nobody read.
@@ -2031,6 +1339,17 @@ def _impure_self_test_body() -> int:
     _rcu, _ou = _main_at(_unr, [])
     case("r1 F1: an unreadable frozen store is CANNOT RUN: L1 returns its err and main exits 2",
          (_l1p, _l1e is not None, _rcu, "CANNOT RUN" in _ou), (None, True, 2, True))
+    # S3 (was backlog #730 r1 F2, whose case left with `--post-cutover`): an ask git cannot read is
+    # CANNOT RUN — committed, then its loose object deleted, so `ls-tree` names it and cannot size it.
+    _ua = _repo(_keep)
+    _ab = subprocess.run(["git", "ls-tree", "HEAD", "--", "docs/asks/"], cwd=_ua, capture_output=True,
+                         text=True, env=fixture_git.env()).stdout.split()
+    _ab = next((w for w in _ab if len(w) == 40 and w != _FPINS["LEGACY_STORE_BLOB"]), None)
+    if _ab:
+        os.remove(_ua / ".git" / "objects" / _ab[:2] / _ab[2:])
+    _rca, _oa = _main_at(_ua, [])
+    case("S3: an ask git cannot read is CANNOT RUN rc 2, never A1 ok",
+         (_ab is not None, _rca, "CANNOT RUN" in _oa, "ok — " in _oa), (True, 2, True, False))
     # r1 F4: an L1 refusal does not hide A1's problems found in the same run — both are printed, rc 1.
     _both = _repo({**_keep, "docs/asks/Foo.md": "# Q?\n"})
     with open(_both / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
@@ -2039,242 +1358,8 @@ def _impure_self_test_body() -> int:
     _rcb, _ob4 = _main_at(_both, [])
     case("r1 F4: an L1 refusal still reports A1's problems from the same run",
          (_rcb, "REFUSED — L1" in _ob4, "Foo.md" in _ob4), (1, True, True))
-    # ── backlog #730: `--post-cutover` (plan Task 13 as one entry point), IMPURE ──────────────────
-    # Each world is a fixture ORIGIN (its branch holds the store, the asks and a gate file) and a CLONE
-    # of it, the checkout the command runs in. `later` is committed to the origin AFTER the clone, so the
-    # clone's HEAD is behind and only the fetch shows it; `pre` is committed BEFORE the clone, whose HEAD is
-    # then detached one commit back, so HEAD is behind with no fetch needed; `dirty` is written, uncommitted,
-    # into the clone.
-    # `gh` is stubbed (no live GitHub); git is real and runs only in these temp repositories.
-    _gate_text = pathlib.Path(__file__).read_text(encoding="utf-8")
-    _pc_dirs: list = []
-    _real_run2 = subprocess.run
-
-    def _pc_world(branch: str, gate: str | None, later: dict | None = None, dirty: dict | None = None,
-                  remote: str = "origin", pre: dict | None = None, narrow: bool = False) -> pathlib.Path:
-        o = _repo({**_keep, **({GATE_REL: gate} if gate is not None else {})})
-        subprocess.run(["git", "-C", str(o), "branch", "-M", branch], check=True, env=fixture_git.env())
-        for rel, content in (pre or {}).items():
-            (o / rel).parent.mkdir(parents=True, exist_ok=True)
-            (o / rel).write_text(content, encoding="utf-8")
-        if pre:
-            _commit(o, "before the clone")
-        w = pathlib.Path(_tf.mkdtemp(prefix="asks-clone-")) / "w"
-        subprocess.run(["git", "clone", "-q", "-o", remote, str(o), str(w)], check=True, capture_output=True,
-                       env=fixture_git.env())
-        if pre:
-            subprocess.run(["git", "-C", str(w), "checkout", "-q", "--detach", "HEAD~1"], check=True,
-                           capture_output=True, env=fixture_git.env())
-        if narrow:      # r1 F5: a clone whose fetch refspec does not cover `branch`
-            subprocess.run(["git", "-C", str(w), "config", f"remote.{remote}.fetch",
-                            f"+refs/heads/nothing:refs/remotes/{remote}/nothing"], check=True, env=fixture_git.env())
-        for rel, content in (later or {}).items():
-            (o / rel).parent.mkdir(parents=True, exist_ok=True)
-            (o / rel).write_text(content, encoding="utf-8")
-        if later:
-            _commit(o, "after the clone")
-        for rel, content in (dirty or {}).items():
-            (w / rel).parent.mkdir(parents=True, exist_ok=True)
-            (w / rel).write_text(content, encoding="utf-8")
-        _pc_dirs.extend([o, w.parent])
-        return w
-
-    _GREEN = {CI_SELFTEST_STEP: "success", CI_L1_STEP: "success"}
-
-    def _pc_gh(store_prs=(), runs=None, run_list_rc: int = 0, pr_list_rc: int = 0, run_view_rc: int = 0):
-        """`gh` answered from tables; every other command (git) runs for real. A run is `(id, rev, jobs)`:
-        `rev` is `""` (the fetched `origin/<branch>` tip), `"~N"` (N commits behind it) or a literal sha, resolved
-        in the clone AFTER the fetch, so `headSha` is a real commit as GitHub's is. `jobs` is the `verify` job's
-        {step: conclusion}, or a list of `(job name, {step: conclusion}[, job conclusion])`. An optional 4th item
-        `{"status", "conclusion", "job"}` sets the run's status (default `completed`), its conclusion (default
-        `success`; `""` while not completed, as gh prints it) and the `verify` job's conclusion (default
-        `success`). ⛔ r2: `gh run list` answers as GitHub's does — only the `--json` fields asked for, and
-        `--status` honoured — so a query that asks for less, or filters to completed runs, sees what gh shows."""
-        runs = [(901, "", _GREEN)] if runs is None else runs
-
-        def _meta(r) -> dict:
-            m = dict(r[3]) if len(r) > 3 else {}
-            m.setdefault("status", "completed")
-            m.setdefault("conclusion", "success" if m["status"] == "completed" else "")
-            m.setdefault("job", "success" if m["status"] == "completed" else "")
-            return m
-
-        def _sha(cwd, branch: str, rev: str) -> str:
-            if re.fullmatch(r"[0-9a-f]{40}", rev):
-                return rev
-            return _real_run2(["git", "-C", str(cwd), "rev-parse", f"origin/{branch}{rev}"], capture_output=True,
-                              text=True, check=True).stdout.strip()
-
-        def run(cmd, *a, **k):
-            if not cmd or cmd[0] != "gh":
-                return _real_run2(cmd, *a, **k)
-            if cmd[1:3] == ["pr", "list"]:
-                if pr_list_rc:
-                    return _R(pr_list_rc, "", "gh: boom")
-                return _R(0, _js.dumps([{"number": n, "headRefName": f"b{n}"} for n in store_prs]))
-            if cmd[1:3] == ["pr", "diff"]:
-                return _R(0, "docs/dashboard-entries.md\n")
-            if cmd[1:3] == ["run", "list"]:
-                if run_list_rc:
-                    return _R(run_list_rc, "", "gh: boom")
-                b = cmd[cmd.index("--branch") + 1]
-                fields = cmd[cmd.index("--json") + 1].split(",")
-                want = cmd[cmd.index("--status") + 1] if "--status" in cmd else None
-                rows = [{"databaseId": r[0], "headSha": _sha(k.get("cwd"), b, r[1]),
-                         "status": _meta(r)["status"], "conclusion": _meta(r)["conclusion"]} for r in runs]
-                return _R(0, _js.dumps([{f: row[f] for f in fields} for row in rows
-                                        if want is None or row["status"] == want]))
-            if cmd[1:3] == ["run", "view"]:
-                if run_view_rc:
-                    return _R(run_view_rc, "", "gh: boom")
-                r = {r[0]: r for r in runs}[int(cmd[3])]
-                m = _meta(r)
-                jobs = [(CI_JOB, r[2], m["job"])] if isinstance(r[2], dict) else [
-                    (j[0], j[1], j[2] if len(j) > 2 else (m["job"] if j[0] == CI_JOB else "success")) for j in r[2]]
-                return _R(0, _js.dumps({"jobs": [{
-                    "name": jn, "status": "completed" if jc else "in_progress", "conclusion": jc,
-                    "steps": [{"name": n, "status": "completed" if c else "in_progress", "conclusion": c}
-                              for n, c in st.items()]} for jn, st, jc in jobs]}))
-            return _R(127, "", f"unexpected {cmd[:3]}")
-        return run
-
-    def _pc(w: pathlib.Path, remote: str, branch: str, gh) -> tuple[int, str]:
-        real_pins = {k: g[k] for k in _FPINS}
-        g.update(_FPINS)
-        try:
-            rc, lines = _with_run(gh, lambda: post_cutover(w, remote, branch))
-        finally:
-            g.update(real_pins)
-        return rc, "\n".join(lines)
-
-    def _drop_object(w: pathlib.Path, oid: str) -> None:
-        """Delete one loose object from the clone, so git names it in a tree and cannot read it (exit 128)."""
-        os.remove(w / ".git" / "objects" / oid[:2] / oid[2:])
-
-    _G = _pc_gh()
-    _stray = _FS + "\n## 2026-11-27 [needs-you]\nStray after the squash.\n"
-    _w0 = _pc_world("master", _gate_text)
-    _rc0, _o0 = _pc(_w0, "origin", "master", _G)
-    _tip0 = _real_run2(["git", "-C", str(_w0), "rev-parse", "origin/master"], capture_output=True,
-                       text=True).stdout.strip()
-    case("730 M1: master at the pins, its gate the running one, no store PR, CI green — rc 0",
-         (_rc0, _o0), (0, "ok — L1: origin/master's store is the pinned bytes\n"
-                          "ok — A1: origin/master's docs/asks/ is well-formed\n"
-                          "ok — no open pull request edits the frozen store\n"
-                          f"ok — CI run 901 ({_tip0[:8]}) on master: run success, job `verify` success: "
-                          "`check-ask-store self-test` success, `ask store (push)` success\n"
-                          "post-cutover rc 0"))
-    _w1 = _pc_world("master", _gate_text, later={LEGACY_STORE_REL: _stray})
-    _rc1, _o1 = _pc(_w1, "origin", "master", _G)
-    case("730 M1: master's committed store moved off the pins (the clone's HEAD behind) is rc 1, with the restore",
-         (_rc1, "Stray after the squash." in _o1, f"git cat-file blob {_FPINS['LEGACY_STORE_BLOB']}" in _o1),
-         (1, True, True))
-    _wn = _pc_world("master", _gate_text, later={LEGACY_STORE_REL: _stray}, narrow=True)
-    case("730 r1 F5: the fetch moves origin/master even when the clone's refspec does not cover it — rc 1",
-         _pc(_wn, "origin", "master", _G)[0], 1)
-    _w3a = _pc_world("master", "print('a gate from before S2')\n")
-    _w3b = _pc_world("trunk", None)
-    _rc3a, _o3a = _pc(_w3a, "origin", "master", _G)
-    _rc3b, _o3b = _pc(_w3b, "origin", "trunk", _G)
-    case("730 M1: master without the L1 gate, or with no gate file (S2 not merged), is rc 3 — never L1's rc 1",
-         (_rc3a, "without L1" in _o3a, _rc3b, f"no {GATE_REL}" in _o3b), (3, True, 3, True))
-    _rc2, _o2 = _pc(_w0, "nowhere", "master", _G)
-    case("730 M1: a fetch git cannot do is CANNOT RUN rc 2, never a pass",
-         (_rc2, _o2.startswith("CANNOT RUN — nowhere/master could not be fetched")), (2, True))
-    _w5 = _pc_world("master", _gate_text, pre={"docs/asks/Foo.md": "# Q?\n"},
-                    dirty={"docs/asks/Foo.md": "# Q?\n"})
-    _rc5, _o5 = _pc(_w5, "origin", "master", _G)
-    case("730 M1: an ask A1 refuses on master is rc 5, not the store's rc 1",
-         (_rc5, "REFUSED (rc 5) — A1: " in _o5, "Foo.md" in _o5), (5, True, True))
-    _wa = _pc_world("master", _gate_text, dirty={LEGACY_STORE_REL: _stray, "docs/asks/Bar.md": "no heading\n"})
-    case("730 L1: a dirty worktree (store and an ask, uncommitted) does not change the verdict — rc 0",
-         _pc(_wa, "origin", "master", _G)[0], 0)
-    _wb = _pc_world("master", _gate_text + "# edited locally\n", remote="upstream")
-    _rcb4, _ob4b = _pc(_wb, "upstream", "master", _G)
-    case("730 L1: a running gate that is not master's blob is rc 4 — a local copy never judges master",
-         (_rcb4, "must not judge master" in _ob4b, "upstream/master's is" in _ob4b), (4, True, True))
-    # r1 F2: git cannot read what the fetched tree names — the object is deleted from the clone only.
-    _wl = _pc_world("master", _gate_text)
-    _drop_object(_wl, _FPINS["LEGACY_STORE_BLOB"])
-    _rcl, _ol = _pc(_wl, "origin", "master", _G)
-    case("730 r1 F2: master's store git cannot read is CANNOT RUN rc 2, never L1 ok",
-         (_rcl, "CANNOT RUN — the frozen store could not be read" in _ol), (2, True))
-    _ask_z = "# Unreadable on purpose?\n"
-    _wq = _pc_world("master", _gate_text, pre={"docs/asks/2026-11-26-z.md": _ask_z})
-    _drop_object(_wq, _git_blob_id(_ask_z.encode()))
-    _rcq, _oq = _pc(_wq, "origin", "master", _G)
-    case("730 r1 F2: an ask git cannot read on master is CANNOT RUN rc 2, never A1 ok",
-         (_rcq, "CANNOT RUN — the ask store could not be checked" in _oq), (2, True))
-    _rc6, _o6 = _pc(_w0, "origin", "master", _pc_gh(store_prs=(41,)))
-    case("730 Step 2: an open PR still editing the store is rc 6 and is named",
-         (_rc6, "PR 41 (b41) edits the frozen store" in _o6), (6, True))
-    _rcp, _op = _pc(_w0, "origin", "master", _pc_gh(pr_list_rc=1))
-    case("730 r1 F2: a failed gh pr list under --post-cutover is CANNOT RUN rc 2, never 'no PRs'",
-         (_rcp, "CANNOT RUN — gh pr list did not answer" in _op), (2, True))
-    # r1 F1 + r2 G1-G3: GitHub's REAL shapes. In `verify` a red step marks every later step `skipped`. Only the
-    # run whose `headSha` is the fetched head answers (G1); runs are listed whatever their status (G3); green
-    # needs the run, the `verify` job and both steps `success` (G2).
-    _w2c = _pc_world("master", _gate_text, later={"docs/x.txt": "a later master commit\n"})
-    _rc7, _o7 = _pc(_w2c, "origin", "master", _pc_gh(runs=[
-        (906, "", {CI_SELFTEST_STEP: "failure", CI_L1_STEP: "skipped"}, {"conclusion": "failure", "job": "failure"}),
-        (905, "~1", _GREEN)]))
-    case("730 r1 F1: the head's run, self-test red and the L1 step skipped, is rc 7 over an older commit's green",
-         (_rc7, "CI run 906" in _o7, "`ask store (push)` skipped" in _o7), (7, True, True))
-    _rc7b, _o7b = _pc(_w0, "origin", "master", _pc_gh(runs=[
-        (907, "", {CI_SELFTEST_STEP: "success", CI_L1_STEP: "skipped"})]))
-    case("730 r1 F1: a head run whose L1 step was skipped while its job and run succeeded is rc 7",
-         (_rc7b, "`ask store (push)` skipped" in _o7b), (7, True))
-    _rc7c, _o7c = _pc(_w0, "origin", "master", _pc_gh(runs=[(908, "", {CI_L1_STEP: "success"})]))
-    case("730 r1 F1: a head run with no self-test step is rc 7 — absent is not green",
-         (_rc7c, "`check-ask-store self-test` absent" in _o7c), (7, True))
-    _rc7d = _pc(_w0, "origin", "master", _pc_gh(runs=[
-        (910, "", [(CI_JOB, {"unit suite": "success"}), ("mutation-sweep", _GREEN)])]))[0]
-    case("730 r1 F6: only the verify job's steps count — another job's same-named green steps do not — rc 7",
-         _rc7d, 7)
-    # G1: S2's own squash, and every commit after it, carries the gate — so a commit carrying it is no proof
-    # that its run is the head's. Before r2 this green run on `~1` answered rc 0.
-    _w8 = _pc_world("trunk", _gate_text, later={"docs/x.txt": "a later trunk commit\n"})
-    _rc8, _o8 = _pc(_w8, "origin", "trunk", _pc_gh(runs=[(905, "~1", _GREEN)]))
-    case("730 r2 G1: a green run on an earlier commit carrying S2's gate does not answer for the head — rc 8",
-         (_rc8, "is not listed yet" in _o8, "on trunk" in _o8), (8, True, True))
-    # G3: the head's run still in progress, an older commit's completed run green. Before r2 `--status
-    # completed` hid the head's run and the older one answered rc 0.
-    _rcg3, _og3 = _pc(_w2c, "origin", "master", _pc_gh(runs=[
-        (921, "", {CI_SELFTEST_STEP: "success", CI_L1_STEP: ""}, {"status": "in_progress"}),
-        (920, "~1", _GREEN)]))
-    case("730 r2 G3: the head's run in progress while an older commit's run is green is rc 8, not green",
-         (_rcg3, "CI run 921" in _og3, "`in_progress`, not completed" in _og3), (8, True, True))
-    # G2: both steps `success` and still not green. Before r2 each of these answered rc 0.
-    _rcg2, _og2 = _pc(_w0, "origin", "master", _pc_gh(runs=[
-        (922, "", _GREEN, {"conclusion": "cancelled", "job": "cancelled"})]))
-    case("730 r2 G2: a run cancelled after both verify steps succeeded is rc 7",
-         (_rcg2, "run cancelled, job `verify` cancelled" in _og2), (7, True))
-    _rcg2j, _og2j = _pc(_w0, "origin", "master", _pc_gh(runs=[(923, "", _GREEN, {"job": "failure"})]))
-    case("730 r2 G2: a verify job that failed while the run concluded success (continue-on-error) is rc 7",
-         (_rcg2j, "run success, job `verify` failure" in _og2j), (7, True))
-    _rcg2r, _og2r = _pc(_w0, "origin", "master", _pc_gh(runs=[
-        (924, "", [(CI_JOB, _GREEN), ("mutation-sweep", {"sweep": "failure"}, "failure")], {"conclusion": "failure"})]))
-    case("730 r2 G2: a run that failed in another job while verify is green is rc 7",
-         (_rcg2r, "run failure, job `verify` success" in _og2r), (7, True))
-    _rcg4, _og4 = _pc(_w0, "origin", "master", _pc_gh(runs=[
-        (931, "", {CI_SELFTEST_STEP: "success", CI_L1_STEP: "failure"}, {"conclusion": "failure", "job": "failure"}),
-        (930, "", _GREEN)]))
-    case("730 r2: two runs on the head commit, the newest red, is rc 7 — the newest is judged",
-         (_rcg4, "CI run 931" in _og4), (7, True))
-    _rcc, _oc = _pc(_w0, "origin", "master", _pc_gh(run_list_rc=1))
-    case("730 L2: a failed gh run list is CANNOT RUN rc 2, never 'no runs'",
-         (_rcc, "CANNOT RUN — gh run list did not answer" in _oc), (2, True))
-    _rcv, _ov = _pc(_w0, "origin", "master", _pc_gh(run_view_rc=1))
-    case("730 r1 F2: a failed gh run view is CANNOT RUN rc 2, never an older run's verdict",
-         (_rcv, "CANNOT RUN — gh run view 901 did not answer" in _ov), (2, True))
-    # Over the all-green world, so no other check's mutation can move it: only the dispatch can.
-    _rcm, _om = _with_run(_G, lambda: _main_at(_w0, ["--post-cutover"]))
-    case("730 main --post-cutover runs the check over origin/master and exits with its status",
-         (_rcm, _om.rstrip().endswith("post-cutover rc 0"), "ok — CI run 901" in _om), (0, True, True))
-    for _d in _pc_dirs:
-        _sh.rmtree(_d, ignore_errors=True)
-    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code, _st, _cv,
-               _unr, _both):
+    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code, _st,
+               _unr, _both, _ua):
         _sh.rmtree(_d, ignore_errors=True)
 
     print(f"{ok}/{ok+fail} cannot-run cases passed")
@@ -2289,40 +1374,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--base", default=None,
                     help="the ref F1 compares against (`git merge-base <base> HEAD`); "
                          "without it only A1 runs")
-    ap.add_argument("--cutover-check", metavar="REF", default=None,
-                    help="only: is the store at REF still master's at pin time (LEGACY_STORE_BASE_BLOB)?")
-    ap.add_argument("--list-store-prs", action="store_true",
-                    help="only: list the open pull requests whose diff names the frozen store")
-    ap.add_argument("--post-cutover", action="store_true",
-                    help=f"only: plan Task 13 after S2's squash, as one command — fetch "
-                         f"{POST_CUTOVER_REMOTE} {POST_CUTOVER_BRANCH} and judge its committed tree. "
-                         f"Exit: 0 ok; 1 the store moved off its pins; 2 CANNOT RUN (git/gh); 3 S2 not "
-                         f"merged; 4 the running script is not master's; 5 A1 refused master's asks; "
-                         f"6 an open PR still edits the store; 7 master's CI step red; 8 no completed "
-                         f"master CI run has the step yet")
     a = ap.parse_args(argv)
-    if a.post_cutover:
-        rc, lines = post_cutover(ROOT, POST_CUTOVER_REMOTE, POST_CUTOVER_BRANCH)
-        print("\n".join(lines))
-        return rc
-    if a.cutover_check is not None:
-        try:
-            ref_blob = _store_blob(ROOT, a.cutover_check)
-        except _AskGitError as exc:
-            print(f"CANNOT RUN — the store at {a.cutover_check} could not be read — {exc}\n"
-                  f"Treat this as NOT CHECKED.")
-            return 2
-        why = cutover_problem(ref_blob)
-        print(f"REFUSED — {why}" if why else
-              f"ok — the store at {a.cutover_check} is the pinned base blob {LEGACY_STORE_BASE_BLOB}")
-        return 1 if why else 0
-    if a.list_store_prs:
-        lines, err = store_edit_prs()
-        if err:
-            print(f"CANNOT RUN — {err}. Treat this as NOT CHECKED.")
-            return 2
-        print("\n".join(lines) if lines else "ok — no open pull request edits the frozen store")
-        return 0
     if a.self_test:
         # BOTH suites, both always run. `or` would short-circuit and hide the
         # cannot-run cases whenever the pure suite is already red.

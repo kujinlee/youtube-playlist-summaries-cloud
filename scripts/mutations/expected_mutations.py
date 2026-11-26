@@ -265,10 +265,8 @@ EXPECTED_MUTATIONS = {
     # non-object input. PR #440 r2: both retargeted onto `bounded_read`, the count unchanged.
     # ⟳ 51 -> 52 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
     "scripts/check-closing-table.py": 52,
-    # ⟳ 2026-11-03, backlog #470: 68 -> 70. the PR option link through key_link, and its un-nested text (+2).
-    # ⟳ 2026-11-25, dashboard-retire S2 Task 7: 70 -> 72. C1 `--assert-no-open-asks` refuses an open ask, and a
-    # parse error is CANNOT RUN, never "no asks" (+2).
-    "scripts/gen-dashboard.py": 72,
+    # ⟳ 2026-11-26, dashboard-retire S3 Task 15: `scripts/gen-dashboard.py` (72) DELETED with its manifest —
+    # the page retired, and an entry whose subject is gone is deleted, never kept as a pin of nothing.
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
     # all had one. ⚠ IT WAS NOT "the ONE generator with no manifest", which both round-1
@@ -712,7 +710,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-03, backlog #470 review round 3: 39 -> 44. The generators' renderers property: a raise is
     # reported, so is an <a> in an <a>, the corpus is seeded and holds the review's inputs, and every
     # renderer in the table is read (+5).
-    "scripts/check-page-links.py": 44,
+    "scripts/check-page-links.py": 46,  # +2 dashboard-retire S3 r2 G1: `/dashboard#` refused again
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
     # it added well-formed?" (new, and previously fail-open on the entry-only branch,
@@ -887,7 +885,13 @@ EXPECTED_MUTATIONS = {
     # an unreadable run commit passed over: no run loop or run-commit read is left). ADDED 5: G1 the head-SHA
     # match, G3 the not-yet-completed check, G2 the `verify` job's conclusion and the run's conclusion, and
     # the NEWEST of several runs on the head commit is the one judged.
-    "scripts/check-ask-store.py": 98,
+    # dashboard-retire S3 (plan Task 16): 98 -> 54. DELETED 14 whose anchors left with the page's grammar
+    # and parser (BLOCK, header_error's both-flags and empty-resolved rules, parse_entries' eight) and with the
+    # base-blob cutover check (12.8, 12.12), and 31 with `store_edit_prs` (4) and `post_cutover` (27, backlog #730),
+    # deleted after Task 13's one run answered rc 0. One of the 31 anchors in `_ask_tree`, which stays: it is
+    # KEPT, retargeted to the new case "S3: an ask git cannot read is CANNOT RUN rc 2, never A1 ok" (98-14-31+1=54;
+    # the plan's 45 predates backlog #730).
+    "scripts/check-ask-store.py": 54,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
@@ -1546,7 +1550,10 @@ EXPECTED_MUTATIONS = {
     # bar being measured — 225 -> 1965px in two seconds) and `assert_wired`'s label, which
     # the reviewer severed while the suite stayed green: dropping it from KNOWN_UNVARIED was
     # lexically correct and the parameter was still indistinguishable from a constant.
-    "scripts/page_chrome.py": 114,
+    # ⟳ 2026-11-26, dashboard-retire S3 Task 14: 114 -> 117. The WCAG formula moved in from the
+    # retired generator, with one mutation per term: the channel weights, the lighter-over-darker
+    # ordering, and the 0.05 flare term.
+    "scripts/page_chrome.py": 117,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -2208,7 +2215,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ dashboard-retire S2 Task 9: 214 -> 212. MISDIRECTED and INERT-OTHER needed a second gate's escape
     # and retired with `NO-ENTRY:` (2 gone); INVISIBLE RE-BOUND onto the loop's new first `if`.
     # dashboard-retire S2 r1 fold F2: 212 -> 213 — the replay of C1 (`gen-dashboard.py --assert-no-open-asks`).
-    "scripts/check-merge-ready.py": 213,
+    # ⟳ dashboard-retire S3 Task 15: 213 -> 212 — C1 left with its generator, so its replay entry went too.
+    "scripts/check-merge-ready.py": 212,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -2262,6 +2270,7 @@ EXPECTED_MUTATIONS = {
     # rebound (every path's diff, the sides swapped, the hunk sign), none retired; two added: the head
     # read as raw worktree bytes under `eol=crlf` (F2), and `splitlines()` for `split("\n")` (F3).
     "scripts/check-reference-namespace.py": 23,  # 22 -> 23 (dashboard-retire S1 Task 6: docs/asks leaves the scope)
+    "scripts/check-retired-references.py": 16,  # dashboard-retire S3: K8, a token scan since r1 F1 (string/text/page-table/link readers, comment + prose skips, the G2 `/*` close, exemptions, route and token bounds, 3 CANNOT RUN)
     # ⟳ 6 -> 9 (backlog #331(a) / #357, PR #440 r1). ⟳ 9 -> 7 (PR #440 r2): #331(a)'s `if not records` moved to
     # `bounded_read.stop_transcript`, and the None-mapping entry is now masked by `judge`'s try, so both retire;
     # r2 X1 / #331(e)'s mutant — the reader's refusal answered QUIET — is the no-transcript entry's, which names

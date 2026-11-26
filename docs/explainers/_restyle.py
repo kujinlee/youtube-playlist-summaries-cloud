@@ -8,7 +8,8 @@ ONE stylesheet (`_explainer-style.css`), N pages, no copies to drift.
    09-25 file and leaves the original stale. Measured the hard way: a first version passed
    the full filename as `--slug` and produced ten `2026-09-25-brief-2026-09-24-…` duplicates.
 
-⛔ SKIPS THE GENERATED PAGES (dashboard, goals, backlog-table, features). Their palettes are
+⛔ SKIPS THE GENERATED PAGES (goals, backlog-table, features — and `dashboard`, retired in
+   dashboard-retire S3, so that a stale copy still on disk is never restyled). Their palettes are
    local by a recorded decision — `scripts/page_chrome.py`: "MECHANISM SHARED, PALETTE LOCAL …
    emitting one palette would flatten six pages that deliberately look different."
 

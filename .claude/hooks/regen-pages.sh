@@ -11,7 +11,7 @@
 #
 #     bash .claude/hooks/regen-pages.sh --self-test     # runs scripts/regen-pages.py --self-test
 #
-# NEVER BLOCKS, NEVER FAILS THE TOOL CALL: exit 0 unconditionally, like regen-dashboard.sh. Each
+# NEVER BLOCKS, NEVER FAILS THE TOOL CALL: exit 0 unconditionally (as the retired dashboard hook did). Each
 # generator has its own timeout and one failing never stops the others; every page NOT rebuilt is
 # named in the output. ⚠ So this hook's exit code carries NO information.
 set -uo pipefail

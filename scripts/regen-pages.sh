@@ -8,7 +8,8 @@
 # teammate using this repo (backlog #194).
 #
 # MEASURED 2026-09-30: all four rebuild in 21.1s total from tracked sources. `gh` is optional —
-# `gen-dashboard` degrades loudly, printing what it could not fetch, and still writes the page.
+# the dashboard generator degraded loudly, printing what it could not fetch, and still wrote the page.
+# ⟳ dashboard-retire S3: that generator and its page retired; four pages remain.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
