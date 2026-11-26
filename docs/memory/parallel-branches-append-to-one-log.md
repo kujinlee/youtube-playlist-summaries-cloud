@@ -1,6 +1,6 @@
 ---
 name: parallel-branches-append-to-one-log
-description: "FIRES-WHEN: opening a second branch that touches dashboard-entries.md or the roadmap — Parallel branches each appending to docs/dashboard-entries.md + the roadmap conflict pairwise; `git merge-tree` reported ZERO conflicts when a real merge found three; and 'keep both' FUSES two entries into one when they share a header line"
+description: "FIRES-WHEN: opening a second branch that touches the roadmap or another shared log — Parallel branches each appending to the roadmap (and, until 2026-11-25, docs/dashboard-entries.md) conflict pairwise; `git merge-tree` reported ZERO conflicts when a real merge found three; and 'keep both' FUSES two entries into one when they share a header line"
 metadata: 
   node_type: memory
   type: feedback
@@ -8,11 +8,11 @@ metadata:
   modified: 2026-09-09T19:12:15.089Z
 ---
 
-**The rule:** parallel branches that each append to `docs/dashboard-entries.md` and the roadmap WILL conflict
+**The rule:** parallel branches that each append to the roadmap (or any other shared log) WILL conflict
 pairwise — decide the shape before opening a second one (stack the branches or batch into one PR). When resolving:
 (1) assert by performing a real merge in a throwaway worktree, never trust `git merge-tree`; (2) "keep both" must
 duplicate a shared header line by hand (`grep -c '^## <date>'` must rise); (3) put the side already on master first
-(entry ids are positional); (4) `ast.parse` every touched `.py` and run the gates BEFORE `git commit` on the merge.
+(ids that count by position shift otherwise); (4) `ast.parse` every touched `.py` and run the gates BEFORE `git commit` on the merge.
 
 ## History and detail
 
@@ -21,7 +21,7 @@ block to the END of `docs/dashboard-entries.md` and inserted a section at the SA
 The first merges clean; **every subsequent one conflicts** — measured: #192 conflicted on
 `ci.yml` + both docs, #193 on both docs.
 
-The process *requires* each branch to add an entry (`check-dashboard-entry.py` refuses otherwise) and
+The process *required* each branch to add an entry (`check-dashboard-entry.py` refused otherwise, until 2026-11-25) and
 to update the roadmap in the same turn. So the conflict is structural, not carelessness: **the
 per-branch documentation rules guarantee a collision whenever branches run in parallel.**
 

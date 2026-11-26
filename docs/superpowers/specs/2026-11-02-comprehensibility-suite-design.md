@@ -7,6 +7,8 @@
 Every answer below was given by the owner on the roles review page
 (`docs/explainers/2026-10-28-topic-suite-roles-review.fragment.html`), 2026-10-28 and 2026-11-02 ~09:25.
 
+> ⟳ 2026-11-25 — **amended by `docs/superpowers/specs/2026-11-24-dashboard-retire-design.md` §6** (owner decision O1, 2026-11-24): the dashboard page and the per-PR entry rule are retired. Superseded here: R3 (the dashboard as change log); the `/dashboard` row of the page-question table; the *Change* row of the key table; migration step 4's *Dashboard asks* bullet (asks now live as files in `docs/asks/`, and NEEDS YOU reads three sources: the ask files, the ledger, the backlog); step 5; step 6's "each change line links to its dashboard entry"; §8 choices 1 and 8. The body below is not rewritten.
+
 ## In plain words
 
 The project has seven page producers (`gen-dashboard`, `gen-goals-page`, `gen-backlog-page`,

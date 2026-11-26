@@ -33,7 +33,7 @@
       "phase": "1",
       "package": "comprehensibility",
       "files": [
-        ".agents/skills/dashboard/"
+        ".agents/skills/needs-you/"
       ]
     },
     {

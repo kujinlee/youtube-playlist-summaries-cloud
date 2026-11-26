@@ -31,7 +31,7 @@ has been a house rule for a while."*
 **How to apply:** never write "holds for the owner by design" in a handoff; a PR "touching the gate itself" is NOT a
 category that goes to the owner. HOLD exceptions chosen on a card against base rates over 30 merged PRs: a loosening
 (baseline edit, pin/total/case-count drop, a removed line within 5 of a failure path in a gate file — 5/30), a
-migration, a `NO-REVIEW:` waiver (`NO-ENTRY` does not hold), app code without a local `test:integration` + `test:e2e`
+migration, a `NO-REVIEW:` waiver, app code without a local `test:integration` + `test:e2e`
 run at that head (run them myself, then pass `--app-tests-passed <head>`). Matches `docs/dev-process.md` → HITL policy.
 
 See [[process-conventions]], [[a-stacked-pr-dies-with-its-base-branch]], [[defaults-i-decide-myself]],

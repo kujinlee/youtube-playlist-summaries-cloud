@@ -1,5 +1,5 @@
 {
- "measured_at": "f3d75203",
+ "measured_at": "575a5606",
  "packages": {
   "ci-layer": {
    "channel": "reusable-workflow",
@@ -188,8 +188,8 @@
     "scripts/page_markup.py",
     "scripts/regen-pages.py",
     "scripts/session-state.py",
-    "skills/dashboard/SKILL.md",
     "skills/explain-topic/SKILL.md",
+    "skills/needs-you/SKILL.md",
     "skills/shared/corpus-search.md",
     "skills/shared/explainer-delivery.md",
     "skills/shared/handoff-path.md"
@@ -371,7 +371,7 @@
     },
     "skill-dashboard": {
      "files": [
-      "skills/dashboard/SKILL.md"
+      "skills/needs-you/SKILL.md"
      ],
      "expected_count": 1
     },

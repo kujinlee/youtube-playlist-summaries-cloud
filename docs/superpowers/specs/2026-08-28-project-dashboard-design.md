@@ -5,6 +5,8 @@
 
 **Status:** ✅ shipped — merged in PR #184 (*"Backlog #75: a day with seven entries made a CURRENT dashboard read a…"*) and 6 earlier PR(s), all MERGED; the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
 
+> ⟳ 2026-11-25 — **amended by `docs/superpowers/specs/2026-11-24-dashboard-retire-design.md` §6** (owner decision O1, 2026-11-24): the dashboard page, the per-PR entry rule and the collapsed cards are retired; `docs/dashboard-entries.md` is frozen and new asks are files in `docs/asks/`. §6.2's grammar and the ask-choices rules stay in force. The body below is not rewritten.
+
 > ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: ***v5 — round 3 folded in, and the entry is now GATED rather than voluntary.***
 Three dual-adversarial rounds, six reviewer verdicts, all NOT CONVERGED. Reviews retained at
 `docs/reviews/spec-project-dashboard-r{1,2,3}-{codex,claude}.md`.

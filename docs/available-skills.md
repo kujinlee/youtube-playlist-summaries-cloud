@@ -1,6 +1,6 @@
 # Available Skills Reference
 
-> **Generated** 2026-08-29 · `scripts/regen-skills-doc.py`
+> **Generated** 2026-11-25 · `scripts/regen-skills-doc.py`
 > Re-run after: `/plugin install`, `/plugin update`, `/plugin enable/disable`,
 > or `npx skills@latest add/remove mattpocock/skills`.
 
@@ -41,15 +41,16 @@ The **Trigger** column in each table tells you who fires the skill and how:
 
 ---
 
-## 🔵 superpowers — `superpowers@claude-plugins-official` v6.3.0 ✅
+## 🔵 superpowers — `superpowers@claude-plugins-official` v7.0.2 ✅
 
 Core workflow skills for the gate-based dev process in `docs/dev-process.md`.
 
 | Name | Invoke | Trigger | Description |
 |---|---|---|---|
-| **brainstorming** | `superpowers:brainstorming` | `auto + /slash` | You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. |
+| **brainstorming** | `superpowers:brainstorming` | `auto + /slash` | You MUST use this before any creative work - creating features, building components, adding functionality, modifying behavior, or planning anything ne… |
+| **diagnosing-superpowers** | `superpowers:diagnosing-superpowers` | `auto + /slash` | Use when a superpowers session went wrong and your human partner wants to know why — repeated work, ignored plans, stumbles, poor results, a skill tha… |
 | **dispatching-parallel-agents** | `superpowers:dispatching-parallel-agents` | `auto + /slash` | Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies |
-| **executing-plans** | `superpowers:executing-plans` | `auto + /slash` | Use when you have a written implementation plan to execute in a separate session with review checkpoints |
+| **executing-plans** | `superpowers:executing-plans` | `auto + /slash` | Use when executing an implementation plan in the current session as the implementer yourself — your human partner chose inline execution, or no subage… |
 | **finishing-a-development-branch** | `superpowers:finishing-a-development-branch` | `auto + /slash` | Use when implementation is complete, all tests pass, and you need to decide how to integrate the work |
 | **receiving-code-review** | `superpowers:receiving-code-review` | `auto + /slash` | Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires… |
 | **requesting-code-review** | `superpowers:requesting-code-review` | `auto + /slash` | Use when completing tasks, implementing major features, or before merging to verify work meets requirements |
@@ -72,13 +73,13 @@ Installed via `npx skills@latest add mattpocock/skills` — lives in `.agents/sk
 | Name | Invoke | Trigger | Description |
 |---|---|---|---|
 | **caveman** | `caveman` | `auto + /slash` | Ultra-compressed communication mode. Cuts token usage ~75% by dropping filler, articles, and pleasantries while keeping full technical accuracy. |
-| **dashboard** | `dashboard` | `auto + /slash` | Record what changed in this repo as a dated dashboard entry, and regenerate the project dashboard page. |
 | **diagnose** | `diagnose` | `auto + /slash` | Disciplined diagnosis loop for hard bugs and performance regressions. Reproduce → minimise → hypothesise → instrument → fix → regression-test. |
 | **explain-topic** | `explain-topic` | `auto + /slash` | Build a self-contained HTML page explaining a topic, concept, mechanism or open question, served locally so the reader can ask questions back and get… |
 | **grill-me** | `grill-me` | `auto + /slash` | Interview the user relentlessly about a plan or design until reaching shared understanding, resolving each branch of the decision tree. |
 | **grill-with-docs** | `grill-with-docs` | `auto + /slash` | Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (CONTEXT. |
 | **handoff** | `handoff` | `auto + /slash` | Compact the current conversation into a handoff document for another agent to pick up. |
 | **improve-codebase-architecture** | `improve-codebase-architecture` | `auto + /slash` | Find deepening opportunities in a codebase, informed by the domain language in CONTEXT.md and the decisions in docs/adr/. |
+| **needs-you** | `needs-you` | `auto + /slash` | Write an ask — a decision that is waiting on the human — as a file in docs/asks/, or record the human's answer to one. |
 | **prototype** | `prototype` | `auto + /slash` | Build a throwaway prototype to flesh out a design before committing to it. |
 | **setup-matt-pocock-skills** | `setup-matt-pocock-skills` | `/slash only` | Sets up an `## Agent skills` block in AGENTS.md/CLAUDE. |
 | **sync-docs** | `sync-docs` | `auto + /slash` | Use when plugins, skills, or commands have changed and the project docs need updating — after /plugin install, /plugin update, /plugin enable/disable,… |
@@ -108,75 +109,13 @@ Always use `--fresh` to start a clean session.
 
 ## 🟣 Other Plugins — Enabled
 
-### 🟣 claude-code-setup — `claude-code-setup@claude-plugins-official` v1.0.0 ✅
-
-Analyze a codebase and recommend Claude Code automations (hooks, skills, MCP servers).
-
-| Name | Invoke | Trigger | Description |
-|---|---|---|---|
-| **claude-automation-recommender** | `claude-code-setup:claude-automation-recommender` | `auto + /slash` | Analyze a codebase and recommend Claude Code automations (hooks, subagents, skills, plugins, MCP servers). |
-
-### 🟣 claude-md-management — `claude-md-management@claude-plugins-official` v1.0.0 ✅
-
-Audit and improve CLAUDE.md files across the project.
-
-| Name | Invoke | Trigger | Description |
-|---|---|---|---|
-| **claude-md-improver** | `claude-md-management:claude-md-improver` | `auto + /slash` | Audit and improve CLAUDE.md files in repositories. Use when user asks to check, audit, update, improve, or fix CLAUDE.md files. Scans for all CLAUDE. |
-| **revise-claude-md** | `/revise-claude-md` | `/command` | Update CLAUDE.md with learnings from this session |
-
-### 🟣 code-review — `code-review@claude-plugins-official` vd45efab8c85b ✅
-
-Automated PR review using 4 parallel agents with confidence-based scoring to filter false positives.
-
-| Name | Invoke | Trigger | Description |
-|---|---|---|---|
-| **code-review** | `/code-review` | `/command` | Code review a pull request |
-
-### 🟣 code-simplifier — `code-simplifier@claude-plugins-official` v1.0.0 ✅
-
-Simplify recently modified code for clarity, consistency, and maintainability.
-
-| Name | Invoke | Trigger | Description |
-|---|---|---|---|
-| **code-simplifier** | `code-simplifier:code-simplifier` | agent (Task tool) | Simplifies and refines code for clarity, consistency, and maintainability while preserving all functionality. |
-
-### 🟣 commit-commands — `commit-commands@claude-plugins-official` vd45efab8c85b ✅
-
-Streamlined git workflow — commit, push, and open a PR in single commands.
-
-| Name | Invoke | Trigger | Description |
-|---|---|---|---|
-| **clean_gone** | `/clean_gone` | `/command` | Cleans up all git branches marked as [gone] (branches that have been deleted on the remote but still exist locally), including removing associated wor… |
-| **commit-push-pr** | `/commit-push-pr` | `/command` | Commit, push, and open a PR |
-| **commit** | `/commit` | `/command` | Create a git commit |
-
-### 🟣 explanatory-output-style — `explanatory-output-style@claude-plugins-official` v1.0.0 ✅
+### 🟣 explanatory-output-style — `explanatory-output-style@claude-plugins-official` v1.0.1 ✅
 
 Educational output mode — adds `★ Insight` blocks with implementation rationale.
 
 *(no skills, agents, or commands found — plugin may need updating)*
 
-### 🟣 feature-dev — `feature-dev@claude-plugins-official` vd45efab8c85b ✅
-
-Structured 7-phase feature development workflow: explore → clarify → architect → implement → review.
-
-| Name | Invoke | Trigger | Description |
-|---|---|---|---|
-| **feature-dev** | `/feature-dev` | `/command` | Guided feature development with codebase understanding and architecture focus |
-| **code-architect** | `feature-dev:code-architect` | agent (Task tool) | Designs feature architectures by analyzing existing codebase patterns and conventions, then providing comprehensive implementation blueprints with spe… |
-| **code-explorer** | `feature-dev:code-explorer` | agent (Task tool) | Deeply analyzes existing codebase features by tracing execution paths, mapping architecture layers, understanding patterns and abstractions, and docum… |
-| **code-reviewer** | `feature-dev:code-reviewer` | agent (Task tool) | Reviews code for bugs, logic errors, security vulnerabilities, code quality issues, and adherence to project conventions, using confidence-based filte… |
-
-### 🟣 frontend-design — `frontend-design@claude-plugins-official` vd45efab8c85b ✅
-
-Production-grade frontend UI with high design quality; avoids generic AI aesthetics.
-
-| Name | Invoke | Trigger | Description |
-|---|---|---|---|
-| **frontend-design** | `frontend-design:frontend-design` | `auto + /slash` | Create distinctive, production-grade frontend interfaces with high design quality. |
-
-### 🟣 hookify — `hookify@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 hookify — `hookify@claude-plugins-official` v0.1.1 ✅
 
 Hook configuration management — prevent unwanted behaviors via pre/post tool hooks.
 
@@ -189,11 +128,11 @@ Hook configuration management — prevent unwanted behaviors via pre/post tool h
 | **list** | `/list` | `/command` | List all configured hookify rules |
 | **conversation-analyzer** | `hookify:conversation-analyzer` | agent (Task tool) | Use this agent when analyzing conversation transcripts to find behaviors worth preventing with hooks. |
 
-### 🟣 playwright — `playwright@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 playwright — `playwright@claude-plugins-official` v6985b2d88dc0 ✅
 
 *(no skills, agents, or commands found — plugin may need updating)*
 
-### 🟣 pr-review-toolkit — `pr-review-toolkit@claude-plugins-official` vd45efab8c85b ✅
+### 🟣 pr-review-toolkit — `pr-review-toolkit@claude-plugins-official` v1.0.1 ✅
 
 Six specialized review agents for thorough PR analysis (comments, tests, errors, types, simplification).
 
@@ -213,17 +152,7 @@ Pyright LSP integration for Python type checking.
 
 *(no skills, agents, or commands found — plugin may need updating)*
 
-### 🟣 ralph-loop — `ralph-loop@claude-plugins-official` v1.0.0 ✅
-
-Iterative agent loop — repeatedly feeds Claude a task until a "completion promise" string appears.
-
-| Name | Invoke | Trigger | Description |
-|---|---|---|---|
-| **cancel-ralph** | `/cancel-ralph` | `/command` | Cancel active Ralph Loop |
-| **help** | `/help` | `/command` | Explain Ralph Loop plugin and available commands |
-| **ralph-loop** | `/ralph-loop` | `/command` | Start Ralph Loop in current session |
-
-### 🟣 remember — `remember@claude-plugins-official` v0.20.0 ✅
+### 🟣 remember — `remember@claude-plugins-official` v0.43.1 ✅
 
 Session continuity — saves state to `.remember/now.md` for clean resumption next session.
 
@@ -232,28 +161,11 @@ Session continuity — saves state to `.remember/now.md` for clean resumption ne
 | **remember** | `remember:remember` | `auto + /slash` | Save session state for clean continuation next session. |
 | **doctor** | `/doctor` | `/command` | Diagnose the Remember plugin — resolved paths, detected tools, storage mode, and whether capture is actually saving memory. |
 
-### 🟣 security-guidance — `security-guidance@claude-plugins-official` v2.0.7 ✅
+### 🟣 security-guidance — `security-guidance@claude-plugins-official` v2.0.21 ✅
 
 Security-focused code review and vulnerability guidance.
 
 *(no skills, agents, or commands found — plugin may need updating)*
-
-### 🟣 skill-creator — `skill-creator@claude-plugins-official` vd45efab8c85b ✅
-
-Create, edit, eval, and benchmark Claude Code skills.
-
-| Name | Invoke | Trigger | Description |
-|---|---|---|---|
-| **skill-creator** | `skill-creator:skill-creator` | `auto + /slash` | Create new skills, modify and improve existing skills, and measure skill performance. |
-
-### 🟣 supabase — `supabase@claude-plugins-official` v0.1.15 ✅
-
-Postgres performance optimization and best practices from Supabase.
-
-| Name | Invoke | Trigger | Description |
-|---|---|---|---|
-| **supabase** | `supabase:supabase` | `auto + /slash` | Use when doing ANY task involving Supabase. |
-| **supabase-postgres-best-practices** | `supabase:supabase-postgres-best-practices` | `auto + /slash` | Postgres best practices maintained by Supabase, for Postgres running anywhere. |
 
 ### 🟣 typescript-lsp — `typescript-lsp@claude-plugins-official` v1.0.0 ✅
 
@@ -271,7 +183,17 @@ Checked into the repo; available only in this project.
 
 | Name | Invoke | Trigger | Description |
 |---|---|---|---|
+| **clean_gone** | `/clean_gone` | `/command` | Delete local branches whose remote branch is gone — with the prune that makes [gone] visible at all |
+| **goal-tree** | `/goal-tree` | `/command` | Print the goal tree — every work thread in this session, hung under the request it serves, with live PR state |
 | **session-skills** | `/session-skills` | `/command` | Show readable skill and slash-command usage for the current Claude Code session |
+
+### User-global — `~/.claude/commands/`
+
+Available across all projects for this user.
+
+| Name | Invoke | Trigger | Description |
+|---|---|---|---|
+| **agenda** | `/agenda` | `/command` | Show the simplified agenda (today's plan and progress) from the goal tree |
 
 ---
 
@@ -303,9 +225,19 @@ Skills are unavailable until re-enabled.
 
 | Plugin | Version | Re-enable |
 |---|---|---|
-| `asana@claude-plugins-official` | d45efab8c85b — Asana task and project management commands. | `/plugin enable asana@claude-plugins-official` |
-| `deploy-on-aws@claude-plugins-official` | 1.3.0 — Deploy to AWS and generate validated architecture diagrams (draw.io with AWS4 icons). | `/plugin enable deploy-on-aws@claude-plugins-official` |
-| `github@claude-plugins-official` | d45efab8c85b — GitHub PR, issue, and repo management commands. | `/plugin enable github@claude-plugins-official` |
+| `asana@claude-plugins-official` | 6985b2d88dc0 — Asana task and project management commands. | `/plugin enable asana@claude-plugins-official` |
+| `claude-code-setup@claude-plugins-official` | 1.0.0 — Analyze a codebase and recommend Claude Code automations (hooks, skills, MCP servers). | `/plugin enable claude-code-setup@claude-plugins-official` |
+| `claude-md-management@claude-plugins-official` | 1.0.0 — Audit and improve CLAUDE.md files across the project. | `/plugin enable claude-md-management@claude-plugins-official` |
+| `code-review@claude-plugins-official` | 1.0.1 — Automated PR review using 4 parallel agents with confidence-based scoring to filter false positives. | `/plugin enable code-review@claude-plugins-official` |
+| `code-simplifier@claude-plugins-official` | 1.0.0 — Simplify recently modified code for clarity, consistency, and maintainability. | `/plugin enable code-simplifier@claude-plugins-official` |
+| `commit-commands@claude-plugins-official` | 1.0.1 — Streamlined git workflow — commit, push, and open a PR in single commands. | `/plugin enable commit-commands@claude-plugins-official` |
+| `deploy-on-aws@claude-plugins-official` | 1.4.0 — Deploy to AWS and generate validated architecture diagrams (draw.io with AWS4 icons). | `/plugin enable deploy-on-aws@claude-plugins-official` |
+| `feature-dev@claude-plugins-official` | 1.0.1 — Structured 7-phase feature development workflow: explore → clarify → architect → implement → review. | `/plugin enable feature-dev@claude-plugins-official` |
+| `frontend-design@claude-plugins-official` | 1.1.1 — Production-grade frontend UI with high design quality; avoids generic AI aesthetics. | `/plugin enable frontend-design@claude-plugins-official` |
+| `github@claude-plugins-official` | 6985b2d88dc0 — GitHub PR, issue, and repo management commands. | `/plugin enable github@claude-plugins-official` |
+| `ralph-loop@claude-plugins-official` | 1.0.1 — Iterative agent loop — repeatedly feeds Claude a task until a "completion promise" string appears. | `/plugin enable ralph-loop@claude-plugins-official` |
+| `skill-creator@claude-plugins-official` | 6985b2d88dc0 — Create, edit, eval, and benchmark Claude Code skills. | `/plugin enable skill-creator@claude-plugins-official` |
+| `supabase@claude-plugins-official` | 0.1.16 — Postgres performance optimization and best practices from Supabase. | `/plugin enable supabase@claude-plugins-official` |
 
 ---
 
