@@ -709,6 +709,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "run.plan_dir",
         "run.root", "run.tdir", "run.write",
     ),
+    # ⟳ dashboard-retire S2 Task 10: `needs_from_dashboard.text` left with its function (the old store is no
+    # longer read); `needs_from_asks.directory` (dashboard-retire S1) is examined in its place.
     # The logged goal tree (backlog #363; `row_fates`, backlog #484). Every parameter is varied by a
     # case; none is exempt.
     "goal-tree.py": (
@@ -716,7 +718,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "collect.root", "collect.run", "consolidate.items", "counts_conflict.item", "derive.goals",
         "derive.now", "derive.src", "derive_thread.src", "derive_thread.t", "identity.text",
         "main.argv", "main.now", "main.root", "main.run", "multiplicity.text",
-        "needs_from_backlog.text", "needs_from_dashboard.text", "needs_from_ledger.entries",
+        "needs_from_asks.directory", "needs_from_backlog.text", "needs_from_ledger.entries",
         "needs_html.snap", "needs_lines.snap", "needs_owner.row", "needs_state.snap",
         "parse_threads.text", "read_log.path", "render_page.built", "render_page.live",
         "render_page.log", "render_text.snap", "row_fates.text",
