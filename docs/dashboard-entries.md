@@ -1,9 +1,9 @@
 # Dashboard entries
 
-Append-only. One `## YYYY-MM-DD` block per entry; **newest at the end**.
-Nothing here is edited or deleted — corrections are appended.
-Grammar: `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` §6.2.
-Rendered by `scripts/gen-dashboard.py`; enforced by `scripts/check-dashboard-entry.py`.
+**FROZEN 2026-11-25 (dashboard-retire S2).** A record of what was asked and decided up to then; nothing is
+added, edited or deleted here any more. A new ask is a file in `docs/asks/` (the `needs-you` skill).
+Grammar of the entries below: `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` §6.2.
+Frozen to pinned bytes by `scripts/check-ask-store.py` (L1).
 
 ## 2026-08-28
 Started building the dashboard — a page that shows what changed while you were away.
@@ -21706,13 +21706,3 @@ A1 (grammar) and F1 (decisions) checks; `docs/asks/.gitkeep`. Readers: `scripts/
 `scripts/explainer-serve.py` (`DIR_SOURCES`, `source_mtime`: `/_stale` names the ask that moved),
 `scripts/regen-pages.py` (an ask edit rebuilds the goal tree), `scripts/check-reference-namespace.py` (scope).
 Backlog #623 retargeted to `scripts/goal-tree.py`.
-
-## 2026-11-25
-A small testing gap in the goal tree is closed: each of the two checks that stop a finished step from
-showing as done while an open pull request still works on it now has its own deliberate-breakage test, where
-before only one test removed both at once. Nothing the goal tree shows has changed. Nothing new is waiting for you.
-<!--tech-->
-Backlog #687, branch `b687-cells-held-mutations`. `scripts/mutations/goal-tree.json`: two entries, one per
-`and not cells_held` clause in `scripts/goal-tree.py` (the CANNOT RUN branch and the merged branch), each
-expecting exactly the r2 Codex M1 case — the only case either deletion turns red (607/608 each). Pin 528 -> 530
-in `scripts/mutations/expected_mutations.py`.

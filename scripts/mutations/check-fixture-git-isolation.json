@@ -363,7 +363,7 @@
       ]
     ],
     "expect": [
-      "⭐ every suite `main` dispatches is an entry: an unwrapped SECOND suite is refused (check-dashboard-entry's shape)"
+      "⭐ every suite `main` dispatches is an entry: an unwrapped SECOND suite is refused (check-ask-store's shape)"
     ]
   },
   {

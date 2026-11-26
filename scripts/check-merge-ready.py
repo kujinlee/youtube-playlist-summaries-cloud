@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 467 cases
+    python3 scripts/check-merge-ready.py --self-test # 463 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -16,7 +16,7 @@
 on the strength of a local gate sweep, and twice CI refused it. Both times the refusal was
 correct and both times the failing gate was one a working copy CANNOT ANSWER:
 
-  * `check-dashboard-entry.py` asks whether the BRANCH recorded what it changed.
+  * `check-ask-store.py` asks whether the BRANCH recorded what it changed.
   * `check-review-recorded.py` asks whether a review round saw the code, and reads the PULL
     REQUEST BODY for its waiver — so it only runs on a `pull_request` event at all.
 
@@ -188,6 +188,39 @@ def pr_only_steps(workflow: str) -> list[str]:
     return names
 
 
+def replayed_gates(body_file: Path) -> list[tuple[str, list[str]]]:
+    """The PR-only gates `main` replays, as `(label, argv)`, in order. PURE. A label fits the 18-character
+    report column. ⟳ dashboard-retire S2 r1 F2: a module function, so a case can hold it to ci.yml."""
+    return [
+        # ⟳ dashboard-retire S2: the ask-store gate reads no body (its `NO-ENTRY:` waiver retired).
+        ("ask store", ["python3", "scripts/check-ask-store.py", "--base", BASE_REF]),
+        ("C1 no open ask", ["python3", "scripts/gen-dashboard.py", "--assert-no-open-asks"]),
+        ("review recorded", ["python3", "scripts/check-review-recorded.py",
+                             "--base", BASE_REF, "--pr-body-file", str(body_file)]),
+        ("review rounds", ["python3", "scripts/check-review-rounds.py"]),
+    ]
+
+
+def step_python_commands(workflow: str, step: str) -> list[list[str]]:
+    """The `python3 …` command lines of the step named `step`, split shell-wise, with CI's
+    `origin/$GITHUB_BASE_REF` read as BASE_REF. PURE. `[]` when no such step exists."""
+    import shlex
+    lines = workflow.split("\n")
+    out: list[list[str]] = []
+    start = next((i for i, ln in enumerate(lines)
+                  if re.match(r"\s*-\s*name:\s*" + re.escape(step) + r"\s*$", ln)), None)
+    if start is None:
+        return out
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    for ln in lines[start + 1:]:
+        if ln.strip() and len(ln) - len(ln.lstrip()) <= indent:
+            break
+        m = re.match(r"\s*(?:run:\s*)?(python3\s.*?)\s*$", ln)
+        if m:
+            out.append([BASE_REF if t == "origin/$GITHUB_BASE_REF" else t for t in shlex.split(m.group(1))])
+    return out
+
+
 def job_level_gates(workflow: str) -> list[str]:
     """Job names gated on a pull_request event. PURE.
 
@@ -293,6 +326,11 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     # step's env aliases as `SWEEP_TIMEOUT_MINUTES` (check-plan-code's time budget). Still a setting, not a gate.
     ("ci.yml", "timeout-minutes: &sweep-limit ${{ github.event_name == 'schedule' && 60 || 30 }}"):
         (1, "the sweep shard's timeout, longer on the two-seed scheduled sweep — gates no step"),
+    # ⟳ 2026-11-25, dashboard-retire S2 Task 12: the ask store's PUSH-mode step (A1 + L1 on master and
+    # batch/**). It never runs on a pull request, so it is no gate a READY verdict could miss; the PR's
+    # own `ask store (pull request)` step, which this script replays, runs the same L1.
+    ("ci.yml", "if: github.event_name == 'push'"):
+        (1, "the ask store's push-mode step (master, batch/**) — never runs on a pull request"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),
     # ⟳ 2026-11-15, backlog #651 (owner 11-15, option A): the full sweep moved from every master push to the
@@ -527,12 +565,15 @@ def _pr_number(explicit: int | None) -> tuple[int | None, str]:
 # This script is the only place that holds BOTH verdicts and the body at once, so
 # it is the only place the confusion is visible. That is why the diagnosis lives
 # here and not in a forty-first guard: one mechanism per concern.
-GATE_ESCAPE = {"dashboard entry": "NO-ENTRY:", "review recorded": "NO-REVIEW:"}
+# ⟳ dashboard-retire S2: the dashboard-entry ratchet and its `NO-ENTRY:` waiver are retired, so one
+# gate with one escape is left. The diagnosis keeps its INVISIBLE and MISSPELLED states; MISDIRECTED
+# and INERT-OTHER needed a second gate's escape and went with it.
+GATE_ESCAPE = {"review recorded": "NO-REVIEW:"}
 
 # Anything shaped like an escape but not spelled as one. ⚠ MEASURED against the
-# real matcher, not guessed: `NO_ENTRY:`, `no-entry:`, `NO-ENTRY` without a colon,
+# real matcher, not guessed: `NO_REVIEW:`, `no-review:`, `NO-REVIEW` without a colon,
 # the token mid-line, indented 4+, or inside a fence ALL grant nothing silently.
-ESCAPE_LOOKALIKE = re.compile(r"(?i)\bno[-_ ]?(?:entry|review)\b")
+ESCAPE_LOOKALIKE = re.compile(r"(?i)\bno[-_ ]?review\b")
 
 
 class SiblingUnusable(Exception):
@@ -650,7 +691,7 @@ def _import_sibling(src: Path, name: str, error=SiblingUnusable):
 
 
 # The sibling that owns the escape grammar. A module global so a case can point it at a copy.
-DASHBOARD_GATE = Path(__file__).with_name("check-dashboard-entry.py")
+ASK_STORE_GATE = Path(__file__).with_name("check-ask-store.py")
 
 
 @functools.lru_cache(maxsize=4)
@@ -2053,8 +2094,8 @@ def granted_escapes(pr_body: str) -> dict[str, str | None]:
     The CALL fails closed like the import (r5 Claude F1): whatever the matcher raises, `SystemExit`
     included, is `SiblingUnusable`, which `main()` reports as CANNOT RUN. ⟳ r7 Claude F3: so does an
     answer that is neither `None` nor an exact str — `escape_diagnosis` truth-tests it, outside any `try`."""
-    gate = _dashboard_gate(DASHBOARD_GATE)
-    where = str.__str__(DASHBOARD_GATE.name)
+    gate = _dashboard_gate(ASK_STORE_GATE)
+    where = str.__str__(ASK_STORE_GATE.name)
     return {m: _cross(lambda m=m: gate.exemption_reason(pr_body, m), reduce=_exact_reason,
                       error=lambda d: SiblingUnusable(f"{where}: exemption_reason: {d}"))
             for m in sorted(set(GATE_ESCAPE.values()))}
@@ -2064,11 +2105,10 @@ def escape_diagnosis(refused: list[str], granted: dict[str, str | None],
                      pr_body: str) -> list[str]:
     """PURE. Why a REFUSING gate did not see the escape its author thinks they wrote.
 
-    Three distinguishable states, and the distinction is the whole point — each has a
-    different repair:
+    Two distinguishable states, and the distinction is the whole point — each has a
+    different repair (⟳ dashboard-retire S2: MISDIRECTED and INERT-OTHER needed a second gate's
+    escape and retired with `NO-ENTRY:`):
 
-      MISDIRECTED  the other gate's escape is granted and this one's is not. The
-                   author answered the wrong gate. Name the token this gate wants.
       INVISIBLE    this gate's exact token IS in the body and was not counted, so
                    its placement killed it: indented 4+, inside a fence, or not at
                    the start of its own line.
@@ -2076,31 +2116,16 @@ def escape_diagnosis(refused: list[str], granted: dict[str, str | None],
 
     ⚠ It runs ONLY on gates that already refused, so it can never turn a pass into a
     failure and adds no false-positive surface. It explains a verdict; it is not one.
-    ⚠ And it never advises taking the escape. Usually the right answer is the entry
-    or the review — both 2026-09-26 branches genuinely warranted one.
+    ⚠ And it never advises taking the escape. Usually the right answer is the review.
     """
     out: list[str] = []
     for gate in refused:
         want = GATE_ESCAPE.get(gate)
         if want is None or granted.get(want):
             continue
-        other = next((m for g, m in GATE_ESCAPE.items() if g != gate), None)
-        if other is not None and granted.get(other):
-            out.append(f"{gate}: the body declares `{other}`, which answers the OTHER gate. "
-                       f"This one is only answered by `{want}` — or by doing the work.")
-        elif want in pr_body:
+        if want in pr_body:
             out.append(f"{gate}: `{want}` IS in the body and was not counted. It must start its "
                        f"own line, unindented (4+ columns is a code block), outside any fence.")
-        elif other is not None and other in pr_body:
-            # ⭐ FOUND BY THE FALSIFIER, 2026-09-26, and it is the state the incident was
-            # actually in. Both PR bodies wrote `NO-REVIEW:` inside BACKTICKS, so the
-            # matcher granted nothing — and the review gate happened to pass for an
-            # unrelated reason, so nobody learned the declaration was inert. Saying only
-            # "wrong token" would have been true and would have hidden this.
-            out.append(f"{gate}: this gate needs `{want}`, which is absent. ⚠ And `{other}` is "
-                       f"in the body but was NOT granted either — so that declaration is inert "
-                       f"too. Both must start their own line, unindented, outside fences and "
-                       f"NOT wrapped in backticks.")
         elif (hit := ESCAPE_LOOKALIKE.search(pr_body)) is not None:
             out.append(f"{gate}: the body contains {hit.group(0)!r}, which is not `{want}`. "
                        f"The gate matches that literal exactly — case, hyphen and colon.")
@@ -2190,17 +2215,7 @@ def main(argv: list[str]) -> int:
     body_file.write_text(rb.stdout)
 
     # The two gates a working copy cannot answer. Invoked the way CI invokes them.
-    for name, cmd in [
-        # ⚠ BOTH ARGUMENTS, because CI passes both (ci.yml:422) — code review r1 (Codex), Low.
-        # Without `--pr-body-file` the gate cannot see a `NO-ENTRY:` waiver, so this script would
-        # report NOT READY for a branch CI passes: right answer, wrong reason, and the reader goes
-        # looking for an entry they already waived.
-        ("dashboard entry", ["python3", "scripts/check-dashboard-entry.py",
-                             "--base", BASE_REF, "--pr-body-file", str(body_file)]),
-        ("review recorded", ["python3", "scripts/check-review-recorded.py",
-                             "--base", BASE_REF, "--pr-body-file", str(body_file)]),
-        ("review rounds", ["python3", "scripts/check-review-rounds.py"]),
-    ]:
+    for name, cmd in replayed_gates(body_file):
         r = _run(cmd)
         results[name] = r.returncode
         mark = MARK.get(r.returncode, "?? ")
@@ -2352,7 +2367,7 @@ def _self_test_body() -> int:
         run: npm test
       - name: dashboard entry ratchet
         if: github.event_name == 'pull_request'
-        run: python3 scripts/check-dashboard-entry.py
+        run: python3 scripts/check-ask-store.py
       - name: check-review-recorded (PR only)
         if: github.event_name == 'pull_request'
         env:
@@ -2395,11 +2410,30 @@ def _self_test_body() -> int:
     # ⚠ The REAL workflow, not a fixture: the derivation must agree with what CI actually gates.
     check("the derivation finds exactly the FOUR steps ci.yml gates today",
           sorted(pr_only_steps(WORKFLOW.read_text())) if WORKFLOW.is_file() else [],
-          ["check-review-recorded (PR only)", "dashboard entry ratchet",
+          ["ask store (pull request)", "check-review-recorded (PR only)",
            "doc citations resolve", "reference namespaces are qualified"])
 
     check("the real workflow has pull-request-only steps — an empty answer here is CANNOT RUN",
           len(pr_only_steps(WORKFLOW.read_text())) > 0 if WORKFLOW.is_file() else True, True)
+
+    # ── dashboard-retire S2 r1 F2: the replay runs EVERY command CI's `ask store (pull request)` step runs ──
+    check("step_python_commands reads a step's multi-line run block and maps the base ref",
+          step_python_commands("      - name: s\n        if: x\n        run: |\n"
+                               "          python3 scripts/a.py --base \"origin/$GITHUB_BASE_REF\"\n"
+                               "          python3 scripts/b.py --flag\n      - name: t\n"
+                               "        run: python3 scripts/c.py\n", "s"),
+          [["python3", "scripts/a.py", "--base", BASE_REF], ["python3", "scripts/b.py", "--flag"]])
+    _ci_ask = step_python_commands(WORKFLOW.read_text(), "ask store (pull request)") if WORKFLOW.is_file() else []
+    _replayed = [argv for _n, argv in replayed_gates(Path("/x"))]
+    check("r1 F2: every command of ci.yml's `ask store (pull request)` step is replayed (A1/F1/L1 AND C1)",
+          (len(_ci_ask), [c for c in _ci_ask if c not in _replayed]), (2, []))
+    check("r1 F2: every replayed label fits the 18-character report column",
+          [n for n, _a in replayed_gates(Path("/x")) if len(n) > 18], [])
+    # ⟳ r1 F2 fold, CI fixture-variation: `body_file` reaches the review gate's argv, at two distinct paths.
+    check("r1 F2: replayed_gates passes its body file to the review gate, and only there",
+          ([n for n, a in replayed_gates(Path("/a/b.md")) if "/a/b.md" in a],
+           [n for n, a in replayed_gates(Path("/c.md")) if "/c.md" in a]),
+          (["review recorded"], ["review recorded"]))
 
     check("all green is READY", verdict({"a": 0, "b": 0})[0], 0)
     check("one failure is NOT READY", verdict({"a": 0, "b": 1})[0], 1)
@@ -2532,59 +2566,39 @@ def _self_test_body() -> int:
           ci_conclusion([{"name": "a", "bucket": "pass"}, {"name": "b", "bucket": "skipping"}])[0], 0)
 
     # ── the escape cross-check (2026-09-26) ──────────────────────────────────
-    D, R = "dashboard entry", "review recorded"
-    NE, NR = "NO-ENTRY:", "NO-REVIEW:"
-    none2 = {NE: None, NR: None}
+    # ⟳ dashboard-retire S2: one gate, one escape. MISDIRECTED and INERT-OTHER retired with
+    # `NO-ENTRY:`; INVISIBLE and MISSPELLED remain, now on `NO-REVIEW:` (9.5, 9.6).
+    R, NR = "review recorded", "NO-REVIEW:"
+    none1 = {NR: None}
     check("a refusing gate whose own escape is granted says nothing",
-          escape_diagnosis([D], {NE: "docs only", NR: None}, "NO-ENTRY: docs only"), [])
-    _mis = escape_diagnosis([D], {NE: None, NR: "prose"}, "NO-REVIEW: prose")
-    check("MISDIRECTED: the dashboard gate refused while NO-REVIEW is granted", len(_mis), 1)
-    check("...and it names the token THIS gate wants", NE in _mis[0], True)
-    check("...and names the one that answers the other gate", NR in _mis[0], True)
-    # ⛔ THE CASE THAT DISTINGUISHES MISDIRECTED FROM INERT-OTHER, added because a mutation
-    # silencing MISDIRECTED SURVIVED: control fell through to INERT-OTHER, whose message also
-    # carries both tokens and is also one line, so every assertion above still passed. The
-    # distinguishing PROPERTY is that the other escape WAS granted — so it is not inert, and
-    # saying it is would be false.
-    check("...and does NOT call the other declaration inert, because it was granted",
-          "inert" in _mis[0], False)
-    check("...whereas the INERT case does say so — the two states are distinguishable",
-          "inert" in escape_diagnosis([D], none2, "NO-REVIEW: ungranted")[0], True)
-    check("MISDIRECTED mirrors: the review gate refused while NO-ENTRY is granted",
-          NR in escape_diagnosis([R], {NE: "docs", NR: None}, "NO-ENTRY: docs")[0], True)
-    check("INVISIBLE: the exact token is present but granted nothing",
+          escape_diagnosis([R], {NR: "docs only"}, "NO-REVIEW: docs only"), [])
+    check("9.5 INVISIBLE: the exact token is present but granted nothing",
           "must start its own line" in
-          escape_diagnosis([D], none2, "    NO-ENTRY: indented four")[0], True)
+          escape_diagnosis([R], none1, "    NO-REVIEW: x")[0], True)
     check("MISSPELLED: an underscore lookalike names the literal the gate wants",
-          NE in escape_diagnosis([D], none2, "NO_ENTRY: typo")[0], True)
-    check("MISSPELLED: lowercase is diagnosed too",
-          len(escape_diagnosis([D], none2, "no-entry: lower")), 1)
+          NR in escape_diagnosis([R], none1, "NO_REVIEW: typo")[0], True)
+    check("9.6 MISSPELLED: lowercase is diagnosed too",
+          len(escape_diagnosis([R], none1, "no-review: lower")), 1)
     check("...and names the lowercase text it actually found",
-          "no-entry" in escape_diagnosis([D], none2, "no-entry: lower")[0], True)
+          "no-review" in escape_diagnosis([R], none1, "no-review: lower")[0], True)
     check("a body with no escape at all produces no diagnosis",
-          escape_diagnosis([D], none2, "just a normal PR body"), [])
+          escape_diagnosis([R], none1, "just a normal PR body"), [])
     check("a gate with no escape of its own (review rounds) is never diagnosed",
-          escape_diagnosis(["review rounds"], none2, "NO-ENTRY: x"), [])
+          escape_diagnosis(["review rounds"], none1, "NO-REVIEW: x"), [])
+    check("the ask-store gate has no escape of its own and is never diagnosed",
+          escape_diagnosis(["ask store"], none1, "NO-ENTRY: x"), [])
     check("NOTHING is said when no gate refused — it explains, never accuses",
-          escape_diagnosis([], none2, "NO_ENTRY: typo"), [])
-    # ⭐ THE STATE THE REAL INCIDENT WAS IN — found by replaying the actual PR bodies.
-    check("INERT OTHER: the other token is present but was granted nothing",
-          "inert" in escape_diagnosis([D], none2, "`NO-REVIEW:` backticked, so no gate sees it")[0],
-          True)
-    check("...and it says backticks are one of the causes",
-          "backticks" in escape_diagnosis([D], none2, "`NO-REVIEW:` backticked")[0], True)
-    check("a MISSPELLED diagnosis names the lookalike it found",
-          "NO_ENTRY" in escape_diagnosis([D], none2, "NO_ENTRY: typo")[0], True)
-    check("both gates refusing can yield two diagnoses",
-          len(escape_diagnosis([D, R], none2, "NO_ENTRY: typo and NO_REVIEW: typo")), 2)
+          escape_diagnosis([], none1, "NO_REVIEW: typo"), [])
+    check("a retired NO-ENTRY lookalike is no longer an escape lookalike",
+          escape_diagnosis([R], none1, "no-entry: lower"), [])
     # ⛔ THE REAL MATCHER, not a copy of its rule — these assert the imported gate's behaviour.
-    _g = granted_escapes("NO-ENTRY: docs only")
-    check("the imported matcher grants a well-formed NO-ENTRY", _g[NE], "docs only")
-    check("...and grants nothing for the other marker", _g[NR], None)
+    _g = granted_escapes("NO-REVIEW: docs only")
+    check("the imported matcher grants a well-formed NO-REVIEW", _g, {NR: "docs only"})
+    check("...and a NO-ENTRY declaration grants nothing", granted_escapes("NO-ENTRY: docs only"), {NR: None})
     check("the imported matcher refuses a 4-column-indented token",
-          granted_escapes("    NO-ENTRY: x")[NE], None)
+          granted_escapes("    NO-REVIEW: x")[NR], None)
     check("the imported matcher refuses a fenced token",
-          granted_escapes("```\nNO-ENTRY: x\n```")[NE], None)
+          granted_escapes("```\nNO-REVIEW: x\n```")[NR], None)
 
     # ── THE HOUSE RULE'S EXCEPTIONS (2026-10-25) — each fired by TWO DISTINCT inputs, and each
     # with an ADJACENT input that must stay quiet, so no branch passes on one fixture's constant.
@@ -4168,20 +4182,20 @@ def _self_test_body() -> int:
           _rc, 0)
     # ⛔ r5 Claude F1: the SAME class at the other in-process importer. Codex's r4 input appended to
     # the dashboard gate left `main()` at rc 0 with no verdict, on a head whose pin falls 5 -> 4.
-    _real_cde = (_here / "check-dashboard-entry.py").read_text(encoding="utf-8")
+    _real_cde = (_here / "check-ask-store.py").read_text(encoding="utf-8")
     def _gate_main(body, pr, refuse=()):
-        """`main()` over a falling pin, with `DASHBOARD_GATE` pointed at a copy holding `body`."""
+        """`main()` over a falling pin, with `ASK_STORE_GATE` pointed at a copy holding `body`."""
         d = Path(tempfile.mkdtemp())
-        (d / "check-dashboard-entry.py").write_text(body, encoding="utf-8")
-        saved = globals()["DASHBOARD_GATE"]
-        globals()["DASHBOARD_GATE"] = d / "check-dashboard-entry.py"
+        (d / "check-ask-store.py").write_text(body, encoding="utf-8")
+        saved = globals()["ASK_STORE_GATE"]
+        globals()["ASK_STORE_GATE"] = d / "check-ask-store.py"
         try:
             return _main(["scripts/check-plan-code.py"], pr, refuse=refuse,
                          pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
         except BaseException as exc:      # SystemExit escaping main() is exactly the defect
             return f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
         finally:
-            globals()["DASHBOARD_GATE"] = saved
+            globals()["ASK_STORE_GATE"] = saved
             shutil.rmtree(d, ignore_errors=True)
     _rc, _o = _gate_main(_real_cde + '\nif __name__ != "__main__":\n    raise SystemExit(0)\n', "16")
     check("⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)",
@@ -4265,7 +4279,7 @@ def _self_test_body() -> int:
           (_rc, "scripts/a.py drops 5 -> 4" in _o), (3, True))
     _falsy = f"class _B:\n    __bool__ = lambda s: {_exit}\n"
     _rc, _o = _gate_main(_real_cde + "\n" + _falsy + "def exemption_reason(body, marker):\n    return _B()\n",
-                         "33", refuse=("scripts/check-dashboard-entry.py",))
+                         "33", refuse=("scripts/check-ask-store.py",))
     check("⭐ a REFUSING gate is CANNOT RUN, rc=2, never rc 0, when exemption_reason returns a value whose __bool__ exits (r7 P11)",
           (_rc, "escape cross-check NOT RUN" in _o, "NO-REVIEW matcher failed" in _o), (2, True, True))
     _sname = ("\nclass _S(str):\n    __format__ = lambda s, f: " + _exit + "\n"
@@ -4274,10 +4288,10 @@ def _self_test_body() -> int:
     check("⭐ main() is CANNOT RUN, rc=2, when the gate's import raises a class whose __name__ is a str subclass (r7 P12)",
           (_rc, "CANNOT RUN" in _o), (2, True))
     _rc, _o = _gate_main(_real_cde + _sname + "def exemption_reason(body, marker):\n    raise Broken('x')\n",
-                         "35", refuse=("scripts/check-dashboard-entry.py",))
+                         "35", refuse=("scripts/check-ask-store.py",))
     check("⭐ ...and when exemption_reason raises it under a refusing gate, the text=False site (r7 P13)",
           (_rc, "CANNOT RUN" in _o), (2, True))
-    _rc, _o = _gate_main(_real_cde, "36", refuse=("scripts/check-dashboard-entry.py",))
+    _rc, _o = _gate_main(_real_cde, "36", refuse=("scripts/check-ask-store.py",))
     check("...while a well-behaved gate under a refusal is NOT READY, rc=1 (the adjacent negative)", _rc, 1)
     # #353: the MACHINE list decides paths. The header says `docs/g.yml` both sides; the list says a
     # workflow was renamed there — so only a main() that reads the list holds it.

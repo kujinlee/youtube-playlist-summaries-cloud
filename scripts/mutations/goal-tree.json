@@ -459,19 +459,6 @@
     ]
   },
   {
-    "name": "X1: an unreadable dashboard entry is not reported",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "for e in entries if e[\"error\"]]",
-        "for e in entries if False]"
-      ]
-    ],
-    "expect": [
-      "⛔ X1: an entry the store cannot read is a PROBLEM naming its id; readable asks are kept"
-    ]
-  },
-  {
     "name": "X1: backlog lines the row parser refused are not reported",
     "file": "scripts/goal-tree.py",
     "edits": [
@@ -719,20 +706,20 @@
       ]
     ],
     "expect": [
-      "⭐ Z2: a dashboard ask's identity and count are read from its BODY, the title kept for display"
+      "⭐ Z2: an ask file's identity and count are read from its BODY, the question kept for display"
     ]
   },
   {
-    "name": "Z2: a dashboard ask's whole entry is not handed over for the count",
+    "name": "Z2: an ask file's whole entry is not handed over for the count (⟳ dashboard-retire S2: re-bound from the old store's reader)",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "identity(whole), whole))",
-        "identity(whole), None))"
+        "_SS.clean(a[\"question\"], 160), identity(whole), whole)",
+        "_SS.clean(a[\"question\"], 160), identity(whole), None)"
       ]
     ],
     "expect": [
-      "⭐ Z2: a dashboard ask's identity and count are read from its BODY, the title kept for display"
+      "⭐ Z2: an ask file's identity and count are read from its BODY, the question kept for display"
     ]
   },
   {
@@ -749,12 +736,12 @@
     ]
   },
   {
-    "name": "Y1: a dashboard ask's declared identity is ignored, so it never merges (re-anchored on the Z2 rewrite)",
+    "name": "Y1: an ask file's declared identity is ignored, so it never merges (⟳ dashboard-retire S2: re-bound from the old store's reader)",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                           _SS.clean(e.get(\"title\") or \"\", 160), identity(whole)",
-        "                           _SS.clean(e.get(\"title\") or \"\", 160), None"
+        "_SS.clean(a[\"question\"], 160), identity(whole)",
+        "_SS.clean(a[\"question\"], 160), None"
       ]
     ],
     "expect": [
@@ -6838,19 +6825,6 @@
     ]
   },
   {
-    "name": "the goal tree's call to the old store's reader is severed",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "(\"dashboard\", DASHBOARD_REL, needs_from_dashboard),",
-        "(\"dashboard\", DASHBOARD_REL, lambda _t: ([], [])),"
-      ]
-    ],
-    "expect": [
-      "3.9 the old store's asks still show, through collect, with their /dashboard link"
-    ]
-  },
-  {
     "name": "an asks problem is dropped",
     "file": "scripts/goal-tree.py",
     "edits": [
@@ -6881,8 +6855,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "NEEDS_SOURCES = (\"dashboard\", \"asks\", \"ledger\", \"backlog\")",
-        "NEEDS_SOURCES = (\"dashboard\", \"ledger\", \"backlog\")"
+        "NEEDS_SOURCES = (\"asks\", \"ledger\", \"backlog\")",
+        "NEEDS_SOURCES = (\"ledger\", \"backlog\")"
       ]
     ],
     "expect": [

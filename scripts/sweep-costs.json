@@ -110,6 +110,13 @@
    "samples": 10,
    "mutations": 10
   },
+  "scripts/check-ask-store.py": {
+   "control": 0.159,
+   "recontrol": 0.159,
+   "mutation": 0.162,
+   "samples": 76,
+   "mutations": 88
+  },
   "scripts/check-backlog-closure.py": {
    "control": 0.034,
    "recontrol": 0.034,
@@ -165,13 +172,6 @@
    "mutation": 0.31,
    "samples": 76,
    "mutations": 134
-  },
-  "scripts/check-dashboard-entry.py": {
-   "control": 0.159,
-   "recontrol": 0.159,
-   "mutation": 0.162,
-   "samples": 76,
-   "mutations": 88
   },
   "scripts/check-decision-scheme.py": {
    "control": 0.328,

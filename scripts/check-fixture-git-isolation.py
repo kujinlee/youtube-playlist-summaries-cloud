@@ -785,7 +785,7 @@ def _self_test_body() -> int:
            'def main(argv):\n    ap = argparse.ArgumentParser()\n    ap.add_argument("--self-test", action="store_true")\n'
            '    a = ap.parse_args(argv)\n    if a.self_test:\n        pure, impure = _self_test(), _impure_self_test()\n'
            '        return pure or impure\n')
-    case("⭐ every suite `main` dispatches is an entry: an unwrapped SECOND suite is refused (check-dashboard-entry's shape)",
+    case("⭐ every suite `main` dispatches is an entry: an unwrapped SECOND suite is refused (check-ask-store's shape)",
          rc(two), 1)
     nested = ('import argparse, subprocess\ndef main(argv):\n    def _self_test():\n        subprocess.run(["git", "status"])\n'
               '    ap = argparse.ArgumentParser()\n    ap.add_argument("--self-test", action="store_true")\n'

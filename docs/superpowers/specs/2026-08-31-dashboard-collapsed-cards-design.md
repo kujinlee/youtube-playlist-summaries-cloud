@@ -5,6 +5,8 @@
 
 **Status:** ✅ shipped — merged in PR #189 (*"Dashboard cards collapse to one line, and a truncated title stops los…"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
 
+> ⟳ 2026-11-25 — **amended by `docs/superpowers/specs/2026-11-24-dashboard-retire-design.md` §6** (owner decision O1, 2026-11-24): the dashboard page, the per-PR entry rule and the collapsed cards are retired; `docs/dashboard-entries.md` is frozen and new asks are files in `docs/asks/`. §6.2's grammar and the ask-choices rules stay in force. The body below is not rewritten.
+
 > ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: ***v3 — rounds 1 and 2 folded in, BOTH halves each round.***
 **Approved by the user 2026-08-31; proceeding in AFK mode from here.**
 Reviews at `docs/reviews/spec-dashboard-collapsed-cards-r{1,2}-{codex,claude}.md`.

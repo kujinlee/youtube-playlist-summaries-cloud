@@ -5,6 +5,8 @@
 
 **Status:** ✅ shipped — merged in PR #187 (*"Heads-up expiry decided: no expiry, and the ask that carried it is re…"*) and 1 earlier PR(s), all MERGED; the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
 
+> ⟳ 2026-11-25 — **amended by `docs/superpowers/specs/2026-11-24-dashboard-retire-design.md` §6** (owner decision O1, 2026-11-24): the dashboard page, the per-PR entry rule and the collapsed cards are retired; `docs/dashboard-entries.md` is frozen and new asks are files in `docs/asks/`. §6.2's grammar and the ask-choices rules stay in force. The body below is not rewritten.
+
 > ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: ***v3 — rounds 1 and 2 folded in. Both rounds NOT CONVERGED from both halves.***
 Reviews at `docs/reviews/spec-dashboard-ask-choices-r{1,2}-{codex,claude}.md`.
 Round 1: 2 Blocking each, agreeing. Round 2: 3 Blocking each — **all flagged as regressions

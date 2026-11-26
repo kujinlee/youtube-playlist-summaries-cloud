@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Refuse a branch that changes tracked files and records no dashboard entry.
+"""Check the ask store, `docs/asks/` (one file per ask).
 
-It also checks the ask store, `docs/asks/` (one file per ask): A1, every file there is a well-formed
-ask, and F1, an ask at the merge base is still at HEAD and only grew at its end. A1 reads the names
-git tracks at HEAD (`git ls-tree`), not the directory listing; content comes from the working tree.
-A problem in the ask store is REFUSED whatever the entry verdict, a `NO-ENTRY:` waiver included.
+A1: every file there is a well-formed ask. F1 (only with `--base`): an ask at the merge base is
+still at HEAD and only grew at its end. Both read HEAD's tree through git (`git ls-tree`), never
+the directory listing, so an untracked scratch file cannot fail the gate.
+
+It also owns the declaration parser `exemption_reason`, which `check-review-recorded.py` and
+`check-merge-ready.py` call for `NO-REVIEW:`. ⟳ dashboard-retire S2: the per-PR dashboard-entry rule
+(R1) and its `NO-ENTRY:` waiver are retired; the entry grammar the page still imports stays until S3.
 """
 from __future__ import annotations
 import argparse
@@ -27,9 +30,7 @@ import sys
 # the property that fix set out to delete, so it is deleted in both places.
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-EXEMPT_DIRS = ("docs/reviews/",)
-EXEMPT_FILES = ("docs/dashboard-entries.md",)
-NO_ENTRY = "NO-ENTRY:"
+NO_REVIEW = "NO-REVIEW:"     # the one declaration marker left; R1's `NO-ENTRY:` retired in S2
 
 # ─── the entry-header grammar — ONE definition, imported by scripts/gen-dashboard.py
 HEADER = re.compile(r"^## (\S+)(.*)$")
@@ -102,8 +103,10 @@ def header_error(line: str) -> str | None:
     states a consequence for the whole gate will go stale every time a sibling grows.
     **State what this function decides; name the sibling that decides the rest.**
 
-    So: reference is decided by `added_reference_errors`, not here. This function is
-    the SYNTAX half, and remains shared with the page's parser.
+    So: reference is decided by `parse_entries` (which sets the entry's error), not here. This
+    function is the SYNTAX half, and remains shared with the page's parser.
+    ⟳ dashboard-retire S2: `added_reference_errors` and `verdict` were deleted with the per-PR
+    entry ratchet, so NO gate refuses a dangling reference any more; the page shows it until S3.
 
     The SYNTAX half is still worth the shared definition, and was earned the hard
     way: v2.2 claimed the two already agreed; measured, they diverged on five
@@ -147,9 +150,6 @@ def header_error(line: str) -> str | None:
     return None
 
 
-def _added_entry_line(line: str) -> bool:
-    return line.startswith("+") and header_error(line[1:]) is None
-
 FENCE = re.compile(r"^(?P<ind> {0,3})(?P<ch>`{3,}|~{3,})")
 
 
@@ -176,14 +176,15 @@ def _indented(text: str) -> bool:
 EMPH = re.compile(r"^(\*{1,3}|_{1,3})")
 
 
-def _declaration_reason(s: str, marker: str = NO_ENTRY) -> str | None:
+def _declaration_reason(s: str, marker: str = NO_REVIEW) -> str | None:
     """The reason after a declaration marker at the START of `s`, else None.
 
     ⟳ 2026-09-10. `marker` is a parameter so `check-review-recorded.py` can ask the same question
     of `NO-REVIEW:` without owning a second copy of this parser. The rules below — which contexts
     are inert, and that emphasis is NOT one of them — cost measured escapes to get right; a sibling
     gate re-deriving them would drift, which is the divergence this file has already paid for twice.
-    The default keeps every existing caller, including `gen-dashboard.py`, unchanged.
+    ⟳ dashboard-retire S2: the default is `NO-REVIEW:`, the one marker left. `gen-dashboard.py`, whose
+    exemption list is historical `NO-ENTRY:` declarations, passes that marker explicitly until S3.
 
     ONE definition, called from BOTH of `exemption_reason`'s scan points. They had
     the marker test written out twice and would have needed the same fix twice —
@@ -295,7 +296,7 @@ def fenced_lines(text: str) -> set[int]:
     return out
 
 
-def exemption_reason(pr_body: str, marker: str = NO_ENTRY) -> str | None:
+def exemption_reason(pr_body: str, marker: str = NO_REVIEW) -> str | None:
     """The reason after a line-leading declaration marker, or None.
 
     ONE DEFINITION, shared with scripts/gen-dashboard.py, so the page displays exactly
@@ -734,25 +735,109 @@ def ask_store_problems(base: str | None, root: pathlib.Path) -> tuple[list[str],
     return problems, None
 
 
-def _is_exempt(path: str) -> bool:
-    return path in EXEMPT_FILES or any(path.startswith(d) for d in EXEMPT_DIRS)
+# ── L1: the old dashboard store is FROZEN to pinned bytes (dashboard-retire S2, Task 12) ──────
+#
+# ⛔ A new ask is a file in `docs/asks/`. Nothing reads `docs/dashboard-entries.md` for asks any more,
+# so an entry appended there would be an ask nobody sees: L1 refuses ANY change to it, on a pull
+# request and without `--base` (`main` runs it in both modes). The two HEAD pins describe the frozen
+# bytes; `LEGACY_STORE_BASE_BLOB` is master's store at pin time, read only by `--cutover-check` (12.8,
+# 12.12), because after the squash master no longer holds it. ⚠ The base pin, `cutover_problem`,
+# `PR_LIST_LIMIT` and `store_edit_prs` are the cutover's and leave in S3 (plan Task 16).
+LEGACY_STORE_REL = "docs/dashboard-entries.md"
+LEGACY_STORE_BLOB = "befaa1cb22cfb272bc803e23b4b990ae812ebc27"        # HEAD: git hash-object
+LEGACY_STORE_SHA256 = "c6e110df45ac06328b14356d276b03a47f505737b18ab0901065acdc4b1ef97f"
+LEGACY_STORE_BASE_BLOB = "a9553580e41bac27f7710f28c7dee1f4216e98f0"   # master f9979fa0, before the header edit
+L1_DIFF_LINES = 40
+PR_LIST_LIMIT = 1000
 
 
-# An ADDED line trying to be an entry header: `BLOCK`, in its diff-line form.
-#
-# ⛔ DERIVED, NOT RE-TYPED — and the reason is measured, not stylistic. This was
-# hand-written as `^\+##(?!#)` next to a hand-written `^##\s*\S` in the page, and
-# the pair silently disagreed about `###` for as long as both existed. Anything
-# spelled out here again is a third copy free to drift; the only way the gate and
-# the page cannot answer "does this line start an entry?" differently is for one
-# of them not to hold an opinion.
-#
-# ⚠ The previous comment justified `(?!#)` with "several entries use one".
-# That was FALSE when written: `grep -c '^###' docs/dashboard-entries.md` → 0.
-# The real justification is spec §6.2, quoted at `BLOCK` — a `###` line is body
-# markup, and no live entry depends on either reading, which is precisely why the
-# divergence survived. The rule is right; only its stated evidence was invented.
-ENTRY_ISH = re.compile(r"^\+" + BLOCK.pattern.removeprefix("^"))
+def legacy_store_problem(head_blob: str | None, head_bytes: bytes | None,
+                         diff) -> str | None:
+    """PURE. `None` when HEAD's store bytes hash to `LEGACY_STORE_SHA256`; otherwise what differs (the
+    first L1_DIFF_LINES lines of `diff(LEGACY_STORE_BLOB, head_blob)`, or that it could not be printed),
+    then the command that shows it and the one that restores it — by BLOB, never a commit id, so the
+    command works whatever history the branch has."""
+    import hashlib
+    if head_bytes is not None and hashlib.sha256(head_bytes).hexdigest() == LEGACY_STORE_SHA256:
+        return None
+    restore = f"git cat-file blob {LEGACY_STORE_BLOB} > {LEGACY_STORE_REL}"
+    if head_bytes is None or head_blob is None:
+        return (f"{LEGACY_STORE_REL} is missing at HEAD — it is a frozen record and must stay; restore it "
+                f"with:\n    {restore}")
+    shown = diff(LEGACY_STORE_BLOB, head_blob)
+    what = ("    the diff could not be printed (the pinned blob is not in this clone)" if shown is None
+            else "\n".join("    | " + ln for ln in shown.splitlines()[:L1_DIFF_LINES]))
+    return (f"{LEGACY_STORE_REL} changed — it is FROZEN; a new ask is a file in {ASKS_REL}/. What differs:\n"
+            f"{what}\n  See it whole with:\n    git diff {LEGACY_STORE_BLOB} {head_blob}\n"
+            f"  Restore the frozen bytes with:\n    {restore}")
+
+
+def cutover_problem(ref_blob: str | None) -> str | None:
+    """PURE. `None` when the store at the revision read is `LEGACY_STORE_BASE_BLOB` (master's at pin time)."""
+    if ref_blob == LEGACY_STORE_BASE_BLOB:
+        return None
+    return (f"master's {LEGACY_STORE_REL} moved since the pin: it is {ref_blob or 'missing'}, the pin is "
+            f"{LEGACY_STORE_BASE_BLOB}. Merge master in, re-run C1 (gen-dashboard.py --assert-no-open-asks), "
+            f"and re-pin all three constants (LEGACY_STORE_BASE_BLOB, LEGACY_STORE_BLOB, LEGACY_STORE_SHA256).")
+
+
+def _store_blob(root: pathlib.Path, rev: str) -> str | None:
+    """The store's blob id at `rev`, or None when `rev` has no such path. ⚠ Read through `ls-tree`, not
+    `rev-parse REV:path`, so a missing path (an empty answer, rc 0) is told apart from git failing (raises)."""
+    out = _ask_git(root, "ls-tree", "-z", rev, "--", LEGACY_STORE_REL).decode("utf-8", "surrogateescape")
+    rec = out.split("\0")[0]
+    if not rec.strip():
+        return None
+    meta = rec.split("\t", 1)[0].split()
+    return meta[2] if meta[1] == "blob" else None
+
+
+def legacy_store_check(root: pathlib.Path) -> tuple[str | None, str | None]:
+    """L1 over HEAD: `(problem, err)`. `err` when git could not answer — CANNOT RUN, never a pass."""
+    try:
+        blob = _store_blob(root, "HEAD")
+        data = _ask_git(root, "cat-file", "blob", blob) if blob else None
+    except _AskGitError as exc:
+        return None, f"the frozen store could not be read — {exc}"
+
+    def _diff(a: str, b: str) -> str | None:
+        try:
+            return _ask_git(root, "diff", a, b).decode("utf-8", "replace")
+        except _AskGitError:
+            return None
+    return legacy_store_problem(blob, data, _diff), None
+
+
+def store_edit_prs() -> tuple[list[str], str | None]:
+    """Every OPEN pull request whose diff names the store: `(lines, err)`. Any failed `gh` call, an
+    unparseable list, or a list of exactly PR_LIST_LIMIT entries (there may be more) is `err`."""
+    import json as _json
+
+    def _gh(*args: str):
+        try:
+            return subprocess.run(["gh", *args], cwd=ROOT, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return exc
+    r = _gh("pr", "list", "--state", "open", "--limit", str(PR_LIST_LIMIT), "--json", "number,headRefName")
+    if isinstance(r, Exception) or r.returncode != 0:
+        why = r if isinstance(r, Exception) else f"exited {r.returncode}: {(r.stderr or '').strip()[:200]}"
+        return [], f"gh pr list did not answer ({why})"
+    try:
+        prs = [(int(p["number"]), str(p["headRefName"])) for p in _json.loads(r.stdout or "")]
+    except (ValueError, TypeError, KeyError) as exc:
+        return [], f"gh pr list's answer did not parse ({exc})"
+    if len(prs) >= PR_LIST_LIMIT:
+        return [], f"gh pr list returned {len(prs)} PRs, the limit of {PR_LIST_LIMIT} — there may be more"
+    lines: list[str] = []
+    for n, branch in prs:
+        d = _gh("pr", "diff", str(n), "--name-only")
+        if isinstance(d, Exception) or d.returncode != 0:
+            return lines, f"gh pr diff {n} did not answer — PR {n} ({branch}) was not checked"
+        if LEGACY_STORE_REL in (d.stdout or "").splitlines():
+            lines.append(f"PR {n} ({branch}) edits the frozen store")
+    return lines, None
+
+
 
 
 
@@ -905,7 +990,7 @@ def parse_entries(text: str) -> list[dict]:
                  "date": None, "ordinal": 0, "id": None, "would_be_id": None,
                  "title": "", "plain": "", "tech": None}
         err = header_error(b[0])
-        # ⛔ THE RAW HEADER LINE, recorded for `added_reference_errors` (code review r1,
+        # ⛔ THE RAW HEADER LINE, recorded for `added_reference_errors` (deleted in S2; code review r1,
         # Blocking + High). It is what an error is ABOUT, and it is stable under the
         # positional renumbering that appending an entry causes — which neither the id nor
         # the body-derived title is.
@@ -992,116 +1077,12 @@ def parse_entries(text: str) -> list[dict]:
     return out
 
 
-def added_reference_errors(base_text: str, head_text: str) -> list[str]:
-    """PURE. Entry errors present in HEAD's store that are NOT already in BASE's.
 
-    ⛔ THIS IS WHY THE PARSER HAD TO MOVE (backlog #82). Whether `[resolved: 2026-09-01/99]`
-    names a real entry is a property of the WHOLE STORE; `added_entry_problems` only ever sees a
-    PATCH, so no tightening of `FLAG` could ever reach it. Measured 2026-09-01: three
-    `[resolved: …]` shapes returned `header_error -> None` while the page said "names no entry".
+def _git_blob_id(data: bytes) -> str:
+    """TEST ONLY. git's blob id for `data` — `sha1("blob <n>\\0" + data)` — computed without a repository."""
+    import hashlib
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
-    ⛔ AND IT REPORTS ONLY WHAT THE BRANCH ADDED. Reporting every error in HEAD would make one
-    pre-existing broken entry fail every future branch, including branches that never touch the
-    store — the gate everyone learns to override. `#56` records that verdict from measurement
-    ("do NOT rebuild the reconciliation as a gate: it fires on every docs-only commit and gets
-    disabled"), and `#98` now cites it.
-
-    ⚠ THE KEY IS (header line, error), NOT THE ENTRY ID, and that is the trap here.
-    Ids are POSITIONAL — `YYYY-MM-DD/N` counts entries sharing a date in FILE ORDER — so
-    appending one entry renumbers every later one that day. Keyed by id, a pre-existing error
-    would read as NEW the moment anything shifted it: a false positive on the most ordinary
-    action there is, which is exactly how a gate gets switched off. The title is content-derived
-    and does not move. (`header` would be better still and is NOT available: `parse_entries`
-    never sets it, and adding it would change the page's data shape for a gate-only need.)
-
-    A COUNTER, not a set: two entries can carry the same bad reference, and a branch adding a
-    SECOND one has added something. Multiset difference sees that; set difference would not.
-    """
-    from collections import Counter
-
-    def errors_in(text: str) -> "Counter":
-        return Counter((e.get("header") or "", e["error"])
-                       for e in parse_entries(text) if e.get("error"))
-
-    fresh = errors_in(head_text) - errors_in(base_text)
-    return [msg for (_title, msg), n in sorted(fresh.items()) for _ in range(n)]
-
-
-def added_entry_problems(patch: str) -> list[str]:
-    """Every added line ATTEMPTING an entry header that is malformed (backlog #78).
-
-    ⛔ THIS IS THE SPLIT, and the reason one predicate could not stay.
-    `_added_entry_line` answers *does this branch add an entry?* and is strict on
-    purpose — a malformed header simply is not an entry. That is right for the
-    obligation question and FAIL-OPEN for the content question: on an entry-only
-    branch `verdict` returns 0 at "no tracked files changed outside the exempt
-    paths" and nothing ever inspects what was added. MEASURED on the branch that
-    fixed this: an entry-only branch reported ok with its entry unread.
-
-    So this recognises the ATTEMPT (`^## `, not `^## <valid date>`) and reports why
-    it fails, using the SAME `header_error` the page's parser uses — one grammar,
-    two questions, never two definitions.
-
-    ⚠ SCOPE, stated so the gap is visible rather than implied: this validates the
-    HEADER only. The decision grammar (`decision_errors`) is enforced by the
-    RENDERER and deliberately NOT wired in here — doing so would refuse a
-    `[needs-you]` entry carrying no parsed decision, which is backlog #81's tier-2
-    guard, HELD by user decision 2026-09-01. #81 records the mechanical re-open
-    trigger. This function is the seam that makes wiring it a one-line change if
-    that trigger ever fires.
-    """
-    out: list[str] = []
-    for line in patch.split("\n"):
-        if not ENTRY_ISH.match(line):
-            continue
-        err = header_error(line[1:])
-        if err:
-            out.append(f"{line[1:].strip()!r} — {err}")
-    return out
-
-
-def verdict(changed: list[str], added_entry: bool, pr_body: str,
-            entry_problems: list[str] | tuple = (),
-            ref_problems: list[str] | tuple = ()) -> tuple[int, str]:
-    # ⚠ ABOVE the exemption short-circuit, and that ORDER is the fix. Every branch
-    # below answers "does this branch owe an entry?"; this one answers "is what it
-    # added well-formed?". Putting it second would re-create the hole, because the
-    # exemption returns 0 before any of them run.
-    if entry_problems:
-        return 1, ("the entry this branch adds is malformed, so the page would render "
-                   "it under 'Could not parse this entry' — "
-                   + "; ".join(entry_problems))
-    # ⚠ ALSO above the short-circuit, and for the same reason: this answers "is what the branch
-    # added sound?", not "does the branch owe an entry?". Referential, so it needed the whole
-    # store — backlog #82.
-    if ref_problems:
-        return 1, ("this branch adds a reference that names nothing in the store — "
-                   + "; ".join(ref_problems))
-    real = [p for p in changed if not _is_exempt(p)]
-    if not real:
-        return 0, "no tracked files changed outside the exempt paths"
-    if added_entry:
-        return 0, "an entry block was added"
-    reason = exemption_reason(pr_body)
-    if reason:
-        return 0, f"exempted by declaration — {reason}"
-    if reason == "":
-        return 1, f"{NO_ENTRY} was declared with no reason after it"
-    # ⛔ THE LAST SENTENCE IS BACKLOG #168, AND IT IS THE HALF THAT WAS MISSING. This message
-    # tells the reader to edit the PR body — and editing the PR body CANNOT, BY ITSELF, make this
-    # gate pass. CI reads `github.event.pull_request.body` from the EVENT PAYLOAD, which is frozen
-    # when the event fires; `gh run rerun` replays that same stale payload. Measured twice: PR #322
-    # on 2026-09-18 (two rerun cycles) and PR #336 on 2026-09-22, where the author followed this
-    # very message, spent a rerun, and found the cause written on a DIFFERENT step's comment.
-    # ⭐ The remedy belongs HERE rather than only in a `ci.yml` comment, because a comment on the
-    # sibling step is exactly the mechanism that already failed — the person reading a refusal is
-    # not reading the workflow file.
-    return 1, (f"{len(real)} tracked file(s) changed and no entry was added to "
-               f"docs/dashboard-entries.md. Add a '## YYYY-MM-DD' block describing "
-               f"the change in plain words, or put 'NO-ENTRY: <reason>' in the PR body. "
-               f"⚠ If you edit the PR body to answer this, you must then PUSH something — "
-               f"CI reads the body from the frozen event payload, so an edit alone (and a "
-               f"`gh run rerun`) will fail again with this identical message.")
 
 def _self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
@@ -1121,70 +1102,11 @@ def _self_test_body() -> int:
             fail += 1
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
 
-    case("code change with no entry is refused", verdict(["lib/x.ts"], False, "")[0], 1)
-    case("code change with entry passes", verdict(["lib/x.ts"], True, "")[0], 0)
-    case("NO-ENTRY declaration passes", verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[0], 0)
-    case("NO-ENTRY without a reason is refused", verdict(["lib/x.ts"], False, "NO-ENTRY:")[0], 1)
-    # ⚠ `reason` is three-valued and both empty-vs-absent branches return 1, so the
-    # CODE cannot tell them apart — only the message can. Round 4's M3: deleting the
-    # empty-reason branch entirely left 45/45 green, which made the distinction the
-    # ⚠ calls load-bearing purely cosmetic. Assert the MESSAGE, as the sibling case
-    # below already does for the other branch.
-    case("...and says the marker was present with nothing after it",
-         "no reason after it" in verdict(["lib/x.ts"], False, "NO-ENTRY:")[1], True)
-    case("review-only branch is exempt", verdict(["docs/reviews/r1.md"], False, "")[0], 0)
-    case("entry-only branch is exempt", verdict(["docs/dashboard-entries.md"], False, "")[0], 0)
-    case("no changes at all passes", verdict([], False, "")[0], 0)
-    case("mixed exempt and real is refused", verdict(["docs/reviews/r.md", "lib/x.ts"], False, "")[0], 1)
-    case("refusal explains itself", "entry" in verdict(["lib/x.ts"], False, "")[1].lower(), True)
-    # ⟳ r2 M2, backlog #168 — THE REMEDY SHIPPED AS AN UNTESTED SENTENCE. The message below is the
-    # ONE place a reader learns that editing the PR body cannot by itself re-arm this gate, and no
-    # case asserted it: the suite was 148/148 with the clause present or absent, so a later message
-    # rewrite would delete it silently. ⭐ That is #168 ITSELF — the knowledge existing only where
-    # the person in trouble is not looking — committed inside the fix for it.
-    # ⚠ IT ASSERTS THE THREE HALVES TOGETHER, in the one message that tells the reader to edit the
-    # body: the instruction without its reason still invites a `gh run rerun`, which is precisely
-    # what happened on PR #336 and cost a rerun cycle before the cause was found on a sibling
-    # step's comment. A rewrite keeping "push" and dropping "frozen event payload" is the same
-    # defect one word smaller.
-    _refuse_body = verdict(["lib/x.ts"], False, "")[1]
-    case("the refusal telling you to edit the PR body also says you must PUSH, and why (#168)",
-         ("PR body" in _refuse_body, "PUSH" in _refuse_body,
-          "frozen event payload" in _refuse_body), (True, True, True))
-    case("NO-ENTRY reason is echoed", "typo fix" in verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[1], True)
-    case("a lookalike filename is NOT exempt", verdict(["docs/dashboard-entries.md.bak"], False, "")[0], 1)
-    case("a lookalike directory is NOT exempt", verdict(["docs/reviews-not-really/x.ts"], False, "")[0], 1)
-
-    # ─── backlog #78: the two questions, split ───────────────────────────────
-    # ⛔ THE HOLE THESE CLOSE, measured on this very branch: `verdict` returned
-    # 0 with "no tracked files changed outside the exempt paths" for a branch
-    # whose ONLY change was the entry store, so the entry it added was never
-    # looked at. `_added_entry_line` is strict by design — a malformed header
-    # simply is not an entry — which answers "does this branch OWE an entry?"
-    # correctly and answers "is the entry it ADDED well-formed?" fail-open.
-    case("a malformed added header is a problem",
-         len(added_entry_problems("+## 2026-02-30\n")), 1)
-    case("a well-formed added header is not",
-         added_entry_problems("+## 2026-08-28 [needs-you]\n"), [])
-    case("...nor is a well-formed bare one",
-         added_entry_problems("+## 2026-08-28\n"), [])
-    # The ATTEMPT is what must be recognised, not the success — that is the split.
-    case("'##' with no space is an ATTEMPT and is caught",
-         len(added_entry_problems("+##2026-08-28\n")), 1)
-    case("a typo'd flag is caught", len(added_entry_problems("+## 2026-08-28 [needs-yo]\n")), 1)
-    case("both flags at once is caught",
-         len(added_entry_problems("+## 2026-08-28 [needs-you] [heads-up]\n")), 1)
-    case("a REMOVED malformed header is not this branch's problem",
-         added_entry_problems("-## 2026-02-30\n"), [])
-    case("a CONTEXT line is not an added line",
-         added_entry_problems(" ## 2026-02-30\n"), [])
-    # ⚠ `###` is a sub-heading inside a body, NOT a failed entry header — spec §6.2
-    # says only column-0 `## ` splits blocks. (The comment here used to justify that
-    # with "several entries use one"; measured, `grep -c '^###'` on the store is 0.
-    # The rule is right, its stated evidence was invented, and the real evidence is
-    # the spec plus the truncation the divergence caused — quoted at `BLOCK`.)
-    case("a level-3 heading is not an entry attempt",
-         added_entry_problems("+### Worth knowing\n"), [])
+    # ⟳ dashboard-retire S2: the entry ratchet (R1) and its cases are gone. What stays: the BLOCK
+    # rule the page's parser uses, the fence scanner, `exemption_reason` (now `NO-REVIEW:` by
+    # default), the decision grammar and the parser.
+    # ⚠ `###` is a sub-heading inside a body, NOT a block start — spec §6.2 says only column-0
+    # `## ` splits blocks (quoted at `BLOCK`).
     # ⛔ THE DIVERGENCE ITSELF, asserted on the OBJECT both sides now share rather
     # than on either side's behaviour. The case above passed for months while the
     # page disagreed, because nothing compared them — that is the whole defect, and
@@ -1192,17 +1114,6 @@ def _self_test_body() -> int:
     case("the block-start rule excludes a sub-heading", bool(BLOCK.match("### Worth knowing")), False)
     case("...and still starts on a real header", bool(BLOCK.match("## 2026-08-28")), True)
     case("...and still catches a missing space", bool(BLOCK.match("##2026-08-28")), True)
-    # ⚠ Asserts the PROPERTY — the two rules answer alike on every shape — not the
-    # mechanism. Comparing `ENTRY_ISH.pattern` to a derived string was the first
-    # draft; it pins today's spelling and would go red on a legitimate re-spelling
-    # while staying green for any shape the corpus does not name. This form is what
-    # actually failed: the pair agreed on all four of these EXCEPT `###`.
-    _agree = [(ln, bool(BLOCK.match(ln)) == bool(ENTRY_ISH.match("+" + ln)))
-              for ln in ["## 2026-08-28", "## 2026-08-28 [needs-you]", "##2026-08-28",
-                         "### Worth knowing", "#### deeper", "## ", "  ## indented",
-                         "ordinary body prose"]]
-    case("the gate and the page agree on every block-start shape",
-         [ln for ln, same in _agree if not same], [])
 
     # ─── backlog #84: fenced_lines, the scanner the PAGE's parser asks ───────
     case("a fence opens and closes", sorted(fenced_lines("a\n```\nx\n```\nb\n")), [1, 2, 3])
@@ -1243,16 +1154,16 @@ def _self_test_body() -> int:
     # against RE-FORKING the rule; the three rule mutations guard the rule itself.
     case("the page's scanner and the gate's agree about where a fence ENDS",
          sorted(_inert_lines(_ANNOTATED)), sorted(fenced_lines(_ANNOTATED)))
-    # ⛔ THE BYPASS. A `NO-ENTRY:` that GitHub renders as grey code inside a code
-    # block used to exempt the branch from this very gate — the same escape the
-    # LENGTH rule was added to stop, arriving one rule over.
-    case("a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt",
-         exemption_reason("```\n``` x\nNO-ENTRY: smuggled\n```\n"), None)
+    # ⛔ THE BYPASS. A declaration that GitHub renders as grey code inside a code block used to
+    # exempt the branch — the same escape the LENGTH rule was added to stop, arriving one rule
+    # over. (Measured on `NO-ENTRY:`; ⟳ S2 the one marker left is `NO-REVIEW:`.)
+    case("a NO-REVIEW: inside a fence closed only by an ANNOTATED fence does NOT exempt",
+         exemption_reason("```\n``` x\nNO-REVIEW: smuggled\n```\n"), None)
     # ...and the control: with a REAL closer the same declaration is genuinely
     # outside the block and MUST still exempt. Without this the case above passes
     # for a scanner that simply never exempts anything.
     case("...but after a REAL closer the same declaration still exempts",
-         exemption_reason("```\nx\n```\nNO-ENTRY: genuine\n"), "genuine")
+         exemption_reason("```\nx\n```\nNO-REVIEW: genuine\n"), "genuine")
     case("fence_closes: same char, long enough, no trailing text",
          (fence_closes("```", "", "```"), fence_closes("~~~", "", "```"),
           fence_closes("``", "", "```"), fence_closes("```", " x", "```")),
@@ -1267,26 +1178,16 @@ def _self_test_body() -> int:
     case("prose mentioning an unclosed <!-- is NOT fenced", fenced_lines(_trap), set())
     case("...and _inert_lines DOES swallow it — the difference is the point",
          2 in _inert_lines(_trap), True)
-    case("the message names the offending header",
-         "2026-02-30" in added_entry_problems("+## 2026-02-30\n")[0], True)
-    # The whole point: this fires on an ENTRY-ONLY branch, where `real` is empty.
-    case("entry-only branch with a MALFORMED entry is refused",
-         verdict(["docs/dashboard-entries.md"], False, "", ["bad header"])[0], 1)
-    case("entry-only branch with a good entry still passes",
-         verdict(["docs/dashboard-entries.md"], False, "", [])[0], 0)
-    case("...and the refusal says the entry is the problem",
-         "malformed" in verdict(["docs/dashboard-entries.md"], False, "", ["bad"])[1], True)
-    # A malformed entry is refused even when the branch would otherwise pass on
-    # its own merits — content and obligation are now independent.
-    case("a NO-ENTRY declaration does NOT excuse a malformed entry",
-         verdict(["lib/x.ts"], False, "NO-ENTRY: typo", ["bad header"])[0], 1)
-    case("...nor does adding a good entry alongside a bad one",
-         verdict(["lib/x.ts"], True, "", ["bad header"])[0], 1)
-
-    fenced = "```\nNO-ENTRY: example from the docs\n```"
-    case("NO-ENTRY inside a code fence does not exempt", verdict(["lib/x.ts"], False, fenced)[0], 1)
+    fenced = "```\nNO-REVIEW: example from the docs\n```"
+    # ── 9.2–9.4: the one marker left (dashboard-retire S2) ──
+    case("9.2 a fenced NO-REVIEW: does not exempt", exemption_reason(fenced), None)
+    case("9.3 NO-REVIEW: is the default marker", exemption_reason("NO-REVIEW: docs only"), "docs only")
+    case("9.4 a NO-ENTRY: declaration is no longer read", exemption_reason("NO-ENTRY: x"), None)
+    # ⛔ THE `marker` PARAMETER IS STILL LOAD-BEARING: gen-dashboard passes `NO-ENTRY:` to list the
+    # historical waivers. With `NO-REVIEW:` the default, only a NON-default marker shows it is read.
+    case("a non-default marker is honoured", exemption_reason("X-MARK: y", "X-MARK:"), "y")
     # ─── the marker survives EMPHASIS ──────────────────────────────────────
-    # ⛔ MEASURED 2026-09-01: `**NO-ENTRY:** typo fix` returned None, so a PR body
+    # ⛔ MEASURED 2026-09-01: `**NO-REVIEW:** typo fix` returned None, so a PR body
     # that GitHub renders exactly as intended was REFUSED. The failure is a false
     # refusal, not a false pass, which is why it went unnoticed — the author simply
     # rewrote the line. THIRD instance of one class in a day: `REVIEW GAP:` was
@@ -1295,94 +1196,77 @@ def _self_test_body() -> int:
     # emphasised in the wild.
     # ⚠ Emphasis is NOT an inert context. Fenced, indented, comment and blockquote
     # all mean "not deliberate"; bold means the opposite — someone made it louder.
-    case("**bold** marker is recognised", exemption_reason("**NO-ENTRY:** typo fix"), "typo fix")
-    case("*single* marker is recognised", exemption_reason("*NO-ENTRY:* typo fix"), "typo fix")
-    case("__underscore__ marker is recognised", exemption_reason("__NO-ENTRY:__ typo fix"), "typo fix")
+    case("**bold** marker is recognised", exemption_reason("**NO-REVIEW:** typo fix"), "typo fix")
+    case("*single* marker is recognised", exemption_reason("*NO-REVIEW:* typo fix"), "typo fix")
+    case("__underscore__ marker is recognised", exemption_reason("__NO-REVIEW:__ typo fix"), "typo fix")
     case("an emphasised marker with no reason is EMPTY, not absent",
-         exemption_reason("**NO-ENTRY:**"), "")
+         exemption_reason("**NO-REVIEW:**"), "")
     # The four inert contexts must be untouched by this — emphasis is orthogonal.
-    case("a blockquoted bold marker is still inert", exemption_reason("> **NO-ENTRY:** x"), None)
+    case("a blockquoted bold marker is still inert", exemption_reason("> **NO-REVIEW:** x"), None)
     case("a fenced bold marker is still inert",
-         exemption_reason("```\n**NO-ENTRY:** x\n```"), None)
+         exemption_reason("```\n**NO-REVIEW:** x\n```"), None)
     case("an indented bold marker is still inert",
-         exemption_reason("    **NO-ENTRY:** x"), None)
+         exemption_reason("    **NO-REVIEW:** x"), None)
     # ⚠ Emphasis in the REASON is the author's text and must survive verbatim. A
     # naive lstrip("*") on the remainder would eat it.
     case("emphasis inside the reason is preserved",
-         exemption_reason("NO-ENTRY: keep **bold** here"), "keep **bold** here")
+         exemption_reason("NO-REVIEW: keep **bold** here"), "keep **bold** here")
     case("...and also when the marker itself was emphasised",
-         exemption_reason("**NO-ENTRY:** keep **bold** here"), "keep **bold** here")
+         exemption_reason("**NO-REVIEW:** keep **bold** here"), "keep **bold** here")
     # A closer that does not match the opener is not a closer; it is the reason.
     case("a mismatched closer is left in the reason",
-         exemption_reason("**NO-ENTRY:* odd"), "* odd")
-    case("a bold declaration exempts at the VERDICT level",
-         verdict(["lib/x.ts"], False, "**NO-ENTRY:** typo fix")[0], 0)
+         exemption_reason("**NO-REVIEW:* odd"), "* odd")
     # ⚠ THE SECOND SCAN POINT. `exemption_reason` tests the marker in TWO places —
     # the bare line, and the text BEFORE an inline `<!--`. They were separate
     # copies of `startswith(NO_ENTRY)`; fixing one and not the other is the exact
     # divergence this file has already paid for twice. Only this case reaches the
     # comment-head branch with an emphasised marker.
     case("bold works on the pre-comment head too",
-         exemption_reason("**NO-ENTRY:** typo fix <!-- note -->"), "typo fix")
+         exemption_reason("**NO-REVIEW:** typo fix <!-- note -->"), "typo fix")
 
     # ⛔ THE `marker` PARAMETER IS LOAD-BEARING, and this suite is where that must be visible.
     # `check-review-recorded.py` shares this parser rather than copying it, so if `marker` were
-    # ignored the sibling gate would silently read `NO-ENTRY:` and every `NO-REVIEW:` declaration
+    # ignored the sibling gate would silently read `NO-REVIEW:` and every `NO-REVIEW:` declaration
     # would be dropped — with BOTH suites green, because nothing here asked.
     case("reads a NO-REVIEW declaration through the shared parser",
          exemption_reason("NO-REVIEW: docs only", "NO-REVIEW:"), "docs only")
     case("...on the pre-comment head too",
          exemption_reason("NO-REVIEW: docs only <!-- x -->", "NO-REVIEW:"), "docs only")
 
-    case("exemption_reason reads a real declaration", exemption_reason("NO-ENTRY: typo fix"), "typo fix")
+    case("exemption_reason reads a real declaration", exemption_reason("NO-REVIEW: typo fix"), "typo fix")
     case("exemption_reason distinguishes empty from absent",
-         (exemption_reason("NO-ENTRY:"), exemption_reason("nothing here")), ("", None))
+         (exemption_reason("NO-REVIEW:"), exemption_reason("nothing here")), ("", None))
 
     for name, body, want in [
         ("fenced ```",                  fenced,                                        None),
         ("a SHORT fence does not close a longer fence",
-                                        "`````\n```\nNO-ENTRY: sneaky\n`````\n",       None),
-        ("...same for tildes",          "~~~~\n~~~\nNO-ENTRY: sneaky2\n~~~~\n",       None),
+                                        "`````\n```\nNO-REVIEW: sneaky\n`````\n",       None),
+        ("...same for tildes",          "~~~~\n~~~\nNO-REVIEW: sneaky2\n~~~~\n",       None),
         ("an EQUAL-length fence does close",
-                                        "```\ncode\n```\nNO-ENTRY: real\n",        "real"),
-        ("fenced with ~~~",             "~~~\nNO-ENTRY: inside\n~~~",                  None),
-        ("unterminated fence",          "```\nNO-ENTRY: inside\n",                     None),
-        ("``` is not closed by ~~~",    "```\nNO-ENTRY: a\n~~~\nNO-ENTRY: b\n",        None),
-        ("indented code block",         "    NO-ENTRY: indented\n",                    None),
-        ("TAB-indented code block",     "\tNO-ENTRY: tabbed\n",                        None),
+                                        "```\ncode\n```\nNO-REVIEW: real\n",        "real"),
+        ("fenced with ~~~",             "~~~\nNO-REVIEW: inside\n~~~",                  None),
+        ("unterminated fence",          "```\nNO-REVIEW: inside\n",                     None),
+        ("``` is not closed by ~~~",    "```\nNO-REVIEW: a\n~~~\nNO-REVIEW: b\n",        None),
+        ("indented code block",         "    NO-REVIEW: indented\n",                    None),
+        ("TAB-indented code block",     "\tNO-REVIEW: tabbed\n",                        None),
         ("indented, with a comment later on the line",
-                                        "    NO-ENTRY: sneaky <!-- c -->\n",           None),
-        ("multi-line HTML comment",     "<!--\nNO-ENTRY: commented out\n-->\n",        None),
-        ("one-line HTML comment",       "<!-- NO-ENTRY: nope -->\n",                   None),
-        ("blockquoted",                 "> NO-ENTRY: quoted\n",                        None),
-        ("lowercase is not the marker", "no-entry: lower\n",                           None),
-        ("CRLF body still reads",       "NO-ENTRY: crlf\r\n",                        "crlf"),
-        ("after a CLOSED comment",      "<!-- hint --> NO-ENTRY: real one\n",    "real one"),
-        ("after a CLOSED fence",        "```\ncode\n```\nNO-ENTRY: real one\n",  "real one"),
-        ("3 spaces is still a declaration", "   NO-ENTRY: ok\n",                       "ok"),
+                                        "    NO-REVIEW: sneaky <!-- c -->\n",           None),
+        ("multi-line HTML comment",     "<!--\nNO-REVIEW: commented out\n-->\n",        None),
+        ("one-line HTML comment",       "<!-- NO-REVIEW: nope -->\n",                   None),
+        ("blockquoted",                 "> NO-REVIEW: quoted\n",                        None),
+        ("lowercase is not the marker", "no-review: lower\n",                           None),
+        ("CRLF body still reads",       "NO-REVIEW: crlf\r\n",                        "crlf"),
+        ("after a CLOSED comment",      "<!-- hint --> NO-REVIEW: real one\n",    "real one"),
+        ("after a CLOSED fence",        "```\ncode\n```\nNO-REVIEW: real one\n",  "real one"),
+        ("3 spaces is still a declaration", "   NO-REVIEW: ok\n",                       "ok"),
     ]:
         case(f"exemption_reason — {name}", exemption_reason(body), want)
 
     # ─── the header grammar, shared with the parser ───
-    case("a real date header counts", _added_entry_line("+## 2026-08-28"), True)
-    case("a flagged header counts", _added_entry_line("+## 2026-08-28 [needs-you]"), True)
-    case("a non-date header does NOT count", _added_entry_line("+## not-a-date"), False)
-    case("an impossible date does NOT count", _added_entry_line("+## 2026-02-30"), False)
-    case("a REMOVED header does not count", _added_entry_line("-## 2026-08-28"), False)
-    case("'##' with no space does NOT count", _added_entry_line("+##2026-08-28"), False)
-    # The five shapes v2.2 claimed could not diverge, and did.
-    case("a suffixed date does NOT count", _added_entry_line("+## 2026-08-28-foo"), False)
-    case("a trailing dot does NOT count", _added_entry_line("+## 2026-08-28."), False)
-    case("a typo'd flag does NOT count", _added_entry_line("+## 2026-08-28 [needs-yo]"), False)
-    case("a heads-up header counts", _added_entry_line("+## 2026-08-28 [heads-up]"), True)
     case("heads-up header_error is None", header_error("## 2026-08-28 [heads-up]"), None)
-    case("a typo'd heads-up does NOT count",
-         _added_entry_line("+## 2026-08-28 [heads-u]"), False)
     # The gate and the page must not disagree about this header (ask-choices spec §9).
     case("both flags is a header error",
          header_error("## 2026-08-28 [needs-you] [heads-up]") is not None, True)
-    case("both flags does not count as an added entry",
-         _added_entry_line("+## 2026-08-28 [needs-you] [heads-up]"), False)
 
     # ─── the empty resolved payload — Codex retrospective review r1, High ────
     # ⛔ FOUND BY THE ADVERSARIAL HALF. Not by this suite, not by 150 mutations,
@@ -1401,11 +1285,6 @@ def _self_test_body() -> int:
          header_error("## 2026-09-01 [resolved:   ]") is not None, True)
     case("a real resolved payload still passes",
          header_error("## 2026-09-01 [resolved: 2026-08-31/1]"), None)
-    # The refusal must reach the VERDICT on an entry-only branch — the path the
-    # High actually travelled.
-    case("an entry-only branch with an empty resolved payload is REFUSED",
-         verdict(["docs/dashboard-entries.md"], False, "",
-                 added_entry_problems("+## 2026-09-01 [resolved:]\n"))[0], 1)
 
     # ── the decision grammar (ask-choices spec §4) ──
     GOOD = ("An ask.\n\n**Decide:** Merge it\n- merge PR #181 [recommended]\n"
@@ -1465,41 +1344,12 @@ def _self_test_body() -> int:
     case("a tab-indented continuation does not drop options",
          len(decisions("**Decide:** Q\n- merge PR #1\n\t- it is green\n"
                        "- hold it\n")[0]["options"]), 2)
-    case("a title on the header line does NOT count",
-         _added_entry_line("+## 2026-08-28 rambling title text"), False)
     case("header_error names the space", "space" in (header_error("##2026-08-28") or ""), True)
     case("header_error is None on a good header", header_error("## 2026-08-28 [needs-you]"), None)
 
 
-    # ── backlog #82: the REFERENTIAL half, which needed the whole store ────────────────────
-    _BASE = ("## 2026-08-28\nTarget entry.\n"
-             "## 2026-08-30 [resolved: nonsense]\nA pre-existing broken reference.\n")
-    case("F1 a NEWLY added dangling reference is reported",
-         added_reference_errors(_BASE, _BASE + "## 2026-08-31 [resolved: 2026-09-01/99]\nNew.\n"),
-         ["[resolved: 2026-09-01/99] names no entry in this file"])
-    case("F1b ...and so is the `nonsense` shape, which header_error returns None for",
-         (header_error("## 2026-08-30 [resolved: nonsense]"),
-          bool(added_reference_errors("", "## 2026-08-30 [resolved: nonsense]\nX.\n"))),
-         (None, True))
-    case("F2 an error present in BOTH base and head is NOT this branch's",
-         added_reference_errors(_BASE, _BASE), [])
-    # ⛔ THE CASE THE OBVIOUS IMPLEMENTATION FAILS. Appending an entry that shares a date
-    # RENUMBERS every later id that day, so an id-keyed diff would call the pre-existing
-    # error new. That false positive on the most ordinary action is how a gate gets disabled.
-    case("F3 a valid append that RENUMBERS later ids reports nothing",
-         added_reference_errors(_BASE, _BASE + "## 2026-08-28\nValid, and it renumbers.\n"),
-         [])
-    case("F7 a reference that NAMES a real entry is accepted",
-         added_reference_errors("", "## 2026-08-28\nTarget.\n"
-                                    "## 2026-08-29 [resolved: 2026-08-28/1]\nGood.\n"), [])
-    # A COUNTER, not a set: a second copy of the same bad reference IS something added.
-    case("...and a SECOND identical bad reference is still an addition",
-         len(added_reference_errors(_BASE, _BASE + "## 2026-09-02 [resolved: nonsense]\nAgain.\n")),
-         1)
-    # WIRING, not just the predicate — the r2 lesson: a correct rule that nothing calls.
-    case("verdict REFUSES on a referential problem, above the exemption short-circuit",
-         verdict(["docs/dashboard-entries.md"], True, "", (), ["names no entry"])[0], 1)
-    case("...and is quiet when there is none", verdict([], False, "", (), [])[0], 0)
+    case("F1b the `nonsense` resolved shape passes header_error (the parser judges it)",
+         header_error("## 2026-08-30 [resolved: nonsense]"), None)
 
 
     # ── the relocated parser's own behaviours (backlog #82) ────────────────────────────────
@@ -1677,45 +1527,41 @@ def _self_test_body() -> int:
          f1_problems({"2026-11-25-a.md": b"# Which form?"},
                      {"2026-11-25-a.md": b"# Which form?\n## Answer\na\n"}), [])
 
+    # ── dashboard-retire S2, Task 12: L1 and the cutover check, PURE (12.1–12.6, 12.8, 12.9) ──
+    # The pins are patched to a FIXTURE store here; 12.11 (impure) holds the committed pins to the real file.
+    import hashlib as _hl
+    _fs = b"# Dashboard entries\n\n## 2026-10-01\nOld entry one.\n"
+    _fb = _git_blob_id(_fs)
+    _gp = globals()
+    _pins = {k: _gp[k] for k in ("LEGACY_STORE_BLOB", "LEGACY_STORE_SHA256", "LEGACY_STORE_BASE_BLOB")}
+    _gp.update(LEGACY_STORE_BLOB=_fb, LEGACY_STORE_SHA256=_hl.sha256(_fs).hexdigest(), LEGACY_STORE_BASE_BLOB=_fb)
+    try:
+        case("12.1 the pinned bytes pass L1", legacy_store_problem(_fb, _fs, lambda a, b: ""), None)
+        _m2 = legacy_store_problem(None, None, lambda a, b: "")
+        case("12.2 a missing store is refused", (_m2 is not None, "missing" in (_m2 or "")), (True, True))
+        _app = _fs + b"\n## 2026-11-26 [needs-you]\nA stray ask nobody reads.\n"
+        _ab = _git_blob_id(_app)
+        _m3 = legacy_store_problem(
+            _ab, _app, lambda a, b: ("+## 2026-11-26 [needs-you]\n+A stray ask nobody reads.\n"
+                                     if (a, b) == (_fb, _ab) else None)) or ""
+        case("12.3 an appended entry is refused and SHOWN", "A stray ask nobody reads." in _m3, True)
+        _fl = _fs.replace(b"one.", b"onE.")
+        case("12.4 one edited byte of an old entry is refused",
+             legacy_store_problem(_git_blob_id(_fl), _fl, lambda a, b: "") is not None, True)
+        case("12.5 the message carries the restore command by BLOB, and no commit id",
+             (f"git cat-file blob {_fb} > docs/dashboard-entries.md" in _m3,
+              set(re.findall(r"\b[0-9a-f]{40}\b", _m3)) <= {_fb, _ab}), (True, True))
+        case("12.6 a pinned blob absent from the clone is still refused, saying the diff could not be printed",
+             "the diff could not be printed" in (legacy_store_problem(_ab, _app, lambda a, b: None) or ""), True)
+        _m8 = cutover_problem("0" * 40) or ""
+        case("12.8 master's store moved since the pin is refused, naming both blobs",
+             ("0" * 40 in _m8, _fb in _m8, "re-pin" in _m8), (True, True, True))
+        case("12.9 master's store unchanged passes the cutover check", cutover_problem(_fb), None)
+    finally:
+        _gp.update(_pins)
+
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
-
-def collect(base: str) -> tuple[list[str], bool, str | None, list[str], list[str]]:
-    try:
-        names = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"],
-                               cwd=ROOT, capture_output=True, text=True, timeout=20)
-        patch = subprocess.run(["git", "diff", "-U0", f"{base}...HEAD",
-                                "--", "docs/dashboard-entries.md"],
-                               cwd=ROOT, capture_output=True, text=True, timeout=20)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return [], False, f"could not run git: {exc}", [], []
-    if names.returncode != 0:
-        return [], False, f"git diff exited {names.returncode}: {names.stderr.strip()[:200]}", [], []
-    changed = [l for l in names.stdout.split("\n") if l.strip()]
-    added = any(_added_entry_line(l) for l in patch.stdout.split("\n"))
-    # ⚠ The SAME `-U0` patch already fetched. Measured on 7183111: an appended entry
-    # arrives in full, header through `<!--tech-->`, 39 added lines — so the content
-    # question needs no second revision and no working-tree read. (Author and both
-    # reviewers once agreed `-U0` omits the body; one `git diff` refuted all three.)
-    problems = added_entry_problems(patch.stdout)
-    # ── the referential half needs the STORE, not the patch (backlog #82) ──────────────────
-    store = ROOT / "docs/dashboard-entries.md"
-    head_text = store.read_text(encoding="utf-8") if store.exists() else ""
-    try:
-        shown = subprocess.run(["git", "show", f"{base}:docs/dashboard-entries.md"],
-                               cwd=ROOT, capture_output=True, text=True, timeout=20)
-        base_text, base_ok = shown.stdout, shown.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        base_text, base_ok = "", False
-    refs = added_reference_errors(base_text, head_text)
-    if not base_ok and refs:
-        # ⚠ NOT SILENCE. A first commit, a shallow clone or a rename makes the baseline
-        # unreadable; treating that as "nothing added" would let a broken reference through on
-        # exactly the runs where the check cannot see. Say so, and report what HEAD holds.
-        refs = [f"(baseline {base}:docs/dashboard-entries.md unreadable — "
-                f"reporting every error in HEAD) {r}" for r in refs]
-    return changed, added, None, problems, refs
-
 
 def _impure_self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
@@ -1727,17 +1573,10 @@ def _impure_self_test() -> int:
 def _impure_self_test_body() -> int:
     """The cannot-run contract for the layer that touches git.
 
-    SEPARATE from `_self_test` on purpose. `_self_test` is added in Step 4, where
-    `collect` and `main` do not exist yet — folding these cases into it would make
-    Step 4's stated outcome ("exit 0, no [FAIL] lines") impossible to observe, and a
-    step whose outcome cannot occur is the defect rounds 2, 3 and 4 each filed. Both
-    suites run; `main --self-test` fails if either does.
-
-    Round 4 measured three one-line mutations here, ALL GREEN against the whole
-    45-case suite: `return 2` becoming `return 0` — which turns this ratchet
-    FAIL-OPEN, merging a branch with no entry on a git hiccup — the returncode check
-    becoming `if False`, and the OSError branch returning `err=None`. `collect()` and
-    `main()` had no coverage at all.
+    SEPARATE from `_self_test` on purpose: these cases touch git (or stub it). Both suites run;
+    `main --self-test` fails if either does. ⟳ dashboard-retire S2: R1's `collect` is gone; what
+    stays is A1/F1's own git layer (`_ask_git`) and `main`'s fail-closed dispatch on it — `return 2`
+    becoming `return 0` would merge a branch whose ask store was never read.
     """
     ok = fail = 0
 
@@ -1764,101 +1603,24 @@ def _impure_self_test_body() -> int:
     def _boom(*a, **k):
         raise OSError("git is not installed")
 
-    ch, ad, err, pr, rf = _with_run(_boom, lambda: collect("master"))
-    case("collect: a missing git is a could-not-tell, not 'nothing changed'",
-         (ch, ad, bool(err)), ([], False, True))
-    # ⚠ The 4th element on the CANNOT-RUN paths. An empty list here is not a
-    # cosmetic default: `verdict` refuses on a non-empty `entry_problems`, so a
-    # sentinel or a None would turn "git is missing" into "your entry is malformed"
-    # — a wrong REASON on the one path whose whole job is to say it could not tell.
-    case("collect: a could-not-tell reports no entry problems either", pr, [])
-
-    # ⟲ Asserts the VALUE, not the presence of the kwarg. `collect` makes TWO
-    # git calls, so both are captured and both are checked — a fix applied to
-    # only the first would otherwise pass here, which is the instance-not-class
-    # error one level down from the one that put this case in the file.
-    _cwds = []
-
-    def _spy(*a, **k):
-        _cwds.append(k.get("cwd"))
-        return _R(0, "", "")
-    _with_run(_spy, lambda: collect("master"))
-    # ⟳ 2 -> 3 calls, backlog #82: `collect` now also runs `git show <base>:…` for the
-    # referential half. The COUNT is pinned deliberately — this case guards that every git
-    # call is scoped to THIS repo, so a new call that forgot `cwd=ROOT` must fail here rather
-    # than be absorbed by a length-agnostic assertion.
-    case("collect: asks about THIS repo, not the caller's cwd — on EVERY call",
-         (_cwds, len(_cwds)), ([ROOT, ROOT, ROOT], 3))
-    ch, ad, err, pr, rf = _with_run(lambda *a, **k: _R(128, "", "fatal: no merge base"),
-                            lambda: collect("master"))
-    case("collect: a non-zero git exit is a could-not-tell, not 'nothing changed'",
-         (ch, ad, bool(err)), ([], False, True))
-    case("...and that path reports no entry problems either", pr, [])
-    ch, ad, err, pr, rf = _with_run(lambda *a, **k: _R(0, "lib/x.ts\n", ""),
-                            lambda: collect("master"))
-    # ⟲ `ad` is asserted, not just ch/err. Branch review of backlog #70 mutated
-    # `added = any(...)` to `added = True` and it SURVIVED the whole manifest: this
-    # case named the success path and checked two of its three results, so the ratchet
-    # could fail OPEN — every branch reported as having added an entry — with the suite
-    # green. The diff here carries no `## YYYY-MM-DD` line, so `added` must be False.
-    case("collect: a working git still reports the changed files, and NO entry added",
-         (ch, ad, err), (["lib/x.ts"], False, None))
-    case("collect: a clean diff carries no entry problems", pr, [])
-
-    # ⛔ backlog #78, END TO END through the real `collect`: the SECOND git call is
-    # the entry patch, and its malformed header must arrive as a problem. Without
-    # this the wiring could be dropped and every pure case above would stay green —
-    # `added_entry_problems` would still be correct and still never be CALLED.
-    def _entry_patch(*a, **k):
-        argv = a[0] if a else k.get("args", [])
-        if "-U0" in argv:
-            return _R(0, "@@ -1 +1,2 @@\n+## 2026-02-30 [needs-you]\n+body\n", "")
-        return _R(0, "docs/dashboard-entries.md\n", "")
-    ch, ad, err, pr, rf = _with_run(_entry_patch, lambda: collect("master"))
-    case("collect: a malformed ADDED header reaches the caller as a problem",
-         (len(pr), ad, err), (1, False, None))
-    case("...and an entry-only branch is then REFUSED, not exempted",
-         verdict(ch, ad, "", pr)[0], 1)
-
-    # main's dispatch on that error is the fail-closed half, and it is the single
+    # main's dispatch on A1's error is the fail-closed half, and it is the single
     # worst line in this file to get wrong: rc 0 merges the branch.
     import contextlib as _cl, io as _io
     g = globals()
-    real_collect = g["collect"]
-    # ⚠ FIVE values since backlog #82. A stub that drifts from the real signature tests a
-    # contract nobody has — here it crashed loudly, which is the good failure; a stub returning
-    # the RIGHT arity with the wrong meaning would not have.
-    # ⚠ dashboard-retire r1 Claude M1: every `main` case stubs A1 as well as `collect`. Unstubbed,
-    # `main` reaches A1's real `git merge-base master HEAD`, and a CI `pull_request` checkout has no
-    # local `master` — the case goes red (rc 2) in CI only.
+    # ⚠ dashboard-retire r1 Claude M1: every `main` case stubs A1. Unstubbed, `main` reaches A1's
+    # real `git merge-base master HEAD`, and a CI `pull_request` checkout has no local `master` —
+    # the case goes red (rc 2) in CI only.
     real_asp = g["ask_store_problems"]
-    g["collect"] = lambda base: ([], False, "could not run git: boom", [], [])
-    g["ask_store_problems"] = lambda base, root: ([], None)
+    real_l1 = g["legacy_store_check"]
+    g["legacy_store_check"] = lambda root: (None, None)   # L1 has its own cases (12.x); these drive A1's dispatch
+    g["ask_store_problems"] = lambda base, root: ([], "could not run git: boom")
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf:
             rc = main(["--base", "master"])
     finally:
-        g["collect"] = real_collect
         g["ask_store_problems"] = real_asp
     case("main: a could-not-tell exits 2 — NEVER 0", rc, 2)
     case("...and says NOT CHECKED", "NOT CHECKED" in buf.getvalue(), True)
-
-    # ⛔ backlog #78 at the OUTERMOST layer. `main` is where the fix can be
-    # silently undone — dropping `entry_problems` from the `verdict(...)` call
-    # leaves every other case in both suites green, because they all reach
-    # `verdict` directly. This is the only case that fails if the argument is
-    # not passed through, so it is the one that makes the wiring load-bearing.
-    g["collect"] = lambda base: (["docs/dashboard-entries.md"], False, None,
-                                 ["'## 2026-02-30' — not a real calendar date"], [])
-    g["ask_store_problems"] = lambda base, root: ([], None)
-    try:
-        with _cl.redirect_stdout(_io.StringIO()) as buf2:
-            rc2 = main(["--base", "master"])
-    finally:
-        g["collect"] = real_collect
-        g["ask_store_problems"] = real_asp
-    case("main: an entry-only branch with a malformed entry exits 1", rc2, 1)
-    case("...and the refusal reaches stdout", "REFUSED" in buf2.getvalue(), True)
 
     # ─── read_asks over entries that are not regular files (dashboard-retire plan, 1.17) ───────
     import tempfile as _tf, time as _time
@@ -1877,42 +1639,46 @@ def _impure_self_test_body() -> int:
     _sh.rmtree(_odd, ignore_errors=True)
 
     # ─── A1 and F1 through git (dashboard-retire plan, Task 2) ────────────────────────────────
-    # 2.12: driven DIRECTLY, not through `main` (r1 Claude M2). Through `main`, a missing git fails
-    # first inside `collect`, so a fail-open `ask_store_problems` would have no witness.
+    # 2.12: driven DIRECTLY, not through `main` (r1 Claude M2), so a fail-open `ask_store_problems`
+    # has its own witness and does not lean on `main`'s dispatch.
     _p, _e = _with_run(_boom, lambda: ask_store_problems("master", ROOT))
     _p2, _e2 = _with_run(lambda *a, **k: _R(128, "", "fatal"),
                          lambda: ask_store_problems("master", ROOT))
     case("A1's own git failure is CANNOT RUN",
          (_e is not None, _p, _e2 is not None, _p2), (True, [], True, []))
-    # 2.14 / 2.15: `main`'s dispatch on A1's two outputs, `collect` stubbed clean.
-    g["collect"] = lambda base: ([], False, None, [], [])
+    # 2.14 / 2.15: `main`'s dispatch on A1's two outputs.
     g["ask_store_problems"] = lambda base, root: (["x"], None)
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf3:
             rc3 = main(["--base", "master"])
     finally:
-        g["collect"] = real_collect
         g["ask_store_problems"] = real_asp
     case("main refuses on A1's problem list",
          (rc3, "REFUSED — the ask store" in buf3.getvalue()), (1, True))
-    g["collect"] = lambda base: ([], False, None, [], [])
     g["ask_store_problems"] = lambda base, root: ([], "boom")
     try:
         with _cl.redirect_stdout(_io.StringIO()) as buf4:
             rc4 = main(["--base", "master"])
     finally:
-        g["collect"] = real_collect
         g["ask_store_problems"] = real_asp
     case("main is CANNOT RUN on A1's err", (rc4, "NOT CHECKED" in buf4.getvalue()), (2, True))
+    g["legacy_store_check"] = real_l1
 
     # 2.8–2.11, 2.13: a `fixture_git` temp repository, never this checkout (r3 Claude M1: the
     # mutation harness stages a tree with no `.git`, where a live `git ls-tree HEAD` exits 128).
     import fixture_git
 
+    import hashlib as _hl
+    _FS = "# Dashboard entries\n\n## 2026-10-01\nOld entry one.\n"   # the fixture's frozen store
+    _FPINS = {"LEGACY_STORE_BLOB": _git_blob_id(_FS.encode()),
+              "LEGACY_STORE_SHA256": _hl.sha256(_FS.encode()).hexdigest(),
+              "LEGACY_STORE_BASE_BLOB": _git_blob_id(_FS.encode())}
+
     def _repo(files: dict, untracked: dict | None = None) -> pathlib.Path:
         d = pathlib.Path(_tf.mkdtemp(prefix="asks-repo-"))
         env = fixture_git.env()
         subprocess.run(["git", "init", "-q", str(d)], check=True, env=env)
+        files = {"docs/dashboard-entries.md": _FS, **files}
         for rel, content in files.items():
             (d / rel).parent.mkdir(parents=True, exist_ok=True)
             (d / rel).write_text(content, encoding="utf-8")
@@ -1923,17 +1689,22 @@ def _impure_self_test_body() -> int:
             (d / rel).write_text(content, encoding="utf-8")
         return d
 
-    def _main_at(root: pathlib.Path) -> tuple[int, str]:
-        real_root = g["ROOT"]
+    def _main_at(root: pathlib.Path, argv: list[str] | None = None) -> tuple[int, str]:
+        real_root, real_pins = g["ROOT"], {k: g[k] for k in _FPINS}
         g["ROOT"] = root
-        g["collect"] = lambda base: ([], False, None, [], [])
+        g.update(_FPINS)
         try:
             with _cl.redirect_stdout(_io.StringIO()) as b:
-                rc = main(["--base", "HEAD"])
+                rc = main(["--base", "HEAD"] if argv is None else argv)
         finally:
             g["ROOT"] = real_root
-            g["collect"] = real_collect
+            g.update(real_pins)
         return rc, b.getvalue()
+
+    def _commit(d: pathlib.Path, msg: str) -> None:
+        subprocess.run(["git", "-C", str(d), "add", "-A"], check=True, env=fixture_git.env())
+        subprocess.run(["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", msg],
+                       check=True, capture_output=True, env=fixture_git.env())
 
     _keep = {"docs/asks/.gitkeep": ""}
     _rc, _out = _main_at(_repo({**_keep, "docs/asks/Foo.md": "# Q?\n"}))
@@ -1989,7 +1760,118 @@ def _impure_self_test_body() -> int:
     _p, _e = ask_store_problems("HEAD~1", _edit)
     case("...F1 reads the merge base's blob through git and refuses an edited question",
          (len(_p), _e), (1, None))
-    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep):
+    # ── dashboard-retire S2, Task 9: R1 is gone ──
+    # 9.1: a branch that changes a tracked script and adds NO dashboard entry passes.
+    _code = _repo(_keep)
+    (_code / "scripts").mkdir(exist_ok=True)
+    (_code / "scripts/x.py").write_text("print(1)\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(_code), "add", "scripts/x.py"], check=True, env=fixture_git.env())
+    subprocess.run(["git", "-C", str(_code), "-c", "user.name=t", "-c", "user.email=t@t",
+                    "commit", "-qm", "code"], check=True, capture_output=True, env=fixture_git.env())
+    case("9.1 a code-only branch with no dashboard entry exits 0",
+         _main_at(_code, ["--base", "HEAD~1"])[0], 0)
+    # 9.7: without `--base`, F1 is not run, so `merge-base` is never asked (a master-branch run
+    # has no base to compare against).
+    _argvs: list = []
+    _real_run = subprocess.run
+
+    def _spy_run(*a, **k):
+        _argvs.append(list(a[0] if a else k.get("args", [])))
+        return _real_run(*a, **k)
+    _rc97 = _with_run(_spy_run, lambda: _main_at(_code, []))[0]
+    case("9.7 without --base only A1 runs: merge-base is never asked, and it exits 0",
+         (_rc97, any("merge-base" in av for av in _argvs), bool(_argvs)), (0, False, True))
+    # 9.8: `--pr-body-file` is gone, so passing it is a usage error, not a silently ignored flag.
+    try:
+        with _cl.redirect_stderr(_io.StringIO()):
+            main(["--base", "origin/master", "--pr-body-file", "x"])
+        _rc98 = "returned"
+    except SystemExit as exc:
+        _rc98 = exc.code
+    case("9.8 --pr-body-file is refused as a usage error (exit 2)", _rc98, 2)
+    # ── dashboard-retire S2, Task 12: L1, the cutover check and the open-PR lister, IMPURE ──
+    _st = _repo(_keep)
+    with open(_st / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
+        _fh.write("\n## 2026-11-26 [needs-you]\nA stray ask nobody reads.\n")
+    _commit(_st, "append")
+    _rc10, _o10 = _main_at(_st, [])
+    case("12.10 without --base (a push) L1 still runs, and refuses the appended entry",
+         (_rc10, "REFUSED — L1" in _o10, "A stray ask nobody reads." in _o10), (1, True, True))
+    _restore = [ln.strip() for ln in _o10.splitlines() if ln.strip().startswith("git cat-file blob ")]
+    if _restore:
+        subprocess.run(_restore[0], shell=True, cwd=_st, check=False, env=fixture_git.env())
+        _commit(_st, "restore")
+    case("12.7 the printed restore command repairs the tree: L1 red before, green after",
+         (_rc10, len(_restore), _main_at(_st, [])[0]), (1, 1, 0))
+    # 12.12: A = the pinned base store, B appends an entry, C changes something else on top.
+    _cv = _repo(_keep)
+    _a = subprocess.run(["git", "-C", str(_cv), "rev-parse", "HEAD"], capture_output=True, text=True,
+                        env=fixture_git.env()).stdout.strip()
+    with open(_cv / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
+        _fh.write("\n## 2026-11-26\nMerged after the pin.\n")
+    _commit(_cv, "B")
+    (_cv / "README").write_text("c\n", encoding="utf-8")
+    _commit(_cv, "C")
+    case("12.12 the cutover check reads the revision it is given: C^1 (B's store) rc 1, A rc 0",
+         (_main_at(_cv, ["--cutover-check", "HEAD^1"])[0], _main_at(_cv, ["--cutover-check", _a])[0]), (1, 0))
+    # 12.11: the COMMITTED pins against the store on disk — no HEAD, no rev-parse, so no repository needed.
+    _sp = ROOT / LEGACY_STORE_REL
+    _hb = subprocess.run(["git", "hash-object", "--", str(_sp)], capture_output=True, text=True,
+                         env=fixture_git.env()).stdout.strip() if _sp.is_file() else None
+    _hs = _hl.sha256(_sp.read_bytes()).hexdigest() if _sp.is_file() else None
+    case("12.11 the two HEAD pins describe the store on disk (git hash-object, sha256)",
+         (_hb, _hs), (LEGACY_STORE_BLOB, LEGACY_STORE_SHA256))
+    # 12.13–12.16: `gh` stubbed through `_with_run`.
+    import json as _js
+
+    def _gh_stub(numbers, store_in=(), diff_rc=None, list_rc: int = 0):
+        def run(cmd, *a, **k):
+            if cmd[:3] == ["gh", "pr", "list"]:
+                if list_rc:
+                    return _R(list_rc, "", "gh: boom")
+                lim = int(cmd[cmd.index("--limit") + 1]) if "--limit" in cmd else 30
+                ns = numbers(lim)
+                return _R(0, _js.dumps([{"number": n, "headRefName": f"b{n}"} for n in ns]))
+            if cmd[:3] == ["gh", "pr", "diff"]:
+                n = int(cmd[3])
+                if diff_rc and n in diff_rc:
+                    return _R(1, "", "gh: boom")
+                return _R(0, "docs/dashboard-entries.md\n" if n in store_in else "scripts/x.py\n")
+            return _R(127, "", f"unexpected {cmd[:3]}")
+        return run
+    case("12.13 a PR beyond gh's default page of 30 is listed",
+         _with_run(_gh_stub(lambda lim: range(1, min(lim, 31) + 1), store_in={31}), store_edit_prs),
+         (["PR 31 (b31) edits the frozen store"], None))
+    _l14, _e14 = _with_run(_gh_stub(lambda lim: range(1, PR_LIST_LIMIT + 1)), store_edit_prs)
+    case("12.14 a full page of PR_LIST_LIMIT is CANNOT RUN, naming the limit",
+         (_l14, str(PR_LIST_LIMIT) in (_e14 or "")), ([], True))
+    _with_main = lambda: _main_at(ROOT, ["--list-store-prs"])[0]
+    case("12.15 a failed gh pr list is CANNOT RUN, never 'no PRs': err set, --list-store-prs rc 2",
+         (_with_run(_gh_stub(lambda lim: [], list_rc=1), store_edit_prs)[1] is not None,
+          _with_run(_gh_stub(lambda lim: [], list_rc=1), _with_main)), (True, 2))
+    _e16 = _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, diff_rc={7}), store_edit_prs)[1] or ""
+    case("12.16 a failed gh pr diff is CANNOT RUN, never 'no edit': err names PR 7, rc 2",
+         ("PR 7" in _e16, _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, diff_rc={7}), _with_main)), (True, 2))
+    # r1 F1: git cannot read the frozen store — it is committed, then its loose object is deleted, so
+    # `ls-tree` still names the blob and `cat-file` exits 128. A1's own blobs are intact. L1 must hand
+    # back its err, and `main` must say CANNOT RUN (rc 2) — never "ok" over a store nobody read.
+    _unr = _repo(_keep)
+    _ob = _FPINS["LEGACY_STORE_BLOB"]
+    os.remove(_unr / ".git" / "objects" / _ob[:2] / _ob[2:])
+    _l1p, _l1e = legacy_store_check(_unr)
+    _rcu, _ou = _main_at(_unr, [])
+    case("r1 F1: an unreadable frozen store is CANNOT RUN: L1 returns its err and main exits 2",
+         (_l1p, _l1e is not None, _rcu, "CANNOT RUN" in _ou), (None, True, 2, True))
+    # r1 F4: an L1 refusal does not hide A1's problems found in the same run — both are printed, rc 1.
+    _both = _repo({**_keep, "docs/asks/Foo.md": "# Q?\n"})
+    with open(_both / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
+        _fh.write("\n## 2026-11-26\nAppended.\n")
+    _commit(_both, "append")
+    _rcb, _ob4 = _main_at(_both, [])
+    case("r1 F4: an L1 refusal still reports A1's problems from the same run",
+         (_rcb, "REFUSED — L1" in _ob4, "Foo.md" in _ob4), (1, True, True))
+    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code, _st, _cv,
+               _unr, _both):
         _sh.rmtree(_d, ignore_errors=True)
 
     print(f"{ok}/{ok+fail} cannot-run cases passed")
@@ -2001,34 +1883,55 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true")
-    ap.add_argument("--base", default="origin/master")
-    ap.add_argument("--pr-body-file", default=None)
+    ap.add_argument("--base", default=None,
+                    help="the ref F1 compares against (`git merge-base <base> HEAD`); "
+                         "without it only A1 runs")
+    ap.add_argument("--cutover-check", metavar="REF", default=None,
+                    help="only: is the store at REF still master's at pin time (LEGACY_STORE_BASE_BLOB)?")
+    ap.add_argument("--list-store-prs", action="store_true",
+                    help="only: list the open pull requests whose diff names the frozen store")
     a = ap.parse_args(argv)
+    if a.cutover_check is not None:
+        try:
+            ref_blob = _store_blob(ROOT, a.cutover_check)
+        except _AskGitError as exc:
+            print(f"CANNOT RUN — the store at {a.cutover_check} could not be read — {exc}\n"
+                  f"Treat this as NOT CHECKED.")
+            return 2
+        why = cutover_problem(ref_blob)
+        print(f"REFUSED — {why}" if why else
+              f"ok — the store at {a.cutover_check} is the pinned base blob {LEGACY_STORE_BASE_BLOB}")
+        return 1 if why else 0
+    if a.list_store_prs:
+        lines, err = store_edit_prs()
+        if err:
+            print(f"CANNOT RUN — {err}. Treat this as NOT CHECKED.")
+            return 2
+        print("\n".join(lines) if lines else "ok — no open pull request edits the frozen store")
+        return 0
     if a.self_test:
         # BOTH suites, both always run. `or` would short-circuit and hide the
         # cannot-run cases whenever the pure suite is already red.
         pure, impure = _self_test(), _impure_self_test()
         return 1 if (pure or impure) else 0
-    changed, added, err, entry_problems, ref_problems = collect(a.base)
-    if err:
-        print(f"CANNOT RUN — {err}\nTreat this as NOT CHECKED.")
-        return 2
     ask_problems, ask_err = ask_store_problems(a.base, ROOT)
-    if ask_err:
-        print(f"CANNOT RUN — {ask_err}\nTreat this as NOT CHECKED.")
+    # L1 runs in BOTH modes: with `--base` (a pull request) and without (master, batch/**).
+    l1_problem, l1_err = legacy_store_check(ROOT)
+    if ask_err or l1_err:
+        print(f"CANNOT RUN — {ask_err or l1_err}\nTreat this as NOT CHECKED.")
         return 2
-    body = ""
-    if a.pr_body_file:
-        import pathlib
-        p = pathlib.Path(a.pr_body_file)
-        body = p.read_text(encoding="utf-8") if p.exists() else ""
-    code, reason = verdict(changed, added, body, entry_problems, ref_problems)
-    print(("ok — " if code == 0 else "REFUSED — ") + reason)
+    # r1 F4: BOTH blocks print before the exit, so one run reports an L1 refusal and A1/F1's problems together.
+    if l1_problem:
+        print(f"REFUSED — L1: {l1_problem}")
     if ask_problems:
         print(f"REFUSED — the ask store under {ASKS_REL}/ has {len(ask_problems)} problem(s):\n"
               + "\n".join(f"  - {p}" for p in ask_problems))
+    if l1_problem or ask_problems:
         return 1
-    return code
+    print(f"ok — the ask store under {ASKS_REL}/ is well-formed"
+          + (f" and every ask at the merge base with {a.base} only grew" if a.base else
+             " (A1 only: no --base, so F1 was not run)"))
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
