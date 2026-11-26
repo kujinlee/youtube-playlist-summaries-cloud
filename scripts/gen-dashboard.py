@@ -318,7 +318,7 @@ def _store_label(p) -> str:
 
 
 def _gate_module():
-    """Load scripts/check-dashboard-entry.py for the grammar it owns.
+    """Load scripts/check-ask-store.py for the grammar it owns.
 
     The dependency arrow points generator -> gate, never the reverse: a GATE
     must not import the thing it guards, but a page importing a gate is what
@@ -326,7 +326,7 @@ def _gate_module():
     not importable, so importlib is the only route.
     """
     import importlib.util, pathlib
-    p = pathlib.Path(__file__).with_name("check-dashboard-entry.py")
+    p = pathlib.Path(__file__).with_name("check-ask-store.py")
     spec = importlib.util.spec_from_file_location("_dash_gate", p)
     if spec is None or spec.loader is None:
         raise ImportError(f"could not load {p}")

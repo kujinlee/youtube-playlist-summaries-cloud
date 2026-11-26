@@ -1268,7 +1268,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'warn_reason.head_sha',
         'warn_reason.watching_sha',
     ),
-    'check-dashboard-entry.py': (
+    'check-ask-store.py': (
         'added_entry_problems.patch', 'added_reference_errors.base_text',
         'added_reference_errors.head_text', 'decision_errors.category',
         'decision_errors.plain', 'decisions.plain', 'exemption_reason.marker',

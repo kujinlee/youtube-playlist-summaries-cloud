@@ -1329,7 +1329,7 @@ def needs_from_asks(directory: pathlib.Path) -> tuple[list[dict], list[str]]:
 
     ⛔ A MALFORMED DECISION KEEPS THE ASK: an ask with no block, or one option, is still shown, with its warning
     — it is louder, never quieter. A problem the reader names makes the source NOT READ (the caller's job)."""
-    gate = _sibling("check-dashboard-entry")
+    gate = _sibling("check-ask-store")
     asks, problems = gate.read_asks(directory)
     items = []
     for a in asks:

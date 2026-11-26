@@ -1809,7 +1809,7 @@ def _self_test_body() -> int:
                               closure(tree({**gen, "scripts/check-gate.py": ""}), gen_src), gen_src), [])
     # The reviewer's six, written out here and never read from the map: each shipped entry point and the sibling it
     # loads by path. An edge reader that loses one of these forms loses a row.
-    six = (("gen-dashboard", "check-dashboard-entry"), ("gen-goals-page", "check-goal-status"),
+    six = (("gen-dashboard", "check-ask-store"), ("gen-goals-page", "check-goal-status"),
            ("gen-features-page", "check-features"), ("gen-backlog-page", "check-docs"),
            ("goal-tree", "session-state"), ("check-surface-recall", "check-rc-contract"))
     case("CB1: the live tree — each of the six shipped entry points has an edge to the sibling it loads by path",
@@ -2644,6 +2644,9 @@ def _self_test_body() -> int:
         # lines, diffed by hand (sorted, `comm -3`) against 0392c70f's tree: `compaction-state.py` ->
         # `check-dashboard-entry.py` and `goal-tree.py` -> `check-dashboard-entry.py` (each loads `read_asks`, the one
         # reader of `docs/asks/`). Lost: 0.
+        # ⟳ 2026-11-25 dashboard-retire S2 Task 8 (the gate file renamed `check-ask-store.py`): 370 / 11b65c8abbb07195,
+        # diffed by hand (sorted, `diff`) against the Task 7 tree f3d75203: the six edges into or out of
+        # `check-dashboard-entry.py` now name `check-ask-store.py`, the same six importers. Gained: 0 new. Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2655,7 +2658,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (370, "3effa00a97160051", []))
+             (370, "11b65c8abbb07195", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

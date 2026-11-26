@@ -1161,7 +1161,7 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "        files, problems = _load(\"check-dashboard-entry.py\", \"_ask_gate_for_compaction\").read_asks(root / \"docs\" / \"asks\")\n",
+        "        files, problems = _load(\"check-ask-store.py\", \"_ask_gate_for_compaction\").read_asks(root / \"docs\" / \"asks\")\n",
         "        files, problems = [], []\n"
       ]
     ],

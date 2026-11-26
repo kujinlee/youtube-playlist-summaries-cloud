@@ -16,7 +16,7 @@
 on the strength of a local gate sweep, and twice CI refused it. Both times the refusal was
 correct and both times the failing gate was one a working copy CANNOT ANSWER:
 
-  * `check-dashboard-entry.py` asks whether the BRANCH recorded what it changed.
+  * `check-ask-store.py` asks whether the BRANCH recorded what it changed.
   * `check-review-recorded.py` asks whether a review round saw the code, and reads the PULL
     REQUEST BODY for its waiver — so it only runs on a `pull_request` event at all.
 
@@ -650,7 +650,7 @@ def _import_sibling(src: Path, name: str, error=SiblingUnusable):
 
 
 # The sibling that owns the escape grammar. A module global so a case can point it at a copy.
-DASHBOARD_GATE = Path(__file__).with_name("check-dashboard-entry.py")
+ASK_STORE_GATE = Path(__file__).with_name("check-ask-store.py")
 
 
 @functools.lru_cache(maxsize=4)
@@ -2053,8 +2053,8 @@ def granted_escapes(pr_body: str) -> dict[str, str | None]:
     The CALL fails closed like the import (r5 Claude F1): whatever the matcher raises, `SystemExit`
     included, is `SiblingUnusable`, which `main()` reports as CANNOT RUN. ⟳ r7 Claude F3: so does an
     answer that is neither `None` nor an exact str — `escape_diagnosis` truth-tests it, outside any `try`."""
-    gate = _dashboard_gate(DASHBOARD_GATE)
-    where = str.__str__(DASHBOARD_GATE.name)
+    gate = _dashboard_gate(ASK_STORE_GATE)
+    where = str.__str__(ASK_STORE_GATE.name)
     return {m: _cross(lambda m=m: gate.exemption_reason(pr_body, m), reduce=_exact_reason,
                       error=lambda d: SiblingUnusable(f"{where}: exemption_reason: {d}"))
             for m in sorted(set(GATE_ESCAPE.values()))}
@@ -2195,7 +2195,7 @@ def main(argv: list[str]) -> int:
         # Without `--pr-body-file` the gate cannot see a `NO-ENTRY:` waiver, so this script would
         # report NOT READY for a branch CI passes: right answer, wrong reason, and the reader goes
         # looking for an entry they already waived.
-        ("dashboard entry", ["python3", "scripts/check-dashboard-entry.py",
+        ("dashboard entry", ["python3", "scripts/check-ask-store.py",
                              "--base", BASE_REF, "--pr-body-file", str(body_file)]),
         ("review recorded", ["python3", "scripts/check-review-recorded.py",
                              "--base", BASE_REF, "--pr-body-file", str(body_file)]),
@@ -2352,7 +2352,7 @@ def _self_test_body() -> int:
         run: npm test
       - name: dashboard entry ratchet
         if: github.event_name == 'pull_request'
-        run: python3 scripts/check-dashboard-entry.py
+        run: python3 scripts/check-ask-store.py
       - name: check-review-recorded (PR only)
         if: github.event_name == 'pull_request'
         env:
@@ -4168,20 +4168,20 @@ def _self_test_body() -> int:
           _rc, 0)
     # ⛔ r5 Claude F1: the SAME class at the other in-process importer. Codex's r4 input appended to
     # the dashboard gate left `main()` at rc 0 with no verdict, on a head whose pin falls 5 -> 4.
-    _real_cde = (_here / "check-dashboard-entry.py").read_text(encoding="utf-8")
+    _real_cde = (_here / "check-ask-store.py").read_text(encoding="utf-8")
     def _gate_main(body, pr, refuse=()):
-        """`main()` over a falling pin, with `DASHBOARD_GATE` pointed at a copy holding `body`."""
+        """`main()` over a falling pin, with `ASK_STORE_GATE` pointed at a copy holding `body`."""
         d = Path(tempfile.mkdtemp())
-        (d / "check-dashboard-entry.py").write_text(body, encoding="utf-8")
-        saved = globals()["DASHBOARD_GATE"]
-        globals()["DASHBOARD_GATE"] = d / "check-dashboard-entry.py"
+        (d / "check-ask-store.py").write_text(body, encoding="utf-8")
+        saved = globals()["ASK_STORE_GATE"]
+        globals()["ASK_STORE_GATE"] = d / "check-ask-store.py"
         try:
             return _main(["scripts/check-plan-code.py"], pr, refuse=refuse,
                          pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
         except BaseException as exc:      # SystemExit escaping main() is exactly the defect
             return f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
         finally:
-            globals()["DASHBOARD_GATE"] = saved
+            globals()["ASK_STORE_GATE"] = saved
             shutil.rmtree(d, ignore_errors=True)
     _rc, _o = _gate_main(_real_cde + '\nif __name__ != "__main__":\n    raise SystemExit(0)\n', "16")
     check("⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)",
@@ -4265,7 +4265,7 @@ def _self_test_body() -> int:
           (_rc, "scripts/a.py drops 5 -> 4" in _o), (3, True))
     _falsy = f"class _B:\n    __bool__ = lambda s: {_exit}\n"
     _rc, _o = _gate_main(_real_cde + "\n" + _falsy + "def exemption_reason(body, marker):\n    return _B()\n",
-                         "33", refuse=("scripts/check-dashboard-entry.py",))
+                         "33", refuse=("scripts/check-ask-store.py",))
     check("⭐ a REFUSING gate is CANNOT RUN, rc=2, never rc 0, when exemption_reason returns a value whose __bool__ exits (r7 P11)",
           (_rc, "escape cross-check NOT RUN" in _o, "NO-REVIEW matcher failed" in _o), (2, True, True))
     _sname = ("\nclass _S(str):\n    __format__ = lambda s, f: " + _exit + "\n"
@@ -4274,10 +4274,10 @@ def _self_test_body() -> int:
     check("⭐ main() is CANNOT RUN, rc=2, when the gate's import raises a class whose __name__ is a str subclass (r7 P12)",
           (_rc, "CANNOT RUN" in _o), (2, True))
     _rc, _o = _gate_main(_real_cde + _sname + "def exemption_reason(body, marker):\n    raise Broken('x')\n",
-                         "35", refuse=("scripts/check-dashboard-entry.py",))
+                         "35", refuse=("scripts/check-ask-store.py",))
     check("⭐ ...and when exemption_reason raises it under a refusing gate, the text=False site (r7 P13)",
           (_rc, "CANNOT RUN" in _o), (2, True))
-    _rc, _o = _gate_main(_real_cde, "36", refuse=("scripts/check-dashboard-entry.py",))
+    _rc, _o = _gate_main(_real_cde, "36", refuse=("scripts/check-ask-store.py",))
     check("...while a well-behaved gate under a refusal is NOT READY, rc=1 (the adjacent negative)", _rc, 1)
     # #353: the MACHINE list decides paths. The header says `docs/g.yml` both sides; the list says a
     # workflow was renamed there — so only a main() that reads the list holds it.

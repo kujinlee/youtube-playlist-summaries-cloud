@@ -676,12 +676,12 @@ def _gate_sources() -> "tuple[str, dict[str, str]] | None":
 
 
 def _load_declaration_parser():
-    """`exemption_reason` from check-dashboard-entry, so both markers share one parser.
+    """`exemption_reason` from check-ask-store, so both markers share one parser.
 
     RAISES if it cannot be loaded — a gate that silently fell back to its own parser would be the
     duplicate this docstring exists to prevent, and it would look green while doing it.
     """
-    path = ROOT / "scripts" / "check-dashboard-entry.py"
+    path = ROOT / "scripts" / "check-ask-store.py"
     spec = importlib.util.spec_from_file_location("_cde", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"CANNOT RUN — cannot load the declaration parser from {path}")

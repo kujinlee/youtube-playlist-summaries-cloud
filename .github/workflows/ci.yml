@@ -984,8 +984,8 @@ jobs:
       - name: gen-dashboard self-test
         run: python3 scripts/gen-dashboard.py --self-test
 
-      - name: check-dashboard-entry self-test
-        run: python3 scripts/check-dashboard-entry.py --self-test
+      - name: check-ask-store self-test
+        run: python3 scripts/check-ask-store.py --self-test
 
       # ── The plan-file reader (the work-lines page it drew retired into the goal tree, backlog #389) ──
       #
@@ -1109,7 +1109,7 @@ jobs:
           BODY: ${{ github.event.pull_request.body }}
         run: |
           printf '%s' "$BODY" > /tmp/pr-body.md
-          python3 scripts/check-dashboard-entry.py \
+          python3 scripts/check-ask-store.py \
             --base "origin/$GITHUB_BASE_REF" --pr-body-file /tmp/pr-body.md
 
       # ⛔ THE ZERO-ROUND CASE. `check-review-rounds` audits rounds that EXIST; a branch with none

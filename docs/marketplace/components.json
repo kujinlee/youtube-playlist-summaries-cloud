@@ -250,7 +250,7 @@
       "phase": "1",
       "package": "comprehensibility",
       "files": [
-        "scripts/check-dashboard-entry.py"
+        "scripts/check-ask-store.py"
       ]
     },
     {

@@ -871,7 +871,7 @@ EXPECTED_MUTATIONS = {
     # main's dispatch on A1 (the refusal, the err) plus ask_store_problems' own failure branch.
     # r1 fold: 62 -> 68 — A1 refuses a HEAD with no docs/asks/, the name rule's fullmatch and ASCII digits (2),
     # F1's no-final-newline clause, A1 reads HEAD's bytes and a tracked symlink's tree mode (2).
-    "scripts/check-dashboard-entry.py": 68,
+    "scripts/check-ask-store.py": 68,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look

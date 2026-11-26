@@ -485,7 +485,7 @@ def pending_asks(root: Path) -> tuple[int | None, list[dict], str | None]:
             text = fh.read().decode("utf-8", "replace")
         gd = _load("gen-dashboard.py", "_gen_dashboard_for_compaction")
         need = gd.unresolved(gd.parse_entries(text))
-        files, problems = _load("check-dashboard-entry.py", "_ask_gate_for_compaction").read_asks(root / "docs" / "asks")
+        files, problems = _load("check-ask-store.py", "_ask_gate_for_compaction").read_asks(root / "docs" / "asks")
     except Exception as exc:  # noqa: BLE001 — any failure is a CANNOT RUN line, never a crash
         return None, [], f"{exc.__class__.__name__}: {clean(exc, 120)}"
     if problems:
@@ -2112,8 +2112,8 @@ def _self_test_body() -> int:
         _real_load = _load
 
         def _no_gate(filename, alias):
-            if filename == "check-dashboard-entry.py":
-                raise ImportError("cannot load scripts/check-dashboard-entry.py")
+            if filename == "check-ask-store.py":
+                raise ImportError("cannot load scripts/check-ask-store.py")
             return _real_load(filename, alias)
         globals()["_load"] = _no_gate
         try:
@@ -2121,7 +2121,7 @@ def _self_test_body() -> int:
         finally:
             globals()["_load"] = _real_load
         case("4.3 a gate that cannot be loaded is CANNOT RUN, with the reason",
-             (_nog[0], "cannot load scripts/check-dashboard-entry.py" in (_nog[2] or "")), (None, True))
+             (_nog[0], "cannot load scripts/check-ask-store.py" in (_nog[2] or "")), (None, True))
         _fq = root / "fifo-ask" / "docs"
         (_fq / "asks").mkdir(parents=True)
         (_fq / "dashboard-entries.md").write_text("# Dashboard entries\n")
