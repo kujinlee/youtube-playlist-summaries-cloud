@@ -1103,14 +1103,11 @@ jobs:
       - name: doc-citations guard's own cases
         run: python3 scripts/check-doc-citations.py --self-test
 
+      # ⟳ dashboard-retire S2: the per-PR entry rule and its `NO-ENTRY:` waiver are retired, so the
+      # step reads no PR body; it checks the ask store (A1, and F1 against the base).
       - name: dashboard entry ratchet
         if: github.event_name == 'pull_request'
-        env:
-          BODY: ${{ github.event.pull_request.body }}
-        run: |
-          printf '%s' "$BODY" > /tmp/pr-body.md
-          python3 scripts/check-ask-store.py \
-            --base "origin/$GITHUB_BASE_REF" --pr-body-file /tmp/pr-body.md
+        run: python3 scripts/check-ask-store.py --base "origin/$GITHUB_BASE_REF"
 
       # ⛔ THE ZERO-ROUND CASE. `check-review-rounds` audits rounds that EXIST; a branch with none
       # passes it vacuously, which is how five PRs merged unreviewed on 2026-09-09 with every gate

@@ -1268,14 +1268,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'warn_reason.head_sha',
         'warn_reason.watching_sha',
     ),
+    # ⟳ dashboard-retire S2: R1's `verdict`, `added_entry_problems` and `added_reference_errors`
+    # are deleted with the entry ratchet, so their eight keys leave this table.
     'check-ask-store.py': (
-        'added_entry_problems.patch', 'added_reference_errors.base_text',
-        'added_reference_errors.head_text', 'decision_errors.category',
+        'decision_errors.category',
         'decision_errors.plain', 'decisions.plain', 'exemption_reason.marker',
         'exemption_reason.pr_body', 'fence_closes.open_run', 'fence_closes.rest',
         'fence_closes.run', 'fenced_lines.text', 'header_error.line',
-        'parse_entries.text', 'verdict.added_entry', 'verdict.changed',
-        'verdict.entry_problems', 'verdict.pr_body', 'verdict.ref_problems',),
+        'parse_entries.text',),
     'check-docs.py': (
         'backlog_marker_errors.label', 'backlog_marker_errors.lines',
         'backlog_marker_errors.ok_lines', 'backlog_shape_errors.label',

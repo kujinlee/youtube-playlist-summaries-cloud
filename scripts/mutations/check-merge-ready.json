@@ -133,36 +133,15 @@
  },
  {
   "file": "scripts/check-merge-ready.py",
-  "name": "the MISDIRECTED case is silenced, so answering the wrong gate reads as no diagnosis at all",
-  "edits": [
-   [
-    "        if other is not None and granted.get(other):\n",
-    "        if False:\n"
-   ]
-  ],
-  "expect": "...and does NOT call the other declaration inert, because it was granted"
- },
- {
-  "file": "scripts/check-merge-ready.py",
   "name": "the INVISIBLE case stops checking placement, so an indented or fenced token reads as absent",
   "edits": [
    [
-    "        elif want in pr_body:\n",
-    "        elif False:\n"
+    "        if want in pr_body:\n",
+    "        if False:\n"
    ]
   ],
-  "expect": "INVISIBLE: the exact token is present but granted nothing"
- },
- {
-  "file": "scripts/check-merge-ready.py",
-  "name": "the INERT-OTHER case is removed, hiding that the other declaration was never granted either",
-  "edits": [
-   [
-    "        elif other is not None and other in pr_body:\n",
-    "        elif False:\n"
-   ]
-  ],
-  "expect": "INERT OTHER: the other token is present but was granted nothing"
+  "expect": "9.5 INVISIBLE: the exact token is present but granted nothing",
+  "_note": "REBOUND dashboard-retire S2: MISDIRECTED left with `NO-ENTRY:`, so INVISIBLE is the loop's first branch (`if`, not `elif`)."
  },
  {
   "file": "scripts/check-merge-ready.py",
@@ -1701,7 +1680,7 @@
     "True\n"
    ]
   ],
-  "expect": "#508 r2 Codex 5: ...nor a later round of the same half that answers THAT id a finding AGAIN \u2014 both verdicts stay named"
+  "expect": "#508 r2 Codex 5: ...nor a later round of the same half that answers THAT id a finding AGAIN — both verdicts stay named"
  },
  {
   "name": "#508 r2 Codex 5: review_answers names no verdict whose finding stands",
@@ -2444,7 +2423,7 @@
     "                if False:\n"
    ]
   ],
-  "expect": "\u2b50 #680 r1 X1: an inline flow list of fix-induced findings in BOTH rounds is cannot-judge, never clean"
+  "expect": "⭐ #680 r1 X1: an inline flow list of fix-induced findings in BOTH rounds is cannot-judge, never clean"
  },
  {
   "name": "backlog #680 (2) r1 X1: `findings: []` followed by a comment is refused as an inline value",
@@ -2455,7 +2434,7 @@
     "EMPTY_INLINE = re.compile(r\"^\\[\\][ \\t]*$\")\n"
    ]
   ],
-  "expect": "#680 r1 C1: `findings: []  # none` is an explicit empty list \u2014 a clean round, no HOLD"
+  "expect": "#680 r1 C1: `findings: []  # none` is an explicit empty list — a clean round, no HOLD"
  },
  {
   "name": "backlog #680 (2) r1 C2: an architecture review in docs/reviews/coordinator/ is not recognised",
@@ -2466,7 +2445,7 @@
     "ARCH_REVIEW = re.compile(r\"^docs/reviews/architecture-review-[^/]+\\.md$\")\n"
    ]
   ],
-  "expect": "\u2b50 #680 r1 C2: an architecture review filed under docs/reviews/coordinator/ clears it too"
+  "expect": "⭐ #680 r1 C2: an architecture review filed under docs/reviews/coordinator/ clears it too"
  },
  {
   "name": "backlog #680 (2) r1 C3: a lone unreadable round HOLDS though thrashing needs two",
@@ -2477,7 +2456,7 @@
     "        if any("
    ]
   ],
-  "expect": "#680 r1 C3: a subject with ONE round, unreadable, does not HOLD \u2014 thrashing needs two"
+  "expect": "#680 r1 C3: a subject with ONE round, unreadable, does not HOLD — thrashing needs two"
  },
  {
   "name": "backlog #680 (2) r1 C3: a readable round with no fix-induced finding does not rule thrashing out",
@@ -2510,7 +2489,7 @@
     "                if False:\n"
    ]
   ],
-  "expect": "\u2b50 #680 r2 X1: `findings: []` then a second `findings: [...]` beside a fix-induced r3 is cannot-judge"
+  "expect": "⭐ #680 r2 X1: `findings: []` then a second `findings: [...]` beside a fix-induced r3 is cannot-judge"
  },
  {
   "name": "backlog #680 (2) r2 X1: a field set twice in one finding is read as a readable round",
@@ -2521,7 +2500,7 @@
     "                if False:\n"
    ]
   ],
-  "expect": "\u2b50 #680 r2 X1: an item that sets `fix_induced` twice (true, then false) is cannot-judge, never clean"
+  "expect": "⭐ #680 r2 X1: an item that sets `fix_induced` twice (true, then false) is cannot-judge, never clean"
  },
  {
   "name": "backlog #680 (2) r2 X2: an architecture review need not exist at HEAD to clear the HOLD",
@@ -2532,7 +2511,7 @@
     "    if any(ARCH_REVIEW.match(f) for f in files):\n"
    ]
   ],
-  "expect": "\u2b50 #680 r2 X2: a DELETED coordinator-dir architecture review (in the range, absent at HEAD) still HOLDS"
+  "expect": "⭐ #680 r2 X2: a DELETED coordinator-dir architecture review (in the range, absent at HEAD) still HOLDS"
  },
  {
   "name": "backlog #680 (2) r3 C1: `findings: []` is clean even with lines under it — clean is no longer the POSITIVE form",

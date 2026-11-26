@@ -398,8 +398,13 @@ def _exemption_reader():
     disk between import and call the page's grammar and its exemption reader
     would come from two different reads — contradicting `no_entry_prs`'s own
     rationale that the page shows exactly the exemptions the gate granted.
+
+    ⟳ dashboard-retire S2: the gate's default marker became `NO-REVIEW:` when R1 retired. This
+    section lists the HISTORICAL `NO-ENTRY:` waivers, so the marker is passed explicitly until the
+    page itself retires in S3.
     """
-    return getattr(_GATE, "exemption_reason")
+    reader = getattr(_GATE, "exemption_reason")
+    return lambda body: reader(body, "NO-ENTRY:")
 
 
 def _decision_reader():

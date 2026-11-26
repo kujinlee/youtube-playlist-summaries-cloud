@@ -1,22 +1,5 @@
 [
   {
-    "name": "gate stops sharing the parser grammar",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "return line.startswith(\"+\") and header_error(line[1:]) is None",
-        "import re as _r; return bool(_r.match(r\"^\\+## (\\d{4}-\\d{2}-\\d{2})\\b\", line))"
-      ]
-    ],
-    "expect": [
-      "an impossible date does NOT count",
-      "a suffixed date does NOT count",
-      "a trailing dot does NOT count",
-      "a typo'd flag does NOT count",
-      "a title on the header line does NOT count"
-    ]
-  },
-  {
     "name": "tab indent not counted",
     "file": "scripts/check-ask-store.py",
     "edits": [
@@ -64,59 +47,39 @@
     "expect": "exemption_reason — blockquoted"
   },
   {
-    "name": "the three-valued reason collapses: empty and absent become one message",
+    "name": "A1 reads a non-zero git exit as an empty store",
     "file": "scripts/check-ask-store.py",
+    "_note": "REBOUND dashboard-retire S2: R1's `collect` was deleted with the entry ratchet; A1's own git layer `_ask_git` carries the same could-not-tell contract.",
     "edits": [
       [
-        "    if reason == \"\":",
+        "    if r.returncode != 0:",
         "    if False:"
       ]
     ],
-    "expect": "...and says the marker was present with nothing after it"
+    "expect": "A1's own git failure is CANNOT RUN"
   },
   {
-    "name": "the GATE reads a broken git as 'nothing changed'",
+    "name": "A1's missing-git branch reports no error",
     "file": "scripts/check-ask-store.py",
+    "_note": "REBOUND dashboard-retire S2: R1's `collect` was deleted with the entry ratchet; A1's own git layer `_ask_git` carries the same could-not-tell contract.",
     "edits": [
       [
-        "    if names.returncode != 0:",
-        "    if False:"
+        "        raise _AskGitError(f\"could not run git {args[0]}: {exc}\") from exc",
+        "        return b\"\""
       ]
     ],
-    "expect": "collect: a non-zero git exit is a could-not-tell, not 'nothing changed'"
+    "expect": "A1's own git failure is CANNOT RUN"
   },
   {
-    "name": "the GATE's missing-git branch reports no error",
+    "name": "THE GATE GOES FAIL-OPEN — an unreadable ask store exits 0 and the branch merges",
     "file": "scripts/check-ask-store.py",
     "edits": [
       [
-        "        return [], False, f\"could not run git: {exc}\"",
-        "        return [], False, None"
-      ]
-    ],
-    "expect": "collect: a missing git is a could-not-tell, not 'nothing changed'"
-  },
-  {
-    "name": "THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
-        "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
+        "        print(f\"CANNOT RUN — {ask_err}\\nTreat this as NOT CHECKED.\")\n        return 2",
+        "        print(f\"CANNOT RUN — {ask_err}\\nTreat this as NOT CHECKED.\")\n        return 0"
       ]
     ],
     "expect": "main: a could-not-tell exits 2 — NEVER 0"
-  },
-  {
-    "name": "the entry ratchet fails OPEN: added is hardcoded true",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "    added = any(_added_entry_line(l) for l in patch.stdout.split(\"\\n\"))",
-        "    added = True"
-      ]
-    ],
-    "expect": "collect: a working git still reports the changed files, and NO entry added"
   },
   {
     "name": "decision_errors stops requiring two options",
@@ -207,59 +170,8 @@
       ]
     ],
     "expect": [
-      "the block-start rule excludes a sub-heading",
-      "a level-3 heading is not an entry attempt"
+      "the block-start rule excludes a sub-heading"
     ]
-  },
-  {
-    "name": "content check forgets to strip the diff marker",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "        err = header_error(line[1:])",
-        "        err = header_error(line)"
-      ]
-    ],
-    "expect": [
-      "a well-formed added header is not",
-      "...nor is a well-formed bare one"
-    ]
-  },
-  {
-    "name": "the content check sinks below the exemption short-circuit",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "    if entry_problems:",
-        "    if entry_problems and False:"
-      ]
-    ],
-    "expect": [
-      "entry-only branch with a MALFORMED entry is refused",
-      "a NO-ENTRY declaration does NOT excuse a malformed entry"
-    ]
-  },
-  {
-    "name": "collect stops reading the entry patch it already fetched",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "    problems = added_entry_problems(patch.stdout)",
-        "    problems = []"
-      ]
-    ],
-    "expect": "collect: a malformed ADDED header reaches the caller as a problem"
-  },
-  {
-    "name": "main drops the entry problems on the floor",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "    code, reason = verdict(changed, added, body, entry_problems, ref_problems)",
-        "    code, reason = verdict(changed, added, body)"
-      ]
-    ],
-    "expect": "main: an entry-only branch with a malformed entry exits 1"
   },
   {
     "name": "emphasis matcher forgets underscores",
@@ -331,21 +243,6 @@
     "expect": "a whitespace-only resolved payload is refused"
   },
   {
-    "name": "the added-line rule is re-typed instead of derived",
-    "file": "scripts/check-ask-store.py",
-    "_note": "NEW 2026-09-01, added by the Claude review half after the Codex half rated the agreement case Low ('verifies agreement, not derivation'). The point stands and this is the answer to it: the agreement case WAS load-bearing but nothing proved it fired, which by this repo's own standard is an unproven guard — the layer nothing checks back. Restoring a hand-written ENTRY_ISH is the exact regression the seam exists to prevent, and it is NOT covered by the BLOCK mutation: that one corrupts the shared rule so both sides move together and the agreement case stays green. Only breaking the DERIVATION separates them.",
-    "edits": [
-      [
-        "ENTRY_ISH = re.compile(r\"^\\+\" + BLOCK.pattern.removeprefix(\"^\"))",
-        "ENTRY_ISH = re.compile(r\"^\\+##\")"
-      ]
-    ],
-    "expect": [
-      "the gate and the page agree on every block-start shape",
-      "a level-3 heading is not an entry attempt"
-    ]
-  },
-  {
     "name": "the scanner stops marking the fence MARKERS themselves",
     "file": "scripts/check-ask-store.py",
     "_note": "backlog #84. The opening marker line must be in the set: a ``` line is not an entry header, but leaving it out is the kind of off-by-one that only shows up on a store nobody re-reads.",
@@ -401,7 +298,7 @@
     ],
     "expect": [
       "a closer with trailing text does NOT close",
-      "a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt"
+      "a NO-REVIEW: inside a fence closed only by an ANNOTATED fence does NOT exempt"
     ]
   },
   {
@@ -415,7 +312,7 @@
       ]
     ],
     "expect": [
-      "a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt"
+      "a NO-REVIEW: inside a fence closed only by an ANNOTATED fence does NOT exempt"
     ]
   },
   {
@@ -430,7 +327,7 @@
     ],
     "expect": [
       "fence_closes: same char, long enough, no trailing text",
-      "a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt"
+      "a NO-REVIEW: inside a fence closed only by an ANNOTATED fence does NOT exempt"
     ]
   },
   {
@@ -543,26 +440,15 @@
     ]
   },
   {
-    "name": "the marker parameter is ignored, so a sibling gate silently reads NO-ENTRY:",
+    "name": "the marker parameter is ignored, so a caller asking for another marker silently reads NO-REVIEW:",
     "file": "scripts/check-ask-store.py",
     "edits": [
       [
-        "def _declaration_reason(s: str, marker: str = NO_ENTRY) -> str | None:",
-        "def _declaration_reason(s: str, marker: str = NO_ENTRY) -> str | None:\n    marker = NO_ENTRY"
+        "def _declaration_reason(s: str, marker: str = NO_REVIEW) -> str | None:",
+        "def _declaration_reason(s: str, marker: str = NO_REVIEW) -> str | None:\n    marker = NO_REVIEW"
       ]
     ],
-    "expect": "reads a NO-REVIEW declaration through the shared parser"
-  },
-  {
-    "name": "the #168 push clause is dropped from the refusal, so editing the PR body looks sufficient",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "               f\"⚠ If you edit the PR body to answer this, you must then PUSH something — \"\n               f\"CI reads the body from the frozen event payload, so an edit alone (and a \"\n               f\"`gh run rerun`) will fail again with this identical message.\")",
-        "               f\"\")"
-      ]
-    ],
-    "expect": "the refusal telling you to edit the PR body also says you must PUSH, and why (#168)"
+    "expect": "a non-default marker is honoured"
   },
   {
     "name": "the answer rule loosens to a prefix",

@@ -871,7 +871,10 @@ EXPECTED_MUTATIONS = {
     # main's dispatch on A1 (the refusal, the err) plus ask_store_problems' own failure branch.
     # r1 fold: 62 -> 68 — A1 refuses a HEAD with no docs/asks/, the name rule's fullmatch and ASCII digits (2),
     # F1's no-final-newline clause, A1 reads HEAD's bytes and a tracked symlink's tree mode (2).
-    "scripts/check-ask-store.py": 68,
+    # ⟳ dashboard-retire S2 Task 9: 68 -> 59. R1 (`verdict`, `collect`, `added_entry_problems`,
+    # `added_reference_errors`, `_added_entry_line`) is deleted with the per-PR entry ratchet: 9 mutations
+    # anchored there go with it; 3 RE-BOUND onto A1's `_ask_git` and the new `main`, 1 onto `NO_REVIEW`.
+    "scripts/check-ask-store.py": 59,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
@@ -2189,7 +2192,9 @@ EXPECTED_MUTATIONS = {
     # `frozenset(tree)` argument is gone — `counted` replaced it, and a deletion is excluded structurally (no
     # `new` path). THREE RE-BOUND: #680 (b) and r2 X2's first onto `f in counted`, r1 X1's onto `if not clean and
     # inline != ""`.
-    "scripts/check-merge-ready.py": 214,
+    # ⟳ dashboard-retire S2 Task 9: 214 -> 212. MISDIRECTED and INERT-OTHER needed a second gate's escape
+    # and retired with `NO-ENTRY:` (2 gone); INVISIBLE RE-BOUND onto the loop's new first `if`.
+    "scripts/check-merge-ready.py": 212,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
