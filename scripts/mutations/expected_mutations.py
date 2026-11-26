@@ -266,7 +266,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 51 -> 52 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
     "scripts/check-closing-table.py": 52,
     # ⟳ 2026-11-03, backlog #470: 68 -> 70. the PR option link through key_link, and its un-nested text (+2).
-    "scripts/gen-dashboard.py": 70,
+    # ⟳ 2026-11-25, dashboard-retire S2 Task 7: 70 -> 72. C1 `--assert-no-open-asks` refuses an open ask, and a
+    # parse error is CANNOT RUN, never "no asks" (+2).
+    "scripts/gen-dashboard.py": 72,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
     # all had one. ⚠ IT WAS NOT "the ONE generator with no manifest", which both round-1

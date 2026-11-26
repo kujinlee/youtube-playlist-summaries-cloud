@@ -458,6 +458,37 @@ def unresolved(entries: list[dict]) -> list[dict]:
             if e["needs_you"] and not e["error"] and e["id"] not in cleared]
 
 
+def assert_no_open_asks(store: pathlib.Path) -> tuple[int, str]:
+    """C1 (dashboard-retire spec §3): the cutover leaves no ask behind in the old store.
+
+    `(rc, line)`: 0 `ok — …` when `unresolved(parse_entries(text))` is empty; 1 `REFUSED — …`
+    naming every open ask's id; 2 `CANNOT RUN — …` when the store cannot be read or ANY entry
+    carries a parse error. A parse error is never "no asks": a header the grammar refused may be
+    an ask the grammar could not see, so the count would be a zero nobody measured.
+    No new reader — the two functions the page itself uses, so C1 and the page cannot disagree.
+    """
+    try:
+        text = store.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return 2, f"CANNOT RUN — no such file: {store}. Treat this as NOT CHECKED."
+    except UnicodeDecodeError as exc:
+        return 2, f"CANNOT RUN — {store} is not valid UTF-8: {exc}. Treat this as NOT CHECKED."
+    except OSError as exc:
+        return 2, f"CANNOT RUN — could not read {store}: {exc}. Treat this as NOT CHECKED."
+    entries = parse_entries(text)
+    broken = [e for e in entries if e["error"]]
+    if broken:
+        where = ", ".join(f"{e['id'] or '(no id)'}: {e['error']}" for e in broken[:5])
+        return 2, (f"CANNOT RUN — {len(broken)} entr{'y' if len(broken) == 1 else 'ies'} of "
+                   f"{store} did not parse ({where}), so an ask there could not be seen. "
+                   f"Treat this as NOT CHECKED.")
+    opened = unresolved(entries)
+    if opened:
+        return 1, (f"REFUSED — {len(opened)} open ask(s): "
+                   + ", ".join(e["id"] for e in opened))
+    return 0, "ok — the old store holds 0 open asks"
+
+
 def unresolved_heads_up(entries: list[dict]) -> list[dict]:
     """heads-up entries not cleared. SAME mechanism as `unresolved`, deliberately.
 
@@ -3465,6 +3496,38 @@ def _self_test_body(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # was green because it could not look, not because the paths were absolute.
     # `_paths_passed` non-empty is the anti-vacuity half, and unlike counting
     # FLAGS in the source it cannot be satisfied unless the recorder really ran.
+    # C1 — `--assert-no-open-asks` (dashboard-retire plan, Task 7). Driven through `main`, so the
+    # flag's wiring is under test as well as `assert_no_open_asks`.
+    import contextlib as _c1ctx, io as _c1io, tempfile as _c1tf
+
+    def _c1(store_text: str | None) -> tuple[int, str]:
+        with _c1tf.TemporaryDirectory() as _d:
+            _p = pathlib.Path(_d) / "store.md"
+            if store_text is not None:
+                _p.write_text(store_text, encoding="utf-8")
+            _o, _e = _c1io.StringIO(), _c1io.StringIO()
+            with _c1ctx.redirect_stdout(_o), _c1ctx.redirect_stderr(_e):
+                _rc = main(["--assert-no-open-asks", "--store", str(_p)])
+            return _rc, _o.getvalue() + _e.getvalue()
+
+    _ask = "## 2026-08-28 [needs-you]\nShould we ship it?\n"
+    _rc, _out = _c1(_ask)
+    case("7.1 C1: a store with one open ask is refused, naming its id",
+         (_rc, "2026-08-28/1" in _out, _out.startswith("REFUSED")), (1, True, True))
+    _rc, _out = _c1(_ask + "## 2026-08-29 [resolved: 2026-08-28/1]\nShipped.\n")
+    case("7.2 C1: a resolved ask passes",
+         (_rc, _out.strip()), (0, "ok — the old store holds 0 open asks"))
+    _rc, _out = _c1(None)
+    case("7.3 C1: a missing store is CANNOT RUN", (_rc, "CANNOT RUN" in _out), (2, True))
+    _rc, _out = _c1("## 2026-02-30 [needs-you]\nAn ask on an impossible date.\n")
+    case("7.3 C1: an entry with a bad header is CANNOT RUN, never 'no asks'",
+         (_rc, "CANNOT RUN" in _out), (2, True))
+    _o, _e = _c1io.StringIO(), _c1io.StringIO()
+    with _c1ctx.redirect_stdout(_o), _c1ctx.redirect_stderr(_e):
+        _rc = main(["--assert-no-open-asks"])
+    case("7.4 C1: the live store passes today (0 open asks)", (_rc, _o.getvalue().strip()),
+         (0, "ok — the old store holds 0 open asks"))
+
     globals()["main"] = _real_main
     case("every --out / --fragment-only path the suite PASSES is absolute",
          ([p for p in _paths_passed if not pathlib.Path(p).is_absolute()],
@@ -3485,9 +3548,16 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--out", type=pathlib.Path,
                     default=OUT_DEFAULT)
     ap.add_argument("--fragment-only", type=pathlib.Path, default=None)
+    ap.add_argument("--assert-no-open-asks", action="store_true",
+                    help="C1: refuse (rc 1) if the store holds an open ask; rc 2 if it cannot be read")
     a = ap.parse_args(argv)
     if a.self_test:
         return _self_test()
+    if a.assert_no_open_asks:
+        rc, line = assert_no_open_asks(pathlib.Path(a.store) if a.store is not None
+                                       else STORE_DEFAULT)
+        print(line, file=sys.stdout if rc == 0 else sys.stderr)
+        return rc
     # Every `PR #N` this page renders links to GitHub (backlog #470); no GitHub remote -> plain text.
     page_markup.use_repo(page_markup.origin_repo(ROOT))
     # A `backlog #N` naming no row is marked text, not a link to nothing (backlog #470).
