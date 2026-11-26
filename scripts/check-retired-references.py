@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""K8: no live source or config file still names a thing the dashboard retirement deleted.
+"""K8: no SCANNED string or line of a source or config file names a thing the dashboard retirement deleted.
 
     python3 scripts/check-retired-references.py              # rc 0 ok, rc 1 findings, rc 2 CANNOT RUN
     python3 scripts/check-retired-references.py --self-test
@@ -34,10 +34,20 @@ is read unless an exemption below names it, in one of two ways:
 A text scan of a token cannot miss a syntactic form; the spec's original design enumerated forms, and
 review round 1 found thirteen it missed (`docs/reviews/coordinator/dashboard-retire-s3-r1-coordinator.md`).
 
-NOT READ, by kind (prose and pages, which keep the retired names as history on purpose): `.md`, `.html`,
-`.css`, `.txt`, images. NOT READ, by path — `EXEMPT_PREFIXES`, each with its reason; this script itself;
-and the literals of `ALLOWED`, each scoped to ONE file. A name assembled at run time from pieces that
-are each innocent (`"gen-" + "dashboard.py"`) is not seen: the bound of any static scan.
+NOT SCANNED — so a reference there passes, and this check claims nothing about it (review S3 r2 G3):
+  * a Python string that is a whole statement — a docstring, or prose standing alone — EVEN when code reads
+    it as `__doc__` (argparse descriptions do): docstrings narrate the retirement as history, and reading
+    them would refuse that history. A `__doc__` printed as help text is not checked to be current.
+  * a whole-line comment in a text kind (`#`, `//`, a `/*` line with nothing after its `*/`, a `*` line):
+    comments are not run.
+  * every kind outside `.py` and `TEXT_SUFFIXES` — `.md`, `.html`, `.css`, `.txt`, images, a Makefile, an
+    extensionless file with no `#!`: the `.md` and `.html` files are docs and explainer archives that keep the
+    retired names as history on purpose and are not loaded as code; no live Makefile exists.
+  * the five `EXEMPT_PREFIXES`, each with its reason (dated reviews, specs and plans, marketplace scans and
+    inventory, replayed fixtures) — Python there included; this script itself; and the literals of
+    `ALLOWED`, each scoped to ONE file.
+  * a name assembled at run time from pieces that are each innocent (`"gen-" + "dashboard.py"`): the bound
+    of any static scan. For a `/dashboard#` href, check-page-links rule 2 reads the joined value (G1).
 
 THE FILE SET is `git ls-files` when the root is a repository, so the scan reads what CI reads; a root
 that is not one (the self-test's scratch trees) is walked.
@@ -208,11 +218,22 @@ def _text_kind(root: Path, rel: str) -> tuple[bool, str | None]:
     return False, None
 
 
+def _whole_line_comment(s: str, comment: str) -> bool:
+    """A stripped line that is nothing but a comment. A `/*` line is one only if nothing but whitespace
+    follows its `*/`, or it does not close there (review S3 r2 G2: `/* x */ fetch(…)` is code)."""
+    if s.startswith(comment):
+        return True
+    if comment == "//" and s.startswith("/*"):
+        end = s.find("*/", 2)
+        return end == -1 or not s[end + 2:].strip()
+    return comment == "//" and s.startswith("*")
+
+
 def _text_findings(rel: str, text: str, comment: str | None) -> list[str]:
     out = []
     for n, line in enumerate(text.splitlines(), 1):
         s = line.strip()
-        if comment and (s.startswith(comment) or (comment == "//" and s.startswith(("/*", "*")))):
+        if comment and _whole_line_comment(s, comment):
             continue
         if _names_retired(line):
             out.append(_finding(rel, n, _text_category(rel), s))
@@ -272,8 +293,9 @@ def main(argv: list[str]) -> int:
         for f in findings:
             print(f"  {f}", file=sys.stderr)
         return 1
-    print("check-retired-references: ok — no string constant, source or config line, page table or "
-          "key_link names a retired thing")
+    print("check-retired-references: ok — no scanned string constant, source or config line, page table or "
+          "key_link names a retired thing (docstrings, whole-line comments, .md/.html/Makefiles and the "
+          "exempt prefixes are not scanned)")
     return 0
 
 
@@ -312,9 +334,12 @@ def _cats(files: dict[str, str]) -> list[str]:
 
 # Every input review round 1 ran that the enumerating scanner passed (F1, both halves) or that
 # check-page-links stopped refusing (F2). Each must be refused: a non-empty finding list.
-# (case name, file, text)
+# (case name, file, text). A `_self_test*` function, so check-page-links reads its hrefs as test values.
 _PY = "scripts/a.py"
-REVIEW_R1_INPUTS = (
+
+
+def _self_test_review_r1_inputs() -> tuple:
+    return (
     ("F1a a shell=True command string is refused", _PY,
      'subprocess.run("python3 scripts/gen-dashboard.py --self-test", shell=True)\n'),
     ("F1b a bash -c argv element is refused", _PY,
@@ -393,7 +418,7 @@ def _self_test_body() -> int:
          _cats({_PY: 'def row(slug):\n    return f\'<a href="/dashboard#{slug}">x</a>\'\n'}), ["string"])
 
     # Review round 1's inputs: every one refused.
-    for name, rel, text in REVIEW_R1_INPUTS:
+    for name, rel, text in _self_test_review_r1_inputs():
         got = _cats({rel: text})
         case(name, bool(got) and "CANNOT RUN" not in got, True)
 
@@ -410,6 +435,12 @@ def _self_test_body() -> int:
                 "app/x.ts": "// the old /dashboard page is gone\n/* gen-dashboard.py */\nconst a = 1;\n",
                 ".github/workflows/ci.yml": "jobs:\n  t:\n    steps:\n      # gen-dashboard.py was here\n"
                                             "      - run: python3 scripts/ok.py\n"}),
+         [])
+    # review S3 r2 G2: a line that opens with `/*` is a comment only up to its `*/`
+    case("G2 code after a closed block comment on its line is refused",
+         _cats({"app/x.ts": '/* x */ fetch("/dashboard");\n'}), ["text"])
+    case("G2 a block comment closed with only whitespace after, or left open, passes",
+         _cats({"app/x.ts": "/* gen-dashboard.py */   \n/* the old /dashboard page\n * is gone\n */\nconst a = 1;\n"}),
          [])
     case("15.12 the RETIRED_FILES row passes", _cats({_PY: 'RETIRED_FILES = {"dashboard.html": "/dashboard-archive"}\n'}),
          [])

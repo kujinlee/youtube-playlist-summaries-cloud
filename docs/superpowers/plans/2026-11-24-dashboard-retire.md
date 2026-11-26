@@ -1033,6 +1033,11 @@ that are call arguments, path-literal operands, list or tuple elements, and dict
   (the deleted manifest must leave no pin behind: `python3 scripts/check-plan-code.py --self-test`).
 - [x] **Step 9: Commit.**
 
+**K8's scope (⟳ S3 r2 G3):** it refuses what it SCANS — non-prose Python string constants and non-comment lines
+of the `TEXT_SUFFIXES` kinds — and names what it does not: docstrings (even one read as `__doc__`), whole-line
+comments, `.md`/`.html`/Makefiles and other unlisted kinds, and the five exempt prefixes, each because it holds
+history, not code. A `/dashboard#` href joined at run time is check-page-links rule 2's (G1).
+
 **FAILS IF (K8):** a seeded reference of any category passes the scan; or the prose seed or the
 `RETIRED_FILES` seed fails it; or the live scan is green while a load, hook, run line, argv, manifest field,
 page-table key or literal link still names a retired thing.
@@ -1053,7 +1058,7 @@ page-table key or literal link still names a retired thing.
 |---|---|---|---|
 | 16.1 | the gate still reads asks, decisions and waivers | the staying cases of Tasks 1, 2, 9, 12 | unchanged counts |
 | 16.2 | L1 is still green | live run, no `--base` | rc 0 — nothing in S3 touches the store |
-| 16.3 | the live scan is green | `python3 scripts/check-retired-references.py` | rc 0 |
+| 16.3 | the live scan is green over what it scans (its docstring names what it does not) | `python3 scripts/check-retired-references.py` | rc 0 |
 | 16.4 | NEEDS YOU still shows an ask | Task 3's 3.2–3.6 | green |
 
 - [x] **Step 1:** delete the grammar and its cases; run `check-ask-store.py`, `check-merge-ready.py`,

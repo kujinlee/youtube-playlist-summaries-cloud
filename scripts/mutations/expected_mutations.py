@@ -710,7 +710,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-03, backlog #470 review round 3: 39 -> 44. The generators' renderers property: a raise is
     # reported, so is an <a> in an <a>, the corpus is seeded and holds the review's inputs, and every
     # renderer in the table is read (+5).
-    "scripts/check-page-links.py": 44,
+    "scripts/check-page-links.py": 46,  # +2 dashboard-retire S3 r2 G1: `/dashboard#` refused again
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
     # it added well-formed?" (new, and previously fail-open on the entry-only branch,
@@ -2270,7 +2270,7 @@ EXPECTED_MUTATIONS = {
     # rebound (every path's diff, the sides swapped, the hunk sign), none retired; two added: the head
     # read as raw worktree bytes under `eol=crlf` (F2), and `splitlines()` for `split("\n")` (F3).
     "scripts/check-reference-namespace.py": 23,  # 22 -> 23 (dashboard-retire S1 Task 6: docs/asks leaves the scope)
-    "scripts/check-retired-references.py": 15,  # dashboard-retire S3: K8, a token scan since r1 F1 (string/text/page-table/link readers, comment + prose skips, exemptions, route and token bounds, 3 CANNOT RUN)
+    "scripts/check-retired-references.py": 16,  # dashboard-retire S3: K8, a token scan since r1 F1 (string/text/page-table/link readers, comment + prose skips, the G2 `/*` close, exemptions, route and token bounds, 3 CANNOT RUN)
     # ⟳ 6 -> 9 (backlog #331(a) / #357, PR #440 r1). ⟳ 9 -> 7 (PR #440 r2): #331(a)'s `if not records` moved to
     # `bounded_read.stop_transcript`, and the None-mapping entry is now masked by `judge`'s try, so both retire;
     # r2 X1 / #331(e)'s mutant — the reader's refusal answered QUIET — is the no-transcript entry's, which names

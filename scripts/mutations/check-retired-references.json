@@ -81,7 +81,7 @@
   "file": "scripts/check-retired-references.py",
   "edits": [
    [
-    "if comment and (s.startswith(comment) or (comment == \"//\" and s.startswith((\"/*\", \"*\")))):",
+    "if comment and _whole_line_comment(s, comment):",
     "if False:"
    ]
   ],
@@ -163,5 +163,16 @@
    ]
   ],
   "expect": "15.14 a manifest that is not JSON is CANNOT RUN"
+ },
+ {
+  "name": "K8 text G2: code after a closed `/*` comment on its line is skipped as a comment",
+  "file": "scripts/check-retired-references.py",
+  "edits": [
+   [
+    "        return end == -1 or not s[end + 2:].strip()",
+    "        return True"
+   ]
+  ],
+  "expect": "G2 code after a closed block comment on its line is refused"
  }
 ]

@@ -1429,7 +1429,8 @@ corrections slice above.
       and `NO-ENTRY:` are gone, the goal tree and the compaction snapshot read only `docs/asks/`, the skill is
       `needs-you`, and the old store is frozen to pinned bytes. **S3 built** (branch `dashboard-retire-s3`, draft
       PR #644): `gen-dashboard.py` and its page are deleted, a frozen `docs/explainers/dashboard-archive.html`
-      stands in, `check-retired-references.py` refuses any live reference to them, and the entry grammar and
+      stands in, `check-retired-references.py` refuses a reference to them in every scanned string or line (not
+      docstrings, whole-line comments, `.md`/`.html`/Makefiles or its exempt prefixes), and the entry grammar and
       the one-shot cutover tooling (the base-blob check, `--list-store-prs` and `--post-cutover`, backlog #730,
       which ran once and answered rc 0) leave `check-ask-store.py`; backlog #739 is closed as moot. The history
       above stands as recorded. **FAILS IF** after S3 a merged PR still needs a dashboard entry.
