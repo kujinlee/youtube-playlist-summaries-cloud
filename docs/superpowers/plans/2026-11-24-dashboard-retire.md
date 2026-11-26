@@ -847,14 +847,15 @@ git fetch -q origin +refs/heads/master:refs/remotes/origin/master && d="$(mktemp
   "730 L1: a running gate that is not master's blob …") — which is why the command runs from a fresh
   detached worktree of `origin/master`, and why a local edit to the gate cannot be the judge. In order it checks:
   L1 (the store is the pinned bytes), A1 (`docs/asks/` is well-formed), the open PRs that still edit the
-  store (Task 12's `store_edit_prs`; an empty `gh pr diff` answer is CANNOT RUN), and master's CI: the
-  newest COMPLETED `CI` push run on `master` whose COMMIT is post-squash (its `scripts/check-ask-store.py`
-  carries L1, read through git at the run's `headSha`) must have both `check-ask-store self-test` and
-  `ask store (push)` concluded `success` in the `verify` job; read-only `gh run list` / `gh run view`.
-  ⟳ r1 F1: post-squash is decided by the commit, never by which steps a run reports — in `verify` an earlier
-  red step marks the later ones `skipped`, which is what a red run looks like, so `skipped`, `cancelled` or
-  absent is red, and an older green run never answers for a newer red one. A run still in progress is not
-  judged (re-run once it completes). Each check prints one `ok — ` / `REFUSED (rc N) — ` / `CANNOT RUN — ` line;
+  store (Task 12's `store_edit_prs`; an empty `gh pr diff` answer is CANNOT RUN), and master's CI: the CI
+  run on the fetched head commit — the newest `CI` push run on `master` whose `headSha` IS the fetched
+  `origin/master` commit, listed whatever its status — must be `completed`, and the run's conclusion, the
+  `verify` job's conclusion, and both `check-ask-store self-test` and `ask store (push)` in that job must be
+  `success`; read-only `gh run list` / `gh run view`. ⟳ r2 G1–G3: a run on any other commit never answers,
+  though it carry S2's gate (S2's own squash does); the head's run not yet listed, or listed and not
+  completed, is rc 8. ⟳ r1 F1: in `verify` an earlier red step marks the later ones `skipped`, which is what
+  a red run looks like, so `skipped`, `cancelled`, `failure` or absent — of a step, the job or the run — is
+  red. Each check prints one `ok — ` / `REFUSED (rc N) — ` / `CANNOT RUN — ` line;
   the last line is `post-cutover rc N`.
 
   | rc | means | do |
@@ -866,28 +867,35 @@ git fetch -q origin +refs/heads/master:refs/remotes/origin/master && d="$(mktemp
   | 4 | the running gate is not `origin/master`'s blob | re-run from a clean detached checkout of `origin/master` |
   | 5 | A1 refuses `docs/asks/` on master | fix the named ask file in a PR |
   | 6 | an open PR still edits the store; each is named | Step 2 |
-  | 7 | master's newest completed post-squash run has one of the two `verify` steps not `success` (red, skipped, cancelled or absent) | read that run; repair as rc 1 |
-  | 8 | no completed master run is on a post-squash commit yet | wait for it, re-run |
+  | 7 | the CI run on the fetched head commit is completed and not green: the run, its `verify` job or one of the two steps is not `success` (failure, skipped, cancelled or absent); the line names each | read that run; repair as rc 1 |
+  | 8 | the CI run on the fetched head commit is not listed yet, or not completed | wait for it, re-run |
 
   When several checks refuse, rc is the first in the order 1, 5, 6, 7, 8; a CANNOT RUN is reported as rc 2
   only when nothing refused, and every line is printed either way.
 - [ ] **Step 2: For each PR Step 1 named (rc 6)**, in its worktree: merge master (`git merge --no-edit
   origin/master`), restore the store (`git checkout origin/master -- docs/dashboard-entries.md`), re-ask any
   question its dropped entry held as a file in `docs/asks/`, commit, push. Its CI now runs under L1.
-- [ ] **Step 3: Re-run Step 1's command.** Expected: rc 0 (rc 8 means only that master's run has not
-  completed yet — re-run).
+- [ ] **Step 3: Re-run Step 1's command.** Expected: rc 0 (rc 8 means only that the CI run on the fetched
+  head commit has not completed yet — re-run).
 
 **FAILS IF:** Step 1 returns 0 while the store at `origin/master` differs from the pinned bytes, while an
-open PR still edits the store, or while master's newest completed post-squash run has `ask store (push)` or
-`check-ask-store self-test` anything but `success` (a run whose L1 step was skipped by an earlier red is red); or a later push to master turns `ask store (push)` red (then the repair is 12.7's command,
+open PR still edits the store, or while the CI run on the fetched head commit is absent, not completed, or has
+its conclusion, its `verify` job's conclusion, `ask store (push)` or `check-ask-store self-test` anything but
+`success` (a run whose L1 step was skipped by an earlier red is red); or a later push to master turns `ask store (push)` red (then the repair is 12.7's command,
 taken from the step's own output, in a PR of its own).
-**Test:** the twenty-two `730 …` impure cases of `check-ask-store.py --self-test`, each with a mutation in
-`scripts/mutations/check-ask-store.json` that turns exactly it red: M1 (rc 0, 1, 2, 3, 5 kept apart), L1
-(the dirty worktree, the stale judge), Step 2's listing (rc 6), L2 (rc 8, a failed `gh run list` is
-rc 2), and `main`'s dispatch; and the r1 fold's: F1 (GitHub's real step shapes — the self-test red with the
-L1 step skipped over an older green run, the L1 step failed, the self-test absent, all rc 7; a run commit
-git cannot read, rc 2), F6 (only `verify`'s steps count), F2 (`gh pr list`, `gh run view`, and git failing
-on master's store or an ask, all rc 2), F4 (an empty `gh pr diff`), F5 (the fetch's explicit refspec).
+**Test:** the twenty-six `730 …` impure cases of `check-ask-store.py --self-test`; each but three has a
+mutation in `scripts/mutations/check-ask-store.json` that turns exactly it red: M1 (rc 0, 1, 2, 3, 5 kept
+apart), L1 (the dirty worktree, the stale judge), Step 2's listing (rc 6), L2 (a failed `gh run list` is
+rc 2), and `main`'s dispatch; the r1 fold's: F1 (GitHub's real step shapes — the head's self-test red with
+the L1 step skipped over an older commit's green, the L1 step skipped in a green job, the self-test absent,
+all rc 7), F6 (only `verify`'s steps count), F2 (`gh pr list`, `gh run view`, and git failing on master's
+store or an ask, all rc 2), F4 (an empty `gh pr diff`), F5 (the fetch's explicit refspec); and the r2 fold's:
+G1 (a green run on an earlier commit carrying the gate is rc 8), G3 (the head's run in progress over an older
+commit's green is rc 8), G2 (the `verify` job failed in a run concluded `success`, and the run failed in
+another job, both rc 7), and the newest of two runs on the head commit judged. The three without a mutation
+of their own: M1's rc 0 (the all-green world, which a mutation breaking any clause turns red with others),
+F1's head-red-over-older-green, and G2's run cancelled after both steps succeeded (the last two refused by
+more than one clause, so no single mutation turns either alone red).
 Not driven by a case: the Step 1 shell line itself (it is read by its last line, above). Behind them: 12.10 is push-mode L1 (mutation "push mode skips L1"); 12.3 is
 L1's comparison itself (mutation "L1 compares nothing" — Task 12 Step 8 binds it to 12.3, and so does this
 line; backlog #730 L3); 12.13–12.16 are the PR listing (a PR past gh's default page, a full page, a failed
