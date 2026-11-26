@@ -885,7 +885,11 @@ EXPECTED_MUTATIONS = {
     # an unreadable run commit passed over: no run loop or run-commit read is left). ADDED 5: G1 the head-SHA
     # match, G3 the not-yet-completed check, G2 the `verify` job's conclusion and the run's conclusion, and
     # the NEWEST of several runs on the head commit is the one judged.
-    "scripts/check-ask-store.py": 98,
+    # dashboard-retire S3 (plan Task 16): 98 -> 84. DELETED 14 whose anchors left with the page's grammar
+    # and parser (BLOCK, header_error's both-flags and empty-resolved rules, parse_entries' eight) and with the
+    # base-blob cutover check (12.8, 12.12). The plan's 45 was written before backlog #730 added its entries; the store_edit_prs
+    # entries stay with `post_cutover`, which still calls it (an open fork).
+    "scripts/check-ask-store.py": 84,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look

@@ -8,11 +8,11 @@ the directory listing, so an untracked scratch file cannot fail the gate.
 It also owns the declaration parser `exemption_reason`, which `check-review-recorded.py` and
 `check-merge-ready.py` call for `NO-REVIEW:`. `--post-cutover` is plan Task 13 (the cutover after
 S2's squash) as one command with one exit status per cause (backlog #730; see `post_cutover`). ⟳ dashboard-retire S2: the per-PR dashboard-entry rule
-(R1) and its `NO-ENTRY:` waiver are retired; the entry grammar the page still imports stays until S3.
+(R1) and its `NO-ENTRY:` waiver are retired. ⟳ S3: the entry grammar and parser left with the page that imported
+them, and so did the base-blob cutover check (`--cutover-check`).
 """
 from __future__ import annotations
 import argparse
-import datetime as _dt
 import errno
 import os
 import pathlib
@@ -32,124 +32,6 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 NO_REVIEW = "NO-REVIEW:"     # the one declaration marker left; R1's `NO-ENTRY:` retired in S2
-
-# ─── the entry-header grammar — ONE definition, imported by scripts/gen-dashboard.py
-HEADER = re.compile(r"^## (\S+)(.*)$")
-FLAG = re.compile(r"\[(needs-you|heads-up|resolved:\s*[^\]]*)\]")
-# What starts an entry block in the store — and read the name as block-ATTEMPT,
-# not as a transcription of spec §6.2's "Block start" row. §6.2 defines a block
-# start as `## ` at column 0 WITH the space; this is deliberately WIDER, and the
-# gap is the parser's recovery policy, not the grammar. Saying so because the
-# earlier framing implied exact §6.2 compliance and it does not have it.
-#
-# Where it is FAITHFUL to §6.2 is the part that was broken: row "`##` inside
-# detail" reads "only column-0 `## ` splits blocks", so a `###` line is body
-# markup. `(?!#)` is that rule's teeth.
-#
-# ⟳ MOVED HERE 2026-09-01. It lived in `gen-dashboard.py` as `^##\s*\S`, which
-# MATCHES `### Worth knowing` — `\s*` takes zero characters and `\S` takes the
-# third `#`. Two hand-written near-copies of one grammar, and they diverged on
-# exactly the input the gate's `(?!#)` was written to exclude. Measured cost, end
-# to end: a level-3 heading in a body did not merely add a "could not parse" card,
-# it SPLIT the entry — the prose after it was swallowed into the orphan block and
-# the entry above rendered TRUNCATED, losing content with no error next to it.
-#
-# It stays PERMISSIVE about the space (`##Nospace` still starts a block) on
-# purpose: that is a near-miss header, and swallowing one into the previous
-# entry's body is the silent failure this whole gate exists to prevent. `###` is
-# different in kind — it is markup an author writes deliberately, not a typo.
-BLOCK = re.compile(r"^##(?!#)\s*\S")
-
-
-def valid_date(s: str) -> bool:
-    try:
-        _dt.date.fromisoformat(s)
-        return True
-    except ValueError:
-        return False
-
-
-def header_error(line: str) -> str | None:
-    """None if `line` is a well-formed entry header, else why not.
-
-    Shared by the parser and the ratchet so they cannot disagree about header
-    SYNTAX.
-
-    ⛔ THIS DOCSTRING USED TO CLAIM THEY "CANNOT DISAGREE ABOUT WHAT A HEADER IS".
-    That was FALSE, and it was false before the sentence was written. The page's
-    `parse_entries` has a SECOND pass this function has never had: it checks that a
-    `[resolved: <id>]` names an entry that actually EXISTS. Codex's retrospective
-    review r1 found the empty-payload instance; measuring the class found FIVE
-    headers the gate accepted and the page rejected, of which THREE
-    (`[resolved: nonsense]`, `[resolved: 2026-09-01/99]`, `[resolved: 2026-13-45/1]`)
-    are REFERENTIAL and cannot be judged from a header alone at all — they are
-    properties of the whole store.
-
-    So the honest contract is: SYNTAX agrees here; REFERENCE cannot be judged from a
-    header alone and never will be, because it is a property of the whole store.
-
-    ⟳ CORRECTED 2026-09-06 — backlog #82 SHIPPED (`3ec912f6`), and this paragraph
-    outlived it by hours. It used to end: *"Until then a wrong-but-existing
-    `[resolved:]` id reaches the reader as 'could not parse this entry' on the page
-    rather than as a refusal at the gate."* **That is now false.**
-    `added_reference_errors` reads BASE and HEAD of the store and `verdict` refuses on
-    it ABOVE the exemption short-circuit, so the gate rejects a dangling reference.
-    MEASURED the same day on `[resolved: 2026-09-01/99]`: `header_error` → `None`,
-    `added_reference_errors` → `['… names no entry in this file']`, `verdict` → `rc=1`.
-
-    ⚠ NOTE THE SHAPE, because it is the one this file keeps producing. The old
-    sentence was TRUE ABOUT THIS FUNCTION — `header_error` still returns `None` on a
-    dangling reference and still cannot do otherwise — and STALE ABOUT THE FILE, where
-    a sibling now refuses it. A docstring that scopes its claim to its own function but
-    states a consequence for the whole gate will go stale every time a sibling grows.
-    **State what this function decides; name the sibling that decides the rest.**
-
-    So: reference is decided by `parse_entries` (which sets the entry's error), not here. This
-    function is the SYNTAX half, and remains shared with the page's parser.
-    ⟳ dashboard-retire S2: `added_reference_errors` and `verdict` were deleted with the per-PR
-    entry ratchet, so NO gate refuses a dangling reference any more; the page shows it until S3.
-
-    The SYNTAX half is still worth the shared definition, and was earned the hard
-    way: v2.2 claimed the two already agreed; measured, they diverged on five
-    shapes — `## D-foo`, `## D.`, a typo'd flag, an unknown-flag payload, and a
-    title on the header line — each of which the ratchet waved through while the
-    page rendered it under "Could not parse this entry".
-    """
-    m = HEADER.match(line)
-    if m is None:
-        return "header must be '## ' then a YYYY-MM-DD date — check the space after the ##"
-    if not valid_date(m.group(1)):
-        return f"not a real calendar date: {m.group(1)!r}"
-    leftover = FLAG.sub("", m.group(2)).strip()
-    if leftover:
-        return f"unrecognised text in header: {leftover!r}"
-    # ⚠ THE BOTH-FLAGS REFUSAL LIVES HERE, not in the generator's parser.
-    # `FLAG.sub` above strips every flag, so a header carrying BOTH would otherwise
-    # leave no `leftover` and this function would return None — the ratchet accepting
-    # a header the page renders as "could not parse". That is the sixth divergence
-    # this function's docstring exists to prevent, and the ask-choices spec §9 names
-    # it as a falsifier. Both callers read the verdict from here.
-    flags = FLAG.findall(m.group(2))
-    # ⟳ 2026-09-01, Codex retrospective review r1 (High). `resolved:\s*[^\]]*`
-    # permits a payload of ZERO characters, so `[resolved:]` was a well-formed
-    # header HERE and "with no entry id after it" on the PAGE. Written as a named
-    # check rather than a tighter regex for three reasons: the message can then be
-    # WORD-FOR-WORD the page's, so the two do not merely both refuse but say the
-    # same thing; the rule is legible; and `strip()` is a SEPARATE decision from
-    # emptiness, so each can be mutated on its own line.
-    # ⚠ `+` alone would NOT have been enough: `\s*` matches nothing and `[^\]]+`
-    # then eats the spaces of `[resolved:   ]`. Measured in a temp copy first.
-    for f in flags:
-        if not f.startswith("resolved:"):
-            continue
-        payload = f[len("resolved:"):].strip()
-        if not payload:
-            return "[resolved:] with no entry id after it"
-    if "needs-you" in flags and "heads-up" in flags:
-        return ("an entry is [needs-you] OR [heads-up], never both — "
-                "a heads-up asks for nothing")
-    return None
-
 
 FENCE = re.compile(r"^(?P<ind> {0,3})(?P<ch>`{3,}|~{3,})")
 
@@ -189,7 +71,7 @@ def _declaration_reason(s: str, marker: str = NO_REVIEW) -> str | None:
 
     ONE definition, called from BOTH of `exemption_reason`'s scan points. They had
     the marker test written out twice and would have needed the same fix twice —
-    the divergence `header_error`'s docstring exists to prevent, in the same file.
+    two hand-written copies of one rule, which is how this file's copies drifted before.
 
     ⚠ EMPHASIS IS NOT AN INERT CONTEXT, and that is the whole distinction. Fenced,
     indented, commented and blockquoted all mean *not deliberate*, so they do not
@@ -251,6 +133,10 @@ def fenced_lines(text: str) -> set[int]:
     `parse_entries`. Two hand-written copies of one rule have already drifted once
     in this very file — the `startswith` note beside `_inert_lines` records a real
     decision parsing as inert because of it.
+
+    ⟳ dashboard-retire S3: `parse_entries` is deleted with the page; its history is
+    kept below because the measured reason still explains why the two scanners differ.
+    Its caller today is `answered` (the `## Answer` rule).
 
     ⛔ WHY `parse_entries` GETS THIS AND NOT `_inert_lines`, WHICH IT WOULD BE
     CHEAPER TO REUSE. `_inert_lines` deliberately OVER-approximates: any line
@@ -746,13 +632,12 @@ def ask_store_problems(base: str | None, root: pathlib.Path,
 # ⛔ A new ask is a file in `docs/asks/`. Nothing reads `docs/dashboard-entries.md` for asks any more,
 # so an entry appended there would be an ask nobody sees: L1 refuses ANY change to it, on a pull
 # request and without `--base` (`main` runs it in both modes). The two HEAD pins describe the frozen
-# bytes; `LEGACY_STORE_BASE_BLOB` is master's store at pin time, read only by `--cutover-check` (12.8,
-# 12.12), because after the squash master no longer holds it. ⚠ The base pin, `cutover_problem`,
-# `PR_LIST_LIMIT` and `store_edit_prs` are the cutover's and leave in S3 (plan Task 16).
+# bytes. ⟳ S3 (plan Task 16): the base pin `LEGACY_STORE_BASE_BLOB`, `cutover_problem` and `--cutover-check`
+# were the cutover's and are deleted. ⚠ `PR_LIST_LIMIT` and `store_edit_prs` are listed for deletion too, but
+# `post_cutover` (backlog #730, added after the plan) calls `store_edit_prs`; they stay until that is decided.
 LEGACY_STORE_REL = "docs/dashboard-entries.md"
 LEGACY_STORE_BLOB = "befaa1cb22cfb272bc803e23b4b990ae812ebc27"        # HEAD: git hash-object
 LEGACY_STORE_SHA256 = "c6e110df45ac06328b14356d276b03a47f505737b18ab0901065acdc4b1ef97f"
-LEGACY_STORE_BASE_BLOB = "a9553580e41bac27f7710f28c7dee1f4216e98f0"   # master f9979fa0, before the header edit
 L1_DIFF_LINES = 40
 PR_LIST_LIMIT = 1000
 
@@ -776,15 +661,6 @@ def legacy_store_problem(head_blob: str | None, head_bytes: bytes | None,
     return (f"{LEGACY_STORE_REL} changed — it is FROZEN; a new ask is a file in {ASKS_REL}/. What differs:\n"
             f"{what}\n  See it whole with:\n    git diff {LEGACY_STORE_BLOB} {head_blob}\n"
             f"  Restore the frozen bytes with:\n    {restore}")
-
-
-def cutover_problem(ref_blob: str | None) -> str | None:
-    """PURE. `None` when the store at the revision read is `LEGACY_STORE_BASE_BLOB` (master's at pin time)."""
-    if ref_blob == LEGACY_STORE_BASE_BLOB:
-        return None
-    return (f"master's {LEGACY_STORE_REL} moved since the pin: it is {ref_blob or 'missing'}, the pin is "
-            f"{LEGACY_STORE_BASE_BLOB}. Merge master in, re-run C1 (gen-dashboard.py --assert-no-open-asks), "
-            f"and re-pin all three constants (LEGACY_STORE_BASE_BLOB, LEGACY_STORE_BLOB, LEGACY_STORE_SHA256).")
 
 
 def _store_blob(root: pathlib.Path, rev: str, rel: str = LEGACY_STORE_REL) -> str | None:
@@ -1005,243 +881,6 @@ def post_cutover(root: pathlib.Path, remote: str, branch: str) -> tuple[int, lis
 
 
 
-# ── the entry MODEL, relocated from gen-dashboard.py (backlog #82) ──────────────────────────
-#
-# ⛔ IT LIVES HERE BECAUSE A REFERENCE IS A PROPERTY OF THE WHOLE STORE. `header_error` judges
-# one header line and can never decide whether `[resolved: 2026-09-01/99]` NAMES anything;
-# `added_entry_problems` only ever sees a PATCH. Measured 2026-09-01: three `[resolved: …]`
-# shapes returned `header_error -> None` while the page set "names no entry in this file".
-#
-# ⛔ AND THE OBVIOUS FIX WAS FORBIDDEN. Having the gate import `gen-dashboard.parse_entries`
-# inverts `_gate_module`'s written rule — *a GATE must not import the thing it guards*. A lazy
-# import works technically, which is exactly why the rule is honoured deliberately here rather
-# than discovered later. The arrow still points page -> gate; the page imports these back.
-#
-# ⚠ `_first_sentence` TRAVELS WITH THE PARSER and that is not scope creep: it has two callers
-# doing different jobs — setting an entry's title, and re-deriving the headline while rendering
-# — and the render's own comment says it works by RE-APPLYING this function rather than by
-# prefix-matching. A second copy would break the identity that comment depends on.
-
-TECH_MARKER = "<!--tech-->"
-SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
-TITLE_FLOOR = 12
-ABBREVIATIONS = {"dr", "mr", "mrs", "ms", "prof", "st", "vs", "etc", "approx",
-                 "fig", "no", "inc", "ltd", "jan", "feb", "mar", "apr", "jun",
-                 "jul", "aug", "sep", "sept", "oct", "nov", "dec"}
-
-def _ends_in_abbreviation(text: str) -> bool:
-    """Is this "sentence" actually stopping mid-thought at an abbreviation?
-
-    ⚠ Review REPRODUCED: "Met with Dr. Smith about the release." produced the
-    headline "Met with Dr." — and because the fold DROPS the headline, the lede
-    then opened with the orphaned word "Smith". Splitting on `[.!?]\\s` treats
-    every full stop as a sentence end, and `TITLE_FLOOR` did not save it because
-    "Met with Dr." is exactly 12 characters.
-
-    A trailing token that is short, or that contains an internal dot ("e.g."),
-    is an abbreviation rather than a sentence end. Conservative by design: a
-    false positive merely makes the headline one sentence longer, while a false
-    negative cuts a word off the front of the reader's prose.
-    """
-    last = text.rstrip()[:-1].rsplit(" ", 1)[-1] if text.rstrip().endswith((".", "!", "?")) else ""
-    if not last:
-        return False
-    return "." in last or last.lower().strip(".") in ABBREVIATIONS
-
-
-# ── inline markup is NOT implemented here any more. Backlog #71. ───────────────────────────────
-#
-# What stood between here and `_prose`: `INLINE_URL`, `ENTITY_TAIL`, `_trim_url_tail`, `_inline`
-# and `_inline_scan` — about 100 lines, and the best inline renderer in this repo. It was rewritten
-# as ONE left-to-right scan in PR #178 over four review rounds, precisely because stacked `re.sub`
-# passes are blind to each other's output.
-#
-# ⚠ THAT FIX WAS UNREACHABLE FROM THE OTHER THREE GENERATORS, and all three still had the defect it
-# cured. Measured 2026-08-30 on the rendered backlog page: 6 crossed tag spans and 10 cases of
-# markup emitted inside a code span, including this repo's own `select count(*) filter (…)`
-# arriving as `select count(<em>) filter …`. The renderer was never the problem; having no seam to
-# reach it through was.
-#
-# It now lives in `scripts/page_markup.py`, widened to the union of what the four supported, and
-# the mutations that guarded it moved with it — so they defend four pages instead of one.
-
-def _first_sentence(text: str) -> str:
-    """The headline for an entry: its first SENTENCE, not its first LINE.
-
-    It was `the first non-blank line`, which is a physical artefact of where the
-    author's editor wrapped — so a heading read "...It is one page at" and
-    stopped. A sentence is a unit of meaning; a line is a unit of typing.
-
-    Short leading fragments ("Decided:", "Fixed.") are joined onto the next
-    sentence rather than standing alone as the whole headline.
-
-    ⟳ 2026-08-31: NOT TRUNCATED, and that is the point. There was a `cap`
-    (TITLE_CAP = 110) plus a repair, `_close_orphan_markup`, for the `**bold**`
-    spans the cut orphaned. Both are gone. MEASURED on the live page: the cap cut
-    the title while `_prose` dropped the whole first sentence, so the words
-    between the cut and the full stop were displayed NOWHERE. Clipping is now CSS
-    (`text-overflow: ellipsis`), which keeps the text in the DOM where
-    find-in-page and an opened card can both reach it. The orphan repair existed
-    only to heal a wound the cap inflicted; removing the cut removed the class.
-    """
-    text = " ".join(text.split())
-    if not text:
-        return ""
-    out = ""
-    for part in SENTENCE_END.split(text):
-        out = f"{out} {part}".strip() if out else part
-        if len(out) >= TITLE_FLOOR and not _ends_in_abbreviation(out):
-            break
-    return out
-
-
-
-def parse_entries(text: str) -> list[dict]:
-    """Split on column-0 '##' only. A malformed block is RETURNED with an
-    error, never dropped — the page must show it in place (spec §6.2).
-
-    `resolves` is a LIST: spec §6.2 says flags are "zero or more", and a
-    second [resolved:] used to overwrite the first silently, clearing one item
-    and leaving the other open forever with error=None.
-
-    ⟳ 2026-09-01, backlog #84: "column-0 '##'" was not the whole rule and the spec
-    always said so. §6.2's `##`-inside-detail row reads "indent OR FENCE it to
-    include one literally". The indent half worked by accident — `BLOCK` is
-    `^`-anchored, so an indented line never matched — and the FENCE half had no
-    implementation at all. MEASURED before the fix, on this parser:
-
-        "## 2026-08-28\\nTitle.\\n```\\n## 2026-08-29\\nfenced\\n```\\nTail prose.\\n"
-        -> 2 entries, ids ['2026-08-28/1', '2026-08-29/1'], errors 0, tail LOST
-
-    Note `errors 0`. The phantom is not a visible "could not parse" card — it is a
-    fully VALID entry that renders like any other, holding a real id. Ids are
-    positional and a standing `[resolved: <id>]` binds by id, so one fenced example
-    renumbers every later entry that day and can rebind a resolution to the wrong
-    item. Silent, on the section whose whole job is telling the reader what needs
-    them.
-
-    ⛔ THE FIX ADDS A CONSUMER, NOT AN IMPLEMENTATION. The obvious repair — track
-    fence state right here — would have been the THIRD hand-written fence scanner in
-    this feature: `check-dashboard-entry.py` already carries one in
-    `exemption_reason` and one in `_inert_lines`, and those two have already drifted
-    once (see the `startswith` comment beside `_inert_lines`). PR #205 merged hours
-    earlier for exactly this shape, one seam over. So the parser asks the gate what a
-    Markdown reader treats as literal, and holds no opinion of its own.
-
-    ⚠ IT ASKS FOR FENCES, NOT FOR "INERT". The first cut of this fix reused the
-    gate's `_inert_lines`, which is the cheaper reuse and looked equivalent — a probe
-    over blockquote, indent and fence shapes showed the only line it newly suppressed
-    was the fenced header. That probe had NO HTML COMMENT in it. Run against the real
-    store, `_inert_lines` DELETED entry 2026-09-01/16: an earlier entry mentions
-    `<!--` in prose while explaining this very machinery, `_inert_lines` treats an
-    unclosed `<!--` as a comment running to end-of-input, and every entry after it
-    vanished (47 -> 46). Over-approximating fails SAFE for "is there an ask here?"
-    and DANGEROUS for "does a block start here?". A measurement is only as good as
-    its corpus.
-    """
-    blocks: list[list[str]] = []
-    fenced = fenced_lines(text)
-    for i, line in enumerate(text.split("\n")):
-        if BLOCK.match(line) and i not in fenced:
-            blocks.append([line])
-        elif blocks:
-            blocks[-1].append(line)
-    out: list[dict] = []
-    seen: dict[str, int] = {}
-    for b in blocks:
-        entry = {"raw": "\n".join(b), "error": None, "needs_you": False,
-                 "heads_up": False, "resolves": [],
-                 "date": None, "ordinal": 0, "id": None, "would_be_id": None,
-                 "title": "", "plain": "", "tech": None}
-        err = header_error(b[0])
-        # ⛔ THE RAW HEADER LINE, recorded for `added_reference_errors` (deleted in S2; code review r1,
-        # Blocking + High). It is what an error is ABOUT, and it is stable under the
-        # positional renumbering that appending an entry causes — which neither the id nor
-        # the body-derived title is.
-        entry["header"] = b[0]
-        m = HEADER.match(b[0])
-        if m is not None and valid_date(m.group(1)):
-            # The ordinal is claimed as soon as the DATE is known good — BEFORE
-            # the flag check — so repairing a typo'd flag does not renumber the
-            # entries after it and silently rebind a standing [resolved:].
-            date = m.group(1)
-            seen[date] = seen.get(date, 0) + 1
-            entry["date"], entry["ordinal"] = date, seen[date]
-            entry["id"] = f"{date}/{seen[date]}"
-            for f in FLAG.findall(m.group(2)):
-                # The `else` here used to assume every non-`needs-you` flag
-                # contains a colon — true only by accident of FLAG's current
-                # alternation, in a file whose header says it OWNS the grammar
-                # and invites you to extend it there. Measured: adding one
-                # alternative to FLAG left the gate's suite fully green and made
-                # `f.split(":", 1)[1]` raise IndexError on EVERY render, so the
-                # page stopped existing rather than degrading one entry. The
-                # generator imported the grammar's symbols but not its meaning.
-                if f == "needs-you":
-                    entry["needs_you"] = True
-                elif f == "heads-up":
-                    # ⚠ Added WITH the FLAG alternative in check-dashboard-entry.py,
-                    # never after it. The comment above records the measured cost of
-                    # doing otherwise: the gate's suite stayed fully green while
-                    # `f.split(":", 1)[1]` raised IndexError on EVERY render.
-                    entry["heads_up"] = True
-                elif f.startswith("resolved:"):
-                    entry["resolves"].append(f.split(":", 1)[1].strip())
-                else:
-                    entry["error"] = f"unrecognised flag [{f}]"
-        elif m is not None:
-            # A block whose DATE is malformed never gets an id, so pass 2 could
-            # not distinguish "no such entry" from "that entry exists and is
-            # unparseable" — and sent the author hunting for a typo that was not
-            # there. A bad date is the CANONICAL malformed entry (§6.2's own
-            # example, and the one control D exercises), so it was precisely the
-            # case the earlier three-way fix did not reach.
-            raw_date = m.group(1)
-            seen[raw_date] = seen.get(raw_date, 0) + 1
-            entry["would_be_id"] = f"{raw_date}/{seen[raw_date]}"
-        if err:
-            entry["error"] = err
-            out.append(entry)
-            continue
-        body = b[1:]
-        cut = next((i for i, l in enumerate(body) if l.strip() == TECH_MARKER), None)
-        plain_lines = body if cut is None else body[:cut]
-        entry["tech"] = None if cut is None else "\n".join(body[cut + 1:]).strip()
-        # The FIRST PARAGRAPH, reduced to its first sentence — not the first
-        # physical line. The blank-line test below is unchanged: an entry whose
-        # first line is blank still has no title and is still an error.
-        _first_para: list[str] = []
-        for _l in plain_lines:
-            if _l.strip():
-                _first_para.append(_l.strip())
-            elif _first_para:
-                break
-        entry["title"] = _first_sentence(" ".join(_first_para))
-        entry["plain"] = "\n".join(plain_lines).strip()
-        if not entry["title"]:
-            entry["error"] = "no title line — the first line after the header is blank"
-        out.append(entry)
-
-    # PASS 2 — every [resolved:] must name an entry that exists.
-    ids = {e["id"] for e in out if e["id"] and not e["error"]}
-    for e in out:
-        if e["error"]:
-            continue
-        for r in e["resolves"]:
-            if r in ids:
-                continue
-            if not r:
-                e["error"] = "[resolved:] with no entry id after it"
-            elif any(o["id"] == r or o["would_be_id"] == r for o in out):
-                e["error"] = (f"[resolved: {r}] names an entry that could not be "
-                              f"parsed — fix that entry first")
-            else:
-                e["error"] = f"[resolved: {r}] names no entry in this file"
-            break
-    return out
-
-
-
 def _git_blob_id(data: bytes) -> str:
     """git's blob id for `data` — `sha1("blob <n>\\0" + data)` — computed without a repository."""
     import hashlib
@@ -1266,18 +905,9 @@ def _self_test_body() -> int:
             fail += 1
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
 
-    # ⟳ dashboard-retire S2: the entry ratchet (R1) and its cases are gone. What stays: the BLOCK
-    # rule the page's parser uses, the fence scanner, `exemption_reason` (now `NO-REVIEW:` by
-    # default), the decision grammar and the parser.
-    # ⚠ `###` is a sub-heading inside a body, NOT a block start — spec §6.2 says only column-0
-    # `## ` splits blocks (quoted at `BLOCK`).
-    # ⛔ THE DIVERGENCE ITSELF, asserted on the OBJECT both sides now share rather
-    # than on either side's behaviour. The case above passed for months while the
-    # page disagreed, because nothing compared them — that is the whole defect, and
-    # a test of one half could not have caught it.
-    case("the block-start rule excludes a sub-heading", bool(BLOCK.match("### Worth knowing")), False)
-    case("...and still starts on a real header", bool(BLOCK.match("## 2026-08-28")), True)
-    case("...and still catches a missing space", bool(BLOCK.match("##2026-08-28")), True)
+    # ⟳ dashboard-retire S2: the entry ratchet (R1) and its cases are gone. ⟳ S3: so are the BLOCK rule
+    # and the header grammar, with the page's parser. What stays: the fence scanner, `exemption_reason`
+    # (`NO-REVIEW:` by default), the decision grammar and the ask store.
 
     # ─── backlog #84: fenced_lines, the scanner the PAGE's parser asks ───────
     case("a fence opens and closes", sorted(fenced_lines("a\n```\nx\n```\nb\n")), [1, 2, 3])
@@ -1426,30 +1056,6 @@ def _self_test_body() -> int:
     ]:
         case(f"exemption_reason — {name}", exemption_reason(body), want)
 
-    # ─── the header grammar, shared with the parser ───
-    case("heads-up header_error is None", header_error("## 2026-08-28 [heads-up]"), None)
-    # The gate and the page must not disagree about this header (ask-choices spec §9).
-    case("both flags is a header error",
-         header_error("## 2026-08-28 [needs-you] [heads-up]") is not None, True)
-
-    # ─── the empty resolved payload — Codex retrospective review r1, High ────
-    # ⛔ FOUND BY THE ADVERSARIAL HALF. Not by this suite, not by 150 mutations,
-    # not by any gate — all of which measure this code against itself.
-    # `[resolved:]` passed `header_error`, so `added_entry_problems` returned []
-    # and an ENTRY-ONLY branch got `(0, "no tracked files changed outside the
-    # exempt paths")` while `gen-dashboard.parse_entries` set
-    # "[resolved:] with no entry id after it". Gate green, page broken — the exact
-    # class backlog #78 set out to close, surviving inside #78's own fix.
-    case("an empty resolved payload is refused",
-         header_error("## 2026-09-01 [resolved:]") is not None, True)
-    # ⚠ WHITESPACE-ONLY IS A SECOND SHAPE, and the obvious one-character `*`->`+`
-    # fix does NOT close it: `\s*` matches nothing and `[^\]]+` then eats the
-    # spaces. MEASURED in a temp copy before this fix was written.
-    case("a whitespace-only resolved payload is refused",
-         header_error("## 2026-09-01 [resolved:   ]") is not None, True)
-    case("a real resolved payload still passes",
-         header_error("## 2026-09-01 [resolved: 2026-08-31/1]"), None)
-
     # ── the decision grammar (ask-choices spec §4) ──
     GOOD = ("An ask.\n\n**Decide:** Merge it\n- merge PR #181 [recommended]\n"
             "- hold it and tell me what to change\n")
@@ -1508,63 +1114,6 @@ def _self_test_body() -> int:
     case("a tab-indented continuation does not drop options",
          len(decisions("**Decide:** Q\n- merge PR #1\n\t- it is green\n"
                        "- hold it\n")[0]["options"]), 2)
-    case("header_error names the space", "space" in (header_error("##2026-08-28") or ""), True)
-    case("header_error is None on a good header", header_error("## 2026-08-28 [needs-you]"), None)
-
-
-    case("F1b the `nonsense` resolved shape passes header_error (the parser judges it)",
-         header_error("## 2026-08-30 [resolved: nonsense]"), None)
-
-
-    # ── the relocated parser's own behaviours (backlog #82) ────────────────────────────────
-    # ⛔ THESE EXIST BECAUSE THE MUTATION HARNESS RUNS ONLY THE MUTATED FILE'S SUITE
-    # (`check-plan-code.py:852`, `run_suite(d, fname)`). `parse_entries` moved here, so the
-    # eight mutations that guard it moved with it — and a mutation whose killing case sits in
-    # ANOTHER file's suite reads as a survivor. gen-dashboard keeps its own copies as
-    # CONSUMER coverage: the page asserting the imported function still behaves is a
-    # different question from the owner asserting its own rules.
-    _R2 = parse_entries("## 2026-08-26\nOne.\n## 2026-08-27\nTwo.\n"
-                        "## 2026-08-28 [resolved: 2026-08-26/1] [resolved: 2026-08-27/1]\nBoth.\n")
-    case("two [resolved:] flags are both kept", len(_R2[2]["resolves"]), 2)
-    case("resolve of an unknown id is an error",
-         "names no entry" in (parse_entries("## 2026-08-29 [resolved: 1999-01-01/9]\nX.\n")[0]["error"] or ""),
-         True)
-    # ⛔ THE ORDINAL IS CLAIMED WHEN THE DATE IS GOOD, BEFORE the flag check — so repairing a
-    # typo'd flag must not renumber the entries after it and silently rebind a standing
-    # [resolved:]. A bad-DATE block is the wrong fixture: it never claims an ordinal at all.
-    _ORD = parse_entries("## 2026-08-28 [needs-yo]\nTypo'd flag.\n## 2026-08-28\nReal one.\n")
-    case("a malformed block still consumes its ordinal",
-         [e["id"] for e in _ORD], ["2026-08-28/1", "2026-08-28/2"])
-    # ⚠ FLAG IS WIDENED ON PURPOSE. The else-branch below is unreachable while FLAG matches
-    # exactly the three flags the if/elif chain handles — so a case using a plain `[blocked]`
-    # tests the HEADER's unrecognised-text path instead and cannot kill the flag-loop
-    # mutations. This simulates the real hazard: the gate learns a new flag and the loop does
-    # not. The case above asserts the widening is real, so it cannot pass for the wrong reason.
-    _wide = re.compile(r"\[(needs-you|heads-up|blocked|resolved:\s*[^\]]*)\]")
-    case("the unknown-flag fixture really extends the gate's own pattern",
-         (_wide.pattern != FLAG.pattern, _wide.findall("[blocked]")), (True, ["blocked"]))
-    _real_flag = globals()["FLAG"]
-    globals()["FLAG"] = _wide
-    try:
-        _UNK = parse_entries("## 2026-08-29 [blocked]\nA thing.\n")
-    except Exception as exc:                 # the defect: an unknown flag would crash the page
-        _UNK = [{"error": f"RAISED {type(exc).__name__}"}]
-    finally:
-        globals()["FLAG"] = _real_flag
-    case("an unrecognised flag is an ERROR, not a crash", bool(_UNK[0]["error"]), True)
-    case("...and says WHICH text it could not recognise",
-         "unrecognised flag" in (_UNK[0]["error"] or ""), True)
-    _LONG = ("A first sentence deliberately far longer than any truncation cap this parser has "
-             "ever applied to a headline, so a reinstated cap would visibly cut its tail off.")
-    case("a long first sentence reaches the reader WHOLE",
-         parse_entries(f"## 2026-08-28\n{_LONG}\nMore.\n")[0]["title"], _LONG)
-    _FEN = parse_entries("## 2026-08-28\nTitle.\n```\n## 2026-08-29\nfenced\n```\nAfter.\n")
-    case("a fenced header does not split the entry", len(_FEN), 1)
-    case("...and mints no phantom id", [e["id"] for e in _FEN], ["2026-08-28/1"])
-    _INERT = parse_entries("## 2026-08-28\nI mention `<!--` in prose.\n## 2026-08-29\nB.\n")
-    case("prose mentioning <!-- does not swallow the NEXT entry", len(_INERT), 2)
-    case("...and both keep their ids", [e["id"] for e in _INERT],
-         ["2026-08-28/1", "2026-08-29/1"])
 
     # ─── read_asks (dashboard-retire plan, Task 1) — each world is its own temp directory ──────
     import tempfile as _tf
@@ -1691,14 +1240,14 @@ def _self_test_body() -> int:
          f1_problems({"2026-11-25-a.md": b"# Which form?"},
                      {"2026-11-25-a.md": b"# Which form?\n## Answer\na\n"}), [])
 
-    # ── dashboard-retire S2, Task 12: L1 and the cutover check, PURE (12.1–12.6, 12.8, 12.9) ──
+    # ── dashboard-retire S2, Task 12: L1, PURE (12.1–12.6; 12.8 and 12.9 left with the cutover check in S3) ──
     # The pins are patched to a FIXTURE store here; 12.11 (impure) holds the committed pins to the real file.
     import hashlib as _hl
     _fs = b"# Dashboard entries\n\n## 2026-10-01\nOld entry one.\n"
     _fb = _git_blob_id(_fs)
     _gp = globals()
-    _pins = {k: _gp[k] for k in ("LEGACY_STORE_BLOB", "LEGACY_STORE_SHA256", "LEGACY_STORE_BASE_BLOB")}
-    _gp.update(LEGACY_STORE_BLOB=_fb, LEGACY_STORE_SHA256=_hl.sha256(_fs).hexdigest(), LEGACY_STORE_BASE_BLOB=_fb)
+    _pins = {k: _gp[k] for k in ("LEGACY_STORE_BLOB", "LEGACY_STORE_SHA256")}
+    _gp.update(LEGACY_STORE_BLOB=_fb, LEGACY_STORE_SHA256=_hl.sha256(_fs).hexdigest())
     try:
         case("12.1 the pinned bytes pass L1", legacy_store_problem(_fb, _fs, lambda a, b: ""), None)
         _m2 = legacy_store_problem(None, None, lambda a, b: "")
@@ -1717,10 +1266,6 @@ def _self_test_body() -> int:
               set(re.findall(r"\b[0-9a-f]{40}\b", _m3)) <= {_fb, _ab}), (True, True))
         case("12.6 a pinned blob absent from the clone is still refused, saying the diff could not be printed",
              "the diff could not be printed" in (legacy_store_problem(_ab, _app, lambda a, b: None) or ""), True)
-        _m8 = cutover_problem("0" * 40) or ""
-        case("12.8 master's store moved since the pin is refused, naming both blobs",
-             ("0" * 40 in _m8, _fb in _m8, "re-pin" in _m8), (True, True, True))
-        case("12.9 master's store unchanged passes the cutover check", cutover_problem(_fb), None)
     finally:
         _gp.update(_pins)
 
@@ -1835,8 +1380,7 @@ def _impure_self_test_body() -> int:
     import hashlib as _hl
     _FS = "# Dashboard entries\n\n## 2026-10-01\nOld entry one.\n"   # the fixture's frozen store
     _FPINS = {"LEGACY_STORE_BLOB": _git_blob_id(_FS.encode()),
-              "LEGACY_STORE_SHA256": _hl.sha256(_FS.encode()).hexdigest(),
-              "LEGACY_STORE_BASE_BLOB": _git_blob_id(_FS.encode())}
+              "LEGACY_STORE_SHA256": _hl.sha256(_FS.encode()).hexdigest()}
 
     def _repo(files: dict, untracked: dict | None = None) -> pathlib.Path:
         d = pathlib.Path(_tf.mkdtemp(prefix="asks-repo-"))
@@ -1967,17 +1511,6 @@ def _impure_self_test_body() -> int:
         _commit(_st, "restore")
     case("12.7 the printed restore command repairs the tree: L1 red before, green after",
          (_rc10, len(_restore), _main_at(_st, [])[0]), (1, 1, 0))
-    # 12.12: A = the pinned base store, B appends an entry, C changes something else on top.
-    _cv = _repo(_keep)
-    _a = subprocess.run(["git", "-C", str(_cv), "rev-parse", "HEAD"], capture_output=True, text=True,
-                        env=fixture_git.env()).stdout.strip()
-    with open(_cv / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
-        _fh.write("\n## 2026-11-26\nMerged after the pin.\n")
-    _commit(_cv, "B")
-    (_cv / "README").write_text("c\n", encoding="utf-8")
-    _commit(_cv, "C")
-    case("12.12 the cutover check reads the revision it is given: C^1 (B's store) rc 1, A rc 0",
-         (_main_at(_cv, ["--cutover-check", "HEAD^1"])[0], _main_at(_cv, ["--cutover-check", _a])[0]), (1, 0))
     # 12.11: the COMMITTED pins against the store on disk — no HEAD, no rev-parse, so no repository needed.
     _sp = ROOT / LEGACY_STORE_REL
     _hb = subprocess.run(["git", "hash-object", "--", str(_sp)], capture_output=True, text=True,
@@ -2273,7 +1806,7 @@ def _impure_self_test_body() -> int:
          (_rcm, _om.rstrip().endswith("post-cutover rc 0"), "ok — CI run 901" in _om), (0, True, True))
     for _d in _pc_dirs:
         _sh.rmtree(_d, ignore_errors=True)
-    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code, _st, _cv,
+    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code, _st,
                _unr, _both):
         _sh.rmtree(_d, ignore_errors=True)
 
@@ -2289,8 +1822,6 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--base", default=None,
                     help="the ref F1 compares against (`git merge-base <base> HEAD`); "
                          "without it only A1 runs")
-    ap.add_argument("--cutover-check", metavar="REF", default=None,
-                    help="only: is the store at REF still master's at pin time (LEGACY_STORE_BASE_BLOB)?")
     ap.add_argument("--list-store-prs", action="store_true",
                     help="only: list the open pull requests whose diff names the frozen store")
     ap.add_argument("--post-cutover", action="store_true",
@@ -2305,17 +1836,6 @@ def main(argv: list[str]) -> int:
         rc, lines = post_cutover(ROOT, POST_CUTOVER_REMOTE, POST_CUTOVER_BRANCH)
         print("\n".join(lines))
         return rc
-    if a.cutover_check is not None:
-        try:
-            ref_blob = _store_blob(ROOT, a.cutover_check)
-        except _AskGitError as exc:
-            print(f"CANNOT RUN — the store at {a.cutover_check} could not be read — {exc}\n"
-                  f"Treat this as NOT CHECKED.")
-            return 2
-        why = cutover_problem(ref_blob)
-        print(f"REFUSED — {why}" if why else
-              f"ok — the store at {a.cutover_check} is the pinned base blob {LEGACY_STORE_BASE_BLOB}")
-        return 1 if why else 0
     if a.list_store_prs:
         lines, err = store_edit_prs()
         if err:

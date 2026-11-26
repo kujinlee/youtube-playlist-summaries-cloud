@@ -1045,11 +1045,14 @@ page-table key or literal link still names a retired thing.
 | 16.3 | the live scan is green | `python3 scripts/check-retired-references.py` | rc 0 |
 | 16.4 | NEEDS YOU still shows an ask | Task 3's 3.2–3.6 | green |
 
-- [ ] **Step 1:** delete the grammar and its cases; run `check-ask-store.py`, `check-merge-ready.py`,
+- [x] **Step 1:** delete the grammar and its cases; run `check-ask-store.py`, `check-merge-ready.py`,
   `check-review-recorded.py`, `goal-tree.py`, `compaction-state.py` self-tests. Expected: rc 0.
 - [ ] **Step 2:** manifests, pins, the anchor resolve, `--only scripts/check-ask-store.py` sweep.
-- [ ] **Step 3:** add the CI step; run the live scan (16.3) and every `python3 scripts/check-*` docs step.
-- [ ] **Step 4:** `python3 scripts/check-ratchet-contract.py` — the new guard has a `--self-test`, no
+  ⟳ S3 build: manifest 98 → 84 (14 deleted, pin repinned); the anchor resolve passes. The local `--only` sweep was
+  NOT RUN (84 × ~9 s exceeds the local budget and the 265 s call bound); the PR's CI shards run it. `store_edit_prs`,
+  `PR_LIST_LIMIT` and `--list-store-prs` are NOT deleted: `post_cutover` (backlog #730) calls `store_edit_prs`.
+- [x] **Step 3:** add the CI step; run the live scan (16.3) and every `python3 scripts/check-*` docs step.
+- [x] **Step 4:** `python3 scripts/check-ratchet-contract.py` — the new guard has a `--self-test`, no
   fail-open handler and a caller. Commit.
 
 **FAILS IF:** the live K8 scan is red; or L1 is red; or any self-test in Step 1 changes a staying case's

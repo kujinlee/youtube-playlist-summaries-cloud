@@ -1275,8 +1275,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'decision_errors.category',
         'decision_errors.plain', 'decisions.plain', 'exemption_reason.marker',
         'exemption_reason.pr_body', 'fence_closes.open_run', 'fence_closes.rest',
-        'fence_closes.run', 'fenced_lines.text', 'header_error.line',
-        'parse_entries.text',),
+        'fence_closes.run', 'fenced_lines.text',),
     'check-docs.py': (
         'backlog_marker_errors.label', 'backlog_marker_errors.lines',
         'backlog_marker_errors.ok_lines', 'backlog_shape_errors.label',

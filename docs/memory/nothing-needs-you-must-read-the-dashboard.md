@@ -19,6 +19,6 @@ inventory (backlog #384) measured three answers to "what needs me?": the dashboa
 that nobody has triaged look identical to live ones.
 
 **How to apply:** say "N items in NEEDS YOU (sources read: …), none new from this work" instead of "nothing".
-The dashboard page and its store were retired on 2026-11-25 (dashboard-retire S2); asks are files in
-`docs/asks/` now. Related: [[a-check-result-is-not-the-claim]],
+The dashboard's per-PR entry rule and its store retired on 2026-11-25 (dashboard-retire S2) and the page
+on 2026-11-26 (S3); asks are files in `docs/asks/` now. Related: [[a-check-result-is-not-the-claim]],
 [[how-to-shape-a-message-to-me]].

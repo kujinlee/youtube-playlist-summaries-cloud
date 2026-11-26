@@ -134,19 +134,6 @@
     ]
   },
   {
-    "name": "the gate stops refusing both flags at once",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "if \"needs-you\" in flags and \"heads-up\" in flags:",
-        "if False:"
-      ]
-    ],
-    "expect": [
-      "both flags is a header error"
-    ]
-  },
-  {
     "name": "nested options end the list instead of continuing it",
     "file": "scripts/check-ask-store.py",
     "edits": [
@@ -157,20 +144,6 @@
     ],
     "expect": [
       "a 4-space nest does not DROP the options after it"
-    ]
-  },
-  {
-    "name": "block-start regex stops excluding sub-headings",
-    "file": "scripts/check-ask-store.py",
-    "_note": "RETARGETED 2026-09-01. It used to edit `ENTRY_ISH = re.compile(r'^\\+##(?!#)')` in this same file; that literal no longer exists, because ENTRY_ISH is now DERIVED from BLOCK and BLOCK moved here from gen-dashboard.py. Left unrepaired the anchor would stop matching and the coverage would vanish silently — the third time in this repo that a refactor orphaned the mutation guarding it. ⚠ `expect` NAMES ONLY CASES IN THIS FILE'S OWN SUITE: `mutate_delivered` calls `run_suite(d, fname)` for the MUTATED FILE ALONE (check-plan-code.py:694), so a renderer case named here resolves to 0 red cases and the manifest fails. The first draft named `a level-3 heading does not split the entry` — a gen-dashboard case — and the Codex review half caught it by running `--mutate .`. The page-side blast radius of this same edit is covered by its own entry in gen-dashboard.json.",
-    "edits": [
-      [
-        "BLOCK = re.compile(r\"^##(?!#)\\s*\\S\")",
-        "BLOCK = re.compile(r\"^##\\s*\\S\")"
-      ]
-    ],
-    "expect": [
-      "the block-start rule excludes a sub-heading"
     ]
   },
   {
@@ -216,31 +189,6 @@
       ]
     ],
     "expect": "bold works on the pre-comment head too"
-  },
-  {
-    "name": "the empty-resolved refusal is dropped",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "        if not payload:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "an empty resolved payload is refused",
-      "a whitespace-only resolved payload is refused"
-    ]
-  },
-  {
-    "name": "a whitespace-only payload counts as a real id",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "        payload = f[len(\"resolved:\"):].strip()",
-        "        payload = f[len(\"resolved:\"):]"
-      ]
-    ],
-    "expect": "a whitespace-only resolved payload is refused"
   },
   {
     "name": "the scanner stops marking the fence MARKERS themselves",
@@ -328,115 +276,6 @@
     "expect": [
       "fence_closes: same char, long enough, no trailing text",
       "a NO-REVIEW: inside a fence closed only by an ANNOTATED fence does NOT exempt"
-    ]
-  },
-  {
-    "name": "second [resolved:] dropped",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())",
-        "entry[\"resolves\"] = [f.split(\":\", 1)[1].strip()]"
-      ]
-    ],
-    "expect": [
-      "two [resolved:] flags are both kept"
-    ]
-  },
-  {
-    "name": "pass 2 deleted",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "        for r in e[\"resolves\"]:\n            if r in ids:",
-        "        for r in []:\n            if r in ids:"
-      ]
-    ],
-    "expect": [
-      "resolve of an unknown id is an error"
-    ]
-  },
-  {
-    "name": "ordinal instability restored",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "        if m is not None and valid_date(m.group(1)):",
-        "        if m is not None and valid_date(m.group(1)) and not err:"
-      ]
-    ],
-    "expect": [
-      "a malformed block still consumes its ordinal"
-    ]
-  },
-  {
-    "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "                elif f.startswith(\"resolved:\"):\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())\n                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
-        "                else:\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())"
-      ]
-    ],
-    "expect": [
-      "...and says WHICH text it could not recognise"
-    ]
-  },
-  {
-    "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
-        "                else:\n                    pass"
-      ]
-    ],
-    "expect": [
-      "an unrecognised flag is an ERROR, not a crash",
-      "...and says WHICH text it could not recognise"
-    ]
-  },
-  {
-    "name": "the title is capped again, so its tail vanishes",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "_ends_in_abbreviation(out):\n            break\n    return out",
-        "_ends_in_abbreviation(out):\n            break\n    return out[:110] + \"\\u2026\" if len(out) > 110 else out"
-      ]
-    ],
-    "expect": [
-      "a long first sentence reaches the reader WHOLE"
-    ]
-  },
-  {
-    "name": "the parser stops asking which lines are fenced",
-    "file": "scripts/check-ask-store.py",
-    "_note": "backlog #84, THE defect. Restores the fence-blind split, which minted a fully VALID phantom entry holding a real id — no error, renders like any other card. Ids are positional and `[resolved: <id>]` binds by id.",
-    "edits": [
-      [
-        "        if BLOCK.match(line) and i not in fenced:",
-        "        if BLOCK.match(line):"
-      ]
-    ],
-    "expect": [
-      "a fenced header does not split the entry",
-      "...and mints no phantom id"
-    ]
-  },
-  {
-    "name": "the parser asks for INERT lines instead of fenced ones",
-    "file": "scripts/check-ask-store.py",
-    "_note": "backlog #84, and this is the OVER-rejection half — the first cut of the fix, which looked equivalent and DELETED entry 2026-09-01/16 from the live store. `_inert_lines` treats an unclosed `<!--` as running to end-of-input; one entry mentioning the marker in prose erased every entry after it. A mutation only on the under-rejection half would let this ship again.",
-    "edits": [
-      [
-        "    fenced = fenced_lines(text)",
-        "    fenced = _inert_lines(text)"
-      ]
-    ],
-    "expect": [
-      "prose mentioning <!-- does not swallow the NEXT entry",
-      "...and both keep their ids"
     ]
   },
   {
@@ -772,28 +611,6 @@
       ]
     ],
     "expect": "12.10 without --base (a push) L1 still runs, and refuses the appended entry"
-  },
-  {
-    "name": "the cutover check accepts any blob",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "    if ref_blob == LEGACY_STORE_BASE_BLOB:",
-        "    if True:"
-      ]
-    ],
-    "expect": "12.8 master's store moved since the pin is refused, naming both blobs"
-  },
-  {
-    "name": "the cutover check reads HEAD instead of REF",
-    "file": "scripts/check-ask-store.py",
-    "edits": [
-      [
-        "            ref_blob = _store_blob(ROOT, a.cutover_check)",
-        "            ref_blob = _store_blob(ROOT, \"HEAD\")"
-      ]
-    ],
-    "expect": "12.12 the cutover check reads the revision it is given: C^1 (B's store) rc 1, A rc 0"
   },
   {
     "name": "the PR list keeps gh's default limit",

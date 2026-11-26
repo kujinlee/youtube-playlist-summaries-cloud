@@ -97,8 +97,9 @@ A summary section that has been elaborated into the dig-deeper doc is **dug**; o
 
 ## Page Generation (Repo Tooling)
 
-The repo generates five local HTML pages from its own markdown — the dashboard, the backlog table,
-the goals view, the explainer viewer, and the features tree. These terms are about that tooling, not
+The repo generates four local HTML pages from its own markdown — the backlog table, the goals view,
+the explainer viewer, and the features tree. (The fifth, the dashboard, retired 2026-11-26 and is kept as
+a frozen archive page.) These terms are about that tooling, not
 the product.
 
 - **Inline markup** — the small subset of markdown that appears *within* a line: `**bold**`,

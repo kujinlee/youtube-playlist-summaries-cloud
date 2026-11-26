@@ -157,9 +157,10 @@ playwright/.auth/
 # IS the artifact, so losing it loses the work. `~/explainers` is symlinked here by
 # `scripts/bootstrap-explainers.sh` so the server and the generators keep their hardcoded path.
 #
-# ⛔ BUT THE DERIVED PAGES MUST NOT BE TRACKED, and that is not a size argument. `gen-dashboard`,
-# `gen-goals-page`, `gen-backlog-page` and `gen-features-page` rebuild these from sources already
-# in the repo — measured 2026-09-30 at 21.1s for all four, with every input tracked and `gh`
+# ⛔ BUT THE DERIVED PAGES MUST NOT BE TRACKED, and that is not a size argument. `gen-goals-page`,
+# `gen-backlog-page` and `gen-features-page` rebuild these from sources already in the repo
+# (⟳ 2026-11-26: `gen-dashboard` retired; its two lines below stay so a stale local copy is never
+# committed) — measured 2026-09-30 at 21.1s for the four generators of that day, with every input tracked and `gh`
 # optional (it fails loudly and the page still writes). A committed copy is stale the moment its
 # source moves, which is precisely the defect the `regen-*` hooks exist to prevent: a
 # confident-looking page describing a world that has moved on. They are also 1–1.6MB of generated
