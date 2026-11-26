@@ -1546,7 +1546,10 @@ EXPECTED_MUTATIONS = {
     # bar being measured — 225 -> 1965px in two seconds) and `assert_wired`'s label, which
     # the reviewer severed while the suite stayed green: dropping it from KNOWN_UNVARIED was
     # lexically correct and the parameter was still indistinguishable from a constant.
-    "scripts/page_chrome.py": 114,
+    # ⟳ 2026-11-26, dashboard-retire S3 Task 14: 114 -> 117. The WCAG formula moved in from the
+    # retired generator, with one mutation per term: the channel weights, the lighter-over-darker
+    # ordering, and the 0.05 flare term.
+    "scripts/page_chrome.py": 117,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in

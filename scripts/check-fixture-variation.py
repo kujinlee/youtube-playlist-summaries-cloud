@@ -227,8 +227,6 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'declares.count_drift', 'population_errors.pinned',),
     'check-test-counts.py': (
         'compare.actual', 'load_results.path',),
-    'check-theme-token-coverage.py': (
-        'palette_tokens.name',),
     # ⟳ 2026-09-23, backlog #176 — `verdict_record.out_path` LEAVES THIS DICT, and it is the
     # OTHER direction of the guard's own warning: not debt paid, but a SUBJECT DELETED. The
     # parameter is gone because the record's `review` field stopped being derived from the
@@ -1362,8 +1360,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'assert_describes_this_tree.results', 'compare.actual', 'compare.documented',
         'documented_counts.roadmap_text', 'load_results.path', 'test_sources.config',),
     'check-theme-token-coverage.py': (
-        'audit.known_gap', 'audit.light', 'audit.shim', 'palette_tokens.name',
-        'palette_tokens.text', 'shim_tokens.text',),
+        'audit.known_gap', 'audit.light', 'audit.shim', 'css_block_tokens.selector',
+        'css_block_tokens.text', 'shim_tokens.text',),
     'check-vocabulary-collisions.py': (
         'evaluate.allowed', 'evaluate.cols', 'evaluate.stems',),
     # ⟳ 2026-09-23, backlog #176 — RE-DERIVED by running `analyse()` over the frozen source, not
@@ -1447,7 +1445,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'build.git_error', 'build.pr_error', 'build.prs', 'build.store',
         'build.store_error', 'build.window', 'cleared_ids.entries',
         'commit_dates.window', 'contrast_failures.html', 'contrast_failures.minimum',
-        'contrast_ratio.bg', 'contrast_ratio.fg', 'main.argv', 'pr_state.budget',
+        'main.argv', 'pr_state.budget',
         'pr_state.cache', 'pr_state.n', 'scheme_palettes.css', 'unresolved.entries',
         'unresolved_heads_up.entries',),
     'gen-goals-page.py': (
@@ -1457,8 +1455,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'derive.source', 'has_m4.catalog', 'has_m4.manifest', 'psql.db', 'psql.sql',),
     'page_chrome.py': (
         'assert_wired.page', 'assert_wired.where', 'chrome_bar.refresh',
-        'chrome_bar.slug', 'chrome_bar.when', 'has_control.page',
-        'missing_palettes.page', 'provenance.now', 'provenance.root', 'stamp.when',),
+        'chrome_bar.slug', 'chrome_bar.when', 'contrast_ratio.bg', 'contrast_ratio.fg',
+        'has_control.page', 'missing_palettes.page', 'provenance.now', 'provenance.root',
+        'stamp.when',),
     # ⟳ 2026-09-16 — `peer-sites.py` arrives pinned rather than as debt. Note `parse_hunks.diff`
     # in this set: the RULE was split out of `changed_lines` because this very guard refused the
     # welded version, so the pin records not just what is examined but that the split happened.

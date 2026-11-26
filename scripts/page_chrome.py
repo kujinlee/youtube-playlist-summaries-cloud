@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 234 cases
+    python3 scripts/page_chrome.py --self-test          # 241 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -1442,6 +1442,31 @@ def _scripts(page: str) -> str:
     return "\n".join(_scan(page).scripts)
 
 
+# ---------------------------------------------------------------- the WCAG contrast formula
+# ONE copy, shared: `brief-compose._contrast` asks this. Moved here byte for byte from the retired
+# dashboard generator (dashboard-retire S3, Task 14), which was its last owner; `gen-backlog-page`
+# keeps a separate `_luminance` of its own.
+def _luminance(colour: str) -> float:
+    """WCAG relative luminance of an #rgb or #rrggbb colour."""
+    h = colour.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        raise ValueError(f"not a hex colour: {colour!r}")
+
+    def chan(c: float) -> float:
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
+
+
+def contrast_ratio(fg: str, bg: str) -> float:
+    """WCAG 2.x contrast ratio. 4.5:1 is AA for body-size text."""
+    a, b = _luminance(fg), _luminance(bg)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
 # ---------------------------------------------------------------- self-test
 def self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
@@ -2742,6 +2767,33 @@ console.log(JSON.stringify(REP));
         # misleading, and nothing else would notice it.
         case("the subject is declared where it is enforced",
              "generators or by its explainer skills" in (assert_wired.__doc__ or ""), True)
+
+        # ── the WCAG contrast formula (moved here from the retired dashboard generator) ──
+        # Pinned against hand-computed values, so a broken luminance formula cannot make every
+        # ratio pass. Each pair pins a different term: 14.1 the flare term, 14.2 the ordering,
+        # 14.3 the channel weights.
+        case("black on white is 21:1",
+             round(contrast_ratio("#000000", "#ffffff"), 2), 21.0)
+        case("the contrast ratio is symmetric in its arguments",
+             (round(contrast_ratio("#1b2024", "#f7f8fa"), 6),
+              round(contrast_ratio("#f7f8fa", "#1b2024"), 6)),
+             (round(contrast_ratio("#1b2024", "#f7f8fa"), 6),) * 2)
+        case("the symmetric pair is not 1:1 (the ordering case has a subject)",
+             round(contrast_ratio("#f7f8fa", "#1b2024"), 2) > 10, True)
+        case("the 2026-09-01 hover defect measures 1.03:1",
+             round(contrast_ratio("#1b2024", "#1d1c22"), 2), 1.03)
+        case("a colour against itself is 1:1",
+             round(contrast_ratio("#8cbde0", "#8cbde0"), 2), 1.0)
+        case("shorthand hex expands",
+             round(contrast_ratio("#fff", "#ffffff"), 2), 1.0)
+
+        def _not_hex(colour: str) -> bool:
+            try:
+                _luminance(colour)
+            except ValueError:
+                return True
+            return False
+        case("a colour that is not hex is refused, never measured", _not_hex("red"), True)
 
 
     try:

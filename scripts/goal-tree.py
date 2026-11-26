@@ -3065,7 +3065,7 @@ CSS = """
       --good:#6fcf9a;--defect:#f0937c;--structure:#82b4ee;}
 :root[data-theme="light"]{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--ink-soft:#4b5060;
       --ink-faint:#838a9b;--rule:#ddd9d0;--pending:#8f6410;--link:#1d5fa8;--accent:#8a5a2b;
-      --good:#2f7d63;--defect:#a3323c;--structure:#33607a;}
+      --good:#2f7d63;--defect:#a3323c;--structure:#33607a;--structure-br:#33607a;--structure-bg:#eaf0f4;}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);line-height:1.5}
 main{max-width:72rem;margin:0 auto;padding:2rem 1rem}
 h1{font-size:2rem;margin:.2rem 0 1rem}

@@ -1449,25 +1449,9 @@ LINK_FOREGROUNDS = ("--link", "--link-visited", "--ink")   # --ink is the :hover
 LINK_SURFACES = ("--bg", "--panel", "--need-bg", "--err-bg")
 
 
-def _luminance(colour: str) -> float:
-    """WCAG relative luminance of an #rgb or #rrggbb colour."""
-    h = colour.lstrip("#")
-    if len(h) == 3:
-        h = "".join(c * 2 for c in h)
-    if len(h) != 6:
-        raise ValueError(f"not a hex colour: {colour!r}")
-
-    def chan(c: float) -> float:
-        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-
-    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
-    return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
-
-
-def contrast_ratio(fg: str, bg: str) -> float:
-    """WCAG 2.x contrast ratio. 4.5:1 is AA for body-size text."""
-    a, b = _luminance(fg), _luminance(bg)
-    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+# The WCAG formula lives in `page_chrome` now (dashboard-retire S3, Task 14): ONE copy.
+_luminance = page_chrome._luminance
+contrast_ratio = page_chrome.contrast_ratio
 
 
 def scheme_palettes(css: str) -> dict[str, dict[str, str]]:

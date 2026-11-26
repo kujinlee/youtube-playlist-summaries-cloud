@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 264 cases
+    python3 scripts/brief-compose.py --self-test  # 265 cases
 
 DECISION TAGS (backlog #603, 2026-11-11)
 ---------------------------------------
@@ -435,8 +435,8 @@ def light_palette_tokens(fragment_css: str) -> set[str]:
 # The palette tokens this governs: the ground the shim paints with, and what bold reads.
 PALETTE_TOKENS = ("--bg", "--em")
 PALETTE_GROUND, EM_TOKEN = PALETTE_TOKENS
-# The floor `--em` must clear against `--bg`: WCAG AA for body-size text, the same figure
-# `gen-dashboard.CONTRAST_MIN` holds its links to.
+# The floor `--em` must clear against `--bg`: WCAG AA for body-size text (4.5:1, the figure
+# `page_chrome.contrast_ratio`'s docstring names).
 CONTRAST_MIN = 4.5
 _DARK_MEDIA = "@media(prefers-color-scheme:dark)"
 # ⭐ THE CANONICAL BLOCKS — MEASURED, not chosen: every rule in the repo fragments that declares
@@ -603,20 +603,10 @@ def palette_blocks(fragment_css: str) -> list[tuple[str, dict[str, str]]]:
     return blocks
 
 
-_DASHBOARD = None
-
-
 def _contrast(fg: str, bg: str) -> float:
-    """`gen-dashboard.contrast_ratio`, loaded on first use — ONE copy of the WCAG formula, not a
-    third (gen-backlog-page has the second). Lazy, because gen-dashboard runs this file."""
-    global _DASHBOARD
-    if _DASHBOARD is None:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "gen_dashboard", pathlib.Path(__file__).with_name("gen-dashboard.py"))
-        _DASHBOARD = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(_DASHBOARD)
-    return _DASHBOARD.contrast_ratio(fg, bg)
+    """`page_chrome.contrast_ratio` — ONE copy of the WCAG formula, not a third (gen-backlog-page
+    has the second). Looked up on the module at call time, so the self-test can stub it."""
+    return page_chrome.contrast_ratio(fg, bg)
 
 
 def assert_em_in_every_palette(fragment_css: str) -> None:
@@ -2859,6 +2849,18 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
          _refusal_for_fn(lambda: assert_em_in_every_palette(
              ":root{--bg:#fff;--em:#2d4a7c}" + _os_dark
              + ':root[data-theme="dark"]{--bg:#000;--em:#9db8e8}')) == "")
+    # ONE copy of the WCAG formula: `_contrast` asks `page_chrome.contrast_ratio`, so a stub
+    # there is what it returns. A private copy of the formula here would answer 21.0 for black on
+    # white whatever the stub says, so the stub returns a value no real pair can give.
+    _real_ratio = page_chrome.contrast_ratio
+    try:
+        page_chrome.contrast_ratio = lambda fg, bg: 0.5
+        # the module's `_contrast` (this body defines a local `_contrast` of its own further down)
+        _asked = globals()["_contrast"]("#000000", "#ffffff")
+    finally:
+        page_chrome.contrast_ratio = _real_ratio
+    case("the --em contrast asks page_chrome.contrast_ratio, the one copy of the formula",
+         _asked == 0.5)
 
     # ── backlog #376 ROUND 1: every repro from both halves, each red on the code it was found in ──
     # The grammar is CLOSED: a form inside it is read exactly, a root-level form outside it that
