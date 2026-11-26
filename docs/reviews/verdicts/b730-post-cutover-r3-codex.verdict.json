@@ -1,0 +1,24 @@
+{
+  "attempts": [
+    "  gpt-6.2-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.2-astra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.1-terra: ok \u2014 1913 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "bb74b2833a40f7b4a17c63683c5775a0ee8ab665",
+  "intrusions": [],
+  "loosening_answers": {
+    "01fcd6b0b69c": "not a loosening",
+    "5bfd46c9d5f8": "not a loosening"
+  },
+  "model": "gpt-6.1-terra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b8b70ddb-ac10-4d26-bd53-6419325840da/scratchpad/b730r3/prompt.md",
+  "reason": "1913 chars",
+  "refused": false,
+  "review": "b730-post-cutover-r3-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/b730-post-cutover"
+}

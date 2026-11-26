@@ -25,9 +25,9 @@ halves:
   codex: ran
   claude: gap
 findings:
-  - {id: G1, severity: Major, aim: deliverable, fix_induced: true, component: "scripts/check-ask-store.py _master_ci", disposition: fixed}
-  - {id: G2, severity: Major, aim: deliverable, fix_induced: true, component: "scripts/check-ask-store.py _master_ci", disposition: fixed}
-  - {id: G3, severity: Major, aim: deliverable, fix_induced: false, component: "scripts/check-ask-store.py _master_ci", disposition: fixed}
+  - {id: G1, severity: High, aim: deliverable, fix_induced: true, component: "scripts/check-ask-store.py _master_ci", disposition: fixed}
+  - {id: G2, severity: High, aim: deliverable, fix_induced: true, component: "scripts/check-ask-store.py _master_ci", disposition: fixed}
+  - {id: G3, severity: High, aim: deliverable, fix_induced: false, component: "scripts/check-ask-store.py _master_ci", disposition: fixed}
 ```
 
 Review: `docs/reviews/codex/b730-post-cutover-r2-codex.md`.
