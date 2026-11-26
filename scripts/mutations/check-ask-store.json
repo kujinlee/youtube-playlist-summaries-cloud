@@ -867,7 +867,7 @@
     "file": "scripts/check-ask-store.py",
     "edits": [
       [
-        "        _ask_git(root, \"fetch\", \"-q\", remote, branch)\n",
+        "        _ask_git(root, \"fetch\", \"-q\", remote, f\"+refs/heads/{branch}:refs/remotes/{remote}/{branch}\")\n",
         "        pass\n"
       ]
     ],
@@ -970,10 +970,10 @@
         "        green = steps.get(CI_L1_STEP) == \"success\""
       ]
     ],
-    "expect": "730 L2: master's newest completed run that ran the L1 step, with its self-test red, is rc 7"
+    "expect": "730 r1 F1: a post-squash run with no self-test step is rc 7 — absent is not green"
   },
   {
-    "name": "730 no master run with the L1 step reads as green",
+    "name": "730 no post-squash master run reads as green",
     "file": "scripts/check-ask-store.py",
     "edits": [
       [
@@ -981,7 +981,7 @@
         "    return (None, f\"none of the newest"
       ]
     ],
-    "expect": "730 L2: no completed master run has run the L1 step yet is rc 8, not green"
+    "expect": "730 L2: no completed run on a post-squash commit yet is rc 8, not green"
   },
   {
     "name": "730 a failed gh run list reads as no runs yet",
@@ -1004,5 +1004,137 @@
       ]
     ],
     "expect": "730 main --post-cutover runs the check over origin/master and exits with its status"
+  },
+  {
+    "name": "730 r1 F1 a post-squash run whose L1 step was skipped is passed over",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        got = \", \".join(",
+        "        if steps.get(CI_L1_STEP) not in (\"success\", \"failure\"):\n            continue\n        got = \", \".join("
+      ]
+    ],
+    "expect": "730 r1 F1: the newest post-squash run, self-test red and the L1 step skipped, is rc 7 over an older green"
+  },
+  {
+    "name": "730 r1 F1 an L1 step failure reads as green",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        green = all(steps.get(n) == \"success\" for n in (CI_SELFTEST_STEP, CI_L1_STEP))",
+        "        green = steps.get(CI_SELFTEST_STEP) == \"success\""
+      ]
+    ],
+    "expect": "730 r1 F1: a post-squash run whose L1 step itself failed is rc 7"
+  },
+  {
+    "name": "730 r1 F1 a pre-squash commit's run is judged",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        if GATE_L1_MARKER not in at:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": "730 L2: no completed run on a post-squash commit yet is rc 8, not green"
+  },
+  {
+    "name": "730 r1 F1 a run commit git cannot read is passed over",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "            return None, \"\", f\"CI run {rid}'s commit",
+        "            continue\n            return None, \"\", f\"CI run {rid}'s commit"
+      ]
+    ],
+    "expect": "730 r1 F1: a run whose commit git cannot read is CANNOT RUN rc 2"
+  },
+  {
+    "name": "730 r1 F6 steps are merged across jobs",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "                     if j.get(\"name\") == CI_JOB for s in j.get(\"steps\") or []}",
+        "                     for s in j.get(\"steps\") or []}"
+      ]
+    ],
+    "expect": "730 r1 F6: only the verify job's steps count — another job's same-named green steps do not — rc 7"
+  },
+  {
+    "name": "730 r1 F2 post-cutover drops gh pr list's error",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    prs, prs_err = store_edit_prs()",
+        "    prs, prs_err = store_edit_prs()[0], None"
+      ]
+    ],
+    "expect": "730 r1 F2: a failed gh pr list under --post-cutover is CANNOT RUN rc 2, never 'no PRs'"
+  },
+  {
+    "name": "730 r1 F2 a failed gh run view skips to the next run",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "            return None, \"\", f\"gh run view {rid} did not answer ({_why(v)})\"",
+        "            continue"
+      ]
+    ],
+    "expect": "730 r1 F2: a failed gh run view is CANNOT RUN rc 2, never an older run's verdict"
+  },
+  {
+    "name": "730 r1 F2 post-cutover drops L1's git error",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "_record(PC_STORE_MOVED, *legacy_store_check(root, ref),",
+        "_record(PC_STORE_MOVED, legacy_store_check(root, ref)[0], None,"
+      ]
+    ],
+    "expect": "730 r1 F2: master's store git cannot read is CANNOT RUN rc 2, never L1 ok"
+  },
+  {
+    "name": "730 r1 F2 post-cutover drops A1's git error",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    a1, a1_err = ask_store_problems(None, root, ref)\n",
+        "    a1, a1_err = ask_store_problems(None, root, ref)[0], None\n"
+      ]
+    ],
+    "expect": "730 r1 F2: an ask git cannot read on master is CANNOT RUN rc 2, never A1 ok"
+  },
+  {
+    "name": "730 r1 F2 an unreadable ask object reads as an empty ask",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "            raise _AskGitError(f\"git ls-tree could not size {path}",
+        "            out[name] = (b\"\", 0, None)\n            continue\n            raise _AskGitError(f\"git ls-tree could not size {path}"
+      ]
+    ],
+    "expect": "730 r1 F2: an ask git cannot read on master is CANNOT RUN rc 2, never A1 ok"
+  },
+  {
+    "name": "730 r1 F4 an empty gh pr diff reads as no store edit",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        if not names:",
+        "        if False:"
+      ]
+    ],
+    "expect": "730 r1 F4: an empty gh pr diff answer is CANNOT RUN, never 'no edit': err names PR 7, rc 2"
+  },
+  {
+    "name": "730 r1 F5 the fetch relies on the clone's refspec",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "remote, f\"+refs/heads/{branch}:refs/remotes/{remote}/{branch}\")",
+        "remote, branch)"
+      ]
+    ],
+    "expect": "730 r1 F5: the fetch moves origin/master even when the clone's refspec does not cover it — rc 1"
   }
 ]
