@@ -38,7 +38,7 @@ THE TWO HOOK MODES:
                deletes the session's previous snapshot, then captures in the child: the open PRs and the in-flight
                ledger (`session-state.fetch`/`render`, the ledger read from the MAIN checkout, asked for ONCE); `git
                worktree list` with each worktree's branch, tip and clean/dirty state; pending OWNER decisions (ledger
-               entries whose DECLARED `kind` is owner-wait or owner-instruction, printed whole; `gen-dashboard.unresolved`); and the owner's recent PROMPTS and the
+               entries whose DECLARED `kind` is owner-wait or owner-instruction, printed whole; the open ask files, by the ask-store gate's `read_asks`); and the owner's recent PROMPTS and the
                newest AskUserQuestion ANSWERS that fit, from `transcript_path`. Under SNAPSHOT_CAP. If the child does
                not finish, the snapshot is `CANNOT RUN — capture timed out after N s and was killed`.
   --print      SessionStart, `compact` source (a matcher). Headed "NEWEST CAPTURE for this session, taken at T (N s
@@ -84,7 +84,7 @@ different compaction — SESSION_NOT_COMPACTION, printed, not fixed; STALE_AFTER
 
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 130 cases
+    python3 scripts/compaction-state.py --self-test  # 129 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; a child mode exits 0 when it wrote
 its file.
@@ -140,7 +140,6 @@ N_PROMPTS = 12
 RECENT_ASKS = 5
 ITEM_WIDTH = 400
 MAX_TRANSCRIPT = 256 * 1024 * 1024   # read at most the TAIL this long
-MAX_STORE = 8 * 1024 * 1024          # the dashboard store, read only if a regular file under this
 KEYS_OPEN = "<!-- compaction-keys: "
 KEYS_CLOSE = " -->"
 ANSWER_PREFIX = re.compile(r"^(?:Your questions have been answered|The user answered):\s*")
@@ -342,7 +341,7 @@ def owner_items(records, session_id) -> tuple[list[tuple[str, str]], list[tuple[
 
 def _open_regular(path: Path, cap: int) -> tuple[int | None, int, str | None]:
     """(fd, size, None) for a REGULAR file of at most `cap` bytes, else (None, 0, why). Opened non-blocking and checked
-    on the descriptor, so a FIFO is refused without blocking (r2 Codex XM3: a FIFO dashboard hung the hook)."""
+    on the descriptor, so a FIFO is refused without blocking (r2 Codex XM3: a FIFO store hung the hook)."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
     except OSError as exc:
@@ -471,28 +470,19 @@ def worktree_section(wts, err, budget: int) -> str:
 
 
 def pending_asks(root: Path) -> tuple[int | None, list[dict], str | None]:
-    """(unresolved count, the newest RECENT_ASKS, None), or (None, [], why). The count is the old store's open asks
-    (gen-dashboard's own `unresolved`) PLUS the open ask files in `docs/asks/` (the gate's `read_asks`, its ONE
-    reader — dashboard-retire S1). The newest are the store's, then the ask files', in filename order, the last
-    RECENT_ASKS of them. ⛔ ANY problem `read_asks` names is CANNOT RUN, never 0 and never a partial count. The
-    store is read only as a regular file under MAX_STORE (r2 Codex XM3: a FIFO store hung the hook); an ask file
-    is opened non-blocking by `read_asks` itself."""
-    fd, _, err = _open_regular(root / "docs" / "dashboard-entries.md", MAX_STORE)
-    if fd is None:
-        return None, [], err
+    """(unresolved count, the newest RECENT_ASKS, None), or (None, [], why). The count is the open ask files in
+    `docs/asks/` (the gate's `read_asks`, its ONE reader); the newest are the last RECENT_ASKS of them, in filename
+    order. ⟳ dashboard-retire S2: the old dashboard store is no longer read. ⛔ ANY problem `read_asks` names is
+    CANNOT RUN, never 0 and never a partial count. An ask file is opened non-blocking by `read_asks` itself (r2
+    Codex XM3: a FIFO store hung the hook)."""
     try:
-        with os.fdopen(fd, "rb") as fh:
-            text = fh.read().decode("utf-8", "replace")
-        gd = _load("gen-dashboard.py", "_gen_dashboard_for_compaction")
-        need = gd.unresolved(gd.parse_entries(text))
         files, problems = _load("check-ask-store.py", "_ask_gate_for_compaction").read_asks(root / "docs" / "asks")
     except Exception as exc:  # noqa: BLE001 — any failure is a CANNOT RUN line, never a crash
         return None, [], f"{exc.__class__.__name__}: {clean(exc, 120)}"
     if problems:
         return None, [], f"{len(problems)} problem(s) in docs/asks/: {clean('; '.join(problems), 240)}"
-    newest = ([{"id": e["id"], "title": e.get("title") or ""} for e in need]
-              + [{"id": a["stem"], "title": a["question"]} for a in files])
-    return len(need) + len(files), newest[-RECENT_ASKS:], None
+    newest = [{"id": a["stem"], "title": a["question"]} for a in files]
+    return len(files), newest[-RECENT_ASKS:], None
 
 
 def decision_section(count, asks, err, waits: list[dict], ledger_complete: bool) -> str:
@@ -505,9 +495,9 @@ def decision_section(count, asks, err, waits: list[dict], ledger_complete: bool)
     elif not waits:
         L.append("  ledger: no entry is marked as waiting on the owner (it is hand-written, so this is not proof)")
     if count is None:
-        L.append(f"  dashboard asks and docs/asks/: {NC} — CANNOT RUN, {clean(err)}.")
+        L.append(f"  ask files (docs/asks/): {NC} — CANNOT RUN, {clean(err)}.")
     else:
-        L.append(f"  asks (the dashboard store and docs/asks/): {count} unresolved ask(s); the newest {len(asks)}"
+        L.append(f"  ask files (docs/asks/): {count} unresolved ask(s); the newest {len(asks)}"
                  f"{f' (the other {count - len(asks)} {NC} here)' if count > len(asks) else ''}:")
         L += [f"    {clean(a['id'], 20)} — {clean(a['title'], 140)}" for a in asks]
     return "\n".join(L)
@@ -1323,7 +1313,7 @@ def _self_test_body() -> int:
         case("⭐ the owner's words are headed RECORDED, never AUTHORITATIVE — a hook cannot prove authorship (r1 XB1)",
              ("## The owner's recent words — RECORDED in the transcript, not proven" in snap, "AUTHORITATIVE" in snap), (True, False))
         case("the header names the trigger and the session", "trigger auto · session sess-1" in snap.splitlines()[0], True)
-        case("⭐ pending decisions: the MARKED ledger entry (not one that only mentions the owner) and the dashboard's asks",
+        case("⭐ pending decisions: the MARKED ledger entry (not one that only mentions the owner) and the open ask files",
              ("ledger [walk-361]" in snap, "ledger [codex-r2]" in snap.split("## Pending OWNER")[1].split("## Worktrees")[0],
               "36 unresolved ask(s)" in snap, "2026-10-28/3 — Merge the hooks PR?" in snap), (True, False, True, True))
         case("the keys line carries only what the print matches on: nonce, time, session — the audit is deferred",
@@ -1422,7 +1412,7 @@ def _self_test_body() -> int:
         broken = snapshot(None, "payload is not JSON (x)", root, fake_run((4, "gh: auth required")), 1000.0,
                           transcript_ok, lambda r: (None, [], "FileNotFoundError: no store"), nonce="N1")
         case("⭐ every input that fails is a CANNOT RUN line in the snapshot — gh, the asks, the payload's transcript",
-             ("OPEN PRS: CANNOT RUN — gh exited 4: gh: auth required" in broken, "dashboard asks and docs/asks/: NOT CAPTURED — CANNOT RUN" in broken,
+             ("OPEN PRS: CANNOT RUN — gh exited 4: gh: auth required" in broken, "ask files (docs/asks/): NOT CAPTURED — CANNOT RUN" in broken,
               "OWNER'S WORDS: NOT CAPTURED — CANNOT RUN, the hook payload was unreadable" in broken,
               "⚠ hook payload: NOT CAPTURED — UNREADABLE" in broken), (True, True, True, True))
         refused = root / "refused"
@@ -1574,15 +1564,13 @@ def _self_test_body() -> int:
              (rc_ok, stray_gone), (0, True))
         fifo_root = root / "fifo-store"
         (fifo_root / "docs").mkdir(parents=True)
-        os.mkfifo(fifo_root / "docs" / "dashboard-entries.md")
+        # ⟳ dashboard-retire S2: the old store is no longer read, so its FIFO case went with it; the ask files'
+        # FIFO case is 4.4, and the transcript keeps `_open_regular`'s own.
+        os.mkfifo(fifo_root / "docs" / "transcript.jsonl")
         t0 = time.monotonic()
-        fifo_asks = pending_asks(fifo_root)
-        case("⭐ a FIFO dashboard store is refused WITHOUT blocking (r2 Codex XM3 hung here past 16 s)",
-             (fifo_asks[0], "is not a regular file" in (fifo_asks[2] or ""), time.monotonic() - t0 < 0.5), (None, True, True))
-        t0 = time.monotonic()
-        fifo_t = read_transcript(fifo_root / "docs" / "dashboard-entries.md")
-        case("...and a FIFO transcript too", (fifo_t[0], "is not a regular file" in (fifo_t[1] or ""),
-                                              time.monotonic() - t0 < 0.5), (None, True, True))
+        fifo_t = read_transcript(fifo_root / "docs" / "transcript.jsonl")
+        case("⭐ a FIFO transcript is refused WITHOUT blocking (r2 Codex XM3: a FIFO store hung the hook past 16 s)",
+             (fifo_t[0], "is not a regular file" in (fifo_t[1] or ""), time.monotonic() - t0 < 0.5), (None, True, True))
         t0 = time.monotonic()
         with redirect_stdout(io.StringIO()):
             main(["--snapshot"], root=root / "killed", stdin_text=json.dumps({"session_id": "S-kill"}), now=7000.0,
@@ -2086,24 +2074,24 @@ def _self_test_body() -> int:
              (got, took < 2), ((None, "no payload on stdin"), True))
         store = root / "dash" / "docs"
         store.mkdir(parents=True)
+        # ⟳ dashboard-retire S2: an OPEN ask in the old store, which must count for nothing (10.4).
         (store / "dashboard-entries.md").write_text(
-            "# Dashboard entries\n\n## 2026-10-28 [needs-you]\nThe compaction hooks wait for your real compact run.\n\n"
-            "## 2026-10-28\nSomething shipped and needs nothing from you.\n")
-        (store / "asks").mkdir()   # dashboard-retire S1: the ask files, empty and READ
-        count, recent, err = pending_asks(root / "dash")
-        case("pending_asks reads the store through gen-dashboard's own unresolved()",
-             (count, [a["id"] for a in recent], err), (1, ["2026-10-28/1"], None))
-        case("a missing dashboard store is CANNOT RUN for the asks, with the reason",
-             (pending_asks(root / "nowhere")[0], "cannot be opened" in (pending_asks(root / "nowhere")[2] or "")), (None, True))
+            "# Dashboard entries\n\n## 2026-10-28 [needs-you]\nThe compaction hooks wait for your real compact run.\n")
+        (store / "asks").mkdir()   # the ask files, empty and READ
+        case("an empty docs/asks/ is zero asks, read — the old store's open ask counts for nothing",
+             pending_asks(root / "dash"), (0, [], None))
+        case("a missing docs/asks is CANNOT RUN for the asks, with the reason",
+             (pending_asks(root / "nowhere")[0], "docs/asks/ is missing" in (pending_asks(root / "nowhere")[2] or "")),
+             (None, True))
         # ── dashboard-retire S1, Task 4: the ask files in docs/asks/ are counted too, through the gate's read_asks ──
         _ask = "# Pick a name?\n\n**Decide:** which?\n- a [recommended]\n- b\n"
         for _n in ("2026-11-25-one", "2026-11-25-two"):
             (store / "asks" / f"{_n}.md").write_text(_ask)
         (store / "asks" / "2026-11-25-done.md").write_text(_ask + "\n## Answer\na\n")
         count, recent, err = pending_asks(root / "dash")
-        case("4.1 K6: the count is the store's open asks plus the open ask files",
+        case("10.4 the snapshot counts the open ask files only",
              (count, [a["id"] for a in recent], err),
-             (3, ["2026-10-28/1", "2026-11-25-one", "2026-11-25-two"], None))
+             (2, ["2026-11-25-one", "2026-11-25-two"], None))
         (store / "asks" / "Foo.md").write_text("# a badly named ask\n")
         count, recent, err = pending_asks(root / "dash")
         case("4.2 a PROBLEM in docs/asks is CANNOT RUN, never 0 and never a partial count",
@@ -2124,7 +2112,6 @@ def _self_test_body() -> int:
              (_nog[0], "cannot load scripts/check-ask-store.py" in (_nog[2] or "")), (None, True))
         _fq = root / "fifo-ask" / "docs"
         (_fq / "asks").mkdir(parents=True)
-        (_fq / "dashboard-entries.md").write_text("# Dashboard entries\n")
         os.mkfifo(_fq / "asks" / "2026-11-25-a.md")
         t0 = time.monotonic()
         _fa = pending_asks(root / "fifo-ask")
@@ -2135,7 +2122,7 @@ def _self_test_body() -> int:
         count, recent, err = pending_asks(root / "dash")
         case("4.5 the newest asks are the last RECENT_ASKS, the ask files last, in filename order",
              (count, [a["id"] for a in recent]),
-             (8, ["2026-11-25-later", "2026-11-25-one", "2026-11-25-two", "2026-11-26-later", "2026-11-27-later"]))
+             (7, ["2026-11-25-later", "2026-11-25-one", "2026-11-25-two", "2026-11-26-later", "2026-11-27-later"]))
 
         # ─── backlog #407: which cases wait on a REAL deadline, and where those still run ─────────────────────────
         M = MUTATION_RUN_ENV
