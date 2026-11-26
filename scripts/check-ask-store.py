@@ -6,7 +6,8 @@ still at HEAD and only grew at its end. Both read HEAD's tree through git (`git 
 the directory listing, so an untracked scratch file cannot fail the gate.
 
 It also owns the declaration parser `exemption_reason`, which `check-review-recorded.py` and
-`check-merge-ready.py` call for `NO-REVIEW:`. ⟳ dashboard-retire S2: the per-PR dashboard-entry rule
+`check-merge-ready.py` call for `NO-REVIEW:`. `--post-cutover` is plan Task 13 (the cutover after
+S2's squash) as one command with one exit status per cause (backlog #730; see `post_cutover`). ⟳ dashboard-retire S2: the per-PR dashboard-entry rule
 (R1) and its `NO-ENTRY:` waiver are retired; the entry grammar the page still imports stays until S3.
 """
 from __future__ import annotations
@@ -706,7 +707,8 @@ def _ask_tree(root: pathlib.Path, rev: str) -> dict[str, tuple[bytes | None, int
     return out
 
 
-def ask_store_problems(base: str | None, root: pathlib.Path) -> tuple[list[str], str | None]:
+def ask_store_problems(base: str | None, root: pathlib.Path,
+                       rev: str = "HEAD") -> tuple[list[str], str | None]:
     """A1 and F1 over the ask store: `(problems, err)`. `err` is set when git could not answer,
     and `main` turns it into CANNOT RUN — never a pass.
 
@@ -718,12 +720,14 @@ def ask_store_problems(base: str | None, root: pathlib.Path) -> tuple[list[str],
     readers downstream treat a missing store as NOT READ, so the gate must not let it merge.
 
     F1 runs only when `base` is given: the asks at `git merge-base <base> HEAD` against HEAD's.
+    `rev` is the tree A1 reads (HEAD unless given): `--post-cutover` passes `origin/master`, so A1
+    judges master's COMMITTED asks and no worktree can flip it (backlog #730 L1).
     """
     problems: list[str] = []
     try:
-        head = _ask_tree(root, "HEAD")
+        head = _ask_tree(root, rev)
         if not head:
-            problems.append(f"{ASKS_REL}/ is not tracked at HEAD — the goal tree and the compaction "
+            problems.append(f"{ASKS_REL}/ is not tracked at {rev} — the goal tree and the compaction "
                             f"snapshot cannot read a missing store; keep {ASK_KEEP} until the first "
                             f"ask lands")
         problems += _judge_asks(list(head), head.__getitem__)[1]
@@ -781,10 +785,11 @@ def cutover_problem(ref_blob: str | None) -> str | None:
             f"and re-pin all three constants (LEGACY_STORE_BASE_BLOB, LEGACY_STORE_BLOB, LEGACY_STORE_SHA256).")
 
 
-def _store_blob(root: pathlib.Path, rev: str) -> str | None:
-    """The store's blob id at `rev`, or None when `rev` has no such path. ⚠ Read through `ls-tree`, not
-    `rev-parse REV:path`, so a missing path (an empty answer, rc 0) is told apart from git failing (raises)."""
-    out = _ask_git(root, "ls-tree", "-z", rev, "--", LEGACY_STORE_REL).decode("utf-8", "surrogateescape")
+def _store_blob(root: pathlib.Path, rev: str, rel: str = LEGACY_STORE_REL) -> str | None:
+    """The blob id of `rel` (the store unless given) at `rev`, or None when `rev` has no such path. ⚠ Read
+    through `ls-tree`, not `rev-parse REV:path`, so a missing path (an empty answer, rc 0) is told apart from
+    git failing (raises)."""
+    out = _ask_git(root, "ls-tree", "-z", rev, "--", rel).decode("utf-8", "surrogateescape")
     rec = out.split("\0")[0]
     if not rec.strip():
         return None
@@ -792,10 +797,11 @@ def _store_blob(root: pathlib.Path, rev: str) -> str | None:
     return meta[2] if meta[1] == "blob" else None
 
 
-def legacy_store_check(root: pathlib.Path) -> tuple[str | None, str | None]:
-    """L1 over HEAD: `(problem, err)`. `err` when git could not answer — CANNOT RUN, never a pass."""
+def legacy_store_check(root: pathlib.Path, rev: str = "HEAD") -> tuple[str | None, str | None]:
+    """L1 over `rev` (HEAD unless given): `(problem, err)`. `err` when git could not answer — CANNOT RUN,
+    never a pass. It reads the COMMITTED blob, so a dirty working-tree store cannot change the verdict."""
     try:
-        blob = _store_blob(root, "HEAD")
+        blob = _store_blob(root, rev)
         data = _ask_git(root, "cat-file", "blob", blob) if blob else None
     except _AskGitError as exc:
         return None, f"the frozen store could not be read — {exc}"
@@ -836,6 +842,134 @@ def store_edit_prs() -> tuple[list[str], str | None]:
         if LEGACY_STORE_REL in (d.stdout or "").splitlines():
             lines.append(f"PR {n} ({branch}) edits the frozen store")
     return lines, None
+
+
+# ── --post-cutover: plan Task 13 as ONE tested entry point (backlog #730) ──────────────────────
+#
+# ⛔ WHY THIS IS CODE AND NOT SHELL. Task 13 runs once, on master, after S2's squash, and nothing
+# reviewed its shell before it ran: r5 found its exit 1 meant three things (a `cd` into a missing
+# worktree, a `checkout --detach` blocked by a local edit, L1's "the store moved" — and A1 a fourth),
+# and "any clean worktree serves" was asserted, never checked (a dirty `check-ask-store.py` would have
+# judged master). The Phase 6 falsifier routed it here: ONE command whose exit status is the answer.
+#
+# ⛔ IT READS ONLY COMMITTED OBJECTS (r5 L1). It fetches `<remote> <branch>` itself and reads the store,
+# the asks and the gate file at `<remote>/<branch>` through `git ls-tree` / `git cat-file` — never
+# `git checkout`, so no worktree is moved, a dirty one cannot block it, and none can change its verdict.
+# The one thing a worktree CAN still supply is the script running this check, so it compares its OWN
+# bytes' blob id to master's `scripts/check-ask-store.py` and refuses (rc 4) when they differ: a local
+# copy, edited or stale, never judges master.
+#
+# The exit status, one cause each (r5 M1). When several checks refuse, the FIRST in `order` (in
+# `post_cutover`) is the status, and every check's line is still printed:
+PC_OK = 0               # master's store is the pinned bytes, A1 passes, no PR edits it, master's CI green
+PC_STORE_MOVED = 1      # L1 refused master's committed store: it moved off LEGACY_STORE_BLOB/SHA256
+PC_CANNOT_RUN = 2       # git or gh could not answer — treat as NOT CHECKED, never a pass
+PC_NOT_MERGED = 3       # master has no gate file, or one without L1: S2 is not merged
+PC_STALE_JUDGE = 4      # the running script is not master's blob — run it from a checkout of master
+PC_ASKS_REFUSED = 5     # A1 refused master's committed docs/asks/
+PC_STORE_PRS = 6        # an open pull request still edits the frozen store (plan Task 13 Step 1, the former Step 2)
+PC_CI_RED = 7           # master's newest completed CI run carrying the L1 CI step has a step not green
+PC_CI_NOT_YET = 8       # no completed master CI run has run the L1 CI step yet — wait, then re-run
+POST_CUTOVER_REMOTE = "origin"
+POST_CUTOVER_BRANCH = "master"
+GATE_REL = "scripts/check-ask-store.py"
+GATE_L1_MARKER = b"\nLEGACY_STORE_SHA256 = "     # a gate file without it predates S2's L1
+CI_WORKFLOW = "CI"
+CI_SELFTEST_STEP = "check-ask-store self-test"
+CI_L1_STEP = "ask store (push)"                 # S2's step: no run before the squash has it
+RUN_LIST_LIMIT = 20
+
+
+def _master_ci(root: pathlib.Path, branch: str) -> tuple[int | None, str, str | None]:
+    """Plan Task 13 Step 1, the former Step 5 (r5 L2): `(code, line, err)` over the newest COMPLETED push-event run of
+    `CI_WORKFLOW` on `branch` that RAN `CI_L1_STEP`. "At or after the squash" is decided by that step's
+    presence: it is S2's, so no run before the squash has it, and no commit id is needed. `code` is None
+    (green), PC_CI_RED or PC_CI_NOT_YET; any failed or unparseable `gh` answer is `err` — CANNOT RUN."""
+    import json as _json
+
+    def _gh(*args: str):
+        try:
+            return subprocess.run(["gh", *args], cwd=root, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return exc
+
+    def _why(r) -> str:
+        return str(r) if isinstance(r, Exception) else f"exited {r.returncode}: {(r.stderr or '').strip()[:200]}"
+    r = _gh("run", "list", "--workflow", CI_WORKFLOW, "--branch", branch, "--event", "push",
+            "--status", "completed", "--limit", str(RUN_LIST_LIMIT), "--json", "databaseId,headSha")
+    if isinstance(r, Exception) or r.returncode != 0:
+        return None, "", f"gh run list did not answer ({_why(r)})"
+    try:
+        runs = [(int(x["databaseId"]), str(x["headSha"])) for x in _json.loads(r.stdout or "")]
+    except (ValueError, TypeError, KeyError) as exc:
+        return None, "", f"gh run list's answer did not parse ({exc})"
+    for rid, sha in runs:                                   # gh lists the newest first
+        v = _gh("run", "view", str(rid), "--json", "jobs")
+        if isinstance(v, Exception) or v.returncode != 0:
+            return None, "", f"gh run view {rid} did not answer ({_why(v)})"
+        try:
+            steps = {s["name"]: s.get("conclusion") for j in _json.loads(v.stdout or "")["jobs"]
+                     for s in j.get("steps") or []}
+        except (ValueError, TypeError, KeyError) as exc:
+            return None, "", f"gh run view {rid}'s answer did not parse ({exc})"
+        if steps.get(CI_L1_STEP) not in ("success", "failure"):
+            continue                                        # before the squash, or cancelled before the step
+        got = ", ".join(f"`{n}` {steps.get(n) or 'absent'}" for n in (CI_SELFTEST_STEP, CI_L1_STEP))
+        green = all(steps.get(n) == "success" for n in (CI_SELFTEST_STEP, CI_L1_STEP))
+        return (None if green else PC_CI_RED), f"CI run {rid} ({sha[:8]}) on {branch}: {got}", None
+    return (PC_CI_NOT_YET, f"none of the newest {len(runs)} completed push-event runs of {CI_WORKFLOW} on "
+            f"{branch} ran `{CI_L1_STEP}` — the squash's run has not completed; wait for it and re-run", None)
+
+
+def post_cutover(root: pathlib.Path, remote: str, branch: str) -> tuple[int, list[str]]:
+    """Plan Task 13, whole: `(rc, lines)`, rc one of the PC_* codes above. Fetches `<remote> <branch>`,
+    then judges `<remote>/<branch>` from committed objects only: is S2's gate there (3), is it the script
+    running now (4), L1 over its store (1), A1 over its asks (5), open PRs editing the store (6, through
+    `store_edit_prs`), and its newest CI run carrying the L1 step (7, 8). Any git/gh failure is 2."""
+    ref = f"{remote}/{branch}"
+    try:
+        _ask_git(root, "fetch", "-q", remote, branch)
+        gate = _store_blob(root, ref, GATE_REL)
+        gate_bytes = _ask_git(root, "cat-file", "blob", gate) if gate else b""
+    except _AskGitError as exc:
+        return PC_CANNOT_RUN, [f"CANNOT RUN — {ref} could not be fetched or read — {exc}. "
+                               f"Treat this as NOT CHECKED."]
+    if GATE_L1_MARKER not in gate_bytes:
+        return PC_NOT_MERGED, [f"REFUSED — S2 IS NOT MERGED: {ref} has "
+                               + ("no " + GATE_REL if not gate else f"a {GATE_REL} without L1")
+                               + ". Nothing else was checked."]
+    running = _git_blob_id(pathlib.Path(__file__).read_bytes())
+    if running != gate:
+        return PC_STALE_JUDGE, [f"REFUSED — the running {GATE_REL} is blob {running}, {ref}'s is {gate}: a "
+                                f"local copy must not judge master. Run this from a checkout of {ref} whose "
+                                f"{GATE_REL} is unmodified. Nothing else was checked."]
+    lines: list[str] = []
+    refused: list[int] = []
+    errs: list[str] = []
+
+    def _record(code: int, problem, err, ok_line: str) -> None:
+        if err:
+            errs.append(err)
+            lines.append(f"CANNOT RUN — {err}")
+        elif problem:
+            refused.append(code)
+            lines.append(f"REFUSED (rc {code}) — {problem}")
+        else:
+            lines.append(f"ok — {ok_line}")
+    _record(PC_STORE_MOVED, *legacy_store_check(root, ref), f"L1: {ref}'s store is the pinned bytes")
+    a1, a1_err = ask_store_problems(None, root, ref)
+    _record(PC_ASKS_REFUSED, ("A1: " + "; ".join(a1)) if a1 else None, a1_err,
+            f"A1: {ref}'s {ASKS_REL}/ is well-formed")
+    prs, prs_err = store_edit_prs()
+    _record(PC_STORE_PRS, ("open PRs still edit the frozen store (merge master in, restore it): "
+                           + "; ".join(prs)) if prs else None, prs_err,
+            "no open pull request edits the frozen store")
+    ci_code, ci_line, ci_err = _master_ci(root, branch)
+    _record(ci_code or PC_OK, ci_line if ci_code else None, ci_err, ci_line)
+    order = (PC_STORE_MOVED, PC_ASKS_REFUSED, PC_STORE_PRS, PC_CI_RED, PC_CI_NOT_YET)
+    rc = next((c for c in order if c in refused), PC_CANNOT_RUN if errs else PC_OK)
+    lines.append(f"post-cutover rc {rc}" + (" — Treat this as NOT CHECKED." if rc == PC_CANNOT_RUN else ""))
+    return rc, lines
 
 
 
@@ -1079,7 +1213,7 @@ def parse_entries(text: str) -> list[dict]:
 
 
 def _git_blob_id(data: bytes) -> str:
-    """TEST ONLY. git's blob id for `data` — `sha1("blob <n>\\0" + data)` — computed without a repository."""
+    """git's blob id for `data` — `sha1("blob <n>\\0" + data)` — computed without a repository."""
     import hashlib
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
@@ -1870,6 +2004,131 @@ def _impure_self_test_body() -> int:
     _rcb, _ob4 = _main_at(_both, [])
     case("r1 F4: an L1 refusal still reports A1's problems from the same run",
          (_rcb, "REFUSED — L1" in _ob4, "Foo.md" in _ob4), (1, True, True))
+    # ── backlog #730: `--post-cutover` (plan Task 13 as one entry point), IMPURE ──────────────────
+    # Each world is a fixture ORIGIN (its branch holds the store, the asks and a gate file) and a CLONE
+    # of it, the checkout the command runs in. `later` is committed to the origin AFTER the clone, so the
+    # clone's HEAD is behind and only the fetch shows it; `pre` is committed BEFORE the clone, whose HEAD is
+    # then detached one commit back, so HEAD is behind with no fetch needed; `dirty` is written, uncommitted,
+    # into the clone.
+    # `gh` is stubbed (no live GitHub); git is real and runs only in these temp repositories.
+    _gate_text = pathlib.Path(__file__).read_text(encoding="utf-8")
+    _pc_dirs: list = []
+    _real_run2 = subprocess.run
+
+    def _pc_world(branch: str, gate: str | None, later: dict | None = None, dirty: dict | None = None,
+                  remote: str = "origin", pre: dict | None = None) -> pathlib.Path:
+        o = _repo({**_keep, **({GATE_REL: gate} if gate is not None else {})})
+        subprocess.run(["git", "-C", str(o), "branch", "-M", branch], check=True, env=fixture_git.env())
+        for rel, content in (pre or {}).items():
+            (o / rel).parent.mkdir(parents=True, exist_ok=True)
+            (o / rel).write_text(content, encoding="utf-8")
+        if pre:
+            _commit(o, "before the clone")
+        w = pathlib.Path(_tf.mkdtemp(prefix="asks-clone-")) / "w"
+        subprocess.run(["git", "clone", "-q", "-o", remote, str(o), str(w)], check=True, capture_output=True,
+                       env=fixture_git.env())
+        if pre:
+            subprocess.run(["git", "-C", str(w), "checkout", "-q", "--detach", "HEAD~1"], check=True,
+                           capture_output=True, env=fixture_git.env())
+        for rel, content in (later or {}).items():
+            (o / rel).parent.mkdir(parents=True, exist_ok=True)
+            (o / rel).write_text(content, encoding="utf-8")
+        if later:
+            _commit(o, "after the clone")
+        for rel, content in (dirty or {}).items():
+            (w / rel).parent.mkdir(parents=True, exist_ok=True)
+            (w / rel).write_text(content, encoding="utf-8")
+        _pc_dirs.extend([o, w.parent])
+        return w
+
+    def _pc_gh(store_prs=(), runs=None, run_list_rc: int = 0):
+        """`gh` answered from tables; every other command (git) runs for real."""
+        runs = [(901, {CI_SELFTEST_STEP: "success", CI_L1_STEP: "success"})] if runs is None else runs
+
+        def run(cmd, *a, **k):
+            if not cmd or cmd[0] != "gh":
+                return _real_run2(cmd, *a, **k)
+            if cmd[1:3] == ["pr", "list"]:
+                return _R(0, _js.dumps([{"number": n, "headRefName": f"b{n}"} for n in store_prs]))
+            if cmd[1:3] == ["pr", "diff"]:
+                return _R(0, "docs/dashboard-entries.md\n")
+            if cmd[1:3] == ["run", "list"]:
+                if run_list_rc:
+                    return _R(run_list_rc, "", "gh: boom")
+                return _R(0, _js.dumps([{"databaseId": i, "headSha": f"{i:040d}"} for i, _ in runs]))
+            if cmd[1:3] == ["run", "view"]:
+                steps = dict(runs)[int(cmd[3])]
+                return _R(0, _js.dumps({"jobs": [{"name": "unit", "steps": [
+                    {"name": n, "conclusion": c} for n, c in steps.items()]}]}))
+            return _R(127, "", f"unexpected {cmd[:3]}")
+        return run
+
+    def _pc(w: pathlib.Path, remote: str, branch: str, gh) -> tuple[int, str]:
+        real_pins = {k: g[k] for k in _FPINS}
+        g.update(_FPINS)
+        try:
+            rc, lines = _with_run(gh, lambda: post_cutover(w, remote, branch))
+        finally:
+            g.update(real_pins)
+        return rc, "\n".join(lines)
+
+    _G = _pc_gh()
+    _stray = _FS + "\n## 2026-11-27 [needs-you]\nStray after the squash.\n"
+    _w0 = _pc_world("master", _gate_text)
+    case("730 M1: master at the pins, its gate the running one, no store PR, CI green — rc 0",
+         _pc(_w0, "origin", "master", _G), (0, "ok — L1: origin/master's store is the pinned bytes\n"
+                                               "ok — A1: origin/master's docs/asks/ is well-formed\n"
+                                               "ok — no open pull request edits the frozen store\n"
+                                               "ok — CI run 901 (00000000) on master: "
+                                               "`check-ask-store self-test` success, `ask store (push)` success\n"
+                                               "post-cutover rc 0"))
+    _w1 = _pc_world("master", _gate_text, later={LEGACY_STORE_REL: _stray})
+    _rc1, _o1 = _pc(_w1, "origin", "master", _G)
+    case("730 M1: master's committed store moved off the pins (the clone's HEAD behind) is rc 1, with the restore",
+         (_rc1, "Stray after the squash." in _o1, f"git cat-file blob {_FPINS['LEGACY_STORE_BLOB']}" in _o1),
+         (1, True, True))
+    _w3a = _pc_world("master", "print('a gate from before S2')\n")
+    _w3b = _pc_world("trunk", None)
+    _rc3a, _o3a = _pc(_w3a, "origin", "master", _G)
+    _rc3b, _o3b = _pc(_w3b, "origin", "trunk", _G)
+    case("730 M1: master without the L1 gate, or with no gate file (S2 not merged), is rc 3 — never L1's rc 1",
+         (_rc3a, "without L1" in _o3a, _rc3b, f"no {GATE_REL}" in _o3b), (3, True, 3, True))
+    _rc2, _o2 = _pc(_w0, "nowhere", "master", _G)
+    case("730 M1: a fetch git cannot do is CANNOT RUN rc 2, never a pass",
+         (_rc2, _o2.startswith("CANNOT RUN — nowhere/master could not be fetched")), (2, True))
+    _w5 = _pc_world("master", _gate_text, pre={"docs/asks/Foo.md": "# Q?\n"},
+                    dirty={"docs/asks/Foo.md": "# Q?\n"})
+    _rc5, _o5 = _pc(_w5, "origin", "master", _G)
+    case("730 M1: an ask A1 refuses on master is rc 5, not the store's rc 1",
+         (_rc5, "REFUSED (rc 5) — A1: " in _o5, "Foo.md" in _o5), (5, True, True))
+    _wa = _pc_world("master", _gate_text, dirty={LEGACY_STORE_REL: _stray, "docs/asks/Bar.md": "no heading\n"})
+    case("730 L1: a dirty worktree (store and an ask, uncommitted) does not change the verdict — rc 0",
+         _pc(_wa, "origin", "master", _G)[0], 0)
+    _wb = _pc_world("master", _gate_text + "# edited locally\n", remote="upstream")
+    _rcb4, _ob4b = _pc(_wb, "upstream", "master", _G)
+    case("730 L1: a running gate that is not master's blob is rc 4 — a local copy never judges master",
+         (_rcb4, "must not judge master" in _ob4b, "upstream/master's is" in _ob4b), (4, True, True))
+    _rc6, _o6 = _pc(_w0, "origin", "master", _pc_gh(store_prs=(41,)))
+    case("730 Step 2: an open PR still editing the store is rc 6 and is named",
+         (_rc6, "PR 41 (b41) edits the frozen store" in _o6), (6, True))
+    _rc7, _o7 = _pc(_w0, "origin", "master", _pc_gh(runs=[
+        (904, {CI_SELFTEST_STEP: "success"}),
+        (903, {CI_SELFTEST_STEP: "failure", CI_L1_STEP: "success"})]))
+    case("730 L2: master's newest completed run that ran the L1 step, with its self-test red, is rc 7",
+         (_rc7, "CI run 903" in _o7, "`check-ask-store self-test` failure" in _o7), (7, True, True))
+    _w8 = _pc_world("trunk", _gate_text)
+    _rc8, _o8 = _pc(_w8, "origin", "trunk", _pc_gh(runs=[(905, {CI_SELFTEST_STEP: "success"})]))
+    case("730 L2: no completed master run has run the L1 step yet is rc 8, not green",
+         (_rc8, "has not completed" in _o8, "on trunk" in _o8), (8, True, True))
+    _rcc, _oc = _pc(_w0, "origin", "master", _pc_gh(run_list_rc=1))
+    case("730 L2: a failed gh run list is CANNOT RUN rc 2, never 'no runs'",
+         (_rcc, "CANNOT RUN — gh run list did not answer" in _oc), (2, True))
+    # Over the all-green world, so no other check's mutation can move it: only the dispatch can.
+    _rcm, _om = _with_run(_G, lambda: _main_at(_w0, ["--post-cutover"]))
+    case("730 main --post-cutover runs the check over origin/master and exits with its status",
+         (_rcm, _om.rstrip().endswith("post-cutover rc 0"), "ok — CI run 901" in _om), (0, True, True))
+    for _d in _pc_dirs:
+        _sh.rmtree(_d, ignore_errors=True)
     for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code, _st, _cv,
                _unr, _both):
         _sh.rmtree(_d, ignore_errors=True)
@@ -1890,7 +2149,18 @@ def main(argv: list[str]) -> int:
                     help="only: is the store at REF still master's at pin time (LEGACY_STORE_BASE_BLOB)?")
     ap.add_argument("--list-store-prs", action="store_true",
                     help="only: list the open pull requests whose diff names the frozen store")
+    ap.add_argument("--post-cutover", action="store_true",
+                    help=f"only: plan Task 13 after S2's squash, as one command — fetch "
+                         f"{POST_CUTOVER_REMOTE} {POST_CUTOVER_BRANCH} and judge its committed tree. "
+                         f"Exit: 0 ok; 1 the store moved off its pins; 2 CANNOT RUN (git/gh); 3 S2 not "
+                         f"merged; 4 the running script is not master's; 5 A1 refused master's asks; "
+                         f"6 an open PR still edits the store; 7 master's CI step red; 8 no completed "
+                         f"master CI run has the step yet")
     a = ap.parse_args(argv)
+    if a.post_cutover:
+        rc, lines = post_cutover(ROOT, POST_CUTOVER_REMOTE, POST_CUTOVER_BRANCH)
+        print("\n".join(lines))
+        return rc
     if a.cutover_check is not None:
         try:
             ref_blob = _store_blob(ROOT, a.cutover_check)

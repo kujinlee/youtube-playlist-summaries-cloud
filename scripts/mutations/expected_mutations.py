@@ -876,7 +876,10 @@ EXPECTED_MUTATIONS = {
     # anchored there go with it; 3 RE-BOUND onto A1's `_ask_git` and the new `main`, 1 onto `NO_REVIEW`.
     # dashboard-retire S2 r1 fold F1: 69 -> 71 — L1's git-failure path: `legacy_store_check` returning no err,
     # and `main` ignoring L1's err.
-    "scripts/check-ask-store.py": 71,
+    # backlog #730: 71 -> 84 — `--post-cutover` (plan Task 13 as one entry point): the fetch, L1 and A1 over
+    # the fetched ref (not HEAD, not the working tree), the not-merged and fetch-failure codes, A1's own rc,
+    # the running-script comparison, the store-PR list, master's CI step (red, not yet, gh failure), main.
+    "scripts/check-ask-store.py": 84,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look

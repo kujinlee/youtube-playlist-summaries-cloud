@@ -861,5 +861,148 @@
     ],
     "expect": "r1 F1: an unreadable frozen store is CANNOT RUN: L1 returns its err and main exits 2",
     "_note": "anchored on two lines: the one-line `if ask_err or l1_err:` is already the anchor of \"main ignores A1's err\", and the harness refuses a repeated anchor."
+  },
+  {
+    "name": "730 post-cutover skips its fetch",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        _ask_git(root, \"fetch\", \"-q\", remote, branch)\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": "730 M1: master's committed store moved off the pins (the clone's HEAD behind) is rc 1, with the restore"
+  },
+  {
+    "name": "730 post-cutover's L1 reads HEAD, not the fetched ref",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "_record(PC_STORE_MOVED, *legacy_store_check(root, ref),",
+        "_record(PC_STORE_MOVED, *legacy_store_check(root),"
+      ]
+    ],
+    "expect": "730 M1: master's committed store moved off the pins (the clone's HEAD behind) is rc 1, with the restore"
+  },
+  {
+    "name": "730 a fetch git cannot do passes",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        return PC_CANNOT_RUN, [f\"CANNOT RUN — {ref} could not be fetched",
+        "        return PC_OK, [f\"CANNOT RUN — {ref} could not be fetched"
+      ]
+    ],
+    "expect": "730 M1: a fetch git cannot do is CANNOT RUN rc 2, never a pass"
+  },
+  {
+    "name": "730 a gate file without L1 counts as S2 merged",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    if GATE_L1_MARKER not in gate_bytes:",
+        "    if False:"
+      ]
+    ],
+    "expect": "730 M1: master without the L1 gate, or with no gate file (S2 not merged), is rc 3 — never L1's rc 1"
+  },
+  {
+    "name": "730 an A1 refusal on master shares L1's rc 1",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "PC_ASKS_REFUSED = 5 ",
+        "PC_ASKS_REFUSED = 1 "
+      ]
+    ],
+    "expect": "730 M1: an ask A1 refuses on master is rc 5, not the store's rc 1"
+  },
+  {
+    "name": "730 post-cutover's A1 reads HEAD, not the fetched ref",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    a1, a1_err = ask_store_problems(None, root, ref)",
+        "    a1, a1_err = ask_store_problems(None, root)"
+      ]
+    ],
+    "expect": "730 M1: an ask A1 refuses on master is rc 5, not the store's rc 1"
+  },
+  {
+    "name": "730 post-cutover's A1 reads the working tree",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    a1, a1_err = ask_store_problems(None, root, ref)",
+        "    a1, a1_err = read_asks(root / ASKS_REL)[1], None"
+      ]
+    ],
+    "expect": "730 L1: a dirty worktree (store and an ask, uncommitted) does not change the verdict — rc 0"
+  },
+  {
+    "name": "730 the running script is not compared to master's blob",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    if running != gate:",
+        "    if False:"
+      ]
+    ],
+    "expect": "730 L1: a running gate that is not master's blob is rc 4 — a local copy never judges master"
+  },
+  {
+    "name": "730 open PRs that edit the store are ignored",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    prs, prs_err = store_edit_prs()",
+        "    prs, prs_err = [], None"
+      ]
+    ],
+    "expect": "730 Step 2: an open PR still editing the store is rc 6 and is named"
+  },
+  {
+    "name": "730 a red self-test step in master's run reads as green",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        green = all(steps.get(n) == \"success\" for n in (CI_SELFTEST_STEP, CI_L1_STEP))",
+        "        green = steps.get(CI_L1_STEP) == \"success\""
+      ]
+    ],
+    "expect": "730 L2: master's newest completed run that ran the L1 step, with its self-test red, is rc 7"
+  },
+  {
+    "name": "730 no master run with the L1 step reads as green",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    return (PC_CI_NOT_YET, f\"none of the newest",
+        "    return (None, f\"none of the newest"
+      ]
+    ],
+    "expect": "730 L2: no completed master run has run the L1 step yet is rc 8, not green"
+  },
+  {
+    "name": "730 a failed gh run list reads as no runs yet",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        return None, \"\", f\"gh run list did not answer ({_why(r)})\"",
+        "        return PC_CI_NOT_YET, \"no runs\", None"
+      ]
+    ],
+    "expect": "730 L2: a failed gh run list is CANNOT RUN rc 2, never 'no runs'"
+  },
+  {
+    "name": "730 main ignores --post-cutover",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    if a.post_cutover:\n        rc, lines = post_cutover(",
+        "    if False:\n        rc, lines = post_cutover("
+      ]
+    ],
+    "expect": "730 main --post-cutover runs the check over origin/master and exits with its status"
   }
 ]
