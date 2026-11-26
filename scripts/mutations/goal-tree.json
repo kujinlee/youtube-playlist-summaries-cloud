@@ -6552,6 +6552,32 @@
     ]
   },
   {
+    "name": "backlog #687: the CANNOT RUN branch drops its `not cells_held` — an unread merge log with an open PR on an all-✅ step reads CANNOT RUN",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    elif unread and not by_cells and not cells_held:",
+        "    elif unread and not by_cells:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: an OPEN PR naming a row outranks the row's ✅ — with the merge log unread and with it read, the step reads ⏳ open naming the PR, never ✅; with no open PR the closed row is still ✅"
+    ]
+  },
+  {
+    "name": "backlog #687: the merged branch drops its `not cells_held` — a read merge log with an open PR on an all-✅ step reads ✅ merged",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif hit and not row_open and not cells_held:",
+        "        elif hit and not row_open:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: an OPEN PR naming a row outranks the row's ✅ — with the merge log unread and with it read, the step reads ⏳ open naming the PR, never ✅; with no open PR the closed row is still ✅"
+    ]
+  },
+  {
     "name": "r3 F3: a date exactly WAIT_AHEAD_DAYS ahead is out of reach",
     "file": "scripts/goal-tree.py",
     "edits": [
