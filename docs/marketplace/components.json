@@ -243,6 +243,7 @@
     },
     {
       "id": "check-dashboard-entry",
+      "notes": "the id is kept for map and shipping-set stability (dashboard-retire S2, Task 11); the component's file is now scripts/check-ask-store.py",
       "effort": 3,
       "roles": [
         "library"

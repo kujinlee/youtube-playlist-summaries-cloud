@@ -1852,7 +1852,26 @@ def _impure_self_test_body() -> int:
     _e16 = _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, diff_rc={7}), store_edit_prs)[1] or ""
     case("12.16 a failed gh pr diff is CANNOT RUN, never 'no edit': err names PR 7, rc 2",
          ("PR 7" in _e16, _with_run(_gh_stub(lambda lim: [7, 8], store_in={8}, diff_rc={7}), _with_main)), (True, 2))
-    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code, _st, _cv):
+    # r1 F1: git cannot read the frozen store — it is committed, then its loose object is deleted, so
+    # `ls-tree` still names the blob and `cat-file` exits 128. A1's own blobs are intact. L1 must hand
+    # back its err, and `main` must say CANNOT RUN (rc 2) — never "ok" over a store nobody read.
+    _unr = _repo(_keep)
+    _ob = _FPINS["LEGACY_STORE_BLOB"]
+    os.remove(_unr / ".git" / "objects" / _ob[:2] / _ob[2:])
+    _l1p, _l1e = legacy_store_check(_unr)
+    _rcu, _ou = _main_at(_unr, [])
+    case("r1 F1: an unreadable frozen store is CANNOT RUN: L1 returns its err and main exits 2",
+         (_l1p, _l1e is not None, _rcu, "CANNOT RUN" in _ou), (None, True, 2, True))
+    # r1 F4: an L1 refusal does not hide A1's problems found in the same run — both are printed, rc 1.
+    _both = _repo({**_keep, "docs/asks/Foo.md": "# Q?\n"})
+    with open(_both / "docs/dashboard-entries.md", "a", encoding="utf-8") as _fh:
+        _fh.write("\n## 2026-11-26\nAppended.\n")
+    _commit(_both, "append")
+    _rcb, _ob4 = _main_at(_both, [])
+    case("r1 F4: an L1 refusal still reports A1's problems from the same run",
+         (_rcb, "REFUSED — L1" in _ob4, "Foo.md" in _ob4), (1, True, True))
+    for _d in (_clean, _dirty, _gone, _edit, _bad_head, _good_head, _link, _none, _rmkeep, _code, _st, _cv,
+               _unr, _both):
         _sh.rmtree(_d, ignore_errors=True)
 
     print(f"{ok}/{ok+fail} cannot-run cases passed")
@@ -1901,12 +1920,13 @@ def main(argv: list[str]) -> int:
     if ask_err or l1_err:
         print(f"CANNOT RUN — {ask_err or l1_err}\nTreat this as NOT CHECKED.")
         return 2
+    # r1 F4: BOTH blocks print before the exit, so one run reports an L1 refusal and A1/F1's problems together.
     if l1_problem:
         print(f"REFUSED — L1: {l1_problem}")
-        return 1
     if ask_problems:
         print(f"REFUSED — the ask store under {ASKS_REL}/ has {len(ask_problems)} problem(s):\n"
               + "\n".join(f"  - {p}" for p in ask_problems))
+    if l1_problem or ask_problems:
         return 1
     print(f"ok — the ask store under {ASKS_REL}/ is well-formed"
           + (f" and every ask at the merge base with {a.base} only grew" if a.base else

@@ -1060,9 +1060,10 @@ jobs:
       # not re-arm this gate and `gh run rerun` replays the stale payload — only a new
       # `pull_request` event (a push) picks the edit up. Measured on PR #336, 2026-09-22: the
       # author read this step's refusal, edited the body exactly as instructed, spent a rerun, and
-      # found the cause on the sibling's comment. ⭐ The durable fix is in the REFUSAL MESSAGE
-      # (`scripts/check-dashboard-entry.py`), which the reader actually sees; this comment is the
-      # cheap half, for whoever is editing the workflow rather than reading its output.
+      # found the cause on the sibling's comment. ⭐ The durable fix was in the REFUSAL MESSAGE
+      # of the retired dashboard-entry gate, which the reader actually saw. ⟳ dashboard-retire S2:
+      # that gate (now `scripts/check-ask-store.py`) reads no PR body, so the warning holds for
+      # `check-review-recorded` only.
       # ⛔ TWO SEQUENCES SHARE ONE VISUAL SPACE: GitHub PR numbers and `docs/backlog.md` row ids.
       # PR numbers grow monotonically and have overtaken the backlog, so a bare `#N` below the PR
       # ceiling resolves to whichever the reader guesses. Measured 2026-10-15: `#291` names backlog

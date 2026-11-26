@@ -838,5 +838,28 @@
       ]
     ],
     "expect": "12.16 a failed gh pr diff is CANNOT RUN, never 'no edit': err names PR 7, rc 2"
+  },
+  {
+    "name": "r1 F1: L1 reads git failing on the frozen store as a pass",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        return None, f\"the frozen store could not be read — {exc}\"",
+        "        return None, None"
+      ]
+    ],
+    "expect": "r1 F1: an unreadable frozen store is CANNOT RUN: L1 returns its err and main exits 2"
+  },
+  {
+    "name": "r1 F1: main ignores L1's err",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    l1_problem, l1_err = legacy_store_check(ROOT)\n    if ask_err or l1_err:",
+        "    l1_problem, l1_err = legacy_store_check(ROOT)\n    if ask_err:"
+      ]
+    ],
+    "expect": "r1 F1: an unreadable frozen store is CANNOT RUN: L1 returns its err and main exits 2",
+    "_note": "anchored on two lines: the one-line `if ask_err or l1_err:` is already the anchor of \"main ignores A1's err\", and the harness refuses a repeated anchor."
   }
 ]

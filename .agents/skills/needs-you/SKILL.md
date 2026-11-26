@@ -20,7 +20,8 @@ durable answer: `scripts/goal-tree.py` reads every open one into NEEDS YOU, and 
 counts them.
 
 ⟳ 2026-11-25 (dashboard-retire S2): this skill was `dashboard`. It no longer records what changed, and
-there is no dashboard page to regenerate. `docs/dashboard-entries.md` is a **frozen** record.
+it does not regenerate the dashboard page (that page and its generator are retired in a later slice,
+S3). `docs/dashboard-entries.md` is a **frozen** record.
 
 ## Writing an ask — a new file
 

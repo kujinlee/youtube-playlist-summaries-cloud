@@ -874,7 +874,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ dashboard-retire S2 Task 9: 68 -> 59. R1 (`verdict`, `collect`, `added_entry_problems`,
     # `added_reference_errors`, `_added_entry_line`) is deleted with the per-PR entry ratchet: 9 mutations
     # anchored there go with it; 3 RE-BOUND onto A1's `_ask_git` and the new `main`, 1 onto `NO_REVIEW`.
-    "scripts/check-ask-store.py": 69,
+    # dashboard-retire S2 r1 fold F1: 69 -> 71 — L1's git-failure path: `legacy_store_check` returning no err,
+    # and `main` ignoring L1's err.
+    "scripts/check-ask-store.py": 71,
     # ⟳ backlog #91: check-plan-code 35 -> 30, and the FIVE did not disappear — they MOVED
     # to scripts/coverage_verdict.py with the clauses they guard. The sum below is unchanged
     # at 359, which is the point: a seam that relocates coverage must not be able to look
@@ -2194,7 +2196,8 @@ EXPECTED_MUTATIONS = {
     # inline != ""`.
     # ⟳ dashboard-retire S2 Task 9: 214 -> 212. MISDIRECTED and INERT-OTHER needed a second gate's escape
     # and retired with `NO-ENTRY:` (2 gone); INVISIBLE RE-BOUND onto the loop's new first `if`.
-    "scripts/check-merge-ready.py": 212,
+    # dashboard-retire S2 r1 fold F2: 212 -> 213 — the replay of C1 (`gen-dashboard.py --assert-no-open-asks`).
+    "scripts/check-merge-ready.py": 213,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

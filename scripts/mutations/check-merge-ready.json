@@ -2600,5 +2600,16 @@
    ]
   ],
   "expect": "⭐ #680 r3 C5: an EMPTY new review clears nothing"
+ },
+ {
+  "name": "dashboard-retire S2 r1 F2: the merge-ready replay drops C1",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        (\"C1 no open ask\", [\"python3\", \"scripts/gen-dashboard.py\", \"--assert-no-open-asks\"]),\n",
+    ""
+   ]
+  ],
+  "expect": "r1 F2: every command of ci.yml's `ask store (pull request)` step is replayed (A1/F1/L1 AND C1)"
  }
 ]

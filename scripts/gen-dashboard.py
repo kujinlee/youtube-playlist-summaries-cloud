@@ -3362,8 +3362,9 @@ def _self_test_body(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # check-dashboard-entry.py's `collect`/`main`, where `return 2` -> `return 0`
     # made the ratchet fail-open at a fully green suite. That fix landed on one
     # script and not its sibling. Four one-line mutations survived here, and two
-    # are the exact promise .agents/skills/dashboard/SKILL.md makes about the exit
-    # code — the promise .claude/hooks/regen-dashboard.sh's error branch rests on.
+    # are the exact promise the dashboard skill made about the exit code (that skill
+    # is retired in dashboard-retire S2) — the promise .claude/hooks/regen-dashboard.sh's
+    # error branch still rests on.
     import contextlib as _ctx, io as _io, tempfile as _tf
 
     def _run_main(args, stub):

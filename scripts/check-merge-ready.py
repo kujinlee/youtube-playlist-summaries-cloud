@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 459 cases
+    python3 scripts/check-merge-ready.py --self-test # 462 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -186,6 +186,39 @@ def pr_only_steps(workflow: str) -> list[str]:
                 cond = c
     flush()
     return names
+
+
+def replayed_gates(body_file: Path) -> list[tuple[str, list[str]]]:
+    """The PR-only gates `main` replays, as `(label, argv)`, in order. PURE. A label fits the 18-character
+    report column. ⟳ dashboard-retire S2 r1 F2: a module function, so a case can hold it to ci.yml."""
+    return [
+        # ⟳ dashboard-retire S2: the ask-store gate reads no body (its `NO-ENTRY:` waiver retired).
+        ("ask store", ["python3", "scripts/check-ask-store.py", "--base", BASE_REF]),
+        ("C1 no open ask", ["python3", "scripts/gen-dashboard.py", "--assert-no-open-asks"]),
+        ("review recorded", ["python3", "scripts/check-review-recorded.py",
+                             "--base", BASE_REF, "--pr-body-file", str(body_file)]),
+        ("review rounds", ["python3", "scripts/check-review-rounds.py"]),
+    ]
+
+
+def step_python_commands(workflow: str, step: str) -> list[list[str]]:
+    """The `python3 …` command lines of the step named `step`, split shell-wise, with CI's
+    `origin/$GITHUB_BASE_REF` read as BASE_REF. PURE. `[]` when no such step exists."""
+    import shlex
+    lines = workflow.split("\n")
+    out: list[list[str]] = []
+    start = next((i for i, ln in enumerate(lines)
+                  if re.match(r"\s*-\s*name:\s*" + re.escape(step) + r"\s*$", ln)), None)
+    if start is None:
+        return out
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    for ln in lines[start + 1:]:
+        if ln.strip() and len(ln) - len(ln.lstrip()) <= indent:
+            break
+        m = re.match(r"\s*(?:run:\s*)?(python3\s.*?)\s*$", ln)
+        if m:
+            out.append([BASE_REF if t == "origin/$GITHUB_BASE_REF" else t for t in shlex.split(m.group(1))])
+    return out
 
 
 def job_level_gates(workflow: str) -> list[str]:
@@ -2182,14 +2215,7 @@ def main(argv: list[str]) -> int:
     body_file.write_text(rb.stdout)
 
     # The two gates a working copy cannot answer. Invoked the way CI invokes them.
-    for name, cmd in [
-        # ⟳ dashboard-retire S2: the ask-store gate reads no body (its `NO-ENTRY:` waiver retired).
-        ("ask store", ["python3", "scripts/check-ask-store.py", "--base", BASE_REF]),
-        ("old store holds no open ask (C1)", ["python3", "scripts/gen-dashboard.py", "--assert-no-open-asks"]),
-        ("review recorded", ["python3", "scripts/check-review-recorded.py",
-                             "--base", BASE_REF, "--pr-body-file", str(body_file)]),
-        ("review rounds", ["python3", "scripts/check-review-rounds.py"]),
-    ]:
+    for name, cmd in replayed_gates(body_file):
         r = _run(cmd)
         results[name] = r.returncode
         mark = MARK.get(r.returncode, "?? ")
@@ -2389,6 +2415,20 @@ def _self_test_body() -> int:
 
     check("the real workflow has pull-request-only steps — an empty answer here is CANNOT RUN",
           len(pr_only_steps(WORKFLOW.read_text())) > 0 if WORKFLOW.is_file() else True, True)
+
+    # ── dashboard-retire S2 r1 F2: the replay runs EVERY command CI's `ask store (pull request)` step runs ──
+    check("step_python_commands reads a step's multi-line run block and maps the base ref",
+          step_python_commands("      - name: s\n        if: x\n        run: |\n"
+                               "          python3 scripts/a.py --base \"origin/$GITHUB_BASE_REF\"\n"
+                               "          python3 scripts/b.py --flag\n      - name: t\n"
+                               "        run: python3 scripts/c.py\n", "s"),
+          [["python3", "scripts/a.py", "--base", BASE_REF], ["python3", "scripts/b.py", "--flag"]])
+    _ci_ask = step_python_commands(WORKFLOW.read_text(), "ask store (pull request)") if WORKFLOW.is_file() else []
+    _replayed = [argv for _n, argv in replayed_gates(Path("/x"))]
+    check("r1 F2: every command of ci.yml's `ask store (pull request)` step is replayed (A1/F1/L1 AND C1)",
+          (len(_ci_ask), [c for c in _ci_ask if c not in _replayed]), (2, []))
+    check("r1 F2: every replayed label fits the 18-character report column",
+          [n for n, _a in replayed_gates(Path("/x")) if len(n) > 18], [])
 
     check("all green is READY", verdict({"a": 0, "b": 0})[0], 0)
     check("one failure is NOT READY", verdict({"a": 0, "b": 1})[0], 1)
