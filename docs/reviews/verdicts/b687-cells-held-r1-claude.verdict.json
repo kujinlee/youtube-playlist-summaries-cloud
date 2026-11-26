@@ -1,0 +1,24 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/backlog.md": "100644 017733313bd7c62bb2a4379ab4dcb739fd81a65d",
+    "docs/reviews/claude/b687-cells-held-r1-claude.md": "100644 715f8f920d81a9f3dfa40d1e1178cd2e97902b51",
+    "docs/reviews/codex/b687-cells-held-r1-codex.md": "100644 43ac51144ad6159424a8df1b7a5553fcfe73f679",
+    "docs/reviews/verdicts/b687-cells-held-r1-codex.verdict.json": "100644 a5c098ff8e8c45731ff8a37cc7ec4a70e9e8f074"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "1652618487bcec4ff3eac86b1b9b9f52a4286b95",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 2655 chars, names 1652618487bc",
+  "refused": false,
+  "review": "b687-cells-held-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a6eb993f636914de3",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
