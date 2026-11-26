@@ -474,7 +474,7 @@
    ]
   ],
   "expect": [
-   "⭐ main() does NOT hold a PR whose body declares only NO-ENTRY: (owner: NO-REVIEW only)"
+   "⭐ main() HOLDS a READY PR whose body declares NO-REVIEW:, rc=3"
   ]
  },
  {

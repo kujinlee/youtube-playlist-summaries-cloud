@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 462 cases
+    python3 scripts/check-merge-ready.py --self-test # 463 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -2429,6 +2429,11 @@ def _self_test_body() -> int:
           (len(_ci_ask), [c for c in _ci_ask if c not in _replayed]), (2, []))
     check("r1 F2: every replayed label fits the 18-character report column",
           [n for n, _a in replayed_gates(Path("/x")) if len(n) > 18], [])
+    # ⟳ r1 F2 fold, CI fixture-variation: `body_file` reaches the review gate's argv, at two distinct paths.
+    check("r1 F2: replayed_gates passes its body file to the review gate, and only there",
+          ([n for n, a in replayed_gates(Path("/a/b.md")) if "/a/b.md" in a],
+           [n for n, a in replayed_gates(Path("/c.md")) if "/c.md" in a]),
+          (["review recorded"], ["review recorded"]))
 
     check("all green is READY", verdict({"a": 0, "b": 0})[0], 0)
     check("one failure is NOT READY", verdict({"a": 0, "b": 1})[0], 1)
