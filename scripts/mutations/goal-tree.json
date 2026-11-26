@@ -6556,8 +6556,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    elif unread and not by_cells and not cells_held:",
-        "    elif unread and not by_cells:"
+        "    elif unread and not by_cells and not cells_held:\n        state, detail = \"cannot\"",
+        "    elif unread and not by_cells:\n        state, detail = \"cannot\""
       ]
     ],
     "expect": [
@@ -6569,8 +6569,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        elif hit and not row_open and not cells_held:",
-        "        elif hit and not row_open:"
+        "                detail += f\" · merged {merge_when(whens[0])} · {hit[0]} via PR #{hit[1]}\"\n        elif hit and not row_open and not cells_held:",
+        "                detail += f\" · merged {merge_when(whens[0])} · {hit[0]} via PR #{hit[1]}\"\n        elif hit and not row_open:"
       ]
     ],
     "expect": [
