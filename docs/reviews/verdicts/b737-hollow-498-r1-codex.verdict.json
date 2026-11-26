@@ -1,0 +1,19 @@
+{
+  "attempts": [
+    "  gpt-6.1-terra: ok \u2014 665 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "344a35b2f29063362346729213518fb032cd7ddd",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": "gpt-6.1-terra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b8b70ddb-ac10-4d26-bd53-6419325840da/scratchpad/b737r1/prompt.md",
+  "reason": "665 chars",
+  "refused": false,
+  "review": "b737-hollow-498-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a5c157b37431e75b4"
+}

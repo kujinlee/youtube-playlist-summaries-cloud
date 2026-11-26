@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/b737-hollow-498-r1-claude.md": "100644 16936cc5b57e2c2c53c00b5c7edf6c4230231236",
+    "docs/reviews/codex/b737-hollow-498-r1-codex.md": "100644 ec48c45b4cdff744226808734e76f573dc4d623f",
+    "docs/reviews/verdicts/b737-hollow-498-r1-codex.verdict.json": "100644 6b1980b3b70ed4f03b94223321b5f3a13ddea158"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "344a35b2f29063362346729213518fb032cd7ddd",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 4632 chars, names 344a35b2f290",
+  "refused": false,
+  "review": "b737-hollow-498-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a5c157b37431e75b4",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
