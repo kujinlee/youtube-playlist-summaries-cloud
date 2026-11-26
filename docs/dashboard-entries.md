@@ -21706,3 +21706,14 @@ A1 (grammar) and F1 (decisions) checks; `docs/asks/.gitkeep`. Readers: `scripts/
 `scripts/explainer-serve.py` (`DIR_SOURCES`, `source_mtime`: `/_stale` names the ask that moved),
 `scripts/regen-pages.py` (an ask edit rebuilds the goal tree), `scripts/check-reference-namespace.py` (scope).
 Backlog #623 retargeted to `scripts/goal-tree.py`.
+
+## 2026-11-25
+A test in the tool that decides which checks a pull request re-runs had stopped testing what its name said. It
+would have stayed green if the behaviour it guards broke. It now tests a real pair of files that only that
+behaviour connects, and it goes red when that behaviour is removed. Nothing is waiting for you.
+<!--tech-->
+Backlog #737, branch `b737-hollow-498-case`. `scripts/check-plan-code.py`: the real-tree backlog #498 case
+moved from `check-dashboard-entry.py` -> `compaction-state.py` (which now loads the changed file directly, so the
+FILENAME hop was not taken) to `agent-watchdog.py` -> `check-stalled-work.py` through `goal-tree.py`, which
+check-stalled-work loads only by FILENAME. Under the backlog #498 mutation: old case green (505/506), new case red
+(504/506). `scripts/mutations/check-plan-code.json`: the entry's duplicated `expect` is now this case.
