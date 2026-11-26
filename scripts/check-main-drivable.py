@@ -5331,7 +5331,7 @@ def _self_test_body() -> int:                                      # noqa: C901 
     for name, want, why in (
             ("check-plan-file-tags.py", True, "drives main over a tmp root under `global ROOT, DOCS`"),
             ("check-rc-contract.py", True, "substitutes ROOT/MATCHER/HOOK as a tuple at :743"),
-            ("check-dashboard-entry.py", True, "substitutes g['collect'] through a globals() ALIAS"),
+            ("check-ask-store.py", True, "substitutes g['collect'] through a globals() ALIAS"),
             ("check-selection-card.py", True, "re-launches __file__ as a subprocess over built stdin"),
             ("check-ci-watched.py", True, "its world is a helper's parameter, resolved at the call site"),
     ):

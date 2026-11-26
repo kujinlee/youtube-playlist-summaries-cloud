@@ -1423,9 +1423,11 @@ corrections slice above.
 
 - [ ] **⟳ 2026-11-25 — THE PAGE AND THE PER-PR ENTRY RULE RETIRE (backlog #736; owner 2026-11-24 09:57, selection
       card A).** Spec `docs/superpowers/specs/2026-11-24-dashboard-retire-design.md` (PR #633), plan
-      `docs/superpowers/plans/2026-11-24-dashboard-retire.md` (PR #636), three slices. **S1 built** (branch
-      `dashboard-retire-s1`): asks move to `docs/asks/`, read by one reader, checked by the PR gate and shown on the
-      goal tree's NEEDS YOU. S2 freezes the old store and drops the per-PR rule; S3 deletes the page. The history
+      `docs/superpowers/plans/2026-11-24-dashboard-retire.md` (PR #636), three slices. **S1 merged** (PR #638,
+      `f9979fa0`): asks move to `docs/asks/`, read by one reader, checked by the PR gate and shown on the goal tree's
+      NEEDS YOU. **S2 built** (branch `dashboard-retire-s2`): the gate is `check-ask-store.py`, the per-PR entry rule
+      and `NO-ENTRY:` are gone, the goal tree and the compaction snapshot read only `docs/asks/`, the skill is
+      `needs-you`, and the old store is frozen to pinned bytes. S3 deletes the page. The history
       above stands as recorded. **FAILS IF** after S3 a merged PR still needs a dashboard entry.
 
 - [x] **Plan rounds 1–4 — dual adversarial.** All four folded in (v2→v6). Round 1's halves overlapped

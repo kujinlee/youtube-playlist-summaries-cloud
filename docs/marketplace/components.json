@@ -33,7 +33,7 @@
       "phase": "1",
       "package": "comprehensibility",
       "files": [
-        ".agents/skills/dashboard/"
+        ".agents/skills/needs-you/"
       ]
     },
     {
@@ -243,6 +243,7 @@
     },
     {
       "id": "check-dashboard-entry",
+      "notes": "the id is kept for map and shipping-set stability (dashboard-retire S2, Task 11); the component's file is now scripts/check-ask-store.py",
       "effort": 3,
       "roles": [
         "library"
@@ -250,7 +251,7 @@
       "phase": "1",
       "package": "comprehensibility",
       "files": [
-        "scripts/check-dashboard-entry.py"
+        "scripts/check-ask-store.py"
       ]
     },
     {

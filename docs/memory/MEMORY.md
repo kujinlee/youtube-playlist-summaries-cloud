@@ -96,7 +96,7 @@
 
 ## Working with me
 
-- [⛔ "Nothing needs you" reads the DASHBOARD](nothing-needs-you-must-read-the-dashboard.md) — about to say it? Regenerate `/dashboard`, quote its open-ask count
+- [⛔ "Nothing needs you" reads NEEDS YOU](nothing-needs-you-must-read-the-dashboard.md) — about to say it? Run `goal-tree.py`, quote its NEEDS YOU count
 - [⛔ A DECLARATION is not the act](a-declaration-is-not-the-act.md) — just pushed? Arm the Monitor FIRST, then `--watching` (43m blind on a red CI)
 - [⛔ REUSE a teammate or PARK an agent?](usage-is-cache-rewrites-of-parked-agents.md) — fresh agent per slice and round; parked ones rewrite cache (~70% of usage)
 - [⛔ Make the owner approve/run a COMMAND?](no-command-approval-ceremony.md) — never; dry-run + a recovery point instead

@@ -1,24 +1,7 @@
 [
   {
-    "name": "gate stops sharing the parser grammar",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "return line.startswith(\"+\") and header_error(line[1:]) is None",
-        "import re as _r; return bool(_r.match(r\"^\\+## (\\d{4}-\\d{2}-\\d{2})\\b\", line))"
-      ]
-    ],
-    "expect": [
-      "an impossible date does NOT count",
-      "a suffixed date does NOT count",
-      "a trailing dot does NOT count",
-      "a typo'd flag does NOT count",
-      "a title on the header line does NOT count"
-    ]
-  },
-  {
     "name": "tab indent not counted",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "            col += 4 - (col % 4)",
@@ -29,7 +12,7 @@
   },
   {
     "name": "head path skips the indent check",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "                if not _indented(head):",
@@ -40,7 +23,7 @@
   },
   {
     "name": "indent rule removed entirely",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "if in_comment or not probe or _indented(probe):",
@@ -54,7 +37,7 @@
   },
   {
     "name": "line-leading rule removed",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "    if not rest.startswith(marker):",
@@ -64,63 +47,43 @@
     "expect": "exemption_reason — blockquoted"
   },
   {
-    "name": "the three-valued reason collapses: empty and absent become one message",
-    "file": "scripts/check-dashboard-entry.py",
+    "name": "A1 reads a non-zero git exit as an empty store",
+    "file": "scripts/check-ask-store.py",
+    "_note": "REBOUND dashboard-retire S2: R1's `collect` was deleted with the entry ratchet; A1's own git layer `_ask_git` carries the same could-not-tell contract.",
     "edits": [
       [
-        "    if reason == \"\":",
+        "    if r.returncode != 0:",
         "    if False:"
       ]
     ],
-    "expect": "...and says the marker was present with nothing after it"
+    "expect": "A1's own git failure is CANNOT RUN"
   },
   {
-    "name": "the GATE reads a broken git as 'nothing changed'",
-    "file": "scripts/check-dashboard-entry.py",
+    "name": "A1's missing-git branch reports no error",
+    "file": "scripts/check-ask-store.py",
+    "_note": "REBOUND dashboard-retire S2: R1's `collect` was deleted with the entry ratchet; A1's own git layer `_ask_git` carries the same could-not-tell contract.",
     "edits": [
       [
-        "    if names.returncode != 0:",
-        "    if False:"
+        "        raise _AskGitError(f\"could not run git {args[0]}: {exc}\") from exc",
+        "        return b\"\""
       ]
     ],
-    "expect": "collect: a non-zero git exit is a could-not-tell, not 'nothing changed'"
+    "expect": "A1's own git failure is CANNOT RUN"
   },
   {
-    "name": "the GATE's missing-git branch reports no error",
-    "file": "scripts/check-dashboard-entry.py",
+    "name": "THE GATE GOES FAIL-OPEN — an unreadable ask store exits 0 and the branch merges",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
-        "        return [], False, f\"could not run git: {exc}\"",
-        "        return [], False, None"
-      ]
-    ],
-    "expect": "collect: a missing git is a could-not-tell, not 'nothing changed'"
-  },
-  {
-    "name": "THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
-        "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
+        "        print(f\"CANNOT RUN — {ask_err or l1_err}\\nTreat this as NOT CHECKED.\")\n        return 2",
+        "        print(f\"CANNOT RUN — {ask_err or l1_err}\\nTreat this as NOT CHECKED.\")\n        return 0"
       ]
     ],
     "expect": "main: a could-not-tell exits 2 — NEVER 0"
   },
   {
-    "name": "the entry ratchet fails OPEN: added is hardcoded true",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    added = any(_added_entry_line(l) for l in patch.stdout.split(\"\\n\"))",
-        "    added = True"
-      ]
-    ],
-    "expect": "collect: a working git still reports the changed files, and NO entry added"
-  },
-  {
     "name": "decision_errors stops requiring two options",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "if len(d[\"options\"]) < 2:",
@@ -133,7 +96,7 @@
   },
   {
     "name": "the inert-line scanner is switched off",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "inert = _inert_lines(plain)",
@@ -146,7 +109,7 @@
   },
   {
     "name": "a heads-up may carry a decision block",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "if category == \"heads-up\":",
@@ -159,7 +122,7 @@
   },
   {
     "name": "two recommendations are tolerated",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "if sum(1 for o in d[\"options\"] if o[\"recommended\"]) > 1:",
@@ -172,7 +135,7 @@
   },
   {
     "name": "the gate stops refusing both flags at once",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "if \"needs-you\" in flags and \"heads-up\" in flags:",
@@ -185,7 +148,7 @@
   },
   {
     "name": "nested options end the list instead of continuing it",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "if options and base_indent is not None and indent > base_indent:",
@@ -198,7 +161,7 @@
   },
   {
     "name": "block-start regex stops excluding sub-headings",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "_note": "RETARGETED 2026-09-01. It used to edit `ENTRY_ISH = re.compile(r'^\\+##(?!#)')` in this same file; that literal no longer exists, because ENTRY_ISH is now DERIVED from BLOCK and BLOCK moved here from gen-dashboard.py. Left unrepaired the anchor would stop matching and the coverage would vanish silently — the third time in this repo that a refactor orphaned the mutation guarding it. ⚠ `expect` NAMES ONLY CASES IN THIS FILE'S OWN SUITE: `mutate_delivered` calls `run_suite(d, fname)` for the MUTATED FILE ALONE (check-plan-code.py:694), so a renderer case named here resolves to 0 red cases and the manifest fails. The first draft named `a level-3 heading does not split the entry` — a gen-dashboard case — and the Codex review half caught it by running `--mutate .`. The page-side blast radius of this same edit is covered by its own entry in gen-dashboard.json.",
     "edits": [
       [
@@ -207,63 +170,12 @@
       ]
     ],
     "expect": [
-      "the block-start rule excludes a sub-heading",
-      "a level-3 heading is not an entry attempt"
+      "the block-start rule excludes a sub-heading"
     ]
-  },
-  {
-    "name": "content check forgets to strip the diff marker",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "        err = header_error(line[1:])",
-        "        err = header_error(line)"
-      ]
-    ],
-    "expect": [
-      "a well-formed added header is not",
-      "...nor is a well-formed bare one"
-    ]
-  },
-  {
-    "name": "the content check sinks below the exemption short-circuit",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    if entry_problems:",
-        "    if entry_problems and False:"
-      ]
-    ],
-    "expect": [
-      "entry-only branch with a MALFORMED entry is refused",
-      "a NO-ENTRY declaration does NOT excuse a malformed entry"
-    ]
-  },
-  {
-    "name": "collect stops reading the entry patch it already fetched",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    problems = added_entry_problems(patch.stdout)",
-        "    problems = []"
-      ]
-    ],
-    "expect": "collect: a malformed ADDED header reaches the caller as a problem"
-  },
-  {
-    "name": "main drops the entry problems on the floor",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "    code, reason = verdict(changed, added, body, entry_problems, ref_problems)",
-        "    code, reason = verdict(changed, added, body)"
-      ]
-    ],
-    "expect": "main: an entry-only branch with a malformed entry exits 1"
   },
   {
     "name": "emphasis matcher forgets underscores",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "EMPH = re.compile(r\"^(\\*{1,3}|_{1,3})\")",
@@ -274,7 +186,7 @@
   },
   {
     "name": "closer stripped without matching the opener",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "    if opener and rest.startswith(opener):",
@@ -285,7 +197,7 @@
   },
   {
     "name": "the marker itself is left in the reason",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "    rest = rest[len(marker):]",
@@ -296,7 +208,7 @@
   },
   {
     "name": "the pre-comment head goes back to its own marker test",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "                    r = _declaration_reason(head.strip(), marker)",
@@ -307,7 +219,7 @@
   },
   {
     "name": "the empty-resolved refusal is dropped",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if not payload:",
@@ -321,7 +233,7 @@
   },
   {
     "name": "a whitespace-only payload counts as a real id",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        payload = f[len(\"resolved:\"):].strip()",
@@ -331,23 +243,8 @@
     "expect": "a whitespace-only resolved payload is refused"
   },
   {
-    "name": "the added-line rule is re-typed instead of derived",
-    "file": "scripts/check-dashboard-entry.py",
-    "_note": "NEW 2026-09-01, added by the Claude review half after the Codex half rated the agreement case Low ('verifies agreement, not derivation'). The point stands and this is the answer to it: the agreement case WAS load-bearing but nothing proved it fired, which by this repo's own standard is an unproven guard — the layer nothing checks back. Restoring a hand-written ENTRY_ISH is the exact regression the seam exists to prevent, and it is NOT covered by the BLOCK mutation: that one corrupts the shared rule so both sides move together and the agreement case stays green. Only breaking the DERIVATION separates them.",
-    "edits": [
-      [
-        "ENTRY_ISH = re.compile(r\"^\\+\" + BLOCK.pattern.removeprefix(\"^\"))",
-        "ENTRY_ISH = re.compile(r\"^\\+##\")"
-      ]
-    ],
-    "expect": [
-      "the gate and the page agree on every block-start shape",
-      "a level-3 heading is not an entry attempt"
-    ]
-  },
-  {
     "name": "the scanner stops marking the fence MARKERS themselves",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "_note": "backlog #84. The opening marker line must be in the set: a ``` line is not an entry header, but leaving it out is the kind of off-by-one that only shows up on a store nobody re-reads.",
     "edits": [
       [
@@ -361,7 +258,7 @@
   },
   {
     "name": "fence closes on the WRONG character",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "_note": "⟳ 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code — this file has recorded that twice.",
     "edits": [
       [
@@ -376,7 +273,7 @@
   },
   {
     "name": "fence LENGTH ignored in the shared closer",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "_note": "⟳ 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code — this file has recorded that twice.",
     "edits": [
       [
@@ -391,7 +288,7 @@
   },
   {
     "name": "a closing fence may carry trailing text",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "_note": "⟳ 2026-09-02, backlog #85. RETARGETED, not deleted: the three closing rules moved out of `fenced_lines` into `fence_closes`, which all THREE consumers now ask. Anchoring by text means a refactor orphans the guard unless it is moved with the code — this file has recorded that twice. This is the rule that existed in ONE of three copies and let a NO-ENTRY: inside a code block exempt the branch — measured 2026-09-02. ⚠ The 'two scanners agree' case is deliberately NOT listed: now that both ask fence_closes, a wrong shared rule breaks them IDENTICALLY and they still agree. That case guards against RE-FORKING the rule, not against the rule being wrong — measured, it matched 0 red cases here.",
     "edits": [
       [
@@ -401,12 +298,12 @@
     ],
     "expect": [
       "a closer with trailing text does NOT close",
-      "a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt"
+      "a NO-REVIEW: inside a fence closed only by an ANNOTATED fence does NOT exempt"
     ]
   },
   {
     "name": "exemption_reason stops asking the shared closer",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "_note": "Replaces two anchors that lived on exemption_reason's own hand-written copy. Guards the CALL, so unwiring the gate from the shared rule goes red even if the rule is fine.",
     "edits": [
       [
@@ -415,12 +312,12 @@
       ]
     ],
     "expect": [
-      "a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt"
+      "a NO-REVIEW: inside a fence closed only by an ANNOTATED fence does NOT exempt"
     ]
   },
   {
     "name": "the shared closer says yes to everything",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "_note": "Guards the COMPOSITION: the three rules must be ANDed. Each rule has its own anchor above; none of them shows that all three are required together.",
     "edits": [
       [
@@ -430,12 +327,12 @@
     ],
     "expect": [
       "fence_closes: same char, long enough, no trailing text",
-      "a NO-ENTRY: inside a fence closed only by an ANNOTATED fence does NOT exempt"
+      "a NO-REVIEW: inside a fence closed only by an ANNOTATED fence does NOT exempt"
     ]
   },
   {
     "name": "second [resolved:] dropped",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())",
@@ -448,7 +345,7 @@
   },
   {
     "name": "pass 2 deleted",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        for r in e[\"resolves\"]:\n            if r in ids:",
@@ -461,7 +358,7 @@
   },
   {
     "name": "ordinal instability restored",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if m is not None and valid_date(m.group(1)):",
@@ -474,7 +371,7 @@
   },
   {
     "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "                elif f.startswith(\"resolved:\"):\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())\n                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
@@ -487,7 +384,7 @@
   },
   {
     "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
@@ -501,7 +398,7 @@
   },
   {
     "name": "the title is capped again, so its tail vanishes",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "_ends_in_abbreviation(out):\n            break\n    return out",
@@ -514,7 +411,7 @@
   },
   {
     "name": "the parser stops asking which lines are fenced",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "_note": "backlog #84, THE defect. Restores the fence-blind split, which minted a fully VALID phantom entry holding a real id — no error, renders like any other card. Ids are positional and `[resolved: <id>]` binds by id.",
     "edits": [
       [
@@ -529,7 +426,7 @@
   },
   {
     "name": "the parser asks for INERT lines instead of fenced ones",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "_note": "backlog #84, and this is the OVER-rejection half — the first cut of the fix, which looked equivalent and DELETED entry 2026-09-01/16 from the live store. `_inert_lines` treats an unclosed `<!--` as running to end-of-input; one entry mentioning the marker in prose erased every entry after it. A mutation only on the under-rejection half would let this ship again.",
     "edits": [
       [
@@ -543,30 +440,19 @@
     ]
   },
   {
-    "name": "the marker parameter is ignored, so a sibling gate silently reads NO-ENTRY:",
-    "file": "scripts/check-dashboard-entry.py",
+    "name": "the marker parameter is ignored, so a caller asking for another marker silently reads NO-REVIEW:",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
-        "def _declaration_reason(s: str, marker: str = NO_ENTRY) -> str | None:",
-        "def _declaration_reason(s: str, marker: str = NO_ENTRY) -> str | None:\n    marker = NO_ENTRY"
+        "def _declaration_reason(s: str, marker: str = NO_REVIEW) -> str | None:",
+        "def _declaration_reason(s: str, marker: str = NO_REVIEW) -> str | None:\n    marker = NO_REVIEW"
       ]
     ],
-    "expect": "reads a NO-REVIEW declaration through the shared parser"
-  },
-  {
-    "name": "the #168 push clause is dropped from the refusal, so editing the PR body looks sufficient",
-    "file": "scripts/check-dashboard-entry.py",
-    "edits": [
-      [
-        "               f\"⚠ If you edit the PR body to answer this, you must then PUSH something — \"\n               f\"CI reads the body from the frozen event payload, so an edit alone (and a \"\n               f\"`gh run rerun`) will fail again with this identical message.\")",
-        "               f\"\")"
-      ]
-    ],
-    "expect": "the refusal telling you to edit the PR body also says you must PUSH, and why (#168)"
+    "expect": "a non-default marker is honoured"
   },
   {
     "name": "the answer rule loosens to a prefix",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if heading == ANSWER:",
@@ -577,7 +463,7 @@
   },
   {
     "name": "the answer rule strips leading space",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        heading = line.rstrip()",
@@ -588,7 +474,7 @@
   },
   {
     "name": "the answer rule ignores the fence",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if i in in_fence:\n            continue\n",
@@ -599,7 +485,7 @@
   },
   {
     "name": "a conflict marker is looked for on the first line only",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if any(l.startswith(ASK_CONFLICT) for l in lines):",
@@ -610,7 +496,7 @@
   },
   {
     "name": "the per-file cap is dropped",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if size > MAX_ASK_BYTES:",
@@ -621,7 +507,7 @@
   },
   {
     "name": "a non-regular entry is read",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if not stat.S_ISREG(st.st_mode):",
@@ -632,7 +518,7 @@
   },
   {
     "name": "MAX_ASKS truncates in silence",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        problems.append(f\"{ASKS_REL}/ holds {len(names)} entries, over the cap of {MAX_ASKS}; \"\n                        f\"only the first {MAX_ASKS} were read\")\n",
@@ -643,7 +529,7 @@
   },
   {
     "name": "the name rule admits uppercase",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "ASK_NAME = re.compile(r\"[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*\\.md\")",
@@ -654,7 +540,7 @@
   },
   {
     "name": "a non-empty .gitkeep is skipped",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "            if size != 0:",
@@ -665,7 +551,7 @@
   },
   {
     "name": "a problem drops the readable asks",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "    return asks, problems\n",
@@ -676,7 +562,7 @@
   },
   {
     "name": "a missing directory reads as no asks",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "            return [], [f\"{ASKS_REL}/ is missing ({directory}) — no ask could be read\"]",
@@ -687,7 +573,7 @@
   },
   {
     "name": "F1 checks every base file",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if not ASK_NAME.fullmatch(name):\n            continue\n",
@@ -698,7 +584,7 @@
   },
   {
     "name": "F1 accepts a rewritten ask",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        is_prefix = head_files[name].startswith(base_files[name])",
@@ -709,7 +595,7 @@
   },
   {
     "name": "F1 misses a deleted ask",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "            problems.append(f\"{ASKS_REL}/{name}: present at the merge base, gone at HEAD — \"\n                            f\"an ask is never deleted; answer it with a '## Answer' line\")\n",
@@ -720,7 +606,7 @@
   },
   {
     "name": "A1 lists the directory instead of HEAD's tree",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        problems += _judge_asks(list(head), head.__getitem__)[1]",
@@ -731,7 +617,7 @@
   },
   {
     "name": "main stops running A1",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "    if ask_problems:",
@@ -742,7 +628,7 @@
   },
   {
     "name": "A1's git failure returns err=None",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        return [], f\"the ask store could not be checked — {exc}\"",
@@ -753,18 +639,18 @@
   },
   {
     "name": "main ignores A1's err",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
-        "    if ask_err:",
-        "    if False:"
+        "    if ask_err or l1_err:",
+        "    if l1_err:"
       ]
     ],
     "expect": "main is CANNOT RUN on A1's err"
   },
   {
     "name": "r1 A: a HEAD with no docs/asks/ passes A1",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if not head:\n",
@@ -777,7 +663,7 @@
   },
   {
     "name": "r1 B: the name rule is asked with .match, so a trailing newline passes",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if name != ASK_KEEP and not ASK_NAME.fullmatch(name):",
@@ -790,7 +676,7 @@
   },
   {
     "name": "r1 B: the name rule's year admits any Unicode digit",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "ASK_NAME = re.compile(r\"[0-9]{4}-",
@@ -803,7 +689,7 @@
   },
   {
     "name": "r1 D: F1 drops the no-final-newline clause, so the last line can be edited",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if (is_prefix and base and not base.endswith(b\"\\n\") and len(head) > len(base)",
@@ -817,7 +703,7 @@
   },
   {
     "name": "r1 F: A1 reads the working tree's bytes instead of HEAD's",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "            data = _ask_git(root, \"cat-file\", \"blob\", obj)\n",
@@ -832,7 +718,7 @@
   },
   {
     "name": "r1 F: a symlink tracked at HEAD is read as a blob",
-    "file": "scripts/check-dashboard-entry.py",
+    "file": "scripts/check-ask-store.py",
     "edits": [
       [
         "        if mode == \"120000\":",
@@ -842,5 +728,138 @@
     "expect": [
       "r1 F: a symlink tracked at HEAD is a PROBLEM read from its tree mode"
     ]
+  },
+  {
+    "name": "L1 compares nothing",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    if head_bytes is not None and hashlib.sha256(head_bytes).hexdigest() == LEGACY_STORE_SHA256:",
+        "    if head_bytes is not None:"
+      ]
+    ],
+    "expect": "12.3 an appended entry is refused and SHOWN"
+  },
+  {
+    "name": "a missing store passes L1",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        return (f\"{LEGACY_STORE_REL} is missing at HEAD — it is a frozen record and must stay; restore it \"",
+        "        return None and (f\"{LEGACY_STORE_REL} is missing at HEAD — it is a frozen record and must stay; restore it \""
+      ]
+    ],
+    "expect": "12.2 a missing store is refused"
+  },
+  {
+    "name": "the restore command is dropped from L1's message",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "            f\"  Restore the frozen bytes with:\\n    {restore}\")",
+        "            \"\")"
+      ]
+    ],
+    "expect": "12.5 the message carries the restore command by BLOB, and no commit id"
+  },
+  {
+    "name": "push mode skips L1",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    l1_problem, l1_err = legacy_store_check(ROOT)",
+        "    l1_problem, l1_err = legacy_store_check(ROOT) if a.base else (None, None)"
+      ]
+    ],
+    "expect": "12.10 without --base (a push) L1 still runs, and refuses the appended entry"
+  },
+  {
+    "name": "the cutover check accepts any blob",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    if ref_blob == LEGACY_STORE_BASE_BLOB:",
+        "    if True:"
+      ]
+    ],
+    "expect": "12.8 master's store moved since the pin is refused, naming both blobs"
+  },
+  {
+    "name": "the cutover check reads HEAD instead of REF",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "            ref_blob = _store_blob(ROOT, a.cutover_check)",
+        "            ref_blob = _store_blob(ROOT, \"HEAD\")"
+      ]
+    ],
+    "expect": "12.12 the cutover check reads the revision it is given: C^1 (B's store) rc 1, A rc 0"
+  },
+  {
+    "name": "the PR list keeps gh's default limit",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    r = _gh(\"pr\", \"list\", \"--state\", \"open\", \"--limit\", str(PR_LIST_LIMIT), \"--json\", \"number,headRefName\")",
+        "    r = _gh(\"pr\", \"list\", \"--state\", \"open\", \"--json\", \"number,headRefName\")"
+      ]
+    ],
+    "expect": "12.13 a PR beyond gh's default page of 30 is listed"
+  },
+  {
+    "name": "a full page passes",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    if len(prs) >= PR_LIST_LIMIT:",
+        "    if len(prs) > PR_LIST_LIMIT:"
+      ]
+    ],
+    "expect": "12.14 a full page of PR_LIST_LIMIT is CANNOT RUN, naming the limit"
+  },
+  {
+    "name": "a failed PR list reads as no PRs",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        return [], f\"gh pr list did not answer ({why})\"",
+        "        return [], None"
+      ]
+    ],
+    "expect": "12.15 a failed gh pr list is CANNOT RUN, never 'no PRs': err set, --list-store-prs rc 2"
+  },
+  {
+    "name": "a failed PR diff reads as no edit",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "            return lines, f\"gh pr diff {n} did not answer — PR {n} ({branch}) was not checked\"",
+        "            continue"
+      ]
+    ],
+    "expect": "12.16 a failed gh pr diff is CANNOT RUN, never 'no edit': err names PR 7, rc 2"
+  },
+  {
+    "name": "r1 F1: L1 reads git failing on the frozen store as a pass",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "        return None, f\"the frozen store could not be read — {exc}\"",
+        "        return None, None"
+      ]
+    ],
+    "expect": "r1 F1: an unreadable frozen store is CANNOT RUN: L1 returns its err and main exits 2"
+  },
+  {
+    "name": "r1 F1: main ignores L1's err",
+    "file": "scripts/check-ask-store.py",
+    "edits": [
+      [
+        "    l1_problem, l1_err = legacy_store_check(ROOT)\n    if ask_err or l1_err:",
+        "    l1_problem, l1_err = legacy_store_check(ROOT)\n    if ask_err:"
+      ]
+    ],
+    "expect": "r1 F1: an unreadable frozen store is CANNOT RUN: L1 returns its err and main exits 2",
+    "_note": "anchored on two lines: the one-line `if ask_err or l1_err:` is already the anchor of \"main ignores A1's err\", and the harness refuses a repeated anchor."
   }
 ]

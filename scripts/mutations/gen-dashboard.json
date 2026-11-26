@@ -837,5 +837,31 @@
     "expect": [
       "a PR option links to its PR, built by key_link"
     ]
+  },
+  {
+    "name": "assert-no-open-asks passes an open ask",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    opened = unresolved(entries)\n    if opened:",
+        "    opened = unresolved(entries)\n    if False:"
+      ]
+    ],
+    "expect": [
+      "7.1 C1: a store with one open ask is refused, naming its id"
+    ]
+  },
+  {
+    "name": "a parse error reads as no asks",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    broken = [e for e in entries if e[\"error\"]]\n    if broken:",
+        "    broken = [e for e in entries if e[\"error\"]]\n    if False:"
+      ]
+    ],
+    "expect": [
+      "7.3 C1: an entry with a bad header is CANNOT RUN, never 'no asks'"
+    ]
   }
 ]

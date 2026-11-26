@@ -159,8 +159,7 @@ copy that drifts. One line per row; each row's measurements and history are in
 | `scripts/check-explainer-delivery.py` | the explainer delivery loop is described in ONE place; skills cite it |
 | `scripts/check-test-counts.py` | the roadmap's stated test counts equal the suite's actual counts |
 | `scripts/check-arch-findings.py` | ratchet on architecture-review findings |
-| `scripts/check-dashboard-entry.py` | a branch that changes tracked files records a dashboard entry, or declares `NO-ENTRY: <reason>` |
-| `scripts/gen-dashboard.py` | the dashboard page is derived, never hand-edited |
+| `scripts/check-ask-store.py` | every file in `docs/asks/` is a readable ask that only grows, and the old store stays frozen |
 | `scripts/check-plan-code.py` | `--mutate .`: every mutation in `scripts/mutations/*.json` goes red via the case it names. On a PR CI runs only the manifests the diff selects (unplaceable → MORE, harness → a ~20% sample keyed by the head SHA, plus the manifests the diff names); master pushes run NO sweep; the nightly schedule (08:30 UTC) runs the FULL sweep, a red one opens a `sweep-red` issue — up to ~38 h after the merge, naming a night's merges, not one (bisect by hand); `session-state.py` flags no completed sweep in 36 h. Locally PARTIAL (`--only <script>`) — open a DRAFT PR at slice start |
 | `scripts/check-plan-file-tags.py` | no document under `docs/` embeds code through a retired plan-mode tag |
 | `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |

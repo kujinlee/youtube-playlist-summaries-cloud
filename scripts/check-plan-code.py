@@ -5547,6 +5547,8 @@ def _self_test_body() -> int:
                                       "scripts/check-anchors.py",
                                       "scripts/check-anon-exposure.py",
                                       "scripts/check-arch-findings.py",
+                                      # 2026-11-25 dashboard-retire S2 Task 8: renamed from check-dashboard-entry.py.
+                                      "scripts/check-ask-store.py",
                                       "scripts/check-backlog-closure.py",
                                       "scripts/check-banner-armed.py",
                                       "scripts/check-canonical-source.py",
@@ -5556,7 +5558,6 @@ def _self_test_body() -> int:
                                       "scripts/check-closing-table.py",
                                       # backlog #440: the PreCompact boundary hook, with its manifest.
                                       "scripts/check-compaction-boundary.py",
-                                      "scripts/check-dashboard-entry.py",
                                       "scripts/check-decision-scheme.py",
                                       "scripts/check-diff-coverage.py",
                                       "scripts/check-doc-citations.py",
