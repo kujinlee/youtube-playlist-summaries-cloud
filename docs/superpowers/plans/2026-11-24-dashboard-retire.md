@@ -826,7 +826,7 @@ worktree of `origin/master` built and removed inside that one call, so no prior 
 local edit blocking a checkout) can collide with it. **A step that needs more than that is code for the gate
 file, with a case and a mutation — never more shell here.**
 
-- [ ] **Step 1: the whole cutover check, one command.**
+- [x] **Step 1: the whole cutover check, one command.** ✅ 2026-11-26 08:37: `post-cutover rc 0` on master `829660eb` (CI run 45858774949).
 
 ```bash
 git fetch -q origin +refs/heads/master:refs/remotes/origin/master && d="$(mktemp -d)/pc" && git worktree add -q --detach "$d" origin/master && (cd "$d" && python3 scripts/check-ask-store.py --post-cutover); git worktree remove --force "$d"
@@ -872,10 +872,10 @@ git fetch -q origin +refs/heads/master:refs/remotes/origin/master && d="$(mktemp
 
   When several checks refuse, rc is the first in the order 1, 5, 6, 7, 8; a CANNOT RUN is reported as rc 2
   only when nothing refused, and every line is printed either way.
-- [ ] **Step 2: For each PR Step 1 named (rc 6)**, in its worktree: merge master (`git merge --no-edit
+- [x] **Step 2: For each PR Step 1 named (rc 6)** (✅ none owed: Step 1 returned rc 0, so no PR was named), in its worktree: merge master (`git merge --no-edit
   origin/master`), restore the store (`git checkout origin/master -- docs/dashboard-entries.md`), re-ask any
   question its dropped entry held as a file in `docs/asks/`, commit, push. Its CI now runs under L1.
-- [ ] **Step 3: Re-run Step 1's command.** Expected: rc 0 (rc 8 means only that the CI run on the fetched
+- [x] **Step 3: Re-run Step 1's command.** ✅ rc 0 on the first run (2026-11-26 08:37, run 45858774949 on `829660eb`), so no re-run was owed. Expected: rc 0 (rc 8 means only that the CI run on the fetched
   head commit has not completed yet — re-run).
 
 **FAILS IF:** Step 1 returns 0 while the store at `origin/master` differs from the pinned bytes, while an
