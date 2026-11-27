@@ -66,13 +66,16 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if OUR server is already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 314 cases, binds only ephemeral ports, never 7391
+    python3 scripts/explainer-serve.py --self-test   # 334 cases, binds only ephemeral ports, never 7391
 
-EXIT CODES: 0 done (or already serving / not running); 1 not running (`--status`) or a fork that never
-listened; 2 a bad `EXPLAINER_SERVE_PORT`; 3 (`RC_NOT_OURS`, backlog #631) ANOTHER program holds what the
-command would act on — the port for start/status, the pidfile's pid for stop — and NOTHING WAS TOUCHED. A
-caller that gets 3 puts the choice to the user (another port via `EXPLAINER_SERVE_PORT`, or the user frees
-the port); it never stops the other program. Who is "ours" is asked of the listener: `GET /__whoami`.
+EXIT CODES: 0 done (or already serving / not running — including a server started by OLDER code, which says
+"older code — `--stop`, then start, to pick up changes"); 1 not running (`--status`), or a fork whose child never
+answered with this start's token (the parent reaps it); 2 a bad `EXPLAINER_SERVE_PORT`; 3 (`RC_NOT_OURS`,
+backlog #631) ANOTHER program holds what the command would act on — the port for start/status, the pidfile's
+pid for stop — and NOTHING WAS TOUCHED. A caller that gets 3 puts the choice to the user (another port via
+`EXPLAINER_SERVE_PORT`, or the user frees the port); it never stops the other program. Who is "ours" is BOUND,
+never claimed: the listener's `GET /__whoami` must echo the token this start recorded in `.serve.<port>.token`,
+or — for older code — the OS must report the pidfile's pid as the listener running this file (`bound_legacy`).
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -94,6 +97,7 @@ import pathlib
 import posixpath
 import re
 import shlex
+import secrets
 import signal
 import socket
 import subprocess
@@ -137,7 +141,33 @@ PORT, PORT_ERROR = port_from(os.environ.get("EXPLAINER_SERVE_PORT", ""))
 HOST = "127.0.0.1"
 ROOT = (pathlib.Path(os.environ["EXPLAINER_SERVE_ROOT"].strip()).expanduser()
         if os.environ.get("EXPLAINER_SERVE_ROOT", "").strip() else pathlib.Path.home() / "explainers")
-PIDFILE = ROOT / ".serve.pid"
+# ⟳ backlog #631 r1 X6: the pidfile is keyed by PORT, not only by root. One root served on two ports (which the
+# exit-3 advice, `EXPLAINER_SERVE_PORT=<other>`, makes an ordinary state) used to share ONE pidfile, so the second
+# start overwrote the first's and neither server could be stopped. It still holds a bare pid, so the gone-checkout
+# 404's pasteable `kill "$(cat <pidfile>)"` keeps working with no checkout present. The start's random TOKEN lives
+# beside it in `.serve.<port>.token` (JSON {pid, port, token}, mode 0600): `/__whoami` echoes it, and only an
+# answer carrying it is OUR server. The legacy `.serve.pid` (a bare pid, no token) is still READ for the default
+# port, so a server started by older code stays recognisable — see `bound_legacy`.
+DEFAULT_PORT = 7391
+LEGACY_PIDFILE = ".serve.pid"
+
+
+def pidfile_for(root: pathlib.Path, port: int) -> pathlib.Path:
+    return root / f".serve.{port}.pid"
+
+
+def tokenfile_for(root: pathlib.Path, port: int) -> pathlib.Path:
+    return root / f".serve.{port}.token"
+
+
+def pidfile_candidates(root: pathlib.Path, port: int) -> "list[pathlib.Path]":
+    """PURE. Where a pid for `port` may be recorded, newest convention first: the per-port pidfile, then — on the
+    default port only — the legacy `.serve.pid` an older start wrote."""
+    return [pidfile_for(root, port)] + ([root / LEGACY_PIDFILE] if port == DEFAULT_PORT else [])
+
+
+PIDFILE = pidfile_for(ROOT, PORT)
+TOKENFILE = tokenfile_for(ROOT, PORT)
 QUESTIONS = ROOT / "questions.md"
 MAX_BODY = 64 * 1024
 
@@ -1293,42 +1323,147 @@ def port_busy(host: str, port: int) -> bool:
 # ── backlog #631: is the listener on HOST:PORT OUR server? ─────────────────────────────────────────────────────
 #
 # `port_busy` answers "does something listen?", never "is it us?" — and a stranger's own app can hold 7391. So
-# the server answers `GET /__whoami` with a marker, its pid and the root it serves; `start`, `stop` and `status`
-# act only on a listener that answers as THIS server. Anything else is left alone, and the caller is told.
+# the server answers `GET /__whoami` with a marker, its pid, its port, the root it serves and the random TOKEN its
+# start wrote into `.serve.<port>.token`; `start`, `stop` and `status` act only on a listener whose answer matches
+# that file in all five. Anything else is left alone, and the caller is told.
+#
+# ⟳ r1 (X1, X2, X4): the first version asked the listener who it was and BELIEVED it — identity was claimed, never
+# bound. A forged answer naming the pidfile's pid licensed a SIGTERM to that pid, and a `ps` substring licensed one
+# to any reused pid whose argv mentioned the file. Now identity is bound two ways, and only these two:
+#   * TOKEN-VERIFIED — the answer carries the token this ROOT's start recorded for this PORT, and the pid, port and
+#     root that record names (`classify_listener`).
+#   * BOUND-LEGACY — the listener gives no token (a server started by code older than `/__whoami`), and the OS
+#     reports the pidfile's pid as THE LISTENER on our port, and that pid's argv runs THIS script file, compared as
+#     a resolved path, never a substring (`bound_legacy`). If `lsof` or `ps` cannot say, it is NOT ours.
+#
+# ⚠ BOUND, stated (r1 X10): this defends against a stranger's program and against reused pids — not against a
+# local process of the same user, which can read the token file (or ask our server for the token while it is up)
+# and then answer as us. Such a process can already signal our server directly, so it is outside what this guards.
 WHOAMI = "/__whoami"
 SERVER_MARK = "explainer-serve"
 # The ONE exit code for "another program holds what this command would act on; nothing was touched". `start`
 # on a port held by anything but this server, `stop` on a pidfile pid that is not this server, `status` on a
 # listener that is not this server. The calling skill puts the choice to the user; it never frees the port.
 RC_NOT_OURS = 3
+SCRIPT_FILE = pathlib.Path(__file__).resolve()
+# Set by `start` BEFORE the fork, so the child's `/__whoami` answers with the token the parent records.
+SERVE_TOKEN = ""
+LEGACY_NOTE = "older code — `--stop`, then start, to pick up changes"
 
 
 def whoami_body() -> bytes:
-    return json.dumps({"server": SERVER_MARK, "pid": os.getpid(), "root": str(ROOT)}).encode()
+    return json.dumps({"server": SERVER_MARK, "pid": os.getpid(), "port": PORT, "root": str(ROOT),
+                       "token": SERVE_TOKEN}).encode()
 
 
-def listener_identity(host: str, port: int, timeout: float = 1.0) -> object:
+def listener_identity(host: str, port: int, timeout: float = 1.5) -> object:
     """The parsed JSON a listener gives for `GET /__whoami`, or None. EVERY failure — refused, silent, not
-    HTTP, not 200, not JSON — is None, never an exception: a listener that cannot say who it is, is not us."""
-    import http.client
+    HTTP, not 200, not JSON, too slow — is None, never an exception: a listener that cannot say who it is, is not us.
+
+    ⟳ r1 X8: ONE deadline covers connect, send and every read. `http.client`'s timeout is per recv, so a listener
+    that dripped a byte every 0.5 s held `start` past 20 s (measured)."""
+    deadline = time.monotonic() + timeout
     try:
-        conn = http.client.HTTPConnection(host, port, timeout=timeout)
-        try:
-            conn.request("GET", WHOAMI)
-            resp = conn.getresponse()
-            if resp.status != 200:
-                return None
-            return json.loads(resp.read(4096).decode("utf-8"))
-        finally:
-            conn.close()
+        with socket.create_connection((host, port), timeout=timeout) as s:
+            s.settimeout(max(deadline - time.monotonic(), 0.01))
+            s.sendall(f"GET {WHOAMI} HTTP/1.0\r\nHost: {host}:{port}\r\n\r\n".encode())
+            buf = b""
+            while len(buf) <= 16384:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                s.settimeout(remaining)
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+                if _http_body(buf, complete=False) is not None:
+                    break
+            body = _http_body(buf, complete=True)
+            return None if body is None else json.loads(body.decode("utf-8"))
     except Exception:  # noqa: BLE001 — any failure means "no answer", and the caller treats it as foreign
         return None
 
 
-def classify_listener(answer: object, pidfile_pid: int | None, root: pathlib.Path) -> str:
-    """PURE. "ours" — the marker, the pid the pidfile names, and this ROOT. "other-root" — another
-    explainer-serve: a different root, or a pid this ROOT's pidfile does not name. "foreign" — no answer, a
-    malformed one, or no marker."""
+def _http_body(buf: bytes, complete: bool) -> bytes | None:
+    """PURE. The body of a 200 response in `buf`, or None. With a Content-Length it needs that many bytes; without
+    one it needs `complete` (the peer closed)."""
+    head, sep, body = buf.partition(b"\r\n\r\n")
+    if not sep:
+        return None
+    lines = head.decode("latin-1").split("\r\n")
+    parts = lines[0].split()
+    if len(parts) < 2 or parts[1] != "200":
+        return None
+    length = None
+    for ln in lines[1:]:
+        k, _, v = ln.partition(":")
+        if k.strip().lower() == "content-length":
+            length = int(v.strip())
+    if length is not None:
+        return body[:length] if len(body) >= length else None
+    return body if complete else None
+
+
+def read_identity(root: pathlib.Path, port: int) -> dict | None:
+    """What THIS root's start recorded for `port`: {pid, port, token}, or None. None unless the token file parses,
+    names this port, and names the pid the per-port pidfile names — a record the pidfile disagrees with is no
+    record."""
+    try:
+        got = json.loads(tokenfile_for(root, port).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(got, dict):
+        return None
+    pid, at, token = got.get("pid"), got.get("port"), got.get("token")
+    if type(pid) is not int or type(at) is not int or not isinstance(token, str) or not token:
+        return None
+    if at != port or pid != read_pid(pidfile_for(root, port)):
+        return None
+    return {"pid": pid, "port": at, "token": token}
+
+
+def write_identity(root: pathlib.Path, port: int, pid: int, token: str) -> None:
+    """Record a start: the token file FIRST, then the bare-pid pidfile, both mode 0600."""
+    for path, text in ((tokenfile_for(root, port), json.dumps({"pid": pid, "port": port, "token": token})),
+                       (pidfile_for(root, port), str(pid))):
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(text)
+        os.chmod(path, 0o600)
+
+
+def recorded_pid(root: pathlib.Path, port: int) -> tuple[int | None, pathlib.Path]:
+    """The pid recorded for `port` and the file that recorded it (the per-port pidfile when none does)."""
+    for path in pidfile_candidates(root, port):
+        pid = read_pid(path)
+        if pid:
+            return pid, path
+    return None, pidfile_for(root, port)
+
+
+def forget(root: pathlib.Path, port: int, pid: int | None) -> bool:
+    """Remove the records naming `pid` — ONLY when that pid is dead (r1 X7: a transient identity failure must not
+    orphan a live server). True when removed; False when the pid is alive and everything was kept."""
+    if pid_alive(pid):
+        return False
+    for path in pidfile_candidates(root, port):
+        if read_pid(path) in (pid, None):
+            path.unlink(missing_ok=True)
+    tok = tokenfile_for(root, port)
+    try:
+        named = json.loads(tok.read_text()).get("pid")
+    except (OSError, ValueError, AttributeError):
+        named = None
+    if named in (pid, None):
+        tok.unlink(missing_ok=True)
+    return True
+
+
+def classify_listener(answer: object, ident: dict | None, root: pathlib.Path, port: int) -> str:
+    """PURE. "ours" — the marker, and the pid, port and token the start's record (`read_identity`) names, and this
+    ROOT. "other-root" — another explainer-serve: a different root, port, token or pid than this root's record for
+    this port names (or no record at all). "foreign" — no answer, a malformed one, or no marker."""
     if not isinstance(answer, dict) or answer.get("server") != SERVER_MARK:
         return "foreign"
     pid, served = answer.get("pid"), answer.get("root")
@@ -1336,39 +1471,126 @@ def classify_listener(answer: object, pidfile_pid: int | None, root: pathlib.Pat
         return "foreign"
     if served != str(root):
         return "other-root"
-    if pid != pidfile_pid:
+    if not isinstance(ident, dict):
+        return "other-root"
+    if answer.get("port") != port:
+        return "other-root"
+    if not isinstance(answer.get("token"), str) or answer.get("token") != ident.get("token"):
+        return "other-root"
+    if pid != ident.get("pid"):
         return "other-root"
     return "ours"
 
 
+def gives_token(answer: object) -> bool:
+    """A listener that answers with a token is current code: it is token-verified or not ours, never legacy."""
+    return isinstance(answer, dict) and answer.get("server") == SERVER_MARK and isinstance(answer.get("token"), str)
+
+
+def lsof_pids(stdout: str) -> "set[int] | None":
+    """PURE. The pids in `lsof -t` output, or None when a line is not a pid (so the caller cannot misread it)."""
+    out = set()
+    for ln in stdout.split():
+        if not ln.isdigit():
+            return None
+        out.add(int(ln))
+    return out
+
+
+def listening_pids(port: int, lsof: str = "lsof") -> "set[int] | None":
+    """The pids the OS reports LISTENING on TCP `port`, or None when `lsof` cannot say (missing, failed, timed out).
+    Every caller treats None as NOT ours: fail closed."""
+    try:
+        r = subprocess.run([lsof, "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+                           capture_output=True, text=True, timeout=5)
+    except Exception:  # noqa: BLE001 — None is "could not say", and it is never read as ours
+        return None
+    if r.returncode not in (0, 1) or (r.returncode == 1 and r.stdout.strip()):
+        return None
+    return lsof_pids(r.stdout)
+
+
+def pid_cwd(pid: int) -> str | None:
+    """`pid`'s working directory, as `lsof` reports it, or None — needed to resolve a RELATIVE script argument."""
+    try:
+        r = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
+                           capture_output=True, text=True, timeout=5)
+    except Exception:  # noqa: BLE001 — None: a relative argument then cannot match
+        return None
+    for ln in r.stdout.splitlines():
+        if ln.startswith("n/"):
+            return ln[1:]
+    return None
+
+
+def argv_runs_script(args: str, cwd: str | None, script: pathlib.Path) -> bool:
+    """PURE but for path resolution. `args` (`ps -o args=`, argv joined by single spaces) has an element whose
+    resolved path IS `script`. Exact, never a substring (r1 X2): `/tmp/notes-about-explainer-serve.py` and
+    `explainer-serve.py.swp` are not it. A path with spaces spans several space-split tokens, so every run of
+    tokens that ends in the script's name is tried. A relative element resolves against `cwd`; without one it
+    cannot match."""
+    want = os.path.realpath(str(script))
+    toks = args.split(" ")
+    for j, last in enumerate(toks, 1):
+        if not last.endswith(script.name):
+            continue
+        for i in range(j):
+            cand = " ".join(toks[i:j])
+            if not os.path.isabs(cand):
+                if cwd is None:
+                    continue
+                cand = os.path.join(cwd, cand)
+            if os.path.realpath(cand) == want:
+                return True
+    return False
+
+
+def bound_legacy(pid: int | None, port: int) -> bool:
+    """`pid` is a server this script started under OLDER code: the OS reports it as the listener on `port`, and
+    its argv runs THIS script file. Either probe failing is NOT ours."""
+    if not pid_alive(pid):
+        return False
+    pids = listening_pids(port)
+    if pids is None or pid not in pids:
+        return False
+    return argv_runs_script(pid_command(pid), pid_cwd(pid), SCRIPT_FILE)
+
+
 def port_holder(port: int) -> str:
     """Best effort, for a message only: "pid N (command)" of what listens on `port`, or "unknown"."""
-    try:
-        r = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
-                           capture_output=True, text=True, timeout=5)
-        pid = int(r.stdout.split()[0])
-    except Exception:  # noqa: BLE001 — a message detail; "unknown" is the honest fallback
+    pids = listening_pids(port)
+    if not pids:
         return "unknown (lsof could not say)"
+    pid = min(pids)
     return f"pid {pid} ({pid_command(pid) or 'command unknown'})"
 
 
 def pid_command(pid: int) -> str:
-    """The command line `ps` gives for `pid`, or "" when it cannot say."""
+    """The argv `ps` gives for `pid` (`args=`), or "" when it cannot say."""
     try:
-        r = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(["ps", "-o", "args=", "-p", str(pid)], capture_output=True, text=True, timeout=5)
     except Exception:  # noqa: BLE001 — "" means unknown, and every caller treats unknown as NOT ours
         return ""
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
-def listener_verdict(pidfile_pid: int | None) -> tuple[str, object]:
+def listener_verdict() -> tuple[str, object, int | None]:
+    """("ours" | "legacy" | "other-root" | "foreign", the listener's answer, the recorded pid)."""
+    pid, _path = recorded_pid(ROOT, PORT)
     answer = listener_identity(HOST, PORT)
-    return classify_listener(answer, pidfile_pid, ROOT), answer
+    verdict = classify_listener(answer, read_identity(ROOT, PORT), ROOT, PORT)
+    if verdict != "ours" and not gives_token(answer) and bound_legacy(pid, PORT):
+        verdict = "legacy"
+    return verdict, answer, pid
 
 
 def not_ours_message(verdict: str, answer: object) -> str:
     if verdict == "other-root" and isinstance(answer, dict):
-        who = f"another explainer-serve (pid {answer.get('pid')}, serving {answer.get('root')})"
+        if answer.get("root") == str(ROOT):
+            who = (f"another explainer-serve (pid {answer.get('pid')}) serving this same root, which this root's "
+                   f"record for port {PORT} did not start")
+        else:
+            who = f"another explainer-serve (pid {answer.get('pid')}, serving {answer.get('root')})"
     else:
         who = f"a program that is NOT explainer-serve — {port_holder(PORT)}"
     return (f"port {PORT} on {HOST} is held by {who}. That is NOT this server (root {ROOT}), and it was left "
@@ -2345,31 +2567,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 def start() -> int:
+    global SERVE_TOKEN
     ROOT.mkdir(parents=True, exist_ok=True)
     if port_busy(HOST, PORT):
-        pid = read_pid(PIDFILE)
-        verdict, answer = listener_verdict(pid)
-        if verdict != "ours":
+        verdict, answer, pid = listener_verdict()
+        if verdict not in ("ours", "legacy"):
             print(f"NOT STARTED — NOT this server: {not_ours_message(verdict, answer)}")
             return RC_NOT_OURS
-        print(f"already serving on http://{HOST}:{PORT}" + (f" (pid {pid})" if pid else ""))
+        print(f"already serving on http://{HOST}:{PORT}" + (f" (pid {pid})" if pid else "")
+              + (f" ({LEGACY_NOTE})" if verdict == "legacy" else ""))
         print(f"  one-click:  http://{HOST}:{PORT}/latest")
         return 0
+    SERVE_TOKEN = secrets.token_hex(16)      # BEFORE the fork: the child answers with what the parent records
     pid = os.fork()
     if pid > 0:
-        PIDFILE.write_text(str(pid))
-        for _ in range(20):
-            if port_busy(HOST, PORT):
-                break
-            import time
-            time.sleep(0.1)
-        if not port_busy(HOST, PORT):
-            print(f"FAIL: forked pid {pid} but nothing is listening on {HOST}:{PORT}. NOT RUNNING.")
-            return 1
-        print(f"serving {ROOT} on http://{HOST}:{PORT}  (pid {pid})")
-        print(f"  one-click:  http://{HOST}:{PORT}/latest")
-        print(f"  questions:  {QUESTIONS}")
-        return 0
+        return after_fork(pid, SERVE_TOKEN)
     os.setsid()
     detach_streams()
     with http.server.ThreadingHTTPServer((HOST, PORT), Handler) as httpd:
@@ -2377,51 +2589,98 @@ def start() -> int:
     return 0
 
 
+AFTER_FORK_WAIT = 2.0
+
+
+def after_fork(pid: int, token: str) -> int:
+    """The parent's half of `start`. ⟳ r1 X3: `port_busy` was counted as success, so a racer that bound the port
+    between the free-port check and the child's bind read as "serving", rc 0. Now the parent waits (bounded) for
+    `/__whoami` to answer with ITS token and ITS child's pid; otherwise it says FAIL, reaps its own child, removes
+    the record it wrote, and returns 1 — the racer is left alone."""
+    write_identity(ROOT, PORT, pid, token)
+    own = {"pid": pid, "port": PORT, "token": token}
+    deadline = time.monotonic() + AFTER_FORK_WAIT
+    while True:
+        if classify_listener(listener_identity(HOST, PORT, 0.5), own, ROOT, PORT) == "ours":
+            if PORT == DEFAULT_PORT and not pid_alive(read_pid(ROOT / LEGACY_PIDFILE)):
+                (ROOT / LEGACY_PIDFILE).unlink(missing_ok=True)
+            print(f"serving {ROOT} on http://{HOST}:{PORT}  (pid {pid})")
+            print(f"  one-click:  http://{HOST}:{PORT}/latest")
+            print(f"  questions:  {QUESTIONS}")
+            return 0
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.1)
+    held = port_busy(HOST, PORT)
+    reap_child(pid)
+    forget(ROOT, PORT, pid)
+    print(f"FAIL: forked pid {pid} but {HOST}:{PORT} never answered as it"
+          + (" — ANOTHER program holds the port, and it was left alone" if held else " — nothing is listening")
+          + ". NOT RUNNING.")
+    return 1
+
+
+def reap_child(pid: int) -> None:
+    """SIGTERM our own child and wait for it (bounded), SIGKILL if it will not go. Never raises."""
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+    for _ in range(40):
+        try:
+            done, _st = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if done:
+            return
+        time.sleep(0.05)
+    try:
+        os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+    except (OSError, ChildProcessError):
+        pass
+
+
 def stop() -> int:
-    pid = read_pid(PIDFILE)
+    pid, path = recorded_pid(ROOT, PORT)
     if not pid_alive(pid):
-        PIDFILE.unlink(missing_ok=True)
+        forget(ROOT, PORT, pid)
         print("not running")
         return 0
     assert pid is not None
-    if not pid_is_ours(pid):
-        # backlog #631: the pidfile names a live process that is not this server (a reused pid). Never signal
-        # it. The pidfile is removed only when `ps` PROVES the pid is now another command; unknown keeps it.
-        cmd = pid_command(pid)
-        if cmd:
-            PIDFILE.unlink(missing_ok=True)
-        print(f"NOT STOPPED — pid {pid} is not our server ({cmd or 'ps could not say what it is'}); it was left "
-              "alone. " + (f"Removed the stale pidfile {PIDFILE}." if cmd else f"Kept the pidfile {PIDFILE}."))
+    verdict, answer, _pid = listener_verdict()
+    # Signalled only when BOUND: the listener answered with our token and this pid, or the OS reports this pid as
+    # the listener on our port running this script (older code). Never on a claim alone (r1 X1, X2).
+    # `classify_listener` is the ONE place the pid is compared: "ours" already means the answer names this pid.
+    if verdict not in ("ours", "legacy"):
+        kept = not forget(ROOT, PORT, pid)
+        print(f"NOT STOPPED — pid {pid} is not our server ({pid_command(pid) or 'ps could not say what it is'}); "
+              "it was left alone. " + (f"Kept the pidfile {path} (that pid is alive)." if kept
+                                       else f"Removed the pidfile {path} (that pid is gone)."))
         return RC_NOT_OURS
     os.kill(pid, signal.SIGTERM)
-    PIDFILE.unlink(missing_ok=True)
-    print(f"stopped pid {pid}")
+    for _ in range(40):
+        if not pid_alive(pid):
+            break
+        time.sleep(0.05)
+    forget(ROOT, PORT, pid)
+    print(f"stopped pid {pid}" + (f" ({LEGACY_NOTE.split(' — ')[0]})" if verdict == "legacy" else ""))
     return 0
 
 
-def pid_is_ours(pid: int) -> bool:
-    """`pid` is this server: its `/__whoami` names that pid, or — when the port does not answer so — `ps`
-    names `explainer-serve.py` in its command line."""
-    answer = listener_identity(HOST, PORT)
-    if isinstance(answer, dict) and answer.get("server") == SERVER_MARK:
-        # An explainer-serve answers on our port: the pid is ours only if it is THAT one. A sibling server
-        # elsewhere whose command also names the script is not what this pidfile's stop is about.
-        return answer.get("pid") == pid
-    return "explainer-serve.py" in pid_command(pid)
-
-
 def status() -> int:
-    running, pid = port_busy(HOST, PORT), read_pid(PIDFILE)
+    running, (pid, _path) = port_busy(HOST, PORT), recorded_pid(ROOT, PORT)
     n = len(explainers(ROOT))
-    verdict, answer = listener_verdict(pid) if running else ("", None)
+    verdict, answer, _pid = listener_verdict() if running else ("", None, None)
     shown = ("NO" if not running else "yes (ours)" if verdict == "ours"
+             else f"yes (ours, {LEGACY_NOTE})" if verdict == "legacy"
              else f"yes — NOT this server: {not_ours_message(verdict, answer)}")
     print(f"listening : {shown} on http://{HOST}:{PORT}")
     print(f"pidfile   : {pid if pid else '(none)'}"
           + ("" if pid_alive(pid) or not pid else "  ⚠ stale — that pid is gone"))
     print(f"explainers: {n} in {ROOT}")
     print(f"questions : {QUESTIONS}" + ("" if QUESTIONS.exists() else "  (none yet)"))
-    if running and verdict != "ours":
+    if running and verdict not in ("ours", "legacy"):
         return RC_NOT_OURS
     return 0 if running else 1
 
@@ -5023,19 +5282,15 @@ def _self_test_body() -> int:
             _real = globals()["port_busy"]
             try:
                 globals()["port_busy"] = lambda *_a, **_k: listening
-                # backlog #631: a listener counts only when it is OURS — stub its answer as ours.
-                _real_id, _real_pid = globals().get("listener_identity"), globals()["read_pid"]
-                globals()["listener_identity"] = lambda *_a, **_k: {
-                    "server": "explainer-serve", "pid": 4242, "root": str(ROOT)}
-                globals()["read_pid"] = lambda *_a, **_k: 4242
+                # backlog #631: a listener counts only when it is OURS — stub the verdict as ours.
+                _real_v = globals()["listener_verdict"]
+                globals()["listener_verdict"] = lambda *_a, **_k: ("ours", {}, 4242)
                 import io as _io, contextlib as _ctx
                 with _ctx.redirect_stdout(_io.StringIO()):
                     return status()
             finally:
                 globals()["port_busy"] = _real
-                globals()["read_pid"] = _real_pid
-                if _real_id is not None:
-                    globals()["listener_identity"] = _real_id
+                globals()["listener_verdict"] = _real_v
         case("--status exits NON-ZERO when nothing is listening — a down server is not a pass",
              lambda: _status_rc(False) != 0)
         case("…and exits 0 when it is", lambda: _status_rc(True) == 0)
@@ -5044,29 +5299,149 @@ def _self_test_body() -> int:
         # The owner 2026-11-13: "if port is occupied, the installation script should be asking permission
         # rather than stopping current process". MEASURED pre-fix: `start()` printed "already serving" and
         # returned 0 for ANY listener, and `stop()` SIGTERMed whatever pid the pidfile named.
+        # ⟳ r1: identity was CLAIMED by whoever answered, never BOUND (X1–X10). Every case below that names an
+        # X-id reproduced its finding on 2651c160 before the fix.
         _M = "explainer-serve"
-        case("#631 classify: OUR server — the marker, the pidfile's pid and this ROOT — at two pids and roots",
-             lambda: (classify_listener({"server": _M, "pid": 111, "root": "/a"}, 111, pathlib.Path("/a")),
-                      classify_listener({"server": _M, "pid": 222, "root": "/b/c"}, 222, pathlib.Path("/b/c")))
+        _A, _BC = pathlib.Path("/a"), pathlib.Path("/b/c")
+
+        def _ans(pid, root_, port, token):
+            return {"server": _M, "pid": pid, "root": root_, "port": port, "token": token}
+
+        def _rec(pid, port, token):
+            return {"pid": pid, "port": port, "token": token}
+        case("#631 classify: OUR server — the marker, the record's pid, port and token, and this ROOT — at two inputs",
+             lambda: (classify_listener(_ans(111, "/a", 9001, "t1"), _rec(111, 9001, "t1"), _A, 9001),
+                      classify_listener(_ans(222, "/b/c", 9002, "t2"), _rec(222, 9002, "t2"), _BC, 9002))
              == ("ours", "ours"))
         case("#631 classify: an explainer-serve serving ANOTHER root is not ours, at two roots",
-             lambda: (classify_listener({"server": _M, "pid": 111, "root": "/other"}, 111, pathlib.Path("/a")),
-                      classify_listener({"server": _M, "pid": 222, "root": "/a/sub"}, 222, pathlib.Path("/a")))
+             lambda: (classify_listener(_ans(111, "/other", 9001, "t1"), _rec(111, 9001, "t1"), _A, 9001),
+                      classify_listener(_ans(222, "/a/sub", 9001, "t1"), _rec(222, 9001, "t1"), _A, 9001))
              == ("other-root", "other-root"))
         case("#631 classify: an explainer-serve whose pid the pidfile does not name is not ours, at two pids",
-             lambda: (classify_listener({"server": _M, "pid": 112, "root": "/a"}, 111, pathlib.Path("/a")),
-                      classify_listener({"server": _M, "pid": 111, "root": "/a"}, None, pathlib.Path("/a")))
+             lambda: (classify_listener(_ans(112, "/a", 9001, "t1"), _rec(111, 9001, "t1"), _A, 9001),
+                      classify_listener(_ans(111, "/a", 9001, "t1"), None, _A, 9001))
+             == ("other-root", "other-root"))
+        case("#631 r1 X1/X4 classify: a wrong or missing TOKEN is not ours, at two answers",
+             lambda: (classify_listener(_ans(111, "/a", 9001, "tX"), _rec(111, 9001, "t1"), _A, 9001),
+                      classify_listener({"server": _M, "pid": 111, "root": "/a", "port": 9001},
+                                        _rec(111, 9001, "t1"), _A, 9001))
+             == ("other-root", "other-root"))
+        case("#631 r1 X6 classify: an answer for ANOTHER port is not ours, at two answers",
+             lambda: (classify_listener(_ans(111, "/a", 9002, "t1"), _rec(111, 9001, "t1"), _A, 9001),
+                      classify_listener(_ans(111, "/a", "9001", "t1"), _rec(111, 9001, "t1"), _A, 9001))
              == ("other-root", "other-root"))
         case("#631 classify: a listener without the marker is foreign, at two answers",
-             lambda: (classify_listener({"server": "nginx", "pid": 111, "root": "/a"}, 111, pathlib.Path("/a")),
-                      classify_listener({"pid": 111, "root": "/a"}, 111, pathlib.Path("/a")))
+             lambda: (classify_listener({"server": "nginx", "pid": 111, "root": "/a"}, _rec(111, 9001, "t"), _A, 9001),
+                      classify_listener({"pid": 111, "root": "/a"}, _rec(111, 9001, "t"), _A, 9001))
              == ("foreign", "foreign"))
         case("#631 classify: no answer, or a malformed one, is foreign — never ours",
-             lambda: (classify_listener(None, 111, pathlib.Path("/a")),
-                      classify_listener([_M, 111, "/a"], 111, pathlib.Path("/a")),
-                      classify_listener({"server": _M, "pid": "111", "root": "/a"}, 111, pathlib.Path("/a")),
-                      classify_listener({"server": _M, "pid": True, "root": "/a"}, 1, pathlib.Path("/a")))
+             lambda: (classify_listener(None, _rec(111, 9001, "t"), _A, 9001),
+                      classify_listener([_M, 111, "/a"], _rec(111, 9001, "t"), _A, 9001),
+                      classify_listener(_ans("111", "/a", 9001, "t"), _rec(111, 9001, "t"), _A, 9001),
+                      classify_listener(_ans(True, "/a", 9001, "t"), _rec(1, 9001, "t"), _A, 9001))
              == ("foreign",) * 4)
+
+        # ── r1 X6: the record is per PORT; the legacy `.serve.pid` is read on the default port only ──────
+        case("#631 r1 X6 pidfile_candidates: per port, and the legacy .serve.pid only on the default port",
+             lambda: (pidfile_candidates(_A, 9001), pidfile_candidates(_A, DEFAULT_PORT))
+             == ([_A / ".serve.9001.pid"], [_A / f".serve.{DEFAULT_PORT}.pid", _A / ".serve.pid"]))
+
+        def _identity_roundtrip():
+            out = []
+            with tempfile.TemporaryDirectory() as t:
+                tr = pathlib.Path(t)
+                write_identity(tr, 9001, 111, "t1")
+                write_identity(tr, 9002, 222, "t2")
+                out.append(read_identity(tr, 9001) == _rec(111, 9001, "t1"))
+                out.append(read_identity(tr, 9002) == _rec(222, 9002, "t2"))
+                out.append(all((p.stat().st_mode & 0o777) == 0o600 for p in tr.iterdir()))
+                pidfile_for(tr, 9001).write_text("333")              # the pidfile now disagrees with the record
+                out.append(read_identity(tr, 9001) is None)
+                tokenfile_for(tr, 9002).write_text(json.dumps(_rec(222, 9003, "t2")))   # names another port
+                out.append(read_identity(tr, 9002) is None)
+            return out == [True] * 5
+        case("#631 r1 X6 write/read_identity: one record per port, 0600, None when the pidfile or the port disagrees",
+             _identity_roundtrip)
+
+        # ── r1 X2: the legacy binding — the LISTENER, and an argv that runs THIS file, exactly ──────────
+        _SF = SCRIPT_FILE
+        case("#631 r1 X2 argv_runs_script: an argv element that IS this file, absolute or relative to its cwd",
+             lambda: (argv_runs_script(f"/usr/bin/python3 {_SF}", None, _SF),
+                      argv_runs_script(f"Python scripts/{_SF.name} --x", str(_SF.parent.parent), _SF))
+             == (True, True))
+        case("#631 r1 X2 argv_runs_script: a SUBSTRING, another checkout's copy, or no cwd is not this file",
+             lambda: (argv_runs_script(f"python3 -c x /tmp/notes-about-{_SF.name}", "/tmp", _SF),
+                      argv_runs_script(f"python3 /tmp/other/scripts/{_SF.name}", None, _SF),
+                      argv_runs_script(f"python3 scripts/{_SF.name}", None, _SF),
+                      argv_runs_script(f"vim {_SF}.swp", None, _SF))
+             == (False, False, False, False))
+        def _spaced_path():
+            with tempfile.TemporaryDirectory() as t:
+                d = pathlib.Path(t) / "has space" / "scripts"
+                d.mkdir(parents=True)
+                (d / _SF.name).write_text("")
+                return (argv_runs_script(f"python3 {d / _SF.name} --x", None, d / _SF.name),
+                        argv_runs_script(f"python3 {d / _SF.name} --x", None, _SF))
+        case("#631 r1 X2 argv_runs_script: a path with spaces spans tokens and still matches exactly",
+             lambda: _spaced_path() == (True, False))
+        case("#631 r1 X2 lsof_pids: pids, nothing, or None for output that is not pids",
+             lambda: (lsof_pids("123\n456\n"), lsof_pids(""), lsof_pids("COMMAND PID\n")) == ({123, 456}, set(), None))
+
+        def _free_port():
+            with socket.socket() as s:
+                s.bind((HOST, 0))
+                return s.getsockname()[1]
+
+        class _Listener:
+            """A listener on an ephemeral port. `body=None`: a silent TCP socket that never answers; else a
+            plain HTTP server answering every GET with `body` (bytes, or a callable of the port), NOT
+            explainer-serve unless `body` imitates it."""
+            def __init__(self, body=None, handler=None):
+                self.httpd = self.sock = None
+                if handler is None and body is None:
+                    self.sock = socket.socket()
+                    self.sock.bind((HOST, 0))
+                    self.sock.listen(128)
+                    self.port = self.sock.getsockname()[1]
+                    return
+                outer = self
+                if handler is None:
+                    class handler(http.server.BaseHTTPRequestHandler):  # noqa: N801
+                        def do_GET(self):  # noqa: N802
+                            b = outer.body
+                            self.send_response(200)
+                            self.send_header("Content-Length", "%d" % len(b))
+                            self.end_headers()
+                            self.wfile.write(b)
+
+                        def log_message(self, *_a):
+                            pass
+                self.httpd = http.server.ThreadingHTTPServer((HOST, 0), handler)
+                self.port = self.httpd.server_address[1]
+                self.body = body(self.port) if callable(body) else body
+                threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+            def alive(self):
+                return port_busy(HOST, self.port)
+
+            def close(self):
+                if self.httpd is not None:
+                    self.httpd.shutdown()
+                    self.httpd.server_close()
+                if self.sock is not None:
+                    self.sock.close()
+
+        def _listening_pids_bound():
+            a, b = _Listener(), _Listener(b"x")
+            try:
+                return (os.getpid() in (listening_pids(a.port) or set()),
+                        os.getpid() in (listening_pids(b.port) or set()),
+                        listening_pids(a.port, "/nonexistent/lsof"))
+            finally:
+                a.close()
+                b.close()
+        case("#631 r1 X2 listening_pids: the OS names THIS process as the listener on two ports; no lsof is None",
+             lambda: _listening_pids_bound() == (True, True, None))
 
         def _whoami_drive(root, headers):
             real = globals()["ROOT"]
@@ -5081,55 +5456,20 @@ def _self_test_body() -> int:
             finally:
                 globals()["ROOT"] = real
 
-        def _whoami_ok(root):
-            code, body = _whoami_drive(root, {"Host": f"127.0.0.1:{PORT}"})
-            return code == 200 and json.loads(body) == {"server": _M, "pid": os.getpid(), "root": str(root)}
-        case("#631 GET /__whoami names this server, its pid and its ROOT, at two roots",
-             lambda: _whoami_ok(pathlib.Path("/x/one")) and _whoami_ok(pathlib.Path("/y/two")))
+        def _whoami_ok(root, token):
+            real_t = globals()["SERVE_TOKEN"]
+            globals()["SERVE_TOKEN"] = token
+            try:
+                code, body = _whoami_drive(root, {"Host": f"127.0.0.1:{PORT}"})
+            finally:
+                globals()["SERVE_TOKEN"] = real_t
+            return code == 200 and json.loads(body) == _ans(os.getpid(), str(root), PORT, token)
+        case("#631 GET /__whoami names this server, its pid, port, ROOT and start token, at two roots",
+             lambda: _whoami_ok(pathlib.Path("/x/one"), "tok1") and _whoami_ok(pathlib.Path("/y/two"), "tok2"))
         case("#631 GET /__whoami from a rebound Host or a foreign Origin is refused 403 — it names a path",
              lambda: (_whoami_drive(root, {"Host": "rebound.evil.example:7391"})[0],
                       _whoami_drive(root, {"Host": "127.0.0.1:7391", "Origin": "https://evil.example"})[0])
              == (403, 403))
-
-        def _free_port():
-            with socket.socket() as s:
-                s.bind((HOST, 0))
-                return s.getsockname()[1]
-
-        class _Listener:
-            """A listener on an ephemeral port. `body=None`: a silent TCP socket that never answers; else a
-            plain HTTP server answering every GET with `body` (NOT explainer-serve unless `body` imitates it)."""
-            def __init__(self, body=None, handler=None):
-                self.httpd = self.sock = None
-                if handler is None and body is None:
-                    self.sock = socket.socket()
-                    self.sock.bind((HOST, 0))
-                    self.sock.listen(128)
-                    self.port = self.sock.getsockname()[1]
-                    return
-                if handler is None:
-                    class handler(http.server.BaseHTTPRequestHandler):  # noqa: N801
-                        def do_GET(self):  # noqa: N802
-                            self.send_response(200)
-                            self.send_header("Content-Length", "%d" % len(body))
-                            self.end_headers()
-                            self.wfile.write(body)
-
-                        def log_message(self, *_a):
-                            pass
-                self.httpd = http.server.ThreadingHTTPServer((HOST, 0), handler)
-                self.port = self.httpd.server_address[1]
-                threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
-
-            def alive(self):
-                return port_busy(HOST, self.port)
-
-            def close(self):
-                if self.httpd is not None:
-                    self.httpd.shutdown()
-                    self.httpd.server_close()
-                if self.sock is not None:
-                    self.sock.close()
 
         class _QuietHandler(Handler):
             def log_message(self, *_a):
@@ -5145,8 +5485,7 @@ def _self_test_body() -> int:
             finally:
                 globals()["ROOT"] = real
                 ln.close()
-            return out == [{"server": _M, "pid": os.getpid(), "root": "/p/one"},
-                           {"server": _M, "pid": os.getpid(), "root": "/p/two"}]
+            return out == [_ans(os.getpid(), "/p/one", PORT, SERVE_TOKEN), _ans(os.getpid(), "/p/two", PORT, SERVE_TOKEN)]
         case("#631 listener_identity reads a real Handler's /__whoami, at two roots",
              _identity_of_real_handler)
 
@@ -5159,19 +5498,77 @@ def _self_test_body() -> int:
              lambda: (_identity_of(_Listener()), _identity_of(_Listener(b"<html>not json")),
                       listener_identity(HOST, _free_port(), 0.5)) == (None, None, None))
 
-        _SELF = str(pathlib.Path(__file__).resolve())
+        # ── r1 X8: a listener that drip-feeds bytes cannot hold the identity probe past its deadline ─────
+        # MEASURED on 2651c160: a byte every 0.5 s held `start` past a 20 s harness timeout.
+        def _drip(first):
+            srv = socket.socket()
+            srv.bind((HOST, 0))
+            srv.listen(8)
+            stop_ = threading.Event()
+
+            def serve():
+                try:
+                    c, _ = srv.accept()
+                    c.sendall(first)
+                    while not stop_.wait(0.2):
+                        c.sendall(b"x")
+                except OSError:
+                    pass
+            threading.Thread(target=serve, daemon=True).start()
+            got, t0 = [], time.monotonic()
+            th = threading.Thread(target=lambda: got.append(listener_identity(HOST, srv.getsockname()[1], 1.0)),
+                                  daemon=True)
+            th.start()
+            th.join(6)
+            took = time.monotonic() - t0
+            stop_.set()
+            srv.close()
+            return (not th.is_alive()) and got == [None] and took < 3
+        case("#631 r1 X8 listener_identity: a drip-feeding listener is NO answer within the deadline, in headers and in body",
+             lambda: (_drip(b"HTTP/1.0 200 OK\r\nX-Drip: "),
+                      _drip(b"HTTP/1.0 200 OK\r\nContent-Length: 5000\r\n\r\n{")) == (True, True))
+
+        _SELF = str(SCRIPT_FILE)
 
         def _cli(port, root, *args):
             env = {**os.environ, "EXPLAINER_SERVE_PORT": str(port), "EXPLAINER_SERVE_ROOT": str(root)}
             r = subprocess.run([sys.executable, _SELF, *args], capture_output=True, text=True, timeout=60, env=env)
             return r.returncode, r.stdout + r.stderr
 
+        # A stand-in SERVER in its own process, so the OS reports IT as the listener: it answers every GET with
+        # `body` (404 when empty — what a server from before `/__whoami` does), and carries `argv` as extra
+        # arguments, which is all `ps` sees of it.
+        _STAND = ("import http.server, sys\n"
+                  "b = sys.argv[1].encode()\n"
+                  "class H(http.server.BaseHTTPRequestHandler):\n"
+                  "    def do_GET(self):\n"
+                  "        self.send_response(200 if b else 404)\n"
+                  "        self.send_header('Content-Length', str(len(b)))\n"
+                  "        self.end_headers()\n"
+                  "        self.wfile.write(b)\n"
+                  "    def log_message(self, *a):\n"
+                  "        pass\n"
+                  "s = http.server.HTTPServer(('127.0.0.1', int(sys.argv[2])), H)\n"
+                  "print('up', flush=True)\n"
+                  "s.serve_forever()\n")
+
+        def _stand_in(port, body="", argv=(), cwd=None):
+            p = subprocess.Popen([sys.executable, "-c", _STAND, body, str(port), *argv], cwd=cwd,
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            p.stdout.readline()
+            return p
+
+        def _kill(p):
+            if p.poll() is None:
+                p.kill()
+            p.wait(10)
+
         def _start_on_foreign(ln):
             try:
                 with tempfile.TemporaryDirectory() as t:
                     rc, out = _cli(ln.port, t)
                     return rc, "NOT this server" in out, f"EXPLAINER_SERVE_PORT=" in out, ln.alive(), \
-                        (pathlib.Path(t) / ".serve.pid").exists()
+                        pidfile_for(pathlib.Path(t), ln.port).exists()
             finally:
                 ln.close()
         _imposter = json.dumps({"server": _M, "pid": 1, "root": "/somewhere/else"}).encode()
@@ -5194,17 +5591,137 @@ def _self_test_body() -> int:
             p = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             try:
                 with tempfile.TemporaryDirectory() as t:
-                    (pathlib.Path(t) / ".serve.pid").write_text(str(p.pid))
-                    rc, out = _cli(_free_port(), t, "--stop")
+                    port = _free_port()
+                    pidfile_for(pathlib.Path(t), port).write_text(str(p.pid))
+                    rc, out = _cli(port, t, "--stop")
                     time.sleep(0.2)
-                    return rc, p.poll() is None, "not our server" in out
+                    return rc, p.poll() is None, "not our server" in out, pidfile_for(pathlib.Path(t), port).exists()
             finally:
-                p.kill()
-                p.wait(10)
+                _kill(p)
         case("#631 --stop with a pidfile naming an UNRELATED live process leaves it alive and exits 3, at two processes",
-             lambda: (_stop_spares(["sleep", "60"]),
-                      _stop_spares([sys.executable, "-c", "import time; time.sleep(60)"]))
-             == ((3, True, True),) * 2)
+             lambda: [r[:3] for r in (_stop_spares(["sleep", "60"]),
+                                      _stop_spares([sys.executable, "-c", "import time; time.sleep(60)"]))]
+             == [(3, True, True)] * 2)
+        # r1 X7: a pid that is ALIVE is never forgotten — the pidfile goes only with a dead pid.
+        case("#631 r1 X7 --stop on a live pid that is not ours KEEPS its pidfile, at two processes",
+             lambda: [r[3] for r in (_stop_spares(["sleep", "60"]),
+                                     _stop_spares([sys.executable, "-c", "import time; time.sleep(60)"]))]
+             == [True, True])
+
+        # ── r1 X2: a pid whose argv runs THIS script but that is NOT the listener on our port is spared ─────
+        def _stop_spares_unbound(hold_port):
+            p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", _SELF],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ln = _Listener() if hold_port else None
+            try:
+                with tempfile.TemporaryDirectory() as t:
+                    port = ln.port if ln else _free_port()
+                    pidfile_for(pathlib.Path(t), port).write_text(str(p.pid))
+                    rc, _out = _cli(port, t, "--stop")
+                    time.sleep(0.2)
+                    return rc, p.poll() is None
+            finally:
+                _kill(p)
+                if ln:
+                    ln.close()
+        case("#631 r1 X2 --stop spares a pid running THIS script that is not the LISTENER on our port, port free or held",
+             lambda: (_stop_spares_unbound(False), _stop_spares_unbound(True)) == ((3, True),) * 2)
+
+        # ── r1 X1/X4/X9: a forged answer — the marker, our root and port, the pidfile's pid — is not ours ───
+        def _forged_answer(answer_of, token_on_disk):
+            victim = subprocess.Popen(["sleep", "60"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                with tempfile.TemporaryDirectory() as t:
+                    tr = pathlib.Path(t)
+                    ln = _Listener(lambda port: json.dumps(answer_of(victim.pid, t, port)).encode())
+                    try:
+                        if token_on_disk:
+                            write_identity(tr, ln.port, victim.pid, token_on_disk)
+                        else:
+                            pidfile_for(tr, ln.port).write_text(str(victim.pid))
+                        rc_start, _o = _cli(ln.port, t)
+                        rc_stop, _o = _cli(ln.port, t, "--stop")
+                        time.sleep(0.2)
+                        return rc_start, rc_stop, victim.poll() is None
+                    finally:
+                        ln.close()
+            finally:
+                _kill(victim)
+        case("#631 r1 X1/X4 a forged answer with no token, or the WRONG token, is not ours: start 3, stop 3, the pid lives",
+             lambda: (_forged_answer(lambda v, t, port: {"server": _M, "pid": v, "root": t, "port": port}, None),
+                      _forged_answer(lambda v, t, port: _ans(v, t, port, "forged"), "right"))
+             == ((3, 3, True),) * 2)
+        case("#631 r1 X9 an answer with our token but ANOTHER pid is not ours: the pidfile's pid is never signalled",
+             lambda: (_forged_answer(lambda v, t, port: _ans(os.getpid(), t, port, "right"), "right"),
+                      _forged_answer(lambda v, t, port: _ans(1, t, port, "right"), "right"))
+             == ((3, 3, True),) * 2)
+        case("#631 r1 X6 an answer with our token for ANOTHER port is not ours: the pidfile's pid is never signalled",
+             lambda: (_forged_answer(lambda v, t, port: _ans(v, t, port + 1, "right"), "right"),
+                      _forged_answer(lambda v, t, port: _ans(v, t, 0, "right"), "right"))
+             == ((3, 3, True),) * 2)
+
+        # ── r1 X5: a server from code older than /__whoami is OURS when bound, and never "another program" ──
+        def _legacy(argv, cwd, exact):
+            port = _free_port()
+            p = _stand_in(port, "", argv, cwd)
+            try:
+                with tempfile.TemporaryDirectory() as t:
+                    pidfile_for(pathlib.Path(t), port).write_text(str(p.pid))
+                    rc1, o1 = _cli(port, t)
+                    rc2, o2 = _cli(port, t, "--status")
+                    rc3, o3 = _cli(port, t, "--stop")
+                    for _ in range(40):
+                        if p.poll() is not None:
+                            break
+                        time.sleep(0.05)
+                    if exact:
+                        return (rc1, "already serving" in o1 and "older code" in o1, rc2, "older code" in o2,
+                                "another" not in o1 + o2, rc3, p.poll() is not None)
+                    return rc1, rc3, p.poll() is None
+            finally:
+                _kill(p)
+        case("#631 r1 X5 an OLDER server running this file is ours: start 0 'older code', status 0, stop kills it, abs and relative argv",
+             lambda: (_legacy([_SELF], None, True), _legacy([f"scripts/{SCRIPT_FILE.name}"],
+                                                             str(SCRIPT_FILE.parent.parent), True))
+             == ((0, True, 0, True, True, 0, True),) * 2)
+        case("#631 r1 X2 a listener whose argv only MENTIONS the file, or runs another copy, is not ours: start 3, stop 3, alive",
+             lambda: (_legacy([f"/tmp/notes-about-{SCRIPT_FILE.name}"], None, False),
+                      _legacy([f"/tmp/other-checkout/scripts/{SCRIPT_FILE.name}"], None, False))
+             == ((3, 3, True),) * 2)
+
+        # ── r1 X3: after the fork the parent waits for ITS token and ITS child, or fails and reaps ──────────
+        def _after_fork_with(answer_of):
+            child = subprocess.Popen(["sleep", "60"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            real = globals()["ROOT"], globals()["PORT"], globals()["AFTER_FORK_WAIT"]
+            try:
+                with tempfile.TemporaryDirectory() as t:
+                    tr = pathlib.Path(t)
+                    ln = _Listener(lambda port: json.dumps(answer_of(child.pid, t, port)).encode())
+                    try:
+                        globals()["ROOT"], globals()["PORT"], globals()["AFTER_FORK_WAIT"] = tr, ln.port, 0.6
+                        import io as _io, contextlib as _ctx
+                        buf = _io.StringIO()
+                        with _ctx.redirect_stdout(buf):
+                            rc = after_fork(child.pid, "tok-of-this-start")
+                        recorded = read_identity(tr, ln.port)
+                        return rc, buf.getvalue().startswith("FAIL"), pid_alive(child.pid), recorded is not None
+                    finally:
+                        globals()["ROOT"], globals()["PORT"], globals()["AFTER_FORK_WAIT"] = real
+                        ln.close()
+            finally:
+                if pid_alive(child.pid):
+                    child.kill()
+                try:
+                    child.wait(10)
+                except ChildProcessError:
+                    pass
+        case("#631 r1 X3 after the fork: a racer on the port (another token, or no token) is FAIL rc 1, the child reaped, no record",
+             lambda: (_after_fork_with(lambda c, t, port: _ans(c, t, port, "a-racer")),
+                      _after_fork_with(lambda c, t, port: {"server": "nginx"}))
+             == ((1, True, False, False),) * 2)
+        case("#631 r1 X3 control: the parent's OWN token and child answering is rc 0, child alive, recorded",
+             lambda: _after_fork_with(lambda c, t, port: _ans(c, t, port, "tok-of-this-start"))
+             == (0, False, True, True))
 
         def _own_server_cycle():
             port = _free_port()
@@ -5212,7 +5729,7 @@ def _self_test_body() -> int:
                 pid = None
                 try:
                     rc1, _o1 = _cli(port, t)
-                    pid = read_pid(pathlib.Path(t) / ".serve.pid")
+                    pid = read_pid(pidfile_for(pathlib.Path(t), port))
                     rc2, o2 = _cli(port, t)
                     rc3, _o3 = _cli(port, t, "--status")
                     rc4, o4 = _cli(port, t, "--stop")
@@ -5227,6 +5744,35 @@ def _self_test_body() -> int:
                         os.kill(pid, signal.SIGKILL)
         case("#631 control: OUR server is recognised — start rc 0, again 'already serving' rc 0, status 0, stop kills it",
              lambda: _own_server_cycle() == (0, 0, True, 0, 0, True, False))
+
+        # ── r1 X6: one root on TWO ports — each is stopped through its own record, and the other survives ──
+        def _two_ports_one_root():
+            pa, pb = _free_port(), _free_port()
+            with tempfile.TemporaryDirectory() as t:
+                pids = []
+                try:
+                    rca, _ = _cli(pa, t)
+                    rcb, _ = _cli(pb, t)
+                    pids = [read_pid(pidfile_for(pathlib.Path(t), p)) for p in (pa, pb)]
+                    rc_sa, _ = _cli(pa, t, "--stop")
+                    for _ in range(40):
+                        if not pid_alive(pids[0]):
+                            break
+                        time.sleep(0.05)
+                    a_dead, b_alive = not pid_alive(pids[0]), pid_alive(pids[1])
+                    rc_stb, _ = _cli(pb, t, "--status")
+                    rc_sb, _ = _cli(pb, t, "--stop")
+                    for _ in range(40):
+                        if not pid_alive(pids[1]):
+                            break
+                        time.sleep(0.05)
+                    return rca, rcb, pids[0] != pids[1], rc_sa, a_dead, b_alive, rc_stb, rc_sb, pid_alive(pids[1])
+                finally:
+                    for pid in pids:
+                        if pid and pid_alive(pid):
+                            os.kill(pid, signal.SIGKILL)
+        case("#631 r1 X6 one root on two ports: stop one, the other is still ours and stops through its own record",
+             lambda: _two_ports_one_root() == (0, 0, True, 0, True, True, 0, 0, False))
 
         # ── r1 MEDIUM 5: the escaping `safe_href` credits `md_render` with ───────────────────
         # ⛔ `:335` writes down a DIVISION OF LABOUR — *"Quotes are escaped upstream in `md_render`,

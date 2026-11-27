@@ -1619,7 +1619,7 @@ EXPECTED_MUTATIONS = {
     # port_from's ASCII shape and caught int() (m4).
     # ⟳ 2026-11-13, backlog #625: 112 -> 116 — the Ask panel reaching the page, /_rev folding the questions in, and
     # a fault in either SAID (the panel on the page, the revision as `:ask-failed`).
-    "scripts/explainer-serve.py": 131,  # 127 -> 131 (backlog #631: start returns 0 on a listener that is not this server, stop skips the identity check, the classifier ignores the pid, the classifier ignores the root); 126 -> 127 (dashboard-retire S1 r1 L3: a directory source's own mtime); 123 -> 126 (dashboard-retire S1 Task 5: a directory source reads only its own mtime, any directory is accepted, the stale reply names the directory)
+    "scripts/explainer-serve.py": 138,  # 131 -> 138 (backlog #631 r1: the classifier ignores the token, the port; the legacy binding skips lsof; the argv compare is a substring; a live pid's pidfile is forgotten; after the fork any listener counts; the identity deadline is per read); 127 -> 131 (backlog #631: start returns 0 on a listener that is not this server, stop skips the identity check, the classifier ignores the pid, the classifier ignores the root); 126 -> 127 (dashboard-retire S1 r1 L3: a directory source's own mtime); 123 -> 126 (dashboard-retire S1 Task 5: a directory source reads only its own mtime, any directory is accepted, the stale reply names the directory)
     # ⟳ 2026-11-13, backlog #625: the Ask answerer, pinned in the commit that creates it. One entry per rule a
     # reader relies on: the claim marker, the caps (both directions of each), Read as the only tool, the suite
     # never starting a real binary, escaping, where an answer may land, what may be replaced, an instruction

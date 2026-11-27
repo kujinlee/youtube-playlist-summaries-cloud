@@ -277,6 +277,13 @@ another port (`EXPLAINER_SERVE_PORT=<other> python3 scripts/explainer-serve.py`,
 port's URL), or the user frees the port and you re-run. `--stop` likewise refuses (exit 3) a pidfile
 whose pid is not this server.
 
+**"already serving … (older code — `--stop`, then start, to pick up changes)" is exit 0 and IS this
+server**, started before the script learned to say who it is. The page is served; it is NOT another
+program, so never present it to the user as one. Run `--stop`, then start, only when the change you
+are delivering needs the new server code. Exit 1 after a start means the child never answered as
+itself (another program won the port in between); the script reaped its own child — re-run, and
+treat a second exit 3 as above.
+
 **Deliver the served URL, never the file path.** `/latest` always points at the newest page, so a
 reader's bookmark never goes stale.
 
