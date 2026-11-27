@@ -7069,7 +7069,7 @@
       ]
     ],
     "expect": [
-      "backlog #652: a damaged `until` is shown as `date not read` and stays a live reason — never dropped, never passed"
+      "backlog #652: a damaged `until` is shown as `date not read` and stays a live reason — never dropped, never passed; beside another entry's PASSED date (an alarm), a live or a damaged date still keeps the item off the session-start list"
     ]
   },
   {
@@ -7082,7 +7082,7 @@
       ]
     ],
     "expect": [
-      "backlog #652: a damaged `until` is shown as `date not read` and stays a live reason — never dropped, never passed"
+      "backlog #652: a damaged `until` is shown as `date not read` and stays a live reason — never dropped, never passed; beside another entry's PASSED date (an alarm), a live or a damaged date still keeps the item off the session-start list"
     ]
   },
   {

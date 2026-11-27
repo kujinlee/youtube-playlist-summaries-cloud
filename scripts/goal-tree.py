@@ -4075,9 +4075,11 @@ def _cases_650(case) -> None:
                                                                      ("12-31 10:00", "01-02", "2026-07-05 10:00"))],
          ["wait date passed 12-30, not started", "wait date passed 01-02, not started"])
     case("backlog #652: a damaged `until` is shown as `date not read` and stays a live reason — never dropped, never "
-         "passed",
-         ([safe(tail, [ent("x", until=v)]) for v in ("next week", 7)], safe(idle_of, [ent("x", until="next week")])),
-         (["waits for: until next week (date not read)", "waits for: until 7 (date not read)"], []))
+         "passed; beside another entry's PASSED date (an alarm), a live or a damaged date still keeps the item off the "
+         "session-start list",
+         ([safe(tail, [ent("x", until=v)]) for v in ("next week", 7)],
+          [safe(idle_of, [_d652(), ent("y", id="sub2", until=v)]) for v in ("next week", "11-20")]),
+         (["waits for: until next week (date not read)", "waits for: until 7 (date not read)"], [[], []]))
     _two652 = [_d652(), ent("y", id="sub2", waits="the owner decides")]
     case("⭐ backlog #652: a passed date retires ONLY its own entry's wait — another entry's recorded wait on the same "
          "item still stands, so the alarm shows and the item is NOT listed at session start",
