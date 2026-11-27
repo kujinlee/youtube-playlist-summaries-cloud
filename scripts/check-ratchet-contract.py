@@ -372,6 +372,7 @@ def check_manifest(path: str, text: str, manifest_stems: set[str]) -> list[Viola
 #     m4_catalog.py               rc=0 and ZERO BYTES — it ignores the flag; there is no suite
 #     gen-m4-manifest.py          rc=1 CANNOT RUN (cannot create its scratch directory)
 #     subject_status.py           rc=1 — 16/17, a suite RED on master that nothing runs
+#       ⟳ 2026-11-27, backlog #386: green 18/18 (the case's premise was stale) and now run in CI
 #
 # ⛔ `m4_catalog.py rc=0` WAS CANNOT-RUN READ AS SUCCESS, inside the evidence for a comment saying
 # each was "verified by RUNNING". An exit code cannot tell a passing suite from an ignored

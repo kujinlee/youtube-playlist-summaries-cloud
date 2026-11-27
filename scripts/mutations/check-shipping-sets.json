@@ -378,7 +378,7 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "        if c.get(\"effort\") not in EFFORTS:",
+        "        if type(c.get(\"effort\")) is not int or c.get(\"effort\") not in EFFORTS:",
         "        if False:"
       ]
     ],
@@ -422,7 +422,7 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "        if c.get(\"package\") not in packages:",
+        "        if not isinstance(c.get(\"package\"), str) or c.get(\"package\") not in packages:",
         "        if False:"
       ]
     ],
@@ -444,11 +444,33 @@
     "file": "scripts/check-shipping-sets.py",
     "edits": [
       [
-        "any(p not in packages or p == c[\"package\"]",
+        "any(not isinstance(p, str) or p not in packages or p == c[\"package\"]",
         "any(p == c[\"package\"]"
       ]
     ],
     "expect": "a shared_with naming no package is refused"
+  },
+  {
+    "name": "a boolean effort is accepted (True == 1)",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "type(c.get(\"effort\")) is not int or ",
+        ""
+      ]
+    ],
+    "expect": "a boolean effort is refused (True == 1 would pass a membership test)"
+  },
+  {
+    "name": "an unhashable package reaches the dict membership test (backlog #700)",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "not isinstance(c.get(\"package\"), str) or ",
+        ""
+      ]
+    ],
+    "expect": "`package: []` is refused by name (backlog #700's reported crash)"
   },
   {
     "name": "a non-library may be shared",

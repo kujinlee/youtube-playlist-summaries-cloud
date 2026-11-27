@@ -797,17 +797,17 @@ def load_map(path: Path, root: Path = REPO) -> ComponentMap:
         if cid in ids:
             raise Refused(f"component id {cid!r} appears twice")
         ids.add(cid)
-        if c.get("effort") not in EFFORTS:
+        if type(c.get("effort")) is not int or c.get("effort") not in EFFORTS:     # bool is an int; refuse it
             raise Refused(f"component {cid!r}: effort {c.get('effort')!r} is not one of {EFFORTS}")
         roles = c.get("roles")
         if not isinstance(roles, list) or not roles or any(r not in ROLES for r in roles):
             raise Refused(f"component {cid!r}: roles {roles!r} are not a non-empty list from {ROLES}")
         if c.get("phase") not in PHASES:
             raise Refused(f"component {cid!r}: phase {c.get('phase')!r} is not one of {PHASES}")
-        if c.get("package") not in packages:
+        if not isinstance(c.get("package"), str) or c.get("package") not in packages:  # backlog #700: [] is unhashable
             raise Refused(f"component {cid!r}: package {c.get('package')!r} is not a key in packages")
         shared = c.get("shared_with", [])
-        if not isinstance(shared, list) or any(p not in packages or p == c["package"] for p in shared):
+        if not isinstance(shared, list) or any(not isinstance(p, str) or p not in packages or p == c["package"] for p in shared):
             raise Refused(f"component {cid!r}: shared_with {shared!r} names a package that is not another key "
                           "in packages")
         if shared and c["roles"] != ["library"]:
@@ -1495,6 +1495,36 @@ def _self_test_body() -> int:
          lambda: load_map(write_map(w, [comp("a", ["scripts/a.py"], roles=["library"], shared_with=["q"])],
                                     packages={"pkg": {"channel": "plugin"}, "q": {"channel": "plugin"}}), w)
          .components[0]["shared_with"], ["q"])
+    # backlog #700: load_map is TOTAL — every wrong-typed value is refused, never a traceback. The field list is an
+    # independent literal (not read from load_map), and each value goes in the place of a VALID one.
+    wrong = ([], {}, None, True, 1.5, "", "x", [[]], [{}])
+    crashed = []
+    for field in ("id", "effort", "roles", "phase", "package", "shared_with", "files"):
+        for v in wrong:
+            try:
+                got = rule(**{field: v}) if field != "shared_with" else rule(roles=["library"], shared_with=v)
+            except Exception as e:      # a traceback is exactly what this case exists to catch
+                got = f"RAISED {type(e).__name__}: {e}"
+            if not got.startswith(("REFUSED", "CANNOT RUN", "ACCEPTED")):
+                crashed.append((field, v, got))
+    for top in ("packages", "components", "exclusions"):
+        for v in wrong:
+            d = {"measured_at": "x", "packages": {"pkg": {"channel": "plugin"}},
+                 "components": [comp("a", ["scripts/a.py"])], "exclusions": []}
+            d[top] = v
+            (w / "bad.json").write_text(json.dumps(d))
+            try:
+                got = refused(lambda: load_map(w / "bad.json", w))
+            except Exception as e:
+                got = f"RAISED {type(e).__name__}: {e}"
+            if not got.startswith(("REFUSED", "CANNOT RUN", "ACCEPTED")):
+                crashed.append((top, v, got))
+    case("every wrong-typed value in a component or a top-level key is refused, never a traceback (backlog #700)",
+         lambda: crashed, [])
+    case("`package: []` is refused by name (backlog #700's reported crash)",
+         lambda: rule(package=[]).startswith("REFUSED: component 'a': package []"), True)
+    case("a boolean effort is refused (True == 1 would pass a membership test)",
+         lambda: rule(effort=True).startswith("REFUSED: component 'a': effort True"), True)
     case("a map with no components is refused",
          lambda: refused(lambda: load_map(write_map(w, []), w)), "REFUSED: the map has no `components`")
     (w / "list.json").write_text("[]")

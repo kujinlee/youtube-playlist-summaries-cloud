@@ -195,8 +195,22 @@ def _self_test_body() -> int:
     # ⭐ the defect this banner shipped with for ten minutes: it counted references to the CALLER's
     # scan list (which includes shipped tables like `jobs`) and announced "SHIPPED — 100 files" for
     # a schema nothing deploys. The number was true; the sentence was false.
+    # ⟳ 2026-11-27, backlog #386: this case read the REAL stable-blob schema and went red on
+    # 2026-08-27, when c517faa0 promoted that schema as `supabase/migrations/0027_stable_blob_addressing.sql`.
+    # The banner was right (it IS shipped now); the case's premise was stale. So the UNSHIPPED
+    # property is now proven on a schema built here, whose one table no runtime file can name,
+    # and the real schema's new status is asserted as what it is.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        parked = Path(tmp)
+        (parked / "01.sql").write_text("create table zzq_parked_probe_t386 (id int);\n")
+        bp = subject_banner(parked, tracked)
     case("the parked schema reports UNSHIPPED, not SHIPPED",
-         any("UNSHIPPED" in x for x in b))
+         any(x.strip().startswith("UNSHIPPED —") for x in bp)
+         and not any(x.strip().startswith("SHIPPED —") for x in bp))
+    case("the promoted stable-blob schema now reports SHIPPED (migration 0027)",
+         any(x.strip().startswith("SHIPPED —") for x in b)
+         and not any(x.strip().startswith("UNSHIPPED —") for x in b))
     case("the banner attributes the subject's last change",
          any("subject last moved at" in x for x in b))
 
