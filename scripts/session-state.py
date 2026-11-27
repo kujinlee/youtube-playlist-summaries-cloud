@@ -63,7 +63,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --set-until ID MM-DD|none     # a dated wait, read by the goal tree (backlog #652)
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 172 cases
+    python3 scripts/session-state.py --self-test  # 173 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -1231,6 +1231,17 @@ def _self_test_body() -> int:
         shutil.rmtree(tmpk.parent, ignore_errors=True)
     case("⭐ r2: --add stores the kind: omitted -> routine, or owner-wait for the marker; explicit wins; an unknown kind is refused",
          (stored, refused_kind), ({"a": KIND_ROUTINE, "b": KIND_WAIT, "c": KIND_INSTRUCTION, "d": KIND_ROUTINE}, "refused"))
+    tmpu = Path(tempfile.mkdtemp(prefix="ss-until-")) / "inflight.jsonl"
+    try:
+        ledger_add(tmpu, "u1", "w", "d", "T", until="11-26", today=dt.date(2026, 11, 26))
+        ledger_add(tmpu, "u2", "w", "d", "T", until="11-24", today=dt.date(2026, 11, 26))
+        ledger_add(tmpu, "u3", "w", "d", "T", until="02-29", today=dt.date(2029, 3, 1))
+        stored_until = {e["id"]: e.get("until") for e in read_ledger(tmpu)[0]}
+    finally:
+        shutil.rmtree(tmpu.parent, ignore_errors=True)
+    case("backlog #652 (fixture variation): ledger_add stores the until its `today` settles — the write day itself, "
+         "a passed day as next year's, a Feb 29 as the next leap year's",
+         stored_until, {"u1": "2026-11-26", "u2": "2027-11-24", "u3": "2032-02-29"})
     case("⭐ r2: is_owner follows the declared kind, whatever the text says",
          (is_owner(own402), is_owner(newer[0]), is_owner(dict(newer[0], kind=KIND_WAIT)), is_owner(dict(own402, kind=KIND_ROUTINE))),
          (True, False, True, False))
