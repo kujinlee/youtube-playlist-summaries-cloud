@@ -17,10 +17,10 @@ halves:
   codex: ran
   claude: gap
 findings:
-  - {id: Y1, severity: BLOCKER, aim: deliverable, fix_induced: true, component: explainer-serve, disposition: folded}
-  - {id: Y2, severity: MAJOR, aim: deliverable, fix_induced: true, component: explainer-serve, disposition: folded}
-  - {id: Y3, severity: MAJOR, aim: deliverable, fix_induced: true, component: explainer-serve, disposition: folded}
-  - {id: Y4, severity: MAJOR, aim: deliverable, fix_induced: true, component: explainer-serve, disposition: folded}
+  - {id: Y1, severity: BLOCKER, aim: deliverable, fix_induced: true, component: explainer-serve, disposition: fixed}
+  - {id: Y2, severity: MAJOR, aim: deliverable, fix_induced: true, component: explainer-serve, disposition: fixed}
+  - {id: Y3, severity: MAJOR, aim: deliverable, fix_induced: true, component: explainer-serve, disposition: fixed}
+  - {id: Y4, severity: MAJOR, aim: deliverable, fix_induced: true, component: explainer-serve, disposition: fixed}
 ```
 
 REVIEW GAP: claude — alternation (round 2 is Codex's).

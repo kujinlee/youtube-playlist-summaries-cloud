@@ -23,16 +23,16 @@ halves:
   codex: ran
   claude: ran
 findings:
-  - {id: X1, severity: BLOCKER, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: folded}
-  - {id: X2, severity: BLOCKER, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: folded}
-  - {id: X3, severity: MAJOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: folded}
-  - {id: X4, severity: MAJOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: folded}
-  - {id: X5, severity: MAJOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: folded}
-  - {id: X6, severity: MAJOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: folded}
-  - {id: X7, severity: MINOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: folded}
-  - {id: X8, severity: MINOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: folded}
-  - {id: X9, severity: MINOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: folded}
-  - {id: X10, severity: NIT, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: folded}
+  - {id: X1, severity: BLOCKER, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: fixed}
+  - {id: X2, severity: BLOCKER, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: fixed}
+  - {id: X3, severity: MAJOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: fixed}
+  - {id: X4, severity: MAJOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: fixed}
+  - {id: X5, severity: MAJOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: fixed}
+  - {id: X6, severity: MAJOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: fixed}
+  - {id: X7, severity: MINOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: fixed}
+  - {id: X8, severity: MINOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: fixed}
+  - {id: X9, severity: MINOR, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: fixed}
+  - {id: X10, severity: NIT, aim: deliverable, fix_induced: false, component: explainer-serve, disposition: fixed}
 ```
 
 Reviews: `docs/reviews/codex/explainer-port-631-r1-codex.md`, `docs/reviews/claude/explainer-port-631-r1-claude.md`.
