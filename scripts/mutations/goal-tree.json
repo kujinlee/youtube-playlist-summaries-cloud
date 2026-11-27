@@ -5065,8 +5065,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            detail += f\" · waits on {x['waits']} (ledger entry {x['id']})\"\n",
-        "            pass\n"
+        "        elif x.get(\"waits\") or said:\n            detail += (\" · \" + \", \".join(",
+        "        elif False:\n            detail += (\" · \" + \", \".join("
       ]
     ],
     "expect": [
@@ -6930,68 +6930,60 @@
     ]
   },
   {
-    "name": "backlog #652: the date's year read against the reader, not the entry",
+    "name": "backlog #652: a yearless until is read in a guessed year",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "out[\"until\"] = [{\"date\": _SS.clean(str(entry[\"until\"]), 20), \"since\": out.get(\"since\"),",
-        "out[\"until\"] = [{\"date\": _SS.clean(str(entry[\"until\"]), 20), \"since\": None,"
+        "_UNTIL_RE = re.compile(r\"\\d{4}-\\d\\d-\\d\\d\")",
+        "_UNTIL_RE = re.compile(r\"(\\d{4}-)?\\d\\d-\\d\\d\")"
+      ],
+      [
+        "        return _dt.date.fromisoformat(until)\n",
+        "        return _dt.date.fromisoformat(until if len(until) > 5 else \"2026-\" + until)\n"
       ]
     ],
     "expect": [
-      "⭐ backlog #652: across the year end, end to end — an entry recorded 12-20 waiting until 12-30, read 01-02; and the year is read from the ENTRY's time, not the reader's — a 01-02 recorded 12-31 and read 07-05 (nearer next January than last) has passed"
+      "backlog #652 r1 F1: the reader takes ONLY a full `YYYY-MM-DD` — a yearless `mm-dd`, an impossible date (02-29 in 2026, 02-30), a short field or a non-text value has no date (None); a real one is its day",
+      "backlog #652: a damaged `until` — prose, a number, or a YEARLESS `mm-dd` (r1 F1: never guessed a year) — is shown as `date not read` and stays a live reason, never dropped, never passed; beside another entry's PASSED date (an alarm), a live or a damaged date still keeps the item off the session-start list"
     ]
   },
   {
-    "name": "backlog #652: a yearless since takes next year",
+    "name": "backlog #652: the reader takes any ISO form, not only YYYY-MM-DD",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            if sm.group(1) or when - today < _dt.timedelta(days=1):",
-        "            if True:"
+        "    if not (isinstance(until, str) and _UNTIL_RE.fullmatch(until)):",
+        "    if not isinstance(until, str):"
       ]
     ],
     "expect": [
-      "⭐ backlog #652: the YEAR of an `until` is the one NEAREST its entry's `since` — a 12-30 wait read on 01-02 has passed, a 01-02 declared on 12-31 is next year's, a date declared after it passed is this year's; a full `since` keeps its year; an unreadable `since` falls back to `now`; 02-29 reads in a leap year"
+      "backlog #652 r1 F1: the reader takes ONLY a full `YYYY-MM-DD` — a yearless `mm-dd`, an impossible date (02-29 in 2026, 02-30), a short field or a non-text value has no date (None); a real one is its day"
     ]
   },
   {
-    "name": "backlog #652: the latest year always, never the nearest",
+    "name": "backlog #652: an impossible stored date reads as a day",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "key=lambda c: (abs((c - anchor).days), -c.toordinal())",
-        "key=lambda c: -c.toordinal()"
+        "        return _dt.date.fromisoformat(until)\n    except ValueError:\n        return None",
+        "        return _dt.date.fromisoformat(until)\n    except ValueError:\n        return _dt.date(2026, 1, 1)"
       ]
     ],
     "expect": [
-      "⭐ backlog #652: the YEAR of an `until` is the one NEAREST its entry's `since` — a 12-30 wait read on 01-02 has passed, a 01-02 declared on 12-31 is next year's, a date declared after it passed is this year's; a full `since` keeps its year; an unreadable `since` falls back to `now`; 02-29 reads in a leap year"
+      "backlog #652 r1 F1: the reader takes ONLY a full `YYYY-MM-DD` — a yearless `mm-dd`, an impossible date (02-29 in 2026, 02-30), a short field or a non-text value has no date (None); a real one is its day"
     ]
   },
   {
-    "name": "backlog #652: an until of any digit count reads",
+    "name": "backlog #652: an unread date is said as live",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "_UNTIL_RE = re.compile(r\"(\\d\\d)-(\\d\\d)\")",
-        "_UNTIL_RE = re.compile(r\"(\\d+)-(\\d+)\")"
+        "    if day is None or today is None:\n        return \"unread\"",
+        "    if day is None or today is None:\n        return \"live\", f\"until {u.get('date')}\"\n        return \"unread\""
       ]
     ],
     "expect": [
-      "backlog #652: an `until` that is not a real `mm-dd`, or judged with no readable `now`, has no date (None)"
-    ]
-  },
-  {
-    "name": "backlog #652: an unreadable now is read as a fixed day",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "        today = _dt.datetime.strptime(now, MINUTE_FMT)\n    except (ValueError, TypeError):\n        return None",
-        "        today = _dt.datetime.strptime(now, MINUTE_FMT)\n    except (ValueError, TypeError):\n        today = _dt.datetime(2026, 11, 15)"
-      ]
-    ],
-    "expect": [
-      "backlog #652: an `until` that is not a real `mm-dd`, or judged with no readable `now`, has no date (None)"
+      "backlog #652: a damaged `until` — prose, a number, or a YEARLESS `mm-dd` (r1 F1: never guessed a year) — is shown as `date not read` and stays a live reason, never dropped, never passed; beside another entry's PASSED date (an alarm), a live or a damaged date still keeps the item off the session-start list"
     ]
   },
   {
@@ -6999,8 +6991,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        elif day < today:",
-        "        elif day <= today:"
+        "    if day < today:\n        return \"passed\"",
+        "    if day <= today:\n        return \"passed\""
       ]
     ],
     "expect": [
@@ -7012,8 +7004,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "(\"\" if builds else \", not started\")",
-        "\", not started\""
+        "passed_until.append(words + (\"\" if builds else \", not started\"))",
+        "passed_until.append(words + \", not started\")"
       ]
     ],
     "expect": [
@@ -7025,7 +7017,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            retired.update(p for p in (u.get(\"waits\") or \"\").split(\"; \") if p)",
+        "            gone |= parts",
         "            pass"
       ]
     ],
@@ -7034,16 +7026,56 @@
     ]
   },
   {
+    "name": "backlog #652: a live dated entry's wait is not kept",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            kept |= parts",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "backlog #652 r1 F4: …and the same when the other entry's date is still AHEAD — its wait and its date stand"
+    ]
+  },
+  {
+    "name": "backlog #652: the undated waits are not kept",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    kept = {p for p in (x.get(\"undated_waits\") or \"\").split(\"; \") if p}",
+        "    kept = set()"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652 r1 F4 (Codex MAJOR): two entries on ONE item waiting on the SAME text, only one of them passed — the other's wait still stands (a passed date retires by ENTRY, never by text), so the alarm shows beside the wait and the item is NOT listed at session start",
+      "backlog #652 r1 F4: the THREAD LINE's own wait is never retired by an entry's passed date on the same text"
+    ]
+  },
+  {
     "name": "backlog #652: a passed date retires every recorded wait",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if p and p not in retired]",
-        "if p and not retired]"
+        "if p and not (p in gone and p not in kept)]",
+        "if p and not gone]"
       ]
     ],
     "expect": [
       "⭐ backlog #652: a passed date retires ONLY its own entry's wait — another entry's recorded wait on the same item still stands, so the alarm shows and the item is NOT listed at session start"
+    ]
+  },
+  {
+    "name": "backlog #652: a passed date retires by TEXT",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if p and not (p in gone and p not in kept)]",
+        "if p and p not in gone]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652 r1 F4 (Codex MAJOR): two entries on ONE item waiting on the SAME text, only one of them passed — the other's wait still stands (a passed date retires by ENTRY, never by text), so the alarm shows beside the wait and the item is NOT listed at session start"
     ]
   },
   {
@@ -7069,20 +7101,7 @@
       ]
     ],
     "expect": [
-      "backlog #652: a damaged `until` is shown as `date not read` and stays a live reason — never dropped, never passed; beside another entry's PASSED date (an alarm), a live or a damaged date still keeps the item off the session-start list"
-    ]
-  },
-  {
-    "name": "backlog #652: an unread date is dropped",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "            live_until.append(f\"until {u.get('date')} (date not read)\")",
-        "            pass"
-      ]
-    ],
-    "expect": [
-      "backlog #652: a damaged `until` is shown as `date not read` and stays a live reason — never dropped, never passed; beside another entry's PASSED date (an alarm), a live or a damaged date still keeps the item off the session-start list"
+      "backlog #652: a damaged `until` — prose, a number, or a YEARLESS `mm-dd` (r1 F1: never guessed a year) — is shown as `date not read` and stays a live reason, never dropped, never passed; beside another entry's PASSED date (an alarm), a live or a damaged date still keeps the item off the session-start list"
     ]
   },
   {
@@ -7090,8 +7109,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            alarms.append(a)",
-        "            pass"
+        "    for a in passed_until:   # backlog #652\n        if a not in alarms:\n            alarms.append(a)",
+        "    for a in passed_until:   # backlog #652\n        if a not in alarms:\n            pass"
       ]
     ],
     "expect": [
@@ -7104,12 +7123,39 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            | ({\"until\": until} if until else {}))",
-        "            )"
+        "            | ({\"until\": until} if until else {}) | ({\"undated_waits\"",
+        "            | ({\"undated_waits\""
       ]
     ],
     "expect": [
       "⭐ backlog #652 (the row's falsifier): an entry declared `--until 11-06` reads `wait date passed 11-06, not started` in the alarm style in a snapshot taken 11-15 — never its wait as a live reason — and on 11-06 itself shows the wait and its date; two clocks, ONE entry"
+    ]
+  },
+  {
+    "name": "backlog #652: the undated waits never reach the item",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "({\"undated_waits\": undated} if until and undated else {})",
+        "{}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652 r1 F4 (Codex MAJOR): two entries on ONE item waiting on the SAME text, only one of them passed — the other's wait still stands (a passed date retires by ENTRY, never by text), so the alarm shows beside the wait and the item is NOT listed at session start",
+      "backlog #652 r1 F4: the THREAD LINE's own wait is never retired by an entry's passed date on the same text"
+    ]
+  },
+  {
+    "name": "backlog #652: the thread line's own wait is not counted undated",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_owed_keys(t.get(\"entries\") or [], t.get(\"blockers\"), t.get(\"waits\"))",
+        "_owed_keys(t.get(\"entries\") or [], t.get(\"blockers\"))"
+      ]
+    ],
+    "expect": [
+      "backlog #652 r1 F4: the THREAD LINE's own wait is never retired by an entry's passed date on the same text"
     ]
   },
   {
@@ -7124,6 +7170,84 @@
     "expect": [
       "⭐ backlog #652 (the row's falsifier): an entry declared `--until 11-06` reads `wait date passed 11-06, not started` in the alarm style in a snapshot taken 11-15 — never its wait as a live reason — and on 11-06 itself shows the wait and its date; two clocks, ONE entry",
       "⭐ backlog #652: a PASSED dated wait is listed at session start; the same entry before its date is not"
+    ]
+  },
+  {
+    "name": "backlog #652: the fold drops the undated waits",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        it[\"undated_waits\"] = _join_waits(it.get(\"undated_waits\"), undated)",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652 r1 F4 (Codex MAJOR): two entries on ONE item waiting on the SAME text, only one of them passed — the other's wait still stands (a passed date retires by ENTRY, never by text), so the alarm shows beside the wait and the item is NOT listed at session start"
+    ]
+  },
+  {
+    "name": "backlog #652: the fold counts a dated source's own wait as undated",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    undated = x.get(\"undated_waits\") if x.get(\"until\") else x.get(\"waits\")",
+        "    undated = x.get(\"waits\")"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652 (the row's falsifier): an entry declared `--until 11-06` reads `wait date passed 11-06, not started` in the alarm style in a snapshot taken 11-15 — never its wait as a live reason — and on 11-06 itself shows the wait and its date; two clocks, ONE entry"
+    ]
+  },
+  {
+    "name": "backlog #652: an item with no date keeps undated_waits",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            g[\"item\"].pop(\"undated_waits\", None)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "backlog #652 r1 F4: an Owed item with no declared date carries no `undated_waits` key, so it is the dict it was before; one with a date carries the undated waits beside it"
+    ]
+  },
+  {
+    "name": "backlog #652: the --print leaf shows a passed wait as live",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if passed:\n            detail += (\" · \" + \"; \".join(passed)",
+        "        if False:\n            detail += (\" · \" + \"; \".join(passed)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652 r1 F5 (Codex MAJOR + Claude MINOR): the `--print` leaf of an entry whose date has PASSED reads `wait date passed <mm-dd>, not started`, never its wait as live; before the date it shows the wait and the date"
+    ]
+  },
+  {
+    "name": "backlog #652: the --print leaf claims not started beside a worktree",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(\"\" if x.get(\"worktree\") else \", not started\")",
+        "\", not started\""
+      ]
+    ],
+    "expect": [
+      "backlog #652 r1 F5: the `--print` leaf of a passed entry that declares a worktree makes no `not started` claim"
+    ]
+  },
+  {
+    "name": "backlog #652: the --print leaf hides a live date",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "([f\"waits on {x['waits']}\"] if x.get(\"waits\") else []) + [w for _, w in said])",
+        "([f\"waits on {x['waits']}\"] if x.get(\"waits\") else []))"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652 r1 F5 (Codex MAJOR + Claude MINOR): the `--print` leaf of an entry whose date has PASSED reads `wait date passed <mm-dd>, not started`, never its wait as live; before the date it shows the wait and the date"
     ]
   }
 ]

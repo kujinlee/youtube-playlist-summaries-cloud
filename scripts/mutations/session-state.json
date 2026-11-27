@@ -2049,20 +2049,61 @@
       ]
     ],
     "expect": [
-      "⭐ backlog #652: --add --until STORES a valid `mm-dd` (02-29 included); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case"
+      "⭐ backlog #652: --add --until STORES a valid `mm-dd` as a full `YYYY-MM-DD` on or after today (02-29 within four years); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case"
     ]
   },
   {
-    "name": "backlog #652: --until accepts an impossible month or day",
+    "name": "backlog #652: the year never rolls forward",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        dt.date(2000, int(m.group(1)), int(m.group(2)))",
-        "        pass"
+        "    for year in range(today.year, today.year + 9) if m else ():",
+        "    for year in range(today.year, today.year + 1) if m else ():"
       ]
     ],
     "expect": [
-      "⭐ backlog #652: --add --until STORES a valid `mm-dd` (02-29 included); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case"
+      "⭐ backlog #652: --add --until STORES a valid `mm-dd` as a full `YYYY-MM-DD` on or after today (02-29 within four years); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case",
+      "⭐ backlog #652 r1 F1/F2/F3: the YEAR is settled at WRITE time — the first `mm-dd` on or after the day it is written: a passed 11-06 is next year's, 11-06 on 11-06 is that day, a December date set in November is this December, 01-02 on 12-31 is next January, 02-29 is the next leap day (on 02-29 itself, that day), and a June date read in November is next June — never already passed"
+    ]
+  },
+  {
+    "name": "backlog #652: a leap day looks only four years on",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    for year in range(today.year, today.year + 9) if m else ():",
+        "    for year in range(today.year, today.year + 4) if m else ():"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652 r1 F1/F2/F3: the YEAR is settled at WRITE time — the first `mm-dd` on or after the day it is written: a passed 11-06 is next year's, 11-06 on 11-06 is that day, a December date set in November is this December, 01-02 on 12-31 is next January, 02-29 is the next leap day (on 02-29 itself, that day), and a June date read in November is next June — never already passed"
+    ]
+  },
+  {
+    "name": "backlog #652: the day itself is next year's",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if when >= today:",
+        "        if when > today:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652 r1 F1/F2/F3: the YEAR is settled at WRITE time — the first `mm-dd` on or after the day it is written: a passed 11-06 is next year's, 11-06 on 11-06 is that day, a December date set in November is this December, 01-02 on 12-31 is next January, 02-29 is the next leap day (on 02-29 itself, that day), and a June date read in November is next June — never already passed"
+    ]
+  },
+  {
+    "name": "backlog #652: a passed date is stored as this year's",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if when >= today:",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652: --add --until STORES a valid `mm-dd` as a full `YYYY-MM-DD` on or after today (02-29 within four years); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case",
+      "⭐ backlog #652 r1 F1/F2/F3: the YEAR is settled at WRITE time — the first `mm-dd` on or after the day it is written: a passed 11-06 is next year's, 11-06 on 11-06 is that day, a December date set in November is this December, 01-02 on 12-31 is next January, 02-29 is the next leap day (on 02-29 itself, that day), and a June date read in November is next June — never already passed"
     ]
   },
   {
@@ -2075,8 +2116,8 @@
       ]
     ],
     "expect": [
-      "⭐ backlog #652: --add --until STORES a valid `mm-dd` (02-29 included); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case",
-      "backlog #652 (fixture variation): ledger_add(until=) STORES the date it is given, and one called without it stores no key — two calls, read back"
+      "⭐ backlog #652: --add --until STORES a valid `mm-dd` as a full `YYYY-MM-DD` on or after today (02-29 within four years); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case",
+      "backlog #652 (fixture variation): ledger_add(until=) STORES the full date its `today` settles — two days, two years — and one called without it stores no key; three calls, read back"
     ]
   },
   {
@@ -2084,12 +2125,25 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    until = parse_until(until) if until is not None else None                  # backlog #652: also refused before it",
-        "    until = until"
+        "(the real day unless a case injects one)\n    until = parse_until(until, today or dt.date.today()) if until is not None else None",
+        "(the real day unless a case injects one)\n    until = until"
       ]
     ],
     "expect": [
-      "⭐ backlog #652: --add --until STORES a valid `mm-dd` (02-29 included); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case"
+      "⭐ backlog #652: --add --until STORES a valid `mm-dd` as a full `YYYY-MM-DD` on or after today (02-29 within four years); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case"
+    ]
+  },
+  {
+    "name": "backlog #652: --add ignores the day it is given",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "(the real day unless a case injects one)\n    until = parse_until(until, today or dt.date.today())",
+        "(the real day unless a case injects one)\n    until = parse_until(until, dt.date.today())"
+      ]
+    ],
+    "expect": [
+      "backlog #652 (fixture variation): ledger_add(until=) STORES the full date its `today` settles — two days, two years — and one called without it stores no key; three calls, read back"
     ]
   },
   {
@@ -2102,7 +2156,7 @@
       ]
     ],
     "expect": [
-      "⭐ backlog #652: --set-until rewrites `until` and keeps every other key, `at` included; `none` removes it — three values over ONE entry"
+      "⭐ backlog #652: --set-until rewrites `until` (a full date, its year from the day it is SET, r1 F1) and keeps every other key, `at` included; `none` removes it — three values over ONE entry"
     ]
   },
   {
@@ -2115,7 +2169,8 @@
       ]
     ],
     "expect": [
-      "⭐ backlog #652: --set-until rewrites `until` and keeps every other key, `at` included; `none` removes it — three values over ONE entry"
+      "⭐ backlog #652: --set-until rewrites `until` (a full date, its year from the day it is SET, r1 F1) and keeps every other key, `at` included; `none` removes it — three values over ONE entry",
+      "⭐ backlog #652 r1 F1 (Claude MAJOR): ledger_set_until settles the year from the day it is SET (its `today`), never from the entry's `at` — a 12-05 and an 11-21 set on 11-20 on an entry recorded 01-10 are this year's"
     ]
   },
   {
@@ -2123,12 +2178,25 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    until = parse_until(until) if until is not None else None\n    with _locked(path):",
-        "    until = until\n    with _locked(path):"
+        "\"an empty id names no job\")\n    until = parse_until(until, today or dt.date.today()) if until is not None else None",
+        "\"an empty id names no job\")\n    until = until"
       ]
     ],
     "expect": [
       "backlog #652: --set-until on an unknown id is exit 1, an impossible or prose date exit 2 — and the ledger is byte-identical after all three"
+    ]
+  },
+  {
+    "name": "backlog #652: --set-until ignores the day it is set",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "\"an empty id names no job\")\n    until = parse_until(until, today or dt.date.today())",
+        "\"an empty id names no job\")\n    until = parse_until(until, dt.date.today())"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #652 r1 F1 (Claude MAJOR): ledger_set_until settles the year from the day it is SET (its `today`), never from the entry's `at` — a 12-05 and an 11-21 set on 11-20 on an entry recorded 01-10 are this year's"
     ]
   },
   {
@@ -2154,7 +2222,7 @@
       ]
     ],
     "expect": [
-      "⭐ backlog #652: --add --until STORES a valid `mm-dd` (02-29 included); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case"
+      "⭐ backlog #652: --add --until STORES a valid `mm-dd` as a full `YYYY-MM-DD` on or after today (02-29 within four years); a short, impossible or full date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case"
     ]
   },
   {
@@ -2167,7 +2235,7 @@
       ]
     ],
     "expect": [
-      "⭐ backlog #652: --set-until rewrites `until` and keeps every other key, `at` included; `none` removes it — three values over ONE entry"
+      "⭐ backlog #652: --set-until rewrites `until` (a full date, its year from the day it is SET, r1 F1) and keeps every other key, `at` included; `none` removes it — three values over ONE entry"
     ]
   }
 ]

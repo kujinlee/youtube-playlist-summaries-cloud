@@ -581,10 +581,10 @@ def _ledger_owed(entry: dict, src: "dict | None" = None) -> dict:
     if isinstance(entry.get("at"), str) and entry["at"].strip():
         out["since"] = _SS.clean(entry["at"], 20)
     if "until" in entry:   # backlog #652: a DATED wait, declared (a full `YYYY-MM-DD`, its year settled at WRITE time —
-        # r1 F1), with the entry's id and its own recorded wait, which the date bounds: a passed date retires THAT
-        # entry's wait, never another entry's (r1 F4)
+        # r1 F1), with the entry's own recorded wait, which the date bounds: a passed date retires THAT entry's wait,
+        # never a text another source still records (r1 F4, `owed_reason`)
         w = entry.get("waits")
-        out["until"] = [{"id": _SS.clean(entry.get("id", ""), 60), "date": _SS.clean(str(entry["until"]), 20),
+        out["until"] = [{"date": _SS.clean(str(entry["until"]), 20),
                          "waits": _SS.clean(w, 160) if isinstance(w, str) and w.strip() else None}]
     if src is not None:
         found = _declared_blockers([entry], src)
@@ -4074,12 +4074,12 @@ def _cases_650(case) -> None:
          [["wait date passed 11-06, not started · split the section"], []])
     case("⭐ backlog #652 r1 F1 (Codex MAJOR): the date's YEAR is the one STORED — a wait until 2026-11-20 read on "
          "2026-11-21 AND a year later on 2027-11-16 has passed, never live again; one stored date, two clocks",
-         [safe(lambda n=n: owed_reason({"until": [{"id": "a", "date": "2026-11-20", "waits": None}]}, n)[:2])
+         [safe(lambda n=n: owed_reason({"until": [{"date": "2026-11-20", "waits": None}]}, n)[:2])
           for n in ("2026-11-21 09:00", "2027-11-16 09:00")],
          [(None, "wait date passed 11-20, not started")] * 2)
     case("⭐ backlog #652 r1 F1 (Claude MAJOR) / F3: a stored date AHEAD of the reader is live however far ahead — "
          "a 12-05 declared in November on an entry recorded in January, and a June date read in November",
-         [safe(lambda u=u, n=n: owed_reason({"since": ["01-10 09:00"], "until": [{"id": "a", "date": u, "waits": None}]},
+         [safe(lambda u=u, n=n: owed_reason({"since": ["01-10 09:00"], "until": [{"date": u, "waits": None}]},
                                             n)[:2]) for u, n in (("2026-12-05", "2026-11-20 09:00"),
                                                                  ("2027-06-01", "2026-11-15 10:00"))],
          [("until 12-05", None), ("until 06-01", None)])
@@ -4089,7 +4089,7 @@ def _cases_650(case) -> None:
              "2026-11-06", "2028-02-29", "11-06", "2026-02-29", "2026-02-30", "2026-11-6", "20261106", 5, None)],
          ["2026-11-06", "2028-02-29", None, None, None, None, None, None, None])
     case("⭐ backlog #652: the wait ends at the END of its day — 23:59 on 11-06 is still live, 00:00 on 11-07 has passed",
-         [safe(owed_reason, {"until": [{"id": "a", "date": "2026-11-06", "waits": None}]}, n)[:2]
+         [safe(owed_reason, {"until": [{"date": "2026-11-06", "waits": None}]}, n)[:2]
           for n in ("2026-11-06 23:59", "2026-11-07 00:00")],
          [("until 11-06", None), (None, "wait date passed 11-06, not started")])
     case("⭐ backlog #652: across the year end, end to end — an entry waiting until 2025-12-30 read 2026-01-02, and "
@@ -4125,7 +4125,7 @@ def _cases_650(case) -> None:
          (safe(tail, _same652b), safe(idle_of, _same652b)),
          (f"waits for: {_w652}; until 11-20 wait date passed 11-06, not started", []))
     case("backlog #652: an item that declares a worktree makes no `not started` claim for a passed date",
-         safe(owed_reason, {"until": [{"id": "a", "date": "2026-11-06", "waits": None}],
+         safe(owed_reason, {"until": [{"date": "2026-11-06", "waits": None}],
                             "builds": [{"state": "quiet", "text": "quiet 90 min"}]}, NOW)[1],
          "wait date passed 11-06; quiet 90 min")
     _leaf652 = lambda ledger, at: [ln.split("split the section", 1)[1] for ln in safe(
