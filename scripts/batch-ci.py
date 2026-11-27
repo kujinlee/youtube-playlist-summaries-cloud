@@ -7,7 +7,7 @@
     python3 scripts/batch-ci.py status batch/20261106-1820          # green? on red, which PR to eject
     python3 scripts/batch-ci.py land batch/20261106-1820            # DRY RUN: the merge plan
     python3 scripts/batch-ci.py land batch/20261106-1820 --land     # squash-merge each member, in order
-    python3 scripts/batch-ci.py --self-test              # 169 cases
+    python3 scripts/batch-ci.py --self-test              # 184 cases
 
     0 = assembled / green / landed   1 = red, or a land STOPPED   2 = CANNOT RUN (treat as NOT RUN)
 
@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import dataclasses
 import datetime as dt
 import difflib
 import itertools
@@ -94,11 +95,16 @@ BRANCH_PREFIX = "batch/"
 # `<!--tech-->`, so the second lost its heading and its marker. Lines are records only in the decision log.
 # `docs/goal-threads.md` is `## GOAL` blocks holding one thread per `- ` line: two PRs appending different
 # threads to one goal keep both; the same thread line added by both is one identical block and lands once.
+#   tree    — `docs/features.md` (goal node tree S3 Task 16, Phase 6 review 2026-11-24-batch-ci-tree): resolved
+#             exactly as `blocks`, and JUDGED by P8 — the merged tree is the three-way merge of the three trees,
+#             attribute by attribute, as the tree's ONE parser (`FEATURES_PARSER`) reads them. Its entry is kept
+#             for that JUDGE, not for its conflict count: a CLEAN merge can re-parent a node, and only P8 sees it.
 UNION_FILES = {
     "docs/backlog.md": "rows",
     "docs/dashboard-entries.md": "blocks",
     "docs/reviews/decision-scheme/decision-log.jsonl": "records",
     "docs/goal-threads.md": "blocks",
+    "docs/features.md": "tree",
 }
 
 # ⟳ batch-ci r1 (R1-F6): EVERY workflow a `batch/**` push runs. `land` needs the LATEST run of each, at the tip,
@@ -133,6 +139,10 @@ MERGEABILITY_WAIT = 3
 # copy here. Round 1's own import closure missed hook scripts, workflow files, `import a, b`, `import_module` and
 # data files, and each miss EJECTED an innocent member. Loaded from beside this file.
 SELECTOR = "check-plan-code.py"
+# The tree's ONE parser (ADR-0016), loaded from beside this file: P8 asks it what `docs/features.md` MEANS and has
+# no heading pattern or parent rule of its own. A quoted literal, so the sweep selector picks this script's
+# manifest when that parser changes.
+FEATURES_PARSER = "check-features.py"
 
 # A ready PR's own CI: every check it reported is green, and these reported at all. They are the three
 # `required_status_checks` contexts on master (read with `gh api …/branches/master/protection`, 2026-11-06);
@@ -302,6 +312,7 @@ def resolve_hunk(policy: str, ours: list[str], base: list[str], theirs: list[str
     blocks  — additions only: ours, then every block theirs added that ours did not add IDENTICALLY, verbatim; a
               heading-led block gets a blank line before it so two entries never fuse under one header.
     records — additions only: ours, then every line theirs added that ours did not add.
+    tree    — exactly `blocks`; `postcondition` P8 judges the tree it makes.
     """
     if policy == "rows":
         o, b, t = _rows(ours, "ours"), _rows(base, "the base"), _rows(theirs, "theirs")
@@ -325,7 +336,7 @@ def resolve_hunk(policy: str, ours: list[str], base: list[str], theirs: list[str
         if not any(x.strip() for x in ta):
             return list(ours)
         return list(ours) + ta
-    if policy == "blocks":
+    if policy in ("blocks", "tree"):
         mine = {_trim(b) for b in _blocks(_added(ours, base, "ours")) if _trim(b)}
         to, tt = _tagged(ours, base, "o"), _tagged(theirs, base, "t")
         keep = [b for b in _blocks([y for y in tt if y[1][0] == "t"], key=lambda y: y[0])
@@ -426,6 +437,70 @@ def _homes(lines: list[str], ident: list) -> list:
     return out
 
 
+def _features():
+    """`check-features`, loaded once from beside this file — the parser of `docs/features.md`. CannotRun when it
+    cannot be loaded: P8 is then unmeasured, never a pass."""
+    import importlib.util
+    name = "_batch_ci_features"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / FEATURES_PARSER)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        try:
+            spec.loader.exec_module(mod)
+        except BaseException as exc:
+            del sys.modules[name]
+            raise CannotRun(f"the tree's parser {FEATURES_PARSER} cannot be loaded ({type(exc).__name__}), "
+                            f"so a merged docs/features.md cannot be judged") from exc
+    return sys.modules[name]
+
+
+def _tree_map(text: str, parse) -> tuple[dict, list[str]]:
+    """{(slug, attribute): value} for every attribute of every node `parse` reads in `text`, except `line` (a
+    position, which every addition above a node moves); and the parser's problems, plus one per slug met twice.
+    PURE."""
+    nodes, problems = parse(text)
+    out, bad = {}, list(problems)
+    for n in nodes:
+        if (n.slug, "slug") in out:
+            bad.append(f"node `{n.slug}` appears twice")
+            continue
+        for k, v in dataclasses.asdict(n).items():
+            if k == "line":
+                continue
+            out[(n.slug, k)] = v
+    return out, bad
+
+
+def _merge3(b, o, t) -> tuple[object, bool]:
+    """The value a three-way merge gives one attribute, and whether both sides changed it differently. PURE."""
+    if o == t:
+        return o, False
+    if o != b and t != b:
+        return None, True
+    return (o if o != b else t), False
+
+
+def _tree_violations(base: str, ours: str, theirs: str, result: str) -> list[str]:
+    """P8 over the FULL four texts: each must parse, and every (slug, attribute) of the result must be the
+    three-way merge of the three sides' — a node added or removed is a key missing on a side (None)."""
+    parse = _features().parse_features
+    maps, bad = {}, []
+    for side, text in (("merged", result), ("base", base), ("ours", ours), ("theirs", theirs)):
+        maps[side], problems = _tree_map(text, parse)
+        bad += [f"P8 the {side} tree does not parse: {p}" for p in problems]
+    if bad:
+        return bad
+    for key in sorted(set().union(*maps.values())):
+        b, o, t, r = (maps[s].get(key) for s in ("base", "ours", "theirs", "merged"))
+        want, both = _merge3(b, o, t)
+        if both:
+            bad.append(f"P8 both sides changed {key[0]}.{key[1]}")
+        elif r != want:
+            bad.append(f"P8 {key[0]}.{key[1]} is {r!r}, and the sides make it {want!r}")
+    return bad
+
+
 def postcondition(base: str, ours: str, theirs: str, result: str, policy: str) -> list[str]:
     """Is `result` a valid union of `ours` and `theirs` over `base`? The violations, each led by its clause id;
     [] = it holds. PURE. Specified in docs/reviews/architecture-review-2026-11-07-batch-ci-docs-union.md §4.
@@ -446,6 +521,11 @@ def postcondition(base: str, ours: str, theirs: str, result: str, policy: str) -
           (R1-F2, R2-F1, R3-F1)
       P6  `rows` only: no backlog row number twice, over the WHOLE result
       P7  no base line changed on BOTH sides (a union cannot decide it)
+      P8  `tree` only, over the FULL four texts: each parses by the tree's own parser, and the merged tree is the
+          three-way merge of the three trees attribute by attribute (`parent` is one attribute, so a re-parenting,
+          a field line under another node's heading, a lost field and a doubled node are ONE comparison). Sibling
+          and field-line order are in no attribute, so P8 does not judge them (P1 still fixes theirs' order).
+          The parser cannot load -> CannotRun, never a pass
     ⚠ Bound (§6): an identical addition on both sides fails P1, so it EJECTS; a fixed alignment that picks a poor
     match among duplicate texts also ejects — the cost of the rule's blind spots is an ejection, never a pass.
     """
@@ -513,6 +593,8 @@ def postcondition(base: str, ours: str, theirs: str, result: str, policy: str) -
     for i in range(len(B)):                                             # P7
         if i not in kept_o and i not in kept_t:
             bad.append(f"P7 a base line changed on both sides: {B[i][:60]!r}")
+    if policy == "tree":                                                # P8
+        bad += _tree_violations(base, ours, theirs, result)
     return bad
 
 
@@ -1491,8 +1573,132 @@ def _self_test_body() -> int:
                     "rows")), ["P6"])
     case("the policies: rows for the backlog, blocks for the entries and goal threads, records for the decision log",
          sorted(UNION_FILES.items()),
-         [("docs/backlog.md", "rows"), ("docs/dashboard-entries.md", "blocks"), ("docs/goal-threads.md", "blocks"),
-          ("docs/reviews/decision-scheme/decision-log.jsonl", "records")])
+         [("docs/backlog.md", "rows"), ("docs/dashboard-entries.md", "blocks"), ("docs/features.md", "tree"),
+          ("docs/goal-threads.md", "blocks"), ("docs/reviews/decision-scheme/decision-log.jsonl", "records")])
+    # ── goal node tree S3 Task 16: docs/features.md is a `tree` — resolved as `blocks`, judged by P8 through the
+    # tree's own parser. Every conflict is MADE by `git merge-file --diff3` and resolved through `resolve_text` with
+    # the path, the way `merge` reaches the policy; every verdict is `postcondition(…, "tree")` with the real parser ──
+    def _mf(base, ours, theirs):
+        d = Path(tempfile.mkdtemp(prefix="batch-ci-tree-"))
+        try:
+            for n, x in (("o", ours), ("b", base), ("t", theirs)):
+                (d / n).write_text(x)
+            r = subprocess.run(["git", "merge-file", "-p", "--diff3", "-L", "ours", "-L", "base", "-L", "theirs",
+                                str(d / "o"), str(d / "b"), str(d / "t")], capture_output=True, text=True)
+            return r.returncode, r.stdout
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def _union(base, ours, theirs, path="docs/features.md"):      # conflicted by git, resolved by the policy
+        rc, text = _mf(base, ours, theirs)
+        return guarded(lambda: resolve_text(path, text)) if rc > 0 else f"git merged it cleanly (rc {rc})"
+
+    def _clean(base, ours, theirs):                                 # a merge git makes with no conflict
+        rc, text = _mf(base, ours, theirs)
+        return text if rc == 0 else f"git conflicted (rc {rc})"
+
+    _fh = "# Feature map\n\n## PRODUCT\nslug: product\nfor: The product.\n\n"
+    _u1b = _fh + "### alpha\nfor: Alpha does one thing.\n"
+    _u1o, _u1t = _u1b + "\n#### a-ours\nfor: Ours' part.\n", _u1b + "\n#### a-theirs\nfor: Theirs' part.\n"
+    _u1 = _union(_u1b, _u1o, _u1t)
+    case("features union: two added nodes keep their own fields",
+         (isinstance(_u1, str) and "#### a-ours\nfor: Ours' part." in _u1 and "#### a-theirs\nfor: Theirs' part." in _u1
+          and _u1.index("a-ours") < _u1.index("a-theirs"), pc(_u1b, _u1o, _u1t, _u1, "tree")), (True, []))
+    _u2b = _fh + "### bravo\nfor: Bravo.\n"
+    _u2s = _u2b + "\n#### b-same\nfor: The same part.\n"
+    _u2c = ("<<<<<<< ours\n" + _u2s + "||||||| base\n" + _u2b + "=======\n" + _u2s + ">>>>>>> theirs\n")
+    _u2 = guarded(lambda: resolve_text("docs/features.md", _u2c))
+    case("features union: the same node added twice ejects",
+         "P1" in clauses(pc(_u2b, _u2s, _u2s, _u2, "tree")), True)
+    _u3b = (_fh + "### charlie\nfor: Charlie.\n\n#### c1\nfor: C one.\n\n#### c2\nfor: C two.\n\n#### c3\n"
+            "for: C three.\n\n### delta\nfor: Delta.\n\n#### d1\nfor: D one.\n")
+    _u3t = _u3b.replace("for: Charlie.\n", "for: Charlie.\nadrs: 0003\n")
+    _u3o = _u3b.replace("for: C three.\n", "for: C three.\n\n#### c4\nfor: C four.\n")
+    _u3 = _clean(_u3b, _u3o, _u3t)
+    case("features union: a distant edit and an addition both survive",
+         ("adrs: 0003" in _u3 and "#### c4" in _u3, pc(_u3b, _u3o, _u3t, _u3, "tree")), (True, []))
+    _u4b = _fh + "### echo\nfor: Echo.\n\n#### e1\nfor: E one.\n"
+    case("features union: an edit inside the hunk is refused",
+         "edited or deleted" in (refusal(lambda: resolve_text("docs/features.md", _mf(
+             _u4b, _u4b.replace("for: E one.", "for: E one, edited."),
+             _u4b + "\n#### e2\nfor: E two.\n")[1])) or ""), True)
+    _u5b = _fh + "### foxtrot\nfor: Foxtrot.\n"
+    case("features union: two edits of one field are refused",
+         "edited or deleted" in (refusal(lambda: resolve_text("docs/features.md", _mf(
+             _u5b, _u5b.replace("for: Foxtrot.", "for: Foxtrot, ours."),
+             _u5b.replace("for: Foxtrot.", "for: Foxtrot, theirs."))[1])) or ""), True)
+    _u6b = _fh + "### golf\nfor: Golf.\n\n#### g1\nfor: G one.\n"
+    _u6o = _u6b + "\n#### g2\nfor: G two.\n"
+    case("features union: a lost base line is a violation",
+         "P3" in clauses(pc(_u6b, _u6o, _u6b, _u6o.replace("for: G one.\n", ""), "tree")), True)
+    _u7b = _fh + "### hotel\nstate: built\nfor: Hotel.\nadrs: 0001\n"
+    _u7o = _u7b.replace("state: built", "state: absent")
+    _u7t = _u7b.replace("adrs: 0001", "adrs: 0001, 0004")
+    _u7 = _clean(_u7b, _u7o, _u7t)
+    case("features union: edits of two fields of one node both survive",
+         ("state: absent" in _u7 and "adrs: 0001, 0004" in _u7, pc(_u7b, _u7o, _u7t, _u7, "tree")), (True, []))
+    _u8 = _mf(_u1b, _u1o, _u1t)[1]
+    _u8r = guarded(lambda: resolve_text("docs/features.md", _u8))
+    case("features union: dispatch is by path",
+         (_u8r == _u1 and not _u8r.startswith("raised") and "<<<<<<<" not in _u8r and "#### a-theirs" in _u8r,
+          "not an append-only file" in (refusal(lambda: resolve_text("docs/other.md", _u8)) or "")), (True, True))
+    _p8b = _fh + "### india\nfor: India.\n\n#### i1\nfor: I one.\n\n#### i2\nfor: I two.\n"
+    _p8t = _p8b.replace("for: I one.\n", "for: I one.\n\n### juliet\nfor: Juliet.\n")
+    _p8o = _p8b + "\n#### i3\nfor: I three.\n"
+    _p8o2 = _p8b.replace("for: India.\n", "for: India.\n\n#### i3\nfor: I three.\n")
+    _p8a, _p8c = pc(_p8b, _p8o, _p8t, _clean(_p8b, _p8o, _p8t), "tree"), pc(
+        _p8b, _p8o2, _p8t, _clean(_p8b, _p8o2, _p8t), "tree")
+    case("tree P8: a clean merge that re-parents a node ejects",
+         (named(_p8a, "P8", "i3.parent"), any("i2." in v for v in _p8a) if isinstance(_p8a, list) else _p8a, _p8c),
+         (True, False, []))
+    _p9b = _fh + "### kilo\nfor: Kilo.\n\n#### k1\nfor: K one.\n"
+    _p9x, _p9y = _p9b + "\n### lima\nfor: Lima.\n", _p9b + "\n#### k2\nfor: K two.\n"
+    _p9a, _p9c = _union(_p9b, _p9x, _p9y), _union(_p9b, _p9y, _p9x)
+    case("tree P8: a union that re-parents a node ejects",
+         (named(pc(_p9b, _p9x, _p9y, _p9a, "tree"), "P8", "k2.parent"), pc(_p9b, _p9y, _p9x, _p9c, "tree")),
+         (True, []))
+    _p10b = (_fh + "### mike\nfor: Mike.\n\n#### m1\nfor: M one.\n\n## OPERATIONS\nslug: operations\n"
+             "for: Running it.\n\n### november\nfor: November.\n")
+    _p10t = _p10b.replace("#### m1\n", "### oscar\nfor: Oscar.\n\n#### m1\n")
+    _p10o = _p10b + "\n#### n1\nfor: N one.\n"
+    _p10 = _clean(_p10b, _p10o, _p10t)
+    case("tree P8: a one-sided re-parenting survives",
+         ("### oscar" in _p10 and "#### n1" in _p10, pc(_p10b, _p10o, _p10t, _p10, "tree")), (True, []))
+    _p11b = _fh + "### papa\nfor: Papa.\n\n#### p1\nfor: P one.\n"
+    _p11o = _p11b.replace("#### p1\n", "### quebec\nfor: Quebec.\n\n#### p1\n")
+    _p11t = _p11b.replace("#### p1\n", "### romeo\nfor: Romeo.\n\n#### p1\n")
+    _p11r = _p11b.replace("#### p1\n", "### quebec\nfor: Quebec.\n\n### romeo\nfor: Romeo.\n\n#### p1\n")
+    case("tree P8: both sides re-parenting one node is refused",
+         named(pc(_p11b, _p11o, _p11t, _p11r, "tree"), "P8", "both sides changed p1.parent"), True)
+    _p12b = _fh + "### sierra\nfor: Sierra.\n\n#### s1\nfor: S one.\n"
+    _p12o, _p12t = _p12b + "\n#### s-added\nfor: Added under sierra.\n", _p12b + "adrs: 0003\n"
+    _p12 = _union(_p12b, _p12o, _p12t)
+    _p12v = pc(_p12b, _p12o, _p12t, _p12, "tree")
+    case("tree P8: a field line keeps its node",
+         (named(_p12v, "P8", "s1.adrs"), named(_p12v, "P8", "s-added.adrs"), pc(_p12b, _p12o, _p12t, _p12, "blocks")),
+         (True, True, []))
+    _p13b = _fh + "### tango\nfor: Tango.\n\n### uniform\nfor: Uniform.\n"
+    _p13t = _p13b + "\n#### u1\nfor: U one.\n"
+    _p13o = _p13b.replace("for: Tango.\n", "for: Tango.\n\n#### t1\nfor: T one, which wraps\nonto a prose line.\n")
+    _p13ok = _p13b.replace("for: Tango.\n", "for: Tango.\n\n#### t1\nfor: T one.\n")
+    _p13wb = _p13b.replace("for: Tango.\n", "for: Tango, which wraps\nonto a prose line.\n")
+    _p13wo, _p13wt = _p13wb.replace("onto a prose line.\n", ""), _p13wb + "\n#### u1\nfor: U one.\n"
+    case("tree P8: a result the parser refuses ejects",
+         (named(pc(_p13b, _p13o, _p13t, _clean(_p13b, _p13o, _p13t), "tree"), "P8", "does not parse"),
+          pc(_p13b, _p13ok, _p13t, _clean(_p13b, _p13ok, _p13t), "tree"),
+          named(pc(_p13wb, _p13wo, _p13wt, _clean(_p13wb, _p13wo, _p13wt), "tree"), "P8", "base tree does not parse")),
+         (True, [], True))
+    _keepf = FEATURES_PARSER
+    try:
+        globals()["FEATURES_PARSER"] = "no-such-parser.py"
+        sys.modules.pop("_batch_ci_features", None)
+        _p14t, _p14b = pc(_u1b, _u1o, _u1t, _u1, "tree"), pc(_u1b, _u1o, _u1t, _u1, "blocks")
+        case("tree P8: a parser that cannot load is CANNOT RUN",
+             (isinstance(_p14t, str) and _p14t.startswith("raised CannotRun") and FEATURES_PARSER in _p14t, _p14b),
+             (True, []))
+    finally:
+        globals()["FEATURES_PARSER"] = _keepf
+        sys.modules.pop("_batch_ci_features", None)
     _two = ("# t\n<<<<<<< ours\n" + r1 + "\n||||||| base\n=======\n" + r2 + "\n>>>>>>> theirs\nmid\n"
             "<<<<<<< ours\n" + r3 + "\n||||||| base\n=======\n| 4 | f | x |\n>>>>>>> theirs\n")
     case("a whole file with two hunks resolves, and no marker survives",

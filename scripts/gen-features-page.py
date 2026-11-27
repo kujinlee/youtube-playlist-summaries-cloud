@@ -1185,12 +1185,15 @@ def _self_test_body() -> int:
           (len(_real_nodes) > 30, _bad, _sevless[:3]), (True, [], []))
     # ⛔ S1 r1 (Claude F6): the case above derives WHICH nodes carry the sentence through
     # `inherits_area`, the predicate under test. This one reads the rendered index and compares it to an
-    # INDEPENDENT LITERAL — the 4 live nodes that claim and inherit no area, measured at S1. ⚠ A tree
-    # edit that gives one an area, or adds a fifth, is meant to redden this; update the literal by hand.
-    check("over the REAL tree, the nodes that claim no area are exactly these four",
+    # INDEPENDENT LITERAL — the live nodes that claim and inherit no area: 4 measured at S1, and 6 more
+    # at node-tree Task 12 (the three trunks, `token-usage`, `memory-recall`, `memory-hygiene` — spec
+    # §4.1, 4.13, 4.23, 4.25–4.27). ⚠ A tree edit that gives one an area, or adds another, is meant to
+    # redden this; update the literal by hand.
+    check("over the REAL tree, the nodes that claim no area are exactly these",
           sorted(n.slug for n in _real_nodes
                  if NO_AREA in _found(re.search(rf'href="#{frag_id(n.slug)}">(.*?)(?:</li>|<ul>)', _rix, re.S), 1)),
-          ["cloud-sync", "serve-path-bounding", "share-and-download", "shared-dig-deeper"])
+          ["cloud-sync", "dev-infrastructure", "memory-hygiene", "memory-recall", "platform", "product",
+           "serve-path-bounding", "share-and-download", "shared-dig-deeper", "token-usage"])
     _cards = re.findall(r"<details class=\"node[^\"]*\"[^>]*>", _tree)
     check("every card is a <details>, and every one is FOLDED",
           (len(_cards), [c for c in _cards if " open" in c]), (len(nested + nodes), []))

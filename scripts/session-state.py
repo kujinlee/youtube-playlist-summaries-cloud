@@ -63,10 +63,12 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --set-until ID MM-DD|none     # a dated wait, read by the goal tree (backlog #652)
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 173 cases
+    python3 scripts/session-state.py --self-test  # 184 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
-text), 0/1 for --self-test, 2 for a ledger command that cannot write.
+text), 0/1 for --self-test, 1 for a ledger command REFUSED (`--add`'s G5: a goal or `--also` that is no current
+node, an `--also` repeating `--goal`; `--set-after`/`--set-until`/`--set-worktree` naming no such id), 2 for a ledger
+command that cannot write.
 """
 
 from __future__ import annotations
@@ -377,10 +379,50 @@ def normalise_what(what: str) -> str:
 
 # backlog #514 (c), the owner's rule of 2026-11-05 13:54: work in flight is never added under no goal. The AGENT names
 # the goal; when none fits it PROPOSES one, named for the objective that groups the work, and the owner picks.
-ADD_NEEDS_GOAL = ("--add needs --goal <slug> and --thread <line>: name the `## GOAL` of docs/goal-threads.md this "
-                  "work serves. When no "
-                  "goal fits, propose a new goal named for its objective (the owner picks the name or counter-proposes) "
-                  "and add it under that slug")
+ADD_NEEDS_GOAL = ("--add needs --goal <slug> and --thread <line>: name the node of docs/features.md this work serves "
+                  "(ADR-0016: a goal is a node). When no goal fits, propose a new goal named for its objective — a node "
+                  "carrying a `proposed:` line (the owner picks the name or counter-proposes) — and add it under that slug")
+FEATURES_REL = "docs/features.md"
+
+
+class TreeUnreadable(Exception):
+    """docs/features.md cannot be read, or declares no node: `--add` cannot check the goal it names (CANNOT RUN)."""
+
+
+def _check_features():
+    """check-features.py, loaded by path at CALL time — only the `--add` path reads the tree, so a read-only
+    invocation never needs it (goal node tree Task 15)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_check_features_for_add", Path(__file__).with_name("check-features.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def read_tree(root: Path) -> list:
+    """The nodes of `root`'s docs/features.md, by check-features' ONE parser, or `TreeUnreadable`."""
+    try:
+        text = (root / FEATURES_REL).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise TreeUnreadable(f"{FEATURES_REL} cannot be read ({type(exc).__name__})") from exc
+    nodes = _check_features().parse_features(text)[0]
+    if not nodes:
+        raise TreeUnreadable(f"{FEATURES_REL} declares no node")
+    return nodes
+
+
+def goal_refusal(slug: str, nodes, flag: str = "--goal") -> str | None:
+    """PURE. Why `slug` cannot be written as a goal (G5, at the moment of writing), or None when it is a current node
+    — a `proposed:` one included, since a proposal is a node awaiting the owner's pick. A former slug names the node it
+    became; an unknown one says how a name is proposed."""
+    cf = _check_features()
+    if slug in cf.current_slugs(nodes):
+        return None
+    now = cf.resolve(nodes, slug)
+    if now is not None:
+        return f"{flag} `{slug}` is a former slug — it was renamed to `{now}`; name the current node"
+    return (f"{flag} `{slug}` names no node of {FEATURES_REL} — when no goal fits, propose one: add a node named for "
+            f"its objective, carrying a `proposed:` line (the owner picks)")
 
 
 # backlog #650 (Phase 6, architecture-review-2026-11-15-goal-wait-derive): a PREREQUISITE is DECLARED, once, at --add,
@@ -462,7 +504,7 @@ def declared_worktree(worktree: str, ledger: "Path | None" = None) -> str:
 def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None,
                goal: str | None = None, thread: str | None = None, waits: str | None = None,
                after: list | None = None, worktree: str | None = None, until: str | None = None,
-               today: "dt.date | None" = None) -> None:
+               today: "dt.date | None" = None, also: list | None = None) -> None:
     """`kind` is DECLARED by the caller. Left out, it is `guess_kind` of the entry — the WIDE reading, so an owner entry
     written without `--kind` is stored as the owner entry it looks like and never as `routine` (r3 R3-1: storing the
     strict-prefix answer made every R2-1 phrasing routine again, and the declared field then bypassed the fallback).
@@ -491,6 +533,9 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
         entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind, "after": declared}
                        | ({"waits": waits.strip()} if waits and waits.strip() else {})
                        | ({"goal": goal, "thread": thread} if goal else {})
+                       # goal node tree Task 15: the OTHER nodes it serves. ⭐ S3 r1 Claude F4: a repeat is DE-DUPLICATED,
+                       # first place kept — a CLI flag repeated is a typo, not a second claim, so it is merged, not refused
+                       | ({"also": list(dict.fromkeys(also))} if also else {})
                        | ({"worktree": wt} if wt else {})
                        | ({"until": until} if until else {}))
         _write(path, entries, raw)
@@ -1021,6 +1066,14 @@ def collect(root: Path, run=_run, now: str | None = None, clock=time.time) -> st
                   full_sweep=green_sweep_status(*fetch_green_markers(root, run), clock()))
 
 
+def _tree_world(root: Path, *slugs: str) -> None:
+    """A self-test root's docs/features.md: one node per slug (`g` and `h` unless named) — the ONE helper every fixture
+    root that `--add`s goes through, so G5 is never loosened for a world with no tree (goal node tree Task 15)."""
+    (root / "docs").mkdir(parents=True, exist_ok=True)
+    (root / FEATURES_REL).write_text("# Feature map\n## PRODUCT\n" +
+                                     "".join(f"### {s}\nfor: {s}.\n" for s in (slugs or ("g", "h"))))
+
+
 def self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
     import fixture_git
@@ -1169,6 +1222,7 @@ def _self_test_body() -> int:
     from contextlib import redirect_stderr as _rs
     _nogit = lambda c, w, timeout=TIMEOUT: (128, "fatal: not a git repository")  # noqa: E731
     w3 = Path(tempfile.mkdtemp(prefix="ss-r3-"))
+    _tree_world(w3)
     try:
         phr = {"new-instr": "OWNER 23:40: do the next thing now (owner: 'when convenient') " + "n" * 200,
                "new-note": "NOTE: WAITS-ON-OWNER: pick A or B",
@@ -1524,6 +1578,7 @@ def _self_test_body() -> int:
         ledger_done(led, "j9")
         ledger_done(led, "j10")
         _r514 = Path(tempfile.mkdtemp(prefix="ss-514-"))
+        _tree_world(_r514)
         try:
             _e514, _enone = io.StringIO(), io.StringIO()
             with redirect_stdout(io.StringIO()), _rs514(_enone):
@@ -1547,6 +1602,68 @@ def _self_test_body() -> int:
         case("backlog #514 r1: --waits outside --add is a stray flag, CANNOT RUN",
              main(["--waits", "x"], root=root, run=NO_GIT), 2)
         case("backlog #505: --goal outside --add is a stray flag, CANNOT RUN", main(["--goal", "g"], root=root, run=NO_GIT), 2)
+        # ── goal node tree Task 15: G5 at the moment of writing — the goal and every `--also` are CURRENT nodes ──────
+        _r15 = Path(tempfile.mkdtemp(prefix="ss-g5-"))
+        try:
+            (_r15 / "docs").mkdir()
+            (_r15 / FEATURES_REL).write_text("# Feature map\n## PRODUCT\n### dev-speed\nfor: D.\nwas: dev-speed-first\n"
+                                             "### token-usage\nfor: T.\n### picked\nfor: P.\n"
+                                             "proposed: 2026-11-27 09:00\n")
+            _l15 = _r15 / LEDGER_REL
+
+            def _add15(id_, goal, *extra, where=_r15):
+                _e = io.StringIO()
+                with redirect_stdout(io.StringIO()), _rs514(_e):
+                    _rc = main(["--add", id_, "w", "d", "--goal", goal, "--thread", "fix · PR #4 · x", "--after", "none",
+                                *extra], root=where, run=NO_GIT)
+                return _rc, _e.getvalue()
+
+            def _ids15():
+                return [e["id"] for e in read_ledger(_l15)[0]] if _l15.exists() else []
+            _cur = _add15("cur", "dev-speed")
+            case("G5: a current goal is added", (_cur[0], _ids15()), (0, ["cur"]))
+            _old = _add15("old", "dev-speed-first")
+            case("G5: a former slug is refused and names its node",
+                 (_old[0], "former slug" in _old[1] and "`dev-speed`" in _old[1], "old" in _ids15()), (1, True, False))
+            _unk = _add15("unk", "memory-recall")
+            case("G5: an unknown goal is refused with the way to propose one",
+                 (_unk[0], "`proposed:`" in _unk[1] and "owner picks" in _unk[1], "unk" in _ids15()), (1, True, False))
+            case("G5: a proposed node is accepted", (_add15("prop", "picked")[0], "prop" in _ids15()), (0, True))
+            _add15("two", "token-usage", "--also", "picked", "--also", "dev-speed")
+            case("also: stored in order", [e.get("also") for e in read_ledger(_l15)[0] if e["id"] in ("two", "cur")],
+                 [None, ["picked", "dev-speed"]])
+            _bad = [_add15(i, "token-usage", "--also", s) for i, s in (("a1", "token-usage-first"), ("a2", "nope"))]
+            case("also: a non-current slug is refused",
+                 ([r for r, _ in _bad], ["--also `nope` names no node" in e for _, e in _bad], _ids15()),
+                 ([1, 1], [False, True], ["cur", "prop", "two"]))
+            _rep = _add15("rep", "picked", "--also", "token-usage", "--also", "picked")
+            case("also: may not repeat the goal", (_rep[0], "repeats --goal" in _rep[1], "rep" in _ids15()), (1, True, False))
+            with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                _stray15 = main(["--also", "token-usage"], root=_r15, run=NO_GIT)
+            case("also: outside --add is a stray flag", _stray15, 2)
+            _dup = _add15("dup", "token-usage", "--also", "picked", "--also", "dev-speed", "--also", "picked")
+            case("also: a repeated --also is stored once, in first-written order",
+                 (_dup[0], [e.get("also") for e in read_ledger(_l15)[0] if e["id"] == "dup"]), (0, [["picked", "dev-speed"]]))
+            _r15b = _r15 / "no-tree"
+            (_r15b / "docs").mkdir(parents=True)
+            _gone = _add15("gone", "dev-speed", where=_r15b)
+            (_r15b / FEATURES_REL).write_text("# Feature map\n\nno node\n")
+            _none = _add15("none", "dev-speed", where=_r15b)
+            case("G5: the tree unreadable is CANNOT RUN",
+                 [(r, "CANNOT RUN" in e and FEATURES_REL in e) for r, e in (_gone, _none)] +
+                 [(_r15b / LEDGER_REL).exists()], [(2, True), (2, True), False])
+            # an entry written before the rename (no G5 then) is read, shown and closed as it was
+            ledger_add(_l15, "pre", "an older job", "close it", "11-20 10:00", goal="dev-speed-first",
+                       thread="side · PR #9 · y", after=[], also=["harness-speed"])
+            _pre_also = [e.get("also") for e in read_ledger(_l15)[0] if e["id"] == "pre"]
+            _shown = collect(_r15, run=NO_GIT, now="T")
+            with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                _closed = main(["--done", "pre"], root=_r15, run=NO_GIT)
+            case("an old entry under a former slug is still read",
+                 ("[pre] an older job" in _shown, _closed, "pre" in _ids15(), _pre_also),
+                 (True, 0, False, [["harness-speed"]]))
+        finally:
+            shutil.rmtree(_r15, ignore_errors=True)
         # ── backlog #650 (Phase 6 redesign): a prerequisite is DECLARED once, at --add, and never read from prose ──
         _led650 = root / "led650" / "inflight.jsonl"
         ledger_add(_led650, "a2", "w", "d", "T", goal="g", thread="fix · backlog #11 · x",
@@ -1563,6 +1680,7 @@ def _self_test_body() -> int:
               for a in ([("PR", 5), ("PR", 5)], [("PR", 1)], [("backlog", 1)])],
              ["raised ValueError", "raised ValueError", "accepted"])
         _r650 = Path(tempfile.mkdtemp(prefix="ss-650-"))
+        _tree_world(_r650)
         try:
             _l650 = _r650 / LEDGER_REL
             _base = ["--goal", "g", "--thread", "fix · backlog #11 · x"]
@@ -1621,6 +1739,7 @@ def _self_test_body() -> int:
                 return f"RAISED {type(exc).__name__}: {exc}"
         try:
             _l652 = _r652 / LEDGER_REL
+            _tree_world(_r652)
             _b652 = ["--goal", "g", "--thread", "fix · backlog #11 · x", "--after", "none"]
             _rcs652, _errs652 = [], []
             for _argv in (["--add", "dated", "w", "d", *_b652, "--until", "11-06"],
@@ -1708,6 +1827,7 @@ def _self_test_body() -> int:
         _r672 = Path(tempfile.mkdtemp(prefix="ss-672-"))
         try:
             _l672 = _r672 / LEDGER_REL
+            _tree_world(_r672)
             _wa, _wb = _r672 / "wt-a", _r672 / "wt-b"
             _wa.mkdir()
             _wb.mkdir()
@@ -1833,6 +1953,7 @@ def _self_test_body() -> int:
         case("a ledger that is not a regular file refuses an update too",
              attempt(ledger_add, fifo, "n", "w", "d", "T"), "refused")
         from contextlib import redirect_stderr
+        _tree_world(big.parent.parent)
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             big_rc = main(["--add", "n", "w", "d", "--goal", "g", "--thread", "fix · PR #1 · x", "--after", "none"], root=big.parent.parent, run=NO_GIT)
         case("main --add on an oversized ledger exits 2 (CANNOT RUN), file untouched",
@@ -1988,6 +2109,7 @@ def _self_test_body() -> int:
              (rc, buf.getvalue().startswith("=== IN FLIGHT"), "none (gh answered)" in buf.getvalue()), (0, True, True))
         r2 = root / "second-root"
         r2.mkdir()
+        _tree_world(r2)
         from contextlib import redirect_stderr
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             added = main(["--add", "k", "Codex r1 on PR #1", "record it", "--goal", "g", "--thread", "fix · PR #1 · x", "--after", "none"], root=r2, run=NO_GIT)
@@ -2134,6 +2256,7 @@ def _self_test_body() -> int:
              (f"full: {repo.resolve() / LEDGER_REL}" in out, f"full: {wt / LEDGER_REL}" in out), (True, False))
         case("collect() where git cannot name the main checkout SAYS the real ledger may not have been read",
              "in a linked worktree the real one was NOT READ" in collect(bare, run=NO_GIT, now="T"), True)
+        _tree_world(wt)
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             wt_add = main(["--add", "wt-job", "CI watch PR #8", "read gh", "--goal", "g", "--thread", "fix · PR #8 · x", "--after", "none"], root=wt, run=gh_only)
             in_main = [e["id"] for e in read_ledger(repo / LEDGER_REL)[0]]
@@ -2162,6 +2285,9 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                     help="REQUIRED with --add, with --thread (backlog #514 (c), #505): the `## GOAL <slug>` of "
                          "docs/goal-threads.md this work serves. When none fits, propose a goal named for its objective; "
                          "the owner picks")
+    ap.add_argument("--also", action="append", default=[], metavar="SLUG",
+                    help="with --add, repeatable (goal node tree Task 15): another node of docs/features.md the work "
+                         "serves, beside --goal. Each must be a current node and differ from --goal; stored in order")
     ap.add_argument("--thread", metavar="LINE",
                     help="REQUIRED with --add, with --goal: `<relation> · <refs> · <what>`, the threads file's own grammar. "
                          "The goal tree shows it under the goal until master's docs/goal-threads.md declares the same refs")
@@ -2202,6 +2328,7 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                                    ("--override", bool(args.override) and not args.migrate_kinds),
                                    ("--kind", args.kind is not None and not args.add),
                                    ("--goal", args.goal is not None and not args.add),
+                                   ("--also", bool(args.also) and not args.add),
                                    ("--thread", args.thread is not None and not args.add),
                                    ("--waits", args.waits is not None and not args.add),
                                    ("--after", args.after is not None and not args.add),
@@ -2235,8 +2362,23 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
             if args.after is None:
                 print(f"CANNOT RUN — {ADD_NEEDS_AFTER}; nothing was added", file=sys.stderr)
                 return 2
+            # G5 (goal node tree Task 15): the goal and every `--also` are CURRENT nodes of the tree, checked at the
+            # moment of writing — a former slug names its node, an unknown one says how a name is proposed
+            try:
+                nodes = read_tree(root)
+            except TreeUnreadable as exc:
+                print(f"CANNOT RUN — {exc}, so the goal cannot be checked; nothing was added", file=sys.stderr)
+                return 2
+            why = [w for w in ([goal_refusal(args.goal, nodes)] if args.goal is not None else []) +
+                   [goal_refusal(s, nodes, "--also") for s in args.also] if w]
+            if args.goal is not None and args.goal in args.also:
+                why.append(f"--also `{args.goal}` repeats --goal: `also` lists the OTHER nodes the work serves")
+            if why:
+                print(f"REFUSED — {'; '.join(why)}; nothing was added", file=sys.stderr)
+                return 1
             ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"), args.kind,
-                       args.goal, args.thread, args.waits, parse_after(args.after), args.worktree, args.until)
+                       args.goal, args.thread, args.waits, parse_after(args.after), args.worktree, args.until,
+                       also=args.also)
             print(f"ledger: added {args.add[0]}")
             return 0
         if args.set_after:

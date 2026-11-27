@@ -561,8 +561,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "so G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        return 2",
-        "so G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        pass"
+        "so G2 and G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        return 2",
+        "so G2 and G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        pass"
       ]
     ],
     "expect": "G9: an unreadable threads file is CANNOT RUN"
@@ -670,6 +670,257 @@
     ],
     "expect": [
       "⛔ F3: an epic naming a proposed node FAILS the gate"
+    ]
+  },
+  {
+    "name": "G2: a heading's current-slug test removed, so a former heading passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "                bad = _name_problem(where, \"the heading\", cur, nodes)",
+        "                bad = None"
+      ]
+    ],
+    "expect": [
+      "G2: a heading must be a current slug"
+    ]
+  },
+  {
+    "name": "G2: an also slug's current-slug test removed",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            bad = _name_problem(where, \"the `also` slug\", s, nodes)",
+        "            bad = None"
+      ]
+    ],
+    "expect": [
+      "G2: an also slug must be current"
+    ]
+  },
+  {
+    "name": "G2: also may repeat its own heading",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            elif s == cur:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "G2: also may not name the primary"
+    ]
+  },
+  {
+    "name": "G2: a PRIORITY slug's current-slug test removed",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "                    bad = _name_problem(where, \"the PRIORITY slug\", s, nodes)",
+        "                    bad = None"
+      ]
+    ],
+    "expect": [
+      "G2: a PRIORITY slug must be current"
+    ]
+  },
+  {
+    "name": "G2: PRIORITY's placement test removed — a second line, or one inside a goal, passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if cur is not None or priorities > 1 or not m:",
+        "            if not m:"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY sits once, in the preamble"
+    ]
+  },
+  {
+    "name": "G2: an answer key's current-slug test removed",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            bad = _name_problem(f\"goal-tree-answers.json answer {n}\", \"the key's goal\", key[5:], nodes)",
+        "            bad = None"
+      ]
+    ],
+    "expect": [
+      "G2: an answer key on a former slug is refused"
+    ]
+  },
+  {
+    "name": "G2: a request line is READ — a quote naming a former slug is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if line.startswith(\">\"):\n            continue\n        if _PRIORITY_ATTEMPT.match(line):",
+        "        if line.startswith(\">>>\"):\n            continue\n        if _PRIORITY_ATTEMPT.match(line):"
+      ]
+    ],
+    "expect": [
+      "G2: a request quoting a retired slug is not read"
+    ]
+  },
+  {
+    "name": "G2: main does not read the threads file's names",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        problems += thread_name_problems(read_threads_text(GOAL_THREADS), nodes)\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "main: G2 reads the threads file"
+    ]
+  },
+  {
+    "name": "G2: an unreadable answers file is passed over instead of CANNOT RUN",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "cannot check its `goal:` keys. Treat this as NOT RUN.\", file=sys.stderr)\n        return 2",
+        "cannot check its `goal:` keys. Treat this as NOT RUN.\", file=sys.stderr)\n        pass"
+      ]
+    ],
+    "expect": [
+      "G2: an unreadable answers file is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F1: any line beginning `PRIORITY` is read as a PRIORITY attempt, so preamble prose is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if _PRIORITY_ATTEMPT.match(line):",
+        "        if line.startswith(\"PRIORITY\"):"
+      ]
+    ],
+    "expect": [
+      "G2: preamble prose beginning `PRIORITY` is not a PRIORITY line"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F1: only a dated line is a PRIORITY attempt, so `PRIORITY someday \"…\"` passes as prose",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "_PRIORITY_ATTEMPT = re.compile(r'^PRIORITY (?:\\d{4}-\\d{2}-\\d{2} \"|.* ·(?: |$))')",
+        "_PRIORITY_ATTEMPT = re.compile(r'^PRIORITY \\d{4}-')"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY sits once, in the preamble",
+      "G2: PRIORITY attempt row 2"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M1: the attempt test reverts to round 1's first-token rule, so quoted prose is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "(?:\\d{4}-\\d{2}-\\d{2} \"|.* ·(?: |$))')",
+        "(?:\\d{4}-|\\S+ \")')"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 1",
+      "G2: PRIORITY attempt row 7"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M2: an attempt needs a quote AND the separator, so an unquoted ranking is dropped in silence",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "^PRIORITY (?:\\d{4}-\\d{2}-\\d{2} \"|.* ·",
+        "^PRIORITY (?:.*\" ·"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 12"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M2: the dated head stops marking an attempt, so a ranking missing its separator is dropped",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "\\d{4}-\\d{2}-\\d{2} \"|.* ·",
+        ".* ·"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 13"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M2: the separator stops marking an attempt, so a multi-token date passes as prose",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "\"|.* ·(?: |$))",
+        "\")"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 2",
+      "G2: PRIORITY attempt row 12"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M2: the separator must precede a well-formed ranking, so a broken or empty one is dropped",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        ".* ·(?: |$))",
+        ".* · \\S+(?: > \\S+)*$)"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 10",
+      "G2: PRIORITY attempt row 11"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M1: the dated head loses its quote, so dated prose is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "\\d{4}-\\d{2}-\\d{2} \"|",
+        "\\d{4}-\\d{2}-\\d{2} |"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 7"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F4: a slug repeated in `also` is accepted",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            elif s in also[:k]:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "G2: a slug repeated in `also` or PRIORITY is refused"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F4: a slug ranked twice in PRIORITY is accepted",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "                    elif s in ranked[:k]:",
+        "                    elif False:"
+      ]
+    ],
+    "expect": [
+      "G2: a slug repeated in `also` or PRIORITY is refused"
     ]
   }
 ]
