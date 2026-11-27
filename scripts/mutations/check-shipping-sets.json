@@ -2385,5 +2385,38 @@
       ]
     ],
     "expect": "X5: rc 0 with a garbage line before the PASS line is CANNOT RUN, rc 2 — every line must be one it prints"
+  },
+  {
+    "name": "a non-string shared_with entry reaches the dict membership test (backlog #700 r1 C4)",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "any(not isinstance(p, str) or p not in packages",
+        "any(p not in packages"
+      ]
+    ],
+    "expect": "every wrong-typed value in a component or a top-level key is refused, never a traceback (backlog #700)"
+  },
+  {
+    "name": "no depth bound on the map (backlog #700 r1 C1)",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "            if depth > MAP_MAX_DEPTH:",
+        "            if False:"
+      ]
+    ],
+    "expect": "a value nested 100,000 deep is CANNOT RUN, never a RecursionError (backlog #700 r1 C1)"
+  },
+  {
+    "name": "a non-string measured_at is accepted (backlog #700 r1 C3)",
+    "file": "scripts/check-shipping-sets.py",
+    "edits": [
+      [
+        "    if not isinstance(data.get(\"measured_at\", \"\"), str):",
+        "    if False:"
+      ]
+    ],
+    "expect": "the substitutions ACCEPTED are exactly the valid ones: an id or measured_at string, an empty shared_with or exclusions list (backlog #700 r1)"
   }
 ]

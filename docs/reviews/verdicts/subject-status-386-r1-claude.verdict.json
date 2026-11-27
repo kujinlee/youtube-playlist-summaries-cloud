@@ -1,0 +1,28 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/subject-status-386-r1-claude.md": "100644 e9a95e3b90d7e66be93cfcccc3b04ba6817251c9",
+    "docs/reviews/codex/subject-status-386-r1-codex.md": "100644 302b02aab5f6548a5f2eac8e920e1f97ba34bef0",
+    "docs/reviews/coordinator/subject-status-386-r1-coordinator.md": "100644 f3918d33a410c8b9a3a7bfafc2841a5467d4fc8f",
+    "docs/reviews/verdicts/subject-status-386-r1-codex.verdict.json": "100644 ed78eec1d0c622f2be131f2b101626429f00dc72",
+    "scripts/check-shipping-sets.py": "100644 b189d7d28ea96e252defb789aefb3d77cd139f51",
+    "scripts/mutations/check-shipping-sets.json": "100644 9c5e89fda7e4c0f31e6c0a418fccb6d5ec648a6f",
+    "scripts/mutations/expected_mutations.py": "100644 d4bbfc166358cce2a7945cebb835ed0274f21b84",
+    "scripts/subject_status.py": "100644 1ce5124791c477dc2ec30261bd428353b47ba489"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "3b92459537732120bca1bded9d89925d8a402d60",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 8560 chars, names 3b9245953773",
+  "refused": false,
+  "review": "subject-status-386-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/b386",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
