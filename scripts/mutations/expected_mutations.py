@@ -1808,7 +1808,9 @@ EXPECTED_MUTATIONS = {
     # main reading the names; an unreadable answers file CANNOT RUN). Three G9 entries re-bound to the one threads read.
     # ⟳ 2026-11-27, goal node tree S3 r1 fold: 69 -> 73 — Claude F1 (a line is a PRIORITY attempt only by its shape:
     # prose refused, a dated-only shape lets `PRIORITY someday "…"` pass: 2); Claude F4 (a repeat in `also`, in PRIORITY: 2).
-    "scripts/check-features.py": 73,
+    # ⟳ 2026-11-27, goal node tree S3 r2 fold: 73 -> 79 — Codex M1/M2: the attempt test reads the declaration's structure
+    # (the ` ·` separator, or a `<date> "` head); six variants of `_PRIORITY_ATTEMPT`, each killed by a named table row.
+    "scripts/check-features.py": 79,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed

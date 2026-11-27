@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 115 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 130 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -511,10 +511,15 @@ def check_cross(nodes, areas_in_use: set[str] | None) -> list[str]:
 # reported rather than left inside `<what>`.
 ALSO_FIELD = re.compile(r" · also ([^·]+?)(?= · waits on |$)")
 PRIORITY_LINE = re.compile(r'^PRIORITY (\d{4}-\d{2}-\d{2}) "(.+)" · (\S+(?: > \S+)*)$')
-# What makes a line an ATTEMPT at the PRIORITY line, then judged by PRIORITY_LINE: the word followed by a date's start,
-# or by one token and the owner's quoted words (`PRIORITY someday "…"` is a malformed attempt, still refused). Prose
-# that merely begins with the word ("PRIORITY is decided by the owner.") is preamble, never refused (S3 r1 Claude F1).
-_PRIORITY_START = re.compile(r'^PRIORITY (?:\d{4}-|\S+ ")')
+# What makes a line an ATTEMPT at the PRIORITY line, then judged by PRIORITY_LINE — read from the declaration's own
+# structure, never its first token (S3 r2 Codex M1/M2). A line carries a part prose never does in that place:
+#   · the separator ` ·` before the ranking, anywhere — the part that RANKS, so a line with it is never dropped
+#     in silence (`PRIORITY tomorrow morning "do a" · a` is refused, whatever its date tokens); or
+#   · the opening `<date> "` — the declaration's head, so a ranking missing its separator is refused too.
+# Prose — quoted (`PRIORITY is "important" to the owner.`), dated (`PRIORITY 2026-11-12 was set.`) or plain
+# (`PRIORITY is decided by the owner.`, S3 r1 Claude F1) — carries neither and stays preamble.
+# Bound: an undated, separator-less line (`PRIORITY someday "a > b"`) is prose, since prose quotes words too.
+_PRIORITY_ATTEMPT = re.compile(r'^PRIORITY (?:\d{4}-\d{2}-\d{2} "|.* ·(?: |$))')
 # Loose on purpose: any `## GOAL …` heading is checked, so `## GOAL Not-A-Slug` is reported by G2 too.
 _GOAL_ANY = re.compile(r"^## GOAL (.*)$")
 
@@ -570,7 +575,7 @@ def thread_name_problems(text: str, nodes) -> list[str]:
             continue
         if line.startswith(">"):
             continue
-        if _PRIORITY_START.match(line):
+        if _PRIORITY_ATTEMPT.match(line):
             priorities += 1
             m = PRIORITY_LINE.match(line)
             if cur is not None or priorities > 1 or not m:
@@ -1318,6 +1323,34 @@ expected-because: standard for a hosted multi-tenant service.
            _says(thread_name_problems("PRIORITY is set.\n" + _PRI.format(s="a", h="a") + 'PRIORITY x "w" · b\n', _G2N),
                  "goal-threads.md:4", "ONCE")],
           [[], [], [True], [True]])
+    # S3 r2 Codex M1/M2: ONE rule decides "is this an attempt?" — the declaration's own structure, never its
+    # first token. Each row is (input, verdict); a refusal is the ONCE message on line 1, an acceptance reads.
+    def _pri_verdict(line):
+        text = line + "\n## GOAL a\n"
+        got = thread_name_problems(text, _G2N)
+        if not got:
+            return ("accepted", priority_order(text))
+        return ("refused",) if all(p.startswith("goal-threads.md:1: a PRIORITY line is written ONCE") for p in got) else ("other", got)
+    for n, line, want in [
+            (1, 'PRIORITY is "important" to the owner.', ("accepted", None)),               # r2 Codex M1: quoted prose
+            (2, 'PRIORITY tomorrow morning "do a" · a', ("refused",)),                      # r2 Codex M2: multi-token date
+            (3, "PRIORITY is decided by the owner.", ("accepted", None)),                   # r1 Claude F1's prose
+            (4, 'PRIORITY 2026-11-12 "the owner\'s order" · a > b > p',
+             ("accepted", ("2026-11-12", "the owner's order", ["a", "b", "p"]))),            # valid, ranked
+            (5, 'PRIORITY 2026-11-12 "w" · b', ("accepted", ("2026-11-12", "w", ["b"]))),  # valid, one slug
+            (6, 'PRIORITY 2026-11-12 "dev speed · then tokens" · a > b',
+             ("accepted", ("2026-11-12", "dev speed · then tokens", ["a", "b"]))),           # valid, separator in words
+            (7, "PRIORITY 2026-11-12 was set by the owner.", ("accepted", None)),           # prose: a date, no quote after
+            (8, 'PRIORITY "first" beats "second" here.', ("accepted", None)),               # prose: quotes, no separator
+            (9, "PRIORITY 2026-11-12 the order · a", ("refused",)),                         # attempt: no quote
+            (10, 'PRIORITY tomorrow "w" · a >', ("refused",)),                              # attempt: broken slug list
+            (11, 'PRIORITY tomorrow "w" ·', ("refused",)),                                  # attempt: empty slug list
+            (12, "PRIORITY tomorrow · a > b", ("refused",)),                                # attempt: no date, no quote
+            (13, 'PRIORITY 2026-11-12 "do a" > b', ("refused",)),                           # attempt: separator forgotten
+            (14, 'PRIORITY is "important" · a', ("refused",)),                              # attempt: M1's words + ranking
+            (15, 'PRIORITY someday "a > b"', ("accepted", None)),                           # the STATED bound: undated, no separator
+    ]:
+        check(f"G2: PRIORITY attempt row {n}", _pri_verdict(line), want)
     # S3 r1 Claude F4: both are hand-written, so a repeated slug is REFUSED (never silently merged)
     check("G2: a slug repeated in `also` or PRIORITY is refused",
           [_says(thread_name_problems("## GOAL a\n- fix · PR #1 · x · also b, b\n", _G2N), "goal-threads.md:2", "`b`", "twice"),

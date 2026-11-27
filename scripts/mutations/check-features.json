@@ -755,8 +755,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "        if line.startswith(\">\"):\n            continue\n        if _PRIORITY_START.match(line):",
-        "        if line.startswith(\">>>\"):\n            continue\n        if _PRIORITY_START.match(line):"
+        "        if line.startswith(\">\"):\n            continue\n        if _PRIORITY_ATTEMPT.match(line):",
+        "        if line.startswith(\">>>\"):\n            continue\n        if _PRIORITY_ATTEMPT.match(line):"
       ]
     ],
     "expect": [
@@ -794,7 +794,7 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "        if _PRIORITY_START.match(line):",
+        "        if _PRIORITY_ATTEMPT.match(line):",
         "        if line.startswith(\"PRIORITY\"):"
       ]
     ],
@@ -807,12 +807,94 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "_PRIORITY_START = re.compile(r'^PRIORITY (?:\\d{4}-|\\S+ \")')",
-        "_PRIORITY_START = re.compile(r'^PRIORITY \\d{4}-')"
+        "_PRIORITY_ATTEMPT = re.compile(r'^PRIORITY (?:\\d{4}-\\d{2}-\\d{2} \"|.* ·(?: |$))')",
+        "_PRIORITY_ATTEMPT = re.compile(r'^PRIORITY \\d{4}-')"
       ]
     ],
     "expect": [
-      "G2: PRIORITY sits once, in the preamble"
+      "G2: PRIORITY sits once, in the preamble",
+      "G2: PRIORITY attempt row 2"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M1: the attempt test reverts to round 1's first-token rule, so quoted prose is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "(?:\\d{4}-\\d{2}-\\d{2} \"|.* ·(?: |$))')",
+        "(?:\\d{4}-|\\S+ \")')"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 1",
+      "G2: PRIORITY attempt row 7"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M2: an attempt needs a quote AND the separator, so an unquoted ranking is dropped in silence",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "^PRIORITY (?:\\d{4}-\\d{2}-\\d{2} \"|.* ·",
+        "^PRIORITY (?:.*\" ·"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 12"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M2: the dated head stops marking an attempt, so a ranking missing its separator is dropped",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "\\d{4}-\\d{2}-\\d{2} \"|.* ·",
+        ".* ·"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 13"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M2: the separator stops marking an attempt, so a multi-token date passes as prose",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "\"|.* ·(?: |$))",
+        "\")"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 2",
+      "G2: PRIORITY attempt row 12"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M2: the separator must precede a well-formed ranking, so a broken or empty one is dropped",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        ".* ·(?: |$))",
+        ".* · \\S+(?: > \\S+)*$)"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 10",
+      "G2: PRIORITY attempt row 11"
+    ]
+  },
+  {
+    "name": "node tree S3 r2 Codex M1: the dated head loses its quote, so dated prose is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "\\d{4}-\\d{2}-\\d{2} \"|",
+        "\\d{4}-\\d{2}-\\d{2} |"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY attempt row 7"
     ]
   },
   {
