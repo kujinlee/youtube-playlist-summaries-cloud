@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 606 cases
+    python3 scripts/goal-tree.py --self-test                 # 624 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -580,6 +580,12 @@ def _ledger_owed(entry: dict, src: "dict | None" = None) -> dict:
     out: dict = {}
     if isinstance(entry.get("at"), str) and entry["at"].strip():
         out["since"] = _SS.clean(entry["at"], 20)
+    if "until" in entry:   # backlog #652: a DATED wait, declared (a full `YYYY-MM-DD`, its year settled at WRITE time —
+        # r1 F1), with the entry's own recorded wait, which the date bounds: a passed date retires THAT entry's wait,
+        # never a text another source still records (r1 F4, `owed_reason`)
+        w = entry.get("waits")
+        out["until"] = [{"date": _SS.clean(str(entry["until"]), 20),
+                         "waits": _SS.clean(w, 160) if isinstance(w, str) and w.strip() else None}]
     if src is not None:
         found = _declared_blockers([entry], src)
         if found:
@@ -699,6 +705,42 @@ def idle_days(since, now) -> "int | None":
     return gap.days if gap > _dt.timedelta(0) else None
 
 
+_UNTIL_RE = re.compile(r"\d{4}-\d\d-\d\d")
+
+
+def until_date(until) -> "_dt.date | None":
+    """PURE (backlog #652). The day a declared `until` names — or None when it is not a full, real `YYYY-MM-DD`.
+    r1 F1 (both halves): the YEAR is settled ONCE, when the wait is declared (`session-state.py --add --until <mm-dd>`
+    stores the first such day on or after the day it is written), so it is never guessed here: a yearless `mm-dd`
+    is not read (no year is ever reconstructed from a yearless `since` or from the reader's clock)."""
+    if not (isinstance(until, str) and _UNTIL_RE.fullmatch(until)):
+        return None
+    try:
+        return _dt.date.fromisoformat(until)
+    except ValueError:
+        return None
+
+
+def until_state(u: dict, today: "_dt.date | None") -> tuple:
+    """PURE (backlog #652). ONE declared `until` record judged on `today`, as (state, words): `live` (its day is not
+    over: `until <mm-dd>`), `passed` (from the day after: `wait date passed <mm-dd>`) or `unread` (no date, or no
+    `today`: `until <value> (date not read)` — a live reason, never dropped, never passed). The one reader of a
+    record: the Owed list (`owed_reason`) and the `--print` leaf (`derive_thread`) both say what this says."""
+    day = until_date(u.get("date"))
+    if day is None or today is None:
+        return "unread", f"until {u.get('date')} (date not read)"
+    if day < today:
+        return "passed", f"wait date passed {day:%m-%d}"
+    return "live", f"until {day:%m-%d}"
+
+
+def _today(now) -> "_dt.date | None":
+    try:
+        return _dt.datetime.strptime(now, MINUTE_FMT).date()
+    except (ValueError, TypeError):
+        return None
+
+
 def _finished(b: dict, started: bool = False) -> str:
     """A done or abandoned blocker as its alarm: `blocker done <mm-dd> (<ref>), not started`, or
     `prerequisite <ref> <why> — re-plan` (r1 Codex 1: an abandoned prerequisite is never `done`). backlog #672: an
@@ -717,15 +759,34 @@ def owed_reason(x: dict, now) -> tuple:
               item has no recorded wait and declares no prerequisite at all, `no reason recorded — idle N days` (N
               from its newest `since` to `now`; `?` when no time reads). Never the neutral "not recorded";
       idle  — no LIVE reason is left (r1 Codex 5): no declared prerequisite open or unread, and no recorded wait. A
-              recorded wait is prose and never expires (Phase 6: prose is never read for refs). Only an idle item
-              with an alarm is listed at session start."""
+              recorded wait is prose and never expires (Phase 6: prose is never read for refs) — unless its entry
+              DECLARES an `until` (backlog #652): while that day is not over it is a live reason (`until <mm-dd>`);
+              from the day after, `wait date passed <mm-dd>, not started` is an alarm and that entry's recorded
+              wait is retired — by ENTRY (r1 F4): a wait text another source still records (`undated_waits`, or
+              an entry whose date is live or unread) stands. Only an idle item with an alarm is listed at session
+              start."""
     blockers = x.get("blockers") or []
-    recorded = [p for p in (x.get("waits") or "").split("; ") if p]
-    pending = [b for b in blockers if b["state"] not in ("done", "abandoned")]
-    waits = _join_waits(x.get("waits"), *(f"{b['ref']} ({'open' if b['state'] == 'open' else 'state not read'})"
-                                           for b in pending))
-    idle = not pending and not recorded
     builds = x.get("builds") or []
+    # backlog #652: each declared `until` is LIVE, PASSED or not read (`until_state`). A PASSED one is an alarm and
+    # retires ITS entry's recorded wait — r1 F4: only a text no other source still records (an undated source's, or
+    # a live or unread dated entry's), so a second entry waiting on the same text keeps its wait
+    today = _today(now)
+    live_until, passed_until, gone = [], [], set()
+    kept = {p for p in (x.get("undated_waits") or "").split("; ") if p}
+    for u in x.get("until") or []:
+        state, words = until_state(u, today)
+        parts = {p for p in (u.get("waits") or "").split("; ") if p}
+        if state == "passed":
+            passed_until.append(words + ("" if builds else ", not started"))
+            gone |= parts
+        else:
+            live_until.append(words)
+            kept |= parts
+    recorded = [p for p in (x.get("waits") or "").split("; ") if p and not (p in gone and p not in kept)]
+    pending = [b for b in blockers if b["state"] not in ("done", "abandoned")]
+    waits = _join_waits("; ".join(recorded), *live_until,
+                        *(f"{b['ref']} ({'open' if b['state'] == 'open' else 'state not read'})" for b in pending))
+    idle = not pending and not recorded and not live_until
     # backlog #672 + PR #606 r1 Claude F2: `not started` is claimed only when NO worktree is declared. A declared one
     # either shows the work began (building, quiet, ahead) or was not read or was removed — the page cannot say
     # `not started` of a source it did not read, and a declared directory existed when it was declared.
@@ -734,6 +795,9 @@ def owed_reason(x: dict, now) -> tuple:
     for b in [b for b in blockers if b not in pending]:
         if _finished(b, started) not in alarms:
             alarms.append(_finished(b, started))
+    for a in passed_until:   # backlog #652
+        if a not in alarms:
+            alarms.append(a)
     for w in builds:   # backlog #672: a worktree that is quiet, gone or not read is said, never hidden
         if w["state"] != "building" and w["text"] not in alarms:
             alarms.append(w["text"])
@@ -1013,9 +1077,18 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
         detail += f" · waits on {t['waits']} (declared)"
     # backlog #514 r2: a wait an entry naming this thread declares (`--add --waits`) is said on the leaf in every state,
     # beside the line's own — never hidden by it
+    # backlog #652 r1 F5: an entry whose declared date has PASSED says so in place of its wait (the wait is retired,
+    # as on the Owed list); a live or unread date is said beside the wait
+    today = _today(now)
     for x in entries:
-        if x.get("waits"):
-            detail += f" · waits on {x['waits']} (ledger entry {x['id']})"
+        said = [until_state(u, today) for u in x.get("until") or []]
+        passed = [w for st, w in said if st == "passed"]
+        if passed:
+            detail += (" · " + "; ".join(passed) + ("" if x.get("worktree") else ", not started")
+                       + f" (ledger entry {x['id']})")
+        elif x.get("waits") or said:
+            detail += (" · " + ", ".join(([f"waits on {x['waits']}"] if x.get("waits") else []) + [w for _, w in said])
+                       + f" (ledger entry {x['id']})")
     # The LATEST merge is when the thread landed; one unread minute makes the whole time unread (never a guess).
     merged_at = max(whens) if whens and all(whens) else None
     # running-vs-owed r1 Codex H1/M1: the open PRs this thread's work IS — a named one or the one its row resolved to,
@@ -2053,7 +2126,7 @@ def agenda_digest(snap: dict, ag: dict, now=None) -> dict:
                      "running": bool(ops or t["state"] == "open") and not waits,
                      "waits": waits,
                      # one PR reached by two declarations is ONE item (r1 Codex M1): merged by EVERY PR (r2 M1)
-                     "prs": list(ops)} | _owed_keys(t.get("entries") or [], t.get("blockers"))
+                     "prs": list(ops)} | _owed_keys(t.get("entries") or [], t.get("blockers"), t.get("waits"))
                     | _builds(t.get("entries") or [], judge)))
             ended = t.get("merged_at")
             if (t["state"] == "merged" and isinstance(ended, str) and _STAMP.fullmatch(ended)
@@ -2102,11 +2175,17 @@ def _run_if_building(x: dict) -> dict:
     return x
 
 
-def _owed_keys(entries: list, blockers) -> dict:
+def _owed_keys(entries: list, blockers, line_waits=None) -> dict:
     """backlog #650: what a NOW entry carries for `owed_reason` — the `since` of every entry behind it and the
-    `blockers` its entries declare. Each key only when present, so an item with none is the dict it was before."""
+    `blockers` its entries declare. Each key only when present, so an item with none is the dict it was before.
+    backlog #652: every declared `until`, and — only beside one — `undated_waits`, the waits recorded by a source that
+    declares NO date (the thread line's own, `line_waits`, and each undated entry's), which no passed date retires
+    (r1 F4: retirement is by entry, never by text)."""
     since = [e["since"] for e in entries if isinstance(e, dict) and isinstance(e.get("since"), str)]
-    return ({"since": since} if since else {}) | ({"blockers": list(blockers)} if blockers else {})
+    until = [u for e in entries if isinstance(e, dict) for u in e.get("until") or []]   # backlog #652
+    undated = _join_waits(line_waits, *(e.get("waits") for e in entries if isinstance(e, dict) and not e.get("until")))
+    return (({"since": since} if since else {}) | ({"blockers": list(blockers)} if blockers else {})
+            | ({"until": until} if until else {}) | ({"undated_waits": undated} if until and undated else {}))
 
 
 def agenda_recap(d: dict) -> str:
@@ -2154,6 +2233,9 @@ def agenda_now_items(d: dict) -> list[dict]:
             groups.remove(o)
         g["labels"].add(x["label"]); g["prs"] |= prs
         _fold_item(g["item"], [x["goal"]], x)
+    for g in groups:   # backlog #652 r1 F4: an item with no declared date carries no `undated_waits`, as before
+        if "until" not in g["item"]:
+            g["item"].pop("undated_waits", None)
     return [g["item"] for g in groups]
 
 
@@ -2171,6 +2253,14 @@ def _fold_item(it: dict, goals: list, x: dict) -> None:
     for b in x.get("blockers") or []:
         if b not in it.setdefault("blockers", []):
             it["blockers"].append(b)
+    for u in x.get("until") or []:    # backlog #652: every declared date, under ANY goal
+        if u not in it.setdefault("until", []):
+            it["until"].append(u)
+    # backlog #652 r1 F4: the waits no date can retire — all of an undated source's, an undated part of a dated one's.
+    # Kept on every item while folding (a dated source may come later); `agenda_now_items` drops it where no date is
+    undated = x.get("undated_waits") if x.get("until") else x.get("waits")
+    if undated:
+        it["undated_waits"] = _join_waits(it.get("undated_waits"), undated)
     for b in x.get("builds") or []:   # backlog #672: every worktree reading, under ANY goal
         if b not in it.setdefault("builds", []):
             it["builds"].append(b)
@@ -3966,6 +4056,101 @@ def _cases_650(case) -> None:
                                         b"y" * 2_000_000 + b'\n{"last": 1}\n', b'{"last": 1}',
                                         b"y" * 50 + b"\n" + b"z" * 9000 + b"\n"))],
          [(True, True), (True, True), (True, True), (True, False)])
+
+    # ── backlog #652: a DATED wait is declared (`until`), shown while it is ahead and an alarm from the day after ──
+    # r1 F1: the year is settled at WRITE time (`session-state.py`), so the ledger holds a full `YYYY-MM-DD`
+    _w652 = "the weekly reset (Fri 11-06 02:00)"
+    _d652 = lambda **kw: ent("x", waits=_w652, until="2026-11-06") | kw
+    _seen652 = [safe(tail, [_d652()], at=a) for a in ("2026-11-15 09:00", "2026-11-06 09:00")]
+    case("⭐ backlog #652 (the row's falsifier): an entry declared `--until 11-06` reads `wait date passed 11-06, not "
+         "started` in the alarm style in a snapshot taken 11-15 — never its wait as a live reason — and on 11-06 "
+         "itself shows the wait and its date; two clocks, ONE entry",
+         [(t, "waits for:" in t) if isinstance(t, str) else t for t in _seen652]
+         + ['class="waits warn">wait date passed 11-06' in safe(lambda: owed([_d652()])[1])],
+         [("wait date passed 11-06, not started", False),
+          (f"waits for: {_w652}; until 11-06", True), True])
+    case("⭐ backlog #652: a PASSED dated wait is listed at session start; the same entry before its date is not",
+         [[ln.split(" — ", 1)[1] for ln in safe(idle_of, [_d652()], now=n)] for n in ("2026-11-15 09:00", "2026-11-06 09:00")],
+         [["wait date passed 11-06, not started · split the section"], []])
+    case("⭐ backlog #652 r1 F1 (Codex MAJOR): the date's YEAR is the one STORED — a wait until 2026-11-20 read on "
+         "2026-11-21 AND a year later on 2027-11-16 has passed, never live again; one stored date, two clocks",
+         [safe(lambda n=n: owed_reason({"until": [{"date": "2026-11-20", "waits": None}]}, n)[:2])
+          for n in ("2026-11-21 09:00", "2027-11-16 09:00")],
+         [(None, "wait date passed 11-20, not started")] * 2)
+    case("⭐ backlog #652 r1 F1 (Claude MAJOR) / F3: a stored date AHEAD of the reader is live however far ahead — "
+         "a 12-05 declared in November on an entry recorded in January, and a June date read in November",
+         [safe(lambda u=u, n=n: owed_reason({"since": ["01-10 09:00"], "until": [{"date": u, "waits": None}]},
+                                            n)[:2]) for u, n in (("2026-12-05", "2026-11-20 09:00"),
+                                                                 ("2027-06-01", "2026-11-15 10:00"))],
+         [("until 12-05", None), ("until 06-01", None)])
+    case("backlog #652 r1 F1: the reader takes ONLY a full `YYYY-MM-DD` — a yearless `mm-dd`, an impossible date "
+         "(02-29 in 2026, 02-30), a short field or a non-text value has no date (None); a real one is its day",
+         [safe(lambda u=u: (lambda d: d and d.isoformat())(until_date(u))) for u in (
+             "2026-11-06", "2028-02-29", "11-06", "2026-02-29", "2026-02-30", "2026-11-6", "20261106", 5, None)],
+         ["2026-11-06", "2028-02-29", None, None, None, None, None, None, None])
+    case("backlog #652 (fixture variation): until_date called directly on distinct literals",
+         [safe(lambda: until_date("2027-01-31")), safe(lambda: until_date("01-31")), safe(lambda: until_date(""))],
+         [_dt.date(2027, 1, 31), None, None])
+    case("⭐ backlog #652: the wait ends at the END of its day — 23:59 on 11-06 is still live, 00:00 on 11-07 has passed",
+         [safe(owed_reason, {"until": [{"date": "2026-11-06", "waits": None}]}, n)[:2]
+          for n in ("2026-11-06 23:59", "2026-11-07 00:00")],
+         [("until 11-06", None), (None, "wait date passed 11-06, not started")])
+    case("⭐ backlog #652: across the year end, end to end — an entry waiting until 2025-12-30 read 2026-01-02, and "
+         "one waiting until 2026-01-02 read 2026-07-05, have both passed",
+         [safe(tail, [ent("x", at=a, until=u)], at=n) for a, u, n in (("12-20 10:00", "2025-12-30", "2026-01-02 10:00"),
+                                                                     ("12-31 10:00", "2026-01-02", "2026-07-05 10:00"))],
+         ["wait date passed 12-30, not started", "wait date passed 01-02, not started"])
+    case("backlog #652: a damaged `until` — prose, a number, or a YEARLESS `mm-dd` (r1 F1: never guessed a year) — is "
+         "shown as `date not read` and stays a live reason, never dropped, never passed; beside another entry's PASSED "
+         "date (an alarm), a live or a damaged date still keeps the item off the session-start list",
+         ([safe(tail, [ent("x", until=v)]) for v in ("next week", 7, "11-06")],
+          [safe(idle_of, [_d652(), ent("y", id="sub2", until=v)]) for v in ("next week", "2026-11-20")]),
+         (["waits for: until next week (date not read)", "waits for: until 7 (date not read)",
+           "waits for: until 11-06 (date not read)"], [[], []]))
+    _two652 = [_d652(), ent("y", id="sub2", waits="the owner decides")]
+    case("⭐ backlog #652: a passed date retires ONLY its own entry's wait — another entry's recorded wait on the same "
+         "item still stands, so the alarm shows and the item is NOT listed at session start",
+         (safe(tail, _two652), safe(idle_of, _two652)),
+         ("waits for: the owner decides wait date passed 11-06, not started", []))
+    _same652 = [_d652(), ent("y", id="sub2", waits=_w652)]
+    case("⭐ backlog #652 r1 F4 (Codex MAJOR): two entries on ONE item waiting on the SAME text, only one of them "
+         "passed — the other's wait still stands (a passed date retires by ENTRY, never by text), so the alarm shows "
+         "beside the wait and the item is NOT listed at session start",
+         (safe(tail, _same652), safe(idle_of, _same652)),
+         (f"waits for: {_w652} wait date passed 11-06, not started", []))
+    _line652 = "- fix · backlog #11 · split the section · waits on the owner"
+    _own652 = [ent("x", waits="the owner", until="2026-11-06")]
+    case("backlog #652 r1 F4: the THREAD LINE's own wait is never retired by an entry's passed date on the same text",
+         (safe(tail, _own652, line=_line652), safe(idle_of, _own652, line=_line652)),
+         ("waits for: the owner wait date passed 11-06, not started", []))
+    _same652b = [_d652(), ent("y", id="sub2", waits=_w652, until="2026-11-20")]
+    case("backlog #652 r1 F4: …and the same when the other entry's date is still AHEAD — its wait and its date stand",
+         (safe(tail, _same652b), safe(idle_of, _same652b)),
+         (f"waits for: {_w652}; until 11-20 wait date passed 11-06, not started", []))
+    case("backlog #652: an item that declares a worktree makes no `not started` claim for a passed date",
+         safe(owed_reason, {"until": [{"date": "2026-11-06", "waits": None}],
+                            "builds": [{"state": "quiet", "text": "quiet 90 min"}]}, NOW)[1],
+         "wait date passed 11-06; quiet 90 min")
+    _leaf652 = lambda ledger, at: [ln.split("split the section", 1)[1] for ln in safe(
+        lambda: render_text(snap(ledger, at))).splitlines() if "split the section" in ln and " — " in ln]
+    case("⭐ backlog #652 r1 F5 (Codex MAJOR + Claude MINOR): the `--print` leaf of an entry whose date has PASSED reads "
+         "`wait date passed <mm-dd>, not started`, never its wait as live; before the date it shows the wait and the date",
+         [any("wait date passed 11-06, not started (ledger entry sub)" in ln and "waits on the weekly" not in ln
+              for ln in _leaf652([_d652()], "2026-11-15 09:00")),
+          any(f"waits on {_w652}, until 11-06 (ledger entry sub)" in ln for ln in _leaf652([_d652()], "2026-11-06 09:00"))],
+         [True, True])
+    case("backlog #652 r1 F5: the `--print` leaf of a passed entry that declares a worktree makes no `not started` claim",
+         [ln.split(" (ledger entry", 1)[0].rsplit(" · ", 1)[1] for ln in _leaf652(
+             [_d652(worktree="/nowhere-652")], "2026-11-15 09:00") if "(ledger entry" in ln],
+         ["wait date passed 11-06"])
+    case("backlog #652 r1 F4: an Owed item with no declared date carries no `undated_waits` key, so it is the dict it "
+         "was before; one with a date carries the undated waits beside it",
+         [["undated_waits" in x for x in safe(lambda l=l: agenda_now_items(agenda_digest(snap(l), plan)))]
+          for l in ([ent("y", waits="the owner")], [_d652(), ent("y", id="sub2", waits="the owner")])],
+         [[False], [True]])
+    case("backlog #652: a tree whose entries declare no `until` carries no `until` key, so it fingerprints as before",
+         ["until" in json.dumps(derive(goals(), s([ent("x", **kw)]), "T")) for kw in ({}, {"until": "2026-11-06"})],
+         [False, True])
 
 
 def _self_test() -> int:

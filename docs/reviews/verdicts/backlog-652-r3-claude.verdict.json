@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/backlog.md": "100644 384fa1067717ce043fb239b98ccb960b9080a8c6",
+    "docs/reviews/claude/backlog-652-r3-claude.md": "100644 2045148bdafd7de2d3095c72541575ed743e2780"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "9d05ca09f5af1c8305cdf84039da0438526bd3ff",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b8b70ddb-ac10-4d26-bd53-6419325840da/scratchpad/b652/prompt-r2.md",
+  "reason": "claude half filed: 8229 chars, names 9d05ca09f5af",
+  "refused": false,
+  "review": "backlog-652-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/backlog-652",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
