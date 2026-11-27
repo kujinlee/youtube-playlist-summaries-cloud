@@ -18,6 +18,8 @@ claimed by the nearest area that equals it or is a family above it. A row carryi
 `(tooling) (comprehensibility)`, appears under the node claiming each one.
 
 ## PRODUCT
+slug: product
+for: Turns YouTube playlists into summaries a person can read, keep and share.
 
 ### summarise-a-playlist
 state: built
@@ -74,6 +76,8 @@ for: Keeps one video's summary coherent between a person's local vault and the h
 adrs: 0002
 
 ## PLATFORM
+slug: platform
+for: Keeps the hosted service correct, bounded and affordable underneath the product.
 
 ### job-queue-and-worker-lifecycle
 state: built
@@ -120,6 +124,8 @@ for: Keeps a person's playlists, summaries and stored files reachable only by th
 areas: (cloud/security)
 
 ## DEV INFRASTRUCTURE
+slug: dev-infrastructure
+for: Makes building this system fast, checked and understandable to its owner.
 
 ### prod-smoke
 state: built
@@ -135,6 +141,7 @@ areas: (cloud/test), (test infra)
 state: built
 for: Gives the rules this project works by a mechanical enforcer, instead of a reader who has to remember them.
 areas: (tooling)
+was: guard-harness-audit
 
 #### review-process
 state: built
@@ -150,6 +157,7 @@ areas: (tooling/mutation)
 state: built
 for: Carries work across turns, compactions and sessions — the Claude Code hooks, the in-flight ledger, usage pacing and stall detection.
 areas: (tooling/hooks)
+was: compaction-guards
 
 #### backlog-and-page-tooling
 state: built
@@ -166,27 +174,43 @@ was: dev-speed-first, harness-speed
 for: A change gets its verdict as fast as the evidence allows, with mutation coverage identical.
 areas: (tooling/speed)
 
-### status-visibility
-state: built
-for: Lets a person who was away see where the work stands and what needs a decision from them.
+### token-usage
+was: token-usage-first
+for: Keeps the tokens agents spend inside the usage limits, so the limit is not what stops the work.
+
+### memory-recall
+for: Brings the right memory to the turn that needs it.
+
+#### memory-hygiene
+for: Keeps each memory file short and opening with its current rule, so that what is recalled is right.
+
+### comprehensibility-suite
+for: Gives each status and explainer page one question to answer under one design, so the project can be understood from its pages.
 areas: (comprehensibility)
 
-#### feature-map
+#### status-visibility
+state: built
+for: Lets a person who was away see where the work stands and what needs a decision from them.
+
+##### feature-map
 state: built
 for: Lets anyone find what the system does, what it omits on purpose, and the fragments that define each.
 areas: (comprehensibility/feature-map)
 
-#### goal-tree
+##### goal-tree
 state: built
-for: Shows every thread of work under the owner request it serves, what waits on the owner, and which plans are not ticked closed — at http://127.0.0.1:7391/goal-tree.
+for: Shows every thread of work under the owner request it serves, what waits on the owner, and which plans are not ticked closed.
 areas: (comprehensibility/goal-tree)
 
-#### work-lines
+##### work-lines
 state: absent
 for: Drew every plan as a line back to the plan it branched from.
 expected-because: retired 2026-10-28 into the goal-tree node above (the owner's decision D2, backlog #389) — two pages answering which threads are live left the reader with neither; a frozen record of it, with plan contents withheld pending backlog #194, is at http://127.0.0.1:7391/work-lines-archive.
 
-### explanation-on-demand
+##### dashboard-decisions
+for: Shows the owner every decision waiting on them, and what each one is.
+
+#### explanation-on-demand
 state: built
 for: Lets a person have a subject they choose explained in a page they can ask questions inside.
 areas: (comprehensibility/explainers)

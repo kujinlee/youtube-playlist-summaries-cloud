@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 624 cases
+    python3 scripts/goal-tree.py --self-test                 # 639 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -139,7 +139,6 @@ OPEN_LIMIT = 100
 ALL_LIMIT = 300
 MERGED_DEPTH = 500
 
-THREAD_RE = re.compile(r"^- (\S+) · (.+?) · (.+?)(?: · waits on (.+))?$")
 REFS_RE = re.compile(r"(?:backlog|PR) #\d+(?:, (?:backlog|PR) #\d+)*")
 REF_RE = page_markup.KEY_REF      # one key grammar, owned by the link function
 # A merged subject ends `… (backlog #N) (#PR)` or `… (#PR)`; the PR number is the LAST parenthesis.
@@ -250,6 +249,75 @@ _SIBLING_MEMO: dict | None = None
 _CHECK_FEATURES = _sibling("check-features")
 GOAL_RE = _CHECK_FEATURES.GOAL_HEADING
 REQUEST_RE = _CHECK_FEATURES.REQUEST
+# ⛔ The optional ` · also <slug>, <slug>` field (goal node tree Task 14) is check-features' `ALSO_FIELD`, never a copy:
+# one pattern, so the gate that checks an `also` slug and the reader that hangs the thread cannot disagree on where
+# the field ends. It sits before ` · waits on `; `parse_thread_line` refuses the other order.
+THREAD_RE = re.compile(rf"^- (\S+) · (.+?) · (.+?)(?:{_CHECK_FEATURES.ALSO_FIELD.pattern})?(?: · waits on (.+))?$")
+FEATURES_REL = "docs/features.md"
+
+
+class TreeUnreadable(Exception):
+    """`docs/features.md` cannot be read or declares no node — CANNOT RUN, never a tree of nothing."""
+
+
+def read_tree(root: pathlib.Path) -> list:
+    """The nodes of `root`'s `docs/features.md`, by check-features' ONE parser, or `TreeUnreadable`."""
+    try:
+        text = (root / FEATURES_REL).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise TreeUnreadable(f"{FEATURES_REL} cannot be read ({type(exc).__name__})") from exc
+    nodes, _problems = _CHECK_FEATURES.parse_features(text)   # its problems are check-features' gate, not this page's
+    if not nodes:
+        raise TreeUnreadable(f"{FEATURES_REL} declares no node")
+    return nodes
+
+
+# What `resolve_snapshot` adds for the READER: the slug a goal was logged under, and its node's place in the tree.
+# Display metadata, never what a snapshot SAYS — `said_through` drops both before two snapshots are compared.
+READER_KEYS = ("then", "tree_pos")
+
+
+def resolve_snapshot(snap: dict, nodes) -> dict:
+    """PURE. A LOGGED snapshot with every goal slug mapped to its CURRENT slug through `resolve` (spec §2.4: history is
+    read through `was:`), the slug it was logged under kept as `then` when it differs, and the node's place in the
+    tree as `tree_pos` — what `goal_numbers` orders a goal quoting no request by (spec §2.2: "in tree order"; r1 Codex
+    1). Applied BEFORE any two snapshots are compared, so a rename alone moves no thread and adds or removes no goal."""
+    pos = {n.slug: k for k, n in enumerate(nodes)}
+    goals = []
+    for g in snap.get("goals") or []:
+        now = _CHECK_FEATURES.resolve(nodes, g["slug"])
+        r = dict(g, slug=now, then=g["slug"]) if now is not None and now != g["slug"] else dict(g)
+        if now in pos:
+            r["tree_pos"] = pos[now]
+        goals.append(r)
+    return dict(snap, goals=goals)
+
+
+def said_through(snap: dict, nodes) -> str:
+    """PURE. What a snapshot SAYS once read through the current tree: `fingerprint` of `resolve_snapshot`, with the
+    reader's own keys (`READER_KEYS`) dropped. Two snapshots that differ only by a rename say the same (r1 Codex 2)."""
+    r = resolve_snapshot(snap, nodes)
+    return fingerprint(dict(r, goals=[{k: v for k, v in g.items() if k not in READER_KEYS} for g in r["goals"]]))
+
+
+def resolve_ledger(entries: list, nodes) -> list:
+    """PURE. Ledger entries with a `goal` written before a rename mapped to the node it became (history, read through
+    `resolve`). An unknown goal is left as written, so it stays a problem on the page."""
+    if not nodes:
+        return entries
+    out = []
+    for e in entries:
+        g = e.get("goal")
+        now = _CHECK_FEATURES.resolve(nodes, g) if isinstance(g, str) else None
+        out.append(dict(e, goal=now) if now is not None and now != g else e)
+    return out
+
+
+def needs_from_tree(nodes) -> list[dict]:
+    """One NEEDS YOU item per `proposed:` node of the tree: a name awaiting the owner's pick (spec §2.7)."""
+    return [_item("decision", "tree", n.slug, None,
+                  _SS.clean(f"a name awaiting your pick: `{n.slug}` — {n.purpose}", 200))
+            for n in nodes if n.proposed]
 
 
 @contextlib.contextmanager
@@ -276,12 +344,15 @@ class Malformed(ValueError):
 
 
 # ── the declared input ────────────────────────────────────────────────────────────────────────
-def parse_threads(text: str) -> list[dict]:
+def parse_threads(text: str, nodes=None) -> list[dict]:
     """PURE. The threads file -> goals. Raises Malformed naming EVERY bad line, not just the first.
 
     Above the first `## GOAL` is prose and is ignored; inside a goal every non-blank line must be a
     request or a thread. ⛔ Any other `## ` heading is refused rather than read as the end of a goal: a
     typo in `GOAL` would otherwise turn a whole goal's threads into silently ignored prose.
+
+    With `nodes` (goal node tree Task 14), a heading must be a current node of `docs/features.md` — check-features'
+    own G2 message, one owner. Without, as before: a self-test builds its own world. A goal may quote no request.
     """
     goals: list[dict] = []
     problems: list[str] = []
@@ -298,6 +369,9 @@ def parse_threads(text: str) -> list[dict]:
             if m.group(1) in seen_slugs:
                 problems.append(f"line {i}: goal `{m.group(1)}` is declared twice")
             seen_slugs.add(m.group(1))
+            bad = None if nodes is None else _CHECK_FEATURES._name_problem(f"line {i}", "the heading", m.group(1), nodes)
+            if bad:
+                problems.append(bad)
             cur = {"slug": m.group(1), "requests": [], "threads": [], "line": i}
             goals.append(cur)
             continue
@@ -321,10 +395,6 @@ def parse_threads(text: str) -> list[dict]:
         else:
             problems.append(f"line {i}: inside goal `{cur['slug']}` a line must be a `> ` request or a "
                             f"`- ` thread: {line!r}")
-    for g in goals:
-        if not g["requests"]:
-            problems.append(f"line {g['line']}: goal `{g['slug']}` quotes no request — the root of a "
-                            f"tree is the owner's own words")
     if not goals and not problems:
         problems.append("no `## GOAL <slug>` is declared, so there is no tree to draw")
     if problems:
@@ -342,15 +412,21 @@ def parse_thread_line(line: str):
     m = THREAD_RE.match(line)
     if not m:
         return None, f"a thread must be `- <relation> · <refs> · <what>`: {line!r}"
-    rel, refs_text, what, waits = m.groups()
+    rel, refs_text, what, also, waits = m.groups()
+    if waits and " · also " in waits:
+        return None, f"the `· also` field comes BEFORE `· waits on`: {line!r}"
+    if " · also " in what:
+        return None, f"an `· also` field lists slugs joined by `, `: {line!r}"
     if rel not in RELATIONS:
         return None, f"relation {rel!r} is not one of {', '.join(RELATIONS)}"
     if not REFS_RE.fullmatch(refs_text):
         return None, (f"refs {refs_text!r} must be `backlog #N` / `PR #N`, "
                       f"joined by `, ` — a thread names a backlog row or a PR")
-    return {"key": f"{rel} · {refs_text}", "relation": rel,
+    thread = {"key": f"{rel} · {refs_text}", "relation": rel,
             "refs": [[k, int(n)] for k, n in REF_RE.findall(refs_text)],
-            "what": what.strip(), "waits": waits.strip() if waits else None}, None
+            "what": what.strip(), "waits": waits.strip() if waits else None}
+    # `also` is set only on a thread that HAS one, so every line written before it parses — and fingerprints — as before
+    return (dict(thread, also=[s.strip() for s in also.split(",")]) if also else thread), None
 
 
 def ledger_threads(goals: list[dict], ledger: list[dict]) -> tuple[list[dict], list[str]]:
@@ -1115,6 +1191,7 @@ def derive_thread(t: dict, src: dict, now: "str | None" = None, by_row: bool = F
 
 def derive(goals: list[dict], src: dict, now: str) -> dict:
     """PURE. Goals + sources -> one snapshot. `cannot` lists every source that could not be read."""
+    src = dict(src, ledger=resolve_ledger(src["ledger"], src.get("nodes")))   # a goal written before a rename (Task 14)
     goals, thread_problems = ledger_threads(goals, src["ledger"])
     out_goals = [dict(g, threads=[derive_thread(t, src, now) for t in g["threads"]]) for g in goals]
     # ⛔ review r1 X1: an open PR is represented only by a STRUCTURED association — a thread's refs, or the open PR
@@ -1567,7 +1644,7 @@ def closed_rows(text: str) -> set:
             if r["section"] == ITEMS_SECTION and r["closed"]}
 
 
-def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
+def collect(root: pathlib.Path, run=None, read_plans=None, nodes=None) -> dict:
     """Read git, gh, the ledger and the plans. NEVER RAISES: a failure is recorded in `errors` by source.
 
     `run(cmd, cwd, timeout) -> (rc, text)` is session-state's `_run` unless a test passes one;
@@ -1663,6 +1740,10 @@ def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
         if problems:
             errors["asks"] = "; ".join(problems) + " — NOT READ"
     needs += needs_from_ledger(src["ledger"])
+    # goal node tree Task 14: a `proposed:` node is a name awaiting the owner's pick; `nodes` also lets `derive` read
+    # a ledger goal written before a rename. None (a caller that read no tree) adds nothing.
+    needs += needs_from_tree(nodes or [])
+    src["nodes"] = nodes
     src["needs"] = consolidate(needs)
     # backlog #484: which rows are SUPERSEDED or WITHDRAWN. Unread (or partly unread) leaves `fates` None,
     # and every thread naming a backlog row then says CANNOT RUN.
@@ -1732,13 +1813,16 @@ def read_log(path: pathlib.Path) -> list[dict]:
     return out
 
 
-def append_if_changed(path: pathlib.Path, snap: dict) -> bool:
+def append_if_changed(path: pathlib.Path, snap: dict, nodes=None) -> bool:
     """Append `snap` unless it says what the newest logged snapshot says. True when appended.
+    With `nodes`, BOTH are read through the tree first (`said_through`), so the first `--snapshot` after a rename
+    logs nothing a reader would call new (r1 Codex 2, Claude F2). Without, the raw `fingerprint`s are compared.
     ⛔ An incomplete snapshot is REFUSED here too, not only by the caller."""
     if snap["cannot"]:
         raise ValueError("refusing to log a snapshot whose sources could not all be read")
     log = read_log(path)
-    if log and fingerprint(log[-1]) == fingerprint(snap):
+    said = fingerprint if nodes is None else (lambda s: said_through(s, nodes))
+    if log and said(log[-1]) == said(snap):
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as fh:
@@ -2394,7 +2478,14 @@ def goal_numbers(goals: list[dict]) -> list[int]:
     """PURE. Each goal's number, in file order: its rank by its FIRST request's time, ties in file order (review r1
     X3). A goal added with a later first request moves no other number, wherever in the file it is declared; ⚠ one
     added with an earlier (or equal, declared above) time, or a goal deleted, still renumbers those after it."""
-    order = sorted(range(len(goals)), key=lambda i: (goals[i]["requests"][0]["when"], i))
+    # a goal quoting no request (spec §2.2) is numbered after every requested one, in TREE order — its node's
+    # `tree_pos`, set by `resolve_snapshot` (r1 Codex 1); one with no place in the tree after those, in file order
+    def key(i):
+        g = goals[i]
+        if g["requests"]:
+            return (0, g["requests"][0]["when"], 0, i)
+        return (1, "", (0, g["tree_pos"]) if "tree_pos" in g else (1, 0), i)
+    order = sorted(range(len(goals)), key=key)
     rank = {i: r for r, i in enumerate(order, 1)}
     return [rank[i] for i in range(len(goals))]
 
@@ -2455,7 +2546,7 @@ def _goal_blocks(g: dict, at, n: int, tags: list[int] = ()) -> list:
     if g["threads"] and not shown and not placed:
         # Nothing current: the WHOLE goal folds on the page, its counts beside its heading; the text is unchanged.
         counts = "nothing current (" + ", ".join(f"{len(f[3])} {f[0]}" for f in folds) + ")"
-    return [("goal", n, g["slug"], g["requests"][0], counts, list(tags), blocks), ("pre", [""])]
+    return [("goal", n, g["slug"], g["requests"][0] if g["requests"] else None, counts, list(tags), blocks), ("pre", [""])]
 
 
 def _undeclared_goal_flag(u: dict) -> str:
@@ -2534,7 +2625,8 @@ def _flat(blocks: list) -> list[str]:
             out += b[1]
         elif b[0] == "goal":
             _, n, slug, first, _counts, tags, inner = b
-            out += [f'{goal_head(n, slug)} ({first["when"]}) "{first["quote"]}"' + tag_text(tags)] + _flat(inner)
+            out += [goal_head(n, slug) + (f' ({first["when"]}) "{first["quote"]}"' if first else "")
+                    + tag_text(tags)] + _flat(inner)
         else:
             out += [b[3]] if b[3] is not None else _flat(b[4])
     return out
@@ -3035,7 +3127,7 @@ def _goal_html(b: tuple, repo, seen, qa=None, hoist=None) -> str:
             f'<span class="goal-slug">{html.escape(slug)}</span></h3>'
             + (f'<span class="goal-agenda">{html.escape(tag_text(tags)[3:])}</span>' if tags else ""))
     quote = (f'<p class="goal-q"><time>{html.escape(first["when"])}</time> '
-             f'{_html_line(chr(34) + first["quote"] + chr(34), repo)}</p>')
+             f'{_html_line(chr(34) + first["quote"] + chr(34), repo)}</p>') if first else ""
     if counts is not None:   # the markers sit OUTSIDE the fold, so a folded goal still shows it has answers —
         mine = [] if hoist is None else hoist   # its own, and its threads' (r1 C)
         body = _blocks_html(inner, repo, seen, qa, mine)
@@ -3369,10 +3461,17 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
     log_path = main_root / LOG_REL
     agenda_path = main_root / AGENDA_REL
     rc, live = 0, None
+    _tree: list = []
+
+    def tree() -> list:
+        """The tree, read ONCE and only by a mode that needs it (`TreeUnreadable` is CANNOT RUN, below)."""
+        if not _tree:
+            _tree.append(read_tree(root))
+        return _tree[0]
     try:
         threads = root / THREADS_REL
         # the declared threads lend a step their `waits`; read only by the modes that derive (not --page)
-        declared = ([t for g in parse_threads(threads.read_text()) for t in g["threads"]]
+        declared = ([t for g in parse_threads(threads.read_text(), tree()) for t in g["threads"]]
                     if (a.record_agenda or a.snapshot) and threads.is_file() else [])
         if a.record_agenda:
             try:
@@ -3382,7 +3481,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
                       f"nothing was recorded.")
                 return 2
             ag = parse_agenda(text)
-            src = collect(root, run)
+            src = collect(root, run, nodes=tree())
             now, judge = read_clock()
             # ⛔ the replaced agenda's states are only as good as the sources: an unread one is said
             print(record_agenda(agenda_path, ag, now,
@@ -3393,9 +3492,10 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
             if not threads.is_file():
                 print(f"CANNOT RUN — {THREADS_REL} does not exist, so there is no tree to draw.")
                 return 2
-            src = collect(root, run)
+            goals = parse_threads(threads.read_text(), tree())   # before any fetch: a bad heading writes nothing
+            src = collect(root, run, nodes=tree())
             now, judge = read_clock()   # PR #606 r1 Codex MAJOR 2: after the fetch and the measure
-            live = derive(parse_threads(threads.read_text()), src, now)
+            live = derive(goals, src, now)
             # ⛔ a malformed agenda log is SAID on the agenda block and in the exit code, and never takes the
             # snapshot down with it — the tree was read whole (r2 Codex M4)
             try:
@@ -3411,13 +3511,20 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
                 print("CANNOT RUN — the snapshot was NOT logged: " + "; ".join(live["cannot"]))
                 rc = 2
             else:
-                print("goal tree: " + ("snapshot logged" if append_if_changed(log_path, live)
+                print("goal tree: " + ("snapshot logged" if append_if_changed(log_path, live, tree())
                                        else "unchanged since the newest snapshot, not logged")
                       + f" -> {LOG_REL}")
         log = read_log(log_path)
+        # ⛔ history is read through `was:` BEFORE any two snapshots are compared (spec §2.4): a rename alone is no
+        # change a reader sees. Only the modes that SHOW the log read the tree for it.
+        if a.page or a.print_:
+            log = [resolve_snapshot(s, tree()) for s in log]
     except Malformed as exc:
         print(f"MALFORMED — {exc}")
         return 1
+    except TreeUnreadable as exc:
+        print(f"CANNOT RUN — {exc}, so the goal tree cannot be read; nothing was logged or written.")
+        return 2
     if a.page:
         if not log:
             print(f"CANNOT RUN — {LOG_REL} holds no complete snapshot, so no page was rendered.")
@@ -3677,7 +3784,7 @@ def _cases_672(case) -> None:
              {w5: {"changed": stamp(t0)}, gone: {"gone": True}})
         # r1 Codex MAJOR 2 / Claude F5: the clock a snapshot is stamped with — and builds are judged by — is read AFTER
         # collect() has fetched and measured, so a slow fetch never turns a live builder into `ahead`
-        (m / THREADS_REL).write_text('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #11 · split the section\n')
+        _write_world(m, '## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #11 · split the section\n')
         events, ticks = [], iter(range(100))
 
         def run_ev(cmd, cwd, timeout):
@@ -4153,6 +4260,15 @@ def _cases_650(case) -> None:
          [False, True])
 
 
+def _write_world(root: pathlib.Path, threads_text: str) -> None:
+    """A self-test world: `root`'s threads file holds `threads_text`, and its `docs/features.md` declares one node per
+    `## GOAL` heading in it — the ONE helper every fixture root goes through, so no check is loosened for a world
+    with no tree (goal node tree Task 14)."""
+    (root / THREADS_REL).write_text(threads_text)
+    slugs = [m.group(1) for m in (GOAL_RE.match(x) for x in threads_text.split("\n")) if m]
+    (root / FEATURES_REL).write_text("# Feature map\n## PRODUCT\n" + "".join(f"### {s}\nfor: {s}.\n" for s in slugs))
+
+
 def _self_test() -> int:
     """No git and no gh: every source is a fixture, injected through `run`. Wrapped anyway, so that a
     later case that does reach git cannot inherit the caller's GIT_* (backlog #373). The body runs in ONE
@@ -4336,9 +4452,106 @@ def _self_test_cases(*, outside: dict) -> int:
          "not `## GOAL <slug>`" in malformed(good.replace("## GOAL beta", "## GAOL beta")), True)
     case("⛔ a request without a time is refused",
          "a request must be" in malformed(good.replace('> 2026-10-28 03:41 "', '> 2026-10-28 "')), True)
-    case("⛔ a goal that quotes no request is refused",
-         "quotes no request" in malformed(good.replace('> 2026-10-28 03:41 "the second goal"\n', "")),
-         True)
+    # ── goal node tree Task 14 (spec §2.2, §2.4, §2.5) ─────────────────────────────────────────────────
+    _bare = parse_threads("## GOAL zeta\n- side · PR #7 · w\n## GOAL alpha\n> 2026-11-02 08:00 \"q\"\n"
+                          "## GOAL eta\n## GOAL beta\n> 2026-11-01 08:00 \"r\"\n")
+    case("a goal with no request is numbered last",
+         (goal_numbers(_bare), goal_numbers(parse_threads(good.replace('> 2026-10-28 03:41 "the second goal"\n', "")))),
+         ([3, 2, 4, 1], [1, 2]))
+    # r1 Codex 1: requestless goals are numbered in TREE order, not heading order — headings written in REVERSE
+    _rev_n = _CHECK_FEATURES.parse_features("# F\n## PRODUCT\n### a\nfor: A.\n### b\nfor: B.\n### c\nfor: C.\n")[0]
+    _rev = parse_threads("## GOAL b\n## GOAL c\n> 2026-11-01 08:00 \"q\"\n## GOAL a\n## GOAL gone\n")
+    case("a goal with no request is numbered in tree order, not heading order",
+         ([(g["slug"], g.get("tree_pos")) for g in resolve_snapshot({"goals": _rev}, _rev_n)["goals"]],
+          goal_numbers(resolve_snapshot({"goals": _rev}, _rev_n)["goals"]), goal_numbers(_rev)),
+         ([("b", 1), ("c", 2), ("a", 0), ("gone", None)], [3, 1, 2, 4], [2, 1, 3, 4]))
+    case("also: parsed before waits",
+         [parse_thread_line(x)[0] for x in ("- fix · PR #5 · x · also token-usage, dev-speed",
+                                            "- side · backlog #9 · y z · also memory-recall · waits on the owner")],
+         [{"key": "fix · PR #5", "relation": "fix", "refs": [["PR", 5]], "what": "x", "waits": None,
+           "also": ["token-usage", "dev-speed"]},
+          {"key": "side · backlog #9", "relation": "side", "refs": [["backlog", 9]], "what": "y z",
+           "waits": "the owner", "also": ["memory-recall"]}])
+    case("also: after waits is refused",
+         [parse_thread_line(x)[1] for x in ("- fix · PR #5 · x · waits on y · also token-usage",
+                                            "- side · PR #6 · w · waits on a, b · also c, d")],
+         ["the `· also` field comes BEFORE `· waits on`: '- fix · PR #5 · x · waits on y · also token-usage'",
+          "the `· also` field comes BEFORE `· waits on`: '- side · PR #6 · w · waits on a, b · also c, d'"])
+    # Every thread line of the LIVE threads file (none carries `also` at this slice), read by the pattern this slice
+    # REPLACED — kept here as a literal — and by the reader now: the four fields agree, and no `also` key appears.
+    _old_re = re.compile(r"^- (\S+) · (.+?) · (.+?)(?: · waits on (.+))?$")
+    _live_text = (ROOT / THREADS_REL).read_text(encoding="utf-8")
+    _live_lines = [x for x in _live_text[_live_text.index("\n## GOAL "):].split("\n") if x.startswith("- ")]
+    _agree = []
+    for _ln in _live_lines:
+        _om, (_nt, _why) = _old_re.match(_ln), parse_thread_line(_ln)
+        _agree.append(_why is None and _om is not None and "also" not in _nt and
+                      (_nt["what"], _nt["waits"], _nt["key"].split(" · ", 1)[1]) ==
+                      (_om.group(3).strip(), _om.group(4).strip() if _om.group(4) else None, _om.group(2)))
+    case("also: a line without it parses as before",
+         (len(_live_lines) > 100, all(_agree), parse_thread_line("- fix · PR #8 · keep · it")[0]),
+         (True, True, {"key": "fix · PR #8", "relation": "fix", "refs": [["PR", 8]], "what": "keep · it",
+                       "waits": None}))
+    _tn = _CHECK_FEATURES.parse_features("# F\n## PRODUCT\n### dev-speed\nfor: D.\nwas: dev-speed-first\n"
+                                         "### token-usage\nfor: T.\nwas: token-usage-first\n"
+                                         "### picked\nfor: P.\nproposed: 2026-11-27 09:00\n")[0]
+    def _refused(text, nodes):
+        try:
+            parse_threads(text, nodes)
+            return None
+        except Malformed as exc:
+            return str(exc)
+    case("nodes: a heading that is not a node is refused",
+         (_refused("## GOAL dev-speed-first\n- fix · PR #1 · x\n", _tn), _refused("# p\n\n## GOAL nope\n", _tn),
+          _refused("## GOAL dev-speed\n## GOAL picked\n", _tn), _refused("## GOAL nope\n", None)),
+         ("line 1: the heading `dev-speed-first` is a former slug — it was renamed to `dev-speed`; write the current slug",
+          "line 3: the heading `nope` names no node of docs/features.md — a name is born as a node there (a "
+          "`proposed:` line marks one awaiting the owner's pick)", None, None))
+    _thr = lambda rel, n: {"key": f"{rel} · PR #{n}", "relation": rel, "refs": [["PR", n]], "state": "merged",
+                           "detail": f"PR #{n} merged"}
+    _old = {"goals": [{"slug": "dev-speed-first", "threads": [_thr("fix", 3)]},
+                      {"slug": "token-usage-first", "threads": [_thr("side", 4)]}],
+            "undeclared": [], "inflight_loose": []}
+    _new = {"goals": [{"slug": "dev-speed", "threads": [_thr("fix", 3)]},
+                      {"slug": "token-usage", "threads": [_thr("side", 4)]}],
+            "undeclared": [], "inflight_loose": []}
+    case("history: a pre-rename snapshot resolves",
+         ([(g["slug"], g.get("then")) for g in resolve_snapshot(_old, _tn)["goals"]],
+          [(g["slug"], g.get("then")) for g in resolve_snapshot(_new, _tn)["goals"]],
+          [g["slug"] for g in resolve_snapshot({"goals": [{"slug": "gone", "threads": []}]}, _tn)["goals"]],
+          [(g["slug"], g.get("then")) for g in resolve_snapshot(_old, _CHECK_FEATURES.parse_features(
+              "# F\n## PRODUCT\n### speed\nfor: S.\nwas: dev-speed-first\n")[0])["goals"]]),
+         ([("dev-speed", "dev-speed-first"), ("token-usage", "token-usage-first")],
+          [("dev-speed", None), ("token-usage", None)], ["gone"],
+          [("speed", "dev-speed-first"), ("token-usage-first", None)]))
+    case("history: a rename alone logs no thread move",
+         (changes(resolve_snapshot(_old, _tn), resolve_snapshot(_new, _tn)),
+          changes(resolve_snapshot(dict(_old, goals=_old["goals"][:1]), _tn), _new)),
+         ([NO_READER_CHANGE], ["goal added: token-usage", "added [side] PR #4: ✅ PR #4 merged"]))
+    _lsrc = {"merged_by_pr": {12: "abab121"}, "merged_rows": [("abab121", 12, "x (#12)")], "merged_at": {},
+             "open": {}, "all": {}, "all_merge_sha": {}, "all_merged_at": {}, "all_closed_at": {},
+             "ledger": [{"id": "e1", "what": "w", "goal": "token-usage-first", "thread": "fix · PR #12 · x"},
+                        {"id": "e2", "what": "v", "goal": "dev-speed-first"}],
+             "ledger_problems": [], "needs": [], "head": None, "repo": None, "errors": {}, "nodes": _tn}
+    _lgoals = parse_threads("## GOAL dev-speed\n## GOAL token-usage\n", _tn)
+    _ld = derive(_lgoals, _lsrc, "2026-11-27 09:00")
+    case("ledger: an entry under a former slug hangs under its node",
+         ([(g["slug"], [t["key"] for t in g["threads"]], [u["id"] for u in g.get("placed") or []]) for g in _ld["goals"]],
+          _ld["ledger_problems"], resolve_ledger(_lsrc["ledger"], None) is _lsrc["ledger"],
+          [e.get("goal") for e in resolve_ledger([{"id": "e7", "goal": "token-usage-first"}, {"id": "e8", "goal": "kept"},
+                                              {"id": "e9"}], _tn)]),
+         ([("dev-speed", [], ["e2"]), ("token-usage", ["fix · PR #12"], [])], [], True,
+          ["token-usage", "kept", None]))
+    _lu = derive(_lgoals, dict(_lsrc, ledger=[{"id": "e3", "what": "u", "goal": "nope", "thread": "side · PR #13 · y"},
+                                              {"id": "e4", "what": "t", "goal": "older-nope"}]), "2026-11-27 09:00")
+    case("ledger: an unknown goal is still a problem",
+         (_lu["ledger_problems"], [u.get("goal_undeclared") for u in _lu["inflight_loose"]]),
+         (["entry e3: goal 'nope' is not declared in docs/goal-threads.md",
+           "entry e4: goal 'older-nope' is not declared in docs/goal-threads.md"], ["nope", "older-nope"]))
+    case("needs: a proposed name awaits the owner's pick",
+         ([(n["kind"], n["source"], n["ref"], n["text"]) for n in needs_from_tree(_tn)],
+          needs_from_tree(_CHECK_FEATURES.parse_features("# F\n## PRODUCT\n### only\nfor: O.\n")[0])),
+         ([("decision", "tree", "picked", "a name awaiting your pick: `picked` — P.")], []))
     case("⛔ a duplicated goal slug is refused",
          "declared twice" in malformed(good.replace("## GOAL beta", "## GOAL alpha-one")), True)
     case("⛔ a duplicated thread in one goal is refused",
@@ -5341,6 +5554,20 @@ def _self_test_cases(*, outside: dict) -> int:
              append_if_changed(pathlib.Path(d) / "other.jsonl", later), True)
         case("the log reads back oldest first", [s["at"] for s in read_log(lp)],
              ["2026-10-28 04:00", "2026-10-28 06:00"])
+        # r1 Codex 2 / Claude F2, the pure half: given the TREE, the newest logged snapshot and the new one are both
+        # read through `was:` first — a rename alone is not logged; a rename WITH a real change is; without the tree
+        # the raw fingerprints differ (three calls, three distinct `nodes` values: the tree, another tree, none)
+        _ren_nodes = _CHECK_FEATURES.parse_features("# F\n## PRODUCT\n### alpha-renamed\nfor: A.\nwas: alpha-one\n"
+                                                    "### beta\nfor: B.\n")[0]
+        def _renamed(sn):
+            return dict(sn, goals=[dict(g, slug="alpha-renamed") if g["slug"] == "alpha-one" else g for g in sn["goals"]])
+        _lp_ren = pathlib.Path(d) / "ren.jsonl"
+        _lp_ren.write_text(lp.read_text())
+        _ren_calls = [append_if_changed(_lp_ren, _renamed(flipped), _ren_nodes),
+                      append_if_changed(_lp_ren, _renamed(flipped), None),
+                      append_if_changed(_lp_ren, _renamed(dict(snap, at="2026-10-28 07:00")), _ren_nodes)]
+        case("append_if_changed: given the tree, a rename alone is not logged; with no tree, or a real change, it is",
+             (_ren_calls, len(read_log(_lp_ren))), ([False, True, True], 4))
         try:
             append_if_changed(lp, derive(goals, gh_down, "t"))
             refused = "LOGGED"
@@ -5944,6 +6171,11 @@ def _self_test_cases(*, outside: dict) -> int:
         s = collect(r, run_ok)
         case("collect reads master's subjects into PR -> SHA, skipping subjects with no PR",
              (s["merged_by_pr"], s["head"]), ({20: "abc1234"}, "abc1234"))
+        _tcol = _CHECK_FEATURES.parse_features("# F\n## PRODUCT\n### chosen\nfor: C.\nproposed: 2026-11-26 08:15\n")[0]
+        _scol = collect(r, run_ok, nodes=_tcol)
+        case("goal node tree Task 14: collect hands its tree on, and a proposed node becomes a NEEDS YOU item",
+             (s["nodes"], _scol["nodes"] is _tcol, len(_scol["needs"]) - len(s["needs"]),
+              any("chosen" in str(n) for n in _scol["needs"])), (None, True, 1, True))
         case("backlog #497: collect reads each master commit's LOCAL committer minute, keyed by SHA",
              s["merged_at"], {"abc1234": "2026-11-03 19:09", "abc0000": "2026-11-02 10:00"})
         run_c, calls_c = fake(ok)
@@ -6087,7 +6319,7 @@ def _self_test_cases(*, outside: dict) -> int:
         case("⛔ unparseable gh output is CANNOT RUN too", "gh" in collect(r, run_junk)["errors"], True)
 
         # ── main, end to end over the fixture world ─────────────────────────────────────────
-        (r / THREADS_REL).write_text(good)
+        _write_world(r, good)
         out = r / "page.html"
         run, _ = fake(ok)
         buf = io.StringIO()
@@ -7181,10 +7413,54 @@ def _self_test_cases(*, outside: dict) -> int:
              (rc_down, len(read_log(r / "main" / LOG_REL)), "could NOT run" in out.read_text()), (2, 1, True))
         case("⛔ the log is written to the MAIN checkout's git-ignored .claude/, never the root's",
              ((r / "main" / LOG_REL).is_file(), (r / LOG_REL).exists()), (True, False))
-        (r / THREADS_REL).write_text(good + "stray\n")
+        _write_world(r, good + "stray\n")
         with contextlib.redirect_stdout(io.StringIO()):
             rc_bad = main(["--snapshot"], root=r, run=fake(ok)[0])
         case("⛔ a malformed threads file exits 1, loudly", rc_bad, 1)
+        # goal node tree Task 14: the tree is read by the ONE parser; one that cannot be read, or declares no node, is
+        # CANNOT RUN (2) and logs nothing — never a page drawn over no tree.
+        _write_world(r, good)
+        _n_tree = len(read_log(r / "main" / LOG_REL))
+        _tree_rcs = []
+        for _ft in (None, "# Feature map\n\nno node here\n"):
+            if _ft is None:
+                (r / FEATURES_REL).unlink()
+            else:
+                (r / FEATURES_REL).write_text(_ft)
+            _bt = io.StringIO()
+            with contextlib.redirect_stdout(_bt):
+                _tree_rcs.append((main(["--snapshot", "--print"], root=r, run=fake(ok)[0], now="2026-10-28 09:40"),
+                                  "CANNOT RUN" in _bt.getvalue() and FEATURES_REL in _bt.getvalue()))
+        case("⛔ a tree that cannot be read is CANNOT RUN, and logs nothing",
+             (_tree_rcs, len(read_log(r / "main" / LOG_REL)) - _n_tree), ([(2, True), (2, True)], 0))
+        # ...and the page reads the LOG through `was:`: after a rename, every snapshot logged under the old heading is
+        # drawn under the node's current slug (spec §2.4) — the call site of `resolve_snapshot`, not only the helper.
+        (r / THREADS_REL).write_text(good.replace("## GOAL alpha-one", "## GOAL alpha-renamed"))
+        (r / FEATURES_REL).write_text("# Feature map\n## PRODUCT\n### alpha-renamed\nfor: A.\nwas: alpha-one\n"
+                                      "### beta\nfor: B.\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            _rc_ren = main(["--page", "--out", str(out)], root=r, run=run_ok, now="2026-10-28 09:45")
+        _ren_ids = re.findall(r'<section class="goal" id="goal-([\w-]+)"', out.read_text())
+        case("⛔ history: the page draws a pre-rename log under the node's current slug",
+             (_rc_ren, "alpha-renamed" in _ren_ids, "alpha-one" in _ren_ids), (0, True, False))
+        # r1 Codex 2 / Claude F2: the APPEND path reads both snapshots through `was:` before comparing — a rename
+        # alone logs nothing. A snapshot is logged under the old heading, the heading renamed, --snapshot run again.
+        _write_world(r, good)
+        _ren_said = []
+        for _thr_text, _ft in ((good, None), (good.replace("## GOAL alpha-one", "## GOAL alpha-renamed"),
+                               "# Feature map\n## PRODUCT\n### alpha-renamed\nfor: A.\nwas: alpha-one\n"
+                               "### beta\nfor: B.\n")):
+            (r / THREADS_REL).write_text(_thr_text)
+            if _ft is not None:
+                (r / FEATURES_REL).write_text(_ft)
+            _br = io.StringIO()
+            with contextlib.redirect_stdout(_br):
+                _rc_r = main(["--snapshot"], root=r, run=fake(ok)[0], now="2026-10-28 09:50")
+            _ren_said.append((_rc_r, len(read_log(r / "main" / LOG_REL)),
+                              "unchanged since the newest snapshot" in _br.getvalue()))
+        case("⛔ history: a rename alone appends no snapshot (the --snapshot append path)",
+             (_ren_said[1][0], _ren_said[1][1] - _ren_said[0][1], _ren_said[1][2]), (0, 0, True))
+        _write_world(r, good)
         (r / "main" / LOG_REL).unlink(missing_ok=True)
         with contextlib.redirect_stdout(io.StringIO()):
             rc_empty = main(["--page", "--out", str(out)], root=r, run=run_ok)
@@ -7200,7 +7476,7 @@ def _self_test_cases(*, outside: dict) -> int:
         case("⛔ a checkout with no threads file is CANNOT RUN, saying which file",
              (rc_none, f"{THREADS_REL} does not exist" in buf.getvalue()), (2, True))
         # ── backlog #610: only regen-pages.py's fresh clone writes the SERVED page ─────────────────────────
-        (r / THREADS_REL).write_text(good)
+        _write_world(r, good)
         _g610, _served = globals(), r / "served.html"
         _saved_out, _saved_env = _g610["DEFAULT_OUT"], os.environ.pop(_SS.MAIN_CHECKOUT_ENV, None)
         _g610["DEFAULT_OUT"] = _served

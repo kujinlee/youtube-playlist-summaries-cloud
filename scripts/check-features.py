@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 101 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 130 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -504,12 +504,141 @@ def check_cross(nodes, areas_in_use: set[str] | None) -> list[str]:
     return problems
 
 
+# ── G2 — the threads file and the answers file name nodes (goal node tree Task 13, spec §2.5) ──
+# ⛔ ONE OWNER for the `also` field and the PRIORITY line, as for the heading and the request above:
+# `goal-tree.py` builds its thread pattern from `ALSO_FIELD.pattern`, never a copy. The field sits
+# before ` · waits on `; its value is read whole and each comma entry checked, so a malformed entry is
+# reported rather than left inside `<what>`.
+ALSO_FIELD = re.compile(r" · also ([^·]+?)(?= · waits on |$)")
+PRIORITY_LINE = re.compile(r'^PRIORITY (\d{4}-\d{2}-\d{2}) "(.+)" · (\S+(?: > \S+)*)$')
+# What makes a line an ATTEMPT at the PRIORITY line, then judged by PRIORITY_LINE — read from the declaration's own
+# structure, never its first token (S3 r2 Codex M1/M2). A line carries a part prose never does in that place:
+#   · the separator ` ·` before the ranking, anywhere — the part that RANKS, so a line with it is never dropped
+#     in silence (`PRIORITY tomorrow morning "do a" · a` is refused, whatever its date tokens); or
+#   · the opening `<date> "` — the declaration's head, so a ranking missing its separator is refused too.
+# Prose — quoted (`PRIORITY is "important" to the owner.`), dated (`PRIORITY 2026-11-12 was set.`) or plain
+# (`PRIORITY is decided by the owner.`, S3 r1 Claude F1) — carries neither and stays preamble.
+# Bound: an undated, separator-less line (`PRIORITY someday "a > b"`) is prose, since prose quotes words too.
+_PRIORITY_ATTEMPT = re.compile(r'^PRIORITY (?:\d{4}-\d{2}-\d{2} "|.* ·(?: |$))')
+# Loose on purpose: any `## GOAL …` heading is checked, so `## GOAL Not-A-Slug` is reported by G2 too.
+_GOAL_ANY = re.compile(r"^## GOAL (.*)$")
+
+
+def also_slugs(line: str) -> list[str] | None:
+    """The slugs of a thread line's `also` field, in order, or None when it has none."""
+    m = ALSO_FIELD.search(line)
+    return None if m is None else [s.strip() for s in m.group(1).split(",")]
+
+
+def _name_problem(where: str, what: str, slug: str, nodes) -> str | None:
+    """The G2 message for one written name, or None when it is a CURRENT slug. A `was:` slug fails and
+    names the node it became; `resolve` is used only to word that message (spec §2.4)."""
+    if slug in current_slugs(nodes):
+        return None
+    now = resolve(nodes, slug)
+    if now is not None:
+        return (f"{where}: {what} `{slug}` is a former slug — it was renamed to `{now}`; write the "
+                f"current slug")
+    return (f"{where}: {what} `{slug}` names no node of docs/features.md — a name is born as a node there "
+            f"(a `proposed:` line marks one awaiting the owner's pick)")
+
+
+def priority_order(text: str) -> tuple[str, str, list[str]] | None:
+    """The preamble's PRIORITY line of `docs/goal-threads.md` as (date, words, slugs), or None."""
+    for raw in text.split("\n"):
+        line = raw.rstrip()
+        if line.startswith("## "):
+            return None
+        m = PRIORITY_LINE.match(line)
+        if m:
+            return m.group(1), m.group(2), m.group(3).split(" > ")
+    return None
+
+
+def thread_name_problems(text: str, nodes) -> list[str]:
+    """G2 over `docs/goal-threads.md`: every `## GOAL` heading, every `also` slug and every PRIORITY slug
+    is a current node slug; an `also` never repeats its own heading; one PRIORITY line, in the preamble.
+    ⛔ A request line (`> …`) is a QUOTE and is never read (spec §2.4)."""
+    problems: list[str] = []
+    cur = None
+    priorities = 0
+    for i, raw in enumerate(text.split("\n"), 1):
+        line = raw.rstrip()
+        where = f"goal-threads.md:{i}"
+        if line.startswith("## "):
+            m = _GOAL_ANY.match(line)
+            cur = m.group(1).strip() if m else None
+            if cur is not None:
+                bad = _name_problem(where, "the heading", cur, nodes)
+                if bad:
+                    problems.append(bad)
+            continue
+        if line.startswith(">"):
+            continue
+        if _PRIORITY_ATTEMPT.match(line):
+            priorities += 1
+            m = PRIORITY_LINE.match(line)
+            if cur is not None or priorities > 1 or not m:
+                problems.append(f"{where}: a PRIORITY line is written ONCE, above the first `## GOAL`, as "
+                                f"`PRIORITY YYYY-MM-DD \"<the owner's words>\" · <slug> > <slug>…`: {line[:60]!r}")
+            if m:
+                ranked = m.group(3).split(" > ")
+                for k, s in enumerate(ranked):
+                    bad = _name_problem(where, "the PRIORITY slug", s, nodes)
+                    if bad:
+                        problems.append(bad)
+                    elif s in ranked[:k]:   # S3 r1 Claude F4: hand-written, so a repeat is REFUSED, never merged
+                        problems.append(f"{where}: the PRIORITY slug `{s}` is ranked twice — a node holds ONE place")
+            continue
+        if cur is None:
+            continue
+        # Every other line inside a goal is a thread (`goal-tree.py` refuses anything else), so its `also`
+        # field is read wherever it is written — only a request, skipped above, is never read.
+        also = also_slugs(line) or []
+        for k, s in enumerate(also):
+            bad = _name_problem(where, "the `also` slug", s, nodes)
+            if bad:
+                problems.append(bad)
+            elif s in also[:k]:   # S3 r1 Claude F4: hand-written, so a repeat is REFUSED, never merged
+                problems.append(f"{where}: the `also` slug `{s}` is written twice — a node is counted once")
+            elif s == cur:
+                problems.append(f"{where}: the `also` slug `{s}` is the heading this thread sits under — "
+                                f"`also` lists the OTHER nodes a thread serves")
+    return problems
+
+
+class AnswersUnreadable(Exception):
+    """`docs/goal-tree-answers.json` is not a JSON object with an `answers` list — CANNOT RUN, never FAILED."""
+
+
+def answer_key_problems(answers_text: str, nodes) -> list[str]:
+    """G2 over `docs/goal-tree-answers.json`: every `goal:<slug>` key is a current node slug. A thread key
+    (`backlog-N`, `pr-N`) is not a name and is not read. Raises `AnswersUnreadable` on text that is not
+    the file's shape."""
+    import json
+    try:
+        data = json.loads(answers_text)
+    except ValueError as e:
+        raise AnswersUnreadable(f"is not JSON ({e.msg})") from e
+    if not isinstance(data, dict) or not isinstance(data.get("answers"), list):
+        raise AnswersUnreadable("holds no `answers` list")
+    problems: list[str] = []
+    for n, a in enumerate(data["answers"], 1):
+        key = a.get("key") if isinstance(a, dict) else None
+        if isinstance(key, str) and key.startswith("goal:"):
+            bad = _name_problem(f"goal-tree-answers.json answer {n}", "the key's goal", key[5:], nodes)
+            if bad:
+                problems.append(bad)
+    return problems
+
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 FEATURES = REPO / "docs" / "features.md"
 # Where the `Anchor:` headers are read — `check-anchors.anchored_slugs` walks its specs, plans and ADRs.
 DOCS_DIR = REPO / "docs"
 BACKLOG = REPO / "docs" / "backlog.md"
 GOAL_THREADS = REPO / "docs" / "goal-threads.md"
+ANSWERS = REPO / "docs" / "goal-tree-answers.json"
 ADR_DIR = REPO / "docs" / "adr"
 
 
@@ -540,11 +669,21 @@ def main() -> int:
     problems += adr_problems(nodes, known_adrs)
     problems += check_cross(nodes, None if not areas else areas)
     try:
-        # The threads file is read only when a node carries `done:` — the guard is `done_problems`'.
+        # The threads file is read by G9 only when a node carries `done:` — the guard is `done_problems'` —
+        # and by G2 (goal node tree Task 13) on EVERY run, after G9 and through the same refusal: ONE
+        # handler, so neither reader's CANNOT RUN can stand in for the other's.
         problems += done_problems(nodes, lambda: read_threads(GOAL_THREADS))
+        problems += thread_name_problems(read_threads_text(GOAL_THREADS), nodes)
     except ThreadsUnreadable as e:
-        print(f"CANNOT RUN — a node carries `done:` and {GOAL_THREADS} {e}, "
-              f"so G9 cannot be checked. Treat this as NOT RUN.", file=sys.stderr)
+        print(f"CANNOT RUN — {GOAL_THREADS} {e}, "
+              f"so G2 and G9 cannot be checked. Treat this as NOT RUN.", file=sys.stderr)
+        return 2
+    # G2: the answers file is read on every run too — not JSON of its shape is CANNOT RUN, never a pass.
+    try:
+        problems += answer_key_problems(ANSWERS.read_text(encoding="utf-8"), nodes)
+    except (OSError, UnicodeDecodeError, AnswersUnreadable) as e:
+        print(f"CANNOT RUN — {ANSWERS} {e if isinstance(e, AnswersUnreadable) else type(e).__name__}, so G2 "
+              f"cannot check its `goal:` keys. Treat this as NOT RUN.", file=sys.stderr)
         return 2
     if problems:
         print(f"FAILED — {len(problems)} feature-map problem(s):", file=sys.stderr)
@@ -558,6 +697,14 @@ def main() -> int:
 
 class ThreadsUnreadable(Exception):
     """`docs/goal-threads.md` gave nothing G9 can compare against — CANNOT RUN, never FAILED."""
+
+
+def read_threads_text(path: pathlib.Path) -> str:
+    """The threads file's text, or `ThreadsUnreadable` when it cannot be read or is not UTF-8 (G2's reader)."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError) as e:
+        raise ThreadsUnreadable(f"cannot be read ({type(e).__name__})") from e
 
 
 def read_threads(path: pathlib.Path) -> dict[str, list[tuple[str, str]]]:
@@ -870,8 +1017,12 @@ expected-because: standard for a hosted multi-tenant service.
     _live_text = FEATURES.read_text()
     _live, _lp = parse_features(_live_text)
     _headings = [l for l in _live_text.split("\n") if re.match(r"^#{3,6} ", l)]
+    # ⟳ node-tree Task 12: the live trunks carry `slug:` now, so the slugless world is the live tree with
+    # its trunk slug lines (and the `for:` each one owns) removed — every heading a node, no level 2.
+    _slugless = parse_features(re.sub(r"(?m)^slug: .*\nfor: .*\n", "", _live_text))[0]
     check("grammar: a slugless trunk yields no node",
-          (len(_live), [n for n in _live if n.level == 2], [n.slug for n in _live if n.level == 3 and n.parent],
+          (len(_slugless), [n for n in _slugless if n.level == 2],
+           [n.slug for n in _slugless if n.level == 3 and n.parent],
            len(_one("### a\nfor: A.\n#### b\nfor: B.\n")[0]), _one("### a\nfor: A.\n#### b\nfor: B.\n")[0][0].parent),
           (len(_headings), [], [], 2, None))
     check("grammar: slug under a node is refused",
@@ -1117,6 +1268,141 @@ expected-because: standard for a hosted multi-tenant service.
           [_safe(lambda: done_problems(_nodes("### a\nfor: A.\n### b\nstate: built\nfor: B.\nareas: (b)\n"), _never)),
            _safe(lambda: done_problems(_live, _never))],
           [[], []])
+
+    # ── G2 — the threads and answers files name nodes (goal node tree Task 13, spec §2.5) ───────
+    _G2N = _nodes("### a\nfor: A.\nwas: old-a\n### b\nfor: B.\n### p\nfor: P.\nproposed: 2026-11-27 10:00\n")
+    _G2M = _nodes("### c\nfor: C.\nwas: old-c, older-c\n### d\nfor: D.\n")
+    def _says(problems, *words):
+        return [all(w in p for w in words) for p in problems]
+    check("G2: a heading must be a current slug",
+          [thread_name_problems("## GOAL a\n- fix · PR #1 · x\n", _G2N),
+           thread_name_problems("## GOAL d\n- side · backlog #2 · y\n", _G2M),
+           _says(thread_name_problems("# T\n## GOAL nope\n- fix · PR #1 · x\n", _G2N), "goal-threads.md:2", "`nope`", "names no node"),
+           _says(thread_name_problems("## GOAL Not-A-Slug\n", _G2M), "goal-threads.md:1", "`Not-A-Slug`", "names no node")],
+          [[], [], [True], [True]])
+    check("G2: a former heading names its node",
+          [_says(thread_name_problems("## GOAL old-a\n- fix · PR #1 · x\n", _G2N), "`old-a`", "renamed to `a`"),
+           _says(thread_name_problems("## GOAL d\n\n## GOAL older-c\n", _G2M), "goal-threads.md:3", "`older-c`", "renamed to `c`")],
+          [[True], [True]])
+    check("G2: an also slug must be current",
+          [_says(thread_name_problems("## GOAL a\n- fix · PR #1 · x · also nope\n", _G2N), "goal-threads.md:2", "`also` slug `nope`"),
+           _says(thread_name_problems("## GOAL d\n- fix · PR #1 · x · also c, old-c · waits on y\n", _G2M), "`old-c`", "renamed to `c`"),
+           thread_name_problems("## GOAL a\n- fix · PR #1 · x · also b, p · waits on z\n", _G2N)],
+          [[True], [True], []])
+    check("G2: also may not name the primary",
+          [_says(thread_name_problems("## GOAL a\n- fix · PR #1 · x · also b, a\n", _G2N), "`a`", "the OTHER nodes"),
+           _says(thread_name_problems("## GOAL d\n- side · PR #4 · w · also d\n", _G2M), "`d`", "the OTHER nodes")],
+          [[True], [True]])
+    # ⛔ A request is a QUOTE (spec §2.4): one that quotes a former slug, even in the `also` shape, is not
+    # read. The LIVE file's four quotes of `dev-speed-first`/`token-usage-first` are the second input.
+    check("G2: a request quoting a retired slug is not read",
+          [thread_name_problems('## GOAL a\n> 2026-11-01 09:00 "rename old-a · also old-a"\n- fix · PR #1 · x\n', _G2N),
+           thread_name_problems('## GOAL c\n> 2026-11-02 10:00 "an older-c · also nope"\n', _G2M),
+           thread_name_problems(GOAL_THREADS.read_text(), _live)],
+          [[], [], []])
+    _PRI = 'PRIORITY 2026-11-12 "the owner\'s order" · {s}\n## GOAL {h}\n'
+    check("G2: a PRIORITY slug must be current",
+          [thread_name_problems(_PRI.format(s="a > b > p", h="a"), _G2N),
+           _says(thread_name_problems(_PRI.format(s="a > nope", h="b"), _G2N), "goal-threads.md:1", "PRIORITY slug `nope`"),
+           _says(thread_name_problems(_PRI.format(s="old-c > d", h="d"), _G2M), "`old-c`", "renamed to `c`"),
+           priority_order(_PRI.format(s="a > b > p", h="a")), priority_order(_PRI.format(s="d", h="c")),
+           priority_order("## GOAL a\n" + _PRI.format(s="a", h="b"))],
+          [[], [True], [True], ("2026-11-12", "the owner's order", ["a", "b", "p"]),
+           ("2026-11-12", "the owner's order", ["d"]), None])
+    check("G2: PRIORITY sits once, in the preamble",
+          [_says(thread_name_problems('PRIORITY 2026-11-12 "w" · b\n' + _PRI.format(s="a", h="a"), _G2N), "goal-threads.md:2", "ONCE"),
+           _says(thread_name_problems("## GOAL d\n" + _PRI.format(s="c", h="c"), _G2M), "goal-threads.md:2", "ONCE"),
+           _says(thread_name_problems('PRIORITY someday "w" · a\n## GOAL a\n', _G2N), "goal-threads.md:1", "ONCE"),
+           thread_name_problems(_PRI.format(s="d > c", h="d"), _G2M)],
+          [[True], [True], [True], []])
+    # S3 r1 Claude F1: prose that only BEGINS with the word is preamble; an attempt with a date or a quote is judged
+    check("G2: preamble prose beginning `PRIORITY` is not a PRIORITY line",
+          [thread_name_problems("PRIORITY is decided by the owner.\n## GOAL a\n", _G2N),
+           thread_name_problems("PRIORITY\nPRIORITYless prose\n" + _PRI.format(s="a", h="a"), _G2N),
+           _says(thread_name_problems("PRIORITY 2026-11-12 the order · a\n## GOAL a\n", _G2N), "goal-threads.md:1", "ONCE"),
+           _says(thread_name_problems("PRIORITY is set.\n" + _PRI.format(s="a", h="a") + 'PRIORITY x "w" · b\n', _G2N),
+                 "goal-threads.md:4", "ONCE")],
+          [[], [], [True], [True]])
+    # S3 r2 Codex M1/M2: ONE rule decides "is this an attempt?" — the declaration's own structure, never its
+    # first token. Each row is (input, verdict); a refusal is the ONCE message on line 1, an acceptance reads.
+    def _pri_verdict(line):
+        text = line + "\n## GOAL a\n"
+        got = thread_name_problems(text, _G2N)
+        if not got:
+            return ("accepted", priority_order(text))
+        return ("refused",) if all(p.startswith("goal-threads.md:1: a PRIORITY line is written ONCE") for p in got) else ("other", got)
+    for n, line, want in [
+            (1, 'PRIORITY is "important" to the owner.', ("accepted", None)),               # r2 Codex M1: quoted prose
+            (2, 'PRIORITY tomorrow morning "do a" · a', ("refused",)),                      # r2 Codex M2: multi-token date
+            (3, "PRIORITY is decided by the owner.", ("accepted", None)),                   # r1 Claude F1's prose
+            (4, 'PRIORITY 2026-11-12 "the owner\'s order" · a > b > p',
+             ("accepted", ("2026-11-12", "the owner's order", ["a", "b", "p"]))),            # valid, ranked
+            (5, 'PRIORITY 2026-11-12 "w" · b', ("accepted", ("2026-11-12", "w", ["b"]))),  # valid, one slug
+            (6, 'PRIORITY 2026-11-12 "dev speed · then tokens" · a > b',
+             ("accepted", ("2026-11-12", "dev speed · then tokens", ["a", "b"]))),           # valid, separator in words
+            (7, "PRIORITY 2026-11-12 was set by the owner.", ("accepted", None)),           # prose: a date, no quote after
+            (8, 'PRIORITY "first" beats "second" here.', ("accepted", None)),               # prose: quotes, no separator
+            (9, "PRIORITY 2026-11-12 the order · a", ("refused",)),                         # attempt: no quote
+            (10, 'PRIORITY tomorrow "w" · a >', ("refused",)),                              # attempt: broken slug list
+            (11, 'PRIORITY tomorrow "w" ·', ("refused",)),                                  # attempt: empty slug list
+            (12, "PRIORITY tomorrow · a > b", ("refused",)),                                # attempt: no date, no quote
+            (13, 'PRIORITY 2026-11-12 "do a" > b', ("refused",)),                           # attempt: separator forgotten
+            (14, 'PRIORITY is "important" · a', ("refused",)),                              # attempt: M1's words + ranking
+            (15, 'PRIORITY someday "a > b"', ("accepted", None)),                           # the STATED bound: undated, no separator
+    ]:
+        check(f"G2: PRIORITY attempt row {n}", _pri_verdict(line), want)
+    # S3 r1 Claude F4: both are hand-written, so a repeated slug is REFUSED (never silently merged)
+    check("G2: a slug repeated in `also` or PRIORITY is refused",
+          [_says(thread_name_problems("## GOAL a\n- fix · PR #1 · x · also b, b\n", _G2N), "goal-threads.md:2", "`b`", "twice"),
+           _says(thread_name_problems(_PRI.format(s="a > b > a", h="a"), _G2N), "goal-threads.md:1", "`a`", "ranked twice"),
+           thread_name_problems("## GOAL a\n- fix · PR #1 · x · also b, p\n", _G2N),
+           thread_name_problems(_PRI.format(s="b > a", h="a"), _G2N)],
+          [[True], [True], [], []])
+    _ANS = '{{"answers": [{{"key": "{k}", "asked": "11-27 10:00", "q": "Q", "a": "A"}}]}}'
+    check("G2: an answer key on a former slug is refused",
+          [_says(answer_key_problems(_ANS.format(k="goal:old-a"), _G2N), "answer 1", "`old-a`", "renamed to `a`"),
+           _says(answer_key_problems(_ANS.format(k="goal:nope"), _G2M), "`nope`", "names no node"),
+           answer_key_problems(_ANS.format(k="goal:a"), _G2N), answer_key_problems(_ANS.format(k="goal:d"), _G2M)],
+          [[True], [True], [], []])
+    check("G2: thread keys are not names",
+          [answer_key_problems(_ANS.format(k="backlog-5"), _G2N), answer_key_problems(_ANS.format(k="pr-20"), _G2M),
+           answer_key_problems('{"_doc": "d", "answers": []}', _G2N)],
+          [[], [], []])
+    check("G2: a proposed node may head threads",
+          [thread_name_problems("## GOAL p\n- fix · PR #1 · x\n", _G2N),
+           thread_name_problems(_PRI.format(s="p", h="p"), _G2N),
+           answer_key_problems(_ANS.format(k="goal:p"), _G2N),
+           _says(thread_name_problems("## GOAL p\n", _G2M), "`p`", "names no node")],
+          [[], [], [], [True]])
+    def _drive_answers(body: bytes | None):
+        """`main` over the live tree and threads, with the answers file holding `body` (None: absent).
+        Returns (exit code, whether stderr said CANNOT RUN about the answers file)."""
+        _g = globals()      # bound HERE: check-main-drivable reads a rebind in the function that calls main
+        _keep = {"ANSWERS": _g["ANSWERS"]}
+        with tempfile.TemporaryDirectory() as _td:
+            _a = pathlib.Path(_td) / "goal-tree-answers.json"
+            if body is not None:
+                _a.write_bytes(body)
+            _g["ANSWERS"] = _a
+            _err = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(_err), contextlib.redirect_stdout(io.StringIO()):
+                    _rc = main()
+            except Exception as e:
+                _rc = type(e).__name__
+            finally:
+                _g.update(_keep)
+            return (_rc, "CANNOT RUN" in _err.getvalue() and "goal-tree-answers.json" in _err.getvalue())
+    # Through the REAL `main`: the two worlds differ ONLY by a former-slug heading, so the exit codes
+    # separate G2's wiring from its absence (G9 passes in both: the request is under the done node).
+    _ok_threads = b'## GOAL summarise-a-playlist\n> 2026-11-01 09:00 "ship the thing"\n'
+    check("main: G2 reads the threads file",
+          [_drive(_ok_threads), _drive(_ok_threads + b"\n## GOAL dev-speed-first\n- fix \xc2\xb7 PR #1 \xc2\xb7 x\n")],
+          [(0, False), (1, False)])
+    check("G2: an unreadable answers file is CANNOT RUN",
+          [_drive_answers(None), _drive_answers(b"{not json"), _drive_answers(b'{"answers": {}}'),
+           _drive_answers(b'{"answers": [{"key": "goal:dev-speed-first"}]}'), _drive_answers(b'{"answers": []}')],
+          [(2, True), (2, True), (2, True), (1, False), (0, False)])
 
     # ── adrs: every number is a file (goal node tree Task 5) ────────────────────────────────────
     _ADR = "### a\nfor: A.\nadrs: {a}\n### b\nfor: B.\nadrs: {b}\n"

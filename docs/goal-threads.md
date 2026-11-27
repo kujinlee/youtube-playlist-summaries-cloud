@@ -8,11 +8,15 @@ merged, open, red or in flight is DERIVED by `python3 scripts/goal-tree.py --sna
 
 Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it fails the snapshot loudly:
 
-- `## GOAL <slug>` opens a goal. The slug is lowercase words joined by `-`, unique in this file.
-  The page numbers goals `GOAL n` by their first request's time (ties in file order), and anchors each as
-  `#goal-<slug>`, so a goal added with a later first request renumbers none; deleting one, or adding one dated earlier, can.
+- `## GOAL <slug>` opens a goal. ⟳ ADR-0016: the heading no longer ALLOCATES a name — the slug must be a current
+  node of `docs/features.md` (a former slug in a node's `was:` is refused, naming the node it became; G2 in
+  `scripts/check-features.py`), unique in this file, and it is the PRIMARY node of every thread beneath it.
+  The page numbers goals `GOAL n` by their first request's time (ties in file order; a goal with no request after
+  every requested one, in tree order), and anchors each as `#goal-<slug>`, so a goal added with a later first
+  request renumbers none; deleting one, or adding one dated earlier, can.
 - `> YYYY-MM-DD HH:MM "<the owner's words>"` is a request that set or widened the goal, in the owner's
-  local time, quoted exactly. The first one is the goal; a goal has at least one.
+  local time, quoted exactly. The first one is the goal; a goal may have none (spec §2.2). A request is a QUOTE:
+  it is never rewritten, by a rename or anything else, and never read for a name.
 - `- <relation> · <refs> · <what>` is a thread. `<relation>` is one of `fix` (serves the goal directly),
   `blocker` (stops a fix), `bookkeeping` (records findings, no new behaviour) or `side` (an aside).
   `<refs>` is one or more `backlog #N` / `PR #N`, joined by `, `. `<what>` is one line.
@@ -21,6 +25,11 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
   marker is `**SUPERSEDED` / `**WITHDRAWN`, bold and in capitals, leading the cell or led by a closing glyph; the
   word anywhere else is prose. An open PR or an in-flight entry still shows ⏳, and a `backlog #N` that is not a
   row of the backlog's Items table is CANNOT RUN.
+- An optional field `· also <slug>, <slug>`, placed before `· waits on`, lists the OTHER nodes a thread serves. Each
+  slug must be a current node and none may be the heading's own. The thread is counted under its heading and
+  SHOWN under each `also` node as shared.
+- An optional line above the first goal, written once, `PRIORITY YYYY-MM-DD "<the owner's words>" · <slug> > <slug>…`,
+  records the owner's priority order of nodes; every slug in it must be a current node (G2).
 - An optional last field `· waits on <what>` declares something a thread waits on that no tool can see
   (the owner's walkthrough, say). It is shown as DECLARED, never as a derived state.
   It is prose and is never read for a ref, so a PR it names merging does not end it; a prerequisite that should
@@ -28,7 +37,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
   the latest date it names has passed, the leaf is not ❌ blocked but flagged `⚠ wait expired <date>` to re-check.
 - Inside a goal, every non-blank line is one of those. Prose belongs above the first goal.
 
-## GOAL guard-harness-audit
+## GOAL guard-and-gate-harness
 > 2026-10-26 09:51 "in http://127.0.0.1:7391/features.html, guard-and-gate-harness section has very large number of open backlogs. when you have chance audit, scrub them then fix high priority ones."
 > 2026-10-26 21:08 "keep working for guard-and-gate-harness backlog fixes along with other fixes necessary. try not to be blocked by non-critical decisions. merge when they become merge ready"
 > 2026-10-27 03:28 "continue in AFK mode"
@@ -102,7 +111,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #611 · an agenda step naming a backlog row is ticked by the row's status, not by the PR that filed it
 - fix · backlog #612 · a declared wait whose date has passed is flagged, not shown as a reason
 - fix · backlog #689 · a tree leaf whose row is ✅ in its Status cell reads done, not queued, when no merge subject names it
-## GOAL compaction-guards
+## GOAL hooks-and-session-continuity
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
 > 2026-10-28 04:12 "when auto-compaction-guard is fully built, continue the works and test the effectiveness of the guard"
 - fix · backlog #361, PR #425 · a compaction leaves a snapshot of what is in flight and prints it back after
@@ -120,7 +129,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #736 · the dashboard page and its per-PR entry rule retire; asks move to docs/asks/, which the goal tree's NEEDS YOU reads (slice 1 of 3: the reader, the PR gate, the goal tree)
 - fix · backlog #736, PR #644 · the dashboard page is deleted and archived, a scan refuses any live reference to it, and the entry grammar leaves the ask gate (slice 3 of 3)
 
-## GOAL token-usage-first
+## GOAL token-usage
 > 2026-10-30 18:50 "For now, let's enhance token usage features first. As when we hit the limit, other optimization doesn't matter."
 > 2026-10-31 04:38 "yes. measure it to confirm our assumptions"
 > 2026-11-01 14:22 "4% saving is still big saving. You said you had blind spots so that you missed the duplicates issue. Try to find real impacts without blind spots."
@@ -160,7 +169,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - blocker · backlog #513 · the usage hook runs the checked-out branch's guard, so an unmerged branch sets the stop
 - fix · backlog #630 · the Fable 5.2 pilot: a comparison week of Fable against Opus per task, reported at the 11-20 reset
 - fix · backlog #645 · the 5-hour meter is paced against its fixed block clock: free, at most 2 agents, no new agents, or stop and wake at reset + 1 min (owner card A, 11-13 16:20)
-## GOAL dev-speed-first
+## GOAL dev-speed
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
 > 2026-11-02 09:09 "let's make development speed issues higher priority than others"
 > 2026-11-02 09:12 "If I cannot correctly understand what you are doing or how the project is progressing, dev speed in local sense doesn't have much meaning. It may be tactically fast, but heading to wrong direction (strategically incorrect or operationally sub-optimal)"

@@ -39,19 +39,6 @@
     ]
   },
   {
-    "name": "a goal with no quoted request is accepted, so a tree has no root",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "        if not g[\"requests\"]:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "⛔ a goal that quotes no request is refused"
-    ]
-  },
-  {
     "name": "a thread declared twice in one goal is accepted",
     "file": "scripts/goal-tree.py",
     "edits": [
@@ -1824,7 +1811,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    order = sorted(range(len(goals)), key=lambda i: (goals[i][\"requests\"][0][\"when\"], i))",
+        "    order = sorted(range(len(goals)), key=key)",
         "    order = list(range(len(goals)))"
       ]
     ],
@@ -7248,6 +7235,177 @@
     ],
     "expect": [
       "⭐ backlog #652 r1 F5 (Codex MAJOR + Claude MINOR): the `--print` leaf of an entry whose date has PASSED reads `wait date passed <mm-dd>, not started`, never its wait as live; before the date it shows the wait and the date"
+    ]
+  },
+  {
+    "name": "node tree T14: the `· also` group never matches, so `also` is read as part of <what>",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(.+?)(?:{_CHECK_FEATURES.ALSO_FIELD.pattern})?(?: · waits on",
+        "(.+?)(?:( · NEVER \\S+))?(?: · waits on"
+      ]
+    ],
+    "expect": [
+      "also: parsed before waits"
+    ]
+  },
+  {
+    "name": "node tree T14: an `also` written after `waits on` is no longer refused",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return None, f\"the `· also` field comes BEFORE `· waits on`: {line!r}\"",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "also: after waits is refused"
+    ]
+  },
+  {
+    "name": "node tree T14: a logged snapshot is not read through `was:`, so a rename alone is history",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        now = _CHECK_FEATURES.resolve(nodes, g[\"slug\"])",
+        "        now = None"
+      ]
+    ],
+    "expect": [
+      "history: a pre-rename snapshot resolves"
+    ]
+  },
+  {
+    "name": "node tree T14: the page (--page/--print) reads the log raw, so a pre-rename snapshot shows under its old slug (render call site; the APPEND path's resolve-before-diff is its own entry)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            log = [resolve_snapshot(s, tree()) for s in log]",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ history: the page draws a pre-rename log under the node's current slug"
+    ]
+  },
+  {
+    "name": "node tree T14: derive places ledger entries before resolving a former goal slug",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    src = dict(src, ledger=resolve_ledger(src[\"ledger\"], src.get(\"nodes\")))",
+        "    src = dict(src)"
+      ]
+    ],
+    "expect": [
+      "ledger: an entry under a former slug hangs under its node"
+    ]
+  },
+  {
+    "name": "node tree T14: every node is offered as a name awaiting a pick, not only a `proposed:` one",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            for n in nodes if n.proposed]",
+        "            for n in nodes]"
+      ]
+    ],
+    "expect": [
+      "needs: a proposed name awaits the owner's pick"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Codex 1: a requestless goal is numbered by its file index, never its node's tree position",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return (1, \"\", (0, g[\"tree_pos\"]) if \"tree_pos\" in g else (1, 0), i)",
+        "        return (1, \"\", (1, 0), i)"
+      ]
+    ],
+    "expect": [
+      "a goal with no request is numbered in tree order, not heading order"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Codex 1: resolve_snapshot stamps no tree position, so numbering falls back to heading order",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if now in pos:\n            r[\"tree_pos\"] = pos[now]\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "a goal with no request is numbered in tree order, not heading order"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Codex 2 / Claude F2: resolve-before-diff — --snapshot compares the RAW logged snapshot (append call site)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "append_if_changed(log_path, live, tree())",
+        "append_if_changed(log_path, live)"
+      ]
+    ],
+    "expect": [
+      "⛔ history: a rename alone appends no snapshot (the --snapshot append path)"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Codex 2 / Claude F2: append_if_changed ignores the tree it is given and compares raw fingerprints",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    said = fingerprint if nodes is None else (lambda s: said_through(s, nodes))",
+        "    said = fingerprint"
+      ]
+    ],
+    "expect": [
+      "⛔ history: a rename alone appends no snapshot (the --snapshot append path)",
+      "append_if_changed: given the tree, a rename alone is not logged; with no tree, or a real change, it is"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Codex 2: said_through keeps the reader's `then`/`tree_pos`, so a resolved rename still differs",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return fingerprint(dict(r, goals=[{k: v for k, v in g.items() if k not in READER_KEYS} for g in r[\"goals\"]]))",
+        "    return fingerprint(r)"
+      ]
+    ],
+    "expect": [
+      "⛔ history: a rename alone appends no snapshot (the --snapshot append path)",
+      "append_if_changed: given the tree, a rename alone is not logged; with no tree, or a real change, it is"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F3: parse_threads with a tree checks no heading against it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            bad = None if nodes is None else _CHECK_FEATURES._name_problem(f\"line {i}\", \"the heading\", m.group(1), nodes)",
+        "            bad = None"
+      ]
+    ],
+    "expect": [
+      "nodes: a heading that is not a node is refused"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F3: read_tree accepts a features file that declares no node",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not nodes:\n        raise TreeUnreadable(f\"{FEATURES_REL} declares no node\")",
+        "    if False:\n        raise TreeUnreadable(f\"{FEATURES_REL} declares no node\")"
+      ]
+    ],
+    "expect": [
+      "⛔ a tree that cannot be read is CANNOT RUN, and logs nothing"
     ]
   }
 ]

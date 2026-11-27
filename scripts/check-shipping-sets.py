@@ -2688,6 +2688,10 @@ def _self_test_body() -> int:
         # outgoing edges, and `check-merge-ready.py`, `explainer-serve.py` and `regen-pages.py` -> `gen-dashboard.py`.
         # Gained: `check-retired-references.py` -> `fixture_git.py` (K8, new), and `regen-pages.py` ->
         # `gen-backlog-page.py` (its self-test fixture now names a live generator).
+        # ⟳ 2026-11-27 node-tree plan S3 Tasks 15 + 16: 361 + 2 = 363 / afc6586ecae9fac2, diffed by hand (sorted,
+        # `diff`) against e316f96e's `git archive`, which reproduces 361 / 6e70bc13894e54c2. Gained: `session-state.py`
+        # -> `check-features.py` (G5, `--goal` checked against the tree) and `batch-ci.py` -> `check-features.py` (P8,
+        # the `tree` policy judged by the tree's own parser), each by load. Lost: 0.
         tracked_py = [f for f in tracked(REPO) if f.endswith(".py")]
         # ⟳ 2026-11-20 merge of master (with backlog #647) into slice E: 351 / 5bf576ccf02ae289 = 347 + 3 + 1, exactly the
         # UNION of the two parents (slice E 350, master 348, shared 347; each measured from its own `git archive`, 0 lines
@@ -2699,7 +2703,7 @@ def _self_test_body() -> int:
              lambda: (lambda pairs: (len(pairs), hashlib.sha256("\n".join(pairs).encode()).hexdigest()[:16]))(
                  live_set()) + ([ln for ln in clo("--closure", str(REPO / "docs/marketplace/shipping-sets.json"),
                                                   root=REPO)[1] if "optional: " in ln],),
-             (361, "6e70bc13894e54c2", []))
+             (363, "afc6586ecae9fac2", []))
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
