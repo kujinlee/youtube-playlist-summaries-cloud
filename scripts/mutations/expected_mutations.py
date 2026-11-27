@@ -1886,7 +1886,7 @@ EXPECTED_MUTATIONS = {
     # check (`dt.date(2000, …)`), deleted — the year loop refuses an impossible month or day itself. New 6: the year
     # never rolling forward, a leap day sought only four years on, the day itself pushed to next year, a passed date
     # stored as this year's, and --add / --set-until ignoring the day they are given. The rest re-bound, same intent.
-    "scripts/session-state.py": 172,
+    "scripts/session-state.py": 179,  # 172 -> 179 (goal node tree S3 Task 15: G5 current-slug test, proposed accepted, --also checked, --also repeating --goal, also stored, a node-less tree, --also stray)
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on

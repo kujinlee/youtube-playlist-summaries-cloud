@@ -1238,8 +1238,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "                       | ({\"goal\": goal, \"thread\": thread} if goal else {})\n                       | ({\"worktree\": wt}",
-        "                       | ({\"worktree\": wt}"
+        "                       | ({\"goal\": goal, \"thread\": thread} if goal else {})\n                       | ({\"also\"",
+        "                       | ({\"also\""
       ]
     ],
     "expect": "backlog #505: --goal and --thread are STORED on the entry"
@@ -1495,8 +1495,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "propose a new goal named for its objective (the owner picks the name or counter-proposes) ",
-        ""
+        "propose a new goal named for its objective — a node \"",
+        "\""
       ]
     ],
     "expect": [
@@ -1534,8 +1534,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "args.goal, args.thread, args.waits, parse_after(args.after), args.worktree, args.until)",
-        "args.goal, args.thread, None, parse_after(args.after), args.worktree, args.until)"
+        "args.goal, args.thread, args.waits, parse_after(args.after), args.worktree, args.until,",
+        "args.goal, args.thread, None, parse_after(args.after), args.worktree, args.until,"
       ]
     ],
     "expect": [
@@ -1862,8 +1862,8 @@
         "            if False:\n                print(f\"CANNOT RUN — {ADD_NEEDS_AFTER}"
       ],
       [
-        "parse_after(args.after), args.worktree, args.until)",
-        "parse_after(args.after or AFTER_NONE), args.worktree, args.until)"
+        "parse_after(args.after), args.worktree, args.until,",
+        "parse_after(args.after or AFTER_NONE), args.worktree, args.until,"
       ]
     ],
     "expect": [
@@ -2217,8 +2217,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "parse_after(args.after), args.worktree, args.until)",
-        "parse_after(args.after), args.worktree)"
+        "parse_after(args.after), args.worktree, args.until,",
+        "parse_after(args.after), args.worktree,"
       ]
     ],
     "expect": [
@@ -2236,6 +2236,97 @@
     ],
     "expect": [
       "⭐ backlog #652: --set-until rewrites `until` (a full date, its year from the day it is SET, r1 F1) and keeps every other key, `at` included; `none` removes it — three values over ONE entry"
+    ]
+  },
+  {
+    "name": "node tree T15: G5's current-slug test removed, so a former or unknown goal is written",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if slug in cf.current_slugs(nodes):\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "G5: a former slug is refused and names its node"
+    ]
+  },
+  {
+    "name": "node tree T15: a `proposed:` node is not accepted as a goal (settled slugs only)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if slug in cf.current_slugs(nodes):",
+        "    if slug in cf.settled_slugs(nodes):"
+      ]
+    ],
+    "expect": [
+      "G5: a proposed node is accepted"
+    ]
+  },
+  {
+    "name": "node tree T15: the `--also` slugs are not checked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "[goal_refusal(s, nodes, \"--also\") for s in args.also]",
+        "[]"
+      ]
+    ],
+    "expect": [
+      "also: a non-current slug is refused"
+    ]
+  },
+  {
+    "name": "node tree T15: an `--also` equal to `--goal` is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            if args.goal is not None and args.goal in args.also:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "also: may not repeat the goal"
+    ]
+  },
+  {
+    "name": "node tree T15: `also` is checked and then not stored",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "({\"also\": list(also)} if also else {})",
+        "({})"
+      ]
+    ],
+    "expect": [
+      "also: stored in order"
+    ]
+  },
+  {
+    "name": "node tree T15: a tree that declares no node is read as one that checks nothing",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if not nodes:\n        raise TreeUnreadable(f\"{FEATURES_REL} declares no node\")",
+        "    if False:\n        raise TreeUnreadable(f\"{FEATURES_REL} declares no node\")"
+      ]
+    ],
+    "expect": [
+      "G5: the tree unreadable is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "node tree T15: `--also` outside `--add` is not a stray flag",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                                   (\"--also\", bool(args.also) and not args.add),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "also: outside --add is a stray flag"
     ]
   }
 ]
