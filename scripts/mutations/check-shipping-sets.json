@@ -2406,7 +2406,7 @@
         "            if False:"
       ]
     ],
-    "expect": "a value nested 100,000 deep is CANNOT RUN, never a RecursionError (backlog #700 r1 C1)"
+    "expect": "a value nested past the depth bound is CANNOT RUN, never a RecursionError (backlog #700 r1 C1)"
   },
   {
     "name": "a non-string measured_at is accepted (backlog #700 r1 C3)",

@@ -1542,9 +1542,12 @@ def _self_test_body() -> int:
          [("exclusions", "[]"), ("id", '"x"'), ("measured_at", '""'), ("measured_at", '"x"'), ("shared_with", "[]")])
     deep = w / "deep.json"
     deep.write_text('{"measured_at": "x", "packages": {"pkg": {"channel": "plugin"}}, "components": [' +
-                    json.dumps(comp("a", ["scripts/a.py"]))[:-1] + ', "effort": ' + "[" * 100000 + "]" * 100000 +
+                    json.dumps(comp("a", ["scripts/a.py"]))[:-1] + ', "effort": ' + "[" * 50 + "]" * 50 +
                     '}], "exclusions": []}')
-    case("a value nested 100,000 deep is CANNOT RUN, never a RecursionError (backlog #700 r1 C1)",
+    # ⟳ r2 Codex BLOCKER: 100,000 levels fails INSIDE json.loads on Python 3.12 (CI's pin), so it never reached
+    # the walk. 50 levels parses on every interpreter and is past the bound, so this case reads the WALK; the
+    # 200,000 case below reads the parse path.
+    case("a value nested past the depth bound is CANNOT RUN, never a RecursionError (backlog #700 r1 C1)",
          lambda: refused(lambda: load_map(deep, w)).startswith("CANNOT RUN: cannot read the map") and
          "nested deeper than 32" in refused(lambda: load_map(deep, w)), True)
     deep.write_text("[" * 200000 + "]" * 200000)
