@@ -1,0 +1,31 @@
+{
+  "attempts": [
+    "  gpt-6.2-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.2-astra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.1-terra: ok \u2014 2253 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "7481f0b60ebaa84ea0ce4a324345fdbf035544a0",
+  "intrusions": [],
+  "loosening_answers": {
+    "42ba753f5e5f": "not a loosening",
+    "44c4d543ae29": "not a loosening",
+    "5d28ad0c5058": "not a loosening",
+    "60465a3094c5": "not a loosening",
+    "8241bc739eba": "not a loosening",
+    "bd2bde2393de": "not a loosening",
+    "e3a13a845f8e": "not a loosening",
+    "e499f664ef9b": "not a loosening",
+    "fdcdc7646862": "not a loosening"
+  },
+  "model": "gpt-6.1-terra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b8b70ddb-ac10-4d26-bd53-6419325840da/scratchpad/b740/prompt.md",
+  "reason": "2253 chars",
+  "refused": false,
+  "review": "backlog-740-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/backlog-740"
+}
