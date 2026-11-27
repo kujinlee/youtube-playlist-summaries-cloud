@@ -3,9 +3,9 @@
 
     python3 scripts/page_markup.py --self-test
 
-WHY THIS FILE EXISTS. Four generators — `gen-dashboard.py`, `gen-backlog-page.py`,
-`gen-goals-page.py`, `explainer-serve.py` — each rendered inline markdown their own
-way, and none imported another. Measured 2026-08-30 by importing all four and running
+WHY THIS FILE EXISTS. Four generators — the dashboard page's (retired by dashboard-retire S3),
+`gen-backlog-page.py`, `gen-goals-page.py`, `explainer-serve.py` — each rendered inline markdown
+their own way, and none imported another. Measured 2026-08-30 by importing all four and running
 them over the real corpora: they disagreed on 11 of 13 probe inputs, and the drift was
 corrupting a live page. On `~/explainers/backlog-table.html` as it stood on disk
 (built 2026-08-29 16:42) there were 10 crossed tag spans and 15 cases of markup
@@ -14,7 +14,7 @@ rendered as `select count(<em>) filter …`, SQL that would fail if copied.
 
 THE CAUSE IS THE ALGORITHM, NOT THE PATTERNS. Three of the four stacked `re.sub`
 passes that are blind to each other's OUTPUT: the `*em*` pass reaches inside the
-`<code>` the code-span pass just emitted. `gen-dashboard._inline_scan` had already
+`<code>` the code-span pass just emitted. The dashboard generator's `_inline_scan` had already
 been rewritten as ONE left-to-right scan for exactly this reason (PR #178, four review
 rounds) and that fix was unreachable from the other three. This module is that scan,
 widened to the union of what the four supported. See
@@ -26,21 +26,21 @@ corpora carrying a `*` inside backticks survive. Widening the feature set on the
 stacked-pass implementations would have corrupted all 39.
 
 IT IS ALSO THE ONE LINK FUNCTION (backlog #470). `key_link` is the only place an href to a key's
-home page is built — a backlog row, a PR, a goal, a feature, a dashboard entry, a goal-tree thread —
+home page is built — a backlog row, a PR, a goal, a feature, a goal-tree thread —
 and `scan` / `link_html` render every `backlog #N` and `PR #N` they meet as that link.
 `scripts/check-page-links.py` is the guard: no such href built anywhere else in `scripts/`, no key
 left unlinked on a built page, no internal fragment without its id. Both read a page only inside the
 SUPPORTED SUBSET (`subset_problems`, review round 2): outside it `link_html` raises `OutsideSubset`.
 
 WHAT THIS IS NOT. It is a PEER of the generators, never a gate. The documented
-generator → gate arrow (`gen-dashboard.py:402-408`) governs a page importing the guard
+generator → gate arrow (in the dashboard generator, now retired) governed a page importing the guard
 that CHECKS it; a renderer checks nothing, and making three generators import a
 2,458-line page generator would be worse than the duplication this replaces. Nothing
 here imports a generator.
 
 The underscore in the filename is the convention, not a typo: the hyphenated
-`scripts/*.py` are executables and are not importable by name, so `gen-dashboard.py`
-reaches its gate through `importlib`. This is a LIBRARY and is imported directly, like
+`scripts/*.py` are executables and are not importable by name, so a generator reaches its
+gate through `importlib` (the retired dashboard generator did). This is a LIBRARY and is imported directly, like
 `m4_base_db.py`, `m4_catalog.py` and `subject_status.py`.
 
 ⚠ THIS FILE IS **NOT** IN THE RATCHET INVENTORY, AND CANNOT BE. An earlier draft of

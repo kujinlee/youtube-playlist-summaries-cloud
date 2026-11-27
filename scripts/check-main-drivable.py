@@ -43,8 +43,8 @@ not a floor, it is a bug with a baseline. The three admitted routes:
             repo and the rule pinned it as debt
 
 ⛔ AND A LITERAL-ONLY `argv` EARNS NO CREDIT, WHICH IS THE WHOLE DISCRIMINATION. Measured on this
-repo: `check-dashboard-entry.py:1445` calls `main(["--base", "master"])` and
-`check-rc-contract.py:781` calls `main(["--self-test"])`. Both satisfy a rule that asks "does the
+repo when the rule was written: the entry gate (since retired by dashboard-retire S3) called
+`main(["--base", "master"])` and `check-rc-contract.py:781` called `main(["--self-test"])`. Both satisfy a rule that asks "does the
 suite invoke main()", and both run `main` over the LIVE REPOSITORY, so neither asserts anything
 about a world a case built. "Drives main" and "drives main over a constructed world" are different
 bits, and only the second is ADR-0014's.

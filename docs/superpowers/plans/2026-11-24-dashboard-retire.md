@@ -1033,10 +1033,10 @@ that are call arguments, path-literal operands, list or tuple elements, and dict
   (the deleted manifest must leave no pin behind: `python3 scripts/check-plan-code.py --self-test`).
 - [x] **Step 9: Commit.**
 
-**K8's scope (⟳ S3 r2 G3):** it refuses what it SCANS — non-prose Python string constants and non-comment lines
-of the `TEXT_SUFFIXES` kinds — and names what it does not: docstrings (even one read as `__doc__`), whole-line
-comments, `.md`/`.html`/Makefiles and other unlisted kinds, and the five exempt prefixes, each because it holds
-history, not code. A `/dashboard#` href joined at run time is check-page-links rule 2's (G1).
+**K8's scope (⟳ S3 r2 G3; ⟳ backlog #740):** it refuses what it SCANS; what it does not scan, each with its
+reason, is the NOT SCANNED section of `scripts/check-retired-references.py`'s docstring, and this plan keeps no
+list of its own. ⟳ backlog #740 REVERSES this plan's earlier choice (cases 15.5 and 15.11) that a comment in a
+text kind may narrate the retirement: every line of a text kind is read, a comment line included.
 
 **FAILS IF (K8):** a seeded reference of any category passes the scan; or the prose seed or the
 `RETIRED_FILES` seed fails it; or the live scan is green while a load, hook, run line, argv, manifest field,

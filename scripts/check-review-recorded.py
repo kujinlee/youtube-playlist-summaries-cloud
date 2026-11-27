@@ -21,7 +21,7 @@ the one-half case while leaving the zero-half case open. This file is that missi
 WHAT IT ASKS, AND WHY IT IS THE DIFF AND NOT A NAMING CONVENTION
 ----------------------------------------------------------------
 "Did this branch ADD a file under `docs/reviews/`?" — asked of the diff against the base, exactly as
-`check-dashboard-entry.py` asks whether an entry was added to the store. Not "is there a review doc
+the entry gate retired by dashboard-retire S3 once asked whether an entry was added. Not "is there a review doc
 whose stem matches the branch name": a subject is named by a human and drifts from the branch, and a
 guard keyed on that would fail for the wrong reason. Adding a review document is the observable act.
 
@@ -109,7 +109,7 @@ FAILS IF
     A shallow clone sees fewer commits and would report a confident, smaller diff.
 
 ⚠ THE DECLARATION IS NOT A RUBBER STAMP. `NO-REVIEW:` takes a reason, and an empty one is refused —
-the same posture as `NO-ENTRY:`. The marker is parsed by `check-dashboard-entry._declaration_reason`
+the same posture the retired `NO-ENTRY:` waiver had. The marker is parsed by `check-ask-store.exemption_reason`
 via a `marker` parameter, NOT by a second copy: which contexts are inert (fenced, indented,
 commented, blockquoted) and which are not (emphasis) cost measured escapes there, and a sibling
 re-deriving them would drift.
@@ -1941,7 +1941,7 @@ def _self_test_body() -> int:
          verdict(CODE, ["docs/notes.md"], "", none_reason)[0], 1)
     case("only .md counts as a review document",
          review_added(["docs/reviews/verdicts/x.json"]), [])
-    # ⭐ THE LIVE CASE: the parser is SHARED, not copied. If check-dashboard-entry stops exporting
+    # ⭐ THE LIVE CASE: the parser is SHARED, not copied. If check-ask-store stops exporting
     # `exemption_reason`, or its signature loses the marker, this fails here rather than silently
     # falling back to a second implementation.
     _reason_of = _load_declaration_parser()

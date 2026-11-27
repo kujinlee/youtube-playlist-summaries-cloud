@@ -22,7 +22,7 @@ is read unless an exemption below names it, in one of two ways:
               string a generator emits. Read with `ast`, so comments are never seen, and a string that is
               a whole statement (a docstring, or prose standing alone) is skipped.
   text        every other source or config kind (`TEXT_SUFFIXES`, plus an extensionless file that starts
-              `#!` such as `.githooks/pre-push`): every line, except a whole-line comment. The category
+              `#!` such as `.githooks/pre-push`): every line, a comment line included. The category
               named in a finding is where the file lives: `hook` (`.claude/settings.json`,
               `.claude/hooks/`, `.githooks/`), `workflow`, `manifest` (`scripts/mutations/`), else `text`.
   page-table  Python: the bare word `"dashboard"` anywhere in a simple statement that names a page table
@@ -34,12 +34,18 @@ is read unless an exemption below names it, in one of two ways:
 A text scan of a token cannot miss a syntactic form; the spec's original design enumerated forms, and
 review round 1 found thirteen it missed (`docs/reviews/coordinator/dashboard-retire-s3-r1-coordinator.md`).
 
+NO COMMENT IS SKIPPED in a text kind (backlog #740). This REVERSES the plan's earlier choice (its cases
+15.5 and 15.11) that a comment may narrate the retirement: a line rule cannot tell a comment from code
+(`*/ fetch(…)`, CSS in a template literal), each comment form it skipped was a hole, and no live comment
+needed the skip. A comment that names a retired thing is refused; reword it. A JS lexer is not the fix:
+one misread comments in 13 live files
+(`docs/reviews/coordinator/architecture-review-2026-11-26-s3-retired-references.md`).
+
 NOT SCANNED — so a reference there passes, and this check claims nothing about it (review S3 r2 G3):
+  * a Python comment, which `ast` never sees.
   * a Python string that is a whole statement — a docstring, or prose standing alone — EVEN when code reads
     it as `__doc__` (argparse descriptions do): docstrings narrate the retirement as history, and reading
     them would refuse that history. A `__doc__` printed as help text is not checked to be current.
-  * a whole-line comment in a text kind (`#`, `//`, a `/*` line with nothing after its `*/`, a `*` line):
-    comments are not run.
   * every kind outside `.py` and `TEXT_SUFFIXES` — `.md`, `.html`, `.css`, `.txt`, images, a Makefile, an
     extensionless file with no `#!`: the `.md` and `.html` files are docs and explainer archives that keep the
     retired names as history on purpose and are not loaded as code; no live Makefile exists.
@@ -47,13 +53,15 @@ NOT SCANNED — so a reference there passes, and this check claims nothing about
     inventory, replayed fixtures) — Python there included; this script itself; and the literals of
     `ALLOWED`, each scoped to ONE file.
   * a name assembled at run time from pieces that are each innocent (`"gen-" + "dashboard.py"`): the bound
-    of any static scan. For a `/dashboard#` href, check-page-links rule 2 reads the joined value (G1).
+    of any static scan. check-page-links rule 2 reads some joined `/dashboard#` hrefs (G1); its reach is
+    stated in its own comment above `HOME_PATHS` and is not restated here.
 
 THE FILE SET is `git ls-files` when the root is a repository, so the scan reads what CI reads; a root
 that is not one (the self-test's scratch trees) is walked.
 
 WHAT WOULD MAKE THIS FAIL (its falsifier): a seeded reference in any form listed by the self-test passes
-the scan; or a seeded exemption, comment, docstring or near-miss name is refused. CANNOT RUN (rc 2, never
+the scan, a comment line of a text kind included; or a seeded exemption, docstring or near-miss name is
+refused. CANNOT RUN (rc 2, never
 a pass): a scanned `.py` does not parse, a scanned file cannot be read as UTF-8, `.claude/settings.json`
 is missing or is not JSON, no workflow file exists, or a manifest is not JSON.
 """
@@ -86,9 +94,9 @@ _ROUTE = re.compile(r"(?:(?<![\w.-])|(?<=localhost)|(?<=:\d\d)|(?<=:\d\d\d)|(?<=
 PAGE_TABLES = frozenset({"REGENERABLE", "PAGES", "CI_PAGES", "PAGE_SOURCES"})
 RETIRED_PAGE = "dashboard"
 
-# Kinds read line by line, and the whole-line comment marker of each (None: the kind has no comments).
-TEXT_SUFFIXES = {".sh": "#", ".bash": "#", ".yml": "#", ".yaml": "#", ".toml": "#", ".json": None,
-                 ".js": "//", ".mjs": "//", ".cjs": "//", ".jsx": "//", ".ts": "//", ".tsx": "//"}
+# Kinds read line by line, every line (backlog #740: no comment is skipped).
+TEXT_SUFFIXES = (".sh", ".bash", ".yml", ".yaml", ".toml", ".json",
+                 ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx")
 
 # Paths never read, each with its reason. A prefix ending in `/` is a directory.
 EXEMPT_PREFIXES = {
@@ -204,39 +212,26 @@ def _text_category(rel: str) -> str:
     return "text"
 
 
-def _text_kind(root: Path, rel: str) -> tuple[bool, str | None]:
-    """(is this file read line by line, its whole-line comment marker)."""
+def _text_kind(root: Path, rel: str) -> bool:
+    """Is this file read line by line: a `TEXT_SUFFIXES` kind, or an extensionless file that starts `#!`."""
     suffix = Path(rel).suffix
     if suffix in TEXT_SUFFIXES:
-        return True, TEXT_SUFFIXES[suffix]
+        return True
     if suffix == "" and not Path(rel).name.startswith("."):
         try:
             with open(root / rel, "rb") as fh:
-                return fh.read(2) == b"#!", "#"
+                return fh.read(2) == b"#!"
         except OSError as e:
             raise CannotRun(f"{rel} could not be read ({e})") from e
-    return False, None
+    return False
 
 
-def _whole_line_comment(s: str, comment: str) -> bool:
-    """A stripped line that is nothing but a comment. A `/*` line is one only if nothing but whitespace
-    follows its `*/`, or it does not close there (review S3 r2 G2: `/* x */ fetch(…)` is code)."""
-    if s.startswith(comment):
-        return True
-    if comment == "//" and s.startswith("/*"):
-        end = s.find("*/", 2)
-        return end == -1 or not s[end + 2:].strip()
-    return comment == "//" and s.startswith("*")
-
-
-def _text_findings(rel: str, text: str, comment: str | None) -> list[str]:
+def _text_findings(rel: str, text: str) -> list[str]:
+    """Every line, a comment line included: a line rule cannot tell a comment from code (backlog #740)."""
     out = []
     for n, line in enumerate(text.splitlines(), 1):
-        s = line.strip()
-        if comment and _whole_line_comment(s, comment):
-            continue
         if _names_retired(line):
-            out.append(_finding(rel, n, _text_category(rel), s))
+            out.append(_finding(rel, n, _text_category(rel), line.strip()))
     return out
 
 
@@ -270,9 +265,8 @@ def scan(root: Path) -> list[str]:
         if rel.endswith(".py"):
             out += _python_findings(rel, _read(root, rel))
             continue
-        is_text, comment = _text_kind(root, rel)
-        if is_text:
-            out += _text_findings(rel, _read(root, rel), comment)
+        if _text_kind(root, rel):
+            out += _text_findings(rel, _read(root, rel))
     return out
 
 
@@ -294,8 +288,9 @@ def main(argv: list[str]) -> int:
             print(f"  {f}", file=sys.stderr)
         return 1
     print("check-retired-references: ok — no scanned string constant, source or config line, page table or "
-          "key_link names a retired thing (docstrings, whole-line comments, .md/.html/Makefiles and the "
-          "exempt prefixes are not scanned)")
+          f"key_link names a retired thing (scanned: .py and {', '.join(TEXT_SUFFIXES)}, and extensionless `#!` "
+          f"files; not scanned: Python comments and docstrings, every other kind, {SELF}, the ALLOWED literals, and "
+          f"{', '.join(EXEMPT_PREFIXES)} — the docstring's NOT SCANNED section gives each reason)")
     return 0
 
 
@@ -393,13 +388,13 @@ def _self_test_body() -> int:
          _cats({".claude/settings.json": json.dumps({"hooks": {"PostToolUse": [{"hooks": [
              {"type": "command", "command": "bash .claude/hooks/run-hook.sh regen-dashboard.sh"}]}]}})}),
          ["hook"])
-    case("15.5 a line of a workflow run block is refused, and its comment line is not",
+    case("15.5 a line of a workflow run block is refused, and so is its comment line",
          _cats({".github/workflows/ci.yml":
                 "jobs:\n  t:\n    steps:\n      - name: x\n        run: |\n"
                 "          # gen-dashboard.py used to run here\n"
                 "          python3 scripts/gen-dashboard.py --self-test\n"
                 "      - name: y\n        run: echo gen-dashboard.py-free\n"}),
-         ["workflow"])
+         ["workflow", "workflow"])
     case("15.6 an argv literal in a gate table is refused",
          _cats({_PY: 'GATES = [["python3", "scripts/check-dashboard-entry.py", "--base", b]]\n'}), ["string"])
     case("15.7 a manifest file field is refused",
@@ -430,18 +425,22 @@ def _self_test_body() -> int:
                      'def f():\n    """Once called _load("gen-dashboard.py")."""\n'
                      '    return 1\n'}),
          [])
-    case("15.11 a whole-line comment in a hook, a TS file and a workflow passes",
+    case("15.11 a whole-line comment in a hook, a TS file and a workflow is refused (backlog #740)",
          _cats({".claude/hooks/x.sh": "#!/bin/bash\n# gen-dashboard.py was retired\necho ok\n",
                 "app/x.ts": "// the old /dashboard page is gone\n/* gen-dashboard.py */\nconst a = 1;\n",
                 ".github/workflows/ci.yml": "jobs:\n  t:\n    steps:\n      # gen-dashboard.py was here\n"
                                             "      - run: python3 scripts/ok.py\n"}),
-         [])
-    # review S3 r2 G2: a line that opens with `/*` is a comment only up to its `*/`
+         ["hook", "workflow", "text", "text"])
+    # review S3 r2 G2 and r3 R3-1/R3-4: no line shape is read as a comment, so none of these is skipped
     case("G2 code after a closed block comment on its line is refused",
          _cats({"app/x.ts": '/* x */ fetch("/dashboard");\n'}), ["text"])
-    case("G2 a block comment closed with only whitespace after, or left open, passes",
+    case("G2 a block comment closed with only whitespace after, or left open, is refused",
          _cats({"app/x.ts": "/* gen-dashboard.py */   \n/* the old /dashboard page\n * is gone\n */\nconst a = 1;\n"}),
-         [])
+         ["text", "text"])
+    case("R3-1 a line starting with * is read: code after */, and a generator method",
+         _cats({"app/x.ts": '*/ fetch("/dashboard");\n*gen() { run("gen-dashboard.py"); }\n'}), ["text", "text"])
+    case("R3-4 a line of two comments naming a retired thing is refused",
+         _cats({"app/x.ts": "/* a */ // gen-dashboard.py\n"}), ["text"])
     case("15.12 the RETIRED_FILES row passes", _cats({_PY: 'RETIRED_FILES = {"dashboard.html": "/dashboard-archive"}\n'}),
          [])
     case("15.13 /dashboard-archive and /dashboards are not the route",
