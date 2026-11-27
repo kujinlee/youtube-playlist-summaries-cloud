@@ -63,7 +63,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --set-until ID MM-DD|none     # a dated wait, read by the goal tree (backlog #652)
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 170 cases
+    python3 scripts/session-state.py --self-test  # 172 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -403,23 +403,27 @@ def parse_after(text: str, gt=None) -> list:
     return [(k, int(n)) for k, n in gt.REF_RE.findall(text)]
 
 
-# backlog #652: a DATED wait is DECLARED as `--until <mm-dd>` (the ledger's own yearless form, as in `at`), so the goal
-# tree can see it pass — a recorded `waits` is prose and is never read. The YEAR is the goal tree's to settle
-# (`goal-tree.py:until_date`); here only the form is checked: two digits each, a real month and day (02-29 allowed).
+# backlog #652: a DATED wait is DECLARED as `--until <mm-dd>`, so the goal tree can see it pass — a recorded `waits` is
+# prose and is never read. r1 F1 (both halves): the YEAR is settled HERE, once, at WRITE time, and STORED as a full
+# `YYYY-MM-DD` — the goal tree reads only that form and never guesses a year (`goal-tree.py:until_date`).
 UNTIL_FORM = "--until <mm-dd>: the day the wait ends, e.g. `--until 11-20`"
 
 
-def parse_until(text: str) -> str:
-    """A valid `mm-dd` -> itself. Anything else — `11-6`, `13-01`, `02-30`, a full `YYYY-MM-DD`, prose — is a
-    ValueError naming the legal form. 02-29 is a real date (read in a leap year)."""
+def parse_until(text: str, today: dt.date) -> str:
+    """A valid `mm-dd` -> the full `YYYY-MM-DD` of its FIRST occurrence on or after `today` (the day it is written):
+    a date not yet passed this year is this year's, one already passed is next year's, and 02-29 is the next leap
+    day (r1 F2) — so a declared date is never behind the day it was declared (r1 F3). Anything else — `11-6`,
+    `13-01`, `02-30`, a full `YYYY-MM-DD`, prose — is a ValueError naming the legal form."""
     m = re.fullmatch(r"(\d\d)-(\d\d)", text) if isinstance(text, str) else None
-    try:
-        if not m:
-            raise ValueError
-        dt.date(2000, int(m.group(1)), int(m.group(2)))
-    except ValueError:
-        raise ValueError(f"{text!r} is not a date. {UNTIL_FORM}") from None
-    return text
+    # a leap day is at most eight years on (2096 -> 2104); a month or day no year has (13-01, 02-30) finds none
+    for year in range(today.year, today.year + 9) if m else ():
+        try:
+            when = dt.date(year, int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            continue
+        if when >= today:
+            return when.isoformat()
+    raise ValueError(f"{text!r} is not a date. {UNTIL_FORM}")
 
 
 def _after_list(after, thread, gt=None) -> list:
@@ -457,7 +461,8 @@ def declared_worktree(worktree: str, ledger: "Path | None" = None) -> str:
 
 def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None,
                goal: str | None = None, thread: str | None = None, waits: str | None = None,
-               after: list | None = None, worktree: str | None = None, until: str | None = None) -> None:
+               after: list | None = None, worktree: str | None = None, until: str | None = None,
+               today: "dt.date | None" = None) -> None:
     """`kind` is DECLARED by the caller. Left out, it is `guess_kind` of the entry — the WIDE reading, so an owner entry
     written without `--kind` is stored as the owner entry it looks like and never as `routine` (r3 R3-1: storing the
     strict-prefix answer made every R2-1 phrasing routine again, and the declared field then bypassed the fallback).
@@ -477,7 +482,8 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
         kind = guess_kind({"what": what, "on_done": on_done})
     declared = _after_list(after, thread)   # backlog #650: refused BEFORE the lock, so a refusal writes nothing
     wt = declared_worktree(worktree, path) if worktree is not None else None   # backlog #672: also refused before it
-    until = parse_until(until) if until is not None else None                  # backlog #652: also refused before it
+    # backlog #652: also refused before it; the year is settled from `today` (the real day unless a case injects one)
+    until = parse_until(until, today or dt.date.today()) if until is not None else None
     with _locked(path):
         entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
@@ -509,13 +515,14 @@ def ledger_set_after(path: Path, id_: str, after: list) -> bool:
         return True
 
 
-def ledger_set_until(path: Path, id_: str, until: str | None) -> bool:
+def ledger_set_until(path: Path, id_: str, until: str | None, today: "dt.date | None" = None) -> bool:
     """backlog #652: rewrite ONE key, `until`, of the entry `id_` under the lock, keeping every other key and its
-    `at`; None removes the key. False (nothing written) for an unknown id; a malformed date is a ValueError, refused
+    `at`; None removes the key. The year is settled from `today`, the day it is SET — never from the entry's `at`
+    (r1 F1, Claude MAJOR). False (nothing written) for an unknown id; a malformed date is a ValueError, refused
     before the lock, so nothing is written either."""
     if not id_.strip():
         raise ValueError("an empty id names no job")
-    until = parse_until(until) if until is not None else None
+    until = parse_until(until, today or dt.date.today()) if until is not None else None
     with _locked(path):
         entries, raw = _for_update(path)
         hit = [e for e in entries if e.get("id") == id_]
@@ -1590,6 +1597,13 @@ def _self_test_body() -> int:
              main(["--after", "none"], root=root, run=NO_GIT), 2)
         # ── backlog #652: a DATED wait is declared (`--until <mm-dd>`), so the goal tree can see it pass ──
         _r652 = Path(tempfile.mkdtemp(prefix="ss-652-"))
+
+        def _safe(fn, *a, **kw):
+            """A raise is a FAILED case, never a crash of the whole suite."""
+            try:
+                return fn(*a, **kw)
+            except Exception as exc:              # noqa: BLE001 - reported as the case's value
+                return f"RAISED {type(exc).__name__}: {exc}"
         try:
             _l652 = _r652 / LEDGER_REL
             _b652 = ["--goal", "g", "--thread", "fix · backlog #11 · x", "--after", "none"]
@@ -1606,10 +1620,29 @@ def _self_test_body() -> int:
                 with redirect_stdout(io.StringIO()), _rs514(_buf):
                     _rcs652.append(main(_argv, root=_r652, run=NO_GIT))
                 _errs652.append(_buf.getvalue())
-            case("⭐ backlog #652: --add --until STORES a valid `mm-dd` (02-29 included); a short, impossible or full "
-                 "date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case",
-                 (_rcs652, [(e["id"], e.get("until")) for e in read_ledger(_l652)[0]]),
-                 ([0, 0, 2, 2, 2, 2, 2, 0], [("dated", "11-06"), ("leap", "02-29"), ("plain", None)]))
+            # r1 F1: the stored form is a full `YYYY-MM-DD`, the first such day on or after TODAY (the real clock here,
+            # so the case asserts the rule's bounds; `parse_until`'s own case pins exact years on fixed days)
+            _today652 = dt.date.today()
+            _ok652 = lambda v, md, span: (isinstance(v, str) and re.fullmatch(r"\d{4}-\d\d-\d\d", v) is not None
+                                          and v[5:] == md and 0 <= (dt.date.fromisoformat(v) - _today652).days < span)
+            _got652 = [(e["id"], e.get("until")) for e in read_ledger(_l652)[0]]
+            case("⭐ backlog #652: --add --until STORES a valid `mm-dd` as a full `YYYY-MM-DD` on or after today (02-29 "
+                 "within four years); a short, impossible or full date and `none` are CANNOT RUN with nothing "
+                 "written; none given stores no key — eight inputs, ONE case",
+                 (_rcs652, [i for i, _ in _got652], [_ok652(v, md, sp) for (_, v), md, sp in
+                                                     zip(_got652, ("11-06", "02-29"), (366, 4 * 366))],
+                  _got652[2:]),
+                 ([0, 0, 2, 2, 2, 2, 2, 0], ["dated", "leap", "plain"], [True, True], [("plain", None)]))
+            _days652 = [dt.date(2026, 11, 15), dt.date(2026, 11, 6), dt.date(2026, 11, 20), dt.date(2026, 12, 31),
+                        dt.date(2026, 3, 1), dt.date(2028, 2, 29), dt.date(2028, 3, 1), dt.date(2026, 11, 15)]
+            case("⭐ backlog #652 r1 F1/F2/F3: the YEAR is settled at WRITE time — the first `mm-dd` on or after the "
+                 "day it is written: a passed 11-06 is next year's, 11-06 on 11-06 is that day, a December date set in "
+                 "November is this December, 01-02 on 12-31 is next January, 02-29 is the next leap day (on 02-29 "
+                 "itself, that day), and a June date read in November is next June — never already passed",
+                 [_safe(parse_until, v, d) for v, d in zip(("11-06", "11-06", "12-05", "01-02", "02-29", "02-29",
+                                                             "02-29", "06-01"), _days652)],
+                 ["2027-11-06", "2026-11-06", "2026-12-05", "2027-01-02", "2028-02-29", "2028-02-29", "2032-02-29",
+                  "2027-06-01"])
             case("backlog #652: an --until refusal names the legal form",
                  ["--until <mm-dd>" in e for e in _errs652[2:7]], [True] * 5)
             _l652.write_text(json.dumps({"id": "old", "what": "w", "on_done": "d", "at": "11-05 13:42", "kind": "routine",
@@ -1618,12 +1651,23 @@ def _self_test_body() -> int:
             for _v in ("11-20", "12-30", "none"):
                 with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
                     _rc = main(["--set-until", "old", _v], root=_r652, run=NO_GIT)
-                _seen652.append((_rc, [(e["at"], e.get("until"), e["kind"], e["after"]) for e in read_ledger(_l652)[0]]))
-            case("⭐ backlog #652: --set-until rewrites `until` and keeps every other key, `at` included; `none` removes "
-                 "it — three values over ONE entry",
-                 _seen652, [(0, [("11-05 13:42", "11-20", "routine", ["PR #1"])]),
-                            (0, [("11-05 13:42", "12-30", "routine", ["PR #1"])]),
+                _seen652.append((_rc, [(e["at"], e.get("until") and e["until"][4:], e["kind"], e["after"])
+                                       for e in read_ledger(_l652)[0]]))
+            case("⭐ backlog #652: --set-until rewrites `until` (a full date, its year from the day it is SET, r1 F1) and "
+                 "keeps every other key, `at` included; `none` removes it — three values over ONE entry",
+                 _seen652, [(0, [("11-05 13:42", "-11-20", "routine", ["PR #1"])]),
+                            (0, [("11-05 13:42", "-12-30", "routine", ["PR #1"])]),
                             (0, [("11-05 13:42", None, "routine", ["PR #1"])])])
+            _l652.write_text(json.dumps({"id": "old", "what": "w", "on_done": "d", "at": "01-10 09:00", "kind": "routine",
+                                         "after": []}) + "\n")
+            _set652b = []
+            for _v in ("12-05", "11-21"):
+                _set652b.append((_safe(ledger_set_until, _l652, "old", _v, dt.date(2026, 11, 20)),
+                                 [e.get("until") for e in read_ledger(_l652)[0]]))
+            case("⭐ backlog #652 r1 F1 (Claude MAJOR): ledger_set_until settles the year from the day it is SET (its "
+                 "`today`), never from the entry's `at` — a 12-05 and an 11-21 set on 11-20 on an entry recorded 01-10 "
+                 "are this year's",
+                 _set652b, [(True, ["2026-12-05"]), (True, ["2026-11-21"])])
             _before652 = _l652.read_bytes()
             _set652 = []
             for _argv in (["--set-until", "nope", "11-20"], ["--set-until", "old", "11-31"],
@@ -1634,11 +1678,13 @@ def _self_test_body() -> int:
                  "ledger is byte-identical after all three",
                  (_set652, _l652.read_bytes() == _before652), ([1, 2, 2], True))
             _ld652 = _r652 / "direct.jsonl"
-            ledger_add(_ld652, "du", "w", "d", "T", until="01-02")
+            _safe(ledger_add, _ld652, "du", "w", "d", "T", until="01-02", today=dt.date(2026, 12, 31))
+            _safe(ledger_add, _ld652, "dv", "w", "d", "T", until="01-02", today=dt.date(2026, 1, 2))
             ledger_add(_ld652, "dn", "w", "d", "T")
-            case("backlog #652 (fixture variation): ledger_add(until=) STORES the date it is given, and one called "
-                 "without it stores no key — two calls, read back",
-                 [(e["id"], e.get("until")) for e in read_ledger(_ld652)[0]], [("du", "01-02"), ("dn", None)])
+            case("backlog #652 (fixture variation): ledger_add(until=) STORES the full date its `today` settles — two "
+                 "days, two years — and one called without it stores no key; three calls, read back",
+                 [(e["id"], e.get("until")) for e in read_ledger(_ld652)[0]],
+                 [("du", "2027-01-02"), ("dv", "2026-01-02"), ("dn", None)])
         finally:
             shutil.rmtree(_r652, ignore_errors=True)
         case("backlog #652: --until outside --add is a stray flag, CANNOT RUN",
@@ -2121,7 +2167,8 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
     ap.add_argument("--set-worktree", nargs=2, metavar=("ID", "PATH"),
                     help="declare (or, with `none`, remove) the worktree of entry ID, keeping every other key and its `at`")
     ap.add_argument("--until", metavar="MM-DD",
-                    help="with --add (backlog #652): the day a DATED wait ends. The goal tree shows it while it is ahead "
+                    help="with --add (backlog #652): the day a DATED wait ends, stored as the full date of its first "
+                         "occurrence on or after today. The goal tree shows it while it is ahead "
                          "and, from the day after, reads `wait date passed <mm-dd>, not started` and lists it at "
                          "session start")
     ap.add_argument("--set-until", nargs=2, metavar=("ID", "MM-DD"),
