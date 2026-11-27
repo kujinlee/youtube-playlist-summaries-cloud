@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 636 cases
+    python3 scripts/goal-tree.py --self-test                 # 639 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -272,15 +272,32 @@ def read_tree(root: pathlib.Path) -> list:
     return nodes
 
 
+# What `resolve_snapshot` adds for the READER: the slug a goal was logged under, and its node's place in the tree.
+# Display metadata, never what a snapshot SAYS — `said_through` drops both before two snapshots are compared.
+READER_KEYS = ("then", "tree_pos")
+
+
 def resolve_snapshot(snap: dict, nodes) -> dict:
     """PURE. A LOGGED snapshot with every goal slug mapped to its CURRENT slug through `resolve` (spec §2.4: history is
-    read through `was:`), the slug it was logged under kept as `then` when it differs. Applied BEFORE any two
-    snapshots are compared, so a rename alone moves no thread and adds or removes no goal."""
+    read through `was:`), the slug it was logged under kept as `then` when it differs, and the node's place in the
+    tree as `tree_pos` — what `goal_numbers` orders a goal quoting no request by (spec §2.2: "in tree order"; r1 Codex
+    1). Applied BEFORE any two snapshots are compared, so a rename alone moves no thread and adds or removes no goal."""
+    pos = {n.slug: k for k, n in enumerate(nodes)}
     goals = []
     for g in snap.get("goals") or []:
         now = _CHECK_FEATURES.resolve(nodes, g["slug"])
-        goals.append(dict(g, slug=now, then=g["slug"]) if now is not None and now != g["slug"] else g)
+        r = dict(g, slug=now, then=g["slug"]) if now is not None and now != g["slug"] else dict(g)
+        if now in pos:
+            r["tree_pos"] = pos[now]
+        goals.append(r)
     return dict(snap, goals=goals)
+
+
+def said_through(snap: dict, nodes) -> str:
+    """PURE. What a snapshot SAYS once read through the current tree: `fingerprint` of `resolve_snapshot`, with the
+    reader's own keys (`READER_KEYS`) dropped. Two snapshots that differ only by a rename say the same (r1 Codex 2)."""
+    r = resolve_snapshot(snap, nodes)
+    return fingerprint(dict(r, goals=[{k: v for k, v in g.items() if k not in READER_KEYS} for g in r["goals"]]))
 
 
 def resolve_ledger(entries: list, nodes) -> list:
@@ -1796,13 +1813,16 @@ def read_log(path: pathlib.Path) -> list[dict]:
     return out
 
 
-def append_if_changed(path: pathlib.Path, snap: dict) -> bool:
+def append_if_changed(path: pathlib.Path, snap: dict, nodes=None) -> bool:
     """Append `snap` unless it says what the newest logged snapshot says. True when appended.
+    With `nodes`, BOTH are read through the tree first (`said_through`), so the first `--snapshot` after a rename
+    logs nothing a reader would call new (r1 Codex 2, Claude F2). Without, the raw `fingerprint`s are compared.
     ⛔ An incomplete snapshot is REFUSED here too, not only by the caller."""
     if snap["cannot"]:
         raise ValueError("refusing to log a snapshot whose sources could not all be read")
     log = read_log(path)
-    if log and fingerprint(log[-1]) == fingerprint(snap):
+    said = fingerprint if nodes is None else (lambda s: said_through(s, nodes))
+    if log and said(log[-1]) == said(snap):
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as fh:
@@ -2458,9 +2478,14 @@ def goal_numbers(goals: list[dict]) -> list[int]:
     """PURE. Each goal's number, in file order: its rank by its FIRST request's time, ties in file order (review r1
     X3). A goal added with a later first request moves no other number, wherever in the file it is declared; ⚠ one
     added with an earlier (or equal, declared above) time, or a goal deleted, still renumbers those after it."""
-    # a goal quoting no request (spec §2.2) is numbered after every requested one, in tree order
-    order = sorted(range(len(goals)), key=lambda i: ((0, goals[i]["requests"][0]["when"], i) if goals[i]["requests"]
-                                                      else (1, "", i)))
+    # a goal quoting no request (spec §2.2) is numbered after every requested one, in TREE order — its node's
+    # `tree_pos`, set by `resolve_snapshot` (r1 Codex 1); one with no place in the tree after those, in file order
+    def key(i):
+        g = goals[i]
+        if g["requests"]:
+            return (0, g["requests"][0]["when"], 0, i)
+        return (1, "", (0, g["tree_pos"]) if "tree_pos" in g else (1, 0), i)
+    order = sorted(range(len(goals)), key=key)
     rank = {i: r for r, i in enumerate(order, 1)}
     return [rank[i] for i in range(len(goals))]
 
@@ -3486,7 +3511,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
                 print("CANNOT RUN — the snapshot was NOT logged: " + "; ".join(live["cannot"]))
                 rc = 2
             else:
-                print("goal tree: " + ("snapshot logged" if append_if_changed(log_path, live)
+                print("goal tree: " + ("snapshot logged" if append_if_changed(log_path, live, tree())
                                        else "unchanged since the newest snapshot, not logged")
                       + f" -> {LOG_REL}")
         log = read_log(log_path)
@@ -4433,6 +4458,13 @@ def _self_test_cases(*, outside: dict) -> int:
     case("a goal with no request is numbered last",
          (goal_numbers(_bare), goal_numbers(parse_threads(good.replace('> 2026-10-28 03:41 "the second goal"\n', "")))),
          ([3, 2, 4, 1], [1, 2]))
+    # r1 Codex 1: requestless goals are numbered in TREE order, not heading order — headings written in REVERSE
+    _rev_n = _CHECK_FEATURES.parse_features("# F\n## PRODUCT\n### a\nfor: A.\n### b\nfor: B.\n### c\nfor: C.\n")[0]
+    _rev = parse_threads("## GOAL b\n## GOAL c\n> 2026-11-01 08:00 \"q\"\n## GOAL a\n## GOAL gone\n")
+    case("a goal with no request is numbered in tree order, not heading order",
+         ([(g["slug"], g.get("tree_pos")) for g in resolve_snapshot({"goals": _rev}, _rev_n)["goals"]],
+          goal_numbers(resolve_snapshot({"goals": _rev}, _rev_n)["goals"]), goal_numbers(_rev)),
+         ([("b", 1), ("c", 2), ("a", 0), ("gone", None)], [3, 1, 2, 4], [2, 1, 3, 4]))
     case("also: parsed before waits",
          [parse_thread_line(x)[0] for x in ("- fix · PR #5 · x · also token-usage, dev-speed",
                                             "- side · backlog #9 · y z · also memory-recall · waits on the owner")],
@@ -5522,6 +5554,20 @@ def _self_test_cases(*, outside: dict) -> int:
              append_if_changed(pathlib.Path(d) / "other.jsonl", later), True)
         case("the log reads back oldest first", [s["at"] for s in read_log(lp)],
              ["2026-10-28 04:00", "2026-10-28 06:00"])
+        # r1 Codex 2 / Claude F2, the pure half: given the TREE, the newest logged snapshot and the new one are both
+        # read through `was:` first — a rename alone is not logged; a rename WITH a real change is; without the tree
+        # the raw fingerprints differ (three calls, three distinct `nodes` values: the tree, another tree, none)
+        _ren_nodes = _CHECK_FEATURES.parse_features("# F\n## PRODUCT\n### alpha-renamed\nfor: A.\nwas: alpha-one\n"
+                                                    "### beta\nfor: B.\n")[0]
+        def _renamed(sn):
+            return dict(sn, goals=[dict(g, slug="alpha-renamed") if g["slug"] == "alpha-one" else g for g in sn["goals"]])
+        _lp_ren = pathlib.Path(d) / "ren.jsonl"
+        _lp_ren.write_text(lp.read_text())
+        _ren_calls = [append_if_changed(_lp_ren, _renamed(flipped), _ren_nodes),
+                      append_if_changed(_lp_ren, _renamed(flipped), None),
+                      append_if_changed(_lp_ren, _renamed(dict(snap, at="2026-10-28 07:00")), _ren_nodes)]
+        case("append_if_changed: given the tree, a rename alone is not logged; with no tree, or a real change, it is",
+             (_ren_calls, len(read_log(_lp_ren))), ([False, True, True], 4))
         try:
             append_if_changed(lp, derive(goals, gh_down, "t"))
             refused = "LOGGED"
@@ -7397,6 +7443,23 @@ def _self_test_cases(*, outside: dict) -> int:
         _ren_ids = re.findall(r'<section class="goal" id="goal-([\w-]+)"', out.read_text())
         case("⛔ history: the page draws a pre-rename log under the node's current slug",
              (_rc_ren, "alpha-renamed" in _ren_ids, "alpha-one" in _ren_ids), (0, True, False))
+        # r1 Codex 2 / Claude F2: the APPEND path reads both snapshots through `was:` before comparing — a rename
+        # alone logs nothing. A snapshot is logged under the old heading, the heading renamed, --snapshot run again.
+        _write_world(r, good)
+        _ren_said = []
+        for _thr_text, _ft in ((good, None), (good.replace("## GOAL alpha-one", "## GOAL alpha-renamed"),
+                               "# Feature map\n## PRODUCT\n### alpha-renamed\nfor: A.\nwas: alpha-one\n"
+                               "### beta\nfor: B.\n")):
+            (r / THREADS_REL).write_text(_thr_text)
+            if _ft is not None:
+                (r / FEATURES_REL).write_text(_ft)
+            _br = io.StringIO()
+            with contextlib.redirect_stdout(_br):
+                _rc_r = main(["--snapshot"], root=r, run=fake(ok)[0], now="2026-10-28 09:50")
+            _ren_said.append((_rc_r, len(read_log(r / "main" / LOG_REL)),
+                              "unchanged since the newest snapshot" in _br.getvalue()))
+        case("⛔ history: a rename alone appends no snapshot (the --snapshot append path)",
+             (_ren_said[1][0], _ren_said[1][1] - _ren_said[0][1], _ren_said[1][2]), (0, 0, True))
         _write_world(r, good)
         (r / "main" / LOG_REL).unlink(missing_ok=True)
         with contextlib.redirect_stdout(io.StringIO()):

@@ -63,10 +63,12 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --set-until ID MM-DD|none     # a dated wait, read by the goal tree (backlog #652)
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 183 cases
+    python3 scripts/session-state.py --self-test  # 184 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
-text), 0/1 for --self-test, 2 for a ledger command that cannot write.
+text), 0/1 for --self-test, 1 for a ledger command REFUSED (`--add`'s G5: a goal or `--also` that is no current
+node, an `--also` repeating `--goal`; `--set-after`/`--set-until`/`--set-worktree` naming no such id), 2 for a ledger
+command that cannot write.
 """
 
 from __future__ import annotations
@@ -531,7 +533,9 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
         entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind, "after": declared}
                        | ({"waits": waits.strip()} if waits and waits.strip() else {})
                        | ({"goal": goal, "thread": thread} if goal else {})
-                       | ({"also": list(also)} if also else {})   # goal node tree Task 15: the OTHER nodes it serves
+                       # goal node tree Task 15: the OTHER nodes it serves. ⭐ S3 r1 Claude F4: a repeat is DE-DUPLICATED,
+                       # first place kept — a CLI flag repeated is a typo, not a second claim, so it is merged, not refused
+                       | ({"also": list(dict.fromkeys(also))} if also else {})
                        | ({"worktree": wt} if wt else {})
                        | ({"until": until} if until else {}))
         _write(path, entries, raw)
@@ -1637,6 +1641,9 @@ def _self_test_body() -> int:
             with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
                 _stray15 = main(["--also", "token-usage"], root=_r15, run=NO_GIT)
             case("also: outside --add is a stray flag", _stray15, 2)
+            _dup = _add15("dup", "token-usage", "--also", "picked", "--also", "dev-speed", "--also", "picked")
+            case("also: a repeated --also is stored once, in first-written order",
+                 (_dup[0], [e.get("also") for e in read_ledger(_l15)[0] if e["id"] == "dup"]), (0, [["picked", "dev-speed"]]))
             _r15b = _r15 / "no-tree"
             (_r15b / "docs").mkdir(parents=True)
             _gone = _add15("gone", "dev-speed", where=_r15b)

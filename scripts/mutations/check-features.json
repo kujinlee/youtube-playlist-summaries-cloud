@@ -755,8 +755,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "        if line.startswith(\">\"):\n            continue\n        if line.startswith(\"PRIORITY\"):",
-        "        if line.startswith(\">>>\"):\n            continue\n        if line.startswith(\"PRIORITY\"):"
+        "        if line.startswith(\">\"):\n            continue\n        if _PRIORITY_START.match(line):",
+        "        if line.startswith(\">>>\"):\n            continue\n        if _PRIORITY_START.match(line):"
       ]
     ],
     "expect": [
@@ -787,6 +787,58 @@
     ],
     "expect": [
       "G2: an unreadable answers file is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F1: any line beginning `PRIORITY` is read as a PRIORITY attempt, so preamble prose is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if _PRIORITY_START.match(line):",
+        "        if line.startswith(\"PRIORITY\"):"
+      ]
+    ],
+    "expect": [
+      "G2: preamble prose beginning `PRIORITY` is not a PRIORITY line"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F1: only a dated line is a PRIORITY attempt, so `PRIORITY someday \"…\"` passes as prose",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "_PRIORITY_START = re.compile(r'^PRIORITY (?:\\d{4}-|\\S+ \")')",
+        "_PRIORITY_START = re.compile(r'^PRIORITY \\d{4}-')"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY sits once, in the preamble"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F4: a slug repeated in `also` is accepted",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            elif s in also[:k]:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "G2: a slug repeated in `also` or PRIORITY is refused"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F4: a slug ranked twice in PRIORITY is accepted",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "                    elif s in ranked[:k]:",
+        "                    elif False:"
+      ]
+    ],
+    "expect": [
+      "G2: a slug repeated in `also` or PRIORITY is refused"
     ]
   }
 ]

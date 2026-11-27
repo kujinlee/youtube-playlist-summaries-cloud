@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 113 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 115 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -511,6 +511,10 @@ def check_cross(nodes, areas_in_use: set[str] | None) -> list[str]:
 # reported rather than left inside `<what>`.
 ALSO_FIELD = re.compile(r" · also ([^·]+?)(?= · waits on |$)")
 PRIORITY_LINE = re.compile(r'^PRIORITY (\d{4}-\d{2}-\d{2}) "(.+)" · (\S+(?: > \S+)*)$')
+# What makes a line an ATTEMPT at the PRIORITY line, then judged by PRIORITY_LINE: the word followed by a date's start,
+# or by one token and the owner's quoted words (`PRIORITY someday "…"` is a malformed attempt, still refused). Prose
+# that merely begins with the word ("PRIORITY is decided by the owner.") is preamble, never refused (S3 r1 Claude F1).
+_PRIORITY_START = re.compile(r'^PRIORITY (?:\d{4}-|\S+ ")')
 # Loose on purpose: any `## GOAL …` heading is checked, so `## GOAL Not-A-Slug` is reported by G2 too.
 _GOAL_ANY = re.compile(r"^## GOAL (.*)$")
 
@@ -566,26 +570,32 @@ def thread_name_problems(text: str, nodes) -> list[str]:
             continue
         if line.startswith(">"):
             continue
-        if line.startswith("PRIORITY"):
+        if _PRIORITY_START.match(line):
             priorities += 1
             m = PRIORITY_LINE.match(line)
             if cur is not None or priorities > 1 or not m:
                 problems.append(f"{where}: a PRIORITY line is written ONCE, above the first `## GOAL`, as "
                                 f"`PRIORITY YYYY-MM-DD \"<the owner's words>\" · <slug> > <slug>…`: {line[:60]!r}")
             if m:
-                for s in m.group(3).split(" > "):
+                ranked = m.group(3).split(" > ")
+                for k, s in enumerate(ranked):
                     bad = _name_problem(where, "the PRIORITY slug", s, nodes)
                     if bad:
                         problems.append(bad)
+                    elif s in ranked[:k]:   # S3 r1 Claude F4: hand-written, so a repeat is REFUSED, never merged
+                        problems.append(f"{where}: the PRIORITY slug `{s}` is ranked twice — a node holds ONE place")
             continue
         if cur is None:
             continue
         # Every other line inside a goal is a thread (`goal-tree.py` refuses anything else), so its `also`
         # field is read wherever it is written — only a request, skipped above, is never read.
-        for s in also_slugs(line) or ():
+        also = also_slugs(line) or []
+        for k, s in enumerate(also):
             bad = _name_problem(where, "the `also` slug", s, nodes)
             if bad:
                 problems.append(bad)
+            elif s in also[:k]:   # S3 r1 Claude F4: hand-written, so a repeat is REFUSED, never merged
+                problems.append(f"{where}: the `also` slug `{s}` is written twice — a node is counted once")
             elif s == cur:
                 problems.append(f"{where}: the `also` slug `{s}` is the heading this thread sits under — "
                                 f"`also` lists the OTHER nodes a thread serves")
@@ -1300,6 +1310,21 @@ expected-because: standard for a hosted multi-tenant service.
            _says(thread_name_problems('PRIORITY someday "w" · a\n## GOAL a\n', _G2N), "goal-threads.md:1", "ONCE"),
            thread_name_problems(_PRI.format(s="d > c", h="d"), _G2M)],
           [[True], [True], [True], []])
+    # S3 r1 Claude F1: prose that only BEGINS with the word is preamble; an attempt with a date or a quote is judged
+    check("G2: preamble prose beginning `PRIORITY` is not a PRIORITY line",
+          [thread_name_problems("PRIORITY is decided by the owner.\n## GOAL a\n", _G2N),
+           thread_name_problems("PRIORITY\nPRIORITYless prose\n" + _PRI.format(s="a", h="a"), _G2N),
+           _says(thread_name_problems("PRIORITY 2026-11-12 the order · a\n## GOAL a\n", _G2N), "goal-threads.md:1", "ONCE"),
+           _says(thread_name_problems("PRIORITY is set.\n" + _PRI.format(s="a", h="a") + 'PRIORITY x "w" · b\n', _G2N),
+                 "goal-threads.md:4", "ONCE")],
+          [[], [], [True], [True]])
+    # S3 r1 Claude F4: both are hand-written, so a repeated slug is REFUSED (never silently merged)
+    check("G2: a slug repeated in `also` or PRIORITY is refused",
+          [_says(thread_name_problems("## GOAL a\n- fix · PR #1 · x · also b, b\n", _G2N), "goal-threads.md:2", "`b`", "twice"),
+           _says(thread_name_problems(_PRI.format(s="a > b > a", h="a"), _G2N), "goal-threads.md:1", "`a`", "ranked twice"),
+           thread_name_problems("## GOAL a\n- fix · PR #1 · x · also b, p\n", _G2N),
+           thread_name_problems(_PRI.format(s="b > a", h="a"), _G2N)],
+          [[True], [True], [], []])
     _ANS = '{{"answers": [{{"key": "{k}", "asked": "11-27 10:00", "q": "Q", "a": "A"}}]}}'
     check("G2: an answer key on a former slug is refused",
           [_says(answer_key_problems(_ANS.format(k="goal:old-a"), _G2N), "answer 1", "`old-a`", "renamed to `a`"),

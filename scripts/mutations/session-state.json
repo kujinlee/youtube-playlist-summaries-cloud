@@ -1238,8 +1238,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "                       | ({\"goal\": goal, \"thread\": thread} if goal else {})\n                       | ({\"also\"",
-        "                       | ({\"also\""
+        "                       | ({\"goal\": goal, \"thread\": thread} if goal else {})\n",
+        "                       | ({})\n"
       ]
     ],
     "expect": "backlog #505: --goal and --thread are STORED on the entry"
@@ -2295,7 +2295,7 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "({\"also\": list(also)} if also else {})",
+        "({\"also\": list(dict.fromkeys(also))} if also else {})",
         "({})"
       ]
     ],
@@ -2327,6 +2327,19 @@
     ],
     "expect": [
       "also: outside --add is a stray flag"
+    ]
+  },
+  {
+    "name": "node tree S3 r1 Claude F4: a repeated --also is stored twice",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                       | ({\"also\": list(dict.fromkeys(also))} if also else {})",
+        "                       | ({\"also\": list(also)} if also else {})"
+      ]
+    ],
+    "expect": [
+      "also: a repeated --also is stored once, in first-written order"
     ]
   }
 ]
