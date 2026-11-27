@@ -4068,9 +4068,12 @@ def _cases_650(case) -> None:
          [safe(owed_reason, {"until": [{"date": "11-06", "since": "11-05 13:42"}]}, n)[:2]
           for n in ("2026-11-06 23:59", "2026-11-07 00:00")],
          [("until 11-06", None), (None, "wait date passed 11-06, not started")])
-    case("⭐ backlog #652: across the year end, end to end — an entry recorded 12-20 waiting until 12-30, read 01-02",
-         safe(tail, [ent("x", at="12-20 10:00", until="12-30")], at="2026-01-02 10:00"),
-         "wait date passed 12-30, not started")
+    case("⭐ backlog #652: across the year end, end to end — an entry recorded 12-20 waiting until 12-30, read 01-02; "
+         "and the year is read from the ENTRY's time, not the reader's — a 01-02 recorded 12-31 and read 07-05 (nearer "
+         "next January than last) has passed",
+         [safe(tail, [ent("x", at=a, until=u)], at=n) for a, u, n in (("12-20 10:00", "12-30", "2026-01-02 10:00"),
+                                                                     ("12-31 10:00", "01-02", "2026-07-05 10:00"))],
+         ["wait date passed 12-30, not started", "wait date passed 01-02, not started"])
     case("backlog #652: a damaged `until` is shown as `date not read` and stays a live reason — never dropped, never "
          "passed",
          ([safe(tail, [ent("x", until=v)]) for v in ("next week", 7)], safe(idle_of, [ent("x", until="next week")])),
