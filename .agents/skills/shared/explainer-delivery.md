@@ -268,21 +268,20 @@ element that asks it; the composer does the rest:
 ## 4. Serve it — the page must be able to answer back
 
 ```bash
-python3 scripts/explainer-serve.py     # a no-op if OUR server is already up; exit 3 if ANOTHER program holds the port
+python3 scripts/explainer-serve.py     # a no-op if OUR server is already up; exit 3 if the port's holder is not PROVEN ours
 ```
 
-⛔ **Exit 3 means the port is held by something that is NOT this server** (backlog #631), and the
-script left it alone. **Put the choice to the user — never stop the other program yourself:** run on
-another port (`EXPLAINER_SERVE_PORT=<other> python3 scripts/explainer-serve.py`, and deliver that
-port's URL), or the user frees the port and you re-run. `--stop` likewise refuses (exit 3) a pidfile
-whose pid is not this server.
+⛔ **Exit 3 means the port is held by something NOT PROVEN to be this server** (backlog #631), and the
+script left it alone. That includes an explainer-serve started by code older than its identity check
+(`/__whoami`): the script never infers that one is ours, and never stops it. **Put the choice to the
+user — never stop it yourself:** run on another port (`EXPLAINER_SERVE_PORT=<other> python3
+scripts/explainer-serve.py`, and deliver that port's URL), or the user frees the port — the message
+names the pid and prints the `kill <pid>` to run when one program holds it — and you re-run.
+`--stop` likewise refuses (exit 3) a pidfile whose pid is not proven to be this server.
 
-**"already serving … (older code — `--stop`, then start, to pick up changes)" is exit 0 and IS this
-server**, started before the script learned to say who it is. The page is served; it is NOT another
-program, so never present it to the user as one. Run `--stop`, then start, only when the change you
-are delivering needs the new server code. Exit 1 after a start means the child never answered as
-itself (another program won the port in between); the script reaped its own child — re-run, and
-treat a second exit 3 as above.
+**Exit 1 after a start means the child never answered as itself.** Re-run once: another program may
+have won the port in between. A second exit 1 is not a race — the FAIL line names `.serve.log`, where
+the child wrote its reason; take that line to the user.
 
 **Deliver the served URL, never the file path.** `/latest` always points at the newest page, so a
 reader's bookmark never goes stale.
