@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py --print                     # print the tree (what /goal-tree runs after the build)
     python3 scripts/goal-tree.py --page --out <file>         # a preview from THIS tree; the served page is refused
                                                              # here unless REGEN_MAIN_CHECKOUT is set (backlog #610)
-    python3 scripts/goal-tree.py --self-test                 # 635 cases
+    python3 scripts/goal-tree.py --self-test                 # 636 cases
     (an Owed item's prerequisite is DECLARED on its ledger entry: `session-state.py --add … --after 'PR #N'`
     or `--after none`, `--set-after <id> <refs>` later; this script reads it, never prose — backlog #650)
 
@@ -4486,9 +4486,12 @@ def _self_test_cases(*, outside: dict) -> int:
     case("history: a pre-rename snapshot resolves",
          ([(g["slug"], g.get("then")) for g in resolve_snapshot(_old, _tn)["goals"]],
           [(g["slug"], g.get("then")) for g in resolve_snapshot(_new, _tn)["goals"]],
-          [g["slug"] for g in resolve_snapshot({"goals": [{"slug": "gone", "threads": []}]}, _tn)["goals"]]),
+          [g["slug"] for g in resolve_snapshot({"goals": [{"slug": "gone", "threads": []}]}, _tn)["goals"]],
+          [(g["slug"], g.get("then")) for g in resolve_snapshot(_old, _CHECK_FEATURES.parse_features(
+              "# F\n## PRODUCT\n### speed\nfor: S.\nwas: dev-speed-first\n")[0])["goals"]]),
          ([("dev-speed", "dev-speed-first"), ("token-usage", "token-usage-first")],
-          [("dev-speed", None), ("token-usage", None)], ["gone"]))
+          [("dev-speed", None), ("token-usage", None)], ["gone"],
+          [("speed", "dev-speed-first"), ("token-usage-first", None)]))
     case("history: a rename alone logs no thread move",
          (changes(resolve_snapshot(_old, _tn), resolve_snapshot(_new, _tn)),
           changes(resolve_snapshot(dict(_old, goals=_old["goals"][:1]), _tn), _new)),
@@ -4502,8 +4505,11 @@ def _self_test_cases(*, outside: dict) -> int:
     _ld = derive(_lgoals, _lsrc, "2026-11-27 09:00")
     case("ledger: an entry under a former slug hangs under its node",
          ([(g["slug"], [t["key"] for t in g["threads"]], [u["id"] for u in g.get("placed") or []]) for g in _ld["goals"]],
-          _ld["ledger_problems"], resolve_ledger(_lsrc["ledger"], None) is _lsrc["ledger"]),
-         ([("dev-speed", [], ["e2"]), ("token-usage", ["fix · PR #12"], [])], [], True))
+          _ld["ledger_problems"], resolve_ledger(_lsrc["ledger"], None) is _lsrc["ledger"],
+          [e.get("goal") for e in resolve_ledger([{"id": "e7", "goal": "token-usage-first"}, {"id": "e8", "goal": "kept"},
+                                              {"id": "e9"}], _tn)]),
+         ([("dev-speed", [], ["e2"]), ("token-usage", ["fix · PR #12"], [])], [], True,
+          ["token-usage", "kept", None]))
     _lu = derive(_lgoals, dict(_lsrc, ledger=[{"id": "e3", "what": "u", "goal": "nope", "thread": "side · PR #13 · y"},
                                               {"id": "e4", "what": "t", "goal": "older-nope"}]), "2026-11-27 09:00")
     case("ledger: an unknown goal is still a problem",
@@ -6119,6 +6125,11 @@ def _self_test_cases(*, outside: dict) -> int:
         s = collect(r, run_ok)
         case("collect reads master's subjects into PR -> SHA, skipping subjects with no PR",
              (s["merged_by_pr"], s["head"]), ({20: "abc1234"}, "abc1234"))
+        _tcol = _CHECK_FEATURES.parse_features("# F\n## PRODUCT\n### chosen\nfor: C.\nproposed: 2026-11-26 08:15\n")[0]
+        _scol = collect(r, run_ok, nodes=_tcol)
+        case("goal node tree Task 14: collect hands its tree on, and a proposed node becomes a NEEDS YOU item",
+             (s["nodes"], _scol["nodes"] is _tcol, len(_scol["needs"]) - len(s["needs"]),
+              any("chosen" in str(n) for n in _scol["needs"])), (None, True, 1, True))
         case("backlog #497: collect reads each master commit's LOCAL committer minute, keyed by SHA",
              s["merged_at"], {"abc1234": "2026-11-03 19:09", "abc0000": "2026-11-02 10:00"})
         run_c, calls_c = fake(ok)
