@@ -57,12 +57,13 @@ oversized ledger with only the new entry and `--done` reported a recorded id as 
 list prints `NO CHECKS`.
 
     python3 scripts/session-state.py                 # print the block (what the hook runs)
-    python3 scripts/session-state.py --add ID WHAT ON_DONE --goal SLUG --thread LINE --after 'PR #N, backlog #M'|none [--waits TEXT] [--kind owner-wait|owner-instruction|routine] [--worktree PATH]
+    python3 scripts/session-state.py --add ID WHAT ON_DONE --goal SLUG --thread LINE --after 'PR #N, backlog #M'|none [--waits TEXT] [--kind owner-wait|owner-instruction|routine] [--worktree PATH] [--until MM-DD]
     python3 scripts/session-state.py --set-after ID 'PR #N'|none   # change a declared prerequisite, keeping `at`
     python3 scripts/session-state.py --set-worktree ID PATH|none   # the worktree its agent builds in (backlog #672)
+    python3 scripts/session-state.py --set-until ID MM-DD|none     # a dated wait, read by the goal tree (backlog #652)
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 164 cases
+    python3 scripts/session-state.py --self-test  # 170 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -402,6 +403,25 @@ def parse_after(text: str, gt=None) -> list:
     return [(k, int(n)) for k, n in gt.REF_RE.findall(text)]
 
 
+# backlog #652: a DATED wait is DECLARED as `--until <mm-dd>` (the ledger's own yearless form, as in `at`), so the goal
+# tree can see it pass — a recorded `waits` is prose and is never read. The YEAR is the goal tree's to settle
+# (`goal-tree.py:until_date`); here only the form is checked: two digits each, a real month and day (02-29 allowed).
+UNTIL_FORM = "--until <mm-dd>: the day the wait ends, e.g. `--until 11-20`"
+
+
+def parse_until(text: str) -> str:
+    """A valid `mm-dd` -> itself. Anything else — `11-6`, `13-01`, `02-30`, a full `YYYY-MM-DD`, prose — is a
+    ValueError naming the legal form. 02-29 is a real date (read in a leap year)."""
+    m = re.fullmatch(r"(\d\d)-(\d\d)", text) if isinstance(text, str) else None
+    try:
+        if not m:
+            raise ValueError
+        dt.date(2000, int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        raise ValueError(f"{text!r} is not a date. {UNTIL_FORM}") from None
+    return text
+
+
 def _after_list(after, thread, gt=None) -> list:
     """The stored form of a declared `after`: `kind #n` strings, in order. Refused (ValueError): a ref given twice, and
     one of the entry's OWN thread refs — work never waits on itself (it replaces the matcher's `own=` filter)."""
@@ -437,7 +457,7 @@ def declared_worktree(worktree: str, ledger: "Path | None" = None) -> str:
 
 def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None,
                goal: str | None = None, thread: str | None = None, waits: str | None = None,
-               after: list | None = None, worktree: str | None = None) -> None:
+               after: list | None = None, worktree: str | None = None, until: str | None = None) -> None:
     """`kind` is DECLARED by the caller. Left out, it is `guess_kind` of the entry — the WIDE reading, so an owner entry
     written without `--kind` is stored as the owner entry it looks like and never as `routine` (r3 R3-1: storing the
     strict-prefix answer made every R2-1 phrasing routine again, and the declared field then bypassed the fallback).
@@ -457,6 +477,7 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
         kind = guess_kind({"what": what, "on_done": on_done})
     declared = _after_list(after, thread)   # backlog #650: refused BEFORE the lock, so a refusal writes nothing
     wt = declared_worktree(worktree, path) if worktree is not None else None   # backlog #672: also refused before it
+    until = parse_until(until) if until is not None else None                  # backlog #652: also refused before it
     with _locked(path):
         entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
@@ -464,7 +485,8 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
         entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind, "after": declared}
                        | ({"waits": waits.strip()} if waits and waits.strip() else {})
                        | ({"goal": goal, "thread": thread} if goal else {})
-                       | ({"worktree": wt} if wt else {}))
+                       | ({"worktree": wt} if wt else {})
+                       | ({"until": until} if until else {}))
         _write(path, entries, raw)
 
 
@@ -483,6 +505,27 @@ def ledger_set_after(path: Path, id_: str, after: list) -> bool:
         declared = _after_list(after, hit[-1].get("thread"))
         for e in hit:
             e["after"] = declared
+        _write(path, entries, raw)
+        return True
+
+
+def ledger_set_until(path: Path, id_: str, until: str | None) -> bool:
+    """backlog #652: rewrite ONE key, `until`, of the entry `id_` under the lock, keeping every other key and its
+    `at`; None removes the key. False (nothing written) for an unknown id; a malformed date is a ValueError, refused
+    before the lock, so nothing is written either."""
+    if not id_.strip():
+        raise ValueError("an empty id names no job")
+    until = parse_until(until) if until is not None else None
+    with _locked(path):
+        entries, raw = _for_update(path)
+        hit = [e for e in entries if e.get("id") == id_]
+        if not hit:
+            return False
+        for e in hit:
+            if until is None:
+                e.pop("until", None)
+            else:
+                e["until"] = until
         _write(path, entries, raw)
         return True
 
@@ -1545,6 +1588,61 @@ def _self_test_body() -> int:
             shutil.rmtree(_r650, ignore_errors=True)
         case("backlog #650: --after outside --add is a stray flag, CANNOT RUN",
              main(["--after", "none"], root=root, run=NO_GIT), 2)
+        # ── backlog #652: a DATED wait is declared (`--until <mm-dd>`), so the goal tree can see it pass ──
+        _r652 = Path(tempfile.mkdtemp(prefix="ss-652-"))
+        try:
+            _l652 = _r652 / LEDGER_REL
+            _b652 = ["--goal", "g", "--thread", "fix · backlog #11 · x", "--after", "none"]
+            _rcs652, _errs652 = [], []
+            for _argv in (["--add", "dated", "w", "d", *_b652, "--until", "11-06"],
+                          ["--add", "leap", "w", "d", *_b652, "--until", "02-29"],
+                          ["--add", "short", "w", "d", *_b652, "--until", "11-6"],
+                          ["--add", "month13", "w", "d", *_b652, "--until", "13-01"],
+                          ["--add", "feb30", "w", "d", *_b652, "--until", "02-30"],
+                          ["--add", "full", "w", "d", *_b652, "--until", "2026-11-06"],
+                          ["--add", "none", "w", "d", *_b652, "--until", "none"],
+                          ["--add", "plain", "w", "d", *_b652]):
+                _buf = io.StringIO()
+                with redirect_stdout(io.StringIO()), _rs514(_buf):
+                    _rcs652.append(main(_argv, root=_r652, run=NO_GIT))
+                _errs652.append(_buf.getvalue())
+            case("⭐ backlog #652: --add --until STORES a valid `mm-dd` (02-29 included); a short, impossible or full "
+                 "date and `none` are CANNOT RUN with nothing written; none given stores no key — eight inputs, ONE case",
+                 (_rcs652, [(e["id"], e.get("until")) for e in read_ledger(_l652)[0]]),
+                 ([0, 0, 2, 2, 2, 2, 2, 0], [("dated", "11-06"), ("leap", "02-29"), ("plain", None)]))
+            case("backlog #652: an --until refusal names the legal form",
+                 ["--until <mm-dd>" in e for e in _errs652[2:7]], [True] * 5)
+            _l652.write_text(json.dumps({"id": "old", "what": "w", "on_done": "d", "at": "11-05 13:42", "kind": "routine",
+                                         "after": ["PR #1"], "goal": "g", "thread": "fix · backlog #11 · x"}) + "\n")
+            _seen652 = []
+            for _v in ("11-20", "12-30", "none"):
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _rc = main(["--set-until", "old", _v], root=_r652, run=NO_GIT)
+                _seen652.append((_rc, [(e["at"], e.get("until"), e["kind"], e["after"]) for e in read_ledger(_l652)[0]]))
+            case("⭐ backlog #652: --set-until rewrites `until` and keeps every other key, `at` included; `none` removes "
+                 "it — three values over ONE entry",
+                 _seen652, [(0, [("11-05 13:42", "11-20", "routine", ["PR #1"])]),
+                            (0, [("11-05 13:42", "12-30", "routine", ["PR #1"])]),
+                            (0, [("11-05 13:42", None, "routine", ["PR #1"])])])
+            _before652 = _l652.read_bytes()
+            _set652 = []
+            for _argv in (["--set-until", "nope", "11-20"], ["--set-until", "old", "11-31"],
+                          ["--set-until", "old", "next friday"]):
+                with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
+                    _set652.append(main(_argv, root=_r652, run=NO_GIT))
+            case("backlog #652: --set-until on an unknown id is exit 1, an impossible or prose date exit 2 — and the "
+                 "ledger is byte-identical after all three",
+                 (_set652, _l652.read_bytes() == _before652), ([1, 2, 2], True))
+            _ld652 = _r652 / "direct.jsonl"
+            ledger_add(_ld652, "du", "w", "d", "T", until="01-02")
+            ledger_add(_ld652, "dn", "w", "d", "T")
+            case("backlog #652 (fixture variation): ledger_add(until=) STORES the date it is given, and one called "
+                 "without it stores no key — two calls, read back",
+                 [(e["id"], e.get("until")) for e in read_ledger(_ld652)[0]], [("du", "01-02"), ("dn", None)])
+        finally:
+            shutil.rmtree(_r652, ignore_errors=True)
+        case("backlog #652: --until outside --add is a stray flag, CANNOT RUN",
+             main(["--until", "11-06"], root=root, run=NO_GIT), 2)
         # ── backlog #672: a ledger entry may DECLARE the worktree its agent builds in; the goal tree reads it ──
         _r672 = Path(tempfile.mkdtemp(prefix="ss-672-"))
         try:
@@ -2022,6 +2120,12 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                          "while that is under the watchdog's window")
     ap.add_argument("--set-worktree", nargs=2, metavar=("ID", "PATH"),
                     help="declare (or, with `none`, remove) the worktree of entry ID, keeping every other key and its `at`")
+    ap.add_argument("--until", metavar="MM-DD",
+                    help="with --add (backlog #652): the day a DATED wait ends. The goal tree shows it while it is ahead "
+                         "and, from the day after, reads `wait date passed <mm-dd>, not started` and lists it at "
+                         "session start")
+    ap.add_argument("--set-until", nargs=2, metavar=("ID", "MM-DD"),
+                    help="declare (or, with `none`, remove) the dated wait of entry ID, keeping every other key and its `at`")
     ap.add_argument("--done", metavar="ID")
     ap.add_argument("--migrate-kinds", action="store_true",
                     help="print the kind each entry has or would get; with --apply, back the ledger up to "
@@ -2039,14 +2143,15 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                                    ("--thread", args.thread is not None and not args.add),
                                    ("--waits", args.waits is not None and not args.add),
                                    ("--after", args.after is not None and not args.add),
-                                   ("--worktree", args.worktree is not None and not args.add)) if on]
+                                   ("--worktree", args.worktree is not None and not args.add),
+                                   ("--until", args.until is not None and not args.add)) if on]
     if stray:   # r3 R3-5: a flag given outside the mode that reads it did nothing and said nothing
         print(f"CANNOT RUN — {', '.join(stray)} only means something with "
               f"{'--migrate-kinds' if stray[0] in ('--apply', '--override') else '--add'}; nothing was done", file=sys.stderr)
         return 2
     main, main_err = main_checkout(root, run)
     led = main / LEDGER_REL   # a worktree session's --add goes where every reader looks
-    if main_err and (args.add or args.done is not None or args.set_after or args.set_worktree):
+    if main_err and (args.add or args.done is not None or args.set_after or args.set_worktree or args.set_until):
         print(f"note: {main_err}; using {led}", file=sys.stderr)
     try:
         if args.migrate_kinds:
@@ -2069,7 +2174,7 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                 print(f"CANNOT RUN — {ADD_NEEDS_AFTER}; nothing was added", file=sys.stderr)
                 return 2
             ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"), args.kind,
-                       args.goal, args.thread, args.waits, parse_after(args.after), args.worktree)
+                       args.goal, args.thread, args.waits, parse_after(args.after), args.worktree, args.until)
             print(f"ledger: added {args.add[0]}")
             return 0
         if args.set_after:
@@ -2077,6 +2182,13 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                 print(f"ledger: no such id {args.set_after[0]}; nothing was written", file=sys.stderr)
                 return 1
             print(f"ledger: {args.set_after[0]} now waits on {args.set_after[1]}")
+            return 0
+        if args.set_until:
+            id_, value = args.set_until
+            if not ledger_set_until(led, id_, None if value == "none" else value):
+                print(f"ledger: no such id {id_}; nothing was written", file=sys.stderr)
+                return 1
+            print(f"ledger: {id_} {'declares no dated wait' if value == 'none' else 'waits until ' + value}")
             return 0
         if args.set_worktree:
             id_, value = args.set_worktree

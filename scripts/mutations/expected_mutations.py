@@ -1875,7 +1875,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-20, PR #606 round 1 fold: 155 -> 157, none retired. Two new: a relative worktree stored as given, the
     # abspath dropped (F4, witnessed by a relative --set-worktree from a known cwd); the main checkout accepted as a
     # worktree (F6).
-    "scripts/session-state.py": 157,
+    # ⟳ 2026-11-26, backlog #652: 157 -> 167, none retired. Ten new, one per clause of the declared dated wait: the
+    # `mm-dd` form loosened, the real-date check dropped, the key not stored, stored unchecked, --set-until `none`
+    # keeping it, the date never written, a malformed --set-until stored, --until outside --add not stray, main dropping
+    # --until, and `none` passed to --set-until as a date.
+    "scripts/session-state.py": 167,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
