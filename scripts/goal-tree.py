@@ -4089,7 +4089,7 @@ def _cases_650(case) -> None:
              "2026-11-06", "2028-02-29", "11-06", "2026-02-29", "2026-02-30", "2026-11-6", "20261106", 5, None)],
          ["2026-11-06", "2028-02-29", None, None, None, None, None, None, None])
     case("backlog #652 (fixture variation): until_date called directly on distinct literals",
-         [until_date("2027-01-31"), until_date("01-31"), until_date("")],
+         [safe(lambda: until_date("2027-01-31")), safe(lambda: until_date("01-31")), safe(lambda: until_date(""))],
          [_dt.date(2027, 1, 31), None, None])
     case("⭐ backlog #652: the wait ends at the END of its day — 23:59 on 11-06 is still live, 00:00 on 11-07 has passed",
          [safe(owed_reason, {"until": [{"date": "2026-11-06", "waits": None}]}, n)[:2]

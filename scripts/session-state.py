@@ -1233,10 +1233,14 @@ def _self_test_body() -> int:
          (stored, refused_kind), ({"a": KIND_ROUTINE, "b": KIND_WAIT, "c": KIND_INSTRUCTION, "d": KIND_ROUTINE}, "refused"))
     tmpu = Path(tempfile.mkdtemp(prefix="ss-until-")) / "inflight.jsonl"
     try:
-        ledger_add(tmpu, "u1", "w", "d", "T", until="11-26", today=dt.date(2026, 11, 26))
-        ledger_add(tmpu, "u2", "w", "d", "T", until="11-24", today=dt.date(2026, 11, 26))
-        ledger_add(tmpu, "u3", "w", "d", "T", until="02-29", today=dt.date(2029, 3, 1))
-        stored_until = {e["id"]: e.get("until") for e in read_ledger(tmpu)[0]}
+        refused_until = {}
+        for i_, u_, t_ in (("u1", "11-26", dt.date(2026, 11, 26)), ("u2", "11-24", dt.date(2026, 11, 26)),
+                           ("u3", "02-29", dt.date(2029, 3, 1))):
+            try:   # a refusal is a VALUE here, so a mutant that refuses turns this case red, never the whole suite
+                ledger_add(tmpu, i_, "w", "d", "T", until=u_, today=t_)
+            except ValueError:
+                refused_until[i_] = "refused"
+        stored_until = {e["id"]: e.get("until") for e in read_ledger(tmpu)[0]} | refused_until
     finally:
         shutil.rmtree(tmpu.parent, ignore_errors=True)
     case("backlog #652 (fixture variation): ledger_add stores the until its `today` settles — the write day itself, "
