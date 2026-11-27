@@ -1949,7 +1949,7 @@ EXPECTED_MUTATIONS = {
     # bases (1), and the worktree created inside plan's clean-up (R3-F3, 1). Not added: the review's "cut = n",
     # which is EQUIVALENT — dropping the shared heading relabels its section to None in all four lists alike.
     # ⟳ 2026-11-11 backlog #495 r1 Codex 5: 95 -> 96 — a FLAKY line read as a failing mutation (`failures`).
-    "scripts/batch-ci.py": 96,
+    "scripts/batch-ci.py": 105,  # 96 -> 105 (goal node tree S3 Task 16: the features.md entry, the tree arm, P8 compare, _merge3 wanted + both-sides, the line exclusion, parser problems, the policy scope, a parser that cannot load)
     # backlog #397 (2026-11-09): the CI-duration tripwire, pinned in the commit that creates it. 25: the 25%
     # threshold in three directions, both sample minimums, the median, the zero baseline, the slowest-shard group
     # row and its derivation, the skipped-job filter, the idempotent append, the run picker, the week step, the
