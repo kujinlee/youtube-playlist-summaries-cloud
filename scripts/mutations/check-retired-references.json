@@ -59,7 +59,7 @@
   "file": "scripts/check-retired-references.py",
   "edits": [
    [
-    "        if is_text:\n",
+    "        if _text_kind(root, rel):\n",
     "        if False:\n"
    ]
   ],
@@ -70,22 +70,22 @@
   "file": "scripts/check-retired-references.py",
   "edits": [
    [
-    "return fh.read(2) == b\"#!\", \"#\"",
-    "return False, \"#\""
+    "return fh.read(2) == b\"#!\"",
+    "return False"
    ]
   ],
   "expect": "F1j a .githooks hook is refused"
  },
  {
-  "name": "K8 text: a whole-line comment is read as a reference",
+  "name": "K8 text: a whole-line comment is skipped again (the skip backlog #740 deleted)",
   "file": "scripts/check-retired-references.py",
   "edits": [
    [
-    "if comment and _whole_line_comment(s, comment):",
-    "if False:"
+    "        if _names_retired(line):\n",
+    "        if _names_retired(line) and not line.strip().startswith((\"#\", \"//\", \"/*\", \"*\")):\n"
    ]
   ],
-  "expect": "15.11 a whole-line comment in a hook, a TS file and a workflow passes"
+  "expect": "15.11 a whole-line comment in a hook, a TS file and a workflow is refused (backlog #740)"
  },
  {
   "name": "K8 exempt: the history prefixes are not honoured",
@@ -163,16 +163,5 @@
    ]
   ],
   "expect": "15.14 a manifest that is not JSON is CANNOT RUN"
- },
- {
-  "name": "K8 text G2: code after a closed `/*` comment on its line is skipped as a comment",
-  "file": "scripts/check-retired-references.py",
-  "edits": [
-   [
-    "        return end == -1 or not s[end + 2:].strip()",
-    "        return True"
-   ]
-  ],
-  "expect": "G2 code after a closed block comment on its line is refused"
  }
 ]

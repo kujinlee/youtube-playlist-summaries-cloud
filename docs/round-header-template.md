@@ -58,7 +58,7 @@ findings:
 agent records — not values the header derives.**
 
 - **`aim`** answers *would this defect reach a user, or only a measurement?* A finding in
-  `scripts/gen-dashboard.py`'s emitted markup is `deliverable`; a finding in the self-test case that
+  `scripts/gen-backlog-page.py`'s emitted markup is `deliverable`; a finding in the self-test case that
   checks that markup is `instrument`. Two consecutive instrument-only rounds is the stop signal,
   because the reviewer has run out of product to attack.
 - **`fix_induced`** answers *did we make this?* It is the difference between a design that is
