@@ -7070,8 +7070,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if p and not (p in gone and p not in kept)]",
-        "if p and p not in gone]"
+        "(p in gone and p not in kept)]",
+        "(p in gone)]"
       ]
     ],
     "expect": [

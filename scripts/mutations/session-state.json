@@ -2071,8 +2071,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    for year in range(today.year, today.year + 9) if m else ():",
-        "    for year in range(today.year, today.year + 4) if m else ():"
+        "today.year + 9) if m else ():",
+        "today.year + 4) if m else ():"
       ]
     ],
     "expect": [
@@ -2097,8 +2097,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        if when >= today:",
-        "        if True:"
+        "        if when >= today:\n            return when.isoformat()",
+        "        if True:\n            return when.isoformat()"
       ]
     ],
     "expect": [
