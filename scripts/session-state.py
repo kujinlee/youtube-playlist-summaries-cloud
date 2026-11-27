@@ -1647,12 +1647,14 @@ def _self_test_body() -> int:
                  [(_r15b / LEDGER_REL).exists()], [(2, True), (2, True), False])
             # an entry written before the rename (no G5 then) is read, shown and closed as it was
             ledger_add(_l15, "pre", "an older job", "close it", "11-20 10:00", goal="dev-speed-first",
-                       thread="side · PR #9 · y", after=[])
+                       thread="side · PR #9 · y", after=[], also=["harness-speed"])
+            _pre_also = [e.get("also") for e in read_ledger(_l15)[0] if e["id"] == "pre"]
             _shown = collect(_r15, run=NO_GIT, now="T")
             with redirect_stdout(io.StringIO()), _rs514(io.StringIO()):
                 _closed = main(["--done", "pre"], root=_r15, run=NO_GIT)
             case("an old entry under a former slug is still read",
-                 ("[pre] an older job" in _shown, _closed, "pre" in _ids15()), (True, 0, False))
+                 ("[pre] an older job" in _shown, _closed, "pre" in _ids15(), _pre_also),
+                 (True, 0, False, [["harness-speed"]]))
         finally:
             shutil.rmtree(_r15, ignore_errors=True)
         # ── backlog #650 (Phase 6 redesign): a prerequisite is DECLARED once, at --add, and never read from prose ──
