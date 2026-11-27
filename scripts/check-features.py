@@ -870,8 +870,12 @@ expected-because: standard for a hosted multi-tenant service.
     _live_text = FEATURES.read_text()
     _live, _lp = parse_features(_live_text)
     _headings = [l for l in _live_text.split("\n") if re.match(r"^#{3,6} ", l)]
+    # ⟳ node-tree Task 12: the live trunks carry `slug:` now, so the slugless world is the live tree with
+    # its trunk slug lines (and the `for:` each one owns) removed — every heading a node, no level 2.
+    _slugless = parse_features(re.sub(r"(?m)^slug: .*\nfor: .*\n", "", _live_text))[0]
     check("grammar: a slugless trunk yields no node",
-          (len(_live), [n for n in _live if n.level == 2], [n.slug for n in _live if n.level == 3 and n.parent],
+          (len(_slugless), [n for n in _slugless if n.level == 2],
+           [n.slug for n in _slugless if n.level == 3 and n.parent],
            len(_one("### a\nfor: A.\n#### b\nfor: B.\n")[0]), _one("### a\nfor: A.\n#### b\nfor: B.\n")[0][0].parent),
           (len(_headings), [], [], 2, None))
     check("grammar: slug under a node is refused",
