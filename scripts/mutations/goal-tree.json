@@ -39,19 +39,6 @@
     ]
   },
   {
-    "name": "a goal with no quoted request is accepted, so a tree has no root",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "        if not g[\"requests\"]:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "⛔ a goal that quotes no request is refused"
-    ]
-  },
-  {
     "name": "a thread declared twice in one goal is accepted",
     "file": "scripts/goal-tree.py",
     "edits": [
@@ -1824,7 +1811,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    order = sorted(range(len(goals)), key=lambda i: (goals[i][\"requests\"][0][\"when\"], i))",
+        "    order = sorted(range(len(goals)), key=lambda i: ((0, goals[i][\"requests\"][0][\"when\"], i) if goals[i][\"requests\"]\n                                                      else (1, \"\", i)))",
         "    order = list(range(len(goals)))"
       ]
     ],
@@ -7248,6 +7235,84 @@
     ],
     "expect": [
       "⭐ backlog #652 r1 F5 (Codex MAJOR + Claude MINOR): the `--print` leaf of an entry whose date has PASSED reads `wait date passed <mm-dd>, not started`, never its wait as live; before the date it shows the wait and the date"
+    ]
+  },
+  {
+    "name": "node tree T14: the `· also` group never matches, so `also` is read as part of <what>",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(.+?)(?:{_CHECK_FEATURES.ALSO_FIELD.pattern})?(?: · waits on",
+        "(.+?)(?:( · NEVER \\S+))?(?: · waits on"
+      ]
+    ],
+    "expect": [
+      "also: parsed before waits"
+    ]
+  },
+  {
+    "name": "node tree T14: an `also` written after `waits on` is no longer refused",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return None, f\"the `· also` field comes BEFORE `· waits on`: {line!r}\"",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "also: after waits is refused"
+    ]
+  },
+  {
+    "name": "node tree T14: a logged snapshot is not read through `was:`, so a rename alone is history",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        now = _CHECK_FEATURES.resolve(nodes, g[\"slug\"])",
+        "        now = None"
+      ]
+    ],
+    "expect": [
+      "history: a pre-rename snapshot resolves"
+    ]
+  },
+  {
+    "name": "node tree T14: the page reads the log raw, so a pre-rename snapshot shows under its old slug (call site)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            log = [resolve_snapshot(s, tree()) for s in log]",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ history: the page draws a pre-rename log under the node's current slug"
+    ]
+  },
+  {
+    "name": "node tree T14: derive places ledger entries before resolving a former goal slug",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    src = dict(src, ledger=resolve_ledger(src[\"ledger\"], src.get(\"nodes\")))",
+        "    src = dict(src)"
+      ]
+    ],
+    "expect": [
+      "ledger: an entry under a former slug hangs under its node"
+    ]
+  },
+  {
+    "name": "node tree T14: every node is offered as a name awaiting a pick, not only a `proposed:` one",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            for n in nodes if n.proposed]",
+        "            for n in nodes]"
+      ]
+    ],
+    "expect": [
+      "needs: a proposed name awaits the owner's pick"
     ]
   }
 ]
