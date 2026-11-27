@@ -268,8 +268,14 @@ element that asks it; the composer does the rest:
 ## 4. Serve it — the page must be able to answer back
 
 ```bash
-python3 scripts/explainer-serve.py     # idempotent; a no-op if already up
+python3 scripts/explainer-serve.py     # a no-op if OUR server is already up; exit 3 if ANOTHER program holds the port
 ```
+
+⛔ **Exit 3 means the port is held by something that is NOT this server** (backlog #631), and the
+script left it alone. **Put the choice to the user — never stop the other program yourself:** run on
+another port (`EXPLAINER_SERVE_PORT=<other> python3 scripts/explainer-serve.py`, and deliver that
+port's URL), or the user frees the port and you re-run. `--stop` likewise refuses (exit 3) a pidfile
+whose pid is not this server.
 
 **Deliver the served URL, never the file path.** `/latest` always points at the newest page, so a
 reader's bookmark never goes stale.
@@ -353,7 +359,8 @@ delivered it is long gone. Every page carries a short block above the table of c
 1. the stable URL `http://127.0.0.1:7391/latest`, and that it always points at the newest page;
 2. how to ask — select text or hover a heading → *ask* → type → **Send** → say *"read my questions"*;
 3. **what to do when that URL does not load** — `python3 scripts/explainer-serve.py`, safe to run
-   twice, and that **a reboot stops it**, which is the one moment the reader needs this;
+   twice, and that **a reboot stops it**, which is the one moment the reader needs this — and that if it
+   says the port is held by ANOTHER program, it stopped nothing: pick another port or free that one;
 4. that a `file://` copy still reads fine and only loses **Send**.
 
 Write it as STATIC markup that is correct with JavaScript disabled, then let a small script sharpen

@@ -63,10 +63,16 @@ An explainer quotes private source and internal reasoning, so:
 
 USAGE
 -----
-    python3 scripts/explainer-serve.py            # start (no-op if already running)
+    python3 scripts/explainer-serve.py            # start (no-op if OUR server is already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 301 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 314 cases, binds only ephemeral ports, never 7391
+
+EXIT CODES: 0 done (or already serving / not running); 1 not running (`--status`) or a fork that never
+listened; 2 a bad `EXPLAINER_SERVE_PORT`; 3 (`RC_NOT_OURS`, backlog #631) ANOTHER program holds what the
+command would act on — the port for start/status, the pidfile's pid for stop — and NOTHING WAS TOUCHED. A
+caller that gets 3 puts the choice to the user (another port via `EXPLAINER_SERVE_PORT`, or the user frees
+the port); it never stops the other program. Who is "ours" is asked of the listener: `GET /__whoami`.
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -1284,6 +1290,92 @@ def port_busy(host: str, port: int) -> bool:
         return s.connect_ex((host, port)) == 0
 
 
+# ── backlog #631: is the listener on HOST:PORT OUR server? ─────────────────────────────────────────────────────
+#
+# `port_busy` answers "does something listen?", never "is it us?" — and a stranger's own app can hold 7391. So
+# the server answers `GET /__whoami` with a marker, its pid and the root it serves; `start`, `stop` and `status`
+# act only on a listener that answers as THIS server. Anything else is left alone, and the caller is told.
+WHOAMI = "/__whoami"
+SERVER_MARK = "explainer-serve"
+# The ONE exit code for "another program holds what this command would act on; nothing was touched". `start`
+# on a port held by anything but this server, `stop` on a pidfile pid that is not this server, `status` on a
+# listener that is not this server. The calling skill puts the choice to the user; it never frees the port.
+RC_NOT_OURS = 3
+
+
+def whoami_body() -> bytes:
+    return json.dumps({"server": SERVER_MARK, "pid": os.getpid(), "root": str(ROOT)}).encode()
+
+
+def listener_identity(host: str, port: int, timeout: float = 1.0) -> object:
+    """The parsed JSON a listener gives for `GET /__whoami`, or None. EVERY failure — refused, silent, not
+    HTTP, not 200, not JSON — is None, never an exception: a listener that cannot say who it is, is not us."""
+    import http.client
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=timeout)
+        try:
+            conn.request("GET", WHOAMI)
+            resp = conn.getresponse()
+            if resp.status != 200:
+                return None
+            return json.loads(resp.read(4096).decode("utf-8"))
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — any failure means "no answer", and the caller treats it as foreign
+        return None
+
+
+def classify_listener(answer: object, pidfile_pid: int | None, root: pathlib.Path) -> str:
+    """PURE. "ours" — the marker, the pid the pidfile names, and this ROOT. "other-root" — another
+    explainer-serve: a different root, or a pid this ROOT's pidfile does not name. "foreign" — no answer, a
+    malformed one, or no marker."""
+    if not isinstance(answer, dict) or answer.get("server") != SERVER_MARK:
+        return "foreign"
+    pid, served = answer.get("pid"), answer.get("root")
+    if type(pid) is not int or not isinstance(served, str):
+        return "foreign"
+    if served != str(root):
+        return "other-root"
+    if pid != pidfile_pid:
+        return "other-root"
+    return "ours"
+
+
+def port_holder(port: int) -> str:
+    """Best effort, for a message only: "pid N (command)" of what listens on `port`, or "unknown"."""
+    try:
+        r = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+                           capture_output=True, text=True, timeout=5)
+        pid = int(r.stdout.split()[0])
+    except Exception:  # noqa: BLE001 — a message detail; "unknown" is the honest fallback
+        return "unknown (lsof could not say)"
+    return f"pid {pid} ({pid_command(pid) or 'command unknown'})"
+
+
+def pid_command(pid: int) -> str:
+    """The command line `ps` gives for `pid`, or "" when it cannot say."""
+    try:
+        r = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5)
+    except Exception:  # noqa: BLE001 — "" means unknown, and every caller treats unknown as NOT ours
+        return ""
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def listener_verdict(pidfile_pid: int | None) -> tuple[str, object]:
+    answer = listener_identity(HOST, PORT)
+    return classify_listener(answer, pidfile_pid, ROOT), answer
+
+
+def not_ours_message(verdict: str, answer: object) -> str:
+    if verdict == "other-root" and isinstance(answer, dict):
+        who = f"another explainer-serve (pid {answer.get('pid')}, serving {answer.get('root')})"
+    else:
+        who = f"a program that is NOT explainer-serve — {port_holder(PORT)}"
+    return (f"port {PORT} on {HOST} is held by {who}. That is NOT this server (root {ROOT}), and it was left "
+            f"alone.\n  choices: run on another port — `EXPLAINER_SERVE_PORT=<other> python3 {sys.argv[0]}` — "
+            f"or free port {PORT} yourself and re-run.")
+
+
 def revision(p: pathlib.Path) -> str:
     """A cheap identity for a file's CONTENT, for change detection. mtime alone is not enough —
     a rewrite within the same clock tick would look unchanged — so size is included."""
@@ -2011,6 +2103,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
+        if path == WHOAMI:
+            # backlog #631: who holds the port. It names a path on disk, so it gets the POST rule: a rebound
+            # Host or another site's Origin is refused (and no CORS header lets a page read it anyway).
+            refused = cross_site(self.headers.get("Origin"), self.headers.get("Host"))
+            if refused:
+                return self._send(403, b"refused: cross-site", "text/plain; charset=utf-8")
+            return self._send(200, whoami_body(), "application/json")
         if path in ("/", "/latest"):
             # ⟳ backlog #627 r1 (Codex 3): both copies' pages, so a page merged but not in the working tree is
             # listed and can be /latest. The index names its source too.
@@ -2249,6 +2348,10 @@ def start() -> int:
     ROOT.mkdir(parents=True, exist_ok=True)
     if port_busy(HOST, PORT):
         pid = read_pid(PIDFILE)
+        verdict, answer = listener_verdict(pid)
+        if verdict != "ours":
+            print(f"NOT STARTED — NOT this server: {not_ours_message(verdict, answer)}")
+            return RC_NOT_OURS
         print(f"already serving on http://{HOST}:{PORT}" + (f" (pid {pid})" if pid else ""))
         print(f"  one-click:  http://{HOST}:{PORT}/latest")
         return 0
@@ -2281,20 +2384,45 @@ def stop() -> int:
         print("not running")
         return 0
     assert pid is not None
+    if not pid_is_ours(pid):
+        # backlog #631: the pidfile names a live process that is not this server (a reused pid). Never signal
+        # it. The pidfile is removed only when `ps` PROVES the pid is now another command; unknown keeps it.
+        cmd = pid_command(pid)
+        if cmd:
+            PIDFILE.unlink(missing_ok=True)
+        print(f"NOT STOPPED — pid {pid} is not our server ({cmd or 'ps could not say what it is'}); it was left "
+              "alone. " + (f"Removed the stale pidfile {PIDFILE}." if cmd else f"Kept the pidfile {PIDFILE}."))
+        return RC_NOT_OURS
     os.kill(pid, signal.SIGTERM)
     PIDFILE.unlink(missing_ok=True)
     print(f"stopped pid {pid}")
     return 0
 
 
+def pid_is_ours(pid: int) -> bool:
+    """`pid` is this server: its `/__whoami` names that pid, or — when the port does not answer so — `ps`
+    names `explainer-serve.py` in its command line."""
+    answer = listener_identity(HOST, PORT)
+    if isinstance(answer, dict) and answer.get("server") == SERVER_MARK:
+        # An explainer-serve answers on our port: the pid is ours only if it is THAT one. A sibling server
+        # elsewhere whose command also names the script is not what this pidfile's stop is about.
+        return answer.get("pid") == pid
+    return "explainer-serve.py" in pid_command(pid)
+
+
 def status() -> int:
     running, pid = port_busy(HOST, PORT), read_pid(PIDFILE)
     n = len(explainers(ROOT))
-    print(f"listening : {'yes' if running else 'NO'} on http://{HOST}:{PORT}")
+    verdict, answer = listener_verdict(pid) if running else ("", None)
+    shown = ("NO" if not running else "yes (ours)" if verdict == "ours"
+             else f"yes — NOT this server: {not_ours_message(verdict, answer)}")
+    print(f"listening : {shown} on http://{HOST}:{PORT}")
     print(f"pidfile   : {pid if pid else '(none)'}"
           + ("" if pid_alive(pid) or not pid else "  ⚠ stale — that pid is gone"))
     print(f"explainers: {n} in {ROOT}")
     print(f"questions : {QUESTIONS}" + ("" if QUESTIONS.exists() else "  (none yet)"))
+    if running and verdict != "ours":
+        return RC_NOT_OURS
     return 0 if running else 1
 
 
@@ -4895,14 +5023,210 @@ def _self_test_body() -> int:
             _real = globals()["port_busy"]
             try:
                 globals()["port_busy"] = lambda *_a, **_k: listening
+                # backlog #631: a listener counts only when it is OURS — stub its answer as ours.
+                _real_id, _real_pid = globals().get("listener_identity"), globals()["read_pid"]
+                globals()["listener_identity"] = lambda *_a, **_k: {
+                    "server": "explainer-serve", "pid": 4242, "root": str(ROOT)}
+                globals()["read_pid"] = lambda *_a, **_k: 4242
                 import io as _io, contextlib as _ctx
                 with _ctx.redirect_stdout(_io.StringIO()):
                     return status()
             finally:
                 globals()["port_busy"] = _real
+                globals()["read_pid"] = _real_pid
+                if _real_id is not None:
+                    globals()["listener_identity"] = _real_id
         case("--status exits NON-ZERO when nothing is listening — a down server is not a pass",
              lambda: _status_rc(False) != 0)
         case("…and exits 0 when it is", lambda: _status_rc(True) == 0)
+
+        # ── backlog #631: a port held by ANOTHER program is not our server — ask, never stop it ──────────
+        # The owner 2026-11-13: "if port is occupied, the installation script should be asking permission
+        # rather than stopping current process". MEASURED pre-fix: `start()` printed "already serving" and
+        # returned 0 for ANY listener, and `stop()` SIGTERMed whatever pid the pidfile named.
+        _M = "explainer-serve"
+        case("#631 classify: OUR server — the marker, the pidfile's pid and this ROOT — at two pids and roots",
+             lambda: (classify_listener({"server": _M, "pid": 111, "root": "/a"}, 111, pathlib.Path("/a")),
+                      classify_listener({"server": _M, "pid": 222, "root": "/b/c"}, 222, pathlib.Path("/b/c")))
+             == ("ours", "ours"))
+        case("#631 classify: an explainer-serve serving ANOTHER root is not ours, at two roots",
+             lambda: (classify_listener({"server": _M, "pid": 111, "root": "/other"}, 111, pathlib.Path("/a")),
+                      classify_listener({"server": _M, "pid": 222, "root": "/a/sub"}, 222, pathlib.Path("/a")))
+             == ("other-root", "other-root"))
+        case("#631 classify: an explainer-serve whose pid the pidfile does not name is not ours, at two pids",
+             lambda: (classify_listener({"server": _M, "pid": 112, "root": "/a"}, 111, pathlib.Path("/a")),
+                      classify_listener({"server": _M, "pid": 111, "root": "/a"}, None, pathlib.Path("/a")))
+             == ("other-root", "other-root"))
+        case("#631 classify: a listener without the marker is foreign, at two answers",
+             lambda: (classify_listener({"server": "nginx", "pid": 111, "root": "/a"}, 111, pathlib.Path("/a")),
+                      classify_listener({"pid": 111, "root": "/a"}, 111, pathlib.Path("/a")))
+             == ("foreign", "foreign"))
+        case("#631 classify: no answer, or a malformed one, is foreign — never ours",
+             lambda: (classify_listener(None, 111, pathlib.Path("/a")),
+                      classify_listener([_M, 111, "/a"], 111, pathlib.Path("/a")),
+                      classify_listener({"server": _M, "pid": "111", "root": "/a"}, 111, pathlib.Path("/a")),
+                      classify_listener({"server": _M, "pid": True, "root": "/a"}, 1, pathlib.Path("/a")))
+             == ("foreign",) * 4)
+
+        def _whoami_drive(root, headers):
+            real = globals()["ROOT"]
+            globals()["ROOT"] = root
+            try:
+                got = {}
+                h = object.__new__(Handler)
+                h.path, h.headers = WHOAMI + "?x=1", headers
+                h._send = lambda code, body, ctype: got.update(code=code, body=body)
+                h.do_GET()
+                return got.get("code"), got.get("body", b"")
+            finally:
+                globals()["ROOT"] = real
+
+        def _whoami_ok(root):
+            code, body = _whoami_drive(root, {"Host": f"127.0.0.1:{PORT}"})
+            return code == 200 and json.loads(body) == {"server": _M, "pid": os.getpid(), "root": str(root)}
+        case("#631 GET /__whoami names this server, its pid and its ROOT, at two roots",
+             lambda: _whoami_ok(pathlib.Path("/x/one")) and _whoami_ok(pathlib.Path("/y/two")))
+        case("#631 GET /__whoami from a rebound Host or a foreign Origin is refused 403 — it names a path",
+             lambda: (_whoami_drive(root, {"Host": "rebound.evil.example:7391"})[0],
+                      _whoami_drive(root, {"Host": "127.0.0.1:7391", "Origin": "https://evil.example"})[0])
+             == (403, 403))
+
+        def _free_port():
+            with socket.socket() as s:
+                s.bind((HOST, 0))
+                return s.getsockname()[1]
+
+        class _Listener:
+            """A listener on an ephemeral port. `body=None`: a silent TCP socket that never answers; else a
+            plain HTTP server answering every GET with `body` (NOT explainer-serve unless `body` imitates it)."""
+            def __init__(self, body=None, handler=None):
+                self.httpd = self.sock = None
+                if handler is None and body is None:
+                    self.sock = socket.socket()
+                    self.sock.bind((HOST, 0))
+                    self.sock.listen(128)
+                    self.port = self.sock.getsockname()[1]
+                    return
+                if handler is None:
+                    class handler(http.server.BaseHTTPRequestHandler):  # noqa: N801
+                        def do_GET(self):  # noqa: N802
+                            self.send_response(200)
+                            self.send_header("Content-Length", "%d" % len(body))
+                            self.end_headers()
+                            self.wfile.write(body)
+
+                        def log_message(self, *_a):
+                            pass
+                self.httpd = http.server.ThreadingHTTPServer((HOST, 0), handler)
+                self.port = self.httpd.server_address[1]
+                threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+            def alive(self):
+                return port_busy(HOST, self.port)
+
+            def close(self):
+                if self.httpd is not None:
+                    self.httpd.shutdown()
+                    self.httpd.server_close()
+                if self.sock is not None:
+                    self.sock.close()
+
+        class _QuietHandler(Handler):
+            def log_message(self, *_a):
+                pass
+
+        def _identity_of_real_handler():
+            real, out = globals()["ROOT"], []
+            ln = _Listener(handler=_QuietHandler)
+            try:
+                for r in (pathlib.Path("/p/one"), pathlib.Path("/p/two")):
+                    globals()["ROOT"] = r
+                    out.append(listener_identity(HOST, ln.port, 2.0))
+            finally:
+                globals()["ROOT"] = real
+                ln.close()
+            return out == [{"server": _M, "pid": os.getpid(), "root": "/p/one"},
+                           {"server": _M, "pid": os.getpid(), "root": "/p/two"}]
+        case("#631 listener_identity reads a real Handler's /__whoami, at two roots",
+             _identity_of_real_handler)
+
+        def _identity_of(ln):
+            try:
+                return listener_identity(HOST, ln.port, 0.5)
+            finally:
+                ln.close()
+        case("#631 listener_identity: a silent listener, a non-JSON answer and a closed port are NO answer, never a raise",
+             lambda: (_identity_of(_Listener()), _identity_of(_Listener(b"<html>not json")),
+                      listener_identity(HOST, _free_port(), 0.5)) == (None, None, None))
+
+        _SELF = str(pathlib.Path(__file__).resolve())
+
+        def _cli(port, root, *args):
+            env = {**os.environ, "EXPLAINER_SERVE_PORT": str(port), "EXPLAINER_SERVE_ROOT": str(root)}
+            r = subprocess.run([sys.executable, _SELF, *args], capture_output=True, text=True, timeout=60, env=env)
+            return r.returncode, r.stdout + r.stderr
+
+        def _start_on_foreign(ln):
+            try:
+                with tempfile.TemporaryDirectory() as t:
+                    rc, out = _cli(ln.port, t)
+                    return rc, "NOT this server" in out, f"EXPLAINER_SERVE_PORT=" in out, ln.alive(), \
+                        (pathlib.Path(t) / ".serve.pid").exists()
+            finally:
+                ln.close()
+        _imposter = json.dumps({"server": _M, "pid": 1, "root": "/somewhere/else"}).encode()
+        case("#631 start on a port held by ANOTHER program exits 3, names the choices and leaves it listening, at two listeners",
+             lambda: (_start_on_foreign(_Listener()), _start_on_foreign(_Listener(_imposter)))
+             == ((3, True, True, True, False),) * 2)
+
+        def _status_on_foreign(ln):
+            try:
+                with tempfile.TemporaryDirectory() as t:
+                    rc, out = _cli(ln.port, t, "--status")
+                    return rc, "NOT this server" in out
+            finally:
+                ln.close()
+        case("#631 --status on a foreign listener says NOT this server and exits 3, at two listeners",
+             lambda: (_status_on_foreign(_Listener()), _status_on_foreign(_Listener(b'{"server": "nginx"}')))
+             == ((3, True),) * 2)
+
+        def _stop_spares(argv):
+            p = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                with tempfile.TemporaryDirectory() as t:
+                    (pathlib.Path(t) / ".serve.pid").write_text(str(p.pid))
+                    rc, out = _cli(_free_port(), t, "--stop")
+                    time.sleep(0.2)
+                    return rc, p.poll() is None, "not our server" in out
+            finally:
+                p.kill()
+                p.wait(10)
+        case("#631 --stop with a pidfile naming an UNRELATED live process leaves it alive and exits 3, at two processes",
+             lambda: (_stop_spares(["sleep", "60"]),
+                      _stop_spares([sys.executable, "-c", "import time; time.sleep(60)"]))
+             == ((3, True, True),) * 2)
+
+        def _own_server_cycle():
+            port = _free_port()
+            with tempfile.TemporaryDirectory() as t:
+                pid = None
+                try:
+                    rc1, _o1 = _cli(port, t)
+                    pid = read_pid(pathlib.Path(t) / ".serve.pid")
+                    rc2, o2 = _cli(port, t)
+                    rc3, _o3 = _cli(port, t, "--status")
+                    rc4, o4 = _cli(port, t, "--stop")
+                    for _ in range(40):
+                        if not pid_alive(pid):
+                            break
+                        time.sleep(0.05)
+                    return (rc1, rc2, "already serving" in o2 and f"pid {pid}" in o2, rc3, rc4,
+                            f"stopped pid {pid}" in o4, pid_alive(pid))
+                finally:
+                    if pid and pid_alive(pid):
+                        os.kill(pid, signal.SIGKILL)
+        case("#631 control: OUR server is recognised — start rc 0, again 'already serving' rc 0, status 0, stop kills it",
+             lambda: _own_server_cycle() == (0, 0, True, 0, 0, True, False))
 
         # ── r1 MEDIUM 5: the escaping `safe_href` credits `md_render` with ───────────────────
         # ⛔ `:335` writes down a DIVISION OF LABOUR — *"Quotes are escaped upstream in `md_render`,
