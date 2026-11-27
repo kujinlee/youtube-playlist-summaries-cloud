@@ -1803,7 +1803,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-24, goal node tree S1 review r3: 58 -> 59 — the merged rule's message back to a
     # truthiness test of `state`, reporting a bare `state:` as "has no `state:`" (Claude F2).
     # PR #637 r3 F3: +1 — `settled_slugs` keeping proposed nodes: 59 -> 60.
-    "scripts/check-features.py": 60,
+    # ⟳ 2026-11-27, goal node tree S3 Task 13: 60 -> 69 — G2 (a heading, an `also`, a PRIORITY slug and an answer key
+    # each a CURRENT node; also not repeating its heading; PRIORITY placed once; a request line read for a former slug;
+    # main reading the names; an unreadable answers file CANNOT RUN). Three G9 entries re-bound to the one threads read.
+    "scripts/check-features.py": 69,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed

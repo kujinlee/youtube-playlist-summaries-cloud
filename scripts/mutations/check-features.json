@@ -561,8 +561,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "so G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        return 2",
-        "so G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        pass"
+        "so G2 and G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        return 2",
+        "so G2 and G9 cannot be checked. Treat this as NOT RUN.\", file=sys.stderr)\n        pass"
       ]
     ],
     "expect": "G9: an unreadable threads file is CANNOT RUN"
@@ -670,6 +670,123 @@
     ],
     "expect": [
       "⛔ F3: an epic naming a proposed node FAILS the gate"
+    ]
+  },
+  {
+    "name": "G2: a heading's current-slug test removed, so a former heading passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "                bad = _name_problem(where, \"the heading\", cur, nodes)",
+        "                bad = None"
+      ]
+    ],
+    "expect": [
+      "G2: a heading must be a current slug"
+    ]
+  },
+  {
+    "name": "G2: an also slug's current-slug test removed",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            bad = _name_problem(where, \"the `also` slug\", s, nodes)",
+        "            bad = None"
+      ]
+    ],
+    "expect": [
+      "G2: an also slug must be current"
+    ]
+  },
+  {
+    "name": "G2: also may repeat its own heading",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            elif s == cur:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "G2: also may not name the primary"
+    ]
+  },
+  {
+    "name": "G2: a PRIORITY slug's current-slug test removed",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "                    bad = _name_problem(where, \"the PRIORITY slug\", s, nodes)",
+        "                    bad = None"
+      ]
+    ],
+    "expect": [
+      "G2: a PRIORITY slug must be current"
+    ]
+  },
+  {
+    "name": "G2: PRIORITY's placement test removed — a second line, or one inside a goal, passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            if cur is not None or priorities > 1 or not m:",
+        "            if not m:"
+      ]
+    ],
+    "expect": [
+      "G2: PRIORITY sits once, in the preamble"
+    ]
+  },
+  {
+    "name": "G2: an answer key's current-slug test removed",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            bad = _name_problem(f\"goal-tree-answers.json answer {n}\", \"the key's goal\", key[5:], nodes)",
+        "            bad = None"
+      ]
+    ],
+    "expect": [
+      "G2: an answer key on a former slug is refused"
+    ]
+  },
+  {
+    "name": "G2: a request line is READ — a quote naming a former slug is refused",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if line.startswith(\">\"):\n            continue\n        if line.startswith(\"PRIORITY\"):",
+        "        if line.startswith(\">>>\"):\n            continue\n        if line.startswith(\"PRIORITY\"):"
+      ]
+    ],
+    "expect": [
+      "G2: a request quoting a retired slug is not read"
+    ]
+  },
+  {
+    "name": "G2: main does not read the threads file's names",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        problems += thread_name_problems(read_threads_text(GOAL_THREADS), nodes)\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "main: G2 reads the threads file"
+    ]
+  },
+  {
+    "name": "G2: an unreadable answers file is passed over instead of CANNOT RUN",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "cannot check its `goal:` keys. Treat this as NOT RUN.\", file=sys.stderr)\n        return 2",
+        "cannot check its `goal:` keys. Treat this as NOT RUN.\", file=sys.stderr)\n        pass"
+      ]
+    ],
+    "expect": [
+      "G2: an unreadable answers file is CANNOT RUN"
     ]
   }
 ]
