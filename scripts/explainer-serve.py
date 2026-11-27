@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if OUR server is already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 334 cases, binds only ephemeral ports, never 7391
+    python3 scripts/explainer-serve.py --self-test   # 343 cases, binds only ephemeral ports, never 7391
 
 EXIT CODES: 0 done (or already serving / not running — including a server started by OLDER code, which says
 "older code — `--stop`, then start, to pick up changes"); 1 not running (`--status`), or a fork whose child never
@@ -146,8 +146,9 @@ ROOT = (pathlib.Path(os.environ["EXPLAINER_SERVE_ROOT"].strip()).expanduser()
 # start overwrote the first's and neither server could be stopped. It still holds a bare pid, so the gone-checkout
 # 404's pasteable `kill "$(cat <pidfile>)"` keeps working with no checkout present. The start's random TOKEN lives
 # beside it in `.serve.<port>.token` (JSON {pid, port, token}, mode 0600): `/__whoami` echoes it, and only an
-# answer carrying it is OUR server. The legacy `.serve.pid` (a bare pid, no token) is still READ for the default
-# port, so a server started by older code stays recognisable — see `bound_legacy`.
+# answer carrying it is OUR server. The legacy `.serve.pid` (a bare pid, no token) is still READ, on EVERY port
+# (⟳ r2 Y2: older code wrote it whatever the port), so a server started by older code stays recognisable — but
+# only through `bound_legacy`, which needs the OS to name that pid as THIS port's listener.
 DEFAULT_PORT = 7391
 LEGACY_PIDFILE = ".serve.pid"
 
@@ -161,9 +162,10 @@ def tokenfile_for(root: pathlib.Path, port: int) -> pathlib.Path:
 
 
 def pidfile_candidates(root: pathlib.Path, port: int) -> "list[pathlib.Path]":
-    """PURE. Where a pid for `port` may be recorded, newest convention first: the per-port pidfile, then — on the
-    default port only — the legacy `.serve.pid` an older start wrote."""
-    return [pidfile_for(root, port)] + ([root / LEGACY_PIDFILE] if port == DEFAULT_PORT else [])
+    """PURE. Where a pid for `port` may be recorded, newest convention first: the per-port pidfile, then the legacy
+    `.serve.pid` an older start wrote — on ANY port (r2 Y2: older code wrote it whatever EXPLAINER_SERVE_PORT said).
+    A legacy pid is never trusted for that: it is ours only when `bound_legacy` binds it to THIS port."""
+    return [pidfile_for(root, port), root / LEGACY_PIDFILE]
 
 
 PIDFILE = pidfile_for(ROOT, PORT)
@@ -1346,7 +1348,7 @@ SERVER_MARK = "explainer-serve"
 # listener that is not this server. The calling skill puts the choice to the user; it never frees the port.
 RC_NOT_OURS = 3
 SCRIPT_FILE = pathlib.Path(__file__).resolve()
-# Set by `start` BEFORE the fork, so the child's `/__whoami` answers with the token the parent records.
+# Set by `start` BEFORE the fork; the child inherits it, records it (after its bind) and answers `/__whoami` with it.
 SERVE_TOKEN = ""
 LEGACY_NOTE = "older code — `--stop`, then start, to pick up changes"
 
@@ -1424,13 +1426,40 @@ def read_identity(root: pathlib.Path, port: int) -> dict | None:
 
 
 def write_identity(root: pathlib.Path, port: int, pid: int, token: str) -> None:
-    """Record a start: the token file FIRST, then the bare-pid pidfile, both mode 0600."""
+    """Record a start: the token file FIRST, then the bare-pid pidfile, both mode 0600. Raises on any failure.
+
+    ⟳ r2 Y3/Y4: called only by the CHILD, after its bind succeeded, and each file is written ATOMICALLY — a temp
+    file in the same directory (mkstemp: 0600), then `os.replace` — so a reader never sees a half-written record."""
+    import tempfile
     for path, text in ((tokenfile_for(root, port), json.dumps({"pid": pid, "port": port, "token": token})),
                        (pidfile_for(root, port), str(pid))):
-        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as fh:
-            fh.write(text)
-        os.chmod(path, 0o600)
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as fh:
+                fh.write(text)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, path)
+        except BaseException:
+            pathlib.Path(tmp).unlink(missing_ok=True)
+            raise
+
+
+def forget_own(root: pathlib.Path, port: int, pid: int, token: str) -> None:
+    """The FAIL path's cleanup (r2 Y4): remove the records ONLY when the token file carries THIS start's `token` —
+    a record another start wrote (a concurrent winner) is never touched, whatever pid it names. Never raises."""
+    tok = tokenfile_for(root, port)
+    try:
+        got = json.loads(tok.read_text())
+    except (OSError, ValueError):
+        return
+    if not isinstance(got, dict) or got.get("token") != token:
+        return
+    try:
+        if read_pid(pidfile_for(root, port)) == pid:
+            pidfile_for(root, port).unlink(missing_ok=True)
+        tok.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def recorded_pid(root: pathlib.Path, port: int) -> tuple[int | None, pathlib.Path]:
@@ -1523,25 +1552,67 @@ def pid_cwd(pid: int) -> str | None:
     return None
 
 
+_PY_EXE = re.compile(r"[Pp]ython(\d+(\.\d+)*)?")
+_PY_FLAGS = set("bBdEhiIOPqsSuvVxR?")      # interpreter flags that take no value
+_PY_VALUED = set("WXQ")                   # …that take one: attached (`-Xdev`) or the NEXT element (`-X dev`)
+_PY_LONG_VALUED = {"--check-hash-based-pycs"}
+
+
+def _resolve_arg(cand: str, cwd: str | None) -> str | None:
+    if not os.path.isabs(cand):
+        if cwd is None:
+            return None
+        cand = os.path.join(cwd, cand)
+    return cand
+
+
 def argv_runs_script(args: str, cwd: str | None, script: pathlib.Path) -> bool:
-    """PURE but for path resolution. `args` (`ps -o args=`, argv joined by single spaces) has an element whose
-    resolved path IS `script`. Exact, never a substring (r1 X2): `/tmp/notes-about-explainer-serve.py` and
-    `explainer-serve.py.swp` are not it. A path with spaces spans several space-split tokens, so every run of
-    tokens that ends in the script's name is tried. A relative element resolves against `cwd`; without one it
-    cannot match."""
+    """PURE but for path resolution. `args` (`ps -o args=`, argv joined by single spaces) is a Python interpreter
+    whose PROGRAM is `script` — ⟳ r2 Y1: never "some argv element is the script" (a foreign server given the path
+    as an extra argument was "ours" and was SIGTERMed). The rule, every step failing CLOSED:
+      * argv[0]'s basename is a Python interpreter (`python3`, `python3.12`, a framework build's `Python`);
+      * its options are skipped — combined short flags (`-uB`), `-W`/`-X`/`-Q` with their value attached or as the
+        next element, `--check-hash-based-pycs <mode>`, and `--` ends them. Any other option is NOT ours;
+      * `-c`, `-m` or `-` (stdin) means the program is not a file: NOT ours;
+      * the PROGRAM is the shortest run of space-split tokens from there that names an existing path (a path with
+        spaces spans tokens; a relative one resolves against `cwd`, without which it cannot match), and it must
+        resolve exactly — realpath, never a substring (r1 X2) — to `script`."""
     want = os.path.realpath(str(script))
     toks = args.split(" ")
-    for j, last in enumerate(toks, 1):
-        if not last.endswith(script.name):
+    k = 1
+    while not _PY_EXE.fullmatch(os.path.basename(" ".join(toks[:k]))) or (k > 1 and not os.path.isfile(" ".join(toks[:k]))):
+        k += 1
+        if k > len(toks):
+            return False
+    i = k
+    while i < len(toks):
+        t = toks[i]
+        if t == "--":
+            i += 1
+            break
+        if t in _PY_LONG_VALUED:
+            i += 2
             continue
-        for i in range(j):
-            cand = " ".join(toks[i:j])
-            if not os.path.isabs(cand):
-                if cwd is None:
-                    continue
-                cand = os.path.join(cwd, cand)
-            if os.path.realpath(cand) == want:
-                return True
+        if not t.startswith("-"):
+            break
+        if t == "-" or t.startswith("--"):
+            return False
+        for n, ch in enumerate(t[1:], 1):
+            if ch in "cm":
+                return False
+            if ch in _PY_VALUED:
+                if n == len(t) - 1:
+                    i += 1             # the value is the next element
+                break
+            if ch not in _PY_FLAGS:
+                return False
+        i += 1
+    for j in range(i + 1, len(toks) + 1):
+        cand = _resolve_arg(" ".join(toks[i:j]), cwd)
+        if cand is None:
+            return False
+        if os.path.exists(cand):
+            return os.path.realpath(cand) == want
     return False
 
 
@@ -2578,13 +2649,28 @@ def start() -> int:
               + (f" ({LEGACY_NOTE})" if verdict == "legacy" else ""))
         print(f"  one-click:  http://{HOST}:{PORT}/latest")
         return 0
-    SERVE_TOKEN = secrets.token_hex(16)      # BEFORE the fork: the child answers with what the parent records
+    SERVE_TOKEN = secrets.token_hex(16)      # BEFORE the fork: the child inherits it, answers with it and records it
     pid = os.fork()
     if pid > 0:
         return after_fork(pid, SERVE_TOKEN)
     os.setsid()
     detach_streams()
-    with http.server.ThreadingHTTPServer((HOST, PORT), Handler) as httpd:
+    # ⟳ r2 Y3/Y4: ONLY the child writes the records, and only AFTER its bind succeeded — a start that lost the
+    # port (a concurrent racer) writes nothing, so it cannot overwrite the winner's token. A record that cannot
+    # be written closes the socket and exits non-zero, so no server runs that `--status`/`--stop` cannot manage;
+    # the parent's token wait then fails, rc 1.
+    try:
+        httpd = http.server.ThreadingHTTPServer((HOST, PORT), Handler)
+    except OSError as e:
+        print(f"FAIL: could not bind {HOST}:{PORT} ({e}); wrote no record", flush=True)
+        os._exit(1)
+    try:
+        write_identity(ROOT, PORT, os.getpid(), SERVE_TOKEN)
+    except Exception as e:  # noqa: BLE001 — any failure to record means this server must not run
+        print(f"FAIL: could not write the record for port {PORT} ({e}); closing the server", flush=True)
+        httpd.server_close()
+        os._exit(1)
+    with httpd:
         httpd.serve_forever()
     return 0
 
@@ -2596,8 +2682,8 @@ def after_fork(pid: int, token: str) -> int:
     """The parent's half of `start`. ⟳ r1 X3: `port_busy` was counted as success, so a racer that bound the port
     between the free-port check and the child's bind read as "serving", rc 0. Now the parent waits (bounded) for
     `/__whoami` to answer with ITS token and ITS child's pid; otherwise it says FAIL, reaps its own child, removes
-    the record it wrote, and returns 1 — the racer is left alone."""
-    write_identity(ROOT, PORT, pid, token)
+    the record its child wrote — only one carrying ITS token (r2 Y4) — and returns 1; the racer is left alone.
+    ⟳ r2 Y3/Y4: the parent writes NO record; the child does, after its bind (see `start`)."""
     own = {"pid": pid, "port": PORT, "token": token}
     deadline = time.monotonic() + AFTER_FORK_WAIT
     while True:
@@ -2613,7 +2699,7 @@ def after_fork(pid: int, token: str) -> int:
         time.sleep(0.1)
     held = port_busy(HOST, PORT)
     reap_child(pid)
-    forget(ROOT, PORT, pid)
+    forget_own(ROOT, PORT, pid, token)
     print(f"FAIL: forked pid {pid} but {HOST}:{PORT} never answered as it"
           + (" — ANOTHER program holds the port, and it was left alone" if held else " — nothing is listening")
           + ". NOT RUNNING.")
@@ -5341,10 +5427,12 @@ def _self_test_body() -> int:
                       classify_listener(_ans(True, "/a", 9001, "t"), _rec(1, 9001, "t"), _A, 9001))
              == ("foreign",) * 4)
 
-        # ── r1 X6: the record is per PORT; the legacy `.serve.pid` is read on the default port only ──────
-        case("#631 r1 X6 pidfile_candidates: per port, and the legacy .serve.pid only on the default port",
-             lambda: (pidfile_candidates(_A, 9001), pidfile_candidates(_A, DEFAULT_PORT))
-             == ([_A / ".serve.9001.pid"], [_A / f".serve.{DEFAULT_PORT}.pid", _A / ".serve.pid"]))
+        # ── r1 X6: the record is per PORT. ⟳ r2 Y2: the legacy `.serve.pid` is read on EVERY port, after it ──────
+        # (master writes `.serve.pid` whatever EXPLAINER_SERVE_PORT says; reading it on 7391 only orphaned an older
+        # server on any other port). Reproduced on 1745c1b9: `[_A / ".serve.9001.pid"]` alone.
+        case("#631 r2 Y2 pidfile_candidates: the per-port pidfile first, then the legacy .serve.pid on ANY port",
+             lambda: (pidfile_candidates(_A, 9001), pidfile_candidates(_BC, DEFAULT_PORT))
+             == ([_A / ".serve.9001.pid", _A / ".serve.pid"], [_BC / f".serve.{DEFAULT_PORT}.pid", _BC / ".serve.pid"]))
 
         def _identity_roundtrip():
             out = []
@@ -5384,6 +5472,31 @@ def _self_test_body() -> int:
                         argv_runs_script(f"python3 {d / _SF.name} --x", None, _SF))
         case("#631 r1 X2 argv_runs_script: a path with spaces spans tokens and still matches exactly",
              lambda: _spaced_path() == (True, False))
+        # ── r2 Y1: the script must be the PROGRAM the interpreter runs — never any argv element ──────────────
+        # Reproduced on 1745c1b9 (Codex r2): a foreign Python server given this file's path as an EXTRA argument was
+        # "ours, older code", and `--stop` SIGTERMed it.
+        case("#631 r2 Y1 argv_runs_script: argv[0] must be a Python interpreter, at two programs",
+             lambda: (argv_runs_script(f"sleep {_SF}", None, _SF),
+                      argv_runs_script(f"/bin/bash {_SF}", None, _SF),
+                      argv_runs_script(f"/usr/bin/vim {_SF}", None, _SF),
+                      argv_runs_script(f"/opt/pythonista {_SF}", None, _SF))
+             == (False, False, False, False))
+        case("#631 r2 Y1 argv_runs_script: the script as an EXTRA argument, or after -c/-m/-, is not the program",
+             lambda: (argv_runs_script(f"python3 -m http.server 8000 {_SF}", None, _SF),
+                      argv_runs_script(f"python3 {_SF.parent / 'regen-pages.py'} {_SF}", None, _SF),
+                      argv_runs_script(f"python3 -c import\tx {_SF}", None, _SF),
+                      argv_runs_script(f"python3 -uc x {_SF}", None, _SF),
+                      argv_runs_script(f"python3 -mhttp.server {_SF}", None, _SF),
+                      argv_runs_script(f"python3 - {_SF}", None, _SF),
+                      argv_runs_script(f"python3 -X {_SF}", None, _SF),
+                      argv_runs_script(f"python3 -W {_SF} {_SF.parent / 'regen-pages.py'}", None, _SF))
+             == (False,) * 8)
+        case("#631 r2 Y1 argv_runs_script: interpreter options are skipped, including ones that take a value, at two argvs",
+             lambda: (argv_runs_script(f"/x/Python.app/Contents/MacOS/Python -X dev -W ignore -uB {_SF} --stop", None, _SF),
+                      argv_runs_script(f"python3.12 -Xdev -I -Werror -- scripts/{_SF.name}",
+                                       str(_SF.parent.parent), _SF),
+                      argv_runs_script(f"python -OO --check-hash-based-pycs never {_SF}", None, _SF))
+             == (True, True, True))
         case("#631 r1 X2 lsof_pids: pids, nothing, or None for output that is not pids",
              lambda: (lsof_pids("123\n456\n"), lsof_pids(""), lsof_pids("COMMAND PID\n")) == ({123, 456}, set(), None))
 
@@ -5563,6 +5676,36 @@ def _self_test_body() -> int:
                 p.kill()
             p.wait(10)
 
+        # ⟳ r2 Y1: a stand-in that runs the way a REAL server runs — `<python> <program file> …`, the program being
+        # a FILE, never `-c`. `prog` is where the stand-in's code is written; the caller decides whether that path
+        # is the script under test (`_as_script`) or some other program.
+        def _stand_in_file(prog, port, body="", argv=(), cwd=None, run_as=None):
+            prog = pathlib.Path(prog)
+            prog.parent.mkdir(parents=True, exist_ok=True)
+            prog.write_text(_STAND)
+            p = subprocess.Popen([sys.executable, str(run_as or prog), body, str(port), *argv], cwd=cwd,
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            p.stdout.readline()
+            return p
+
+        def _as_script(script, root, port, *cmds):
+            """Run start/status/stop IN-PROCESS with `script` as the script under test (SCRIPT_FILE), so a stand-in
+            program file can be the file a legacy server runs. Returns [(rc, output)] per command."""
+            import io as _io, contextlib as _ctx
+            real = globals()["SCRIPT_FILE"], globals()["ROOT"], globals()["PORT"]
+            out = []
+            try:
+                globals()["SCRIPT_FILE"], globals()["ROOT"], globals()["PORT"] = (
+                    pathlib.Path(script).resolve(), pathlib.Path(root), port)
+                for c in cmds:
+                    buf = _io.StringIO()
+                    with _ctx.redirect_stdout(buf):
+                        rc = {"start": start, "status": status, "stop": stop}[c]()
+                    out.append((rc, buf.getvalue()))
+            finally:
+                globals()["SCRIPT_FILE"], globals()["ROOT"], globals()["PORT"] = real
+            return out
+
         def _start_on_foreign(ln):
             try:
                 with tempfile.TemporaryDirectory() as t:
@@ -5610,20 +5753,26 @@ def _self_test_body() -> int:
 
         # ── r1 X2: a pid whose argv runs THIS script but that is NOT the listener on our port is spared ─────
         def _stop_spares_unbound(hold_port):
-            p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", _SELF],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # ⟳ r2 Y1: the process RUNS the script under test as its program (not `-c … <path>`, which is no longer
+            # "runs this file" at all), so only the listener binding can be what spares it.
             ln = _Listener() if hold_port else None
-            try:
-                with tempfile.TemporaryDirectory() as t:
+            with tempfile.TemporaryDirectory() as t:
+                script = pathlib.Path(t) / "scripts" / SCRIPT_FILE.name
+                script.parent.mkdir(parents=True)
+                script.write_text("import time\ntime.sleep(60)\n")
+                p = subprocess.Popen([sys.executable, str(script)], stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL)
+                try:
+                    time.sleep(0.2)
                     port = ln.port if ln else _free_port()
                     pidfile_for(pathlib.Path(t), port).write_text(str(p.pid))
-                    rc, _out = _cli(port, t, "--stop")
+                    [(rc, _out)] = _as_script(script, t, port, "stop")
                     time.sleep(0.2)
                     return rc, p.poll() is None
-            finally:
-                _kill(p)
-                if ln:
-                    ln.close()
+                finally:
+                    _kill(p)
+                    if ln:
+                        ln.close()
         case("#631 r1 X2 --stop spares a pid running THIS script that is not the LISTENER on our port, port free or held",
              lambda: (_stop_spares_unbound(False), _stop_spares_unbound(True)) == ((3, True),) * 2)
 
@@ -5661,36 +5810,64 @@ def _self_test_body() -> int:
              == ((3, 3, True),) * 2)
 
         # ── r1 X5: a server from code older than /__whoami is OURS when bound, and never "another program" ──
-        def _legacy(argv, cwd, exact):
+        # ⟳ r2 Y1: the legacy stand-in RUNS the script under test as its program — a file at `<t>/scripts/<name>`,
+        # started as `<python> <that file>` (absolute) or `<python> scripts/<name>` from `<t>` (relative) — and the
+        # commands run with THAT file as SCRIPT_FILE. The r1 stand-in was `-c <code> … <path>`, which endorsed the
+        # very false positive Codex reproduced. ⟳ r2 Y2: `pidname` is which file records the pid.
+        def _legacy(relative, pidname):
             port = _free_port()
-            p = _stand_in(port, "", argv, cwd)
-            try:
-                with tempfile.TemporaryDirectory() as t:
-                    pidfile_for(pathlib.Path(t), port).write_text(str(p.pid))
-                    rc1, o1 = _cli(port, t)
-                    rc2, o2 = _cli(port, t, "--status")
-                    rc3, o3 = _cli(port, t, "--stop")
+            with tempfile.TemporaryDirectory() as t:
+                script = pathlib.Path(t) / "scripts" / SCRIPT_FILE.name
+                p = _stand_in_file(script, port, cwd=t if relative else None,
+                                   run_as=f"scripts/{SCRIPT_FILE.name}" if relative else None)
+                try:
+                    (pathlib.Path(t) / (pidname or pidfile_for(pathlib.Path(t), port).name)).write_text(str(p.pid))
+                    (rc1, o1), (rc2, o2), (rc3, _o3) = _as_script(script, t, port, "start", "status", "stop")
                     for _ in range(40):
                         if p.poll() is not None:
                             break
                         time.sleep(0.05)
-                    if exact:
-                        return (rc1, "already serving" in o1 and "older code" in o1, rc2, "older code" in o2,
-                                "another" not in o1 + o2, rc3, p.poll() is not None)
-                    return rc1, rc3, p.poll() is None
-            finally:
-                _kill(p)
+                    return (rc1, "already serving" in o1 and "older code" in o1, rc2, "older code" in o2,
+                            "another" not in o1 + o2, rc3, p.poll() is not None)
+                finally:
+                    _kill(p)
         case("#631 r1 X5 an OLDER server running this file is ours: start 0 'older code', status 0, stop kills it, abs and relative argv",
-             lambda: (_legacy([_SELF], None, True), _legacy([f"scripts/{SCRIPT_FILE.name}"],
-                                                             str(SCRIPT_FILE.parent.parent), True))
+             lambda: (_legacy(False, None), _legacy(True, None)) == ((0, True, 0, True, True, 0, True),) * 2)
+        case("#631 r2 Y2 an OLDER server on a non-default port, recorded only in the legacy .serve.pid, is ours and stops, abs and relative argv",
+             lambda: (_legacy(False, LEGACY_PIDFILE), _legacy(True, LEGACY_PIDFILE))
              == ((0, True, 0, True, True, 0, True),) * 2)
+
+        # A foreign listener, its pid in the per-port pidfile, managed through the REAL CLI (SCRIPT_FILE = this file).
+        def _foreign_named(start_proc):
+            port = _free_port()
+            with tempfile.TemporaryDirectory() as t:
+                p = start_proc(port, t)
+                try:
+                    pidfile_for(pathlib.Path(t), port).write_text(str(p.pid))
+                    rc1, _o = _cli(port, t)
+                    rc2, _o = _cli(port, t, "--status")
+                    rc3, _o = _cli(port, t, "--stop")
+                    time.sleep(0.2)
+                    return rc1, rc2, rc3, p.poll() is None
+                finally:
+                    _kill(p)
         case("#631 r1 X2 a listener whose argv only MENTIONS the file, or runs another copy, is not ours: start 3, stop 3, alive",
-             lambda: (_legacy([f"/tmp/notes-about-{SCRIPT_FILE.name}"], None, False),
-                      _legacy([f"/tmp/other-checkout/scripts/{SCRIPT_FILE.name}"], None, False))
-             == ((3, 3, True),) * 2)
+             lambda: (_foreign_named(lambda port, t: _stand_in_file(pathlib.Path(t) / f"notes-about-{SCRIPT_FILE.name}", port)),
+                      _foreign_named(lambda port, t: _stand_in_file(
+                          pathlib.Path(t) / "other-checkout" / "scripts" / SCRIPT_FILE.name, port)))
+             == ((3, 3, 3, True),) * 2)
+        # ⛔ r2 Y1 BLOCKER — Codex's reproduction: a foreign Python HTTP server given THIS file's path as an extra
+        # argument. On 1745c1b9 `--status` said "ours, older code" (rc 0) and `--stop` SIGTERMed it (rc 0).
+        case("#631 r2 Y1 a foreign Python server given this file's path as an EXTRA argument is not ours: start 3, status 3, stop 3, alive",
+             lambda: (_foreign_named(lambda port, t: _stand_in(port, "", [_SELF])),
+                      _foreign_named(lambda port, t: _stand_in_file(pathlib.Path(t) / "foreign.py", port, argv=[_SELF])))
+             == ((3, 3, 3, True),) * 2)
 
         # ── r1 X3: after the fork the parent waits for ITS token and ITS child, or fails and reaps ──────────
-        def _after_fork_with(answer_of):
+        # ⟳ r2 Y3/Y4: the CHILD writes the records (after its bind), so the stand-in child's record is written here,
+        # as the child would; `record` overrides it with (pid-of(child_pid), token) — or None for no record at all —
+        # and `raw` returns the record files' bytes after `after_fork` instead of the usual tuple.
+        def _after_fork_with(answer_of, record=(lambda c: c, "tok-of-this-start"), raw=False):
             child = subprocess.Popen(["sleep", "60"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             real = globals()["ROOT"], globals()["PORT"], globals()["AFTER_FORK_WAIT"]
             try:
@@ -5698,11 +5875,19 @@ def _self_test_body() -> int:
                     tr = pathlib.Path(t)
                     ln = _Listener(lambda port: json.dumps(answer_of(child.pid, t, port)).encode())
                     try:
+                        if record is not None:
+                            write_identity(tr, ln.port, record[0](child.pid), record[1])
+                        before = [f.read_bytes() if f.is_file() else None
+                                  for f in (tokenfile_for(tr, ln.port), pidfile_for(tr, ln.port))]
                         globals()["ROOT"], globals()["PORT"], globals()["AFTER_FORK_WAIT"] = tr, ln.port, 0.6
                         import io as _io, contextlib as _ctx
                         buf = _io.StringIO()
                         with _ctx.redirect_stdout(buf):
                             rc = after_fork(child.pid, "tok-of-this-start")
+                        after = [f.read_bytes() if f.is_file() else None
+                                 for f in (tokenfile_for(tr, ln.port), pidfile_for(tr, ln.port))]
+                        if raw:
+                            return rc, before == after
                         recorded = read_identity(tr, ln.port)
                         return rc, buf.getvalue().startswith("FAIL"), pid_alive(child.pid), recorded is not None
                     finally:
@@ -5722,6 +5907,19 @@ def _self_test_body() -> int:
         case("#631 r1 X3 control: the parent's OWN token and child answering is rc 0, child alive, recorded",
              lambda: _after_fork_with(lambda c, t, port: _ans(c, t, port, "tok-of-this-start"))
              == (0, False, True, True))
+
+        # ── r2 Y4: the PARENT writes no record, and its FAIL path removes only a record carrying ITS token ──────
+        # Reproduced on 1745c1b9: the parent wrote its record before knowing whether its child bound, so a losing
+        # start overwrote the winner's token; with no record of its own the winner's was then removed on FAIL.
+        _winner = lambda c, t, port: _ans(os.getpid(), t, port, "winner-tok")  # noqa: E731
+        case("#631 r2 Y4 a LOSING start writes no record: the winner's records stay byte-identical, at two winners",
+             lambda: (_after_fork_with(_winner, record=(lambda c: os.getpid(), "winner-tok"), raw=True),
+                      _after_fork_with(lambda c, t, port: _ans(1, t, port, "w2"), record=(lambda c: 1, "w2"), raw=True))
+             == ((1, True),) * 2)
+        case("#631 r2 Y4 the FAIL path removes a record only when it carries THIS start's token, at two records",
+             lambda: (_after_fork_with(_winner, record=(lambda c: c, "winner-tok"), raw=True),
+                      _after_fork_with(_winner, record=(lambda c: c, "tok-of-this-start"), raw=True))
+             == ((1, True), (1, False)))
 
         def _own_server_cycle():
             port = _free_port()
@@ -5744,6 +5942,62 @@ def _self_test_body() -> int:
                         os.kill(pid, signal.SIGKILL)
         case("#631 control: OUR server is recognised — start rc 0, again 'already serving' rc 0, status 0, stop kills it",
              lambda: _own_server_cycle() == (0, 0, True, 0, 0, True, False))
+
+        # ── r2 Y3: a record write that FAILS leaves no running, unmanageable child ──────────────────────────────
+        # Reproduced on 1745c1b9: the parent raised on the write (a traceback, no FAIL line) while its forked child
+        # bound the port and kept serving with no usable record.
+        def _record_write_fails(which):
+            port = _free_port()
+            with tempfile.TemporaryDirectory() as t:
+                tr = pathlib.Path(t)
+                (tokenfile_for if which == "token" else pidfile_for)(tr, port).mkdir()
+                try:
+                    rc, out = _cli(port, t)
+                    time.sleep(0.3)
+                    m = re.search(r"forked pid (\d+)", out)
+                    gone = m is not None and not pid_alive(int(m.group(1)))
+                    return rc, out.startswith("FAIL"), gone, port_busy(HOST, port), \
+                        tokenfile_for(tr, port).is_file(), read_identity(tr, port)
+                finally:
+                    for pid in listening_pids(port) or ():
+                        if pid != os.getpid():
+                            os.kill(pid, signal.SIGKILL)
+        case("#631 r2 Y3 a record write that FAILS is rc 1 FAIL with no child left running and no record, token or pidfile path",
+             lambda: (_record_write_fails("token"), _record_write_fails("pid"))
+             == ((1, True, True, False, False, None),) * 2)
+
+        # ── r2 Y4: two concurrent starts on one port — exactly one server runs, and its records are ITS ─────────
+        def _concurrent_starts():
+            port = _free_port()
+            with tempfile.TemporaryDirectory() as t:
+                tr = pathlib.Path(t)
+                res = []
+                try:
+                    ths = [threading.Thread(target=lambda: res.append(_cli(port, t))) for _ in range(2)]
+                    for th in ths:
+                        th.start()
+                    for th in ths:
+                        th.join(60)
+                    time.sleep(0.3)
+                    holders = listening_pids(port) or set()
+                    answer = listener_identity(HOST, port, 2.0)
+                    ident = read_identity(tr, port)
+                    matches = (isinstance(answer, dict) and ident is not None and len(holders) == 1
+                               and answer.get("pid") == ident["pid"] == min(holders)
+                               and answer.get("token") == ident["token"])
+                    rc_st, _o = _cli(port, t, "--status")
+                    rc_sp, _o = _cli(port, t, "--stop")
+                    for _ in range(40):
+                        if not port_busy(HOST, port):
+                            break
+                        time.sleep(0.05)
+                    return (sorted(r[0] for r in res)[0], matches, rc_st, rc_sp, port_busy(HOST, port))
+                finally:
+                    for pid in listening_pids(port) or ():
+                        if pid != os.getpid():
+                            os.kill(pid, signal.SIGKILL)
+        case("#631 r2 Y4 two concurrent starts on one port: one server, its records match its /__whoami, status and stop manage it, twice",
+             lambda: (_concurrent_starts(), _concurrent_starts()) == ((0, True, 0, 0, False),) * 2)
 
         # ── r1 X6: one root on TWO ports — each is stopped through its own record, and the other survives ──
         def _two_ports_one_root():
