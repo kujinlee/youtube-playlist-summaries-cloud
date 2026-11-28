@@ -969,6 +969,14 @@ def _self_test_body() -> int:
     ylog = os.path.join(yh, ".claude", LOG_NAME)
     with contextlib.redirect_stderr(io.StringIO()):
         direct = tr(lambda: log_decision(ylog, {"cwd": Unprintable()}, BLOCK, {"rule": "block"}, NOW))
+    # CONTROL: the same direct call with every argument different and nothing raising DOES write — so the
+    # "no log" half below is the injected failure, not a call that never writes (and each parameter is varied).
+    ch = fresh_home("buildable-home")
+    clog = os.path.join(ch, ".claude", LOG_NAME)
+    log_decision(clog, {"cwd": "/ctl", "session_id": "s-ctl"}, ALLOW, {"rule": "allow-ctl"}, NOW + 3600)
+    ctl = json.loads(Path(clog).read_text().splitlines()[-1])
+    ctl_seen = (ctl.get("verdict"), ctl.get("cwd"), ctl.get("session"), ctl.get("rule"),
+                ctl.get("at") == time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(NOW + 3600)))
     raw = json.dumps(payload(T0224)).encode()
 
     def dumps_fails(*a, **kw):
@@ -977,7 +985,8 @@ def _self_test_body() -> int:
         got = bounded(lambda: drive(raw, h=yh))
     case("⭐ #751 Y1: an exception that is not OSError/ValueError while BUILDING the log line (str() raising "
          "RecursionError; json.dumps raising TypeError) never escapes: exit 2, the failed write SAID, no traceback",
-         (direct, said(got), os.path.exists(ylog)), (None, (2, True, False), False))
+         (direct, said(got), os.path.exists(ylog), ctl_seen),
+         (None, (2, True, False), False, (ALLOW, "/ctl", "s-ctl", "allow-ctl", True)))
     wh = fresh_home("short-home")
     wlog = os.path.join(wh, ".claude", LOG_NAME)
     Path(wlog).write_text('{"rule": "old"}\n')
