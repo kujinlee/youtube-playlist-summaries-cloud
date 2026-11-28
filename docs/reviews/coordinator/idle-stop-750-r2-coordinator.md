@@ -12,6 +12,8 @@ Codex reviewed `eafd6671`. The Claude half did not run this round, because round
 
 Mutations: 72 → 79, one per new guard: the lock taken blocking, the lock wait with no deadline, writing to a rotated-away file, a missing path mid-rotation treated as an error, the moving-path retry with no deadline, the reopen bypassing `_open_log`, and the old file closed before the new one is open. Three round-1 mutations were re-bound to the lines that moved into `_open_log`, with the same intent: the blocking open, the regular-file check and the 0600 mode.
 
+REVIEW GAP: claude — alternation (round 2 is the Codex half's turn).
+
 ```yaml
 round: 2
 fixes_nontrivial: true
