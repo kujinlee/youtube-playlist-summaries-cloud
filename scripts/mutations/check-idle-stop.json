@@ -797,8 +797,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "            f.write(line + \"\\n\")",
-        "            pass"
+        "        os.write(fd, (line + \"\\n\").encode(\"ascii\"))\n",
+        "        pass\n"
       ]
     ],
     "expect": [
@@ -842,6 +842,97 @@
     ],
     "expect": [
       "#750: a log past LOG_MAX_BYTES moves to `.1` and the new line starts a fresh file"
+    ]
+  },
+  {
+    "name": "#750 r1: the log line may carry non-ASCII (a lone surrogate then fails to encode)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "                       **_log_safe(why)}, ensure_ascii=True)\n",
+        "                       **_log_safe(why)}, ensure_ascii=False)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #750 r1: a lone surrogate in the payload is still LOGGED, and the stop still exits 2 with no traceback"
+    ]
+  },
+  {
+    "name": "#750 r1: the log is opened BLOCKING (a FIFO hangs the hook)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NONBLOCK, 0o600)\n        if not stat",
+        "        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)\n        if not stat"
+      ]
+    ],
+    "expect": [
+      "⭐ #750 r1: a FIFO where the log should be does not hang the hook: exit 2, and the failed write is SAID"
+    ]
+  },
+  {
+    "name": "#750 r1: a log path that is not a regular file is written as if it were",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        if not stat.S_ISREG(os.fstat(fd).st_mode):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "#750 r1: a log path that is not a regular file (a link to /dev/null) is a failed write, SAID; exit 2"
+    ]
+  },
+  {
+    "name": "#750 r1: the NOT CHECKED line drops the parser's reason",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "{message} {unread}\".rstrip()",
+        "{message}\".rstrip()"
+      ]
+    ],
+    "expect": [
+      "#750 r1: an unreadable payload's NOT CHECKED line keeps the PARSER's reason, not the log's rule"
+    ]
+  },
+  {
+    "name": "#750 r1: PR numbers are logged as gh returned them",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    if \"prs\" in why:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "#750 r1: a PR number that is not an int is logged as a placeholder, never as the object gh returned"
+    ]
+  },
+  {
+    "name": "#750 r1: the log is created world-readable",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "os.O_NONBLOCK, 0o600)\n        if not stat.S_ISREG(",
+        "os.O_NONBLOCK, 0o644)\n        if not stat.S_ISREG("
+      ]
+    ],
+    "expect": [
+      "#750 r1: the log is created mode 0600"
+    ]
+  },
+  {
+    "name": "#750 r1: the usage rule is logged under another rule's name",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        return ALLOW, \"\", {\"rule\": \"usage\"}\n",
+        "        return ALLOW, \"\", {\"rule\": \"subagent\"}\n"
+      ]
+    ],
+    "expect": [
+      "#750 r1: each rule logs ITS OWN name — unreadable, stop_hook_active, subagent, block-unseen, usage"
     ]
   }
 ]
