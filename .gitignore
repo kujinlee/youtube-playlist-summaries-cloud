@@ -177,6 +177,8 @@ docs/explainers/goal-tree.html
 # The server's own runtime droppings — it writes these into whatever it serves.
 docs/explainers/.serve.log
 docs/explainers/.serve.pid
+docs/explainers/.serve.*.pid
+docs/explainers/.serve.*.token
 
 # ⛔ THE EXPLAINER QUESTION LOG IS A QUEUE, NOT AN ARTIFACT — and THIS REPOSITORY IS PUBLIC.
 # Decided 2026-10-05 by the repository owner. `questions.md` is the raw, unedited stream of
