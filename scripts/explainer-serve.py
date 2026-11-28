@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if OUR server is already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 341 cases, binds only ephemeral ports, never 7391
+    python3 scripts/explainer-serve.py --self-test   # 343 cases, binds only ephemeral ports, never 7391
 
 EXIT CODES: 0 done (or already serving / not running); 1 not running (`--status`), or a fork whose child never
 answered with this start's token (the parent reaps it; the child's reason, if it gave one, is in `<ROOT>/.serve.log`);
@@ -5822,7 +5822,7 @@ def _self_test_body() -> int:
         # ⟳ r2 Y3/Y4: the CHILD writes the records (after its bind), so the stand-in child's record is written here,
         # as the child would; `record` overrides it with (pid-of(child_pid), token) — or None for no record at all —
         # and `raw` returns the record files' bytes after `after_fork` instead of the usual tuple.
-        def _after_fork_with(answer_of, record=(lambda c: c, "tok-of-this-start"), raw=False):
+        def _after_fork_with(answer_of, record=(lambda c: c, "tok-of-this-start"), raw=False, own="tok-of-this-start"):
             child = subprocess.Popen(["sleep", "60"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             real = globals()["ROOT"], globals()["PORT"], globals()["AFTER_FORK_WAIT"]
             try:
@@ -5838,7 +5838,7 @@ def _self_test_body() -> int:
                         import io as _io, contextlib as _ctx
                         buf = _io.StringIO()
                         with _ctx.redirect_stdout(buf):
-                            rc = after_fork(child.pid, "tok-of-this-start")
+                            rc = after_fork(child.pid, own)
                         after = [f.read_bytes() if f.is_file() else None
                                  for f in (tokenfile_for(tr, ln.port), pidfile_for(tr, ln.port))]
                         if raw:
@@ -5862,6 +5862,21 @@ def _self_test_body() -> int:
         case("#631 r1 X3 control: the parent's OWN token and child answering is rc 0, child alive, recorded",
              lambda: _after_fork_with(lambda c, t, port: _ans(c, t, port, "tok-of-this-start"))
              == (0, False, True, True))
+        case("#631 the parent's OWN token decides, at two tokens: own 'tok-B' with a 'tok-B' answer is rc 0, and own "
+             "'tok-B' with a 'tok-of-this-start' answer is FAIL rc 1",
+             lambda: (_after_fork_with(lambda c, t, port: _ans(c, t, port, "tok-B"), record=(lambda c: c, "tok-B"),
+                                       own="tok-B")[0],
+                      _after_fork_with(lambda c, t, port: _ans(c, t, port, "tok-of-this-start"), own="tok-B")[0])
+             == (0, 1))
+
+        def _two_roots():
+            with tempfile.TemporaryDirectory() as ta, tempfile.TemporaryDirectory() as tb:
+                ra, rb = pathlib.Path(ta), pathlib.Path(tb)
+                write_identity(ra, 5555, 4242, "tok-a")
+                return (read_identity(ra, 5555), read_identity(rb, 5555),
+                        tokenfile_for(ra, 5555) == tokenfile_for(rb, 5555))
+        case("#631 a record is keyed by ROOT: written under root A it reads back under A and is absent under B",
+             lambda: _two_roots() == ({"pid": 4242, "port": 5555, "token": "tok-a"}, None, False))
 
         # ── r2 Y4: the PARENT writes no record, and its FAIL path removes only a record carrying ITS token ──────
         # Reproduced on 1745c1b9: the parent wrote its record before knowing whether its child bound, so a losing
