@@ -320,11 +320,12 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     ("ci.yml", "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"):
         (1, "which runs a newer push CANCELS (pull requests only) — gates no step"),
     # ⟳ 2026-11-06, backlog #506: the sweep shard's TIMEOUT is keyed on the event — 60 min on the schedule,
-    # which runs every suite under two hash seeds, 30 otherwise. A job SETTING, not a condition: it gates no
+    # which runs every suite under two hash seeds, 30 otherwise (40 since 2026-11-28). A job SETTING, not a condition: it gates no
     # step, and the shard runs on a pull request exactly as before.
     # ⟳ 2026-11-08, PR #538 (backlog #558): the line now carries the YAML anchor `&sweep-limit`, which the sweep
     # step's env aliases as `SWEEP_TIMEOUT_MINUTES` (check-plan-code's time budget). Still a setting, not a gate.
-    ("ci.yml", "timeout-minutes: &sweep-limit ${{ github.event_name == 'schedule' && 60 || 30 }}"):
+    # ⟳ 2026-11-28, backlog #754: the PR/push limit 30 -> 40 (the cut's shards ran out of the 30 on PR CI).
+    ("ci.yml", "timeout-minutes: &sweep-limit ${{ github.event_name == 'schedule' && 60 || 40 }}"):
         (1, "the sweep shard's timeout, longer on the two-seed scheduled sweep — gates no step"),
     # ⟳ 2026-11-25, dashboard-retire S2 Task 12: the ask store's PUSH-mode step (A1 + L1 on master and
     # batch/**). It never runs on a pull request, so it is no gate a READY verdict could miss; the PR's

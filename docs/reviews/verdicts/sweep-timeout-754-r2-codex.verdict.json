@@ -1,0 +1,22 @@
+{
+  "attempts": [
+    "  gpt-6.1-terra: try_next \u2014 final message was only 177 chars (< 200) \u2014 this is the silent no-op, NOT a clean review",
+    "  gpt-6.1-sol: ok \u2014 772 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "02a73b6833957737dfa4fc8b27cfc6199b8668be",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ca92d502-e60f-45ae-8940-518395e3c285/scratchpad/stl-r2/codex.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "loosening_answers": {},
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ca92d502-e60f-45ae-8940-518395e3c285/scratchpad/stl-r2/prompt.md",
+  "reason": "772 chars",
+  "refused": false,
+  "review": "sweep-timeout-754-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/stl"
+}
