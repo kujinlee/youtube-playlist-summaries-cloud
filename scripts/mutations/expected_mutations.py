@@ -2728,7 +2728,7 @@ EXPECTED_MUTATIONS = {
     # announcement / any card excusing the stop (D2, D3, D6), the old block message and a dropped second out (D5),
     # a malformed `__typename` read past (r3 Cm1, D7), a signal asked before the order's allows (D8). Three
     # surviving anchors re-bound to the same intent (the two prose-question mutants, the question-teaching one).
-    "scripts/check-idle-stop.py": 72,  # 65 -> 72 (backlog #750 r1: surrogate, FIFO, not-regular, parser reason, PR placeholder, 0600, rule names); 61 -> 65 (backlog #750: the decision log — written, live-only, a failed write said, rotation)
+    "scripts/check-idle-stop.py": 79,  # 72 -> 79 (backlog #750 r2 Codex: LOCK_NB, the lock deadline, rotated-away, mid-rotation missing, the moving-path deadline, the reopen through _open_log, the old fd held until the new one is open); 65 -> 72 (backlog #750 r1: surrogate, FIFO, not-regular, parser reason, PR placeholder, 0600, rule names); 61 -> 65 (backlog #750: the decision log — written, live-only, a failed write said, rotation)
     # backlog #657 (2026-11-16): the agent watchdog, pinned in the commit that creates it. 43: the argument rules
     # (10, the 270 s floor and its identity with `check-agent-long-call.LIMIT_S` among them), the git directory (4),
     # what counts as activity (12: files, directories, the three git files, the three excluded directories, the

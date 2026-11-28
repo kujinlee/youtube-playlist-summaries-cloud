@@ -862,8 +862,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NONBLOCK, 0o600)\n        if not stat",
-        "        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)\n        if not stat"
+        "        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NONBLOCK, 0o600)\n        try:\n",
+        "        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)\n        try:\n"
       ]
     ],
     "expect": [
@@ -875,8 +875,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "        if not stat.S_ISREG(os.fstat(fd).st_mode):\n",
-        "        if False:\n"
+        "            if not stat.S_ISREG(os.fstat(fd).st_mode):\n",
+        "            if False:\n"
       ]
     ],
     "expect": [
@@ -914,8 +914,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "os.O_NONBLOCK, 0o600)\n        if not stat.S_ISREG(",
-        "os.O_NONBLOCK, 0o644)\n        if not stat.S_ISREG("
+        "os.O_NONBLOCK, 0o600)\n        try:\n            if not stat.S_ISREG(",
+        "os.O_NONBLOCK, 0o644)\n        try:\n            if not stat.S_ISREG("
       ]
     ],
     "expect": [
@@ -933,6 +933,97 @@
     ],
     "expect": [
       "#750 r1: each rule logs ITS OWN name — unreadable, stop_hook_active, subagent, block-unseen, usage"
+    ]
+  },
+  {
+    "name": "#750 r2: the lock is taken BLOCKING (a held flock hangs the hook)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)",
+        "fcntl.flock(fd, fcntl.LOCK_EX)"
+      ]
+    ],
+    "expect": [
+      "⭐ #750 r2: a log whose flock another writer HOLDS does not hang the hook: exit 2 within 2 s, the failed write SAID"
+    ]
+  },
+  {
+    "name": "#750 r2: the wait for a held lock has no deadline",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "                    if time.monotonic() >= deadline:\n                        raise OSError(f\"another writer",
+        "                    if False:\n                        raise OSError(f\"another writer"
+      ]
+    ],
+    "expect": [
+      "⭐ #750 r2: a log whose flock another writer HOLDS does not hang the hook: exit 2 within 2 s, the failed write SAID"
+    ]
+  },
+  {
+    "name": "#750 r2: a file rotated away while the writer waited is written anyway",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            if _is_at(fd, path):\n",
+        "            if True:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #750 r2: a writer whose log was ROTATED AWAY while it waited for the lock appends to the NEW file, never to `.1` — whether the new file is not there yet or another writer already made it"
+    ]
+  },
+  {
+    "name": "#750 r2: a path missing mid-rotation is an error, not a reopen",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    except FileNotFoundError:\n        return False\n",
+        "    except ZeroDivisionError:\n        return False\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #750 r2: a writer whose log was ROTATED AWAY while it waited for the lock appends to the NEW file, never to `.1` — whether the new file is not there yet or another writer already made it"
+    ]
+  },
+  {
+    "name": "#750 r2: a path that keeps moving is retried without a deadline",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        if time.monotonic() >= deadline:\n            raise OSError(f\"the file at the path kept",
+        "        if False:\n            raise OSError(f\"the file at the path kept"
+      ]
+    ],
+    "expect": [
+      "#750 r2: a log path that KEEPS moving is retried only within the bound, then a failed write, SAID; exit 2"
+    ]
+  },
+  {
+    "name": "#750 r2: the reopen after rotation bypasses the checked, locked open",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            new = _open_log(path, deadline)\n",
+        "            new = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NONBLOCK, 0o600)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #750 r2: a FIFO that appears at the path between rotation and reopen is never written: exit 2, SAID"
+    ]
+  },
+  {
+    "name": "#750 r2: the old file is closed before the new one is open (a failed reopen closes it twice)",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            new = _open_log(path, deadline)\n            old, fd = fd, new\n            os.close(old)\n",
+        "            os.close(fd)\n            fd = _open_log(path, deadline)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #750 r2: a reopen that FAILS after rotation is a failed write, SAID — exit 2, no traceback, no raise"
     ]
   }
 ]

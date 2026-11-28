@@ -85,7 +85,7 @@ named as `transcript_path` cannot hold the hook.
     idle would over-ALLOW. It can never block a real builder.
 
     python3 scripts/check-idle-stop.py --hook < payload.json
-    python3 scripts/check-idle-stop.py --self-test  # 72 cases
+    python3 scripts/check-idle-stop.py --self-test  # 77 cases
 
 EXIT CODES: `--hook` 0 = allowed (silent) · 2 = BLOCKED (the reason on stderr, which Claude reads) · 1 = allowed,
 NOT CHECKED (the warning on stderr, which the human reads).
@@ -261,6 +261,49 @@ def _log_safe(why: dict) -> dict:
     return why
 
 
+LOG_WAIT_S = 0.5     # the whole log write's wait for the lock, and for a path that keeps moving (r2 Codex B)
+
+
+def _open_log(path: str, deadline: float) -> int:
+    """A descriptor of the REGULAR file that is AT `path` now, holding its `flock` — or OSError, past `deadline` at
+    the latest. Every descriptor it does not return, it closes itself, so the caller can never close one twice
+    (r2 Codex M1). ⟳ r2 Codex: the lock is taken LOCK_NB and retried until `deadline` (a held lock hung the hook:
+    `O_NONBLOCK` does not make `flock` nonblocking); and a file that is no longer the one at `path` once the lock
+    is held — rotated away while this writer waited — is closed and the path opened again, so a decision is never
+    appended to `.1` (M3). The rotation's reopen comes here too, so it is checked and locked the same way (M2)."""
+    import fcntl
+    import stat
+    while True:
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NONBLOCK, 0o600)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError(f"not a regular file: {path}")
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise OSError(f"another writer held the lock past {LOG_WAIT_S} s: {path}") from None
+                    time.sleep(0.01)
+            if _is_at(fd, path):
+                return fd
+        except BaseException:
+            os.close(fd)
+            raise
+        os.close(fd)
+        if time.monotonic() >= deadline:
+            raise OSError(f"the file at the path kept changing for {LOG_WAIT_S} s: {path}")
+
+
+def _is_at(fd: int, path: str) -> bool:
+    """True when `fd` is the file now at `path`; False when another file, or none (mid-rotation), is there."""
+    try:
+        return os.path.samestat(os.fstat(fd), os.stat(path))
+    except FileNotFoundError:
+        return False
+
+
 def log_decision(path: str, doc: object, verdict: str, why: dict, now: float) -> None:
     """Append ONE line per decision (backlog #750), so a false allow can be traced to the entry that excused it.
     Past LOG_MAX_BYTES the file moves to `<path>.1` (one generation kept). A write that fails is SAID on stderr
@@ -269,27 +312,25 @@ def log_decision(path: str, doc: object, verdict: str, why: dict, now: float) ->
     ⟳ r1 (both halves): the line is ASCII (`ensure_ascii`), so a lone surrogate in the payload cannot raise
     UnicodeEncodeError past the handler; the file is opened O_NONBLOCK and written only if it is a REGULAR file,
     so a FIFO at the path fails at once instead of hanging the hook; it is created 0600; rotation and the append
-    happen under one `flock`, so two concurrent stops cannot lose the rotated generation. What it holds: up to 80
-    characters of each live task's description — the same text the session's transcript, also under ~/.claude,
-    already holds in full."""
+    happen under one `flock`, so two concurrent stops cannot lose the rotated generation. ⟳ r2 (Codex): the
+    open, the regular-file check and a BOUNDED nonblocking lock live in `_open_log`, used for the first open and
+    for the reopen after rotation alike; the old file's lock is held until the new one is locked. What it holds:
+    up to 80 characters of each live task's description — the same text the session's transcript, also under
+    ~/.claude, already holds in full."""
     d = doc if isinstance(doc, dict) else {}
     line = json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(now)), "verdict": verdict,
                        "session": str(d.get("session_id", ""))[:64], "cwd": str(d.get("cwd", ""))[:200],
                        **_log_safe(why)}, ensure_ascii=True)
-    import fcntl
-    import stat
     fd = -1
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NONBLOCK, 0o600)
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            raise OSError(f"not a regular file: {path}")
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        if os.fstat(fd).st_size > LOG_MAX_BYTES and os.path.samestat(os.fstat(fd), os.stat(path)):
+        deadline = time.monotonic() + LOG_WAIT_S
+        fd = _open_log(path, deadline)
+        if os.fstat(fd).st_size > LOG_MAX_BYTES:
             os.replace(path, path + ".1")
-            os.close(fd)
-            fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NONBLOCK, 0o600)
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            new = _open_log(path, deadline)
+            old, fd = fd, new
+            os.close(old)
         os.write(fd, (line + "\n").encode("ascii"))
     except (OSError, ValueError) as e:
         print(f"⚠ idle-stop guard: the decision log could not be written ({type(e).__name__}: {path}); the verdict "
@@ -814,6 +855,107 @@ def _self_test_body() -> int:
          ([["<not an int>", 34]], False))
     case("#750 r1: the log is created mode 0600",
          oct(os.stat(os.path.join(sh, ".claude", LOG_NAME)).st_mode & 0o777), oct(0o600))
+
+    # ── backlog #750 r2 (Codex): the lock and the rotation can neither hang, crash nor misfile a decision ───────────
+    import fcntl
+    real_open, real_replace, real_flock = os.open, os.replace, fcntl.flock
+
+    @contextlib.contextmanager
+    def patched(mod, attr, fake):
+        old = getattr(mod, attr)
+        setattr(mod, attr, fake)
+        try:
+            yield
+        finally:
+            setattr(mod, attr, old)
+
+    def said(got):
+        return got if isinstance(got, str) else (got[0], "decision log could not be written" in got[1],
+                                                 "Traceback" in got[1])
+    kh = fresh_home("held-home")
+    klog = os.path.join(kh, ".claude", LOG_NAME)
+    Path(klog).write_text("")
+    holder = real_open(klog, os.O_RDONLY)
+    real_flock(holder, fcntl.LOCK_EX)
+    t0 = time.monotonic()
+    try:
+        got = bounded(lambda: drive(payload(T0224), h=kh))
+        took = time.monotonic() - t0
+    finally:
+        os.close(holder)
+    case("⭐ #750 r2: a log whose flock another writer HOLDS does not hang the hook: exit 2 within 2 s, the failed "
+         "write SAID", (said(got), took < 2.0), ((2, True, False), True))
+
+    def big_home(name):
+        h = fresh_home(name)
+        Path(h, ".claude", LOG_NAME).write_text("x" * (LOG_MAX_BYTES + 1) + "\n")
+        return h, os.path.join(h, ".claude", LOG_NAME)
+    oh, olog = big_home("reopen-home")
+    opens = []
+
+    def failing_reopen(path, *a, **kw):
+        if path == olog:
+            opens.append(path)
+            if len(opens) > 1:
+                raise PermissionError(13, "injected: the reopen after rotation fails", path)
+        return real_open(path, *a, **kw)
+    with patched(os, "open", failing_reopen):
+        got = bounded(lambda: drive(payload(T0224), h=oh))
+    case("⭐ #750 r2: a reopen that FAILS after rotation is a failed write, SAID — exit 2, no traceback, no raise",
+         (said(got), os.path.exists(olog + ".1")), ((2, True, False), True))
+
+    qh, qlog = big_home("fiforeopen-home")
+    readers = []
+
+    def fifo_after_rotation(src, dst):
+        real_replace(src, dst)
+        if src == qlog:
+            os.mkfifo(qlog)
+            readers.append(real_open(qlog, os.O_RDONLY | os.O_NONBLOCK))
+    with patched(os, "replace", fifo_after_rotation):
+        got = bounded(lambda: drive(payload(T0224), h=qh), fifo=qlog)
+    piped = b""
+    for r in readers:
+        with contextlib.suppress(OSError):
+            piped = os.read(r, 65536)
+        os.close(r)
+    case("⭐ #750 r2: a FIFO that appears at the path between rotation and reopen is never written: exit 2, SAID",
+         (said(got), piped), ((2, True, False), b""))
+
+    def rotated_while_waiting(create):
+        h = fresh_home(f"moved-home-{create}")
+        log = os.path.join(h, ".claude", LOG_NAME)
+        Path(log).write_text('{"rule": "old"}\n')
+        fired = []
+
+        def flock(fd, op):
+            if not fired:
+                fired.append(1)
+                real_replace(log, log + ".1")
+                if create:
+                    Path(log).write_text("")
+            return real_flock(fd, op)
+        with patched(fcntl, "flock", flock):
+            got = bounded(lambda: drive(payload(T0224), h=h))
+        return (said(got), Path(log + ".1").read_text(), [r["rule"] for r in logged(h)])
+    case("⭐ #750 r2: a writer whose log was ROTATED AWAY while it waited for the lock appends to the NEW file, never "
+         "to `.1` — whether the new file is not there yet or another writer already made it",
+         [rotated_while_waiting(False), rotated_while_waiting(True)],
+         [((2, False, False), '{"rule": "old"}\n', ["block"])] * 2)
+
+    mh = fresh_home("moving-home")
+    mlog = os.path.join(mh, ".claude", LOG_NAME)
+
+    def always_moved(fd, op):
+        with contextlib.suppress(OSError):
+            real_replace(mlog, mlog + ".1")
+        return real_flock(fd, op)
+    t0 = time.monotonic()
+    with patched(fcntl, "flock", always_moved):
+        got = bounded(lambda: drive(payload(T0224), h=mh))
+    took = time.monotonic() - t0
+    case("#750 r2: a log path that KEEPS moving is retried only within the bound, then a failed write, SAID; exit 2",
+         (said(got), took < 2.0), ((2, True, False), True))
 
     # ── END TO END: the launcher, the real `run_gh`, a stub `gh` on PATH ─────────────────────────────────────────────
     e2e = os.path.join(tmp, "e2e")
