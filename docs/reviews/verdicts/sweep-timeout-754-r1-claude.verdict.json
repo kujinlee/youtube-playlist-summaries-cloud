@@ -1,0 +1,26 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".github/workflows/ci.yml": "100644 a0989e1c2a04f7747acab65bf043a464ccbe35ba",
+    "docs/backlog.md": "100644 a7074172c11118cae4dd6a055bc3800d463728e4",
+    "docs/reviews/claude/sweep-timeout-754-r1-claude.md": "100644 518631c4bf7edaf6498a4554c06fafbff1aa3dbc",
+    "docs/reviews/codex/sweep-timeout-754-r1-codex.md": "100644 46726e725a803c01cf10f3871559d59da1d8a303",
+    "docs/reviews/verdicts/sweep-timeout-754-r1-codex.verdict.json": "100644 db2dd43e079d27d81be77c5a34b6ee53bc4f0446",
+    "scripts/check-plan-code.py": "100644 9b65b2872001335193417134f72196000b13c26c"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "66590fea02c62cf81a265e75802f6860cb24feea",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 5408 chars, names 66590fea02c6",
+  "refused": false,
+  "review": "sweep-timeout-754-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/stl",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

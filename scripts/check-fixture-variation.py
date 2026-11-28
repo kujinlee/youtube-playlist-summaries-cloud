@@ -1486,6 +1486,11 @@ EXEMPT: dict[str, str] = {
     "explainer-serve.py:port_busy.host": "HOST is the module constant 127.0.0.1, the only address the server ever binds or probes; no caller passes another",
     "explainer-serve.py:after_fork.pid": "the pid must be a real child the parent can reap, so the helper always forks one; the callers vary the ANSWER's pid against it (the child's, 1, the test process's), and the manifest entry that drops the pid compare dies via the case naming it",
     "explainer-serve.py:after_fork.token": "driven through ONE helper, `_after_fork_with`, whose `own` argument its callers vary ('tok-of-this-start', 'tok-B'); guarded by the manifest entry that compares the answer with a fixed token, which dies via the case naming it",
+    # backlog #750 (2026-11-27): check-idle-stop.py — `decide_why` is the reason-returning core; `decide` and `main` forward to it.
+    "check-idle-stop.py:decide_why.doc": "driven through `decide()` and `main()`, which forward it unchanged; their call sites across the suite vary it (every D-series and END TO END case), and this one direct call reads the third element, the reason, which `decide` drops",
+    "check-idle-stop.py:decide_why.now": "driven through `decide()` and `main()`, which forward it unchanged; their call sites across the suite vary it (every D-series and END TO END case), and this one direct call reads the third element, the reason, which `decide` drops",
+    "check-idle-stop.py:decide_why.cache_text": "driven through `decide()` and `main()`, which forward it unchanged; their call sites across the suite vary it (every D-series and END TO END case), and this one direct call reads the third element, the reason, which `decide` drops",
+    "check-idle-stop.py:decide_why.gh": "driven through `decide()` and `main()`, which forward it unchanged; their call sites across the suite vary it (every D-series and END TO END case), and this one direct call reads the third element, the reason, which `decide` drops",
     # backlog #625 (2026-11-13): ask_answerer.py — two PURE functions each driven by ONE table loop. This scan
     # compares argument EXPRESSIONS, so a loop variable reads as one value; the ROWS vary.
     # goal node tree Task 6 (2026-11-24): check-anchors.py — each case builds its OWN tree under `tmp`, bound to

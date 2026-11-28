@@ -23,7 +23,9 @@ THE DECISION, for a Stop payload (the first that applies wins):
 were REMOVED: a pause marker `.claude/paused` (one `touch` the agent may run excused every stop for 24 h, and the
 refusal named the command) and "the last tool call was an AskUserQuestion" (a parser of agent-influenced
 transcript text, which thrashed for two rounds). `main()` does not open `transcript_path` at all, and no file in
-the checkout pauses this guard. This is the repository's existing practice — a harness cannot read a cause from
+the checkout pauses this guard. ⟳ backlog #750: every decision is APPENDED to `~/.claude/idle-stop-log.jsonl`
+(the rule that decided, and for allow (a) the live entries that excused the stop) — WRITTEN, NEVER READ, so the
+log cannot change a verdict; a failed write is reported on stderr and the verdict stands. This is the repository's existing practice — a harness cannot read a cause from
 a child's text — applied here. Each removed exception saved ONE refusal on its honest path and nothing else:
   THE CONTINUATION IS THE OUT. If the owner told the agent to stop, or only the owner can act (a card they
 rejected, a decision that is theirs), the stop is refused once, the agent says so in one line quoting them, and
@@ -83,7 +85,7 @@ named as `transcript_path` cannot hold the hook.
     idle would over-ALLOW. It can never block a real builder.
 
     python3 scripts/check-idle-stop.py --hook < payload.json
-    python3 scripts/check-idle-stop.py --self-test  # 61 cases
+    python3 scripts/check-idle-stop.py --self-test  # 79 cases
 
 EXIT CODES: `--hook` 0 = allowed (silent) · 2 = BLOCKED (the reason on stderr, which Claude reads) · 1 = allowed,
 NOT CHECKED (the warning on stderr, which the human reads).
@@ -133,11 +135,17 @@ def usage_stop(cache_text: str | None, now: float) -> str | None:
 def running_tasks(doc: dict) -> list[str] | None:
     """(a): the harness's background tasks whose status is an explicit LIVE one, as labels; None when the payload
     does not list them. A missing or unknown status is no evidence that a task is live."""
+    live = _live(doc)
+    return None if live is None else [f"{t.get('type', '?')} {t.get('id', '?')}" for t in live]
+
+
+def _live(doc: dict) -> list[dict] | None:
+    """The ONE live-status rule, read by (a) and by the log: entries whose status is an explicit LIVE one; None when
+    the payload does not list them."""
     tasks = doc.get("background_tasks")
     if not isinstance(tasks, list):
         return None
-    return [f"{t.get('type', '?')} {t.get('id', '?')}" for t in tasks
-            if isinstance(t, dict) and str(t.get("status", "")).lower() in LIVE]
+    return [t for t in tasks if isinstance(t, dict) and str(t.get("status", "")).lower() in LIVE]
 
 
 def run_gh(root: str, timeout_s: float = GH_TIMEOUT_S) -> tuple[int, str]:
@@ -185,29 +193,49 @@ def pending_ci(rc: int, out: str) -> list[int] | None:
 
 
 def decide(doc: object, now: float, cache_text: str | None, gh) -> tuple[str, str]:
-    """(verdict, message). `gh` is a zero-argument callable returning `run_gh`'s (rc, text), called only when
+    """(verdict, message) — `decide_why` without the reason."""
+    verdict, message, _why = decide_why(doc, now, cache_text, gh)
+    return verdict, message
+
+
+def live_entries(doc: dict) -> list[dict]:
+    """The LIVE `background_tasks` entries themselves, trimmed for the log: id, type, status, description."""
+    return [{k: str(t.get(k, ""))[:80] for k in ("id", "type", "status", "description")} for t in _live(doc) or []]
+
+
+def decide_why(doc: object, now: float, cache_text: str | None, gh) -> tuple[str, str, dict]:
+    """(verdict, message, why). `why` names the rule that decided and, for (a), the excusing entries — backlog
+    #750: two promise-only stops were ALLOWED on 2026-11-27 and nothing recorded which entry excused them."""
+    verdict, message, why = _decide(doc, now, cache_text, gh)
+    if why.get("rule") == "a" and isinstance(doc, dict):
+        why = {**why, "tasks": live_entries(doc)}
+    return verdict, message, why
+
+
+def _decide(doc: object, now: float, cache_text: str | None, gh) -> tuple[str, str, dict]:
+    """(verdict, message, why). `gh` is a zero-argument callable returning `run_gh`'s (rc, text), called only when
     (a) found nothing. EVERY ALLOW here reads state the stopping agent did not author: the payload's harness
     fields, the usage cache, `gh`. Nothing the agent wrote or caused — its prose, a transcript, a marker file, a
     file in a worktree — is read."""
     if not isinstance(doc, dict):
-        return NOT_CHECKED, "the Stop payload is not a JSON object"
+        return NOT_CHECKED, "the Stop payload is not a JSON object", {"rule": "unreadable"}
     if doc.get("stop_hook_active") is True:
-        return ALLOW, ""
+        return ALLOW, "", {"rule": "stop_hook_active"}
     aid = doc.get("agent_id")
     if isinstance(aid, str) and aid.strip():
-        return ALLOW, ""
+        return ALLOW, "", {"rule": "subagent"}
     if usage_stop(cache_text, now):
-        return ALLOW, ""
+        return ALLOW, "", {"rule": "usage"}
     unseen = []
     tasks = running_tasks(doc)
     if tasks:
-        return ALLOW, ""
+        return ALLOW, "", {"rule": "a"}
     if tasks is None:
         unseen.append("(a) the payload has no `background_tasks` list")
     rc, out = gh()
     ci = pending_ci(rc, out)
     if ci:
-        return ALLOW, ""
+        return ALLOW, "", {"rule": "c", "prs": ci}
     if ci is None:
         unseen.append(f"(c) gh could not answer ({out.strip()[:120] if rc != 0 else 'unreadable JSON'})")
     todo = ("A turn that says work is starting must START it before it ends. DO ONE: (1) start the next job in this "
@@ -216,9 +244,104 @@ def decide(doc: object, now: float, cache_text: str | None, gh) -> tuple[str, st
     if unseen:
         return BLOCK, ("⛔ IDLE STOP REFUSED: nothing was SEEN running, and this could NOT be read: "
                        + "; ".join(unseen) + ". An unread signal is no evidence of work — treat it as NOT RUN. "
-                       + todo)
+                       + todo), {"rule": "block-unseen"}
     return BLOCK, ("⛔ IDLE STOP REFUSED: nothing is running — no background job of this session, no pending CI "
-                   "check on an open PR. " + todo)
+                   "check on an open PR. " + todo), {"rule": "block"}
+
+
+LOG_NAME = "idle-stop-log.jsonl"
+LOG_MAX_BYTES = 2_000_000
+
+
+def _log_safe(why: dict) -> dict:
+    """The reason as LOGGED: a PR number that is not an int is written as a placeholder (r1 Codex M2 — a malformed
+    `gh` answer must not put an arbitrary object into the log). The VERDICT already taken is not touched."""
+    if "prs" in why:
+        return {**why, "prs": [n if type(n) is int else "<not an int>" for n in why["prs"]][:50]}
+    return why
+
+
+LOG_WAIT_S = 0.5     # the whole log write's wait for the lock, and for a path that keeps moving (r2 Codex B)
+
+
+def _open_log(path: str, deadline: float) -> int:
+    """A descriptor of the REGULAR file that is AT `path` now, holding its `flock` — or OSError, past `deadline` at
+    the latest. Every descriptor it does not return, it closes itself, so the caller can never close one twice
+    (r2 Codex M1). ⟳ r2 Codex: the lock is taken LOCK_NB and retried until `deadline` (a held lock hung the hook:
+    `O_NONBLOCK` does not make `flock` nonblocking); and a file that is no longer the one at `path` once the lock
+    is held — rotated away while this writer waited — is closed and the path opened again, so a decision is never
+    appended to `.1` (M3). The rotation's reopen comes here too, so it is checked and locked the same way (M2)."""
+    import fcntl
+    import stat
+    while True:
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NONBLOCK, 0o600)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError(f"not a regular file: {path}")
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise OSError(f"another writer held the lock past {LOG_WAIT_S} s: {path}") from None
+                    time.sleep(0.01)
+            if _is_at(fd, path):
+                return fd
+        except BaseException:
+            os.close(fd)
+            raise
+        os.close(fd)
+        if time.monotonic() >= deadline:
+            raise OSError(f"the file at the path kept changing for {LOG_WAIT_S} s: {path}")
+
+
+def _is_at(fd: int, path: str) -> bool:
+    """True when `fd` is the file now at `path`; False when another file, or none (mid-rotation), is there."""
+    try:
+        return os.path.samestat(os.fstat(fd), os.stat(path))
+    except FileNotFoundError:
+        return False
+
+
+def log_decision(path: str, doc: object, verdict: str, why: dict, now: float) -> None:
+    """Append ONE line per decision (backlog #750), so a false allow can be traced to the entry that excused it.
+    Past LOG_MAX_BYTES the file moves to `<path>.1` (one generation kept). A write that fails is SAID on stderr
+    and never changes the verdict: the log is evidence about the guard, not a signal the guard reads.
+
+    ⟳ r1 (both halves): the line is ASCII (`ensure_ascii`), so a lone surrogate in the payload cannot raise
+    UnicodeEncodeError past the handler; the file is opened O_NONBLOCK and written only if it is a REGULAR file,
+    so a FIFO at the path fails at once instead of hanging the hook; it is created 0600; rotation and the append
+    happen under one `flock`, so two concurrent stops cannot lose the rotated generation. ⟳ r2 (Codex): the
+    open, the regular-file check and a BOUNDED nonblocking lock live in `_open_log`, used for the first open and
+    for the reopen after rotation alike; the old file's lock is held until the new one is locked. ⟳ r3 (Claude,
+    backlog #751): the line is built inside the `try`, which catches ANY Exception, and a short write is truncated
+    back off and reported, so no torn line is left. What it holds: up to 80 characters of each live task's
+    description — the same text the session's transcript, also under ~/.claude, already holds in full."""
+    d = doc if isinstance(doc, dict) else {}
+    fd = -1
+    try:   # ⟳ r3 Y1 (backlog #751): the line is BUILT inside the try, and ANY Exception is a failed write
+        line = json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(now)), "verdict": verdict,
+                           "session": str(d.get("session_id", ""))[:64], "cwd": str(d.get("cwd", ""))[:200],
+                           **_log_safe(why)}, ensure_ascii=True)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        deadline = time.monotonic() + LOG_WAIT_S
+        fd = _open_log(path, deadline)
+        if os.fstat(fd).st_size > LOG_MAX_BYTES:
+            os.replace(path, path + ".1")
+            new = _open_log(path, deadline)
+            old, fd = fd, new
+            os.close(old)
+        data, start = (line + "\n").encode("ascii"), os.fstat(fd).st_size
+        if os.write(fd, data) != len(data):   # ⟳ r3 Y2: a SHORT write is cut back off, so no torn line is left
+            os.ftruncate(fd, start)
+            raise OSError(f"short write: {path}")
+    except Exception as e:  # noqa: BLE001 - the log must never change the verdict, whatever it raises
+        print(f"⚠ idle-stop guard: the decision log could not be written ({type(e).__name__}: {path}); the verdict "
+              "stands", file=sys.stderr)
+    finally:
+        if fd >= 0:
+            os.close(fd)
 
 
 def main(argv: list[str] | None = None, stdin_bytes: bytes | None = None, now: float | None = None,
@@ -228,18 +351,20 @@ def main(argv: list[str] | None = None, stdin_bytes: bytes | None = None, now: f
         print("usage: check-idle-stop.py --hook < payload  |  --self-test", file=sys.stderr)
         return 1
     import bounded_read
-    data, why = (stdin_bytes, "") if stdin_bytes is not None else bounded_read.read_stream(sys.stdin.buffer)
-    doc, why = bounded_read.parse_json(data) if data is not None else (None, why)
+    data, unread = (stdin_bytes, "") if stdin_bytes is not None else bounded_read.read_stream(sys.stdin.buffer)
+    doc, unread = bounded_read.parse_json(data) if data is not None else (None, unread)
     now = time.time() if now is None else now
     root = str(ROOT) if root is None else root
-    cache_path = os.path.join(os.path.expanduser("~") if home is None else home, ".claude", ".rate-limits.json")
+    home = os.path.expanduser("~") if home is None else home
+    cache_path = os.path.join(home, ".claude", ".rate-limits.json")
     cache_text, _ = _pace.read_regular(cache_path, _pace.CACHE_MAX_BYTES)
-    verdict, message = decide(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)
+    verdict, message, why = decide_why(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)
+    log_decision(os.path.join(home, ".claude", LOG_NAME), doc, verdict, why, now)
     if verdict == BLOCK:
         print(message, file=sys.stderr)
         return 2
     if verdict == NOT_CHECKED:
-        print(f"⚠ idle-stop guard: NOT CHECKED — {message} {why}".rstrip() + ". This stop is ALLOWED; treat the "
+        print(f"⚠ idle-stop guard: NOT CHECKED — {message} {unread}".rstrip() + ". This stop is ALLOWED; treat the "
               "check as NOT RUN.", file=sys.stderr)
         return 1
     return 0
@@ -648,6 +773,233 @@ def _self_test_body() -> int:
     case("⭐ r4 XB1 identity: a builder worktree with a file written 5 s ago / 120 s ago / a `touch`ed file / an "
          "unlistable worktrees dir changes NOTHING: each stop exits 2 with the words of the stop with no worktrees "
          "dir at all", (xb_base[0], [n for n, got in xb_rows if got != xb_base], len(xb_rows)), (2, [], 4))
+
+    # ── backlog #750: every decision is LOGGED, naming the rule and, for (a), the entry that excused it ─────────────
+    def logged(h):
+        f = os.path.join(h, ".claude", LOG_NAME)
+        out = []
+        for x in (Path(f).read_text().splitlines() if os.path.exists(f) else []):
+            try:
+                out.append(json.loads(x))
+            except ValueError:
+                out.append({"rule": "<not a JSON line>"})
+        return out
+    lh = os.path.join(tmp, "log-home")
+    os.makedirs(os.path.join(lh, ".claude"))
+    Path(lh, ".claude", ".rate-limits.json").write_text(cache())
+    agent_live = [{"id": "a7f3", "type": "subagent", "status": "running", "description": "r4 review"}]
+    lr = [drive(payload(T0224, agent_live), h=lh)[0], drive(payload(T0224), h=lh)[0],
+          drive(payload(T0224), gh_says(0, pend), h=lh)[0]]
+    rows = logged(lh)
+    case("⭐ #750: three stops through main() write three log lines: (a) names the subagent that excused it, a BLOCK "
+         "says block, (c) names the PR — and the exit codes are unchanged (0, 2, 0)",
+         (lr, [(r["verdict"], r["rule"]) for r in rows], rows[0].get("tasks") if rows else None,
+          rows[2].get("prs") if len(rows) > 2 else None),
+         ([0, 2, 0], [(ALLOW, "a"), (BLOCK, "block"), (ALLOW, "c")],
+          [{"id": "a7f3", "type": "subagent", "status": "running", "description": "r4 review"}], [12, 34]))
+    case("#750: (a) logs ONLY the live entries — a completed shell beside a running monitor names the monitor",
+         decide_why(payload(T0224, [{**shell[0], "status": "completed"},
+                                    {"id": "bm1", "type": "monitor", "status": "pending", "description": "ci"}]),
+                    NOW, cache(60), gh_says())[2],
+         {"rule": "a", "tasks": [{"id": "bm1", "type": "monitor", "status": "pending", "description": "ci"}]})
+    bad = os.path.join(tmp, "bad-home")
+    os.makedirs(bad)
+    Path(bad, ".claude").write_text("a FILE where the log's directory should be")
+    rc, err = drive(payload(T0224), h=bad)
+    case("⭐ #750: a log that cannot be written leaves the verdict alone (exit 2) and SAYS so on stderr",
+         (rc, "IDLE STOP REFUSED" in err, "decision log could not be written" in err), (2, True, True))
+    big = os.path.join(lh, ".claude", LOG_NAME)
+    Path(big).write_text("x" * (LOG_MAX_BYTES + 1) + "\n")
+    drive(payload(T0224, agent_live), h=lh)
+    case("#750: a log past LOG_MAX_BYTES moves to `.1` and the new line starts a fresh file",
+         (os.path.exists(big + ".1") and os.path.getsize(big + ".1") > LOG_MAX_BYTES, [r["rule"] for r in logged(lh)]),
+         (True, ["a"]))
+
+    # ── backlog #750 r1 (both halves): logging can neither hang, crash nor leak past what it must ──────────────────
+    def fresh_home(name, cache_text=None):
+        h = os.path.join(tmp, name)
+        os.makedirs(os.path.join(h, ".claude"))
+        Path(h, ".claude", ".rate-limits.json").write_text(cache_text or cache())
+        return h
+    sh = fresh_home("surr-home")
+    rc, err = drive(payload(T0224, session_id="\ud800", cwd="\ud800"), h=sh)
+    case("⭐ #750 r1: a lone surrogate in the payload is still LOGGED, and the stop still exits 2 with no traceback",
+         (rc, "Traceback" in err, [r["rule"] for r in logged(sh)]), (2, False, ["block"]))
+    fh = fresh_home("fifo-home")
+    os.mkfifo(os.path.join(fh, ".claude", LOG_NAME))
+    got = bounded(lambda: drive(payload(T0224), h=fh))
+    with contextlib.suppress(OSError):
+        os.close(os.open(os.path.join(fh, ".claude", LOG_NAME), os.O_RDONLY | os.O_NONBLOCK))
+    case("⭐ #750 r1: a FIFO where the log should be does not hang the hook: exit 2, and the failed write is SAID",
+         got if got == "HUNG" else (got[0], "decision log could not be written" in got[1]), (2, True))
+    nh = fresh_home("null-home")
+    os.symlink(os.devnull, os.path.join(nh, ".claude", LOG_NAME))
+    rc, err = drive(payload(T0224), h=nh)
+    case("#750 r1: a log path that is not a regular file (a link to /dev/null) is a failed write, SAID; exit 2",
+         (rc, "decision log could not be written" in err), (2, True))
+    rc, err = drive(b"{not json")
+    case("#750 r1: an unreadable payload's NOT CHECKED line keeps the PARSER's reason, not the log's rule",
+         ("JSONDecodeError" in err, "'rule'" in err), (True, False))
+    rh = fresh_home("rules-home")
+    uh = fresh_home("usage-home", cache(98, at=NOW + 3600))
+    drive(b"{not json", h=rh)
+    drive(payload(T0224, stop_hook_active=True), h=rh)
+    drive(payload(T0224, agent_id="a12c"), h=rh)
+    drive(payload(T0224), gh_says(4, "gh auth"), h=rh)
+    drive(payload(T0224), now=NOW + 3600, h=uh)
+    case("#750 r1: each rule logs ITS OWN name — unreadable, stop_hook_active, subagent, block-unseen, usage",
+         [r["rule"] for r in logged(rh)] + [r["rule"] for r in logged(uh)],
+         ["unreadable", "stop_hook_active", "subagent", "block-unseen", "usage"])
+    ph = fresh_home("prs-home")
+    odd = json.loads(pend)
+    odd[0]["number"] = {"secret": "TOKEN"}
+    drive(payload(T0224), gh_says(0, json.dumps(odd)), h=ph)
+    case("#750 r1: a PR number that is not an int is logged as a placeholder, never as the object gh returned",
+         ([r.get("prs") for r in logged(ph)], "TOKEN" in Path(ph, ".claude", LOG_NAME).read_text()),
+         ([["<not an int>", 34]], False))
+    case("#750 r1: the log is created mode 0600",
+         oct(os.stat(os.path.join(sh, ".claude", LOG_NAME)).st_mode & 0o777), oct(0o600))
+
+    # ── backlog #750 r2 (Codex): the lock and the rotation can neither hang, crash nor misfile a decision ───────────
+    import fcntl
+    real_open, real_replace, real_flock = os.open, os.replace, fcntl.flock
+
+    @contextlib.contextmanager
+    def patched(mod, attr, fake):
+        old = getattr(mod, attr)
+        setattr(mod, attr, fake)
+        try:
+            yield
+        finally:
+            setattr(mod, attr, old)
+
+    def said(got):
+        return got if isinstance(got, str) else (got[0], "decision log could not be written" in got[1],
+                                                 "Traceback" in got[1])
+    kh = fresh_home("held-home")
+    klog = os.path.join(kh, ".claude", LOG_NAME)
+    Path(klog).write_text("")
+    holder = real_open(klog, os.O_RDONLY)
+    real_flock(holder, fcntl.LOCK_EX)
+    t0 = time.monotonic()
+    try:
+        got = bounded(lambda: drive(payload(T0224), h=kh))
+        took = time.monotonic() - t0
+    finally:
+        os.close(holder)
+    case("⭐ #750 r2: a log whose flock another writer HOLDS does not hang the hook: exit 2 within 2 s, the failed "
+         "write SAID", (said(got), took < 2.0), ((2, True, False), True))
+
+    def big_home(name):
+        h = fresh_home(name)
+        Path(h, ".claude", LOG_NAME).write_text("x" * (LOG_MAX_BYTES + 1) + "\n")
+        return h, os.path.join(h, ".claude", LOG_NAME)
+    oh, olog = big_home("reopen-home")
+    opens = []
+
+    def failing_reopen(path, *a, **kw):
+        if path == olog:
+            opens.append(path)
+            if len(opens) > 1:
+                raise PermissionError(13, "injected: the reopen after rotation fails", path)
+        return real_open(path, *a, **kw)
+    with patched(os, "open", failing_reopen):
+        got = bounded(lambda: drive(payload(T0224), h=oh))
+    case("⭐ #750 r2: a reopen that FAILS after rotation is a failed write, SAID — exit 2, no traceback, no raise",
+         (said(got), os.path.exists(olog + ".1")), ((2, True, False), True))
+
+    qh, qlog = big_home("fiforeopen-home")
+    readers = []
+
+    def fifo_after_rotation(src, dst):
+        real_replace(src, dst)
+        if src == qlog:
+            os.mkfifo(qlog)
+            readers.append(real_open(qlog, os.O_RDONLY | os.O_NONBLOCK))
+    with patched(os, "replace", fifo_after_rotation):
+        got = bounded(lambda: drive(payload(T0224), h=qh), fifo=qlog)
+    piped = b""
+    for r in readers:
+        with contextlib.suppress(OSError):
+            piped = os.read(r, 65536)
+        os.close(r)
+    case("⭐ #750 r2: a FIFO that appears at the path between rotation and reopen is never written: exit 2, SAID",
+         (said(got), piped), ((2, True, False), b""))
+
+    def rotated_while_waiting(create):
+        h = fresh_home(f"moved-home-{create}")
+        log = os.path.join(h, ".claude", LOG_NAME)
+        Path(log).write_text('{"rule": "old"}\n')
+        fired = []
+
+        def flock(fd, op):
+            if not fired:
+                fired.append(1)
+                real_replace(log, log + ".1")
+                if create:
+                    Path(log).write_text("")
+            return real_flock(fd, op)
+        with patched(fcntl, "flock", flock):
+            got = bounded(lambda: drive(payload(T0224), h=h))
+        return (said(got), Path(log + ".1").read_text(), [r["rule"] for r in logged(h)])
+    case("⭐ #750 r2: a writer whose log was ROTATED AWAY while it waited for the lock appends to the NEW file, never "
+         "to `.1` — whether the new file is not there yet or another writer already made it",
+         [rotated_while_waiting(False), rotated_while_waiting(True)],
+         [((2, False, False), '{"rule": "old"}\n', ["block"])] * 2)
+
+    mh = fresh_home("moving-home")
+    mlog = os.path.join(mh, ".claude", LOG_NAME)
+
+    def always_moved(fd, op):
+        with contextlib.suppress(OSError):
+            real_replace(mlog, mlog + ".1")
+        return real_flock(fd, op)
+    t0 = time.monotonic()
+    with patched(fcntl, "flock", always_moved):
+        got = bounded(lambda: drive(payload(T0224), h=mh))
+    took = time.monotonic() - t0
+    case("#750 r2: a log path that KEEPS moving is retried only within the bound, then a failed write, SAID; exit 2",
+         (said(got), took < 2.0), ((2, True, False), True))
+
+    # ── backlog #751 (r3 Claude Y1, Y2): no exception from BUILDING the line escapes; a short write leaves no torn line
+    class Unprintable:
+        def __str__(self):
+            raise RecursionError("injected: str() of a too-deep value")
+    yh = fresh_home("unbuildable-home")
+    ylog = os.path.join(yh, ".claude", LOG_NAME)
+    with contextlib.redirect_stderr(io.StringIO()):
+        direct = tr(lambda: log_decision(ylog, {"cwd": Unprintable()}, BLOCK, {"rule": "block"}, NOW))
+    # CONTROL: the same direct call with every argument different and nothing raising DOES write — so the
+    # "no log" half below is the injected failure, not a call that never writes (and each parameter is varied).
+    ch = fresh_home("buildable-home")
+    clog = os.path.join(ch, ".claude", LOG_NAME)
+    log_decision(clog, {"cwd": "/ctl", "session_id": "s-ctl"}, ALLOW, {"rule": "allow-ctl"}, NOW + 3600)
+    ctl = json.loads(Path(clog).read_text().splitlines()[-1])
+    ctl_seen = (ctl.get("verdict"), ctl.get("cwd"), ctl.get("session"), ctl.get("rule"),
+                ctl.get("at") == time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(NOW + 3600)))
+    raw = json.dumps(payload(T0224)).encode()
+
+    def dumps_fails(*a, **kw):
+        raise TypeError("injected: a why field json cannot serialise")
+    with patched(json, "dumps", dumps_fails):
+        got = bounded(lambda: drive(raw, h=yh))
+    case("⭐ #751 Y1: an exception that is not OSError/ValueError while BUILDING the log line (str() raising "
+         "RecursionError; json.dumps raising TypeError) never escapes: exit 2, the failed write SAID, no traceback",
+         (direct, said(got), os.path.exists(ylog), ctl_seen),
+         (None, (2, True, False), False, (ALLOW, "/ctl", "s-ctl", "allow-ctl", True)))
+    wh = fresh_home("short-home")
+    wlog = os.path.join(wh, ".claude", LOG_NAME)
+    Path(wlog).write_text('{"rule": "old"}\n')
+    real_write = os.write
+
+    def short_write(fd, data):
+        return real_write(fd, data[: len(data) // 2]) if data.startswith(b'{"at"') else real_write(fd, data)
+    with patched(os, "write", short_write):
+        got = bounded(lambda: drive(payload(T0224), h=wh))
+    after = drive(payload(T0224), h=wh)[0]
+    case("⭐ #751 Y2: a SHORT os.write is a failed write, SAID, and leaves no torn line: exit 2 both times, and the "
+         "next decision is a whole JSON line right after the old one",
+         (said(got), after, [r["rule"] for r in logged(wh)]), ((2, True, False), 2, ["old", "block"]))
 
     # ── END TO END: the launcher, the real `run_gh`, a stub `gh` on PATH ─────────────────────────────────────────────
     e2e = os.path.join(tmp, "e2e")

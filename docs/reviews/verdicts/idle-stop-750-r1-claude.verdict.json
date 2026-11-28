@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/idle-stop-750-r1-claude.md": "100644 b85b596ff47471f84171cc8836b59be99e77f54d",
+    "docs/reviews/codex/idle-stop-750-r1-codex.md": "100644 6e8716c82e451b4fc85b30f58f0e201a50224723",
+    "docs/reviews/verdicts/idle-stop-750-r1-codex.verdict.json": "100644 16c7b583acdfcd108d5d4723b816df1a48a2d73d"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "593dd524785cd35e318a830d909172f4e647a522",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 6530 chars, names 593dd524785c",
+  "refused": false,
+  "review": "idle-stop-750-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/i750",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
