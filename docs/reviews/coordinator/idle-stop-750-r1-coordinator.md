@@ -24,13 +24,13 @@ halves:
   codex: ran
   claude: ran
 findings:
-  - {id: W1, severity: BLOCKER, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
-  - {id: W2, severity: MAJOR, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
-  - {id: W3, severity: MAJOR, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
-  - {id: W4, severity: MAJOR, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
-  - {id: W5, severity: MAJOR, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
-  - {id: W6, severity: MINOR, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
-  - {id: W7, severity: NIT, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
+  - {id: W1, severity: Blocking, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
+  - {id: W2, severity: High, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
+  - {id: W3, severity: High, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
+  - {id: W4, severity: High, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
+  - {id: W5, severity: High, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
+  - {id: W6, severity: Medium, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
+  - {id: W7, severity: Low, aim: deliverable, fix_induced: false, component: check-idle-stop, disposition: fixed}
 ```
 
 Reviews: `docs/reviews/codex/idle-stop-750-r1-codex.md`, `docs/reviews/claude/idle-stop-750-r1-claude.md`.

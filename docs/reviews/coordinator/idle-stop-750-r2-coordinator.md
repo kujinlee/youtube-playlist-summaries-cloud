@@ -22,11 +22,11 @@ halves:
   codex: ran
   claude: "REVIEW GAP: claude — alternation"
 findings:
-  - {id: X1, severity: BLOCKER, aim: deliverable, fix_induced: true, component: check-idle-stop, disposition: fixed}
-  - {id: X2, severity: MAJOR, aim: deliverable, fix_induced: true, component: check-idle-stop, disposition: fixed}
-  - {id: X3, severity: MAJOR, aim: deliverable, fix_induced: true, component: check-idle-stop, disposition: fixed}
-  - {id: X4, severity: MAJOR, aim: deliverable, fix_induced: true, component: check-idle-stop, disposition: fixed}
-  - {id: X5, severity: MINOR, aim: deliverable, fix_induced: true, component: check-idle-stop, disposition: fixed}
+  - {id: X1, severity: Blocking, aim: deliverable, fix_induced: true, component: check-idle-stop, disposition: fixed}
+  - {id: X2, severity: High, aim: deliverable, fix_induced: true, component: check-idle-stop, disposition: fixed}
+  - {id: X3, severity: High, aim: deliverable, fix_induced: true, component: check-idle-stop, disposition: fixed}
+  - {id: X4, severity: High, aim: deliverable, fix_induced: true, component: check-idle-stop, disposition: fixed}
+  - {id: X5, severity: Medium, aim: deliverable, fix_induced: true, component: check-idle-stop, disposition: fixed}
 ```
 
 Review: `docs/reviews/codex/idle-stop-750-r2-codex.md`.
