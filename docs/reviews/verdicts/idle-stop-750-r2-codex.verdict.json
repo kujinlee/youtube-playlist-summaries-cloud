@@ -1,0 +1,27 @@
+{
+  "attempts": [
+    "  gpt-6.2-sol: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.2-astra: try_next \u2014 CLI reported HTTP 400",
+    "  gpt-6.1-terra: ok \u2014 2495 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "eafd6671ac807bb89ff3ab04ab30678c01c5e399",
+  "intrusions": [],
+  "loosening_answers": {
+    "3da215bb3b5a": "finding",
+    "7561e8387dcf": "not a loosening",
+    "86933663dfac": "not a loosening",
+    "9bd65a0f92e3": "not a loosening",
+    "a15fb6cd1a6c": "not a loosening"
+  },
+  "model": "gpt-6.1-terra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ca92d502-e60f-45ae-8940-518395e3c285/scratchpad/r2-652-prompt.md",
+  "reason": "2495 chars",
+  "refused": false,
+  "review": "idle-stop-750-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/i750"
+}

@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/idle-stop-750-r3-claude.md": "100644 bbc9d49c688977f8e114011f3699165a788783f7"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "5677ff59293fea9c7d6e4f00a064be0de915e150",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "r3 Claude half: refute that the decision log can change verdict/exit/timing; scope log_decision, _open_log, whole diff",
+  "reason": "claude half filed: 6001 chars, names 5677ff59293f",
+  "refused": false,
+  "review": "idle-stop-750-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/i750",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
