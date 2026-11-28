@@ -2711,7 +2711,11 @@ EXPECTED_MUTATIONS = {
     # back; a declared file the repository lacks: X4) and the builder's exact success contract (stderr, the exact PASS
     # line, the count line, its file count, every other line: X5). Retired 1: r1's "not only the corpus directories"
     # mutation, whose anchor (the filter) is gone.
-    "scripts/check-shipping-sets.py": 215,
+    # ⟳ 2026-11-27 backlog #700: 215 + 2 = 217 — the bool-effort and the unhashable-package type checks; 3 anchors
+    # re-bound (effort, package, shared_with lines gained their type checks); none retired.
+    # ⟳ 2026-11-27 backlog #700 r1: 217 + 3 = 220 — the shared_with type check (C4), the depth bound (C1) and the
+    # measured_at type check (C3); none retired.
+    "scripts/check-shipping-sets.py": 220,
     # The idle-stop guard (owner 2026-11-16 02:51; its backlog row is filed after PR #596): a Stop with nothing
     # running is refused. Pinned in the commit that creates it (48): each exception, each of the three signals,
     # NOT CHECKED, and the hook's exit codes. r1 fold -> 79.
