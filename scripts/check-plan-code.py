@@ -130,7 +130,7 @@ SUITE_TIMEOUT = 120
 SUITE_TIMEOUT_FACTOR = 20
 SUITE_TIMEOUT_CEILING = 600
 # ⛔ r1 (both halves, F1): THE CEILING IS PER RUN, NOT PER SHARD. Three hung mutants at 600 s are 1,800 s,
-# the whole `timeout-minutes: 30` of a pull request's shard; the job is then KILLED, and the line naming
+# the whole `timeout-minutes: 30` a pull request's shard had then (40 since 2026-11-28); the job is then KILLED, and the line naming
 # each hang, and every verdict the shard reached, never reach the log. So a run under `--event` (CI) has a
 # CUMULATIVE budget: the sweep job's own `timeout-minutes`, as the RUNNER evaluated it (`LIMIT_VAR`, below),
 # less SWEEP_HEADROOM. Every suite run is capped at the budget left (`run_suite_parts`),
