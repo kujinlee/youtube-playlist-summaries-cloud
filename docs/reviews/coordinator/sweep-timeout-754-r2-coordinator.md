@@ -38,3 +38,8 @@ findings:
 ```
 
 Review: `docs/reviews/codex/sweep-timeout-754-r2-codex.md`.
+
+## Owner decision — 2026-11-28 06:39 PST
+
+The owner chose **A — merge it** on a selection card: X1 is accepted as not a real loosening, because the red it
+describes comes from the clock rather than from the mutation. The HOLD is lifted by that decision, not by a fix.
