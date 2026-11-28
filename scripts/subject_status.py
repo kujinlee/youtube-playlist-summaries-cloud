@@ -5,10 +5,11 @@ WHY THIS EXISTS — measured 2026-08-19, in time spent rather than in defects.
 
 Three schema ratchets (`check-guard-coverage`, `check-sentinel-meanings`,
 `check-vocabulary-collisions`) read `docs/superpowers/specs/2026-08-03-stable-blob-addressing/
-schema/` — an UNSHIPPED spec. Two of them exit 1. They have exited 1 since `1a7c076` on 2026-08-10,
+schema/` — an UNSHIPPED spec when this was written. (⟳ 2026-11-27, backlog #386: c517faa0 promoted it as
+migration 0027, so the banner now reads SHIPPED; the self-test proves UNSHIPPED on a fixture schema.) Two of them exit 1. They have exited 1 since `1a7c076` on 2026-08-10,
 the commit that implemented ADR-0007 and deleted the reservation protocol without updating the
-classification tables that describe it. Nothing noticed: these need a live Postgres, so they are not
-in CI, so they cannot fail a merge. PR #66 merged over its own gates.
+classification tables that describe it. Nothing noticed: these needed a live Postgres, so they were not
+in CI then (they are now, since 2026-09-13), so they could not fail a merge. PR #66 merged over its own gates.
 
 That red state is CORRECT and worth keeping — the stale entries (`art_pending_has_token`,
 `video_artifacts_inflight_uq`, `video_artifacts.reserved_at`, …) are the reservation protocol's
@@ -29,7 +30,7 @@ would be worse than no banner. Two questions, both answered from the tree as it 
 
 Usage (from a sibling script in scripts/):
     from subject_status import subject_banner
-    for line in subject_banner(SCHEMA, Path(__file__), TABLES):
+    for line in subject_banner(SCHEMA, Path(__file__)):
         print(line)
 
     python3 scripts/subject_status.py --self-test
@@ -195,8 +196,25 @@ def _self_test_body() -> int:
     # ⭐ the defect this banner shipped with for ten minutes: it counted references to the CALLER's
     # scan list (which includes shipped tables like `jobs`) and announced "SHIPPED — 100 files" for
     # a schema nothing deploys. The number was true; the sentence was false.
+    # ⟳ 2026-11-27, backlog #386: this case read the REAL stable-blob schema and went red on
+    # 2026-08-27, when c517faa0 promoted that schema as `supabase/migrations/0027_stable_blob_addressing.sql`.
+    # The banner was right (it IS shipped now); the case's premise was stale. So the UNSHIPPED
+    # property is now proven on a schema built here, whose one table no runtime file can name,
+    # and the real schema's new status is asserted as what it is.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        parked = Path(tmp)
+        # r1 C2: the fixture also REFERENCES and ALTERS a shipped table (`jobs`), so the ⭐ bug above — counting
+        # names the schema only mentions, not the tables it creates — would read SHIPPED here and go red.
+        (parked / "01.sql").write_text("create table zzq_parked_probe_t386 (id int, job uuid references jobs(id));\n"
+                                       "alter table jobs add column zzq_probe int;\n")
+        bp = subject_banner(parked, tracked)
     case("the parked schema reports UNSHIPPED, not SHIPPED",
-         any("UNSHIPPED" in x for x in b))
+         any(x.strip().startswith("UNSHIPPED —") for x in bp)
+         and not any(x.strip().startswith("SHIPPED —") for x in bp))
+    case("the promoted stable-blob schema now reports SHIPPED (migration 0027)",
+         any(x.strip().startswith("SHIPPED —") for x in b)
+         and not any(x.strip().startswith("UNSHIPPED —") for x in b))
     case("the banner attributes the subject's last change",
          any("subject last moved at" in x for x in b))
 

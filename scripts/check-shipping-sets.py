@@ -2,7 +2,7 @@
 """The component map, checked for completeness against what is on disk (marketplace-inventory plan, Task 5;
 spec §3: "every supporting artifact maps to a component, to a package, or to a written exclusion").
 
-    python3 scripts/check-shipping-sets.py --self-test  # 170 cases
+    python3 scripts/check-shipping-sets.py --self-test  # 176 cases
     python3 scripts/check-shipping-sets.py --map docs/marketplace/components.json
     python3 scripts/check-shipping-sets.py --closure docs/marketplace/shipping-sets.json [MAP]
 
@@ -183,6 +183,7 @@ CHANNELS = ("plugin", "reusable-workflow")
 ROLES = ("entry-point", "library", "data")
 PHASES = ("1", "1-if-feasible", "later")
 EFFORTS = (1, 2, 3)
+MAP_MAX_DEPTH = 32         # backlog #700 r1 C1: the real map nests 4 deep (measured 2026-11-27); check-inventory bounds at 32 too
 
 RECALL_TRIO = ("scripts/recall-llm.py", "scripts/check-surface-recall.py", ".claude/hooks/surface-recall.sh")
 EFFORT2_FILES = ("scripts/check-plan-code.py", ".github/workflows/ci.yml",
@@ -777,8 +778,22 @@ def load_map(path: Path, root: Path = REPO) -> ComponentMap:
         data = json.loads(Path(path).read_text())
     except (OSError, ValueError) as e:
         raise CannotRun(f"cannot read the map {path}: {e}") from e
+    except RecursionError as e:     # backlog #700 r1 C1: a 200,000-deep array fails inside json.loads
+        raise CannotRun(f"cannot read the map {path}: nested too deep to parse") from e
+    # backlog #700 r1 C1: bound the depth BEFORE any rule builds a message with `repr` (100,000 levels raised
+    # RecursionError there). Iterative, so the walk itself needs no stack. The same bound as check-inventory's
+    # `_read_json` (MAX_DEPTH 32); kept local because an import would add a load to this script's shipping set.
+    todo = [(data, 1)]
+    while todo:
+        v, depth = todo.pop()
+        if isinstance(v, (list, dict)):
+            if depth > MAP_MAX_DEPTH:
+                raise CannotRun(f"cannot read the map {path}: nested deeper than {MAP_MAX_DEPTH} levels")
+            todo.extend((x, depth + 1) for x in (v.values() if isinstance(v, dict) else v))
     if not isinstance(data, dict):
         raise Refused("the map is not a JSON object")
+    if not isinstance(data.get("measured_at", ""), str):
+        raise Refused(f"`measured_at` is not a string: {data['measured_at']!r}")
     packages = data.get("packages")
     if not isinstance(packages, dict) or not packages:
         raise Refused("the map has no `packages`")
@@ -797,17 +812,17 @@ def load_map(path: Path, root: Path = REPO) -> ComponentMap:
         if cid in ids:
             raise Refused(f"component id {cid!r} appears twice")
         ids.add(cid)
-        if c.get("effort") not in EFFORTS:
+        if type(c.get("effort")) is not int or c.get("effort") not in EFFORTS:     # bool is an int; refuse it
             raise Refused(f"component {cid!r}: effort {c.get('effort')!r} is not one of {EFFORTS}")
         roles = c.get("roles")
         if not isinstance(roles, list) or not roles or any(r not in ROLES for r in roles):
             raise Refused(f"component {cid!r}: roles {roles!r} are not a non-empty list from {ROLES}")
         if c.get("phase") not in PHASES:
             raise Refused(f"component {cid!r}: phase {c.get('phase')!r} is not one of {PHASES}")
-        if c.get("package") not in packages:
+        if not isinstance(c.get("package"), str) or c.get("package") not in packages:  # backlog #700: [] is unhashable
             raise Refused(f"component {cid!r}: package {c.get('package')!r} is not a key in packages")
         shared = c.get("shared_with", [])
-        if not isinstance(shared, list) or any(p not in packages or p == c["package"] for p in shared):
+        if not isinstance(shared, list) or any(not isinstance(p, str) or p not in packages or p == c["package"] for p in shared):
             raise Refused(f"component {cid!r}: shared_with {shared!r} names a package that is not another key "
                           "in packages")
         if shared and c["roles"] != ["library"]:
@@ -1495,6 +1510,53 @@ def _self_test_body() -> int:
          lambda: load_map(write_map(w, [comp("a", ["scripts/a.py"], roles=["library"], shared_with=["q"])],
                                     packages={"pkg": {"channel": "plugin"}, "q": {"channel": "plugin"}}), w)
          .components[0]["shared_with"], ["q"])
+    # backlog #700: load_map is TOTAL — every wrong-typed value is refused, never a traceback. The field list is an
+    # independent literal (not read from load_map), and each value goes in the place of a VALID one.
+    # ⟳ r1 (Codex MINOR, Claude C3): "no traceback" alone let an ACCEPTED through unexamined, so the case now pins
+    # EXACTLY which substitutions are accepted — each one a value the rules call valid — and `measured_at` joins.
+    wrong = ([], {}, None, True, 1.5, "", "x", [[]], [{}])
+    outcome: dict = {}
+    for field in ("id", "effort", "roles", "phase", "package", "shared_with", "files"):
+        for v in wrong:
+            try:
+                got = rule(**{field: v}) if field != "shared_with" else rule(roles=["library"], shared_with=v)
+            except Exception as e:      # a traceback is exactly what this case exists to catch
+                got = f"RAISED {type(e).__name__}: {e}"
+            outcome[(field, json.dumps(v))] = got
+    for top in ("measured_at", "packages", "components", "exclusions"):
+        for v in wrong:
+            d = {"measured_at": "x", "packages": {"pkg": {"channel": "plugin"}},
+                 "components": [comp("a", ["scripts/a.py"])], "exclusions": []}
+            d[top] = v
+            (w / "bad.json").write_text(json.dumps(d))
+            try:
+                got = refused(lambda: load_map(w / "bad.json", w))
+            except Exception as e:
+                got = f"RAISED {type(e).__name__}: {e}"
+            outcome[(top, json.dumps(v))] = got
+    case("every wrong-typed value in a component or a top-level key is refused, never a traceback (backlog #700)",
+         lambda: sorted(k for k, g in outcome.items() if not g.startswith(("REFUSED", "CANNOT RUN", "ACCEPTED"))), [])
+    case("the substitutions ACCEPTED are exactly the valid ones: an id or measured_at string, an empty shared_with "
+         "or exclusions list (backlog #700 r1)",
+         lambda: sorted(k for k, g in outcome.items() if g == "ACCEPTED"),
+         [("exclusions", "[]"), ("id", '"x"'), ("measured_at", '""'), ("measured_at", '"x"'), ("shared_with", "[]")])
+    deep = w / "deep.json"
+    deep.write_text('{"measured_at": "x", "packages": {"pkg": {"channel": "plugin"}}, "components": [' +
+                    json.dumps(comp("a", ["scripts/a.py"]))[:-1] + ', "effort": ' + "[" * 50 + "]" * 50 +
+                    '}], "exclusions": []}')
+    # ⟳ r2 Codex BLOCKER: 100,000 levels fails INSIDE json.loads on Python 3.12 (CI's pin), so it never reached
+    # the walk. 50 levels parses on every interpreter and is past the bound, so this case reads the WALK; the
+    # 200,000 case below reads the parse path.
+    case("a value nested past the depth bound is CANNOT RUN, never a RecursionError (backlog #700 r1 C1)",
+         lambda: refused(lambda: load_map(deep, w)).startswith("CANNOT RUN: cannot read the map") and
+         "nested deeper than 32" in refused(lambda: load_map(deep, w)), True)
+    deep.write_text("[" * 200000 + "]" * 200000)
+    case("a map nested 200,000 deep fails inside json.loads and is CANNOT RUN (backlog #700 r1 C1)",
+         lambda: refused(lambda: load_map(deep, w)).startswith("CANNOT RUN: cannot read the map"), True)
+    case("`package: []` is refused by name (backlog #700's reported crash)",
+         lambda: rule(package=[]).startswith("REFUSED: component 'a': package []"), True)
+    case("a boolean effort is refused (True == 1 would pass a membership test)",
+         lambda: rule(effort=True).startswith("REFUSED: component 'a': effort True"), True)
     case("a map with no components is refused",
          lambda: refused(lambda: load_map(write_map(w, []), w)), "REFUSED: the map has no `components`")
     (w / "list.json").write_text("[]")
