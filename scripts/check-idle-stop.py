@@ -23,7 +23,9 @@ THE DECISION, for a Stop payload (the first that applies wins):
 were REMOVED: a pause marker `.claude/paused` (one `touch` the agent may run excused every stop for 24 h, and the
 refusal named the command) and "the last tool call was an AskUserQuestion" (a parser of agent-influenced
 transcript text, which thrashed for two rounds). `main()` does not open `transcript_path` at all, and no file in
-the checkout pauses this guard. This is the repository's existing practice — a harness cannot read a cause from
+the checkout pauses this guard. ⟳ backlog #750: every decision is APPENDED to `~/.claude/idle-stop-log.jsonl`
+(the rule that decided, and for allow (a) the live entries that excused the stop) — WRITTEN, NEVER READ, so the
+log cannot change a verdict; a failed write is reported on stderr and the verdict stands. This is the repository's existing practice — a harness cannot read a cause from
 a child's text — applied here. Each removed exception saved ONE refusal on its honest path and nothing else:
   THE CONTINUATION IS THE OUT. If the owner told the agent to stop, or only the owner can act (a card they
 rejected, a decision that is theirs), the stop is refused once, the agent says so in one line quoting them, and
@@ -133,11 +135,17 @@ def usage_stop(cache_text: str | None, now: float) -> str | None:
 def running_tasks(doc: dict) -> list[str] | None:
     """(a): the harness's background tasks whose status is an explicit LIVE one, as labels; None when the payload
     does not list them. A missing or unknown status is no evidence that a task is live."""
+    live = _live(doc)
+    return None if live is None else [f"{t.get('type', '?')} {t.get('id', '?')}" for t in live]
+
+
+def _live(doc: dict) -> list[dict] | None:
+    """The ONE live-status rule, read by (a) and by the log: entries whose status is an explicit LIVE one; None when
+    the payload does not list them."""
     tasks = doc.get("background_tasks")
     if not isinstance(tasks, list):
         return None
-    return [f"{t.get('type', '?')} {t.get('id', '?')}" for t in tasks
-            if isinstance(t, dict) and str(t.get("status", "")).lower() in LIVE]
+    return [t for t in tasks if isinstance(t, dict) and str(t.get("status", "")).lower() in LIVE]
 
 
 def run_gh(root: str, timeout_s: float = GH_TIMEOUT_S) -> tuple[int, str]:
@@ -185,29 +193,49 @@ def pending_ci(rc: int, out: str) -> list[int] | None:
 
 
 def decide(doc: object, now: float, cache_text: str | None, gh) -> tuple[str, str]:
-    """(verdict, message). `gh` is a zero-argument callable returning `run_gh`'s (rc, text), called only when
+    """(verdict, message) — `decide_why` without the reason."""
+    verdict, message, _why = decide_why(doc, now, cache_text, gh)
+    return verdict, message
+
+
+def live_entries(doc: dict) -> list[dict]:
+    """The LIVE `background_tasks` entries themselves, trimmed for the log: id, type, status, description."""
+    return [{k: str(t.get(k, ""))[:80] for k in ("id", "type", "status", "description")} for t in _live(doc) or []]
+
+
+def decide_why(doc: object, now: float, cache_text: str | None, gh) -> tuple[str, str, dict]:
+    """(verdict, message, why). `why` names the rule that decided and, for (a), the excusing entries — backlog
+    #750: two promise-only stops were ALLOWED on 2026-11-27 and nothing recorded which entry excused them."""
+    verdict, message, why = _decide(doc, now, cache_text, gh)
+    if why.get("rule") == "a" and isinstance(doc, dict):
+        why = {**why, "tasks": live_entries(doc)}
+    return verdict, message, why
+
+
+def _decide(doc: object, now: float, cache_text: str | None, gh) -> tuple[str, str, dict]:
+    """(verdict, message, why). `gh` is a zero-argument callable returning `run_gh`'s (rc, text), called only when
     (a) found nothing. EVERY ALLOW here reads state the stopping agent did not author: the payload's harness
     fields, the usage cache, `gh`. Nothing the agent wrote or caused — its prose, a transcript, a marker file, a
     file in a worktree — is read."""
     if not isinstance(doc, dict):
-        return NOT_CHECKED, "the Stop payload is not a JSON object"
+        return NOT_CHECKED, "the Stop payload is not a JSON object", {"rule": "unreadable"}
     if doc.get("stop_hook_active") is True:
-        return ALLOW, ""
+        return ALLOW, "", {"rule": "stop_hook_active"}
     aid = doc.get("agent_id")
     if isinstance(aid, str) and aid.strip():
-        return ALLOW, ""
+        return ALLOW, "", {"rule": "subagent"}
     if usage_stop(cache_text, now):
-        return ALLOW, ""
+        return ALLOW, "", {"rule": "usage"}
     unseen = []
     tasks = running_tasks(doc)
     if tasks:
-        return ALLOW, ""
+        return ALLOW, "", {"rule": "a"}
     if tasks is None:
         unseen.append("(a) the payload has no `background_tasks` list")
     rc, out = gh()
     ci = pending_ci(rc, out)
     if ci:
-        return ALLOW, ""
+        return ALLOW, "", {"rule": "c", "prs": ci}
     if ci is None:
         unseen.append(f"(c) gh could not answer ({out.strip()[:120] if rc != 0 else 'unreadable JSON'})")
     todo = ("A turn that says work is starting must START it before it ends. DO ONE: (1) start the next job in this "
@@ -216,9 +244,32 @@ def decide(doc: object, now: float, cache_text: str | None, gh) -> tuple[str, st
     if unseen:
         return BLOCK, ("⛔ IDLE STOP REFUSED: nothing was SEEN running, and this could NOT be read: "
                        + "; ".join(unseen) + ". An unread signal is no evidence of work — treat it as NOT RUN. "
-                       + todo)
+                       + todo), {"rule": "block-unseen"}
     return BLOCK, ("⛔ IDLE STOP REFUSED: nothing is running — no background job of this session, no pending CI "
-                   "check on an open PR. " + todo)
+                   "check on an open PR. " + todo), {"rule": "block"}
+
+
+LOG_NAME = "idle-stop-log.jsonl"
+LOG_MAX_BYTES = 2_000_000
+
+
+def log_decision(path: str, doc: object, verdict: str, why: dict, now: float) -> None:
+    """Append ONE line per decision (backlog #750), so a false allow can be traced to the entry that excused it.
+    Past LOG_MAX_BYTES the file moves to `<path>.1` (one generation kept). A write that fails is SAID on stderr
+    and never changes the verdict: the log is evidence about the guard, not a signal the guard reads."""
+    d = doc if isinstance(doc, dict) else {}
+    line = json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(now)), "verdict": verdict,
+                       "session": str(d.get("session_id", ""))[:64], "cwd": str(d.get("cwd", ""))[:200], **why},
+                      ensure_ascii=False)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.getsize(path) > LOG_MAX_BYTES if os.path.exists(path) else False:
+            os.replace(path, path + ".1")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError as e:
+        print(f"⚠ idle-stop guard: the decision log could not be written ({type(e).__name__}: {path}); the verdict "
+              "stands", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None, stdin_bytes: bytes | None = None, now: float | None = None,
@@ -232,9 +283,11 @@ def main(argv: list[str] | None = None, stdin_bytes: bytes | None = None, now: f
     doc, why = bounded_read.parse_json(data) if data is not None else (None, why)
     now = time.time() if now is None else now
     root = str(ROOT) if root is None else root
-    cache_path = os.path.join(os.path.expanduser("~") if home is None else home, ".claude", ".rate-limits.json")
+    home = os.path.expanduser("~") if home is None else home
+    cache_path = os.path.join(home, ".claude", ".rate-limits.json")
     cache_text, _ = _pace.read_regular(cache_path, _pace.CACHE_MAX_BYTES)
-    verdict, message = decide(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)
+    verdict, message, why = decide_why(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)
+    log_decision(os.path.join(home, ".claude", LOG_NAME), doc, verdict, why, now)
     if verdict == BLOCK:
         print(message, file=sys.stderr)
         return 2
@@ -648,6 +701,47 @@ def _self_test_body() -> int:
     case("⭐ r4 XB1 identity: a builder worktree with a file written 5 s ago / 120 s ago / a `touch`ed file / an "
          "unlistable worktrees dir changes NOTHING: each stop exits 2 with the words of the stop with no worktrees "
          "dir at all", (xb_base[0], [n for n, got in xb_rows if got != xb_base], len(xb_rows)), (2, [], 4))
+
+    # ── backlog #750: every decision is LOGGED, naming the rule and, for (a), the entry that excused it ─────────────
+    def logged(h):
+        f = os.path.join(h, ".claude", LOG_NAME)
+        out = []
+        for x in (Path(f).read_text().splitlines() if os.path.exists(f) else []):
+            try:
+                out.append(json.loads(x))
+            except ValueError:
+                out.append({"rule": "<not a JSON line>"})
+        return out
+    lh = os.path.join(tmp, "log-home")
+    os.makedirs(os.path.join(lh, ".claude"))
+    Path(lh, ".claude", ".rate-limits.json").write_text(cache())
+    agent_live = [{"id": "a7f3", "type": "subagent", "status": "running", "description": "r4 review"}]
+    lr = [drive(payload(T0224, agent_live), h=lh)[0], drive(payload(T0224), h=lh)[0],
+          drive(payload(T0224), gh_says(0, pend), h=lh)[0]]
+    rows = logged(lh)
+    case("⭐ #750: three stops through main() write three log lines: (a) names the subagent that excused it, a BLOCK "
+         "says block, (c) names the PR — and the exit codes are unchanged (0, 2, 0)",
+         (lr, [(r["verdict"], r["rule"]) for r in rows], rows[0].get("tasks") if rows else None,
+          rows[2].get("prs") if len(rows) > 2 else None),
+         ([0, 2, 0], [(ALLOW, "a"), (BLOCK, "block"), (ALLOW, "c")],
+          [{"id": "a7f3", "type": "subagent", "status": "running", "description": "r4 review"}], [12, 34]))
+    case("#750: (a) logs ONLY the live entries — a completed shell beside a running monitor names the monitor",
+         decide_why(payload(T0224, [{**shell[0], "status": "completed"},
+                                    {"id": "bm1", "type": "monitor", "status": "pending", "description": "ci"}]),
+                    NOW, cache(60), gh_says())[2],
+         {"rule": "a", "tasks": [{"id": "bm1", "type": "monitor", "status": "pending", "description": "ci"}]})
+    bad = os.path.join(tmp, "bad-home")
+    os.makedirs(bad)
+    Path(bad, ".claude").write_text("a FILE where the log's directory should be")
+    rc, err = drive(payload(T0224), h=bad)
+    case("⭐ #750: a log that cannot be written leaves the verdict alone (exit 2) and SAYS so on stderr",
+         (rc, "IDLE STOP REFUSED" in err, "decision log could not be written" in err), (2, True, True))
+    big = os.path.join(lh, ".claude", LOG_NAME)
+    Path(big).write_text("x" * (LOG_MAX_BYTES + 1) + "\n")
+    drive(payload(T0224, agent_live), h=lh)
+    case("#750: a log past LOG_MAX_BYTES moves to `.1` and the new line starts a fresh file",
+         (os.path.exists(big + ".1") and os.path.getsize(big + ".1") > LOG_MAX_BYTES, [r["rule"] for r in logged(lh)]),
+         (True, ["a"]))
 
     # ── END TO END: the launcher, the real `run_gh`, a stub `gh` on PATH ─────────────────────────────────────────────
     e2e = os.path.join(tmp, "e2e")

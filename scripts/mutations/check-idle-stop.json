@@ -56,8 +56,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "    if usage_stop(cache_text, now):\n        return ALLOW, \"\"\n    unseen = []",
-        "    if usage_stop(cache_text, now) or str(doc.get(\"last_assistant_message\")).rstrip().endswith(\"?\"):\n        return ALLOW, \"\"\n    unseen = []"
+        "    if usage_stop(cache_text, now):\n        return ALLOW, \"\", {\"rule\": \"usage\"}\n    unseen = []",
+        "    if usage_stop(cache_text, now) or str(doc.get(\"last_assistant_message\")).rstrip().endswith(\"?\"):\n        return ALLOW, \"\", {\"rule\": \"usage\"}\n    unseen = []"
       ]
     ],
     "expect": [
@@ -667,8 +667,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "    verdict, message = decide(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)\n",
-        "    try:\n        with open(doc.get(\"transcript_path\"), \"rb\") as _f:\n            _f.read(1)\n    except Exception:\n        pass\n    verdict, message = decide(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)\n"
+        "    verdict, message, why = decide_why(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)\n",
+        "    try:\n        with open(doc.get(\"transcript_path\"), \"rb\") as _f:\n            _f.read(1)\n    except Exception:\n        pass\n    verdict, message, why = decide_why(doc, now, cache_text, (lambda: run_gh(root)) if gh is None else gh)\n"
       ]
     ],
     "expect": [
@@ -706,8 +706,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "    cache_path = os.path.join(os.path.expanduser(\"~\") if home is None else home, \".claude\", \".rate-limits.json\")\n",
-        "    cache_path = os.path.join(os.path.expanduser(\"~\") if home is None else home, \".claude\", \".rate-limits.json\")\n    try:\n        with os.fdopen(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK), \"rb\") as _f:\n            if b\"doesn't want to proceed\" in _f.read(1 << 20) and \"starting\" in str(doc.get(\"last_assistant_message\")):\n                return 0\n    except Exception:\n        pass\n"
+        "    cache_path = os.path.join(home, \".claude\", \".rate-limits.json\")\n",
+        "    cache_path = os.path.join(home, \".claude\", \".rate-limits.json\")\n    try:\n        with os.fdopen(os.open(doc.get(\"transcript_path\"), os.O_RDONLY | os.O_NONBLOCK), \"rb\") as _f:\n            if b\"doesn't want to proceed\" in _f.read(1 << 20) and \"starting\" in str(doc.get(\"last_assistant_message\")):\n                return 0\n    except Exception:\n        pass\n"
       ]
     ],
     "expect": [
@@ -790,6 +790,58 @@
     ],
     "expect": [
       "⭐ r4 XB1 identity: a builder worktree with a file written 5 s ago / 120 s ago / a `touch`ed file / an unlistable worktrees dir changes NOTHING: each stop exits 2 with the words of the stop with no worktrees dir at all"
+    ]
+  },
+  {
+    "name": "#750 the decision is never written to the log",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            f.write(line + \"\\n\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ #750: three stops through main() write three log lines: (a) names the subagent that excused it, a BLOCK says block, (c) names the PR — and the exit codes are unchanged (0, 2, 0)"
+    ]
+  },
+  {
+    "name": "#750 (a) logs every listed entry, not only the live ones",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    return [{k: str(t.get(k, \"\"))[:80] for k in (\"id\", \"type\", \"status\", \"description\")} for t in _live(doc) or []]",
+        "    return [{k: str(t.get(k, \"\"))[:80] for k in (\"id\", \"type\", \"status\", \"description\")} for t in doc.get(\"background_tasks\") or []]"
+      ]
+    ],
+    "expect": [
+      "#750: (a) logs ONLY the live entries — a completed shell beside a running monitor names the monitor"
+    ]
+  },
+  {
+    "name": "#750 a failed log write is swallowed in silence",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        print(f\"⚠ idle-stop guard: the decision log could not be written ({type(e).__name__}: {path}); the verdict \"\n              \"stands\", file=sys.stderr)\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #750: a log that cannot be written leaves the verdict alone (exit 2) and SAYS so on stderr"
+    ]
+  },
+  {
+    "name": "#750 the log never rotates",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            os.replace(path, path + \".1\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "#750: a log past LOG_MAX_BYTES moves to `.1` and the new line starts a fresh file"
     ]
   }
 ]
