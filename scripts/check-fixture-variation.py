@@ -1480,6 +1480,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #750 (2026-11-27): check-idle-stop.py — `decide_why` is the reason-returning core; `decide` and `main` forward to it.
+    "check-idle-stop.py:decide_why.doc": "driven through `decide()` and `main()`, which forward it unchanged; their call sites across the suite vary it (every D-series and END TO END case), and this one direct call reads the third element, the reason, which `decide` drops",
+    "check-idle-stop.py:decide_why.now": "driven through `decide()` and `main()`, which forward it unchanged; their call sites across the suite vary it (every D-series and END TO END case), and this one direct call reads the third element, the reason, which `decide` drops",
+    "check-idle-stop.py:decide_why.cache_text": "driven through `decide()` and `main()`, which forward it unchanged; their call sites across the suite vary it (every D-series and END TO END case), and this one direct call reads the third element, the reason, which `decide` drops",
+    "check-idle-stop.py:decide_why.gh": "driven through `decide()` and `main()`, which forward it unchanged; their call sites across the suite vary it (every D-series and END TO END case), and this one direct call reads the third element, the reason, which `decide` drops",
     # backlog #625 (2026-11-13): ask_answerer.py — two PURE functions each driven by ONE table loop. This scan
     # compares argument EXPRESSIONS, so a loop variable reads as one value; the ROWS vary.
     # goal node tree Task 6 (2026-11-24): check-anchors.py — each case builds its OWN tree under `tmp`, bound to
