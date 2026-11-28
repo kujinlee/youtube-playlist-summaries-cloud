@@ -85,7 +85,7 @@ named as `transcript_path` cannot hold the hook.
     idle would over-ALLOW. It can never block a real builder.
 
     python3 scripts/check-idle-stop.py --hook < payload.json
-    python3 scripts/check-idle-stop.py --self-test  # 77 cases
+    python3 scripts/check-idle-stop.py --self-test  # 79 cases
 
 EXIT CODES: `--hook` 0 = allowed (silent) · 2 = BLOCKED (the reason on stderr, which Claude reads) · 1 = allowed,
 NOT CHECKED (the warning on stderr, which the human reads).
@@ -314,15 +314,16 @@ def log_decision(path: str, doc: object, verdict: str, why: dict, now: float) ->
     so a FIFO at the path fails at once instead of hanging the hook; it is created 0600; rotation and the append
     happen under one `flock`, so two concurrent stops cannot lose the rotated generation. ⟳ r2 (Codex): the
     open, the regular-file check and a BOUNDED nonblocking lock live in `_open_log`, used for the first open and
-    for the reopen after rotation alike; the old file's lock is held until the new one is locked. What it holds:
-    up to 80 characters of each live task's description — the same text the session's transcript, also under
-    ~/.claude, already holds in full."""
+    for the reopen after rotation alike; the old file's lock is held until the new one is locked. ⟳ r3 (Claude,
+    backlog #751): the line is built inside the `try`, which catches ANY Exception, and a short write is truncated
+    back off and reported, so no torn line is left. What it holds: up to 80 characters of each live task's
+    description — the same text the session's transcript, also under ~/.claude, already holds in full."""
     d = doc if isinstance(doc, dict) else {}
-    line = json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(now)), "verdict": verdict,
-                       "session": str(d.get("session_id", ""))[:64], "cwd": str(d.get("cwd", ""))[:200],
-                       **_log_safe(why)}, ensure_ascii=True)
     fd = -1
-    try:
+    try:   # ⟳ r3 Y1 (backlog #751): the line is BUILT inside the try, and ANY Exception is a failed write
+        line = json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(now)), "verdict": verdict,
+                           "session": str(d.get("session_id", ""))[:64], "cwd": str(d.get("cwd", ""))[:200],
+                           **_log_safe(why)}, ensure_ascii=True)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         deadline = time.monotonic() + LOG_WAIT_S
         fd = _open_log(path, deadline)
@@ -331,8 +332,11 @@ def log_decision(path: str, doc: object, verdict: str, why: dict, now: float) ->
             new = _open_log(path, deadline)
             old, fd = fd, new
             os.close(old)
-        os.write(fd, (line + "\n").encode("ascii"))
-    except (OSError, ValueError) as e:
+        data, start = (line + "\n").encode("ascii"), os.fstat(fd).st_size
+        if os.write(fd, data) != len(data):   # ⟳ r3 Y2: a SHORT write is cut back off, so no torn line is left
+            os.ftruncate(fd, start)
+            raise OSError(f"short write: {path}")
+    except Exception as e:  # noqa: BLE001 - the log must never change the verdict, whatever it raises
         print(f"⚠ idle-stop guard: the decision log could not be written ({type(e).__name__}: {path}); the verdict "
               "stands", file=sys.stderr)
     finally:
@@ -956,6 +960,37 @@ def _self_test_body() -> int:
     took = time.monotonic() - t0
     case("#750 r2: a log path that KEEPS moving is retried only within the bound, then a failed write, SAID; exit 2",
          (said(got), took < 2.0), ((2, True, False), True))
+
+    # ── backlog #751 (r3 Claude Y1, Y2): no exception from BUILDING the line escapes; a short write leaves no torn line
+    class Unprintable:
+        def __str__(self):
+            raise RecursionError("injected: str() of a too-deep value")
+    yh = fresh_home("unbuildable-home")
+    ylog = os.path.join(yh, ".claude", LOG_NAME)
+    with contextlib.redirect_stderr(io.StringIO()):
+        direct = tr(lambda: log_decision(ylog, {"cwd": Unprintable()}, BLOCK, {"rule": "block"}, NOW))
+    raw = json.dumps(payload(T0224)).encode()
+
+    def dumps_fails(*a, **kw):
+        raise TypeError("injected: a why field json cannot serialise")
+    with patched(json, "dumps", dumps_fails):
+        got = bounded(lambda: drive(raw, h=yh))
+    case("⭐ #751 Y1: an exception that is not OSError/ValueError while BUILDING the log line (str() raising "
+         "RecursionError; json.dumps raising TypeError) never escapes: exit 2, the failed write SAID, no traceback",
+         (direct, said(got), os.path.exists(ylog)), (None, (2, True, False), False))
+    wh = fresh_home("short-home")
+    wlog = os.path.join(wh, ".claude", LOG_NAME)
+    Path(wlog).write_text('{"rule": "old"}\n')
+    real_write = os.write
+
+    def short_write(fd, data):
+        return real_write(fd, data[: len(data) // 2]) if data.startswith(b'{"at"') else real_write(fd, data)
+    with patched(os, "write", short_write):
+        got = bounded(lambda: drive(payload(T0224), h=wh))
+    after = drive(payload(T0224), h=wh)[0]
+    case("⭐ #751 Y2: a SHORT os.write is a failed write, SAID, and leaves no torn line: exit 2 both times, and the "
+         "next decision is a whole JSON line right after the old one",
+         (said(got), after, [r["rule"] for r in logged(wh)]), ((2, True, False), 2, ["old", "block"]))
 
     # ── END TO END: the launcher, the real `run_gh`, a stub `gh` on PATH ─────────────────────────────────────────────
     e2e = os.path.join(tmp, "e2e")

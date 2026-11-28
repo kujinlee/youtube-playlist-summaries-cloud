@@ -797,8 +797,8 @@
     "file": "scripts/check-idle-stop.py",
     "edits": [
       [
-        "        os.write(fd, (line + \"\\n\").encode(\"ascii\"))\n",
-        "        pass\n"
+        "        data, start = (line + \"\\n\").encode(\"ascii\"), os.fstat(fd).st_size\n",
+        "        data, start = b\"\", os.fstat(fd).st_size\n"
       ]
     ],
     "expect": [
@@ -1024,6 +1024,62 @@
     ],
     "expect": [
       "⭐ #750 r2: a reopen that FAILS after rotation is a failed write, SAID — exit 2, no traceback, no raise"
+    ]
+  },
+  {
+    "name": "#751 Y1: the log's handler catches only OSError and ValueError",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    except Exception as e:  # noqa: BLE001 - the log must never change the verdict",
+        "    except (OSError, ValueError) as e:  # noqa: BLE001 - the log must never change the verdict"
+      ]
+    ],
+    "expect": [
+      "⭐ #751 Y1: an exception that is not OSError/ValueError while BUILDING the log line (str() raising RecursionError; json.dumps raising TypeError) never escapes: exit 2, the failed write SAID, no traceback"
+    ]
+  },
+  {
+    "name": "#751 Y1: the log line is built OUTSIDE the try",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "    try:   # ⟳ r3 Y1 (backlog #751): the line is BUILT inside the try, and ANY Exception is a failed write\n        line = json.dumps(",
+        "    line = json.dumps("
+      ],
+      [
+        "                           **_log_safe(why)}, ensure_ascii=True)\n        os.makedirs(",
+        "                           **_log_safe(why)}, ensure_ascii=True)\n    try:\n        os.makedirs("
+      ]
+    ],
+    "expect": [
+      "⭐ #751 Y1: an exception that is not OSError/ValueError while BUILDING the log line (str() raising RecursionError; json.dumps raising TypeError) never escapes: exit 2, the failed write SAID, no traceback"
+    ]
+  },
+  {
+    "name": "#751 Y2: a short os.write is not detected",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "        if os.write(fd, data) != len(data):",
+        "        if os.write(fd, data) != len(data) and False:"
+      ]
+    ],
+    "expect": [
+      "⭐ #751 Y2: a SHORT os.write is a failed write, SAID, and leaves no torn line: exit 2 both times, and the next decision is a whole JSON line right after the old one"
+    ]
+  },
+  {
+    "name": "#751 Y2: a short write is reported but its torn bytes are left in the log",
+    "file": "scripts/check-idle-stop.py",
+    "edits": [
+      [
+        "            os.ftruncate(fd, start)\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #751 Y2: a SHORT os.write is a failed write, SAID, and leaves no torn line: exit 2 both times, and the next decision is a whole JSON line right after the old one"
     ]
   }
 ]
