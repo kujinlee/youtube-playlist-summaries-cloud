@@ -1,7 +1,8 @@
 {
  "schema": 1,
  "sources": [
-  "46048742954@4e247843"
+  "46048742954@4e247843",
+  "hand-timed:scripts/explainer-serve.py@PR #651 CI shard 30 (job 140943010037: control 52 s, 29 mutations in 1586 s = 54.7 s each, twice out of its time budget; the self-test grew 301 -> 343 cases, 29 s -> 80 s locally, its #631 cases starting real servers; re-priced 8.4 -> 55 s, the nightly that priced it predates them)"
  ],
  "defaults": {
   "mutation": 11.656,
@@ -590,9 +591,9 @@
    "mutations": 6
   },
   "scripts/explainer-serve.py": {
-   "control": 8.297,
-   "recontrol": 7.618,
-   "mutation": 8.399,
+   "control": 52.0,
+   "recontrol": 52.0,
+   "mutation": 55.0,
    "samples": 2,
    "mutations": 127
   },

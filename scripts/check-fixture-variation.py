@@ -1480,6 +1480,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #631 (2026-11-27): explainer-serve.py — the server binds LOOPBACK only, and after_fork is driven through
+    # ONE helper, `_after_fork_with`, whose callers vary what the listener answers and what the parent owns.
+    "explainer-serve.py:listener_identity.host": "HOST is the module constant 127.0.0.1, the only address the server ever binds or probes; no caller passes another, and a second host would test a path that does not exist",
+    "explainer-serve.py:port_busy.host": "HOST is the module constant 127.0.0.1, the only address the server ever binds or probes; no caller passes another",
+    "explainer-serve.py:after_fork.pid": "the pid must be a real child the parent can reap, so the helper always forks one; the callers vary the ANSWER's pid against it (the child's, 1, the test process's), and the manifest entry that drops the pid compare dies via the case naming it",
+    "explainer-serve.py:after_fork.token": "driven through ONE helper, `_after_fork_with`, whose `own` argument its callers vary ('tok-of-this-start', 'tok-B'); guarded by the manifest entry that compares the answer with a fixed token, which dies via the case naming it",
     # backlog #750 (2026-11-27): check-idle-stop.py — `decide_why` is the reason-returning core; `decide` and `main` forward to it.
     "check-idle-stop.py:decide_why.doc": "driven through `decide()` and `main()`, which forward it unchanged; their call sites across the suite vary it (every D-series and END TO END case), and this one direct call reads the third element, the reason, which `decide` drops",
     "check-idle-stop.py:decide_why.now": "driven through `decide()` and `main()`, which forward it unchanged; their call sites across the suite vary it (every D-series and END TO END case), and this one direct call reads the third element, the reason, which `decide` drops",

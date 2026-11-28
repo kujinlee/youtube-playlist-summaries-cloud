@@ -1,0 +1,35 @@
+{
+  "attempts": [
+    "  gpt-6.1-terra: ok \u2014 729 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "c9690b9e841f035ef3f9383f00bf037afbc9caee",
+  "intrusions": [],
+  "loosening_answers": {
+    "07f7ec40b017": "not a loosening",
+    "1fa8feb292f4": "not a loosening",
+    "788ef2f927e5": "not a loosening",
+    "9728b8b30a53": "not a loosening",
+    "9b05c65c83f3": "not a loosening",
+    "ae4248e994e5": "not a loosening",
+    "b2e4eac449b5": "not a loosening",
+    "bc2f5b58709f": "not a loosening",
+    "d1873ad3ae0b": "not a loosening",
+    "d30f34f027ed": "not a loosening",
+    "d9dbaca13512": "not a loosening",
+    "e3a4cb7e2c09": "not a loosening",
+    "f282f6e86a7d": "not a loosening",
+    "f4631f9b0c4f": "not a loosening",
+    "fa1e2c8534c9": "not a loosening"
+  },
+  "model": "gpt-6.1-terra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ca92d502-e60f-45ae-8940-518395e3c285/scratchpad/r6-651-prompt.md",
+  "reason": "729 chars",
+  "refused": false,
+  "review": "explainer-port-631-r6-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/e631"
+}

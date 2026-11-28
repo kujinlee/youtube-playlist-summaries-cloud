@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/explainer-port-631-r1-claude.md": "100644 f1b3612919d7f5f6d6fab063769db844e569aa3b",
+    "docs/reviews/codex/explainer-port-631-r1-codex.md": "100644 166b72194e7483aac1d1bbac550eeacfe335e875",
+    "docs/reviews/verdicts/explainer-port-631-r1-codex.verdict.json": "100644 4df5e05d3c66d37d908a948e5154e7db6e062668"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "380689fb486b3497128746c53479acbbbf1bf082",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 7980 chars, names 380689fb486b",
+  "refused": false,
+  "review": "explainer-port-631-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/e631",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
