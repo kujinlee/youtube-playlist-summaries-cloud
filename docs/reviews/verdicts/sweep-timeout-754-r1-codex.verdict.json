@@ -1,0 +1,21 @@
+{
+  "attempts": [
+    "  gpt-6.1-terra: ok \u2014 1133 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "66590fea02c62cf81a265e75802f6860cb24feea",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ca92d502-e60f-45ae-8940-518395e3c285/scratchpad/stl-r1/codex.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "loosening_answers": {},
+  "model": "gpt-6.1-terra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/ca92d502-e60f-45ae-8940-518395e3c285/scratchpad/stl-r1/prompt.md",
+  "reason": "1133 chars",
+  "refused": false,
+  "review": "sweep-timeout-754-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/stl"
+}
