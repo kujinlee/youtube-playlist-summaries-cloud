@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if OUR server is already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 339 cases, binds only ephemeral ports, never 7391
+    python3 scripts/explainer-serve.py --self-test   # 341 cases, binds only ephemeral ports, never 7391
 
 EXIT CODES: 0 done (or already serving / not running); 1 not running (`--status`), or a fork whose child never
 answered with this start's token (the parent reaps it; the child's reason, if it gave one, is in `<ROOT>/.serve.log`);
@@ -2648,6 +2648,10 @@ def stop() -> int:
         return 0
     assert pid is not None
     verdict, answer, _pid = listener_verdict()
+    # r4 Codex B1: `listener_verdict` reads the records AGAIN, so a restart between the two reads can prove a NEW
+    # server's pid while `pid` is still the old one. The pid signalled must be the pid the token proved.
+    if verdict == "ours" and not (isinstance(answer, dict) and answer.get("pid") == pid):
+        verdict = "other-root"
     # Signalled ONLY when the listener answered with this root's token and this pid (`classify_listener` is the ONE
     # place the pid is compared). Never on a claim alone (r1 X1), and never on what lsof or ps say (Phase 6 (c)).
     if verdict != "ours":
@@ -5297,6 +5301,31 @@ def _self_test_body() -> int:
         case("--status exits NON-ZERO when nothing is listening — a down server is not a pass",
              lambda: _status_rc(False) != 0)
         case("…and exits 0 when it is", lambda: _status_rc(True) == 0)
+
+        # ── r4 Codex B1: stop() proved one pid and signalled another ──────────────────────────────────────
+        # The record named pid A; by the time the listener was asked, a restart had proved pid B. A was signalled.
+        def _stop_sends(rec_pid, ans_pid):
+            names = ("recorded_pid", "pid_alive", "listener_verdict", "forget", "listening_pids", "pid_command")
+            saved, sent, real_kill = {n: globals()[n] for n in names}, [], os.kill
+            try:
+                globals()["recorded_pid"] = lambda *_a, **_k: (rec_pid, pathlib.Path("/nonexistent/.serve.pid"))
+                globals()["pid_alive"] = lambda p: p is not None and not sent
+                globals()["listener_verdict"] = lambda *_a, **_k: ("ours", {"pid": ans_pid}, rec_pid)
+                globals()["forget"] = lambda *_a, **_k: False
+                globals()["listening_pids"] = lambda *_a, **_k: set()
+                globals()["pid_command"] = lambda *_a, **_k: ""
+                os.kill = lambda p, _s: sent.append(p)
+                import io as _io, contextlib as _ctx
+                with _ctx.redirect_stdout(_io.StringIO()):
+                    rc = stop()
+            finally:
+                globals().update(saved)
+                os.kill = real_kill
+            return rc, sent
+        case("r4 Codex B1: --stop never signals the recorded pid when the token proved a DIFFERENT pid — exit 3",
+             lambda: _stop_sends(111, 222) == (RC_NOT_OURS, []))
+        case("…and signals the recorded pid when the token proved that same pid",
+             lambda: _stop_sends(111, 111) == (0, [111]))
 
         # ── backlog #631: a port held by ANOTHER program is not our server — ask, never stop it ──────────
         # The owner 2026-11-13: "if port is occupied, the installation script should be asking permission
